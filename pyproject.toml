@@ -1,13 +1,105 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "llm"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.0.1"
+description = "A nice python project"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Mystic", email = "215104920@qq.com" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "allure-pytest>=2.13.5",
     "accelerate>=1.4.0",
     "datasets>=3.3.1",
     "peft>=0.14.0",
     "torch>=2.6.0",
     "transformers>=4.49.0",
 ]
+
+[project.urls]
+Documentation = "https://github.com/pplmx/llm#readme"
+Issues = "https://github.com/pplmx/llm/issues"
+Source = "https://github.com/pplmx/llm"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = [
+    "-ra",
+    "-q",
+    "--cov=llm",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=lcov",
+    "--alluredir=allure-results",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+
+[tool.coverage.run]
+source_pkgs = ["llm"]
+branch = true
+parallel = true
+omit = [
+    "*/.venv/*",
+    "*/tests/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.paths]
+llm = ["src/llm", "*/llm/src/llm"]
+tests = ["tests", "*/llm/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__ == .__main__.:",
+    "if self.debug:",
+    "if TYPE_CHECKING:",
+    "no cov",
+    "raise NotImplementedError",
+    "pass",
+    "pragma: no cover",
+]
+show_missing = true  # Show missing lines in the report
+precision = 2  # Number of decimal places to use when rounding
+
+[tool.mypy]
+# Enable strict mode for comprehensive type checking
+strict = true
+python_version = "3.12"
+
+# Error reporting settings
+pretty = true              # Beautify output for better readability
+show_error_codes = true    # Display error codes for easier troubleshooting
+show_error_context = true  # Show context for errors to aid debugging
+
+# Ignore missing type hints for third-party libraries
+ignore_missing_imports = true
+
+# Exclude specific paths or files from type checking
+exclude = [
+    "tests/",
+    "setup.py",
+]
+
+# Relax type-checking rules for test files (e.g., allow functions without type annotations)
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
