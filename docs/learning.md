@@ -478,31 +478,31 @@ def evaluate_model(model, eval_dataloader, config):
 
 1. 克隆代码仓库：
 
-    ```bash
-    git clone <repository-url>
-    cd llm-training
-    ```
+```bash
+git clone <repository-url>
+cd llm-training
+```
 
 2. 创建虚拟环境：
 
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # Linux/Mac
-    # 或
-    .venv\Scripts\activate  # Windows
-    ```
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# 或
+.venv\Scripts\activate  # Windows
+```
 
 3. 安装依赖：
 
-    ```bash
-    uv pip install -e .
-    ```
+```bash
+uv pip install -e .
+```
 
 4. 运行训练：
 
-    ```bash
-    python train.py
-    ```
+```bash
+python train.py
+```
 
 ## 训练过程优化
 
@@ -797,6 +797,262 @@ class ExperimentTracker:
     - 调整学习率和优化器参数
     - 增加训练轮次
     - 使用交叉验证选择最佳参数
+
+## 项目结构和代码组织
+
+```
+llm-training/
+├── .venv/                    # 虚拟环境目录
+├── data/                     # 数据目录
+│   ├── raw/                 # 原始数据
+│   └── processed/           # 预处理后的数据
+├── src/                     # 源代码
+│   ├── __init__.py
+│   ├── config.py           # 配置文件
+│   ├── data.py             # 数据处理
+│   ├── model.py            # 模型定义
+│   ├── trainer.py          # 训练器
+│   ├── evaluate.py         # 评估脚本
+│   ├── utils/              # 工具函数
+│   │   ├── __init__.py
+│   │   ├── memory_utils.py
+│   │   └── logging_utils.py
+│   └── experiments/        # 实验跟踪
+│       ├── __init__.py
+│       └── tracking.py
+├── notebooks/               # Jupyter notebooks
+│   ├── 1_data_exploration.ipynb
+│   └── 2_model_analysis.ipynb
+├── tests/                   # 单元测试
+│   ├── __init__.py
+│   ├── test_data.py
+│   └── test_model.py
+├── outputs/                 # 模型输出
+│   ├── checkpoints/
+│   └── logs/
+├── examples/                # 示例代码
+│   └── custom_dataset_example.py
+├── scripts/                 # 实用脚本
+│   ├── prepare_data.sh
+│   └── train_model.sh
+├── pyproject.toml          # 项目配置
+├── README.md               # 项目说明
+└── requirements.txt        # 依赖清单
+```
+
+## 错误处理和调试指南
+
+### 1. 常见错误及解决方案
+
+1. 内存相关错误：
+
+    ```python
+    # 错误：RuntimeError: out of memory
+    # 解决方案：实现渐进式数据加载
+    from typing import Iterator, List
+
+
+    def batch_generator(data: List, batch_size: int) -> Iterator:
+        for i in range(0, len(data), batch_size):
+            yield data[i:i + batch_size]
+
+
+    # 使用示例
+    for batch in batch_generator(large_dataset, batch_size=32):
+        process_batch(batch)
+    ```
+
+2. 数据加载错误：
+
+    ```python
+    # 错误：FileNotFoundError: [Errno 2] No such file or directory
+    # 解决方案：添加路径检查
+    def safe_load_data(file_path: str):
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"数据文件不存在：{file_path}")
+        try:
+            # 尝试不同的编码
+            for encoding in ['utf-8', 'gbk', 'latin1']:
+                try:
+                    with open(file_path, 'r', encoding=encoding) as f:
+                        return f.read()
+                except UnicodeDecodeError:
+                    continue
+            raise UnicodeDecodeError("无法识别文件编码")
+        except Exception as e:
+            raise Exception(f"加载数据失败：{str(e)}")
+    ```
+
+3. 模型训练错误：
+
+    ```python
+    # 错误：Loss is NaN
+    # 解决方案：添加梯度裁剪和损失检查
+    def check_loss(loss: torch.Tensor) -> bool:
+        if torch.isnan(loss) or torch.isinf(loss):
+            logger.error(f"检测到无效损失值：{loss.item()}")
+            return False
+        return True
+
+    # 训练循环中使用
+    loss = outputs.loss
+    if not check_loss(loss):
+        logger.info("跳过当前批次")
+        continue
+    ```
+
+### 2. 调试技巧
+
+1. 使用日志记录关键信息：
+
+    ```python
+    import logging
+
+    def setup_debug_logging():
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('debug.log'),
+                logging.StreamHandler()
+            ]
+        )
+
+    # 在关键位置添加日志
+    logging.debug(f"数据形状: {batch.shape}")
+    logging.debug(f"当前学习率: {optimizer.param_groups[0]['lr']}")
+    ```
+
+2. 添加断言检查：
+
+    ```python
+    def validate_inputs(inputs: dict):
+        """验证模型输入"""
+        assert 'input_ids' in inputs, "缺少 input_ids"
+        assert 'attention_mask' in inputs, "缺少 attention_mask"
+        assert inputs['input_ids'].dim() == 2, f"input_ids 维度错误: {inputs['input_ids'].dim()}"
+        return True
+    ```
+
+3. 性能分析工具：
+
+    ```python
+    import cProfile
+    import pstats
+
+
+    def profile_function(func):
+        """函数性能分析装饰器"""
+
+        def wrapper(*args, **kwargs):
+            profile = cProfile.Profile()
+            try:
+                return profile.runcall(func, *args, **kwargs)
+            finally:
+                ps = pstats.Stats(profile)
+                ps.sort_stats('cumulative')
+                ps.print_stats(20)  # 打印前20行统计信息
+
+        return wrapper
+
+
+    @profile_function
+    def train_epoch(model, dataloader):
+        # 训练代码
+        pass
+    ```
+
+## 实践任务示例
+
+### 任务1：文本分类
+
+创建一个简单的文本分类模型：
+
+```python
+from transformers import DistilBertForSequenceClassification
+
+
+def create_classification_model(num_labels: int = 2):
+    model = DistilBertForSequenceClassification.from_pretrained(
+        "distilbert-base-uncased",
+        num_labels=num_labels
+    )
+    return model
+
+
+# 使用示例
+model = create_classification_model()
+outputs = model(**batch)
+loss = outputs.loss
+logits = outputs.logits
+```
+
+### 任务2：文本生成
+
+实现一个简单的文本生成任务：
+
+```python
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
+
+
+def generate_text(
+    prompt: str,
+    max_length: int = 50,
+    num_return_sequences: int = 1
+):
+    tokenizer = GPT2Tokenizer.from_pretrained("distilgpt2")
+    model = GPT2LMHeadModel.from_pretrained("distilgpt2")
+
+    inputs = tokenizer(prompt, return_tensors="pt")
+    outputs = model.generate(
+        **inputs,
+        max_length=max_length,
+        num_return_sequences=num_return_sequences,
+        no_repeat_ngram_size=2,
+        temperature=0.7
+    )
+
+    return tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+
+# 使用示例
+generated_texts = generate_text("Once upon a time")
+```
+
+### 任务3：模型微调
+
+```python
+def fine_tune_model(
+    model,
+    train_dataset,
+    eval_dataset,
+    output_dir: str,
+    epochs: int = 3
+):
+    training_args = TrainingArguments(
+        output_dir=output_dir,
+        num_train_epochs=epochs,
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=8,
+        warmup_steps=500,
+        weight_decay=0.01,
+        logging_dir='./logs',
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset
+    )
+
+    trainer.train()
+    return trainer
+
+
+# 使用示例
+trainer = fine_tune_model(model, train_dataset, eval_dataset, "./output")
+```
 
 ## 资源推荐
 
