@@ -1,0 +1,13 @@
+services:
+    llm:
+        build: .
+        image: llm
+        ports:
+            - 8000:8000
+
+networks:
+    llm-net:
+        name: llm-net
+        ipam:
+            config:
+                -   subnet: 172.16.238.0/24
