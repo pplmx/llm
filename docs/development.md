@@ -18,7 +18,7 @@ This document will walk you through setting up your development environment, run
 
 Before you start, make sure you have the following installed on your system:
 
-- **Python 3.12+**: Ensure you have the correct version of Python. You can check your Python version with:
+- **Python 3.13+**: Ensure you have the correct version of Python. You can check your Python version with:
 
     ```bash
     python --version

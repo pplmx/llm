@@ -47,7 +47,7 @@ print(result)
 ## Installation
 
 ### Requirements
-- Python 3.12+
+- Python 3.13+
 - Dependencies:
   - [Dependency 1]: [version] - [brief description or purpose]
   - [Dependency 2]: [version] - [brief description or purpose]

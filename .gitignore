@@ -3,6 +3,7 @@
 .vscode
 .DS_Store
 allure-results
+results
 
 ### Python template
 # Byte-compiled / optimized / DLL files

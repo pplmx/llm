@@ -7,14 +7,14 @@ name = "llm"
 version = "0.0.1"
 description = "A nice python project"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = "MIT"
 authors = [
     { name = "Mystic", email = "215104920@qq.com" },
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "pytest>=8.0",
@@ -25,6 +25,8 @@ dependencies = [
     "peft>=0.14.0",
     "torch>=2.6.0",
     "transformers>=4.49.0",
+    "tokenizers>=0.21.0",
+    "psutil>=7.0.0",
 ]
 
 [project.urls]
@@ -83,7 +85,7 @@ precision = 2  # Number of decimal places to use when rounding
 [tool.mypy]
 # Enable strict mode for comprehensive type checking
 strict = true
-python_version = "3.12"
+python_version = "3.13"
 
 # Error reporting settings
 pretty = true              # Beautify output for better readability
