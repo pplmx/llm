@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [
-    { name = "Mystic", email = "215104920@qq.com" },
+    { name = "Mystic" },
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -20,13 +20,7 @@ dependencies = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "allure-pytest>=2.13.5",
-    "accelerate>=1.4.0",
-    "datasets>=3.3.1",
-    "peft>=0.14.0",
     "torch>=2.6.0",
-    "transformers>=4.49.0",
-    "tokenizers>=0.21.0",
-    "psutil>=7.0.0",
 ]
 
 [project.urls]
@@ -38,7 +32,7 @@ Source = "https://github.com/pplmx/llm"
 packages = ["src/llm"]
 
 [tool.pytest.ini_options]
-minversion = "6.0"
+minversion = "8.1"
 addopts = [
     "-ra",
     "-q",
@@ -48,12 +42,12 @@ addopts = [
     "--cov-report=lcov",
     "--alluredir=allure-results",
 ]
+consider_namespace_packages=true # Enable this to allow using the same filename in different test directories without needing __init__.py in each one
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
 python_functions = ["test_*"]
-markers = [
-    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
-]
 
 [tool.coverage.run]
 source_pkgs = ["llm"]
