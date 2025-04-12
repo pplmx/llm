@@ -164,9 +164,9 @@ class MultiHeadAttention(nn.Module):
         v = self.v_proj(hidden_states)
 
         # 将 hidden_size 分解为多个头：形状变为 (batch_size, seq_len, num_heads, head_dim)
-        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim)
-        k = k.view(batch_size, seq_len, self.num_heads, self.head_dim)
-        v = v.view(batch_size, seq_len, self.num_heads, self.head_dim)
+        q = q.reshape(batch_size, seq_len, self.num_heads, self.head_dim)
+        k = k.reshape(batch_size, seq_len, self.num_heads, self.head_dim)
+        v = v.reshape(batch_size, seq_len, self.num_heads, self.head_dim)
 
         # 转置为 (batch_size, num_heads, seq_len, head_dim)
         q = q.transpose(1, 2)
@@ -188,7 +188,7 @@ class MultiHeadAttention(nn.Module):
         )  # (batch_size, num_heads, seq_len, head_dim)
 
         # 拼接多头输出 (batch_size, seq_len, num_heads * head_dim)
-        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.hidden_size)
+        attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_len, self.hidden_size)
 
         # 输出投影
         out = self.out_proj(attn_output)
