@@ -1,7 +1,9 @@
 import math
 
 import torch
-from torch import nn
+from torch import Tensor, nn
+
+from llm.core.attn.dot_product_attn import scaled_dot_product_attention
 
 
 class Attention(nn.Module):
@@ -29,43 +31,41 @@ class Attention(nn.Module):
         super().__init__()
 
         self.hidden_size = hidden_size
+        self.dropout_p = dropout_p
         self.scaling = math.sqrt(hidden_size)
 
         # Linear projections for Query, Key, and Value
-        self.query = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
-        self.key = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
-        self.value = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
+        self.query_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
+        self.key_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
+        self.value_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
 
         # Output projection
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
-
-        # Dropout for attention weights
-        self.dropout = nn.Dropout(dropout_p)
 
         # Initialize weights
         self._init_weights()
 
     def _init_weights(self):
         """Initializes the weights of the attention layers."""
-        nn.init.xavier_uniform_(self.query.weight)
-        nn.init.xavier_uniform_(self.key.weight)
-        nn.init.xavier_uniform_(self.value.weight)
+        nn.init.xavier_uniform_(self.query_proj.weight)
+        nn.init.xavier_uniform_(self.key_proj.weight)
+        nn.init.xavier_uniform_(self.value_proj.weight)
         nn.init.xavier_uniform_(self.out_proj.weight)
 
-        if self.query.bias is not None:
-            nn.init.zeros_(self.query.bias)
-        if self.key.bias is not None:
-            nn.init.zeros_(self.key.bias)
-        if self.value.bias is not None:
-            nn.init.zeros_(self.value.bias)
+        if self.query_proj.bias is not None:
+            nn.init.zeros_(self.query_proj.bias)
+        if self.key_proj.bias is not None:
+            nn.init.zeros_(self.key_proj.bias)
+        if self.value_proj.bias is not None:
+            nn.init.zeros_(self.value_proj.bias)
         if self.out_proj.bias is not None:
             nn.init.zeros_(self.out_proj.bias)
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        hidden_states: Tensor,
+        attention_mask: Tensor | None = None,
+    ) -> Tensor:
         """
         Forward pass for the basic attention mechanism.
 
@@ -79,33 +79,35 @@ class Attention(nn.Module):
             Output tensor with shape [batch_size, seq_len, hidden_size].
         """
         # Project inputs to queries, keys, and values
-        query_states = self.query(hidden_states)  # [batch_size, seq_len, hidden_size]
-        key_states = self.key(hidden_states)  # [batch_size, seq_len, hidden_size]
-        value_states = self.value(hidden_states)  # [batch_size, seq_len, hidden_size]
+        query = self.query_proj(hidden_states)  # [batch_size, seq_len, hidden_size]
+        key = self.key_proj(hidden_states)  # [batch_size, seq_len, hidden_size]
+        value = self.value_proj(hidden_states)  # [batch_size, seq_len, hidden_size]
 
-        # Compute scaled dot-product attention
-        # [batch_size, seq_len, hidden_size] x [batch_size, hidden_size, seq_len]
-        # -> [batch_size, seq_len, seq_len]
-        attention_scores = torch.matmul(query_states, key_states.transpose(-1, -2)) / self.scaling
+        # Add head dim(Single Head) - (batch_size, 1, seq_len, hidden_size)
+        query = query.unsqueeze(1)
+        key = key.unsqueeze(1)
+        value = value.unsqueeze(1)
 
-        # Apply attention mask if provided
+        # Extend mask dim to broadcast
         if attention_mask is not None:
-            # Add large negative value to masked positions to make their softmax output close to 0
-            attention_scores = attention_scores + attention_mask
+            attention_mask = attention_mask.unsqueeze(1)  # (batch_size, 1, seq_len, seq_len)
 
-        # Normalize the attention scores to probabilities
-        attention_probs = torch.nn.functional.softmax(attention_scores, dim=-1)
+        # Compute Attention
+        context_layer = scaled_dot_product_attention(
+            query=query,
+            key=key,
+            value=value,
+            attn_mask=attention_mask,
+            dropout_p=self.dropout_p,
+            is_causal=self.is_causal,
+            scale=self.scaling,
+        )  # (batch_size, 1, seq_len, hidden_size)
 
-        # Apply dropout to the attention probabilities
-        attention_probs = self.dropout(attention_probs)
-
-        # Compute the weighted sum of values
-        # [batch_size, seq_len, seq_len] x [batch_size, seq_len, hidden_size]
-        # -> [batch_size, seq_len, hidden_size]
-        context_layer = torch.matmul(attention_probs, value_states)
+        # Remove head dim
+        context_layer = context_layer.squeeze(1)  # (batch_size, seq_len, hidden_size)
 
         # Project the context layer
-        output = self.out_proj(context_layer)
+        output = self.out_proj(context_layer)  # (batch_size, seq_len, hidden_size)
 
         return output
 
@@ -183,7 +185,7 @@ class MultiHeadAttention(nn.Module):
         if self.out_proj.bias is not None:
             nn.init.zeros_(self.out_proj.bias)
 
-    def _reshape_for_multihead_attention(self, x: torch.Tensor) -> torch.Tensor:
+    def _reshape_for_multihead_attention(self, x: Tensor) -> Tensor:
         """
         Reshapes the input tensor for multi-head attention computation.
 
@@ -201,9 +203,9 @@ class MultiHeadAttention(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        hidden_states: Tensor,
+        attention_mask: Tensor | None = None,
+    ) -> Tensor:
         """
         Forward pass for the multi-head attention mechanism.
 
@@ -369,7 +371,7 @@ class MultiLatentAttention(nn.Module):
         if self.out_proj.bias is not None:
             nn.init.zeros_(self.out_proj.bias)
 
-    def _reshape_for_multihead_attention(self, x: torch.Tensor, from_latents: bool = False) -> torch.Tensor:
+    def _reshape_for_multihead_attention(self, x: Tensor, from_latents: bool = False) -> Tensor:
         """
         Reshapes the input tensor for multi-head attention computation.
 
@@ -397,9 +399,9 @@ class MultiLatentAttention(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        hidden_states: Tensor,
+        attention_mask: Tensor | None = None,
+    ) -> Tensor:
         """
         Forward pass for the multi-latent attention mechanism.
 
