@@ -3,7 +3,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from llm.core.attn.dot_product_attn import scaled_dot_product_attention
+from llm.core.attn import scaled_dot_product_attention
 
 
 class Attention(nn.Module):
