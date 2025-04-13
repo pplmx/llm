@@ -40,7 +40,7 @@ def scaled_dot_product_attention(
     query: Tensor,
     key: Tensor,
     value: Tensor,
-    mask: Tensor | None = None,
+    attn_mask: Tensor | None = None,
     dropout_p: float = 0.0,
     is_causal: bool = False,
     scale: float | None = None,
@@ -72,8 +72,8 @@ def scaled_dot_product_attention(
     attn_scores = attn_scores / scale
 
     # 步骤3: 应用掩码(如果提供)
-    if mask is not None:
-        attn_scores = attn_scores.masked_fill(mask, float("-inf"))
+    if attn_mask is not None:
+        attn_scores = attn_scores.masked_fill(attn_mask, float("-inf"))
 
     # 步骤4: 应用因果掩码(如果需要) - 防止信息泄露
     if is_causal:
@@ -174,7 +174,7 @@ class SingleHeadAttention(nn.Module):
             query=query,
             key=key,
             value=value,
-            mask=attention_mask,
+            attn_mask=attention_mask,
             dropout_p=self.dropout,
             is_causal=self.is_causal,
             scale=scale_factor,
@@ -295,7 +295,7 @@ class MultiHeadAttention(nn.Module):
             query=query,
             key=key,
             value=value,
-            mask=attention_mask,
+            attn_mask=attention_mask,
             dropout_p=self.dropout,
             is_causal=self.is_causal,
             scale=scale_factor,
