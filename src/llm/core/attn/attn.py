@@ -16,6 +16,7 @@ class Attention(nn.Module):
         hidden_size: Hidden dimension size.
         dropout_p: Dropout probability. Defaults to 0.1.
         bias: Whether to use bias in the linear layers. Defaults to True.
+        is_causal: Whether to use causal attention. Defaults to False.
         device: Device for the model.
         dtype: Data type for the model parameters.
     """
@@ -25,6 +26,7 @@ class Attention(nn.Module):
         hidden_size: int,
         dropout_p: float = 0.1,
         bias: bool = True,
+        is_causal: bool = False,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -33,6 +35,7 @@ class Attention(nn.Module):
         self.hidden_size = hidden_size
         self.dropout_p = dropout_p
         self.scaling = math.sqrt(hidden_size)
+        self.is_causal = is_causal
 
         # Linear projections for Query, Key, and Value
         self.query_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
@@ -125,6 +128,7 @@ class MultiHeadAttention(nn.Module):
         bias: Whether to use bias in the linear layers. Defaults to True.
         layer_norm_eps: Epsilon value for Layer Normalization. Defaults to 1e-5.
         use_layer_norm: Whether to use Layer Normalization. Defaults to True.
+        is_causal: Whether to use causal attention. Defaults to False.
         device: Device for the model.
         dtype: Data type for the model parameters.
     """
@@ -137,6 +141,7 @@ class MultiHeadAttention(nn.Module):
         bias: bool = True,
         layer_norm_eps: float = 1e-5,
         use_layer_norm: bool = True,
+        is_causal: bool = False,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -149,6 +154,7 @@ class MultiHeadAttention(nn.Module):
         self.head_size = hidden_size // num_attention_heads
         self.scaling = math.sqrt(self.head_size)
         self.use_layer_norm = use_layer_norm
+        self.is_causal = is_causal
 
         # Layer Normalization (applied first in forward pass if use_layer_norm is True)
         if use_layer_norm:
@@ -163,7 +169,6 @@ class MultiHeadAttention(nn.Module):
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
 
         # Dropout layers
-        self.attention_dropout = nn.Dropout(dropout_p)
         self.output_dropout = nn.Dropout(dropout_p)
 
         # Initialize weights
@@ -238,26 +243,16 @@ class MultiHeadAttention(nn.Module):
         key_states = self._reshape_for_multihead_attention(key_states)
         value_states = self._reshape_for_multihead_attention(value_states)
 
-        # Compute scaled dot-product attention
-        # [batch_size, num_heads, seq_len, head_size] x [batch_size, num_heads, head_size, seq_len]
-        # -> [batch_size, num_heads, seq_len, seq_len]
-        attention_scores = torch.matmul(query_states, key_states.transpose(-1, -2)) / self.scaling
-
-        # Apply attention mask if provided
-        if attention_mask is not None:
-            # Add large negative value to masked positions to make their softmax output close to 0
-            attention_scores = attention_scores + attention_mask
-
-        # Normalize the attention scores to probabilities
-        attention_probs = torch.nn.functional.softmax(attention_scores, dim=-1)
-
-        # Apply dropout to the attention probabilities
-        attention_probs = self.attention_dropout(attention_probs)
-
-        # Compute the weighted sum of values
-        # [batch_size, num_heads, seq_len, seq_len] x [batch_size, num_heads, seq_len, head_size]
-        # -> [batch_size, num_heads, seq_len, head_size]
-        context_layer = torch.matmul(attention_probs, value_states)
+        # Compute scaled dot-product attention using the custom function
+        context_layer = scaled_dot_product_attention(
+            query=query_states,
+            key=key_states,
+            value=value_states,
+            attn_mask=attention_mask,
+            dropout_p=self.dropout_p,
+            is_causal=self.is_causal,
+            scale=self.scaling,
+        )  # [batch_size, num_heads, seq_len, head_size]
 
         # Reshape back to original dimensions
         # [batch_size, num_heads, seq_len, head_size] -> [batch_size, seq_len, num_heads, head_size]
@@ -293,6 +288,7 @@ class MultiLatentAttention(nn.Module):
         bias: Whether to use bias in the linear layers. Defaults to True.
         layer_norm_eps: Epsilon value for Layer Normalization. Defaults to 1e-5.
         use_layer_norm: Whether to use Layer Normalization. Defaults to True.
+        is_causal: Whether to use causal attention. Defaults to False.
         device: Device for the model.
         dtype: Data type for the model parameters.
     """
@@ -307,6 +303,7 @@ class MultiLatentAttention(nn.Module):
         bias: bool = True,
         layer_norm_eps: float = 1e-5,
         use_layer_norm: bool = True,
+        is_causal: bool = False,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -321,6 +318,8 @@ class MultiLatentAttention(nn.Module):
         self.use_layer_norm = use_layer_norm
         self.num_latents = num_latents
         self.latent_size = latent_size if latent_size is not None else hidden_size
+        self.is_causal = is_causal
+        self.dropout_p = dropout_p
 
         # Layer Normalization (applied first in forward pass if use_layer_norm is True)
         if use_layer_norm:
@@ -341,7 +340,6 @@ class MultiLatentAttention(nn.Module):
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
 
         # Dropout layers
-        self.attention_dropout = nn.Dropout(dropout_p)
         self.output_dropout = nn.Dropout(dropout_p)
 
         # Initialize weights
@@ -438,28 +436,23 @@ class MultiLatentAttention(nn.Module):
         latent_queries = self._reshape_for_multihead_attention(latent_queries, from_latents=True)
         # [batch_size, num_heads, num_latents, head_size]
 
-        # Compute scaled dot-product attention: latent queries attend to input keys
-        # [batch_size, num_heads, num_latents, head_size] x [batch_size, num_heads, head_size, seq_len]
-        # -> [batch_size, num_heads, num_latents, seq_len]
-        attention_scores = torch.matmul(latent_queries, input_keys.transpose(-1, -2)) / self.scaling
-
-        # Apply attention mask if provided
+        # Expand attention mask for latent dimension if provided
+        expanded_mask = None
         if attention_mask is not None:
             # Expand mask to cover the latent dimension
             # [batch_size, 1, 1, seq_len] -> [batch_size, 1, num_latents, seq_len]
             expanded_mask = attention_mask.expand(-1, -1, self.num_latents, -1)
-            attention_scores = attention_scores + expanded_mask
 
-        # Normalize the attention scores to probabilities
-        attention_probs = torch.nn.functional.softmax(attention_scores, dim=-1)
-
-        # Apply dropout to the attention probabilities
-        attention_probs = self.attention_dropout(attention_probs)
-
-        # Compute the weighted sum of values
-        # [batch_size, num_heads, num_latents, seq_len] x [batch_size, num_heads, seq_len, head_size]
-        # -> [batch_size, num_heads, num_latents, head_size]
-        latent_context = torch.matmul(attention_probs, input_values)
+        # Compute scaled dot-product attention using the custom function
+        latent_context = scaled_dot_product_attention(
+            query=latent_queries,
+            key=input_keys,
+            value=input_values,
+            attn_mask=expanded_mask,
+            dropout_p=self.dropout_p,
+            is_causal=self.is_causal,
+            scale=self.scaling,
+        )  # [batch_size, num_heads, num_latents, head_size]
 
         # Phase 2: Transform updated latents
         # Reshape latent context: [batch_size, num_heads, num_latents, head_size] -> [batch_size, num_latents, hidden_size]
