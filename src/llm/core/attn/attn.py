@@ -3,7 +3,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from llm.core.attn import scaled_dot_product_attention
+from .dot_product_attn import scaled_dot_product_attention
 
 
 class Attention(nn.Module):
@@ -155,15 +155,14 @@ class MultiHeadAttention(nn.Module):
         self.scale = math.sqrt(self.head_dim)
         self.norm_first = norm_first
         self.is_causal = is_causal
+        self.p = p
 
         # Layer Normalization (applied first in forward pass if norm_first is True)
         if norm_first:
             self.norm = nn.LayerNorm(hidden_size, eps=eps, device=device, dtype=dtype)
 
-        # Linear projections for Query, Key, and Value
-        self.q_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
-        self.k_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
-        self.v_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
+        # Combined Linear projections for Query, Key, and Value
+        self.in_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, device=device, dtype=dtype)
 
         # Output projection
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
@@ -176,17 +175,15 @@ class MultiHeadAttention(nn.Module):
 
     def _init_weights(self):
         """Initializes the weights of the multi-head attention layers."""
-        nn.init.xavier_uniform_(self.q_proj.weight)
-        nn.init.xavier_uniform_(self.k_proj.weight)
-        nn.init.xavier_uniform_(self.v_proj.weight)
-        nn.init.xavier_uniform_(self.out_proj.weight)
+        # Initialize combined input projection
+        # Splitting the weight matrix for potentially different initializations if needed,
+        # but Xavier uniform for the whole matrix is common.
+        nn.init.xavier_uniform_(self.in_proj.weight)
+        if self.in_proj.bias is not None:
+            nn.init.zeros_(self.in_proj.bias)
 
-        if self.q_proj.bias is not None:
-            nn.init.zeros_(self.q_proj.bias)
-        if self.k_proj.bias is not None:
-            nn.init.zeros_(self.k_proj.bias)
-        if self.v_proj.bias is not None:
-            nn.init.zeros_(self.v_proj.bias)
+        # Initialize output projection
+        nn.init.xavier_uniform_(self.out_proj.weight)
         if self.out_proj.bias is not None:
             nn.init.zeros_(self.out_proj.bias)
 
@@ -232,10 +229,12 @@ class MultiHeadAttention(nn.Module):
 
         batch_size, seq_len, _ = hidden_states.size()
 
-        # Project inputs to queries, keys, and values
-        query = self.q_proj(hidden_states)  # [batch_size, seq_len, hidden_size]
-        key = self.k_proj(hidden_states)  # [batch_size, seq_len, hidden_size]
-        value = self.v_proj(hidden_states)  # [batch_size, seq_len, hidden_size]
+        # Project inputs to queries, keys, and values using the combined layer
+        qkv = self.in_proj(hidden_states)  # [batch_size, seq_len, 3 * hidden_size]
+
+        # Split the combined tensor into query, key, and value
+        # qkv: [batch_size, seq_len, 3 * hidden_size] -> three tensors of [batch_size, seq_len, hidden_size]
+        query, key, value = qkv.chunk(3, dim=-1)
 
         # Reshape for multi-head attention
         # [batch_size, num_heads, seq_len, head_dim]
@@ -332,9 +331,8 @@ class MultiLatentAttention(nn.Module):
         self.latent_q_proj = nn.Linear(self.latent_dim, hidden_size, bias=bias, device=device, dtype=dtype)
         self.latent_v_proj = nn.Linear(self.latent_dim, hidden_size, bias=bias, device=device, dtype=dtype)
 
-        # Input projections
-        self.input_k_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
-        self.input_v_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
+        # Combined Input projections for Key and Value
+        self.input_kv_proj = nn.Linear(hidden_size, 2 * hidden_size, bias=bias, device=device, dtype=dtype)
 
         # Output projections
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, device=device, dtype=dtype)
@@ -353,8 +351,7 @@ class MultiLatentAttention(nn.Module):
         # Initialize linear projections
         nn.init.xavier_uniform_(self.latent_q_proj.weight)
         nn.init.xavier_uniform_(self.latent_v_proj.weight)
-        nn.init.xavier_uniform_(self.input_k_proj.weight)
-        nn.init.xavier_uniform_(self.input_v_proj.weight)
+        nn.init.xavier_uniform_(self.input_kv_proj.weight)  # Initialize combined KV projection
         nn.init.xavier_uniform_(self.out_proj.weight)
 
         # Initialize biases to zero
@@ -362,10 +359,8 @@ class MultiLatentAttention(nn.Module):
             nn.init.zeros_(self.latent_q_proj.bias)
         if self.latent_v_proj.bias is not None:
             nn.init.zeros_(self.latent_v_proj.bias)
-        if self.input_k_proj.bias is not None:
-            nn.init.zeros_(self.input_k_proj.bias)
-        if self.input_v_proj.bias is not None:
-            nn.init.zeros_(self.input_v_proj.bias)
+        if self.input_kv_proj.bias is not None:  # Initialize combined KV bias
+            nn.init.zeros_(self.input_kv_proj.bias)
         if self.out_proj.bias is not None:
             nn.init.zeros_(self.out_proj.bias)
 
@@ -421,9 +416,10 @@ class MultiLatentAttention(nn.Module):
         batch_size, seq_len, _ = hidden_states.size()
 
         # Phase 1: Latents attend to input sequence
-        # Project inputs to keys and values
-        input_keys = self.input_k_proj(hidden_states)  # [batch_size, seq_len, hidden_size]
-        input_values = self.input_v_proj(hidden_states)  # [batch_size, seq_len, hidden_size]
+        # Project inputs to keys and values using the combined layer
+        kv = self.input_kv_proj(hidden_states)  # [batch_size, seq_len, 2 * hidden_size]
+        # Split the combined tensor into input_keys and input_values
+        input_keys, input_values = kv.chunk(2, dim=-1)  # Two tensors of [batch_size, seq_len, hidden_size]
 
         # Project latents to queries
         latent_queries = self.latent_q_proj(self.latents)  # [num_latents, hidden_size]
