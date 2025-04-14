@@ -32,7 +32,7 @@ def test_attention_forward_shape(attention, input_tensor):
 def test_attention_with_mask(attention, input_tensor):
     """Test attention with attention mask."""
     # Create a simple attention mask
-    attn_mask = torch.ones(2, 1, 1, 10, dtype=torch.bool)  # [batch_size, 1, 1, seq_len]
+    attn_mask = torch.ones(2, 1, 10, dtype=torch.bool)  # [batch_size, 1, seq_len]
     output = attention(input_tensor, attn_mask)
     assert output.shape == input_tensor.shape
 

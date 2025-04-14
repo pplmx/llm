@@ -51,7 +51,7 @@ class MultiLatentAttention(nn.Module):
         self.scale = math.sqrt(self.head_dim)
         self.norm_first = norm_first
         self.num_latents = num_latents
-        self.latent_dim = latent_dim if latent_dim is not None else hidden_size
+        self.latent_dim = latent_dim or hidden_size
         self.is_causal = is_causal
         self.p = p
 

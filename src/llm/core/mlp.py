@@ -38,7 +38,7 @@ class MLP(nn.Module):
         super().__init__()
 
         self.hidden_size = hidden_size
-        self.intermediate_size = intermediate_size if intermediate_size is not None else 4 * hidden_size
+        self.intermediate_size = intermediate_size or 4 * hidden_size
         self.use_layer_norm = use_layer_norm
 
         # Layer Normalization (applied first in forward pass if use_layer_norm is True)
