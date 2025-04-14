@@ -64,7 +64,13 @@ class MultiLatentAttention(nn.Module):
 
         # Latent projections
         self.latent_q_proj = nn.Linear(self.latent_dim, hidden_size, bias=bias, device=device, dtype=dtype)
-        self.latent_v_proj = nn.Linear(self.latent_dim, hidden_size, bias=bias, device=device, dtype=dtype)
+
+        # FIXED: Change the projection direction to match dimensions
+        # For Phase 2: we need to project from hidden_size back to latent_dim
+        self.latent_v_proj = nn.Linear(hidden_size, self.latent_dim, bias=bias, device=device, dtype=dtype)
+
+        # And then project from latent_dim to hidden_size for the final output
+        self.latent_output_proj = nn.Linear(self.latent_dim, hidden_size, bias=bias, device=device, dtype=dtype)
 
         # Combined Input projections for Key and Value
         self.input_kv_proj = nn.Linear(hidden_size, 2 * hidden_size, bias=bias, device=device, dtype=dtype)
@@ -86,7 +92,8 @@ class MultiLatentAttention(nn.Module):
         # Initialize linear projections
         nn.init.xavier_uniform_(self.latent_q_proj.weight)
         nn.init.xavier_uniform_(self.latent_v_proj.weight)
-        nn.init.xavier_uniform_(self.input_kv_proj.weight)  # Initialize combined KV projection
+        nn.init.xavier_uniform_(self.latent_output_proj.weight)
+        nn.init.xavier_uniform_(self.input_kv_proj.weight)
         nn.init.xavier_uniform_(self.out_proj.weight)
 
         # Initialize biases to zero
@@ -94,7 +101,9 @@ class MultiLatentAttention(nn.Module):
             nn.init.zeros_(self.latent_q_proj.bias)
         if self.latent_v_proj.bias is not None:
             nn.init.zeros_(self.latent_v_proj.bias)
-        if self.input_kv_proj.bias is not None:  # Initialize combined KV bias
+        if self.latent_output_proj.bias is not None:
+            nn.init.zeros_(self.latent_output_proj.bias)
+        if self.input_kv_proj.bias is not None:
             nn.init.zeros_(self.input_kv_proj.bias)
         if self.out_proj.bias is not None:
             nn.init.zeros_(self.out_proj.bias)
@@ -188,8 +197,11 @@ class MultiLatentAttention(nn.Module):
         latent_output = latent_output.transpose(1, 2).contiguous()
         latent_output = latent_output.view(batch_size, self.num_latents, self.hidden_size)
 
-        # Project latents to output values
-        latent_output_values = self.latent_v_proj(latent_output)  # [batch_size, num_latents, hidden_size]
+        # FIXED: Project latents from hidden_size to latent_dim first
+        latent_output_values = self.latent_v_proj(latent_output)  # [batch_size, num_latents, latent_dim]
+
+        # Then project from latent_dim back to hidden_size
+        latent_output_values = self.latent_output_proj(latent_output_values)  # [batch_size, num_latents, hidden_size]
 
         # Reshape for final projection
         # Reshape to match the input sequence: [batch_size, seq_len, hidden_size]
