@@ -176,14 +176,14 @@ class SingleHeadAttention(nn.Module):
 
     参数:
         hidden_size: 输入和输出的特征维度
-        dropout: 注意力权重的dropout概率
+        dropout_p: 注意力权重的dropout概率
         is_causal: 是否使用因果注意力(用于生成任务)
     """
 
-    def __init__(self, hidden_size: int, dropout: float = 0.1, is_causal: bool = False):
+    def __init__(self, hidden_size: int, dropout_p: float = 0.1, is_causal: bool = False):
         super().__init__()
         self.hidden_size = hidden_size
-        self.dropout = dropout
+        self.dropout_p = dropout_p
         self.is_causal = is_causal
 
         # 合并的QKV投影 (教学说明：实际实现常用这种方式提高效率)
@@ -237,7 +237,7 @@ class SingleHeadAttention(nn.Module):
             k.unsqueeze(1),  # [B, 1, S, H]
             v.unsqueeze(1),  # [B, 1, S, H]
             attn_mask=attn_mask.unsqueeze(1) if attn_mask is not None else None,
-            dropout_p=self.dropout,
+            dropout_p=self.dropout_p,
             is_causal=self.is_causal,
         ).squeeze(1)  # [B, S, H]
 
@@ -272,11 +272,11 @@ class MultiHeadAttention(nn.Module):
     参数:
         hidden_size: 输入和输出的特征维度
         num_heads: 注意力头的数量
-        dropout: 注意力权重的dropout概率
+        dropout_p: 注意力权重的dropout概率
         is_causal: 是否使用因果注意力(用于生成任务)
     """
 
-    def __init__(self, hidden_size: int, num_heads: int, dropout: float = 0.1, is_causal: bool = False):
+    def __init__(self, hidden_size: int, num_heads: int, dropout_p: float = 0.1, is_causal: bool = False):
         super().__init__()
         # 参数验证 (教学提示：确保可分割)
         assert hidden_size % num_heads == 0, "hidden_size必须能被num_heads整除"
@@ -284,7 +284,7 @@ class MultiHeadAttention(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads  # 每个头的维度
-        self.dropout = dropout
+        self.dropout_p = dropout_p
         self.is_causal = is_causal
 
         # 投影层 (教学说明：实际框架常用合并投影)
@@ -347,7 +347,7 @@ class MultiHeadAttention(nn.Module):
         # 4. 计算注意力
         # 每个头独立计算注意力
         attn_output = scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, dropout_p=self.dropout if self.training else 0.0, is_causal=self.is_causal
+            q, k, v, attn_mask=attn_mask, dropout_p=self.dropout_p if self.training else 0.0, is_causal=self.is_causal
         )  # [B, N, S, D]
 
         # 5. 合并多头
