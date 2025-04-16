@@ -65,10 +65,10 @@ def scaled_dot_product_attention(
     # 1. 获取头维度并计算缩放因子
     head_dim = query.size(-1)
     # 若未提供 scale，则使用 1/sqrt(d_k) 作为默认值
-    effective_scale = scale if scale is not None else (head_dim**-0.5)
+    scale = scale or head_dim**-0.5
 
     # 2. 计算注意力分数并应用缩放: (Q @ K^T) * scale
-    attn_scores = torch.matmul(query, key.transpose(-2, -1)) * effective_scale
+    attn_scores = torch.matmul(query, key.transpose(-2, -1)) * scale
 
     # 3. 应用掩码 (优先处理因果掩码)
     if is_causal:
