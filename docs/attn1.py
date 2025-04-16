@@ -161,7 +161,7 @@ class SingleHeadAttention(nn.Module):
 
     初始化参数：
         hidden_size: 输入/输出的隐藏层维度
-        dropout: 注意力dropout概率
+        dropout_p: 注意力dropout概率
         is_causal: 是否使用因果注意力
         bias: 是否在线性层使用偏置
 
@@ -176,10 +176,10 @@ class SingleHeadAttention(nn.Module):
         - 需要轻量级注意力的任务
     """
 
-    def __init__(self, hidden_size: int, dropout: float = 0.1, is_causal: bool = False, bias: bool = True):
+    def __init__(self, hidden_size: int, dropout_p: float = 0.1, is_causal: bool = False, bias: bool = True):
         super().__init__()
         self.hidden_size = hidden_size
-        self.dropout = dropout
+        self.dropout_p = dropout_p
         self.is_causal = is_causal
 
         # 合并投影层
@@ -229,7 +229,7 @@ class SingleHeadAttention(nn.Module):
 
         # 计算注意力
         attn_output = scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, dropout_p=self.dropout, is_causal=self.is_causal
+            q, k, v, attn_mask=attn_mask, dropout_p=self.dropout_p, is_causal=self.is_causal
         ).squeeze(1)  # (B, S, H)
 
         # 输出投影
@@ -256,7 +256,7 @@ class MultiHeadAttention(nn.Module):
     参数说明：
         hidden_size: 必须能被num_heads整除
         num_heads: 建议为2的幂次（优化考虑）
-        dropout: 注意力dropout概率
+        dropout_p: 注意力dropout概率
         is_causal: 是否自回归
         bias: 是否使用投影偏置
 
@@ -267,7 +267,7 @@ class MultiHeadAttention(nn.Module):
     """
 
     def __init__(
-        self, hidden_size: int, num_heads: int, dropout: float = 0.1, is_causal: bool = False, bias: bool = True
+        self, hidden_size: int, num_heads: int, dropout_p: float = 0.1, is_causal: bool = False, bias: bool = True
     ):
         super().__init__()
         if hidden_size % num_heads != 0:
@@ -276,7 +276,7 @@ class MultiHeadAttention(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
-        self.dropout = dropout
+        self.dropout_p = dropout_p
         self.is_causal = is_causal
 
         # 投影层
@@ -323,7 +323,7 @@ class MultiHeadAttention(nn.Module):
 
         # 计算注意力
         attn_output = scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, dropout_p=self.dropout, is_causal=self.is_causal
+            q, k, v, attn_mask=attn_mask, dropout_p=self.dropout_p, is_causal=self.is_causal
         )  # (B, N, S, D)
 
         # 合并多头
@@ -332,52 +332,3 @@ class MultiHeadAttention(nn.Module):
 
         # 输出投影
         return self.out_proj(attn_output)
-
-
-# ---------------------------- 第4部分：文档工具 ----------------------------
-
-
-def print_attention_architecture():
-    """打印注意力架构图示"""
-    print("""
-    Transformer 注意力架构:
-
-    Input
-      │
-      ├─→ Q Projection →─┐
-      ├─→ K Projection →─┤ → Attention Scores → Mask → Softmax → Attention Weights
-      └─→ V Projection →─┘                           │
-                                                     ↓
-    Output ←─ Value Weighted Sum ←───────────────────┘
-    """)
-
-
-def get_usage_examples():
-    """返回使用示例代码"""
-    return """
-    # 基础使用示例
-    mha = MultiHeadAttention(hidden_size=512, num_heads=8)
-    x = torch.randn(1, 10, 512)  # (batch, seq_len, hidden_size)
-    output = mha(x)
-
-    # 带掩码的使用
-    mask = torch.tril(torch.ones(10, 10)).bool()  # 因果掩码
-    output = mha(x, attn_mask=mask)
-
-    # 直接使用基础函数
-    q = k = v = torch.randn(1, 8, 10, 64)  # (batch, heads, seq_len, head_dim)
-    attn_output = scaled_dot_product_attention(q, k, v, is_causal=True)
-    """
-
-
-# ---------------------------- 执行入口 ----------------------------
-
-if __name__ == "__main__":
-    print("注意力机制教学模块已加载")
-    print("可用功能:")
-    print("- attention_score(): 基础注意力计算")
-    print("- scaled_dot_product_attention(): 完整注意力实现")
-    print("- SingleHeadAttention: 单头注意力模块")
-    print("- MultiHeadAttention: 多头注意力模块")
-    print("- print_attention_architecture(): 打印架构图")
-    print("- get_usage_examples(): 获取使用示例")
