@@ -11,7 +11,6 @@
 这种结构设计使得初学者可以循序渐进地理解注意力机制的原理和实现细节。
 """
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -290,9 +289,7 @@ class MultiHeadAttention(nn.Module):
 # ------------------------------------ 第4部分: 可视化和演示 ------------------------------------
 
 
-def visualize_attention(
-    attn_weights: Tensor, input_tokens: list | None = None, plot_title: str = "Attention Weights"
-):
+def visualize_attention(attn_weights: Tensor, input_tokens: list | None = None, plot_title: str = "Attention Weights"):
     """
     可视化注意力权重。
 
@@ -450,7 +447,6 @@ def attention_demo():
         )
 
     except Exception as e:
-
         print(f"\n可视化失败: {e}")
         # traceback.print_exc() # 如果需要详细错误栈
 
