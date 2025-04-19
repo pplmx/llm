@@ -99,13 +99,17 @@ class MultiHeadAttention(nn.Module):
 
         # 2. Project Q, K, V
         qkv = (
-            self.qkv_proj(hidden_states)  # [B, S, 3*H*D]
-            .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, H, D]
-            .permute(2, 0, 3, 1, 4)  # [3, B, H, S, D]
+            self.qkv_proj(hidden_states)  # [B, S, 3*H]
+            .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, N, D]
+            .permute(2, 0, 3, 1, 4)  # [3, B, N, S, D]
         )
         q, k, v = qkv[0], qkv[1], qkv[2]  # Each [B, H, S, D]
 
-        # 3. Scaled Dot-Product Attention
+        # 3. Adapt attn mask to [B, N, S, S]
+        if attn_mask is not None and attn_mask.dim() == 3:
+            attn_mask = attn_mask.unsqueeze(1)
+
+        # 4. Scaled Dot-Product Attention
         attn_output = scaled_dot_product_attention(
             query=q,
             key=k,
@@ -116,16 +120,16 @@ class MultiHeadAttention(nn.Module):
             scale=self.scale,
         )
 
-        # 4. Combine Heads: [B, N, S, D] -> [B, S, H]
+        # 5. Combine Heads: [B, N, S, D] -> [B, S, H]
         attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_len, self.hidden_size)
 
-        # 5. Output Projection & Dropout
+        # 6. Output Projection & Dropout
         output = self.dropout(self.out_proj(attn_output))
 
-        # 6. Residual Connection
+        # 7. Residual Connection
         output = output + residual  # Slightly more efficient than residual + output
 
-        # 7. Layer Normalization (Post-LN)
+        # 8. Layer Normalization (Post-LN)
         if not self.norm_first:
             output = self.norm(output)
 
