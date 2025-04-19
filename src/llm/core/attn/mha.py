@@ -49,14 +49,14 @@ class MultiHeadAttention(nn.Module):
         if hidden_size % num_heads != 0:
             raise ValueError(f"hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})")
 
-        factory_kwargs = {"device": device, "dtype": dtype}  # For device/dtype propagation
+        factory_kwargs = {"device": device, "dtype": dtype}
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
-        self.scale = math.sqrt(self.head_dim)  # Pre-calculate scale for attention
+        self.scale = math.sqrt(self.head_dim)
         self.norm_first = norm_first
         self.is_causal = is_causal
-        self.p = p  # Store attention dropout probability
+        self.p = p
 
         # --- Layers ---
         self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
@@ -98,35 +98,35 @@ class MultiHeadAttention(nn.Module):
             hidden_states = self.norm(hidden_states)
 
         # 2. Project Q, K, V
-        query, key, value = self.in_proj(hidden_states).chunk(3, dim=-1)
+        qkv = (
+            self.qkv_proj(hidden_states)  # [B, S, 3*H*D]
+            .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, H, D]
+            .permute(2, 0, 3, 1, 4)  # [3, B, H, S, D]
+        )
+        q, k, v = qkv.unbind(0)  # Each [B, H, S, D]
 
-        # 3. Reshape for Multi-Head: [B, S, H] -> [B, S, N, D] -> [B, N, S, D]
-        query = query.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key = key.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        value = value.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-
-        # 4. Scaled Dot-Product Attention (Custom Function)
+        # 3. Scaled Dot-Product Attention
         attn_output = scaled_dot_product_attention(
-            query=query,
-            key=key,
-            value=value,
+            query=q,
+            key=k,
+            value=v,
             attn_mask=attn_mask,
             dropout_p=self.p if self.training else 0.0,  # Apply dropout only during training
             is_causal=self.is_causal,
             scale=self.scale,
         )
 
-        # 5. Combine Heads: [B, N, S, D] -> [B, S, H]
+        # 4. Combine Heads: [B, N, S, D] -> [B, S, H]
         attn_output = attn_output.transpose(1, 2).contiguous()  # Ensure contiguous before view
         attn_output = attn_output.view(batch_size, seq_len, self.hidden_size)
 
-        # 6. Output Projection & Dropout
+        # 5. Output Projection & Dropout
         output = self.dropout(self.out_proj(attn_output))
 
-        # 7. Residual Connection
+        # 6. Residual Connection
         output = residual + output
 
-        # 8. Layer Normalization (Post-LN)
+        # 7. Layer Normalization (Post-LN)
         if not self.norm_first:
             output = self.norm(output)
 
