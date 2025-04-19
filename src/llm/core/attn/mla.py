@@ -8,11 +8,10 @@ from .dot_product_attn import scaled_dot_product_attention
 
 class MultiLatentAttention(nn.Module):
     """
-    Optimized Multi-Latent Attention mechanism implementation.
+    Multi-Latent Attention mechanism implementation.
 
     Similar to Multi-Head Attention but incorporates a set of learnable latent vectors
     that can capture different aspects of the input and enhance attention computations.
-    This optimized version improves tensor operations and reshaping for better performance.
 
     Args:
         hidden_size: Hidden dimension size.
@@ -124,25 +123,29 @@ class MultiLatentAttention(nn.Module):
             hidden_states = self.norm(hidden_states)
 
         # Phase 1: Latents attend to input sequence
-        # Project inputs to keys and values
-        kv_proj = self.input_kv_proj(hidden_states)  # [batch_size, seq_len, 2*hidden_size]
-        k_proj, v_proj = kv_proj.chunk(2, dim=-1)  # Each [batch_size, seq_len, hidden_size]
+        # Project inputs to keys and values with chained operations
+        kv = (
+            self.input_kv_proj(hidden_states)  # [batch_size, seq_len, 2*hidden_size]
+            .reshape(
+                batch_size, seq_len, 2, self.num_heads, self.head_dim
+            )  # [batch_size, seq_len, 2, num_heads, head_dim]
+            .permute(2, 0, 3, 1, 4)  # [2, batch_size, num_heads, seq_len, head_dim]
+        )
+        k, v = kv[0], kv[1]  # Each [batch_size, num_heads, seq_len, head_dim]
 
-        # Reshape K, V for multi-head attention
-        # [batch_size, seq_len, hidden_size] -> [batch_size, num_heads, seq_len, head_dim]
-        k_proj = k_proj.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        v_proj = v_proj.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        # Process latent queries with chained operations
+        latent_q = self.latents.expand(batch_size, -1, -1).reshape(  # [batch_size, num_latents, latent_dim]
+            batch_size * self.num_latents, self.latent_dim
+        )
 
-        # Get latent queries - optimized to avoid conditional reshaping logic
-        # First expand latents to batch dimension
-        latents = self.latents.expand(batch_size, -1, -1)  # [batch_size, num_latents, latent_dim]
-
-        # Project latents to queries and reshape for attention
-        # [batch_size, num_latents, latent_dim] -> [batch_size, num_latents, hidden_size]
-        latent_q = self.latent_q_proj(latents)
-
-        # [batch_size, num_latents, hidden_size] -> [batch_size, num_heads, num_latents, head_dim]
-        latent_q = latent_q.view(batch_size, self.num_latents, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
+        # Project and reshape latent queries in one chain
+        latent_q = (
+            self.latent_q_proj(latent_q)  # [batch_size * num_latents, hidden_size]
+            .reshape(
+                batch_size, self.num_latents, self.num_heads, self.head_dim
+            )  # [batch_size, num_latents, num_heads, head_dim]
+            .permute(0, 2, 1, 3)  # [batch_size, num_heads, num_latents, head_dim]
+        )
 
         # Handle attention mask for latents
         if attn_mask is not None:
@@ -153,33 +156,45 @@ class MultiLatentAttention(nn.Module):
         # Compute scaled dot-product attention
         latent_output = scaled_dot_product_attention(
             query=latent_q,
-            key=k_proj,
-            value=v_proj,
+            key=k,
+            value=v,
             attn_mask=attn_mask,
             dropout_p=self.p if self.training else 0.0,  # Only apply dropout during training
             is_causal=self.is_causal,
             scale=self.scale,
         )  # [batch_size, num_heads, num_latents, head_dim]
 
-        # Phase 2: Transform updated latents - streamlined transformations
-        # Reshape: [batch_size, num_heads, num_latents, head_dim] -> [batch_size, num_latents, hidden_size]
-        latent_output = latent_output.permute(0, 2, 1, 3).reshape(batch_size, self.num_latents, self.hidden_size)
+        # Phase 2: Transform updated latents with chained operations
+        latent_output = (
+            latent_output.permute(0, 2, 1, 3).reshape(  # [batch_size, num_latents, num_heads, head_dim]
+                batch_size, self.num_latents, self.hidden_size
+            )  # [batch_size, num_latents, hidden_size]
+        )
 
-        # Project from hidden_size to latent_dim
-        latent_output = self.latent_v_proj(latent_output)  # [batch_size, num_latents, latent_dim]
+        # Project through latent_dim and back to hidden_size in chained operations
+        latent_output = self.latent_v_proj(latent_output).reshape(  # [batch_size, num_latents, latent_dim]
+            batch_size * self.num_latents, self.latent_dim
+        )
 
-        # Project from latent_dim back to hidden_size
-        latent_output = self.latent_output_proj(latent_output)  # [batch_size, num_latents, hidden_size]
+        latent_output = (
+            self.latent_output_proj(latent_output).reshape(
+                batch_size, self.num_latents, self.hidden_size
+            )  # [batch_size, num_latents, hidden_size]
+        )
 
-        # Improved output mapping - using weighted combination instead of simple mean
-        # This allows the model to weight latents differently based on their importance
-        output_weights = torch.softmax(torch.ones(batch_size, self.num_latents, 1, device=latent_output.device), dim=1)
-        output = torch.bmm(output_weights.transpose(1, 2), latent_output)  # [batch_size, 1, hidden_size]
-        output = output.expand(-1, seq_len, -1)  # [batch_size, seq_len, hidden_size]
+        # Output mapping and final projection with chained operations
+        output = (
+            # Create adaptive weights and apply them to latent outputs
+            torch.bmm(
+                torch.softmax(
+                    torch.ones(batch_size, self.num_latents, 1, device=latent_output.device), dim=1
+                ).transpose(1, 2),  # [batch_size, 1, num_latents]
+                latent_output,  # [batch_size, num_latents, hidden_size]
+            ).expand(-1, seq_len, -1)  # [batch_size, 1, hidden_size]  # [batch_size, seq_len, hidden_size]
+        )
 
-        # Final projection and dropout
-        output = self.out_proj(output)
-        output = self.dropout(output)
+        # Final projection and dropout in one chain
+        output = self.dropout(self.out_proj(output))
 
         # Residual connection
         output = output + residual
