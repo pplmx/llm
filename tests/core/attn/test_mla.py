@@ -21,7 +21,7 @@ def test_mla_initialization(mla):
     assert mla.num_heads == 8
     assert mla.head_dim == 8  # 64 // 8
     assert mla.scale == 2.8284271247461903  # sqrt(8)
-    assert mla.p == 0.1
+    assert mla.dropout_p == 0.1
     assert not mla.is_causal
     assert mla.num_latents == 16
     assert mla.latent_dim == 64
