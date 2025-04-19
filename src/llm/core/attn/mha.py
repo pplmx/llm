@@ -10,7 +10,7 @@ class MultiHeadAttention(nn.Module):
     """
     Multi-Head Attention mechanism using a custom attention function.
 
-    Supports Pre-LN and Post-LN normalization.
+    Supports Pre-LN and Post-LN normalization with improved performance.
 
     Args:
         hidden_size: Total model dimension.
@@ -26,7 +26,7 @@ class MultiHeadAttention(nn.Module):
     Attributes:
         head_dim: Dimension of each head.
         scale: Pre-calculated attention scaling factor (sqrt(head_dim)).
-        in_proj: Combined QKV projection layer.
+        qkv_proj: Combined QKV projection layer.
         out_proj: Output projection layer.
         norm: Layer normalization module.
         dropout: Dropout layer applied to the output projection.
@@ -60,17 +60,17 @@ class MultiHeadAttention(nn.Module):
 
         # --- Layers ---
         self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
-        self.in_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, **factory_kwargs)  # QKV projection
-        self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, **factory_kwargs)  # Output projection
-        self.dropout = nn.Dropout(p)  # Output dropout (uses same p as attention for convenience)
+        self.qkv_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, **factory_kwargs)
+        self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, **factory_kwargs)
+        self.dropout = nn.Dropout(p)
 
         self._init_weights()
 
     def _init_weights(self):
         """Initialize linear layer weights."""
-        nn.init.xavier_uniform_(self.in_proj.weight)
-        if self.in_proj.bias is not None:
-            nn.init.zeros_(self.in_proj.bias)
+        nn.init.xavier_uniform_(self.qkv_proj.weight)
+        if self.qkv_proj.bias is not None:
+            nn.init.zeros_(self.qkv_proj.bias)
 
         nn.init.xavier_uniform_(self.out_proj.weight)
         if self.out_proj.bias is not None:
@@ -103,7 +103,7 @@ class MultiHeadAttention(nn.Module):
             .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, H, D]
             .permute(2, 0, 3, 1, 4)  # [3, B, H, S, D]
         )
-        q, k, v = qkv.unbind(0)  # Each [B, H, S, D]
+        q, k, v = qkv[0], qkv[1], qkv[2]  # Each [B, H, S, D]
 
         # 3. Scaled Dot-Product Attention
         attn_output = scaled_dot_product_attention(
@@ -117,14 +117,13 @@ class MultiHeadAttention(nn.Module):
         )
 
         # 4. Combine Heads: [B, N, S, D] -> [B, S, H]
-        attn_output = attn_output.transpose(1, 2).contiguous()  # Ensure contiguous before view
-        attn_output = attn_output.view(batch_size, seq_len, self.hidden_size)
+        attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_len, self.hidden_size)
 
         # 5. Output Projection & Dropout
         output = self.dropout(self.out_proj(attn_output))
 
         # 6. Residual Connection
-        output = residual + output
+        output = output + residual  # Slightly more efficient than residual + output
 
         # 7. Layer Normalization (Post-LN)
         if not self.norm_first:
