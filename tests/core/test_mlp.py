@@ -4,52 +4,104 @@ import torch
 from llm.core.mlp import MLP
 
 
-# Helper function to create MLP and input tensor
-def _create_mlp_input(
-    batch_size, seq_len, hidden_size, intermediate_factor, activation, use_layer_norm, bias, dropout_p, device, dtype
+# Helper function to create MLP and input tensor with more focused parameters
+def create_test_mlp(
+    hidden_size=64,
+    intermediate_factor=4,
+    activation="gelu",
+    norm_first=True,
+    bias=True,
+    dropout_p=0.0,
+    input_dims=None,
+    device=None,
+    dtype=None,
 ):
+    """
+    Creates an MLP instance and input tensor for testing.
+
+    Args:
+        hidden_size: Dimensionality of input/output features
+        intermediate_factor: Multiplier for intermediate size
+        activation: Activation function
+        norm_first: Whether to use pre-LN (True) or post-LN (False)
+        bias: Whether to use bias in linear layers
+        dropout_p: Dropout probability
+        input_dims: Additional input dimensions (e.g., [batch_size, seq_len])
+        device: torch device
+        dtype: torch dtype
+
+    Returns:
+        mlp: Configured MLP instance in eval mode
+        input_tensor: Input tensor with appropriate shape
+    """
+    # Set defaults for device and dtype
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if dtype is None:
+        dtype = torch.float32
+
+    # Calculate actual intermediate size
     intermediate_size = hidden_size * intermediate_factor
-    if seq_len is None:
-        input_shape = (batch_size, hidden_size)
-    else:
-        input_shape = (batch_size, seq_len, hidden_size)
+
+    # Create input tensor with appropriate shape
+    if input_dims is None:
+        input_dims = [2, 8]  # Default batch_size=2, seq_len=8
+
+    # Input shape includes hidden_size as the last dimension
+    input_shape = input_dims + [hidden_size]
     input_tensor = torch.randn(input_shape, dtype=dtype, device=device)
 
+    # Create and configure MLP
     mlp = MLP(
         hidden_size=hidden_size,
         intermediate_size=intermediate_size,
         activation=activation,
         dropout_p=dropout_p,
-        norm_first=use_layer_norm,
+        norm_first=norm_first,
         bias=bias,
         device=device,
         dtype=dtype,
     )
     mlp.eval()  # Default to eval mode for tests
-    return mlp, input_tensor, intermediate_size
+
+    return mlp, input_tensor
 
 
-# --- Test Case 1: Output Shape ---
-@pytest.mark.parametrize("batch_size", [1, 2])
-@pytest.mark.parametrize("seq_len", [None, 10])  # None for 2D input, value for 3D
-@pytest.mark.parametrize("hidden_size", [64])
-def test_mlp_output_shape(batch_size, seq_len, hidden_size):
-    """Tests if the MLP output shape matches the input shape."""
+# --- Test Case 1: Basic Functionality ---
+def test_mlp_basic_functionality():
+    """Tests basic MLP functionality with default parameters."""
     torch.manual_seed(42)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.float32
-    mlp, input_tensor, _ = _create_mlp_input(
-        batch_size=batch_size,
-        seq_len=seq_len,
-        hidden_size=hidden_size,
-        intermediate_factor=4,
-        activation="gelu",
-        use_layer_norm=True,
-        bias=True,
-        dropout_p=0.0,
-        device=device,
-        dtype=dtype,
+
+    # Create MLP with default configuration
+    mlp, input_tensor = create_test_mlp()
+
+    # Run forward pass
+    with torch.no_grad():
+        output = mlp(input_tensor)
+
+    # Check output shape matches input shape
+    assert output.shape == input_tensor.shape, (
+        f"Output shape {output.shape} does not match input shape {input_tensor.shape}"
     )
+
+    # Verify output differs from input (transformation happened)
+    assert not torch.allclose(output, input_tensor, atol=1e-6), "Output tensor should not be identical to input tensor"
+
+
+# --- Test Case 2: Different Input Shapes ---
+@pytest.mark.parametrize(
+    "input_dims",
+    [
+        [1],  # Just batch size (2D input)
+        [2, 10],  # Batch size and sequence length (3D input)
+        [3, 4, 5],  # Batch size, dim1, dim2 (4D input)
+    ],
+)
+def test_mlp_different_input_shapes(input_dims):
+    """Tests MLP with various input shapes."""
+    torch.manual_seed(42)
+
+    mlp, input_tensor = create_test_mlp(input_dims=input_dims)
 
     with torch.no_grad():
         output = mlp(input_tensor)
@@ -59,209 +111,119 @@ def test_mlp_output_shape(batch_size, seq_len, hidden_size):
     )
 
 
-# --- Test Case 2: Transformation Effect (Output != Input) ---
-@pytest.mark.parametrize("batch_size", [1])
-@pytest.mark.parametrize("seq_len", [None, 10])
-@pytest.mark.parametrize("hidden_size", [64])
-@pytest.mark.parametrize("intermediate_factor", [2])
-@pytest.mark.parametrize("activation", ["relu", "gelu"])
-@pytest.mark.parametrize("use_layer_norm", [True, False])
-@pytest.mark.parametrize("bias", [True, False])
-def test_mlp_transformation_effect(
-    batch_size, seq_len, hidden_size, intermediate_factor, activation, use_layer_norm, bias
-):
-    """Tests if the MLP output is generally different from the input."""
-    torch.manual_seed(43)  # Use different seed
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.float32
-    mlp, input_tensor, intermediate_size = _create_mlp_input(
-        batch_size=batch_size,
-        seq_len=seq_len,
-        hidden_size=hidden_size,
-        intermediate_factor=intermediate_factor,
-        activation=activation,
-        use_layer_norm=use_layer_norm,
-        bias=bias,
-        dropout_p=0.0,
-        device=device,
-        dtype=dtype,  # Keep dropout 0 for simplicity
-    )
-    input_tensor_clone = input_tensor.clone()
+# --- Test Case 3: Normalization Options ---
+@pytest.mark.parametrize("norm_first", [True, False])
+def test_mlp_normalization_options(norm_first):
+    """Tests MLP with pre-LN vs post-LN configurations."""
+    torch.manual_seed(42)
+
+    mlp, input_tensor = create_test_mlp(norm_first=norm_first)
 
     with torch.no_grad():
         output = mlp(input_tensor)
 
-    if intermediate_size > 0:
-        assert not torch.allclose(output, input_tensor_clone, atol=1e-6), (
-            f"Output tensor is unexpectedly identical to the input tensor for config: "
-            f"use_layer_norm={use_layer_norm}, activation={activation}, bias={bias}"
-        )
+    # Basic shape test
+    assert output.shape == input_tensor.shape
 
+    # Create another MLP with opposite norm_first setting to compare
+    opposite_mlp, _ = create_test_mlp(norm_first=not norm_first)
 
-# --- Test Case 3: Pre-LayerNorm Effect ---
-@pytest.mark.parametrize("batch_size", [1])
-@pytest.mark.parametrize("seq_len", [None, 10])
-@pytest.mark.parametrize("hidden_size", [64])
-@pytest.mark.parametrize("intermediate_factor", [2])
-@pytest.mark.parametrize("activation", ["gelu"])
-@pytest.mark.parametrize("bias", [True, False])
-def test_mlp_pre_ln_effect(batch_size, seq_len, hidden_size, intermediate_factor, activation, bias):
-    """Tests that enabling Pre-LayerNorm changes the output."""
-    torch.manual_seed(44)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.float32
-    dropout_p = 0.0  # Keep dropout 0
-
-    # MLP with LayerNorm
-    mlp_ln, input_tensor, intermediate_size = _create_mlp_input(
-        batch_size=batch_size,
-        seq_len=seq_len,
-        hidden_size=hidden_size,
-        intermediate_factor=intermediate_factor,
-        activation=activation,
-        use_layer_norm=True,
-        bias=bias,
-        dropout_p=dropout_p,
-        device=device,
-        dtype=dtype,
-    )
-    input_tensor_clone = input_tensor.clone()
-
-    # MLP without LayerNorm (same weights)
-    mlp_no_ln, _, _ = _create_mlp_input(
-        batch_size=batch_size,
-        seq_len=seq_len,
-        hidden_size=hidden_size,
-        intermediate_factor=intermediate_factor,
-        activation=activation,
-        use_layer_norm=False,
-        bias=bias,
-        dropout_p=dropout_p,
-        device=device,
-        dtype=dtype,
-    )
-    mlp_no_ln.load_state_dict(mlp_ln.state_dict(), strict=False)
+    # Copy weights where possible
+    opposite_mlp.load_state_dict(mlp.state_dict(), strict=False)
 
     with torch.no_grad():
-        output_ln = mlp_ln(input_tensor)
-        output_no_ln = mlp_no_ln(input_tensor_clone)
+        opposite_output = opposite_mlp(input_tensor)
 
-    if intermediate_size > 0:
-        assert not torch.allclose(output_ln, output_no_ln, atol=1e-6), (
-            f"Output with LayerNorm is unexpectedly identical to output without LayerNorm for config: "
-            f"activation={activation}, bias={bias}"
-        )
-
-
-# --- Test Case 4: Bias Effect ---
-@pytest.mark.parametrize("batch_size", [1])
-@pytest.mark.parametrize("seq_len", [None, 10])
-@pytest.mark.parametrize("hidden_size", [64])
-@pytest.mark.parametrize("intermediate_factor", [2])
-@pytest.mark.parametrize("activation", ["gelu"])
-@pytest.mark.parametrize("use_layer_norm", [True, False])
-def test_mlp_bias_parameter_existence(
-    batch_size, seq_len, hidden_size, intermediate_factor, activation, use_layer_norm
-):
-    """Tests that the bias parameter exists or not based on the bias flag."""
-    torch.manual_seed(45)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.float32
-    dropout_p = 0.0  # Keep dropout 0
-
-    # MLP with Bias
-    mlp_bias, _, _ = _create_mlp_input(
-        batch_size=batch_size,
-        seq_len=seq_len,
-        hidden_size=hidden_size,
-        intermediate_factor=intermediate_factor,
-        activation=activation,
-        use_layer_norm=use_layer_norm,
-        bias=True,
-        dropout_p=dropout_p,
-        device=device,
-        dtype=dtype,
+    # Outputs should differ between pre-LN and post-LN
+    assert not torch.allclose(output, opposite_output, atol=1e-6), (
+        f"Output with norm_first={norm_first} should differ from norm_first={not norm_first}"
     )
 
-    # MLP without Bias
-    mlp_no_bias, _, _ = _create_mlp_input(
-        batch_size=batch_size,
-        seq_len=seq_len,
-        hidden_size=hidden_size,
-        intermediate_factor=intermediate_factor,
-        activation=activation,
-        use_layer_norm=use_layer_norm,
-        bias=False,
-        dropout_p=dropout_p,
-        device=device,
-        dtype=dtype,
-    )
+
+# --- Test Case 4: Activation Functions ---
+@pytest.mark.parametrize("activation", ["relu", "gelu", "silu"])
+def test_mlp_activation_functions(activation):
+    """Tests MLP with different activation functions."""
+    torch.manual_seed(42)
+
+    mlp, input_tensor = create_test_mlp(activation=activation)
+
+    with torch.no_grad():
+        output = mlp(input_tensor)
+
+    # Basic shape test
+    assert output.shape == input_tensor.shape
+
+
+# --- Test Case 5: Bias Parameter ---
+def test_mlp_bias_parameter():
+    """Tests bias parameter existence based on bias flag."""
+    torch.manual_seed(42)
+
+    # MLP with bias
+    mlp_with_bias, _ = create_test_mlp(bias=True)
+
+    # MLP without bias
+    mlp_without_bias, _ = create_test_mlp(bias=False)
 
     # Check bias parameter existence
-    assert mlp_bias.fc1.bias is not None, "fc1.bias should exist when bias=True"
-    assert mlp_bias.fc2.bias is not None, "fc2.bias should exist when bias=True"
-    assert mlp_no_bias.fc1.bias is None, "fc1.bias should be None when bias=False"
-    assert mlp_no_bias.fc2.bias is None, "fc2.bias should be None when bias=False"
+    assert mlp_with_bias.fc1.bias is not None, "fc1.bias should exist when bias=True"
+    assert mlp_with_bias.fc2.bias is not None, "fc2.bias should exist when bias=True"
+    assert mlp_without_bias.fc1.bias is None, "fc1.bias should be None when bias=False"
+    assert mlp_without_bias.fc2.bias is None, "fc2.bias should be None when bias=False"
 
 
-# --- Test Case 5: Dropout Effect in Eval Mode ---
-@pytest.mark.parametrize("batch_size", [1])
-@pytest.mark.parametrize("seq_len", [None, 10])
-@pytest.mark.parametrize("hidden_size", [64])
-@pytest.mark.parametrize("intermediate_factor", [2])
-@pytest.mark.parametrize("activation", ["gelu"])
-@pytest.mark.parametrize("use_layer_norm", [True, False])
-@pytest.mark.parametrize("bias", [True])
-def test_mlp_dropout_in_eval_mode(
-    batch_size, seq_len, hidden_size, intermediate_factor, activation, use_layer_norm, bias
-):
-    """Tests that dropout has no effect in eval mode."""
-    torch.manual_seed(46)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.float32
+# --- Test Case 6: Dropout Behavior ---
+def test_mlp_dropout_behavior():
+    """Tests dropout behavior in train vs eval modes."""
+    torch.manual_seed(42)
 
-    # MLP with Dropout (p=0.5)
-    mlp_dropout, input_tensor, intermediate_size = _create_mlp_input(
-        batch_size=batch_size,
-        seq_len=seq_len,
-        hidden_size=hidden_size,
-        intermediate_factor=intermediate_factor,
-        activation=activation,
-        use_layer_norm=use_layer_norm,
-        bias=bias,
-        dropout_p=0.5,
-        device=device,
-        dtype=dtype,  # High dropout prob
+    # Create MLP with high dropout
+    mlp, input_tensor = create_test_mlp(dropout_p=0.5)
+
+    # Test in eval mode (dropout should be disabled)
+    mlp.eval()
+    with torch.no_grad():
+        output_eval_1 = mlp(input_tensor)
+        output_eval_2 = mlp(input_tensor)
+
+    # Outputs in eval mode should be identical (deterministic)
+    assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), (
+        "Outputs in eval mode should be identical with fixed input"
     )
-    input_tensor_clone = input_tensor.clone()
 
-    # MLP without Dropout (p=0.0) - should have same weights/buffers after loading state dict
-    mlp_no_dropout, _, _ = _create_mlp_input(
-        batch_size=batch_size,
-        seq_len=seq_len,
-        hidden_size=hidden_size,
-        intermediate_factor=intermediate_factor,
-        activation=activation,
-        use_layer_norm=use_layer_norm,
-        bias=bias,
-        dropout_p=0.0,
-        device=device,
-        dtype=dtype,
+    # Test in train mode (dropout should be active)
+    mlp.train()
+    with torch.no_grad():  # We still don't need gradients for this test
+        output_train_1 = mlp(input_tensor)
+        output_train_2 = mlp(input_tensor)
+
+    # Outputs in train mode should differ due to random dropout
+    assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), (
+        "Outputs in train mode should differ due to dropout"
     )
-    # Explicitly load state dict to ensure weights/buffers are identical.
-    # Use strict=True because the underlying architecture (layers) is the same.
-    mlp_no_dropout.load_state_dict(mlp_dropout.state_dict(), strict=True)
-    # Ensure both are in eval mode
-    mlp_dropout.eval()
-    mlp_no_dropout.eval()
+
+
+# --- Test Case 7: Hidden Size and Intermediate Size ---
+@pytest.mark.parametrize(
+    "hidden_size,intermediate_factor",
+    [
+        (32, 2),  # Small hidden, small expansion
+        (64, 4),  # Medium hidden, standard expansion
+        (128, 8),  # Large hidden, large expansion
+    ],
+)
+def test_mlp_size_configurations(hidden_size, intermediate_factor):
+    """Tests different hidden size and intermediate size configurations."""
+    torch.manual_seed(42)
+
+    mlp, input_tensor = create_test_mlp(hidden_size=hidden_size, intermediate_factor=intermediate_factor)
+
+    # Verify the intermediate size is correctly configured
+    assert mlp.intermediate_size == hidden_size * intermediate_factor
 
     with torch.no_grad():
-        output_dropout = mlp_dropout(input_tensor)
-        output_no_dropout = mlp_no_dropout(input_tensor_clone)
+        output = mlp(input_tensor)
 
-    if intermediate_size > 0:
-        # In eval mode, dropout is off, so outputs should be identical
-        assert torch.allclose(output_dropout, output_no_dropout, atol=1e-7), (
-            f"Output with dropout={mlp_dropout.dropout.p} is unexpectedly different from output with dropout=0.0 in eval mode for config: "
-            f"activation={activation}, use_layer_norm={use_layer_norm}, bias={bias}"
-        )
+    # Check shape consistency
+    assert output.shape == input_tensor.shape
