@@ -54,9 +54,9 @@ def test_mlp_output_shape(batch_size, seq_len, hidden_size):
     with torch.no_grad():
         output = mlp(input_tensor)
 
-    assert (
-        output.shape == input_tensor.shape
-    ), f"Output shape {output.shape} does not match input shape {input_tensor.shape}"
+    assert output.shape == input_tensor.shape, (
+        f"Output shape {output.shape} does not match input shape {input_tensor.shape}"
+    )
 
 
 # --- Test Case 2: Transformation Effect (Output != Input) ---

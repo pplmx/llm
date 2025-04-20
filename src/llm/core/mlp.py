@@ -113,22 +113,19 @@ class MLP(nn.Module):
         """
         residual = hidden_states
 
-        # Pre-norm: apply normalization before main computation
-        if self.norm_first:
-            x = self.norm(hidden_states)
-            x = self.fc1(x)
-            x = self.activation(x)
-            x = self.dropout(x)
-            x = self.fc2(x)
-            output = residual + x
+        # Apply normalization first if using pre-norm
+        x = self.norm(hidden_states) if self.norm_first else hidden_states
 
-        # Post-norm: apply normalization after residual connection
-        else:
-            x = self.fc1(hidden_states)
-            x = self.activation(x)
-            x = self.dropout(x)
-            x = self.fc2(x)
-            x = residual + x
-            output = self.norm(x)
+        # MLP computation (common for both pre-norm and post-norm)
+        x = self.fc1(x)
+        x = self.activation(x)
+        x = self.dropout(x)
+        x = self.fc2(x)
+
+        # Add residual connection
+        x = residual + x
+
+        # Apply normalization after if using post-norm
+        output = x if self.norm_first else self.norm(x)
 
         return output
