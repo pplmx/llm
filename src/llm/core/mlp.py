@@ -8,16 +8,17 @@ from llm.utils.common import get_activation_layer
 
 class MLP(nn.Module):
     """
-    Pre-LayerNorm MLP block for Transformer-style Feed-Forward Networks.
+    MLP block for Transformer-style Feed-Forward Networks with flexible normalization.
 
     Args:
         hidden_size (int): Dimensionality of inputs and outputs.
         intermediate_size (int, optional): Dimensionality of the inner layer. Defaults to 4 * hidden_size.
         activation (str or nn.Module): Activation name or module. Defaults to "gelu".
         dropout_p (float): Dropout probability. Defaults to 0.1.
-        layer_norm_eps (float): Epsilon for LayerNorm. Defaults to 1e-5.
+        norm_first (bool): Whether to apply normalization before or after (pre-LN vs post-LN). Defaults to True.
+        norm_type (Type[nn.Module] or nn.Module): Normalization layer type or instance. Defaults to nn.LayerNorm.
+        norm_eps (float): Epsilon for normalization layers. Defaults to 1e-5.
         bias (bool): Whether to include bias terms in Linear layers. Defaults to True.
-        use_layer_norm (bool): Whether to apply pre-LN. Defaults to True.
         device (torch.device, optional): Device for parameters. Defaults to None.
         dtype (torch.dtype, optional): Dtype for parameters. Defaults to None.
     """
@@ -28,19 +29,30 @@ class MLP(nn.Module):
         intermediate_size: int | None = None,
         activation: str | nn.Module = "gelu",
         dropout_p: float = 0.1,
-        layer_norm_eps: float = 1e-5,
+        norm_first: bool = True,
+        norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,
+        norm_eps: float = 1e-5,
         bias: bool = True,
-        use_layer_norm: bool = True,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size or (4 * hidden_size)
-        self.use_layer_norm = use_layer_norm
+        self.norm_first = norm_first
 
-        if self.use_layer_norm:
-            self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps, device=device, dtype=dtype)
+        # Create normalization layer based on provided type or instance
+        if isinstance(norm_type, type):
+            if norm_type == nn.LayerNorm:
+                self.norm = norm_type(hidden_size, eps=norm_eps, device=device, dtype=dtype)
+            elif norm_type == nn.RMSNorm:
+                self.norm = norm_type(hidden_size, eps=norm_eps, device=device, dtype=dtype)
+            else:
+                # For other norm types that might have different init parameters
+                self.norm = norm_type(hidden_size, device=device, dtype=dtype)
+        else:
+            # If an instance is provided, use it directly
+            self.norm = norm_type
 
         self.fc1 = nn.Linear(hidden_size, self.intermediate_size, bias=bias, device=device, dtype=dtype)
         self.fc2 = nn.Linear(self.intermediate_size, hidden_size, bias=bias, device=device, dtype=dtype)
@@ -100,11 +112,23 @@ class MLP(nn.Module):
             torch.Tensor: Output tensor with same shape as input.
         """
         residual = hidden_states
-        x = self.layer_norm(hidden_states) if self.use_layer_norm else hidden_states
 
-        x = self.fc1(x)
-        x = self.activation(x)
-        x = self.dropout(x)
-        x = self.fc2(x)
+        # Pre-norm: apply normalization before main computation
+        if self.norm_first:
+            x = self.norm(hidden_states)
+            x = self.fc1(x)
+            x = self.activation(x)
+            x = self.dropout(x)
+            x = self.fc2(x)
+            output = residual + x
 
-        return residual + x
+        # Post-norm: apply normalization after residual connection
+        else:
+            x = self.fc1(hidden_states)
+            x = self.activation(x)
+            x = self.dropout(x)
+            x = self.fc2(x)
+            x = residual + x
+            output = self.norm(x)
+
+        return output
