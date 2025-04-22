@@ -1,3 +1,5 @@
+import math
+
 import pytest
 import torch
 
@@ -20,7 +22,7 @@ def test_mha_initialization(mha):
     assert mha.hidden_size == 64
     assert mha.num_heads == 8
     assert mha.head_dim == 8  # 64 // 8
-    assert mha.scale == 2.8284271247461903  # sqrt(8)
+    torch.testing.assert_close(mha.scale, 1 / math.sqrt(8), atol=1e-12, rtol=1e-12)
     assert mha.p == 0.1
     assert not mha.is_causal
 

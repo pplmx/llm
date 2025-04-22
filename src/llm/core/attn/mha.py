@@ -53,7 +53,7 @@ class MultiHeadAttention(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
-        self.scale = math.sqrt(self.head_dim)
+        self.scale = 1 / math.sqrt(self.head_dim)
         self.norm_first = norm_first
         self.is_causal = is_causal
         self.p = p

@@ -10,6 +10,8 @@
 这种结构设计使得初学者可以循序渐进地理解注意力机制的原理和实现细节。
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -61,10 +63,8 @@ def scaled_dot_product_attention(
     返回:
         Tensor: 注意力输出张量, 形状 (B, N, Sq, D)。
     """
-    # 1. 获取头维度并计算缩放因子
-    head_dim = query.size(-1)
-    # 若未提供 scale，则使用 1/sqrt(d_k) 作为默认值
-    scale = scale or head_dim**-0.5
+    # 若未提供 scale，则使用 1/sqrt(d_q) 作为默认值
+    scale = scale or 1 / math.sqrt(query.size(-1))
 
     # 2. 计算注意力分数并应用缩放: (Q @ K^T) * scale
     attn_scores = torch.matmul(query, key.transpose(-2, -1)) * scale
