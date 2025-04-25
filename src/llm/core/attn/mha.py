@@ -1,5 +1,3 @@
-import math
-
 import torch
 from torch import Tensor, nn
 
@@ -8,28 +6,27 @@ from .dot_product_attn import scaled_dot_product_attention
 
 class MultiHeadAttention(nn.Module):
     """
-    Multi-Head Attention mechanism using a custom attention function.
+    Multi-Head Attention mechanism.
 
-    Supports Pre-LN and Post-LN normalization with improved performance.
+    Integrates Layer Normalization and residual connection, supporting Pre-LN and Post-LN modes.
 
     Args:
-        hidden_size: Total model dimension.
-        num_heads: Number of attention heads. Must divide hidden_size.
-        p: Dropout probability for the attention weights (inside attention calc). Defaults to 0.1.
-        bias: Whether to use bias in linear layers. Defaults to True.
-        eps: Epsilon for Layer Normalization. Defaults to 1e-5.
-        norm_first: Use Pre-LN (True) or Post-LN (False). Defaults to True.
-        is_causal: Use causal masking in attention. Defaults to False.
-        device: Target device. Defaults to None (inferred).
-        dtype: Target data type. Defaults to None (inferred).
+        hidden_size (int): Total dimension of the model.
+        num_heads (int): Number of attention heads. Must divide hidden_size. Defaults to 8.
+        p (float): Dropout probability applied to attention weights and final output. Defaults to 0.1.
+        bias (bool): Whether to use bias in the linear layers (QKV projection and output projection). Defaults to False.
+        eps (float): Epsilon value for Layer Normalization. Defaults to 1e-5.
+        norm_first (bool): Whether to use Pre-LN (True) or Post-LN (False) architecture. Defaults to True.
+        is_causal (bool): Whether to apply causal masking by default (e.g., for decoders). Defaults to False.
+        device (torch.device | str | None): Target device for model parameters. Defaults to None (inferred).
+        dtype (torch.dtype | None): Target data type for model parameters. Defaults to None (inferred).
 
     Attributes:
-        head_dim: Dimension of each head.
-        scale: Pre-calculated attention scaling factor (sqrt(head_dim)).
-        qkv_proj: Combined QKV projection layer.
-        out_proj: Output projection layer.
-        norm: Layer normalization module.
-        dropout: Dropout layer applied to the output projection.
+        head_dim (int): Dimension of each attention head.
+        qkv_proj (nn.Linear): Combined Q, K, V projection layer.
+        out_proj (nn.Linear): Output projection layer.
+        norm (nn.LayerNorm): Layer normalization module.
+        dropout (nn.Dropout): Dropout layer applied after the output projection.
     """
 
     def __init__(
@@ -37,11 +34,11 @@ class MultiHeadAttention(nn.Module):
         hidden_size: int,
         num_heads: int = 8,
         p: float = 0.1,
-        bias: bool = True,
+        bias: bool = False,
         eps: float = 1e-5,
         norm_first: bool = True,
         is_causal: bool = False,
-        device: torch.device | None = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
@@ -53,7 +50,6 @@ class MultiHeadAttention(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
-        self.scale = 1 / math.sqrt(self.head_dim)
         self.norm_first = norm_first
         self.is_causal = is_causal
         self.p = p
@@ -67,7 +63,7 @@ class MultiHeadAttention(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize linear layer weights."""
+        """Initialize linear layer weights (Xavier uniform) and biases (zeros)."""
         nn.init.xavier_uniform_(self.qkv_proj.weight)
         if self.qkv_proj.bias is not None:
             nn.init.zeros_(self.qkv_proj.bias)
@@ -80,24 +76,35 @@ class MultiHeadAttention(nn.Module):
         self,
         hidden_states: Tensor,
         attn_mask: Tensor | None = None,
+        is_causal: bool | None = None,
     ) -> Tensor:
         """
+        Forward pass.
+
         Args:
-            hidden_states: Input tensor [B, S, H].
-            attn_mask: Optional mask passed to the attention function.
-                       Expected format depends on the function (e.g., bool `True`=mask).
+            hidden_states (Tensor): Input tensor of shape [B, S, H] (Batch, Sequence Length, Hidden Size).
+            attn_mask (Tensor | None): Optional attention mask.
+                - For F.scaled_dot_product_attention, expected to be a boolean tensor where `True` indicates masking.
+                - Shape should be broadcastable to [B, N, S, S] (Batch, Num Heads, Seq Len, Seq Len).
+                - E.g., Padding mask could be [B, 1, 1, S] or [B, 1, S, S].
+            is_causal (bool | None): Whether to enforce causal masking for this forward pass.
+                - If `None` (default), uses the default `self.is_causal` set during initialization.
+                - If `True` or `False`, overrides the default setting.
 
         Returns:
-            Output tensor [B, S, H].
+            Tensor: Output tensor of shape [B, S, H].
         """
         batch_size, seq_len, _ = hidden_states.size()
         residual = hidden_states
 
-        # 1. Layer Normalization (Pre-LN)
+        # --- Determine causality setting for this call ---
+        use_causal = self.is_causal if is_causal is None else is_causal
+
+        # --- 1. Layer Normalization (Pre-LN mode) ---
         if self.norm_first:
             hidden_states = self.norm(hidden_states)
 
-        # 2. Project Q, K, V
+        # --- 2. Project Q, K, V and reshape ---
         qkv = (
             self.qkv_proj(hidden_states)  # [B, S, 3*H]
             .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, N, D]
@@ -105,31 +112,28 @@ class MultiHeadAttention(nn.Module):
         )
         q, k, v = qkv[0], qkv[1], qkv[2]  # Each [B, H, S, D]
 
-        # 3. Adapt attn mask to [B, N, S, S]
-        if attn_mask is not None and attn_mask.dim() == 3:
-            attn_mask = attn_mask.unsqueeze(1)
-
-        # 4. Scaled Dot-Product Attention
+        # --- 3. Attention computation ---
         attn_output = scaled_dot_product_attention(
             query=q,
             key=k,
             value=v,
             attn_mask=attn_mask,
-            dropout_p=self.p if self.training else 0.0,  # Apply dropout only during training
-            is_causal=self.is_causal,
-            scale=self.scale,
-        )
+            dropout_p=self.p if self.training else 0.0,
+            is_causal=use_causal,
+            scale=None
+        ) # Output shape: [B, N, S, D]
 
-        # 5. Combine Heads: [B, N, S, D] -> [B, S, H]
+        # --- 4. Combine head outputs ---
+        # [B, N, S, D] -> [B, S, N, D] -> [B, S, H]
         attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_len, self.hidden_size)
 
-        # 6. Output Projection & Dropout
+        # --- 5. Output projection and dropout ---
         output = self.dropout(self.out_proj(attn_output))
 
-        # 7. Residual Connection
-        output = output + residual  # Slightly more efficient than residual + output
+        # --- 6. Residual connection ---
+        output += residual
 
-        # 8. Layer Normalization (Post-LN)
+        # --- 7. Layer Normalization (Post-LN mode) ---
         if not self.norm_first:
             output = self.norm(output)
 
