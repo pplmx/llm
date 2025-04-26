@@ -120,8 +120,8 @@ class MultiHeadAttention(nn.Module):
             attn_mask=attn_mask,
             dropout_p=self.p if self.training else 0.0,
             is_causal=use_causal,
-            scale=None
-        ) # Output shape: [B, N, S, D]
+            scale=None,
+        )  # Output shape: [B, N, S, D]
 
         # --- 4. Combine head outputs ---
         # [B, N, S, D] -> [B, S, N, D] -> [B, S, H]
