@@ -84,23 +84,13 @@ class EnhancedMultiHeadAttention(nn.Module):
         if self.use_rope:
             self.rotary_dim = config.rotary_dim
 
-        self._init_weights()
-
-    def _init_weights(self):
-        """初始化线性层权重（Xavier均匀分布）和偏置（零）。"""
-        if self.has_separate_qkv:
-            for proj in [self.q_proj, self.k_proj, self.v_proj]:
-                nn.init.xavier_uniform_(proj.weight)
-                if proj.bias is not None:
-                    nn.init.zeros_(proj.bias)
-        else:
-            nn.init.xavier_uniform_(self.qkv_proj.weight)
-            if self.qkv_proj.bias is not None:
-                nn.init.zeros_(self.qkv_proj.bias)
-
-        nn.init.xavier_uniform_(self.out_proj.weight)
-        if self.out_proj.bias is not None:
-            nn.init.zeros_(self.out_proj.bias)
+    def _rotate_half(self, x):
+        """Rotates half the hidden dims of the input."""
+        # x shape: [..., D_r]
+        x1 = x[..., : self.rotary_dim // 2]
+        x2 = x[..., self.rotary_dim // 2 :]
+        # 负号应用在第二部分
+        return torch.cat((-x2, x1), dim=-1)
 
     def _apply_rotary_pos_emb(self, q: Tensor, k: Tensor, cos: Tensor, sin: Tensor):
         """应用旋转位置嵌入 (RoPE)。"""
@@ -110,14 +100,13 @@ class EnhancedMultiHeadAttention(nn.Module):
         k_rot, k_pass = k[..., : self.rotary_dim], k[..., self.rotary_dim :]
 
         # 应用旋转
-        q_rot_cos = cos.unsqueeze(1) * q_rot  # [B, 1, S, D_r]
-        q_rot_sin = sin.unsqueeze(1) * q_rot.roll(shifts=1, dims=-1)
-        k_rot_cos = cos.unsqueeze(1) * k_rot
-        k_rot_sin = sin.unsqueeze(1) * k_rot.roll(shifts=1, dims=-1)
+        # cos/sin 的形状 [B, 1, S, D_r] 可以广播到 q_rot/k_rot 的 [B, N, S, D_r]
+        q_rotated = (q_rot * cos) + (self._rotate_half(q_rot) * sin)
+        k_rotated = (k_rot * cos) + (self._rotate_half(k_rot) * sin)
 
         # 合并
-        q_out = torch.cat([q_rot_cos - q_rot_sin, q_pass], dim=-1)
-        k_out = torch.cat([k_rot_cos - k_rot_sin, k_pass], dim=-1)
+        q_out = torch.cat((q_rotated, q_pass), dim=-1)
+        k_out = torch.cat((k_rotated, k_pass), dim=-1)
 
         return q_out, k_out
 
@@ -224,8 +213,16 @@ class EnhancedMultiHeadAttention(nn.Module):
             sin, cos = sincos.sin(), sincos.cos()
 
             # 重塑成正确的形状
-            sin = sin.view(batch_size, -1, sin.size(1)).unsqueeze(1)  # [B, 1, S, D/2]
-            cos = cos.view(batch_size, -1, cos.size(1)).unsqueeze(1)  # [B, 1, S, D/2]
+            # 重塑 sin 和 cos: [B, S, D_r/2]
+            sin = sin.view(batch_size, seq_length, -1)
+            cos = cos.view(batch_size, seq_length, -1)
+            # 扩展最后一个维度以匹配 rotary_dim: [B, S, D_r]
+            # 使用 repeat_interleave 比 reshape 更健壮
+            sin = sin.repeat_interleave(2, dim=-1)
+            cos = cos.repeat_interleave(2, dim=-1)
+            # 添加 head 维度（用于广播）: [B, 1, S, D_r]
+            sin = sin.unsqueeze(1)
+            cos = cos.unsqueeze(1)
 
             # 只对新计算的token应用RoPE
             if past_key_value is not None and self.config.kv_cache_enabled:
@@ -266,13 +263,14 @@ class EnhancedMultiHeadAttention(nn.Module):
         else:
             return output
 
+
 def test_mha():
     # 基本用法
     config = MultiHeadAttentionConfig(
         hidden_size=512,
         num_heads=8,
         dropout=0.1,
-        norm_first=True
+        norm_first=True,
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -287,7 +285,7 @@ def test_mha():
         num_heads=8,
         dropout=0.1,
         kv_cache_enabled=True,
-        norm_first=True
+        norm_first=True,
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -297,16 +295,17 @@ def test_mha():
     output, past_kv = mha(prompt, use_cache=True)
 
     # 自回归生成
-    for i in range(10):
+    for _idx in range(10):
         # 只输入最后一个token
         next_token = output[:, -1:, :]  # [batch_size, 1, hidden_size]
         # 使用KV缓存
         output, past_kv = mha(
             next_token,
             past_key_value=past_kv,
-            use_cache=True
+            use_cache=True,
         )
         # output现在包含新生成的token表示
+
 
 def test_rope():
     # 配置使用RoPE的多头注意力
@@ -314,7 +313,7 @@ def test_rope():
         hidden_size=512,
         num_heads=8,
         use_rotary_embeddings=True,
-        rotary_dim=64  # 应用到每个头的前64维
+        rotary_dim=64,  # 应用到每个头的前64维
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -324,18 +323,19 @@ def test_rope():
     position_ids = torch.arange(10).unsqueeze(0).expand(2, 10)
 
     # 前向传播
-    output = mha(x, position_ids=position_ids)
+    mha(x, position_ids=position_ids)
+
 
 def test_separate_qkv():
     # 配置使用分离QKV投影的多头注意力
     config = MultiHeadAttentionConfig(
         hidden_size=768,
         num_heads=12,
-        separate_qkv=True  # 使用分离的QKV投影
+        separate_qkv=True,  # 使用分离的QKV投影
     )
 
     mha = EnhancedMultiHeadAttention(config)
 
     # 前向传播
     x = torch.randn(1, 20, 768)
-    output = mha(x)
+    mha(x)
