@@ -7,42 +7,59 @@ from torch import Tensor, nn
 
 
 @dataclass
-class MultiHeadAttentionConfig:
+class AttentionConfig:
     """
-    多头注意力机制的配置类。
-
-    这个配置类包含了所有用于初始化多头注意力模块的参数。通过使用数据类，
-    可以更清晰地管理和传递这些参数，同时提供默认值和验证。
+    注意力机制的配置类。
 
     Args:
+        # 核心模型参数
         hidden_size: 隐藏层维度，必须是num_heads的整数倍
         num_heads: 注意力头的数量，默认为8
+
+        # 正则化相关参数
         dropout: 用于输出的dropout率，默认为0.1
         attention_dropout: 用于注意力权重的dropout率，默认与dropout相同
-        bias: 是否在线性投影中使用偏置，默认为False
         eps: LayerNorm的epsilon值，用于数值稳定性，默认为1e-5
-        norm_first: 是否先进行层归一化（Pre-LN），默认为True
-        is_causal: 是否使用因果注意力掩码，默认为False
-        separate_qkv: 是否使用分离的QKV投影，默认为False
+
+        # 功能开关参数（统一使用use_前缀）
+        use_bias: 是否在线性投影中使用偏置，默认为False
+        use_norm_first: 是否先进行层归一化（Pre-LN），默认为True
+        use_causal_mask: 是否使用因果注意力掩码，默认为False
+        use_separate_qkv: 是否使用分离的QKV投影，默认为False
         use_rotary_embeddings: 是否使用旋转位置嵌入(RoPE)，默认为False
+        use_kv_cache: 是否启用KV缓存用于生成，默认为False
+
+        # 特殊参数
         rotary_dim: 旋转位置嵌入的维度，默认为head_dim
-        kv_cache_enabled: 是否启用KV缓存用于生成，默认为False
+
+        # 技术细节参数
         device: 张量设备
         dtype: 张量数据类型
     """
 
+    # 核心模型参数
     hidden_size: int
     num_heads: int = 8
+
+    # 正则化相关参数
     dropout: float = 0.1
-    attention_dropout: float | None = None  # 如果未指定，则使用dropout值
-    bias: bool = False
+    attention_dropout: float | None = None
     eps: float = 1e-5
-    norm_first: bool = True
-    is_causal: bool = False
-    separate_qkv: bool = False
+
+    # 架构参数
+    use_norm_first: bool = True
+    use_bias: bool = False
+    use_causal_mask: bool = False
+    use_separate_qkv: bool = False
+
+    # 位置编码相关参数
     use_rotary_embeddings: bool = False
-    rotary_dim: int | None = None  # 若使用旋转位置嵌入，可指定维度
-    kv_cache_enabled: bool = False
+    rotary_dim: int | None = None
+
+    # 推理相关参数
+    use_kv_cache: bool = False
+
+    # 硬件相关参数
     device: torch.device | str | None = None
     dtype: torch.dtype | None = None
 
@@ -79,7 +96,7 @@ class EnhancedMultiHeadAttention(nn.Module):
     5. 进行最终的投影和残差连接
     """
 
-    def __init__(self, config: MultiHeadAttentionConfig):
+    def __init__(self, config: AttentionConfig):
         """
         初始化多头注意力模块。
 
@@ -96,8 +113,8 @@ class EnhancedMultiHeadAttention(nn.Module):
         self.head_dim = config.hidden_size // config.num_heads
 
         # 配置选项
-        self.norm_first = config.norm_first
-        self.is_causal = config.is_causal
+        self.norm_first = config.use_norm_first
+        self.is_causal = config.use_causal_mask
         self.p = config.dropout
         self.attn_p = config.attention_dropout
         self.use_rope = config.use_rotary_embeddings
@@ -109,19 +126,21 @@ class EnhancedMultiHeadAttention(nn.Module):
         self.norm = nn.LayerNorm(config.hidden_size, eps=config.eps, **factory_kwargs)
 
         # QKV投影策略
-        if config.separate_qkv:
+        if config.use_separate_qkv:
             # 分离的QKV投影（每个都有自己的权重矩阵）
-            self.q_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.bias, **factory_kwargs)
-            self.k_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.bias, **factory_kwargs)
-            self.v_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.bias, **factory_kwargs)
+            self.q_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.use_bias, **factory_kwargs)
+            self.k_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.use_bias, **factory_kwargs)
+            self.v_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.use_bias, **factory_kwargs)
             self.has_separate_qkv = True
         else:
             # 融合的QKV投影（单个权重矩阵）
-            self.qkv_proj = nn.Linear(config.hidden_size, 3 * config.hidden_size, bias=config.bias, **factory_kwargs)
+            self.qkv_proj = nn.Linear(
+                config.hidden_size, 3 * config.hidden_size, bias=config.use_bias, **factory_kwargs
+            )
             self.has_separate_qkv = False
 
         # 输出投影和dropout
-        self.out_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.bias, **factory_kwargs)
+        self.out_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.use_bias, **factory_kwargs)
         self.dropout = nn.Dropout(config.dropout)
 
     def _rotate_half(self, x: Tensor) -> Tensor:
@@ -204,7 +223,7 @@ class EnhancedMultiHeadAttention(nn.Module):
         Returns:
             查询、键和值张量，形状均为 [B, N, S, D]
         """
-        use_cache = past_key_value is not None and self.config.kv_cache_enabled
+        use_cache = past_key_value is not None and self.config.use_kv_cache
 
         if self.has_separate_qkv:
             # 使用分离的QKV投影
@@ -347,7 +366,7 @@ class EnhancedMultiHeadAttention(nn.Module):
             sin, cos = self._compute_rope_sincos(position_ids, batch_size, seq_len)
 
             # 如果使用KV缓存，只对新token应用RoPE
-            if past_key_value is not None and self.config.kv_cache_enabled:
+            if past_key_value is not None and self.config.use_kv_cache:
                 q_len = q.size(2)
                 sin, cos = sin[:, :, -q_len:, :], cos[:, :, -q_len:, :]
 
@@ -379,7 +398,7 @@ class EnhancedMultiHeadAttention(nn.Module):
             output = self.norm(output)
 
         # 返回输出和更新的KV缓存
-        if use_cache and self.config.kv_cache_enabled:
+        if use_cache and self.config.use_kv_cache:
             return output, (k, v)
         else:
             return output
@@ -389,11 +408,11 @@ class EnhancedMultiHeadAttention(nn.Module):
 def test_mha():
     """基本用法示例"""
     # 创建配置
-    config = MultiHeadAttentionConfig(
+    config = AttentionConfig(
         hidden_size=512,  # 隐藏层维度
         num_heads=8,  # 注意力头数量
         dropout=0.1,  # dropout比率
-        norm_first=True,  # 使用Pre-LN结构
+        use_norm_first=True,  # 使用Pre-LN结构
     )
 
     # 初始化多头注意力模块
@@ -408,12 +427,12 @@ def test_mha():
 def test_kv_cache():
     """使用KV缓存的自回归生成示例"""
     # 创建启用KV缓存的配置
-    config = MultiHeadAttentionConfig(
+    config = AttentionConfig(
         hidden_size=512,
         num_heads=8,
         dropout=0.1,
-        kv_cache_enabled=True,  # 启用KV缓存
-        norm_first=True,
+        use_kv_cache=True,  # 启用KV缓存
+        use_norm_first=True,
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -430,13 +449,13 @@ def test_kv_cache():
 
 def test_rotary_embeddings():
     """测试旋转位置嵌入（RoPE）功能"""
-    config = MultiHeadAttentionConfig(
+    config = AttentionConfig(
         hidden_size=512,
         num_heads=8,
         dropout=0.1,
         use_rotary_embeddings=True,  # 启用旋转位置嵌入
         rotary_dim=64,  # 指定旋转位置嵌入的维度
-        norm_first=True,
+        use_norm_first=True,
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -458,12 +477,12 @@ def test_rotary_embeddings():
 
 def test_causal_masking():
     """测试因果掩码（Causal Masking）功能"""
-    config = MultiHeadAttentionConfig(
+    config = AttentionConfig(
         hidden_size=512,
         num_heads=8,
         dropout=0.1,
-        is_causal=True,  # 启用因果掩码
-        norm_first=True,
+        use_causal_mask=True,  # 启用因果掩码
+        use_norm_first=True,
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -487,12 +506,12 @@ def test_causal_masking():
 
 def test_separate_qkv():
     """测试分离的QKV投影"""
-    config = MultiHeadAttentionConfig(
+    config = AttentionConfig(
         hidden_size=512,
         num_heads=8,
         dropout=0.1,
-        separate_qkv=True,  # 使用分离的QKV投影
-        norm_first=False,  # 测试Post-LN结构
+        use_separate_qkv=True,  # 使用分离的QKV投影
+        use_norm_first=False,  # 测试Post-LN结构
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -505,7 +524,7 @@ def test_separate_qkv():
     output = mha(x)
 
     print(f"分离QKV测试 - 输入形状: {x.shape}, 输出形状: {output.shape}")
-    print(f"使用Post-LN结构: {not config.norm_first}")
+    print(f"使用Post-LN结构: {not config.use_norm_first}")
 
     # 验证输出形状和输入相同
     assert output.shape == x.shape, "分离QKV输出形状应与输入相同"
@@ -513,13 +532,13 @@ def test_separate_qkv():
 
 def test_rope_with_kv_cache():
     """测试同时使用旋转位置嵌入和KV缓存"""
-    config = MultiHeadAttentionConfig(
+    config = AttentionConfig(
         hidden_size=512,
         num_heads=8,
         dropout=0.1,
         use_rotary_embeddings=True,  # 启用旋转位置嵌入
-        kv_cache_enabled=True,  # 启用KV缓存
-        norm_first=True,
+        use_kv_cache=True,  # 启用KV缓存
+        use_norm_first=True,
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -551,12 +570,12 @@ def test_rope_with_kv_cache():
 
 def test_attention_mask():
     """测试自定义注意力掩码"""
-    config = MultiHeadAttentionConfig(
+    config = AttentionConfig(
         hidden_size=512,
         num_heads=8,
         dropout=0.1,
-        is_causal=False,  # 不使用默认因果掩码
-        norm_first=True,
+        use_causal_mask=False,  # 不使用默认因果掩码
+        use_norm_first=True,
     )
 
     mha = EnhancedMultiHeadAttention(config)
@@ -580,11 +599,11 @@ def test_attention_mask():
 
 def test_long_sequence():
     """测试处理长序列的能力"""
-    config = MultiHeadAttentionConfig(
+    config = AttentionConfig(
         hidden_size=256,
         num_heads=4,
         dropout=0.1,
-        norm_first=True,
+        use_norm_first=True,
     )
 
     mha = EnhancedMultiHeadAttention(config)
