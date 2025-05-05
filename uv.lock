@@ -4,28 +4,28 @@ requires-python = ">=3.13"
 
 [[package]]
 name = "allure-pytest"
-version = "2.14.0"
+version = "2.14.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "allure-python-commons" },
     { name = "pytest" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/52/0c/3c267bd6dd27ed61aef3ae71c491866a8da02d8481dcab3fe876e243c320/allure_pytest-2.14.0.tar.gz", hash = "sha256:2b485dc307755f8f3207783a69558ca1cc72f1e2c97bedc65c93fdb77adf328f" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/93/ec/c26d6ea1ea0e36b2a470c6a5224bbd4221d58a64838b118991b4427c4747/allure_pytest-2.14.1.tar.gz", hash = "sha256:f5a7469608044869243355ac1c1a97d373501a961076ac876ae29dbc6548920d" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/d1/7e/e2d9e0f03e4d0bf56c793746cb531a18a3addfa7b34a7c6b4680d2d12f2b/allure_pytest-2.14.0-py3-none-any.whl", hash = "sha256:6ddb68ef42bd5a2dfbcc136a184bf3e78e631ede7b8c54750026ffd407bda9af" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/4a/6b/50fb0080767af94e217357ba2a0719d8bc245437e37b3c2d34b1a1110687/allure_pytest-2.14.1-py3-none-any.whl", hash = "sha256:2d35bee7118b6478acac264cf8e9b401ca9a8b1929cae2afa56c9c79193be3a2" },
 ]
 
 [[package]]
 name = "allure-python-commons"
-version = "2.14.0"
+version = "2.14.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "pluggy" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/c8/7d/4109e0be649365811a009f1a3e991f9755adfd1221b2f73da5b4df9d3650/allure_python_commons-2.14.0.tar.gz", hash = "sha256:9b217e2f6c74cdbd0e253f89059d4165346e95fcb28228fae333ff4dccea0bd5" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ae/02/c1920b7a78e3c0486099c99fdfa59c874ddfde5fabb70a2c1af66c081796/allure_python_commons-2.14.1.tar.gz", hash = "sha256:2a18f987c722810ff1cfc1509fad85fbdaabd695770804a1b4c93cf95d3cdd4e" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/27/d9/940df1901343a27becc0d85b52e250fdc418f1ec9eb3824946a89bd49e62/allure_python_commons-2.14.0-py3-none-any.whl", hash = "sha256:9200f40abee697133e9ed9f68887cde996a24b9eb33fcf528da8fe50fae88e43" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/92/ba/78fa28dae93f5cde9d12454df6991c62b9bcb014ee97b49d0a1fef888f07/allure_python_commons-2.14.1-py3-none-any.whl", hash = "sha256:cf2bc5fef2c392b1782ee6956fce6641645517b453ff72a901acf20db3d37d36" },
 ]
 
 [[package]]
@@ -209,7 +209,7 @@ wheels = [
 
 [[package]]
 name = "llm"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "allure-pytest" },
@@ -221,10 +221,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "allure-pytest", specifier = ">=2.13.5" },
+    { name = "allure-pytest", specifier = ">=2.14.1" },
     { name = "matplotlib", specifier = ">=3.10.1" },
-    { name = "pytest", specifier = ">=8.1" },
-    { name = "pytest-cov", specifier = ">=6.0" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-cov", specifier = ">=6.1" },
     { name = "torch", specifier = ">=2.7.0" },
 ]
 
@@ -565,11 +565,11 @@ wheels = [
 
 [[package]]
 name = "setuptools"
-version = "79.0.1"
+version = "80.3.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/bb/71/b6365e6325b3290e14957b2c3a804a529968c77a049b2ed40c095f749707/setuptools-79.0.1.tar.gz", hash = "sha256:128ce7b8f33c3079fd1b067ecbb4051a66e8526e7b65f6cec075dfc650ddfa88" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/70/dc/3976b322de9d2e87ed0007cf04cc7553969b6c7b3f48a565d0333748fbcd/setuptools-80.3.1.tar.gz", hash = "sha256:31e2c58dbb67c99c289f51c16d899afedae292b978f8051efaf6262d8212f927" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/0d/6d/b4752b044bf94cb802d88a888dc7d288baaf77d7910b7dedda74b5ceea0c/setuptools-79.0.1-py3-none-any.whl", hash = "sha256:e147c0549f27767ba362f9da434eab9c5dc0045d5304feb602a0af001089fc51" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/53/7e/5d8af3317ddbf9519b687bd1c39d8737fde07d97f54df65553faca5cffb1/setuptools-80.3.1-py3-none-any.whl", hash = "sha256:ea8e00d7992054c4c592aeb892f6ad51fe1b4d90cc6947cc45c45717c40ec537" },
 ]
 
 [[package]]
@@ -583,14 +583,14 @@ wheels = [
 
 [[package]]
 name = "sympy"
-version = "1.13.3"
+version = "1.14.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "mpmath" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/11/8a/5a7fd6284fa8caac23a26c9ddf9c30485a48169344b4bd3b0f02fef1890f/sympy-1.13.3.tar.gz", hash = "sha256:b27fd2c6530e0ab39e275fc9b683895367e51d5da91baa8d3d64db2565fec4d9" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/99/ff/c87e0622b1dadea79d2fb0b25ade9ed98954c9033722eb707053d310d4f3/sympy-1.13.3-py3-none-any.whl", hash = "sha256:54612cf55a62755ee71824ce692986f23c88ffa77207b30c1368eda4a7060f73" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl", hash = "sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5" },
 ]
 
 [[package]]
