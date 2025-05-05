@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm"
-version = "0.0.1"
+version = "0.0.2"
 description = "A nice python project"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -17,9 +17,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "pytest>=8.1",
-    "pytest-cov>=6.0",
-    "allure-pytest>=2.13.5",
+    "pytest>=8.3",
+    "pytest-cov>=6.1",
+    "allure-pytest>=2.14.1",
     "torch>=2.7.0",
     "matplotlib>=3.10.1",
 ]
