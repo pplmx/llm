@@ -7,12 +7,17 @@ class MoELayer(nn.Module):
     """
     混合专家模型层 (Mixture of Experts Layer)
 
+    该层将输入路由到多个“专家”网络（通常是FFN）中的一部分，并对它们的输出进行加权组合。
+    这种方法可以在增加模型参数容量的同时，保持每个输入的计算成本相对较低。
+
     参数:
-        hidden_size (int): 隐藏层维度，同时作为输入和输出维度
-        num_experts (int): 专家网络的数量
-        ffn_hidden_size (int, 可选): 专家FFN中间层的大小，默认为 4 * hidden_size
-        num_experts_per_tok (int, 可选): 每个token要路由到的专家数量，默认为1
-        router_jitter_noise (float, 可选): 路由器抖动噪声大小，默认为0.0（不使用噪声）
+        hidden_size (int): 输入和输出特征的维度
+        num_experts (int): 专家网络的总数量。
+        ffn_hidden_size (int, 可选): 每个专家网络中前馈网络 (FFN) 的中间层维度。默认为 hidden_size 的 4 倍
+        top_k (int, 可选): 每个 token 被路由到的专家数量。默认为 1。
+        router_jitter_noise (float, 可选): 添加到路由器 logits 的抖动噪声的标准差。
+                                         仅在训练时使用，有助于负载均衡和防止专家特化过度。默认为 0.01。
+        router_bias (bool, 可选): 路由器线性层是否使用偏置。默认为 False。
     """
 
     def __init__(
@@ -20,209 +25,141 @@ class MoELayer(nn.Module):
         hidden_size: int,
         num_experts: int,
         ffn_hidden_size: int | None = None,
-        num_experts_per_tok: int = 1,
-        router_jitter_noise: float = 0.0,
+        top_k: int = 1,
+        router_jitter_noise: float = 0.01,
+        router_bias: bool = False,
     ):
         super().__init__()
 
+        if top_k > num_experts:
+            raise ValueError(f"top_k ({top_k}) 不能大于 num_experts ({num_experts})")
+        if hidden_size <= 0 or num_experts * top_k <= 0:
+            raise ValueError("hidden_size, num_experts, 和 top_k 必须是正整数")
+
         self.hidden_size = hidden_size
         self.num_experts = num_experts
-        self.num_experts_per_tok = num_experts_per_tok
+        self.ffn_hidden_size = ffn_hidden_size if ffn_hidden_size is not None else 4 * hidden_size
+        self.top_k = top_k
         self.router_jitter_noise = router_jitter_noise
 
-        if ffn_hidden_size is None:
-            ffn_hidden_size = 4 * hidden_size  # 默认使用4倍hidden_size，与Transformer一致
+        # 1. 路由器 (Gating Network)
+        # 路由器的作用是为每个输入token计算分配给各个专家的权重（或logits）
+        # 输入: token的隐藏状态 (hidden_size)
+        # 输出: 每个专家的logit分数 (num_experts)
+        self.router = nn.Linear(self.hidden_size, self.num_experts, bias=router_bias)
 
-        # 初始化路由器网络
-        self.router = nn.Linear(hidden_size, num_experts, bias=False)
-
-        # 初始化专家网络 - 使用标准FFN结构（与Transformer中的FFN一致）
+        # 2. 专家网络 (Expert Networks)
+        # 每个专家通常是一个标准的前馈网络 (FFN)
+        # FFN: Linear -> Activation -> Linear
         self.experts = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Linear(hidden_size, ffn_hidden_size),
-                    nn.GELU(),  # 使用GELU激活函数，与现代Transformer一致
-                    nn.Linear(ffn_hidden_size, hidden_size),
+                    nn.Linear(self.hidden_size, self.ffn_hidden_size),
+                    nn.GELU(),  # GELU 是现代 Transformer 中常用的激活函数
+                    nn.Linear(self.ffn_hidden_size, self.hidden_size),
                 )
-                for _ in range(num_experts)
+                for _ in range(self.num_experts)
             ]
         )
 
-    def _compute_router_probabilities(self, hidden_states):
+    def _add_router_jitter(self, router_logits: torch.Tensor) -> torch.Tensor:
         """
-        计算路由概率
-
-        参数:
-            hidden_states (torch.Tensor): 形状为[batch_size, seq_len, hidden_size]的输入张量
-
-        返回:
-            router_probs (torch.Tensor): 归一化后的路由概率
-            router_indices (torch.Tensor): top-k专家的索引
+        在训练期间向路由器 logits 添加抖动噪声。
+        这有助于专家之间的负载均衡，并可以提高模型的泛化能力。
+        参考: "Designing Effective Sparse Expert Models" (https://arxiv.org/abs/2401.00954)
+              "Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity" (https://arxiv.org/abs/2101.03961)
         """
-        batch_size, seq_len, _ = hidden_states.shape
-
-        # 重塑张量以便于路由计算
-        hidden_states_reshaped = hidden_states.view(-1, self.hidden_size)  # [batch_size * seq_len, hidden_size]
-
-        # 计算路由logits
-        router_logits = self.router(hidden_states_reshaped)  # [batch_size * seq_len, num_experts]
-
         if self.router_jitter_noise > 0.0 and self.training:
-            # 添加噪声以增强训练稳定性和多样性
-            router_logits += torch.rand_like(router_logits) * self.router_jitter_noise
+            # torch.rand_like 生成 [0, 1) 的均匀分布噪声
+            # 乘以 2.0 再减去 1.0，将其转换为 [-1, 1) 的均匀分布噪声 (近似)
+            # 或者直接使用标准正态分布噪声 torch.randn_like
+            # 这里我们使用均匀噪声乘以 router_jitter_noise
+            noise = torch.rand_like(router_logits) * self.router_jitter_noise
+            # 为了使其均值为0，可以乘以 2 再减 1，然后乘以 noise_std
+            # noise = (torch.rand_like(router_logits) * 2.0 - 1.0) * self.router_jitter_noise
+            # 原始代码是直接加正向噪声，这里保持一致性，但通常会用均值为0的噪声
+            router_logits = router_logits + noise
+        return router_logits
 
-        # 获取每个token的top-k专家
-        router_probs, router_indices = torch.topk(
-            router_logits, k=self.num_experts_per_tok, dim=-1
-        )  # [batch_size * seq_len, num_experts_per_tok]
-
-        # 对top-k概率进行softmax归一化
-        router_probs = F.softmax(router_probs, dim=-1)
-
-        return router_probs, router_indices
-
-    def forward(self, hidden_states):
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
-        前向传播
+        MoE层的前向传播。
 
         参数:
-            hidden_states (torch.Tensor): 形状为[batch_size, seq_len, hidden_size]的输入张量
+            hidden_states (torch.Tensor): 输入张量，形状为 [batch_size, seq_len, hidden_size]
 
         返回:
-            output (torch.Tensor): 形状为[batch_size, seq_len, hidden_size]的输出张量
+            output (torch.Tensor): 输出张量，形状与输入相同 [batch_size, seq_len, hidden_size]
         """
         batch_size, seq_len, _ = hidden_states.shape
-        flat_size = batch_size * seq_len
 
-        # 计算路由概率和索引
-        router_probs, router_indices = self._compute_router_probabilities(hidden_states)
+        # 为了方便处理，将输入reshape为 [batch_size * seq_len, hidden_size]
+        # 这样每个token都可以独立地进行路由
+        flat_hidden_states = hidden_states.reshape(-1, self.hidden_size)  # Shape: [N, H] where N = B * S
 
-        # 初始化输出
-        output = torch.zeros(flat_size, self.hidden_size, device=hidden_states.device)
+        # 1. 通过路由器计算每个token到各个专家的logits
+        # router_logits: [N, num_experts]
+        router_logits = self.router(flat_hidden_states)
+        router_logits = self._add_router_jitter(router_logits)
 
-        # 重塑输入便于处理
-        hidden_states = hidden_states.reshape(flat_size, self.hidden_size)
+        # 2. 为每个token选择top-k个专家，并计算它们的权重
+        # torch.topk 返回 (values, indices)
+        # top_k_logits: [N, top_k], 选出的top-k个专家的logits
+        # top_k_indices: [N, top_k], 选出的top-k个专家的索引
+        top_k_logits, top_k_indices = torch.topk(router_logits, k=self.top_k, dim=-1)
 
-        # 处理每个专家
-        for expert_idx in range(self.num_experts):
-            # 找出应该被路由到当前专家的token
-            # 检查router_indices中是否包含当前专家的索引
-            expert_mask = router_indices == expert_idx  # [batch_size * seq_len, num_experts_per_tok]
+        # 将top-k logits通过softmax转换为权重（概率分布）
+        # routing_weights: [N, top_k]
+        routing_weights = F.softmax(top_k_logits, dim=-1)
 
-            # 获取被路由到当前专家的token索引
-            token_indices = torch.nonzero(expert_mask.any(dim=-1), as_tuple=True)[0]
+        # 3. 将token分发给选中的专家并计算输出
+        # 初始化最终输出张量
+        output = torch.zeros_like(flat_hidden_states)  # Shape: [N, H]
 
-            if token_indices.shape[0] == 0:
-                # 如果没有token被路由到当前专家，则跳过
-                continue
+        # 遍历top_k中的每一个选择（例如，第1选择的专家，第2选择的专家...）
+        for k_idx in range(self.top_k):
+            expert_indices_kth_choice = top_k_indices[:, k_idx]  # Shape: [N], 第k个选择的专家索引
+            weights_kth_choice = routing_weights[:, k_idx]  # Shape: [N], 第k个选择的路由权重
 
-            # 获取这些token及其对应的权重
-            expert_inputs = hidden_states[token_indices]  # [num_tokens, hidden_size]
+            # 遍历所有专家
+            for expert_id in range(self.num_experts):
+                # 找到当前遍历到的expert_id被选为第k选择的所有token
+                # token_mask: [N], bool张量，标记哪些token的第k选择是当前expert_id
+                token_mask_for_expert = expert_indices_kth_choice == expert_id
 
-            # 找出每个token中当前专家在top-k中的位置
-            expert_positions = torch.nonzero(expert_mask, as_tuple=True)
-            token_positions, k_positions = expert_positions[0], expert_positions[1]
+                # 获取这些token的实际索引
+                # tokens_to_process_indices: [num_tokens_for_this_expert_at_kth_choice]
+                tokens_to_process_indices = torch.where(token_mask_for_expert)[0]
 
-            # 只保留与token_indices匹配的位置
-            mask = torch.zeros(token_positions.shape[0], dtype=torch.bool, device=token_positions.device)
-            for i, idx in enumerate(token_positions):
-                mask[i] = idx in token_indices
+                if tokens_to_process_indices.numel() == 0:
+                    # 如果没有token路由到这个专家（作为其第k选择），则跳过
+                    continue
 
-            token_positions = token_positions[mask]
-            k_positions = k_positions[mask]
+                # 从flat_hidden_states中选出这些token
+                # tokens_for_expert: [num_tokens_for_this_expert_at_kth_choice, hidden_size]
+                tokens_for_expert = flat_hidden_states[tokens_to_process_indices]
 
-            # 获取对应的权重
-            expert_weights = router_probs[token_positions, k_positions]  # [num_tokens]
+                # 获取这些token对应的路由权重
+                # weights_for_tokens: [num_tokens_for_this_expert_at_kth_choice]
+                weights_for_tokens = weights_kth_choice[tokens_to_process_indices]
 
-            # 通过专家网络处理输入
-            expert_outputs = self.experts[expert_idx](expert_inputs)  # [num_tokens, hidden_size]
+                # 通过专家网络处理
+                expert_output = self.experts[expert_id](tokens_for_expert)
+                # expert_output: [num_tokens_for_this_expert_at_kth_choice, hidden_size]
 
-            # 将输出乘以对应的权重
-            weighted_outputs = expert_outputs * expert_weights.unsqueeze(-1)  # [num_tokens, hidden_size]
+                # 将专家输出乘以对应的权重
+                # weights_for_tokens.unsqueeze(1) -> [num_tokens_for_this_expert_at_kth_choice, 1]
+                # 以便与expert_output进行广播乘法
+                weighted_expert_output = expert_output * weights_for_tokens.unsqueeze(1)
 
-            # 累加到最终输出
-            output.index_add_(0, token_indices, weighted_outputs)
+                # 使用 index_add_ 将加权输出累加到 output 的对应位置
+                # index_add_ (dim, index, tensor) 会将 tensor 中的值加到 self 张量在 dim 维度上由 index 指定的位置
+                # 这里 dim=0 表示在第0维（token维度）上操作
+                output.index_add_(0, tokens_to_process_indices, weighted_expert_output)
 
-        # 重塑回原始形状
+        # 将输出reshape回原始形状 [batch_size, seq_len, hidden_size]
         output = output.reshape(batch_size, seq_len, self.hidden_size)
-
         return output
-
-
-class SimpleMoELayer(nn.Module):
-    """
-    简化版混合专家模型层
-
-    这个版本使用更简洁的实现，专注于MoE的核心概念。
-
-    参数:
-        hidden_size (int): 隐藏层维度，同时作为输入和输出维度
-        num_experts (int): 专家网络的数量
-        ffn_hidden_size (int, 可选): 专家FFN中间层的大小，默认为4倍hidden_size
-        top_k (int, 可选): 每个token要路由到的专家数量，默认为1
-    """
-
-    def __init__(self, hidden_size: int, num_experts: int, ffn_hidden_size: int = None, top_k: int = 1):
-        super().__init__()
-
-        self.hidden_size = hidden_size
-        self.num_experts = num_experts
-        self.top_k = top_k
-
-        if ffn_hidden_size is None:
-            ffn_hidden_size = 4 * hidden_size
-
-        # 路由器
-        self.router = nn.Linear(hidden_size, num_experts, bias=False)
-
-        # 专家网络 - 使用简单FFN
-        self.experts = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Linear(hidden_size, ffn_hidden_size), nn.GELU(), nn.Linear(ffn_hidden_size, hidden_size)
-                )
-                for _ in range(num_experts)
-            ]
-        )
-
-    def forward(self, x):
-        """
-        前向传播
-
-        参数:
-            x (torch.Tensor): 形状为[batch_size, seq_len, hidden_size]的输入张量
-
-        返回:
-            output (torch.Tensor): 形状为[batch_size, seq_len, hidden_size]的输出张量
-        """
-        batch_size, seq_len, _ = x.shape
-
-        # 获取路由分数
-        router_logits = self.router(x)  # [batch_size, seq_len, num_experts]
-
-        # 选择top-k专家
-        router_probs, indices = torch.topk(router_logits, k=self.top_k, dim=-1)
-        router_probs = F.softmax(router_probs, dim=-1)
-
-        # 初始化输出
-        final_output = torch.zeros_like(x)
-
-        # 对每个batch和序列位置处理
-        for b in range(batch_size):
-            for s in range(seq_len):
-                for k in range(self.top_k):
-                    # 获取专家索引和权重
-                    expert_idx = indices[b, s, k].item()
-                    weight = router_probs[b, s, k].item()
-
-                    # 处理输入
-                    token = x[b, s].unsqueeze(0)  # 保持维度: [1, hidden_size]
-                    output = self.experts[expert_idx](token)
-
-                    # 加权累加
-                    final_output[b, s] += output.squeeze(0) * weight
-
-        return final_output
 
 
 def moe_example():
@@ -230,27 +167,49 @@ def moe_example():
     MoE层使用示例
     """
     # 设置参数
-    hidden_size = 64
-    num_experts = 4
     batch_size = 2
-    seq_len = 3
+    seq_len = 10  # 序列长度
+    hidden_size = 32  # 模型/隐藏层维度
+    num_experts = 4  # 专家数量
+    ffn_hidden_size = hidden_size * 4  # FFN中间层维度
+    top_k = 2  # 每个token路由到2个专家
 
-    # 创建输入
-    x = torch.rand(batch_size, seq_len, hidden_size)
+    print("--- MoE Layer Demo ---")
+    print(f"Batch size: {batch_size}, Sequence length: {seq_len}, Hidden size: {hidden_size}")
+    print(f"Number of experts: {num_experts}, FFN hidden size: {ffn_hidden_size}, Top-K: {top_k}")
 
-    # 测试MoELayer
-    moe = MoELayer(hidden_size=hidden_size, num_experts=num_experts)
-    output = moe(x)
+    # 创建MoE层实例
+    moe_layer = MoELayer(
+        hidden_size=hidden_size,
+        num_experts=num_experts,
+        ffn_hidden_size=ffn_hidden_size,
+        top_k=top_k,
+        router_jitter_noise=0.01,  # 在训练时使用
+    )
+    # print("\nMoE Layer Structure:")
+    # print(moe_layer)
 
-    print(f"MoE Input shape: {x.shape}")
-    print(f"MoE Output shape: {output.shape}")
+    # 创建模拟输入数据
+    # hidden_states: [batch_size, seq_len, hidden_size]
+    input_tensor = torch.rand(batch_size, seq_len, hidden_size)
+    print(f"\nInput tensor shape: {input_tensor.shape}")
 
-    simple_moe = SimpleMoELayer(hidden_size=hidden_size, num_experts=num_experts)
-    output = simple_moe(x)
-    print(f"Simple MoE Input shape: {x.shape}")
-    print(f"Simple MoE Output shape: {output.shape}")
+    # 模拟训练模式
+    moe_layer.train()
+    output_train = moe_layer(input_tensor)
+    print(f"Output tensor shape (train mode): {output_train.shape}")
 
-    return output
+    # 模拟评估模式 (无抖动噪声)
+    moe_layer.eval()
+    output_eval = moe_layer(input_tensor)
+    print(f"Output tensor shape (eval mode): {output_eval.shape}")
+
+    # 检查输出维度是否正确
+    assert output_train.shape == input_tensor.shape, "训练模式下输出形状不匹配"
+    assert output_eval.shape == input_tensor.shape, "评估模式下输出形状不匹配"
+
+    print("\n--- MoE Layer Demo End ---")
+    return output_train, output_eval
 
 
 if __name__ == "__main__":
