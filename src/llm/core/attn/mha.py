@@ -38,6 +38,7 @@ class MultiHeadAttention(nn.Module):
         eps: float = 1e-5,
         norm_first: bool = True,
         is_causal: bool = False,
+        include_norm_residual: bool = True,  # New parameter
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -50,15 +51,19 @@ class MultiHeadAttention(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
-        self.norm_first = norm_first
+        self.norm_first = norm_first  # Relevant only if include_norm_residual is True
         self.is_causal = is_causal
         self.p = p
+        self.include_norm_residual = include_norm_residual
 
         # --- Layers ---
-        self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
+        self.norm = None
+        if self.include_norm_residual:
+            self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
+        
         self.qkv_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, **factory_kwargs)
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, **factory_kwargs)
-        self.dropout = nn.Dropout(p)
+        self.dropout = nn.Dropout(p) # This is for the output projection
 
         self._init_weights()
 
@@ -95,18 +100,23 @@ class MultiHeadAttention(nn.Module):
             Tensor: Output tensor of shape [B, S, H].
         """
         batch_size, seq_len, _ = hidden_states.size()
-        residual = hidden_states
-
+        
         # --- Determine causality setting for this call ---
         use_causal = self.is_causal if is_causal is None else is_causal
 
-        # --- 1. Layer Normalization (Pre-LN mode) ---
-        if self.norm_first:
-            hidden_states = self.norm(hidden_states)
+        # Prepare input for QKV projection
+        # If norm and residual are handled by this module, apply norm first (if pre-norm)
+        if self.include_norm_residual and self.norm is not None:
+            residual = hidden_states
+            x_for_qkv = self.norm(hidden_states) if self.norm_first else hidden_states
+        else:
+            # If no norm/residual by this module, use hidden_states directly
+            # No residual variable needed here if not added by this module
+            x_for_qkv = hidden_states
 
         # --- 2. Project Q, K, V and reshape ---
         qkv = (
-            self.qkv_proj(hidden_states)  # [B, S, 3*H]
+            self.qkv_proj(x_for_qkv)  # [B, S, 3*H]
             .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, N, D]
             .permute(2, 0, 3, 1, 4)  # [3, B, N, S, D]
         )
@@ -128,13 +138,17 @@ class MultiHeadAttention(nn.Module):
         attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_len, self.hidden_size)
 
         # --- 5. Output projection and dropout ---
-        output = self.dropout(self.out_proj(attn_output))
+        # The dropout here is applied to the output of the MHA's out_proj.
+        projected_output = self.dropout(self.out_proj(attn_output))
 
-        # --- 6. Residual connection ---
-        output += residual
+        if self.include_norm_residual and self.norm is not None:
+            # --- 6. Residual connection ---
+            output = residual + projected_output # residual was stored earlier
 
-        # --- 7. Layer Normalization (Post-LN mode) ---
-        if not self.norm_first:
-            output = self.norm(output)
-
-        return output
+            # --- 7. Layer Normalization (Post-LN mode) ---
+            if not self.norm_first: # self.norm must exist if not self.norm_first is true
+                output = self.norm(output)
+            return output
+        else:
+            # No residual, no norm by this module
+            return projected_output

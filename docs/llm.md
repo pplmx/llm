@@ -71,6 +71,102 @@
 
 ---
 
+### **3.A Custom LLM Framework Components**
+
+As part of this learning journey, we have built a small, functional LLM framework from scratch. These components are inspired by established architectures like the Transformer but are custom implementations designed for educational purposes. They are distinct from the highly optimized and general-purpose modules found in libraries like Hugging Face Transformers.
+
+Here's a brief overview of the core components:
+
+*   **`llm.tokenization.simple_tokenizer.SimpleCharacterTokenizer`**:
+    *   **Location**: `src/llm/tokenization/simple_tokenizer.py`
+    *   **Purpose**: A basic character-level tokenizer. It builds a vocabulary by identifying all unique characters in a given training corpus. It also automatically handles a special `<PAD>` token, used for padding sequences to a consistent length, which is crucial for batch processing.
+
+*   **`llm.data.loader.TextDataset` and `llm.data.loader.create_dataloader`**:
+    *   **Location**: `src/llm/data/loader.py`
+    *   **Purpose**:
+        *   `TextDataset`: Reads a raw text file, tokenizes it using a provided tokenizer (like `SimpleCharacterTokenizer`), and then chunks the tokenized text into sequences of a specified `max_seq_len`. It supports overlapping sequences and pads shorter sequences (usually the last one in a file) with the tokenizer's `pad_token_id`.
+        *   `create_dataloader`: A utility function that takes a `TextDataset` instance and wraps it in a PyTorch `DataLoader` for efficient batching during training.
+
+*   **`llm.core.positional_encoding.PositionalEncoding`**:
+    *   **Location**: `src/llm/core/positional_encoding.py`
+    *   **Purpose**: Provides positional information to the model, allowing it to understand the order of tokens in a sequence. It supports both fixed sinusoidal positional encodings and learned positional embeddings.
+
+*   **`llm.core.embedding.EmbeddingLayer`**:
+    *   **Location**: `src/llm/core/embedding.py`
+    *   **Purpose**: Combines token embeddings (converting token IDs to vectors) with positional encodings. It also applies a common scaling factor (`sqrt(hidden_size)`) to the token embeddings before adding positional information.
+
+*   **`llm.core.attn.mha.MultiHeadAttention`**:
+    *   **Location**: `src/llm/core/attn/mha.py`
+    *   **Purpose**: Implements the multi-head self-attention mechanism, a core component of the Transformer. It allows the model to weigh the importance of different tokens in a sequence when processing each token. This custom version can optionally include its own Layer Normalization and residual connection, but these are typically managed by the `TransformerBlock` when used within it.
+
+*   **`llm.core.mlp.MLP`**:
+    *   **Location**: `src/llm/core/mlp.py`
+    *   **Purpose**: A Multi-Layer Perceptron (feed-forward network) used within each Transformer layer. It typically consists of two linear layers with an activation function in between. Similar to MHA, it can optionally include its own norm/residual, but these are usually handled by the `TransformerBlock`.
+
+*   **`llm.core.transformer_block.TransformerBlock`**:
+    *   **Location**: `src/llm/core/transformer_block.py`
+    *   **Purpose**: Represents a single layer of a Transformer. It combines an MHA sublayer and an MLP sublayer. Crucially, this module manages the Layer Normalization (supporting Pre-LN and Post-LN configurations) and residual connections around these sublayers, ensuring proper information flow and gradient stability.
+
+*   **`llm.models.decoder.DecoderModel`**:
+    *   **Location**: `src/llm/models/decoder.py`
+    *   **Purpose**: A complete decoder-only Transformer model. It stacks multiple `TransformerBlock` layers on top of an `EmbeddingLayer`. A final linear layer (language modeling head) projects the output of the last Transformer block to vocabulary-sized logits, which can be used to predict the next token in a sequence. This model is designed for causal language modeling (predicting the next token).
+
+These components provide a foundational understanding of how a language model can be constructed.
+
+---
+
+### **3.B Training a Custom Character-Level Model**
+
+Using the custom framework components described above, we can train a character-level language model. A script is provided to facilitate this process.
+
+**Running the Training Script:**
+
+The primary script for training is `scripts/train_simple_decoder.py`. It uses the custom components to build and train a `DecoderModel`.
+
+**Key Command-Line Arguments:**
+
+*   `--file_path <path>`: (Required) Path to the training text file.
+*   `--max_seq_len <int>`: Maximum sequence length for the dataset and model (default: 32).
+*   `--batch_size <int>`: Training batch size (default: 16).
+*   `--epochs <int>`: Number of training epochs (default: 1).
+*   `--lr <float>`: Learning rate (default: 1e-3).
+*   `--hidden_size <int>`: Model hidden size (default: 64).
+*   `--num_layers <int>`: Number of transformer layers in the model (default: 2).
+*   `--num_heads <int>`: Number of attention heads in each MHA layer (default: 2).
+*   `--device <str>`: Device to train on ("cpu" or "cuda", default: "cpu").
+*   `--overlap <int>`: Token overlap for sequences in `TextDataset` (default: 0).
+*   `--log_interval <int>`: Print loss every N batches (default: 10).
+
+**Example Command:**
+
+To train a model, you would run a command similar to this from the root of the project:
+
+```bash
+python scripts/train_simple_decoder.py \
+    --file_path /path/to/your/textfile.txt \
+    --epochs 5 \
+    --batch_size 32 \
+    --max_seq_len 64 \
+    --hidden_size 128 \
+    --num_layers 3 \
+    --num_heads 4 \
+    --lr 0.001 \
+    --device cuda
+```
+*(Note: Adjust `--file_path` to your actual data file and `--device` based on your hardware.)*
+
+**What the Script Does:**
+
+1.  **Initializes Tokenizer**: Creates a `SimpleCharacterTokenizer` from the character vocabulary of your input file.
+2.  **Prepares Data**: Uses `TextDataset` to process the text file into tokenized sequences (with padding and overlap) and `create_dataloader` to prepare batches.
+3.  **Builds Model**: Constructs a `DecoderModel` using the specified architecture parameters.
+4.  **Trains**: Performs a standard training loop using Adam optimizer and CrossEntropyLoss. The script handles causal masking (for language modeling) and ignores padded tokens in the loss calculation.
+5.  **Logs Progress**: Prints training loss periodically.
+
+This script provides a practical example of using the custom LLM components for a complete training workflow.
+
+---
+
 ### **四、模型选择与微调**
 
 1. **适合CPU的轻量模型**：

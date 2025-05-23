@@ -33,6 +33,7 @@ class MLP(nn.Module):
         norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,
         norm_eps: float = 1e-5,
         bias: bool = True,
+        include_norm_residual: bool = True, # New parameter
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -40,22 +41,30 @@ class MLP(nn.Module):
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size or (4 * hidden_size)
         self.norm_first = norm_first
+        self.include_norm_residual = include_norm_residual
 
-        # Create normalization layer based on provided type or instance
-        if isinstance(norm_type, type):
-            if norm_type == nn.LayerNorm:
-                self.norm = norm_type(hidden_size, eps=norm_eps, device=device, dtype=dtype)
-            elif norm_type == nn.RMSNorm:
-                self.norm = norm_type(hidden_size, eps=norm_eps, device=device, dtype=dtype)
+        self.norm = None
+        if self.include_norm_residual:
+            # Create normalization layer based on provided type or instance
+            if isinstance(norm_type, type):
+                # Specific handling for known norm types with eps
+                if norm_type == nn.LayerNorm or norm_type == nn.RMSNorm:
+                    self.norm = norm_type(hidden_size, eps=norm_eps, device=device, dtype=dtype)
+                else:
+                    # For other norm types that might have different init parameters
+                    # This might need adjustment if they don't follow `norm(hidden_size, **kwargs)`
+                    try:
+                        self.norm = norm_type(hidden_size, device=device, dtype=dtype)
+                    except TypeError: # Fallback if eps is not accepted but common for other norms
+                        self.norm = norm_type(hidden_size, eps=norm_eps, device=device, dtype=dtype)
+
             else:
-                # For other norm types that might have different init parameters
-                self.norm = norm_type(hidden_size, device=device, dtype=dtype)
-        else:
-            # If an instance is provided, use it directly
-            self.norm = norm_type
-
-        self.fc1 = nn.Linear(hidden_size, self.intermediate_size, bias=bias, device=device, dtype=dtype)
-        self.fc2 = nn.Linear(self.intermediate_size, hidden_size, bias=bias, device=device, dtype=dtype)
+                # If an instance is provided, use it directly
+                self.norm = norm_type
+        
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        self.fc1 = nn.Linear(hidden_size, self.intermediate_size, bias=bias, **factory_kwargs)
+        self.fc2 = nn.Linear(self.intermediate_size, hidden_size, bias=bias, **factory_kwargs)
 
         # Determine activation module and name
         if isinstance(activation, str):
@@ -111,21 +120,31 @@ class MLP(nn.Module):
         Returns:
             torch.Tensor: Output tensor with same shape as input.
         """
-        residual = hidden_states
+        if self.include_norm_residual:
+            residual = hidden_states
 
-        # Apply normalization first if using pre-norm
-        x = self.norm(hidden_states) if self.norm_first else hidden_states
+            # Apply normalization first if using pre-norm
+            # Ensure self.norm exists before calling it
+            x = self.norm(hidden_states) if self.norm_first and self.norm else hidden_states
 
-        # MLP computation (common for both pre-norm and post-norm)
-        x = self.fc1(x)
-        x = self.activation(x)
-        x = self.dropout(x)
-        x = self.fc2(x)
+            # MLP computation (common for both pre-norm and post-norm)
+            x_mlp = self.fc1(x)
+            x_mlp = self.activation(x_mlp)
+            x_mlp = self.dropout(x_mlp)
+            x_mlp = self.fc2(x_mlp)
 
-        # Add residual connection
-        x = residual + x
+            # Add residual connection
+            x_mlp = residual + x_mlp
 
-        # Apply normalization after if using post-norm
-        output = x if self.norm_first else self.norm(x)
-
-        return output
+            # Apply normalization after if using post-norm
+            # Ensure self.norm exists before calling it
+            output = x_mlp if self.norm_first or not self.norm else self.norm(x_mlp)
+            return output
+        else:
+            # No internal norm or residual connection
+            x = hidden_states # Direct input to MLP
+            x = self.fc1(x)
+            x = self.activation(x)
+            x = self.dropout(x)
+            x = self.fc2(x)
+            return x
