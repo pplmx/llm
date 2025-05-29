@@ -175,7 +175,7 @@ def test_sequence_length_handling(dummy_input):
     assert torch.allclose(output_lrn, dummy_input + expected_learned_slice, atol=1e-6)
 
 
-def test_seq_len_exceeds_max_len(dummy_input):
+def test_seq_len_exceeds_max_len():
     """Test that an error is raised if seq_len > max_seq_len."""
     model = PositionalEncoding(HIDDEN_SIZE, MAX_SEQ_LEN, learned=False)
     too_long_input = torch.randn(BATCH_SIZE, MAX_SEQ_LEN + 1, HIDDEN_SIZE)
