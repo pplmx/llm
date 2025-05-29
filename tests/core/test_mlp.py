@@ -60,7 +60,7 @@ def create_test_mlp(
         dropout_p=dropout_p,
         norm_first=norm_first,
         bias=bias,
-        include_norm_residual=include_norm_residual, # Pass to MLP
+        include_norm_residual=include_norm_residual,  # Pass to MLP
         device=device,
         dtype=dtype,
     )
@@ -131,20 +131,20 @@ def test_mlp_normalization_options_with_norm_residual(norm_first):
 
     # Create another MLP with opposite norm_first setting to compare
     opposite_mlp, _ = create_test_mlp(norm_first=not norm_first, include_norm_residual=True)
-    
+
     # Ensure weights are identical for a fair comparison of norm_first effect
     # This requires copying state dict carefully if architectures are compatible
     # For MLP, changing norm_first doesn't change layers, just their order of ops with norm
     opposite_mlp.load_state_dict(mlp.state_dict())
-
 
     with torch.no_grad():
         opposite_output = opposite_mlp(input_tensor)
 
     # Outputs should differ between pre-LN and post-LN if hidden_size is not 1 (norm makes a diff)
     if input_tensor.shape[-1] > 1:
-         assert not torch.allclose(output, opposite_output, atol=1e-5), \
-             f"Output with norm_first={norm_first} should differ from norm_first={not norm_first} when norm/residual is active"
+        assert not torch.allclose(output, opposite_output, atol=1e-5), (
+            f"Output with norm_first={norm_first} should differ from norm_first={not norm_first} when norm/residual is active"
+        )
     else:
         # If hidden_size is 1, LayerNorm might not change values much or at all.
         # This part of the test is less meaningful for hidden_size=1.
@@ -159,7 +159,7 @@ def test_mlp_no_norm_residual_output():
     mlp_no_norm_res, input_tensor = create_test_mlp(
         hidden_size=hidden_size_test,
         include_norm_residual=False,
-        dropout_p=0.0 # Disable dropout for exact output check
+        dropout_p=0.0,  # Disable dropout for exact output check
     )
     mlp_no_norm_res.eval()
 
@@ -175,15 +175,12 @@ def test_mlp_no_norm_residual_output():
     # Dropout is 0.0 and in eval mode, so self.dropout(manual_output) is manual_output
     manual_output = mlp_no_norm_res.fc2(manual_output)
 
-    assert torch.allclose(output_no_norm_res, manual_output, atol=1e-6), \
+    assert torch.allclose(output_no_norm_res, manual_output, atol=1e-6), (
         "Output with no norm/residual does not match manual computation."
+    )
 
     # Compare with MLP that *does* include norm and residual
-    mlp_with_norm_res, _ = create_test_mlp(
-        hidden_size=hidden_size_test,
-        include_norm_residual=True,
-        dropout_p=0.0
-    )
+    mlp_with_norm_res, _ = create_test_mlp(hidden_size=hidden_size_test, include_norm_residual=True, dropout_p=0.0)
     mlp_with_norm_res.eval()
     # Copy weights for fair comparison
     # Note: mlp_with_norm_res has a 'norm' layer, mlp_no_norm_res does not.
@@ -198,46 +195,46 @@ def test_mlp_no_norm_residual_output():
     # Activation layers typically don't have state, but if they did:
     # mlp_with_norm_res.activation.load_state_dict(mlp_no_norm_res.activation.state_dict())
 
-
     with torch.no_grad():
         output_with_norm_res = mlp_with_norm_res(input_tensor)
-    
+
     # Outputs should generally differ if norm/residual make a difference
-    if hidden_size_test > 1: # LayerNorm typically changes things if hidden_size > 1
-        assert not torch.allclose(output_no_norm_res, output_with_norm_res, atol=1e-5), \
+    if hidden_size_test > 1:  # LayerNorm typically changes things if hidden_size > 1
+        assert not torch.allclose(output_no_norm_res, output_with_norm_res, atol=1e-5), (
             "Output with no norm/residual should differ from output with norm/residual."
+        )
+
 
 def test_mlp_no_norm_residual_dropout_still_active():
     """Tests that dropout is still active in MLP when include_norm_residual is False."""
     torch.manual_seed(42)
     dropout_val = 0.5
-    mlp, input_tensor = create_test_mlp(
-        include_norm_residual=False,
-        dropout_p=dropout_val
-    )
+    mlp, input_tensor = create_test_mlp(include_norm_residual=False, dropout_p=dropout_val)
 
     # Test in eval mode (dropout should be disabled)
     mlp.eval()
     with torch.no_grad():
         output_eval_1 = mlp(input_tensor)
         output_eval_2 = mlp(input_tensor)
-    assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), \
+    assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), (
         "Outputs in eval mode should be identical (no norm/res)."
+    )
 
     # Test in train mode (dropout should be active)
     mlp.train()
     # Ensure different random seeds for dropout mask generation if not handled by PyTorch's global seed already
     # However, multiple calls to dropout in train() should yield different masks for the same input.
-    torch.manual_seed(43) # Change seed slightly for first train output if necessary
+    torch.manual_seed(43)  # Change seed slightly for first train output if necessary
     with torch.no_grad():
         output_train_1 = mlp(input_tensor)
-    torch.manual_seed(44) # And for second
+    torch.manual_seed(44)  # And for second
     with torch.no_grad():
         output_train_2 = mlp(input_tensor)
-    
+
     if dropout_val > 0:
-        assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), \
+        assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), (
             "Outputs in train mode should differ due to dropout (no norm/res)."
+        )
 
 
 # --- Test Case 4: Activation Functions ---
@@ -303,8 +300,9 @@ def test_mlp_dropout_behavior():
         output_train_2_default = mlp_default_dropout(input_tensor_default)
 
     if 0.5 > 0:
-        assert not torch.allclose(output_train_1_default, output_train_2_default, atol=1e-6), \
+        assert not torch.allclose(output_train_1_default, output_train_2_default, atol=1e-6), (
             "Outputs in train mode should differ due to dropout (default MLP with norm/res)"
+        )
 
 
 # --- Test Case 7: Hidden Size and Intermediate Size ---

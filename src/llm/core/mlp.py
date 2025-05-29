@@ -33,7 +33,7 @@ class MLP(nn.Module):
         norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,
         norm_eps: float = 1e-5,
         bias: bool = True,
-        include_norm_residual: bool = True, # New parameter
+        include_norm_residual: bool = True,  # New parameter
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -55,14 +55,14 @@ class MLP(nn.Module):
                     # This might need adjustment if they don't follow `norm(hidden_size, **kwargs)`
                     try:
                         self.norm = norm_type(hidden_size, device=device, dtype=dtype)
-                    except TypeError: # Fallback if eps is not accepted but common for other norms
+                    except TypeError:  # Fallback if eps is not accepted but common for other norms
                         self.norm = norm_type(hidden_size, eps=norm_eps, device=device, dtype=dtype)
 
             else:
                 # If an instance is provided, use it directly
                 self.norm = norm_type
-        
-        factory_kwargs = {'device': device, 'dtype': dtype}
+
+        factory_kwargs = {"device": device, "dtype": dtype}
         self.fc1 = nn.Linear(hidden_size, self.intermediate_size, bias=bias, **factory_kwargs)
         self.fc2 = nn.Linear(self.intermediate_size, hidden_size, bias=bias, **factory_kwargs)
 
@@ -142,7 +142,7 @@ class MLP(nn.Module):
             return output
         else:
             # No internal norm or residual connection
-            x = hidden_states # Direct input to MLP
+            x = hidden_states  # Direct input to MLP
             x = self.fc1(x)
             x = self.activation(x)
             x = self.dropout(x)
