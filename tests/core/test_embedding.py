@@ -1,27 +1,11 @@
 import math
-import os
 
 import pytest
 import torch
 import torch.nn as nn
 
-# Determine project root to adjust Python path for imports
-# Assuming this test file is in tests/core/test_embedding.py
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-SRC_ROOT = os.path.join(PROJECT_ROOT, "src")
-
-# Add src to Python path to allow direct import of llm.core modules
-import sys
-
-if SRC_ROOT not in sys.path:
-    sys.path.insert(0, SRC_ROOT)
-
-try:
-    from llm.core.embedding import EmbeddingLayer
-    from llm.core.positional_encoding import PositionalEncoding
-except ModuleNotFoundError as e:
-    print(f"Failed to import modules. Current sys.path: {sys.path}")
-    raise e
+from llm.core.embedding import EmbeddingLayer
+from llm.core.positional_encoding import PositionalEncoding
 
 
 # Test constants
