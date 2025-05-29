@@ -3,17 +3,7 @@ import math
 import torch
 import torch.nn as nn
 
-try:
-    # Assuming 'llm' is in PYTHONPATH or installed
-    from llm.core.positional_encoding import PositionalEncoding
-except ModuleNotFoundError:
-    # Fallback for local/CI execution where 'src' might be the root for Python
-    try:
-        from src.llm.core.positional_encoding import PositionalEncoding
-    except ModuleNotFoundError:
-        # Direct relative import if 'embedding.py' and 'positional_encoding.py' are siblings
-        # This is less robust but can work in some structures.
-        from .positional_encoding import PositionalEncoding
+from llm.core.positional_encoding import PositionalEncoding
 
 
 class EmbeddingLayer(nn.Module):

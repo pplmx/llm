@@ -54,7 +54,7 @@ class TextDataset(Dataset):
                                            If None, defaults to `tokenizer.pad_token_id`.
                                            If tokenizer has no `pad_token_id`, defaults to 0.
         """
-        if not isinstance(file_path, (str, Path)):
+        if not isinstance(file_path, str | Path):
             raise TypeError("file_path must be a string or Path object.")
 
         self.file_path = Path(file_path)

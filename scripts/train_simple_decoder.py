@@ -1,28 +1,13 @@
 import argparse
-import os
-
-# Adjust path to import from src (if script is run from project root or scripts/ folder)
-import sys
 import time
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
-try:
-    from src.llm.data.loader import TextDataset, create_dataloader
-    from src.llm.models.decoder import DecoderModel
-    from src.llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-except ModuleNotFoundError as e:
-    print("Error: Could not import necessary modules. Ensure PYTHONPATH is set correctly or run from project root.")
-    print(f"Details: {e}")
-    print(f"Current sys.path: {sys.path}")
-    sys.exit(1)
+from llm.data.loader import TextDataset, create_dataloader
+from llm.models.decoder import DecoderModel
+from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 
 def train(args):

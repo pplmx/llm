@@ -6,7 +6,6 @@ import torch.nn as nn
 
 from llm.core.positional_encoding import PositionalEncoding
 
-
 # Test constants
 HIDDEN_SIZE = 64
 MAX_SEQ_LEN = 128
