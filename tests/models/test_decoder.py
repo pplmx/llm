@@ -1,17 +1,8 @@
-import os
-
-# Adjust path to import from src
-import sys
 from unittest.mock import patch
 
 import pytest
 import torch
 import torch.nn as nn
-
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-SRC_ROOT = os.path.join(PROJECT_ROOT, "src")
-if SRC_ROOT not in sys.path:
-    sys.path.insert(0, SRC_ROOT)
 
 from llm.core.embedding import EmbeddingLayer
 from llm.core.transformer_block import TransformerBlock

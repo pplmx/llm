@@ -1,17 +1,10 @@
 import os
-import sys  # Added import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 import torch
 from torch.utils.data import DataLoader
-
-# Adjust path to import from src
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-SRC_ROOT = os.path.join(PROJECT_ROOT, "src")
-if SRC_ROOT not in sys.path:
-    sys.path.insert(0, SRC_ROOT)
 
 from llm.data.loader import TextDataset, create_dataloader
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer

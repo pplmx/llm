@@ -4,17 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-# Attempt to import PositionalEncoding from the location it should be
-try:
-    from src.llm.core.positional_encoding import PositionalEncoding
-except ImportError:
-    # Fallback for local testing if PYTHONPATH is not set, e.g. when running pytest from root
-    # This assumes the script is run from a context where 'src' is a direct subdir
-    import os
-    import sys
-
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-    from src.llm.core.positional_encoding import PositionalEncoding
+from llm.core.positional_encoding import PositionalEncoding
 
 
 # Test constants
