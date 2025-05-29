@@ -12,7 +12,7 @@ class SimpleCharacterTokenizer:
         Initializes the SimpleCharacterTokenizer.
 
         Args:
-            corpus (List[str]): A list of strings from which to build the vocabulary.
+            corpus (list[str]): A list of strings from which to build the vocabulary.
                                 The vocabulary will consist of all unique characters
                                 present in the corpus.
         """
@@ -49,7 +49,7 @@ class SimpleCharacterTokenizer:
             text (str): The input string to encode.
 
         Returns:
-            List[int]: A list of integer tokens representing the input text.
+            list[int]: A list of integer tokens representing the input text.
 
         Raises:
             KeyError: If the text contains characters not present in the
@@ -78,7 +78,7 @@ class SimpleCharacterTokenizer:
         Decodes a list of integer tokens back into a string of text.
 
         Args:
-            tokens (List[int]): A list of integer tokens to decode.
+            tokens (list[int]): A list of integer tokens to decode.
 
         Returns:
             str: The decoded string.

@@ -1,3 +1,5 @@
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +13,7 @@ try:
 except ModuleNotFoundError:
     # Fallback for local testing or specific execution environments
     # This assumes a certain directory structure if 'llm' is not installed.
-    import os
-    import sys
+    # os and sys are already imported at the top level.
 
     # Example: Adjust path to go up to project root then into src
     # This path adjustment might be fragile depending on execution context.
@@ -144,7 +145,7 @@ class TextDataset(Dataset):
             idx (int): Index of the sequence to retrieve.
 
         Returns:
-            Dict[str, torch.Tensor]: A dictionary containing:
+            dict[str, torch.Tensor]: A dictionary containing:
                 - "input_ids": Padded token IDs (torch.LongTensor).
                 - "labels": Cloned padded token IDs (torch.LongTensor).
         """
@@ -208,8 +209,7 @@ def create_dataloader(
 
 if __name__ == "__main__":
     # Example Usage (requires a dummy tokenizer and a text file)
-    import os  # Ensure os is imported for os.remove
-    import sys  # Ensure sys is imported for print statements to stderr
+    # os and sys are imported at the top of the file.
     from tempfile import NamedTemporaryFile
 
     # Create a dummy tokenizer (SimpleCharacterTokenizer is now expected to have PAD)

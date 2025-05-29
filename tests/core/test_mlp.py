@@ -70,12 +70,12 @@ def create_test_mlp(
 
 
 # --- Test Case 1: Basic Functionality ---
-def test_mlp_basic_functionality():
-    """Tests basic MLP functionality with default parameters."""
+@pytest.mark.parametrize("bias_val", [True, False])
+def test_mlp_basic_functionality(bias_val):
+    """Tests basic MLP functionality with default and no-bias parameters."""
     torch.manual_seed(42)
 
-    # Create MLP with default configuration (include_norm_residual=True)
-    mlp, input_tensor = create_test_mlp()
+    mlp, input_tensor = create_test_mlp(bias=bias_val)
 
     # Run forward pass
     with torch.no_grad():
@@ -114,13 +114,17 @@ def test_mlp_different_input_shapes(input_dims):
 
 
 # --- Test Case 3: Normalization Options ---
-@pytest.mark.parametrize("norm_first", [True, False])
-def test_mlp_normalization_options_with_norm_residual(norm_first):
-    """Tests MLP with pre-LN vs post-LN configurations when norm/residual is included."""
+@pytest.mark.parametrize("norm_first_val", [True, False])
+@pytest.mark.parametrize("bias_val", [True, False])
+def test_mlp_normalization_options_with_norm_residual(norm_first_val, bias_val):
+    """
+    Tests MLP with pre-LN vs post-LN configurations when norm/residual is included,
+    also considering bias.
+    """
     torch.manual_seed(42)
 
     # Test explicitly with include_norm_residual=True
-    mlp, input_tensor = create_test_mlp(norm_first=norm_first, include_norm_residual=True)
+    mlp, input_tensor = create_test_mlp(norm_first=norm_first_val, include_norm_residual=True, bias=bias_val)
 
     with torch.no_grad():
         output = mlp(input_tensor)
@@ -130,7 +134,11 @@ def test_mlp_normalization_options_with_norm_residual(norm_first):
     assert mlp.norm is not None, "Norm layer should exist"
 
     # Create another MLP with opposite norm_first setting to compare
-    opposite_mlp, _ = create_test_mlp(norm_first=not norm_first, include_norm_residual=True)
+    opposite_mlp, _ = create_test_mlp(
+        norm_first=not norm_first_val,
+        include_norm_residual=True,
+        bias=bias_val,  # Keep bias consistent for this comparison
+    )
 
     # Ensure weights are identical for a fair comparison of norm_first effect
     # This requires copying state dict carefully if architectures are compatible
@@ -143,7 +151,8 @@ def test_mlp_normalization_options_with_norm_residual(norm_first):
     # Outputs should differ between pre-LN and post-LN if hidden_size is not 1 (norm makes a diff)
     if input_tensor.shape[-1] > 1:
         assert not torch.allclose(output, opposite_output, atol=1e-5), (
-            f"Output with norm_first={norm_first} should differ from norm_first={not norm_first} when norm/residual is active"
+            f"Output with norm_first={norm_first_val} should differ from norm_first={not norm_first_val} "
+            f"when norm/residual is active (bias={bias_val})"
         )
     else:
         # If hidden_size is 1, LayerNorm might not change values much or at all.
@@ -271,37 +280,42 @@ def test_mlp_bias_parameter():
 
 
 # --- Test Case 6: Dropout Behavior ---
-def test_mlp_dropout_behavior():
-    """Tests dropout behavior in train vs eval modes."""
+@pytest.mark.parametrize("include_norm_residual_val", [True, False])
+def test_mlp_dropout_train_eval_modes(include_norm_residual_val):
+    """
+    Tests dropout behavior in train vs eval modes for MLP,
+    covering both include_norm_residual=True and False.
+    """
+    dropout_p_test = 0.5
     torch.manual_seed(42)
 
-    # Create MLP with high dropout
-    mlp, input_tensor = create_test_mlp(dropout_p=0.5)
+    mlp, input_tensor = create_test_mlp(dropout_p=dropout_p_test, include_norm_residual=include_norm_residual_val)
 
-    # Test in eval mode (dropout should be disabled)
+    # Eval mode: Dropout should be disabled, outputs should be identical.
     mlp.eval()
     with torch.no_grad():
         output_eval_1 = mlp(input_tensor)
         output_eval_2 = mlp(input_tensor)
-
-    # Outputs in eval mode should be identical (deterministic)
     assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), (
-        "Outputs in eval mode should be identical with fixed input"
+        f"Outputs in eval mode should be identical (include_norm_residual={include_norm_residual_val})"
     )
 
-    # Test in train mode (dropout should be active) - this part is for default MLP with norm/res
-    mlp_default_dropout, input_tensor_default = create_test_mlp(dropout_p=0.5, include_norm_residual=True)
-    mlp_default_dropout.train()
-    torch.manual_seed(45)
+    # Train mode: Dropout should be active, outputs should differ for different forward passes.
+    mlp.train()
+    # It's important that multiple forward passes in train mode use different dropout masks.
+    # PyTorch's dropout layer typically handles this correctly without needing to re-seed globally
+    # for each call, as long as it's the same layer instance.
     with torch.no_grad():
-        output_train_1_default = mlp_default_dropout(input_tensor_default)
-    torch.manual_seed(46)
-    with torch.no_grad():
-        output_train_2_default = mlp_default_dropout(input_tensor_default)
+        output_train_1 = mlp(input_tensor)
+        output_train_2 = mlp(input_tensor)  # Second call to the same layer instance
 
-    if 0.5 > 0:
-        assert not torch.allclose(output_train_1_default, output_train_2_default, atol=1e-6), (
-            "Outputs in train mode should differ due to dropout (default MLP with norm/res)"
+    if dropout_p_test > 0:
+        assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), (
+            f"Outputs in train mode should differ due to dropout (include_norm_residual={include_norm_residual_val})"
+        )
+    else:  # Should not happen with dropout_p_test = 0.5, but as a guard
+        assert torch.allclose(output_train_1, output_train_2, atol=1e-7), (
+            "Outputs in train mode should be identical if dropout_p is 0"
         )
 
 
@@ -328,3 +342,44 @@ def test_mlp_size_configurations(hidden_size, intermediate_factor):
 
     # Check shape consistency
     assert output.shape == input_tensor.shape
+
+
+# --- Test Case 8: Gradient Computation ---
+@pytest.mark.parametrize("include_norm_residual_val", [True, False])
+@pytest.mark.parametrize("bias_val", [True, False])  # Also test gradients with and without bias
+def test_mlp_gradient_computation(include_norm_residual_val, bias_val):
+    """Tests if gradients are computed correctly for all trainable parameters."""
+    torch.manual_seed(42)
+    hidden_size_grad = 32  # Smaller hidden size for faster test
+    mlp, input_tensor = create_test_mlp(
+        hidden_size=hidden_size_grad,
+        include_norm_residual=include_norm_residual_val,
+        bias=bias_val,
+        dropout_p=0.0,  # Disable dropout for deterministic gradient check
+    )
+
+    # Ensure model is in training mode for gradients
+    mlp.train()
+    input_tensor.requires_grad_(True)
+
+    # Forward pass
+    output = mlp(input_tensor)
+
+    # Compute a dummy loss and backward pass
+    loss = output.sum()
+    loss.backward()
+
+    # Check gradients for all parameters that should have them
+    for name, param in mlp.named_parameters():
+        if param.requires_grad:
+            assert param.grad is not None, f"Gradient for {name} is None"
+            assert not torch.isnan(param.grad).any(), f"Gradient for {name} contains NaN values"
+            assert not torch.isinf(param.grad).any(), f"Gradient for {name} contains Inf values"
+            assert (param.grad != 0).any(), f"Gradient for {name} is all zeros (potential issue)"
+        else:
+            # Optional: check that non-trainable params indeed have no grad
+            assert param.grad is None or (param.grad == 0).all(), f"Unexpected gradient for non-trainable param {name}"
+
+    # Check input tensor gradient
+    assert input_tensor.grad is not None, "Input tensor gradient is None"
+    assert not torch.isnan(input_tensor.grad).any(), "Input tensor gradient contains NaN values"

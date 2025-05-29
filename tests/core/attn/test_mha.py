@@ -75,12 +75,26 @@ def test_mha_initialization(mha, mha_props):
     else:
         assert mha.norm is None
 
+    if mha_props["bias"]:
+        assert mha.qkv_proj.bias is not None
+        assert mha.out_proj.bias is not None
+    else:
+        assert mha.qkv_proj.bias is None
+        assert mha.out_proj.bias is None
+
 
 @pytest.mark.parametrize(
-    "mha_props", [{"include_norm_residual": True}, {"include_norm_residual": False}], indirect=True
+    "mha_props",
+    [
+        {"include_norm_residual": True, "bias": True},
+        {"include_norm_residual": True, "bias": False},
+        {"include_norm_residual": False, "bias": True},
+        {"include_norm_residual": False, "bias": False},
+    ],
+    indirect=True,
 )
 def test_mha_forward_shape(mha, input_tensor):
-    """Test if forward pass maintains correct shape for both norm/residual modes."""
+    """Test if forward pass maintains correct shape for norm/residual and bias modes."""
     output = mha(input_tensor)
     assert output.shape == input_tensor.shape
 
@@ -115,6 +129,13 @@ def test_mha_gradients(mha, input_tensor):
     loss.backward()
     assert input_tensor.grad is not None
     assert not torch.isnan(input_tensor.grad).any()
+    # Check gradients for bias terms if they exist
+    if mha.qkv_proj.bias is not None:
+        assert mha.qkv_proj.bias.grad is not None
+        assert not torch.isnan(mha.qkv_proj.bias.grad).any()
+    if mha.out_proj.bias is not None:
+        assert mha.out_proj.bias.grad is not None
+        assert not torch.isnan(mha.out_proj.bias.grad).any()
 
 
 @pytest.mark.parametrize(
@@ -301,3 +322,45 @@ def test_mha_no_norm_residual_dropout_active():
         assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), (
             "Outputs in train mode should differ due to dropout (no norm/res)."
         )
+
+
+@pytest.mark.parametrize(
+    "mha_props", [{"p": 0.5, "include_norm_residual": True}, {"p": 0.5, "include_norm_residual": False}], indirect=True
+)
+def test_mha_dropout_train_eval_modes(mha, input_tensor, mha_props):
+    """
+    Tests MHA dropout behavior in train vs eval modes, parameterized for include_norm_residual.
+    Dropout (p > 0) is applied in two places: within scaled_dot_product_attention and in the output projection.
+    """
+    dropout_p_test = mha_props["p"]
+    assert dropout_p_test > 0, "This test requires dropout_p > 0"
+
+    # Eval mode: Dropout should be disabled, outputs should be identical.
+    mha.eval()
+    with torch.no_grad():
+        output_eval_1 = mha(input_tensor)
+        output_eval_2 = mha(input_tensor)
+    assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), (
+        f"Outputs in eval mode should be identical (include_norm_residual={mha_props['include_norm_residual']})"
+    )
+
+    # Train mode: Dropout should be active, outputs should differ.
+    mha.train()
+    # As MHA applies dropout in two places (SDPA and output projection),
+    # subsequent calls in train mode should produce different results.
+    with torch.no_grad():
+        output_train_1 = mha(input_tensor)
+        output_train_2 = mha(input_tensor)
+
+    assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), (
+        f"Outputs in train mode should differ due to dropout (include_norm_residual={mha_props['include_norm_residual']})"
+    )
+
+
+def test_mha_initialization_invalid_hidden_size_num_heads():
+    """Test MHA initialization with hidden_size not divisible by num_heads."""
+    with pytest.raises(ValueError, match="hidden_size .* must be divisible by num_heads .*"):
+        MultiHeadAttention(hidden_size=60, num_heads=8)  # 60 is not divisible by 8
+
+    with pytest.raises(ValueError, match="hidden_size .* must be divisible by num_heads .*"):
+        MultiHeadAttention(hidden_size=32, num_heads=3)  # 32 is not divisible by 3
