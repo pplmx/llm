@@ -120,7 +120,7 @@ class MultiHeadAttention(nn.Module):
             .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, N, D]
             .permute(2, 0, 3, 1, 4)  # [3, B, N, S, D]
         )
-        q, k, v = qkv[0], qkv[1], qkv[2]  # Each [B, H, S, D]
+        q, k, v = qkv[0], qkv[1], qkv[2]  # Each [B, N, S, D]
 
         # --- 3. Attention computation ---
         attn_output = scaled_dot_product_attention(

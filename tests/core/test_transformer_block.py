@@ -258,24 +258,50 @@ class TestTransformerBlockForwardPass:
             assert torch.equal(kwargs["attn_mask"], dummy_mask)
             # Or if passed positionally: assert torch.equal(args[1], dummy_mask) if arg order is known
 
-    @pytest.mark.parametrize("block_kwargs", [{"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5}], indirect=True)
-    def test_dropout_behavior_integration(self, transformer_block, input_tensor):
-        # Eval mode (default from fixture) - dropout disabled
-        output_eval_1 = transformer_block(input_tensor)
-        output_eval_2 = transformer_block(input_tensor)
-        assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), "Outputs in eval mode should be identical."
+    @pytest.mark.parametrize(
+        "block_kwargs",
+        [
+            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.0, "norm_first": True},
+            {"attn_dropout_p": 0.0, "mlp_dropout_p": 0.5, "norm_first": True},
+            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5, "norm_first": True},
+            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5, "norm_first": False},
+            {"attn_dropout_p": 0.0, "mlp_dropout_p": 0.0, "norm_first": True},  # Control: no dropout
+        ],
+        indirect=True,
+    )
+    def test_transformer_block_dropout_train_eval_modes(self, transformer_block, input_tensor, block_kwargs):
+        """
+        Tests TransformerBlock dropout behavior in train vs eval modes.
+        Dropout is applied in MHA (attention and output projection) and MLP.
+        """
+        attn_p = block_kwargs["attn_dropout_p"]
+        mlp_p = block_kwargs["mlp_dropout_p"]
+        norm_f = block_kwargs["norm_first"]
 
-        # Train mode - dropout should be active
+        # Eval mode: Dropout should be disabled, outputs should be identical.
+        transformer_block.eval()  # Fixture already sets to eval, but explicit here
+        with torch.no_grad():
+            output_eval_1 = transformer_block(input_tensor)
+            output_eval_2 = transformer_block(input_tensor)
+        assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), (
+            f"Outputs in eval mode should be identical (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f})"
+        )
+
+        # Train mode: Dropout should be active if p > 0.
         transformer_block.train()
-        torch.manual_seed(0)  # For reproducibility of this test
-        output_train_1 = transformer_block(input_tensor)
-        torch.manual_seed(1)  # Ensure different dropout masks if code relies on global seed per call
-        output_train_2 = transformer_block(input_tensor)
+        with torch.no_grad():
+            # Multiple calls to dropout layers within MHA and MLP should use different masks.
+            output_train_1 = transformer_block(input_tensor)
+            output_train_2 = transformer_block(input_tensor)
 
-        # If dropout is > 0, outputs should differ
-        if transformer_block.self_attn.p > 0 or transformer_block.mlp.dropout.p > 0:
+        if attn_p > 0 or mlp_p > 0:
             assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), (
-                "Outputs in train mode should differ due to dropout."
+                f"Outputs in train mode should differ due to dropout (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f})"
+            )
+        else:
+            # If both dropout probabilities are 0, outputs in train mode should also be identical.
+            assert torch.allclose(output_train_1, output_train_2, atol=1e-7), (
+                f"Outputs in train mode should be identical if all dropout_p are 0 (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f})"
             )
 
 
@@ -323,3 +349,62 @@ class TestDeviceAndDtypePropagation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+@pytest.mark.parametrize("norm_first_val", [True, False])
+@pytest.mark.parametrize("qkv_bias_val", [True, False])
+@pytest.mark.parametrize("mlp_bias_val", [True, False])
+def test_transformer_block_gradient_computation(norm_first_val, qkv_bias_val, mlp_bias_val, block_kwargs):
+    """Tests if gradients are computed correctly for all trainable parameters."""
+    torch.manual_seed(42)
+
+    current_block_kwargs = block_kwargs.copy()
+    current_block_kwargs.update(
+        {
+            "norm_first": norm_first_val,
+            "qkv_bias": qkv_bias_val,
+            "mlp_bias": mlp_bias_val,
+            "attn_dropout_p": 0.0,  # Disable dropout for deterministic gradient check
+            "mlp_dropout_p": 0.0,
+            # Use a smaller hidden_size for faster test if desired, but ensure it's divisible by num_heads
+            # For this test, we'll use the fixture's default HIDDEN_SIZE
+        }
+    )
+
+    # Create a new block and input tensor with potentially different device/dtype from fixture
+    # The input_tensor fixture already uses block_kwargs for device/dtype
+    # We need to ensure the block and tensor are on the same device/dtype
+    device = current_block_kwargs["device"]
+    dtype = current_block_kwargs["dtype"]
+
+    block = TransformerBlock(**current_block_kwargs)
+    block.to(device, dtype)  # Ensure model is on correct device/dtype
+    block.train()  # Ensure model is in training mode
+
+    # Create input tensor on the same device/dtype as the block
+    current_input_tensor = torch.randn(
+        BATCH_SIZE, SEQ_LEN, current_block_kwargs["hidden_size"], device=device, dtype=dtype, requires_grad=True
+    )
+
+    # Forward pass
+    output = block(current_input_tensor)
+
+    # Compute a dummy loss and backward pass
+    loss = output.sum()
+    loss.backward()
+
+    # Check gradients for all parameters that should have them
+    for name, param in block.named_parameters():
+        if param.requires_grad:
+            assert param.grad is not None, f"Gradient for {name} is None"
+            assert not torch.isnan(param.grad).any(), f"Gradient for {name} contains NaN values"
+            assert not torch.isinf(param.grad).any(), f"Gradient for {name} contains Inf values"
+            # It's possible for some gradients to be zero, especially with simple inputs or architectures.
+            # A stricter check might be `(param.grad != 0).any()` if non-zero grads are guaranteed.
+            # For now, just ensure they exist and are finite.
+        else:
+            assert param.grad is None or (param.grad == 0).all(), f"Unexpected gradient for non-trainable param {name}"
+
+    # Check input tensor gradient
+    assert current_input_tensor.grad is not None, "Input tensor gradient is None"
+    assert not torch.isnan(current_input_tensor.grad).any(), "Input tensor gradient contains NaN values"

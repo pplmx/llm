@@ -57,7 +57,33 @@ def train(args):
         batch_size=args.batch_size,
         shuffle=True,  # Shuffle for training
     )
-    print(f"Dataset and DataLoader created. Number of sequences in dataset: {len(dataset)}")
+    print(f"Training Dataset and DataLoader created. Number of sequences: {len(dataset)}")
+
+    # Validation DataLoader (if val_file_path is provided)
+    val_dataloader = None
+    if args.val_file_path:
+        print(f"Validation file provided: {args.val_file_path}")
+        try:
+            val_dataset = TextDataset(
+                file_path=args.val_file_path,
+                tokenizer=tokenizer,  # Use the same tokenizer
+                max_seq_len=args.max_seq_len,
+                overlap=args.overlap,  # Using same overlap as training, can be made configurable
+                padding_value=tokenizer.pad_token_id,
+            )
+            if len(val_dataset) > 0:
+                val_dataloader = create_dataloader(
+                    dataset=val_dataset,
+                    batch_size=args.batch_size,  # Can use a different batch size for validation
+                    shuffle=False,  # No need to shuffle validation data
+                )
+                print(f"Validation Dataset and DataLoader created. Number of sequences: {len(val_dataset)}")
+            else:
+                print("Warning: Validation dataset is empty. Skipping validation.")
+        except FileNotFoundError:
+            print(f"Error: Validation file not found at {args.val_file_path}. Skipping validation.")
+        except Exception as e:
+            print(f"Error creating validation dataset/loader: {e}. Skipping validation.")
 
     # 4. Initialize Model
     print("Initializing model...")
@@ -90,13 +116,26 @@ def train(args):
     # 5. Initialize Optimizer
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    # 6. Loss Function
+    # 6. Initialize Learning Rate Scheduler
+    # T_max is often set to the total number of training steps (len(dataloader) * args.epochs)
+    # or just args.epochs if step is called per epoch.
+    # For CosineAnnealingLR, T_max is the number of iterations until the first restart.
+    # If scheduler.step() is called per epoch, T_max=args.epochs is common.
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    print(f"Initialized CosineAnnealingLR scheduler with T_max={args.epochs}.")
+
+    # 7. Loss Function
     # CrossEntropyLoss will ignore targets with value `tokenizer.pad_token_id` if `ignore_index` is set.
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 
-    # 7. Training Loop
+    # 8. Training Loop
     print("\nStarting training...")
     model.train()  # Set model to training mode
+
+    # Early stopping variables (only relevant if val_dataloader is used)
+    best_val_loss = float("inf")
+    epochs_no_improve = 0
+    early_stop = False
 
     for epoch in range(args.epochs):
         epoch_start_time = time.time()
@@ -131,8 +170,58 @@ def train(args):
 
         avg_epoch_loss = total_epoch_loss / batch_count if batch_count > 0 else 0
         epoch_duration = time.time() - epoch_start_time
+        current_lr = optimizer.param_groups[0]["lr"]
         print(f"--- Epoch {epoch + 1} completed in {epoch_duration:.2f}s ---")
-        print(f"Average Loss for Epoch {epoch + 1}: {avg_epoch_loss:.4f}")
+        print(f"Average Training Loss for Epoch {epoch + 1}: {avg_epoch_loss:.4f}")
+        print(f"Current Learning Rate at end of Epoch {epoch + 1}: {current_lr:.6f}")
+
+        # Validation loop
+        if val_dataloader:
+            model.eval()  # Set model to evaluation mode
+            total_val_loss = 0
+            val_batch_count = 0
+            val_epoch_start_time = time.time()
+
+            with torch.no_grad():  # Disable gradient calculations
+                for val_batch in val_dataloader:
+                    input_ids_val = val_batch["input_ids"].to(device)
+                    labels_val = val_batch["labels"].to(device)
+
+                    logits_val = model(input_ids_val, attn_mask=None)
+                    loss_val = criterion(logits_val.view(-1, tokenizer.vocab_size), labels_val.view(-1))
+
+                    total_val_loss += loss_val.item()
+                    val_batch_count += 1
+
+            avg_val_loss = total_val_loss / val_batch_count if val_batch_count > 0 else 0
+            val_epoch_duration = time.time() - val_epoch_start_time
+            print(
+                f"Average Validation Loss for Epoch {epoch + 1}: {avg_val_loss:.4f} (calculated in {val_epoch_duration:.2f}s)"
+            )
+
+            # Early stopping check
+            if avg_val_loss < best_val_loss - args.early_stopping_min_delta:
+                best_val_loss = avg_val_loss
+                epochs_no_improve = 0
+                # Optional: Save model checkpoint here
+                print(f"Validation loss improved to {best_val_loss:.4f}.")
+            else:
+                epochs_no_improve += 1
+                print(f"No significant improvement in validation loss for {epochs_no_improve} epoch(s).")
+
+            if epochs_no_improve >= args.early_stopping_patience:
+                early_stop = True
+                print(f"Early stopping triggered after {args.early_stopping_patience} epochs without improvement.")
+
+            model.train()  # Set model back to training mode
+
+        # Step the scheduler after the epoch (and after validation)
+        scheduler.step()
+
+        if early_stop:
+            print("Breaking training loop due to early stopping.")
+            break
+
         print("---------------------------------------------------")
 
     print("\nTraining finished.")
@@ -143,6 +232,7 @@ if __name__ == "__main__":
 
     # File and Data arguments
     parser.add_argument("--file_path", type=str, required=True, help="Path to the training text file.")
+    parser.add_argument("--val_file_path", type=str, default=None, help="Optional path to the validation text file.")
     parser.add_argument("--max_seq_len", type=int, default=32, help="Maximum sequence length for dataset and model.")
     parser.add_argument("--overlap", type=int, default=0, help="Overlap for TextDataset sequences.")
 
@@ -160,6 +250,20 @@ if __name__ == "__main__":
         "--device", type=str, default="cpu", choices=["cpu", "cuda"], help="Device to train on ('cpu' or 'cuda')."
     )
     parser.add_argument("--log_interval", type=int, default=10, help="Print loss every N batches.")
+
+    # Early stopping arguments
+    parser.add_argument(
+        "--early_stopping_patience",
+        type=int,
+        default=3,
+        help="Number of epochs to wait for improvement before stopping early. Only active if val_file_path is provided.",
+    )
+    parser.add_argument(
+        "--early_stopping_min_delta",
+        type=float,
+        default=0.001,
+        help="Minimum change in validation loss to be considered an improvement for early stopping.",
+    )
 
     args = parser.parse_args()
 

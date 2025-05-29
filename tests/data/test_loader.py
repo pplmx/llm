@@ -141,6 +141,48 @@ class TestTextDatasetInitialization:
             TextDataset(str(dummy_text_file), dummy_tokenizer, 5, overlap=5)
         with pytest.raises(FileNotFoundError):
             TextDataset("non_existent_file.txt", dummy_tokenizer, MAX_SEQ_LEN)
+        with pytest.raises(ValueError, match="max_seq_len must be a positive integer"):
+            TextDataset(str(dummy_text_file), dummy_tokenizer, 0)
+        with pytest.raises(ValueError, match="max_seq_len must be a positive integer"):
+            TextDataset(str(dummy_text_file), dummy_tokenizer, -1)
+        with pytest.raises(ValueError, match="overlap must be a non-negative integer"):
+            TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN, overlap=-1)
+        with pytest.raises(TypeError, match="file_path must be a string or Path object"):
+            TextDataset(123, dummy_tokenizer, MAX_SEQ_LEN)  # type: ignore
+
+    def test_tokenizer_validation(self, dummy_text_file, dummy_tokenizer):
+        # Test with a tokenizer missing 'encode'
+        class MockTokenizerNoEncode:
+            pad_token_id = 0
+
+        with pytest.raises(ValueError, match="Tokenizer must have an 'encode' method"):
+            TextDataset(str(dummy_text_file), MockTokenizerNoEncode(), MAX_SEQ_LEN)
+
+        # Test with a tokenizer missing 'pad_token_id' (should fallback to padding_value=0)
+        class MockTokenizerNoPadId:
+            def encode(self, text):
+                return [ord(c) for c in text]
+
+        dataset_no_pad_id = TextDataset(str(dummy_text_file), MockTokenizerNoPadId(), MAX_SEQ_LEN)
+        assert dataset_no_pad_id.padding_value == 0, (
+            "Padding value should default to 0 if tokenizer has no pad_token_id"
+        )
+
+        # Test with a tokenizer where pad_token_id is None (should also fallback to padding_value=0)
+        class MockTokenizerNonePadId:
+            pad_token_id = None
+
+            def encode(self, text):
+                return [ord(c) for c in text]
+
+        dataset_none_pad_id = TextDataset(str(dummy_text_file), MockTokenizerNonePadId(), MAX_SEQ_LEN)
+        assert dataset_none_pad_id.padding_value == 0, (
+            "Padding value should default to 0 if tokenizer.pad_token_id is None"
+        )
+
+        # Test that if padding_value is explicitly provided, it's used
+        dataset_explicit_padding = TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN, padding_value=999)
+        assert dataset_explicit_padding.padding_value == 999
 
 
 class TestTextDatasetGetItem:
