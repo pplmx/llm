@@ -40,52 +40,84 @@ Before you start, make sure you have the following installed on your system:
 
 ### Installation Steps
 
-1. **Clone the Repository**: Start by cloning the project repository to your local machine and navigate to the project directory:
-
+1.  **Clone the Repository**: Start by cloning the project repository to your local machine and navigate to the project directory:
     ```bash
     git clone https://github.com/pplmx/llm.git
     cd llm
     ```
 
-2. **Initialize the Development Environment**: This command sets up a virtual environment and installs all necessary dependencies.
-
+2.  **Synchronize Dependencies**: Use `uv` to set up the virtual environment and install all necessary dependencies (including development tools) as defined in `pyproject.toml`. `uv` will automatically create or use a virtual environment in `.venv` at the project root.
     ```bash
-    make init
+    uv sync
     ```
 
-    This step will also install any pre-commit hooks, ensuring your code adheres to the project’s coding standards before each commit.
+3.  **Set Up Pre-commit Hooks**: This project uses pre-commit hooks to ensure code quality and consistency before commits are made. Install the hooks with:
+    ```bash
+    uvx pre-commit install --hook-type commit-msg --hook-type pre-push
+    ```
+    This step is important to run after cloning and setting up the environment.
 
 ## Running Tests
 
-Tests are crucial to ensure the stability of the project. To run all tests, use the following command:
+Tests are managed and run using `pytest`. Ensure your dependencies are synchronized with `uv sync` before running tests.
 
-```bash
-make test
-```
+-   **Run all tests**:
+    ```bash
+    uv run pytest
+    ```
+    This command discovers and executes all tests in the `tests/` directory.
 
-This command will execute the test suite using `pytest`, ensuring all components work as expected.
+-   **Run tests with coverage report**:
+    ```bash
+    uv run pytest --cov=src/llm
+    ```
+    This command runs the tests and generates a code coverage report, showing which parts of the `src/llm` codebase were exercised by the tests. Coverage reports (e.g., HTML, XML) are configured in `pyproject.toml`.
 
 [Consider adding specific details on the structure of tests, testing strategy, or how to add new tests.]
 
 ## Building the Project
 
-To build the project and create a distributable package, use:
+To build the project and create distributable packages (e.g., `.whl` and source distribution), use `hatchling` via `uvx`:
 
 ```bash
-make build
+uvx hatch build
 ```
 
-This command will generate a `.whl` file in the `dist` directory, which can be used to distribute and install the project.
+This command, as configured by `pyproject.toml` (using `hatchling.build` as the build backend), will generate the distributable files in the `dist/` directory.
 
 ## Code Style and Linting
 
-Maintaining consistent code style is essential. We use `ruff` for linting and formatting. To check for any style issues, run:
+Maintaining consistent code style and quality is essential. We use `Ruff` for both formatting and linting. All commands should be run from the project root.
 
-```bash
-make ruff
-```
+-   **Format code (apply changes)**:
+    ```bash
+    uvx ruff format .
+    ```
+    This command automatically reformats your code to match the project's style.
 
-This command will automatically check and optionally fix any code style issues according to the project's style guide.
+-   **Check formatting (without applying changes)**:
+    ```bash
+    uvx ruff format --check .
+    ```
+    This command reports any files that don't adhere to the style guide, without modifying them. Useful for CI checks.
+
+-   **Lint code (check for errors and style issues)**:
+    ```bash
+    uvx ruff check .
+    ```
+    This command analyzes your code for potential errors, bugs, and style violations.
+
+-   **Lint code and apply auto-fixes (for safe fixes)**:
+    ```bash
+    uvx ruff check . --fix
+    ```
+    This command attempts to automatically fix any safe linting issues found.
+
+-   **Lint code and apply more aggressive auto-fixes (including potentially unsafe ones)**:
+    ```bash
+    uvx ruff check . --fix --unsafe-fixes
+    ```
+    Use this with caution, as it might apply changes that alter semantics in rare cases.
 
 ---
 

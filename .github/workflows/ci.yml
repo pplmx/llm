@@ -17,8 +17,11 @@ jobs:
             -   name: Set up UV Environment
                 uses: astral-sh/setup-uv@v6
 
-            -   name: Format Code
-                run: uvx ruff format --diff .
+            -   name: Synchronize Dependencies for Linting
+                run: uv sync --quiet
+
+            -   name: Check Code Formatting
+                run: uvx ruff format --check .
 
             -   name: Lint Code
                 run: uvx ruff check .
@@ -43,5 +46,12 @@ jobs:
             -   name: Build Project
                 run: uvx hatch build
 
-            -   name: Run Tests
-                run: uvx hatch test
+            -   name: Run Pytest Tests
+                run: uv run pytest --cov=src/llm --cov-report=xml
+
+            -   name: Upload coverage report as artifact
+                if: always() # Ensure it runs even if tests fail, to upload partial coverage
+                uses: actions/upload-artifact@v4
+                with:
+                    name: coverage-report-${{ matrix.os }} # Make artifact name unique per OS
+                    path: coverage.xml
