@@ -30,6 +30,10 @@
 - **Feature 1**: [Detailed description of feature 1 and its benefits]
 - **Feature 2**: [Detailed description of feature 2 and its benefits]
 - **Feature 3**: [Detailed description of feature 3 and its benefits]
+- **Advanced Training Script**: The `scripts/train_simple_decoder.py` script for training decoder-only models now supports:
+    - Evaluation on a validation set during training (via the `--val_file_path` argument).
+    - Learning rate scheduling using Cosine Annealing.
+    - Early stopping based on validation loss to prevent overfitting and reduce training time.
 - [Add more features as needed]
 
 ## Quick Start
@@ -48,17 +52,26 @@ print(result)
 
 ### Requirements
 - Python 3.13+
-- Dependencies:
-  - [Dependency 1]: [version] - [brief description or purpose]
-  - [Dependency 2]: [version] - [brief description or purpose]
-  - [Add more dependencies as needed]
+- [uv](https://github.com/astral-sh/uv): A fast Python package installer and resolver, written in Rust.
 
-### User Installation
-Install `llm` using pip:
+### Setting up the Environment
+
+This project uses `uv` for dependency management and environment setup.
+
+1.  **Install `uv`**: If you don't have `uv` installed, follow the official instructions [here](https://github.com/astral-sh/uv#installation).
+2.  **Synchronize Dependencies**: Navigate to the project root directory and run:
+    ```bash
+    uv sync
+    ```
+    This command will install all dependencies defined in `pyproject.toml` (and captured in `uv.lock` if present), including main dependencies as well as those required for development, testing, and quality checks (e.g., `pytest`, `ruff`, `pytest-cov`).
+
+### User Installation (Distribution)
+If this project were to be distributed as a package, users would typically install it using pip:
 
 ```bash
-pip install llm
+pip install llm # Assuming 'llm' is the package name on PyPI
 ```
+However, for development, `uv sync` is the recommended way to set up the environment.
 
 ## Usage
 
@@ -77,7 +90,48 @@ For more detailed examples and explanations of key concepts, please refer to our
 
 ## Development
 
-For information on setting up the development environment, running tests, and contributing to the project, please refer to our [Development Guide](docs/development.md).
+Setting up the development environment is handled by `uv sync` as described in the [Installation](#installation) section. This ensures all necessary tools for development, testing, and quality checks are installed.
+
+### Code Style and Quality Checks
+
+This project uses `ruff` for formatting and linting. All commands should be run from the project root.
+
+-   **Format code (apply changes)**:
+    ```bash
+    uvx ruff format .
+    ```
+-   **Check formatting (without applying changes)**:
+    ```bash
+    uvx ruff format --check .
+    ```
+-   **Lint code (check for errors and style issues)**:
+    ```bash
+    uvx ruff check .
+    ```
+-   **Lint code and apply auto-fixes (for safe fixes)**:
+    ```bash
+    uvx ruff check . --fix
+    ```
+-   **Lint code and apply more aggressive auto-fixes (including potentially unsafe ones)**:
+    ```bash
+    uvx ruff check . --fix --unsafe-fixes
+    ```
+
+### Running Tests
+
+Tests are managed and run using `pytest`. Ensure dependencies are synchronized with `uv sync` before running tests.
+
+-   **Run all tests**:
+    ```bash
+    uv run pytest
+    ```
+-   **Run tests with coverage report**:
+    ```bash
+    uv run pytest --cov=src/llm
+    ```
+    This command will output a coverage summary to the terminal. Detailed HTML and XML reports are also generated (see `pyproject.toml` for `pytest-cov` configuration, typically in a `htmlcov/` directory and `coverage.xml` file respectively).
+
+For more detailed information on development workflows, advanced testing, and contribution guidelines, please refer to our [Development Guide](docs/development.md).
 
 ## Troubleshooting
 
