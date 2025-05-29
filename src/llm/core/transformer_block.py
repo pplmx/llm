@@ -1,19 +1,8 @@
 import torch
 import torch.nn as nn
 
-try:
-    from llm.core.attn.mha import MultiHeadAttention
-    from llm.core.mlp import MLP
-except ModuleNotFoundError:
-    # Fallback for local testing if PYTHONPATH is not set
-    import os
-    import sys
-
-    # Assuming the script is run from a context where 'src' is a direct subdir or similar
-    # This might need adjustment based on actual execution context
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-    from src.llm.core.attn.mha import MultiHeadAttention
-    from src.llm.core.mlp import MLP
+from llm.core.attn.mha import MultiHeadAttention
+from llm.core.mlp import MLP
 
 
 class TransformerBlock(nn.Module):

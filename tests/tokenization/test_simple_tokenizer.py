@@ -8,11 +8,11 @@ SAMPLE_CORPUS_BASIC = ["hello world", "pytest testing"]
 # ' ' -> 0, 'd' -> 1, 'e' -> 2, 'g' -> 3, 'h' -> 4, 'i' -> 5, 'l' -> 6, 'n' -> 7,
 # 'o' -> 8, 'p' -> 9, 'r' -> 10, 's' -> 11, 't' -> 12, 'w' -> 13, 'y' -> 14
 # Vocab size = 15 (before PAD)
-INITIAL_EXPECTED_CHARS_BASIC = sorted(list(set("".join(SAMPLE_CORPUS_BASIC))))
+INITIAL_EXPECTED_CHARS_BASIC = sorted(set("".join(SAMPLE_CORPUS_BASIC)))
 
 
 SAMPLE_CORPUS_EXTENDED = ["hello world", "你好 世界"]  # Includes non-ASCII
-INITIAL_EXPECTED_CHARS_EXTENDED = sorted(list(set("".join(SAMPLE_CORPUS_EXTENDED))))
+INITIAL_EXPECTED_CHARS_EXTENDED = sorted(set("".join(SAMPLE_CORPUS_EXTENDED)))
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ class TestSimpleCharacterTokenizerInitialization:
         assert len(basic_tokenizer.itos) == expected_vocab_size
 
         # Check initial chars are still there and correctly mapped
-        for i, char_code in enumerate(INITIAL_EXPECTED_CHARS_BASIC):
+        for _i, char_code in enumerate(INITIAL_EXPECTED_CHARS_BASIC):
             # The exact index might shift if PAD is not appended last or if corpus contained PAD.
             # The current implementation appends PAD if not present.
             assert char_code in basic_tokenizer.stoi
@@ -76,7 +76,7 @@ class TestSimpleCharacterTokenizerInitialization:
 
     def test_corpus_with_empty_string_with_pad(self):
         tokenizer = SimpleCharacterTokenizer(["abc", "", "de"])
-        initial_corpus_chars = sorted(list("abcde"))
+        initial_corpus_chars = sorted("abcde")
         expected_vocab_size = len(initial_corpus_chars) + 1
 
         assert tokenizer.vocab_size == expected_vocab_size
@@ -95,7 +95,7 @@ class TestSimpleCharacterTokenizerInitialization:
         # Current logic: if self.pad_char is in self.stoi (from corpus), self.pad_token_id takes that ID.
         # Vocab size should not double-count it.
 
-        unique_single_chars_from_corpus = sorted(list(set("".join(corpus_with_pad_str))))
+        unique_single_chars_from_corpus = sorted(set("".join(corpus_with_pad_str)))
         # Assert that the individual characters from "<PAD>world" are in the tokenizer's single char mapping
         for char_in_pad_str_literal in "<PAD>":  # i.e. '<', 'P', 'A', 'D', '>'
             assert char_in_pad_str_literal in tokenizer.stoi

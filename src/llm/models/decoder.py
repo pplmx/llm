@@ -1,21 +1,8 @@
 import torch
 import torch.nn as nn
 
-try:
-    from llm.core.embedding import EmbeddingLayer
-    from llm.core.transformer_block import TransformerBlock
-except ModuleNotFoundError:
-    # Fallback for local testing if PYTHONPATH is not set
-    import os
-    import sys
-
-    # Assuming the script is run from a context where 'src' is a direct subdir or similar
-    PROJECT_ROOT_FALLBACK = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-    SRC_ROOT_FALLBACK = os.path.join(PROJECT_ROOT_FALLBACK, "src")
-    if SRC_ROOT_FALLBACK not in sys.path:
-        sys.path.insert(0, SRC_ROOT_FALLBACK)
-    from src.llm.core.embedding import EmbeddingLayer
-    from src.llm.core.transformer_block import TransformerBlock
+from llm.core.embedding import EmbeddingLayer
+from llm.core.transformer_block import TransformerBlock
 
 
 class DecoderModel(nn.Module):

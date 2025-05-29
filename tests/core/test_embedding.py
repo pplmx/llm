@@ -7,7 +7,6 @@ import torch.nn as nn
 from llm.core.embedding import EmbeddingLayer
 from llm.core.positional_encoding import PositionalEncoding
 
-
 # Test constants
 VOCAB_SIZE = 20  # Increased for padding_idx tests
 HIDDEN_SIZE = 64

@@ -23,10 +23,10 @@ class SimpleCharacterTokenizer:
 
         # Join all strings in the corpus, then find unique characters
         unique_chars: set[str] = set("".join(corpus))
-        self.chars: list[str] = sorted(list(unique_chars))  # Sort for consistent mapping
+        self.chars: list[str] = sorted(unique_chars)  # Sort for consistent mapping
 
         self.stoi: dict[str, int] = {char: i for i, char in enumerate(self.chars)}
-        self.itos: dict[int, str] = {i: char for i, char in enumerate(self.chars)}
+        self.itos: dict[int, str] = dict(enumerate(self.chars))
         self.vocab_size: int = len(self.chars)
 
         # Add PAD token
