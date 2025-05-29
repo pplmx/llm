@@ -1,5 +1,3 @@
-from typing import List, Dict, Set
-
 class SimpleCharacterTokenizer:
     """
     A simple character-level tokenizer.
@@ -9,7 +7,7 @@ class SimpleCharacterTokenizer:
     tokens back into text.
     """
 
-    def __init__(self, corpus: List[str]):
+    def __init__(self, corpus: list[str]):
         """
         Initializes the SimpleCharacterTokenizer.
 
@@ -24,11 +22,11 @@ class SimpleCharacterTokenizer:
             raise TypeError("All items in the corpus must be strings.")
 
         # Join all strings in the corpus, then find unique characters
-        unique_chars: Set[str] = set("".join(corpus))
-        self.chars: List[str] = sorted(list(unique_chars)) # Sort for consistent mapping
+        unique_chars: set[str] = set("".join(corpus))
+        self.chars: list[str] = sorted(list(unique_chars))  # Sort for consistent mapping
 
-        self.stoi: Dict[str, int] = {char: i for i, char in enumerate(self.chars)}
-        self.itos: Dict[int, str] = {i: char for i, char in enumerate(self.chars)}
+        self.stoi: dict[str, int] = {char: i for i, char in enumerate(self.chars)}
+        self.itos: dict[int, str] = {i: char for i, char in enumerate(self.chars)}
         self.vocab_size: int = len(self.chars)
 
         # Add PAD token
@@ -37,14 +35,13 @@ class SimpleCharacterTokenizer:
             self.pad_token_id: int = self.vocab_size
             self.stoi[self.pad_char] = self.pad_token_id
             self.itos[self.pad_token_id] = self.pad_char
-            self.chars.append(self.pad_char) # Add to the list of characters
+            self.chars.append(self.pad_char)  # Add to the list of characters
             self.vocab_size += 1
         else:
             # If PAD char was part of the corpus, use its existing ID
             self.pad_token_id: int = self.stoi[self.pad_char]
 
-
-    def encode(self, text: str) -> List[int]:
+    def encode(self, text: str) -> list[int]:
         """
         Encodes a string of text into a list of integer tokens.
 
@@ -61,8 +58,11 @@ class SimpleCharacterTokenizer:
         """
         if not isinstance(text, str):
             raise TypeError("Input text must be a string.")
-        
-        tokens: List[int] = []
+
+        if text == self.pad_char:
+            return [self.pad_token_id]
+
+        tokens: list[int] = []
         for char in text:
             try:
                 tokens.append(self.stoi[char])
@@ -73,7 +73,7 @@ class SimpleCharacterTokenizer:
                 )
         return tokens
 
-    def decode(self, tokens: List[int]) -> str:
+    def decode(self, tokens: list[int]) -> str:
         """
         Decodes a list of integer tokens back into a string of text.
 
@@ -92,7 +92,7 @@ class SimpleCharacterTokenizer:
         if not all(isinstance(token, int) for token in tokens):
             raise TypeError("All items in the tokens list must be integers.")
 
-        text_chars: List[str] = []
+        text_chars: list[str] = []
         for token in tokens:
             try:
                 text_chars.append(self.itos[token])
@@ -103,12 +103,13 @@ class SimpleCharacterTokenizer:
                 )
         return "".join(text_chars)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Example Usage
     corpus_example = ["hello world!", "你好 世界！"]
     tokenizer_example = SimpleCharacterTokenizer(corpus_example)
 
-    print(f"Vocabulary ({tokenizer_example.vocab_size} chars): {tokenizer_example.chars}") # Print list for clarity
+    print(f"Vocabulary ({tokenizer_example.vocab_size} chars): {tokenizer_example.chars}")  # Print list for clarity
     print(f"String to Integer mapping (stoi): {tokenizer_example.stoi}")
     print(f"Integer to String mapping (itos): {tokenizer_example.itos}")
     print(f"PAD token: '{tokenizer_example.pad_char}', ID: {tokenizer_example.pad_token_id}")
@@ -124,14 +125,14 @@ if __name__ == '__main__':
     print(f"Decoded: '{decoded1}'")
     assert decoded1 == text1
 
-    text2 = "你好！" # Assumes these chars are in corpus_example
+    text2 = "你好！"  # Assumes these chars are in corpus_example
     encoded2 = tokenizer_example.encode(text2)
     decoded2 = tokenizer_example.decode(encoded2)
     print(f"\nOriginal text 2: '{text2}'")
     print(f"Encoded: {encoded2}")
     print(f"Decoded: '{decoded2}'")
     assert decoded2 == text2
-    
+
     print("\nTesting empty string encoding/decoding:")
     empty_encoded = tokenizer_example.encode("")
     empty_decoded = tokenizer_example.decode([])
@@ -142,14 +143,14 @@ if __name__ == '__main__':
 
     print("\nTesting unknown character (should raise KeyError):")
     try:
-        tokenizer_example.encode("abc") # 'a', 'b', 'c' are not in the example corpus
+        tokenizer_example.encode("abc")  # 'a', 'b', 'c' are not in the example corpus
     except KeyError as e:
         print(f"Caught expected error for unknown char: {e}")
 
     print("\nTesting unknown token ID (should raise KeyError):")
-    unknown_id = tokenizer_example.vocab_size + 10 # An ID guaranteed to be out of vocab
+    unknown_id = tokenizer_example.vocab_size + 10  # An ID guaranteed to be out of vocab
     try:
-        tokenizer_example.decode([unknown_id]) 
+        tokenizer_example.decode([unknown_id])
     except KeyError as e:
         print(f"Caught expected error for unknown token: {e}")
 
@@ -157,5 +158,5 @@ if __name__ == '__main__':
     decoded_pad = tokenizer_example.decode([tokenizer_example.pad_token_id])
     print(f"Decoded PAD token ID [{tokenizer_example.pad_token_id}]: '{decoded_pad}'")
     assert decoded_pad == tokenizer_example.pad_char
-    
+
     print("\nAll basic __main__ tests passed.")

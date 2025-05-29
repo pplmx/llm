@@ -6,11 +6,12 @@ try:
     from llm.core.transformer_block import TransformerBlock
 except ModuleNotFoundError:
     # Fallback for local testing if PYTHONPATH is not set
-    import sys
     import os
+    import sys
+
     # Assuming the script is run from a context where 'src' is a direct subdir or similar
-    PROJECT_ROOT_FALLBACK = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
-    SRC_ROOT_FALLBACK = os.path.join(PROJECT_ROOT_FALLBACK, 'src')
+    PROJECT_ROOT_FALLBACK = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
+    SRC_ROOT_FALLBACK = os.path.join(PROJECT_ROOT_FALLBACK, "src")
     if SRC_ROOT_FALLBACK not in sys.path:
         sys.path.insert(0, SRC_ROOT_FALLBACK)
     from src.llm.core.embedding import EmbeddingLayer
@@ -43,9 +44,9 @@ class DecoderModel(nn.Module):
         norm_first: bool = True,
         is_causal: bool = True,  # Default to True for a decoder model
         padding_idx: int | None = None,
-        qkv_bias: bool = True, # Bias for QKV in MHA within TransformerBlock
-        mlp_bias: bool = True, # Bias for MLP in TransformerBlock
-        lm_head_bias: bool = True, # Bias for the final LM head
+        qkv_bias: bool = True,  # Bias for QKV in MHA within TransformerBlock
+        mlp_bias: bool = True,  # Bias for MLP in TransformerBlock
+        lm_head_bias: bool = True,  # Bias for the final LM head
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -77,7 +78,7 @@ class DecoderModel(nn.Module):
         """
         super().__init__()
         factory_kwargs = {"device": device, "dtype": dtype}
-        self.norm_first = norm_first # Store for final norm logic
+        self.norm_first = norm_first  # Store for final norm logic
 
         self.embedding_layer = EmbeddingLayer(
             vocab_size=vocab_size,
@@ -103,7 +104,7 @@ class DecoderModel(nn.Module):
                     mlp_activation=mlp_activation,
                     norm_eps=norm_eps,
                     norm_first=norm_first,
-                    is_causal=is_causal, # Pass overall model's causality default
+                    is_causal=is_causal,  # Pass overall model's causality default
                     qkv_bias=qkv_bias,
                     mlp_bias=mlp_bias,
                     **factory_kwargs,
@@ -148,13 +149,14 @@ class DecoderModel(nn.Module):
             # So, we pass `is_causal=None` to the block's forward method.
             hidden_states = block(hidden_states, attn_mask=attn_mask, is_causal=None)
 
-        if self.final_norm is not None: # Applied only in Pre-LN architectures
+        if self.final_norm is not None:  # Applied only in Pre-LN architectures
             hidden_states = self.final_norm(hidden_states)
 
         logits = self.lm_head(hidden_states)
         return logits
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Example Usage
     device_ex = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype_ex = torch.float32
@@ -165,19 +167,23 @@ if __name__ == '__main__':
     num_heads_ex = 4
     max_seq_len_ex = 128
     batch_size_ex = 4
-    seq_len_ex = 50 # Test sequence length
+    seq_len_ex = 50  # Test sequence length
 
     print(f"DecoderModel Example running on device: {device_ex}, dtype: {dtype_ex}")
 
     # Dummy input
-    dummy_input_ids = torch.randint(0, vocab_size_ex, (batch_size_ex, seq_len_ex),
-                                    device=device_ex, dtype=torch.long)
+    dummy_input_ids = torch.randint(0, vocab_size_ex, (batch_size_ex, seq_len_ex), device=device_ex, dtype=torch.long)
     # Example padding mask (True means ignore): last 10 tokens are padding for first batch item
-    example_padding_mask = torch.zeros(batch_size_ex, 1, 1, seq_len_ex, # MHA expects [B, N, S_q, S_k] or broadcastable
-                                       device=device_ex, dtype=torch.bool)
+    example_padding_mask = torch.zeros(
+        batch_size_ex,
+        1,
+        1,
+        seq_len_ex,  # MHA expects [B, N, S_q, S_k] or broadcastable
+        device=device_ex,
+        dtype=torch.bool,
+    )
     if seq_len_ex > 10:
         example_padding_mask[0, 0, 0, -10:] = True
-
 
     # --- Test Pre-LN Decoder ---
     print("\nTesting Pre-LN DecoderModel (is_causal=True by default)...")
@@ -189,10 +195,10 @@ if __name__ == '__main__':
         max_seq_len=max_seq_len_ex,
         norm_first=True,
         device=device_ex,
-        dtype=dtype_ex
+        dtype=dtype_ex,
     )
     pre_ln_decoder.eval()
-    
+
     output_pre_ln = pre_ln_decoder(dummy_input_ids)
     print(f"  Input IDs shape: {dummy_input_ids.shape}")
     print(f"  Output logits shape (Pre-LN): {output_pre_ln.shape}")
@@ -204,7 +210,6 @@ if __name__ == '__main__':
     print(f"  Output logits shape (Pre-LN, masked): {output_pre_ln_masked.shape}")
     assert output_pre_ln_masked.shape == (batch_size_ex, seq_len_ex, vocab_size_ex)
 
-
     # --- Test Post-LN Decoder ---
     print("\nTesting Post-LN DecoderModel (is_causal=True by default)...")
     post_ln_decoder = DecoderModel(
@@ -213,9 +218,9 @@ if __name__ == '__main__':
         num_layers=num_layers_ex,
         num_heads=num_heads_ex,
         max_seq_len=max_seq_len_ex,
-        norm_first=False, # Key change for Post-LN
+        norm_first=False,  # Key change for Post-LN
         device=device_ex,
-        dtype=dtype_ex
+        dtype=dtype_ex,
     )
     post_ln_decoder.eval()
 
@@ -229,5 +234,5 @@ if __name__ == '__main__':
     output_post_ln_masked = post_ln_decoder(dummy_input_ids, attn_mask=example_padding_mask)
     print(f"  Output logits shape (Post-LN, masked): {output_post_ln_masked.shape}")
     assert output_post_ln_masked.shape == (batch_size_ex, seq_len_ex, vocab_size_ex)
-    
+
     print("\nAll basic __main__ tests passed.")

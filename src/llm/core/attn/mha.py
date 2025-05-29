@@ -60,10 +60,10 @@ class MultiHeadAttention(nn.Module):
         self.norm = None
         if self.include_norm_residual:
             self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
-        
+
         self.qkv_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, **factory_kwargs)
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, **factory_kwargs)
-        self.dropout = nn.Dropout(p) # This is for the output projection
+        self.dropout = nn.Dropout(p)  # This is for the output projection
 
         self._init_weights()
 
@@ -100,7 +100,7 @@ class MultiHeadAttention(nn.Module):
             Tensor: Output tensor of shape [B, S, H].
         """
         batch_size, seq_len, _ = hidden_states.size()
-        
+
         # --- Determine causality setting for this call ---
         use_causal = self.is_causal if is_causal is None else is_causal
 
@@ -143,10 +143,10 @@ class MultiHeadAttention(nn.Module):
 
         if self.include_norm_residual and self.norm is not None:
             # --- 6. Residual connection ---
-            output = residual + projected_output # residual was stored earlier
+            output = residual + projected_output  # residual was stored earlier
 
             # --- 7. Layer Normalization (Post-LN mode) ---
-            if not self.norm_first: # self.norm must exist if not self.norm_first is true
+            if not self.norm_first:  # self.norm must exist if not self.norm_first is true
                 output = self.norm(output)
             return output
         else:

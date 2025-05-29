@@ -6,11 +6,12 @@ try:
     from llm.core.mlp import MLP
 except ModuleNotFoundError:
     # Fallback for local testing if PYTHONPATH is not set
-    import sys
     import os
+    import sys
+
     # Assuming the script is run from a context where 'src' is a direct subdir or similar
     # This might need adjustment based on actual execution context
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
     from src.llm.core.attn.mha import MultiHeadAttention
     from src.llm.core.mlp import MLP
 
@@ -34,9 +35,9 @@ class TransformerBlock(nn.Module):
         mlp_activation: str | nn.Module = "gelu",
         norm_eps: float = 1e-5,
         norm_first: bool = True,
-        is_causal: bool = False, # Default causality for MHA within this block
-        qkv_bias: bool = True, # Bias for QKV projections in MHA
-        mlp_bias: bool = True, # Bias for Linear layers in MLP
+        is_causal: bool = False,  # Default causality for MHA within this block
+        qkv_bias: bool = True,  # Bias for QKV projections in MHA
+        mlp_bias: bool = True,  # Bias for Linear layers in MLP
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -63,7 +64,7 @@ class TransformerBlock(nn.Module):
         factory_kwargs = {"device": device, "dtype": dtype}
 
         self.norm_first = norm_first
-        self.hidden_size = hidden_size # Needed for potential checks or logging
+        self.hidden_size = hidden_size  # Needed for potential checks or logging
 
         # Initialize Layer Normalization layers
         self.norm1 = nn.LayerNorm(hidden_size, eps=norm_eps, **factory_kwargs)
@@ -75,11 +76,11 @@ class TransformerBlock(nn.Module):
             hidden_size=hidden_size,
             num_heads=num_heads,
             p=attn_dropout_p,
-            bias=qkv_bias, # Pass bias for QKV layers
-            is_causal=is_causal, # Set default causality for MHA
-            include_norm_residual=False, # MHA does not handle norm/residual itself
-            eps=norm_eps, # MHA's norm_eps, not used if include_norm_residual=False
-            norm_first=False, # MHA's norm_first, not used if include_norm_residual=False
+            bias=qkv_bias,  # Pass bias for QKV layers
+            is_causal=is_causal,  # Set default causality for MHA
+            include_norm_residual=False,  # MHA does not handle norm/residual itself
+            eps=norm_eps,  # MHA's norm_eps, not used if include_norm_residual=False
+            norm_first=False,  # MHA's norm_first, not used if include_norm_residual=False
             **factory_kwargs,
         )
 
@@ -87,16 +88,16 @@ class TransformerBlock(nn.Module):
         # MLP's internal norm/residual are disabled; TransformerBlock handles them.
         if mlp_intermediate_size is None:
             mlp_intermediate_size = 4 * hidden_size
-            
+
         self.mlp = MLP(
             hidden_size=hidden_size,
             intermediate_size=mlp_intermediate_size,
             activation=mlp_activation,
             dropout_p=mlp_dropout_p,
-            bias=mlp_bias, # Pass bias for MLP layers
-            include_norm_residual=False, # MLP does not handle norm/residual itself
-            norm_eps=norm_eps, # MLP's norm_eps, not used if include_norm_residual=False
-            norm_first=False, # MLP's norm_first, not used if include_norm_residual=False
+            bias=mlp_bias,  # Pass bias for MLP layers
+            include_norm_residual=False,  # MLP does not handle norm/residual itself
+            norm_eps=norm_eps,  # MLP's norm_eps, not used if include_norm_residual=False
+            norm_first=False,  # MLP's norm_first, not used if include_norm_residual=False
             **factory_kwargs,
         )
 
@@ -122,14 +123,14 @@ class TransformerBlock(nn.Module):
         # If is_causal is provided as an argument, it overrides the MHA's default.
         # Otherwise, MHA uses its own self.is_causal.
         # The MHA forward method handles this logic if is_causal=None is passed.
-        
-        if self.norm_first: # Pre-LN
+
+        if self.norm_first:  # Pre-LN
             # First sublayer: Multi-Head Attention
             normed_hidden_states = self.norm1(hidden_states)
             attn_output = self.self_attn(
                 normed_hidden_states,
                 attn_mask=attn_mask,
-                is_causal=is_causal # Pass through, MHA handles None
+                is_causal=is_causal,  # Pass through, MHA handles None
             )
             # Residual connection for MHA
             hidden_states = hidden_states + attn_output
@@ -139,13 +140,13 @@ class TransformerBlock(nn.Module):
             mlp_output = self.mlp(normed_intermediate_states)
             # Residual connection for MLP
             output = hidden_states + mlp_output
-        
-        else: # Post-LN
+
+        else:  # Post-LN
             # First sublayer: Multi-Head Attention
             attn_output = self.self_attn(
                 hidden_states,
                 attn_mask=attn_mask,
-                is_causal=is_causal # Pass through, MHA handles None
+                is_causal=is_causal,  # Pass through, MHA handles None
             )
             # Residual connection and normalization for MHA
             hidden_states = self.norm1(hidden_states + attn_output)
@@ -154,14 +155,15 @@ class TransformerBlock(nn.Module):
             mlp_output = self.mlp(hidden_states)
             # Residual connection and normalization for MLP
             output = self.norm2(hidden_states + mlp_output)
-            
+
         return output
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Example Usage (for self-testing, not part of the module's core logic)
     device_ex = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype_ex = torch.float32
-    
+
     hidden_size_ex = 64
     num_heads_ex = 8
     batch_size_ex = 4
@@ -171,17 +173,13 @@ if __name__ == '__main__':
 
     # Dummy input
     dummy_input = torch.randn(batch_size_ex, seq_len_ex, hidden_size_ex, device=device_ex, dtype=dtype_ex)
-    
+
     # Pre-LN configuration
     print("\nTesting Pre-LN TransformerBlock...")
     pre_ln_block = TransformerBlock(
-        hidden_size=hidden_size_ex,
-        num_heads=num_heads_ex,
-        norm_first=True,
-        device=device_ex,
-        dtype=dtype_ex
+        hidden_size=hidden_size_ex, num_heads=num_heads_ex, norm_first=True, device=device_ex, dtype=dtype_ex
     )
-    pre_ln_block.eval() # For consistent dropout behavior if any were active by default
+    pre_ln_block.eval()  # For consistent dropout behavior if any were active by default
     output_pre_ln = pre_ln_block(dummy_input)
     print(f"  Input shape: {dummy_input.shape}")
     print(f"  Output shape (Pre-LN): {output_pre_ln.shape}")
@@ -190,11 +188,7 @@ if __name__ == '__main__':
     # Post-LN configuration
     print("\nTesting Post-LN TransformerBlock...")
     post_ln_block = TransformerBlock(
-        hidden_size=hidden_size_ex,
-        num_heads=num_heads_ex,
-        norm_first=False,
-        device=device_ex,
-        dtype=dtype_ex
+        hidden_size=hidden_size_ex, num_heads=num_heads_ex, norm_first=False, device=device_ex, dtype=dtype_ex
     )
     post_ln_block.eval()
     output_post_ln = post_ln_block(dummy_input)
@@ -208,27 +202,27 @@ if __name__ == '__main__':
         hidden_size=hidden_size_ex,
         num_heads=num_heads_ex,
         norm_first=True,
-        is_causal=True, # Block default causality
+        is_causal=True,  # Block default causality
         device=device_ex,
-        dtype=dtype_ex
+        dtype=dtype_ex,
     )
     pre_ln_causal_block.eval()
-    output_pre_ln_causal = pre_ln_causal_block(dummy_input) # Uses block's default
+    output_pre_ln_causal = pre_ln_causal_block(dummy_input)  # Uses block's default
     print(f"  Output shape (Pre-LN, Causal default): {output_pre_ln_causal.shape}")
     assert output_pre_ln_causal.shape == dummy_input.shape
-    
+
     # Override causality in forward pass
     output_pre_ln_non_causal_override = pre_ln_causal_block(dummy_input, is_causal=False)
     print(f"  Output shape (Pre-LN, Causal override to False): {output_pre_ln_non_causal_override.shape}")
     assert output_pre_ln_non_causal_override.shape == dummy_input.shape
-    
+
     # Test with attention mask
     # Example: padding mask - True means masked position in F.scaled_dot_product_attention
     # For MHA, a common padding mask shape is [B, 1, 1, S_key] or broadcastable
     # For this test, let's make a simple mask that SDPA can use.
     # Mask out the last token for each sequence in the batch.
     attn_mask_ex = torch.zeros(batch_size_ex, seq_len_ex, seq_len_ex, device=device_ex, dtype=torch.bool)
-    attn_mask_ex[:, :, -1] = True # Mask the last key for all queries
+    attn_mask_ex[:, :, -1] = True  # Mask the last key for all queries
     # SDPA expects mask shape like [B, N, S_q, S_k] or [B, 1, S_q, S_k] or [B, 1, 1, S_k] for padding mask
     # For simplicity, we'll pass a mask that is [B, S_q, S_k] and SDPA should broadcast it over heads.
     # Or, more correctly for MHA, it should be [B, N, S, S] or [B, 1, S, S].
@@ -239,7 +233,7 @@ if __name__ == '__main__':
     # For testing purposes, a [B, S, S] mask that SDPA can broadcast is fine.
     # Let's use a more MHA-friendly mask structure: [B, 1, S, S]
     attn_mask_mha_ex = torch.zeros(batch_size_ex, 1, seq_len_ex, seq_len_ex, device=device_ex, dtype=torch.bool)
-    attn_mask_mha_ex[:, :, :, -1] = True # Mask last key for all queries for all heads
+    attn_mask_mha_ex[:, :, :, -1] = True  # Mask last key for all queries for all heads
 
     print("\nTesting Pre-LN TransformerBlock with attention_mask...")
     output_pre_ln_masked = pre_ln_block(dummy_input, attn_mask=attn_mask_mha_ex)
