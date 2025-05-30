@@ -42,6 +42,7 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=lcov",
+    "--cov-report=xml",
     "--alluredir=allure-results",
 ]
 consider_namespace_packages=true # Enable this to allow using the same filename in different test directories without needing __init__.py in each one

@@ -67,12 +67,6 @@ Tests are managed and run using `pytest`. Ensure your dependencies are synchroni
     ```
     This command discovers and executes all tests in the `tests/` directory.
 
--   **Run tests with coverage report**:
-    ```bash
-    uv run pytest --cov=src/llm
-    ```
-    This command runs the tests and generates a code coverage report, showing which parts of the `src/llm` codebase were exercised by the tests. Coverage reports (e.g., HTML, XML) are configured in `pyproject.toml`.
-
 [Consider adding specific details on the structure of tests, testing strategy, or how to add new tests.]
 
 ## Building the Project
