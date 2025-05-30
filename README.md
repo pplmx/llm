@@ -125,11 +125,6 @@ Tests are managed and run using `pytest`. Ensure dependencies are synchronized w
     ```bash
     uv run pytest
     ```
--   **Run tests with coverage report**:
-    ```bash
-    uv run pytest --cov=src/llm
-    ```
-    This command will output a coverage summary to the terminal. Detailed HTML and XML reports are also generated (see `pyproject.toml` for `pytest-cov` configuration, typically in a `htmlcov/` directory and `coverage.xml` file respectively).
 
 For more detailed information on development workflows, advanced testing, and contribution guidelines, please refer to our [Development Guide](docs/development.md).
 

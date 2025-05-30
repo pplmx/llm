@@ -44,10 +44,10 @@ jobs:
                 run: uv sync
 
             -   name: Build Project
-                run: uvx hatch build
+                run: uv build
 
             -   name: Run Pytest Tests
-                run: uv run pytest --cov=src/llm --cov-report=xml
+                run: uv run pytest
 
             -   name: Upload coverage report as artifact
                 if: always() # Ensure it runs even if tests fail, to upload partial coverage
