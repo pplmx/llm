@@ -119,7 +119,7 @@ class MultiHeadAttention(nn.Module):
             self.qkv_proj(x_for_qkv)  # [B, S, 3*H]
             .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, N, D]
             .permute(2, 0, 3, 1, 4)  # [3, B, N, S, D]
-            .chunk(3, dim=0)  # Each [B, N, S, D]
+            .unbind(0)  # Each [B, N, S, D]
         )
 
         # --- 3. Attention computation ---
