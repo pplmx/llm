@@ -24,6 +24,14 @@ This project adheres to the [Conventional Commits](https://www.conventionalcommi
 
 **Note:** The `description` (subject line) should generally start with a lowercase letter.
 
+## Commit Workflow
+
+To ensure consistent and properly formatted commit messages, please follow this workflow:
+
+1.  **Create a temporary file:** Write the full commit message, including the subject and body, to a temporary file named `commit_message.txt` in the project root.
+2.  **Commit from the file:** Use the command `git commit -F commit_message.txt` to create the commit.
+3.  **Clean up:** After the commit is successfully created, delete the `commit_message.txt` file.
+
 ## Commands
 
 The following commands are available in the `Makefile`:
