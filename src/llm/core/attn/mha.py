@@ -115,12 +115,12 @@ class MultiHeadAttention(nn.Module):
             x_for_qkv = hidden_states
 
         # --- 2. Project Q, K, V and reshape ---
-        qkv = (
+        q, k, v = (
             self.qkv_proj(x_for_qkv)  # [B, S, 3*H]
             .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, N, D]
             .permute(2, 0, 3, 1, 4)  # [3, B, N, S, D]
+            .chunk(3, dim=0)  # Each [B, N, S, D]
         )
-        q, k, v = qkv[0], qkv[1], qkv[2]  # Each [B, N, S, D]
 
         # --- 3. Attention computation ---
         attn_output = scaled_dot_product_attention(

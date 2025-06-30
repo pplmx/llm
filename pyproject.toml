@@ -17,12 +17,13 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "pytest>=8.3",
-    "pytest-cov>=6.1",
+    "pytest>=8.4",
+    "pytest-cov>=6.2",
     "allure-pytest>=2.14.1",
     "torch>=2.7.0",
     "matplotlib>=3.10.1",
     "seaborn>=0.13.2",
+    "pillow>=11.2.1",
 ]
 
 [project.urls]
