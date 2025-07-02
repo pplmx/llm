@@ -25,7 +25,7 @@ def get_activation_layer(activation_name: str) -> Callable:
             return nn.SiLU
         case "glu":
             # Gated Linear Unit
-            return lambda: nn.GLU(dim=-1)
+            return nn.GLU
         case "leaky_relu":
             return nn.LeakyReLU
         case _:
