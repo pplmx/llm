@@ -5,9 +5,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import os # For checking file paths for BPE
 from llm.data.loader import TextDataset, create_dataloader
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.tokenization.bpe_tokenizer import BPETokenizer
 
 
 def train(args):
@@ -23,24 +25,65 @@ def train(args):
 
     # 2. Initialize Tokenizer
     print("Initializing tokenizer...")
-    try:
-        with open(args.file_path, encoding="utf-8") as f:
-            # Reading lines to build corpus, could also read whole file
-            # For SimpleCharacterTokenizer, a list of unique characters is fine.
-            # Reading the whole file to extract all characters for the vocab.
-            corpus_text = f.read()
-    except FileNotFoundError:
-        print(f"Error: Training file not found at {args.file_path}")
+    tokenizer = None
+    actual_tokenizer_vocab_size = 0 # Store the actual vocab size of the loaded/trained tokenizer
+
+    if args.tokenizer_type == "simple":
+        try:
+            with open(args.file_path, encoding="utf-8") as f:
+                corpus_text_for_simple_tokenizer = f.read()
+        except FileNotFoundError:
+            print(f"Error: Training data file not found at {args.file_path} (required for SimpleCharacterTokenizer vocab).")
+            return
+        tokenizer = SimpleCharacterTokenizer(corpus=[corpus_text_for_simple_tokenizer])
+        actual_tokenizer_vocab_size = tokenizer.vocab_size
+        print(f"SimpleCharacterTokenizer initialized. Effective vocabulary size: {actual_tokenizer_vocab_size}")
+
+    elif args.tokenizer_type == "bpe":
+        if args.bpe_vocab_path and os.path.exists(args.bpe_vocab_path):
+            print(f"Loading BPE tokenizer from: {args.bpe_vocab_path}")
+            tokenizer = BPETokenizer.load_vocab(args.bpe_vocab_path)
+            # The loaded BPE tokenizer's vocab_size attribute might be the target,
+            # but effective_vocab_size is what's actually in its vocab map.
+            actual_tokenizer_vocab_size = tokenizer.effective_vocab_size
+            print(f"BPE tokenizer loaded. Effective vocabulary size: {actual_tokenizer_vocab_size}")
+        elif args.bpe_train_corpus and os.path.exists(args.bpe_train_corpus):
+            print(f"Training BPE tokenizer from corpus: {args.bpe_train_corpus} with target vocab size: {args.bpe_vocab_size}")
+            try:
+                with open(args.bpe_train_corpus, encoding="utf-8") as f:
+                    # BPETokenizer.train expects a list of strings (lines/documents)
+                    bpe_corpus_lines = f.readlines()
+                if not bpe_corpus_lines:
+                    raise ValueError("BPE training corpus is empty.")
+            except FileNotFoundError:
+                print(f"Error: BPE training corpus not found at {args.bpe_train_corpus}")
+                return
+            except ValueError as e:
+                print(f"Error with BPE training corpus: {e}")
+                return
+
+            tokenizer = BPETokenizer(vocab_size=args.bpe_vocab_size)
+            tokenizer.train(bpe_corpus_lines, verbose=True) # Enable verbose BPE training
+            actual_tokenizer_vocab_size = tokenizer.effective_vocab_size
+            print(f"BPE tokenizer trained. Effective vocabulary size: {actual_tokenizer_vocab_size}")
+            if args.bpe_save_path:
+                print(f"Saving trained BPE tokenizer to: {args.bpe_save_path}")
+                tokenizer.save_vocab(args.bpe_save_path)
+        else:
+            print("Error: For BPE tokenizer, either --bpe_vocab_path (to load) or --bpe_train_corpus (to train) must be provided and valid.")
+            return
+    else:
+        print(f"Error: Invalid tokenizer_type '{args.tokenizer_type}'. Choose 'simple' or 'bpe'.")
         return
 
-    # SimpleCharacterTokenizer expects a list of strings.
-    # To build vocab from all chars in file, pass the content as a single-element list.
-    tokenizer = SimpleCharacterTokenizer(corpus=[corpus_text])
-    print(f"Tokenizer initialized. Vocabulary size: {tokenizer.vocab_size}")
-    print(f"PAD token ID: {tokenizer.pad_token_id}")
+    if tokenizer is None or tokenizer.pad_token_id is None:
+        print("Error: Tokenizer initialization failed or tokenizer does not have a pad_token_id.")
+        return
+
+    print(f"Tokenizer successfully initialized. Type: {args.tokenizer_type.upper()}, PAD token ID: {tokenizer.pad_token_id}")
 
     # 3. Initialize Dataset and DataLoader
-    print("Loading data...")
+    print("Loading data using main training file:", args.file_path)
     dataset = TextDataset(
         file_path=args.file_path,
         tokenizer=tokenizer,
@@ -92,8 +135,9 @@ def train(args):
     attn_dropout_p = 0.1
     mlp_dropout_p = 0.1
 
+    # Use actual_tokenizer_vocab_size for the model
     model = DecoderModel(
-        vocab_size=tokenizer.vocab_size,
+        vocab_size=actual_tokenizer_vocab_size,
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
         num_heads=args.num_heads,
@@ -156,7 +200,8 @@ def train(args):
             # Calculate loss
             # Logits: [B, S, V], Labels: [B, S]
             # Criterion expects Logits: [B*S, V] or [N,C], Labels: [B*S] or [N]
-            loss = criterion(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
+            # Use actual_tokenizer_vocab_size for reshaping logits for the criterion
+            loss = criterion(logits.view(-1, actual_tokenizer_vocab_size), labels.view(-1))
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Clip gradients
@@ -188,7 +233,8 @@ def train(args):
                     labels_val = val_batch["labels"].to(device)
 
                     logits_val = model(input_ids_val, attn_mask=None)
-                    loss_val = criterion(logits_val.view(-1, tokenizer.vocab_size), labels_val.view(-1))
+                    # Use actual_tokenizer_vocab_size for reshaping logits for the criterion
+                    loss_val = criterion(logits_val.view(-1, actual_tokenizer_vocab_size), labels_val.view(-1))
 
                     total_val_loss += loss_val.item()
                     val_batch_count += 1
@@ -240,7 +286,40 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_size", type=int, default=64, help="Model hidden size.")
     parser.add_argument("--num_layers", type=int, default=2, help="Number of transformer layers.")
     parser.add_argument("--num_heads", type=int, default=2, help="Number of attention heads.")
-    # vocab_size is derived from tokenizer, so not an arg here.
+    # vocab_size is derived from tokenizer.
+
+    # Tokenizer arguments
+    parser.add_argument(
+        "--tokenizer_type",
+        type=str,
+        default="simple",
+        choices=["simple", "bpe"],
+        help="Type of tokenizer to use ('simple' or 'bpe')."
+    )
+    parser.add_argument(
+        "--bpe_vocab_path",
+        type=str,
+        default=None,
+        help="Path to a pre-trained BPE tokenizer vocab file (JSON). Used if tokenizer_type is 'bpe'."
+    )
+    parser.add_argument(
+        "--bpe_train_corpus",
+        type=str,
+        default=None,
+        help="Path to a corpus file to train a new BPE tokenizer. Used if tokenizer_type is 'bpe' and bpe_vocab_path is not provided."
+    )
+    parser.add_argument(
+        "--bpe_vocab_size",
+        type=int,
+        default=1000,
+        help="Target vocabulary size for training a new BPE tokenizer."
+    )
+    parser.add_argument(
+        "--bpe_save_path",
+        type=str,
+        default=None,
+        help="Optional path to save the newly trained BPE tokenizer vocabulary."
+    )
 
     # Training arguments
     parser.add_argument("--batch_size", type=int, default=16, help="Training batch size.")

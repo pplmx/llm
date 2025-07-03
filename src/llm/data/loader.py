@@ -6,23 +6,28 @@ from typing import Any
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-# Attempt to import SimpleCharacterTokenizer, assuming it's in the PYTHONPATH
+# Attempt to import Tokenizers, assuming it's in the PYTHONPATH
 # or accessible via the llm package structure.
 try:
-    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer # Keep for example if needed
+    from llm.tokenization.bpe_tokenizer import BPETokenizer
 except ModuleNotFoundError:
     # Fallback for local testing or specific execution environments
-    # This assumes a certain directory structure if 'llm' is not installed.
-    # os and sys are already imported at the top level.
-
-    # Example: Adjust path to go up to project root then into src
-    # This path adjustment might be fragile depending on execution context.
-    # A better solution is ensuring PYTHONPATH is set correctly.
     PROJECT_ROOT_FALLBACK = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
     SRC_ROOT_FALLBACK = os.path.join(PROJECT_ROOT_FALLBACK, "src")
     if SRC_ROOT_FALLBACK not in sys.path:
         sys.path.insert(0, SRC_ROOT_FALLBACK)
-    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+    # This is getting complex, recommend setting PYTHONPATH or installing the package
+    try:
+        from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+    except ImportError:
+        print("Warning: SimpleCharacterTokenizer not found via fallback.", file=sys.stderr)
+        SimpleCharacterTokenizer = None # Define as None if not found
+    try:
+        from llm.tokenization.bpe_tokenizer import BPETokenizer
+    except ImportError:
+        print("Warning: BPETokenizer not found via fallback.", file=sys.stderr)
+        BPETokenizer = None # Define as None if not found
 
 
 class TextDataset(Dataset):
@@ -37,7 +42,7 @@ class TextDataset(Dataset):
     def __init__(
         self,
         file_path: str,
-        tokenizer: Any,  # Should ideally be a more specific TokenizerProtocol
+        tokenizer: BPETokenizer | SimpleCharacterTokenizer, # Type hint for supported tokenizers
         max_seq_len: int,
         overlap: int = 0,
         padding_value: int | None = None,  # Allow None to use tokenizer's pad_id
@@ -47,13 +52,14 @@ class TextDataset(Dataset):
 
         Args:
             file_path (str): Path to the text file.
-            tokenizer (Any): A tokenizer instance with `encode` and `pad_token_id` attributes.
+            tokenizer (BPETokenizer | SimpleCharacterTokenizer): A tokenizer instance.
+                                                                Must have `encode` and `pad_token_id` attributes.
             max_seq_len (int): The maximum length for each sequence.
             overlap (int, default=0): The number of tokens to overlap between consecutive sequences.
                                       Must be less than `max_seq_len`.
             padding_value (int, optional): Value to use for padding shorter sequences.
                                            If None, defaults to `tokenizer.pad_token_id`.
-                                           If tokenizer has no `pad_token_id`, defaults to 0.
+                                           If tokenizer has no `pad_token_id` or it's None, defaults to 0.
         """
         if not isinstance(file_path, str | Path):
             raise TypeError("file_path must be a string or Path object.")
@@ -79,16 +85,21 @@ class TextDataset(Dataset):
         self.overlap = overlap
 
         if padding_value is None:
+            # Use tokenizer's pad_token_id if available and not None
             if hasattr(self.tokenizer, "pad_token_id") and self.tokenizer.pad_token_id is not None:
                 self.padding_value = self.tokenizer.pad_token_id
             else:
-                # Fallback if tokenizer doesn't specify a pad_token_id
-                # (though SimpleCharacterTokenizer is now expected to have one)
-                self.padding_value = 0
-                # print(f"Warning: padding_value not specified and tokenizer has no pad_token_id. Defaulting to 0.", file=sys.stderr)
-                # Avoiding print to stderr for cleaner test output, assuming this case is handled or tested elsewhere.
+                # Fallback if tokenizer doesn't have a valid pad_token_id
+                self.padding_value = 0 # Default to 0 if no pad_token_id
+                # Consider logging a warning if a tokenizer is expected to always have one
+                # print(f"Warning: padding_value not specified or tokenizer.pad_token_id is None. Defaulting to 0.", file=sys.stderr)
         else:
             self.padding_value = padding_value
+
+        # Ensure padding_value is an integer
+        if not isinstance(self.padding_value, int):
+            raise ValueError(f"padding_value must be an integer. Got {self.padding_value} (type: {type(self.padding_value)}) from tokenizer or argument.")
+
 
         # Read and tokenize the entire text file
         try:
