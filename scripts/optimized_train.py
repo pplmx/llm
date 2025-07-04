@@ -1,7 +1,15 @@
+"""
+优化后的PyTorch分布式训练脚本
+结构更清晰，模块化程度更高，易于维护和扩展
+"""
+
 import argparse
+import logging
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional, Tuple
 
 import torch
 import torch.distributed as dist
@@ -12,132 +20,402 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 
-# [BEST PRACTICE] Using a dataclass to manage configurations provides clarity and type hints.
-@dataclass
-class TrainConfig:
-    """Configuration settings for the training process."""
+# ============================================================================
+# 配置管理
+# ============================================================================
 
-    # Model parameters
+@dataclass
+class ModelConfig:
+    """模型配置"""
     hidden_size: int = 512
     ffn_hidden_size: int = 2048
 
-    # Training parameters
+
+@dataclass
+class TrainingConfig:
+    """训练配置"""
     batch_size: int = 128
     epochs: int = 10
     lr: float = 1e-3
     weight_decay: float = 0.01
-
-    # Dataset parameters
     num_samples: int = 20000
 
-    # DDP environment parameters
+
+@dataclass
+class DistributedConfig:
+    """分布式配置"""
     master_addr: str = "127.0.0.1"
     master_port: str = "12355"
     num_nodes: int = 1
     gpus_per_node: int = torch.cuda.device_count()
     node_rank: int = 0
 
-    # Performance optimization switches
-    use_compile: bool = True  # Whether to use torch.compile
-    use_amp: bool = True  # Whether to use Automatic Mixed Precision (AMP)
+
+@dataclass
+class OptimizationConfig:
+    """性能优化配置"""
+    use_compile: bool = True
+    use_amp: bool = True
+    num_workers: int = 4
+    pin_memory: bool = True
 
 
-class SimpleMLP(nn.Module):
-    def __init__(self, hidden_size=512, ffn_hidden_size=2048):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(hidden_size, ffn_hidden_size),
-            nn.ReLU(),
-            nn.Linear(ffn_hidden_size, hidden_size),
+@dataclass
+class CheckpointConfig:
+    """检查点配置"""
+    checkpoint_dir: str = "checkpoints"
+    resume_from_checkpoint: Optional[str] = None
+    save_interval: int = 1  # 每隔多少个epoch保存一次
+
+
+@dataclass
+class Config:
+    """主配置类，组合所有配置"""
+    model: ModelConfig
+    training: TrainingConfig
+    distributed: DistributedConfig
+    optimization: OptimizationConfig
+    checkpoint: CheckpointConfig
+
+    @classmethod
+    def from_args_and_env(cls) -> 'Config':
+        """从命令行参数和环境变量创建配置"""
+        parser = argparse.ArgumentParser(description="PyTorch DDP Training Script")
+
+        # 训练参数
+        parser.add_argument("--epochs", type=int, help="Number of training epochs")
+        parser.add_argument("--batch-size", type=int, help="Batch size per GPU")
+        parser.add_argument("--lr", type=float, help="Learning rate")
+        parser.add_argument("--hidden-size", type=int, help="Hidden size of the model")
+
+        # 优化参数
+        parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
+        parser.add_argument("--no-amp", action="store_true", help="Disable AMP")
+
+        # 检查点参数
+        parser.add_argument("--resume-from", type=str, help="Path to checkpoint to resume from")
+        parser.add_argument("--checkpoint-dir", type=str, help="Directory to save checkpoints")
+
+        args = parser.parse_args()
+
+        # 创建默认配置
+        config = cls(
+            model=ModelConfig(),
+            training=TrainingConfig(),
+            distributed=DistributedConfig(),
+            optimization=OptimizationConfig(),
+            checkpoint=CheckpointConfig()
         )
 
-    def forward(self, x):
+        # 从环境变量更新分布式配置
+        config.distributed.node_rank = int(os.environ.get("NODE_RANK", 0))
+        config.distributed.num_nodes = int(os.environ.get("NUM_NODES", 1))
+        config.distributed.master_addr = os.environ.get("MASTER_ADDR", "127.0.0.1")
+        config.distributed.master_port = os.environ.get("MASTER_PORT", "12355")
+        config.distributed.gpus_per_node = int(os.environ.get("GPUS_PER_NODE", torch.cuda.device_count()))
+
+        # 从命令行参数更新配置
+        if args.epochs is not None:
+            config.training.epochs = args.epochs
+        if args.batch_size is not None:
+            config.training.batch_size = args.batch_size
+        if args.lr is not None:
+            config.training.lr = args.lr
+        if args.hidden_size is not None:
+            config.model.hidden_size = args.hidden_size
+            config.model.ffn_hidden_size = args.hidden_size * 4
+        if args.no_compile:
+            config.optimization.use_compile = False
+        if args.no_amp:
+            config.optimization.use_amp = False
+        if args.resume_from:
+            config.checkpoint.resume_from_checkpoint = args.resume_from
+        if args.checkpoint_dir:
+            config.checkpoint.checkpoint_dir = args.checkpoint_dir
+
+        return config
+
+
+# ============================================================================
+# 日志管理
+# ============================================================================
+
+class Logger:
+    """日志管理器"""
+
+    def __init__(self, rank: int):
+        self.rank = rank
+        self.logger = logging.getLogger(__name__)
+        self._setup_logging()
+
+    def _setup_logging(self):
+        """配置日志"""
+        self.logger.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            f"[%(asctime)s] [%(levelname)s] [Rank {self.rank}] %(message)s"
+        )
+
+        if self.rank == 0:
+            handler = logging.StreamHandler()
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+        else:
+            self.logger.addHandler(logging.NullHandler())
+
+    def info(self, msg: str):
+        self.logger.info(msg)
+
+    def warning(self, msg: str):
+        self.logger.warning(msg)
+
+    def error(self, msg: str):
+        self.logger.error(msg)
+
+    def debug(self, msg: str):
+        self.logger.debug(msg)
+
+    def exception(self, msg: str):
+        self.logger.exception(msg)
+
+
+# ============================================================================
+# 模型定义
+# ============================================================================
+
+class SimpleMLP(nn.Module):
+    """简单的多层感知机模型"""
+
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(config.hidden_size, config.ffn_hidden_size),
+            nn.ReLU(),
+            nn.Linear(config.ffn_hidden_size, config.hidden_size),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
 
-def setup_ddp(rank: int, world_size: int, config: TrainConfig):
-    """Initializes the process group for distributed training."""
-    os.environ["MASTER_ADDR"] = config.master_addr
-    os.environ["MASTER_PORT"] = str(config.master_port)
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
-    torch.cuda.set_device(rank % torch.cuda.device_count())
+# ============================================================================
+# 分布式训练管理
+# ============================================================================
+
+class DistributedManager:
+    """分布式训练管理器"""
+
+    def __init__(self, config: DistributedConfig):
+        self.config = config
+
+    def setup(self, rank: int, world_size: int):
+        """初始化分布式训练环境"""
+        os.environ["MASTER_ADDR"] = self.config.master_addr
+        os.environ["MASTER_PORT"] = self.config.master_port
+
+        # 使用NCCL后端进行GPU通信
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(rank % torch.cuda.device_count())
+
+    @staticmethod
+    def cleanup():
+        """清理分布式训练环境"""
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+    def get_world_size(self) -> int:
+        """获取总的进程数"""
+        return self.config.num_nodes * self.config.gpus_per_node
 
 
-def cleanup_ddp():
-    """Destroys the DDP process group."""
-    if dist.is_initialized():
-        dist.destroy_process_group()
+# ============================================================================
+# 数据管理
+# ============================================================================
 
+class DataManager:
+    """数据管理器"""
+
+    def __init__(self, config: Config, rank: int, world_size: int):
+        self.config = config
+        self.rank = rank
+        self.world_size = world_size
+
+    def create_dataloader(self) -> Tuple[DataLoader, DistributedSampler]:
+        """创建数据加载器"""
+        # 创建合成数据集
+        x = torch.randn(self.config.training.num_samples, self.config.model.hidden_size)
+        y = torch.randn(self.config.training.num_samples, self.config.model.hidden_size)
+        dataset = TensorDataset(x, y)
+
+        # 创建分布式采样器
+        sampler = DistributedSampler(
+            dataset,
+            num_replicas=self.world_size,
+            rank=self.rank,
+            shuffle=True
+        )
+
+        # 创建数据加载器
+        dataloader = DataLoader(
+            dataset,
+            batch_size=self.config.training.batch_size,
+            sampler=sampler,
+            num_workers=self.config.optimization.num_workers,
+            pin_memory=self.config.optimization.pin_memory
+        )
+
+        return dataloader, sampler
+
+
+# ============================================================================
+# 检查点管理
+# ============================================================================
+
+class CheckpointManager:
+    """检查点管理器"""
+
+    def __init__(self, config: CheckpointConfig, rank: int, logger: Logger):
+        self.config = config
+        self.rank = rank
+        self.logger = logger
+
+    def save_checkpoint(self, epoch: int, model: DDP, optimizer: optim.Optimizer,
+                        scaler: torch.amp.GradScaler, loss: float):
+        """保存检查点"""
+        if self.rank != 0:
+            return
+
+        Path(self.config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+        checkpoint_path = os.path.join(self.config.checkpoint_dir, f"epoch_{epoch}.pt")
+
+        checkpoint = {
+            "epoch": epoch,
+            "loss": loss,
+            "model_state": model.module.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "scaler_state": scaler.state_dict(),
+        }
+
+        torch.save(checkpoint, checkpoint_path)
+        self.logger.debug(f"Checkpoint saved to {checkpoint_path}")
+
+    def load_checkpoint(self, model: nn.Module, optimizer: optim.Optimizer,
+                        scaler: torch.amp.GradScaler, rank: int) -> int:
+        """加载检查点，返回起始epoch"""
+        if not self.config.resume_from_checkpoint:
+            return 0
+
+        ckp_path = self.config.resume_from_checkpoint
+        if not os.path.exists(ckp_path):
+            self.logger.warning(f"Checkpoint file not found: {ckp_path}. Starting from scratch.")
+            return 0
+
+        map_location = {"cuda:0": f"cuda:{rank}"}
+        checkpoint = torch.load(ckp_path, map_location=map_location)
+
+        model.load_state_dict(checkpoint["model_state"])
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+        scaler.load_state_dict(checkpoint["scaler_state"])
+
+        start_epoch = checkpoint["epoch"] + 1
+        self.logger.info(f"Resumed training from epoch {start_epoch} using checkpoint {ckp_path}")
+
+        return start_epoch
+
+
+# ============================================================================
+# 训练器
+# ============================================================================
 
 class Trainer:
-    """
-    Encapsulates the training logic for better modularity and reusability.
-    """
+    """训练器主类"""
 
-    def __init__(self, config: TrainConfig, rank: int, world_size: int):
+    def __init__(self, config: Config, rank: int, world_size: int):
         self.config = config
         self.rank = rank
         self.world_size = world_size
         self.device = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
 
-        model = SimpleMLP(config.hidden_size, config.ffn_hidden_size)
+        # 初始化各个管理器
+        self.logger = Logger(rank)
+        self.checkpoint_manager = CheckpointManager(config.checkpoint, rank, self.logger)
+        self.data_manager = DataManager(config, rank, world_size)
 
-        # [PERFORMANCE] torch.compile (PyTorch 2.0+) can significantly speed up the model.
-        # The 'reduce-overhead' mode is a good choice for models with less dynamic shapes.
-        if config.use_compile:
-            if self.rank == 0:
-                print("🚀 Compiling the model with torch.compile()...")
+        # 初始化模型和训练组件
+        self._setup_model()
+        self._setup_training_components()
+        self._setup_data()
+
+    def _setup_model(self):
+        """设置模型"""
+        # 创建模型
+        model = SimpleMLP(self.config.model)
+
+        # 加载检查点（在DDP包装之前）
+        self.start_epoch = self.checkpoint_manager.load_checkpoint(
+            model, None, None, self.rank
+        )
+
+        # 移动到设备
+        model = model.to(self.device)
+
+        # 编译模型（如果启用）
+        if self.config.optimization.use_compile:
+            self.logger.info("🚀 Compiling model with torch.compile...")
             model = torch.compile(model, mode="reduce-overhead")
 
-        self.model = DDP(model.to(self.device), device_ids=[self.device.index])
+        # 包装为DDP
+        self.model = DDP(model, device_ids=[self.device.index])
 
-        # [PERFORMANCE] The 'fused' option for AdamW can improve GPU performance.
+    def _setup_training_components(self):
+        """设置训练组件"""
+        # 优化器
         self.optimizer = optim.AdamW(
             self.model.parameters(),
-            lr=config.lr,
-            weight_decay=config.weight_decay,
-            fused=torch.cuda.is_available(),
+            lr=self.config.training.lr,
+            weight_decay=self.config.training.weight_decay,
+            fused=torch.cuda.is_available()
         )
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=config.epochs)
 
-        # GradScaler is used for automatic mixed precision (AMP) to prevent underflow.
-        self.scaler = torch.amp.GradScaler("cuda", enabled=config.use_amp)
+        # 学习率调度器
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=self.config.training.epochs
+        )
 
-        self.dataloader, self.sampler = self._create_dataloader()
+        # 混合精度缩放器
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.config.optimization.use_amp)
+
+        # 损失函数
         self.criterion = nn.MSELoss()
 
-    def _create_dataloader(self):
-        # Each rank creates the same synthetic data. The DDP Sampler ensures each
-        # process gets a unique, non-overlapping slice of the data.
-        x = torch.randn(self.config.num_samples, self.config.hidden_size)
-        y = torch.randn(self.config.num_samples, self.config.hidden_size)
-        dataset = TensorDataset(x, y)
+        # 如果有检查点，重新加载优化器和缩放器状态
+        if self.config.checkpoint.resume_from_checkpoint:
+            self.start_epoch = self.checkpoint_manager.load_checkpoint(
+                self.model.module, self.optimizer, self.scaler, self.rank
+            )
 
-        sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=self.rank, shuffle=True)
+    def _setup_data(self):
+        """设置数据"""
+        self.dataloader, self.sampler = self.data_manager.create_dataloader()
 
-        # Using num_workers > 0 and pin_memory=True are best practices for data loading performance.
-        dataloader = DataLoader(
-            dataset, batch_size=self.config.batch_size, sampler=sampler, num_workers=4, pin_memory=True
-        )
-        return dataloader, sampler
-
-    def _run_epoch(self, epoch: int):
-        # This is crucial to ensure that shuffling is different and properly coordinated across epochs.
+    def _run_epoch(self, epoch: int) -> float:
+        """运行一个epoch"""
         self.sampler.set_epoch(epoch)
         self.model.train()
-
         total_loss = 0.0
+
         for data, target in self.dataloader:
             data = data.to(self.device, non_blocking=True)
             target = target.to(self.device, non_blocking=True)
 
-            # [PERFORMANCE] set_to_none=True is a micro-optimization that avoids a memory-setting kernel.
+            # 清零梯度
             self.optimizer.zero_grad(set_to_none=True)
 
-            with torch.amp.autocast("cuda", enabled=self.config.use_amp):
+            # 前向传播（使用混合精度）
+            with torch.amp.autocast("cuda", enabled=self.config.optimization.use_amp):
                 output = self.model(data)
                 loss = self.criterion(output, target)
 
+            # 反向传播
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
@@ -147,100 +425,104 @@ class Trainer:
         return total_loss / len(self.dataloader)
 
     def train(self):
-        if self.rank == 0:
-            print("🎉 Starting training...")
-
+        """主训练循环"""
+        self.logger.info("🎉 Starting training...")
         start_time = time.time()
-        for epoch in range(self.config.epochs):
+
+        for epoch in range(self.start_epoch, self.config.training.epochs):
+            # 训练一个epoch
             avg_loss = self._run_epoch(epoch)
+
+            # 更新学习率
             self.scheduler.step()
 
-            # A barrier synchronizes all processes, ensuring all ranks have finished
-            # the current epoch before the main process prints the log.
+            # 同步所有进程
             dist.barrier()
 
+            # 日志记录和检查点保存（仅rank 0）
             if self.rank == 0:
                 elapsed = time.time() - start_time
                 lr = self.scheduler.get_last_lr()[0]
-                print(
-                    f"📊 Epoch {epoch + 1:2d}/{self.config.epochs} | "
+
+                self.logger.info(
+                    f"Epoch {epoch + 1:2d}/{self.config.training.epochs} | "
                     f"Loss: {avg_loss:.4f} | LR: {lr:.6f} | Time: {elapsed:.1f}s"
                 )
 
+                # 保存检查点
+                if (epoch + 1) % self.config.checkpoint.save_interval == 0:
+                    self.checkpoint_manager.save_checkpoint(
+                        epoch, self.model, self.optimizer, self.scaler, avg_loss
+                    )
+
         if self.rank == 0:
             total_time = time.time() - start_time
-            print(f"✅ Training completed in {total_time:.1f}s on {self.world_size} GPUs.")
+            self.logger.info(f"✅ Training completed in {total_time:.1f}s on {self.world_size} GPUs.")
 
 
-def train_worker(rank: int, world_size: int, config: TrainConfig):
+# ============================================================================
+# 主函数和入口点
+# ============================================================================
+
+def train_worker(rank: int, world_size: int, config: Config):
+    """训练工作进程"""
+    distributed_manager = DistributedManager(config.distributed)
+
     try:
-        setup_ddp(rank, world_size, config)
+        # 设置分布式环境
+        distributed_manager.setup(rank, world_size)
+
+        # 创建并运行训练器
         trainer = Trainer(config, rank, world_size)
         trainer.train()
+
     except Exception as e:
-        print(f"Error in rank {rank}: {e}")
+        logger = Logger(rank)
+        logger.exception(f"An error occurred in rank {rank}: {e}")
+        raise
     finally:
-        cleanup_ddp()
-
-
-def get_config_from_env_and_args():
-    """
-    [BEST PRACTICE] Combine argparse and environment variables for flexible configuration.
-    """
-    parser = argparse.ArgumentParser(description="PyTorch DDP Training Script")
-    parser.add_argument("--epochs", type=int, help="Number of training epochs.")
-    parser.add_argument("--batch_size", type=int, help="Batch size per GPU.")
-    parser.add_argument("--lr", type=float, help="Learning rate.")
-    parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile.")
-
-    args = parser.parse_args()
-
-    # Get distributed settings from environment variables, a standard practice
-    # in cluster environments like SLURM.
-    config_dict = {
-        "node_rank": int(os.environ.get("NODE_RANK", 0)),
-        "num_nodes": int(os.environ.get("NUM_NODES", 1)),
-        "master_addr": os.environ.get("MASTER_ADDR", "127.0.0.1"),
-        "master_port": os.environ.get("MASTER_PORT", "12355"),
-        "gpus_per_node": int(os.environ.get("GPUS_PER_NODE", torch.cuda.device_count())),
-    }
-
-    if args.epochs is not None:
-        config_dict["epochs"] = args.epochs
-    if args.batch_size is not None:
-        config_dict["batch_size"] = args.batch_size
-    if args.lr is not None:
-        config_dict["lr"] = args.lr
-    if args.no_compile:
-        config_dict["use_compile"] = False
-
-    return TrainConfig(**config_dict)
+        # 清理分布式环境
+        distributed_manager.cleanup()
 
 
 def main():
-    config = get_config_from_env_and_args()
+    """主函数"""
+    # 获取配置
+    config = Config.from_args_and_env()
 
-    # [PERFORMANCE] Enables cudnn's auto-tuner to find the best algorithm for the
-    # current hardware. Recommended when input tensor sizes are consistent.
+    # 性能优化设置
     torch.backends.cudnn.benchmark = True
 
-    world_size = config.num_nodes * config.gpus_per_node
+    # 计算总的进程数
+    distributed_manager = DistributedManager(config.distributed)
+    world_size = distributed_manager.get_world_size()
+
+    # 设置临时日志（主进程）
+    logger = Logger(0)
 
     if world_size > 1:
-        print("🔧 Distributed Training Configuration:")
-        print(f"   🌍 World Size: {world_size} | Nodes: {config.num_nodes} | GPUs per node: {config.gpus_per_node}")
-        print(f"   🏷️   Current node rank: {config.node_rank}")
-        print(f"   🌐 Master: {config.master_addr}:{config.master_port}")
-        print(f"   ⚙️  torch.compile: {'Enabled' if config.use_compile else 'Disabled'}")
-        print(f"   ⚡ AMP: {'Enabled' if config.use_amp else 'Disabled'}")
-        print("=" * 60)
+        # 多GPU分布式训练
+        logger.info("🔧 Distributed Training Configuration:")
+        logger.info(f"   🌍 World Size: {world_size} | Nodes: {config.distributed.num_nodes} | GPUs per node: {config.distributed.gpus_per_node}")
+        logger.info(f"   🏷️  Current node rank: {config.distributed.node_rank}")
+        logger.info(f"   🌐 Master: {config.distributed.master_addr}:{config.distributed.master_port}")
+        logger.info(f"   ⚙️  torch.compile: {'Enabled' if config.optimization.use_compile else 'Disabled'}")
+        logger.info(f"   ⚡ AMP: {'Enabled' if config.optimization.use_amp else 'Disabled'}")
 
-        mp.spawn(train_worker, args=(world_size, config), nprocs=config.gpus_per_node, join=True)
+        # 启动多进程训练
+        mp.spawn(
+            train_worker,
+            args=(world_size, config),
+            nprocs=config.distributed.gpus_per_node,
+            join=True
+        )
     elif world_size == 1:
-        print("🚀 Starting single-GPU training...")
+        # 单GPU训练
+        logger.info("🚀 Starting single-GPU training...")
         train_worker(0, 1, config)
     else:
-        print("No GPUs found. Exiting.")
+        logger.error("❌ No GPUs found. Exiting.")
+        return
 
 
 if __name__ == "__main__":
