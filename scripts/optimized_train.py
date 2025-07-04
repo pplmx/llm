@@ -9,7 +9,6 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
 
 import torch
 import torch.distributed as dist
@@ -19,14 +18,15 @@ import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
-
 # ============================================================================
 # 配置管理
 # ============================================================================
 
+
 @dataclass
 class ModelConfig:
     """模型配置"""
+
     hidden_size: int = 512
     ffn_hidden_size: int = 2048
 
@@ -34,6 +34,7 @@ class ModelConfig:
 @dataclass
 class TrainingConfig:
     """训练配置"""
+
     batch_size: int = 128
     epochs: int = 10
     lr: float = 1e-3
@@ -44,6 +45,7 @@ class TrainingConfig:
 @dataclass
 class DistributedConfig:
     """分布式配置"""
+
     master_addr: str = "127.0.0.1"
     master_port: str = "12355"
     num_nodes: int = 1
@@ -54,6 +56,7 @@ class DistributedConfig:
 @dataclass
 class OptimizationConfig:
     """性能优化配置"""
+
     use_compile: bool = True
     use_amp: bool = True
     num_workers: int = 4
@@ -63,14 +66,16 @@ class OptimizationConfig:
 @dataclass
 class CheckpointConfig:
     """检查点配置"""
+
     checkpoint_dir: str = "checkpoints"
-    resume_from_checkpoint: Optional[str] = None
+    resume_from_checkpoint: str | None = None
     save_interval: int = 1  # 每隔多少个epoch保存一次
 
 
 @dataclass
 class Config:
     """主配置类，组合所有配置"""
+
     model: ModelConfig
     training: TrainingConfig
     distributed: DistributedConfig
@@ -78,7 +83,7 @@ class Config:
     checkpoint: CheckpointConfig
 
     @classmethod
-    def from_args_and_env(cls) -> 'Config':
+    def from_args_and_env(cls) -> "Config":
         """从命令行参数和环境变量创建配置"""
         parser = argparse.ArgumentParser(description="PyTorch DDP Training Script")
 
@@ -104,7 +109,7 @@ class Config:
             training=TrainingConfig(),
             distributed=DistributedConfig(),
             optimization=OptimizationConfig(),
-            checkpoint=CheckpointConfig()
+            checkpoint=CheckpointConfig(),
         )
 
         # 从环境变量更新分布式配置
@@ -140,6 +145,7 @@ class Config:
 # 日志管理
 # ============================================================================
 
+
 class Logger:
     """日志管理器"""
 
@@ -151,9 +157,7 @@ class Logger:
     def _setup_logging(self):
         """配置日志"""
         self.logger.setLevel(logging.INFO)
-        formatter = logging.Formatter(
-            f"[%(asctime)s] [%(levelname)s] [Rank {self.rank}] %(message)s"
-        )
+        formatter = logging.Formatter(f"[%(asctime)s] [%(levelname)s] [Rank {self.rank}] %(message)s")
 
         if self.rank == 0:
             handler = logging.StreamHandler()
@@ -182,6 +186,7 @@ class Logger:
 # 模型定义
 # ============================================================================
 
+
 class SimpleMLP(nn.Module):
     """简单的多层感知机模型"""
 
@@ -200,6 +205,7 @@ class SimpleMLP(nn.Module):
 # ============================================================================
 # 分布式训练管理
 # ============================================================================
+
 
 class DistributedManager:
     """分布式训练管理器"""
@@ -231,6 +237,7 @@ class DistributedManager:
 # 数据管理
 # ============================================================================
 
+
 class DataManager:
     """数据管理器"""
 
@@ -239,7 +246,7 @@ class DataManager:
         self.rank = rank
         self.world_size = world_size
 
-    def create_dataloader(self) -> Tuple[DataLoader, DistributedSampler]:
+    def create_dataloader(self) -> tuple[DataLoader, DistributedSampler]:
         """创建数据加载器"""
         # 创建合成数据集
         x = torch.randn(self.config.training.num_samples, self.config.model.hidden_size)
@@ -247,12 +254,7 @@ class DataManager:
         dataset = TensorDataset(x, y)
 
         # 创建分布式采样器
-        sampler = DistributedSampler(
-            dataset,
-            num_replicas=self.world_size,
-            rank=self.rank,
-            shuffle=True
-        )
+        sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=self.rank, shuffle=True)
 
         # 创建数据加载器
         dataloader = DataLoader(
@@ -260,7 +262,7 @@ class DataManager:
             batch_size=self.config.training.batch_size,
             sampler=sampler,
             num_workers=self.config.optimization.num_workers,
-            pin_memory=self.config.optimization.pin_memory
+            pin_memory=self.config.optimization.pin_memory,
         )
 
         return dataloader, sampler
@@ -270,6 +272,7 @@ class DataManager:
 # 检查点管理
 # ============================================================================
 
+
 class CheckpointManager:
     """检查点管理器"""
 
@@ -278,8 +281,9 @@ class CheckpointManager:
         self.rank = rank
         self.logger = logger
 
-    def save_checkpoint(self, epoch: int, model: DDP, optimizer: optim.Optimizer,
-                        scaler: torch.amp.GradScaler, loss: float):
+    def save_checkpoint(
+        self, epoch: int, model: DDP, optimizer: optim.Optimizer, scaler: torch.amp.GradScaler, loss: float
+    ):
         """保存检查点"""
         if self.rank != 0:
             return
@@ -298,8 +302,9 @@ class CheckpointManager:
         torch.save(checkpoint, checkpoint_path)
         self.logger.debug(f"Checkpoint saved to {checkpoint_path}")
 
-    def load_checkpoint(self, model: nn.Module, optimizer: optim.Optimizer,
-                        scaler: torch.amp.GradScaler, rank: int) -> int:
+    def load_checkpoint(
+        self, model: nn.Module, optimizer: optim.Optimizer, scaler: torch.amp.GradScaler, rank: int
+    ) -> int:
         """加载检查点，返回起始epoch"""
         if not self.config.resume_from_checkpoint:
             return 0
@@ -326,6 +331,7 @@ class CheckpointManager:
 # 训练器
 # ============================================================================
 
+
 class Trainer:
     """训练器主类"""
 
@@ -351,9 +357,7 @@ class Trainer:
         model = SimpleMLP(self.config.model)
 
         # 加载检查点（在DDP包装之前）
-        self.start_epoch = self.checkpoint_manager.load_checkpoint(
-            model, None, None, self.rank
-        )
+        self.start_epoch = self.checkpoint_manager.load_checkpoint(model, None, None, self.rank)
 
         # 移动到设备
         model = model.to(self.device)
@@ -373,13 +377,11 @@ class Trainer:
             self.model.parameters(),
             lr=self.config.training.lr,
             weight_decay=self.config.training.weight_decay,
-            fused=torch.cuda.is_available()
+            fused=torch.cuda.is_available(),
         )
 
         # 学习率调度器
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=self.config.training.epochs
-        )
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.config.training.epochs)
 
         # 混合精度缩放器
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.config.optimization.use_amp)
@@ -451,9 +453,7 @@ class Trainer:
 
                 # 保存检查点
                 if (epoch + 1) % self.config.checkpoint.save_interval == 0:
-                    self.checkpoint_manager.save_checkpoint(
-                        epoch, self.model, self.optimizer, self.scaler, avg_loss
-                    )
+                    self.checkpoint_manager.save_checkpoint(epoch, self.model, self.optimizer, self.scaler, avg_loss)
 
         if self.rank == 0:
             total_time = time.time() - start_time
@@ -463,6 +463,7 @@ class Trainer:
 # ============================================================================
 # 主函数和入口点
 # ============================================================================
+
 
 def train_worker(rank: int, world_size: int, config: Config):
     """训练工作进程"""
@@ -503,7 +504,9 @@ def main():
     if world_size > 1:
         # 多GPU分布式训练
         logger.info("🔧 Distributed Training Configuration:")
-        logger.info(f"   🌍 World Size: {world_size} | Nodes: {config.distributed.num_nodes} | GPUs per node: {config.distributed.gpus_per_node}")
+        logger.info(
+            f"   🌍 World Size: {world_size} | Nodes: {config.distributed.num_nodes} | GPUs per node: {config.distributed.gpus_per_node}"
+        )
         logger.info(f"   🏷️  Current node rank: {config.distributed.node_rank}")
         logger.info(f"   🌐 Master: {config.distributed.master_addr}:{config.distributed.master_port}")
         logger.info(f"   ⚙️  torch.compile: {'Enabled' if config.optimization.use_compile else 'Disabled'}")
@@ -514,7 +517,7 @@ def main():
             train_worker,
             args=(world_size, config),
             nprocs=config.distributed.gpus_per_node,
-            join=True
+            join=True,
         )
     elif world_size == 1:
         # 单GPU训练
