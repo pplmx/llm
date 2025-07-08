@@ -24,6 +24,7 @@ dependencies = [
     "matplotlib>=3.10.1",
     "seaborn>=0.13.2",
     "pillow>=11.2.1",
+    "rich>=14.0.0",
 ]
 
 [project.urls]

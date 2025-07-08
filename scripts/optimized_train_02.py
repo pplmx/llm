@@ -1,14 +1,14 @@
 import argparse
 import logging
 import os
+import shutil
 import sys
 import time
 import types
 import typing
 from dataclasses import dataclass, field
-from pathlib import Path
 from datetime import datetime
-import shutil
+from pathlib import Path
 
 import torch
 import torch.distributed as dist
@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 # ============================================================================
 # 配置管理
 # ============================================================================
+
 
 @dataclass
 class ModelConfig:
@@ -150,9 +151,16 @@ class Config:
                 # 简化处理，只暴露部分关键参数
                 arg_name = f"--{name.replace('_', '-')}"
                 if name in [
-                    "epochs", "batch_size", "lr", "hidden_size",
-                    "scheduler_type", "num_workers", "resume_from_checkpoint",
-                    "checkpoint_dir", "log_interval", "log_level"
+                    "epochs",
+                    "batch_size",
+                    "lr",
+                    "hidden_size",
+                    "scheduler_type",
+                    "num_workers",
+                    "resume_from_checkpoint",
+                    "checkpoint_dir",
+                    "log_interval",
+                    "log_level",
                 ]:
                     # 从联合类型 (e.g., str | None) 中提取基础类型 (e.g., str)
                     type_for_argparse = type_hint
@@ -166,7 +174,9 @@ class Config:
                             # 如果参数类型是 Optional[None] 这种无法从命令行设置的，就跳过
                             continue
 
-                    parser.add_argument(arg_name, type=type_for_argparse, default=None, help=f"Override {dc_name}.{name}")
+                    parser.add_argument(
+                        arg_name, type=type_for_argparse, default=None, help=f"Override {dc_name}.{name}"
+                    )
 
         config = cls()
         add_args_from_dataclass(parser, "training", config.training)
@@ -189,14 +199,17 @@ class Config:
 
         # REFACTOR: 简化从命令行参数更新配置的逻辑
         for group_name, group_config in config.__dict__.items():
-            if group_name.startswith('_'): continue
+            if group_name.startswith("_"):
+                continue
             for key, _ in group_config.__annotations__.items():
                 arg_val = getattr(args, key, None)
                 if arg_val is not None:
                     setattr(group_config, key, arg_val)
 
-        if args.no_compile: config.optimization.use_compile = False
-        if args.no_amp: config.optimization.use_amp = False
+        if args.no_compile:
+            config.optimization.use_compile = False
+        if args.no_amp:
+            config.optimization.use_amp = False
 
         # 手动后处理
         config.model.__post_init__()
@@ -208,6 +221,7 @@ class Config:
 # ============================================================================
 # 性能监控
 # ============================================================================
+
 
 class PerformanceMonitor:
     """性能监控器"""
@@ -232,7 +246,7 @@ class PerformanceMonitor:
         return sum(self.batch_times) / len(self.batch_times) if self.batch_times else 0.0
 
     def get_current_gpu_memory(self) -> tuple[float, float]:
-        if self.device.type == 'cuda':
+        if self.device.type == "cuda":
             memory_allocated = torch.cuda.memory_allocated(self.device) / 1024**3
             memory_reserved = torch.cuda.memory_reserved(self.device) / 1024**3
             return memory_allocated, memory_reserved
@@ -240,7 +254,7 @@ class PerformanceMonitor:
 
     # OPTIMIZATION: 添加峰值内存监控
     def get_peak_gpu_memory(self) -> float:
-        if self.device.type == 'cuda':
+        if self.device.type == "cuda":
             return torch.cuda.max_memory_allocated(self.device) / 1024**3
         return 0.0
 
@@ -248,15 +262,18 @@ class PerformanceMonitor:
         self.batch_times.clear()
         self.losses.clear()
         self.gradient_norms.clear()
-        if self.device.type == 'cuda':
+        if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
+
 
 # ============================================================================
 # 日志管理
 # ============================================================================
 
+
 class Logger:
     """增强的日志管理器"""
+
     def __init__(self, rank: int, config: LoggingConfig):
         self.rank = rank
         self.config = config
@@ -265,7 +282,9 @@ class Logger:
 
     def _setup_logging(self):
         self.logger.setLevel(getattr(logging, self.config.log_level.upper()))
-        formatter = logging.Formatter(f"[%(asctime)s] [%(levelname)s] [Rank {self.rank}] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        formatter = logging.Formatter(
+            f"[%(asctime)s] [%(levelname)s] [Rank {self.rank}] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        )
 
         if self.rank == 0:
             console_handler = logging.StreamHandler(sys.stdout)
@@ -286,9 +305,11 @@ class Logger:
         # 代理所有日志方法 (info, warning, error, etc.)
         return getattr(self.logger, name)
 
+
 # ============================================================================
 # 模型定义 (无变化，已足够好)
 # ============================================================================
+
 
 class SimpleMLP(nn.Module):
     def __init__(self, config: ModelConfig):
@@ -301,7 +322,7 @@ class SimpleMLP(nn.Module):
             output_size = config.hidden_size if is_last_layer else config.ffn_hidden_size
             layers.append(nn.Linear(input_size, output_size))
             if not is_last_layer:
-                layers.append(nn.GELU()) # 使用GELU，现代模型中更常见
+                layers.append(nn.GELU())  # 使用GELU，现代模型中更常见
                 layers.append(nn.Dropout(config.dropout))
             input_size = output_size
         self.net = nn.Sequential(*layers)
@@ -322,9 +343,11 @@ class SimpleMLP(nn.Module):
         trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
         return total_params, trainable_params
 
+
 # ============================================================================
 # 分布式训练管理 (无变化，已足够好)
 # ============================================================================
+
 
 class DistributedManager:
     def __init__(self, config: DistributedConfig):
@@ -358,9 +381,11 @@ class DistributedManager:
             tensor /= dist.get_world_size()
         return tensor
 
+
 # ============================================================================
 # 数据管理 (无变化，已足够好)
 # ============================================================================
+
 
 class DataManager:
     def __init__(self, config: Config, rank: int, world_size: int):
@@ -370,8 +395,12 @@ class DataManager:
 
     def create_dataloader(self) -> tuple[DataLoader, DistributedSampler]:
         dataset = self._create_dataset()
-        sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=self.rank, shuffle=True, drop_last=True)
-        use_persistent_workers = self.config.optimization.persistent_workers and self.config.optimization.num_workers > 0
+        sampler = DistributedSampler(
+            dataset, num_replicas=self.world_size, rank=self.rank, shuffle=True, drop_last=True
+        )
+        use_persistent_workers = (
+            self.config.optimization.persistent_workers and self.config.optimization.num_workers > 0
+        )
         dataloader = DataLoader(
             dataset,
             batch_size=self.config.training.batch_size,
@@ -388,9 +417,11 @@ class DataManager:
         y = x + 0.1 * torch.randn_like(x)
         return TensorDataset(x, y)
 
+
 # ============================================================================
 # 检查点管理
 # ============================================================================
+
 
 class CheckpointManager:
     def __init__(self, config: CheckpointConfig, rank: int, logger: Logger):
@@ -402,14 +433,26 @@ class CheckpointManager:
         if self.rank == 0:
             Path(self.config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
-    def save_checkpoint(self, epoch: int, model: DDP, optimizer: optim.Optimizer, scheduler: LRScheduler, scaler: torch.amp.GradScaler, loss: float):
+    def save_checkpoint(
+        self,
+        epoch: int,
+        model: DDP,
+        optimizer: optim.Optimizer,
+        scheduler: LRScheduler,
+        scaler: torch.amp.GradScaler,
+        loss: float,
+    ):
         if self.rank != 0:
             return
 
         checkpoint = {
-            "epoch": epoch, "loss": loss, "best_loss": self.best_loss,
-            "model_state": model.module.state_dict(), "optimizer_state": optimizer.state_dict(),
-            "scheduler_state": scheduler.state_dict(), "scaler_state": scaler.state_dict(),
+            "epoch": epoch,
+            "loss": loss,
+            "best_loss": self.best_loss,
+            "model_state": model.module.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "scheduler_state": scheduler.state_dict(),
+            "scaler_state": scaler.state_dict(),
         }
 
         # OPTIMIZATION: 原子化保存，先保存到临时文件再移动
@@ -448,7 +491,14 @@ class CheckpointManager:
                 except OSError as e:
                     self.logger.warning(f"Could not remove old checkpoint {oldest_checkpoint}: {e}")
 
-    def load_checkpoint(self, model: nn.Module, optimizer: optim.Optimizer, scheduler: LRScheduler, scaler: torch.amp.GradScaler, device: torch.device) -> tuple[int, float]:
+    def load_checkpoint(
+        self,
+        model: nn.Module,
+        optimizer: optim.Optimizer,
+        scheduler: LRScheduler,
+        scaler: torch.amp.GradScaler,
+        device: torch.device,
+    ) -> tuple[int, float]:
         if not self.config.resume_from_checkpoint:
             return 0, float("inf")
 
@@ -474,9 +524,11 @@ class CheckpointManager:
             self.logger.warning("Starting from scratch due to checkpoint loading error.")
             return 0, float("inf")
 
+
 # ============================================================================
 # 训练器
 # ============================================================================
+
 
 class Trainer:
     def __init__(self, config: Config, rank: int, world_size: int):
@@ -516,11 +568,13 @@ class Trainer:
 
     def _setup_training_components(self):
         self.optimizer = optim.AdamW(
-            self.model.parameters(), lr=self.config.training.lr,
-            weight_decay=self.config.training.weight_decay, fused=self.device.type == 'cuda'
+            self.model.parameters(),
+            lr=self.config.training.lr,
+            weight_decay=self.config.training.weight_decay,
+            fused=self.device.type == "cuda",
         )
         self.scheduler = self._create_scheduler()
-        self.scaler = torch.amp.GradScaler(enabled=(self.config.optimization.use_amp and self.device.type == 'cuda'))
+        self.scaler = torch.amp.GradScaler(enabled=(self.config.optimization.use_amp and self.device.type == "cuda"))
         self.criterion = nn.MSELoss()
 
         self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(
@@ -530,9 +584,13 @@ class Trainer:
 
     def _create_scheduler(self) -> LRScheduler:
         scheduler_map = {
-            "cosine": optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.config.training.epochs - self.config.training.warmup_epochs),
-            "step": optim.lr_scheduler.StepLR(self.optimizer, step_size=max(1, self.config.training.epochs // 3), gamma=0.1),
-            "plateau": optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", patience=5, factor=0.5)
+            "cosine": optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=self.config.training.epochs - self.config.training.warmup_epochs
+            ),
+            "step": optim.lr_scheduler.StepLR(
+                self.optimizer, step_size=max(1, self.config.training.epochs // 3), gamma=0.1
+            ),
+            "plateau": optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", patience=5, factor=0.5),
         }
         scheduler = scheduler_map.get(self.config.training.scheduler_type)
         if not scheduler:
@@ -540,15 +598,25 @@ class Trainer:
         if self.config.training.warmup_epochs > 0:
             return optim.lr_scheduler.SequentialLR(
                 self.optimizer,
-                [optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1e-6, end_factor=1.0, total_iters=self.config.training.warmup_epochs), scheduler],
-                milestones=[self.config.training.warmup_epochs]
+                [
+                    optim.lr_scheduler.LinearLR(
+                        self.optimizer,
+                        start_factor=1e-6,
+                        end_factor=1.0,
+                        total_iters=self.config.training.warmup_epochs,
+                    ),
+                    scheduler,
+                ],
+                milestones=[self.config.training.warmup_epochs],
             )
         return scheduler
 
     def _setup_data(self):
         self.dataloader, self.sampler = self.data_manager.create_dataloader()
         if self.rank == 0:
-            self.logger.info(f"📊 Dataset: {len(self.dataloader.dataset):,} samples, {len(self.dataloader)} batches per epoch")
+            self.logger.info(
+                f"📊 Dataset: {len(self.dataloader.dataset):,} samples, {len(self.dataloader)} batches per epoch"
+            )
 
     def _run_epoch(self, epoch: int) -> float:
         self.sampler.set_epoch(epoch)
@@ -634,16 +702,20 @@ class Trainer:
                 )
                 self.logger.info("-" * 80)
 
-                self.checkpoint_manager.save_checkpoint(epoch, self.model, self.optimizer, self.scheduler, self.scaler, avg_loss)
+                self.checkpoint_manager.save_checkpoint(
+                    epoch, self.model, self.optimizer, self.scheduler, self.scaler, avg_loss
+                )
 
         if self.rank == 0:
             total_time = time.time() - self.training_start_time
-            self.logger.info(f"✅ Training completed in {total_time/3600:.2f} hours on {self.world_size} GPUs.")
+            self.logger.info(f"✅ Training completed in {total_time / 3600:.2f} hours on {self.world_size} GPUs.")
             self.logger.info(f"🌟 Best loss achieved: {self.checkpoint_manager.best_loss:.4f}")
+
 
 # ============================================================================
 # 主函数和入口点
 # ============================================================================
+
 
 def train_worker(rank: int, world_size: int, config: Config):
     """训练工作进程"""
@@ -660,6 +732,7 @@ def train_worker(rank: int, world_size: int, config: Config):
     finally:
         distributed_manager.cleanup()
 
+
 def main():
     config = Config.from_args_and_env()
 
@@ -671,14 +744,22 @@ def main():
 
     logger = Logger(0, config.logging)
     if torch.cuda.is_available() and world_size > 0:
-        logger.info("="*50)
+        logger.info("=" * 50)
         logger.info("🔧 TRAINING CONFIGURATION 🔧")
-        logger.info("="*50)
-        logger.info(f"  Model        : Hidden={config.model.hidden_size}, FFN={config.model.ffn_hidden_size}, Layers={config.model.num_layers}")
-        logger.info(f"  Training     : Epochs={config.training.epochs}, BS/GPU={config.training.batch_size}, LR={config.training.lr}")
-        logger.info(f"  Distributed  : World Size={world_size}, Nodes={config.distributed.num_nodes}, GPUs/Node={config.distributed.gpus_per_node}")
-        logger.info(f"  Optimization : torch.compile={'✅' if config.optimization.use_compile else '❌'}, AMP={'✅' if config.optimization.use_amp else '❌'}")
-        logger.info("="*50)
+        logger.info("=" * 50)
+        logger.info(
+            f"  Model        : Hidden={config.model.hidden_size}, FFN={config.model.ffn_hidden_size}, Layers={config.model.num_layers}"
+        )
+        logger.info(
+            f"  Training     : Epochs={config.training.epochs}, BS/GPU={config.training.batch_size}, LR={config.training.lr}"
+        )
+        logger.info(
+            f"  Distributed  : World Size={world_size}, Nodes={config.distributed.num_nodes}, GPUs/Node={config.distributed.gpus_per_node}"
+        )
+        logger.info(
+            f"  Optimization : torch.compile={'✅' if config.optimization.use_compile else '❌'}, AMP={'✅' if config.optimization.use_amp else '❌'}"
+        )
+        logger.info("=" * 50)
 
         if world_size > 1:
             logger.info(f"🚀 Spawning {world_size} DDP processes...")
@@ -689,6 +770,7 @@ def main():
     else:
         logger.error("❌ No GPUs found or world_size is zero. Exiting.")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
