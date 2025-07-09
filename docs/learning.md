@@ -501,7 +501,7 @@ uv pip install -e .
 4. 运行训练：
 
 ```bash
-python train_01.py
+python best_minimal_train.py
 ```
 
 ## 训练过程优化
