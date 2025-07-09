@@ -1,5 +1,6 @@
 import pytest
 import torch
+from torch import nn  # Added nn
 
 from llm.core.mlp import MLP
 
@@ -10,6 +11,7 @@ def create_test_mlp(
     intermediate_factor=4,
     activation="gelu",
     norm_first=True,
+    norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # Added norm_type
     bias=True,
     dropout_p=0.0,
     include_norm_residual=True,  # New parameter for the helper
@@ -59,6 +61,7 @@ def create_test_mlp(
         activation=activation,
         dropout_p=dropout_p,
         norm_first=norm_first,
+        norm_type=norm_type,  # Pass norm_type
         bias=bias,
         include_norm_residual=include_norm_residual,  # Pass to MLP
         device=device,
@@ -383,3 +386,39 @@ def test_mlp_gradient_computation(include_norm_residual_val, bias_val):
     # Check input tensor gradient
     assert input_tensor.grad is not None, "Input tensor gradient is None"
     assert not torch.isnan(input_tensor.grad).any(), "Input tensor gradient contains NaN values"
+
+
+# --- New Test Case: Test MLP with norm_type as an instance ---
+def test_mlp_norm_type_as_instance():
+    """Tests MLP initialization and forward pass when norm_type is an nn.Module instance."""
+    torch.manual_seed(42)
+    hidden_size_test = 64
+    custom_norm_layer = torch.nn.LayerNorm(hidden_size_test, eps=1e-6)  # Custom instance
+
+    mlp, input_tensor = create_test_mlp(
+        hidden_size=hidden_size_test,
+        norm_type=custom_norm_layer,  # Pass the instance
+        norm_first=True,  # Ensure norm is used
+        include_norm_residual=True,
+        dropout_p=0.0,  # Disable dropout for deterministic check
+    )
+    mlp.eval()
+
+    assert mlp.norm is custom_norm_layer, "MLP should use the provided norm instance"
+    assert mlp.norm_first is True
+    assert mlp.include_norm_residual is True
+
+    with torch.no_grad():
+        output = mlp(input_tensor)
+
+    assert output.shape == input_tensor.shape
+
+    # Verify that the custom norm layer was indeed used by checking its parameters
+    # This is a bit indirect, but ensures the path was taken.
+    # If the norm layer has trainable parameters, they should be part of mlp.parameters()
+    found_norm_params = False
+    for name, _param in mlp.named_parameters():  # Changed param to _param
+        if "norm" in name:
+            found_norm_params = True
+            break
+    assert found_norm_params, "Custom norm layer parameters not found in MLP parameters"

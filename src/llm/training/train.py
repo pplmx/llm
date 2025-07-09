@@ -5,10 +5,11 @@ import sys
 import torch
 import torch.multiprocessing as mp
 
+from llm.data.synthetic_data_module import SyntheticDataModule  # Added SyntheticDataModule
+from llm.training.core.callbacks import LRSchedulerCallback, MetricsLogger, TensorBoardLogger
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
 from llm.training.core.utils import DistributedManager, Logger
-from llm.training.tasks.classification_task import ClassificationTask
 
 # --- Import your tasks here ---
 from llm.training.tasks.regression_task import RegressionTask
@@ -16,7 +17,6 @@ from llm.training.tasks.regression_task import RegressionTask
 # --- Map task names to task classes ---
 AVAILABLE_TASKS = {
     "regression": RegressionTask,
-    "classification": ClassificationTask,
 }
 
 
@@ -26,7 +26,25 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
     try:
         distributed_manager.setup(rank, world_size)
         task = task_class(config)
-        engine = TrainingEngine(config, task, rank, world_size)
+        data_module = SyntheticDataModule(config)  # Instantiate DataModule
+        data_module.prepare_data()  # Prepare data
+        data_module.setup()  # Setup data
+
+        # Instantiate callbacks
+        callbacks = [
+            MetricsLogger(),
+            TensorBoardLogger(log_dir=config.logging.log_dir),
+            LRSchedulerCallback(),  # Added LRSchedulerCallback
+        ]
+
+        engine = TrainingEngine(
+            config,
+            task,
+            rank,
+            world_size,
+            data_module=data_module,  # Pass data_module
+            callbacks=callbacks,  # Pass callbacks
+        )
         engine.run()
     except Exception:
         logging.getLogger().exception(f"An error occurred in rank {rank}")
