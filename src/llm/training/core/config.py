@@ -2,9 +2,12 @@ import argparse
 import os
 import types
 import typing
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Union
 
 import torch
+import yaml
 
 # ============================================================================
 # 配置管理
@@ -44,6 +47,7 @@ class TrainingConfig:
     scheduler_type: str = "cosine"  # cosine, step, plateau
     warmup_epochs: int = 1
     gradient_clip_val: float = 1.0
+    run_validation: bool = True  # Added for validation loop
 
     def __post_init__(self):
         if self.batch_size <= 0:
@@ -124,6 +128,42 @@ class Config:
     optimization: OptimizationConfig = field(default_factory=OptimizationConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+    def save_to_yaml(self, path: str | Path):
+        """将配置保存到 YAML 文件"""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "Config":
+        """从 YAML 文件加载配置"""
+        path = Path(path)
+        with open(path) as f:
+            config_dict = yaml.safe_load(f)
+
+        # Recursively reconstruct dataclasses
+        def _from_dict(data_class, data_dict):
+            if not isinstance(data_dict, dict):
+                return data_dict
+
+            field_values = {}
+            for field_name, field_type in data_class.__annotations__.items():
+                if field_name in data_dict:
+                    if hasattr(field_type, "__origin__") and field_type.__origin__ is Union:  # Handle Optional
+                        actual_type = next((t for t in typing.get_args(field_type) if t is not types.NoneType), None)
+                        if actual_type and hasattr(actual_type, "__annotations__"):  # Nested dataclass
+                            field_values[field_name] = _from_dict(actual_type, data_dict[field_name])
+                        else:
+                            field_values[field_name] = data_dict[field_name]
+                    elif hasattr(field_type, "__annotations__"):  # Nested dataclass
+                        field_values[field_name] = _from_dict(field_type, data_dict[field_name])
+                    else:
+                        field_values[field_name] = data_dict[field_name]
+            return data_class(**field_values)
+
+        return _from_dict(cls, config_dict)
 
     @classmethod
     def from_args_and_env(cls) -> "Config":

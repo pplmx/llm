@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
-from torch.utils.data import DataLoader, DistributedSampler
 
+from llm.data.data_module import BaseDataModule  # Added BaseDataModule
 from llm.training.core.config import Config
 
 
@@ -15,8 +15,9 @@ class TrainingTask(abc.ABC):
     Users should subclass this and implement the abstract methods.
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, data_module: BaseDataModule):
         self.config = config
+        self.data_module = data_module  # Stored data_module
 
     @abc.abstractmethod
     def build_model(self) -> nn.Module:
@@ -39,11 +40,6 @@ class TrainingTask(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def build_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader, DistributedSampler]:
-        """Builds and returns the dataloader and its distributed sampler."""
-        pass
-
-    @abc.abstractmethod
     def train_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
         """
         Performs a single training step.
@@ -56,6 +52,23 @@ class TrainingTask(abc.ABC):
         Returns:
             A tuple containing:
             - The loss tensor for backpropagation.
+            - A dictionary of metrics to log (e.g., {'loss': loss.item()}).
+        """
+        pass
+
+    @abc.abstractmethod
+    def validation_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
+        """
+        Performs a single validation step.
+
+        Args:
+            batch: The data batch from the dataloader.
+            model: The model to validate.
+            criterion: The loss function.
+
+        Returns:
+            A tuple containing:
+            - The loss tensor for backpropagation (or just for logging).
             - A dictionary of metrics to log (e.g., {'loss': loss.item()}).
         """
         pass

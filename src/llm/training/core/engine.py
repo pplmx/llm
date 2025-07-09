@@ -4,25 +4,45 @@ import time
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from llm.data.data_module import BaseDataModule  # Added BaseDataModule
+from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
 from llm.training.tasks.base_task import TrainingTask
 
 
 class TrainingEngine:
-    def __init__(self, config: Config, task: TrainingTask, rank: int, world_size: int):
+    def __init__(
+        self,
+        config: Config,
+        task: TrainingTask,
+        rank: int,
+        world_size: int,
+        data_module: BaseDataModule,  # Changed to data_module
+        callbacks: list[Callback] | None = None,
+    ):
         self.config = config
         self.task = task
         self.rank = rank
         self.world_size = world_size
         self.device = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
 
+        self.data_module = data_module  # Stored data_module
+
         self.logger = Logger(rank, config.logging)
         self.performance_monitor = PerformanceMonitor(rank, self.device)
         self.checkpoint_manager = CheckpointManager(config.checkpoint, rank, self.logger)
+        self.callbacks = callbacks or []
+        for callback in self.callbacks:
+            callback.set_engine(self)
 
         self._setup_components()
         self.training_start_time = time.time()
+        self.should_stop_training = False  # Added for early stopping
+
+    def _run_callbacks(self, method_name: str, *args, **kwargs):
+        for callback in self.callbacks:
+            getattr(callback, method_name)(*args, **kwargs)
 
     def _setup_components(self):
         """Builds all necessary components for training from the task."""
@@ -49,7 +69,10 @@ class TrainingEngine:
         self.optimizer = self.task.build_optimizer(self.model)
         self.scheduler = self.task.build_scheduler(self.optimizer)
         self.criterion = self.task.build_criterion().to(self.device)
-        self.dataloader, self.sampler = self.task.build_dataloader(self.rank, self.world_size)
+
+        # Use data_module to get dataloaders
+        self.dataloader, self.sampler = self.data_module.train_dataloader(self.rank, self.world_size)
+        self.val_dataloader, self.val_sampler = self.data_module.val_dataloader(self.rank, self.world_size)
 
         # Setup scaler and load checkpoint
         self.scaler = torch.amp.GradScaler(enabled=(self.config.optimization.use_amp and self.device.type == "cuda"))
@@ -67,6 +90,7 @@ class TrainingEngine:
         num_batches = len(self.dataloader)
 
         for batch_idx, batch in enumerate(self.dataloader):
+            self._run_callbacks("on_batch_start", epoch=epoch, batch_idx=batch_idx)
             batch_start_time = time.time()
             # Move batch to device
             batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
@@ -81,6 +105,7 @@ class TrainingEngine:
             grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.training.gradient_clip_val)
             self.scaler.step(self.optimizer)
             self.scaler.update()
+            self._run_callbacks("on_train_step_end", epoch=epoch, batch_idx=batch_idx, loss=loss, metrics=metrics)
 
             batch_loss = metrics.get("loss", loss.item())
             epoch_loss += batch_loss
@@ -92,16 +117,55 @@ class TrainingEngine:
 
             if (batch_idx + 1) % self.config.logging.log_interval == 0 and self.rank == 0:
                 self._log_batch_stats(epoch, batch_idx, num_batches, metrics)
+            self._run_callbacks("on_batch_end", epoch=epoch, batch_idx=batch_idx)
 
         loss_tensor = torch.tensor(epoch_loss / num_batches, device=self.device)
         global_avg_loss = DistributedManager.reduce_mean(loss_tensor).item()
 
         return global_avg_loss
 
+    def _run_validation_epoch(self, epoch: int) -> float:
+        self._run_callbacks("on_validation_start", epoch=epoch)
+        self.model.eval()  # Set model to evaluation mode
+        self.performance_monitor.reset_epoch_stats()
+
+        val_loss = 0.0
+        # Use val_dataloader if available, otherwise skip validation
+        if self.val_dataloader is None:
+            self.logger.warning("Validation dataloader not provided. Skipping validation.")
+            self._run_callbacks("on_validation_end", epoch=epoch, logs={"val_loss": None})
+            return None
+
+        if self.val_sampler:  # Set epoch for validation sampler if it exists
+            self.val_sampler.set_epoch(epoch)
+
+        num_batches = len(self.val_dataloader)
+
+        with torch.no_grad():  # Disable gradient calculations
+            for batch_idx, batch in enumerate(self.val_dataloader):
+                # Move batch to device
+                batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
+
+                loss, metrics = self.task.validation_step(batch, self.model, self.criterion)
+
+                batch_loss = metrics.get("loss", loss.item())
+                val_loss += batch_loss
+
+                # Performance monitoring (optional for validation)
+                self.performance_monitor.log_loss(batch_loss)
+
+                if (batch_idx + 1) % self.config.logging.log_interval == 0 and self.rank == 0:
+                    self._log_batch_stats(epoch, batch_idx, num_batches, metrics)  # Reuse log_batch_stats
+
+        loss_tensor = torch.tensor(val_loss / num_batches, device=self.device)
+        global_avg_loss = DistributedManager.reduce_mean(loss_tensor).item()
+        self._run_callbacks("on_validation_end", epoch=epoch, logs={"val_loss": global_avg_loss})
+
+        return global_avg_loss
+
     def _log_batch_stats(self, epoch, batch_idx, num_batches, metrics):
         lr = self.optimizer.param_groups[0]["lr"]
         mem_alloc, mem_cached = self.performance_monitor.get_current_gpu_memory()
-        loss = metrics.get("loss", 0.0)
         grad_norm = self.performance_monitor.gradient_norms[-1]
         batch_time = self.performance_monitor.get_avg_batch_time()
 
@@ -116,39 +180,68 @@ class TrainingEngine:
         self.logger.info(log_msg)
 
     def run(self):
+        self._run_callbacks("on_train_start")
         if self.rank == 0:
             self.logger.info("🎉 Starting training...")
 
-        for epoch in range(self.start_epoch, self.config.training.epochs):
-            epoch_start_time = time.time()
-            avg_loss = self._run_epoch(epoch)
+        try:
+            for epoch in range(self.start_epoch, self.config.training.epochs):
+                self._run_callbacks("on_epoch_start", epoch=epoch)
+                epoch_start_time = time.time()
+                avg_loss = self._run_epoch(epoch)
+                val_loss = None
+                if self.config.training.run_validation:  # TODO: Add run_validation to TrainingConfig
+                    val_loss = self._run_validation_epoch(epoch)
 
-            if self.scheduler:
-                # ReduceLROnPlateau needs the metric, others don't
-                if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    self.scheduler.step(avg_loss)
-                else:
-                    self.scheduler.step()
+                if self.should_stop_training:  # Check early stopping flag
+                    if self.rank == 0:
+                        self.logger.info(f"Training stopped early at epoch {epoch + 1} by EarlyStopping callback.")
+                    break  # Break the training loop
 
-            DistributedManager.barrier()
+                if self.scheduler:
+                    # ReduceLROnPlateau needs the metric, others don't
+                    if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        self.scheduler.step(
+                            val_loss if val_loss is not None else avg_loss
+                        )  # Use val_loss for scheduler if available
+                    else:
+                        self.scheduler.step()
 
+                DistributedManager.barrier()
+
+                if self.rank == 0:
+                    epoch_time = time.time() - epoch_start_time
+                    lr = self.scheduler.get_last_lr()[0] if self.scheduler else self.optimizer.param_groups[0]["lr"]
+                    peak_mem = self.performance_monitor.get_peak_gpu_memory()
+                    self.logger.info("-" * 80)
+                    log_msg = (
+                        f"Epoch {epoch + 1:2d}/{self.config.training.epochs} SUMMARY | Train Loss: {avg_loss:.4f} | "
+                    )
+                    if val_loss is not None:
+                        log_msg += f"Val Loss: {val_loss:.4f} | "
+                    log_msg += f"LR: {lr:.6f} | Time: {epoch_time:.2f}s | Peak Mem: {peak_mem:.2f} GB"
+                    self.logger.info(log_msg)
+                    self.logger.info("-" * 80)
+
+                    # Save checkpoint based on validation loss if available, otherwise training loss
+                    metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
+                    self.checkpoint_manager.save_checkpoint(
+                        epoch, self.model, self.optimizer, self.scheduler, self.scaler, metric_for_checkpoint
+                    )
+                    self._run_callbacks("on_save_checkpoint", epoch=epoch)
+
+                logs = {"avg_loss": avg_loss}
+                if val_loss is not None:
+                    logs["val_loss"] = val_loss
+                self._run_callbacks("on_epoch_end", epoch=epoch, logs=logs)
+
+        except Exception as e:
+            self._run_callbacks("on_exception", exception=e)
+            raise
+
+        finally:
             if self.rank == 0:
-                epoch_time = time.time() - epoch_start_time
-                lr = self.scheduler.get_last_lr()[0] if self.scheduler else self.optimizer.param_groups[0]["lr"]
-                peak_mem = self.performance_monitor.get_peak_gpu_memory()
-                self.logger.info("-" * 80)
-                self.logger.info(
-                    f"Epoch {epoch + 1:2d}/{self.config.training.epochs} SUMMARY | "
-                    f"Avg Loss: {avg_loss:.4f} | LR: {lr:.6f} | "
-                    f"Time: {epoch_time:.2f}s | Peak Mem: {peak_mem:.2f} GB"
-                )
-                self.logger.info("-" * 80)
-
-                self.checkpoint_manager.save_checkpoint(
-                    epoch, self.model, self.optimizer, self.scheduler, self.scaler, avg_loss
-                )
-
-        if self.rank == 0:
-            total_time = time.time() - self.training_start_time
-            self.logger.info(f"✅ Training completed in {total_time / 3600:.2f} hours on {self.world_size} GPUs.")
-            self.logger.info(f"🌟 Best loss achieved: {self.checkpoint_manager.best_loss:.4f}")
+                total_time = time.time() - self.training_start_time
+                self.logger.info(f"✅ Training completed in {total_time / 3600:.2f} hours on {self.world_size} GPUs.")
+                self.logger.info(f"🌟 Best loss achieved: {self.checkpoint_manager.best_loss:.4f}")
+            self._run_callbacks("on_train_end")
