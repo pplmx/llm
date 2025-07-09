@@ -26,16 +26,25 @@ class SimpleMLP(nn.Module):
 
 
 @contextmanager
-def distributed_context(rank, world_size):
+def distributed_context(rank, world_size, local_rank):
     """Context manager for distributed training setup and cleanup"""
     os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
     os.environ.setdefault("MASTER_PORT", "12355")
 
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
-    torch.cuda.set_device(rank % torch.cuda.device_count())
+    # Set the device before initializing the process group
+    torch.cuda.set_device(local_rank)
+    device = torch.device(f"cuda:{local_rank}")
+
+    # Initialize with explicit device specification
+    dist.init_process_group(
+        backend="nccl",
+        rank=rank,
+        world_size=world_size,
+        device_id=device  # This fixes the warning
+    )
 
     try:
-        yield
+        yield device
     finally:
         if dist.is_initialized():
             dist.destroy_process_group()
@@ -96,9 +105,7 @@ def train_worker(local_rank):
     global_rank = config["node_rank"] * config["gpus_per_node"] + local_rank
     world_size = config["num_nodes"] * config["gpus_per_node"]
 
-    with distributed_context(global_rank, world_size):
-        device = torch.device(f"cuda:{local_rank}")
-
+    with distributed_context(global_rank, world_size, local_rank) as device:
         # Model setup
         model = DDP(SimpleMLP().to(device), device_ids=[local_rank])
         optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
@@ -114,8 +121,8 @@ def train_worker(local_rank):
             avg_loss = train_epoch(model, dataloader, optimizer, device)
             scheduler.step()
 
-            # Synchronize and report progress
-            dist.barrier()
+            # Synchronize and report progress - specify device for barrier
+            dist.barrier(device_ids=[local_rank])
             if global_rank == 0:
                 elapsed = time.time() - start_time
                 lr = scheduler.get_last_lr()[0]
@@ -134,6 +141,9 @@ def main():
     """Launch distributed training"""
     print_config()
     config = get_env_config()
+
+    # Set start method for multiprocessing to avoid potential issues
+    mp.set_start_method('spawn', force=True)
 
     mp.spawn(train_worker, nprocs=config["gpus_per_node"], join=True)
 
