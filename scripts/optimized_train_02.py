@@ -174,7 +174,7 @@ class Config:
                             # 如果参数类型是 Optional[None] 这种无法从命令行设置的，就跳过
                             continue
 
-                    parser.add_argument(
+                    parser_.add_argument(
                         arg_name, type=type_for_argparse, default=None, help=f"Override {dc_name}.{name}"
                     )
 
