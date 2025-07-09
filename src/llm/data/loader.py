@@ -6,23 +6,7 @@ from typing import Any
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-# Attempt to import SimpleCharacterTokenizer, assuming it's in the PYTHONPATH
-# or accessible via the llm package structure.
-try:
-    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-except ModuleNotFoundError:
-    # Fallback for local testing or specific execution environments
-    # This assumes a certain directory structure if 'llm' is not installed.
-    # os and sys are already imported at the top level.
-
-    # Example: Adjust path to go up to project root then into src
-    # This path adjustment might be fragile depending on execution context.
-    # A better solution is ensuring PYTHONPATH is set correctly.
-    PROJECT_ROOT_FALLBACK = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-    SRC_ROOT_FALLBACK = os.path.join(PROJECT_ROOT_FALLBACK, "src")
-    if SRC_ROOT_FALLBACK not in sys.path:
-        sys.path.insert(0, SRC_ROOT_FALLBACK)
-    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 
 class TextDataset(Dataset):
