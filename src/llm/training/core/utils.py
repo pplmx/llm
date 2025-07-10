@@ -74,9 +74,16 @@ class Logger:
         self.rank = rank
         self.config = config
         self.logger = logging.getLogger(f"rank_{rank}")
-        self._setup_logging()
+        # Only setup handlers if they haven't been added for this logger name yet
+        if not self.logger.hasHandlers():
+            self._setup_logging()
+        else:
+            # Ensure level is set even if handlers are already there
+            # This could happen if a default logger existed before our custom setup
+            self.logger.setLevel(getattr(logging, self.config.log_level.upper()))
 
     def _setup_logging(self):
+        # This method is now only called if self.logger.hasHandlers() was false
         self.logger.setLevel(getattr(logging, self.config.log_level.upper()))
         formatter = logging.Formatter(
             f"[%(asctime)s] [%(levelname)s] [Rank {self.rank}] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
@@ -220,11 +227,12 @@ class CheckpointManager:
         if self.rank != 0:
             return
 
+        model_state_to_save = model.module.state_dict() if isinstance(model, DDP) else model.state_dict()
         checkpoint = {
             "epoch": epoch,
             "loss": loss,
             "best_loss": self.best_loss,
-            "model_state": model.module.state_dict(),
+            "model_state": model_state_to_save,
             "optimizer_state": optimizer.state_dict(),
             "scheduler_state": scheduler.state_dict(),
             "scaler_state": scaler.state_dict(),
