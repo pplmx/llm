@@ -55,7 +55,7 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
         raise
     finally:
         # Ensure all processes sync up before cleaning up
-        if world_size > 1: # Barrier is only relevant for DDP
+        if world_size > 1:  # Barrier is only relevant for DDP
             DistributedManager.barrier()
         distributed_manager.cleanup()
 
@@ -90,7 +90,9 @@ def main():
     logger.info(f"Selected Task: {args.task}")
     logger.info(f"Determined world_size from DistributedManager: {world_size}")
     logger.info(f"CUDA Available: {torch.cuda.is_available()}, GPU Count: {torch.cuda.device_count()}")
-    logger.info(f"Configured gpus_per_node: {config.distributed.gpus_per_node}, num_nodes: {config.distributed.num_nodes}")
+    logger.info(
+        f"Configured gpus_per_node: {config.distributed.gpus_per_node}, num_nodes: {config.distributed.num_nodes}"
+    )
 
     if world_size > 1:
         # This implies DDP on GPUs. get_world_size() should only return > 1 if GPUs are configured and available.
@@ -104,9 +106,7 @@ def main():
         logger.info(f"🚀 Spawning {world_size} DDP processes for GPU training...")
         # For single-node DDP, nprocs should be the world_size determined (number of GPUs to use).
         # The arguments to train_worker will be (rank, world_size, config, task_class).
-        mp.spawn(
-            train_worker, args=(world_size, config, task_class), nprocs=world_size, join=True
-        )
+        mp.spawn(train_worker, args=(world_size, config, task_class), nprocs=world_size, join=True)
     elif world_size == 1:
         # This handles:
         # 1. CPU only (get_world_size returned 1 because no GPUs were found/configured for use)
@@ -117,7 +117,7 @@ def main():
             logger.info("🚀 Starting single-process training (GPU available, will use if rank 0 maps to GPU)...")
         else:
             logger.info("🚀 Starting single-process training (CPU)...")
-        train_worker(0, 1, config, task_class) # rank 0, world_size 1
+        train_worker(0, 1, config, task_class)  # rank 0, world_size 1
     else:
         # world_size <= 0, which should ideally be prevented by get_world_size returning min 1.
         logger.error(f"❌ Invalid world_size ({world_size}) determined by DistributedManager. Exiting.")
