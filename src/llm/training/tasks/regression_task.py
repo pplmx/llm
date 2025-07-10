@@ -18,8 +18,8 @@ class RegressionTask(TrainingTask):
         # Current MLP uses hidden_size as its input and output dimensionality.
         return MLP(
             hidden_size=model_config.hidden_size,
-            intermediate_size=model_config.ffn_hidden_size, # ffn_hidden_size in ModelConfig maps to intermediate_size
-            dropout_p=model_config.dropout
+            intermediate_size=model_config.ffn_hidden_size,  # ffn_hidden_size in ModelConfig maps to intermediate_size
+            dropout_p=model_config.dropout,
             # Other MLP params like activation, norm_type, etc., will use defaults
             # as they are not specified in ModelConfig.
         )
