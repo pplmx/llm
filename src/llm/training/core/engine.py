@@ -9,6 +9,7 @@ from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
 from llm.training.tasks.base_task import TrainingTask
+from llm.utils.common import count_parameters # Added import
 
 
 class TrainingEngine:
@@ -25,7 +26,13 @@ class TrainingEngine:
         self.task = task
         self.rank = rank
         self.world_size = world_size
-        self.device = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
+
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0 and self.world_size > 0 :
+            # world_size > 0 is a proxy for intending to use GPUs if available
+            # rank % torch.cuda.device_count() ensures valid device index per process
+            self.device = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
+        else:
+            self.device = torch.device("cpu")
 
         self.data_module = data_module  # Stored data_module
 
@@ -51,7 +58,7 @@ class TrainingEngine:
         # Build model and move to device
         model = self.task.build_model().to(self.device)
         if self.rank == 0:
-            total, trainable = model.count_parameters()
+            total, trainable = count_parameters(model) # Use the utility function
             self.logger.info(f"🏗️  Model: {total:,} total params, {trainable:,} trainable")
 
         # Compile model if enabled
@@ -63,10 +70,14 @@ class TrainingEngine:
                 self.logger.warning(f"torch.compile failed: {e}. Continuing without it.")
 
         # DDP wrapper
-        self.model = DDP(model, device_ids=[self.device.index], find_unused_parameters=False)
+        if self.world_size > 1 and self.device.type == 'cuda':
+            # Ensure device_ids is only passed if actually using CUDA and DDP
+            self.model = DDP(model, device_ids=[self.device.index], find_unused_parameters=False)
+        else:
+            self.model = model # No DDP for CPU or single GPU / single process
 
         # Build other components from task
-        self.optimizer = self.task.build_optimizer(self.model)
+        self.optimizer = self.task.build_optimizer(self.model) # Optimizer should work with model or model.module
         self.scheduler = self.task.build_scheduler(self.optimizer)
         self.criterion = self.task.build_criterion().to(self.device)
 

@@ -60,11 +60,11 @@ class Callback:
         """Called after the train_step (forward/backward/optimizer.step) is completed for a batch."""
         pass
 
-    def on_validation_start(self, logs: dict[str, Any] | None = None):
+    def on_validation_start(self, epoch: int, logs: dict[str, Any] | None = None): # Added epoch
         """Called at the beginning of validation phase."""
         pass
 
-    def on_validation_end(self, logs: dict[str, Any] | None = None):
+    def on_validation_end(self, epoch: int, logs: dict[str, Any] | None = None): # Added epoch for consistency
         """Called at the end of validation phase."""
         pass
 

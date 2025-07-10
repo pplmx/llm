@@ -11,7 +11,18 @@ class RegressionTask(TrainingTask):
     """A concrete task for the SimpleMLP regression problem."""
 
     def build_model(self) -> nn.Module:
-        return MLP(self.config.model)
+        model_config = self.config.model
+        # Assuming MLP is a generic block. If input/output features are different
+        # from hidden_size for the regression task, additional layers or a
+        # different MLP structure might be needed.
+        # Current MLP uses hidden_size as its input and output dimensionality.
+        return MLP(
+            hidden_size=model_config.hidden_size,
+            intermediate_size=model_config.ffn_hidden_size, # ffn_hidden_size in ModelConfig maps to intermediate_size
+            dropout_p=model_config.dropout
+            # Other MLP params like activation, norm_type, etc., will use defaults
+            # as they are not specified in ModelConfig.
+        )
 
     def build_optimizer(self, model: nn.Module) -> optim.Optimizer:
         return optim.AdamW(
@@ -52,3 +63,9 @@ class RegressionTask(TrainingTask):
         output = model(data)
         loss = criterion(output, target)
         return loss, {"loss": loss.item()}
+
+    def validation_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
+        data, target = batch
+        output = model(data)
+        loss = criterion(output, target)
+        return loss, {"val_loss": loss.item()}

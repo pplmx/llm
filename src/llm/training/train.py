@@ -25,10 +25,14 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
     distributed_manager = DistributedManager(config.distributed)
     try:
         distributed_manager.setup(rank, world_size)
-        task = task_class(config)
-        data_module = SyntheticDataModule(config)  # Instantiate DataModule
-        data_module.prepare_data()  # Prepare data
-        data_module.setup()  # Setup data
+
+        # Instantiate DataModule first
+        data_module = SyntheticDataModule(config)
+        data_module.prepare_data()
+        data_module.setup()
+
+        # Now instantiate the task with the data_module
+        task = task_class(config, data_module)
 
         # Instantiate callbacks
         callbacks = [
@@ -50,6 +54,9 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
         logging.getLogger().exception(f"An error occurred in rank {rank}")
         raise
     finally:
+        # Ensure all processes sync up before cleaning up
+        if world_size > 1: # Barrier is only relevant for DDP
+            DistributedManager.barrier()
         distributed_manager.cleanup()
 
 
@@ -74,22 +81,46 @@ def main():
     distributed_manager = DistributedManager(config.distributed)
     world_size = distributed_manager.get_world_size()
 
-    logger = Logger(0, config.logging)  # Main process logger
+    distributed_manager = DistributedManager(config.distributed)
+    # get_world_size() now returns 1 if no GPUs, or calculated size if GPUs exist (for single node).
+    world_size = distributed_manager.get_world_size()
 
-    if torch.cuda.is_available() and world_size > 0:
-        logger.info(f"Selected Task: {args.task}")
-        # ... (logging config info can go here)
+    # Logger setup: rank 0 for the main process. TrainingEngine will determine actual device.
+    logger = Logger(0, config.logging)
+    logger.info(f"Selected Task: {args.task}")
+    logger.info(f"Determined world_size from DistributedManager: {world_size}")
+    logger.info(f"CUDA Available: {torch.cuda.is_available()}, GPU Count: {torch.cuda.device_count()}")
+    logger.info(f"Configured gpus_per_node: {config.distributed.gpus_per_node}, num_nodes: {config.distributed.num_nodes}")
 
-        if world_size > 1:
-            logger.info(f"🚀 Spawning {world_size} DDP processes...")
-            mp.spawn(
-                train_worker, args=(world_size, config, task_class), nprocs=config.distributed.gpus_per_node, join=True
+    if world_size > 1:
+        # This implies DDP on GPUs. get_world_size() should only return > 1 if GPUs are configured and available.
+        if not (torch.cuda.is_available() and torch.cuda.device_count() >= world_size):
+            logger.error(
+                f"❌ DDP Misconfiguration: world_size is {world_size}, but CUDA not available or "
+                f"insufficient GPUs ({torch.cuda.device_count()} available). Exiting."
             )
+            sys.exit(1)
+
+        logger.info(f"🚀 Spawning {world_size} DDP processes for GPU training...")
+        # For single-node DDP, nprocs should be the world_size determined (number of GPUs to use).
+        # The arguments to train_worker will be (rank, world_size, config, task_class).
+        mp.spawn(
+            train_worker, args=(world_size, config, task_class), nprocs=world_size, join=True
+        )
+    elif world_size == 1:
+        # This handles:
+        # 1. CPU only (get_world_size returned 1 because no GPUs were found/configured for use)
+        # 2. Single GPU (get_world_size returned 1, e.g., gpus_per_node=1 or only 1 GPU available and used)
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+            # Check if this single process run is intended for a GPU
+            # TrainingEngine will place on cuda:0 if world_size=1 and rank=0 and cuda is available
+            logger.info("🚀 Starting single-process training (GPU available, will use if rank 0 maps to GPU)...")
         else:
-            logger.info("🚀 Starting single-GPU training...")
-            train_worker(0, 1, config, task_class)
+            logger.info("🚀 Starting single-process training (CPU)...")
+        train_worker(0, 1, config, task_class) # rank 0, world_size 1
     else:
-        logger.error("❌ No GPUs found or world_size is zero. Exiting.")
+        # world_size <= 0, which should ideally be prevented by get_world_size returning min 1.
+        logger.error(f"❌ Invalid world_size ({world_size}) determined by DistributedManager. Exiting.")
         sys.exit(1)
 
 

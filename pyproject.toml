@@ -25,6 +25,8 @@ dependencies = [
     "seaborn>=0.13.2",
     "pillow>=11.2.1",
     "rich>=14.0.0",
+    "tensorboard>=2.16.2", # Added tensorboard for logging
+    "PyYAML>=6.0.1", # Added PyYAML for config loading
 ]
 
 [project.urls]
