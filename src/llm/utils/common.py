@@ -33,3 +33,20 @@ def get_activation_layer(activation_name: str) -> Callable:
             raise ValueError(
                 f"Unsupported activation function: {activation_name}. Supported activations are: {supported_activations}"
             )
+
+
+def count_parameters(model: nn.Module) -> tuple[int, int]:
+    """
+    Counts the total and trainable parameters of a PyTorch model.
+
+    Args:
+        model (nn.Module): The model to inspect.
+
+    Returns:
+        tuple[int, int]: A tuple containing:
+            - total_params (int): The total number of parameters.
+            - trainable_params (int): The number of trainable parameters.
+    """
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return total_params, trainable_params
