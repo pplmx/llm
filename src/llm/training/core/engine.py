@@ -87,8 +87,12 @@ class TrainingEngine:
 
         # Setup scaler and load checkpoint
         self.scaler = torch.amp.GradScaler(enabled=(self.config.optimization.use_amp and self.device.type == "cuda"))
+
+        # Determine the model to pass for checkpoint loading (unwrap if DDP)
+        model_to_load = self.model.module if isinstance(self.model, DDP) else self.model
+
         self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(
-            self.model.module, self.optimizer, self.scheduler, self.scaler, self.device
+            model_to_load, self.optimizer, self.scheduler, self.scaler, self.device
         )
         self.checkpoint_manager.best_loss = self.best_loss
 
