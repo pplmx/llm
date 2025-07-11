@@ -33,7 +33,7 @@
 本项目使用 `uv` 进行依赖管理，并推荐使用 `Makefile` 进行环境设置和常用任务管理。
 
 1.  **安装 `uv`**: 如果您尚未安装 `uv`，请按照官方说明进行安装：[uv 安装指南](https://github.com/astral-sh/uv#installation)。
-2.  **克隆仓库**: 
+2.  **克隆仓库**:
     ```bash
     git clone https://github.com/pplmx/llm.git
     cd llm

@@ -76,7 +76,7 @@
 -   **根目录的 `CONTRIBUTING.md`**：提供高层次的贡献指南。
 -   **`docs/` 目录作为主要文档中心**：
     -   **根目录的 `README.md` 是所有文档的主要入口**，它直接链接到 `docs/` 目录下的各个顶级文档文件。
-    -   大多数文档文件名使用小写（例如 `development.md`, `tutorial-cpu-llm.md`），`README.md` 是例外。
+    -   大多数文档文件名使用小写，**多单词文件名使用连字符 `-` 分隔**（例如 `development.md`, `tutorial-cpu-llm.md`, `guide-extending.md`），`README.md` 是例外。
     -   相关文档组织在特定子目录中（例如 `docs/training/` 用于所有训练框架文档）。
     -   子目录可以包含自己的 `README.md` 作为入口。
     -   项目级别的 `docs/troubleshooting.md` 用于通用问题排查。
@@ -84,3 +84,7 @@
 ## Comments policy
 
 Only write high-value comments if at all. Avoid talking to the user through comments.
+
+## Gemini Added Memories
+- 用户偏好我使用中文进行回复。
+- 用户在 Python 项目中测试时，偏好不使用 mock，直接调用代码，主要验证功能性，不关注覆盖率，只使用 pytest。
