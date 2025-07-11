@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from llm.core.mlp import MLP # Reusing the MLP for experts
+from llm.core.mlp import MLP  # Reusing the MLP for experts
 
 
 class MoE(nn.Module):
@@ -65,7 +65,7 @@ class MoE(nn.Module):
                     norm_type=norm_type,
                     norm_eps=norm_eps,
                     bias=bias,
-                    include_norm_residual=False, # Experts are simple MLPs, norm/residual handled by TransformerBlock
+                    include_norm_residual=False,  # Experts are simple MLPs, norm/residual handled by TransformerBlock
                     **factory_kwargs,
                 )
                 for _ in range(num_experts)
@@ -83,10 +83,10 @@ class MoE(nn.Module):
             torch.Tensor: Output tensor with same shape as input.
         """
         original_shape = x.shape
-        x = x.view(-1, self.hidden_size) # Flatten to [batch_size * seq_len, hidden_size]
+        x = x.view(-1, self.hidden_size)  # Flatten to [batch_size * seq_len, hidden_size]
 
         # 1. Gating network to get expert scores
-        gate_logits = self.gate(x) # [batch_size * seq_len, num_experts]
+        gate_logits = self.gate(x)  # [batch_size * seq_len, num_experts]
 
         # 2. Select top-k experts
         # top_k_logits: [batch_size * seq_len, top_k]
@@ -98,7 +98,7 @@ class MoE(nn.Module):
         expert_weights = F.softmax(top_k_logits, dim=-1, dtype=x.dtype)
 
         # Initialize output tensor
-        output = torch.zeros_like(x) # [batch_size * seq_len, hidden_size]
+        output = torch.zeros_like(x)  # [batch_size * seq_len, hidden_size]
 
         # Create a list of lists, where each inner list contains the indices
         # of tokens routed to that expert.
@@ -106,7 +106,7 @@ class MoE(nn.Module):
         expert_weights_per_token = [[] for _ in range(self.num_experts)]
         expert_original_indices = [[] for _ in range(self.num_experts)]
 
-        for i in range(x.size(0)): # Iterate over each token
+        for i in range(x.size(0)):  # Iterate over each token
             for k_idx in range(self.top_k):
                 expert_idx = top_k_indices[i, k_idx].item()
                 expert_inputs[expert_idx].append(x[i])
@@ -118,8 +118,7 @@ class MoE(nn.Module):
             if expert_inputs[i]:
                 expert_input_batch = torch.stack(expert_inputs[i])
                 expert_output_batch = expert(expert_input_batch)
-                expert_weights_batch = torch.stack(expert_weights_per_token[i]).unsqueeze(-1);
-
+                expert_weights_batch = torch.stack(expert_weights_per_token[i]).unsqueeze(-1)
                 # Weighted sum and scatter
                 weighted_expert_output = expert_output_batch * expert_weights_batch
                 output.index_add_(0, torch.tensor(expert_original_indices[i], device=x.device), weighted_expert_output)
@@ -151,7 +150,7 @@ if __name__ == "__main__":
         device=device_ex,
         dtype=dtype_ex,
     )
-    moe_layer.eval() # Set to eval mode for consistent dropout behavior if any
+    moe_layer.eval()  # Set to eval mode for consistent dropout behavior if any
 
     # Forward pass
     output = moe_layer(dummy_input)
