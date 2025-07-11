@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from llm.core.attn.mha import MultiHeadAttention
 from llm.core.mlp import MLP
+from llm.core.moe.moe import MoE # Import MoE
 
 
 class TransformerBlock(nn.Module):
@@ -27,6 +28,9 @@ class TransformerBlock(nn.Module):
         is_causal: bool = False,  # Default causality for MHA within this block
         qkv_bias: bool = True,  # Bias for QKV projections in MHA
         mlp_bias: bool = True,  # Bias for Linear layers in MLP
+        use_moe: bool = False, # New: Whether to use MoE instead of MLP
+        num_experts: int = 0, # New: Number of experts if use_moe is True
+        top_k: int = 0, # New: Number of top experts to select if use_moe is True
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -46,6 +50,9 @@ class TransformerBlock(nn.Module):
             is_causal (bool, default=False): Default causality for MHA.
             qkv_bias (bool, default=True): Whether MHA QKV projections should use bias.
             mlp_bias (bool, default=True): Whether MLP Linear layers should use bias.
+            use_moe (bool, default=False): Whether to use a Mixture of Experts (MoE) layer instead of a standard MLP.
+            num_experts (int, default=0): The total number of experts if `use_moe` is True.
+            top_k (int, default=0): The number of top experts to select if `use_moe` is True.
             device (torch.device | str | None, default=None): Target device.
             dtype (torch.dtype | None, default=None): Target data type.
         """
@@ -73,22 +80,36 @@ class TransformerBlock(nn.Module):
             **factory_kwargs,
         )
 
-        # Initialize MLP
-        # MLP's internal norm/residual are disabled; TransformerBlock handles them.
+        # Initialize MLP or MoE
         if mlp_intermediate_size is None:
             mlp_intermediate_size = 4 * hidden_size
 
-        self.mlp = MLP(
-            hidden_size=hidden_size,
-            intermediate_size=mlp_intermediate_size,
-            activation=mlp_activation,
-            dropout_p=mlp_dropout_p,
-            bias=mlp_bias,  # Pass bias for MLP layers
-            include_norm_residual=False,  # MLP does not handle norm/residual itself
-            norm_eps=norm_eps,  # MLP's norm_eps, not used if include_norm_residual=False
-            norm_first=False,  # MLP's norm_first, not used if include_norm_residual=False
-            **factory_kwargs,
-        )
+        if use_moe:
+            if num_experts <= 0 or top_k <= 0:
+                raise ValueError("num_experts and top_k must be positive if use_moe is True.")
+            self.mlp = MoE(
+                hidden_size=hidden_size,
+                num_experts=num_experts,
+                top_k=top_k,
+                intermediate_size=mlp_intermediate_size,
+                activation=mlp_activation,
+                dropout_p=mlp_dropout_p,
+                bias=mlp_bias,
+                norm_eps=norm_eps, # Pass norm_eps to MoE's experts
+                **factory_kwargs,
+            )
+        else:
+            self.mlp = MLP(
+                hidden_size=hidden_size,
+                intermediate_size=mlp_intermediate_size,
+                activation=mlp_activation,
+                dropout_p=mlp_dropout_p,
+                bias=mlp_bias,  # Pass bias for MLP layers
+                include_norm_residual=False,  # MLP does not handle norm/residual itself
+                norm_eps=norm_eps,  # MLP's norm_eps, not used if include_norm_residual=False
+                norm_first=False,  # MLP's norm_first, not used if include_norm_residual=False
+                **factory_kwargs,
+            )
 
     def forward(
         self,
