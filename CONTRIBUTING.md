@@ -1,50 +1,26 @@
-# Contribution guidelines
+# Contributing Guide
 
-First off, thank you for considering contributing to `llm`.
+We warmly welcome your contributions to the `llm` project! Your contributions will help us improve the project and make it more useful for everyone.
 
-If your contribution is not straightforward, please first discuss the change you
-wish to make by creating a new issue before making the change.
+## How to Contribute
 
-## Reporting issues
+We encourage contributions through the following ways:
 
-Before reporting an issue on the
-[issue tracker](https://github.com/pplmx/llm/issues),
-please check that it has not already been reported by searching for some related
-keywords.
+-   **Report Bugs**: If you find any issues or errors, please submit them in [GitHub Issues](https://github.com/pplmx/llm/issues).
+-   **Suggest Features**: If you have new feature ideas, please also propose them in [GitHub Issues](https://github.com/pplmx/llm/issues).
+-   **Submit Code**: If you wish to contribute code directly, please follow this process:
+    1.  Fork this repository.
+    2.  Create your feature branch (`git checkout -b feature/YourFeature`).
+    3.  Make changes and commit (`git commit -m 'feat: Add some feature'`).
+    4.  Push to your branch (`git push origin feature/YourFeature`).
+    5.  Submit a Pull Request.
 
-## Pull requests
+## Development Guide
 
-Try to do one pull request per change.
+Before you start writing code, please make sure to read our [Development Guide](docs/development.md). It contains detailed information on setting up the development environment, running tests, code style, and the contribution process.
 
-### Updating the changelog
+## Code of Conduct
 
-Update the changes you have made in
-[CHANGELOG](CHANGELOG.md)
-file under the **Unreleased** section.
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) to understand the expected behavior within our community.
 
-Add the changes of your pull request to one of the following subsections,
-depending on the types of changes defined by
-[Keep a changelog](https://keepachangelog.com/en/1.0.0/):
-
-- `Added` for new features.
-- `Changed` for changes in existing functionality.
-- `Deprecated` for soon-to-be removed features.
-- `Removed` for now removed features.
-- `Fixed` for any bug fixes.
-- `Security` in case of vulnerabilities.
-
-If the required subsection does not exist yet under **Unreleased**, create it!
-
-## Developing
-
-### Set up
-
-This is no different from other Python projects.
-
-```shell
-git clone https://github.com/pplmx/llm
-cd llm
-make test
-```
-
-### Useful Commands
+Thank you for your contributions!
