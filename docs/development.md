@@ -11,6 +11,8 @@ This document will walk you through setting up your development environment, run
 - [Running Tests](#running-tests)
 - [Building the Project](#building-the-project)
 - [Code Style and Linting](#code-style-and-linting)
+- [Type Checking](#type-checking)
+- [Docker Development](#docker-development)
 
 ## Setting Up the Development Environment
 
@@ -38,6 +40,8 @@ Before you start, make sure you have the following installed on your system:
         powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
         ```
 
+- **`make` tool**: A build automation tool (typically pre-installed on Linux/macOS, available via Chocolatey/Scoop on Windows).
+
 ### Installation Steps
 
 1.  **Clone the Repository**: Start by cloning the project repository to your local machine and navigate to the project directory:
@@ -46,72 +50,100 @@ Before you start, make sure you have the following installed on your system:
     cd llm
     ```
 
-2.  **Synchronize Dependencies**: Use `uv` to set up the virtual environment and install all necessary dependencies (including development tools) as defined in `pyproject.toml`. `uv` will automatically create or use a virtual environment in `.venv` at the project root.
+2.  **Initialize Project**: Run the `make init` command to set up the virtual environment, install all necessary dependencies, and install pre-commit hooks.
     ```bash
-    uv sync
+    make init
     ```
-
-3.  **Set Up Pre-commit Hooks**: This project uses pre-commit hooks to ensure code quality and consistency before commits are made. Install the hooks with:
-    ```bash
-    uvx pre-commit install --hook-type commit-msg --hook-type pre-push
-    ```
-    This step is important to run after cloning and setting up the environment.
+    This command internally runs `uv sync` and `uvx pre-commit install --hook-type commit-msg --hook-type pre-push`.
 
 ## Running Tests
 
-Tests are managed and run using `pytest`. Ensure your dependencies are synchronized with `uv sync` before running tests.
+Tests are managed and run using `pytest`.
 
 -   **Run all tests**:
     ```bash
-    uv run pytest
+    make test
     ```
-    This command discovers and executes all tests in the `tests/` directory.
-
-[Consider adding specific details on the structure of tests, testing strategy, or how to add new tests.]
+    This command discovers and executes all tests in the `tests/` directory, generates code coverage reports (HTML, LCOV, XML) in the `htmlcov/` directory, and Allure test results in `allure-results/`. You can view the Allure report by running `make allure`.
 
 ## Building the Project
 
-To build the project and create distributable packages (e.g., `.whl` and source distribution), use `hatchling` via `uvx`:
+To build the project and create distributable packages (e.g., `.whl` and source distribution), use the `make build` command:
 
 ```bash
-uvx hatch build
+make build
 ```
 
 This command, as configured by `pyproject.toml` (using `hatchling.build` as the build backend), will generate the distributable files in the `dist/` directory.
 
 ## Code Style and Linting
 
-Maintaining consistent code style and quality is essential. We use `Ruff` for both formatting and linting. All commands should be run from the project root.
+Maintaining consistent code style and quality is essential. We use `Ruff` for both formatting and linting.
 
--   **Format code (apply changes)**:
+-   **Run Code Style & Linting Checks**:
     ```bash
-    uvx ruff format .
+    make ruff
     ```
-    This command automatically reformats your code to match the project's style.
+    This command will format your code and check for linting issues. For more granular control, you can use the `uvx ruff` commands directly as follows:
 
--   **Check formatting (without applying changes)**:
-    ```bash
-    uvx ruff format --check .
-    ```
-    This command reports any files that don't adhere to the style guide, without modifying them. Useful for CI checks.
+    -   **Format code (apply changes)**:
+        ```bash
+        uvx ruff format .
+        ```
+    -   **Check formatting (without applying changes)**:
+        ```bash
+        uvx ruff format --check .
+        ```
+    -   **Lint code (check for errors and style issues)**:
+        ```bash
+        uvx ruff check .
+        ```
+    -   **Lint code and apply auto-fixes (for safe fixes)**:
+        ```bash
+        uvx ruff check . --fix
+        ```
+    -   **Lint code and apply more aggressive auto-fixes (including potentially unsafe ones)**:
+        ```bash
+        uvx ruff check . --fix --unsafe-fixes
+        ```
 
--   **Lint code (check for errors and style issues)**:
-    ```bash
-    uvx ruff check .
-    ```
-    This command analyzes your code for potential errors, bugs, and style violations.
+## Type Checking
 
--   **Lint code and apply auto-fixes (for safe fixes)**:
-    ```bash
-    uvx ruff check . --fix
-    ```
-    This command attempts to automatically fix any safe linting issues found.
+This project uses `mypy` for static type checking to ensure code correctness and maintainability.
 
--   **Lint code and apply more aggressive auto-fixes (including potentially unsafe ones)**:
+-   **Run type checks**:
     ```bash
-    uvx ruff check . --fix --unsafe-fixes
+    make type
     ```
-    Use this with caution, as it might apply changes that alter semantics in rare cases.
+    This command will run `mypy` against the codebase based on the configuration in `pyproject.toml`.
+
+## Docker Development
+
+The project provides `Makefile` commands for Docker-related tasks.
+
+-   **Build Docker Image**:
+    ```bash
+    make image
+    ```
+    Builds the application's Docker image.
+
+-   **Start Application with Docker Compose**:
+    ```bash
+    make compose-up
+    ```
+    Starts the application using Docker Compose.
+
+-   **Stop Application with Docker Compose**:
+    ```bash
+    make compose-down
+    ```
+    Stops the application started with Docker Compose.
+
+-   **Clean Project**:
+    ```bash
+    make clean
+    ```
+    Removes build artifacts and stops Docker containers.
 
 ---
 
