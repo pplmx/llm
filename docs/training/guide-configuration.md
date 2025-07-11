@@ -13,21 +13,24 @@
 
 ## 方法一：使用命令行参数 (最常用)
 
-对于快速实验和微调，直接在命令行中覆盖参数是最方便的。框架暴露了最常用的一些参数。
+对于快速实验和微调，直接在命令行中覆盖参数是最方便的。框架的配置系统设计为高度可配置，几乎所有参数都可以通过命令行设置。
 
 ```bash
 # 运行一个训练任务，并覆盖学习率和批量大小
-python -m llm.training.train --task regression --lr 0.005 --batch-size 256
+python -m llm.training.train --task regression --training-lr 0.005 --training-batch-size 256
 
 # 禁用 torch.compile 以进行调试
-python -m llm.training.train --task regression --no-compile
+python -m llm.training.train --task regression --no-optimization-use-compile
 
 # 从指定的检查点恢复训练
-python -m llm.training.train --task regression --resume-from-checkpoint checkpoints/latest.pt
+python -m llm.training.train --task regression --checkpoint-resume-from-checkpoint checkpoints/latest.pt
+
+# 启用 MoE 并设置专家数量和 Top-K
+python -m llm.training.train --task regression --model-use-moe --model-num-experts 8 --model-top-k 2
 ```
 
 -   要查看所有可用的命令行参数，请运行 `python -m llm.training.train --help`。
--   注意：并非 `Config` 中的所有参数都暴露在命令行中，只有最关键的那些被暴露出来以保持简洁性。
+-   参数命名约定：`--<配置组名称>-<参数名称>`（例如，`--model-hidden-size`，`--training-epochs`）。布尔参数可以通过 `--no-<配置组名称>-<参数名称>` 来禁用（如果默认值为 `True`），或通过 `--<配置组名称>-<参数名称>` 来启用（如果默认值为 `False`）。
 
 ## 方法二：使用 YAML 配置文件 (推荐用于可复现的实验)
 
@@ -41,6 +44,9 @@ python -m llm.training.train --task regression --resume-from-checkpoint checkpoi
       hidden_size: 256
       num_layers: 4
       dropout: 0.15
+      use_moe: true # 启用 MoE
+      num_experts: 8
+      top_k: 2
 
     training:
       epochs: 50
@@ -63,28 +69,20 @@ python -m llm.training.train --task regression --resume-from-checkpoint checkpoi
       log_interval: 50
     ```
 
-2.  **在代码中加载它**: (这需要对 `train.py` 进行少量修改)
+2.  **在您的训练脚本中加载它**: 
 
-    目前 `train.py` 默认从命令行和环境变量加载配置。要支持从 YAML 加载，您需要修改 `main` 函数：
+    框架的 `Config` 类提供了 `from_yaml` 方法来从 YAML 文件加载配置。您可以在自己的训练脚本中调用此方法：
 
     ```python
-    # 在 train.py 的 main 函数中
-    import argparse
+    from llm.training.core.config import Config
 
-    parser = argparse.ArgumentParser(...)
-    parser.add_argument("--config", type=str, help="Path to YAML config file.")
-    # ...
+    # 从 YAML 文件加载配置
+    config = Config.from_yaml("path/to/your/config.yaml")
 
-    args, remaining_argv = parser.parse_known_args()
-
-    if args.config:
-        config = Config.from_yaml(args.config)
-    else:
-        config = Config.from_args_and_env()
-
-    # ... 后续逻辑保持不变 ...
+    # 如果需要，可以通过命令行参数覆盖 YAML 中的设置
+    # config = Config.from_args_and_env(config) # 假设 from_args_and_env 可以接受一个基础 config
     ```
-    *注意：此修改尚未应用，此处仅为示例。*
+    *注意：`train.py` 默认从命令行和环境变量加载配置。如果您希望使用 YAML 文件，您需要在自己的脚本中显式调用 `Config.from_yaml()`。*
 
 ## 方法三：使用环境变量 (分布式训练)
 

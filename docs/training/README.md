@@ -15,29 +15,29 @@
 
 ### 理论与结构
 
--   **[核心组件详解 (`COMPONENTS.md`)](./COMPONENTS.md)**
+-   **[核心组件详解 (`components.md`)](./components.md)**
     -   深入了解构成训练框架的各个核心类，例如 `TrainingEngine`、`Config`、`CheckpointManager` 等。这里是理解“**什么**”的地方。
 
--   **[端到端调用流程 (`TRAINING_FLOW.md`)](./TRAINING_FLOW.md)**
+-   **[端到端调用流程 (`training-flow.md`)](./training-flow.md)**
     -   从程序启动到结束，宏观地了解各个组件是如何被依次调用和交互的。这里是理解“**如何**”的地方。
 
--   **[回调机制调用流程 (`FLOW_CALLBACKS.md`)](./FLOW_CALLBACKS.md)**
+-   **[回调机制调用流程 (`flow-callbacks.md`)](./flow-callbacks.md)**
     -   详细剖析了回调（Callback）系统，解释了在训练过程的各个阶段，您的自定义逻辑可以在何时被触发。这里是理解“**何时**”的地方。
 
 ### 实践与应用
 
--   **[指南：配置训练任务 (`GUIDE_CONFIGURATION.md`)](./GUIDE_CONFIGURATION.md)**
+-   **[指南：配置训练任务 (`guide-configuration.md`)](./guide-configuration.md)**
     -   学习如何通过命令行、YAML 文件和环境变量来配置您的训练任务。
 
--   **[指南：扩展训练框架 (`GUIDE_EXTENDING.md`)](./GUIDE_EXTENDING.md)**
+-   **[指南：扩展训练框架 (`guide-extending.md`)](./guide-extending.md)**
     -   通过具体的“食谱”示例，学习如何添加新的任务、回调、调度器等，以扩展框架的功能。
 
--   **[指南：故障排查 (`TROUBLESHOOTING.md`)](./TROUBLESHOOTING.md)**
+-   **[指南：故障排查 (`troubleshooting.md`)](./troubleshooting.md)**
     -   快速诊断和解决训练过程中可能遇到的常见问题。
 
 ### 深入主题
 
--   **[深度解析：分布式数据并行 (DDP)](./DEEP_DIVE_DDP.md)**
+-   **[深度解析：分布式数据并行 (DDP) (`deep-dive-ddp.md`)](./deep-dive-ddp.md)**
     -   为希望深入理解分布式训练背后原理的用户提供背景知识。
 
 ## 快速开始
