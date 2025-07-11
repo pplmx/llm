@@ -30,7 +30,7 @@
 **常见错误 1: `DDP Misconfiguration: world_size is X, but ... insufficient GPUs`**
 
 -   **原因**: 框架检测到您希望使用的进程数 (`world_size`) 与可用的 GPU 数量不匹配。
--   **解决方案**: 
+-   **解决方案**:
     -   检查您的 `DistributedConfig` 或环境变量 `GPUS_PER_NODE` 是否设置正确。
     -   运行 `nvidia-smi` 确认您的机器上有多少可用的 GPU。
     -   `world_size` 应该等于 `num_nodes * gpus_per_node`。
@@ -50,7 +50,7 @@
 **可能的原因及解决方案:**
 
 1.  **数据加载瓶颈**: CPU 准备数据的时间超过了 GPU 计算的时间。
-    -   **解决方案**: 
+    -   **解决方案**:
         -   增加 `optimization.num_workers` 的值，以使用更多进程来并行加载数据。一个经验法则是设置为您 CPU 核心数的一半左右。
         -   确保 `optimization.pin_memory` 设置为 `true`，这可以加速数据从 CPU 到 GPU 的传输。
 

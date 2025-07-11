@@ -75,18 +75,13 @@ However, for development, `uv sync` is the recommended way to set up the environ
 
 ## Usage
 
-Here's a brief overview of basic usage:
+For comprehensive documentation, including detailed usage examples, development guides, and troubleshooting, please refer to our dedicated documentation section:
 
-```python
-import llm
+-   [Development Guide](docs/development.md)
+-   [CPU LLM Tutorial](docs/tutorial-cpu-llm.md)
+-   [Project Troubleshooting](docs/troubleshooting.md)
+-   [Training Framework Documentation](docs/training/README.md)
 
-# Example usage
-result = llm.do_something()
-print(result)
-
-```
-
-For more detailed examples and a full breakdown of all features, please see our complete documentation in the [docs directory](docs/README.md).
 
 ## Development
 

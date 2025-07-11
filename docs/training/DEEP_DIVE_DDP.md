@@ -39,7 +39,7 @@
 
 #### `find_unused_parameters=False`
 
--   **这是什么？** 在 `DDP(model, find_unused_parameters=False)` 中，这个参数告诉 DDP 不要去检查模型中哪些参数在前向传播中没有被使用。 
+-   **这是什么？** 在 `DDP(model, find_unused_parameters=False)` 中，这个参数告诉 DDP 不要去检查模型中哪些参数在前向传播中没有被使用。
 -   **为什么设置为 `False`？** 检查未使用的参数会带来一些开销。如果您的模型所有参数都在 `forward` 中被使用（这是绝大多数情况），将此项设置为 `False` 可以略微提高性能。如果您的模型中有一些参数只在特定的代码路径下被使用（例如，在 `if` 语句中），您可能需要将其设置为 `True`，否则 DDP 在反向传播时可能会因为找不到这些参数的梯度而报错。
 
 #### `DistributedManager.reduce_mean(tensor)`
