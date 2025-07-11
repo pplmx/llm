@@ -1,12 +1,10 @@
-from unittest.mock import patch
-
 import pytest
 import torch
 import torch.nn as nn
 
 from llm.core.attn.mha import MultiHeadAttention
 from llm.core.mlp import MLP
-from llm.core.moe.moe import MoE # Import MoE
+from llm.core.moe.moe import MoE
 from llm.core.transformer_block import TransformerBlock
 
 # Test Constants
@@ -73,17 +71,23 @@ class TestTransformerBlockInitialization:
     def test_submodule_types(self, transformer_block):
         assert isinstance(transformer_block.self_attn, MultiHeadAttention)
         # Check type of mlp based on whether MoE is used
-        if transformer_block.mlp.__class__.__name__ == "MoE": # Check by name to avoid circular import issues if MoE is not directly imported
+        if (
+            transformer_block.mlp.__class__.__name__ == "MoE"
+        ):  # Check by name to avoid circular import issues if MoE is not directly imported
             assert isinstance(transformer_block.mlp, MoE)
         else:
             assert isinstance(transformer_block.mlp, MLP)
         assert isinstance(transformer_block.norm1, nn.LayerNorm)
         assert isinstance(transformer_block.norm2, nn.LayerNorm)
 
-    @pytest.mark.parametrize("block_kwargs", [
-        {"use_moe": False},
-        {"use_moe": True, "num_experts": 4, "top_k": 2},
-    ], indirect=True)
+    @pytest.mark.parametrize(
+        "block_kwargs",
+        [
+            {"use_moe": False},
+            {"use_moe": True, "num_experts": 4, "top_k": 2},
+        ],
+        indirect=True,
+    )
     def test_mlp_or_moe_instance(self, transformer_block, block_kwargs):
         if block_kwargs["use_moe"]:
             assert isinstance(transformer_block.mlp, MoE)
@@ -126,28 +130,28 @@ class TestTransformerBlockInitialization:
                 assert expert.intermediate_size == expected_mlp_intermediate
                 assert expert.dropout.p == block_kwargs["mlp_dropout_p"]
 
-
         assert transformer_block.norm1.eps == block_kwargs["norm_eps"]
         assert transformer_block.norm2.eps == block_kwargs["norm_eps"]
         assert transformer_block.norm_first == block_kwargs["norm_first"]
 
 
 class TestTransformerBlockForwardPass:
-    @pytest.mark.parametrize("block_kwargs", [
-        {"norm_first": True, "use_moe": False},
-        {"norm_first": False, "use_moe": False},
-        {"norm_first": True, "use_moe": True, "num_experts": 4, "top_k": 2},
-        {"norm_first": False, "use_moe": True, "num_experts": 4, "top_k": 2},
-    ], indirect=True)
+    @pytest.mark.parametrize(
+        "block_kwargs",
+        [
+            {"norm_first": True, "use_moe": False},
+            {"norm_first": False, "use_moe": False},
+            {"norm_first": True, "use_moe": True, "num_experts": 4, "top_k": 2},
+            {"norm_first": False, "use_moe": True, "num_experts": 4, "top_k": 2},
+        ],
+        indirect=True,
+    )
     def test_forward_pass_shape(self, transformer_block, input_tensor):
         output = transformer_block(input_tensor)
         assert output.shape == input_tensor.shape, (
             f"Output shape {output.shape} does not match input shape {input_tensor.shape}"
         )
 
-    # Removed @patch decorators and mock-based tests for pre_ln_path_logic and post_ln_path_logic.
-    # These tests are now covered by direct functional tests and gradient checks.
-
     def test_causality_propagation(self, block_kwargs, input_tensor):
         # Test with block's default is_causal = True
         block_kwargs["is_causal"] = True
@@ -178,38 +182,6 @@ class TestTransformerBlockForwardPass:
 
         output_masked = transformer_block(input_tensor, attn_mask=dummy_mask)
         assert output_masked.shape == input_tensor.shape
-
-    def test_causality_propagation(self, block_kwargs, input_tensor):
-        # Test with block's default is_causal = True
-        block_kwargs["is_causal"] = True
-        block = TransformerBlock(**block_kwargs)
-        block.eval()
-
-        # Test with causal mask (default behavior for is_causal=True)
-        output_causal = block(input_tensor)
-        assert output_causal.shape == input_tensor.shape
-
-        # Test with is_causal=False override
-        output_non_causal_override = block(input_tensor, is_causal=False)
-        assert output_non_causal_override.shape == input_tensor.shape
-
-        # Test with is_causal=True override (explicitly same as default)
-        output_causal_override = block(input_tensor, is_causal=True)
-        assert output_causal_override.shape == input_tensor.shape
-
-    def test_attention_mask_propagation(self, transformer_block, input_tensor):
-        dummy_mask = torch.ones(
-            BATCH_SIZE,
-            1,
-            SEQ_LEN,
-            SEQ_LEN,  # MHA expects [B, N, S, S] or broadcastable
-            device=input_tensor.device,
-            dtype=torch.bool,
-        )
-
-        output_masked = transformer_block(input_tensor, attn_mask=dummy_mask)
-        assert output_masked.shape == input_tensor.shape
-
 
     @pytest.mark.parametrize(
         "block_kwargs",
@@ -219,8 +191,22 @@ class TestTransformerBlockForwardPass:
             {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5, "norm_first": True, "use_moe": False},
             {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5, "norm_first": False, "use_moe": False},
             {"attn_dropout_p": 0.0, "mlp_dropout_p": 0.0, "norm_first": True, "use_moe": False},  # Control: no dropout
-            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.0, "norm_first": True, "use_moe": True, "num_experts": 4, "top_k": 2},
-            {"attn_dropout_p": 0.0, "mlp_dropout_p": 0.5, "norm_first": True, "use_moe": True, "num_experts": 4, "top_k": 2},
+            {
+                "attn_dropout_p": 0.5,
+                "mlp_dropout_p": 0.0,
+                "norm_first": True,
+                "use_moe": True,
+                "num_experts": 4,
+                "top_k": 2,
+            },
+            {
+                "attn_dropout_p": 0.0,
+                "mlp_dropout_p": 0.5,
+                "norm_first": True,
+                "use_moe": True,
+                "num_experts": 4,
+                "top_k": 2,
+            },
         ],
         indirect=True,
     )
@@ -306,7 +292,6 @@ class TestDeviceAndDtypePropagation:
                 if block_kwargs["mlp_bias"]:
                     assert expert.fc1.bias.dtype == dtype
 
-
         # Check output tensor device and dtype
         current_input_tensor = torch.randn(BATCH_SIZE, SEQ_LEN, block_kwargs["hidden_size"], device=device, dtype=dtype)
         output = block(current_input_tensor)
@@ -321,11 +306,16 @@ if __name__ == "__main__":
 @pytest.mark.parametrize("norm_first_val", [True, False])
 @pytest.mark.parametrize("qkv_bias_val", [True, False])
 @pytest.mark.parametrize("mlp_bias_val", [True, False])
-@pytest.mark.parametrize("use_moe_val, num_experts_val, top_k_val", [
-    (False, 0, 0),
-    (True, 4, 2),
-])
-def test_transformer_block_gradient_computation(norm_first_val, qkv_bias_val, mlp_bias_val, use_moe_val, num_experts_val, top_k_val, block_kwargs):
+@pytest.mark.parametrize(
+    "use_moe_val, num_experts_val, top_k_val",
+    [
+        (False, 0, 0),
+        (True, 4, 2),
+    ],
+)
+def test_transformer_block_gradient_computation(
+    norm_first_val, qkv_bias_val, mlp_bias_val, use_moe_val, num_experts_val, top_k_val, block_kwargs
+):
     """Tests if gradients are computed correctly for all trainable parameters."""
     torch.manual_seed(42)
 

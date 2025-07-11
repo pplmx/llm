@@ -34,9 +34,9 @@ class DecoderModel(nn.Module):
         qkv_bias: bool = True,  # Bias for QKV in MHA within TransformerBlock
         mlp_bias: bool = True,  # Bias for MLP in TransformerBlock
         lm_head_bias: bool = True,  # Bias for the final LM head
-        use_moe: bool = False, # New: Whether to use MoE in TransformerBlocks
-        num_experts: int = 0, # New: Number of experts if use_moe is True
-        top_k: int = 0, # New: Number of top experts to select if use_moe is True
+        use_moe: bool = False,  # New: Whether to use MoE in TransformerBlocks
+        num_experts: int = 0,  # New: Number of experts if use_moe is True
+        top_k: int = 0,  # New: Number of top experts to select if use_moe is True
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -100,9 +100,9 @@ class DecoderModel(nn.Module):
                     is_causal=is_causal,  # Pass overall model's causality default
                     qkv_bias=qkv_bias,
                     mlp_bias=mlp_bias,
-                    use_moe=use_moe, # Pass MoE flag
-                    num_experts=num_experts, # Pass num_experts
-                    top_k=top_k, # Pass top_k
+                    use_moe=use_moe,  # Pass MoE flag
+                    num_experts=num_experts,  # Pass num_experts
+                    top_k=top_k,  # Pass top_k
                     **factory_kwargs,
                 )
                 for _ in range(num_layers)

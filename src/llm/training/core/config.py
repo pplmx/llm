@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import types
 import typing
 from dataclasses import asdict, dataclass, field
@@ -181,8 +182,10 @@ class Config:
         # 动态添加参数，避免重复
         def add_args_from_dataclass(parser_, dc_name, dc_instance):
             for name, type_hint in dc_instance.__annotations__.items():
-                arg_name = f"--{dc_name.lower().replace('config', '')}-{name.replace('_', '-')}" # e.g., --model-hidden-size
-                
+                arg_name = (
+                    f"--{dc_name.lower().replace('config', '')}-{name.replace('_', '-')}"  # e.g., --model-hidden-size
+                )
+
                 # Determine the type for argparse
                 type_for_argparse = type_hint
                 origin = typing.get_origin(type_hint)
@@ -191,7 +194,7 @@ class Config:
                     if base_type:
                         type_for_argparse = base_type
                     else:
-                        continue # Skip Optional[None] types
+                        continue  # Skip Optional[None] types
 
                 # Handle boolean flags for argparse
                 # Handle boolean flags for argparse
@@ -200,10 +203,20 @@ class Config:
                     # For --no-flag, dest is 'flag'
                     # For --flag, dest is 'flag'
                     # So, we need to ensure the dest matches the field name
-                    if getattr(dc_instance, name) is True: # Default is True, so provide --no-flag
-                        parser_.add_argument(f"--no-{dc_name.lower().replace('config', '')}-{name.replace('_', '-')}", action="store_false", dest=f"{dc_name.lower().replace('config', '')}_{name}", help=f"Disable {dc_name}.{name}")
-                    else: # Default is False, so provide --flag
-                        parser_.add_argument(arg_name, action="store_true", dest=f"{dc_name.lower().replace('config', '')}_{name}", help=f"Enable {dc_name}.{name}")
+                    if getattr(dc_instance, name) is True:  # Default is True, so provide --no-flag
+                        parser_.add_argument(
+                            f"--no-{dc_name.lower().replace('config', '')}-{name.replace('_', '-')}",
+                            action="store_false",
+                            dest=f"{dc_name.lower().replace('config', '')}_{name}",
+                            help=f"Disable {dc_name}.{name}",
+                        )
+                    else:  # Default is False, so provide --flag
+                        parser_.add_argument(
+                            arg_name,
+                            action="store_true",
+                            dest=f"{dc_name.lower().replace('config', '')}_{name}",
+                            help=f"Enable {dc_name}.{name}",
+                        )
                 else:
                     parser_.add_argument(
                         arg_name, type=type_for_argparse, default=None, help=f"Override {dc_name}.{name}"
@@ -232,10 +245,10 @@ class Config:
         for group_name, group_config in config.__dict__.items():
             if group_name.startswith("_"):
                 continue
-            for key, type_hint in group_config.__annotations__.items():
+            for key, _type_hint in group_config.__annotations__.items():
                 # Construct the expected attribute name in 'args'
                 arg_attr_name = f"{group_name.lower().replace('config', '')}_{key}"
-                
+
                 # Check if the argument was actually provided in the command line
                 # For boolean flags, argparse sets the attribute even if not explicitly provided
                 # if it's a store_true/store_false action.
@@ -249,14 +262,16 @@ class Config:
                     arg_val = getattr(args, arg_attr_name)
                     # Only update if the value is not None (for non-boolean types)
                     # or if it's a boolean and was explicitly set (not default)
-                    if arg_val is not None or (isinstance(arg_val, bool) and arg_attr_name in sys.argv): # This check is still problematic
+                    if arg_val is not None or (
+                        isinstance(arg_val, bool) and arg_attr_name in sys.argv
+                    ):  # This check is still problematic
                         setattr(group_config, key, arg_val)
 
         # Special handling for --no-compile and --no-amp flags
         # These are global flags, not tied to a specific dataclass field directly
-        if hasattr(args, 'no_compile') and args.no_compile:
+        if hasattr(args, "no_compile") and args.no_compile:
             config.optimization.use_compile = False
-        if hasattr(args, 'no_amp') and args.no_amp:
+        if hasattr(args, "no_amp") and args.no_amp:
             config.optimization.use_amp = False
 
         # 手动后处理

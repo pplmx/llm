@@ -1,7 +1,16 @@
+from unittest.mock import patch  # Import patch
+
 import pytest
-import torch
-from unittest.mock import patch # Import patch
-from llm.training.core.config import Config, ModelConfig, TrainingConfig, DistributedConfig, OptimizationConfig, CheckpointConfig, LoggingConfig
+
+from llm.training.core.config import (
+    CheckpointConfig,
+    Config,
+    DistributedConfig,
+    LoggingConfig,
+    ModelConfig,
+    OptimizationConfig,
+    TrainingConfig,
+)
 
 
 class TestConfig:
@@ -21,20 +30,26 @@ class TestConfig:
         model_config_custom_ffn = ModelConfig(hidden_size=128, ffn_hidden_size=512)
         assert model_config_custom_ffn.ffn_hidden_size == 512
 
-    @pytest.mark.parametrize("hidden_size, ffn_hidden_size, num_layers", [
-        (0, 100, 1),  # Invalid hidden_size
-        (100, 0, 1),  # Invalid ffn_hidden_size
-        (100, 100, 0),  # Invalid num_layers
-    ])
+    @pytest.mark.parametrize(
+        "hidden_size, ffn_hidden_size, num_layers",
+        [
+            (0, 100, 1),  # Invalid hidden_size
+            (100, 0, 1),  # Invalid ffn_hidden_size
+            (100, 100, 0),  # Invalid num_layers
+        ],
+    )
     def test_model_config_validation_errors(self, hidden_size, ffn_hidden_size, num_layers):
         with pytest.raises(ValueError):
             ModelConfig(hidden_size=hidden_size, ffn_hidden_size=ffn_hidden_size, num_layers=num_layers)
 
-    @pytest.mark.parametrize("batch_size, lr, epochs", [
-        (0, 1e-3, 1),  # Invalid batch_size
-        (32, 0, 1),  # Invalid lr
-        (32, 1e-3, 0),  # Invalid epochs
-    ])
+    @pytest.mark.parametrize(
+        "batch_size, lr, epochs",
+        [
+            (0, 1e-3, 1),  # Invalid batch_size
+            (32, 0, 1),  # Invalid lr
+            (32, 1e-3, 0),  # Invalid epochs
+        ],
+    )
     def test_training_config_validation_errors(self, batch_size, lr, epochs):
         with pytest.raises(ValueError):
             TrainingConfig(batch_size=batch_size, lr=lr, epochs=epochs)
@@ -54,7 +69,7 @@ class TestConfig:
 
     def test_distributed_config_validation_errors(self):
         # Test validation directly
-        with patch('torch.cuda.device_count', return_value=2): # Mock device_count to 2
+        with patch("torch.cuda.device_count", return_value=2):  # Mock device_count to 2
             with pytest.raises(ValueError, match="Requested 3 GPUs but only 2 available"):
                 DistributedConfig(gpus_per_node=3)
 
@@ -71,38 +86,44 @@ class TestConfig:
     def test_config_from_args_and_env(self):
         # Test with some command line arguments
         import sys
+
         original_argv = sys.argv
-        sys.argv = ['train.py', '--model-hidden-size', '256', '--training-epochs', '5', '--no-amp']
-        
+        sys.argv = ["train.py", "--model-hidden-size", "256", "--training-epochs", "5", "--no-amp"]
+
         config = Config.from_args_and_env()
         assert config.model.hidden_size == 256
         assert config.training.epochs == 5
         assert config.optimization.use_amp is False
-        
-        sys.argv = original_argv # Restore original argv
+
+        sys.argv = original_argv  # Restore original argv
 
     def test_config_from_args_and_env_moe_params(self):
         import sys
+
         original_argv = sys.argv
-        sys.argv = ['train.py', '--model-use-moe', '--model-num-experts', '8', '--model-top-k', '4'] # Removed 'True'
-        
+        sys.argv = ["train.py", "--model-use-moe", "--model-num-experts", "8", "--model-top-k", "4"]  # Removed 'True'
+
         config = Config.from_args_and_env()
         assert config.model.use_moe is True
         assert config.model.num_experts == 8
         assert config.model.top_k == 4
-        
-        sys.argv = original_argv # Restore original argv
+
+        sys.argv = original_argv  # Restore original argv
 
     def test_model_config_moe_validation(self):
         # Test invalid num_experts
         with pytest.raises(ValueError, match="num_experts must be positive if use_moe is True."):
             ModelConfig(use_moe=True, num_experts=0, top_k=2)
-        
+
         # Test invalid top_k
-        with pytest.raises(ValueError, match="top_k must be positive and less than or equal to num_experts if use_moe is True."):
+        with pytest.raises(
+            ValueError, match="top_k must be positive and less than or equal to num_experts if use_moe is True."
+        ):
             ModelConfig(use_moe=True, num_experts=4, top_k=0)
-        
-        with pytest.raises(ValueError, match="top_k must be positive and less than or equal to num_experts if use_moe is True."):
+
+        with pytest.raises(
+            ValueError, match="top_k must be positive and less than or equal to num_experts if use_moe is True."
+        ):
             ModelConfig(use_moe=True, num_experts=4, top_k=5)
 
     def test_config_save_and_load_yaml(self, tmp_path):

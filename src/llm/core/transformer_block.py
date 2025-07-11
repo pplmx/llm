@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from llm.core.attn.mha import MultiHeadAttention
 from llm.core.mlp import MLP
-from llm.core.moe.moe import MoE # Import MoE
+from llm.core.moe.moe import MoE  # Import MoE
 
 
 class TransformerBlock(nn.Module):
@@ -28,9 +28,9 @@ class TransformerBlock(nn.Module):
         is_causal: bool = False,  # Default causality for MHA within this block
         qkv_bias: bool = True,  # Bias for QKV projections in MHA
         mlp_bias: bool = True,  # Bias for Linear layers in MLP
-        use_moe: bool = False, # New: Whether to use MoE instead of MLP
-        num_experts: int = 0, # New: Number of experts if use_moe is True
-        top_k: int = 0, # New: Number of top experts to select if use_moe is True
+        use_moe: bool = False,  # New: Whether to use MoE instead of MLP
+        num_experts: int = 0,  # New: Number of experts if use_moe is True
+        top_k: int = 0,  # New: Number of top experts to select if use_moe is True
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -95,7 +95,7 @@ class TransformerBlock(nn.Module):
                 activation=mlp_activation,
                 dropout_p=mlp_dropout_p,
                 bias=mlp_bias,
-                norm_eps=norm_eps, # Pass norm_eps to MoE's experts
+                norm_eps=norm_eps,  # Pass norm_eps to MoE's experts
                 **factory_kwargs,
             )
         else:
