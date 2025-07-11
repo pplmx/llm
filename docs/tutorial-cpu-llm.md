@@ -1,278 +1,168 @@
-### **一、基础知识**
+# LLM 框架教程：从零开始构建与训练
 
-1. **LLM核心概念**：
-    - Transformer架构（注意力机制、前馈网络）
-    - 预训练（Masked Language Modeling / Causal LM）与微调
-    - Tokenization（BPE/WordPiece分词器）
-    - 参数量与硬件需求关系（1B参数≈4GB显存，CPU需更高内存）
+本教程旨在指导您如何使用本项目自定义的 LLM 框架进行模型构建、训练和实验。我们将专注于框架的核心组件和工作流程，帮助您理解如何利用其模块化和可扩展性。
 
-2. **训练流程**：
-   ```plaintext
-   数据收集 → 清洗 → Tokenization → 模型选择 → 微调 → 评估 → 部署
-   ```
+## 目录
 
-3. **工具推荐**：
-    - Hugging Face Transformers（核心库）
-    - PyTorch（CPU优化版）
-    - Datasets（数据加载）
-    - Tokenizers（高效分词）
+- [一、框架核心概念](#一、框架核心概念)
+- [二、环境搭建](#二、环境搭建)
+- [三、模型构建与组件](#三、模型构建与组件)
+- [四、数据处理](#四、数据处理)
+- [五、训练流程与配置](#五、训练流程与配置)
+- [六、扩展与高级特性](#六、扩展与高级特性)
+- [七、常见问题与故障排查](#七、常见问题与故障排查)
 
 ---
 
-### **二、环境搭建**
+### 一、框架核心概念
 
-1. **安装`uv`并配置虚拟环境**：
-   ```bash
-   pip install uv
-   uv venv llm-env
-   source llm-env/bin/activate  # Linux/macOS
-   llm-env\Scripts\activate    # Windows
-   ```
+本项目提供了一个模块化、可扩展的 PyTorch LLM 训练框架。其核心设计理念是**解耦**和**可扩展性**，旨在将通用的训练逻辑与具体的任务逻辑分离。
 
-2. **安装CPU版PyTorch**：
-   ```bash
-   pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-   ```
+**主要特点：**
 
-3. **安装其他依赖**：
-   ```bash
-   uv pip install transformers datasets tokenizers accelerate psutil
-   ```
+-   **模块化架构**：Transformer 核心组件（如注意力、MLP、归一化）被设计为可插拔模块。
+-   **灵活配置**：通过 YAML 文件和 Python `dataclasses` 实现高度可配置的模型和训练参数。
+-   **健壮的训练引擎**：支持分布式训练 (DDP)、自动混合精度 (AMP)、`torch.compile` 优化、回调系统和检查点管理。
+-   **抽象的数据流**：通过 `DataModule` 抽象数据加载和预处理。
+-   **可扩展的任务**：通过 `TrainingTask` 抽象不同的训练任务。
 
 ---
 
-### **三、数据准备**
+### 二、环境搭建
 
-1. **开源小型数据集推荐**：
-    - [WikiText-2](https://huggingface.co/datasets/wikitext)（英文百科）
-    - [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories)（儿童故事）
-    - [OpenWebText (1%样本)](https://huggingface.co/datasets/openwebtext)
+本项目使用 `uv` 进行依赖管理，并推荐使用 `Makefile` 进行环境设置和常用任务管理。
 
-2. **数据加载与清洗示例**：
-   ```python
-   from datasets import load_dataset
-
-   dataset = load_dataset("wikitext", "wikitext-2-raw-v1")
-   dataset = dataset.filter(lambda x: len(x["text"]) > 100)  # 过滤短文本
-   ```
-
-3. **分词处理**：
-   ```python
-   from transformers import AutoTokenizer
-
-   tokenizer = AutoTokenizer.from_pretrained("distilgpt2")
-   tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-
-   def tokenize_fn(examples):
-       return tokenizer(examples["text"], truncation=True, max_length=512)
-
-   dataset = dataset.map(tokenize_fn, batched=True, num_proc=4)
-   ```
+1.  **安装 `uv`**: 如果您尚未安装 `uv`，请按照官方说明进行安装：[uv 安装指南](https://github.com/astral-sh/uv#installation)。
+2.  **克隆仓库**: 
+    ```bash
+    git clone https://github.com/pplmx/llm.git
+    cd llm
+    ```
+3.  **初始化项目**: 运行 `make init` 命令。这将创建虚拟环境、安装所有必要的依赖项，并设置 pre-commit 钩子。
+    ```bash
+    make init
+    ```
+4.  **同步依赖 (如果需要)**: 如果 `pyproject.toml` 或 `uv.lock` 发生变化，您可以重新同步依赖：
+    ```bash
+    make sync
+    ```
 
 ---
 
-### **3.A Custom LLM Framework Components**
+### 三、模型构建与组件
 
-As part of this learning journey, we have built a small, functional LLM framework from scratch. These components are inspired by established architectures like the Transformer but are custom implementations designed for educational purposes. They are distinct from the highly optimized and general-purpose modules found in libraries like Hugging Face Transformers.
+本项目框架的核心模型是 `DecoderModel`，它由一系列模块化组件构成。这些组件位于 `src/llm/core/` 和 `src/llm/models/` 目录下。
 
-Here's a brief overview of the core components:
+**核心组件概览：**
 
-*   **`llm.tokenization.simple_tokenizer.SimpleCharacterTokenizer`**:
-    *   **Location**: `src/llm/tokenization/simple_tokenizer.py`
-    *   **Purpose**: A basic character-level tokenizer. It builds a vocabulary by identifying all unique characters in a given training corpus. It also automatically handles a special `<PAD>` token, used for padding sequences to a consistent length, which is crucial for batch processing.
+-   **`llm.tokenization.simple_tokenizer.SimpleCharacterTokenizer`**:
+    -   **位置**: `src/llm/tokenization/simple_tokenizer.py`
+    -   **用途**: 一个基础的字符级分词器，用于将文本转换为模型可处理的整数序列。它支持 `<PAD>` 特殊 token。
 
-*   **`llm.data.loader.TextDataset` and `llm.data.loader.create_dataloader`**:
-    *   **Location**: `src/llm/data/loader.py`
-    *   **Purpose**:
-        *   `TextDataset`: Reads a raw text file, tokenizes it using a provided tokenizer (like `SimpleCharacterTokenizer`), and then chunks the tokenized text into sequences of a specified `max_seq_len`. It supports overlapping sequences and pads shorter sequences (usually the last one in a file) with the tokenizer's `pad_token_id`.
-        *   `create_dataloader`: A utility function that takes a `TextDataset` instance and wraps it in a PyTorch `DataLoader` for efficient batching during training.
+-   **`llm.core.embedding.EmbeddingLayer`**:
+    -   **位置**: `src/llm/core/embedding.py`
+    -   **用途**: 结合 token 嵌入和位置编码，为模型提供输入序列的向量表示。
 
-*   **`llm.core.positional_encoding.PositionalEncoding`**:
-    *   **Location**: `src/llm/core/positional_encoding.py`
-    *   **Purpose**: Provides positional information to the model, allowing it to understand the order of tokens in a sequence. It supports both fixed sinusoidal positional encodings and learned positional embeddings.
+-   **`llm.core.attn.mha.MultiHeadAttention`**:
+    -   **位置**: `src/llm/core/attn/mha.py`
+    -   **用途**: 实现多头自注意力机制，是 Transformer 的核心。
 
-*   **`llm.core.embedding.EmbeddingLayer`**:
-    *   **Location**: `src/llm/core/embedding.py`
-    *   **Purpose**: Combines token embeddings (converting token IDs to vectors) with positional encodings. It also applies a common scaling factor (`sqrt(hidden_size)`) to the token embeddings before adding positional information.
+-   **`llm.core.mlp.MLP`**:
+    -   **位置**: `src/llm/core/mlp.py`
+    -   **用途**: Transformer 层中的多层感知器（前馈网络）。
 
-*   **`llm.core.attn.mha.MultiHeadAttention`**:
-    *   **Location**: `src/llm/core/attn/mha.py`
-    *   **Purpose**: Implements the multi-head self-attention mechanism, a core component of the Transformer. It allows the model to weigh the importance of different tokens in a sequence when processing each token. This custom version can optionally include its own Layer Normalization and residual connection, but these are typically managed by the `TransformerBlock` when used within it.
+-   **`llm.core.transformer_block.TransformerBlock`**:
+    -   **位置**: `src/llm/core/transformer_block.py`
+    -   **用途**: 构成 Transformer 模型的基本单元，结合了注意力机制和 MLP，并处理层归一化和残差连接。
 
-*   **`llm.core.mlp.MLP`**:
-    *   **Location**: `src/llm/core/mlp.py`
-    *   **Purpose**: A Multi-Layer Perceptron (feed-forward network) used within each Transformer layer. It typically consists of two linear layers with an activation function in between. Similar to MHA, it can optionally include its own norm/residual, but these are usually handled by the `TransformerBlock`.
+-   **`llm.models.decoder.DecoderModel`**:
+    -   **位置**: `src/llm/models/decoder.py`
+    -   **用途**: 完整的解码器模型，堆叠了多个 `TransformerBlock`，并包含一个语言模型头用于预测下一个 token。
 
-*   **`llm.core.transformer_block.TransformerBlock`**:
-    *   **Location**: `src/llm/core/transformer_block.py`
-    *   **Purpose**: Represents a single layer of a Transformer. It combines an MHA sublayer and an MLP sublayer. Crucially, this module manages the Layer Normalization (supporting Pre-LN and Post-LN configurations) and residual connections around these sublayers, ensuring proper information flow and gradient stability.
+**模型配置：**
 
-*   **`llm.models.decoder.DecoderModel`**:
-    *   **Location**: `src/llm/models/decoder.py`
-    *   **Purpose**: A complete decoder-only Transformer model. It stacks multiple `TransformerBlock` layers on top of an `EmbeddingLayer`. A final linear layer (language modeling head) projects the output of the last Transformer block to vocabulary-sized logits, which can be used to predict the next token in a sequence. This model is designed for causal language modeling (predicting the next token).
-
-These components provide a foundational understanding of how a language model can be constructed.
+您可以通过 `Config` 类（特别是 `ModelConfig` 部分）来配置 `DecoderModel` 的参数，例如 `hidden_size`、`num_layers`、`num_heads` 等。
 
 ---
 
-### **3.B Training a Custom Character-Level Model**
+### 四、数据处理
 
-Using the custom framework components described above, we can train a character-level language model. A script is provided to facilitate this process.
+本项目通过 `DataModule` 抽象数据处理和加载。
 
-**Running the Training Script:**
+-   **`llm.data.data_module.BaseDataModule`**:
+    -   **位置**: `src/llm/data/data_module.py`
+    -   **用途**: 定义了数据模块的抽象接口，包括数据准备 (`prepare_data`)、设置 (`setup`) 和创建数据加载器 (`train_dataloader`, `val_dataloader`)。
 
-The primary script for training is `scripts/train_simple_decoder.py`. It uses the custom components to build and train a `DecoderModel`.
+-   **`llm.data.synthetic_data_module.SyntheticDataModule`**:
+    -   **位置**: `src/llm/data/synthetic_data_module.py`
+    -   **用途**: `BaseDataModule` 的一个实现，用于生成合成数据进行训练和测试。这对于框架的初步验证和功能开发非常有用。
 
-**Key Command-Line Arguments:**
+**如何使用：**
 
-*   `--file_path <path>`: (Required) Path to the training text file.
-*   `--max_seq_len <int>`: Maximum sequence length for the dataset and model (default: 32).
-*   `--batch_size <int>`: Training batch size (default: 16).
-*   `--epochs <int>`: Number of training epochs (default: 1).
-*   `--lr <float>`: Learning rate (default: 1e-3).
-*   `--hidden_size <int>`: Model hidden size (default: 64).
-*   `--num_layers <int>`: Number of transformer layers in the model (default: 2).
-*   `--num_heads <int>`: Number of attention heads in each MHA layer (default: 2).
-*   `--device <str>`: Device to train on ("cpu" or "cuda", default: "cpu").
-*   `--overlap <int>`: Token overlap for sequences in `TextDataset` (default: 0).
-*   `--log_interval <int>`: Print loss every N batches (default: 10).
+在您的 `TrainingTask` 中，您将实例化一个 `DataModule` 的子类，并将其传递给 `TrainingEngine`。
 
-**Example Command:**
+---
 
-To train a model, you would run a command similar to this from the root of the project:
+### 五、训练流程与配置
+
+项目的训练流程由 `TrainingEngine` 驱动，并通过 `Config` 类进行全面配置。
+
+**训练入口：**
+
+主要的训练脚本是 `src/llm/training/train.py`。您可以通过命令行参数来选择训练任务和覆盖默认配置。
+
+**示例命令：**
 
 ```bash
-python scripts/train_simple_decoder.py \
-    --file_path /path/to/your/textfile.txt \
-    --epochs 5 \
-    --batch_size 32 \
-    --max_seq_len 64 \
-    --hidden_size 128 \
-    --num_layers 3 \
-    --num_heads 4 \
-    --lr 0.001 \
-    --device cuda
+python src/llm/training/train.py --task regression --epochs 5 --batch-size 64 --model.hidden_size 128 --training.lr 0.0005
 ```
-*(Note: Adjust `--file_path` to your actual data file and `--device` based on your hardware.)*
 
-**What the Script Does:**
+**配置管理：**
 
-1.  **Initializes Tokenizer**: Creates a `SimpleCharacterTokenizer` from the character vocabulary of your input file.
-2.  **Prepares Data**: Uses `TextDataset` to process the text file into tokenized sequences (with padding and overlap) and `create_dataloader` to prepare batches.
-3.  **Builds Model**: Constructs a `DecoderModel` using the specified architecture parameters.
-4.  **Trains**: Performs a standard training loop using Adam optimizer and CrossEntropyLoss. The script handles causal masking (for language modeling) and ignores padded tokens in the loss calculation.
-5.  **Logs Progress**: Prints training loss periodically.
+-   **`llm.training.core.config.Config`**:
+    -   **位置**: `src/llm/training/core/config.py`
+    -   **用途**: 集中管理所有训练相关的配置，包括模型、训练参数、分布式设置、优化选项、检查点和日志。
+    -   支持从 YAML 文件加载配置，并通过命令行参数和环境变量进行覆盖。
 
-This script provides a practical example of using the custom LLM components for a complete training workflow.
+**训练引擎 (`TrainingEngine`)：**
 
----
+-   **位置**: `src/llm/training/core/engine.py`
+-   **用途**: 协调整个训练循环，包括：
+    -   模型、优化器、调度器和损失函数的构建。
+    -   分布式训练 (DDP) 的设置。
+    -   自动混合精度 (AMP) 和 `torch.compile` 的集成。
+    -   检查点加载和保存。
+    -   通过回调系统触发自定义逻辑。
 
-### **四、模型选择与微调**
+**训练任务 (`TrainingTask`)：**
 
-1. **适合CPU的轻量模型**：
-    - [TinyBERT](https://huggingface.co/huawei-noah/TinyBERT_General_4L_312D)
-    - [DistilGPT-2](https://huggingface.co/distilgpt2)（82M参数）
-    - [MobileBERT](https://huggingface.co/google/mobilebert-uncased)
-
-2. **微调代码示例**：
-   ```python
-   from transformers import AutoModelForCausalLM, TrainingArguments, Trainer
-
-   model = AutoModelForCausalLM.from_pretrained("distilgpt2")
-   model.config.pad_token_id = tokenizer.pad_token_id  # 对齐Pad Token
-
-   training_args = TrainingArguments(
-       output_dir="./results",
-       per_device_train_batch_size=2,     # 小批量适应内存
-       gradient_accumulation_steps=8,      # 模拟更大batch size
-       num_train_epochs=3,
-       logging_steps=100,
-       optim="adamw_torch",
-       fp16=False                         # CPU禁用混合精度
-   )
-
-   trainer = Trainer(
-       model=model,
-       args=training_args,
-       train_dataset=dataset["train"],
-   )
-   trainer.train()
-   ```
+-   **位置**: `src/llm/training/tasks/base_task.py`
+-   **用途**: 抽象了具体的训练任务。您需要实现 `TrainingTask` 的子类来定义模型的构建、优化器、损失函数以及训练和验证步骤。
 
 ---
 
-### **五、训练优化技巧**
+### 六、扩展与高级特性
 
-1. **CPU加速方法**：
-    - 使用Intel Extension for PyTorch：
-      ```bash
-      pip install intel_extension_for_pytorch
-      ```
-    - 设置多线程：
-      ```python
-      import torch
-      torch.set_num_threads(16)  # i7-12700有20线程
-      ```
+本项目框架旨在高度可扩展，允许您轻松添加新功能。
 
-2. **内存优化**：
-   ```python
-   # 在TrainingArguments中设置：
-   gradient_checkpointing=True  # 用计算时间换内存
-   dataloader_num_workers=4    # 并行加载数据
-   ```
+-   **添加新的训练任务**:
+    -   创建 `llm.training.tasks.base_task.TrainingTask` 的子类，实现其抽象方法。
+    -   在 `src/llm/training/train.py` 的 `AVAILABLE_TASKS` 字典中注册您的新任务。
 
----
+-   **自定义回调**:
+    -   创建 `llm.training.core.callbacks.Callback` 的子类，并在训练生命周期的不同阶段实现 `on_...` 方法。
+    -   在 `train.py` 中将您的回调添加到 `TrainingEngine` 的回调列表中。
 
-### **六、评估与调优**
+-   **集成新的模型组件**:
+    -   在 `src/llm/core/` 或 `src/llm/models/` 中添加新的注意力机制、归一化层或 MoE 实现。
+    -   修改 `DecoderModel` 或其他模型定义以集成这些新组件。
 
-1. **评估指标计算**：
-   ```python
-   import math
-   eval_results = trainer.evaluate()
-   perplexity = math.exp(eval_results["eval_loss"])
-   ```
-
-2. **超参数调优建议**：
-    - 学习率：`1e-5`到`5e-4`之间尝试
-    - 批次大小：逐步增加直到内存占满
-    - 使用`optuna`库自动搜索参数
+-   **性能优化**:
+    -   利用 `Config` 中的 `optimization` 部分来启用或禁用 `torch.compile` 和 AMP。
+    -   探索更高级的优化技术，如梯度累积、模型并行等。
 
 ---
 
-### **七、扩展建议**
+### 七、常见问题与故障排查
 
-1. **硬件升级方向**：
-    - 增加NVIDIA RTX 3090/4090 GPU（单卡24GB显存）
-    - 升级到128GB内存（处理更大批次）
-
-2. **云训练方案**：
-    - AWS EC2 `g4dn.xlarge`（约$0.526/小时）
-    - 使用Hugging Face AutoTrain（免代码微调）
-
-3. **分布式训练工具**：
-    - DeepSpeed（支持ZeRO-Offload技术，允许CPU+GPU混合训练）
-    - Ray框架（管理多节点训练）
-
----
-
-### **硬件限制说明**
-
-1. **不可行任务**：
-    - 训练参数量>1B的模型（内存不足）
-    - 使用全量OpenWebText（需TB级存储）
-
-2. **替代方案**：
-    - 使用模型并行化（需重构代码）
-    - 采用`LoRA`等参数高效微调技术
-
----
-
-以上所有代码均已在类似硬件环境测试通过。建议从`DistilGPT-2`+`TinyStories`组合开始实验，预计训练时间约12-24小时/epoch。如果遇到内存不足问题，可尝试：
-
-```python
-# 在训练前添加内存监控
-import psutil
-
-process = psutil.Process()
-print(f"Memory used: {process.memory_info().rss / 1024 ** 2:.2f} MB")
-```
+如果您在使用过程中遇到问题，请参考项目的 [故障排查指南](docs/troubleshooting.md)。

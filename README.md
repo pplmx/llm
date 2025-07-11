@@ -23,47 +23,63 @@
 
 ## Overview
 
-`llm` is a Python project designed to [brief description of the project's main purpose or functionality]. This project aims to [explain the primary goals or problems it solves].
+`llm` is a modular and extensible PyTorch framework for training and experimenting with Large Language Models (LLMs). It provides a robust infrastructure for building, training, and evaluating LLMs, focusing on modularity, scalability, and ease of experimentation.
 
 ## Features
 
-- **Feature 1**: [Detailed description of feature 1 and its benefits]
-- **Feature 2**: [Detailed description of feature 2 and its benefits]
-- **Feature 3**: [Detailed description of feature 3 and its benefits]
-- **Advanced Training Script**: The `scripts/train_simple_decoder.py` script for training decoder-only models now supports:
-    - Evaluation on a validation set during training (via the `--val_file_path` argument).
-    - Learning rate scheduling using Cosine Annealing.
-    - Early stopping based on validation loss to prevent overfitting and reduce training time.
-- [Add more features as needed]
+- **Modular LLM Architecture**:
+    - Built with a modular Transformer architecture, allowing for flexible component swapping.
+    - Supports advanced features like Mixture of Experts (MoE) and various normalization techniques (Pre-LN/Post-LN).
+- **Robust Training Framework**:
+    - Distributed Data Parallel (DDP) training for scalability.
+    - Automatic Mixed Precision (AMP) for memory efficiency and faster training.
+    - `torch.compile` integration for performance optimization.
+    - Flexible configuration system using YAML and Python dataclasses.
+    - Extensible callback system for custom training logic (logging, checkpointing, early stopping, LR scheduling).
+    - Comprehensive checkpoint management and performance monitoring.
+- **Efficient Development Workflow**:
+    - Utilizes `uv` for fast and reliable dependency management.
+    - Enforces code quality with `ruff` (linting and formatting) and `mypy` (static type checking).
+    - Comprehensive testing with `pytest`, including coverage reports and Allure test results.
+- **Data and Tokenization Abstraction**:
+    - Modular `DataModule` design for flexible data loading and preprocessing.
+    - Character-level tokenizer for basic experimentation, with clear extensibility for advanced tokenizers.
+- **Example Training Script**: The `src/llm/training/train.py` script demonstrates end-to-end training of decoder-only models, showcasing the framework's capabilities.
 
 ## Quick Start
 
-```python
-import llm
+To quickly get started with training a model using the framework, follow these steps:
 
-# Example usage
-result = llm.do_something()
-print(result)
-
-# Add more examples showcasing key features
-```
+1.  **Initialize Project**: Ensure your environment is set up by running the initialization command (see [Installation](#installation) for details).
+    ```bash
+    make init
+    ```
+2.  **Run a Training Example**: Execute the main training script with a sample task.
+    ```bash
+    python src/llm/training/train.py --task regression --epochs 1 --batch-size 32
+    ```
+    This command will train a simple regression model for 1 epoch with a batch size of 32. You will see training progress logs in your console.
 
 ## Installation
 
 ### Requirements
 - Python 3.13+
 - [uv](https://github.com/astral-sh/uv): A fast Python package installer and resolver, written in Rust.
+- [make](https://www.gnu.org/software/make/): A build automation tool (typically pre-installed on Linux/macOS, available via Chocolatey/Scoop on Windows).
 
 ### Setting up the Environment
 
-This project uses `uv` for dependency management and environment setup.
+This project uses `uv` for dependency management and `Makefile` for common development tasks.
 
 1.  **Install `uv`**: If you don't have `uv` installed, follow the official instructions [here](https://github.com/astral-sh/uv#installation).
-2.  **Synchronize Dependencies**: Navigate to the project root directory and run:
+2.  **Initialize Project**: Navigate to the project root directory and run the `make init` command. This will set up the virtual environment, install all necessary dependencies, and install pre-commit hooks.
     ```bash
-    uv sync
+    make init
     ```
-    This command will install all dependencies defined in `pyproject.toml` (and captured in `uv.lock` if present), including main dependencies as well as those required for development, testing, and quality checks (e.g., `pytest`, `ruff`, `pytest-cov`).
+3.  **Synchronize Dependencies (if needed)**: If `pyproject.toml` or `uv.lock` changes, you can re-synchronize dependencies:
+    ```bash
+    make sync
+    ```
 
 ### User Installation (Distribution)
 If this project were to be distributed as a package, users would typically install it using pip:
@@ -71,7 +87,7 @@ If this project were to be distributed as a package, users would typically insta
 ```bash
 pip install llm # Assuming 'llm' is the package name on PyPI
 ```
-However, for development, `uv sync` is the recommended way to set up the environment.
+However, for development, `make init` is the recommended way to set up the environment.
 
 ## Usage
 
@@ -85,43 +101,7 @@ For comprehensive documentation, including detailed usage examples, development 
 
 ## Development
 
-Setting up the development environment is handled by `uv sync` as described in the [Installation](#installation) section. This ensures all necessary tools for development, testing, and quality checks are installed.
-
-### Code Style and Quality Checks
-
-This project uses `ruff` for formatting and linting. All commands should be run from the project root.
-
--   **Format code (apply changes)**:
-    ```bash
-    uvx ruff format .
-    ```
--   **Check formatting (without applying changes)**:
-    ```bash
-    uvx ruff format --check .
-    ```
--   **Lint code (check for errors and style issues)**:
-    ```bash
-    uvx ruff check .
-    ```
--   **Lint code and apply auto-fixes (for safe fixes)**:
-    ```bash
-    uvx ruff check . --fix
-    ```
--   **Lint code and apply more aggressive auto-fixes (including potentially unsafe ones)**:
-    ```bash
-    uvx ruff check . --fix --unsafe-fixes
-    ```
-
-### Running Tests
-
-Tests are managed and run using `pytest`. Ensure dependencies are synchronized with `uv sync` before running tests.
-
--   **Run all tests**:
-    ```bash
-    uv run pytest
-    ```
-
-For more detailed information on development workflows, advanced testing, and contribution guidelines, please refer to our [Development Guide](docs/development.md).
+For detailed information on setting up the development environment, running tests, maintaining code quality, and other development workflows, please refer to our comprehensive [Development Guide](docs/development.md).
 
 ## Troubleshooting
 
@@ -146,8 +126,8 @@ For a detailed history of changes to this project, please refer to our [CHANGELO
 
 ## Contact
 
-[Provide information on how to contact the maintainers or where to ask questions]
+For questions, suggestions, or support, please open an issue on our GitHub repository.
 
 ## Acknowledgements
 
-[Acknowledge contributors, inspirations, or resources used in the project]
+We acknowledge all contributors, open-source projects, and resources that have inspired and supported the development of this project.
