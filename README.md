@@ -86,7 +86,7 @@ print(result)
 
 ```
 
-For more detailed examples and explanations of key concepts, please refer to our comprehensive [Usage Guide](docs/usage.md).
+For more detailed examples and a full breakdown of all features, please see our complete documentation in the [docs directory](docs/README.md).
 
 ## Development
 
