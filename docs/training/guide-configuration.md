@@ -69,7 +69,7 @@ python -m llm.training.train --task regression --model-use-moe --model-num-exper
       log_interval: 50
     ```
 
-2.  **在您的训练脚本中加载它**: 
+2.  **在您的训练脚本中加载它**:
 
     框架的 `Config` 类提供了 `from_yaml` 方法来从 YAML 文件加载配置。您可以在自己的训练脚本中调用此方法：
 
