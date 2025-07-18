@@ -18,7 +18,7 @@ repos:
                 stages: [ pre-push ]
 
     -   repo: https://github.com/astral-sh/ruff-pre-commit
-        rev: v0.12.1
+        rev: v0.12.4
         hooks:
             -   id: ruff-format
             -   id: ruff-check
@@ -27,7 +27,7 @@ repos:
                 require_serial: true
 
     -   repo: https://github.com/astral-sh/uv-pre-commit
-        rev: 0.7.17
+        rev: 0.8.0
         hooks:
             -   id: uv-lock
 
