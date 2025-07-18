@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.0,<0.9"]
+build-backend = "uv_build"
 
 [project]
 name = "llm"
@@ -25,8 +25,8 @@ dependencies = [
     "seaborn>=0.13.2",
     "pillow>=11.2.1",
     "rich>=14.0.0",
-    "tensorboard>=2.16.2", # Added tensorboard for logging
-    "PyYAML>=6.0.1", # Added PyYAML for config loading
+    "tensorboard>=2.16.2",
+    "PyYAML>=6.0.1",
 ]
 
 [project.urls]
@@ -34,8 +34,8 @@ Documentation = "https://github.com/pplmx/llm#readme"
 Issues = "https://github.com/pplmx/llm/issues"
 Source = "https://github.com/pplmx/llm"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/llm"]
+[tool.uv.build-backend]
+module-name = "llm"
 
 [tool.pytest.ini_options]
 minversion = "8.1"
