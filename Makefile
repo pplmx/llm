@@ -5,7 +5,7 @@ APP_NAME := llm
 
 # Init the venv
 init: sync
-	@uvx pre-commit install --hook-type commit-msg --hook-type pre-push
+	@uvx prek install --hook-type commit-msg --hook-type pre-commit --hook-type pre-push
 
 # Sync the project with the venv
 sync:
