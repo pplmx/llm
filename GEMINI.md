@@ -28,9 +28,9 @@
 
 为确保提交信息的一致性和正确格式，请遵循以下工作流：
 
-1.  **创建临时文件**：将完整的提交信息（包括主题和正文）写入项目根目录下的临时文件 `commit_message.txt`。
-2.  **从文件提交**：使用命令 `git commit -F commit_message.txt` 创建提交。
-3.  **清理**：成功创建提交后，删除 `commit_message.txt` 文件。
+1. **创建临时文件**：将完整的提交信息（包括主题和正文）写入项目根目录下的临时文件 `commit_message.txt`。
+2. **从文件提交**：使用命令 `git commit -F commit_message.txt` 创建提交。
+3. **清理**：成功创建提交后，删除 `commit_message.txt` 文件。
 
 ## 可用命令
 
@@ -51,11 +51,11 @@
 
 ## 工具链
 
--   **Linting 和格式化**：`ruff` 用于 linting 和格式化。配置位于 `ruff.toml`。
--   **类型检查**：`mypy` 用于静态类型检查。配置位于 `pyproject.toml`。
--   **测试**：`pytest` 用于运行测试。配置位于 `pyproject.toml`。
--   **包管理**：`uv` 用于管理依赖。
--   **构建**：`hatchling` 用于构建项目。
+- **Linting 和格式化**：`ruff` 用于 linting 和格式化。配置位于 `ruff.toml`。
+- **类型检查**：`mypy` 用于静态类型检查。配置位于 `pyproject.toml`。
+- **测试**：`pytest` 用于运行测试。配置位于 `pyproject.toml`。
+- **包管理**：`uv` 用于管理依赖。
+- **构建**：`hatchling` 用于构建项目。
 
 ## 依赖项
 
@@ -73,18 +73,26 @@
 
 项目的文档组织在 `docs/` 目录下，遵循标准的 GitHub 项目实践。关键规范包括：
 
--   **根目录的 `CONTRIBUTING.md`**：提供高层次的贡献指南。
--   **`docs/` 目录作为主要文档中心**：
-    -   **根目录的 `README.md` 是所有文档的主要入口**，它直接链接到 `docs/` 目录下的各个顶级文档文件。
-    -   大多数文档文件名使用小写，**多单词文件名使用连字符 `-` 分隔**（例如 `development.md`, `tutorial-cpu-llm.md`, `guide-extending.md`），`README.md` 是例外。
-    -   相关文档组织在特定子目录中（例如 `docs/training/` 用于所有训练框架文档）。
-    -   子目录可以包含自己的 `README.md` 作为入口。
-    -   项目级别的 `docs/troubleshooting.md` 用于通用问题排查。
+- **根目录的 `CONTRIBUTING.md`**：提供高层次的贡献指南。
+- **`docs/` 目录作为主要文档中心**：
+    - **根目录的 `README.md` 是所有文档的主要入口**，它直接链接到 `docs/` 目录下的各个顶级文档文件。
+    - 大多数文档文件名使用小写，**多单词文件名使用连字符 `-` 分隔**（例如 `development.md`, `tutorial-cpu-llm.md`,
+      `guide-extending.md`），`README.md` 是例外。
+    - 相关文档组织在特定子目录中（例如 `docs/training/` 用于所有训练框架文档）。
+    - 子目录可以包含自己的 `README.md` 作为入口。
+    - 项目级别的 `docs/troubleshooting.md` 用于通用问题排查。
 
 ## Comments policy
 
 Only write high-value comments if at all. Avoid talking to the user through comments.
 
 ## Gemini Added Memories
+
 - 用户偏好我使用中文进行回复。
 - 用户在 Python 项目中测试时，偏好不使用 mock，直接调用代码，主要验证功能性，不关注覆盖率，只使用 pytest。
+
+---
+
+## 开发路线图
+
+项目的详细开发路线图请参见 [ROADMAP.md](ROADMAP.md)。
