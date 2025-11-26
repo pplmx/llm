@@ -361,16 +361,16 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "allure-pytest", specifier = ">=2.14.1" },
-    { name = "matplotlib", specifier = ">=3.10.1" },
-    { name = "pillow", specifier = ">=11.2.1" },
-    { name = "pytest", specifier = ">=8.4" },
-    { name = "pytest-cov", specifier = ">=6.2" },
-    { name = "pyyaml", specifier = ">=6.0.1" },
-    { name = "rich", specifier = ">=14.0.0" },
+    { name = "allure-pytest", specifier = ">=2.15.0" },
+    { name = "matplotlib", specifier = ">=3.10.7" },
+    { name = "pillow", specifier = ">=12.0.0" },
+    { name = "pytest", specifier = ">=9.0" },
+    { name = "pytest-cov", specifier = ">=7.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rich", specifier = ">=14.2.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
-    { name = "tensorboard", specifier = ">=2.16.2" },
-    { name = "torch", specifier = ">=2.7.0" },
+    { name = "tensorboard", specifier = ">=2.20.0" },
+    { name = "torch", specifier = ">=2.9.0" },
 ]
 
 [[package]]
@@ -857,7 +857,7 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "8.4.2"
+version = "9.0.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -866,9 +866,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/07/56/f013048ac4bc4c1d9be45afd4ab209ea62822fb1598f40687e6bf45dcea4/pytest-9.0.1.tar.gz", hash = "sha256:3e9c069ea73583e255c3b21cf46b8d3c56f6e3a1a8f6da94ccb0fcf57b9d73c8" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/0b/8b/6300fb80f858cda1c51ffa17075df5d846757081d11ab4aa35cef9e6258b/pytest-9.0.1-py3-none-any.whl", hash = "sha256:67be0030d194df2dfa7b556f2e56fb3c3315bd5c8822c6951162b92b32ce7dad" },
 ]
 
 [[package]]
