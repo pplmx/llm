@@ -68,7 +68,10 @@ class TestMoE:
         output_tensor = moe_layer(input_tensor)
 
         assert output_tensor.shape == input_tensor.shape
-        assert output_tensor.device == device
+        # Normalize device comparison: torch.device('cuda') and torch.device('cuda:0')
+        # both should be considered equivalent for these tests. Compare by device.type
+        expected_device_type = device.type if hasattr(device, 'type') else str(device).split(':')[0]
+        assert output_tensor.device.type == expected_device_type
         assert output_tensor.dtype == dtype
 
         # Basic check: output should not be all zeros unless input is all zeros
