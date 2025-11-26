@@ -70,7 +70,7 @@ class TestMoE:
         assert output_tensor.shape == input_tensor.shape
         # Normalize device comparison: torch.device('cuda') and torch.device('cuda:0')
         # both should be considered equivalent for these tests. Compare by device.type
-        expected_device_type = device.type if hasattr(device, 'type') else str(device).split(':')[0]
+        expected_device_type = device.type if hasattr(device, "type") else str(device).split(":")[0]
         assert output_tensor.device.type == expected_device_type
         assert output_tensor.dtype == dtype
 
