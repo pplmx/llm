@@ -29,13 +29,49 @@ def generate(
     input_ids = tokenizer.encode(prompt)
     input_tensor = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0)  # 添加 batch 维度
 
-    # TODO: 实现自回归生成循环
-    # TODO: 实现 KV 缓存优化
-    # TODO: 实现 top-k / top-p 采样
-    # TODO: 将生成的 token ids 解码回文本
-    print(f"输入 prompt '{prompt}' 已被编码为: {input_ids}")
+    # 获取设备信息
+    device = next(model.parameters()).device
+    input_tensor = input_tensor.to(device)
 
-    return "文本生成功能待实现..."
+    # 用于存储生成的 token
+    generated_tokens = input_ids.copy()
+
+    with torch.no_grad():
+        # 自回归生成循环
+        for _ in range(max_new_tokens):
+            # 截取模型上下文长度内的 tokens (默认使用512作为最大序列长度)
+            seq_length = input_tensor.size(1)
+            max_seq_len = 512  # 默认值，与模型中一致
+            start_pos = max(0, seq_length - max_seq_len)
+            context_tensor = input_tensor[:, start_pos:]
+
+            # 获取模型输出 logits
+            logits = model(context_tensor)
+
+            # 只关注最后一个时间步的 logits
+            next_token_logits = logits[0, -1, :] / temperature
+
+            # 应用 top-k 过滤
+            if top_k is not None:
+                indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
+                next_token_logits = next_token_logits.masked_fill(indices_to_remove, -float('inf'))
+
+            # 计算概率分布
+            probs = torch.softmax(next_token_logits, dim=-1)
+
+            # 采样下一个 token
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            # 添加到生成序列
+            generated_tokens.append(int(next_token.item()))
+
+            # 更新 input_tensor 用于下一次迭代
+            input_tensor = torch.cat([input_tensor, next_token.unsqueeze(0)], dim=1)
+
+    # 将生成的 token ids 解码回文本
+    generated_text = tokenizer.decode(generated_tokens)
+
+    return generated_text
 
 
 if __name__ == "__main__":
