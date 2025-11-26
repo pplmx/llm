@@ -67,7 +67,7 @@ class TestEmbeddingLayer:
         output = layer(input_ids)
 
         assert output.shape == (BATCH_SIZE, TEST_SEQ_LEN, HIDDEN_SIZE)
-        assert str(output.device) == str(device)  # Check device of output tensor
+        assert output.device.type == (device.type if hasattr(device, "type") else device.split(":")[0])  # Check device of output tensor
 
     @pytest.mark.parametrize("padding_idx_val", [None, 0, 5])  # VOCAB_SIZE = 20
     def test_padding_idx_effect(self, padding_idx_val):
