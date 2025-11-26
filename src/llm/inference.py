@@ -54,7 +54,7 @@ def generate(
             # 应用 top-k 过滤
             if top_k is not None:
                 indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
-                next_token_logits = next_token_logits.masked_fill(indices_to_remove, -float('inf'))
+                next_token_logits = next_token_logits.masked_fill(indices_to_remove, -float("inf"))
 
             # 计算概率分布
             probs = torch.softmax(next_token_logits, dim=-1)
