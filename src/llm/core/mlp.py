@@ -59,8 +59,21 @@ class MLP(nn.Module):
                         self.norm = norm_type(hidden_size, eps=norm_eps, device=device, dtype=dtype)
 
             else:
-                # If an instance is provided, use it directly
+                # If an instance is provided, use it directly and ensure it's on the
+                # requested device/dtype (if provided). This prevents mismatch when
+                # callers pass a pre-created normalization layer that defaults to CPU.
                 self.norm = norm_type
+                # Move provided norm instance to the same device/dtype as other params
+                if device is not None or dtype is not None:
+                    # .to() is in-place for nn.Module, but assign back in case it returns a new object
+                    try:
+                        moved_norm = self.norm.to(device=device, dtype=dtype)
+                        # If .to() returned a new module, keep that reference
+                        self.norm = moved_norm
+                    except Exception:
+                        # If moving fails for some custom module, ignore and let the caller
+                        # be responsible for device/dtype placement.
+                        pass
 
         factory_kwargs = {"device": device, "dtype": dtype}
         self.fc1 = nn.Linear(hidden_size, self.intermediate_size, bias=bias, **factory_kwargs)
