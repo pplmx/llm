@@ -111,7 +111,7 @@ graph TD
     PE_Add --> PE_Out[Input to Transformer]
 ```
 
-**说明：位置编码可以是**
+**说明: 位置编码可以是**
 
 - **Sinusoidal**（静态）
 - **Learned**（可训练）
@@ -146,7 +146,7 @@ graph TD
     DN --> DecoderOutput[Decoder Stack Output]
 ```
 
-**注意：** Decoder 每层都访问 Encoder Stack 的输出作为 Cross-Attention 的 KV。
+**注意: ** Decoder 每层都访问 Encoder Stack 的输出作为 Cross-Attention 的 KV。
 
 ---
 

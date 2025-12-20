@@ -148,9 +148,12 @@ class TestEmbeddingLayer:
         """Test if device and dtype are correctly propagated to submodules."""
         dtype = eval(dtype_str)
 
-        if device == "cuda" and dtype == torch.float64:
-            if not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7):
-                pytest.skip("CUDA float64 support not adequate or device not capable.")
+        if (
+            device == "cuda"
+            and dtype == torch.float64
+            and not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7)
+        ):
+            pytest.skip("CUDA float64 support not adequate or device not capable.")
         if device == "cpu" and dtype == torch.float64:  # float64 on CPU is generally fine
             pass
 

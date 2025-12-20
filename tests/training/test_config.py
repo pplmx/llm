@@ -69,9 +69,11 @@ class TestConfig:
 
     def test_distributed_config_validation_errors(self):
         # Test validation directly
-        with patch("torch.cuda.device_count", return_value=2):  # Mock device_count to 2
-            with pytest.raises(ValueError, match="Requested 3 GPUs but only 2 available"):
-                DistributedConfig(gpus_per_node=3)
+        with (
+            patch("torch.cuda.device_count", return_value=2),
+            pytest.raises(ValueError, match="Requested 3 GPUs but only 2 available"),
+        ):
+            DistributedConfig(gpus_per_node=3)
 
     def test_optimization_config_validation_errors(self):
         with pytest.raises(ValueError, match="Number of workers must be non-negative"):

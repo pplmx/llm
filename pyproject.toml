@@ -16,13 +16,27 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.13",
 ]
+dependencies = [
+    "torch>=2.9.0",
+    "matplotlib>=3.10.7",
+    "seaborn>=0.13.2",
+    "pillow>=12.0.0",
     "rich>=14.2.0",
     "tensorboard>=2.20.0",
     "PyYAML>=6.0.3",
+    "tokenizers>=0.21.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
+  {include-group = "lint"},
+  {include-group = "test"}
+]
+lint = [
+    "ruff",
+    "ty"
+]
+test = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
     "allure-pytest>=2.15.0",
@@ -81,27 +95,3 @@ exclude_lines = [
 ]
 show_missing = true  # Show missing lines in the report
 precision = 2  # Number of decimal places to use when rounding
-
-[tool.mypy]
-# Enable strict mode for comprehensive type checking
-strict = true
-python_version = "3.13"
-
-# Error reporting settings
-pretty = true              # Beautify output for better readability
-show_error_codes = true    # Display error codes for easier troubleshooting
-show_error_context = true  # Show context for errors to aid debugging
-
-# Ignore missing type hints for third-party libraries
-ignore_missing_imports = true
-
-# Exclude specific paths or files from type checking
-exclude = [
-    "tests/",
-    "setup.py",
-]
-
-# Relax type-checking rules for test files (e.g., allow functions without type annotations)
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false

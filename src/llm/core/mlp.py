@@ -33,6 +33,7 @@ class MLP(nn.Module):
         norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,
         norm_eps: float = 1e-5,
         bias: bool = True,
+        use_glu: bool = False,  # New parameter for SwiGLU/GLU support
         include_norm_residual: bool = True,  # New parameter
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
@@ -41,6 +42,7 @@ class MLP(nn.Module):
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size or (4 * hidden_size)
         self.norm_first = norm_first
+        self.use_glu = use_glu
         self.include_norm_residual = include_norm_residual
 
         self.norm = None
@@ -77,6 +79,8 @@ class MLP(nn.Module):
 
         factory_kwargs = {"device": device, "dtype": dtype}
         self.fc1 = nn.Linear(hidden_size, self.intermediate_size, bias=bias, **factory_kwargs)
+        if self.use_glu:
+            self.gate_proj = nn.Linear(hidden_size, self.intermediate_size, bias=bias, **factory_kwargs)
         self.fc2 = nn.Linear(self.intermediate_size, hidden_size, bias=bias, **factory_kwargs)
 
         # Determine activation module and name
@@ -101,6 +105,8 @@ class MLP(nn.Module):
         if act in ("relu", "leaky_relu"):
             # He initialization for ReLU variants
             nn.init.kaiming_uniform_(self.fc1.weight, a=neg_slope, nonlinearity=act)
+            if self.use_glu:
+                nn.init.kaiming_uniform_(self.gate_proj.weight, a=neg_slope, nonlinearity=act)
             nn.init.kaiming_uniform_(self.fc2.weight, a=neg_slope, nonlinearity=act)
         elif act in ("gelu", "silu", "swish"):
             # Truncated normal for smoother activations
@@ -108,9 +114,13 @@ class MLP(nn.Module):
             std2 = 1.0 / math.sqrt(self.intermediate_size)
             try:
                 nn.init.trunc_normal_(self.fc1.weight, std=std1)
+                if self.use_glu:
+                    nn.init.trunc_normal_(self.gate_proj.weight, std=std1)
                 nn.init.trunc_normal_(self.fc2.weight, std=std2)
             except AttributeError:
                 nn.init.normal_(self.fc1.weight, mean=0.0, std=std1)
+                if self.use_glu:
+                    nn.init.normal_(self.gate_proj.weight, mean=0.0, std=std1)
                 nn.init.normal_(self.fc2.weight, mean=0.0, std=std2)
         else:
             # Default Xavier/Glorot
@@ -120,6 +130,8 @@ class MLP(nn.Module):
         # Zero out biases for stable training
         if self.fc1.bias is not None:
             nn.init.zeros_(self.fc1.bias)
+        if self.use_glu and self.gate_proj.bias is not None:
+            nn.init.zeros_(self.gate_proj.bias)
         if self.fc2.bias is not None:
             nn.init.zeros_(self.fc2.bias)
 
@@ -141,8 +153,15 @@ class MLP(nn.Module):
             x = self.norm(hidden_states) if self.norm_first and self.norm else hidden_states
 
             # MLP computation (common for both pre-norm and post-norm)
-            x_mlp = self.fc1(x)
-            x_mlp = self.activation(x_mlp)
+            if self.use_glu:
+                # GLU logic
+                x_gate = self.gate_proj(x)
+                x_gate = self.activation(x_gate)
+                x_fc1 = self.fc1(x)
+                x_mlp = x_fc1 * x_gate
+            else:
+                x_mlp = self.fc1(x)
+                x_mlp = self.activation(x_mlp)
             x_mlp = self.dropout(x_mlp)
             x_mlp = self.fc2(x_mlp)
 
@@ -156,8 +175,16 @@ class MLP(nn.Module):
         else:
             # No internal norm or residual connection
             x = hidden_states  # Direct input to MLP
-            x = self.fc1(x)
-            x = self.activation(x)
+            if self.use_glu:
+                # GLU logic: (x * activation(gate(x)))
+                # For SwiGLU, activation is SiLU
+                x_gate = self.gate_proj(x)
+                x_gate = self.activation(x_gate)
+                x_fc1 = self.fc1(x)
+                x = x_fc1 * x_gate
+            else:
+                x = self.fc1(x)
+                x = self.activation(x)
             x = self.dropout(x)
             x = self.fc2(x)
             return x

@@ -252,9 +252,12 @@ class TestTransformerBlockForwardPass:
 class TestDeviceAndDtypePropagation:
     def test_block_device_dtype(self, device, dtype_str, block_kwargs):
         dtype = getattr(torch, dtype_str.replace("torch.", ""))
-        if device == "cuda" and dtype == torch.float64:
-            if not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7):
-                pytest.skip("CUDA float64 support not adequate or device not capable.")
+        if (
+            device == "cuda"
+            and dtype == torch.float64
+            and not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7)
+        ):
+            pytest.skip("CUDA float64 support not adequate or device not capable.")
 
         block_kwargs.update({"device": device, "dtype": dtype})
         block = TransformerBlock(**block_kwargs)

@@ -31,6 +31,9 @@ class TransformerBlock(nn.Module):
         use_moe: bool = False,  # New: Whether to use MoE instead of MLP
         num_experts: int = 0,  # New: Number of experts if use_moe is True
         top_k: int = 0,  # New: Number of top experts to select if use_moe is True
+        num_kv_heads: int | None = None,  # New: For GQA support
+        use_glu: bool = False,  # New: For SwiGLU support
+        norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # New: For RMSNorm support
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -63,8 +66,12 @@ class TransformerBlock(nn.Module):
         self.hidden_size = hidden_size  # Needed for potential checks or logging
 
         # Initialize Layer Normalization layers
-        self.norm1 = nn.LayerNorm(hidden_size, eps=norm_eps, **factory_kwargs)
-        self.norm2 = nn.LayerNorm(hidden_size, eps=norm_eps, **factory_kwargs)
+        if isinstance(norm_type, type):
+            self.norm1 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
+            self.norm2 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
+        else:
+            self.norm1 = norm_type
+            self.norm2 = norm_type
 
         # Initialize Multi-Head Attention
         # MHA's internal norm/residual are disabled; TransformerBlock handles them.
@@ -77,6 +84,7 @@ class TransformerBlock(nn.Module):
             include_norm_residual=False,  # MHA does not handle norm/residual itself
             eps=norm_eps,  # MHA's norm_eps, not used if include_norm_residual=False
             norm_first=False,  # MHA's norm_first, not used if include_norm_residual=False
+            num_kv_heads=num_kv_heads,  # Pass num_kv_heads
             **factory_kwargs,
         )
 
@@ -106,6 +114,7 @@ class TransformerBlock(nn.Module):
                 dropout_p=mlp_dropout_p,
                 bias=mlp_bias,  # Pass bias for MLP layers
                 include_norm_residual=False,  # MLP does not handle norm/residual itself
+                use_glu=use_glu,  # Pass use_glu flag
                 norm_eps=norm_eps,  # MLP's norm_eps, not used if include_norm_residual=False
                 norm_first=False,  # MLP's norm_first, not used if include_norm_residual=False
                 **factory_kwargs,

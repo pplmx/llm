@@ -4,7 +4,7 @@
 
 ## 端到端的高阶流程
 
-整个训练过程可以分为以下几个主要阶段：
+整个训练过程可以分为以下几个主要阶段:
 
 1.  **启动入口 (`train.py`)**
     - 用户在命令行执行 `python -m llm.training.train --task <task_name> [other_args]`。
@@ -29,7 +29,7 @@
 
 5.  **训练引擎初始化 (`TrainingEngine.__init__`)**
     - 引擎接收 `config`, `task`, `data_module`, `callbacks` 等对象。
-    - 调用 `_setup_components()` 方法，该方法会：
+    - 调用 `_setup_components()` 方法，该方法会:
         - 调用 `task.build_model()` 创建模型，并移至当前进程对应的设备。**模型构建时，`TransformerBlock` 会根据配置（`use_moe`、`num_experts`、`top_k`）来决定使用标准 MLP 还是 MoE 层。**
         - （可选）编译模型 (`torch.compile`)。
         - （可选）用 `DDP` 包装模型。
@@ -50,6 +50,6 @@
 
 ## 深入了解
 
-为了更清晰地理解特定部分的交互逻辑，请参阅以下详细文档：
+为了更清晰地理解特定部分的交互逻辑，请参阅以下详细文档:
 
 - **[回调机制调用流程](./FLOW_CALLBACKS.md)**: 详细解释了在训练循环中，回调函数在何时以及如何被触发。

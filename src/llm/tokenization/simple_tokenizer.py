@@ -106,7 +106,7 @@ class SimpleCharacterTokenizer:
 
 if __name__ == "__main__":
     # Example Usage
-    corpus_example = ["hello world!", "你好 世界！"]
+    corpus_example = ["hello world!", "你好 世界!"]
     tokenizer_example = SimpleCharacterTokenizer(corpus_example)
 
     print(f"Vocabulary ({tokenizer_example.vocab_size} chars): {tokenizer_example.chars}")  # Print list for clarity
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     print(f"Decoded: '{decoded1}'")
     assert decoded1 == text1
 
-    text2 = "你好！"  # Assumes these chars are in corpus_example
+    text2 = "你好!"  # Assumes these chars are in corpus_example
     encoded2 = tokenizer_example.encode(text2)
     decoded2 = tokenizer_example.decode(encoded2)
     print(f"\nOriginal text 2: '{text2}'")

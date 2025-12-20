@@ -70,7 +70,7 @@ def main():
     # Let the Config class handle the rest of the arguments
     # We parse known args first to get the task, then let Config parse the rest
     args, remaining_argv = parser.parse_known_args()
-    sys.argv = [sys.argv[0]] + remaining_argv
+    sys.argv = [sys.argv[0], *remaining_argv]
 
     config = Config.from_args_and_env()
     task_class = AVAILABLE_TASKS[args.task]

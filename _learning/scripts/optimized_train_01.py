@@ -289,7 +289,7 @@ class CheckpointManager:
             return
 
         Path(self.config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
-        checkpoint_path = os.path.join(self.config.checkpoint_dir, f"epoch_{epoch}.pt")
+        checkpoint_path = Path(self.config.checkpoint_dir) / f"epoch_{epoch}.pt"
 
         checkpoint = {
             "epoch": epoch,
@@ -310,7 +310,7 @@ class CheckpointManager:
             return 0
 
         ckp_path = self.config.resume_from_checkpoint
-        if not os.path.exists(ckp_path):
+        if not Path(ckp_path).exists():
             self.logger.warning(f"Checkpoint file not found: {ckp_path}. Starting from scratch.")
             return 0
 

@@ -1,5 +1,6 @@
 import argparse
 import time
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -24,7 +25,7 @@ def train(args):
     # 2. Initialize Tokenizer
     print("Initializing tokenizer...")
     try:
-        with open(args.file_path, encoding="utf-8") as f:
+        with Path(args.file_path).open(encoding="utf-8") as f:
             # Reading lines to build corpus, could also read whole file
             # For SimpleCharacterTokenizer, a list of unique characters is fine.
             # Reading the whole file to extract all characters for the vocab.

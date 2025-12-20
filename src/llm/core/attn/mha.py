@@ -39,6 +39,7 @@ class MultiHeadAttention(nn.Module):
         norm_first: bool = True,
         is_causal: bool = False,
         include_norm_residual: bool = True,  # New parameter
+        num_kv_heads: int | None = None,  # New: For GQA/MQA support
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -50,18 +51,24 @@ class MultiHeadAttention(nn.Module):
         factory_kwargs = {"device": device, "dtype": dtype}
         self.hidden_size = hidden_size
         self.num_heads = num_heads
+        self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
         self.head_dim = hidden_size // num_heads
+        self.kv_dim = self.num_kv_heads * self.head_dim
         self.norm_first = norm_first  # Relevant only if include_norm_residual is True
         self.is_causal = is_causal
         self.p = p
         self.include_norm_residual = include_norm_residual
+
+        if self.num_heads % self.num_kv_heads != 0:
+            raise ValueError(f"num_heads ({self.num_heads}) must be divisible by num_kv_heads ({self.num_kv_heads})")
 
         # --- Layers ---
         self.norm = None
         if self.include_norm_residual:
             self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
 
-        self.qkv_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, **factory_kwargs)
+        self.qkv_dim = (self.num_heads + 2 * self.num_kv_heads) * self.head_dim
+        self.qkv_proj = nn.Linear(hidden_size, self.qkv_dim, bias=bias, **factory_kwargs)
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, **factory_kwargs)
         self.dropout = nn.Dropout(p)  # This is for the output projection
 
@@ -69,13 +76,10 @@ class MultiHeadAttention(nn.Module):
 
     def _init_weights(self):
         """Initialize linear layer weights (Xavier uniform) and biases (zeros)."""
-        nn.init.xavier_uniform_(self.qkv_proj.weight)
-        if self.qkv_proj.bias is not None:
-            nn.init.zeros_(self.qkv_proj.bias)
-
-        nn.init.xavier_uniform_(self.out_proj.weight)
-        if self.out_proj.bias is not None:
-            nn.init.zeros_(self.out_proj.bias)
+        for proj in [self.qkv_proj, self.out_proj]:
+            nn.init.xavier_uniform_(proj.weight)
+            if proj.bias is not None:
+                nn.init.zeros_(proj.bias)
 
     def forward(
         self,
@@ -122,12 +126,18 @@ class MultiHeadAttention(nn.Module):
             x_for_qkv = hidden_states
 
         # --- 2. Project Q, K, V and reshape ---
-        q, k, v = (
-            self.qkv_proj(x_for_qkv)  # [B, S, 3*H]
-            .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, N, D]
-            .permute(2, 0, 3, 1, 4)  # [3, B, N, S, D]
-            .unbind(0)  # Each [B, N, S, D]
-        )
+        qkv = self.qkv_proj(x_for_qkv)  # [B, S, (N_q + 2*N_kv) * D]
+
+        # Split Q, K, V
+        q_size = self.num_heads * self.head_dim
+        kv_size = self.num_kv_heads * self.head_dim
+
+        q, k, v = torch.split(qkv, [q_size, kv_size, kv_size], dim=-1)
+
+        # Reshape and transpose for attention calculation: [B, N, S, D]
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
 
         # --- KV Cache logic ---
         if past_key_value is not None:
@@ -138,6 +148,13 @@ class MultiHeadAttention(nn.Module):
         if use_cache:
             current_kv = (k, v)
 
+        # --- GQA: Repeat K, V if num_kv_heads < num_heads ---
+        if self.num_kv_heads != self.num_heads:
+            # k, v: [B, N_kv, S, D] -> [B, N_q, S, D]
+            num_queries_per_kv = self.num_heads // self.num_kv_heads
+            k = k.repeat_interleave(num_queries_per_kv, dim=1)
+            v = v.repeat_interleave(num_queries_per_kv, dim=1)
+
         # --- 3. Attention computation ---
         attn_output = scaled_dot_product_attention(
             query=q,
@@ -145,7 +162,9 @@ class MultiHeadAttention(nn.Module):
             value=v,
             attn_mask=attn_mask,
             dropout_p=self.p if self.training else 0.0,
-            is_causal=use_causal if past_key_value is None else False, # Disable causal mask if using KV cache (incremental)
+            is_causal=use_causal
+            if past_key_value is None
+            else False,  # Disable causal mask if using KV cache (incremental)
             scale=None,
         )  # Output shape: [B, N, S, D]
 

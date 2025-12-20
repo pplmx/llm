@@ -1,4 +1,4 @@
-# LLM 框架教程：从零开始构建与训练
+# LLM 框架教程: 从零开始构建与训练
 
 本教程旨在指导您如何使用本项目自定义的 LLM 框架进行模型构建、训练和实验。我们将专注于框架的核心组件和工作流程，帮助您理解如何利用其模块化和可扩展性。
 
@@ -18,13 +18,13 @@
 
 本项目提供了一个模块化、可扩展的 PyTorch LLM 训练框架。其核心设计理念是**解耦**和**可扩展性**，旨在将通用的训练逻辑与具体的任务逻辑分离。
 
-**主要特点：**
+**主要特点: **
 
--   **模块化架构**：Transformer 核心组件（如注意力、MLP、归一化）被设计为可插拔模块。
--   **灵活配置**：通过 YAML 文件和 Python `dataclasses` 实现高度可配置的模型和训练参数。
--   **健壮的训练引擎**：支持分布式训练 (DDP)、自动混合精度 (AMP)、`torch.compile` 优化、回调系统和检查点管理。
--   **抽象的数据流**：通过 `DataModule` 抽象数据加载和预处理。
--   **可扩展的任务**：通过 `TrainingTask` 抽象不同的训练任务。
+-   **模块化架构**: Transformer 核心组件（如注意力、MLP、归一化）被设计为可插拔模块。
+-   **灵活配置**: 通过 YAML 文件和 Python `dataclasses` 实现高度可配置的模型和训练参数。
+-   **健壮的训练引擎**: 支持分布式训练 (DDP)、自动混合精度 (AMP)、`torch.compile` 优化、回调系统和检查点管理。
+-   **抽象的数据流**: 通过 `DataModule` 抽象数据加载和预处理。
+-   **可扩展的任务**: 通过 `TrainingTask` 抽象不同的训练任务。
 
 ---
 
@@ -32,7 +32,7 @@
 
 本项目使用 `uv` 进行依赖管理，并推荐使用 `Makefile` 进行环境设置和常用任务管理。
 
-1.  **安装 `uv`**: 如果您尚未安装 `uv`，请按照官方说明进行安装：[uv 安装指南](https://github.com/astral-sh/uv#installation)。
+1.  **安装 `uv`**: 如果您尚未安装 `uv`，请按照官方说明进行安装: [uv 安装指南](https://github.com/astral-sh/uv#installation)。
 2.  **克隆仓库**:
     ```bash
     git clone https://github.com/pplmx/llm.git
@@ -42,7 +42,7 @@
     ```bash
     make init
     ```
-4.  **同步依赖 (如果需要)**: 如果 `pyproject.toml` 或 `uv.lock` 发生变化，您可以重新同步依赖：
+4.  **同步依赖 (如果需要)**: 如果 `pyproject.toml` 或 `uv.lock` 发生变化，您可以重新同步依赖:
     ```bash
     make sync
     ```
@@ -53,7 +53,7 @@
 
 本项目框架的核心模型是 `DecoderModel`，它由一系列模块化组件构成。这些组件位于 `src/llm/core/` 和 `src/llm/models/` 目录下。
 
-**核心组件概览：**
+**核心组件概览: **
 
 -   **`llm.tokenization.simple_tokenizer.SimpleCharacterTokenizer`**:
     -   **位置**: `src/llm/tokenization/simple_tokenizer.py`
@@ -79,7 +79,7 @@
     -   **位置**: `src/llm/models/decoder.py`
     -   **用途**: 完整的解码器模型，堆叠了多个 `TransformerBlock`，并包含一个语言模型头用于预测下一个 token。
 
-**模型配置：**
+**模型配置: **
 
 您可以通过 `Config` 类（特别是 `ModelConfig` 部分）来配置 `DecoderModel` 的参数，例如 `hidden_size`、`num_layers`、`num_heads` 等。
 
@@ -97,7 +97,7 @@
     -   **位置**: `src/llm/data/synthetic_data_module.py`
     -   **用途**: `BaseDataModule` 的一个实现，用于生成合成数据进行训练和测试。这对于框架的初步验证和功能开发非常有用。
 
-**如何使用：**
+**如何使用: **
 
 在您的 `TrainingTask` 中，您将实例化一个 `DataModule` 的子类，并将其传递给 `TrainingEngine`。
 
@@ -107,34 +107,34 @@
 
 项目的训练流程由 `TrainingEngine` 驱动，并通过 `Config` 类进行全面配置。
 
-**训练入口：**
+**训练入口: **
 
 主要的训练脚本是 `src/llm/training/train.py`。您可以通过命令行参数来选择训练任务和覆盖默认配置。
 
-**示例命令：**
+**示例命令: **
 
 ```bash
 python src/llm/training/train.py --task regression --epochs 5 --batch-size 64 --model.hidden_size 128 --training.lr 0.0005
 ```
 
-**配置管理：**
+**配置管理: **
 
 -   **`llm.training.core.config.Config`**:
     -   **位置**: `src/llm/training/core/config.py`
     -   **用途**: 集中管理所有训练相关的配置，包括模型、训练参数、分布式设置、优化选项、检查点和日志。
     -   支持从 YAML 文件加载配置，并通过命令行参数和环境变量进行覆盖。
 
-**训练引擎 (`TrainingEngine`)：**
+**训练引擎 (`TrainingEngine`): **
 
 -   **位置**: `src/llm/training/core/engine.py`
--   **用途**: 协调整个训练循环，包括：
+-   **用途**: 协调整个训练循环，包括:
     -   模型、优化器、调度器和损失函数的构建。
     -   分布式训练 (DDP) 的设置。
     -   自动混合精度 (AMP) 和 `torch.compile` 的集成。
     -   检查点加载和保存。
     -   通过回调系统触发自定义逻辑。
 
-**训练任务 (`TrainingTask`)：**
+**训练任务 (`TrainingTask`): **
 
 -   **位置**: `src/llm/training/tasks/base_task.py`
 -   **用途**: 抽象了具体的训练任务。您需要实现 `TrainingTask` 的子类来定义模型的构建、优化器、损失函数以及训练和验证步骤。

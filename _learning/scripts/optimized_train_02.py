@@ -295,7 +295,8 @@ class Logger:
                 Path(self.config.log_dir).mkdir(parents=True, exist_ok=True)
                 # OPTIMIZATION: 使用更友好的时间格式
                 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                file_handler = logging.FileHandler(os.path.join(self.config.log_dir, f"training_{timestamp}.log"))
+                log_path = Path(self.config.log_dir) / f"training_{timestamp}.log"
+                file_handler = logging.FileHandler(log_path)
                 file_handler.setFormatter(formatter)
                 self.logger.addHandler(file_handler)
         else:
@@ -503,7 +504,7 @@ class CheckpointManager:
             return 0, float("inf")
 
         ckp_path = self.config.resume_from_checkpoint
-        if not os.path.exists(ckp_path):
+        if not Path(ckp_path).exists():
             self.logger.warning(f"Checkpoint file not found: {ckp_path}. Starting from scratch.")
             return 0, float("inf")
 

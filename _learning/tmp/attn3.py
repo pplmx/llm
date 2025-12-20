@@ -83,12 +83,12 @@ class EnhancedMultiHeadAttention(nn.Module):
     增强的多头注意力实现，使用配置类进行初始化。
 
     这个实现支持多种高级功能:
-    - 旋转位置嵌入 (RoPE)：为模型提供相对位置信息而不需要位置编码
-    - KV缓存：加速自回归生成过程
-    - 分离或融合的QKV投影：可以选择更灵活的架构
-    - 可配置的归一化策略：Pre-LN或Post-LN
+    - 旋转位置嵌入 (RoPE): 为模型提供相对位置信息而不需要位置编码
+    - KV缓存: 加速自回归生成过程
+    - 分离或融合的QKV投影: 可以选择更灵活的架构
+    - 可配置的归一化策略: Pre-LN或Post-LN
 
-    多头注意力机制工作原理：
+    多头注意力机制工作原理:
     1. 将输入投影到查询(Q)、键(K)和值(V)
     2. 将Q、K、V分割为多个头
     3. 每个头独立计算注意力分数并获取加权值
@@ -158,7 +158,7 @@ class EnhancedMultiHeadAttention(nn.Module):
         # x shape: [..., D_r]
         x1 = x[..., : self.rotary_dim // 2]  # 前半部分
         x2 = x[..., self.rotary_dim // 2 :]  # 后半部分
-        # 旋转操作：交换前后半部分并在第二部分加负号
+        # 旋转操作: 交换前后半部分并在第二部分加负号
         return torch.cat((-x2, x1), dim=-1)
 
     def _apply_rotary_pos_emb(self, q: Tensor, k: Tensor, cos: Tensor, sin: Tensor) -> tuple[Tensor, Tensor]:
@@ -437,7 +437,7 @@ def test_kv_cache():
 
     mha = EnhancedMultiHeadAttention(config)
 
-    # 第一步：处理提示文本
+    # 第一步: 处理提示文本
     prompt = torch.randn(1, 5, 512)  # [batch_size, prompt_len, hidden_size]
     print(f"提示文本形状: {prompt.shape}")
 
@@ -543,7 +543,7 @@ def test_rope_with_kv_cache():
 
     mha = EnhancedMultiHeadAttention(config)
 
-    # 第一步：处理提示文本
+    # 第一步: 处理提示文本
     batch_size, prompt_len = 1, 8
     prompt = torch.randn(batch_size, prompt_len, 512)
     position_ids = torch.arange(prompt_len).unsqueeze(0)
@@ -584,7 +584,7 @@ def test_attention_mask():
     batch_size, seq_len = 2, 10
     x = torch.randn(batch_size, seq_len, 512)
 
-    # 创建自定义注意力掩码（例如：填充掩码）
+    # 创建自定义注意力掩码（例如: 填充掩码）
     # 假设第二个序列的最后两个token是填充的
     attn_mask = torch.ones(batch_size, 1, seq_len, seq_len)
     attn_mask[1, :, :, 8:] = 0  # 第二个序列的最后两个位置被掩盖

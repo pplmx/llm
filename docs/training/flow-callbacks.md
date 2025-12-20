@@ -6,7 +6,7 @@
 
 ## 1. 训练开始
 
-当 `TrainingEngine.run()` 方法被调用时，在任何训练循环开始之前，会立即触发：
+当 `TrainingEngine.run()` 方法被调用时，在任何训练循环开始之前，会立即触发:
 
 - **`Callback.on_train_start()`**
   - **触发点**: `TrainingEngine.run()` 的开头。
@@ -14,7 +14,7 @@
 
 ## 2. Epoch 开始
 
-在每个 `epoch` 的训练循环开始时：
+在每个 `epoch` 的训练循环开始时:
 
 - **`Callback.on_epoch_start(epoch)`**
   - **触发点**: `TrainingEngine.run()` 内部的 `for epoch in ...` 循环的开始处。
@@ -22,7 +22,7 @@
 
 ## 3. Batch 开始 (训练)
 
-在每个训练 `batch` 处理之前：
+在每个训练 `batch` 处理之前:
 
 - **`Callback.on_batch_start(epoch, batch_idx)`**
   - **触发点**: `TrainingEngine._run_epoch()` 内部的 `for batch_idx, batch in ...` 循环的开始处。
@@ -30,7 +30,7 @@
 
 ## 4. 训练步骤结束
 
-在一个训练 `batch` 完成前向传播、损失计算、反向传播和优化器步骤之后：
+在一个训练 `batch` 完成前向传播、损失计算、反向传播和优化器步骤之后:
 
 - **`Callback.on_train_step_end(epoch, batch_idx, loss, metrics)`**
   - **触发点**: `TrainingEngine._run_epoch()` 中，在 `scaler.step(optimizer)` 和 `scaler.update()` 之后。
@@ -38,7 +38,7 @@
 
 ## 5. Batch 结束 (训练)
 
-在每个训练 `batch` 的所有处理完成之后：
+在每个训练 `batch` 的所有处理完成之后:
 
 - **`Callback.on_batch_end(epoch, batch_idx)`**
   - **触发点**: `TrainingEngine._run_epoch()` 内部的 `for batch_idx, batch in ...` 循环的末尾。
@@ -46,7 +46,7 @@
 
 ## 6. 验证开始
 
-如果启用了验证，在验证循环开始之前：
+如果启用了验证，在验证循环开始之前:
 
 - **`Callback.on_validation_start(epoch)`**
   - **触发点**: `TrainingEngine._run_validation_epoch()` 的开头。
@@ -54,7 +54,7 @@
 
 ## 7. 验证结束
 
-在所有验证数据处理完毕，计算出平均验证损失之后：
+在所有验证数据处理完毕，计算出平均验证损失之后:
 
 - **`Callback.on_validation_end(epoch, logs)`**
   - **触发点**: `TrainingEngine._run_validation_epoch()` 的末尾。
@@ -63,7 +63,7 @@
 
 ## 8. 保存检查点
 
-在 `rank 0` 进程成功保存一个检查点之后：
+在 `rank 0` 进程成功保存一个检查点之后:
 
 - **`Callback.on_save_checkpoint(epoch)`**
   - **触发点**: `TrainingEngine.run()` 中，在 `checkpoint_manager.save_checkpoint()` 调用之后。
@@ -71,7 +71,7 @@
 
 ## 9. Epoch 结束
 
-在一个 `epoch` 的训练和验证（如果启用）都完成之后：
+在一个 `epoch` 的训练和验证（如果启用）都完成之后:
 
 - **`Callback.on_epoch_end(epoch, logs)`**
   - **触发点**: `TrainingEngine.run()` 内部的 `for epoch in ...` 循环的末尾。
@@ -80,7 +80,7 @@
 
 ## 10. 异常发生
 
-如果在训练过程中（`try` 块内）捕获到任何异常：
+如果在训练过程中（`try` 块内）捕获到任何异常:
 
 - **`Callback.on_exception(exception)`**
   - **触发点**: `TrainingEngine.run()` 的 `except` 块中。
@@ -88,7 +88,7 @@
 
 ## 11. 训练结束
 
-在整个训练过程（所有 `epochs`）正常完成或被中断后，在 `finally` 块中：
+在整个训练过程（所有 `epochs`）正常完成或被中断后，在 `finally` 块中:
 
 - **`Callback.on_train_end()`**
   - **触发点**: `TrainingEngine.run()` 的 `finally` 块中。

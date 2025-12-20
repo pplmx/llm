@@ -63,11 +63,7 @@ def scaled_dot_product_attention(
         # expected_shape = (..., seq_len_q, seq_len_k)
         # (这里省略显式检查以保持简洁，依赖 PyTorch 的广播机制)
 
-        if final_mask is None:
-            final_mask = attn_mask
-        else:
-            # 组合掩码: 如果 causal 或 attn_mask 中任何一个为 True, 则屏蔽
-            final_mask = final_mask | attn_mask  # 逻辑或操作
+        final_mask = attn_mask if final_mask is None else final_mask | attn_mask
 
     # 应用最终计算出的掩码
     if final_mask is not None:
