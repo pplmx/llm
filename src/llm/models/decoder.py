@@ -114,16 +114,19 @@ class DecoderModel(nn.Module):
             self.final_norm = nn.LayerNorm(hidden_size, eps=norm_eps, **factory_kwargs)
 
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=lm_head_bias, **factory_kwargs)
+        self.max_seq_len = max_seq_len
 
     def forward(
         self,
         input_ids: torch.Tensor,
         attn_mask: torch.Tensor | None = None,
+        past_key_values: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
+        use_cache: bool = False,
         # is_causal for individual forward passes is not typically exposed at this level,
         # as the decoder model's causality is a structural property set at init.
         # If a block needs dynamic causality, it would be an argument to the block's forward.
         # Here, attn_mask is the primary way to influence attention beyond the default causality.
-    ) -> torch.Tensor:
+    ) -> torch.Tensor | tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
         """
         Forward pass of the DecoderModel.
 
@@ -133,22 +136,39 @@ class DecoderModel(nn.Module):
                 Shape should be broadcastable to [B, N, S, S] or compatible with
                 `torch.nn.functional.scaled_dot_product_attention`.
                 If `is_causal=True` in blocks, this mask will be combined with the causal mask.
+            past_key_values (list[tuple[torch.Tensor, torch.Tensor]] | None):
+                List of (key, value) tuples from previous steps, one for each block.
+            use_cache (bool): Whether to return the updated (key, value) pairs.
 
         Returns:
-            torch.Tensor: Logits tensor of shape [B, S, vocab_size].
+            torch.Tensor or tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
+                - If use_cache=False: Logits tensor of shape [B, S, vocab_size].
+                - If use_cache=True: (Logits tensor, current_key_values)
         """
         hidden_states = self.embedding_layer(input_ids)
 
-        for block in self.transformer_blocks:
+        current_key_values = []
+        for i, block in enumerate(self.transformer_blocks):
             # The `is_causal` parameter in block.forward() can override the block's
             # default. Here, we rely on the block's initialized `is_causal` state.
             # So, we pass `is_causal=None` to the block's forward method.
-            hidden_states = block(hidden_states, attn_mask=attn_mask, is_causal=None)
+            past_kv = past_key_values[i] if past_key_values is not None else None
+            block_outputs = block(
+                hidden_states, attn_mask=attn_mask, is_causal=None, past_key_value=past_kv, use_cache=use_cache
+            )
+            if use_cache:
+                hidden_states, current_kv = block_outputs
+                current_key_values.append(current_kv)
+            else:
+                hidden_states = block_outputs
 
         if self.final_norm is not None:  # Applied only in Pre-LN architectures
             hidden_states = self.final_norm(hidden_states)
 
         logits = self.lm_head(hidden_states)
+
+        if use_cache:
+            return logits, current_key_values
         return logits
 
 
