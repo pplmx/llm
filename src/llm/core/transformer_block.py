@@ -116,7 +116,9 @@ class TransformerBlock(nn.Module):
         hidden_states: torch.Tensor,
         attn_mask: torch.Tensor | None = None,
         is_causal: bool | None = None,
-    ) -> torch.Tensor:
+        past_key_value: tuple[torch.Tensor, torch.Tensor] | None = None,
+        use_cache: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """
         Forward pass of the Transformer block.
 
@@ -125,9 +127,13 @@ class TransformerBlock(nn.Module):
             attn_mask (torch.Tensor, optional): Attention mask for MHA.
             is_causal (bool, optional): Overrides the default MHA causality for this pass.
                                         If None, MHA's default `is_causal` is used.
+            past_key_value (tuple[Tensor, Tensor] | None): Tuple of (key, value) from previous steps.
+            use_cache (bool): Whether to return the updated (key, value) pair.
 
         Returns:
-            torch.Tensor: Output tensor of shape [B, S, H].
+            torch.Tensor or tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+                - If use_cache=False: Output tensor of shape [B, S, H].
+                - If use_cache=True: (Output tensor, (current_key, current_value))
         """
         # Determine causality for the MHA call
         # If is_causal is provided as an argument, it overrides the MHA's default.
@@ -137,11 +143,18 @@ class TransformerBlock(nn.Module):
         if self.norm_first:  # Pre-LN
             # First sublayer: Multi-Head Attention
             normed_hidden_states = self.norm1(hidden_states)
-            attn_output = self.self_attn(
+            attn_outputs = self.self_attn(
                 normed_hidden_states,
                 attn_mask=attn_mask,
                 is_causal=is_causal,  # Pass through, MHA handles None
+                past_key_value=past_key_value,
+                use_cache=use_cache,
             )
+            if use_cache:
+                attn_output, current_kv = attn_outputs
+            else:
+                attn_output = attn_outputs
+
             # Residual connection for MHA
             hidden_states = hidden_states + attn_output
 
@@ -153,11 +166,18 @@ class TransformerBlock(nn.Module):
 
         else:  # Post-LN
             # First sublayer: Multi-Head Attention
-            attn_output = self.self_attn(
+            attn_outputs = self.self_attn(
                 hidden_states,
                 attn_mask=attn_mask,
                 is_causal=is_causal,  # Pass through, MHA handles None
+                past_key_value=past_key_value,
+                use_cache=use_cache,
             )
+            if use_cache:
+                attn_output, current_kv = attn_outputs
+            else:
+                attn_output = attn_outputs
+
             # Residual connection and normalization for MHA
             hidden_states = self.norm1(hidden_states + attn_output)
 
@@ -166,6 +186,8 @@ class TransformerBlock(nn.Module):
             # Residual connection and normalization for MLP
             output = self.norm2(hidden_states + mlp_output)
 
+        if use_cache:
+            return output, current_kv
         return output
 
 

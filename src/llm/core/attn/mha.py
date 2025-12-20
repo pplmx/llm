@@ -82,7 +82,9 @@ class MultiHeadAttention(nn.Module):
         hidden_states: Tensor,
         attn_mask: Tensor | None = None,
         is_causal: bool | None = None,
-    ) -> Tensor:
+        past_key_value: tuple[Tensor, Tensor] | None = None,
+        use_cache: bool = False,
+    ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """
         Forward pass.
 
@@ -95,9 +97,14 @@ class MultiHeadAttention(nn.Module):
             is_causal (bool | None): Whether to enforce causal masking for this forward pass.
                 - If `None` (default), uses the default `self.is_causal` set during initialization.
                 - If `True` or `False`, overrides the default setting.
+            past_key_value (tuple[Tensor, Tensor] | None): Tuple of (key, value) from previous steps.
+                Each has shape [B, N, S_prev, D].
+            use_cache (bool): Whether to return the updated (key, value) pair.
 
         Returns:
-            Tensor: Output tensor of shape [B, S, H].
+            Tensor or tuple[Tensor, tuple[Tensor, Tensor]]:
+                - If use_cache=False: Output tensor of shape [B, S, H].
+                - If use_cache=True: (Output tensor, (current_key, current_value))
         """
         batch_size, seq_len, _ = hidden_states.size()
 
@@ -122,6 +129,15 @@ class MultiHeadAttention(nn.Module):
             .unbind(0)  # Each [B, N, S, D]
         )
 
+        # --- KV Cache logic ---
+        if past_key_value is not None:
+            prev_k, prev_v = past_key_value
+            k = torch.cat([prev_k, k], dim=2)
+            v = torch.cat([prev_v, v], dim=2)
+
+        if use_cache:
+            current_kv = (k, v)
+
         # --- 3. Attention computation ---
         attn_output = scaled_dot_product_attention(
             query=q,
@@ -129,7 +145,7 @@ class MultiHeadAttention(nn.Module):
             value=v,
             attn_mask=attn_mask,
             dropout_p=self.p if self.training else 0.0,
-            is_causal=use_causal,
+            is_causal=use_causal if past_key_value is None else False, # Disable causal mask if using KV cache (incremental)
             scale=None,
         )  # Output shape: [B, N, S, D]
 
@@ -148,7 +164,10 @@ class MultiHeadAttention(nn.Module):
             # --- 7. Layer Normalization (Post-LN mode) ---
             if not self.norm_first:  # self.norm must exist if not self.norm_first is true
                 output = self.norm(output)
-            return output
         else:
             # No residual, no norm by this module
-            return projected_output
+            output = projected_output
+
+        if use_cache:
+            return output, current_kv
+        return output
