@@ -1,4 +1,4 @@
-# 指南：故障排查 (`TROUBLESHOOTING.md`)
+# 指南: 故障排查 (`TROUBLESHOOTING.md`)
 
 本指南旨在帮助您快速诊断和解决在使用本训练框架时可能遇到的常见问题。
 

@@ -1,8 +1,0 @@
-feat: enhance inference performance and project quality tools
-
-- Implement KV cache in MHA, TransformerBlock, and DecoderModel for efficiency
-- Support greedy search (temperature=0) and dynamic sequence length in inference.py
-- Add comprehensive unit tests for the inference module
-- Update project configuration: move test dependencies to optional-dependencies
-- Enhance Ruff linting rules (SIM, RUF, PTH) and fix related issues
-- Add lint/fmt targets to Makefile and py.typed for PEP 561 compliance

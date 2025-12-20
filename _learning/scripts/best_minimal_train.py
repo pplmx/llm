@@ -229,7 +229,7 @@ class Trainer:
             shutil.copyfile(latest_path, best_path)
 
     def _load_checkpoint(self, path: str):
-        if not os.path.exists(path):
+        if not Path(path).exists():
             self.logger.warning(f"Checkpoint {path} not found. Starting from scratch.")
             return
 
@@ -256,7 +256,7 @@ class Trainer:
         ]
 
         total_start_time = time.time()
-        with Progress(*progress_columns, transient=False) if self.rank == 0 else open(os.devnull, "w") as progress:
+        with Progress(*progress_columns, transient=False) if self.rank == 0 else Path(os.devnull).open("w") as progress:
             epoch_task = (
                 progress.add_task("[bold red]Epochs", total=self.config.epochs, loss=0.0, lr=0.0)
                 if self.rank == 0

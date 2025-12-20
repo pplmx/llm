@@ -78,10 +78,10 @@ class LayerNorm(nn.Module):
 
         # 2. 计算均值 (μ) 和方差 (σ²)
         # 在指定的维度上计算，并保持维度以便广播
-        # 注意：计算方差时使用 unbiased=False，与 PyTorch 官方实现一致
+        # 注意: 计算方差时使用 unbiased=False，与 PyTorch 官方实现一致
         mean = torch.mean(x, dim=dims_to_normalize, keepdim=True)
         # var = torch.var(x, dim=dims_to_normalize, unbiased=False, keepdim=True) # 简洁写法
-        # 或者，使用定义式计算方差（对初学者更清晰）：
+        # 或者，使用定义式计算方差（对初学者更清晰）:
         var = ((x - mean) ** 2).mean(dim=dims_to_normalize, keepdim=True)
 
         # 3. 归一化 (x_normalized)
@@ -108,7 +108,7 @@ def layer_norm_numpy(
     """
     Layer Normalization 的 NumPy 实现 (简化版)
 
-    注意：此版本为了简洁，*固定*在最后一个轴 (axis=-1) 上进行归一化。
+    注意: 此版本为了简洁，*固定*在最后一个轴 (axis=-1) 上进行归一化。
     主要用于帮助理解 LayerNorm 的核心计算步骤。
 
     参数:
@@ -173,14 +173,14 @@ def layer_norm_demo():
     # 3. 自定义 LayerNorm (无仿射变换)
     custom_layer_norm_no_affine = LayerNorm(normalized_shape=normalized_shape, eps=1e-5, elementwise_affine=False)
 
-    # 注意：不再需要手动创建 gamma_numpy 和 beta_numpy，因为我们将从 torch_layer_norm 获取
+    # 注意: 不再需要手动创建 gamma_numpy 和 beta_numpy，因为我们将从 torch_layer_norm 获取
 
     # --- 前向传播 ---
     # 1. PyTorch 内置
     torch_output = torch_layer_norm(x)
 
     # 2. 自定义 (带仿射)
-    # 注意：为了公平比较，将自定义 LN 的权重/偏置设置为与 PyTorch 内置 LN 相同
+    # 注意: 为了公平比较，将自定义 LN 的权重/偏置设置为与 PyTorch 内置 LN 相同
     custom_layer_norm.weight.data = torch_layer_norm.weight.data.clone()
     custom_layer_norm.bias.data = torch_layer_norm.bias.data.clone()
     custom_output = custom_layer_norm(x)
@@ -228,10 +228,10 @@ def layer_norm_demo():
 
     # --- 观察输出统计特性 ---
     print("\n--- 输出统计特性 (沿归一化维度计算) ---")
-    # 理想情况下：
+    # 理想情况下:
     # - 对于无仿射变换 (或 gamma=1, beta=0) 的输出，均值应接近 0，标准差应接近 1。
     # - 对于有仿射变换的输出，均值可能不再是 0，标准差可能不再是 1，取决于学习到的 gamma 和 beta。
-    # 注意：这里 gamma=1, beta=0，所以理论上带仿射和不带仿射的统计特性应该相似。
+    # 注意: 这里 gamma=1, beta=0，所以理论上带仿射和不带仿射的统计特性应该相似。
 
     def print_stats(name: str, output_tensor: torch.Tensor):
         # 计算每个样本在归一化维度上的均值和标准差

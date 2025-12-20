@@ -98,7 +98,8 @@ class Logger:
                 Path(self.config.log_dir).mkdir(parents=True, exist_ok=True)
                 # OPTIMIZATION: 使用更友好的时间格式
                 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                file_handler = logging.FileHandler(os.path.join(self.config.log_dir, f"training_{timestamp}.log"))
+                log_path = Path(self.config.log_dir) / f"training_{timestamp}.log"
+                file_handler = logging.FileHandler(log_path)
                 file_handler.setFormatter(formatter)
                 self.logger.addHandler(file_handler)
         else:
@@ -110,7 +111,7 @@ class Logger:
 
 
 # ============================================================================
-# 分布式训练管理 (无变化，已足够好)
+# 分布式训练管理 (无变化, 已足够好)
 # ============================================================================
 
 
@@ -126,11 +127,10 @@ class DistributedManager:
             os.environ["MASTER_PORT"] = self.config.master_port
             # Ensure backend is NCCL if GPUs are used for DDP
             backend = self.config.backend if self.config.backend else "nccl"
-            if backend != "nccl" and torch.cuda.is_available():
+            if backend != "nccl" and torch.cuda.is_available() and backend != "gloo":
                 # In a typical DDP setup with GPUs, nccl is preferred.
                 # If another backend is specified, respect it but log a warning if it's not 'gloo' for CPU.
-                if backend != "gloo":
-                    print(f"Warning: Non-standard backend '{backend}' specified for DDP with GPUs. 'nccl' is typical.")
+                print(f"Warning: Non-standard backend '{backend}' specified for DDP with GPUs. 'nccl' is typical.")
 
             dist.init_process_group(backend=backend, rank=rank, world_size=world_size)
 
@@ -238,7 +238,7 @@ class CheckpointManager:
             "scaler_state": scaler.state_dict(),
         }
 
-        # OPTIMIZATION: 原子化保存，先保存到临时文件再移动
+        # OPTIMIZATION: 原子化保存, 先保存到临时文件再移动
         def atomic_save(data, path):
             temp_path = str(path) + ".tmp"
             torch.save(data, temp_path)
@@ -286,7 +286,7 @@ class CheckpointManager:
             return 0, float("inf")
 
         ckp_path = self.config.resume_from_checkpoint
-        if not os.path.exists(ckp_path):
+        if not Path(ckp_path).exists():
             self.logger.warning(f"Checkpoint file not found: {ckp_path}. Starting from scratch.")
             return 0, float("inf")
 

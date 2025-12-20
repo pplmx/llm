@@ -2,14 +2,14 @@
 注意力机制教学版本 - 从基础到高级的实现 (教学优化版)
 =============================================
 
-教学特点：
-1. 渐进式学习路径：基础→缩放→单头→多头
-2. 丰富的教学注释：包含原理说明和类比解释
-3. 交互式可视化：直观展示注意力权重变化
-4. 学习检查点：包含理解检查和小练习
-5. 典型错误示例：常见错误实现对比
+教学特点:
+1. 渐进式学习路径: 基础→缩放→单头→多头
+2. 丰富的教学注释: 包含原理说明和类比解释
+3. 交互式可视化: 直观展示注意力权重变化
+4. 学习检查点: 包含理解检查和小练习
+5. 典型错误示例: 常见错误实现对比
 
-学习路线建议：
+学习路线建议:
 1. 先运行 attention_demo() 看整体效果
 2. 从 attention_score() 开始逐步学习
 3. 尝试 interactive_attention() 交互式学习
@@ -21,24 +21,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-# ---------------------------- 第1部分：基础函数 (教学核心) ----------------------------
+# ---------------------------- 第1部分: 基础函数 (教学核心) ----------------------------
 
 
 def attention_score(query: Tensor, key: Tensor) -> Tensor:
     """
     基础注意力分数计算: Q @ K^T
 
-    教学说明：
+    教学说明:
     - 这是注意力机制最核心的计算
     - 每个查询(query)与所有键(key)计算相似度
     - 结果表示query和key的匹配程度
     - 点积越大表示相似度越高
     - 这个分数后续会经过softmax转换为概率分布
 
-    类比理解：
+    类比理解:
     就像用你的问题(Q)去匹配书籍目录(K)，得到每本书的相关分数
-    - Q: 你的问题(例如："如何学习深度学习？")
-    - K: 书籍目录的关键词(例如："深度学习基础"、"机器学习入门")
+    - Q: 你的问题(例如: "如何学习深度学习？")
+    - K: 书籍目录的关键词(例如: "深度学习基础"、"机器学习入门")
     - 分数: 每本书与你的问题的相关程度
 
     参数:
@@ -73,7 +73,7 @@ def scaled_dot_product_attention(
     """
     缩放点积注意力完整实现 (带详细教学注释)
 
-    计算步骤分解：
+    计算步骤分解:
     1. QK^T        - 计算相似度
     2. Scale       - 缩放防止梯度消失
     3. Mask        - 应用注意力掩码
@@ -81,7 +81,7 @@ def scaled_dot_product_attention(
     5. Dropout     - 随机失活(正则化)
     6. 加权求和     - 聚合value信息
 
-    教学提示：
+    教学提示:
     - 缩放(scale)是为了防止点积结果过大导致softmax梯度太小
     - 掩码(mask)用于控制哪些位置可以参与计算
     - 因果(causal)掩码确保只能看到当前位置之前的信息
@@ -150,21 +150,21 @@ def scaled_dot_product_attention(
     return torch.matmul(attn_weights, value)
 
 
-# ---------------------------- 第3部分：单头注意力 (教学中间步骤) ----------------------------
+# ---------------------------- 第3部分: 单头注意力 (教学中间步骤) ----------------------------
 
 
 class SingleHeadAttention(nn.Module):
     """
     单头自注意力模块 (教学优化版)
 
-    教学重点：
+    教学重点:
     - 展示如何将基础计算封装为模块
     - 解释QKV投影的含义
     - 说明输出投影的作用
     - 展示初始化方法
     - 解释前向传播流程
 
-    类比理解：
+    类比理解:
     - 就像一个人专注阅读一篇文章的不同部分
     - Q: 阅读时关注的问题(你想了解什么)
     - K: 文章各部分的关键词(文章在讲什么)
@@ -186,7 +186,7 @@ class SingleHeadAttention(nn.Module):
         self.dropout_p = dropout_p
         self.is_causal = is_causal
 
-        # 合并的QKV投影 (教学说明：实际实现常用这种方式提高效率)
+        # 合并的QKV投影 (教学说明: 实际实现常用这种方式提高效率)
         # 输入维度: hidden_size
         # 输出维度: 3*hidden_size (Q,K,V各hidden_size)
         self.qkv_proj = nn.Linear(hidden_size, 3 * hidden_size)
@@ -199,7 +199,7 @@ class SingleHeadAttention(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """初始化说明：Xavier初始化适合注意力层"""
+        """初始化说明: Xavier初始化适合注意力层"""
         # 线性层的权重使用Xavier均匀初始化
         # 偏置初始化为0
         nn.init.xavier_uniform_(self.qkv_proj.weight)
@@ -209,7 +209,7 @@ class SingleHeadAttention(nn.Module):
 
     def forward(self, x: Tensor, attn_mask: Tensor | None = None) -> Tensor:
         """
-        前向传播流程教学分解：
+        前向传播流程教学分解:
         1. 计算QKV投影
         2. 分割Q,K,V
         3. 计算缩放点积注意力
@@ -226,7 +226,7 @@ class SingleHeadAttention(nn.Module):
         # 将输入x通过线性层投影到QKV空间
         qkv = self.qkv_proj(x)  # [B, S, 3*H]
 
-        # 2. 分割 (教学提示：chunk是PyTorch的拆分函数)
+        # 2. 分割 (教学提示: chunk是PyTorch的拆分函数)
         # 将最后一个维度分成3份，得到Q,K,V
         q, k, v = qkv.chunk(3, dim=-1)  # 每个[B, S, H]
 
@@ -246,21 +246,21 @@ class SingleHeadAttention(nn.Module):
         return self.out_proj(attn_output)
 
 
-# ---------------------------- 第4部分：多头注意力 (完整实现) ----------------------------
+# ---------------------------- 第4部分: 多头注意力 (完整实现) ----------------------------
 
 
 class MultiHeadAttention(nn.Module):
     """
     多头注意力模块 (教学完整版)
 
-    教学重点：
+    教学重点:
     - 多头注意力的核心思想
     - 如何分割和重组注意力头
     - 实际实现中的效率考量
     - 参数初始化
     - 前向传播流程
 
-    类比理解：
+    类比理解:
     - 就像多个人同时阅读同一篇文章
     - 每个人关注不同的方面(头)
     - 最后整合所有人的理解
@@ -278,7 +278,7 @@ class MultiHeadAttention(nn.Module):
 
     def __init__(self, hidden_size: int, num_heads: int, dropout_p: float = 0.1, is_causal: bool = False):
         super().__init__()
-        # 参数验证 (教学提示：确保可分割)
+        # 参数验证 (教学提示: 确保可分割)
         assert hidden_size % num_heads == 0, "hidden_size必须能被num_heads整除"
 
         self.hidden_size = hidden_size
@@ -287,7 +287,7 @@ class MultiHeadAttention(nn.Module):
         self.dropout_p = dropout_p
         self.is_causal = is_causal
 
-        # 投影层 (教学说明：实际框架常用合并投影)
+        # 投影层 (教学说明: 实际框架常用合并投影)
         # 输入维度: hidden_size
         # 输出维度: 3*hidden_size (Q,K,V各hidden_size)
         self.qkv_proj = nn.Linear(hidden_size, 3 * hidden_size)
@@ -309,7 +309,7 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, x: Tensor, attn_mask: Tensor | None = None) -> Tensor:
         """
-        前向传播流程教学分解：
+        前向传播流程教学分解:
         1. 计算QKV投影
         2. 重塑为多头形式
         3. 计算缩放点积注意力
@@ -339,7 +339,7 @@ class MultiHeadAttention(nn.Module):
         k = k.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
 
-        # 3. 调整掩码形状 (教学提示：广播机制)
+        # 3. 调整掩码形状 (教学提示: 广播机制)
         # 如果提供了掩码，需要增加一个头维度以广播到所有头
         if attn_mask is not None:
             attn_mask = attn_mask.unsqueeze(1)  # [B, 1, S, S]
@@ -360,7 +360,7 @@ class MultiHeadAttention(nn.Module):
         return self.out_proj(attn_output)
 
 
-# ---------------------------- 第5部分：教学工具 ----------------------------
+# ---------------------------- 第5部分: 教学工具 ----------------------------
 
 
 def interactive_attention():
@@ -468,7 +468,7 @@ def check_understanding():
         print("建议回顾注意力机制的基本概念")
 
 
-# ---------------------------- 第6部分：演示执行 ----------------------------
+# ---------------------------- 第6部分: 演示执行 ----------------------------
 
 if __name__ == "__main__":
     print("=== 注意力机制教学演示 ===")

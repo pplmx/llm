@@ -20,9 +20,14 @@ class ModelConfig:
     """模型配置"""
 
     hidden_size: int = 512
+    num_heads: int = 8
+    num_kv_heads: int | None = None
     ffn_hidden_size: int | None = None
     num_layers: int = 2
     dropout: float = 0.1
+    use_glu: bool = False
+    vocab_size: int = 50257
+    max_seq_len: int = 512
     use_moe: bool = False  # New: Whether to use MoE in TransformerBlocks
     num_experts: int = 0  # New: Number of experts if use_moe is True
     top_k: int = 0  # New: Number of top experts to select if use_moe is True
@@ -37,6 +42,11 @@ class ModelConfig:
             raise ValueError("FFN hidden size must be positive")
         if self.num_layers <= 0:
             raise ValueError("Number of layers must be positive")
+        if self.num_heads <= 0:
+            raise ValueError("Number of heads must be positive")
+        if self.hidden_size % self.num_heads != 0:
+            raise ValueError("hidden_size must be divisible by num_heads")
+
         if self.use_moe:
             if self.num_experts <= 0:
                 raise ValueError("num_experts must be positive if use_moe is True.")
@@ -90,6 +100,7 @@ class OptimizationConfig:
 
     use_compile: bool = True
     use_amp: bool = True
+    amp_dtype: str = "auto"  # auto, float16, bfloat16
     num_workers: int = 4
     pin_memory: bool = True
     prefetch_factor: int = 2
@@ -129,7 +140,7 @@ class LoggingConfig:
 
 @dataclass
 class Config:
-    """主配置类，组合所有配置"""
+    """主配置类, 组合所有配置"""
 
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
@@ -142,14 +153,14 @@ class Config:
         """将配置保存到 YAML 文件"""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
+        with path.open("w") as f:
             yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
         """从 YAML 文件加载配置"""
         path = Path(path)
-        with open(path) as f:
+        with path.open() as f:
             config_dict = yaml.safe_load(f)
 
         # Recursively reconstruct dataclasses
@@ -179,7 +190,7 @@ class Config:
         """从命令行参数和环境变量创建配置"""
         parser = argparse.ArgumentParser(description="PyTorch DDP Training Script")
 
-        # 动态添加参数，避免重复
+        # 动态添加参数, 避免重复
         def add_args_from_dataclass(parser_, dc_name, dc_instance):
             for name, type_hint in dc_instance.__annotations__.items():
                 arg_name = (
@@ -231,6 +242,9 @@ class Config:
 
         parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
         parser.add_argument("--no-amp", action="store_true", help="Disable AMP")
+        parser.add_argument(
+            "--amp-dtype", type=str, choices=["float16", "bfloat16"], default=None, help="AMP data type"
+        )
 
         args = parser.parse_args()
 
@@ -273,6 +287,8 @@ class Config:
             config.optimization.use_compile = False
         if hasattr(args, "no_amp") and args.no_amp:
             config.optimization.use_amp = False
+        if hasattr(args, "amp_dtype") and args.amp_dtype:
+            config.optimization.amp_dtype = args.amp_dtype
 
         # 手动后处理
         config.model.__post_init__()

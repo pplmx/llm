@@ -76,13 +76,13 @@ class SimpleMoE(nn.Module):
         # --- 1. Gating: 为每个 Token 选择最合适的 Experts ---
         print("--- 1. Gating: Selecting Experts ---")
         gate_scores = self.gate(x)
-        # 注释: 在混合精度训练中，门控分数和后续的softmax通常会转换到float32以保证数值稳定性。
+        # 注释: 在混合精度训练中, 门控分数和后续的 softmax 通常会转换到 float32 以保证数值稳定性。
 
         # 找到分数最高的 top-k 个 experts 及其索引
         topk_scores, topk_indices = torch.topk(gate_scores, self.k, dim=-1)
 
-        # 对 top-k 的分数应用 softmax，得到权重
-        # 注释: 这是现代MoE（如Mixtral）的常见做法。它比对所有expert分数做softmax更高效。
+        # 对 top-k 的分数应用 softmax, 得到权重
+        # 注释: 这是现代 MoE (如 Mixtral) 的常见做法。它比对所有 expert 分数做 softmax 更高效。
         topk_weights = F.softmax(topk_scores, dim=-1)
 
         print("Gating decision for each token:")
@@ -93,14 +93,14 @@ class SimpleMoE(nn.Module):
 
         # --- 2. Routing & Computation: 将 Token 分发给 Expert 并行计算 ---
         print("--- 2. Routing & Computation (Scatter-Gather) ---")
-        # 创建一个扁平化的张量，用于收集所有 expert 的输出
-        # 形状为 [batch_size * k, hidden_size]，为每个 token-expert 对准备了位置
+        # 创建一个扁平化的张量, 用于收集所有 expert 的输出
+        # 形状为 [batch_size * k, hidden_size], 为每个 token-expert 对准备了位置
         dispatched_x = torch.zeros(batch_size * self.k, hidden_dim, device=x.device, dtype=x.dtype)
 
-        # 将 top-k 索引扁平化，得到一个长列表，指明每个计算任务应由哪个 expert 处理
+        # 将 top-k 索引扁平化, 得到一个长列表, 指明每个计算任务应由哪个 expert 处理
         flat_topk_indices = topk_indices.view(-1)
 
-        # 将输入 token 复制 k 次，因为每个 token 都需要被 k 个 expert 处理
+        # 将输入 token 复制 k 次, 因为每个 token 都需要被 k 个 expert 处理
         repeated_x = x.repeat_interleave(self.k, dim=0)
 
         # 以 Expert 为中心进行计算 (Gather & Compute)
@@ -125,7 +125,7 @@ class SimpleMoE(nn.Module):
         # --- 3. Aggregation: 加权合并 Expert 的输出 ---
         print("--- 3. Aggregation: Combining Outputs ---")
 
-        # 1. 重塑 expert 输出，使其与 token 和 k 值对应
+        # 1. 重塑 expert 输出, 使其与 token 和 k 值对应
         #    [batch_size * k, hidden_size] -> [batch_size, k, hidden_size]
         outputs_per_expert = dispatched_x.view(batch_size, self.k, hidden_dim)
 
@@ -136,7 +136,7 @@ class SimpleMoE(nn.Module):
         # 3. 对每个 expert 的输出进行加权
         weighted_outputs = outputs_per_expert * weights_expanded
 
-        # 4. 将 k 个加权后的 expert 输出相加，得到最终结果
+        # 4. 将 k 个加权后的 expert 输出相加, 得到最终结果
         final_output = weighted_outputs.sum(dim=1)
 
         print("\n" + "=" * 20 + " MoE Final Result " + "=" * 20)
@@ -148,13 +148,13 @@ class SimpleMoE(nn.Module):
 
 if __name__ == "__main__":
     # --- 配置 ---
-    # 使用小的、固定的参数，让输出清晰且可复现
+    # 使用小的、固定的参数, 让输出清晰且可复现
     batch_size_ = 2
     hidden_size_ = 8
     num_experts_ = 4
     k_ = 2
 
-    # 设置随机种子以确保每次运行结果一致，便于分析
+    # 设置随机种子以确保每次运行结果一致, 便于分析
     torch.manual_seed(42)
 
     # --- 数据准备 ---
@@ -183,8 +183,8 @@ if __name__ == "__main__":
 
     print(f"Total parameters in dense FFN: {ffn_params}")
     print(f"Total parameters in MoE:       {moe_params}")
-    # MoE的参数量主要由 experts 贡献，外加一个小的 gate 网络。
-    # expert部分的参数量约等于 FFN 的 num_experts 倍。
+    # MoE 的参数量主要由 experts 贡献, 外加一个小的 gate 网络。
+    # expert 部分的参数量约等于 FFN 的 num_experts 倍。
     print(f"-> MoE has approximately {moe_params / ffn_params:.2f}x more parameters than FFN.")
 
     print("\nKey Insight:")

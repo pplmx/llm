@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -76,7 +75,7 @@ class TextDataset(Dataset):
 
         # Read and tokenize the entire text file
         try:
-            with open(self.file_path, encoding="utf-8") as f:
+            with Path(self.file_path).open(encoding="utf-8") as f:
                 text_content = f.read()
         except Exception as e:
             raise OSError(f"Error reading file {self.file_path}: {e}")
@@ -286,6 +285,8 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error in __main__ example: {e}", file=sys.stderr)
     finally:
-        if tmp_file_path and os.path.exists(tmp_file_path):
-            os.remove(tmp_file_path)
-            print(f"Removed dummy text file: {tmp_file_path}")
+        if tmp_file_path:
+            p = Path(tmp_file_path)
+            if p.exists():
+                p.unlink()
+                print(f"Removed dummy text file: {tmp_file_path}")

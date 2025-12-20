@@ -1,13 +1,13 @@
 ## Transformer深度学习路线图
 
-### 第一阶段：基础准备（1-2周）
+### 第一阶段: 基础准备（1-2周）
 
 **必备数学基础**
 
-- 线性代数：矩阵运算、向量空间、特征值分解
-- 概率统计：概率分布、期望、方差
-- 微积分：梯度、链式法则、反向传播
-- 信息论基础：熵、KL散度
+- 线性代数: 矩阵运算、向量空间、特征值分解
+- 概率统计: 概率分布、期望、方差
+- 微积分: 梯度、链式法则、反向传播
+- 信息论基础: 熵、KL散度
 
 **深度学习基础**
 
@@ -15,7 +15,7 @@
 - 激活函数（ReLU, GELU, SwiGLU等）
 - 优化器（SGD, Adam, AdamW）
 - 正则化技术（Dropout, Layer Norm）
-- 注意力机制的前身：RNN、LSTM、GRU
+- 注意力机制的前身: RNN、LSTM、GRU
 
 **实践任务**
 
@@ -24,7 +24,7 @@
 
 ---
 
-### 第二阶段：Transformer核心原理（2-3周）
+### 第二阶段: Transformer核心原理（2-3周）
 
 **经典论文精读**
 
@@ -57,16 +57,16 @@
 
 ---
 
-### 第三阶段：Transformer变体与优化（3-4周）
+### 第三阶段: Transformer变体与优化（3-4周）
 
 **位置编码进化**
 
-- 绝对位置编码：Sinusoidal, Learned
-- 相对位置编码：
+- 绝对位置编码: Sinusoidal, Learned
+- 相对位置编码:
     - T5的相对位置偏置
     - DeBERTa的解耦注意力
 - 旋转位置编码（RoPE）- 重点学习
-    - 论文："RoFormer: Enhanced Transformer with Rotary Position Embedding"
+    - 论文: "RoFormer: Enhanced Transformer with Rotary Position Embedding"
     - 理解复数域旋转的几何意义
     - 为什么RoPE能外推到更长序列
 
@@ -81,7 +81,7 @@
 **架构改进**
 
 - Pre-Norm vs Post-Norm
-- GLU变体：SwiGLU, GeGLU
+- GLU变体: SwiGLU, GeGLU
 - RMSNorm vs LayerNorm
 
 **实践任务**
@@ -92,23 +92,23 @@
 
 ---
 
-### 第四阶段：现代LLM架构（3-4周）
+### 第四阶段: 现代LLM架构（3-4周）
 
 **主流模型架构研究**
 
 **GPT系列（Decoder-only）**
 
 - GPT-2/3的架构细节
-- LLaMA系列：
+- LLaMA系列:
     - LLaMA 1/2的改进点
     - Group Query Attention (GQA)
     - Pre-normalization with RMSNorm
 
 **其他重要架构**
 
-- Mistral：Sliding Window Attention
-- Mixtral：MoE (Mixture of Experts)
-- Gemini：多模态架构
+- Mistral: Sliding Window Attention
+- Mixtral: MoE (Mixture of Experts)
+- Gemini: 多模态架构
 
 **实践任务**
 
@@ -118,13 +118,13 @@
 
 ---
 
-### 第五阶段：前沿技术深度解析（4-6周）
+### 第五阶段: 前沿技术深度解析（4-6周）
 
 #### **5.1 Multi-Head Latent Attention (MLA)**
 
 **DeepSeek-V2/V3核心技术**
 
-论文精读：
+论文精读:
 
 - "DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model"
 - "DeepSeek-V3 Technical Report"
@@ -132,8 +132,8 @@
 **MLA原理详解**
 
 - 传统MHA的KV Cache瓶颈问题
-- 低秩压缩思想：将KV投影到低维隐空间
-- 数学形式：
+- 低秩压缩思想: 将KV投影到低维隐空间
+- 数学形式:
   ```
   传统MHA: K = W_K * X, V = W_V * X
   MLA: C = W_C * X (低维), K = W_KR * C, V = W_VR * C
@@ -194,13 +194,13 @@
 
 **Multi-Token Prediction (MTP)**
 
-- Meta的论文："Better & Faster Large Language Models via Multi-token Prediction"
+- Meta的论文: "Better & Faster Large Language Models via Multi-token Prediction"
 - 同时预测多个token的训练策略
 - 推理加速原理
 
 **Mixture of Experts (MoE) 深度**
 
-- 路由算法：Top-K, Switch Transformer
+- 路由算法: Top-K, Switch Transformer
 - 负载均衡问题
 - Expert并行化策略
 - DeepSeek-V3的细粒度专家分割
@@ -214,7 +214,7 @@
 
 ---
 
-### 第六阶段：训练与优化实战（3-4周）
+### 第六阶段: 训练与优化实战（3-4周）
 
 **分布式训练**
 
@@ -245,7 +245,7 @@
 
 ---
 
-### 第七阶段：前沿论文追踪（持续）
+### 第七阶段: 前沿论文追踪（持续）
 
 **必读论文清单**
 
@@ -333,23 +333,23 @@
 
 ### 时间线总结
 
-- **第1-2周**：基础准备
-- **第3-5周**：Transformer核心
-- **第6-9周**：变体与优化
-- **第10-13周**：现代LLM架构
-- **第14-19周**：前沿技术（MLA, DSA等）
-- **第20-23周**：训练与优化实战
-- **持续**：论文追踪与项目实践
+- **第1-2周**: 基础准备
+- **第3-5周**: Transformer核心
+- **第6-9周**: 变体与优化
+- **第10-13周**: 现代LLM架构
+- **第14-19周**: 前沿技术（MLA, DSA等）
+- **第20-23周**: 训练与优化实战
+- **持续**: 论文追踪与项目实践
 
-**预计总时长**：5-6个月达到深入理解前沿技术的水平
+**预计总时长**: 5-6个月达到深入理解前沿技术的水平
 
 ---
 
 ### 学习建议
 
-1. **动手实践至关重要**：每个概念都要自己实现一遍
-2. **从小规模开始**：先在小数据集、小模型上验证想法
-3. **可视化帮助理解**：多画图、多可视化attention权重
-4. **论文要精读**：重要论文要反复读，理解每个设计决策
-5. **关注数学推导**：理解"为什么"比记住"是什么"更重要
-6. **加入社区讨论**：与其他学习者交流能加深理解
+1. **动手实践至关重要**: 每个概念都要自己实现一遍
+2. **从小规模开始**: 先在小数据集、小模型上验证想法
+3. **可视化帮助理解**: 多画图、多可视化attention权重
+4. **论文要精读**: 重要论文要反复读，理解每个设计决策
+5. **关注数学推导**: 理解"为什么"比记住"是什么"更重要
+6. **加入社区讨论**: 与其他学习者交流能加深理解

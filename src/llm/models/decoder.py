@@ -37,6 +37,9 @@ class DecoderModel(nn.Module):
         use_moe: bool = False,  # New: Whether to use MoE in TransformerBlocks
         num_experts: int = 0,  # New: Number of experts if use_moe is True
         top_k: int = 0,  # New: Number of top experts to select if use_moe is True
+        num_kv_heads: int | None = None,  # New: For GQA support
+        use_glu: bool = False,  # New: For SwiGLU support
+        norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # New: For RMSNorm support
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -71,6 +74,9 @@ class DecoderModel(nn.Module):
         """
         super().__init__()
         factory_kwargs = {"device": device, "dtype": dtype}
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.max_seq_len = max_seq_len
         self.norm_first = norm_first  # Store for final norm logic
 
         self.embedding_layer = EmbeddingLayer(
@@ -103,6 +109,9 @@ class DecoderModel(nn.Module):
                     use_moe=use_moe,  # Pass MoE flag
                     num_experts=num_experts,  # Pass num_experts
                     top_k=top_k,  # Pass top_k
+                    num_kv_heads=num_kv_heads,  # Pass num_kv_heads
+                    use_glu=use_glu,  # Pass use_glu
+                    norm_type=norm_type,  # Pass norm_type
                     **factory_kwargs,
                 )
                 for _ in range(num_layers)
@@ -111,7 +120,10 @@ class DecoderModel(nn.Module):
 
         self.final_norm = None
         if self.norm_first:
-            self.final_norm = nn.LayerNorm(hidden_size, eps=norm_eps, **factory_kwargs)
+            if isinstance(norm_type, type):
+                self.final_norm = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
+            else:
+                self.final_norm = norm_type
 
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=lm_head_bias, **factory_kwargs)
         self.max_seq_len = max_seq_len

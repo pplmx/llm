@@ -157,11 +157,11 @@ class TestDecoderModelForwardPass:
         # The mock should still return a tensor of the correct shape.
         original_block_forward = decoder_model.transformer_blocks[0].forward
 
-        def block_forward_spy(hidden_states, attn_mask=None, is_causal=None):
+        def block_forward_spy(hidden_states, attn_mask=None, is_causal=None, **kwargs):
             # This is where we can assert or store the attn_mask
             block_forward_spy.called_attn_mask = attn_mask
             # Call the original forward method to ensure model runs
-            return original_block_forward(hidden_states, attn_mask, is_causal)
+            return original_block_forward(hidden_states, attn_mask, is_causal, **kwargs)
 
         block_forward_spy.called_attn_mask = None  # Initialize
 
@@ -180,9 +180,12 @@ class TestDecoderModelForwardPass:
 class TestDeviceAndDtypePropagation:
     def test_model_device_dtype(self, device, dtype_str, model_kwargs, input_ids_tensor):
         dtype = getattr(torch, dtype_str.replace("torch.", ""))
-        if device == "cuda" and dtype == torch.float64:  # Assuming float64 might be tested later
-            if not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7):
-                pytest.skip("CUDA float64 support not adequate or device not capable.")
+        if (
+            device == "cuda"
+            and dtype == torch.float64
+            and not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7)
+        ):
+            pytest.skip("CUDA float64 support not adequate or device not capable.")
 
         model_kwargs.update({"device": device, "dtype": dtype})
         model = DecoderModel(**model_kwargs)
