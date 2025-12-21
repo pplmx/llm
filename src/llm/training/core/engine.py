@@ -85,16 +85,19 @@ class TrainingEngine:
         self.dataloader, self.sampler = self.data_module.train_dataloader(self.rank, self.world_size)
         self.val_dataloader, self.val_sampler = self.data_module.val_dataloader(self.rank, self.world_size)
 
-        # Setup scaler and load checkpoint
         # Resolve 'auto' dtype
         self.resolved_amp_dtype = self.config.optimization.amp_dtype
         if self.resolved_amp_dtype == "auto":
-            if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
-                self.resolved_amp_dtype = "bfloat16"
-                self.logger.info("✨ Auto-detected BF16 support. Using bfloat16 for AMP.")
+            if self.device.type == "cuda":
+                if torch.cuda.is_bf16_supported():
+                    self.resolved_amp_dtype = "bfloat16"
+                    self.logger.info("✨ Auto-detected BF16 support. Using bfloat16 for AMP.")
+                else:
+                    self.resolved_amp_dtype = "float16"
+                    self.logger.info("✨ Auto-detected no BF16 support. Using float16 for AMP.")
             else:
-                self.resolved_amp_dtype = "float16"
-                self.logger.info("✨ Auto-detected no BF16 support. Using float16 for AMP.")
+                self.resolved_amp_dtype = "float32"
+                self.logger.info("✨ Using float32 (no AMP) on CPU.")
 
         # BF16 typically doesn't need scaling
         use_scaler = (

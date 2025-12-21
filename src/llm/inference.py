@@ -39,9 +39,9 @@ def generate(
     past_key_values = None
 
     # 第一步: 预热 (Prefill)
-    # 如果 prompt 超过 max_seq_len, 截断它
-    if input_tensor.size(1) > max_seq_len:
-        input_tensor = input_tensor[:, -max_seq_len:]
+    # 如果 prompt + max_new_tokens 超过 max_seq_len, 截断它以留出空间
+    if input_tensor.size(1) + max_new_tokens > max_seq_len:
+        input_tensor = input_tensor[:, -(max_seq_len - max_new_tokens) :]
 
     # 获取第一个输出并初始化 KV Cache
     logits, past_key_values = model(input_tensor, use_cache=True)

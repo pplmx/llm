@@ -157,7 +157,12 @@ class DecoderModel(nn.Module):
                 - If use_cache=False: Logits tensor of shape [B, S, vocab_size].
                 - If use_cache=True: (Logits tensor, current_key_values)
         """
-        hidden_states = self.embedding_layer(input_ids)
+        start_pos = 0
+        if past_key_values is not None:
+            # past_key_values[0][0] shape: [B, N, S_prev, D]
+            start_pos = past_key_values[0][0].size(2)
+
+        hidden_states = self.embedding_layer(input_ids, start_pos=start_pos)
 
         current_key_values = []
         for i, block in enumerate(self.transformer_blocks):

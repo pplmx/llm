@@ -155,9 +155,9 @@ class MLP(nn.Module):
             # MLP computation (common for both pre-norm and post-norm)
             if self.use_glu:
                 # GLU logic
-                x_gate = self.gate_proj(x)
-                x_gate = self.activation(x_gate)
                 x_fc1 = self.fc1(x)
+                x_fc1 = self.activation(x_fc1)
+                x_gate = self.gate_proj(x)
                 x_mlp = x_fc1 * x_gate
             else:
                 x_mlp = self.fc1(x)
@@ -178,9 +178,9 @@ class MLP(nn.Module):
             if self.use_glu:
                 # GLU logic: (x * activation(gate(x)))
                 # For SwiGLU, activation is SiLU
-                x_gate = self.gate_proj(x)
-                x_gate = self.activation(x_gate)
                 x_fc1 = self.fc1(x)
+                x_fc1 = self.activation(x_fc1)
+                x_gate = self.gate_proj(x)
                 x = x_fc1 * x_gate
             else:
                 x = self.fc1(x)

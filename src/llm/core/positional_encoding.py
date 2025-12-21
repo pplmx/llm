@@ -52,28 +52,25 @@ class PositionalEncoding(nn.Module):
 
             self.register_buffer("pe", pe)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, start_pos: int = 0) -> torch.Tensor:
         """
         Args:
             x: Tensor, shape [batch_size, seq_len, hidden_size]
+            start_pos: Initial position index for the sequence.
         """
         seq_len = x.size(1)
-        if seq_len > self.max_seq_len:
-            raise ValueError(f"Sequence length {seq_len} exceeds maximum sequence length {self.max_seq_len}")
+        if start_pos + seq_len > self.max_seq_len:
+            raise ValueError(
+                f"Sequence endpoint {start_pos + seq_len} exceeds maximum sequence length {self.max_seq_len}"
+            )
 
         if self.learned:
-            # Create position IDs [0, 1, ..., seq_len-1] for the current sequence length
-            # pos_ids shape: (seq_len) -> unsqueezed to (1, seq_len) for batch compatibility
-            pos_ids = torch.arange(seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
-            # Get positional embeddings: pos_embedding(pos_ids) -> [1, seq_len, hidden_size]
+            # Create position IDs [start_pos, ..., start_pos + seq_len - 1]
+            pos_ids = torch.arange(start_pos, start_pos + seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
             pos_enc = self.pos_embedding(pos_ids)
-            x = x + pos_enc  # Broadcasting adds pos_enc to each batch element
+            x = x + pos_enc
         else:
-            # Add sinusoidal positional encoding to the input tensor
-            # x shape: [batch_size, seq_len, hidden_size]
             # self.pe is [1, max_seq_len, hidden_size]
-            # We need self.pe[:, :seq_len, :] which is [1, seq_len, hidden_size]
-            # This will be broadcasted across the batch dimension of x
-            x = x + self.pe[:, :seq_len, :]
+            x = x + self.pe[:, start_pos : start_pos + seq_len, :]
 
         return self.dropout(x)

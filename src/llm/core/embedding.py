@@ -67,12 +67,13 @@ class EmbeddingLayer(nn.Module):
         # if PositionalEncoding correctly uses factory_kwargs for its parameters (learned case)
         # and its buffers are handled by the parent module's .to() method (sinusoidal case).
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, start_pos: int = 0) -> torch.Tensor:
         """
         Forward pass of the EmbeddingLayer.
 
         Args:
             input_ids (torch.Tensor): Tensor of token IDs of shape (batch_size, seq_len).
+            start_pos (int): Initial position index for the sequence.
 
         Returns:
             torch.Tensor: Tensor of embeddings with positional encodings,
@@ -80,7 +81,7 @@ class EmbeddingLayer(nn.Module):
         """
         token_embs = self.token_embeddings(input_ids)
         scaled_embs = token_embs * math.sqrt(self.hidden_size)
-        output_embs = self.positional_encoding(scaled_embs)
+        output_embs = self.positional_encoding(scaled_embs, start_pos=start_pos)
         return output_embs
 
 

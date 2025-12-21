@@ -179,11 +179,11 @@ def test_seq_len_exceeds_max_len():
     """Test that an error is raised if seq_len > max_seq_len."""
     model = PositionalEncoding(HIDDEN_SIZE, MAX_SEQ_LEN, learned=False)
     too_long_input = torch.randn(BATCH_SIZE, MAX_SEQ_LEN + 1, HIDDEN_SIZE)
-    with pytest.raises(ValueError, match=r"Sequence length \d+ exceeds maximum sequence length \d+"):
+    with pytest.raises(ValueError, match=r"Sequence endpoint \d+ exceeds maximum sequence length \d+"):
         model(too_long_input)
 
     model_learned = PositionalEncoding(HIDDEN_SIZE, MAX_SEQ_LEN, learned=True)
-    with pytest.raises(ValueError, match=r"Sequence length \d+ exceeds maximum sequence length \d+"):
+    with pytest.raises(ValueError, match=r"Sequence endpoint \d+ exceeds maximum sequence length \d+"):
         model_learned(too_long_input)
 
 
