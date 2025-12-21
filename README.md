@@ -17,6 +17,7 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
+- [Roadmap](#roadmap)
 - [Changelog](#changelog)
 - [Contact](#contact)
 - [Acknowledgements](#acknowledgements)
@@ -27,9 +28,12 @@
 
 ## Features
 
-- **Modular LLM Architecture**:
-    - Built with a modular Transformer architecture, allowing for flexible component swapping.
-    - Supports advanced features like Mixture of Experts (MoE) and various normalization techniques (Pre-LN/Post-LN).
+- **Modern Transformer Architecture**:
+    - Grouped Query Attention (GQA) for balanced performance and memory efficiency
+    - SwiGLU activation function for enhanced MLP performance
+    - Unified QKV projection for optimized memory layout and throughput
+    - Mixture of Experts (MoE) support for scaling model capacity
+    - Flexible normalization techniques (Pre-LN/Post-LN, RMSNorm)
 - **Robust Training Framework**:
     - Distributed Data Parallel (DDP) training for scalability.
     - Automatic Mixed Precision (AMP) for memory efficiency and faster training.
@@ -54,11 +58,11 @@ To quickly get started with training a model using the framework, follow these s
     ```bash
     make init
     ```
-2.  **Run a Training Example**: Execute the main training script with a sample task.
+2.  **Run a Training Example**: Execute the main training script with a language modeling task.
     ```bash
-    python src/llm/training/train.py --task regression --epochs 1 --batch-size 32
+    python src/llm/training/train.py --task lm --epochs 1 --batch-size 32
     ```
-    This command will train a simple regression model for 1 epoch with a batch size of 32. You will see training progress logs in your console.
+    This command will train a language model for 1 epoch with a batch size of 32. You will see training progress logs in your console.
 
 ## Installation
 
@@ -119,6 +123,10 @@ This project is licensed under either of:
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
+
+## Roadmap
+
+For our detailed development roadmap and future plans, including upcoming features like inference API, Flash Attention integration, and RLHF support, please see [ROADMAP.md](ROADMAP.md).
 
 ## Changelog
 
