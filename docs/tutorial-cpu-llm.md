@@ -18,9 +18,10 @@
 
 本项目提供了一个模块化、可扩展的 PyTorch LLM 训练框架。其核心设计理念是**解耦**和**可扩展性**，旨在将通用的训练逻辑与具体的任务逻辑分离。
 
-**主要特点: **
+**主要特点:**
 
 -   **模块化架构**: Transformer 核心组件（如注意力、MLP、归一化）被设计为可插拔模块。
+-   **现代化特性**: 支持 Grouped Query Attention (GQA)、SwiGLU 激活函数、RMSNorm 等先进技术。
 -   **灵活配置**: 通过 YAML 文件和 Python `dataclasses` 实现高度可配置的模型和训练参数。
 -   **健壮的训练引擎**: 支持分布式训练 (DDP)、自动混合精度 (AMP)、`torch.compile` 优化、回调系统和检查点管理。
 -   **抽象的数据流**: 通过 `DataModule` 抽象数据加载和预处理。
@@ -55,9 +56,9 @@
 
 **核心组件概览: **
 
--   **`llm.tokenization.simple_tokenizer.SimpleCharacterTokenizer`**:
-    -   **位置**: `src/llm/tokenization/simple_tokenizer.py`
-    -   **用途**: 一个基础的字符级分词器，用于将文本转换为模型可处理的整数序列。它支持 `<PAD>` 特殊 token。
+-   **分词器**:
+    -   **`llm.tokenization.simple_tokenizer.SimpleCharacterTokenizer`** (`src/llm/tokenization/simple_tokenizer.py`): 一个基础的字符级分词器，用于快速原型验证。支持 `<PAD>` 特殊 token。
+    -   **`llm.tokenization.bpe_tokenizer.BPETokenizer`** (`src/llm/tokenization/bpe_tokenizer.py`): 生产级的 BPE (Byte Pair Encoding) 分词器，基于 `tokenizers` 库实现，支持训练自定义词表和高效的子词分词。
 
 -   **`llm.core.embedding.EmbeddingLayer`**:
     -   **位置**: `src/llm/core/embedding.py`
@@ -65,11 +66,13 @@
 
 -   **`llm.core.attn.mha.MultiHeadAttention`**:
     -   **位置**: `src/llm/core/attn/mha.py`
-    -   **用途**: 实现多头自注意力机制，是 Transformer 的核心。
+    -   **用途**: 实现多头自注意力机制，是 Transformer 的核心。支持 **Grouped Query Attention (GQA)** 以平衡性能和显存效率。
+    -   **GQA 说明**: 通过 `num_kv_heads` 参数控制 K/V 头数，当 `num_kv_heads < num_heads` 时启用 GQA，多个 Q 头共享同一组 K/V 头，显著减少 KV Cache 的显存占用。
 
 -   **`llm.core.mlp.MLP`**:
     -   **位置**: `src/llm/core/mlp.py`
-    -   **用途**: Transformer 层中的多层感知器（前馈网络）。
+    -   **用途**: Transformer 层中的多层感知器（前馈网络）。支持 **SwiGLU 激活函数**以提升性能。
+    -   **SwiGLU 说明**: 通过设置 `use_glu=True` 启用，结合 Swish 激活和门控线性单元，相比标准 GELU 激活能提供更好的性能。
 
 -   **`llm.core.transformer_block.TransformerBlock`**:
     -   **位置**: `src/llm/core/transformer_block.py`
@@ -79,9 +82,17 @@
     -   **位置**: `src/llm/models/decoder.py`
     -   **用途**: 完整的解码器模型，堆叠了多个 `TransformerBlock`，并包含一个语言模型头用于预测下一个 token。
 
-**模型配置: **
+**模型配置:**
 
-您可以通过 `Config` 类（特别是 `ModelConfig` 部分）来配置 `DecoderModel` 的参数，例如 `hidden_size`、`num_layers`、`num_heads` 等。
+您可以通过 `Config` 类（特别是 `ModelConfig` 部分）来配置 `DecoderModel` 的参数。关键配置项包括：
+
+- `hidden_size`: 模型维度
+- `num_layers`: Transformer 层数
+- `num_heads`: 注意力头数
+- `num_kv_heads`: K/V 头数（用于 GQA，设为 `None` 使用标准 MHA）
+- `use_glu`: 是否启用 SwiGLU（默认 `False`）
+- `norm_type`: 归一化类型（`nn.LayerNorm` 或 `RMSNorm`）
+- `use_moe`: 是否使用 Mixture of Experts
 
 ---
 

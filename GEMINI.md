@@ -108,3 +108,14 @@ Only write high-value comments if at all. Avoid talking to the user through comm
 ## 开发路线图
 
 项目的详细开发路线图请参见 [ROADMAP.md](ROADMAP.md)。
+
+### 当前重点 (2025 Q1-Q2)
+- **推理服务化**: FastAPI REST API, 流式输出, 批处理推理
+- **性能优化**: Flash Attention 2, Paged Attention, torch.compile 集成
+- **数据工程**: 流式数据加载, 大规模数据集集成
+
+### 未来规划
+- **模型对齐** (Q3-Q4 2025): RLHF, DPO, SFT 完整流程
+- **量化与压缩** (Q4 2025-Q2 2026): INT8/INT4 量化, GPTQ, AWQ
+- **多模态扩展** (Q4 2025-Q1 2026): 视觉-语言模型, 音频支持
+- **生态集成** (Q3 2025-Q2 2026): HuggingFace, LangChain, ONNX 导出
