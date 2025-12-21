@@ -1,0 +1,20 @@
+{
+    "recommendations": [
+        // Python 核心
+        "ms-python.python",
+        "charliermarsh.ruff",
+        // 类型检查(二选一)
+        // "astral-sh.ty",  // 如果团队明确使用 Ty
+        // 配置文件支持
+        "tamasfe.even-better-toml",
+        "redhat.vscode-yaml",
+        // AI 辅助
+        "GitHub.copilot",
+        // 可选但推荐
+        "ms-python.vscode-pylance", // 如果不用 Ty,明确添加
+        "ms-python.debugpy", // 调试支持
+        "streetsidesoftware.code-spell-checker", // 拼写检查
+        "eamodio.gitlens", // Git 增强
+        "usernamehw.errorlens", // 错误内联显示
+    ]
+}
