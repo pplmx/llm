@@ -92,6 +92,9 @@ class LanguageModelingTask(TrainingTask):
         # Reshape for cross entropy: (batch * seq_len, vocab_size)
         loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
 
+        if torch.isnan(loss):
+            return torch.tensor(0.0, device=loss.device, requires_grad=True), {"loss": 0.0, "ppl": 1.0}
+
         metrics = {
             "loss": loss.item(),
             "ppl": torch.exp(loss).item() if loss.item() < 20 else float("inf"),  # PPL calculation
