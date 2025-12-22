@@ -1,6 +1,6 @@
 # Transformer 架构
 
-本文件展示了完整的 Transformer 架构结构图，使用 Mermaid 绘制，并按照模块化结构进行拆分。
+本文件展示了完整的 Transformer 架构结构图, 使用 Mermaid 绘制, 并按照模块化结构进行拆分.
 
 ---
 
@@ -18,7 +18,7 @@
 
 ---
 
-## 🔹 Self-Attention 模块（SelfAttentionBlock）
+## 🔹 Self-Attention 模块(SelfAttentionBlock)
 
 ```mermaid
 graph TD
@@ -34,7 +34,7 @@ graph TD
 
 ---
 
-## 🔹 FeedForward 模块（FeedForwardBlock）
+## 🔹 FeedForward 模块(FeedForwardBlock)
 
 ```mermaid
 graph TD
@@ -49,7 +49,7 @@ graph TD
 
 ---
 
-## 🔹 MoE 模块（MoEBlock）
+## 🔹 MoE 模块(MoEBlock)
 
 ```mermaid
 graph TD
@@ -79,7 +79,7 @@ graph TD
 
 ---
 
-## 🔹 Transformer Decoder Block（含 Cross-Attention + MoE）
+## 🔹 Transformer Decoder Block(含 Cross-Attention + MoE)
 
 ```mermaid
 graph TD
@@ -103,7 +103,7 @@ graph TD
 
 ---
 
-## 🔹 位置编码模块（PositionalEncoding）
+## 🔹 位置编码模块(PositionalEncoding)
 
 ```mermaid
 graph TD
@@ -113,10 +113,10 @@ graph TD
 
 **说明: 位置编码可以是**
 
-- **Sinusoidal**（静态）
-- **Learned**（可训练）
-- **RoPE**（旋转位置编码，适用于 QK）
-- **Alibi**（线性偏移 attention logits）
+- **Sinusoidal**(静态)
+- **Learned**(可训练)
+- **RoPE**(旋转位置编码, 适用于 QK)
+- **Alibi**(线性偏移 attention logits)
 
 ---
 
@@ -146,7 +146,7 @@ graph TD
     DN --> DecoderOutput[Decoder Stack Output]
 ```
 
-**注意: ** Decoder 每层都访问 Encoder Stack 的输出作为 Cross-Attention 的 KV。
+**注意:** Decoder 每层都访问 Encoder Stack 的输出作为 Cross-Attention 的 KV.
 
 ---
 

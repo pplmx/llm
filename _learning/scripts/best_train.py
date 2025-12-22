@@ -23,11 +23,11 @@ from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 @dataclass
 class Config:
-    """主配置类，整合所有参数"""
+    """主配置类, 整合所有参数"""
 
     # 模型配置
     hidden_size: int = 512
-    ffn_hidden_size: int | None = None  # 若为None，则自动设置为 hidden_size * 4
+    ffn_hidden_size: int | None = None  # 若为None, 则自动设置为 hidden_size * 4
     num_layers: int = 2
     dropout: float = 0.1
 
@@ -69,7 +69,7 @@ class Config:
 
     @classmethod
     def from_args(cls) -> "Config":
-        """从命令行参数创建配置，并从环境变量加载分布式设置"""
+        """从命令行参数创建配置, 并从环境变量加载分布式设置"""
         parser = argparse.ArgumentParser(description="An elegant PyTorch DDP Training Script")
         # 从Config类的字段动态添加命令行参数
         for name, default in cls.__annotations__.items():
@@ -297,11 +297,11 @@ class Trainer:
         self.scaler = torch.amp.GradScaler(enabled=self.config.use_amp)
         self.criterion = nn.MSELoss()
 
-        # 3. 加载检查点（在DDP包装前）
+        # 3. 加载检查点(在DDP包装前)
         self.checkpoint_manager = CheckpointManager(config, rank, self.logger)
         self.start_epoch = self.checkpoint_manager.load(model, self.optimizer, self.scheduler, self.scaler, self.device)
 
-        # 4. 编译模型（在DDP包装前）
+        # 4. 编译模型(在DDP包装前)
         if self.config.use_compile:
             self.logger.info("🚀 Compiling model with torch.compile...")
             model = torch.compile(model, mode="reduce-overhead")
@@ -369,7 +369,7 @@ class Trainer:
 
             avg_loss = self._run_epoch(epoch)
 
-            # 在所有进程上同步平均损失，以便进行一致的决策
+            # 在所有进程上同步平均损失, 以便进行一致的决策
             loss_tensor = torch.tensor(avg_loss, device=self.device)
             dist.all_reduce(loss_tensor, op=dist.ReduceOp.AVG)
             global_avg_loss = loss_tensor.item()
@@ -411,7 +411,7 @@ def worker_fn(rank: int, world_size: int, config: Config):
 
 
 def main():
-    """主函数，负责启动训练"""
+    """主函数, 负责启动训练"""
     config = Config.from_args()
 
     # 设置PyTorch性能选项
@@ -425,7 +425,7 @@ def main():
 
     if world_size > 1:
         logger.info(f"🚀 Spawning {world_size} DDP processes...")
-        # 设置环境变量，以便worker_fn可以访问
+        # 设置环境变量, 以便worker_fn可以访问
         os.environ["WORLD_SIZE"] = str(world_size)
         mp.spawn(worker_fn, args=(world_size, config), nprocs=world_size, join=True)
     elif world_size == 1 and torch.cuda.is_available():

@@ -15,26 +15,26 @@ def scaled_dot_product_attention(
     scale: float | None = None,
 ) -> Tensor:
     """
-    计算缩放点积注意力 (Scaled Dot-Product Attention)。
+    计算缩放点积注意力 (Scaled Dot-Product Attention).
 
     参数:
-        query (Tensor): 查询张量, 形状 (B, N, Sq, D)。 B=批次, N=头数, Sq=查询序列长度, D=头维度。
-        key (Tensor): 键张量, 形状 (B, N, Sk, D)。 Sk=键序列长度。
-        value (Tensor): 值张量, 形状 (B, N, Sv, D)。 通常 Sk == Sv。
-        attn_mask (Optional[Tensor]): 布尔注意力掩码。
-            - 形状需能广播至 (B, N, Sq, Sk)。
-            - `True` 表示屏蔽该位置 (将其注意力分数设为 -inf)。
-            - 默认为 None。
-        dropout_p (float): 应用于注意力权重的 dropout 概率。仅在 > 0 时应用。默认为 0.0。
-        is_causal (bool): 若为 True, 应用因果掩码 (上三角掩码)，阻止关注未来位置。
-                          会与 attn_mask 结合使用 (逻辑或)。默认为 False。
-        scale (Optional[float]): 缩放因子。若为 None, 则使用 1 / sqrt(head_dim)。默认为 None。
+        query (Tensor): 查询张量, 形状 (B, N, Sq, D). B=批次, N=头数, Sq=查询序列长度, D=头维度.
+        key (Tensor): 键张量, 形状 (B, N, Sk, D). Sk=键序列长度.
+        value (Tensor): 值张量, 形状 (B, N, Sv, D). 通常 Sk == Sv.
+        attn_mask (Tensor | None): 布尔注意力掩码.
+            - 形状需能广播至 (B, N, Sq, Sk).
+            - `True` 表示屏蔽该位置 (将其注意力分数设为 -inf).
+            - 默认为 None.
+        dropout_p (float): 应用于注意力权重的 dropout 概率. 仅在 > 0 时应用. 默认为 0.0.
+        is_causal (bool): 若为 True, 应用因果掩码 (上三角掩码), 阻止关注未来位置.
+                          会与 attn_mask 结合使用 (逻辑或). 默认为 False.
+        scale (float | None): 缩放因子. 若为 None, 则使用 1 / sqrt(head_dim). 默认为 None.
 
     返回:
-        Tensor: 注意力输出张量, 形状 (B, N, Sq, D)。
+        Tensor: 注意力输出张量, 形状 (B, N, Sq, D).
     """
     head_dim = query.size(-1)
-    # 若未提供 scale，则使用 1/sqrt(d_k) 作为默认值 (d_k == head_dim)
+    # 若未提供 scale, 则使用 1/sqrt(d_k) 作为默认值 (d_k == head_dim)
     scale = scale or 1.0 / math.sqrt(head_dim)
 
     # 2. 计算注意力分数并应用缩放: (Q @ K^T) * scale
@@ -54,14 +54,14 @@ def scaled_dot_product_attention(
             torch.ones((seq_len_q, seq_len_k), device=query.device, dtype=torch.bool),
             diagonal=1,  # 屏蔽严格上三角部分 (i > j)
         )
-        final_mask = causal_mask  # .unsqueeze(0).unsqueeze(0) # 根据需要调整维度以广播，但通常 PyTorch 会自动处理
+        final_mask = causal_mask  # .unsqueeze(0).unsqueeze(0) # 根据需要调整维度以广播, 但通常 PyTorch 会自动处理
 
     if attn_mask is not None:
         if attn_mask.dtype != torch.bool:
-            raise ValueError(f"attn_mask 必须是布尔类型张量，但收到 {attn_mask.dtype}")
+            raise ValueError(f"attn_mask 必须是布尔类型张量, 但收到 {attn_mask.dtype}")
         # 检查 attn_mask 的维度是否可以广播到 attn_scores
         # expected_shape = (..., seq_len_q, seq_len_k)
-        # (这里省略显式检查以保持简洁，依赖 PyTorch 的广播机制)
+        # (这里省略显式检查以保持简洁, 依赖 PyTorch 的广播机制)
 
         final_mask = attn_mask if final_mask is None else final_mask | attn_mask
 

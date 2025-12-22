@@ -1,8 +1,8 @@
 """
-注意力机制教学版本 - 从基础到高级的实现（完整文档版）
+注意力机制教学版本 - 从基础到高级的实现(完整文档版)
 =================================================
 
-本模块系统性地实现了注意力机制的核心组件，按照由浅入深的教学顺序组织:
+本模块系统性地实现了注意力机制的核心组件, 按照由浅入深的教学顺序组织:
 
 1. 基础注意力计算 (attention_score) - 理解核心计算
 2. 缩放点积注意力 (scaled_dot_product_attention) - 完整实现
@@ -14,7 +14,7 @@
 - 包含完整的数学公式表示
 - 添加了实现注意事项和常见问题
 - 丰富的示例说明和类比解释
-- 类型提示完整，便于IDE支持
+- 类型提示完整, 便于IDE支持
 
 参考论文:
 - "Attention Is All You Need" (Vaswani et al., 2017)
@@ -37,17 +37,17 @@ def attention_score(query: Tensor, key: Tensor) -> Tensor:
         Score(Q, K) = Q · K^T
 
     参数说明:
-        query: 查询张量，形状为 (..., seq_len_q, dim)
+        query: 查询张量, 形状为 (..., seq_len_q, dim)
                - seq_len_q: 查询序列长度
                - dim: 每个位置的嵌入维度
-        key: 键张量，形状为 (..., seq_len_k, dim)
-             - seq_len_k: 键序列长度（通常与seq_len_q相同）
+        key: 键张量, 形状为 (..., seq_len_k, dim)
+             - seq_len_k: 键序列长度(通常与seq_len_q相同)
 
     返回:
-        注意力分数张量，形状为 (..., seq_len_q, seq_len_k)
+        注意力分数张量, 形状为 (..., seq_len_q, seq_len_k)
 
     示例:
-        >>> q = torch.randn(2, 5, 64)  # 批量2，查询长度5，维度64
+        >>> q = torch.randn(2, 5, 64)  # 批量2, 查询长度5, 维度64
         >>> k = torch.randn(2, 5, 64)  # 键长度5
         >>> scores = attention_score(q, k)  # 输出形状 (2, 5, 5)
 
@@ -82,19 +82,19 @@ def scaled_dot_product_attention(
                - D: 每个头的维度
         key: 键张量 (B, N, Sk, D)
         value: 值张量 (B, N, Sv, D)
-        attn_mask: 可选掩码，类型可以是:
+        attn_mask: 可选掩码, 类型可以是:
                   - 布尔型: True表示屏蔽
                   - 数值型: 加到注意力分数上
         dropout_p: dropout概率
-        is_causal: 是否使用因果掩码（自回归模型使用）
-        scale: 自定义缩放因子，默认使用1/√D
+        is_causal: 是否使用因果掩码(自回归模型使用)
+        scale: 自定义缩放因子, 默认使用1/√D
 
     返回:
         注意力输出张量 (B, N, Sq, D)
 
     实现步骤:
         1. 计算QK^T并缩放
-        2. 应用掩码（因果或自定义）
+        2. 应用掩码(因果或自定义)
         3. softmax归一化
         4. dropout正则化
         5. 加权求和
@@ -105,7 +105,7 @@ def scaled_dot_product_attention(
         - 确保value的序列长度与key匹配
 
     示例:
-        >>> q = torch.randn(2, 8, 10, 64)  # 批次2，8头，查询长度10
+        >>> q = torch.randn(2, 8, 10, 64)  # 批次2, 8头, 查询长度10
         >>> k = v = torch.randn(2, 8, 10, 64)
         >>> output = scaled_dot_product_attention(q, k, v, is_causal=True)
     """
@@ -144,7 +144,7 @@ def scaled_dot_product_attention(
 
 class SingleHeadAttention(nn.Module):
     """
-    单头自注意力模块（合并投影优化版）
+    单头自注意力模块(合并投影优化版)
 
     架构说明:
         ┌─────────┐    ┌─────────┐
@@ -241,7 +241,7 @@ class SingleHeadAttention(nn.Module):
 
 class MultiHeadAttention(nn.Module):
     """
-    多头注意力模块（工业级实现）
+    多头注意力模块(工业级实现)
 
     关键特性:
         - 支持多头并行计算
@@ -255,7 +255,7 @@ class MultiHeadAttention(nn.Module):
 
     参数说明:
         hidden_size: 必须能被num_heads整除
-        num_heads: 建议为2的幂次（优化考虑）
+        num_heads: 建议为2的幂次(优化考虑)
         dropout_p: 注意力dropout概率
         is_causal: 是否自回归
         bias: 是否使用投影偏置

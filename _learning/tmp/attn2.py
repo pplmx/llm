@@ -36,7 +36,7 @@ def attention_score(query: Tensor, key: Tensor) -> Tensor:
     - 这个分数后续会经过softmax转换为概率分布
 
     类比理解:
-    就像用你的问题(Q)去匹配书籍目录(K)，得到每本书的相关分数
+    就像用你的问题(Q)去匹配书籍目录(K), 得到每本书的相关分数
     - Q: 你的问题(例如: "如何学习深度学习？")
     - K: 书籍目录的关键词(例如: "深度学习基础"、"机器学习入门")
     - 分数: 每本书与你的问题的相关程度
@@ -49,8 +49,8 @@ def attention_score(query: Tensor, key: Tensor) -> Tensor:
         注意力分数: [..., seq_len_q, seq_len_k] 每个查询对每个键的分数
 
     示例:
-        >>> Q = torch.tensor([[1.0, 0.5], [0.2, 1.2]])  # 2个查询，每个维度2
-        >>> K = torch.tensor([[0.8, 0.3], [1.2, 0.4]])  # 2个键，每个维度2
+        >>> Q = torch.tensor([[1.0, 0.5], [0.2, 1.2]])  # 2个查询, 每个维度2
+        >>> K = torch.tensor([[0.8, 0.3], [1.2, 0.4]])  # 2个键, 每个维度2
         >>> attention_score(Q, K)
         tensor([[0.9500, 1.0800],  # 第一个查询与两个键的分数
                 [0.5200, 0.4800]]) # 第二个查询与两个键的分数
@@ -92,18 +92,18 @@ def scaled_dot_product_attention(
         query: [batch, num_heads, seq_len_q, head_dim] 查询向量
         key:   [batch, num_heads, seq_len_k, head_dim] 键向量
         value: [batch, num_heads, seq_len_v, head_dim] 值向量
-        attn_mask: 可选的注意力掩码，形状为[batch, seq_len_q, seq_len_k]或[batch, 1, seq_len_q, seq_len_k]
-        dropout_p: dropout概率，训练时随机丢弃部分注意力权重
+        attn_mask: 可选的注意力掩码, 形状为[batch, seq_len_q, seq_len_k]或[batch, 1, seq_len_q, seq_len_k]
+        dropout_p: dropout概率, 训练时随机丢弃部分注意力权重
         is_causal: 是否使用因果掩码(用于自回归生成)
-        scale: 自定义缩放因子，默认使用head_dim的平方根的倒数
+        scale: 自定义缩放因子, 默认使用head_dim的平方根的倒数
 
     返回:
         注意力输出: [batch, num_heads, seq_len_q, head_dim] 注意力加权后的值向量
 
     示例:
-        >>> Q = torch.randn(1, 1, 3, 4)  # 批大小1，1个头，3个查询，每个维度4
-        >>> K = torch.randn(1, 1, 5, 4)  # 批大小1，1个头，5个键，每个维度4
-        >>> V = torch.randn(1, 1, 5, 4)  # 批大小1，1个头，5个值，每个维度4
+        >>> Q = torch.randn(1, 1, 3, 4)  # 批大小1, 1个头, 3个查询, 每个维度4
+        >>> K = torch.randn(1, 1, 5, 4)  # 批大小1, 1个头, 5个键, 每个维度4
+        >>> V = torch.randn(1, 1, 5, 4)  # 批大小1, 1个头, 5个值, 每个维度4
         >>> output = scaled_dot_product_attention(Q, K, V)
         >>> output.shape
         torch.Size([1, 1, 3, 4])
@@ -119,7 +119,7 @@ def scaled_dot_product_attention(
     # 3. 掩码处理 (教学重点)
     if is_causal:
         # 生成上三角因果掩码 (不能看到未来信息)
-        # 例如在序列长度为3时，掩码矩阵如下:
+        # 例如在序列长度为3时, 掩码矩阵如下:
         # [[0, -inf, -inf],
         #  [0,   0, -inf],
         #  [0,   0,   0]]
@@ -129,14 +129,14 @@ def scaled_dot_product_attention(
     elif attn_mask is not None:
         # 处理显式提供的掩码
         if attn_mask.dtype == torch.bool:
-            # 布尔掩码，True的位置会被填充为负无穷
+            # 布尔掩码, True的位置会被填充为负无穷
             attn_scores = attn_scores.masked_fill(attn_mask, -torch.inf)
         else:
-            # 加法掩码，直接加到分数上
+            # 加法掩码, 直接加到分数上
             attn_scores = attn_scores + attn_mask
 
     # 4. Softmax归一化
-    # 将分数转换为概率分布，和为1
+    # 将分数转换为概率分布, 和为1
     # dim=-1表示对最后一个维度(键的维度)进行softmax
     attn_weights = F.softmax(attn_scores, dim=-1)
 
@@ -216,22 +216,22 @@ class SingleHeadAttention(nn.Module):
         4. 应用输出投影
 
         参数:
-            x: 输入张量，形状为[batch_size, seq_len, hidden_size]
-            attn_mask: 可选注意力掩码，形状为[batch_size, seq_len, seq_len]
+            x: 输入张量, 形状为[batch_size, seq_len, hidden_size]
+            attn_mask: 可选注意力掩码, 形状为[batch_size, seq_len, seq_len]
 
         返回:
-            输出张量，形状与输入相同[batch_size, seq_len, hidden_size]
+            输出张量, 形状与输入相同[batch_size, seq_len, hidden_size]
         """
         # 1. 投影
         # 将输入x通过线性层投影到QKV空间
         qkv = self.qkv_proj(x)  # [B, S, 3*H]
 
         # 2. 分割 (教学提示: chunk是PyTorch的拆分函数)
-        # 将最后一个维度分成3份，得到Q,K,V
+        # 将最后一个维度分成3份, 得到Q,K,V
         q, k, v = qkv.chunk(3, dim=-1)  # 每个[B, S, H]
 
         # 3. 计算注意力 (添加头维度以适应接口)
-        # 虽然这是单头注意力，但为了接口统一，我们添加一个头维度
+        # 虽然这是单头注意力, 但为了接口统一, 我们添加一个头维度
         attn_output = scaled_dot_product_attention(
             q.unsqueeze(1),  # [B, 1, S, H]
             k.unsqueeze(1),  # [B, 1, S, H]
@@ -317,13 +317,13 @@ class MultiHeadAttention(nn.Module):
         5. 应用输出投影
 
         参数:
-            x: 输入张量，形状为[batch_size, seq_len, hidden_size]
-            attn_mask: 可选注意力掩码，形状为[batch_size, seq_len, seq_len]
+            x: 输入张量, 形状为[batch_size, seq_len, hidden_size]
+            attn_mask: 可选注意力掩码, 形状为[batch_size, seq_len, seq_len]
 
         返回:
-            输出张量，形状与输入相同[batch_size, seq_len, hidden_size]
+            输出张量, 形状与输入相同[batch_size, seq_len, hidden_size]
         """
-        B, S, _ = x.shape  # 批大小，序列长度，特征维度
+        B, S, _ = x.shape  # 批大小, 序列长度, 特征维度
 
         # 1. 投影
         # 将输入x通过线性层投影到QKV空间
@@ -334,13 +334,13 @@ class MultiHeadAttention(nn.Module):
         q, k, v = qkv.chunk(3, dim=-1)  # 每个[B, S, H]
 
         # 重塑为 [B, S, N, D] -> [B, N, S, D]
-        # 其中N是头数，D是每个头的维度
+        # 其中N是头数, D是每个头的维度
         q = q.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
         k = k.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
 
         # 3. 调整掩码形状 (教学提示: 广播机制)
-        # 如果提供了掩码，需要增加一个头维度以广播到所有头
+        # 如果提供了掩码, 需要增加一个头维度以广播到所有头
         if attn_mask is not None:
             attn_mask = attn_mask.unsqueeze(1)  # [B, 1, S, S]
 
@@ -398,7 +398,7 @@ def interactive_attention():
     print(output)
 
     print("\n总结:")
-    print("注意力机制通过计算查询与键的相似度，得到权重")
+    print("注意力机制通过计算查询与键的相似度, 得到权重")
     print("然后使用这些权重对值进行加权求和")
     print("最终输出是值的加权组合")
 
@@ -456,7 +456,7 @@ def check_understanding():
             print(f"解释: {q['explanation']}")
             score += 1
         else:
-            print(f"✗ 错误，正确答案是 {q['answer']}")
+            print(f"✗ 错误, 正确答案是 {q['answer']}")
             print(f"解释: {q['explanation']}")
 
     print(f"\n你的得分: {score}/{len(questions)}")
@@ -492,7 +492,7 @@ if __name__ == "__main__":
 
         print("\n创建随机输入:")
         print("batch_size=2, seq_len=10, hidden_size=64")
-        x = torch.randn(2, 10, 64)  # 批大小2，序列长度10，特征64
+        x = torch.randn(2, 10, 64)  # 批大小2, 序列长度10, 特征64
 
         print("\n运行前向传播...")
         out = mha(x)
@@ -500,4 +500,4 @@ if __name__ == "__main__":
         print(f"\n输入形状: {x.shape}")
         print(f"输出形状: {out.shape}")
         print("演示完成!")
-        print("可以看到输入输出形状相同，这是自注意力的特点")
+        print("可以看到输入输出形状相同, 这是自注意力的特点")

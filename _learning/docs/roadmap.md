@@ -1,6 +1,6 @@
 ## Transformer深度学习路线图
 
-### 第一阶段: 基础准备（1-2周）
+### 第一阶段: 基础准备(1-2周)
 
 **必备数学基础**
 
@@ -12,9 +12,9 @@
 **深度学习基础**
 
 - 神经网络基本概念
-- 激活函数（ReLU, GELU, SwiGLU等）
-- 优化器（SGD, Adam, AdamW）
-- 正则化技术（Dropout, Layer Norm）
+- 激活函数(ReLU, GELU, SwiGLU等)
+- 优化器(SGD, Adam, AdamW)
+- 正则化技术(Dropout, Layer Norm)
 - 注意力机制的前身: RNN、LSTM、GRU
 
 **实践任务**
@@ -24,14 +24,14 @@
 
 ---
 
-### 第二阶段: Transformer核心原理（2-3周）
+### 第二阶段: Transformer核心原理(2-3周)
 
 **经典论文精读**
 
 1. **"Attention Is All You Need"** (2017) - 必读
     - Self-Attention机制详解
     - Multi-Head Attention
-    - Position Encoding（绝对位置编码）
+    - Position Encoding(绝对位置编码)
     - Feed-Forward Network
     - Residual Connection & Layer Normalization
 
@@ -45,9 +45,9 @@
 
 **实践任务**
 
-- 从零实现一个完整的Transformer（机器翻译任务）
+- 从零实现一个完整的Transformer(机器翻译任务)
 - 可视化注意力权重
-- 调试训练过程，理解梯度流动
+- 调试训练过程, 理解梯度流动
 
 **推荐资源**
 
@@ -57,26 +57,26 @@
 
 ---
 
-### 第三阶段: Transformer变体与优化（3-4周）
+### 第三阶段: Transformer变体与优化(3-4周)
 
 **位置编码进化**
 
 - 绝对位置编码: Sinusoidal, Learned
 - 相对位置编码:
-    - T5的相对位置偏置
-    - DeBERTa的解耦注意力
-- 旋转位置编码（RoPE）- 重点学习
-    - 论文: "RoFormer: Enhanced Transformer with Rotary Position Embedding"
-    - 理解复数域旋转的几何意义
-    - 为什么RoPE能外推到更长序列
+  - T5的相对位置偏置
+  - DeBERTa的解耦注意力
+- 旋转位置编码(RoPE)- 重点学习
+  - 论文: "RoFormer: Enhanced Transformer with Rotary Position Embedding"
+  - 理解复数域旋转的几何意义
+  - 为什么RoPE能外推到更长序列
 
 **高效Attention机制**
 
 - Linear Attention
 - Flash Attention (v1, v2, v3)
-    - 理解IO-aware的优化思想
-    - Tiling技术
-- PagedAttention（vLLM）
+  - 理解IO-aware的优化思想
+  - Tiling技术
+- PagedAttention(vLLM)
 
 **架构改进**
 
@@ -92,17 +92,17 @@
 
 ---
 
-### 第四阶段: 现代LLM架构（3-4周）
+### 第四阶段: 现代LLM架构(3-4周)
 
 **主流模型架构研究**
 
-**GPT系列（Decoder-only）**
+**GPT系列(Decoder-only)**
 
 - GPT-2/3的架构细节
 - LLaMA系列:
-    - LLaMA 1/2的改进点
-    - Group Query Attention (GQA)
-    - Pre-normalization with RMSNorm
+  - LLaMA 1/2的改进点
+  - Group Query Attention (GQA)
+  - Pre-normalization with RMSNorm
 
 **其他重要架构**
 
@@ -112,13 +112,13 @@
 
 **实践任务**
 
-- 复现一个小型LLaMA模型（如LLaMA-160M）
+- 复现一个小型LLaMA模型(如LLaMA-160M)
 - 实现GQA并对比MHA的显存占用
 - 训练一个简单的MoE模型
 
 ---
 
-### 第五阶段: 前沿技术深度解析（4-6周）
+### 第五阶段: 前沿技术深度解析(4-6周)
 
 #### **5.1 Multi-Head Latent Attention (MLA)**
 
@@ -134,16 +134,18 @@
 - 传统MHA的KV Cache瓶颈问题
 - 低秩压缩思想: 将KV投影到低维隐空间
 - 数学形式:
+
   ```
   传统MHA: K = W_K * X, V = W_V * X
   MLA: C = W_C * X (低维), K = W_KR * C, V = W_VR * C
   ```
+
 - KV Cache压缩比的计算
 - 解耦的RoPE应用策略
 
 **优势分析**
 
-- 显著降低KV Cache（压缩比可达5-10x）
+- 显著降低KV Cache(压缩比可达5-10x)
 - 推理吞吐量提升
 - 对模型性能影响minimal
 
@@ -208,24 +210,24 @@
 **Context Extension技术**
 
 - Position Interpolation
-- YaRN（Yet another RoPE extensioN method）
+- YaRN(Yet another RoPE extensioN method)
 - LongRoPE
 - 无限长上下文的探索
 
 ---
 
-### 第六阶段: 训练与优化实战（3-4周）
+### 第六阶段: 训练与优化实战(3-4周)
 
 **分布式训练**
 
-- 数据并行（DDP）
-- 模型并行（Tensor Parallel, Pipeline Parallel）
-- ZeRO优化器（DeepSpeed）
-- FSDP（Fully Sharded Data Parallel）
+- 数据并行(DDP)
+- 模型并行(Tensor Parallel, Pipeline Parallel)
+- ZeRO优化器(DeepSpeed)
+- FSDP(Fully Sharded Data Parallel)
 
 **训练技巧**
 
-- 混合精度训练（FP16, BF16）
+- 混合精度训练(FP16, BF16)
 - 梯度累积与检查点
 - 学习率调度策略
 - Warmup的重要性
@@ -235,7 +237,7 @@
 - KV Cache管理
 - Continuous Batching
 - Speculative Decoding
-- Quantization（INT8, INT4, GPTQ, AWQ）
+- Quantization(INT8, INT4, GPTQ, AWQ)
 
 **实践任务**
 
@@ -245,7 +247,7 @@
 
 ---
 
-### 第七阶段: 前沿论文追踪（持续）
+### 第七阶段: 前沿论文追踪(持续)
 
 **必读论文清单**
 
@@ -258,25 +260,25 @@
 
 **位置编码**
 
-5. RoFormer (RoPE)
-6. ALiBi Position Embedding
+1. RoFormer (RoPE)
+2. ALiBi Position Embedding
 
 **高效架构**
 
-7. GQA: Training Generalized Multi-Query Transformer
-8. DeepSeek-V2 (MLA)
-9. DeepSeek-V3 Technical Report
+1. GQA: Training Generalized Multi-Query Transformer
+2. DeepSeek-V2 (MLA)
+3. DeepSeek-V3 Technical Report
 
 **长上下文**
 
-10. Longformer, BigBird
-11. YaRN, LongRoPE
+1. Longformer, BigBird
+2. YaRN, LongRoPE
 
 **训练与推理优化**
 
-12. Flash Attention v3
-13. vLLM: Easy, Fast, and Cheap LLM Serving
-14. DeepSpeed系列论文
+1. Flash Attention v3
+2. vLLM: Easy, Fast, and Cheap LLM Serving
+3. DeepSpeed系列论文
 
 **跟踪资源**
 
@@ -291,20 +293,20 @@
 
 **入门项目**
 
-1. 实现mini-GPT（字符级语言模型）
+1. 实现mini-GPT(字符级语言模型)
 2. 机器翻译系统
 
 **进阶项目**
 
-3. 从头训练一个小型LLM（100M-500M参数）
-4. 实现并对比不同的位置编码方案
-5. 复现MLA机制
+1. 从头训练一个小型LLM(100M-500M参数)
+2. 实现并对比不同的位置编码方案
+3. 复现MLA机制
 
 **高级项目**
 
-6. 实现完整的MoE模型
-7. 长上下文优化（支持32K+ tokens）
-8. 构建高效推理引擎（集成Flash Attention, KV Cache优化等）
+1. 实现完整的MoE模型
+2. 长上下文优化(支持32K+ tokens)
+3. 构建高效推理引擎(集成Flash Attention, KV Cache优化等)
 
 ---
 
@@ -337,7 +339,7 @@
 - **第3-5周**: Transformer核心
 - **第6-9周**: 变体与优化
 - **第10-13周**: 现代LLM架构
-- **第14-19周**: 前沿技术（MLA, DSA等）
+- **第14-19周**: 前沿技术(MLA, DSA等)
 - **第20-23周**: 训练与优化实战
 - **持续**: 论文追踪与项目实践
 
@@ -350,6 +352,6 @@
 1. **动手实践至关重要**: 每个概念都要自己实现一遍
 2. **从小规模开始**: 先在小数据集、小模型上验证想法
 3. **可视化帮助理解**: 多画图、多可视化attention权重
-4. **论文要精读**: 重要论文要反复读，理解每个设计决策
+4. **论文要精读**: 重要论文要反复读, 理解每个设计决策
 5. **关注数学推导**: 理解"为什么"比记住"是什么"更重要
 6. **加入社区讨论**: 与其他学习者交流能加深理解

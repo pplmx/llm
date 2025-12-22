@@ -5,14 +5,29 @@ import torch.nn as nn
 
 
 class PositionalEncoding(nn.Module):
+    """
+    Implements Positional Encoding for Transformer models.
+
+    Supports both sinusoidal (fixed) and learned positional embeddings.
+    Positional information is added to the input embeddings to provide order awareness.
+
+    Args:
+        hidden_size (int): The dimension of the model's hidden states.
+        max_seq_len (int): Maximum sequence length supported. Defaults to 512.
+        dropout_p (float): Dropout probability applied after adding positional signal. Defaults to 0.1.
+        learned (bool): If True, uses learned embeddings; otherwise sinusoidal. Defaults to False.
+        device (torch.device | None): Device to place parameters on.
+        dtype (torch.dtype | None): Data type for parameters.
+    """
+
     def __init__(
         self,
         hidden_size: int,
         max_seq_len: int = 512,
         dropout_p: float = 0.1,
         learned: bool = False,
-        device=None,  # Added device
-        dtype=None,  # Added dtype
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
     ):
         super().__init__()
         self.hidden_size = hidden_size

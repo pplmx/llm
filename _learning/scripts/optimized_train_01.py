@@ -1,6 +1,6 @@
 """
 优化后的PyTorch分布式训练脚本
-结构更清晰，模块化程度更高，易于维护和扩展
+结构更清晰, 模块化程度更高, 易于维护和扩展
 """
 
 import argparse
@@ -74,7 +74,7 @@ class CheckpointConfig:
 
 @dataclass
 class Config:
-    """主配置类，组合所有配置"""
+    """主配置类, 组合所有配置"""
 
     model: ModelConfig
     training: TrainingConfig
@@ -305,7 +305,7 @@ class CheckpointManager:
     def load_checkpoint(
         self, model: nn.Module, optimizer: optim.Optimizer, scaler: torch.amp.GradScaler, rank: int
     ) -> int:
-        """加载检查点，返回起始epoch"""
+        """加载检查点, 返回起始epoch"""
         if not self.config.resume_from_checkpoint:
             return 0
 
@@ -356,13 +356,13 @@ class Trainer:
         # 创建模型
         model = SimpleMLP(self.config.model)
 
-        # 加载检查点（在DDP包装之前）
+        # 加载检查点(在DDP包装之前)
         self.start_epoch = self.checkpoint_manager.load_checkpoint(model, None, None, self.rank)
 
         # 移动到设备
         model = model.to(self.device)
 
-        # 编译模型（如果启用）
+        # 编译模型(如果启用)
         if self.config.optimization.use_compile:
             self.logger.info("🚀 Compiling model with torch.compile...")
             model = torch.compile(model, mode="reduce-overhead")
@@ -389,7 +389,7 @@ class Trainer:
         # 损失函数
         self.criterion = nn.MSELoss()
 
-        # 如果有检查点，重新加载优化器和缩放器状态
+        # 如果有检查点, 重新加载优化器和缩放器状态
         if self.config.checkpoint.resume_from_checkpoint:
             self.start_epoch = self.checkpoint_manager.load_checkpoint(
                 self.model.module, self.optimizer, self.scaler, self.rank
@@ -412,7 +412,7 @@ class Trainer:
             # 清零梯度
             self.optimizer.zero_grad(set_to_none=True)
 
-            # 前向传播（使用混合精度）
+            # 前向传播(使用混合精度)
             with torch.amp.autocast("cuda", enabled=self.config.optimization.use_amp):
                 output = self.model(data)
                 loss = self.criterion(output, target)
@@ -441,7 +441,7 @@ class Trainer:
             # 同步所有进程
             dist.barrier()
 
-            # 日志记录和检查点保存（仅rank 0）
+            # 日志记录和检查点保存(仅rank 0)
             if self.rank == 0:
                 elapsed = time.time() - start_time
                 lr = self.scheduler.get_last_lr()[0]
@@ -498,7 +498,7 @@ def main():
     distributed_manager = DistributedManager(config.distributed)
     world_size = distributed_manager.get_world_size()
 
-    # 设置临时日志（主进程）
+    # 设置临时日志(主进程)
     logger = Logger(0)
 
     if world_size > 1:

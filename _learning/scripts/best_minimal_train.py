@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 # ============================================================================
 @dataclass
 class TrainingConfig:
-    """将所有配置合并到一个类中，更易于管理和传递"""
+    """将所有配置合并到一个类中, 更易于管理和传递"""
 
     # Model
     hidden_size: int = 512
@@ -97,7 +97,7 @@ def get_config() -> TrainingConfig:
 # 2. 辅助函数 (Utility Functions)
 # ============================================================================
 def setup_logging(rank: int):
-    """设置日志，主进程使用 RichHandler，其他进程静默"""
+    """设置日志, 主进程使用 RichHandler, 其他进程静默"""
     logger = logging.getLogger(f"train_rank_{rank}")
     logger.propagate = False
 
