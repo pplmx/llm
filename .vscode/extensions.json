@@ -13,9 +13,6 @@
         "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
 
-        // ===== Code Quality =====
-        "streetsidesoftware.code-spell-checker", // Spell checker
-
         // ===== Git Enhancement =====
         "eamodio.gitlens", // Git history and annotations
         "mhutchie.git-graph", // Git graph visualization
