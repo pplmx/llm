@@ -17,29 +17,24 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "torch>=2.9.0",
     "matplotlib>=3.10.7",
-    "seaborn>=0.13.2",
     "pillow>=12.0.0",
-    "rich>=14.2.0",
-    "tensorboard>=2.20.0",
     "PyYAML>=6.0.3",
+    "rich>=14.2.0",
+    "seaborn>=0.13.2",
+    "tensorboard>=2.20.0",
     "tokenizers>=0.21.0",
+    "torch>=2.9.0",
 ]
 
 [dependency-groups]
 dev = [
-  {include-group = "lint"},
   {include-group = "test"}
 ]
-lint = [
-    "ruff",
-    "ty"
-]
 test = [
+    "allure-pytest>=2.15.0",
     "pytest>=9.0",
     "pytest-cov>=7.0",
-    "allure-pytest>=2.15.0",
 ]
 
 [project.urls]
@@ -62,7 +57,7 @@ addopts = [
     "--cov-report=xml",
     "--alluredir=allure-results",
 ]
-consider_namespace_packages=true # Enable this to allow using the same filename in different test directories without needing __init__.py in each one
+consider_namespace_packages = true # Enable this to allow using the same filename in different test directories without needing __init__.py in each one
 pythonpath = ["src", "."]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]

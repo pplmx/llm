@@ -1,20 +1,39 @@
 {
     "recommendations": [
-        // Python 核心
+        // ===== Python Core =====
         "ms-python.python",
+        "ms-python.debugpy",
         "charliermarsh.ruff",
-        // 类型检查(二选一)
-        // "astral-sh.ty",  // 如果团队明确使用 Ty
-        // 配置文件支持
+
+        // ===== Type Checking (Choose One) =====
+        // "ms-python.vscode-pylance",  // For Official VSCode
+        // "astral-sh.ty",              // For Cursor/Windsurf
+
+        // ===== Configuration Files =====
         "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
-        // AI 辅助
-        "GitHub.copilot",
-        // 可选但推荐
-        "ms-python.vscode-pylance", // 如果不用 Ty,明确添加
-        "ms-python.debugpy", // 调试支持
-        "streetsidesoftware.code-spell-checker", // 拼写检查
-        "eamodio.gitlens", // Git 增强
-        "usernamehw.errorlens", // 错误内联显示
+
+        // ===== Code Quality =====
+        "usernamehw.errorlens", // Inline error display
+        "streetsidesoftware.code-spell-checker", // Spell checker
+
+        // ===== Git Enhancement =====
+        "eamodio.gitlens", // Git history and annotations
+        "mhutchie.git-graph", // Git graph visualization
+
+        // ===== AI Assistant =====
+        // "GitHub.copilot",              // For Official VSCode users
+        // "GitHub.copilot-chat",         // Copilot chat interface
+
+        // ===== Additional Tools =====
+        "ms-vscode.test-adapter-converter", // Test explorer
+        "njpwerner.autodocstring", // Auto-generate docstrings
+        "kevinrose.vsc-python-indent", // Python indent enhancement
+        "davidanson.vscode-markdownlint", // Markdown linter
+        "vscode-icons-team.vscode-icons", // File icons
+        "k--kato.intellij-idea-keybindings" // IntelliJ keybindings
+    ],
+    "unwantedRecommendations": [
+        "ms-python.pylint" // Replaced by Ruff
     ]
 }
