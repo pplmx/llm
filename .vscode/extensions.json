@@ -14,7 +14,6 @@
         "redhat.vscode-yaml",
 
         // ===== Code Quality =====
-        "usernamehw.errorlens", // Inline error display
         "streetsidesoftware.code-spell-checker", // Spell checker
 
         // ===== Git Enhancement =====
