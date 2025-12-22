@@ -56,7 +56,6 @@ class MultiLatentAttention(nn.Module):
         self.latent_dim = latent_dim if latent_dim is not None else hidden_size
         self.is_causal = is_causal
         self.dropout_p = dropout_p
-        self.norm_first = norm_first
 
         # Layer Normalization - shared for all attention operations
         self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
@@ -152,12 +151,12 @@ class MultiLatentAttention(nn.Module):
         Optimized forward pass for the multi-latent attention mechanism.
 
         Args:
-            hidden_states: Input tensor with shape [batch_size, seq_len, hidden_size]
-            attn_mask: Optional mask tensor with shape [batch_size, 1, 1, seq_len]
-                       1 indicates positions to attend to, 0 indicates positions to mask
+            hidden_states: Input tensor with shape [batch_size, seq_len, hidden_size].
+            attn_mask: Optional mask tensor with shape [batch_size, 1, 1, seq_len].
+                       1 indicates positions to attend to, 0 indicates positions to mask.
 
         Returns:
-            Output tensor with shape [batch_size, seq_len, hidden_size]
+            Output tensor with shape [batch_size, seq_len, hidden_size].
         """
         # Store residual connection
         residual = hidden_states
