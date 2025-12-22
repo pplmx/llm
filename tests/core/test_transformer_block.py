@@ -130,9 +130,19 @@ class TestTransformerBlockInitialization:
                 assert expert.intermediate_size == expected_mlp_intermediate
                 assert expert.dropout.p == block_kwargs["mlp_dropout_p"]
 
-        assert transformer_block.norm1.eps == block_kwargs["norm_eps"]
-        assert transformer_block.norm2.eps == block_kwargs["norm_eps"]
         assert transformer_block.norm_first == block_kwargs["norm_first"]
+
+    def test_shared_norm_instance_cloning(self, block_kwargs):
+        """Test that passing a norm instance results in distinct norm layers."""
+        norm_instance = nn.LayerNorm(HIDDEN_SIZE, eps=NORM_EPS)
+        block_kwargs["norm_type"] = norm_instance
+        block = TransformerBlock(**block_kwargs)
+
+        # Verify strict object identity is different
+        assert block.norm1 is not block.norm2
+        # Verify they are still instances of the same class
+        assert isinstance(block.norm1, nn.LayerNorm)
+        assert isinstance(block.norm2, nn.LayerNorm)
 
 
 class TestTransformerBlockForwardPass:

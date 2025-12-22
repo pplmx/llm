@@ -66,12 +66,22 @@ class TransformerBlock(nn.Module):
         self.hidden_size = hidden_size  # Needed for potential checks or logging
 
         # Initialize Layer Normalization layers
+        # Initialize Layer Normalization layers
         if isinstance(norm_type, type):
             self.norm1 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
             self.norm2 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
         else:
-            self.norm1 = norm_type
-            self.norm2 = norm_type
+            # Important: When norm_type is an instance, we must clone it to ensure independent parameters
+            # for norm1 and norm2. Using the same instance would tie their weights together.
+            import copy
+
+            self.norm1 = copy.deepcopy(norm_type)
+            self.norm2 = copy.deepcopy(norm_type)
+
+            # Move to target device/dtype if provided, as the copied instance keeps original placement
+            if device is not None or dtype is not None:
+                self.norm1 = self.norm1.to(device=device, dtype=dtype)
+                self.norm2 = self.norm2.to(device=device, dtype=dtype)
 
         # Initialize Multi-Head Attention
         # MHA's internal norm/residual are disabled; TransformerBlock handles them.
@@ -149,51 +159,43 @@ class TransformerBlock(nn.Module):
         # Otherwise, MHA uses its own self.is_causal.
         # The MHA forward method handles this logic if is_causal=None is passed.
 
-        if self.norm_first:  # Pre-LN
-            # First sublayer: Multi-Head Attention
-            normed_hidden_states = self.norm1(hidden_states)
-            attn_outputs = self.self_attn(
-                normed_hidden_states,
-                attn_mask=attn_mask,
-                is_causal=is_causal,  # Pass through, MHA handles None
-                past_key_value=past_key_value,
-                use_cache=use_cache,
-            )
-            if use_cache:
-                attn_output, current_kv = attn_outputs
-            else:
-                attn_output = attn_outputs
+        residual = hidden_states
 
-            # Residual connection for MHA
-            hidden_states = hidden_states + attn_output
+        # 1. Multi-Head Attention Sublayer
+        if self.norm_first:
+            hidden_states = self.norm1(hidden_states)
 
-            # Second sublayer: MLP
-            normed_intermediate_states = self.norm2(hidden_states)
-            mlp_output = self.mlp(normed_intermediate_states)
-            # Residual connection for MLP
-            output = hidden_states + mlp_output
+        attn_outputs = self.self_attn(
+            hidden_states,
+            attn_mask=attn_mask,
+            is_causal=is_causal,  # Pass through, MHA handles None
+            past_key_value=past_key_value,
+            use_cache=use_cache,
+        )
 
-        else:  # Post-LN
-            # First sublayer: Multi-Head Attention
-            attn_outputs = self.self_attn(
-                hidden_states,
-                attn_mask=attn_mask,
-                is_causal=is_causal,  # Pass through, MHA handles None
-                past_key_value=past_key_value,
-                use_cache=use_cache,
-            )
-            if use_cache:
-                attn_output, current_kv = attn_outputs
-            else:
-                attn_output = attn_outputs
+        if use_cache:
+            attn_output, current_kv = attn_outputs
+        else:
+            attn_output = attn_outputs
 
-            # Residual connection and normalization for MHA
-            hidden_states = self.norm1(hidden_states + attn_output)
+        # Apply residual connection
+        # Pre-LN MHA: output = residual + Attention(Norm(x))
+        # Post-LN MHA: output = Norm(residual + Attention(x))
+        if self.norm_first:
+            hidden_states = residual + attn_output
+            residual = hidden_states  # Update residual for next block
+        else:
+            hidden_states = self.norm1(residual + attn_output)
+            residual = hidden_states  # Update residual for next block
 
-            # Second sublayer: MLP
-            mlp_output = self.mlp(hidden_states)
-            # Residual connection and normalization for MLP
-            output = self.norm2(hidden_states + mlp_output)
+        # 2. MLP Sublayer
+        if self.norm_first:
+            hidden_states = self.norm2(hidden_states)
+
+        mlp_output = self.mlp(hidden_states)
+
+        # Apply residual connection
+        output = residual + mlp_output if self.norm_first else self.norm2(residual + mlp_output)
 
         if use_cache:
             return output, current_kv
