@@ -2,12 +2,12 @@
 
 ## 目录
 
-- [阶段一: 环境准备与基础知识（1-2天）](#阶段一环境准备与基础知识1-2天)
-- [阶段二: 数据处理与预训练模型（2-3天）](#阶段二数据处理与预训练模型2-3天)
-- [阶段三: 模型训练与优化（3-4天）](#阶段三模型训练与优化3-4天)
-- [阶段四: 评估与扩展（2-3天）](#阶段四评估与扩展2-3天)
+- [阶段一: 环境准备与基础知识(1-2天)](#阶段一环境准备与基础知识1-2天)
+- [阶段二: 数据处理与预训练模型(2-3天)](#阶段二数据处理与预训练模型2-3天)
+- [阶段三: 模型训练与优化(3-4天)](#阶段三模型训练与优化3-4天)
+- [阶段四: 评估与扩展(2-3天)](#阶段四评估与扩展2-3天)
 
-## 阶段一: 环境准备与基础知识（1-2天）
+## 阶段一: 环境准备与基础知识(1-2天)
 
 ### 1.1 环境配置
 
@@ -171,7 +171,7 @@ def get_optimizer_and_scheduler(
     return optimizer, scheduler
 ```
 
-## 阶段二: 数据处理与预训练模型（2-3天）
+## 阶段二: 数据处理与预训练模型(2-3天)
 
 ### 2.1 数据加载与预处理
 
@@ -246,7 +246,7 @@ def create_model(config):
     return model
 ```
 
-## 阶段三: 模型训练与优化（3-4天）
+## 阶段三: 模型训练与优化(3-4天)
 
 ### 3.1 训练循环
 
@@ -400,7 +400,7 @@ if __name__ == "__main__":
     main()
 ```
 
-## 阶段四: 评估与扩展（2-3天）
+## 阶段四: 评估与扩展(2-3天)
 
 ### 4.1 模型评估
 
@@ -445,7 +445,7 @@ def evaluate_model(model, eval_dataloader, config):
 
 ### 4.2 性能优化建议
 
-对于CPU训练，以下是一些优化建议:
+对于CPU训练, 以下是一些优化建议:
 
 1. 数据加载优化:
     - 使用 `num_workers` 进行并行数据加载
@@ -453,9 +453,9 @@ def evaluate_model(model, eval_dataloader, config):
     - 使用 `pin_memory=True` 加速数据传输
 
 2. 模型优化:
-    - 使用混合精度训练（虽然在CPU上收益较小）
+    - 使用混合精度训练(虽然在CPU上收益较小)
     - 使用梯度累积减少内存占用
-    - 选择较小的模型架构（如DistilBERT）
+    - 选择较小的模型架构(如DistilBERT)
 
 3. 训练策略优化:
     - 使用较小的序列长度
@@ -465,12 +465,12 @@ def evaluate_model(model, eval_dataloader, config):
 ### 4.3 扩展建议
 
 1. 硬件升级路线:
-    - 首先升级到更大容量的内存（128GB）
-    - 添加入门级GPU（如NVIDIA RTX 3060）
+    - 首先升级到更大容量的内存(128GB)
+    - 添加入门级GPU(如NVIDIA RTX 3060)
     - 考虑使用云服务进行大规模训练
 
 2. 分布式训练准备:
-    - 学习PyTorch DDP（DistributedDataParallel）
+    - 学习PyTorch DDP(DistributedDataParallel)
     - 了解Hugging Face Accelerate库
     - 研究模型并行和数据并行策略
 
@@ -483,7 +483,7 @@ git clone <repository-url>
 cd llm-training
 ```
 
-2. 创建虚拟环境:
+1. 创建虚拟环境:
 
 ```bash
 python -m venv .venv
@@ -492,13 +492,13 @@ source .venv/bin/activate  # Linux/Mac
 .venv\Scripts\activate  # Windows
 ```
 
-3. 安装依赖:
+1. 安装依赖:
 
 ```bash
 uv pip install -e .
 ```
 
-4. 运行训练:
+1. 运行训练:
 
 ```bash
 python best_minimal_train.py
@@ -695,7 +695,7 @@ class CustomTextDataset(Dataset):
             key: val.squeeze(0) for key, val in encoding.items()
         }
 
-        # 添加标签（如果有）
+        # 添加标签(如果有)
         if self.labels is not None:
             item["labels"] = self.labels[idx]
 
@@ -774,7 +774,7 @@ class ExperimentTracker:
     - 实验各种正则化技术
 
 3. 工程技能:
-    - 学习分布式训练框架（如 PyTorch Lightning）
+    - 学习分布式训练框架(如 PyTorch Lightning)
     - 掌握模型量化和压缩技术
     - 研究模型部署和服务化方案
 
@@ -1074,4 +1074,4 @@ trainer = fine_tune_model(model, train_dataset, eval_dataset, "./output")
     - Papers with Code
     - arXiv ML 版块
 
-这个教程提供了一个完整的框架，帮助你在本地 CPU 环境下开始 LLM 训练。建议按照阶段循序渐进地学习，确保每个概念都掌握后再进入下一阶段。同时，可以根据实际情况调整学习计划和进度。
+这个教程提供了一个完整的框架, 帮助你在本地 CPU 环境下开始 LLM 训练. 建议按照阶段循序渐进地学习, 确保每个概念都掌握后再进入下一阶段. 同时, 可以根据实际情况调整学习计划和进度.

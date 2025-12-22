@@ -5,8 +5,8 @@ import torch.nn.functional as F
 
 class SimpleFFN(nn.Module):
     """
-    一个标准的 Feed-Forward Network (FFN)，也称为多层感知机 (MLP)。
-    这是 Transformer 模块中的一个基本构建块。
+    一个标准的 Feed-Forward Network (FFN), 也称为多层感知机 (MLP).
+    这是 Transformer 模块中的一个基本构建块.
     结构: Linear -> Activation -> Linear
     """
 
@@ -14,7 +14,7 @@ class SimpleFFN(nn.Module):
         super().__init__()
         ffn_hidden_size = 4 * hidden_size  # 这是一个常见的扩展因子
         self.fc1 = nn.Linear(hidden_size, ffn_hidden_size)
-        # 注释: 现代LLM中，ReLU常被GELU或SwiGLU/SiLU等更复杂的激活函数替代，以获得更好的性能。
+        # 注释: 现代LLM中, ReLU常被GELU或SwiGLU/SiLU等更复杂的激活函数替代, 以获得更好的性能.
         self.activation = nn.ReLU()
         self.fc2 = nn.Linear(ffn_hidden_size, hidden_size)
 
@@ -35,9 +35,9 @@ class SimpleFFN(nn.Module):
 
 class SimpleMoE(nn.Module):
     """
-    Mixture-of-Experts (MoE) 模块。
-    它用多个稀疏激活的 "Expert" FFNs 来替代单个密集的 FFN。
-    核心思想: 增加模型参数量，但不成比例地增加计算量。
+    Mixture-of-Experts (MoE) 模块.
+    它用多个稀疏激活的 "Expert" FFNs 来替代单个密集的 FFN.
+    核心思想: 增加模型参数量, 但不成比例地增加计算量.
     """
 
     def __init__(self, hidden_size, num_experts=4, k=2):
@@ -63,7 +63,7 @@ class SimpleMoE(nn.Module):
             ]
         )
 
-        # Gating network: 一个简单的线性层，用于决定每个 token 该由哪些 experts 处理
+        # Gating network: 一个简单的线性层, 用于决定每个 token 该由哪些 experts 处理
         self.gate = nn.Linear(hidden_size, num_experts)
 
     def forward(self, x):
@@ -76,13 +76,13 @@ class SimpleMoE(nn.Module):
         # --- 1. Gating: 为每个 Token 选择最合适的 Experts ---
         print("--- 1. Gating: Selecting Experts ---")
         gate_scores = self.gate(x)
-        # 注释: 在混合精度训练中, 门控分数和后续的 softmax 通常会转换到 float32 以保证数值稳定性。
+        # 注释: 在混合精度训练中, 门控分数和后续的 softmax 通常会转换到 float32 以保证数值稳定性.
 
         # 找到分数最高的 top-k 个 experts 及其索引
         topk_scores, topk_indices = torch.topk(gate_scores, self.k, dim=-1)
 
         # 对 top-k 的分数应用 softmax, 得到权重
-        # 注释: 这是现代 MoE (如 Mixtral) 的常见做法。它比对所有 expert 分数做 softmax 更高效。
+        # 注释: 这是现代 MoE (如 Mixtral) 的常见做法. 它比对所有 expert 分数做 softmax 更高效.
         topk_weights = F.softmax(topk_scores, dim=-1)
 
         print("Gating decision for each token:")
@@ -183,8 +183,8 @@ if __name__ == "__main__":
 
     print(f"Total parameters in dense FFN: {ffn_params}")
     print(f"Total parameters in MoE:       {moe_params}")
-    # MoE 的参数量主要由 experts 贡献, 外加一个小的 gate 网络。
-    # expert 部分的参数量约等于 FFN 的 num_experts 倍。
+    # MoE 的参数量主要由 experts 贡献, 外加一个小的 gate 网络.
+    # expert 部分的参数量约等于 FFN 的 num_experts 倍.
     print(f"-> MoE has approximately {moe_params / ffn_params:.2f}x more parameters than FFN.")
 
     print("\nKey Insight:")

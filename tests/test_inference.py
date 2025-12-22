@@ -80,6 +80,6 @@ def test_generate_max_seq_len_truncation(model_and_tokenizer):
     assert isinstance(output, str)
     # 注意: generate 函数目前返回的是 generated_tokens 解码后的结果
     # 其中的 generated_tokens 初始化为 input_ids.copy()
-    # 即使 input_tensor 被截断，generated_tokens 仍然保留了完整输入
+    # 即使 input_tensor 被截断, generated_tokens 仍然保留了完整输入
     encoded_output = tokenizer.encode(output)
     assert len(encoded_output) == 100 + max_new_tokens

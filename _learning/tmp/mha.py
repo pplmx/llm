@@ -6,22 +6,22 @@ from torch import Tensor
 
 class MultiHeadAttention(nn.Module):
     """
-    多头注意力机制实现。
+    多头注意力机制实现.
 
-    集成了Layer Normalization和残差连接，支持Pre-LN和Post-LN模式。
-    提供了高效的计算实现和灵活的配置选项。
+    集成了Layer Normalization和残差连接, 支持Pre-LN和Post-LN模式.
+    提供了高效的计算实现和灵活的配置选项.
 
     Args:
-        hidden_size (int): 模型的总维度。
-        num_heads (int): 注意力头的数量，必须能整除hidden_size。默认为8。
-        p (float): 应用于注意力权重和最终输出的dropout概率。默认为0.1。
-        bias (bool): 是否在线性层（QKV投影和输出投影）中使用偏置。默认为False。
-        eps (float): Layer Normalization的epsilon值。默认为1e-5。
-        norm_first (bool): 是否使用Pre-LN（True）或Post-LN（False）架构。默认为True。
-        is_causal (bool): 是否默认应用因果掩码（如用于解码器）。默认为False。
-        separate_qkv (bool): 是否使用分离的Q、K、V投影层。默认为False（使用融合QKV投影）。
-        device (torch.device | str | None): 模型参数的目标设备。默认为None（自动推断）。
-        dtype (torch.dtype | None): 模型参数的目标数据类型。默认为None（自动推断）。
+        hidden_size (int): 模型的总维度.
+        num_heads (int): 注意力头的数量, 必须能整除hidden_size. 默认为8.
+        p (float): 应用于注意力权重和最终输出的dropout概率. 默认为0.1.
+        bias (bool): 是否在线性层(QKV投影和输出投影)中使用偏置. 默认为False.
+        eps (float): Layer Normalization的epsilon值. 默认为1e-5.
+        norm_first (bool): 是否使用Pre-LN(True)或Post-LN(False)架构. 默认为True.
+        is_causal (bool): 是否默认应用因果掩码(如用于解码器). 默认为False.
+        separate_qkv (bool): 是否使用分离的Q、K、V投影层. 默认为False(使用融合QKV投影).
+        device (torch.device | str | None): 模型参数的目标设备. 默认为None(自动推断).
+        dtype (torch.dtype | None): 模型参数的目标数据类型. 默认为None(自动推断).
     """
 
     def __init__(
@@ -68,7 +68,7 @@ class MultiHeadAttention(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """初始化线性层权重（Xavier均匀分布）和偏置（零）。"""
+        """初始化线性层权重(Xavier均匀分布)和偏置(零)."""
         if self.separate_qkv:
             for proj in [self.q_proj, self.k_proj, self.v_proj]:
                 nn.init.xavier_uniform_(proj.weight)
@@ -84,7 +84,7 @@ class MultiHeadAttention(nn.Module):
             nn.init.zeros_(self.out_proj.bias)
 
     def _reshape_for_attention(self, x: Tensor, batch_size: int, seq_len: int) -> Tensor:
-        """将投影后的张量重新整形为注意力计算所需的形状。"""
+        """将投影后的张量重新整形为注意力计算所需的形状."""
         # [B, S, H] -> [B, S, N, D] -> [B, N, S, D]
         return x.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
 
@@ -95,20 +95,20 @@ class MultiHeadAttention(nn.Module):
         is_causal: bool | None = None,
     ) -> Tensor:
         """
-        前向传播。
+        前向传播.
 
         Args:
-            hidden_states (Tensor): 输入张量，形状为 [B, S, H]（批量大小，序列长度，隐藏大小）。
-            attn_mask (Tensor | None): 可选的注意力掩码。
-                - 对于F.scaled_dot_product_attention，期望是一个布尔张量，其中`True`表示掩蔽。
-                - 形状应可广播到 [B, N, S, S]（批量大小，头数，序列长度，序列长度）。
-                - 例如，填充掩码可以是 [B, 1, 1, S] 或 [B, 1, S, S]。
-            is_causal (bool | None): 是否在此次前向传播中强制执行因果掩码。
-                - 如果为`None`（默认），使用初始化期间设置的默认值`self.is_causal`。
-                - 如果为`True`或`False`，将覆盖默认设置。
+            hidden_states (Tensor): 输入张量, 形状为 [B, S, H](批量大小, 序列长度, 隐藏大小).
+            attn_mask (Tensor | None): 可选的注意力掩码.
+                - 对于F.scaled_dot_product_attention, 期望是一个布尔张量, 其中`True`表示掩蔽.
+                - 形状应可广播到 [B, N, S, S](批量大小, 头数, 序列长度, 序列长度).
+                - 例如, 填充掩码可以是 [B, 1, 1, S] 或 [B, 1, S, S].
+            is_causal (bool | None): 是否在此次前向传播中强制执行因果掩码.
+                - 如果为`None`(默认), 使用初始化期间设置的默认值`self.is_causal`.
+                - 如果为`True`或`False`, 将覆盖默认设置.
 
         Returns:
-            Tensor: 输出张量，形状为 [B, S, H]。
+            Tensor: 输出张量, 形状为 [B, S, H].
         """
         batch_size, seq_len, _ = hidden_states.size()
         residual = hidden_states
@@ -127,7 +127,7 @@ class MultiHeadAttention(nn.Module):
             k = self._reshape_for_attention(self.k_proj(hidden_states), batch_size, seq_len)
             v = self._reshape_for_attention(self.v_proj(hidden_states), batch_size, seq_len)
         else:
-            # 使用融合的QKV投影（更高效）
+            # 使用融合的QKV投影(更高效)
             qkv = self.qkv_proj(hidden_states)  # [B, S, 3*H]
             qkv = qkv.view(batch_size, seq_len, 3, self.num_heads, self.head_dim)
             q, k, v = [qkv[:, :, i].transpose(1, 2) for i in range(3)]  # 每个 [B, N, S, D]

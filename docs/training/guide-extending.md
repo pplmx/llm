@@ -1,16 +1,16 @@
 # 指南: 扩展训练框架 (`GUIDE_EXTENDING.md`)
 
-本框架的核心优势在于其可扩展性。本指南将通过几个“食谱式”的示例，向您展示如何轻松地添加新功能。
+本框架的核心优势在于其可扩展性. 本指南将通过几个“食谱式”的示例, 向您展示如何轻松地添加新功能.
 
 ---
 
 ### 食谱1: 如何添加一个新的学习率调度器？
 
-假设我们想添加一个 `ExponentialLR` 调度器。
+假设我们想添加一个 `ExponentialLR` 调度器.
 
 **第1步: 在 `config.py` 中添加选项**
 
-在 `TrainingConfig` 数据类中，我们可以为 `scheduler_type` 添加一个新的有效选项的注释，以方便其他开发者知道它的存在。
+在 `TrainingConfig` 数据类中, 我们可以为 `scheduler_type` 添加一个新的有效选项的注释, 以方便其他开发者知道它的存在.
 
 ```python
 # in core/config.py
@@ -23,7 +23,7 @@ class TrainingConfig:
 
 **第2步: 在 `TrainingTask` 中实现逻辑**
 
-在您的 `TrainingTask` 子类（例如 `RegressionTask`）的 `build_scheduler` 方法中，根据配置添加对新调度器的支持。
+在您的 `TrainingTask` 子类(例如 `RegressionTask`)的 `build_scheduler` 方法中, 根据配置添加对新调度器的支持.
 
 ```python
 # in tasks/regression_task.py
@@ -49,17 +49,17 @@ class RegressionTask(TrainingTask):
         return scheduler
 ```
 
-现在，您就可以通过配置 `--scheduler-type exponential` 来使用新的调度器了。
+现在, 您就可以通过配置 `--scheduler-type exponential` 来使用新的调度器了.
 
 ---
 
 ### 食谱2: 如何添加一个新的回调？
 
-假设我们想创建一个在训练开始和结束时打印一条自定义消息的回调。
+假设我们想创建一个在训练开始和结束时打印一条自定义消息的回调.
 
 **第1步: 创建 `Callback` 子类**
 
-在 `core/callbacks.py` 中（或一个新文件中），创建一个新类。
+在 `core/callbacks.py` 中(或一个新文件中), 创建一个新类.
 
 ```python
 # in core/callbacks.py
@@ -79,7 +79,7 @@ class WelcomeMessage(Callback):
 
 **第2步: 通过配置动态添加回调**
 
-为了保持 `train.py` 的简洁性和灵活性，我们推荐通过配置来动态添加回调。这需要您在 `Config` 中定义一个回调列表，并在 `train.py` 中根据配置实例化它们。
+为了保持 `train.py` 的简洁性和灵活性, 我们推荐通过配置来动态添加回调. 这需要您在 `Config` 中定义一个回调列表, 并在 `train.py` 中根据配置实例化它们.
 
 **在 `Config` 中定义回调配置 (示例)**:
 
@@ -124,17 +124,18 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
     )
     engine.run()
 ```
-现在，您可以通过修改 `config.yaml` 或命令行参数来轻松添加或移除回调，例如 `--training-callbacks MetricsLogger TensorBoardLogger WelcomeMessage`。
+
+现在, 您可以通过修改 `config.yaml` 或命令行参数来轻松添加或移除回调, 例如 `--training-callbacks MetricsLogger TensorBoardLogger WelcomeMessage`.
 
 ---
 
 ### 食谱3: 如何添加一个全新的训练任务？
 
-这是最常见的扩展方式。假设您要添加一个图像分类任务。
+这是最常见的扩展方式. 假设您要添加一个图像分类任务.
 
-1.  **创建数据模块**: 创建一个新的 `DataModule` 子类（例如 `ImageNetDataModule`），负责下载、预处理和加载您的数据。
-2.  **创建模型**: 创建一个新的 `nn.Module`（例如 `ResNet`）。**请注意，模型应根据 `Config` 中的参数进行构建，而不是硬编码。**
-3.  **创建任务类**: 创建一个新的 `TrainingTask` 子类，例如 `ClassificationTask`。
+1. **创建数据模块**: 创建一个新的 `DataModule` 子类(例如 `ImageNetDataModule`), 负责下载、预处理和加载您的数据.
+2. **创建模型**: 创建一个新的 `nn.Module`(例如 `ResNet`). **请注意, 模型应根据 `Config` 中的参数进行构建, 而不是硬编码.**
+3. **创建任务类**: 创建一个新的 `TrainingTask` 子类, 例如 `ClassificationTask`.
 
     ```python
     # in tasks/classification_task.py
@@ -146,7 +147,7 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
         def build_model(self) -> nn.Module:
             # 示例: 根据配置构建模型
             if self.config.model.use_moe:
-                # 如果配置中启用了 MoE，则构建一个带有 MoE 的 DecoderModel
+                # 如果配置中启用了 MoE, 则构建一个带有 MoE 的 DecoderModel
                 return DecoderModel(
                     vocab_size=self.config.model.vocab_size, # 假设 vocab_size 在 ModelConfig 中
                     hidden_size=self.config.model.hidden_size,
@@ -158,7 +159,7 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
                     # ... 其他参数
                 )
             else:
-                # 否则，构建一个标准的 DecoderModel
+                # 否则, 构建一个标准的 DecoderModel
                 return DecoderModel(
                     vocab_size=self.config.model.vocab_size,
                     hidden_size=self.config.model.hidden_size,
@@ -190,7 +191,7 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
             ...
     ```
 
-4.  **在 `train.py` 中注册新任务**
+4. **在 `train.py` 中注册新任务**
 
     ```python
     # in train.py
@@ -203,17 +204,17 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
     }
     ```
 
-现在，您可以通过运行 `python -m llm.training.train --task classification` 来启动您的新任务。
+现在, 您可以通过运行 `python -m llm.training.train --task classification` 来启动您的新任务.
 
 ---
 
 ### 食谱4: 如何启用 MoE (Mixture of Experts) 功能？
 
-本项目框架支持 MoE 架构，您可以通过配置轻松启用它。
+本项目框架支持 MoE 架构, 您可以通过配置轻松启用它.
 
 **第1步: 在 `Config` 中配置 MoE 参数**
 
-在 `core/config.py` 的 `ModelConfig` 中，设置 `use_moe` 为 `True`，并指定 `num_experts` 和 `top_k`。
+在 `core/config.py` 的 `ModelConfig` 中, 设置 `use_moe` 为 `True`, 并指定 `num_experts` 和 `top_k`.
 
 ```python
 # in config.yaml (或通过命令行参数)
@@ -228,10 +229,10 @@ model:
 
 **第2步: 运行训练**
 
-当您运行训练时，`TrainingEngine` 会根据 `Config` 中的设置，在 `TransformerBlock` 中自动实例化 MoE 层而不是标准 MLP。
+当您运行训练时, `TrainingEngine` 会根据 `Config` 中的设置, 在 `TransformerBlock` 中自动实例化 MoE 层而不是标准 MLP.
 
 ```bash
 python -m llm.training.train --task regression --model-use-moe --model-num-experts 8 --model-top-k 2
 ```
 
-通过这种方式，您可以轻松地在模型中启用和配置 MoE 功能，而无需修改核心模型代码。
+通过这种方式, 您可以轻松地在模型中启用和配置 MoE 功能, 而无需修改核心模型代码.

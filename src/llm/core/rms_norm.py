@@ -21,11 +21,11 @@ class RMSNorm(nn.Module):
 
     参数:
         normalized_shape (int 或 list/tuple of ints):
-            需要进行归一化的输入张量的结尾维度形状。
-            与 LayerNorm 中的定义相同。
+            需要进行归一化的输入张量的结尾维度形状.
+            与 LayerNorm 中的定义相同.
         eps (float):
-            加在均方根计算中的小常数, 防止除零错误并提高数值稳定性。
-            默认为 1e-6 (常见于 RMSNorm 实现)。
+            加在均方根计算中的小常数, 防止除零错误并提高数值稳定性.
+            默认为 1e-6 (常见于 RMSNorm 实现).
         elementwise_affine (bool):
             如果为 True, 则此模块包含可学习的缩放参数 gamma (gamma/weight),
             形状与 `normalized_shape` 相同. gamma 初始化为 1.
@@ -82,11 +82,11 @@ class RMSNorm(nn.Module):
         前向传播函数
 
         参数:
-            x: 输入张量, 其尾部维度应与 `normalized_shape` 匹配。
+            x: 输入张量, 其尾部维度应与 `normalized_shape` 匹配.
                形状例如: [batch_size, ..., *normalized_shape]
 
         返回:
-            归一化后的张量, 形状与输入 x 相同。
+            归一化后的张量, 形状与输入 x 相同.
         """
         # 1. 计算 RMS
         rms = self._compute_rms(x)
@@ -110,8 +110,8 @@ def rms_norm_numpy(x: np.ndarray, gamma: np.ndarray | None = None, eps: float = 
     """
     RMS Normalization 的 NumPy 实现 (简化版)
 
-    注意: 此版本为了简洁, *固定*在最后一个轴 (axis=-1) 上进行归一化。
-    主要用于帮助理解 RMSNorm 的核心计算步骤。不包含偏置项。
+    注意: 此版本为了简洁, *固定*在最后一个轴 (axis=-1) 上进行归一化.
+    主要用于帮助理解 RMSNorm 的核心计算步骤. 不包含偏置项.
 
     参数:
         x: 输入 NumPy 数组, 形状例如 [batch_size, ..., feature_dim]
@@ -119,7 +119,7 @@ def rms_norm_numpy(x: np.ndarray, gamma: np.ndarray | None = None, eps: float = 
         eps: 防止除零错误的小常数
 
     返回:
-        归一化后的 NumPy 数组, 形状与输入 x 相同。
+        归一化后的 NumPy 数组, 形状与输入 x 相同.
     """
     # 1. 沿最后一个轴计算均方值
     mean_square = np.mean(np.square(x), axis=-1, keepdims=True)
@@ -210,8 +210,8 @@ def rms_norm_demo():
 
     # --- 观察输出统计特性 ---
     print("\n--- 输出统计特性 (沿归一化维度计算 RMS) ---")
-    # 对于 RMSNorm (特别是无仿射或 gamma=1 时), 沿归一化维度计算的输出特征的 RMS 值应接近 1.0。
-    # 输出的均值不一定为 0。
+    # 对于 RMSNorm (特别是无仿射或 gamma=1 时), 沿归一化维度计算的输出特征的 RMS 值应接近 1.0.
+    # 输出的均值不一定为 0.
 
     def print_rms_stats(name: str, output_tensor: torch.Tensor):
         num_normalized_dims = len(normalized_shape)

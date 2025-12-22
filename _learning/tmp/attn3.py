@@ -9,28 +9,28 @@ from torch import Tensor, nn
 @dataclass
 class AttentionConfig:
     """
-    注意力机制的配置类。
+    注意力机制的配置类.
 
     Args:
         # 核心模型参数
-        hidden_size: 隐藏层维度，必须是num_heads的整数倍
-        num_heads: 注意力头的数量，默认为8
+        hidden_size: 隐藏层维度, 必须是num_heads的整数倍
+        num_heads: 注意力头的数量, 默认为8
 
         # 正则化相关参数
-        dropout: 用于输出的dropout率，默认为0.1
-        attention_dropout: 用于注意力权重的dropout率，默认与dropout相同
-        eps: LayerNorm的epsilon值，用于数值稳定性，默认为1e-5
+        dropout: 用于输出的dropout率, 默认为0.1
+        attention_dropout: 用于注意力权重的dropout率, 默认与dropout相同
+        eps: LayerNorm的epsilon值, 用于数值稳定性, 默认为1e-5
 
-        # 功能开关参数（统一使用use_前缀）
-        use_bias: 是否在线性投影中使用偏置，默认为False
-        use_norm_first: 是否先进行层归一化（Pre-LN），默认为True
-        use_causal_mask: 是否使用因果注意力掩码，默认为False
-        use_separate_qkv: 是否使用分离的QKV投影，默认为False
-        use_rotary_embeddings: 是否使用旋转位置嵌入(RoPE)，默认为False
-        use_kv_cache: 是否启用KV缓存用于生成，默认为False
+        # 功能开关参数(统一使用use_前缀)
+        use_bias: 是否在线性投影中使用偏置, 默认为False
+        use_norm_first: 是否先进行层归一化(Pre-LN), 默认为True
+        use_causal_mask: 是否使用因果注意力掩码, 默认为False
+        use_separate_qkv: 是否使用分离的QKV投影, 默认为False
+        use_rotary_embeddings: 是否使用旋转位置嵌入(RoPE), 默认为False
+        use_kv_cache: 是否启用KV缓存用于生成, 默认为False
 
         # 特殊参数
-        rotary_dim: 旋转位置嵌入的维度，默认为head_dim
+        rotary_dim: 旋转位置嵌入的维度, 默认为head_dim
 
         # 技术细节参数
         device: 张量设备
@@ -80,7 +80,7 @@ class AttentionConfig:
 
 class EnhancedMultiHeadAttention(nn.Module):
     """
-    增强的多头注意力实现，使用配置类进行初始化。
+    增强的多头注意力实现, 使用配置类进行初始化.
 
     这个实现支持多种高级功能:
     - 旋转位置嵌入 (RoPE): 为模型提供相对位置信息而不需要位置编码
@@ -98,7 +98,7 @@ class EnhancedMultiHeadAttention(nn.Module):
 
     def __init__(self, config: AttentionConfig):
         """
-        初始化多头注意力模块。
+        初始化多头注意力模块.
 
         Args:
             config: 包含所有配置参数的MultiHeadAttentionConfig对象
@@ -127,13 +127,13 @@ class EnhancedMultiHeadAttention(nn.Module):
 
         # QKV投影策略
         if config.use_separate_qkv:
-            # 分离的QKV投影（每个都有自己的权重矩阵）
+            # 分离的QKV投影(每个都有自己的权重矩阵)
             self.q_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.use_bias, **factory_kwargs)
             self.k_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.use_bias, **factory_kwargs)
             self.v_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=config.use_bias, **factory_kwargs)
             self.has_separate_qkv = True
         else:
-            # 融合的QKV投影（单个权重矩阵）
+            # 融合的QKV投影(单个权重矩阵)
             self.qkv_proj = nn.Linear(
                 config.hidden_size, 3 * config.hidden_size, bias=config.use_bias, **factory_kwargs
             )
@@ -145,12 +145,12 @@ class EnhancedMultiHeadAttention(nn.Module):
 
     def _rotate_half(self, x: Tensor) -> Tensor:
         """
-        旋转向量的一半维度。
+        旋转向量的一半维度.
 
-        RoPE的基础操作，对输入张量的前半部分和后半部分进行特殊的旋转变换。
+        RoPE的基础操作, 对输入张量的前半部分和后半部分进行特殊的旋转变换.
 
         Args:
-            x: 输入张量，最后一个维度是要旋转的维度
+            x: 输入张量, 最后一个维度是要旋转的维度
 
         Returns:
             旋转后的张量
@@ -163,10 +163,10 @@ class EnhancedMultiHeadAttention(nn.Module):
 
     def _apply_rotary_pos_emb(self, q: Tensor, k: Tensor, cos: Tensor, sin: Tensor) -> tuple[Tensor, Tensor]:
         """
-        应用旋转位置嵌入 (RoPE)。
+        应用旋转位置嵌入 (RoPE).
 
-        RoPE通过旋转操作在Q和K中注入相对位置信息，无需额外的位置编码。
-        只应用于每个头的前rotary_dim维度。
+        RoPE通过旋转操作在Q和K中注入相对位置信息, 无需额外的位置编码.
+        只应用于每个头的前rotary_dim维度.
 
         Args:
             q: 查询张量 [B, N, S, D]
@@ -194,7 +194,7 @@ class EnhancedMultiHeadAttention(nn.Module):
 
     def _reshape_for_attention(self, x: Tensor, batch_size: int, seq_len: int) -> Tensor:
         """
-        将投影后的张量重新整形为注意力计算所需的形状。
+        将投影后的张量重新整形为注意力计算所需的形状.
 
         Args:
             x: 输入张量 [B, S, H] 或 [B, S, N*D]
@@ -202,7 +202,7 @@ class EnhancedMultiHeadAttention(nn.Module):
             seq_len: 序列长度
 
         Returns:
-            重新整形的张量 [B, N, S, D]，适合注意力计算
+            重新整形的张量 [B, N, S, D], 适合注意力计算
         """
         return x.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
 
@@ -210,9 +210,9 @@ class EnhancedMultiHeadAttention(nn.Module):
         self, hidden_states: Tensor, batch_size: int, seq_len: int, past_key_value: tuple[Tensor, Tensor] | None
     ) -> tuple[Tensor, Tensor, Tensor]:
         """
-        根据配置计算查询(Q)、键(K)和值(V)张量。
+        根据配置计算查询(Q)、键(K)和值(V)张量.
 
-        处理分离/融合QKV投影和KV缓存的逻辑。
+        处理分离/融合QKV投影和KV缓存的逻辑.
 
         Args:
             hidden_states: 输入隐藏状态 [B, S, H]
@@ -221,7 +221,7 @@ class EnhancedMultiHeadAttention(nn.Module):
             past_key_value: 可选的之前的KV缓存
 
         Returns:
-            查询、键和值张量，形状均为 [B, N, S, D]
+            查询、键和值张量, 形状均为 [B, N, S, D]
         """
         use_cache = past_key_value is not None and self.config.use_kv_cache
 
@@ -230,7 +230,7 @@ class EnhancedMultiHeadAttention(nn.Module):
             q = self.q_proj(hidden_states)  # [B, S, H]
 
             if use_cache:
-                # 使用缓存时，只计算最后一个token的KV
+                # 使用缓存时, 只计算最后一个token的KV
                 k = self.k_proj(hidden_states[:, -1:, :])  # [B, 1, H]
                 v = self.v_proj(hidden_states[:, -1:, :])  # [B, 1, H]
 
@@ -238,13 +238,13 @@ class EnhancedMultiHeadAttention(nn.Module):
                 k = torch.cat([past_key_value[0], k], dim=1)  # [B, S+1, H]
                 v = torch.cat([past_key_value[1], v], dim=1)  # [B, S+1, H]
             else:
-                # 首次计算，处理整个序列
+                # 首次计算, 处理整个序列
                 k = self.k_proj(hidden_states)  # [B, S, H]
                 v = self.v_proj(hidden_states)  # [B, S, H]
         else:
             # 使用融合的QKV投影
             if use_cache:
-                # 对所有token计算Q，但只对新token计算KV
+                # 对所有token计算Q, 但只对新token计算KV
                 q = self._reshape_for_attention(
                     self.qkv_proj(hidden_states)[:, :, : self.hidden_size], batch_size, seq_len
                 )  # [B, N, S, D]
@@ -279,7 +279,7 @@ class EnhancedMultiHeadAttention(nn.Module):
 
     def _compute_rope_sincos(self, position_ids: Tensor, batch_size: int, seq_length: int) -> tuple[Tensor, Tensor]:
         """
-        计算RoPE所需的正弦和余弦值。
+        计算RoPE所需的正弦和余弦值.
 
         Args:
             position_ids: 位置ID张量 [B, S]
@@ -287,11 +287,11 @@ class EnhancedMultiHeadAttention(nn.Module):
             seq_length: 序列长度
 
         Returns:
-            sin, cos: 正弦和余弦张量，形状为 [B, 1, S, D_r]
+            sin, cos: 正弦和余弦张量, 形状为 [B, 1, S, D_r]
         """
         position_ids = position_ids.view(-1, seq_length)
 
-        # 生成角度，考虑到旋转位置嵌入的维度
+        # 生成角度, 考虑到旋转位置嵌入的维度
         inv_freq = 1.0 / (10000 ** (torch.arange(0, self.rotary_dim, 2, device=position_ids.device) / self.rotary_dim))
         sincos = torch.einsum("i,j->ij", position_ids.flatten(), inv_freq)
         sin, cos = sincos.sin(), sincos.cos()
@@ -305,7 +305,7 @@ class EnhancedMultiHeadAttention(nn.Module):
         sin = sin.repeat_interleave(2, dim=-1)
         cos = cos.repeat_interleave(2, dim=-1)
 
-        # 添加 head 维度（用于广播）: [B, 1, S, D_r]
+        # 添加 head 维度(用于广播): [B, 1, S, D_r]
         sin = sin.unsqueeze(1)
         cos = cos.unsqueeze(1)
 
@@ -321,27 +321,27 @@ class EnhancedMultiHeadAttention(nn.Module):
         use_cache: bool = False,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """
-        多头注意力的前向传播。
+        多头注意力的前向传播.
 
         处理流程:
-        1. 应用层归一化（如果norm_first=True）
+        1. 应用层归一化(如果norm_first=True)
         2. 计算查询(Q)、键(K)和值(V)
-        3. 应用旋转位置嵌入（如果启用）
+        3. 应用旋转位置嵌入(如果启用)
         4. 计算注意力权重并获取加权值
         5. 合并多头输出并进行输出投影
         6. 应用dropout和残差连接
-        7. 应用层归一化（如果norm_first=False）
+        7. 应用层归一化(如果norm_first=False)
 
         Args:
-            hidden_states: 输入隐藏状态，形状为 [B, S, H]
+            hidden_states: 输入隐藏状态, 形状为 [B, S, H]
             attn_mask: 可选的注意力掩码
-            is_causal: 是否使用因果掩码，覆盖默认设置
-            position_ids: 可选的位置ID，用于旋转位置嵌入
+            is_causal: 是否使用因果掩码, 覆盖默认设置
+            position_ids: 可选的位置ID, 用于旋转位置嵌入
             past_key_value: 可选的之前计算的KV缓存
             use_cache: 是否返回更新的KV缓存
 
         Returns:
-            如果use_cache=False: 输出张量，形状为 [B, S, H]
+            如果use_cache=False: 输出张量, 形状为 [B, S, H]
             如果use_cache=True: (输出张量, (键缓存, 值缓存))
         """
         # 获取基本维度信息
@@ -360,12 +360,12 @@ class EnhancedMultiHeadAttention(nn.Module):
         # --- 2. 计算Q、K、V并整形 ---
         q, k, v = self._get_qkv(hidden_states, batch_size, seq_len, past_key_value)
 
-        # --- 3. 应用旋转位置嵌入（如果启用）---
+        # --- 3. 应用旋转位置嵌入(如果启用)---
         if self.use_rope and position_ids is not None:
             # 计算正弦和余弦值
             sin, cos = self._compute_rope_sincos(position_ids, batch_size, seq_len)
 
-            # 如果使用KV缓存，只对新token应用RoPE
+            # 如果使用KV缓存, 只对新token应用RoPE
             if past_key_value is not None and self.config.use_kv_cache:
                 q_len = q.size(2)
                 sin, cos = sin[:, :, -q_len:, :], cos[:, :, -q_len:, :]
@@ -448,7 +448,7 @@ def test_kv_cache():
 
 
 def test_rotary_embeddings():
-    """测试旋转位置嵌入（RoPE）功能"""
+    """测试旋转位置嵌入(RoPE)功能"""
     config = AttentionConfig(
         hidden_size=512,
         num_heads=8,
@@ -476,7 +476,7 @@ def test_rotary_embeddings():
 
 
 def test_causal_masking():
-    """测试因果掩码（Causal Masking）功能"""
+    """测试因果掩码(Causal Masking)功能"""
     config = AttentionConfig(
         hidden_size=512,
         num_heads=8,
@@ -561,7 +561,7 @@ def test_rope_with_kv_cache():
         # 更新位置ID
         new_position_id = torch.tensor([[prompt_len + i]])
 
-        # 前向传播，使用缓存
+        # 前向传播, 使用缓存
         output, past_kv = mha(new_token, position_ids=new_position_id, past_key_value=past_kv, use_cache=True)
 
         print(f"步骤 {i + 1} - 输出形状: {output.shape}")
@@ -584,13 +584,13 @@ def test_attention_mask():
     batch_size, seq_len = 2, 10
     x = torch.randn(batch_size, seq_len, 512)
 
-    # 创建自定义注意力掩码（例如: 填充掩码）
+    # 创建自定义注意力掩码(例如: 填充掩码)
     # 假设第二个序列的最后两个token是填充的
     attn_mask = torch.ones(batch_size, 1, seq_len, seq_len)
     attn_mask[1, :, :, 8:] = 0  # 第二个序列的最后两个位置被掩盖
-    attn_mask = attn_mask == 0  # 转换为布尔掩码，True表示被掩盖的位置
+    attn_mask = attn_mask == 0  # 转换为布尔掩码, True表示被掩盖的位置
 
-    # 前向传播，使用自定义掩码
+    # 前向传播, 使用自定义掩码
     output = mha(x, attn_mask=attn_mask)
 
     print(f"注意力掩码测试 - 输入形状: {x.shape}, 输出形状: {output.shape}")
