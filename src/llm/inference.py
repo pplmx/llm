@@ -58,7 +58,7 @@ def generate(
             next_token_logits = next_token_logits / temperature
             if top_k is not None:
                 v, _ = torch.topk(next_token_logits, min(top_k, next_token_logits.size(-1)))
-                next_token_logits[next_token_logits < v[..., -1, None]] = -float("Inf")
+                next_token_logits[next_token_logits < v[..., -1, None]] = -torch.inf
 
             probs = torch.softmax(next_token_logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)

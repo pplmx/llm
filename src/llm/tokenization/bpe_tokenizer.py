@@ -35,10 +35,10 @@ class BPETokenizer:
         Trains a BPE tokenizer on the given files.
 
         Args:
-            files (List[str]): List of paths to text files for training.
+            files (list[str]): List of paths to text files for training.
             vocab_size (int): The desired vocabulary size.
             min_frequency (int): The minimum frequency for a pair to be merged.
-            special_tokens (List[str]): List of special tokens to include.
+            special_tokens (list[str]): List of special tokens to include.
 
         Returns:
             BPETokenizer: A trained tokenizer instance.
@@ -69,7 +69,7 @@ class BPETokenizer:
             text (str): The input text.
 
         Returns:
-            List[int]: The list of token IDs.
+            list[int]: The list of token IDs.
         """
         return self.tokenizer.encode(text).ids
 
@@ -78,7 +78,7 @@ class BPETokenizer:
         Decodes a list of token IDs back into a string.
 
         Args:
-            ids (List[int]): The list of token IDs.
+            ids (list[int]): The list of token IDs.
             skip_special_tokens (bool): Whether to skip special tokens in the output.
 
         Returns:
