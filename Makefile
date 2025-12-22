@@ -1,4 +1,4 @@
-.PHONY: help build test ruff image clean lint fmt sync-dev
+.PHONY: help build test ruff image clean lint fmt dev
 .DEFAULT_GOAL := help
 
 APP_NAME := llm
@@ -12,8 +12,8 @@ sync:
 	@uv sync
 
 # Sync the project with dev dependencies
-sync-dev:
-	@uv sync --all-extras
+dev:
+	@uv sync --all-extras --all-groups
 
 # Build wheel
 build:
@@ -38,9 +38,9 @@ lint:
 fmt:
 	@uvx ruff format .
 
-# Type check
-type:
-	@uvx mypy .
+# ty type check
+ty:
+	@uvx ty check
 
 # Build image
 image:
