@@ -1,0 +1,76 @@
+........................................................................ [ 23%]
+........................................................................ [ 47%]
+........................................................................ [ 70%]
+........................................................................ [ 94%]
+................./home/mystvio/repos/llm/.venv/lib/python3.13/site-packages/coverage/inorout.py:537: CoverageWarning: Module llm was previously imported, but not measured (module-not-measured); see https://coverage.readthedocs.io/en/7.13.0/messages.html#warning-module-not-measured
+  self.warn(msg, slug="module-not-measured")
+                                                        [100%]
+=============================== warnings summary ===============================
+tests/data/test_data_abstraction.py::TestDataAbstraction::test_text_data_module_setup
+tests/data/test_data_abstraction.py::TestDataAbstraction::test_text_data_module_setup
+tests/data/test_data_abstraction.py::TestDataAbstraction::test_text_data_module_setup
+tests/data/test_data_abstraction.py::TestDataAbstraction::test_text_data_module_setup
+  /root/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=678664) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+tests/data/test_data_abstraction.py::TestDataAbstraction::test_text_data_module_setup
+tests/data/test_data_abstraction.py::TestDataAbstraction::test_text_data_module_setup
+  /home/mystvio/repos/llm/.venv/lib/python3.13/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+    return data.pin_memory(device)
+
+tests/data/test_data_abstraction.py::TestDataAbstraction::test_text_data_module_setup
+tests/data/test_data_abstraction.py::TestDataAbstraction::test_text_data_module_setup
+  /home/mystvio/repos/llm/.venv/lib/python3.13/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+    return data.pin_memory(device)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.13.9-final-0 ________________
+
+Name                                       Stmts   Miss Branch BrPart   Cover   Missing
+---------------------------------------------------------------------------------------
+src/llm/__init__.py                            0      0      0      0 100.00%
+src/llm/core/__init__.py                       7      0      0      0 100.00%
+src/llm/core/attn/__init__.py                  4      0      0      0 100.00%
+src/llm/core/attn/dot_product_attn.py         25      0     10      0 100.00%
+src/llm/core/attn/mha.py                      70      0     24      0 100.00%
+src/llm/core/attn/mla.py                      67      2     12      4  92.41%   47, 98->86, 168->172, 198
+src/llm/core/embedding.py                     17      0      0      0 100.00%
+src/llm/core/layer_norm.py                   106     97     14      0   7.50%   40-59, 76-97, 101, 124-138, 144-268
+src/llm/core/mlp.py                           97     14     34      4  84.73%   61-64, 72->83, 78, 94-95, 123-131
+src/llm/core/moe/moe.py                       43      0     12      0 100.00%
+src/llm/core/positional_encoding.py           32      0      6      0 100.00%
+src/llm/core/registry.py                      20      2      4      2  83.33%   18, 26
+src/llm/core/rms_norm.py                     111     84     12      3  24.39%   50, 61, 101, 105, 125-137, 143-265
+src/llm/core/transformer_block.py             55      2     22      3  93.51%   59->64, 84, 109
+src/llm/data/data_module.py                   14      0      0      0 100.00%
+src/llm/data/loader.py                        67      6     34      5  89.11%   80-81, 93, 100, 106->95, 177, 179
+src/llm/data/synthetic_data_module.py         28      0      0      0 100.00%
+src/llm/data/text_data_module.py              49     16     14      5  60.32%   31-33, 45, 54-55, 64-65, 70, 87, 108-128
+src/llm/inference.py                          52      0     16      2  97.06%   48->53, 115->56
+src/llm/models/__init__.py                     3      0      0      0 100.00%
+src/llm/models/decoder.py                     25      2      8      2  87.88%   74, 109
+src/llm/models/model_registry.py              14      9      4      0  27.78%   16-22, 38-40
+src/llm/serving/__init__.py                    3      0      0      0 100.00%
+src/llm/serving/api.py                        62      6      8      0  91.43%   105-108, 136-137
+src/llm/serving/config.py                     19      0      0      0 100.00%
+src/llm/serving/engine.py                     62      9     16      5  82.05%   34-36, 74, 82, 95-96, 116, 141
+src/llm/serving/schemas.py                    12      0      0      0 100.00%
+src/llm/tokenization/__init__.py               3      0      0      0 100.00%
+src/llm/tokenization/bpe_tokenizer.py         41      1      6      1  95.74%   98
+src/llm/tokenization/simple_tokenizer.py      49      3     18      1  94.03%   42, 46, 50
+src/llm/tokenization/tokenizer.py             37      5      2      1  84.62%   16, 20, 34->exit, 47, 51, 61
+src/llm/tokenization/train_bpe.py             27     27      6      0   0.00%   1-68
+src/llm/training/core/callbacks.py           126     91     64      0  18.42%   22, 26, 86-93, 118-127, 130-142, 145-149, 152-171, 182-184, 187-190, 193-202, 212-217, 220-222, 238-251, 254-262
+src/llm/training/core/config.py              108      2     18      2  96.83%   46, 163
+src/llm/training/core/engine.py              180    120     54      7  29.49%   35, 44, 51-52, 60->65, 65->73, 69-70, 75, 96-100, 117-163, 166-202, 205-218, 221-285
+src/llm/training/core/utils.py               179    118     48      3  28.19%   33, 36, 39, 42, 45-49, 53-55, 58-62, 79, 87-106, 120, 123-151, 160-161, 164-188, 192-193, 197-200, 215->exit, 227-265, 268-275, 288-308
+src/llm/training/tasks/base_task.py           23      0      0      0 100.00%
+src/llm/training/tasks/lm_task.py             37      2      6      2  90.70%   74, 86
+src/llm/utils/common.py                       21      0     10      0 100.00%
+---------------------------------------------------------------------------------------
+TOTAL                                       1895    618    482     52  64.24%
+Coverage HTML written to dir htmlcov
+Coverage XML written to file coverage.xml
+Coverage LCOV written to file coverage.lcov
+305 passed, 8 warnings in 27.77s

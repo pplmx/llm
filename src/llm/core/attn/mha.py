@@ -1,12 +1,15 @@
 import torch
 from torch import Tensor, nn
 
+from llm.core.registry import ATTENTION_REGISTRY
+
 from .dot_product_attn import scaled_dot_product_attention
 
 
+@ATTENTION_REGISTRY.register("mha")
 class MultiHeadAttention(nn.Module):
     """
-    Multi-Head Attention mechanism.
+    Multi-Head Attention (MHA) mechanism.
 
     Integrates Layer Normalization and residual connection, supporting Pre-LN and Post-LN modes.
 

@@ -35,7 +35,7 @@ class RegressionTask(TrainingTask):
     def build_scheduler(self, optimizer: optim.Optimizer) -> LRScheduler | None:
         scheduler_map = {
             "cosine": optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=self.config.training.epochs - self.config.training.warmup_epochs
+                optimizer, T_max=max(1, self.config.training.epochs - self.config.training.warmup_epochs)
             ),
             "step": optim.lr_scheduler.StepLR(optimizer, step_size=max(1, self.config.training.epochs // 3), gamma=0.1),
         }

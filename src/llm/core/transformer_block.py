@@ -1,10 +1,6 @@
 import torch
 import torch.nn as nn
 
-from llm.core.attn.mha import MultiHeadAttention
-from llm.core.mlp import MLP
-from llm.core.moe.moe import MoE  # Import MoE
-
 
 class TransformerBlock(nn.Module):
     """
@@ -33,102 +29,93 @@ class TransformerBlock(nn.Module):
         top_k: int = 0,  # New: Number of top experts to select if use_moe is True
         num_kv_heads: int | None = None,  # New: For GQA support
         use_glu: bool = False,  # New: For SwiGLU support
-        norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # New: For RMSNorm support
+        norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
+        # Registry keys
+        attn_impl: str = "mha",
+        mlp_impl: str = "mlp",
     ):
         """
         Initializes the TransformerBlock.
-
-        Args:
-            hidden_size (int): Dimensionality of the input and output.
-            num_heads (int): Number of attention heads for MHA.
-            mlp_intermediate_size (int, optional): Intermediate size for MLP.
-                                                   Defaults to 4 * hidden_size.
-            attn_dropout_p (float, default=0.1): Dropout for MHA attention and output.
-            mlp_dropout_p (float, default=0.1): Dropout for MLP.
-            mlp_activation (str | nn.Module, default="gelu"): Activation for MLP.
-            norm_eps (float, default=1e-5): Epsilon for Layer Normalization.
-            norm_first (bool, default=True): True for Pre-LN, False for Post-LN.
-            is_causal (bool, default=False): Default causality for MHA.
-            qkv_bias (bool, default=True): Whether MHA QKV projections should use bias.
-            mlp_bias (bool, default=True): Whether MLP Linear layers should use bias.
-            use_moe (bool, default=False): Whether to use a Mixture of Experts (MoE) layer instead of a standard MLP.
-            num_experts (int, default=0): The total number of experts if `use_moe` is True.
-            top_k (int, default=0): The number of top experts to select if `use_moe` is True.
-            device (torch.device | str | None, default=None): Target device.
-            dtype (torch.dtype | None, default=None): Target data type.
         """
         super().__init__()
         factory_kwargs = {"device": device, "dtype": dtype}
 
-        self.norm_first = norm_first
-        self.hidden_size = hidden_size  # Needed for potential checks or logging
+        from llm.core.registry import ATTENTION_REGISTRY, MLP_REGISTRY
 
-        # Initialize Layer Normalization layers
-        # Initialize Layer Normalization layers
+        self.norm_first = norm_first
+        self.hidden_size = hidden_size
+
+        # Initialize Norms
         if isinstance(norm_type, type):
             self.norm1 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
             self.norm2 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
         else:
-            # Important: When norm_type is an instance, we must clone it to ensure independent parameters
-            # for norm1 and norm2. Using the same instance would tie their weights together.
             import copy
 
             self.norm1 = copy.deepcopy(norm_type)
             self.norm2 = copy.deepcopy(norm_type)
-
-            # Move to target device/dtype if provided, as the copied instance keeps original placement
             if device is not None or dtype is not None:
                 self.norm1 = self.norm1.to(device=device, dtype=dtype)
                 self.norm2 = self.norm2.to(device=device, dtype=dtype)
 
-        # Initialize Multi-Head Attention
-        # MHA's internal norm/residual are disabled; TransformerBlock handles them.
-        self.self_attn = MultiHeadAttention(
+        # Initialize Attention via Registry
+        attn_cls = ATTENTION_REGISTRY.get(attn_impl)
+        self.self_attn = attn_cls(
             hidden_size=hidden_size,
             num_heads=num_heads,
             p=attn_dropout_p,
-            bias=qkv_bias,  # Pass bias for QKV layers
-            is_causal=is_causal,  # Set default causality for MHA
-            include_norm_residual=False,  # MHA does not handle norm/residual itself
-            eps=norm_eps,  # MHA's norm_eps, not used if include_norm_residual=False
-            norm_first=False,  # MHA's norm_first, not used if include_norm_residual=False
-            num_kv_heads=num_kv_heads,  # Pass num_kv_heads
+            bias=qkv_bias,
+            is_causal=is_causal,
+            include_norm_residual=False,
+            eps=norm_eps,
+            norm_first=False,
+            num_kv_heads=num_kv_heads,
             **factory_kwargs,
         )
 
-        # Initialize MLP or MoE
+        # Initialize MLP via Registry
+        # Support legacy use_moe arg if passed, but prefer mlp_impl
+        if use_moe:
+            mlp_impl = "moe"
+
         if mlp_intermediate_size is None:
             mlp_intermediate_size = 4 * hidden_size
 
-        if use_moe:
+        mlp_cls = MLP_REGISTRY.get(mlp_impl)
+
+        # Prepare kwargs for MLP/MoE
+        # Note: Different implementations might need different kwargs.
+        # Ideally we pass a config object, but here we pass common args.
+        # MoE needs num_experts and top_k, MLP doesn't.
+        # We pass them as **kwargs, assuming constructors handle extra args or we filter.
+        # But our classes strictly define __init__.
+        # So we construct specific kwargs map.
+
+        common_mlp_kwargs = {
+            "hidden_size": hidden_size,
+            "intermediate_size": mlp_intermediate_size,
+            "activation": mlp_activation,
+            "dropout_p": mlp_dropout_p,
+            "bias": mlp_bias,
+            "norm_eps": norm_eps,
+            **factory_kwargs,
+        }
+
+        if mlp_impl == "moe":
+            # Add MoE specific args
             if num_experts <= 0 or top_k <= 0:
-                raise ValueError("num_experts and top_k must be positive if use_moe is True.")
-            self.mlp = MoE(
-                hidden_size=hidden_size,
-                num_experts=num_experts,
-                top_k=top_k,
-                intermediate_size=mlp_intermediate_size,
-                activation=mlp_activation,
-                dropout_p=mlp_dropout_p,
-                bias=mlp_bias,
-                norm_eps=norm_eps,  # Pass norm_eps to MoE's experts
-                **factory_kwargs,
-            )
+                raise ValueError("num_experts and top_k must be positive for MoE.")
+            common_mlp_kwargs["num_experts"] = num_experts
+            common_mlp_kwargs["top_k"] = top_k
         else:
-            self.mlp = MLP(
-                hidden_size=hidden_size,
-                intermediate_size=mlp_intermediate_size,
-                activation=mlp_activation,
-                dropout_p=mlp_dropout_p,
-                bias=mlp_bias,  # Pass bias for MLP layers
-                include_norm_residual=False,  # MLP does not handle norm/residual itself
-                use_glu=use_glu,  # Pass use_glu flag
-                norm_eps=norm_eps,  # MLP's norm_eps, not used if include_norm_residual=False
-                norm_first=False,  # MLP's norm_first, not used if include_norm_residual=False
-                **factory_kwargs,
-            )
+            # Add MLP specific args (standard MLP doesn't need num_experts)
+            common_mlp_kwargs["include_norm_residual"] = False
+            common_mlp_kwargs["use_glu"] = use_glu
+            common_mlp_kwargs["norm_first"] = False
+
+        self.mlp = mlp_cls(**common_mlp_kwargs)
 
     def forward(
         self,

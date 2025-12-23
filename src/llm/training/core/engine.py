@@ -204,7 +204,7 @@ class TrainingEngine:
     def _log_batch_stats(self, epoch, batch_idx, num_batches, metrics):
         lr = self.optimizer.param_groups[0]["lr"]
         mem_alloc, mem_cached = self.performance_monitor.get_current_gpu_memory()
-        grad_norm = self.performance_monitor.gradient_norms[-1]
+        grad_norm = self.performance_monitor.gradient_norms[-1] if self.performance_monitor.gradient_norms else 0.0
         batch_time = self.performance_monitor.get_avg_batch_time()
 
         metrics_str = " | ".join([f"{k}: {v:.4f}" for k, v in metrics.items()])

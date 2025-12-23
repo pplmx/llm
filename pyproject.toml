@@ -30,6 +30,8 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "python-json-logger>=2.0.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "typer>=0.20.1",
+    "transformers>=4.40.0",
 ]
 
 [dependency-groups]
@@ -53,6 +55,10 @@ module-name = "llm"
 
 [tool.pytest]
 minversion = "9.0"
+filterwarnings = [
+    "ignore:The argument 'device' of:DeprecationWarning",
+    "ignore:Module llm was previously imported"
+]
 addopts = [
     "-ra",
     "-q",

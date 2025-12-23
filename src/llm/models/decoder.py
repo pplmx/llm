@@ -42,35 +42,12 @@ class DecoderModel(nn.Module):
         norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # New: For RMSNorm support
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
+        # Registry keys
+        attn_impl: str = "mha",
+        mlp_impl: str = "mlp",
     ):
         """
         Initializes the DecoderModel.
-
-        Args:
-            vocab_size (int): Vocabulary size.
-            hidden_size (int): Dimensionality of the model.
-            num_layers (int): Number of TransformerBlock layers.
-            num_heads (int): Number of attention heads per TransformerBlock.
-            max_seq_len (int, default=512): Max sequence length for embeddings.
-            mlp_intermediate_size (int, optional): Intermediate size for MLPs in blocks.
-                                                   Defaults to 4 * hidden_size.
-            pos_encoding_learned (bool, default=False): Use learned positional embeddings.
-            embedding_dropout_p (float, default=0.1): Dropout for positional encoding.
-            attn_dropout_p (float, default=0.1): Dropout for MHA in blocks.
-            mlp_dropout_p (float, default=0.1): Dropout for MLP in blocks.
-            mlp_activation (str | nn.Module, default="gelu"): Activation for MLP in blocks.
-            norm_eps (float, default=1e-5): Epsilon for LayerNorms.
-            norm_first (bool, default=True): True for Pre-LN, False for Post-LN.
-            is_causal (bool, default=True): If MHA in blocks should be causal.
-            padding_idx (int, optional, default=None): Padding index for embeddings.
-            qkv_bias (bool, default=True): Bias for QKV projections in MHA.
-            mlp_bias (bool, default=True): Bias for Linear layers in MLP.
-            lm_head_bias (bool, default=True): Bias for the final language modeling head.
-            use_moe (bool, default=False): Whether to use a Mixture of Experts (MoE) layer in TransformerBlocks.
-            num_experts (int, default=0): The total number of experts if `use_moe` is True.
-            top_k (int, default=0): The number of top experts to select if `use_moe` is True.
-            device (torch.device | str | None, default=None): Target device.
-            dtype (torch.dtype | None, default=None): Target data type.
         """
         super().__init__()
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -92,6 +69,10 @@ class DecoderModel(nn.Module):
         if mlp_intermediate_size is None:
             mlp_intermediate_size = 4 * hidden_size
 
+        # Backward compatibility for use_moe
+        if use_moe:
+            mlp_impl = "moe"
+
         self.transformer_blocks = nn.ModuleList(
             [
                 TransformerBlock(
@@ -106,12 +87,14 @@ class DecoderModel(nn.Module):
                     is_causal=is_causal,  # Pass overall model's causality default
                     qkv_bias=qkv_bias,
                     mlp_bias=mlp_bias,
-                    use_moe=use_moe,  # Pass MoE flag
+                    use_moe=use_moe,  # Pass MoE flag (legacy)
                     num_experts=num_experts,  # Pass num_experts
                     top_k=top_k,  # Pass top_k
                     num_kv_heads=num_kv_heads,  # Pass num_kv_heads
                     use_glu=use_glu,  # Pass use_glu
                     norm_type=norm_type,  # Pass norm_type
+                    attn_impl=attn_impl,  # Pass attn_impl
+                    mlp_impl=mlp_impl,  # Pass mlp_impl
                     **factory_kwargs,
                 )
                 for _ in range(num_layers)

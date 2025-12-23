@@ -1,11 +1,11 @@
 import sys
 from pathlib import Path
-from typing import Any
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.tokenization.tokenizer import BaseTokenizer
 
 
 class TextDataset(Dataset):
@@ -20,7 +20,7 @@ class TextDataset(Dataset):
     def __init__(
         self,
         file_path: str,
-        tokenizer: Any,  # Should ideally be a more specific TokenizerProtocol
+        tokenizer: BaseTokenizer,
         max_seq_len: int,
         overlap: int = 0,
         padding_value: int | None = None,  # Allow None to use tokenizer's pad_id
@@ -30,7 +30,7 @@ class TextDataset(Dataset):
 
         Args:
             file_path (str): Path to the text file.
-            tokenizer (Any): A tokenizer instance with `encode` and `pad_token_id` attributes.
+            tokenizer (BaseTokenizer): A tokenizer instance satisfying the BaseTokenizer protocol.
             max_seq_len (int): The maximum length for each sequence.
             overlap (int, default=0): The number of tokens to overlap between consecutive sequences.
                                       Must be less than `max_seq_len`.
