@@ -1,9 +1,12 @@
-import argparse
 import statistics
 import time
 
+import typer
+
 from llm.serving.config import ServingConfig
 from llm.serving.engine import LLMEngine
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 def run_benchmark(engine: LLMEngine, prompt: str, max_new_tokens: int, num_runs: int, warmup: int = 1):
@@ -45,27 +48,28 @@ def run_benchmark(engine: LLMEngine, prompt: str, max_new_tokens: int, num_runs:
     return avg_latency, avg_tps
 
 
-def main():
-    parser = argparse.ArgumentParser(description="LLM Inference Benchmark")
-    parser.add_argument("--prompt", type=str, default="Hello, world", help="Input prompt")
-    parser.add_argument("--max_new_tokens", type=int, default=50, help="Number of tokens to generate")
-    parser.add_argument("--runs", type=int, default=5, help="Number of benchmark runs")
-    parser.add_argument("--device", type=str, default="auto", help="Device to use")
-    parser.add_argument("--compile", action="store_true", help="Enable torch.compile (if supported in engine)")
-
-    args = parser.parse_args()
-
-    config = ServingConfig(device=args.device)
-    config.compile_model = args.compile
+@app.command()
+def main(
+    prompt: str = typer.Option("Hello, world", help="Input prompt"),
+    max_new_tokens: int = typer.Option(50, help="Number of tokens to generate"),
+    runs: int = typer.Option(5, help="Number of benchmark runs"),
+    device: str = typer.Option("auto", help="Device to use"),
+    compile: bool = typer.Option(False, help="Enable torch.compile (if supported in engine)"),
+):
+    """
+    LLM Inference Benchmark.
+    """
+    config = ServingConfig(device=device)
+    config.compile_model = compile
 
     engine = LLMEngine(config)
     engine.load_model()
 
     try:
-        run_benchmark(engine, args.prompt, args.max_new_tokens, args.runs)
+        run_benchmark(engine, prompt, max_new_tokens, runs)
     finally:
         engine.unload_model()
 
 
 if __name__ == "__main__":
-    main()
+    app()
