@@ -85,21 +85,21 @@ uv run -m llm.training.train --task regression --epochs 10
 For a simple example of training a decoder-only model on a text file, use `scripts/train_simple_decoder.py`.
 
 ```bash
-uv run scripts/train_simple_decoder.py --file_path <path_to_text_file> [options]
+uv run scripts/train_simple_decoder.py --file-path <path_to_text_file> [options]
 ```
 
 **Common Options:**
 
-- `--file_path`: Path to the training text file (Required).
-- `--val_file_path`: Path to the validation text file.
+- `--file-path`: Path to the training text file (Required).
+- `--val-file-path`: Path to the validation text file.
 - `--device`: `cpu` or `cuda`.
 - `--epochs`: Number of training epochs.
-- `--batch_size`: Batch size.
+- `--batch-size`: Batch size.
 
 Example:
 
 ```bash
-uv run scripts/train_simple_decoder.py --file_path data/dummy_corpus.txt --epochs 5
+uv run scripts/train_simple_decoder.py --file-path data/dummy_corpus.txt --epochs 5
 ```
 
 The script will automatically use CUDA if available, otherwise it falls back to CPU. You can force a specific device using `--device`:

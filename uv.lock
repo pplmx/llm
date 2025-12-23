@@ -561,7 +561,7 @@ dependencies = [
     { name = "tokenizers" },
     { name = "torch" },
     { name = "transformers" },
-    { name = "typer" },
+    { name = "typer-slim", extra = ["standard"] },
     { name = "uvicorn" },
 ]
 
@@ -594,7 +594,7 @@ requires-dist = [
     { name = "tokenizers", specifier = ">=0.21.0" },
     { name = "torch", specifier = ">=2.9.0" },
     { name = "transformers", specifier = ">=4.40.0" },
-    { name = "typer", specifier = ">=0.20.1" },
+    { name = "typer-slim", extras = ["standard"], specifier = ">=0.20.1" },
     { name = "uvicorn", specifier = ">=0.27.0" },
 ]
 
@@ -1630,18 +1630,22 @@ wheels = [
 ]
 
 [[package]]
-name = "typer"
+name = "typer-slim"
 version = "0.20.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "click" },
-    { name = "rich" },
-    { name = "shellingham" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/6d/c1/933d30fd7a123ed981e2a1eedafceab63cb379db0402e438a13bc51bbb15/typer-0.20.1.tar.gz", hash = "sha256:68585eb1b01203689c4199bc440d6be616f0851e9f0eb41e4a778845c5a0fd5b" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/3f/3d/6a4ec47010e8de34dade20c8e7bce90502b173f62a6b41619523a3fcf562/typer_slim-0.20.1.tar.gz", hash = "sha256:bb9e4f7e6dc31551c8a201383df322b81b0ce37239a5ead302598a2ebb6f7c9c" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/c8/52/1f2df7e7d1be3d65ddc2936d820d4a3d9777a54f4204f5ca46b8513eff77/typer-0.20.1-py3-none-any.whl", hash = "sha256:4b3bde918a67c8e03d861aa02deca90a95bbac572e71b1b9be56ff49affdb5a8" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/d8/f9/a273c8b57c69ac1b90509ebda204972265fdc978fbbecc25980786f8c038/typer_slim-0.20.1-py3-none-any.whl", hash = "sha256:8e89c5dbaffe87a4f86f4c7a9e2f7059b5b68c66f558f298969d42ce34f10122" },
+]
+
+[package.optional-dependencies]
+standard = [
+    { name = "rich" },
+    { name = "shellingham" },
 ]
 
 [[package]]
