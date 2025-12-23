@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "llm"
-version = "0.0.2"
+version = "0.0.3"
 description = "A nice python project"
 readme = "README.md"
 requires-python = ">=3.13"
