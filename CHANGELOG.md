@@ -93,33 +93,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Comprehensive ROADMAP.md with 15 development stages and clear priorities
-- Grouped Query Attention (GQA) support in MultiHeadAttention for balanced performance and memory efficiency
-- SwiGLU activation function in MLP layers for enhanced performance
-- Unified QKV projection optimization for improved memory layout and computational throughput
-- BPETokenizer for production-ready subword tokenization
-- RMSNorm support as alternative normalization layer
-- KV Cache support in inference for efficient autoregressive generation
-- Top-k and Top-p sampling strategies in inference
-- Greedy search decoding
-- Detailed training framework documentation (8 comprehensive guides)
-- 262 comprehensive test cases covering all core functionality
-- CPU-friendly LLM tutorial and development guide
+- **Modern Architecture Features**:
+  - Grouped Query Attention (GQA) for balanced performance and memory efficiency
+  - SwiGLU activation function in MLP layers
+  - Unified QKV projection optimization for improved memory layout and throughput
+  - RMSNorm support as alternative normalization layer
+
+- **Tokenization & Training**:
+  - BPETokenizer for production-ready subword tokenization
+  - LanguageModelingTask for language model training
+  - Automatic BF16/FP16 mixed precision detection and support
+  - Robust NaN loss handling
+
+- **Inference Capabilities**:
+  - KV Cache support in MHA, TransformerBlock, and DecoderModel
+  - Top-k and Top-p sampling strategies
+  - Greedy search decoding (temperature=0)
+  - Dynamic sequence length support
+  - Simple autoregressive generation loop
+
+- **Testing & Quality**:
+  - 262 comprehensive unit test cases covering all core functionality
+  - Functional tests for causal masking, KV cache consistency, architecture properties
+  - Convergence tests for training validation
+  - Mock-free test design using real components
+
+- **Documentation**:
+  - Comprehensive ROADMAP.md (405 lines) with 15 development stages
+  - Priority levels (P1-P4), timelines, and success metrics
+  - Detailed training framework documentation (8 comprehensive guides)
+  - CPU-friendly LLM tutorial and development guide
+  - FAQ document covering core topics
+  - ADR (Architecture Decision Records) system with 4 initial records
+  - PR template for standardized contributions
 
 ### Changed
 
-- Updated project structure for better modularity and maintainability
-- Enhanced TrainingEngine with improved callback system and performance monitoring
-- Improved mixed precision support with automatic BF16/FP16 detection
-- Optimized DecoderModel architecture with configurable components
-- Enhanced documentation with better cross-references and examples
+- **Architecture Optimization**:
+  - Refactored DecoderModel with configurable components
+  - Optimized padding mask and KV cache handling
+  - Improved GradScaler usage for bfloat16
+
+- **Training Enhancements**:
+  - Enhanced TrainingEngine with improved callback system
+  - Performance monitoring and logging improvements
+  - Auto AMP dtype resolution for CPU-only environments
+
+- **Code Quality**:
+  - Enhanced Ruff linting rules (SIM, RUF, PTH for pathlib)
+  - PEP 561 compliance with py.typed marker
+  - Standardized punctuation across documentation
+  - Project structure improvements for modularity
+
+- **Documentation**:
+  - Updated Quick Start example from regression to lm task
+  - Enhanced feature descriptions with technical highlights
+  - Better cross-references and examples throughout
 
 ### Fixed
 
-- All test regressions resolved (262/262 tests passing)
-- Type checking issues across the codebase
-- Memory management in distributed training
-- Edge cases in attention masking and positional encoding
+- **Core Issues**:
+  - All 262 test regressions resolved
+  - PositionalEncoding support for `start_pos` in incremental generation
+  - MLP SwiGLU operation order for numerical consistency
+  - Prompt truncation respecting `max_seq_len` with new tokens
+  - Device mismatch in MLP when norm instance provided
+  - Auto AMP dtype test failures on CUDA environments
+
+- **Quality & Stability**:
+  - Type checking issues across the codebase
+  - Memory management in distributed training
+  - Edge cases in attention masking and positional encoding
+  - Device comparisons robustness (comparing device.type)
+  - Failed runs on CPU-only environments
 
 ## [0.0.1] - 2024
 
