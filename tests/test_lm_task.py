@@ -13,7 +13,7 @@ def mock_config():
         hidden_size=128,
         num_layers=2,
         num_heads=4,
-        ffn_hidden_size=512,
+        intermediate_size=512,
         use_glu=True,
     )
     config.training = TrainingConfig(batch_size=4, epochs=1, lr=1e-4)

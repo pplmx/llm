@@ -15,7 +15,7 @@ class TransformerBlock(nn.Module):
         self,
         hidden_size: int,
         num_heads: int,
-        mlp_intermediate_size: int | None = None,
+        intermediate_size: int | None = None,
         attn_dropout_p: float = 0.1,
         mlp_dropout_p: float = 0.1,
         mlp_activation: str | nn.Module = "gelu",
@@ -80,8 +80,8 @@ class TransformerBlock(nn.Module):
         if use_moe:
             mlp_impl = "moe"
 
-        if mlp_intermediate_size is None:
-            mlp_intermediate_size = 4 * hidden_size
+        if intermediate_size is None:
+            intermediate_size = 4 * hidden_size
 
         mlp_cls = MLP_REGISTRY.get(mlp_impl)
 
@@ -95,7 +95,7 @@ class TransformerBlock(nn.Module):
 
         common_mlp_kwargs = {
             "hidden_size": hidden_size,
-            "intermediate_size": mlp_intermediate_size,
+            "intermediate_size": intermediate_size,
             "activation": mlp_activation,
             "dropout_p": mlp_dropout_p,
             "bias": mlp_bias,

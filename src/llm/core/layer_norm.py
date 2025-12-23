@@ -58,35 +58,35 @@ class LayerNorm(nn.Module):
             self.register_parameter("weight", None)
             self.register_parameter("bias", None)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         前向传播函数
 
         参数:
-            x: 输入张量, 其尾部维度应与 `normalized_shape` 匹配.
+            hidden_states: 输入张量, 其尾部维度应与 `normalized_shape` 匹配.
                例如, 形状可以是 [batch_size, ..., *normalized_shape]
 
         返回:
-            归一化后的张量, 形状与输入 x 相同.
+            归一化后的张量, 形状与输入 hidden_states 相同.
         """
         # 1. 确定需要计算均值和方差的维度
         # normalized_shape 定义了最后几个维度, 我们需要在这些维度上计算统计量
-        # 例如, 如果 x.shape = (N, C, H, W) 且 normalized_shape = (H, W)
+        # 例如, 如果 hidden_states.shape = (N, C, H, W) 且 normalized_shape = (H, W)
         # 则 dims_to_normalize = (-2, -1)
         num_normalized_dims = len(self.normalized_shape)
-        dims_to_normalize = tuple(range(x.ndim - num_normalized_dims, x.ndim))
+        dims_to_normalize = tuple(range(hidden_states.ndim - num_normalized_dims, hidden_states.ndim))
 
         # 2. 计算均值 (μ) 和方差 (σ²)
         # 在指定的维度上计算, 并保持维度以便广播
         # 注意: 计算方差时使用 unbiased=False, 与 PyTorch 官方实现一致
-        mean = torch.mean(x, dim=dims_to_normalize, keepdim=True)
-        # var = torch.var(x, dim=dims_to_normalize, unbiased=False, keepdim=True) # 简洁写法
+        mean = torch.mean(hidden_states, dim=dims_to_normalize, keepdim=True)
+        # var = torch.var(hidden_states, dim=dims_to_normalize, unbiased=False, keepdim=True) # 简洁写法
         # 或者, 使用定义式计算方差(对初学者更清晰):
-        var = ((x - mean) ** 2).mean(dim=dims_to_normalize, keepdim=True)
+        var = ((hidden_states - mean) ** 2).mean(dim=dims_to_normalize, keepdim=True)
 
         # 3. 归一化 (x_normalized)
         # (x - μ) / sqrt(σ² + ε)
-        x_normalized = (x - mean) / torch.sqrt(var + self.eps)
+        x_normalized = (hidden_states - mean) / torch.sqrt(var + self.eps)
 
         # 4. 应用仿射变换 (γ * x_normalized + β)
         if self.elementwise_affine:

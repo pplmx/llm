@@ -37,7 +37,7 @@ def model_kwargs(request):
         "num_layers": NUM_LAYERS,
         "num_heads": NUM_HEADS,
         "max_seq_len": MAX_SEQ_LEN,
-        "mlp_intermediate_size": MLP_INTERMEDIATE_SIZE,
+        "intermediate_size": MLP_INTERMEDIATE_SIZE,
         "pos_encoding_learned": False,
         "embedding_dropout_p": DROPOUT_P,
         "attn_dropout_p": DROPOUT_P,

@@ -16,7 +16,7 @@ class ModelConfig(BaseModel):
     hidden_size: int = Field(512, gt=0)
     num_heads: int = Field(8, gt=0)
     num_kv_heads: int | None = Field(None, description="If None, defaults to num_heads")
-    ffn_hidden_size: int | None = Field(None, description="If None, defaults to 4 * hidden_size")
+    intermediate_size: int | None = Field(None, description="If None, defaults to 4 * hidden_size")
     num_layers: int = Field(2, gt=0)
     dropout: float = Field(0.1, ge=0.0, le=1.0)
     use_glu: bool = False
@@ -36,11 +36,11 @@ class ModelConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_consistency(self) -> "ModelConfig":
-        if self.ffn_hidden_size is None:
-            self.ffn_hidden_size = self.hidden_size * 4
+        if self.intermediate_size is None:
+            self.intermediate_size = self.hidden_size * 4
 
-        if self.ffn_hidden_size <= 0:
-            raise ValueError("FFN hidden size must be positive")
+        if self.intermediate_size <= 0:
+            raise ValueError("Intermediate size must be positive")
 
         if self.hidden_size % self.num_heads != 0:
             raise ValueError("hidden_size must be divisible by num_heads")

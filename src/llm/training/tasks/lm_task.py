@@ -24,7 +24,7 @@ class LanguageModelingTask(TrainingTask):
             hidden_size=model_config.hidden_size,
             num_layers=model_config.num_layers,
             num_heads=model_config.num_heads if hasattr(model_config, "num_heads") else 8,
-            mlp_intermediate_size=model_config.ffn_hidden_size,
+            intermediate_size=model_config.intermediate_size,
             embedding_dropout_p=model_config.dropout,
             attn_dropout_p=model_config.dropout,
             mlp_dropout_p=model_config.dropout,

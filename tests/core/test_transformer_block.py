@@ -31,7 +31,7 @@ def block_kwargs(request):
     default = {
         "hidden_size": HIDDEN_SIZE,
         "num_heads": NUM_HEADS,
-        "mlp_intermediate_size": MLP_INTERMEDIATE_SIZE,
+        "intermediate_size": MLP_INTERMEDIATE_SIZE,
         "attn_dropout_p": ATTN_DROPOUT_P,
         "mlp_dropout_p": MLP_DROPOUT_P,
         "mlp_activation": "gelu",
@@ -116,7 +116,7 @@ class TestTransformerBlockInitialization:
         if isinstance(transformer_block.mlp, MLP):
             assert transformer_block.mlp.hidden_size == block_kwargs["hidden_size"]
             # MLP's intermediate_size calculation: if None, it's 4*hidden_size
-            expected_mlp_intermediate = block_kwargs["mlp_intermediate_size"] or 4 * block_kwargs["hidden_size"]
+            expected_mlp_intermediate = block_kwargs["intermediate_size"] or 4 * block_kwargs["hidden_size"]
             assert transformer_block.mlp.intermediate_size == expected_mlp_intermediate
             assert transformer_block.mlp.dropout.p == block_kwargs["mlp_dropout_p"]  # MLP stores dropout layer
         elif isinstance(transformer_block.mlp, MoE):
@@ -126,7 +126,7 @@ class TestTransformerBlockInitialization:
             # Check parameters of experts within MoE
             for expert in transformer_block.mlp.experts:
                 assert expert.hidden_size == block_kwargs["hidden_size"]
-                expected_mlp_intermediate = block_kwargs["mlp_intermediate_size"] or 4 * block_kwargs["hidden_size"]
+                expected_mlp_intermediate = block_kwargs["intermediate_size"] or 4 * block_kwargs["hidden_size"]
                 assert expert.intermediate_size == expected_mlp_intermediate
                 assert expert.dropout.p == block_kwargs["mlp_dropout_p"]
 
