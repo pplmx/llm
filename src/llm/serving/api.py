@@ -9,7 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from fastapi.security.api_key import APIKeyHeader
 from prometheus_fastapi_instrumentator import Instrumentator
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger import json
 from starlette.status import HTTP_403_FORBIDDEN
 
 from llm.serving.config import ServingConfig
@@ -19,7 +19,7 @@ from llm.serving.schemas import GenerationRequest, GenerationResponse
 # 配置结构化日志
 logger = logging.getLogger()
 logHandler = logging.StreamHandler(sys.stdout)
-formatter = jsonlogger.JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+formatter = json.JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
 logHandler.setFormatter(formatter)
 logger.addHandler(logHandler)
 logger.setLevel(logging.INFO)
@@ -48,7 +48,7 @@ async def get_api_key(
 
 
 @contextlib.asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, Any]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     """
     FastAPI 生命周期管理器.
     """
@@ -78,7 +78,7 @@ async def health_check() -> dict[str, str]:
 
 @app.post("/generate", response_model=GenerationResponse)
 async def generate_text(
-    request: GenerationRequest, api_key: str = Depends(get_api_key)
+    request: GenerationRequest, _api_key: str = Depends(get_api_key)
 ) -> GenerationResponse | StreamingResponse:
     """
     文本生成端点. 支持流式和非流式.
@@ -133,7 +133,11 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
         async for chunk in iterate_in_threadpool(iterator):
             yield chunk
 
-    except RuntimeError as e:
-        yield f"Error: {str(e)}"
     except Exception as e:
         yield f"Error: {str(e)}"
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("llm.serving.api:app", host="0.0.0.0", port=8000, reload=True)

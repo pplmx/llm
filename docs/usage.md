@@ -157,7 +157,13 @@ make compose-up
 **Local Development:**
 
 ```bash
-uvicorn src.llm.serving.api:app --reload --host 0.0.0.0 --port 8000
+python src/llm/serving/api.py
+```
+
+或者使用 `uv`:
+
+```bash
+uv run src/llm/serving/api.py
 ```
 
 ### API Usage
@@ -230,3 +236,19 @@ Prometheus metrics are available at `/metrics`.
 ```bash
 curl http://127.0.0.1:8000/metrics
 ```
+
+### Performance Benchmarking
+
+A benchmark script is provided to measure inference performance (Latency and TPS).
+
+```bash
+# Run benchmark with torch.compile enabled
+uv run scripts/benchmark_inference.py --compile --runs 5
+```
+
+Arguments:
+
+- `--runs`: Number of benchmark iterations.
+- `--compile`: Enable `torch.compile` optimization.
+- `--device`: Target device (e.g., `cuda`).
+- `--max_new_tokens`: Number of tokens to generate per run.
