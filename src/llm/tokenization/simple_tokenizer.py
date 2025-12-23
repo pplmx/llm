@@ -41,6 +41,14 @@ class SimpleCharacterTokenizer:
             # If PAD char was part of the corpus, use its existing ID
             self.pad_token_id: int = self.stoi[self.pad_char]
 
+    @property
+    def bos_token_id(self) -> int | None:
+        return None
+
+    @property
+    def eos_token_id(self) -> int | None:
+        return None
+
     def encode(self, text: str) -> list[int]:
         """
         Encodes a string of text into a list of integer tokens.

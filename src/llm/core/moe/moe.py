@@ -3,11 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from llm.core.mlp import MLP  # Reusing the MLP for experts
+from llm.core.registry import MLP_REGISTRY
 
 
+@MLP_REGISTRY.register("moe")
 class MoE(nn.Module):
     """
-    Mixture of Experts (MoE) layer.
+    Mixture of Experts (MoE) Layer.
 
     Args:
         hidden_size (int): The dimensionality of the input and output.

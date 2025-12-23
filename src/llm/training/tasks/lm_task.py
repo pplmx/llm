@@ -32,10 +32,17 @@ class LanguageModelingTask(TrainingTask):
             num_experts=model_config.num_experts,
             top_k=model_config.top_k,
             # New architectural params
-            num_kv_heads=getattr(model_config, "num_kv_heads", None),
-            use_glu=getattr(model_config, "use_glu", False),
-            norm_type=getattr(model_config, "norm_type", nn.LayerNorm),
-            max_seq_len=getattr(model_config, "max_seq_len", 512),
+            num_kv_heads=model_config.num_kv_heads,
+            use_glu=model_config.use_glu,
+            norm_type=getattr(
+                model_config, "norm_type", nn.LayerNorm
+            ),  # Still relying on strict type or manual map? Config usually has strings.
+            # Convert string norm_impl to class if we had a registry for norms.
+            # For now DecoderModel accepts type or module. Config has no way to pass type class directly safely from YAML.
+            # We'll ignore norm_impl for now or handle it later.
+            max_seq_len=model_config.max_seq_len,
+            attn_impl=model_config.attn_impl,
+            mlp_impl=model_config.mlp_impl,
         )
 
     def build_optimizer(self, model: nn.Module) -> optim.Optimizer:
@@ -59,7 +66,7 @@ class LanguageModelingTask(TrainingTask):
         if self.config.training.scheduler_type == "cosine":
             main_scheduler = optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
-                T_max=self.config.training.epochs - self.config.training.warmup_epochs,
+                T_max=max(1, self.config.training.epochs - self.config.training.warmup_epochs),
                 eta_min=self.config.training.lr * 0.1,
             )
         else:

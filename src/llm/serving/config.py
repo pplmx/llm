@@ -24,4 +24,12 @@ class ServingConfig(BaseSettings):
     num_heads: int = 4
     max_seq_len: int = 128
 
+    # Advanced Arch Params
+    num_kv_heads: int | None = None
+    use_moe: bool = False
+    num_experts: int = 0
+    top_k: int = 0
+    attn_impl: str = "mha"
+    mlp_impl: str = "mlp"
+
     model_config = SettingsConfigDict(env_prefix="LLM_SERVING_")

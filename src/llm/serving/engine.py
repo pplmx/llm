@@ -53,6 +53,12 @@ class LLMEngine:
             num_layers=self.config.num_layers,
             num_heads=self.config.num_heads,
             max_seq_len=self.config.max_seq_len,
+            num_kv_heads=self.config.num_kv_heads,
+            use_moe=self.config.use_moe,
+            num_experts=self.config.num_experts,
+            top_k=self.config.top_k,
+            attn_impl=self.config.attn_impl,
+            mlp_impl=self.config.mlp_impl,
         )
 
         # 3. Load Model Weights

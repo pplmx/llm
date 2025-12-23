@@ -46,7 +46,9 @@ class SyntheticDataModule(BaseDataModule):
             sampler=train_sampler,
             num_workers=self.config.optimization.num_workers,
             pin_memory=self.config.optimization.pin_memory and torch.cuda.is_available(),
-            prefetch_factor=self.config.optimization.prefetch_factor if use_persistent_workers else 2,
+            prefetch_factor=self.config.optimization.prefetch_factor
+            if self.config.optimization.num_workers > 0
+            else None,
             persistent_workers=use_persistent_workers,
         )
         return train_dataloader, train_sampler
@@ -65,7 +67,9 @@ class SyntheticDataModule(BaseDataModule):
             sampler=val_sampler,
             num_workers=self.config.optimization.num_workers,
             pin_memory=self.config.optimization.pin_memory and torch.cuda.is_available(),
-            prefetch_factor=self.config.optimization.prefetch_factor if use_persistent_workers else 2,
+            prefetch_factor=self.config.optimization.prefetch_factor
+            if self.config.optimization.num_workers > 0
+            else None,
             persistent_workers=use_persistent_workers,
         )
         return val_dataloader, val_sampler

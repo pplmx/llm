@@ -3,24 +3,27 @@ import math
 import torch
 from torch import nn
 
+from llm.core.registry import MLP_REGISTRY
 from llm.utils.common import get_activation_layer
 
 
+@MLP_REGISTRY.register("mlp")
 class MLP(nn.Module):
     """
-    MLP block for Transformer-style Feed-Forward Networks with flexible normalization.
+        Multi-Layer Perceptron (MLP).
+    Transformer-style Feed-Forward Networks with flexible normalization.
 
-    Args:
-        hidden_size (int): Dimensionality of inputs and outputs.
-        intermediate_size (int, optional): Dimensionality of the inner layer. Defaults to 4 * hidden_size.
-        activation (str or nn.Module): Activation name or module. Defaults to "gelu".
-        dropout_p (float): Dropout probability. Defaults to 0.1.
-        norm_first (bool): Whether to apply normalization before or after (pre-LN vs post-LN). Defaults to True.
-        norm_type (Type[nn.Module] or nn.Module): Normalization layer type or instance. Defaults to nn.LayerNorm.
-        norm_eps (float): Epsilon for normalization layers. Defaults to 1e-5.
-        bias (bool): Whether to include bias terms in Linear layers. Defaults to True.
-        device (torch.device, optional): Device for parameters. Defaults to None.
-        dtype (torch.dtype, optional): Dtype for parameters. Defaults to None.
+        Args:
+            hidden_size (int): Dimensionality of inputs and outputs.
+            intermediate_size (int, optional): Dimensionality of the inner layer. Defaults to 4 * hidden_size.
+            activation (str or nn.Module): Activation name or module. Defaults to "gelu".
+            dropout_p (float): Dropout probability. Defaults to 0.1.
+            norm_first (bool): Whether to apply normalization before or after (pre-LN vs post-LN). Defaults to True.
+            norm_type (Type[nn.Module] or nn.Module): Normalization layer type or instance. Defaults to nn.LayerNorm.
+            norm_eps (float): Epsilon for normalization layers. Defaults to 1e-5.
+            bias (bool): Whether to include bias terms in Linear layers. Defaults to True.
+            device (torch.device, optional): Device for parameters. Defaults to None.
+            dtype (torch.dtype, optional): Dtype for parameters. Defaults to None.
     """
 
     def __init__(
