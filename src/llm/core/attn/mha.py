@@ -1,12 +1,15 @@
 import torch
 from torch import Tensor, nn
 
+from llm.core.registry import ATTENTION_REGISTRY
+
 from .dot_product_attn import scaled_dot_product_attention
 
 
+@ATTENTION_REGISTRY.register("mha")
 class MultiHeadAttention(nn.Module):
     """
-    Multi-Head Attention mechanism.
+    Multi-Head Attention (MHA) mechanism.
 
     Integrates Layer Normalization and residual connection, supporting Pre-LN and Post-LN modes.
 
@@ -39,6 +42,7 @@ class MultiHeadAttention(nn.Module):
         norm_first: bool = True,
         is_causal: bool = False,
         include_norm_residual: bool = True,  # New parameter
+        num_kv_heads: int | None = None,  # New: For GQA/MQA support
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -50,18 +54,24 @@ class MultiHeadAttention(nn.Module):
         factory_kwargs = {"device": device, "dtype": dtype}
         self.hidden_size = hidden_size
         self.num_heads = num_heads
+        self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
         self.head_dim = hidden_size // num_heads
+        self.kv_dim = self.num_kv_heads * self.head_dim
         self.norm_first = norm_first  # Relevant only if include_norm_residual is True
         self.is_causal = is_causal
         self.p = p
         self.include_norm_residual = include_norm_residual
+
+        if self.num_heads % self.num_kv_heads != 0:
+            raise ValueError(f"num_heads ({self.num_heads}) must be divisible by num_kv_heads ({self.num_kv_heads})")
 
         # --- Layers ---
         self.norm = None
         if self.include_norm_residual:
             self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
 
-        self.qkv_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, **factory_kwargs)
+        self.qkv_dim = (self.num_heads + 2 * self.num_kv_heads) * self.head_dim
+        self.qkv_proj = nn.Linear(hidden_size, self.qkv_dim, bias=bias, **factory_kwargs)
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, **factory_kwargs)
         self.dropout = nn.Dropout(p)  # This is for the output projection
 
@@ -69,20 +79,19 @@ class MultiHeadAttention(nn.Module):
 
     def _init_weights(self):
         """Initialize linear layer weights (Xavier uniform) and biases (zeros)."""
-        nn.init.xavier_uniform_(self.qkv_proj.weight)
-        if self.qkv_proj.bias is not None:
-            nn.init.zeros_(self.qkv_proj.bias)
-
-        nn.init.xavier_uniform_(self.out_proj.weight)
-        if self.out_proj.bias is not None:
-            nn.init.zeros_(self.out_proj.bias)
+        for proj in [self.qkv_proj, self.out_proj]:
+            nn.init.xavier_uniform_(proj.weight)
+            if proj.bias is not None:
+                nn.init.zeros_(proj.bias)
 
     def forward(
         self,
         hidden_states: Tensor,
         attn_mask: Tensor | None = None,
         is_causal: bool | None = None,
-    ) -> Tensor:
+        past_key_value: tuple[Tensor, Tensor] | None = None,
+        use_cache: bool = False,
+    ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """
         Forward pass.
 
@@ -95,9 +104,14 @@ class MultiHeadAttention(nn.Module):
             is_causal (bool | None): Whether to enforce causal masking for this forward pass.
                 - If `None` (default), uses the default `self.is_causal` set during initialization.
                 - If `True` or `False`, overrides the default setting.
+            past_key_value (tuple[Tensor, Tensor] | None): Tuple of (key, value) from previous steps.
+                Each has shape [B, N, S_prev, D].
+            use_cache (bool): Whether to return the updated (key, value) pair.
 
         Returns:
-            Tensor: Output tensor of shape [B, S, H].
+            Tensor or tuple[Tensor, tuple[Tensor, Tensor]]:
+                - If use_cache=False: Output tensor of shape [B, S, H].
+                - If use_cache=True: (Output tensor, (current_key, current_value))
         """
         batch_size, seq_len, _ = hidden_states.size()
 
@@ -115,12 +129,34 @@ class MultiHeadAttention(nn.Module):
             x_for_qkv = hidden_states
 
         # --- 2. Project Q, K, V and reshape ---
-        q, k, v = (
-            self.qkv_proj(x_for_qkv)  # [B, S, 3*H]
-            .reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)  # [B, S, 3, N, D]
-            .permute(2, 0, 3, 1, 4)  # [3, B, N, S, D]
-            .unbind(0)  # Each [B, N, S, D]
-        )
+        qkv = self.qkv_proj(x_for_qkv)  # [B, S, (N_q + 2*N_kv) * D]
+
+        # Split Q, K, V
+        q_size = self.num_heads * self.head_dim
+        kv_size = self.num_kv_heads * self.head_dim
+
+        q, k, v = torch.split(qkv, [q_size, kv_size, kv_size], dim=-1)
+
+        # Reshape and transpose for attention calculation: [B, N, S, D]
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+
+        # --- KV Cache logic ---
+        if past_key_value is not None:
+            prev_k, prev_v = past_key_value
+            k = torch.cat([prev_k, k], dim=2)
+            v = torch.cat([prev_v, v], dim=2)
+
+        if use_cache:
+            current_kv = (k, v)
+
+        # --- GQA: Repeat K, V if num_kv_heads < num_heads ---
+        if self.num_kv_heads != self.num_heads:
+            # k, v: [B, N_kv, S, D] -> [B, N_q, S, D]
+            num_queries_per_kv = self.num_heads // self.num_kv_heads
+            k = k.repeat_interleave(num_queries_per_kv, dim=1)
+            v = v.repeat_interleave(num_queries_per_kv, dim=1)
 
         # --- 3. Attention computation ---
         attn_output = scaled_dot_product_attention(
@@ -129,7 +165,9 @@ class MultiHeadAttention(nn.Module):
             value=v,
             attn_mask=attn_mask,
             dropout_p=self.p if self.training else 0.0,
-            is_causal=use_causal,
+            is_causal=use_causal
+            if past_key_value is None
+            else False,  # Disable causal mask if using KV cache (incremental)
             scale=None,
         )  # Output shape: [B, N, S, D]
 
@@ -148,7 +186,10 @@ class MultiHeadAttention(nn.Module):
             # --- 7. Layer Normalization (Post-LN mode) ---
             if not self.norm_first:  # self.norm must exist if not self.norm_first is true
                 output = self.norm(output)
-            return output
         else:
             # No residual, no norm by this module
-            return projected_output
+            output = projected_output
+
+        if use_cache:
+            return output, current_kv
+        return output

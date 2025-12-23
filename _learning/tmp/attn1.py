@@ -1,22 +1,22 @@
 """
-注意力机制教学版本 - 从基础到高级的实现（完整文档版）
+注意力机制教学版本 - 从基础到高级的实现(完整文档版)
 =================================================
 
-本模块系统性地实现了注意力机制的核心组件，按照由浅入深的教学顺序组织：
+本模块系统性地实现了注意力机制的核心组件, 按照由浅入深的教学顺序组织:
 
 1. 基础注意力计算 (attention_score) - 理解核心计算
 2. 缩放点积注意力 (scaled_dot_product_attention) - 完整实现
 3. 单头自注意力 (SingleHeadAttention) - 模块化封装
 4. 多头注意力 (MultiHeadAttention) - 工业级实现
 
-教学特色：
+教学特色:
 - 每个函数/类都有详细的理论说明和参数文档
 - 包含完整的数学公式表示
 - 添加了实现注意事项和常见问题
 - 丰富的示例说明和类比解释
-- 类型提示完整，便于IDE支持
+- 类型提示完整, 便于IDE支持
 
-参考论文：
+参考论文:
 - "Attention Is All You Need" (Vaswani et al., 2017)
 - "Transformers in Vision" (Khan et al., 2021)
 """
@@ -26,32 +26,32 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-# ---------------------------- 第1部分：基础函数 ----------------------------
+# ---------------------------- 第1部分: 基础函数 ----------------------------
 
 
 def attention_score(query: Tensor, key: Tensor) -> Tensor:
     """
-    计算基础注意力分数：Q和K的点积相似度
+    计算基础注意力分数: Q和K的点积相似度
 
-    数学表示：
+    数学表示:
         Score(Q, K) = Q · K^T
 
-    参数说明：
-        query: 查询张量，形状为 (..., seq_len_q, dim)
+    参数说明:
+        query: 查询张量, 形状为 (..., seq_len_q, dim)
                - seq_len_q: 查询序列长度
                - dim: 每个位置的嵌入维度
-        key: 键张量，形状为 (..., seq_len_k, dim)
-             - seq_len_k: 键序列长度（通常与seq_len_q相同）
+        key: 键张量, 形状为 (..., seq_len_k, dim)
+             - seq_len_k: 键序列长度(通常与seq_len_q相同)
 
-    返回：
-        注意力分数张量，形状为 (..., seq_len_q, seq_len_k)
+    返回:
+        注意力分数张量, 形状为 (..., seq_len_q, seq_len_k)
 
-    示例：
-        >>> q = torch.randn(2, 5, 64)  # 批量2，查询长度5，维度64
+    示例:
+        >>> q = torch.randn(2, 5, 64)  # 批量2, 查询长度5, 维度64
         >>> k = torch.randn(2, 5, 64)  # 键长度5
         >>> scores = attention_score(q, k)  # 输出形状 (2, 5, 5)
 
-    教学说明：
+    教学说明:
         1. 这是注意力机制最基础的计算形式
         2. 每个查询位置与所有键位置计算相似度
         3. 结果表示查询和键的匹配程度
@@ -71,10 +71,10 @@ def scaled_dot_product_attention(
     """
     完整的缩放点积注意力实现
 
-    数学表示：
+    数学表示:
         Attention(Q, K, V) = softmax(QK^T/√d_k)V
 
-    参数详解：
+    参数详解:
         query: 查询张量 (B, N, Sq, D)
                - B: 批次大小
                - N: 注意力头数
@@ -82,30 +82,30 @@ def scaled_dot_product_attention(
                - D: 每个头的维度
         key: 键张量 (B, N, Sk, D)
         value: 值张量 (B, N, Sv, D)
-        attn_mask: 可选掩码，类型可以是：
-                  - 布尔型：True表示屏蔽
-                  - 数值型：加到注意力分数上
+        attn_mask: 可选掩码, 类型可以是:
+                  - 布尔型: True表示屏蔽
+                  - 数值型: 加到注意力分数上
         dropout_p: dropout概率
-        is_causal: 是否使用因果掩码（自回归模型使用）
-        scale: 自定义缩放因子，默认使用1/√D
+        is_causal: 是否使用因果掩码(自回归模型使用)
+        scale: 自定义缩放因子, 默认使用1/√D
 
-    返回：
+    返回:
         注意力输出张量 (B, N, Sq, D)
 
-    实现步骤：
+    实现步骤:
         1. 计算QK^T并缩放
-        2. 应用掩码（因果或自定义）
+        2. 应用掩码(因果或自定义)
         3. softmax归一化
         4. dropout正则化
         5. 加权求和
 
-    注意事项：
+    注意事项:
         - 训练和推理时dropout行为不同
         - 因果掩码会覆盖attn_mask
         - 确保value的序列长度与key匹配
 
-    示例：
-        >>> q = torch.randn(2, 8, 10, 64)  # 批次2，8头，查询长度10
+    示例:
+        >>> q = torch.randn(2, 8, 10, 64)  # 批次2, 8头, 查询长度10
         >>> k = v = torch.randn(2, 8, 10, 64)
         >>> output = scaled_dot_product_attention(q, k, v, is_causal=True)
     """
@@ -139,14 +139,14 @@ def scaled_dot_product_attention(
     return torch.matmul(attn_weights, value)
 
 
-# ---------------------------- 第2部分：单头注意力 ----------------------------
+# ---------------------------- 第2部分: 单头注意力 ----------------------------
 
 
 class SingleHeadAttention(nn.Module):
     """
-    单头自注意力模块（合并投影优化版）
+    单头自注意力模块(合并投影优化版)
 
-    架构说明：
+    架构说明:
         ┌─────────┐    ┌─────────┐
         │ Input   │ →  │ QKV投影 │ → [Q, K, V]
         └─────────┘    └─────────┘
@@ -159,18 +159,18 @@ class SingleHeadAttention(nn.Module):
         │ Output  │ ←  │ 输出投影 │
         └─────────┘    └─────────┘
 
-    初始化参数：
+    初始化参数:
         hidden_size: 输入/输出的隐藏层维度
         dropout_p: 注意力dropout概率
         is_causal: 是否使用因果注意力
         bias: 是否在线性层使用偏置
 
-    实现细节：
+    实现细节:
         - 使用合并的QKV投影提高效率
         - 支持因果和非因果模式
         - Xavier初始化
 
-    典型应用场景：
+    典型应用场景:
         - 小型语言模型
         - 教学演示场景
         - 需要轻量级注意力的任务
@@ -201,14 +201,14 @@ class SingleHeadAttention(nn.Module):
         """
         前向传播流程
 
-        输入：
+        输入:
             x: 输入张量 (B, S, H)
             attn_mask: 可选掩码 (B, S, S)或(B, 1, S, S)
 
-        返回：
+        返回:
             输出张量 (B, S, H)
 
-        计算步骤：
+        计算步骤:
             1. QKV投影和分割
             2. 添加头维度
             3. 计算注意力
@@ -236,31 +236,31 @@ class SingleHeadAttention(nn.Module):
         return self.out_proj(attn_output)
 
 
-# ---------------------------- 第3部分：多头注意力 ----------------------------
+# ---------------------------- 第3部分: 多头注意力 ----------------------------
 
 
 class MultiHeadAttention(nn.Module):
     """
-    多头注意力模块（工业级实现）
+    多头注意力模块(工业级实现)
 
-    关键特性：
+    关键特性:
         - 支持多头并行计算
         - 高效的合并投影
         - 完整的掩码支持
         - 优化的内存布局
 
-    数学表示：
+    数学表示:
         MultiHead(Q, K, V) = Concat(head_1, ..., head_h)W^O
         where head_i = Attention(QW_i^Q, KW_i^K, VW_i^V)
 
-    参数说明：
+    参数说明:
         hidden_size: 必须能被num_heads整除
-        num_heads: 建议为2的幂次（优化考虑）
+        num_heads: 建议为2的幂次(优化考虑)
         dropout_p: 注意力dropout概率
         is_causal: 是否自回归
         bias: 是否使用投影偏置
 
-    性能考虑：
+    性能考虑:
         - 合并QKV投影减少内存访问
         - 转置操作优化内存连续性
         - 自动广播掩码
@@ -298,14 +298,14 @@ class MultiHeadAttention(nn.Module):
         """
         前向传播
 
-        输入：
+        输入:
             x: (B, S, H)
             attn_mask: (B, S, S) 或 (B, 1, S, S)
 
-        返回：
+        返回:
             (B, S, H)
 
-        计算图：
+        计算图:
             x → qkv_proj → split → reshape → attention → reshape → out_proj
         """
         B, S, _ = x.shape

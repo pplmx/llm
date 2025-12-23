@@ -1,4 +1,4 @@
-.PHONY: help build test ruff image clean
+.PHONY: help build test ruff image clean lint fmt dev
 .DEFAULT_GOAL := help
 
 APP_NAME := llm
@@ -10,6 +10,10 @@ init: sync
 # Sync the project with the venv
 sync:
 	@uv sync
+
+# Sync the project with dev dependencies
+dev:
+	@uv sync --all-extras --all-groups
 
 # Build wheel
 build:
@@ -24,13 +28,19 @@ allure:
 	@allure serve allure-results
 
 # Ruff
-ruff:
-	@uvx ruff format .
+ruff: fmt lint
+
+# Lint only
+lint:
 	@uvx ruff check . --fix
 
-# Type check
-type:
-	@uvx mypy .
+# Format only
+fmt:
+	@uvx ruff format .
+
+# ty type check
+ty:
+	@uvx ty check
 
 # Build image
 image:

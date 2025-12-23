@@ -39,6 +39,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY src ./src
 
-HEALTHCHECK --start-period=30s CMD python -c "import requests; requests.get('http://localhost:8000', timeout=2)"
+EXPOSE 8000
 
-CMD ["python", "src/llm/app.py"]
+# Use uvicorn for production serving
+CMD ["uvicorn", "src.llm.serving.api:app", "--host", "0.0.0.0", "--port", "8000"]

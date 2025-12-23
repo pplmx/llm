@@ -15,11 +15,11 @@ class RegressionTask(TrainingTask):
         # Assuming MLP is a generic block. If input/output features are different
         # from hidden_size for the regression task, additional layers or a
         # different MLP structure might be needed.
-        # Current MLP uses hidden_size as its input and output dimensionality.
         return MLP(
             hidden_size=model_config.hidden_size,
-            intermediate_size=model_config.ffn_hidden_size,  # ffn_hidden_size in ModelConfig maps to intermediate_size
+            intermediate_size=model_config.intermediate_size,
             dropout_p=model_config.dropout,
+            use_glu=getattr(model_config, "use_glu", False),
             # Other MLP params like activation, norm_type, etc., will use defaults
             # as they are not specified in ModelConfig.
         )
@@ -35,7 +35,7 @@ class RegressionTask(TrainingTask):
     def build_scheduler(self, optimizer: optim.Optimizer) -> LRScheduler | None:
         scheduler_map = {
             "cosine": optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=self.config.training.epochs - self.config.training.warmup_epochs
+                optimizer, T_max=max(1, self.config.training.epochs - self.config.training.warmup_epochs)
             ),
             "step": optim.lr_scheduler.StepLR(optimizer, step_size=max(1, self.config.training.epochs // 3), gamma=0.1),
         }

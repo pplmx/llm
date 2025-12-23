@@ -1,0 +1,94 @@
+{
+    // ==================== Python Basics ====================
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+
+    // ==================== Ruff Configuration ====================
+    "ruff.enable": true,
+    "ruff.organizeImports": true,
+    "ruff.fixAll": true,
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit",
+            "source.organizeImports": "explicit"
+        },
+        "editor.rulers": [
+            88,
+            120
+        ],
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
+    },
+
+    // ==================== Type Checking ====================
+    // Pylance (Official VSCode)
+    "python.analysis.typeCheckingMode": "standard",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.inlayHints.functionReturnTypes": true,
+    "python.analysis.inlayHints.variableTypes": true,
+
+    // Ty (Cursor/Windsurf) - If using Ty, comment out Pylance settings above
+    // "ty.enable": true,
+    // "ty.typeCheckingMode": "standard",
+
+    // ==================== Testing ====================
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "tests",
+        "-v"
+    ],
+
+    // ==================== File Exclusions ====================
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/.pytest_cache": true,
+        "**/.ruff_cache": true,
+        "**/.mypy_cache": true,
+        "**/htmlcov": true,
+        "**/.coverage": true,
+        "**/allure-results": true,
+        "**/*.egg-info": true,
+        "**/.venv": false // Show but don't watch
+    },
+    "files.watcherExclude": {
+        "**/.venv/**": true,
+        "**/__pycache__/**": true,
+        "**/.pytest_cache/**": true
+    },
+    "search.exclude": {
+        "**/.venv": true,
+        "**/__pycache__": true,
+        "**/.pytest_cache": true
+    },
+
+    // ==================== Terminal Environment ====================
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+    },
+    "terminal.integrated.env.osx": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+    },
+    "terminal.integrated.env.windows": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+    },
+
+    // ==================== Auto Docstring ====================
+    "autoDocstring.docstringFormat": "google",
+
+    // ==================== Other Editor Settings ====================
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false,
+    "editor.inlineSuggest.enabled": true,
+    "editor.suggestSelection": "first",
+    "editor.minimap.enabled": true,
+
+    // ==================== Icons Configuration ====================
+    "workbench.iconTheme": "vscode-icons",
+
+    // ==================== JSON ====================
+    "json.format.keepLines": true,
+}

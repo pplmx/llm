@@ -21,7 +21,7 @@ class DecoderModel(nn.Module):
         num_layers: int,
         num_heads: int,
         max_seq_len: int = 512,
-        mlp_intermediate_size: int | None = None,
+        intermediate_size: int | None = None,
         pos_encoding_learned: bool = False,
         embedding_dropout_p: float = 0.1,
         attn_dropout_p: float = 0.1,
@@ -37,40 +37,23 @@ class DecoderModel(nn.Module):
         use_moe: bool = False,  # New: Whether to use MoE in TransformerBlocks
         num_experts: int = 0,  # New: Number of experts if use_moe is True
         top_k: int = 0,  # New: Number of top experts to select if use_moe is True
+        num_kv_heads: int | None = None,  # New: For GQA support
+        use_glu: bool = False,  # New: For SwiGLU support
+        norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # New: For RMSNorm support
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
+        # Registry keys
+        attn_impl: str = "mha",
+        mlp_impl: str = "mlp",
     ):
         """
         Initializes the DecoderModel.
-
-        Args:
-            vocab_size (int): Vocabulary size.
-            hidden_size (int): Dimensionality of the model.
-            num_layers (int): Number of TransformerBlock layers.
-            num_heads (int): Number of attention heads per TransformerBlock.
-            max_seq_len (int, default=512): Max sequence length for embeddings.
-            mlp_intermediate_size (int, optional): Intermediate size for MLPs in blocks.
-                                                   Defaults to 4 * hidden_size.
-            pos_encoding_learned (bool, default=False): Use learned positional embeddings.
-            embedding_dropout_p (float, default=0.1): Dropout for positional encoding.
-            attn_dropout_p (float, default=0.1): Dropout for MHA in blocks.
-            mlp_dropout_p (float, default=0.1): Dropout for MLP in blocks.
-            mlp_activation (str | nn.Module, default="gelu"): Activation for MLP in blocks.
-            norm_eps (float, default=1e-5): Epsilon for LayerNorms.
-            norm_first (bool, default=True): True for Pre-LN, False for Post-LN.
-            is_causal (bool, default=True): If MHA in blocks should be causal.
-            padding_idx (int, optional, default=None): Padding index for embeddings.
-            qkv_bias (bool, default=True): Bias for QKV projections in MHA.
-            mlp_bias (bool, default=True): Bias for Linear layers in MLP.
-            lm_head_bias (bool, default=True): Bias for the final language modeling head.
-            use_moe (bool, default=False): Whether to use a Mixture of Experts (MoE) layer in TransformerBlocks.
-            num_experts (int, default=0): The total number of experts if `use_moe` is True.
-            top_k (int, default=0): The number of top experts to select if `use_moe` is True.
-            device (torch.device | str | None, default=None): Target device.
-            dtype (torch.dtype | None, default=None): Target data type.
         """
         super().__init__()
         factory_kwargs = {"device": device, "dtype": dtype}
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.max_seq_len = max_seq_len
         self.norm_first = norm_first  # Store for final norm logic
 
         self.embedding_layer = EmbeddingLayer(
@@ -83,15 +66,19 @@ class DecoderModel(nn.Module):
             **factory_kwargs,
         )
 
-        if mlp_intermediate_size is None:
-            mlp_intermediate_size = 4 * hidden_size
+        if intermediate_size is None:
+            intermediate_size = 4 * hidden_size
+
+        # Backward compatibility for use_moe
+        if use_moe:
+            mlp_impl = "moe"
 
         self.transformer_blocks = nn.ModuleList(
             [
                 TransformerBlock(
                     hidden_size=hidden_size,
                     num_heads=num_heads,
-                    mlp_intermediate_size=mlp_intermediate_size,
+                    intermediate_size=intermediate_size,
                     attn_dropout_p=attn_dropout_p,
                     mlp_dropout_p=mlp_dropout_p,
                     mlp_activation=mlp_activation,
@@ -100,9 +87,14 @@ class DecoderModel(nn.Module):
                     is_causal=is_causal,  # Pass overall model's causality default
                     qkv_bias=qkv_bias,
                     mlp_bias=mlp_bias,
-                    use_moe=use_moe,  # Pass MoE flag
+                    use_moe=use_moe,  # Pass MoE flag (legacy)
                     num_experts=num_experts,  # Pass num_experts
                     top_k=top_k,  # Pass top_k
+                    num_kv_heads=num_kv_heads,  # Pass num_kv_heads
+                    use_glu=use_glu,  # Pass use_glu
+                    norm_type=norm_type,  # Pass norm_type
+                    attn_impl=attn_impl,  # Pass attn_impl
+                    mlp_impl=mlp_impl,  # Pass mlp_impl
                     **factory_kwargs,
                 )
                 for _ in range(num_layers)
@@ -111,19 +103,25 @@ class DecoderModel(nn.Module):
 
         self.final_norm = None
         if self.norm_first:
-            self.final_norm = nn.LayerNorm(hidden_size, eps=norm_eps, **factory_kwargs)
+            if isinstance(norm_type, type):
+                self.final_norm = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
+            else:
+                self.final_norm = norm_type
 
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=lm_head_bias, **factory_kwargs)
+        self.max_seq_len = max_seq_len
 
     def forward(
         self,
         input_ids: torch.Tensor,
         attn_mask: torch.Tensor | None = None,
+        past_key_values: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
+        use_cache: bool = False,
         # is_causal for individual forward passes is not typically exposed at this level,
         # as the decoder model's causality is a structural property set at init.
         # If a block needs dynamic causality, it would be an argument to the block's forward.
         # Here, attn_mask is the primary way to influence attention beyond the default causality.
-    ) -> torch.Tensor:
+    ) -> torch.Tensor | tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
         """
         Forward pass of the DecoderModel.
 
@@ -133,22 +131,44 @@ class DecoderModel(nn.Module):
                 Shape should be broadcastable to [B, N, S, S] or compatible with
                 `torch.nn.functional.scaled_dot_product_attention`.
                 If `is_causal=True` in blocks, this mask will be combined with the causal mask.
+            past_key_values (list[tuple[torch.Tensor, torch.Tensor]] | None):
+                List of (key, value) tuples from previous steps, one for each block.
+            use_cache (bool): Whether to return the updated (key, value) pairs.
 
         Returns:
-            torch.Tensor: Logits tensor of shape [B, S, vocab_size].
+            torch.Tensor or tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
+                - If use_cache=False: Logits tensor of shape [B, S, vocab_size].
+                - If use_cache=True: (Logits tensor, current_key_values)
         """
-        hidden_states = self.embedding_layer(input_ids)
+        start_pos = 0
+        if past_key_values is not None:
+            # past_key_values[0][0] shape: [B, N, S_prev, D]
+            start_pos = past_key_values[0][0].size(2)
 
-        for block in self.transformer_blocks:
+        hidden_states = self.embedding_layer(input_ids, start_pos=start_pos)
+
+        current_key_values = []
+        for i, block in enumerate(self.transformer_blocks):
             # The `is_causal` parameter in block.forward() can override the block's
             # default. Here, we rely on the block's initialized `is_causal` state.
             # So, we pass `is_causal=None` to the block's forward method.
-            hidden_states = block(hidden_states, attn_mask=attn_mask, is_causal=None)
+            past_kv = past_key_values[i] if past_key_values is not None else None
+            block_outputs = block(
+                hidden_states, attn_mask=attn_mask, is_causal=None, past_key_value=past_kv, use_cache=use_cache
+            )
+            if use_cache:
+                hidden_states, current_kv = block_outputs
+                current_key_values.append(current_kv)
+            else:
+                hidden_states = block_outputs
 
         if self.final_norm is not None:  # Applied only in Pre-LN architectures
             hidden_states = self.final_norm(hidden_states)
 
         logits = self.lm_head(hidden_states)
+
+        if use_cache:
+            return logits, current_key_values
         return logits
 
 

@@ -1,23 +1,42 @@
-import argparse
 import logging
 import sys
+from enum import Enum
+from pathlib import Path
 
 import torch
 import torch.multiprocessing as mp
+import typer
+from rich.logging import RichHandler
 
-from llm.data.synthetic_data_module import SyntheticDataModule  # Added SyntheticDataModule
+from llm.data.synthetic_data_module import SyntheticDataModule
 from llm.training.core.callbacks import LRSchedulerCallback, MetricsLogger, TensorBoardLogger
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
-from llm.training.core.utils import DistributedManager, Logger
-
-# --- Import your tasks here ---
+from llm.training.core.utils import DistributedManager
 from llm.training.tasks.regression_task import RegressionTask
+
+# --- Typer App ---
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+# --- Task Enum for Typer choices ---
+class TaskName(str, Enum):
+    regression = "regression"
+
 
 # --- Map task names to task classes ---
 AVAILABLE_TASKS = {
-    "regression": RegressionTask,
+    TaskName.regression: RegressionTask,
 }
+
+
+def configure_logging(log_level: str = "INFO"):
+    logging.basicConfig(
+        level=log_level,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[RichHandler(rich_tracebacks=True)],
+    )
 
 
 def train_worker(rank: int, world_size: int, config: Config, task_class):
@@ -38,7 +57,7 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
         callbacks = [
             MetricsLogger(),
             TensorBoardLogger(log_dir=config.logging.log_dir),
-            LRSchedulerCallback(),  # Added LRSchedulerCallback
+            LRSchedulerCallback(),
         ]
 
         engine = TrainingEngine(
@@ -46,83 +65,89 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
             task,
             rank,
             world_size,
-            data_module=data_module,  # Pass data_module
-            callbacks=callbacks,  # Pass callbacks
+            data_module=data_module,
+            callbacks=callbacks,
         )
         engine.run()
     except Exception:
         logging.getLogger().exception(f"An error occurred in rank {rank}")
         raise
     finally:
-        # Ensure all processes sync up before cleaning up
-        if world_size > 1:  # Barrier is only relevant for DDP
+        if world_size > 1:
             DistributedManager.barrier()
         distributed_manager.cleanup()
 
 
-def main():
-    # We add a new argument to select the task
-    parser = argparse.ArgumentParser(description="Modular PyTorch DDP Training Framework")
-    parser.add_argument(
-        "--task", type=str, required=True, choices=AVAILABLE_TASKS.keys(), help="Name of the task to run."
-    )
+@app.command()
+def main(
+    task: TaskName = typer.Option(..., help="Name of the task to run."),
+    config_path: Path | None = typer.Option(None, help="Path to YAML config file."),
+    epochs: int | None = typer.Option(None, help="Override training epochs"),
+    batch_size: int | None = typer.Option(None, help="Override batch size"),
+    lr: float | None = typer.Option(None, help="Override learning rate"),
+    num_samples: int | None = typer.Option(None, help="Override number of synthetic samples"),
+    compile: bool = typer.Option(True, help="Enable torch.compile"),
+    amp: bool = typer.Option(True, help="Enable AMP"),
+):
+    """
+    Modular PyTorch DDP Training Framework.
+    """
+    configure_logging()
+    logger = logging.getLogger("train")
 
-    # Let the Config class handle the rest of the arguments
-    # We parse known args first to get the task, then let Config parse the rest
-    args, remaining_argv = parser.parse_known_args()
-    sys.argv = [sys.argv[0]] + remaining_argv
+    # 1. Load Base Config
+    # 1. Load Base Config
+    config = Config.from_yaml(config_path) if config_path else Config()
 
-    config = Config.from_args_and_env()
-    task_class = AVAILABLE_TASKS[args.task]
+    # 2. Apply CLI Overrides
+    if epochs is not None:
+        config.training.epochs = epochs
+    if batch_size is not None:
+        config.training.batch_size = batch_size
+    if lr is not None:
+        config.training.lr = lr
+    if num_samples is not None:
+        config.training.num_samples = num_samples
+
+    # Apply boolean flags
+    config.optimization.use_compile = compile
+    config.optimization.use_amp = amp
+
+    # Re-validate
+    # Note: Pydantic models validate on assignment if ConfigDict(validate_assignment=True) is set,
+    # but our nested structure makes it simpler to just let it be or manually re-trigger if needed.
+
+    task_class = AVAILABLE_TASKS[task]
 
     torch.backends.cudnn.benchmark = True
     torch.set_float32_matmul_precision("high")
 
     distributed_manager = DistributedManager(config.distributed)
+    # get_world_size() now returns 1 if no GPUs, or calculated size if GPUs exist.
     world_size = distributed_manager.get_world_size()
 
-    distributed_manager = DistributedManager(config.distributed)
-    # get_world_size() now returns 1 if no GPUs, or calculated size if GPUs exist (for single node).
-    world_size = distributed_manager.get_world_size()
-
-    # Logger setup: rank 0 for the main process. TrainingEngine will determine actual device.
-    logger = Logger(0, config.logging)
-    logger.info(f"Selected Task: {args.task}")
-    logger.info(f"Determined world_size from DistributedManager: {world_size}")
-    logger.info(f"CUDA Available: {torch.cuda.is_available()}, GPU Count: {torch.cuda.device_count()}")
-    logger.info(
-        f"Configured gpus_per_node: {config.distributed.gpus_per_node}, num_nodes: {config.distributed.num_nodes}"
-    )
+    # Logger setup
+    logger.info(f"Selected Task: {task.value}")
+    logger.info(f"Determined world_size: {world_size}")
+    logger.info(f"CUDA Available: {torch.cuda.is_available()}, Count: {torch.cuda.device_count()}")
 
     if world_size > 1:
-        # This implies DDP on GPUs. get_world_size() should only return > 1 if GPUs are configured and available.
         if not (torch.cuda.is_available() and torch.cuda.device_count() >= world_size):
-            logger.error(
-                f"❌ DDP Misconfiguration: world_size is {world_size}, but CUDA not available or "
-                f"insufficient GPUs ({torch.cuda.device_count()} available). Exiting."
-            )
+            logger.error(f"❌ DDP Error: world_size={world_size}, but available GPUs={torch.cuda.device_count()}.")
             sys.exit(1)
 
-        logger.info(f"🚀 Spawning {world_size} DDP processes for GPU training...")
-        # For single-node DDP, nprocs should be the world_size determined (number of GPUs to use).
-        # The arguments to train_worker will be (rank, world_size, config, task_class).
+        logger.info(f"🚀 Spawning {world_size} DDP processes...")
         mp.spawn(train_worker, args=(world_size, config, task_class), nprocs=world_size, join=True)
     elif world_size == 1:
-        # This handles:
-        # 1. CPU only (get_world_size returned 1 because no GPUs were found/configured for use)
-        # 2. Single GPU (get_world_size returned 1, e.g., gpus_per_node=1 or only 1 GPU available and used)
         if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-            # Check if this single process run is intended for a GPU
-            # TrainingEngine will place on cuda:0 if world_size=1 and rank=0 and cuda is available
-            logger.info("🚀 Starting single-process training (GPU available, will use if rank 0 maps to GPU)...")
+            logger.info("🚀 Single-process GPU training...")
         else:
-            logger.info("🚀 Starting single-process training (CPU)...")
-        train_worker(0, 1, config, task_class)  # rank 0, world_size 1
+            logger.info("🚀 Single-process CPU training...")
+        train_worker(0, 1, config, task_class)
     else:
-        # world_size <= 0, which should ideally be prevented by get_world_size returning min 1.
-        logger.error(f"❌ Invalid world_size ({world_size}) determined by DistributedManager. Exiting.")
+        logger.error(f"❌ Invalid world_size ({world_size}).")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    app()

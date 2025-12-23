@@ -5,14 +5,29 @@ import torch.nn as nn
 
 
 class PositionalEncoding(nn.Module):
+    """
+    Implements Positional Encoding for Transformer models.
+
+    Supports both sinusoidal (fixed) and learned positional embeddings.
+    Positional information is added to the input embeddings to provide order awareness.
+
+    Args:
+        hidden_size (int): The dimension of the model's hidden states.
+        max_seq_len (int): Maximum sequence length supported. Defaults to 512.
+        dropout_p (float): Dropout probability applied after adding positional signal. Defaults to 0.1.
+        learned (bool): If True, uses learned embeddings; otherwise sinusoidal. Defaults to False.
+        device (torch.device | None): Device to place parameters on.
+        dtype (torch.dtype | None): Data type for parameters.
+    """
+
     def __init__(
         self,
         hidden_size: int,
         max_seq_len: int = 512,
         dropout_p: float = 0.1,
         learned: bool = False,
-        device=None,  # Added device
-        dtype=None,  # Added dtype
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -52,28 +67,25 @@ class PositionalEncoding(nn.Module):
 
             self.register_buffer("pe", pe)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, start_pos: int = 0) -> torch.Tensor:
         """
         Args:
             x: Tensor, shape [batch_size, seq_len, hidden_size]
+            start_pos: Initial position index for the sequence.
         """
         seq_len = x.size(1)
-        if seq_len > self.max_seq_len:
-            raise ValueError(f"Sequence length {seq_len} exceeds maximum sequence length {self.max_seq_len}")
+        if start_pos + seq_len > self.max_seq_len:
+            raise ValueError(
+                f"Sequence endpoint {start_pos + seq_len} exceeds maximum sequence length {self.max_seq_len}"
+            )
 
         if self.learned:
-            # Create position IDs [0, 1, ..., seq_len-1] for the current sequence length
-            # pos_ids shape: (seq_len) -> unsqueezed to (1, seq_len) for batch compatibility
-            pos_ids = torch.arange(seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
-            # Get positional embeddings: pos_embedding(pos_ids) -> [1, seq_len, hidden_size]
+            # Create position IDs [start_pos, ..., start_pos + seq_len - 1]
+            pos_ids = torch.arange(start_pos, start_pos + seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
             pos_enc = self.pos_embedding(pos_ids)
-            x = x + pos_enc  # Broadcasting adds pos_enc to each batch element
+            x = x + pos_enc
         else:
-            # Add sinusoidal positional encoding to the input tensor
-            # x shape: [batch_size, seq_len, hidden_size]
             # self.pe is [1, max_seq_len, hidden_size]
-            # We need self.pe[:, :seq_len, :] which is [1, seq_len, hidden_size]
-            # This will be broadcasted across the batch dimension of x
-            x = x + self.pe[:, :seq_len, :]
+            x = x + self.pe[:, start_pos : start_pos + seq_len, :]
 
         return self.dropout(x)

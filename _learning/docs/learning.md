@@ -2,16 +2,16 @@
 
 ## 目录
 
-- [阶段一：环境准备与基础知识（1-2天）](#阶段一环境准备与基础知识1-2天)
-- [阶段二：数据处理与预训练模型（2-3天）](#阶段二数据处理与预训练模型2-3天)
-- [阶段三：模型训练与优化（3-4天）](#阶段三模型训练与优化3-4天)
-- [阶段四：评估与扩展（2-3天）](#阶段四评估与扩展2-3天)
+- [阶段一: 环境准备与基础知识(1-2天)](#阶段一环境准备与基础知识1-2天)
+- [阶段二: 数据处理与预训练模型(2-3天)](#阶段二数据处理与预训练模型2-3天)
+- [阶段三: 模型训练与优化(3-4天)](#阶段三模型训练与优化3-4天)
+- [阶段四: 评估与扩展(2-3天)](#阶段四评估与扩展2-3天)
 
-## 阶段一：环境准备与基础知识（1-2天）
+## 阶段一: 环境准备与基础知识(1-2天)
 
 ### 1.1 环境配置
 
-首先创建项目目录并使用 `uv` 初始化虚拟环境：
+首先创建项目目录并使用 `uv` 初始化虚拟环境:
 
 ```bash
 mkdir llm-training
@@ -22,7 +22,7 @@ source .venv/bin/activate  # Linux/Mac
 .venv\Scripts\activate  # Windows
 ```
 
-创建 `pyproject.toml`：
+创建 `pyproject.toml`:
 
 ```toml
 [project]
@@ -50,7 +50,7 @@ build-backend = "hatchling.build"
 line-length = 88
 ```
 
-使用 uv 安装依赖：
+使用 uv 安装依赖:
 
 ```bash
 uv pip install -e .
@@ -58,7 +58,7 @@ uv pip install -e .
 
 ### 1.2 基础配置文件
 
-创建配置文件 `config.py`：
+创建配置文件 `config.py`:
 
 ```python
 from dataclasses import dataclass
@@ -98,7 +98,7 @@ config = TrainingConfig()
 
 ### 1.3 工具函数
 
-创建 `utils.py`：
+创建 `utils.py`:
 
 ```python
 import os
@@ -171,11 +171,11 @@ def get_optimizer_and_scheduler(
     return optimizer, scheduler
 ```
 
-## 阶段二：数据处理与预训练模型（2-3天）
+## 阶段二: 数据处理与预训练模型(2-3天)
 
 ### 2.1 数据加载与预处理
 
-创建 `data.py`：
+创建 `data.py`:
 
 ```python
 from datasets import load_dataset
@@ -233,7 +233,7 @@ def prepare_dataloaders(dataset, tokenizer, config):
 
 ### 2.2 模型定义
 
-创建 `model.py`：
+创建 `model.py`:
 
 ```python
 from transformers import AutoModelForMaskedLM
@@ -246,11 +246,11 @@ def create_model(config):
     return model
 ```
 
-## 阶段三：模型训练与优化（3-4天）
+## 阶段三: 模型训练与优化(3-4天)
 
 ### 3.1 训练循环
 
-创建 `trainer.py`：
+创建 `trainer.py`:
 
 ```python
 import torch
@@ -365,7 +365,7 @@ class Trainer:
 
 ### 3.2 主训练脚本
 
-创建 `train.py`：
+创建 `train.py`:
 
 ```python
 from config import config
@@ -400,11 +400,11 @@ if __name__ == "__main__":
     main()
 ```
 
-## 阶段四：评估与扩展（2-3天）
+## 阶段四: 评估与扩展(2-3天)
 
 ### 4.1 模型评估
 
-创建 `evaluate.py`：
+创建 `evaluate.py`:
 
 ```python
 import torch
@@ -445,45 +445,45 @@ def evaluate_model(model, eval_dataloader, config):
 
 ### 4.2 性能优化建议
 
-对于CPU训练，以下是一些优化建议：
+对于CPU训练, 以下是一些优化建议:
 
-1. 数据加载优化：
+1. 数据加载优化:
     - 使用 `num_workers` 进行并行数据加载
     - 适当调整 `batch_size`
     - 使用 `pin_memory=True` 加速数据传输
 
-2. 模型优化：
-    - 使用混合精度训练（虽然在CPU上收益较小）
+2. 模型优化:
+    - 使用混合精度训练(虽然在CPU上收益较小)
     - 使用梯度累积减少内存占用
-    - 选择较小的模型架构（如DistilBERT）
+    - 选择较小的模型架构(如DistilBERT)
 
-3. 训练策略优化：
+3. 训练策略优化:
     - 使用较小的序列长度
     - 实施早停机制
     - 使用学习率预热和衰减
 
 ### 4.3 扩展建议
 
-1. 硬件升级路线：
-    - 首先升级到更大容量的内存（128GB）
-    - 添加入门级GPU（如NVIDIA RTX 3060）
+1. 硬件升级路线:
+    - 首先升级到更大容量的内存(128GB)
+    - 添加入门级GPU(如NVIDIA RTX 3060)
     - 考虑使用云服务进行大规模训练
 
-2. 分布式训练准备：
-    - 学习PyTorch DDP（DistributedDataParallel）
+2. 分布式训练准备:
+    - 学习PyTorch DDP(DistributedDataParallel)
     - 了解Hugging Face Accelerate库
     - 研究模型并行和数据并行策略
 
 ## 使用说明
 
-1. 克隆代码仓库：
+1. 克隆代码仓库:
 
 ```bash
 git clone <repository-url>
 cd llm-training
 ```
 
-2. 创建虚拟环境：
+1. 创建虚拟环境:
 
 ```bash
 python -m venv .venv
@@ -492,13 +492,13 @@ source .venv/bin/activate  # Linux/Mac
 .venv\Scripts\activate  # Windows
 ```
 
-3. 安装依赖：
+1. 安装依赖:
 
 ```bash
 uv pip install -e .
 ```
 
-4. 运行训练：
+1. 运行训练:
 
 ```bash
 python best_minimal_train.py
@@ -557,7 +557,7 @@ def clear_memory():
 
 ### 2. 梯度累积实现
 
-更新 `trainer.py` 添加梯度累积支持：
+更新 `trainer.py` 添加梯度累积支持:
 
 ```python
 class GradientAccumulationTrainer(Trainer):
@@ -695,7 +695,7 @@ class CustomTextDataset(Dataset):
             key: val.squeeze(0) for key, val in encoding.items()
         }
 
-        # 添加标签（如果有）
+        # 添加标签(如果有)
         if self.labels is not None:
             item["labels"] = self.labels[idx]
 
@@ -763,36 +763,36 @@ class ExperimentTracker:
 
 ## 进阶学习路线建议
 
-1. 理论深化：
+1. 理论深化:
     - 学习 Transformer 架构详细原理
     - 研究不同的注意力机制
     - 了解各种预训练任务的设计
 
-2. 实践提升：
+2. 实践提升:
     - 尝试实现简单的 Transformer 模块
     - 探索不同的优化器和学习率调度策略
     - 实验各种正则化技术
 
-3. 工程技能：
-    - 学习分布式训练框架（如 PyTorch Lightning）
+3. 工程技能:
+    - 学习分布式训练框架(如 PyTorch Lightning)
     - 掌握模型量化和压缩技术
     - 研究模型部署和服务化方案
 
 ## 常见问题解答
 
-1. 内存不足问题：
+1. 内存不足问题:
     - 减小批次大小
     - 使用梯度累积
     - 实施模型检查点机制
     - 使用较小的序列长度
 
-2. 训练速度慢：
+2. 训练速度慢:
     - 使用较小的模型架构
     - 优化数据加载流程
     - 实施多进程数据预处理
     - 考虑使用预计算的特征
 
-3. 模型效果不佳：
+3. 模型效果不佳:
     - 检查数据质量和预处理流程
     - 调整学习率和优化器参数
     - 增加训练轮次
@@ -844,11 +844,11 @@ llm-training/
 
 ### 1. 常见错误及解决方案
 
-1. 内存相关错误：
+1. 内存相关错误:
 
     ```python
-    # 错误：RuntimeError: out of memory
-    # 解决方案：实现渐进式数据加载
+    # 错误: RuntimeError: out of memory
+    # 解决方案: 实现渐进式数据加载
     from typing import Iterator, List
 
 
@@ -862,14 +862,14 @@ llm-training/
         process_batch(batch)
     ```
 
-2. 数据加载错误：
+2. 数据加载错误:
 
     ```python
-    # 错误：FileNotFoundError: [Errno 2] No such file or directory
-    # 解决方案：添加路径检查
+    # 错误: FileNotFoundError: [Errno 2] No such file or directory
+    # 解决方案: 添加路径检查
     def safe_load_data(file_path: str):
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"数据文件不存在：{file_path}")
+            raise FileNotFoundError(f"数据文件不存在: {file_path}")
         try:
             # 尝试不同的编码
             for encoding in ['utf-8', 'gbk', 'latin1']:
@@ -880,17 +880,17 @@ llm-training/
                     continue
             raise UnicodeDecodeError("无法识别文件编码")
         except Exception as e:
-            raise Exception(f"加载数据失败：{str(e)}")
+            raise Exception(f"加载数据失败: {str(e)}")
     ```
 
-3. 模型训练错误：
+3. 模型训练错误:
 
     ```python
-    # 错误：Loss is NaN
-    # 解决方案：添加梯度裁剪和损失检查
+    # 错误: Loss is NaN
+    # 解决方案: 添加梯度裁剪和损失检查
     def check_loss(loss: torch.Tensor) -> bool:
         if torch.isnan(loss) or torch.isinf(loss):
-            logger.error(f"检测到无效损失值：{loss.item()}")
+            logger.error(f"检测到无效损失值: {loss.item()}")
             return False
         return True
 
@@ -903,7 +903,7 @@ llm-training/
 
 ### 2. 调试技巧
 
-1. 使用日志记录关键信息：
+1. 使用日志记录关键信息:
 
     ```python
     import logging
@@ -923,7 +923,7 @@ llm-training/
     logging.debug(f"当前学习率: {optimizer.param_groups[0]['lr']}")
     ```
 
-2. 添加断言检查：
+2. 添加断言检查:
 
     ```python
     def validate_inputs(inputs: dict):
@@ -934,7 +934,7 @@ llm-training/
         return True
     ```
 
-3. 性能分析工具：
+3. 性能分析工具:
 
     ```python
     import cProfile
@@ -964,9 +964,9 @@ llm-training/
 
 ## 实践任务示例
 
-### 任务1：文本分类
+### 任务1: 文本分类
 
-创建一个简单的文本分类模型：
+创建一个简单的文本分类模型:
 
 ```python
 from transformers import DistilBertForSequenceClassification
@@ -987,9 +987,9 @@ loss = outputs.loss
 logits = outputs.logits
 ```
 
-### 任务2：文本生成
+### 任务2: 文本生成
 
-实现一个简单的文本生成任务：
+实现一个简单的文本生成任务:
 
 ```python
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
@@ -1019,7 +1019,7 @@ def generate_text(
 generated_texts = generate_text("Once upon a time")
 ```
 
-### 任务3：模型微调
+### 任务3: 模型微调
 
 ```python
 def fine_tune_model(
@@ -1056,22 +1056,22 @@ trainer = fine_tune_model(model, train_dataset, eval_dataset, "./output")
 
 ## 资源推荐
 
-1. 学习资源：
+1. 学习资源:
     - Hugging Face 课程
     - "Attention is All You Need" 论文
     - The Annotated Transformer
     - PyTorch 官方教程
 
-2. 开源项目：
+2. 开源项目:
     - transformers 库
     - datasets 库
     - accelerate 库
     - PyTorch Lightning
 
-3. 社区资源：
+3. 社区资源:
     - Hugging Face 论坛
     - PyTorch 论坛
     - Papers with Code
     - arXiv ML 版块
 
-这个教程提供了一个完整的框架，帮助你在本地 CPU 环境下开始 LLM 训练。建议按照阶段循序渐进地学习，确保每个概念都掌握后再进入下一阶段。同时，可以根据实际情况调整学习计划和进度。
+这个教程提供了一个完整的框架, 帮助你在本地 CPU 环境下开始 LLM 训练. 建议按照阶段循序渐进地学习, 确保每个概念都掌握后再进入下一阶段. 同时, 可以根据实际情况调整学习计划和进度.

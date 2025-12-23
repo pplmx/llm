@@ -1,4 +1,3 @@
-import os
 import tempfile
 from pathlib import Path
 
@@ -35,14 +34,13 @@ def dummy_text_file(request):
 
     # Using NamedTemporaryFile to ensure it's cleaned up, but need to close it
     # before TextDataset can open it by path, especially on Windows.
-    temp_file = tempfile.NamedTemporaryFile(mode="w", delete=False, encoding="utf-8")
-    temp_file.write(content)
-    temp_file_path = temp_file.name
-    temp_file.close()  # Close the file so it can be opened by TextDataset
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, encoding="utf-8") as temp_file:
+        temp_file.write(content)
+        temp_file_path = temp_file.name
 
     yield Path(temp_file_path)  # Provide the path to the test
 
-    os.remove(temp_file_path)  # Manual cleanup after the test using this fixture
+    Path(temp_file_path).unlink()  # Manual cleanup after the test using this fixture
 
 
 class TestTextDatasetInitialization:
@@ -97,13 +95,10 @@ class TestTextDatasetInitialization:
         # Or simply count:
         count = 0
         for i in range(0, len(all_tokens), step):
-            if i + max_len <= len(all_tokens) or (
-                i < len(all_tokens) and i + max_len > len(all_tokens)
-            ):  # last chunk condition
-                if (
-                    len(all_tokens[i : i + max_len]) > 0 or len(all_tokens[i:]) > 0 and i < len(all_tokens)
-                ):  # ensure last chunk has content
-                    count += 1
+            if (i + max_len <= len(all_tokens) or (i < len(all_tokens) and i + max_len > len(all_tokens))) and (
+                len(all_tokens[i : i + max_len]) > 0 or (len(all_tokens[i:]) > 0 and i < len(all_tokens))
+            ):  # ensure last chunk has content
+                count += 1
             # A simpler way: (len(all_tokens) + step -1 - max_len % step ) // step if we only take full steps
             # For this chunking logic: number of sequences is len(range(0, L, S))
 

@@ -17,6 +17,7 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
+- [Roadmap](#roadmap)
 - [Changelog](#changelog)
 - [Contact](#contact)
 - [Acknowledgements](#acknowledgements)
@@ -27,42 +28,42 @@
 
 ## Features
 
-- **Modular LLM Architecture**:
-    - Built with a modular Transformer architecture, allowing for flexible component swapping.
-    - Supports advanced features like Mixture of Experts (MoE) and various normalization techniques (Pre-LN/Post-LN).
+- **Flexible & Pluggable Architecture**:
+  - **Component Registry**: Switch between MHA/MoE or future implementations (FlashAttn) via config.
+  - Grouped Query Attention (GQA) & SwiGLU support.
+  - Unified QKV projection & Flexible Norms (RMSNorm, LayerNorm).
 - **Robust Training Framework**:
-    - Distributed Data Parallel (DDP) training for scalability.
-    - Automatic Mixed Precision (AMP) for memory efficiency and faster training.
-    - `torch.compile` integration for performance optimization.
-    - Flexible configuration system using YAML and Python dataclasses.
-    - Extensible callback system for custom training logic (logging, checkpointing, early stopping, LR scheduling).
-    - Comprehensive checkpoint management and performance monitoring.
-- **Efficient Development Workflow**:
-    - Utilizes `uv` for fast and reliable dependency management.
-    - Enforces code quality with `ruff` (linting and formatting) and `mypy` (static type checking).
-    - Comprehensive testing with `pytest`, including coverage reports and Allure test results.
-- **Data and Tokenization Abstraction**:
-    - Modular `DataModule` design for flexible data loading and preprocessing.
-    - Character-level tokenizer for basic experimentation, with clear extensibility for advanced tokenizers.
+  - Distributed Data Parallel (DDP) & Automatic Mixed Precision (AMP).
+  - Type-safe Configuration via Pydantic & Typer CLI.
+  - `torch.compile` optimization integration.
+- **Data & Tokenization Abstraction**:
+  - **HuggingFace Integration**: Direct support for HF Tokenizers (GPT-2, Llama, etc.).
+  - Modular `DataModule` design for text datasets.
+  - Legacy Character-level tokenizer for simple experiments.
 - **Example Training Script**: The `src/llm/training/train.py` script demonstrates end-to-end training of decoder-only models, showcasing the framework's capabilities.
 
 ## Quick Start
 
 To quickly get started with training a model using the framework, follow these steps:
 
-1.  **Initialize Project**: Ensure your environment is set up by running the initialization command (see [Installation](#installation) for details).
+1. **Initialize Project**: Ensure your environment is set up by running the initialization command (see [Installation](#installation) for details).
+
     ```bash
     make init
     ```
-2.  **Run a Training Example**: Execute the main training script with a sample task.
+
+2. **Run a Training Example**: Execute the main training script with a language modeling task.
+
     ```bash
-    python src/llm/training/train.py --task regression --epochs 1 --batch-size 32
+    python src/llm/training/train.py --task lm --epochs 1 --batch-size 32
     ```
-    This command will train a simple regression model for 1 epoch with a batch size of 32. You will see training progress logs in your console.
+
+    This command will train a language model for 1 epoch with a batch size of 32. You will see training progress logs in your console.
 
 ## Installation
 
 ### Requirements
+
 - Python 3.13+
 - [uv](https://github.com/astral-sh/uv): A fast Python package installer and resolver, written in Rust.
 - [make](https://www.gnu.org/software/make/): A build automation tool (typically pre-installed on Linux/macOS, available via Chocolatey/Scoop on Windows).
@@ -71,33 +72,38 @@ To quickly get started with training a model using the framework, follow these s
 
 This project uses `uv` for dependency management and `Makefile` for common development tasks.
 
-1.  **Install `uv`**: If you don't have `uv` installed, follow the official instructions [here](https://github.com/astral-sh/uv#installation).
-2.  **Initialize Project**: Navigate to the project root directory and run the `make init` command. This will set up the virtual environment, install all necessary dependencies, and install pre-commit hooks.
+1. **Install `uv`**: If you don't have `uv` installed, follow the official instructions [here](https://github.com/astral-sh/uv#installation).
+2. **Initialize Project**: Navigate to the project root directory and run the `make init` command. This will set up the virtual environment, install all necessary dependencies, and install pre-commit hooks.
+
     ```bash
     make init
     ```
-3.  **Synchronize Dependencies (if needed)**: If `pyproject.toml` or `uv.lock` changes, you can re-synchronize dependencies:
+
+3. **Synchronize Dependencies (if needed)**: If `pyproject.toml` or `uv.lock` changes, you can re-synchronize dependencies:
+
     ```bash
     make sync
     ```
 
 ### User Installation (Distribution)
+
 If this project were to be distributed as a package, users would typically install it using pip:
 
 ```bash
 pip install llm # Assuming 'llm' is the package name on PyPI
 ```
+
 However, for development, `make init` is the recommended way to set up the environment.
 
 ## Usage
 
 For comprehensive documentation, including detailed usage examples, development guides, and troubleshooting, please refer to our dedicated documentation section:
 
--   [Development Guide](docs/development.md)
--   [CPU LLM Tutorial](docs/tutorial-cpu-llm.md)
--   [Project Troubleshooting](docs/troubleshooting.md)
--   [Training Framework Documentation](docs/training/README.md)
-
+- [Architecture Guide](docs/architecture.md)
+- [Development Guide](docs/development.md)
+- [CPU LLM Tutorial](docs/tutorial-cpu-llm.md)
+- [Project Troubleshooting](docs/troubleshooting.md)
+- [Training Framework Documentation](docs/training/README.md)
 
 ## Development
 
@@ -115,10 +121,14 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 This project is licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
+
+## Roadmap
+
+For our detailed development roadmap and future plans, including upcoming features like inference API, Flash Attention integration, and RLHF support, please see [ROADMAP.md](ROADMAP.md).
 
 ## Changelog
 

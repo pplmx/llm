@@ -67,7 +67,9 @@ class TestEmbeddingLayer:
         output = layer(input_ids)
 
         assert output.shape == (BATCH_SIZE, TEST_SEQ_LEN, HIDDEN_SIZE)
-        assert str(output.device) == str(device)  # Check device of output tensor
+        assert output.device.type == (
+            device.type if hasattr(device, "type") else device.split(":")[0]
+        )  # Check device of output tensor
 
     @pytest.mark.parametrize("padding_idx_val", [None, 0, 5])  # VOCAB_SIZE = 20
     def test_padding_idx_effect(self, padding_idx_val):
@@ -146,9 +148,12 @@ class TestEmbeddingLayer:
         """Test if device and dtype are correctly propagated to submodules."""
         dtype = eval(dtype_str)
 
-        if device == "cuda" and dtype == torch.float64:
-            if not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7):
-                pytest.skip("CUDA float64 support not adequate or device not capable.")
+        if (
+            device == "cuda"
+            and dtype == torch.float64
+            and not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7)
+        ):
+            pytest.skip("CUDA float64 support not adequate or device not capable.")
         if device == "cpu" and dtype == torch.float64:  # float64 on CPU is generally fine
             pass
 

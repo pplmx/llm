@@ -85,8 +85,25 @@ class TrainingEngine:
         self.dataloader, self.sampler = self.data_module.train_dataloader(self.rank, self.world_size)
         self.val_dataloader, self.val_sampler = self.data_module.val_dataloader(self.rank, self.world_size)
 
-        # Setup scaler and load checkpoint
-        self.scaler = torch.amp.GradScaler(enabled=(self.config.optimization.use_amp and self.device.type == "cuda"))
+        # Resolve 'auto' dtype
+        self.resolved_amp_dtype = self.config.optimization.amp_dtype
+        if self.resolved_amp_dtype == "auto":
+            if self.device.type == "cuda":
+                if torch.cuda.is_bf16_supported():
+                    self.resolved_amp_dtype = "bfloat16"
+                    self.logger.info("✨ Auto-detected BF16 support. Using bfloat16 for AMP.")
+                else:
+                    self.resolved_amp_dtype = "float16"
+                    self.logger.info("✨ Auto-detected no BF16 support. Using float16 for AMP.")
+            else:
+                self.resolved_amp_dtype = "float32"
+                self.logger.info("✨ Using float32 (no AMP) on CPU.")
+
+        # BF16 typically doesn't need scaling
+        use_scaler = (
+            self.config.optimization.use_amp and self.device.type == "cuda" and self.resolved_amp_dtype == "float16"
+        )
+        self.scaler = torch.amp.GradScaler(enabled=use_scaler)
 
         # Determine the model to pass for checkpoint loading (unwrap if DDP)
         model_to_load = self.model.module if isinstance(self.model, DDP) else self.model
@@ -112,7 +129,13 @@ class TrainingEngine:
 
             self.optimizer.zero_grad(set_to_none=True)
 
-            with torch.autocast(device_type=self.device.type, enabled=self.scaler.is_enabled()):
+            amp_dtype = torch.float16
+            if self.resolved_amp_dtype == "bfloat16":
+                amp_dtype = torch.bfloat16
+
+            with torch.autocast(
+                device_type=self.device.type, enabled=self.config.optimization.use_amp, dtype=amp_dtype
+            ):
                 loss, metrics = self.task.train_step(batch, self.model, self.criterion)
 
             self.scaler.scale(loss).backward()
@@ -139,7 +162,7 @@ class TrainingEngine:
 
         return global_avg_loss
 
-    def _run_validation_epoch(self, epoch: int) -> float:
+    def _run_validation_epoch(self, epoch: int) -> float | None:
         self._run_callbacks("on_validation_start", epoch=epoch)
         self.model.eval()  # Set model to evaluation mode
         self.performance_monitor.reset_epoch_stats()
@@ -181,7 +204,7 @@ class TrainingEngine:
     def _log_batch_stats(self, epoch, batch_idx, num_batches, metrics):
         lr = self.optimizer.param_groups[0]["lr"]
         mem_alloc, mem_cached = self.performance_monitor.get_current_gpu_memory()
-        grad_norm = self.performance_monitor.gradient_norms[-1]
+        grad_norm = self.performance_monitor.gradient_norms[-1] if self.performance_monitor.gradient_norms else 0.0
         batch_time = self.performance_monitor.get_avg_batch_time()
 
         metrics_str = " | ".join([f"{k}: {v:.4f}" for k, v in metrics.items()])

@@ -29,7 +29,7 @@ class ModelConfig:
     """模型配置"""
 
     hidden_size: int = 512
-    # REFACTOR: 允许ffn_hidden_size为None，在__post_init__中设置默认值
+    # REFACTOR: 允许ffn_hidden_size为None, 在__post_init__中设置默认值
     ffn_hidden_size: int | None = None
     num_layers: int = 2
     dropout: float = 0.1
@@ -131,7 +131,7 @@ class LoggingConfig:
 
 @dataclass
 class Config:
-    """主配置类，组合所有配置"""
+    """主配置类, 组合所有配置"""
 
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
@@ -145,10 +145,10 @@ class Config:
         """从命令行参数和环境变量创建配置"""
         parser = argparse.ArgumentParser(description="PyTorch DDP Training Script")
 
-        # 动态添加参数，避免重复
+        # 动态添加参数, 避免重复
         def add_args_from_dataclass(parser_, dc_name, dc_instance):
             for name, type_hint in dc_instance.__annotations__.items():
-                # 简化处理，只暴露部分关键参数
+                # 简化处理, 只暴露部分关键参数
                 arg_name = f"--{name.replace('_', '-')}"
                 if name in [
                     "epochs",
@@ -171,7 +171,7 @@ class Config:
                         if base_type:
                             type_for_argparse = base_type
                         else:
-                            # 如果参数类型是 Optional[None] 这种无法从命令行设置的，就跳过
+                            # 如果参数类型是 Optional[None] 这种无法从命令行设置的, 就跳过
                             continue
 
                     parser_.add_argument(
@@ -295,7 +295,8 @@ class Logger:
                 Path(self.config.log_dir).mkdir(parents=True, exist_ok=True)
                 # OPTIMIZATION: 使用更友好的时间格式
                 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                file_handler = logging.FileHandler(os.path.join(self.config.log_dir, f"training_{timestamp}.log"))
+                log_path = Path(self.config.log_dir) / f"training_{timestamp}.log"
+                file_handler = logging.FileHandler(log_path)
                 file_handler.setFormatter(formatter)
                 self.logger.addHandler(file_handler)
         else:
@@ -307,7 +308,7 @@ class Logger:
 
 
 # ============================================================================
-# 模型定义 (无变化，已足够好)
+# 模型定义 (无变化, 已足够好)
 # ============================================================================
 
 
@@ -322,7 +323,7 @@ class SimpleMLP(nn.Module):
             output_size = config.hidden_size if is_last_layer else config.ffn_hidden_size
             layers.append(nn.Linear(input_size, output_size))
             if not is_last_layer:
-                layers.append(nn.GELU())  # 使用GELU，现代模型中更常见
+                layers.append(nn.GELU())  # 使用GELU, 现代模型中更常见
                 layers.append(nn.Dropout(config.dropout))
             input_size = output_size
         self.net = nn.Sequential(*layers)
@@ -345,7 +346,7 @@ class SimpleMLP(nn.Module):
 
 
 # ============================================================================
-# 分布式训练管理 (无变化，已足够好)
+# 分布式训练管理 (无变化, 已足够好)
 # ============================================================================
 
 
@@ -383,7 +384,7 @@ class DistributedManager:
 
 
 # ============================================================================
-# 数据管理 (无变化，已足够好)
+# 数据管理 (无变化, 已足够好)
 # ============================================================================
 
 
@@ -455,7 +456,7 @@ class CheckpointManager:
             "scaler_state": scaler.state_dict(),
         }
 
-        # OPTIMIZATION: 原子化保存，先保存到临时文件再移动
+        # OPTIMIZATION: 原子化保存, 先保存到临时文件再移动
         def atomic_save(data, path):
             temp_path = str(path) + ".tmp"
             torch.save(data, temp_path)
@@ -503,7 +504,7 @@ class CheckpointManager:
             return 0, float("inf")
 
         ckp_path = self.config.resume_from_checkpoint
-        if not os.path.exists(ckp_path):
+        if not Path(ckp_path).exists():
             self.logger.warning(f"Checkpoint file not found: {ckp_path}. Starting from scratch.")
             return 0, float("inf")
 
@@ -725,7 +726,7 @@ def train_worker(rank: int, world_size: int, config: Config):
         trainer = Trainer(config, rank, world_size)
         trainer.train()
     except Exception:
-        # 使用根logger记录异常，确保即使自定义logger失败也能看到错误
+        # 使用根logger记录异常, 确保即使自定义logger失败也能看到错误
         logging.getLogger().exception(f"An error occurred in rank {rank}")
         # 抛出异常以终止进程
         raise

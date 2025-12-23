@@ -1,4 +1,4 @@
-target-version = "py312"
+target-version = "py313"
 line-length = 120
 
 [lint]
@@ -11,6 +11,9 @@ select = [
     "C4", # flake8-comprehensions
     "UP", # pyupgrade
     "ARG001", # unused arguments in functions
+    "SIM",   # flake8-simplify
+    # "RUF",   # Ruff-specific rules
+    "PTH",   # pathlib best practice
 ]
 
 ignore = [

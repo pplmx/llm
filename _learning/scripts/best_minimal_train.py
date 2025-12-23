@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 # ============================================================================
 @dataclass
 class TrainingConfig:
-    """将所有配置合并到一个类中，更易于管理和传递"""
+    """将所有配置合并到一个类中, 更易于管理和传递"""
 
     # Model
     hidden_size: int = 512
@@ -97,7 +97,7 @@ def get_config() -> TrainingConfig:
 # 2. 辅助函数 (Utility Functions)
 # ============================================================================
 def setup_logging(rank: int):
-    """设置日志，主进程使用 RichHandler，其他进程静默"""
+    """设置日志, 主进程使用 RichHandler, 其他进程静默"""
     logger = logging.getLogger(f"train_rank_{rank}")
     logger.propagate = False
 
@@ -229,7 +229,7 @@ class Trainer:
             shutil.copyfile(latest_path, best_path)
 
     def _load_checkpoint(self, path: str):
-        if not os.path.exists(path):
+        if not Path(path).exists():
             self.logger.warning(f"Checkpoint {path} not found. Starting from scratch.")
             return
 
@@ -256,7 +256,7 @@ class Trainer:
         ]
 
         total_start_time = time.time()
-        with Progress(*progress_columns, transient=False) if self.rank == 0 else open(os.devnull, "w") as progress:
+        with Progress(*progress_columns, transient=False) if self.rank == 0 else Path(os.devnull).open("w") as progress:
             epoch_task = (
                 progress.add_task("[bold red]Epochs", total=self.config.epochs, loss=0.0, lr=0.0)
                 if self.rank == 0

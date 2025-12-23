@@ -1,0 +1,35 @@
+{
+    "recommendations": [
+        // ===== Python Core =====
+        "ms-python.python",
+        "ms-python.debugpy",
+        "charliermarsh.ruff",
+
+        // ===== Type Checking (Choose One) =====
+        // "ms-python.vscode-pylance",  // For Official VSCode
+        // "astral-sh.ty",              // For Cursor/Windsurf
+
+        // ===== Configuration Files =====
+        "tamasfe.even-better-toml",
+        "redhat.vscode-yaml",
+
+        // ===== Git Enhancement =====
+        "eamodio.gitlens", // Git history and annotations
+        "mhutchie.git-graph", // Git graph visualization
+
+        // ===== AI Assistant =====
+        // "GitHub.copilot",              // For Official VSCode users
+        // "GitHub.copilot-chat",         // Copilot chat interface
+
+        // ===== Additional Tools =====
+        "ms-vscode.test-adapter-converter", // Test explorer
+        "njpwerner.autodocstring", // Auto-generate docstrings
+        "kevinrose.vsc-python-indent", // Python indent enhancement
+        "davidanson.vscode-markdownlint", // Markdown linter
+        "vscode-icons-team.vscode-icons", // File icons
+        "k--kato.intellij-idea-keybindings" // IntelliJ keybindings
+    ],
+    "unwantedRecommendations": [
+        "ms-python.pylint" // Replaced by Ruff
+    ]
+}

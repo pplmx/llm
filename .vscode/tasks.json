@@ -1,0 +1,65 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run Tests",
+            "type": "shell",
+            "command": "uv run pytest",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": [ ]
+        },
+        {
+            "label": "Run Tests with Coverage",
+            "type": "shell",
+            "command": "uv run pytest --cov=llm --cov-report=html",
+            "group": "test",
+            "problemMatcher": [ ]
+        },
+        {
+            "label": "Ruff Check",
+            "type": "shell",
+            "command": "uvx ruff check .",
+            "problemMatcher": [ ]
+        },
+        {
+            "label": "Ruff Fix",
+            "type": "shell",
+            "command": "uvx ruff check --fix .",
+            "problemMatcher": [ ]
+        },
+        {
+            "label": "Ruff Format",
+            "type": "shell",
+            "command": "uvx ruff format .",
+            "problemMatcher": [ ]
+        },
+        {
+            "label": "Type Check",
+            "type": "shell",
+            "command": "uvx ty check src/",
+            "problemMatcher": [ ]
+        },
+        {
+            "label": "Install Dependencies",
+            "type": "shell",
+            "command": "uv sync",
+            "problemMatcher": [ ]
+        },
+        {
+            "label": "Clean Cache",
+            "type": "shell",
+            "command": "find . -type d -name '__pycache__' -exec rm -rf {} + && find . -type d -name '.pytest_cache' -exec rm -rf {} + && find . -type d -name '.ruff_cache' -exec rm -rf {} +",
+            "windows": {
+                "command": "Get-ChildItem -Path . -Include __pycache__,.pytest_cache,.ruff_cache -Recurse -Force | Remove-Item -Recurse -Force"
+            },
+            "problemMatcher": [ ]
+        }
+    ]
+}

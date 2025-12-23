@@ -1,0 +1,8 @@
+This is a dummy corpus.
+It contains some text.
+To test the tokenizer and training loop.
+Repeated text for length.
+This is a dummy corpus.
+It contains some text.
+To test the tokenizer and training loop.
+Repeated text for length.
