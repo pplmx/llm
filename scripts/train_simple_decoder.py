@@ -18,7 +18,14 @@ def train(args):
     Main training function.
     """
     # 1. Setup Device
-    if args.device == "cuda" and not torch.cuda.is_available():
+    if args.device is None:
+        if torch.cuda.is_available():
+            args.device = "cuda"
+            print("Device not specified. Auto-detected CUDA available. Using CUDA.")
+        else:
+            args.device = "cpu"
+            print("Device not specified. CUDA not available. Using CPU.")
+    elif args.device == "cuda" and not torch.cuda.is_available():
         print("CUDA requested but not available. Falling back to CPU.")
         args.device = "cpu"
     device = torch.device(args.device)
@@ -250,7 +257,11 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs.")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate.")
     parser.add_argument(
-        "--device", type=str, default="cpu", choices=["cpu", "cuda"], help="Device to train on ('cpu' or 'cuda')."
+        "--device",
+        type=str,
+        default=None,
+        choices=["cpu", "cuda"],
+        help="Device to train on ('cpu' or 'cuda'). Defaults to auto-detect.",
     )
     parser.add_argument("--log_interval", type=int, default=10, help="Print loss every N batches.")
 

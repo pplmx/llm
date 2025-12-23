@@ -77,7 +77,7 @@ uv run -m llm.training.train --help
 Example (Regression Task):
 
 ```bash
-uv run -m llm.training.train --task regression --training-epochs 10
+uv run -m llm.training.train --task regression --epochs 10
 ```
 
 ### Standalone Simple Decoder Training
@@ -99,8 +99,10 @@ uv run scripts/train_simple_decoder.py --file_path <path_to_text_file> [options]
 Example:
 
 ```bash
-uv run scripts/train_simple_decoder.py --file_path data/corpus.txt --epochs 5 --device cuda
+uv run scripts/train_simple_decoder.py --file_path data/dummy_corpus.txt --epochs 5
 ```
+
+The script will automatically use CUDA if available, otherwise it falls back to CPU. You can force a specific device using `--device`:
 
 ## Inference
 
