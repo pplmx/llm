@@ -103,6 +103,7 @@ Only write high-value comments if at all. Avoid talking to the user through comm
 - 标点符号规范：在代码注释和文档中, 偏好使用英文/半角标点符号(如 `,` `(` `)`), 避免使用全角标点.
 - 测试偏好：在 Python 项目中测试时, 偏好不使用 mock, 直接调用代码, 主要验证功能性, 不关注覆盖率, 只使用 pytest.
 - 架构一致性：任何对 MHA 或 MLP 的修改必须考虑 GQA 和 SwiGLU 的兼容性.
+- **验证流程**：每次 Plan 实施结束后，必须执行 `make test -> make ruff -> make test` 验证流程，确保代码质量和功能正确性.
 
 ---
 
