@@ -134,3 +134,99 @@ generated_text = generate(
 )
 print(generated_text)
 ```
+
+## Inference Serving
+
+This project includes a production-ready REST API for inference service, built with FastAPI.
+
+### Features
+
+- **Streaming Support**: Server-Sent Events (SSE) for real-time token generation.
+- **Advanced Sampling**: Support for `top_p` (Nucleus Sampling) and `repetition_penalty`.
+- **Production Ready**: Structured logging, Prometheus metrics, and API Key authentication.
+
+### Starting the Server
+
+**Using Docker (Recommended):**
+
+```bash
+make image
+make compose-up
+```
+
+**Local Development:**
+
+```bash
+uvicorn src.llm.serving.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+### API Usage
+
+#### POST /generate
+
+Generate text from a prompt.
+
+**Request Body:**
+
+```json
+{
+  "prompt": "Hello, world",
+  "max_new_tokens": 50,
+  "temperature": 0.8,
+  "top_k": 5,
+  "top_p": 0.9,
+  "repetition_penalty": 1.1,
+  "stream": false
+}
+```
+
+**Streaming Request:**
+
+Set `"stream": true` to receive a stream of tokens.
+
+```bash
+curl -X POST "http://127.0.0.1:8000/generate" \
+     -H "Content-Type: application/json" \
+     -d '{"prompt": "Tell me a story", "stream": true}'
+```
+
+**Response (Non-streaming):**
+
+```json
+{
+  "generated_text": "Hello, world! This is a generated text...",
+  "token_count": 12
+}
+```
+
+### Authentication
+
+If `LLM_SERVING_API_KEY` is set, you must provide the key in the `X-API-Key` header.
+
+```bash
+export LLM_SERVING_API_KEY="my-secret-key"
+# Start server...
+
+curl -X POST "http://127.0.0.1:8000/generate" \
+     -H "X-API-Key: my-secret-key" \
+     ...
+```
+
+### Configuration
+
+You can configure the serving engine using environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LLM_SERVING_MODEL_PATH` | Path to model checkpoint file | `None` (Dummy Model) |
+| `LLM_SERVING_DEVICE` | Computation device (`cpu`, `cuda`, `auto`) | `auto` |
+| `LLM_SERVING_API_KEY` | API Key for authentication | `None` (Disabled) |
+| `LLM_SERVING_LOG_LEVEL` | Logging level (`INFO`, `DEBUG`, etc.) | `INFO` |
+
+### Metrics
+
+Prometheus metrics are available at `/metrics`.
+
+```bash
+curl http://127.0.0.1:8000/metrics
+```
