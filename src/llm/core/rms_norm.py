@@ -63,36 +63,36 @@ class RMSNorm(nn.Module):
         # RMSNorm 通常没有偏置项 (beta)
         # self.register_parameter("bias", None) # 显式表明无偏置
 
-    def _compute_rms(self, x: torch.Tensor) -> torch.Tensor:
+    def _compute_rms(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """计算 RMS 的辅助函数"""
         # 确定需要归一化的维度
         num_normalized_dims = len(self.normalized_shape)
-        dims_to_normalize = tuple(range(x.ndim - num_normalized_dims, x.ndim))
+        dims_to_normalize = tuple(range(hidden_states.ndim - num_normalized_dims, hidden_states.ndim))
 
         # 计算均方值 (不减去均值的方差)
         # mean(x^2)
-        mean_square = torch.mean(x.pow(2), dim=dims_to_normalize, keepdim=True)
+        mean_square = torch.mean(hidden_states.pow(2), dim=dims_to_normalize, keepdim=True)
 
         # 计算 RMS: sqrt(mean(x^2) + eps)
         rms = torch.sqrt(mean_square + self.eps)
         return rms
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         前向传播函数
 
         参数:
-            x: 输入张量, 其尾部维度应与 `normalized_shape` 匹配.
+            hidden_states: 输入张量, 其尾部维度应与 `normalized_shape` 匹配.
                形状例如: [batch_size, ..., *normalized_shape]
 
         返回:
-            归一化后的张量, 形状与输入 x 相同.
+            归一化后的张量, 形状与输入 hidden_states 相同.
         """
         # 1. 计算 RMS
-        rms = self._compute_rms(x)
+        rms = self._compute_rms(hidden_states)
 
         # 2. 归一化: x / RMS(x)
-        x_normalized = x / rms
+        x_normalized = hidden_states / rms
 
         # 3. 应用缩放因子 (gamma/weight) (如果启用)
         if self.elementwise_affine:

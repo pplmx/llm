@@ -25,23 +25,23 @@ class TestConfig:
         assert isinstance(config.logging, LoggingConfig)
 
     def test_model_config_post_init_ffn_size(self):
-        model_config = ModelConfig(hidden_size=128, ffn_hidden_size=None)
-        assert model_config.ffn_hidden_size == 128 * 4
+        model_config = ModelConfig(hidden_size=128, intermediate_size=None)
+        assert model_config.intermediate_size == 128 * 4
 
-        model_config_custom_ffn = ModelConfig(hidden_size=128, ffn_hidden_size=512)
-        assert model_config_custom_ffn.ffn_hidden_size == 512
+        model_config_custom_ffn = ModelConfig(hidden_size=128, intermediate_size=512)
+        assert model_config_custom_ffn.intermediate_size == 512
 
     @pytest.mark.parametrize(
-        "hidden_size, ffn_hidden_size, num_layers",
+        "hidden_size, intermediate_size, num_layers",
         [
-            (0, 100, 1),  # Invalid hidden_size
-            (100, 0, 1),  # Invalid ffn_hidden_size
-            (100, 100, 0),  # Invalid num_layers
+            (100, 10, 1),  # Invalid hidden_size (not divisible by 8 heads default)
+            (100, 0, 1),  # Invalid intermediate_size
+            (128, 512, 0),  # Invalid num_layers
         ],
     )
-    def test_model_config_validation_errors(self, hidden_size, ffn_hidden_size, num_layers):
-        with pytest.raises(ValidationError):
-            ModelConfig(hidden_size=hidden_size, ffn_hidden_size=ffn_hidden_size, num_layers=num_layers)
+    def test_model_config_validation_errors(self, hidden_size, intermediate_size, num_layers):
+        with pytest.raises(ValueError):
+            ModelConfig(hidden_size=hidden_size, intermediate_size=intermediate_size, num_layers=num_layers)
 
     @pytest.mark.parametrize(
         "batch_size, lr, epochs",

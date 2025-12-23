@@ -21,7 +21,7 @@ class DecoderModel(nn.Module):
         num_layers: int,
         num_heads: int,
         max_seq_len: int = 512,
-        mlp_intermediate_size: int | None = None,
+        intermediate_size: int | None = None,
         pos_encoding_learned: bool = False,
         embedding_dropout_p: float = 0.1,
         attn_dropout_p: float = 0.1,
@@ -66,8 +66,8 @@ class DecoderModel(nn.Module):
             **factory_kwargs,
         )
 
-        if mlp_intermediate_size is None:
-            mlp_intermediate_size = 4 * hidden_size
+        if intermediate_size is None:
+            intermediate_size = 4 * hidden_size
 
         # Backward compatibility for use_moe
         if use_moe:
@@ -78,7 +78,7 @@ class DecoderModel(nn.Module):
                 TransformerBlock(
                     hidden_size=hidden_size,
                     num_heads=num_heads,
-                    mlp_intermediate_size=mlp_intermediate_size,
+                    intermediate_size=intermediate_size,
                     attn_dropout_p=attn_dropout_p,
                     mlp_dropout_p=mlp_dropout_p,
                     mlp_activation=mlp_activation,
