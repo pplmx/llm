@@ -92,9 +92,13 @@ uv run scripts/train_simple_decoder.py --file-path <path_to_text_file> [options]
 
 - `--file-path`: Path to the training text file (Required).
 - `--val-file-path`: Path to the validation text file.
-- `--device`: `cpu` or `cuda`.
+- `--device`: `cpu` or `cuda`. Defaults to auto-detect.
 - `--epochs`: Number of training epochs.
 - `--batch-size`: Batch size.
+- `--hidden-size`: Model hidden size.
+- `--num-layers`: Number of transformer layers.
+- `--num-heads`: Number of attention heads.
+- `--lr`: Learning rate.
 
 Example:
 
@@ -113,11 +117,12 @@ To generate text using a trained model, you can use the `generate` function from
 ```python
 import torch
 from llm.models.decoder import DecoderModel
-from llm.tokenization.tokenizer import HFTokenizer
+from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.inference import generate
 
-# 1. Load Tokenizer (e.g., GPT-2 from HuggingFace)
-tokenizer = HFTokenizer.from_pretrained("gpt2")
+# 1. Create a simple tokenizer
+corpus = ["Hello world", "This is a test"]
+tokenizer = SimpleCharacterTokenizer(corpus)
 
 # 2. Initialize Model
 # Configuration should match the tokenizer's vocab size
