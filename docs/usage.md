@@ -112,7 +112,9 @@ The script will automatically use CUDA if available, otherwise it falls back to 
 
 To generate text using a trained model, you can use the `generate` function from `src/llm/inference.py`.
 
-### Python API Example
+### Python API Example (Simple)
+
+Here's a basic example using the built-in `SimpleCharacterTokenizer`:
 
 ```python
 import torch
@@ -143,6 +145,46 @@ generated_text = generate(
     prompt="Hello",
     max_new_tokens=20,
     temperature=0.8
+)
+print(generated_text)
+```
+
+### Python API Example (HuggingFace)
+
+For production use with pre-trained tokenizers, use `HFTokenizer`:
+
+```python
+import torch
+from llm.models.decoder import DecoderModel
+from llm.tokenization.tokenizer import HFTokenizer
+from llm.inference import generate
+
+# 1. Load Tokenizer (e.g., GPT-2 from HuggingFace)
+# Note: This requires transformers library: pip install transformers
+tokenizer = HFTokenizer.from_pretrained("gpt2")
+
+# 2. Initialize Model
+# IMPORTANT: vocab_size must match the tokenizer
+model = DecoderModel(
+    vocab_size=tokenizer.vocab_size,  # GPT-2: 50257
+    hidden_size=768,
+    num_layers=12,
+    num_heads=12,
+    max_seq_len=1024,
+)
+
+# 3. Load trained weights (if available)
+# checkpoint = torch.load("path/to/checkpoint.pt")
+# model.load_state_dict(checkpoint["model_state_dict"])
+
+# 4. Generate Text
+generated_text = generate(
+    model=model,
+    tokenizer=tokenizer,
+    prompt="Once upon a time",
+    max_new_tokens=50,
+    temperature=0.9,
+    top_p=0.95
 )
 print(generated_text)
 ```
