@@ -22,6 +22,7 @@ def sample_qkv_tensors():
     return query, key, value
 
 
+@pytest.mark.slow
 def test_scaled_dot_product_attention_basic(sample_qkv_tensors):
     """Test basic functionality without masks or dropout."""
     query, key, value = sample_qkv_tensors
@@ -32,6 +33,7 @@ def test_scaled_dot_product_attention_basic(sample_qkv_tensors):
     assert not torch.allclose(output, torch.zeros_like(output))
 
 
+@pytest.mark.slow
 def test_scaled_dot_product_attention_causal_mask(sample_qkv_tensors):
     """Test with causal masking."""
     query, key, value = sample_qkv_tensors
@@ -63,6 +65,7 @@ def test_scaled_dot_product_attention_causal_mask(sample_qkv_tensors):
         assert torch.allclose(actual_output_single, expected_output_single, atol=1e-6)
 
 
+@pytest.mark.slow
 def test_scaled_dot_product_attention_attn_mask(sample_qkv_tensors):
     """Test with explicit attention mask."""
     query, key, value = sample_qkv_tensors
@@ -83,6 +86,7 @@ def test_scaled_dot_product_attention_attn_mask(sample_qkv_tensors):
     assert not torch.allclose(output, output_unmasked)
 
 
+@pytest.mark.slow
 def test_scaled_dot_product_attention_combined_mask(sample_qkv_tensors):
     """Test with both causal and explicit attention mask."""
     query, key, value = sample_qkv_tensors
@@ -117,6 +121,7 @@ def test_scaled_dot_product_attention_combined_mask(sample_qkv_tensors):
     assert torch.allclose(actual_output_single, expected_output_single, atol=1e-6)
 
 
+@pytest.mark.slow
 def test_scaled_dot_product_attention_dropout(sample_qkv_tensors):
     """Test with dropout enabled (in training mode)."""
     query, key, value = sample_qkv_tensors
@@ -134,6 +139,7 @@ def test_scaled_dot_product_attention_dropout(sample_qkv_tensors):
     assert not torch.allclose(output1, output2)
 
 
+@pytest.mark.slow
 def test_scaled_dot_product_attention_custom_scale(sample_qkv_tensors):
     """Test with a custom scale value."""
     query, key, value = sample_qkv_tensors
@@ -151,6 +157,7 @@ def test_scaled_dot_product_attention_custom_scale(sample_qkv_tensors):
     assert torch.allclose(output, expected_output, atol=1e-6)
 
 
+@pytest.mark.slow
 def test_scaled_dot_product_attention_seq_len_one():
     """Test with sequence length of one."""
     batch_size = 1
@@ -169,6 +176,7 @@ def test_scaled_dot_product_attention_seq_len_one():
     assert torch.allclose(output, value, atol=1e-6)
 
 
+@pytest.mark.slow
 def test_scaled_dot_product_attention_invalid_attn_mask_dtype(sample_qkv_tensors):
     """Test that ValueError is raised for non-boolean attn_mask dtype."""
     query, key, value = sample_qkv_tensors

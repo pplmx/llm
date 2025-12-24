@@ -4,6 +4,7 @@ import sys
 import pytest
 
 
+@pytest.mark.quick
 def test_import_llm_registers_components():
     """
     Run a subprocess to verify that `import llm` automatically populates the registry.

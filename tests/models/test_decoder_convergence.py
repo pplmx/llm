@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -5,6 +6,7 @@ import torch.optim as optim
 from llm.models.decoder import DecoderModel
 
 
+@pytest.mark.heavy
 def test_training_convergence_overfit():
     """
     A functional "smoke test" to ensure that gradients flow correctly and
@@ -73,6 +75,7 @@ def test_training_convergence_overfit():
     assert final_loss < 0.2, f"Model failed to overfit tiny sequence. Final loss: {final_loss:.4f}"
 
 
+@pytest.mark.heavy
 def test_gradient_flow():
     """
     Verify that all parameters receive gradients during a backward pass.

@@ -6,6 +6,7 @@ from llm.training.core.engine import TrainingEngine
 from llm.training.tasks.regression_task import RegressionTask
 
 
+@pytest.mark.heavy
 def test_log_batch_stats_handles_empty_gradients(tmp_path):
     """
     Verify _log_batch_stats does not raise IndexError when gradient_norms is empty

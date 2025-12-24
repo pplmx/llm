@@ -1,8 +1,10 @@
+import pytest
 import torch
 
 from llm.models.decoder import DecoderModel
 
 
+@pytest.mark.slow
 def test_kv_cache_consistency():
     """
     Verify that incremental generation with KV cache produces the same hidden states
@@ -51,6 +53,7 @@ def test_kv_cache_consistency():
     )
 
 
+@pytest.mark.slow
 def test_kv_cache_dimensions():
     """
     Verify the dimensions of the returned KV cache.

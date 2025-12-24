@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from llm.core.attn.mha import MultiHeadAttention
@@ -6,6 +7,7 @@ from llm.core.rms_norm import RMSNorm
 from llm.models.decoder import DecoderModel
 
 
+@pytest.mark.slow
 def test_swiglu_mlp():
     hidden_size = 64
     intermediate_size = 128
@@ -18,6 +20,7 @@ def test_swiglu_mlp():
     assert hasattr(mlp, "gate_proj")
 
 
+@pytest.mark.slow
 def test_gqa_attention():
     hidden_size = 64
     num_heads = 8
@@ -33,6 +36,7 @@ def test_gqa_attention():
     assert mha.qkv_proj.out_features == 96
 
 
+@pytest.mark.slow
 def test_rmsnorm_decoder():
     # Use RMSNorm in DecoderModel
     vocab_size = 100
@@ -47,6 +51,7 @@ def test_rmsnorm_decoder():
     assert isinstance(model.transformer_blocks[0].norm1, RMSNorm)
 
 
+@pytest.mark.slow
 def test_gqa_kv_cache():
     hidden_size = 64
     num_heads = 4

@@ -4,6 +4,7 @@ import torch.nn as nn
 from llm.utils.common import get_activation_layer
 
 
+@pytest.mark.quick
 def test_get_activation_layer_supported_activations():
     """Test that get_activation_layer returns the correct activation class for supported names."""
     # Test cases: (activation_name, expected_class)
@@ -34,6 +35,7 @@ def test_get_activation_layer_supported_activations():
             assert activation_class == expected_class
 
 
+@pytest.mark.quick
 def test_get_activation_layer_unsupported_activation():
     """Test that get_activation_layer raises ValueError for unsupported activation names."""
     with pytest.raises(
@@ -42,6 +44,7 @@ def test_get_activation_layer_unsupported_activation():
         get_activation_layer("unknown_activation")
 
 
+@pytest.mark.quick
 def test_get_activation_layer_case_insensitivity():
     """Test that get_activation_layer is case-insensitive."""
     assert get_activation_layer("GeLu") == nn.GELU

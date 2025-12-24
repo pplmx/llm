@@ -20,6 +20,7 @@ def mock_config():
     return config
 
 
+@pytest.mark.heavy
 def test_lm_task_initialization(mock_config):
     data_module = SyntheticDataModule(mock_config)  # Just for interface
     task = LanguageModelingTask(mock_config, data_module)
@@ -32,6 +33,7 @@ def test_lm_task_initialization(mock_config):
     assert hasattr(model.transformer_blocks[0].mlp, "gate_proj")
 
 
+@pytest.mark.heavy
 def test_lm_task_step(mock_config):
     data_module = SyntheticDataModule(mock_config)
     task = LanguageModelingTask(mock_config, data_module)
@@ -56,6 +58,7 @@ def test_lm_task_step(mock_config):
     assert metrics["ppl"] >= 1.0
 
 
+@pytest.mark.heavy
 def test_lm_task_validation(mock_config):
     data_module = SyntheticDataModule(mock_config)
     task = LanguageModelingTask(mock_config, data_module)

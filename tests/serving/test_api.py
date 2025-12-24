@@ -10,6 +10,7 @@ def client():
         yield c
 
 
+@pytest.mark.slow
 def test_health_check(client):
     """测试健康检查端点."""
     response = client.get("/health")
@@ -17,6 +18,7 @@ def test_health_check(client):
     assert response.json() == {"status": "ok"}
 
 
+@pytest.mark.slow
 def test_generate_text(client):
     """测试普通文本生成 (非流式)."""
     payload = {"prompt": "hello", "max_new_tokens": 10, "temperature": 0.5, "top_k": 5}
@@ -30,6 +32,7 @@ def test_generate_text(client):
     assert len(data["generated_text"]) >= len(payload["prompt"])
 
 
+@pytest.mark.slow
 def test_generate_advanced_params(client):
     """测试高级采样参数 (top_p, repetition_penalty)."""
     payload = {"prompt": "hello", "max_new_tokens": 10, "temperature": 0.8, "top_p": 0.9, "repetition_penalty": 1.2}
@@ -42,6 +45,7 @@ def test_generate_advanced_params(client):
     assert len(data["generated_text"]) >= len(payload["prompt"])
 
 
+@pytest.mark.slow
 def test_generate_stream(client):
     """测试流式文本生成."""
     payload = {"prompt": "hello", "max_new_tokens": 10, "stream": True}
@@ -63,6 +67,7 @@ def test_generate_stream(client):
         assert len(full_text) >= len(payload["prompt"])
 
 
+@pytest.mark.slow
 def test_generate_invalid_params(client):
     """测试无效参数."""
     payload = {
@@ -73,6 +78,7 @@ def test_generate_invalid_params(client):
     assert response.status_code == 422
 
 
+@pytest.mark.slow
 def test_metrics_endpoint(client):
     """测试 Prometheus 指标端点."""
     response = client.get("/metrics")
@@ -80,6 +86,7 @@ def test_metrics_endpoint(client):
     assert "http_requests_total" in response.text
 
 
+@pytest.mark.slow
 def test_auth_enforcement():
     """测试 API Key 验证."""
     from fastapi.testclient import TestClient

@@ -62,12 +62,13 @@ filterwarnings = [
 addopts = [
     "-ra",
     "-q",
-    "--cov=llm",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=lcov",
-    "--cov-report=xml",
-    "--alluredir=allure-results",
+]
+markers = [
+    "quick: Fast unit tests (< 1s)",
+    "slow: Slower tests (1-30s)",
+    "heavy: Resource-intensive tests (> 30s, may require GPU)",
+    "e2e: End-to-end workflow tests",
+    "integration: Tests requiring external dependencies (e.g., HuggingFace)",
 ]
 consider_namespace_packages = true # Enable this to allow using the same filename in different test directories without needing __init__.py in each one
 pythonpath = ["src", "."]

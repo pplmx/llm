@@ -46,12 +46,14 @@ jobs:
             -   name: Build Project
                 run: uv build
 
-            -   name: Run Pytest Tests
-                run: uv run pytest
+            -   name: Run Full Tests with Coverage
+                run: make test-cov
 
             -   name: Upload coverage report as artifact
                 if: always() # Ensure it runs even if tests fail, to upload partial coverage
                 uses: actions/upload-artifact@v6
                 with:
                     name: coverage-report-${{ matrix.os }} # Make artifact name unique per OS
-                    path: coverage.xml
+                    path: |
+                        coverage.xml
+                        htmlcov/

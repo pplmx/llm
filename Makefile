@@ -21,7 +21,27 @@ build:
 
 # Test
 test:
+	@uv run pytest -m "not heavy and not e2e"
+
+# Test quick only
+test-quick:
+	@uv run pytest -m quick
+
+# Test all (including heavy and e2e)
+test-all:
 	@uv run pytest
+
+# Test with coverage and allure reports (slowest, for CI)
+test-cov:
+	@uv run pytest --cov=llm --cov-report=term-missing --cov-report=html --cov-report=lcov --cov-report=xml --alluredir=allure-results
+
+# Test integration only
+test-integration:
+	@uv run pytest -m integration
+
+# Test e2e only
+test-e2e:
+	@uv run pytest -m e2e
 
 # Allure report
 allure:

@@ -12,6 +12,7 @@ def sample_text_file(tmp_path):
     return str(f)
 
 
+@pytest.mark.quick
 def test_bpe_tokenizer_train_save_load(sample_text_file, tmp_path):
     # Train
     tokenizer = BPETokenizer.train([sample_text_file], vocab_size=100, min_frequency=1)
@@ -39,6 +40,7 @@ def test_bpe_tokenizer_train_save_load(sample_text_file, tmp_path):
     assert loaded_tokenizer.decode(loaded_tokenizer.encode(text2)) == text2
 
 
+@pytest.mark.quick
 def test_bpe_tokenizer_special_tokens(sample_text_file):
     special_tokens = ["[UNK]", "[PAD]", "[MASK]", "CustomToken"]
     tokenizer = BPETokenizer.train([sample_text_file], vocab_size=100, min_frequency=1, special_tokens=special_tokens)
@@ -48,6 +50,7 @@ def test_bpe_tokenizer_special_tokens(sample_text_file):
         assert token in vocab
 
 
+@pytest.mark.quick
 def test_bpe_tokenizer_empty_input():
     tokenizer = BPETokenizer()  # Default initialized un-trained
     # Note: Default initialized might not encode well without training,

@@ -6,6 +6,7 @@ from llm.core.mlp import MLP
 from llm.core.moe.moe import MoE
 
 
+@pytest.mark.slow
 class TestMoE:
     @pytest.fixture(
         params=[

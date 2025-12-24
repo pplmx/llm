@@ -87,6 +87,7 @@ def attention_mask_tensor(model_kwargs):
     return mask.unsqueeze(1).unsqueeze(1)  # [B, 1, 1, S]
 
 
+@pytest.mark.slow
 class TestDecoderModelInitialization:
     def test_submodule_types_and_counts(self, decoder_model, model_kwargs):
         assert isinstance(decoder_model.embedding_layer, EmbeddingLayer)
@@ -119,6 +120,7 @@ class TestDecoderModelInitialization:
             assert decoder_model.lm_head.bias is None, "LM head bias should be None when lm_head_bias=False"
 
 
+@pytest.mark.slow
 class TestDecoderModelForwardPass:
     @pytest.mark.parametrize("model_kwargs", [{"norm_first": True}, {"norm_first": False}], indirect=True)
     def test_forward_pass_shape(self, decoder_model, input_ids_tensor, model_kwargs):
@@ -177,6 +179,7 @@ class TestDecoderModelForwardPass:
 
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("dtype_str", ["torch.float32"])
+@pytest.mark.slow
 class TestDeviceAndDtypePropagation:
     def test_model_device_dtype(self, device, dtype_str, model_kwargs, input_ids_tensor):
         dtype = getattr(torch, dtype_str.replace("torch.", ""))
@@ -245,6 +248,7 @@ if __name__ == "__main__":
 @pytest.mark.parametrize("mlp_bias_val", [True, False])
 @pytest.mark.parametrize("lm_head_bias_val", [True, False])
 @pytest.mark.parametrize("pos_encoding_learned_val", [True, False])
+@pytest.mark.slow
 def test_decoder_model_gradient_computation(
     norm_first_val,
     qkv_bias_val,
@@ -363,6 +367,7 @@ def test_decoder_model_gradient_computation(
     ],
     indirect=True,
 )
+@pytest.mark.slow
 def test_decoder_model_dropout_train_eval_modes(decoder_model, input_ids_tensor, model_kwargs):
     """
     Tests DecoderModel dropout behavior in train vs eval modes.

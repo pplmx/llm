@@ -14,6 +14,7 @@ from llm.training.core.config import (
 )
 
 
+@pytest.mark.quick
 class TestConfig:
     def test_default_config_creation(self):
         config = Config()
@@ -81,8 +82,6 @@ class TestConfig:
             CheckpointConfig(save_interval=0)
         with pytest.raises(ValidationError, match="Input should be greater than 0"):
             CheckpointConfig(keep_last_n=0)
-
-    # Note: test_config_from_args_and_env removed as that logic is now handled by Typer CLI
 
     def test_model_config_moe_validation(self):
         # Test invalid num_experts

@@ -24,6 +24,7 @@ def dummy_zero_input():
     return torch.zeros(BATCH_SIZE, TEST_SEQ_LEN, HIDDEN_SIZE)
 
 
+@pytest.mark.quick
 def test_sinusoidal_encoding_initialization():
     """Test initialization of Sinusoidal PositionalEncoding."""
     model = PositionalEncoding(HIDDEN_SIZE, MAX_SEQ_LEN, learned=False)
@@ -48,6 +49,7 @@ def test_sinusoidal_encoding_initialization():
     assert torch.allclose(pos1_encoding, manual_pos1, atol=1e-6)
 
 
+@pytest.mark.quick
 def test_learned_encoding_initialization():
     """Test initialization of Learned PositionalEncoding."""
     model = PositionalEncoding(HIDDEN_SIZE, MAX_SEQ_LEN, learned=True)
@@ -60,6 +62,7 @@ def test_learned_encoding_initialization():
     assert not torch.all(model.pos_embedding.weight == 0)
 
 
+@pytest.mark.quick
 def test_forward_pass_sinusoidal(dummy_zero_input):
     """Test forward pass for Sinusoidal PositionalEncoding."""
     model = PositionalEncoding(HIDDEN_SIZE, MAX_SEQ_LEN, dropout_p=0.0, learned=False)  # Dropout 0 for exact check
@@ -74,6 +77,7 @@ def test_forward_pass_sinusoidal(dummy_zero_input):
     assert torch.allclose(output, expected_pe.expand_as(dummy_zero_input), atol=1e-6)
 
 
+@pytest.mark.quick
 def test_forward_pass_learned(dummy_zero_input):
     """Test forward pass for Learned PositionalEncoding."""
     model = PositionalEncoding(HIDDEN_SIZE, MAX_SEQ_LEN, dropout_p=0.0, learned=True)  # Dropout 0 for exact check
@@ -90,6 +94,7 @@ def test_forward_pass_learned(dummy_zero_input):
     assert torch.allclose(output, expected_learned_pe.expand_as(dummy_zero_input), atol=1e-6)
 
 
+@pytest.mark.quick
 def test_dropout_application(dummy_input):
     """Test if dropout is applied during training and not during eval."""
     # Test Sinusoidal
@@ -149,6 +154,7 @@ def test_dropout_application(dummy_input):
         )
 
 
+@pytest.mark.quick
 def test_sequence_length_handling(dummy_input):
     """Test correct handling of sequences shorter than max_seq_len."""
     # Sinusoidal
@@ -175,6 +181,7 @@ def test_sequence_length_handling(dummy_input):
     assert torch.allclose(output_lrn, dummy_input + expected_learned_slice, atol=1e-6)
 
 
+@pytest.mark.quick
 def test_seq_len_exceeds_max_len():
     """Test that an error is raised if seq_len > max_seq_len."""
     model = PositionalEncoding(HIDDEN_SIZE, MAX_SEQ_LEN, learned=False)

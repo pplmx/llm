@@ -19,6 +19,7 @@ def model_and_tokenizer():
     return model, tokenizer
 
 
+@pytest.mark.slow
 def test_generate_greedy(model_and_tokenizer):
     model, tokenizer = model_and_tokenizer
     prompt = "hello"
@@ -42,6 +43,7 @@ def test_generate_greedy(model_and_tokenizer):
     assert len(encoded_output) == len(encoded_prompt) + max_new_tokens
 
 
+@pytest.mark.slow
 def test_generate_sampling(model_and_tokenizer):
     model, tokenizer = model_and_tokenizer
     prompt = "test"
@@ -62,6 +64,7 @@ def test_generate_sampling(model_and_tokenizer):
     assert len(encoded_output) == len(encoded_prompt) + max_new_tokens
 
 
+@pytest.mark.slow
 def test_generate_max_seq_len_truncation(model_and_tokenizer):
     model, tokenizer = model_and_tokenizer
     # 创建一个超过 max_seq_len 的 prompt

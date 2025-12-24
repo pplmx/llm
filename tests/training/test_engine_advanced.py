@@ -16,6 +16,7 @@ def mock_config():
     )
 
 
+@pytest.mark.heavy
 def test_engine_auto_amp_dtype(mock_config):
     """Test that amp_dtype='auto' resolves to float32 on CPU."""
     dm = SyntheticDataModule(mock_config)
@@ -36,6 +37,7 @@ def test_engine_auto_amp_dtype(mock_config):
     assert engine.resolved_amp_dtype == expected_amp_dtype
 
 
+@pytest.mark.heavy
 def test_engine_explicit_amp_dtype(mock_config):
     """Test that explicit amp_dtype is respected."""
     mock_config.optimization.amp_dtype = "float32"

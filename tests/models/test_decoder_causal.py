@@ -1,8 +1,10 @@
+import pytest
 import torch
 
 from llm.models.decoder import DecoderModel
 
 
+@pytest.mark.slow
 def test_causal_masking_property():
     """
     Verify that changing a future token does not affect the hidden states
@@ -47,6 +49,7 @@ def test_causal_masking_property():
     )
 
 
+@pytest.mark.slow
 def test_causal_masking_with_padding():
     """
     Verify causal masking works correctly even when a padding mask is applied.

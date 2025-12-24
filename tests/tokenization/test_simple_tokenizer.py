@@ -27,6 +27,7 @@ def extended_tokenizer():
     return SimpleCharacterTokenizer(SAMPLE_CORPUS_EXTENDED)
 
 
+@pytest.mark.quick
 class TestSimpleCharacterTokenizerInitialization:
     def test_pad_token_attributes(self, basic_tokenizer):
         assert hasattr(basic_tokenizer, "pad_char")
@@ -126,6 +127,7 @@ class TestSimpleCharacterTokenizerInitialization:
             SimpleCharacterTokenizer(["a", "b", 123])  # type: ignore
 
 
+@pytest.mark.quick
 class TestSimpleCharacterTokenizerEncoding:
     def test_encode_basic(self, basic_tokenizer):
         text = "hello"
@@ -167,6 +169,7 @@ class TestSimpleCharacterTokenizerEncoding:
             basic_tokenizer.encode(123)  # type: ignore
 
 
+@pytest.mark.quick
 class TestSimpleCharacterTokenizerDecoding:
     def test_decode_basic(self, basic_tokenizer):
         # Same logic as test_encode_basic for token list construction
@@ -204,6 +207,7 @@ class TestSimpleCharacterTokenizerDecoding:
             basic_tokenizer.decode([1, 2, "c"])  # type: ignore
 
 
+@pytest.mark.quick
 class TestSimpleCharacterTokenizerEndToEnd:
     @pytest.mark.parametrize("text_to_test", ["hello world", "pytest", "testing", " ", ""])
     def test_encode_decode_identity_basic(self, basic_tokenizer, text_to_test):

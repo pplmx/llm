@@ -7,6 +7,7 @@ from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.regression_task import RegressionTask
 
 
+@pytest.mark.heavy
 def test_regression_task_scheduler_zero_division_fix():
     """Test that T_max avoids 0 even if epochs == warmup_epochs."""
     config = Config(
@@ -48,6 +49,7 @@ def test_regression_task_scheduler_zero_division_fix():
         pytest.fail("scheduler.step() raised ZeroDivisionError")
 
 
+@pytest.mark.heavy
 def test_lm_task_scheduler_zero_division_fix():
     """Test LMTask specific scheduler construction too."""
     config = Config(
