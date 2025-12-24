@@ -16,7 +16,6 @@ from llm.serving.config import ServingConfig
 from llm.serving.engine import LLMEngine
 from llm.serving.schemas import GenerationRequest, GenerationResponse
 
-# 配置结构化日志
 logger = logging.getLogger()
 logHandler = logging.StreamHandler(sys.stdout)
 formatter = json.JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -24,21 +23,18 @@ logHandler.setFormatter(formatter)
 logger.addHandler(logHandler)
 logger.setLevel(logging.INFO)
 
-# 全局推理引擎
 config = ServingConfig()
-# 更新日志级别
 logger.setLevel(config.log_level)
 
 engine = LLMEngine(config)
 
-# API Key Security Scheme
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 async def get_api_key(
     api_key_header: str = Security(api_key_header),
 ):
-    """验证 API Key."""
+    """Verify API Key."""
     if config.api_key:
         if api_key_header == config.api_key:
             return api_key_header
@@ -50,7 +46,7 @@ async def get_api_key(
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     """
-    FastAPI 生命周期管理器.
+    FastAPI lifespan manager.
     """
     logger.info("Starting up...")
     engine.load_model()
@@ -72,7 +68,7 @@ Instrumentator().instrument(app).expose(app)
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
-    """健康检查端点."""
+    """Health check endpoint."""
     return {"status": "ok"}
 
 
@@ -81,13 +77,12 @@ async def generate_text(
     request: GenerationRequest, _api_key: str = Depends(get_api_key)
 ) -> GenerationResponse | StreamingResponse:
     """
-    文本生成端点. 支持流式和非流式.
+    Text generation endpoint. Supports streaming and non-streaming.
     """
     if request.stream:
         return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
 
     try:
-        # 在线程池中运行以避免阻塞事件循环
         generated_text = await run_in_threadpool(
             engine.generate,
             prompt=request.prompt,
@@ -109,16 +104,9 @@ async def generate_text(
 
 
 async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
-    """辅助生成器, 将同步的 engine 生成转换为异步流."""
+    """Helper generator to convert sync engine generation to async stream."""
     try:
-        # 在线程池中运行生成器
-        # 注意: 由于 iterate_in_threadpool 不直接支持带参数的生成器调用
-        # 我们需要手动包装或使用 run_in_threadpool 获取迭代器, 然后在 async for 中遍历
-
-        # 简单实现: 我们在线程中获取完整的迭代器, 然后 wrap 成 async
-        # 但这样会阻塞直到生成开始. 更理想的是逐个 yield.
-
-        # 使用 iterate_in_threadpool (Starlette/FastAPI util)
+        # Use iterate_in_threadpool (Starlette/FastAPI util) for streaming
         from starlette.concurrency import iterate_in_threadpool
 
         iterator = engine.stream_generate(

@@ -167,7 +167,7 @@ make compose-up
 python src/llm/serving/api.py
 ```
 
-或者使用 `uv`:
+Or using `uv`:
 
 ```bash
 uv run src/llm/serving/api.py
