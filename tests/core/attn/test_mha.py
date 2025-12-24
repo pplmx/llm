@@ -59,6 +59,7 @@ def create_mha_for_test(**kwargs):
     return mha_instance, input_data
 
 
+@pytest.mark.slow
 def test_mha_initialization(mha, mha_props):
     """Test if MHA module is initialized correctly based on mha_props."""
     assert isinstance(mha, MultiHeadAttention)
@@ -93,12 +94,14 @@ def test_mha_initialization(mha, mha_props):
     ],
     indirect=True,
 )
+@pytest.mark.slow
 def test_mha_forward_shape(mha, input_tensor):
     """Test if forward pass maintains correct shape for norm/residual and bias modes."""
     output = mha(input_tensor)
     assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mha_with_mask(mha, input_tensor):  # Uses default mha_props (norm_res=True)
     """Test MHA with attention mask."""
     # Create a simple attention mask (True means masked for scaled_dot_product_attention)
@@ -121,6 +124,7 @@ def test_mha_with_mask(mha, input_tensor):  # Uses default mha_props (norm_res=T
 @pytest.mark.parametrize(
     "mha_props", [{"include_norm_residual": True}, {"include_norm_residual": False}], indirect=True
 )
+@pytest.mark.slow
 def test_mha_gradients(mha, input_tensor):
     """Test if gradients are computed correctly for both norm/residual modes."""
     input_tensor.requires_grad_(True)
@@ -143,6 +147,7 @@ def test_mha_gradients(mha, input_tensor):
     [{"is_causal": True, "include_norm_residual": True}, {"is_causal": True, "include_norm_residual": False}],
     indirect=True,
 )
+@pytest.mark.slow
 def test_mha_causal(mha, input_tensor):
     """Test causal MHA for both norm/residual modes."""
     assert mha.is_causal is True
@@ -151,6 +156,7 @@ def test_mha_causal(mha, input_tensor):
     # Further checks could involve comparing outputs with a manually created causal mask.
 
 
+@pytest.mark.slow
 def test_mha_different_num_heads(mha_props):
     """Test MHA with different number of heads for both norm/residual modes."""
     num_heads_list = [2, 4]  # Assuming hidden_size=64 from default mha_props
@@ -167,6 +173,7 @@ def test_mha_different_num_heads(mha_props):
     "mha_props", [{"include_norm_residual": True}, {"include_norm_residual": False}], indirect=True
 )
 @pytest.mark.parametrize("hidden_size_test", [32, 128])  # Test different hidden sizes
+@pytest.mark.slow
 def test_mha_different_hidden_sizes(mha_props, hidden_size_test):
     """Test MHA with different hidden sizes for both norm/residual modes."""
     props = mha_props.copy()
@@ -188,6 +195,7 @@ def test_mha_different_hidden_sizes(mha_props, hidden_size_test):
 @pytest.mark.parametrize(
     "mha_props", [{"include_norm_residual": True}, {"include_norm_residual": False}], indirect=True
 )
+@pytest.mark.slow
 def test_mha_different_batch_sizes(mha_props, mha):  # mha here uses the parametrized mha_props
     """Test MHA with different batch sizes for both norm/residual modes."""
     batch_sizes = [1, 2, 4]
@@ -200,6 +208,7 @@ def test_mha_different_batch_sizes(mha_props, mha):  # mha here uses the paramet
 @pytest.mark.parametrize(
     "mha_props", [{"include_norm_residual": True}, {"include_norm_residual": False}], indirect=True
 )
+@pytest.mark.slow
 def test_mha_different_sequence_lengths(mha_props, mha):  # mha here uses the parametrized mha_props
     """Test MHA with different sequence lengths for both norm/residual modes."""
     seq_lengths = [5, 10, 20]
@@ -210,6 +219,7 @@ def test_mha_different_sequence_lengths(mha_props, mha):  # mha here uses the pa
 
 
 @pytest.mark.parametrize("norm_first_val", [True, False])
+@pytest.mark.slow
 def test_mha_internal_norm_first_when_norm_residual_active(norm_first_val):
     """Test MHA's internal norm_first behavior when include_norm_residual is True."""
     mha_instance, input_data = create_mha_for_test(
@@ -237,6 +247,7 @@ def test_mha_internal_norm_first_when_norm_residual_active(norm_first_val):
         )
 
 
+@pytest.mark.slow
 def test_mha_no_norm_residual_output():
     """Test MHA behavior and output when include_norm_residual is False."""
     torch.manual_seed(0)
@@ -292,6 +303,7 @@ def test_mha_no_norm_residual_output():
         )
 
 
+@pytest.mark.slow
 def test_mha_no_norm_residual_dropout_active():
     """Test that output dropout is still active in MHA when include_norm_residual is False."""
     dropout_p_test = 0.5
@@ -327,6 +339,7 @@ def test_mha_no_norm_residual_dropout_active():
 @pytest.mark.parametrize(
     "mha_props", [{"p": 0.5, "include_norm_residual": True}, {"p": 0.5, "include_norm_residual": False}], indirect=True
 )
+@pytest.mark.slow
 def test_mha_dropout_train_eval_modes(mha, input_tensor, mha_props):
     """
     Tests MHA dropout behavior in train vs eval modes, parameterized for include_norm_residual.
@@ -357,6 +370,7 @@ def test_mha_dropout_train_eval_modes(mha, input_tensor, mha_props):
     )
 
 
+@pytest.mark.slow
 def test_mha_initialization_invalid_hidden_size_num_heads():
     """Test MHA initialization with hidden_size not divisible by num_heads."""
     with pytest.raises(ValueError, match="hidden_size .* must be divisible by num_heads .*"):

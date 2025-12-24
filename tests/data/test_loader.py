@@ -43,6 +43,7 @@ def dummy_text_file(request):
     Path(temp_file_path).unlink()  # Manual cleanup after the test using this fixture
 
 
+@pytest.mark.slow
 class TestTextDatasetInitialization:
     @pytest.mark.parametrize("dummy_text_file", ["short example text."], indirect=True)
     def test_dataset_creation(self, dummy_text_file, dummy_tokenizer):
@@ -180,6 +181,7 @@ class TestTextDatasetInitialization:
         assert dataset_explicit_padding.padding_value == 999
 
 
+@pytest.mark.slow
 class TestTextDatasetGetItem:
     @pytest.mark.parametrize("dummy_text_file", ["hello there general kenobi"], indirect=True)
     def test_getitem_output(self, dummy_text_file, dummy_tokenizer):
@@ -223,6 +225,7 @@ class TestTextDatasetGetItem:
             _ = dataset[len(dataset)]  # Access one index beyond the end
 
 
+@pytest.mark.slow
 class TestCreateDataLoader:
     @pytest.mark.parametrize("dummy_text_file", ["batch data " * 20], indirect=True)  # Enough for multiple batches
     def test_dataloader_creation_and_iteration(self, dummy_text_file, dummy_tokenizer):

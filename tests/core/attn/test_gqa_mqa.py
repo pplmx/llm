@@ -4,6 +4,7 @@ import torch
 from llm.core.attn.mha import MultiHeadAttention
 
 
+@pytest.mark.slow
 def test_gqa_initialization_variants():
     """Test different GQA head configurations."""
     hidden_size = 128
@@ -22,6 +23,7 @@ def test_gqa_initialization_variants():
     assert gqa.qkv_proj.out_features == 192
 
 
+@pytest.mark.slow
 def test_gqa_invalid_config():
     """Test that invalid GQA configs raise errors."""
     hidden_size = 64
@@ -36,6 +38,7 @@ def test_gqa_invalid_config():
         MultiHeadAttention(hidden_size=hidden_size, num_heads=num_heads, num_kv_heads=16)
 
 
+@pytest.mark.slow
 def test_gqa_numerical_parity_with_mha():
     """Verify GQA with num_kv_heads=num_heads matches standard MHA behavior."""
     hidden_size = 64
@@ -56,6 +59,7 @@ def test_gqa_numerical_parity_with_mha():
         assert torch.allclose(out_mha, out_gqa, atol=1e-6)
 
 
+@pytest.mark.slow
 def test_gqa_kv_cache_expansion():
     """Deep check on GQA KV Cache dimensions."""
     hidden_size = 64

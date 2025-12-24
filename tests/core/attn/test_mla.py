@@ -16,6 +16,7 @@ def input_tensor():
     return torch.randn(2, 10, 64)  # [batch_size, seq_len, hidden_size]
 
 
+@pytest.mark.slow
 def test_mla_initialization(mla):
     """Test if MLA module is initialized correctly."""
     assert isinstance(mla, MultiLatentAttention)
@@ -29,12 +30,14 @@ def test_mla_initialization(mla):
     assert mla.latent_dim == 64
 
 
+@pytest.mark.slow
 def test_mla_forward_shape(mla, input_tensor):
     """Test if forward pass maintains correct shape."""
     output = mla(input_tensor)
     assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mla_with_mask(mla, input_tensor):
     """Test MLA with attention mask."""
     # Create a simple attention mask
@@ -43,6 +46,7 @@ def test_mla_with_mask(mla, input_tensor):
     assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mla_gradients(mla, input_tensor):
     """Test if gradients are computed correctly."""
     input_tensor.requires_grad_(True)
@@ -53,6 +57,7 @@ def test_mla_gradients(mla, input_tensor):
     assert not torch.isnan(input_tensor.grad).any()
 
 
+@pytest.mark.slow
 def test_mla_causal(mla, input_tensor):
     """Test causal MLA."""
     mla.is_causal = True
@@ -60,6 +65,7 @@ def test_mla_causal(mla, input_tensor):
     assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mla_different_num_latents():
     """Test MLA with different number of latents."""
     num_latents_list = [8, 16, 32]
@@ -70,6 +76,7 @@ def test_mla_different_num_latents():
         assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mla_different_latent_dims():
     """Test MLA with different latent dimensions."""
     latent_dims = [32, 64, 128]
@@ -81,6 +88,7 @@ def test_mla_different_latent_dims():
         assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mla_different_hidden_sizes():
     """Test MLA with different hidden sizes."""
     hidden_sizes = [32, 64, 128]
@@ -91,6 +99,7 @@ def test_mla_different_hidden_sizes():
         assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mla_different_batch_sizes(mla):
     """Test MLA with different batch sizes."""
     batch_sizes = [1, 2, 4]
@@ -100,6 +109,7 @@ def test_mla_different_batch_sizes(mla):
         assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mla_different_sequence_lengths(mla):
     """Test MLA with different sequence lengths."""
     seq_lengths = [5, 10, 20]
@@ -109,6 +119,7 @@ def test_mla_different_sequence_lengths(mla):
         assert output.shape == input_tensor.shape
 
 
+@pytest.mark.slow
 def test_mla_norm_first():
     """Test MLA with norm_first=True."""
     mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16, norm_first=True)

@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from llm.core.attn.mha import MultiHeadAttention
@@ -5,6 +6,7 @@ from llm.core.mlp import MLP
 from llm.models.decoder import DecoderModel
 
 
+@pytest.mark.slow
 def test_gqa_invariants():
     """
     Verify Grouped Query Attention (GQA) structural invariants.
@@ -27,6 +29,7 @@ def test_gqa_invariants():
     assert mha.qkv_proj.out_features == 192
 
 
+@pytest.mark.slow
 def test_swiglu_configuration():
     """
     Verify that SwiGLU is correctly configured in the MLP layer.
@@ -43,6 +46,7 @@ def test_swiglu_configuration():
     assert isinstance(mlp.gate_proj, torch.nn.Linear)
 
 
+@pytest.mark.slow
 def test_parameter_count_scaling():
     """
     Verify that model parameter count scales reasonably with layers and hidden size.

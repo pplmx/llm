@@ -28,6 +28,7 @@ if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:  # 
     pass
 
 
+@pytest.mark.quick
 class TestEmbeddingLayer:
     @pytest.mark.parametrize("pos_learned", [True, False])
     @pytest.mark.parametrize("padding_idx_val", [None, 0, 5])

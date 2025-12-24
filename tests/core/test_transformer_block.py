@@ -67,6 +67,7 @@ def input_tensor(block_kwargs):
     )
 
 
+@pytest.mark.slow
 class TestTransformerBlockInitialization:
     def test_submodule_types(self, transformer_block):
         assert isinstance(transformer_block.self_attn, MultiHeadAttention)
@@ -145,6 +146,7 @@ class TestTransformerBlockInitialization:
         assert isinstance(block.norm2, nn.LayerNorm)
 
 
+@pytest.mark.slow
 class TestTransformerBlockForwardPass:
     @pytest.mark.parametrize(
         "block_kwargs",
@@ -259,6 +261,7 @@ class TestTransformerBlockForwardPass:
 
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("dtype_str", ["torch.float32"])  # Could add 'torch.float64'
+@pytest.mark.slow
 class TestDeviceAndDtypePropagation:
     def test_block_device_dtype(self, device, dtype_str, block_kwargs):
         dtype = getattr(torch, dtype_str.replace("torch.", ""))
@@ -326,6 +329,7 @@ if __name__ == "__main__":
         (True, 4, 2),
     ],
 )
+@pytest.mark.slow
 def test_transformer_block_gradient_computation(
     norm_first_val, qkv_bias_val, mlp_bias_val, use_moe_val, num_experts_val, top_k_val, block_kwargs
 ):

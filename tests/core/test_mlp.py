@@ -74,6 +74,7 @@ def create_test_mlp(
 
 # --- Test Case 1: Basic Functionality ---
 @pytest.mark.parametrize("bias_val", [True, False])
+@pytest.mark.slow
 def test_mlp_basic_functionality(bias_val):
     """Tests basic MLP functionality with default and no-bias parameters."""
     torch.manual_seed(42)
@@ -102,6 +103,7 @@ def test_mlp_basic_functionality(bias_val):
         [3, 4, 5],  # Batch size, dim1, dim2 (4D input)
     ],
 )
+@pytest.mark.slow
 def test_mlp_different_input_shapes(input_dims):
     """Tests MLP with various input shapes."""
     torch.manual_seed(42)
@@ -119,6 +121,7 @@ def test_mlp_different_input_shapes(input_dims):
 # --- Test Case 3: Normalization Options ---
 @pytest.mark.parametrize("norm_first_val", [True, False])
 @pytest.mark.parametrize("bias_val", [True, False])
+@pytest.mark.slow
 def test_mlp_normalization_options_with_norm_residual(norm_first_val, bias_val):
     """
     Tests MLP with pre-LN vs post-LN configurations when norm/residual is included,
@@ -164,6 +167,7 @@ def test_mlp_normalization_options_with_norm_residual(norm_first_val, bias_val):
 
 
 # --- Test Case for include_norm_residual=False ---
+@pytest.mark.slow
 def test_mlp_no_norm_residual_output():
     """Tests MLP behavior when include_norm_residual is False."""
     torch.manual_seed(42)
@@ -217,6 +221,7 @@ def test_mlp_no_norm_residual_output():
         )
 
 
+@pytest.mark.slow
 def test_mlp_no_norm_residual_dropout_still_active():
     """Tests that dropout is still active in MLP when include_norm_residual is False."""
     torch.manual_seed(42)
@@ -251,6 +256,7 @@ def test_mlp_no_norm_residual_dropout_still_active():
 
 # --- Test Case 4: Activation Functions ---
 @pytest.mark.parametrize("activation", ["relu", "gelu", "silu"])
+@pytest.mark.slow
 def test_mlp_activation_functions(activation):
     """Tests MLP with different activation functions."""
     torch.manual_seed(42)
@@ -265,6 +271,7 @@ def test_mlp_activation_functions(activation):
 
 
 # --- Test Case 5: Bias Parameter ---
+@pytest.mark.slow
 def test_mlp_bias_parameter():
     """Tests bias parameter existence based on bias flag."""
     torch.manual_seed(42)
@@ -284,6 +291,7 @@ def test_mlp_bias_parameter():
 
 # --- Test Case 6: Dropout Behavior ---
 @pytest.mark.parametrize("include_norm_residual_val", [True, False])
+@pytest.mark.slow
 def test_mlp_dropout_train_eval_modes(include_norm_residual_val):
     """
     Tests dropout behavior in train vs eval modes for MLP,
@@ -331,6 +339,7 @@ def test_mlp_dropout_train_eval_modes(include_norm_residual_val):
         (128, 8),  # Large hidden, large expansion
     ],
 )
+@pytest.mark.slow
 def test_mlp_size_configurations(hidden_size, intermediate_factor):
     """Tests different hidden size and intermediate size configurations."""
     torch.manual_seed(42)
@@ -350,6 +359,7 @@ def test_mlp_size_configurations(hidden_size, intermediate_factor):
 # --- Test Case 8: Gradient Computation ---
 @pytest.mark.parametrize("include_norm_residual_val", [True, False])
 @pytest.mark.parametrize("bias_val", [True, False])  # Also test gradients with and without bias
+@pytest.mark.slow
 def test_mlp_gradient_computation(include_norm_residual_val, bias_val):
     """Tests if gradients are computed correctly for all trainable parameters."""
     torch.manual_seed(42)
@@ -389,6 +399,7 @@ def test_mlp_gradient_computation(include_norm_residual_val, bias_val):
 
 
 # --- New Test Case: Test MLP with norm_type as an instance ---
+@pytest.mark.slow
 def test_mlp_norm_type_as_instance():
     """Tests MLP initialization and forward pass when norm_type is an nn.Module instance."""
     torch.manual_seed(42)

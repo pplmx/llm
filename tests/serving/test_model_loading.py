@@ -26,6 +26,7 @@ def dummy_model_path(tmp_path):
     return str(path)
 
 
+@pytest.mark.slow
 def test_load_tokenizer_from_path(dummy_tokenizer_path):
     config = ServingConfig(tokenizer_path=dummy_tokenizer_path)
     engine = LLMEngine(config)
@@ -36,6 +37,7 @@ def test_load_tokenizer_from_path(dummy_tokenizer_path):
     assert "h" in engine.tokenizer.stoi
 
 
+@pytest.mark.slow
 def test_load_model_weights_logic(dummy_model_path):
     # Mocking DecoderModel to avoid needing full valid weights
     with patch("llm.serving.engine.DecoderModel") as MockModel:
@@ -62,6 +64,7 @@ def test_load_model_weights_logic(dummy_model_path):
         assert torch.equal(loaded_dict["test_layer"], expected_state_dict["test_layer"])
 
 
+@pytest.mark.slow
 def test_load_model_failure_invalid_path():
     config = ServingConfig(model_path="/invalid/path.pt")
     engine = LLMEngine(config)

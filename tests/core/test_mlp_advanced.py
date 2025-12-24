@@ -1,9 +1,11 @@
+import pytest
 import torch
 import torch.nn as nn
 
 from llm.core.mlp import MLP
 
 
+@pytest.mark.slow
 def test_mlp_swiglu_initialization():
     """Test SwiGLU initialization logic."""
     hidden_size = 64
@@ -20,6 +22,7 @@ def test_mlp_swiglu_initialization():
     assert not hasattr(mlp_no_glu, "gate_proj")
 
 
+@pytest.mark.slow
 def test_mlp_swiglu_forward():
     """Test SwiGLU forward pass with silu."""
     hidden_size = 64
@@ -34,6 +37,7 @@ def test_mlp_swiglu_forward():
     assert output.shape == (2, 5, hidden_size)
 
 
+@pytest.mark.slow
 def test_mlp_swiglu_with_varied_activations():
     """Test SwiGLU with different activations."""
     hidden_size = 32
@@ -46,6 +50,7 @@ def test_mlp_swiglu_with_varied_activations():
         assert output.shape == (1, 4, hidden_size)
 
 
+@pytest.mark.slow
 def test_mlp_numerical_consistency_glu():
     """Verify GLU manual computation consistency."""
     hidden_size = 16
