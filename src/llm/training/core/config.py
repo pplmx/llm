@@ -5,13 +5,9 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# ============================================================================
-# 配置管理 (Refactored to Pydantic)
-# ============================================================================
-
 
 class ModelConfig(BaseModel):
-    """模型配置"""
+    """Model configuration"""
 
     hidden_size: int = Field(512, gt=0)
     num_heads: int = Field(8, gt=0)
@@ -54,7 +50,7 @@ class ModelConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    """训练配置"""
+    """Training configuration"""
 
     batch_size: int = Field(128, gt=0)
     epochs: int = Field(10, gt=0)
@@ -68,7 +64,7 @@ class TrainingConfig(BaseModel):
 
 
 class DistributedConfig(BaseSettings):
-    """分布式配置 (Aware of Environment Variables)"""
+    """Distributed configuration (aware of environment variables)"""
 
     master_addr: str = "127.0.0.1"
     master_port: str = "12355"
@@ -89,7 +85,7 @@ class DistributedConfig(BaseSettings):
 
 
 class OptimizationConfig(BaseModel):
-    """性能优化配置"""
+    """Performance optimization configuration"""
 
     use_compile: bool = True
     use_amp: bool = True
@@ -101,7 +97,7 @@ class OptimizationConfig(BaseModel):
 
 
 class CheckpointConfig(BaseModel):
-    """检查点配置"""
+    """Checkpoint configuration"""
 
     checkpoint_dir: str = "checkpoints"
     resume_from_checkpoint: str | None = None
@@ -111,7 +107,7 @@ class CheckpointConfig(BaseModel):
 
 
 class LoggingConfig(BaseModel):
-    """日志配置"""
+    """Logging configuration"""
 
     log_interval: int = 10
     log_level: str = "INFO"
@@ -120,7 +116,7 @@ class LoggingConfig(BaseModel):
 
 
 class DataConfig(BaseModel):
-    """数据配置"""
+    """Data configuration"""
 
     tokenizer_type: str = Field("simple", pattern="^(simple|hf)$")
     tokenizer_path: str | None = None  # Path to file (simple) or repo_id/path (hf)
@@ -129,7 +125,7 @@ class DataConfig(BaseModel):
 
 
 class Config(BaseSettings):
-    """主配置类, 组合所有配置"""
+    """Main configuration class combining all sub-configurations"""
 
     model: ModelConfig = Field(default_factory=ModelConfig)
     data: DataConfig = Field(default_factory=DataConfig)
@@ -147,7 +143,7 @@ class Config(BaseSettings):
     )
 
     def save_to_yaml(self, path: str | Path):
-        """将配置保存到 YAML 文件"""
+        """Save configuration to YAML file"""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         # Use model_dump instead of asdict for Pydantic V2
@@ -157,7 +153,7 @@ class Config(BaseSettings):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
-        """从 YAML 文件加载配置"""
+        """Load configuration from YAML file"""
         path = Path(path)
         if not path.exists():
             return cls()

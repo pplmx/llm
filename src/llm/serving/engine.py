@@ -11,8 +11,8 @@ from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 class LLMEngine:
     """
-    LLM 推理引擎.
-    封装模型加载、状态管理和生成逻辑.
+    LLM inference engine.
+    Encapsulates model loading, state management, and generation logic.
     """
 
     def __init__(self, config: ServingConfig | None = None) -> None:
@@ -22,7 +22,7 @@ class LLMEngine:
         self._lock = threading.Lock()
 
     def load_model(self) -> None:
-        """加载模型和分词器."""
+        """Load model and tokenizer."""
         print(f"Loading model with config: {self.config}")
         # 1. Load Tokenizer
         if self.config.tokenizer_path:
@@ -98,7 +98,7 @@ class LLMEngine:
         print("Model loaded successfully.")
 
     def unload_model(self) -> None:
-        """卸载模型以释放资源."""
+        """Unload model to free resources."""
         self.model = None
         self.tokenizer = None
 
@@ -111,11 +111,11 @@ class LLMEngine:
         top_p: float | None = None,
         repetition_penalty: float = 1.0,
     ) -> str:
-        """非流式生成."""
+        """Non-streaming generation."""
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model explicitly not loaded")
 
-        with self._lock:  # 简单并发控制
+        with self._lock:  # Simple concurrency control
             return generate(
                 model=self.model,
                 tokenizer=self.tokenizer,
@@ -136,7 +136,7 @@ class LLMEngine:
         top_p: float | None = None,
         repetition_penalty: float = 1.0,
     ) -> Iterator[str]:
-        """流式生成."""
+        """Streaming generation."""
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model explicitly not loaded")
 

@@ -14,13 +14,9 @@ from torch.optim.lr_scheduler import LRScheduler
 
 from llm.training.core.config import CheckpointConfig, DistributedConfig, LoggingConfig
 
-# ============================================================================
-# 性能监控
-# ============================================================================
-
 
 class PerformanceMonitor:
-    """性能监控器"""
+    """Performance monitor for tracking training metrics"""
 
     def __init__(self, rank: int, device: torch.device):
         self.rank = rank
@@ -48,7 +44,7 @@ class PerformanceMonitor:
             return memory_allocated, memory_reserved
         return 0.0, 0.0
 
-    # OPTIMIZATION: 添加峰值内存监控
+    # Track peak GPU memory usage
     def get_peak_gpu_memory(self) -> float:
         if self.device.type == "cuda":
             return torch.cuda.max_memory_allocated(self.device) / 1024**3
@@ -62,13 +58,8 @@ class PerformanceMonitor:
             torch.cuda.reset_peak_memory_stats(self.device)
 
 
-# ============================================================================
-# 日志管理
-# ============================================================================
-
-
 class Logger:
-    """增强的日志管理器"""
+    """Enhanced logging manager with distributed training support"""
 
     def __init__(self, rank: int, config: LoggingConfig):
         self.rank = rank
@@ -96,7 +87,7 @@ class Logger:
 
             if self.config.save_logs:
                 Path(self.config.log_dir).mkdir(parents=True, exist_ok=True)
-                # OPTIMIZATION: 使用更友好的时间格式
+                # Use human-friendly timestamp format
                 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 log_path = Path(self.config.log_dir) / f"training_{timestamp}.log"
                 file_handler = logging.FileHandler(log_path)
@@ -106,13 +97,8 @@ class Logger:
             self.logger.addHandler(logging.NullHandler())
 
     def __getattr__(self, name):
-        # 代理所有日志方法 (info, warning, error, etc.)
+        # Proxy all logger methods (info, warning, error, etc.)
         return getattr(self.logger, name)
-
-
-# ============================================================================
-# 分布式训练管理 (无变化, 已足够好)
-# ============================================================================
 
 
 class DistributedManager:
@@ -200,11 +186,6 @@ class DistributedManager:
         return tensor
 
 
-# ============================================================================
-# 检查点管理
-# ============================================================================
-
-
 class CheckpointManager:
     def __init__(self, config: CheckpointConfig, rank: int, logger: Logger):
         self.config = config
@@ -238,17 +219,15 @@ class CheckpointManager:
             "scaler_state": scaler.state_dict(),
         }
 
-        # OPTIMIZATION: 原子化保存, 先保存到临时文件再移动
+        # Atomic save: write to temp file then move
         def atomic_save(data, path):
             temp_path = str(path) + ".tmp"
             torch.save(data, temp_path)
             shutil.move(temp_path, path)
 
-        # 保存最新检查点
         latest_path = Path(self.config.checkpoint_dir) / "latest.pt"
         atomic_save(checkpoint, latest_path)
 
-        # 保存周期性检查点
         if (epoch + 1) % self.config.save_interval == 0:
             epoch_path = Path(self.config.checkpoint_dir) / f"epoch_{epoch + 1}.pt"
             atomic_save(checkpoint, epoch_path)
@@ -256,7 +235,6 @@ class CheckpointManager:
             self._cleanup_old_checkpoints()
             self.logger.debug(f"Checkpoint saved to {epoch_path}")
 
-        # 保存最佳模型
         if self.config.save_best and loss < self.best_loss:
             self.best_loss = loss
             best_path = Path(self.config.checkpoint_dir) / "best.pt"

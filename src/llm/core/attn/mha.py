@@ -65,7 +65,6 @@ class MultiHeadAttention(nn.Module):
         if self.num_heads % self.num_kv_heads != 0:
             raise ValueError(f"num_heads ({self.num_heads}) must be divisible by num_kv_heads ({self.num_kv_heads})")
 
-        # --- Layers ---
         self.norm = None
         if self.include_norm_residual:
             self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
@@ -115,7 +114,7 @@ class MultiHeadAttention(nn.Module):
         """
         batch_size, seq_len, _ = hidden_states.size()
 
-        # --- Determine causality setting for this call ---
+        # Determine causality for this call
         use_causal = self.is_causal if is_causal is None else is_causal
 
         # Prepare input for QKV projection
@@ -128,7 +127,7 @@ class MultiHeadAttention(nn.Module):
             # No residual variable needed here if not added by this module
             x_for_qkv = hidden_states
 
-        # --- 2. Project Q, K, V and reshape ---
+        # 2. Project Q, K, V and reshape
         qkv = self.qkv_proj(x_for_qkv)  # [B, S, (N_q + 2*N_kv) * D]
 
         # Split Q, K, V
@@ -142,7 +141,7 @@ class MultiHeadAttention(nn.Module):
         k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
 
-        # --- KV Cache logic ---
+        # KV Cache: concatenate with past
         if past_key_value is not None:
             prev_k, prev_v = past_key_value
             k = torch.cat([prev_k, k], dim=2)
@@ -151,14 +150,14 @@ class MultiHeadAttention(nn.Module):
         if use_cache:
             current_kv = (k, v)
 
-        # --- GQA: Repeat K, V if num_kv_heads < num_heads ---
+        # GQA: Repeat K, V if needed
         if self.num_kv_heads != self.num_heads:
             # k, v: [B, N_kv, S, D] -> [B, N_q, S, D]
             num_queries_per_kv = self.num_heads // self.num_kv_heads
             k = k.repeat_interleave(num_queries_per_kv, dim=1)
             v = v.repeat_interleave(num_queries_per_kv, dim=1)
 
-        # --- 3. Attention computation ---
+        # 3. Attention computation
         attn_output = scaled_dot_product_attention(
             query=q,
             key=k,
@@ -171,20 +170,19 @@ class MultiHeadAttention(nn.Module):
             scale=None,
         )  # Output shape: [B, N, S, D]
 
-        # --- 4. Combine head outputs ---
+        # 4. Combine head outputs
         # [B, N, S, D] -> [B, S, N, D] -> [B, S, H]
         attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_len, self.hidden_size)
 
-        # --- 5. Output projection and dropout ---
-        # The dropout here is applied to the output of the MHA's out_proj.
+        # 5. Output projection and dropout
         projected_output = self.dropout(self.out_proj(attn_output))
 
         if self.include_norm_residual and self.norm is not None:
-            # --- 6. Residual connection ---
-            output = residual + projected_output  # residual was stored earlier
+            # 6. Residual connection
+            output = residual + projected_output
 
-            # --- 7. Layer Normalization (Post-LN mode) ---
-            if not self.norm_first:  # self.norm must exist if not self.norm_first is true
+            # 7. Layer Normalization (Post-LN mode)
+            if not self.norm_first:
                 output = self.norm(output)
         else:
             # No residual, no norm by this module

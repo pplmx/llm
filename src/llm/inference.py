@@ -18,55 +18,39 @@ def stream_generate(
     repetition_penalty: float = 1.0,
 ) -> Generator[str]:
     """
-    逐步生成文本的生成器函数.
+    Generator function for incremental text generation.
 
     yields:
-        str: 新生成的文本片段 (通常是一个 token 解码后的字符).
+        str: Newly generated text chunk (usually one token decoded).
     """
     model.eval()
     device = next(model.parameters()).device
-
-    # 1. 将 prompt 转换为 token ids
     input_ids = tokenizer.encode(prompt)
     input_tensor = torch.tensor(input_ids, dtype=torch.long, device=device).unsqueeze(0)
-
-    # 获取模型限制
     max_seq_len = getattr(model, "max_seq_len", 512)
-
     past_key_values = None
 
-    # 第一步: 预热 (Prefill)
-    # 如果 prompt + max_new_tokens 超过 max_seq_len, 截断它以留出空间
+    # Prefill: truncate if needed to fit max_seq_len
     if input_tensor.size(1) + max_new_tokens > max_seq_len:
         input_tensor = input_tensor[:, -(max_seq_len - max_new_tokens) :]
 
-    # 获取第一个输出并初始化 KV Cache
     logits, past_key_values = model(input_tensor, use_cache=True)
     next_token_logits = logits[0, -1, :]
 
-    # 避免生成 PAD token
     if hasattr(tokenizer, "pad_token_id"):
         next_token_logits[tokenizer.pad_token_id] = -float("inf")
 
-    # 跟踪生成历史用于重复惩罚
-    # 初始化为 input_ids (prompt)
     generated_ids = input_ids.copy()
 
-    # 自回归生成循环
     for _ in range(max_new_tokens):
-        # 1. 重复惩罚 (Repetition Penalty)
-        # 论文: https://arxiv.org/abs/1909.05858
+        # Repetition penalty (https://arxiv.org/abs/1909.05858)
         if repetition_penalty != 1.0:
-            # 创建一个 scatter 掩码
             score = torch.gather(next_token_logits, 0, torch.tensor(generated_ids, device=device))
-
-            # 如果 score < 0, 惩罚是乘以 penalty (加大负值)
-            # 如果 score > 0, 惩罚是除以 penalty (减小正值)
+            # If score < 0, multiply by penalty; if score > 0, divide by penalty
             score = torch.where(score < 0, score * repetition_penalty, score / repetition_penalty)
-
             next_token_logits.scatter_(0, torch.tensor(generated_ids, device=device), score)
 
-        # 采样策略
+        # Sampling strategy
         if temperature == 0:
             # Greedy Search
             next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
@@ -96,22 +80,15 @@ def stream_generate(
             probs = torch.softmax(next_token_logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)
 
-        # 获取 token id
         token_id = int(next_token.item())
         generated_ids.append(token_id)
-
-        # 解码当前 token 并 yield
-        # 注意: 这里简单地解码单个 token, 对于 BPE 等可能需要处理字节碎片,
-        # 但对于 SimpleCharacterTokenizer 是安全的.
         text_chunk = tokenizer.decode([token_id])
         yield text_chunk
 
-        # 下一步输入仅为新生成的 token (Incremental decoding)
         next_input = next_token.unsqueeze(0)
         logits, past_key_values = model(next_input, past_key_values=past_key_values, use_cache=True)
         next_token_logits = logits[0, -1, :]
 
-        # 避免生成 PAD token
         if hasattr(tokenizer, "pad_token_id"):
             next_token_logits[tokenizer.pad_token_id] = -float("inf")
 
@@ -127,9 +104,8 @@ def generate(
     repetition_penalty: float = 1.0,
 ) -> str:
     """
-    接收 prompt, 并使用训练好的模型生成文本.
+    Generate text from a prompt using a trained model.
     """
-    # 使用 stream_generate 并拼接所有输出
     generator = stream_generate(
         model=model,
         tokenizer=tokenizer,
@@ -144,14 +120,11 @@ def generate(
 
 
 if __name__ == "__main__":
-    # 这是一个如何使用 generate 函数的示例
-
-    # 1. 准备一个简单的语料库来初始化分词器
     corpus = ["hello world!", "this is a test.", "你好 世界!"]
     tokenizer = SimpleCharacterTokenizer(corpus)
-    print(f"分词器词汇表大小: {tokenizer.vocab_size}")
+    print(f"Tokenizer vocab size: {tokenizer.vocab_size}")
 
-    # 2. 初始化模型 (使用与分词器匹配的 vocab_size)
+    # 2. Initialize model (using vocab_size matching tokenizer)
     model = DecoderModel(
         vocab_size=tokenizer.vocab_size,
         hidden_size=64,
@@ -159,10 +132,10 @@ if __name__ == "__main__":
         num_heads=4,
         max_seq_len=128,
     )
-    print("模型已初始化 (未加载权重).")
+    print("Model initialized (no weights loaded).")
 
-    # 3. 运行生成
-    print("\n测试 Greedy Search (temperature=0):")
+    # 3. Run generation
+    print("\nTesting Greedy Search (temperature=0):")
     generated_text = generate(
         model=model,
         tokenizer=tokenizer,
@@ -170,9 +143,9 @@ if __name__ == "__main__":
         max_new_tokens=10,
         temperature=0,
     )
-    print(f"生成结果: {generated_text}")
+    print(f"Generated: {generated_text}")
 
-    print("\n测试 Sampling (temperature=0.8, top_k=5):")
+    print("\nTesting Sampling (temperature=0.8, top_k=5):")
     generated_text = generate(
         model=model,
         tokenizer=tokenizer,
@@ -181,4 +154,4 @@ if __name__ == "__main__":
         temperature=0.8,
         top_k=5,
     )
-    print(f"生成结果: {generated_text}")
+    print(f"Generated: {generated_text}")
