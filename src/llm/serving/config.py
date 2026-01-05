@@ -17,6 +17,8 @@ class ServingConfig(BaseSettings):
 
     # Performance
     compile_model: bool = False  # Enable torch.compile for acceleration
+    max_concurrent_requests: int = 4  # Max concurrent inference requests
+    request_timeout: float = 60.0  # Request timeout in seconds
 
     # Model Params (for dummy init if no ckpt)
     hidden_size: int = 64

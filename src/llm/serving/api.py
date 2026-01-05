@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import logging
 import sys
@@ -32,6 +33,9 @@ config = ServingConfig()
 logger.setLevel(config.log_level)
 
 engine = LLMEngine(config)
+
+# Concurrency control
+inference_semaphore = asyncio.Semaphore(config.max_concurrent_requests)
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -88,20 +92,24 @@ async def generate_text(
         return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
 
     try:
-        generated_text = await run_in_threadpool(
-            engine.generate,
-            prompt=request.prompt,
-            max_new_tokens=request.max_new_tokens,
-            temperature=request.temperature,
-            top_k=request.top_k,
-            top_p=request.top_p,
-            repetition_penalty=request.repetition_penalty,
-        )
+        async with asyncio.timeout(config.request_timeout):
+            async with inference_semaphore:
+                generated_text = await run_in_threadpool(
+                    engine.generate,
+                    prompt=request.prompt,
+                    max_new_tokens=request.max_new_tokens,
+                    temperature=request.temperature,
+                    top_k=request.top_k,
+                    top_p=request.top_p,
+                    repetition_penalty=request.repetition_penalty,
+                )
 
         return GenerationResponse(
             generated_text=generated_text,
             token_count=len(generated_text),
         )
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Request timeout")
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
@@ -138,19 +146,23 @@ async def batch_generate_text(
     Batch text generation endpoint for multiple prompts.
     """
     try:
-        results = await run_in_threadpool(
-            engine.batch_generate,
-            prompts=request.prompts,
-            max_new_tokens=request.max_new_tokens,
-            temperature=request.temperature,
-            top_k=request.top_k,
-            top_p=request.top_p,
-            repetition_penalty=request.repetition_penalty,
-        )
+        async with asyncio.timeout(config.request_timeout):
+            async with inference_semaphore:
+                results = await run_in_threadpool(
+                    engine.batch_generate,
+                    prompts=request.prompts,
+                    max_new_tokens=request.max_new_tokens,
+                    temperature=request.temperature,
+                    top_k=request.top_k,
+                    top_p=request.top_p,
+                    repetition_penalty=request.repetition_penalty,
+                )
 
         return BatchGenerationResponse(
             results=[GenerationResponse(generated_text=text, token_count=len(text)) for text in results]
         )
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Request timeout")
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
