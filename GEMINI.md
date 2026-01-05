@@ -5,7 +5,7 @@
 ## 项目概览
 
 本项目是一个名为 "llm" 的 Python 应用程序, 旨在构建一个现代、高效的 Decoder-only Transformer 架构.
-它使用 `uv` 进行包管理, 并使用 `hatchling` 进行构建.
+使用 `uv` 进行包管理, 项目配置详见 `pyproject.toml`.
 
 ### 核心架构特性
 
@@ -44,20 +44,7 @@
 
 ## 可用命令
 
-`Makefile` 中提供了以下命令:
-
-- `make init`: 初始化虚拟环境并安装 pre-commit 钩子.
-- `make sync`: 同步项目依赖.
-- `make build`: 构建项目 wheel 包.
-- `make test`: 使用 `pytest` 运行测试.
-- `make allure`: 启动 Allure 测试报告服务.
-- `make ruff`: 使用 `ruff` 格式化和 lint 代码.
-- `make type`: 使用 `mypy` 执行静态类型检查.
-- `make image`: 构建应用程序的 Docker 镜像.
-- `make compose-up`: 使用 Docker Compose 启动应用程序.
-- `make compose-down`: 使用 Docker Compose 停止应用程序.
-- `make clean`: 删除构建产物并停止 Docker 容器.
-- `make help`: 显示所有可用命令的帮助信息.
+运行 `make help` 查看所有可用的 Makefile 命令.
 
 ## 工具链
 
@@ -65,19 +52,11 @@
 - **类型检查**: `mypy` 用于静态类型检查. 配置位于 `pyproject.toml`.
 - **测试**: `pytest` 用于运行测试. 配置位于 `pyproject.toml`.
 - **包管理**: `uv` 用于管理依赖.
-- **构建**: `hatchling` 用于构建项目.
+- **构建**: 详见 `pyproject.toml` 的 build-system 配置.
 
 ## 依赖项
 
-主要依赖项列在 `pyproject.toml` 中, 包括:
-
-- `pytest`
-- `pytest-cov`
-- `allure-pytest`
-- `torch`
-- `matplotlib`
-- `seaborn`
-- `pillow`
+主要依赖项详见 `pyproject.toml`.
 
 ## 文档结构规范
 
