@@ -18,3 +18,20 @@ class GenerationResponse(BaseModel):
 
     generated_text: str = Field(..., description="Generated text.")
     token_count: int | None = Field(None, description="Number of generated tokens.")
+
+
+class BatchGenerationRequest(BaseModel):
+    """Batch generation request model."""
+
+    prompts: list[str] = Field(..., min_length=1, max_length=32, description="List of input prompts.")
+    max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum tokens to generate per prompt.")
+    temperature: float = Field(1.0, ge=0.0, description="Sampling temperature. 0 for greedy.")
+    top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter.")
+    top_p: float | None = Field(None, gt=0.0, lt=1.0, description="Nucleus sampling parameter.")
+    repetition_penalty: float = Field(1.0, ge=1.0, description="Repetition penalty.")
+
+
+class BatchGenerationResponse(BaseModel):
+    """Batch generation response model."""
+
+    results: list[GenerationResponse] = Field(..., description="List of generation results.")

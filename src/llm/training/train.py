@@ -9,10 +9,12 @@ import typer
 from rich.logging import RichHandler
 
 from llm.data.synthetic_data_module import SyntheticDataModule
+from llm.data.text_data_module import TextDataModule
 from llm.training.core.callbacks import LRSchedulerCallback, MetricsLogger, TensorBoardLogger
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
 from llm.training.core.utils import DistributedManager
+from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.regression_task import RegressionTask
 
 # --- Typer App ---
@@ -22,11 +24,13 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 # --- Task Enum for Typer choices ---
 class TaskName(str, Enum):
     regression = "regression"
+    lm = "lm"
 
 
 # --- Map task names to task classes ---
 AVAILABLE_TASKS = {
     TaskName.regression: RegressionTask,
+    TaskName.lm: LanguageModelingTask,
 }
 
 
@@ -45,8 +49,8 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
     try:
         distributed_manager.setup(rank, world_size)
 
-        # Instantiate DataModule first
-        data_module = SyntheticDataModule(config)
+        # Instantiate DataModule based on task type
+        data_module = TextDataModule(config) if task_class == LanguageModelingTask else SyntheticDataModule(config)
         data_module.prepare_data()
         data_module.setup()
 

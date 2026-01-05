@@ -3,7 +3,7 @@ from collections.abc import Iterator
 
 import torch
 
-from llm.inference import generate, stream_generate
+from llm.inference import batch_generate, generate, stream_generate
 from llm.models.decoder import DecoderModel
 from llm.serving.config import ServingConfig
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
@@ -145,6 +145,31 @@ class LLMEngine:
                 model=self.model,
                 tokenizer=self.tokenizer,
                 prompt=prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+            )
+
+    def batch_generate(
+        self,
+        prompts: list[str],
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
+        repetition_penalty: float = 1.0,
+    ) -> list[str]:
+        """Batch generation for multiple prompts."""
+        if self.model is None or self.tokenizer is None:
+            raise RuntimeError("Model explicitly not loaded")
+
+        with self._lock:
+            return batch_generate(
+                model=self.model,
+                tokenizer=self.tokenizer,
+                prompts=prompts,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 top_k=top_k,

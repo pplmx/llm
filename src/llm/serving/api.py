@@ -14,7 +14,12 @@ from starlette.status import HTTP_403_FORBIDDEN
 
 from llm.serving.config import ServingConfig
 from llm.serving.engine import LLMEngine
-from llm.serving.schemas import GenerationRequest, GenerationResponse
+from llm.serving.schemas import (
+    BatchGenerationRequest,
+    BatchGenerationResponse,
+    GenerationRequest,
+    GenerationResponse,
+)
 
 logger = logging.getLogger()
 logHandler = logging.StreamHandler(sys.stdout)
@@ -123,6 +128,33 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
 
     except Exception as e:
         yield f"Error: {str(e)}"
+
+
+@app.post("/batch_generate", response_model=BatchGenerationResponse)
+async def batch_generate_text(
+    request: BatchGenerationRequest, _api_key: str = Depends(get_api_key)
+) -> BatchGenerationResponse:
+    """
+    Batch text generation endpoint for multiple prompts.
+    """
+    try:
+        results = await run_in_threadpool(
+            engine.batch_generate,
+            prompts=request.prompts,
+            max_new_tokens=request.max_new_tokens,
+            temperature=request.temperature,
+            top_k=request.top_k,
+            top_p=request.top_p,
+            repetition_penalty=request.repetition_penalty,
+        )
+
+        return BatchGenerationResponse(
+            results=[GenerationResponse(generated_text=text, token_count=len(text)) for text in results]
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
