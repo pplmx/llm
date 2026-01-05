@@ -111,7 +111,7 @@
     - [x] Prometheus 监控集成
     - [x] API Key 认证
     - [x] 实现批处理推理支持 (`/batch_generate` 端点)
-    - [ ] 添加请求队列和并发控制 🎯 *下一阶段*
+    - [x] 添加请求队列和并发控制 (`asyncio.Semaphore` + timeout)
 - [ ] **性能优化** (基础) ⏭️ *阶段十*
     - [x] 集成 `torch.compile` 到推理流程 (可选配置)
     - [ ] 优化 KV Cache 内存管理
