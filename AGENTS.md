@@ -1,35 +1,37 @@
 # Agent 指南
 
-此文件为参与本项目的 AI Agent 提供快速上下文引导. 详细规则请参考 `GEMINI.md`.
+此文件为参与本项目的 AI Agent 提供快速上下文引导.
 
-## 核心任务
+## 快速索引
 
-1. **架构现代化**: 维护和优化已实现的 SwiGLU、GQA 和统一 QKV 投影.
-2. **代码质量**: 严格执行 `ruff` 检查. 确保所有修改遵循 `pathlib` 最佳实践.
-3. **测试驱动**: 任何改动后必须运行 `make test`. 目前共有 299 个测试用例.
+| 文件 | 用途 |
+| ------ | ------ |
+| [GEMINI.md](GEMINI.md) | Gemini 专属完整规范 |
+| [ROADMAP.md](ROADMAP.md) | 项目状态与开发路线图 |
+| [docs/](docs/) | 技术文档 (架构、训练、教程) |
+| [pyproject.toml](pyproject.toml) | 项目配置与依赖 |
 
-## 关键技术栈
+## 核心规范
 
-- **Core**: PyTorch (Llama 风格架构)
-- **Tooling**: `uv`, `ruff`, `pytest`
-- **Normalization**: 支持 RMSNorm 和 LayerNorm
-- **Tokenization**: `tokenizers` 驱动的 BPETokenizer
+### 代码质量
 
-## Agent 行为准则
+- 任何改动后必须运行 `make test`
+- 使用 `make ruff` 进行格式化和 lint
+- 始终使用 `pathlib.Path` 处理文件路径
 
-- **语言**: 优先使用中文交流.
-- **格式**: 代码注释和文档中使用英文/半角标点.
-- **提交**: 遵循 Conventional Commits, 并使用 `commit_message.txt` 工作流.
-- **路径**: 始终使用 `pathlib.Path` 处理文件路径.
-- **验证**: 每次大改动后依次执行 `make test` -> `make ruff` -> `make test`.
+### 提交规范
 
-## 当前状态 (2026-01-05)
+- 遵循 [Conventional Commits](https://www.conventionalcommits.org/)
+- 使用 `commit_message.txt` 工作流 (创建 → `git commit -F` → 删除)
+- 保持小而聚焦的 commit
 
-- [x] SwiGLU 实现与集成
-- [x] GQA 与统一 QKV 投影
-- [x] BPETokenizer 集成
-- [x] BF16 自动检测
-- [x] 代码质量全面清理 (Ruff clean)
-- [x] FastAPI 推理服务化 (流式 + 批处理)
-- [ ] 请求队列与并发控制
-- [ ] Flash Attention 2 集成
+### 验证流程
+
+每次改动后执行: `make test` → `make ruff` → `make test`
+
+## 用户偏好
+
+- 使用**中文**交流
+- 代码注释使用**英文/半角标点**
+- 不使用 mock, 直接调用真实代码测试
+- 遇到 bug 时考虑是否需要添加测试覆盖

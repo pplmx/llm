@@ -63,7 +63,7 @@
 
 - **Linting 和格式化**: `ruff` 用于 linting 和格式化. 配置位于 `ruff.toml`. 遵循 `pathlib` 最佳实践.
 - **类型检查**: `mypy` 用于静态类型检查. 配置位于 `pyproject.toml`.
-- **测试**: `pytest` 用于运行测试. 配置位于 `pyproject.toml`. 所有 299 个单元测试必须保持通过.
+- **测试**: `pytest` 用于运行测试. 配置位于 `pyproject.toml`.
 - **包管理**: `uv` 用于管理依赖.
 - **构建**: `hatchling` 用于构建项目.
 
@@ -96,7 +96,7 @@
 
 Only write high-value comments if at all. Avoid talking to the user through comments.
 
-## Gemini Added Memories
+## 用户偏好与开发规范
 
 - 用户偏好我使用中文进行回复.
 - 用户极其看重代码美感和现代化(如：使用 `pathlib` 替代 `os.path`, 避免冗余注释).
@@ -112,16 +112,3 @@ Only write high-value comments if at all. Avoid talking to the user through comm
 ## 开发路线图
 
 项目的详细开发路线图请参见 [ROADMAP.md](ROADMAP.md).
-
-### 当前重点 (2025 Q1-Q2)
-
-- **推理服务化**: FastAPI REST API, 流式输出, 批处理推理
-- **性能优化**: Flash Attention 2, Paged Attention, torch.compile 集成
-- **数据工程**: 流式数据加载, 大规模数据集集成
-
-### 未来规划
-
-- **模型对齐** (Q3-Q4 2025): RLHF, DPO, SFT 完整流程
-- **量化与压缩** (Q4 2025-Q2 2026): INT8/INT4 量化, GPTQ, AWQ
-- **多模态扩展** (Q4 2025-Q1 2026): 视觉-语言模型, 音频支持
-- **生态集成** (Q3 2025-Q2 2026): HuggingFace, LangChain, ONNX 导出
