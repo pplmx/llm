@@ -87,6 +87,43 @@ def test_metrics_endpoint(client):
 
 
 @pytest.mark.slow
+def test_batch_generate_basic(client):
+    """测试批处理生成 - 多个 prompt."""
+    payload = {
+        "prompts": ["hello", "world", "test"],
+        "max_new_tokens": 5,
+        "temperature": 0.5,
+    }
+    response = client.post("/batch_generate", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "results" in data
+    assert len(data["results"]) == 3
+    for result in data["results"]:
+        assert "generated_text" in result
+        assert "token_count" in result
+
+
+@pytest.mark.slow
+def test_batch_generate_single(client):
+    """测试批处理生成 - 单个 prompt (退化情况)."""
+    payload = {"prompts": ["hello"], "max_new_tokens": 5}
+    response = client.post("/batch_generate", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["results"]) == 1
+
+
+@pytest.mark.slow
+def test_batch_generate_empty(client):
+    """测试批处理生成 - 空列表边界."""
+    payload = {"prompts": [], "max_new_tokens": 5}
+    response = client.post("/batch_generate", json=payload)
+    # Pydantic 验证应拒绝空列表
+    assert response.status_code == 422
+
+
+@pytest.mark.slow
 def test_auth_enforcement():
     """测试 API Key 验证."""
     from fastapi.testclient import TestClient
