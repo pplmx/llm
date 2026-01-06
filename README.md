@@ -29,18 +29,22 @@
 ## Features
 
 - **Flexible & Pluggable Architecture**:
-  - **Component Registry**: Switch between MHA/MoE or future implementations (FlashAttn) via config.
-  - Grouped Query Attention (GQA) & SwiGLU support.
-  - Unified QKV projection & Flexible Norms (RMSNorm, LayerNorm).
+    - **Component Registry**: Switch between MHA/MoE or future implementations (FlashAttn) via config.
+    - Grouped Query Attention (GQA) & SwiGLU support.
+    - Unified QKV projection & Flexible Norms (RMSNorm, LayerNorm).
 - **Robust Training Framework**:
-  - Distributed Data Parallel (DDP) & Automatic Mixed Precision (AMP).
-  - Type-safe Configuration via Pydantic & Typer CLI.
-  - `torch.compile` optimization integration.
+    - Distributed Data Parallel (DDP) & Automatic Mixed Precision (AMP).
+    - Type-safe Configuration via Pydantic & Typer CLI.
+    - `torch.compile` optimization integration.
+- **Inference & Serving**:
+    - **OpenAI-Compatible API**: `/v1/chat/completions` endpoint works with OpenAI SDK.
+    - Streaming support (Server-Sent Events).
+    - Prometheus metrics & API key authentication.
 - **Data & Tokenization Abstraction**:
-  - **HuggingFace Integration**: Direct support for HF Tokenizers (GPT-2, Llama, etc.).
-  - Modular `DataModule` design for text datasets.
-  - Legacy Character-level tokenizer for simple experiments.
-- **Example Training Script**: The `src/llm/training/train.py` script demonstrates end-to-end training of decoder-only models, showcasing the framework's capabilities.
+    - **HuggingFace Integration**: Direct support for HF Tokenizers (GPT-2, Llama, etc.).
+    - Modular `DataModule` design for text datasets.
+    - Legacy Character-level tokenizer for simple experiments.
+- **CLI Tools**: `llm-train` and `llm-serve` commands for easy usage.
 
 ## Quick Start
 
@@ -55,10 +59,18 @@ To quickly get started with training a model using the framework, follow these s
 2. **Run a Training Example**: Execute the main training script with a language modeling task.
 
     ```bash
-    python src/llm/training/train.py --task lm --epochs 1 --batch-size 32
+    llm-train --task lm --epochs 1 --batch-size 32
     ```
 
-    This command will train a language model for 1 epoch with a batch size of 32. You will see training progress logs in your console.
+    This command will train a language model for 1 epoch with a batch size of 32.
+
+3. **Start Inference Server** (optional):
+
+    ```bash
+    llm-serve
+    ```
+
+    The server will be available at `http://localhost:8000` with OpenAI-compatible API.
 
 ## Installation
 
