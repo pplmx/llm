@@ -306,3 +306,121 @@ Arguments:
 - `--compile`: Enable `torch.compile` optimization.
 - `--device`: Target device (e.g., `cuda`).
 - `--max_new_tokens`: Number of tokens to generate per run.
+
+## OpenAI-Compatible API
+
+The serving module provides an OpenAI-compatible endpoint, allowing you to use the official `openai` Python SDK.
+
+### Endpoint
+
+`POST /v1/chat/completions`
+
+### Request Body
+
+```json
+{
+  "model": "llm",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ],
+  "max_tokens": 50,
+  "temperature": 0.8,
+  "stream": false
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | string | `"llm"` | Model identifier (ignored, for compatibility) |
+| `messages` | array | required | List of chat messages |
+| `max_tokens` | int | `50` | Maximum tokens to generate |
+| `temperature` | float | `1.0` | Sampling temperature (0-2) |
+| `top_p` | float | `null` | Nucleus sampling parameter |
+| `stream` | bool | `false` | Enable streaming response |
+| `presence_penalty` | float | `0.0` | Mapped to repetition_penalty |
+
+### Response
+
+```json
+{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1704556800,
+  "model": "llm",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "Hello! How can I help?"},
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 20,
+    "completion_tokens": 10,
+    "total_tokens": 30
+  }
+}
+```
+
+### Authentication
+
+Supports both `X-API-Key` header and Bearer token:
+
+```bash
+# Using X-API-Key
+curl -X POST "http://localhost:8000/v1/chat/completions" \
+     -H "X-API-Key: your-key" \
+     -H "Content-Type: application/json" \
+     -d '{"messages": [{"role": "user", "content": "hi"}]}'
+
+# Using Bearer token (OpenAI SDK style)
+curl -X POST "http://localhost:8000/v1/chat/completions" \
+     -H "Authorization: Bearer your-key" \
+     -H "Content-Type: application/json" \
+     -d '{"messages": [{"role": "user", "content": "hi"}]}'
+```
+
+### Using OpenAI SDK
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="your-key"  # or any string if auth is disabled
+)
+
+response = client.chat.completions.create(
+    model="llm",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello!"}
+    ],
+    max_tokens=50,
+    temperature=0.8
+)
+
+print(response.choices[0].message.content)
+```
+
+### Streaming with OpenAI SDK
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="test")
+
+stream = client.chat.completions.create(
+    model="llm",
+    messages=[{"role": "user", "content": "Tell me a story"}],
+    max_tokens=100,
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)
+```
