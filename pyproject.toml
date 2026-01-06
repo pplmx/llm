@@ -4,16 +4,29 @@ build-backend = "uv_build"
 
 [project]
 name = "llm"
-version = "0.0.3"
-description = "A nice python project"
+version = "0.0.4"
+description = "A modular PyTorch framework for training and serving Large Language Models"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [
     { name = "Mystic" },
 ]
+keywords = [
+    "llm",
+    "transformer",
+    "pytorch",
+    "deep-learning",
+    "machine-learning",
+    "gqa",
+    "moe",
+    "inference",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
@@ -44,6 +57,10 @@ test = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
 ]
+
+[project.scripts]
+llm-train = "llm.training.train:app"
+llm-serve = "llm.serving.api:main"
 
 [project.urls]
 Documentation = "https://github.com/pplmx/llm#readme"
