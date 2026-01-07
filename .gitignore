@@ -6,6 +6,7 @@ logs
 checkpoints
 allure-results
 results
+commit_message.txt
 
 ### Python template
 # Byte-compiled / optimized / DLL files

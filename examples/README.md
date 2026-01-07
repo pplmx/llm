@@ -23,6 +23,6 @@ python examples/openai_client_demo.py
 ## Files
 
 | File | Description |
-|------|-------------|
+| ------ | ------------- |
 | `inference_demo.py` | Basic text generation with DecoderModel |
 | `openai_client_demo.py` | Using OpenAI SDK with llm-serve |
