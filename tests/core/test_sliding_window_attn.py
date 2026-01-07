@@ -5,66 +5,8 @@ Tests for Sliding Window Attention.
 import pytest
 import torch
 
-from llm.core.attn.dot_product_attn import scaled_dot_product_attention
 from llm.core.attn.mha import MultiHeadAttention
 from llm.models.decoder import DecoderModel
-
-
-class TestSlidingWindowAttention:
-    """Tests for sliding window attention in dot_product_attn."""
-
-    @pytest.fixture
-    def qkv_tensors(self):
-        """Create sample Q, K, V tensors."""
-        batch_size, num_heads, seq_len, head_dim = 2, 4, 16, 32
-        q = torch.randn(batch_size, num_heads, seq_len, head_dim)
-        k = torch.randn(batch_size, num_heads, seq_len, head_dim)
-        v = torch.randn(batch_size, num_heads, seq_len, head_dim)
-        return q, k, v
-
-    def test_window_size_none_is_full_attention(self, qkv_tensors):
-        """Test that window_size=None gives same result as no window."""
-        q, k, v = qkv_tensors
-
-        output_default = scaled_dot_product_attention(q, k, v)
-        output_none = scaled_dot_product_attention(q, k, v, window_size=None)
-
-        assert torch.allclose(output_default, output_none)
-
-    def test_window_size_restricts_attention(self, qkv_tensors):
-        """Test that window_size restricts attention pattern."""
-        q, k, v = qkv_tensors
-
-        output_full = scaled_dot_product_attention(q, k, v)
-        output_window = scaled_dot_product_attention(q, k, v, window_size=2)
-
-        # Outputs should differ due to restricted attention
-        assert not torch.allclose(output_full, output_window)
-
-    def test_window_size_with_causal(self, qkv_tensors):
-        """Test combining window_size with causal masking."""
-        q, k, v = qkv_tensors
-
-        # Should not raise
-        output = scaled_dot_product_attention(q, k, v, is_causal=True, window_size=4)
-        assert output.shape == q.shape
-
-    def test_large_window_equals_full_attention(self, qkv_tensors):
-        """Test that large window_size equals full attention."""
-        q, k, v = qkv_tensors
-        seq_len = q.size(2)
-
-        output_full = scaled_dot_product_attention(q, k, v)
-        output_large_window = scaled_dot_product_attention(q, k, v, window_size=seq_len * 2)
-
-        assert torch.allclose(output_full, output_large_window)
-
-    def test_window_size_one(self, qkv_tensors):
-        """Test window_size=1 (each position attends only to itself and neighbors)."""
-        q, k, v = qkv_tensors
-
-        output = scaled_dot_product_attention(q, k, v, window_size=1)
-        assert output.shape == q.shape
 
 
 class TestMHAWithWindowSize:

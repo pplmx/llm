@@ -3,7 +3,7 @@ from torch import Tensor, nn
 
 from llm.core.registry import ATTENTION_REGISTRY
 
-from .dot_product_attn import scaled_dot_product_attention
+from .sdpa import sdpa
 
 
 @ATTENTION_REGISTRY.register("mha")
@@ -160,15 +160,14 @@ class MultiHeadAttention(nn.Module):
             v = v.repeat_interleave(num_queries_per_kv, dim=1)
 
         # 3. Attention computation
-        attn_output = scaled_dot_product_attention(
+        # Use common SDPA wrapper to handle mask polarity and window size
+        attn_output = sdpa(
             query=q,
             key=k,
             value=v,
             attn_mask=attn_mask,
             dropout_p=self.p if self.training else 0.0,
-            is_causal=use_causal
-            if past_key_value is None
-            else False,  # Disable causal mask if using KV cache (incremental)
+            is_causal=use_causal if past_key_value is None else False,
             scale=None,
             window_size=self.window_size,
         )  # Output shape: [B, N, S, D]
