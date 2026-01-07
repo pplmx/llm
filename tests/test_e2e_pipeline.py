@@ -2,17 +2,16 @@
 End-to-End Pipeline Test.
 
 Tests the complete workflow: train → evaluate → inference.
-This is marked as e2e and will only run with `make test` (all tests)
-or `pytest -m e2e`.
+Uses core functions from llm.utils.e2e module.
 """
 
 import pytest
 import torch
 
-from llm.inference import generate
+from llm.inference import generate, stream_generate
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-from llm.training.core.config import Config, ModelConfig, TrainingConfig
+from llm.utils.e2e import E2EConfig, run_e2e_pipeline
 
 
 @pytest.mark.e2e
@@ -20,132 +19,71 @@ class TestE2EPipeline:
     """End-to-end test for train → evaluate → inference pipeline."""
 
     @pytest.fixture
-    def small_config(self):
+    def small_config(self) -> E2EConfig:
         """Minimal config for fast E2E testing."""
-        config = Config()
-        config.model = ModelConfig(
+        return E2EConfig(
             hidden_size=64,
             num_layers=1,
             num_heads=2,
-            intermediate_size=128,
-            vocab_size=128,
             max_seq_len=32,
-        )
-        config.training = TrainingConfig(
+            epochs=2,
             batch_size=4,
-            epochs=1,
             lr=1e-3,
-            num_samples=100,
+            num_samples=50,
+            prompt="hel",
+            max_new_tokens=5,
         )
-        return config
 
     @pytest.fixture
-    def tokenizer(self):
+    def tokenizer(self) -> SimpleCharacterTokenizer:
         """Create a simple tokenizer for testing."""
         corpus = ["hello world", "the quick brown fox", "testing one two three"]
         return SimpleCharacterTokenizer(corpus)
 
-    def test_e2e_train_evaluate_inference(self, small_config, tokenizer):
+    @pytest.fixture
+    def device(self) -> torch.device:
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    def test_e2e_train_evaluate_inference(self, small_config: E2EConfig, tokenizer, device):
         """
-        Full pipeline test:
-        1. Train model for a few steps
-        2. Verify training loss decreases
-        3. Generate text and verify output is valid
+        Full pipeline test using shared E2E functions.
+        Verifies: training loss decreases, perplexity is valid, inference works.
         """
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        result = run_e2e_pipeline(small_config, device, tokenizer)
 
-        # === 1. Build Model ===
-        model = DecoderModel(
-            vocab_size=tokenizer.vocab_size,
-            hidden_size=small_config.model.hidden_size,
-            num_layers=small_config.model.num_layers,
-            num_heads=small_config.model.num_heads,
-            max_seq_len=small_config.model.max_seq_len,
-        ).to(device)
-
-        # === 2. Train for a few steps ===
-        model.train()
-        optimizer = torch.optim.AdamW(model.parameters(), lr=small_config.training.lr)
-        criterion = torch.nn.CrossEntropyLoss()
-
-        # Generate synthetic batch
-        batch_size = small_config.training.batch_size
-        seq_len = 16
-        input_ids = torch.randint(0, tokenizer.vocab_size, (batch_size, seq_len), device=device)
-        labels = torch.randint(0, tokenizer.vocab_size, (batch_size, seq_len), device=device)
-
-        losses = []
-        num_steps = 10
-
-        for _ in range(num_steps):
-            optimizer.zero_grad()
-            logits = model(input_ids)
-            # Handle tuple return (logits, kv_cache)
-            if isinstance(logits, tuple):
-                logits = logits[0]
-            loss = criterion(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
-            loss.backward()
-            optimizer.step()
-            losses.append(loss.item())
-
-        # Verify loss decreased
-        first_loss = losses[0]
-        last_loss = losses[-1]
-        assert last_loss < first_loss, f"Training should reduce loss: {first_loss:.4f} → {last_loss:.4f}"
-
-        # === 3. Evaluate (compute perplexity) ===
-        model.eval()
-        with torch.no_grad():
-            eval_logits = model(input_ids)
-            if isinstance(eval_logits, tuple):
-                eval_logits = eval_logits[0]
-            eval_loss = criterion(eval_logits.view(-1, tokenizer.vocab_size), labels.view(-1))
-            perplexity = torch.exp(eval_loss).item()
-
-        assert perplexity > 0, "Perplexity should be positive"
-        assert perplexity < float("inf"), "Perplexity should be finite"
-
-        # === 4. Inference ===
-        model.eval()
-        prompt = "hel"
-        generated = generate(
-            model=model,
-            tokenizer=tokenizer,
-            prompt=prompt,
-            max_new_tokens=5,
-            temperature=0,  # Greedy for determinism
+        assert result.loss_decreased, (
+            f"Training should reduce loss: {result.initial_loss:.4f} → {result.final_loss:.4f}"
         )
+        assert result.perplexity > 0, "Perplexity should be positive"
+        assert result.perplexity < float("inf"), "Perplexity should be finite"
+        assert result.inference_ok, "Should generate at least one character"
+        assert result.all_passed, "All E2E checks should pass"
 
-        # Verify output
-        assert len(generated) > len(prompt), "Should generate more tokens than prompt"
-        assert generated.startswith(prompt), "Generated text should start with prompt"
+    def test_e2e_result_properties(self, small_config: E2EConfig, tokenizer, device):
+        """Test that E2EResult properties work correctly."""
+        result = run_e2e_pipeline(small_config, device, tokenizer)
 
-        # All generated characters should be in tokenizer's vocab
-        for char in generated:
-            try:
-                tokenizer.encode(char)
-            except KeyError:
-                pytest.fail(f"Generated character '{char}' not in vocabulary")
+        assert isinstance(result.initial_loss, float)
+        assert isinstance(result.final_loss, float)
+        assert isinstance(result.val_loss, float)
+        assert isinstance(result.perplexity, float)
+        assert isinstance(result.generated_text, str)
+        assert isinstance(result.training_time, float)
 
-    def test_e2e_with_streaming(self, small_config, tokenizer):
+    def test_e2e_with_streaming(self, small_config: E2EConfig, tokenizer, device):
         """Test streaming generation produces same result as non-streaming."""
-        from llm.inference import stream_generate
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         model = DecoderModel(
             vocab_size=tokenizer.vocab_size,
-            hidden_size=small_config.model.hidden_size,
-            num_layers=small_config.model.num_layers,
-            num_heads=small_config.model.num_heads,
-            max_seq_len=small_config.model.max_seq_len,
+            hidden_size=small_config.hidden_size,
+            num_layers=small_config.num_layers,
+            num_heads=small_config.num_heads,
+            max_seq_len=small_config.max_seq_len,
         ).to(device)
         model.eval()
 
         prompt = "the"
         max_tokens = 3
 
-        # Non-streaming
         full_output = generate(
             model=model,
             tokenizer=tokenizer,
@@ -154,7 +92,6 @@ class TestE2EPipeline:
             temperature=0,
         )
 
-        # Streaming
         streamed_parts = list(
             stream_generate(
                 model=model,
