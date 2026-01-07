@@ -3,7 +3,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from .dot_product_attn import scaled_dot_product_attention
+from .sdpa import sdpa
 
 
 class MultiLatentAttention(nn.Module):
@@ -123,7 +123,7 @@ class MultiLatentAttention(nn.Module):
             attn_mask = attn_mask.expand(-1, -1, self.num_latents, -1)
 
         # Compute attention with conditional dropout during training
-        latent_output = scaled_dot_product_attention(
+        latent_output = sdpa(
             query=latent_q,
             key=k,
             value=v,
