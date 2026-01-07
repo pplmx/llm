@@ -123,7 +123,7 @@
 
 > **状态**: 持续进行 | **最后更新**: 2026-01-07
 
-- [x] **单元测试**: 核心模块覆盖, 目前 337 个测试用例全部通过
+- [x] **单元测试**: 核心模块覆盖, 目前 354 个测试用例全部通过
 - [x] **代码质量**: 全面应用 `ruff` 规范并修复所有 lint 问题
 - [x] **集成测试**:
     - [x] 完善 `MoE` 动态专家路由的深度集成测试
@@ -386,7 +386,7 @@
 
 #### 15.3 高效微调技术
 
-- [ ] 实现 LoRA (Low-Rank Adaptation)
+- [x] 实现 LoRA (Low-Rank Adaptation)
 - [ ] 实现 QLoRA (Quantized LoRA)
 - [ ] 实现 AdaLoRA (Adaptive LoRA)
 - [ ] 探索 Prefix Tuning / P-Tuning

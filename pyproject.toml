@@ -49,11 +49,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-  {include-group = "test"}
+  {include-group = "test"},
 ]
 test = [
     "allure-pytest>=2.15.0",
     "httpx>=0.27.0",
+    "ipykernel>=7.1.0",
     "pytest>=9.0",
     "pytest-cov>=7.0",
 ]
