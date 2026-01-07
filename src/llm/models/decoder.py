@@ -46,6 +46,7 @@ class DecoderModel(nn.Module):
         attn_impl: str = "mha",
         mlp_impl: str = "mlp",
         gradient_checkpointing: bool = False,
+        window_size: int | None = None,
     ):
         """
         Initializes the DecoderModel.
@@ -95,6 +96,7 @@ class DecoderModel(nn.Module):
                     num_kv_heads=num_kv_heads,  # Pass num_kv_heads
                     use_glu=use_glu,  # Pass use_glu
                     norm_type=norm_type,  # Pass norm_type
+                    window_size=window_size,  # Pass window_size
                     attn_impl=attn_impl,  # Pass attn_impl
                     mlp_impl=mlp_impl,  # Pass mlp_impl
                     **factory_kwargs,
