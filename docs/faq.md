@@ -50,7 +50,7 @@ make init
 示例：
 
 ```bash
-python src/llm/training/train.py --task lm --epochs 10 --batch-size 32
+llm-train --task lm --epochs 10 --batch-size 32
 ```
 
 ### Q: 如何启用分布式训练？
@@ -159,7 +159,7 @@ SwiGLU 是一种结合 Swish 激活和门控线性单元的激活函数, 相比�
 
 ```bash
 make ruff   # 运行 ruff
-make type   # 运行 ty 类型检查
+make ty     # 运行 ty 类型检查
 make test   # 运行测试
 ```
 

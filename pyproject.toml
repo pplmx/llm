@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "llm"
-version = "0.0.4"
+version = "0.0.3"
 description = "A modular PyTorch framework for training and serving Large Language Models"
 readme = "README.md"
 requires-python = ">=3.13"

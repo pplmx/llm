@@ -17,19 +17,19 @@
 
 ```bash
 # 运行一个训练任务, 并覆盖学习率和批量大小
-python -m llm.training.train --task regression --training-lr 0.005 --training-batch-size 256
+llm-train --task regression --training-lr 0.005 --training-batch-size 256
 
 # 禁用 torch.compile 以进行调试
-python -m llm.training.train --task regression --no-optimization-use-compile
+llm-train --task regression --no-optimization-use-compile
 
 # 从指定的检查点恢复训练
-python -m llm.training.train --task regression --checkpoint-resume-from-checkpoint checkpoints/latest.pt
+llm-train --task regression --checkpoint-resume-from-checkpoint checkpoints/latest.pt
 
 # 启用 MoE 并设置专家数量和 Top-K
-python -m llm.training.train --task regression --model-use-moe --model-num-experts 8 --model-top-k 2
+llm-train --task regression --model-use-moe --model-num-experts 8 --model-top-k 2
 ```
 
-- 要查看所有可用的命令行参数, 请运行 `python -m llm.training.train --help`.
+- 要查看所有可用的命令行参数, 请运行 `llm-train --help`.
 - 参数命名约定: `--<配置组名称>-<参数名称>`(例如, `--model-hidden-size`, `--training-epochs`). 布尔参数可以通过 `--no-<配置组名称>-<参数名称>` 来禁用(如果默认值为 `True`), 或通过 `--<配置组名称>-<参数名称>` 来启用(如果默认值为 `False`).
 
 ## 方法二: 使用 YAML 配置文件 (推荐用于可复现的实验)
@@ -96,7 +96,7 @@ export MASTER_PORT='12355'
 export NUM_NODES=2
 export NODE_RANK=0
 export GPUS_PER_NODE=8
-python -m llm.training.train --task ...
+llm-train --task ...
 
 # 节点 1
 export MASTER_ADDR='10.1.1.1' # 与主节点相同
@@ -104,7 +104,7 @@ export MASTER_PORT='12355'  # 与主节点相同
 export NUM_NODES=2
 export NODE_RANK=1
 export GPUS_PER_NODE=8
-python -m llm.training.train --task ...
+llm-train --task ...
 ```
 
 `DistributedManager` 会自动从环境变量中读取这些值来初始化 `torch.distributed`.
