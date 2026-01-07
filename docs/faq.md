@@ -72,7 +72,7 @@ torchrun --nproc_per_node=4 src/llm/training/train.py --task lm
 3. **减小模型大小**: `--model.hidden_size 512`
 4. **使用 Gradient Checkpointing**: 将在未来版本中支持
 
-详见：[Troubleshooting Guide](troubleshooting.md#内存不足)
+详见：[Troubleshooting Guide](troubleshooting.md)
 
 ---
 
@@ -94,7 +94,7 @@ GQA 是一种优化的注意力机制, 通过让多个 Query 头共享同一组 
 --model.num_heads 32 --model.num_kv_heads 8  # 32个Q头共享8组KV头
 ```
 
-详见：[Tutorial](tutorial-cpu-llm.md#gqa-说明)
+详见：[Tutorial](tutorial-cpu-llm.md#三模型构建与组件)
 
 ### Q: 什么是 SwiGLU？
 
@@ -106,7 +106,7 @@ SwiGLU 是一种结合 Swish 激活和门控线性单元的激活函数, 相比�
 --model.use_glu true
 ```
 
-详见：[Tutorial](tutorial-cpu-llm.md#swiglu-说明)
+详见：[Tutorial](tutorial-cpu-llm.md#三模型构建与组件)
 
 ### Q: 如何选择使用 LayerNorm 还是 RMSNorm？
 

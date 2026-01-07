@@ -1,4 +1,4 @@
-.PHONY: help build test ruff image clean lint fmt dev
+.PHONY: help build test test-fast test-quick test-cov test-e2e ruff image clean lint fmt dev
 .DEFAULT_GOAL := help
 
 APP_NAME := llm
@@ -19,25 +19,21 @@ dev:
 build:
 	@uv build
 
-# Test
+# Test all
 test:
+	@uv run pytest
+
+# Test fast (exclude heavy and e2e, for daily development)
+test-fast:
 	@uv run pytest -m "not heavy and not e2e"
 
 # Test quick only
 test-quick:
 	@uv run pytest -m quick
 
-# Test all (including heavy and e2e)
-test-all:
-	@uv run pytest
-
-# Test with coverage and allure reports (slowest, for CI)
+# Test with coverage and allure reports (for CI)
 test-cov:
 	@uv run pytest --cov=llm --cov-report=term-missing --cov-report=html --cov-report=lcov --cov-report=xml --alluredir=allure-results
-
-# Test integration only
-test-integration:
-	@uv run pytest -m integration
 
 # Test e2e only
 test-e2e:

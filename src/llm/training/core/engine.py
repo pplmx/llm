@@ -228,7 +228,7 @@ class TrainingEngine:
                 epoch_start_time = time.time()
                 avg_loss = self._run_epoch(epoch)
                 val_loss = None
-                if self.config.training.run_validation:  # TODO: Add run_validation to TrainingConfig
+                if self.config.training.run_validation:
                     val_loss = self._run_validation_epoch(epoch)
 
                 if self.should_stop_training:  # Check early stopping flag
