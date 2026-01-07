@@ -8,10 +8,10 @@ The project follows a **Modular & Composable** design philosophy:
 
 * **src-layout**: Code is isolated in `src/` to prevent import layout confusion.
 * **Separation of Concerns**:
-  * `core`: Pure, reusable PyTorch modules (Attention, MLP, Norm).
-  * `models`: Logic to assemble core components into full architectures (Decoder).
-  * `training`: Orchestration of training loops, DDP, logging.
-  * `serving`: High-performance inference API (FastAPI).
+    * `core`: Pure, reusable PyTorch modules (Attention, MLP, Norm).
+    * `models`: Logic to assemble core components into full architectures (Decoder).
+    * `training`: Orchestration of training loops, DDP, logging.
+    * `serving`: High-performance inference API (FastAPI).
 * **Registry Pattern**: Core components are decoupled and selectable via configuration.
 * **Configuration as Code**: Pydantic models define type-safe, validating configurations.
 

@@ -11,6 +11,7 @@ Accepted
 Multi-Head Attention (MHA) is the standard attention mechanism in Transformers, but it has significant memory overhead during inference due to the KV Cache. For each attention head, we need to cache both Key and Value tensors, which grows linearly with the number of heads and sequence length.
 
 Key considerations:
+
 - **Memory constraints**: KV Cache can consume 40-60% of GPU memory during inference
 - **Inference speed**: Memory bandwidth becomes a bottleneck for large models
 - **Model quality**: We need to maintain model performance while reducing memory
@@ -21,12 +22,14 @@ Key considerations:
 We adopt **Grouped Query Attention (GQA)** as the default attention mechanism in our DecoderModel.
 
 **Implementation details**:
+
 - Add `num_kv_heads` parameter to `MultiHeadAttention`
 - When `num_kv_heads < num_heads`, multiple Query heads share the same Key/Value heads
 - Example: 32 Q heads with 8 KV heads means 4 Q heads share 1 KV head group
 - Backward compatible: setting `num_kv_heads = num_heads` gives standard MHA
 
 **Key features**:
+
 ```python
 mha = MultiHeadAttention(
     hidden_size=2048,

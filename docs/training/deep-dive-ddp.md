@@ -13,8 +13,8 @@
 - **`process_group` (进程组)**: 所有参与训练的进程的集合. `torch.distributed.init_process_group` 负责初始化这个组, 让进程之间可以相互通信.
 
 - **`backend` (后端)**: 实现进程间通信的具体库. 最常用的两个是:
-  - **`nccl`**: NVIDIA Collective Communications Library. 这是用于 GPU 分布式训练的推荐后端, 因为它经过了高度优化, 能提供最佳性能.
-  - **`gloo`**: 用于 CPU 分布式训练的后端.
+    - **`nccl`**: NVIDIA Collective Communications Library. 这是用于 GPU 分布式训练的推荐后端, 因为它经过了高度优化, 能提供最佳性能.
+    - **`gloo`**: 用于 CPU 分布式训练的后端.
 
 ## DDP 是如何工作的？
 

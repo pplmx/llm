@@ -11,12 +11,14 @@ Accepted
 The choice of activation function in feedforward networks significantly impacts model performance. Traditional Transformer models use GELU, but recent research has shown that gated activation functions can provide better performance.
 
 Key considerations:
+
 - **Model performance**: Need to maximize model quality
 - **Computational cost**: Must remain practical for training and inference
 - **Industry adoption**: Learn from successful large-scale models
 - **Implementation complexity**: Balance benefits against complexity
 
 Alternatives considered:
+
 - **GELU**: Standard choice, simple and effective
 - **ReLU**: Fast but potentially suboptimal
 - **GLU variants**: Better performance but higher computational cost
@@ -26,12 +28,14 @@ Alternatives considered:
 We adopt **SwiGLU (Swish-Gated Linear Unit)** as an optional activation function in our MLP layers.
 
 **Implementation details**:
+
 - Add `use_glu` parameter to MLP class
 - When `use_glu=True`, use SwiGLU; otherwise use standard activation (GELU)
 - SwiGLU formula: `SwiGLU(x, W, V) = Swish(xW) ⊗ xV`
 - Requires 3x parameter count in intermediate layer but provides better performance
 
 **Usage**:
+
 ```python
 mlp = MLP(
     hidden_size=2048,

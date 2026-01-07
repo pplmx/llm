@@ -66,5 +66,5 @@ make ty  # Run ty type checking
 
 - [ty GitHub Repository](https://github.com/astral-sh/ty)
 - [Astral's vision for Python tooling](https://astral.sh/blog)
-- Alternative considered: mypy (<https://mypy-lang.org/>)
+- Alternative considered: [mypy](https://mypy-lang.org/)
 - Configured in: `pyproject.toml` and `Makefile`
