@@ -116,6 +116,8 @@ For comprehensive documentation, including detailed usage examples, development 
 - [CPU LLM Tutorial](docs/tutorial-cpu-llm.md)
 - [Project Troubleshooting](docs/troubleshooting.md)
 - [Training Framework Documentation](docs/training/README.md)
+- [Examples](examples/README.md)
+- [Scripts](scripts/README.md)
 
 ## Development
 
