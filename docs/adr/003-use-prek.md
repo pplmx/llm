@@ -11,6 +11,7 @@ Accepted
 Git hooks are essential for maintaining code quality by running checks before commits and pushes. The traditional solution is `pre-commit`, but newer alternatives like `prek` offer better performance and integration with modern Python tooling.
 
 Key considerations:
+
 - **Performance**: Hook execution speed affects developer productivity
 - **Tool integration**: Need seamless integration with uv, ruff, ty
 - **Developer experience**: Simple configuration and clear error messages
@@ -21,6 +22,7 @@ Key considerations:
 We adopt **prek** as our Git hook manager, replacing the traditional pre-commit framework.
 
 **Rationale**:
+
 - **Performance**: Written in Rust, significantly faster than Python-based pre-commit
 - **Native integration**: Built-in support for uv, ruff, ty without wrapper scripts
 - **Simpler configuration**: More intuitive and less verbose than pre-commit YAML
@@ -28,6 +30,7 @@ We adopt **prek** as our Git hook manager, replacing the traditional pre-commit 
 - **Active development**: Well-maintained and rapidly evolving
 
 **Configuration approach**:
+
 - Use prek's native hook system
 - Integrate with Makefile for consistency
 - Run ruff, ty, and tests before commits
@@ -58,4 +61,4 @@ We adopt **prek** as our Git hook manager, replacing the traditional pre-commit 
 
 - [prek GitHub Repository](https://github.com/astral-sh/prek)
 - [Why we're migrating from pre-commit](https://astral.sh/blog/prek)
-- Alternative considered: pre-commit (https://pre-commit.com/)
+- Alternative considered: pre-commit (<https://pre-commit.com/>)

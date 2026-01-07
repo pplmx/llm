@@ -11,6 +11,7 @@ Date: YYYY-MM-DD
 What is the issue that we're seeing that is motivating this decision or change?
 
 Describe the forces at play, including:
+
 - Technical considerations
 - Team skills and experience
 - Project constraints
@@ -21,6 +22,7 @@ Describe the forces at play, including:
 What is the change that we're proposing and/or doing?
 
 Be specific and detailed. Include:
+
 - The chosen solution
 - Why this solution was selected
 - Key implementation details
