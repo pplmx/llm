@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [
-    { name = "Mystic" },
+    { name = "Mystvio" },
 ]
 keywords = [
     "llm",

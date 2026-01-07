@@ -22,9 +22,6 @@ class ModelConfig(BaseModel):
     num_experts: int = Field(0, description="Number of experts if use_moe is True")
     top_k: int = Field(0, description="Number of top experts to select if use_moe is True")
 
-    # New architectural params
-    num_kv_heads: int | None = Field(None, description="If None, defaults to num_heads (MHA)")
-
     # Registry keys
     attn_impl: str = "mha"
     mlp_impl: str = "mlp"
