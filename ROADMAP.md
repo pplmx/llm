@@ -141,7 +141,7 @@
     - [ ] 完善代码内文档 (docstrings)
     - [ ] 使用 `Sphinx` 或 `MkDocs` 生成 API 文档网站
 - [ ] **用户文档**: 编写详细的用户指南和教程
-- [ ] **示例**: 提供 `Jupyter Notebook` 示例, 展示框架的核心功能
+- [x] **示例**: 提供 `Jupyter Notebook` 示例, 展示框架的核心功能 (`notebooks/quick_start.ipynb`)
 
 ---
 
