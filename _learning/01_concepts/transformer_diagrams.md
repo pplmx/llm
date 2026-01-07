@@ -34,6 +34,59 @@ graph TD
 
 ---
 
+## 🔹 Attention 变体对比 (MHA vs GQA vs MQA)
+
+### 1. Multi-Head Attention (MHA)
+
+标准 Transformer 使用。每个 Query Head 都有对应的 Key/Value Head。
+
+```mermaid
+graph TD
+    subgraph "MHA (h=4)"
+        Q1[Q1] --- K1[K1] & V1[V1]
+        Q2[Q2] --- K2[K2] & V2[V2]
+        Q3[Q3] --- K3[K3] & V3[V3]
+        Q4[Q4] --- K4[K4] & V4[V4]
+    end
+    style Q1 fill:#e3f2fd
+    style K1 fill:#fff3e0
+```
+
+### 2. Grouped Query Attention (GQA)
+
+LLaMA 2/3 使用。多个 Query Head 共享一组 Key/Value Head。
+(例如: 4个 Query Head, 2组 KV Head -> 2 Q share 1 KV)
+
+```mermaid
+graph TD
+    subgraph "GQA (h=4, g=2)"
+        Q1[Q1] --> KV1[KV1]
+        Q2[Q2] --> KV1
+        Q3[Q3] --> KV2[KV2]
+        Q4[Q4] --> KV2
+    end
+    style Q1 fill:#e3f2fd
+    style KV1 fill:#fff3e0
+```
+
+### 3. Multi-Query Attention (MQA)
+
+极致显存优化。所有 Query Head 共享同一组 Key/Value Head。
+
+```mermaid
+graph TD
+    subgraph "MQA (h=4, g=1)"
+        Q1[Q1] --> KV[KV Shared]
+        Q2[Q2] --> KV
+        Q3[Q3] --> KV
+        Q4[Q4] --> KV
+    end
+    style Q1 fill:#e3f2fd
+    style KV fill:#dcedc8
+```
+
+---
+
 ## 🔹 FeedForward 模块(FeedForwardBlock)
 
 ```mermaid

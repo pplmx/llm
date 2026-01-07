@@ -1,4 +1,17 @@
-## Transformer深度学习路线图
+# Transformer深度学习路线图
+
+欢迎来到 LLM 学习中心！为了提供更清晰的学习体验，我们将内容整理为以下模块：
+
+- **📚 01 Concepts (理论基础)**
+    - [架构图解](01_concepts/transformer_diagrams.md) - Transformer 结构的直观展示
+    - [深度解析](01_concepts/transformer_deep_dive.md) - 核心概念的详细解读
+- **🛠️ 02 Guides (实战指南)**
+    - [CPU 训练指南 (概念版)](02_guides/simplified_training_concept.md) - 从零开始训练 LLM 的概念演示
+    - [代码结构映射](02_guides/code_structure_map.md) - 理论与代码的对照
+- **🔬 03 Lab (实验工坊)**
+    - 包含训练脚本和实验性代码，供动手实践。
+
+---
 
 ### 第一阶段: 基础准备(1-2周)
 
@@ -63,19 +76,23 @@
 
 - 绝对位置编码: Sinusoidal, Learned
 - 相对位置编码:
-  - T5的相对位置偏置
-  - DeBERTa的解耦注意力
+    - T5的相对位置偏置
+    - DeBERTa的解耦注意力
 - 旋转位置编码(RoPE)- 重点学习
-  - 论文: "RoFormer: Enhanced Transformer with Rotary Position Embedding"
-  - 理解复数域旋转的几何意义
-  - 为什么RoPE能外推到更长序列
+    - 论文: "RoFormer: Enhanced Transformer with Rotary Position Embedding"
+    - 理解复数域旋转的几何意义
+    - 为什么RoPE能外推到更长序列
+    - 为什么RoPE能外推到更长序列
+- ALiBi(Attention with Linear Biases) (参考: [`alibi.py`](../src/llm/core/alibi.py))
+    - 线性偏置带来的外推性
+    - 为什么不需要位置Embedding
 
 **高效Attention机制**
 
 - Linear Attention
 - Flash Attention (v1, v2, v3)
-  - 理解IO-aware的优化思想
-  - Tiling技术
+    - 理解IO-aware的优化思想
+    - Tiling技术
 - PagedAttention(vLLM)
 
 **架构改进**
@@ -86,7 +103,7 @@
 
 **实践任务**
 
-- 实现RoPE并对比Sinusoidal编码
+- 实现RoPE并对比Sinusoidal编码 (参考: [`rope.py`](../src/llm/core/rope.py))
 - 集成Flash Attention到你的模型
 - 对比不同Norm方法的训练稳定性
 
@@ -100,9 +117,9 @@
 
 - GPT-2/3的架构细节
 - LLaMA系列:
-  - LLaMA 1/2的改进点
-  - Group Query Attention (GQA)
-  - Pre-normalization with RMSNorm
+    - LLaMA 1/2的改进点
+    - Group Query Attention (GQA)
+    - Pre-normalization with RMSNorm
 
 **其他重要架构**
 
@@ -113,8 +130,19 @@
 **实践任务**
 
 - 复现一个小型LLaMA模型(如LLaMA-160M)
-- 实现GQA并对比MHA的显存占用
-- 训练一个简单的MoE模型
+- 实现GQA并对比MHA的显存占用 (参考: [`attn/mha.py`](../src/llm/core/attn/mha.py))
+- 训练一个简单的MoE模型 (参考: [`moe/`](../src/llm/core/moe/))
+
+### 第四阶段: 掌握正式框架 (Mastering the Framework)
+
+在理解了核心概念后，建议您深入学习本项目的正式框架：
+
+- [LLM 框架全流程教程](../docs/tutorial-cpu-llm.md)
+    - 学习如何使用配置系统、分布式训练 (DDP) 和混合精度训练 (AMP)。
+- [架构设计深度解析](../docs/architecture.md)
+    - 理解项目的模块化设计、注册机制和抽象层。
+- [架构决策记录 (ADR)](../docs/adr/)
+    - 阅读 ADR 文档，了解我们为什么选择 SwiGLU、GQA 等具体技术方案。
 
 ---
 
