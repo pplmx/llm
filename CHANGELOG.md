@@ -14,24 +14,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RLHF/DPO alignment techniques
 - Multi-modal extensions (vision-language models)
 - Model quantization (INT8/INT4)
+- LoRA/QLoRA efficient fine-tuning
+
+## [0.0.4] - 2026-01-07
 
 ### Added
 
-- **OpenAI-Compatible API**:
-    - `/v1/chat/completions` endpoint compatible with OpenAI SDK
+- **Gradient Checkpointing**:
+    - Memory-efficient training via `gradient_checkpointing` parameter in `DecoderModel`
+    - `enable_gradient_checkpointing()` / `disable_gradient_checkpointing()` methods
+    - Automatic incompatibility check with `use_cache=True`
+
+- **E2E Pipeline Automation**:
+    - `scripts/e2e_pipeline.py` for automated Train → Evaluate → Inference workflow
+    - `src/llm/utils/e2e.py` with reusable E2E core functions (`E2EConfig`, `E2EResult`, `run_e2e_pipeline`)
+    - Rich progress UI and configurable CLI options
+
+- **OpenAI-Compatible Chat API** (`/v1/chat/completions`):
+    - Compatible with official OpenAI Python SDK
     - Streaming and non-streaming chat completions
     - Bearer token authentication support
     - Multi-turn conversation handling
+    - 8 new test cases for compatibility layer
+
+- **Batch Inference**:
+    - `batch_generate` function in `inference.py` with left-padding and batched forward pass
+    - `BatchGenerationRequest` / `BatchGenerationResponse` schemas
+    - `/batch_generate` API endpoint
+    - 3 tests for batch inference (basic, single, empty)
+
+- **Request Queue and Concurrency Control**:
+    - `max_concurrent_requests` and `request_timeout` in `ServingConfig`
+    - `asyncio.Semaphore` for concurrency limiting
+    - `asyncio.timeout` for request timeout handling (504 response)
 
 - **CLI Entry Points**:
     - `llm-train` command for training models
     - `llm-serve` command for starting inference server
 
+- **Testing Infrastructure**:
+    - Pytest markers using decorators: `quick`, `slow`, `heavy`, `e2e`
+    - MoE integration tests (6 tests for expert routing, gradient flow)
+    - E2E pipeline tests (full workflow, streaming consistency)
+    - Gradient checkpointing tests (8 tests)
+    - Total test count: 296 → 337
+
 - **Examples Directory**:
     - `inference_demo.py` for basic text generation
     - `openai_client_demo.py` for OpenAI SDK usage
 
+- **Documentation**:
+    - `scripts/README.md` documenting all available scripts
+    - HFTokenizer example in `usage.md`
+    - Updated root `README.md` with links to Examples and Scripts
+
 ### Changed
+
+- **Makefile Reorganization**:
+    - `make test` now runs all tests by default
+    - `make test-fast` for daily development (excludes heavy/e2e)
+    - `make test-quick` for rapid iteration (~6s)
+    - `make test-cov` for CI with coverage and allure reports
+    - Removed redundant `test-all` and `test-integration`
+
+- **CLI Standardization**:
+    - CLI parameters changed from snake_case to kebab-case (`--file-path`, `--batch-size`)
+    - Replace `typer` with `typer-slim[standard]` for reduced dependencies
+
+- **Code Quality Improvements**:
+    - Translate Chinese docstrings to English in serving module
+    - Remove ~75 lines of redundant comments
+    - Simplify section comments while preserving algorithm clarity
 
 - **Documentation Refactoring**:
     - Eliminated redundancy between README, usage.md, and development.md
@@ -40,8 +93,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Enhanced package metadata (keywords, classifiers)
 
 - **Module Exports**:
-    - Enhanced `llm/__init__.py` with public API exports
-    - Enhanced `llm.serving` module exports
+    - Enhanced `llm/__init__.py` with public API exports (`DecoderModel`, `generate`, etc.)
+    - Enhanced `llm.serving` module exports (`LLMEngine`, `ServingConfig`, OpenAI schemas)
+
+### Fixed
+
+- Removed obsolete TODO comment in `engine.py`
+- Removed duplicate `num_kv_heads` field in `ModelConfig`
+- Fixed MD051/link-fragments in `tutorial-cpu-llm.md` and `faq.md`
+- Fixed `train.py` task registration for `lm` task
 
 ## [0.0.3] - 2025-12-23
 
