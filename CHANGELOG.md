@@ -7,14 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **LoRA (Low-Rank Adaptation)**:
+    - `src/llm/core/lora.py` with `LoRALinear` class for parameter-efficient fine-tuning
+    - `apply_lora()`, `merge_lora()`, `get_lora_parameters()` helper functions
+    - Device/dtype handling for CUDA compatibility
+    - 17 tests covering training and weight merging
+
+- **Sliding Window Attention**:
+    - `window_size` parameter in `scaled_dot_product_attention`
+    - Propagated through `MultiHeadAttention`, `TransformerBlock`, `DecoderModel`
+    - Reduces memory for long sequences by limiting attention scope
+    - 10 tests
+
+- **RoPE (Rotary Position Embedding)**:
+    - `src/llm/core/rope.py` with `RotaryPositionEmbedding` class
+    - Linear, dynamic, and NTK-aware scaling methods for extended context
+    - `apply_rotary_pos_emb()`, `get_rope_scaling_factor()` utilities
+    - 15 tests
+
+- **ALiBi (Attention with Linear Biases)**:
+    - `src/llm/core/alibi.py` with `ALiBiPositionBias` class
+    - `get_alibi_slopes()`, `build_alibi_bias()` functions
+    - Cached bias computation for efficiency
+    - 13 tests
+
+- **Documentation**:
+    - `notebooks/quick_start.ipynb` interactive tutorial
+    - Covers model building, training, inference, and advanced features
+
+### Changed
+
+- Test count: 337 → 392 (+55 tests)
+
 ### Planned
 
 - Flash Attention 2 integration
 - Paged Attention for improved memory efficiency
-- RLHF/DPO alignment techniques
-- Multi-modal extensions (vision-language models)
-- Model quantization (INT8/INT4)
-- LoRA/QLoRA efficient fine-tuning
+- QLoRA (Quantized LoRA)
 
 ## [0.0.4] - 2026-01-07
 
