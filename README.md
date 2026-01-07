@@ -118,6 +118,7 @@ For comprehensive documentation, including detailed usage examples, development 
 - [Training Framework Documentation](docs/training/README.md)
 - [Examples](examples/README.md)
 - [Scripts](scripts/README.md)
+- [Notebooks](notebooks/README.md)
 
 ## Development
 
