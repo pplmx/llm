@@ -43,6 +43,7 @@ class MultiHeadAttention(nn.Module):
         is_causal: bool = False,
         include_norm_residual: bool = True,  # New parameter
         num_kv_heads: int | None = None,  # New: For GQA/MQA support
+        window_size: int | None = None,  # Sliding window attention
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -61,6 +62,7 @@ class MultiHeadAttention(nn.Module):
         self.is_causal = is_causal
         self.p = p
         self.include_norm_residual = include_norm_residual
+        self.window_size = window_size
 
         if self.num_heads % self.num_kv_heads != 0:
             raise ValueError(f"num_heads ({self.num_heads}) must be divisible by num_kv_heads ({self.num_kv_heads})")
@@ -168,6 +170,7 @@ class MultiHeadAttention(nn.Module):
             if past_key_value is None
             else False,  # Disable causal mask if using KV cache (incremental)
             scale=None,
+            window_size=self.window_size,
         )  # Output shape: [B, N, S, D]
 
         # 4. Combine head outputs

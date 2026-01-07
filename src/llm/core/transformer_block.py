@@ -30,6 +30,7 @@ class TransformerBlock(nn.Module):
         num_kv_heads: int | None = None,  # New: For GQA support
         use_glu: bool = False,  # New: For SwiGLU support
         norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,
+        window_size: int | None = None,  # Sliding window attention
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
         # Registry keys
@@ -72,6 +73,7 @@ class TransformerBlock(nn.Module):
             eps=norm_eps,
             norm_first=False,
             num_kv_heads=num_kv_heads,
+            window_size=window_size,
             **factory_kwargs,
         )
 

@@ -13,6 +13,7 @@ def scaled_dot_product_attention(
     dropout_p: float = 0.0,
     is_causal: bool = False,
     scale: float | None = None,
+    window_size: int | None = None,
 ) -> Tensor:
     """
     计算缩放点积注意力 (Scaled Dot-Product Attention).
@@ -29,6 +30,8 @@ def scaled_dot_product_attention(
         is_causal (bool): 若为 True, 应用因果掩码 (上三角掩码), 阻止关注未来位置.
                           会与 attn_mask 结合使用 (逻辑或). 默认为 False.
         scale (float | None): 缩放因子. 若为 None, 则使用 1 / sqrt(head_dim). 默认为 None.
+        window_size (int | None): 滑动窗口大小. 若设置, 每个位置只能关注前后 window_size 个位置.
+                                  默认为 None (无窗口限制).
 
     返回:
         Tensor: 注意力输出张量, 形状 (B, N, Sq, D).
@@ -41,20 +44,29 @@ def scaled_dot_product_attention(
     # (B, N, Sq, D) @ (B, N, D, Sk) -> (B, N, Sq, Sk)
     attn_scores = torch.matmul(query, key.transpose(-2, -1)) * scale
 
-    # 3. 应用掩码 (组合 is_causal 和 attn_mask)
+    # 3. 应用掩码 (组合 is_causal, window_size 和 attn_mask)
     mask_value = -torch.inf  # 或者使用 torch.finfo(attn_scores.dtype).min
     final_mask = None
+    seq_len_q, seq_len_k = attn_scores.shape[-2:]
 
     if is_causal:
         # 创建因果掩码 (上三角矩阵, 对角线为 False)
         # True 表示需要屏蔽的位置 (未来位置)
-        seq_len_q, seq_len_k = attn_scores.shape[-2:]
         # causal_mask 的形状是 (Sq, Sk) 或 (1, 1, Sq, Sk) 以便广播
         causal_mask = torch.triu(
             torch.ones((seq_len_q, seq_len_k), device=query.device, dtype=torch.bool),
             diagonal=1,  # 屏蔽严格上三角部分 (i > j)
         )
         final_mask = causal_mask  # .unsqueeze(0).unsqueeze(0) # 根据需要调整维度以广播, 但通常 PyTorch 会自动处理
+
+    # 滑动窗口掩码: 每个位置只关注前后 window_size 个位置
+    if window_size is not None and window_size > 0:
+        # 创建位置索引矩阵
+        row_idx = torch.arange(seq_len_q, device=query.device).unsqueeze(1)
+        col_idx = torch.arange(seq_len_k, device=query.device).unsqueeze(0)
+        # 计算距离, 屏蔽距离超过 window_size 的位置
+        window_mask = torch.abs(row_idx - col_idx) > window_size
+        final_mask = window_mask if final_mask is None else final_mask | window_mask
 
     if attn_mask is not None:
         if attn_mask.dtype != torch.bool:
