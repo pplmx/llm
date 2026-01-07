@@ -62,30 +62,30 @@
 **核心组件概览:**
 
 - **分词器**:
-  - **`llm.tokenization.simple_tokenizer.SimpleCharacterTokenizer`** (`src/llm/tokenization/simple_tokenizer.py`): 一个基础的字符级分词器, 用于快速原型验证. 支持 `<PAD>` 特殊 token.
-  - **`llm.tokenization.bpe_tokenizer.BPETokenizer`** (`src/llm/tokenization/bpe_tokenizer.py`): 生产级的 BPE (Byte Pair Encoding) 分词器, 基于 `tokenizers` 库实现, 支持训练自定义词表和高效的子词分词.
+    - **`llm.tokenization.simple_tokenizer.SimpleCharacterTokenizer`** (`src/llm/tokenization/simple_tokenizer.py`): 一个基础的字符级分词器, 用于快速原型验证. 支持 `<PAD>` 特殊 token.
+    - **`llm.tokenization.bpe_tokenizer.BPETokenizer`** (`src/llm/tokenization/bpe_tokenizer.py`): 生产级的 BPE (Byte Pair Encoding) 分词器, 基于 `tokenizers` 库实现, 支持训练自定义词表和高效的子词分词.
 
 - **`llm.core.embedding.EmbeddingLayer`**:
-  - **位置**: `src/llm/core/embedding.py`
-  - **用途**: 结合 token 嵌入和位置编码, 为模型提供输入序列的向量表示.
+    - **位置**: `src/llm/core/embedding.py`
+    - **用途**: 结合 token 嵌入和位置编码, 为模型提供输入序列的向量表示.
 
 - **`llm.core.attn.mha.MultiHeadAttention`**:
-  - **位置**: `src/llm/core/attn/mha.py`
-  - **用途**: 实现多头自注意力机制, 是 Transformer 的核心. 支持 **Grouped Query Attention (GQA)** 以平衡性能和显存效率.
-  - **GQA 说明**: 通过 `num_kv_heads` 参数控制 K/V 头数, 当 `num_kv_heads < num_heads` 时启用 GQA, 多个 Q 头共享同一组 K/V 头, 显著减少 KV Cache 的显存占用.
+    - **位置**: `src/llm/core/attn/mha.py`
+    - **用途**: 实现多头自注意力机制, 是 Transformer 的核心. 支持 **Grouped Query Attention (GQA)** 以平衡性能和显存效率.
+    - **GQA 说明**: 通过 `num_kv_heads` 参数控制 K/V 头数, 当 `num_kv_heads < num_heads` 时启用 GQA, 多个 Q 头共享同一组 K/V 头, 显著减少 KV Cache 的显存占用.
 
 - **`llm.core.mlp.MLP`**:
-  - **位置**: `src/llm/core/mlp.py`
-  - **用途**: Transformer 层中的多层感知器(前馈网络). 支持 **SwiGLU 激活函数**以提升性能.
-  - **SwiGLU 说明**: 通过设置 `use_glu=True` 启用, 结合 Swish 激活和门控线性单元, 相比标准 GELU 激活能提供更好的性能.
+    - **位置**: `src/llm/core/mlp.py`
+    - **用途**: Transformer 层中的多层感知器(前馈网络). 支持 **SwiGLU 激活函数**以提升性能.
+    - **SwiGLU 说明**: 通过设置 `use_glu=True` 启用, 结合 Swish 激活和门控线性单元, 相比标准 GELU 激活能提供更好的性能.
 
 - **`llm.core.transformer_block.TransformerBlock`**:
-  - **位置**: `src/llm/core/transformer_block.py`
-  - **用途**: 构成 Transformer 模型的基本单元, 结合了注意力机制和 MLP, 并处理层归一化和残差连接.
+    - **位置**: `src/llm/core/transformer_block.py`
+    - **用途**: 构成 Transformer 模型的基本单元, 结合了注意力机制和 MLP, 并处理层归一化和残差连接.
 
 - **`llm.models.decoder.DecoderModel`**:
-  - **位置**: `src/llm/models/decoder.py`
-  - **用途**: 完整的解码器模型, 堆叠了多个 `TransformerBlock`, 并包含一个语言模型头用于预测下一个 token.
+    - **位置**: `src/llm/models/decoder.py`
+    - **用途**: 完整的解码器模型, 堆叠了多个 `TransformerBlock`, 并包含一个语言模型头用于预测下一个 token.
 
 **模型配置:**
 
@@ -106,12 +106,12 @@
 本项目通过 `DataModule` 抽象数据处理和加载.
 
 - **`llm.data.data_module.BaseDataModule`**:
-  - **位置**: `src/llm/data/data_module.py`
-  - **用途**: 定义了数据模块的抽象接口, 包括数据准备 (`prepare_data`)、设置 (`setup`) 和创建数据加载器 (`train_dataloader`, `val_dataloader`).
+    - **位置**: `src/llm/data/data_module.py`
+    - **用途**: 定义了数据模块的抽象接口, 包括数据准备 (`prepare_data`)、设置 (`setup`) 和创建数据加载器 (`train_dataloader`, `val_dataloader`).
 
 - **`llm.data.synthetic_data_module.SyntheticDataModule`**:
-  - **位置**: `src/llm/data/synthetic_data_module.py`
-  - **用途**: `BaseDataModule` 的一个实现, 用于生成合成数据进行训练和测试. 这对于框架的初步验证和功能开发非常有用.
+    - **位置**: `src/llm/data/synthetic_data_module.py`
+    - **用途**: `BaseDataModule` 的一个实现, 用于生成合成数据进行训练和测试. 这对于框架的初步验证和功能开发非常有用.
 
 **如何使用:**
 
@@ -130,25 +130,25 @@
 **示例命令:**
 
 ```bash
-python src/llm/training/train.py --task regression --epochs 5 --batch-size 64 --model.hidden_size 128 --training.lr 0.0005
+llm-train --task regression --epochs 5 --batch-size 64
 ```
 
 **配置管理:**
 
 - **`llm.training.core.config.Config`**:
-  - **位置**: `src/llm/training/core/config.py`
-  - **用途**: 集中管理所有训练相关的配置, 包括模型、训练参数、分布式设置、优化选项、检查点和日志.
-  - 支持从 YAML 文件加载配置, 并通过命令行参数和环境变量进行覆盖.
+    - **位置**: `src/llm/training/core/config.py`
+    - **用途**: 集中管理所有训练相关的配置, 包括模型、训练参数、分布式设置、优化选项、检查点和日志.
+    - 支持从 YAML 文件加载配置, 并通过命令行参数和环境变量进行覆盖.
 
 **训练引擎 (`TrainingEngine`):**
 
 - **位置**: `src/llm/training/core/engine.py`
 - **用途**: 协调整个训练循环, 包括:
-  - 模型、优化器、调度器和损失函数的构建.
-  - 分布式训练 (DDP) 的设置.
-  - 自动混合精度 (AMP) 和 `torch.compile` 的集成.
-  - 检查点加载和保存.
-  - 通过回调系统触发自定义逻辑.
+    - 模型、优化器、调度器和损失函数的构建.
+    - 分布式训练 (DDP) 的设置.
+    - 自动混合精度 (AMP) 和 `torch.compile` 的集成.
+    - 检查点加载和保存.
+    - 通过回调系统触发自定义逻辑.
 
 **训练任务 (`TrainingTask`):**
 
@@ -162,20 +162,20 @@ python src/llm/training/train.py --task regression --epochs 5 --batch-size 64 --
 本项目框架旨在高度可扩展, 允许您轻松添加新功能.
 
 - **添加新的训练任务**:
-  - 创建 `llm.training.tasks.base_task.TrainingTask` 的子类, 实现其抽象方法.
-  - 在 `src/llm/training/train.py` 的 `AVAILABLE_TASKS` 字典中注册您的新任务.
+    - 创建 `llm.training.tasks.base_task.TrainingTask` 的子类, 实现其抽象方法.
+    - 在 `src/llm/training/train.py` 的 `AVAILABLE_TASKS` 字典中注册您的新任务.
 
 - **自定义回调**:
-  - 创建 `llm.training.core.callbacks.Callback` 的子类, 并在训练生命周期的不同阶段实现 `on_...` 方法.
-  - 在 `train.py` 中将您的回调添加到 `TrainingEngine` 的回调列表中.
+    - 创建 `llm.training.core.callbacks.Callback` 的子类, 并在训练生命周期的不同阶段实现 `on_...` 方法.
+    - 在 `train.py` 中将您的回调添加到 `TrainingEngine` 的回调列表中.
 
 - **集成新的模型组件**:
-  - 在 `src/llm/core/` 或 `src/llm/models/` 中添加新的注意力机制、归一化层或 MoE 实现.
-  - 修改 `DecoderModel` 或其他模型定义以集成这些新组件.
+    - 在 `src/llm/core/` 或 `src/llm/models/` 中添加新的注意力机制、归一化层或 MoE 实现.
+    - 修改 `DecoderModel` 或其他模型定义以集成这些新组件.
 
 - **性能优化**:
-  - 利用 `Config` 中的 `optimization` 部分来启用或禁用 `torch.compile` 和 AMP.
-  - 探索更高级的优化技术, 如梯度累积、模型并行等.
+    - 利用 `Config` 中的 `optimization` 部分来启用或禁用 `torch.compile` 和 AMP.
+    - 探索更高级的优化技术, 如梯度累积、模型并行等.
 
 ---
 

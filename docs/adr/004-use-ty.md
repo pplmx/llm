@@ -11,6 +11,7 @@ Accepted
 Static type checking is crucial for maintaining code quality in Python projects. While `mypy` has been the industry standard, newer alternatives like `ty` (from Astral) offer significant performance improvements and better developer experience.
 
 Key considerations:
+
 - **Type checking speed**: Affects development workflow and CI time
 - **Error messages**: Quality of type error reporting
 - **Configuration complexity**: Ease of setup and maintenance
@@ -22,6 +23,7 @@ Key considerations:
 We adopt **ty** as our type checker, replacing mypy.
 
 **Rationale**:
+
 - **Performance**: 5-10x faster than mypy, written in Rust
 - **Better errors**: More readable and actionable error messages
 - **Zero config**: Works out of the box with sensible defaults
@@ -30,8 +32,9 @@ We adopt **ty** as our type checker, replacing mypy.
 - **Active development**: Rapidly evolving with strong backing
 
 **Usage**:
+
 ```bash
-make type  # Run ty type checking
+make ty  # Run ty type checking
 ```
 
 ## Consequences
@@ -63,5 +66,5 @@ make type  # Run ty type checking
 
 - [ty GitHub Repository](https://github.com/astral-sh/ty)
 - [Astral's vision for Python tooling](https://astral.sh/blog)
-- Alternative considered: mypy (https://mypy-lang.org/)
+- Alternative considered: mypy (<https://mypy-lang.org/>)
 - Configured in: `pyproject.toml` and `Makefile`

@@ -232,7 +232,7 @@ model:
 当您运行训练时, `TrainingEngine` 会根据 `Config` 中的设置, 在 `TransformerBlock` 中自动实例化 MoE 层而不是标准 MLP.
 
 ```bash
-python -m llm.training.train --task regression --model-use-moe --model-num-experts 8 --model-top-k 2
+llm-train --task regression --model-use-moe --model-num-experts 8 --model-top-k 2
 ```
 
 通过这种方式, 您可以轻松地在模型中启用和配置 MoE 功能, 而无需修改核心模型代码.
