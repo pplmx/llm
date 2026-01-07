@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 
 from llm.core.embedding import EmbeddingLayer
 from llm.core.transformer_block import TransformerBlock
@@ -42,9 +43,9 @@ class DecoderModel(nn.Module):
         norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # New: For RMSNorm support
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
-        # Registry keys
         attn_impl: str = "mha",
         mlp_impl: str = "mlp",
+        gradient_checkpointing: bool = False,
     ):
         """
         Initializes the DecoderModel.
@@ -55,6 +56,7 @@ class DecoderModel(nn.Module):
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
         self.norm_first = norm_first  # Store for final norm logic
+        self._gradient_checkpointing = gradient_checkpointing
 
         self.embedding_layer = EmbeddingLayer(
             vocab_size=vocab_size,
@@ -139,7 +141,13 @@ class DecoderModel(nn.Module):
             torch.Tensor or tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
                 - If use_cache=False: Logits tensor of shape [B, S, vocab_size].
                 - If use_cache=True: (Logits tensor, current_key_values)
+
+        Raises:
+            ValueError: If gradient_checkpointing and use_cache are both enabled.
         """
+        if self._gradient_checkpointing and use_cache:
+            raise ValueError("Gradient checkpointing is incompatible with use_cache=True. ")
+
         start_pos = 0
         if past_key_values is not None:
             # past_key_values[0][0] shape: [B, N, S_prev, D]
@@ -153,14 +161,27 @@ class DecoderModel(nn.Module):
             # default. Here, we rely on the block's initialized `is_causal` state.
             # So, we pass `is_causal=None` to the block's forward method.
             past_kv = past_key_values[i] if past_key_values is not None else None
-            block_outputs = block(
-                hidden_states, attn_mask=attn_mask, is_causal=None, past_key_value=past_kv, use_cache=use_cache
-            )
-            if use_cache:
-                hidden_states, current_kv = block_outputs
-                current_key_values.append(current_kv)
+
+            if self._gradient_checkpointing and self.training:
+                # Use gradient checkpointing to save memory during training
+                hidden_states = checkpoint(
+                    block,
+                    hidden_states,
+                    attn_mask,
+                    None,  # is_causal
+                    past_kv,
+                    use_cache,
+                    use_reentrant=False,
+                )
             else:
-                hidden_states = block_outputs
+                block_outputs = block(
+                    hidden_states, attn_mask=attn_mask, is_causal=None, past_key_value=past_kv, use_cache=use_cache
+                )
+                if use_cache:
+                    hidden_states, current_kv = block_outputs
+                    current_key_values.append(current_kv)
+                else:
+                    hidden_states = block_outputs
 
         if self.final_norm is not None:  # Applied only in Pre-LN architectures
             hidden_states = self.final_norm(hidden_states)
@@ -170,6 +191,19 @@ class DecoderModel(nn.Module):
         if use_cache:
             return logits, current_key_values
         return logits
+
+    @property
+    def gradient_checkpointing(self) -> bool:
+        """Whether gradient checkpointing is enabled."""
+        return self._gradient_checkpointing
+
+    def enable_gradient_checkpointing(self) -> None:
+        """Enable gradient checkpointing to reduce memory usage during training."""
+        self._gradient_checkpointing = True
+
+    def disable_gradient_checkpointing(self) -> None:
+        """Disable gradient checkpointing."""
+        self._gradient_checkpointing = False
 
 
 if __name__ == "__main__":
