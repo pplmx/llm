@@ -96,6 +96,62 @@ reset_all_caches(caches)
 
 ---
 
+## Continuous Batching
+
+For high-throughput serving, use the `ContinuousBatchingEngine` which supports iteration-level scheduling.
+
+### Engine Setup
+
+```python
+from llm.serving.engine import ContinuousBatchingEngine
+from llm.models.decoder import DecoderModel
+from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+# Load model and tokenizer
+model = DecoderModel(
+    vocab_size=32000,
+    hidden_size=512,
+    num_layers=6,
+    num_heads=8,
+    max_seq_len=512,
+)
+tokenizer = SimpleCharacterTokenizer(["a", "b", "c"])
+
+# Create engine (model and tokenizer required upfront)
+engine = ContinuousBatchingEngine(
+    model=model,
+    tokenizer=tokenizer,
+    device="cuda",
+    max_batch_size=16,
+    max_seq_len=512,
+)
+```
+
+### Request Processing
+
+```python
+from llm.serving.schemas import GenerationRequest
+
+# Add requests
+req1 = GenerationRequest(prompt="Hello", max_new_tokens=50)
+req2 = GenerationRequest(prompt="World", max_new_tokens=50)
+engine.add_request(req1)
+engine.add_request(req2)
+
+# Run inference steps
+while engine.scheduler.has_pending_work:
+    engine.step()  # One iteration handles all active sequences
+```
+
+### Key Features
+
+| Feature | Description |
+| ------- | ----------- |
+| Iteration-level scheduling | Multiple requests processed per step |
+| Slot-based KV cache | Pre-allocated memory pool |
+| Mixed prefill/decode | New and ongoing sequences batched together |
+| Automatic padding | Handles variable-length inputs |
+
 ## Grouped Query Attention (GQA)
 
 GQA reduces KV cache memory by sharing KV heads across multiple query heads.

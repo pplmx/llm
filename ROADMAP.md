@@ -174,7 +174,7 @@
 
 - [ ] 实现 Paged Attention (vLLM style)
 - [ ] 优化 KV Cache 内存布局和管理
-- [ ] 实现 Continuous Batching
+- [x] 实现 Continuous Batching (`ContinuousBatchingEngine`)
 - [ ] 添加请求级别的动态调度
 
 #### 10.3 编译优化
