@@ -79,15 +79,15 @@ Maintaining consistent code style and quality is essential. We use `Ruff` for bo
 
 ## Type Checking
 
-This project uses `mypy` for static type checking to ensure code correctness and maintainability.
+This project uses `ty` for static type checking, a modern and fast type checker from the Astral team (same as Ruff).
 
 - **Run type checks**:
 
     ```bash
-    make type
+    make ty
     ```
 
-    This command will run `mypy` against the codebase based on the configuration in `pyproject.toml`.
+    This command will run `ty` against the codebase.
 
 ## Docker Development
 
