@@ -11,6 +11,7 @@ This guide covers development workflows: testing, building, linting, and Docker.
 - [Code Style and Linting](#code-style-and-linting)
 - [Type Checking](#type-checking)
 - [Docker Development](#docker-development)
+- [Documentation](#documentation)
 
 ## Running Tests
 
@@ -123,6 +124,39 @@ The project provides `Makefile` commands for Docker-related tasks.
     ```
 
     Removes build artifacts and stops Docker containers.
+
+## Documentation
+
+The project uses [MkDocs](https://www.mkdocs.org/) with the [Material](https://squidfunk.github.io/mkdocs-material/) theme for documentation.
+
+- **Install documentation dependencies**:
+
+    ```bash
+    uv sync --group docs
+    ```
+
+- **Preview documentation locally**:
+
+    ```bash
+    uv run mkdocs serve
+    ```
+
+    Then open `http://localhost:8000` in your browser.
+
+- **Build static documentation**:
+
+    ```bash
+    uv run mkdocs build
+    ```
+
+    This generates the static site in the `site/` directory.
+
+### Deployment
+
+Documentation is automatically deployed to GitHub Pages when changes are pushed to `main`:
+
+- **Trigger conditions**: Changes to `docs/`, `mkdocs.yml`, or `.github/workflows/docs.yml`
+- **Live site**: <https://pplmx.github.io/llm>
 
 ---
 
