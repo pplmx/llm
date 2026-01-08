@@ -8,6 +8,7 @@ import torch.multiprocessing as mp
 import typer
 from rich.logging import RichHandler
 
+from llm.data.dpo_data_module import DPODataModule
 from llm.data.sft_data_module import SFTDataModule
 from llm.data.synthetic_data_module import SyntheticDataModule
 from llm.data.text_data_module import TextDataModule
@@ -15,6 +16,7 @@ from llm.training.core.callbacks import LRSchedulerCallback, MetricsLogger, Tens
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
 from llm.training.core.utils import DistributedManager
+from llm.training.tasks.dpo_task import DPOTask
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.regression_task import RegressionTask
 from llm.training.tasks.sft_task import SFTTask
@@ -28,6 +30,7 @@ class TaskName(str, Enum):
     regression = "regression"
     lm = "lm"
     sft = "sft"
+    dpo = "dpo"
 
 
 # --- Map task names to task classes ---
@@ -35,6 +38,7 @@ AVAILABLE_TASKS = {
     TaskName.regression: RegressionTask,
     TaskName.lm: LanguageModelingTask,
     TaskName.sft: SFTTask,
+    TaskName.dpo: DPOTask,
 }
 
 
@@ -57,6 +61,8 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
             data_module = TextDataModule(config)
         elif task_class == SFTTask:
             data_module = SFTDataModule(config)
+        elif task_class == DPOTask:
+            data_module = DPODataModule(config)
         else:
             data_module = SyntheticDataModule(config)
         data_module.prepare_data()
