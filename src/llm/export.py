@@ -1,15 +1,26 @@
-"""
-ONNX Export Utilities.
-
-Provides functions to export DecoderModel to ONNX format for deployment.
-"""
-
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import torch
 import torch.nn as nn
+
+
+class _ExportWrapper(nn.Module):
+    """Wrapper that fixes use_cache=False to avoid TracerWarning."""
+
+    def __init__(self, model: nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        # Call with use_cache=False to avoid tracing boolean conditionals
+        output = self.model(input_ids, use_cache=False)
+        # Handle tuple return (logits, kv_cache) or just logits
+        if isinstance(output, tuple):
+            return output[0]
+        return output
 
 
 def export_to_onnx(
@@ -44,6 +55,10 @@ def export_to_onnx(
     model.eval()
     device = next(model.parameters()).device
 
+    # Wrap model to fix use_cache=False (avoids TracerWarning)
+    wrapped_model = _ExportWrapper(model)
+    wrapped_model.eval()
+
     # Create dummy input
     batch_size, seq_len = input_shape
     dummy_input = torch.randint(0, 100, (batch_size, seq_len), device=device)
@@ -55,10 +70,15 @@ def export_to_onnx(
             "logits": {0: "batch_size", 1: "seq_len"},
         }
 
-    # Export using legacy API (dynamo=False avoids onnxscript dependency)
-    with torch.no_grad():
+    # Suppress expected warnings:
+    # - TracerWarning from positional encoding bounds check
+    # - DeprecationWarning from legacy TorchScript ONNX exporter (PyTorch 2.9+)
+    with torch.no_grad(), warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=torch.jit.TracerWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*TorchScript.*ONNX.*")
+        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*feature will be removed.*")
         torch.onnx.export(
-            model,
+            wrapped_model,
             (dummy_input,),
             str(output_path),
             input_names=["input_ids"],
