@@ -125,7 +125,12 @@ class TrainingEngine:
             self._run_callbacks("on_batch_start", epoch=epoch, batch_idx=batch_idx)
             batch_start_time = time.time()
             # Move batch to device
-            batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
+            if isinstance(batch, dict):
+                batch = {
+                    k: v.to(self.device, non_blocking=True) for k, v in batch.items() if isinstance(v, torch.Tensor)
+                }
+            else:
+                batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
             self.optimizer.zero_grad(set_to_none=True)
 
@@ -182,7 +187,12 @@ class TrainingEngine:
         with torch.no_grad():  # Disable gradient calculations
             for batch_idx, batch in enumerate(self.val_dataloader):
                 # Move batch to device
-                batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
+                if isinstance(batch, dict):
+                    batch = {
+                        k: v.to(self.device, non_blocking=True) for k, v in batch.items() if isinstance(v, torch.Tensor)
+                    }
+                else:
+                    batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
                 loss, metrics = self.task.validation_step(batch, self.model, self.criterion)
 
