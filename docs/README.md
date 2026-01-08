@@ -43,8 +43,8 @@ Design decisions and their rationale:
 
 In-depth technical explorations:
 
-- [Attention Mechanisms Part 1](llm/attn/attn-01.md)
-- [Attention Mechanisms Part 2](llm/attn/attn-02.md)
+- [Attention Mechanisms Part 1](../_learning/01_concepts/attn-01.md)
+- [Attention Mechanisms Part 2](../_learning/01_concepts/attn-02.md)
 
 ---
 
