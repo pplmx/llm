@@ -209,9 +209,9 @@
 
 #### 11.1 监督微调 (SFT)
 
-- [ ] 实现完整的 SFT 数据处理流程
-- [ ] 支持多种指令格式 (Alpaca, ShareGPT, etc.)
-- [ ] 实现高效的 padding 和 masking 策略
+- [x] 实现完整的 SFT 数据处理流程
+- [x] 支持多种指令格式 (Alpaca, ShareGPT, etc.)
+- [x] 实现高效的 padding 和 masking 策略
 
 #### 11.2 RLHF (Reinforcement Learning from Human Feedback)
 
@@ -222,8 +222,8 @@
 
 #### 11.3 DPO (Direct Preference Optimization)
 
-- [ ] 实现 DPO 损失函数
-- [ ] 支持偏好数据集处理
+- [x] 实现 DPO 损失函数
+- [x] 支持偏好数据集处理
 - [ ] 对比 DPO vs RLHF 性能
 
 #### 11.4 其他对齐技术

@@ -100,6 +100,69 @@ class KVCache:
             self.v_cache[:batch_size, :, :new_seq_len],
         )
 
+    def update_at_indices(
+        self,
+        batch_indices: Tensor,
+        k_new: Tensor,
+        v_new: Tensor,
+        start_pos: Tensor | int,
+    ) -> tuple[Tensor, Tensor]:
+        """Update cache at specific batch indices and positions.
+
+        This is used for continuous batching or when batch slots are managed explicitly.
+
+        Args:
+            batch_indices: Tensor of shape [B_curr] containing the cache slot indices.
+            k_new: New key tensor of shape [B_curr, N_kv, S_new, D].
+            v_new: New value tensor of shape [B_curr, N_kv, S_new, D].
+            start_pos: Starting position to write to. Can be an int (broadcast) or Tensor [B_curr].
+
+        Returns:
+             Tuple of (k_out, v_out) for the current batch.
+             Note: This returns the *full* valid context for the *current batch indices*.
+             Shape: [B_curr, N_kv, Max_Context_Len, D].
+             Since different sequences have different lengths, we return up to max(start_pos + S_new).
+             Correct handling usually implies the model knows how to mask using attention mask.
+        """
+        # Validate shapes
+        seq_len_new = k_new.size(2)
+
+        if isinstance(start_pos, int):
+            pos_end = start_pos + seq_len_new
+            # Simple slice assignment if start_pos is scalar
+            self.k_cache[batch_indices, :, start_pos:pos_end] = k_new
+            self.v_cache[batch_indices, :, start_pos:pos_end] = v_new
+        else:
+            # Tensor start_pos: we need to iterate or use scatter?
+            # Since seq_len_new is usually small (1 for decode, N for prefill), iteration might be fine?
+            # But prefill usually has start_pos=0 (scalar).
+            # Decode usually has start_pos=N (varies per seq).
+            # If seq_len_new == 1 (Decode), we can use scatter / advanced indexing easily.
+            if seq_len_new == 1:
+                # start_pos is [B_curr]
+                # We want self.k_cache[batch_indices[i], :, start_pos[i], :] = k_new[i, :, 0, :]
+                self.k_cache[batch_indices, :, start_pos] = k_new.squeeze(2)
+                self.v_cache[batch_indices, :, start_pos] = v_new.squeeze(2)
+            else:
+                # Fallback for SeqLen > 1 (e.g. Prefill)
+                # We assume contiguous writes for each sequence starting at start_pos[b, 0]
+                # This logic assumes position_ids[b] is [s, s+1, ..., s+L-1]
+                for b_i, slot_idx in enumerate(batch_indices):
+                    # Extract scalar start position for this batch item
+                    s = start_pos[b_i, 0].item()
+                    # Check if s is valid?
+                    # Perform slice assignment
+                    if s + seq_len_new <= self.max_seq_len:
+                        self.k_cache[slot_idx, :, s : s + seq_len_new] = k_new[b_i]
+                        self.v_cache[slot_idx, :, s : s + seq_len_new] = v_new[b_i]
+                    else:
+                        raise ValueError(f"Cache overflow for slot {slot_idx}")
+
+        # Return the updated cache for these indices.
+        # We return the full pre-allocated buffer [B_curr, N_kv, max_seq_len, D]
+        # to ensure compatibility with the global attention masks used in continuous batching.
+        return self.k_cache[batch_indices], self.v_cache[batch_indices]
+
     def reset(self) -> None:
         """Reset cache to empty state (does not deallocate memory)."""
         self._seq_len = 0

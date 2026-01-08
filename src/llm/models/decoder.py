@@ -125,6 +125,8 @@ class DecoderModel(nn.Module):
         past_key_values: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
         kv_caches: list[KVCache] | None = None,
         use_cache: bool = False,
+        position_ids: torch.Tensor | None = None,
+        batch_indices: torch.Tensor | None = None,
         # is_causal for individual forward passes is not typically exposed at this level,
         # as the decoder model's causality is a structural property set at init.
         # If a block needs dynamic causality, it would be an argument to the block's forward.
@@ -144,6 +146,10 @@ class DecoderModel(nn.Module):
             kv_caches (list[KVCache] | None): Pre-allocated KV caches, one per layer.
                 Use `KVCache.from_model_config()` to create.
             use_cache (bool): Whether to return the updated (key, value) pairs.
+            position_ids (torch.Tensor, optional): Explicit position IDs of shape [B, S].
+                If not provided, inferred from `start_pos` or `past_key_values`.
+            batch_indices (torch.Tensor, optional): Indices for KV cache update [B].
+                Used for continuous batching.
 
         Returns:
             torch.Tensor or tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
@@ -163,7 +169,7 @@ class DecoderModel(nn.Module):
             # past_key_values[0][0] shape: [B, N, S_prev, D]
             start_pos = past_key_values[0][0].size(2)
 
-        hidden_states = self.embedding_layer(input_ids, start_pos=start_pos)
+        hidden_states = self.embedding_layer(input_ids, start_pos=start_pos, position_ids=position_ids)
 
         current_key_values = []
         for i, block in enumerate(self.transformer_blocks):
@@ -193,6 +199,13 @@ class DecoderModel(nn.Module):
                     past_key_value=past_kv,
                     kv_cache=kv_cache,
                     use_cache=use_cache,
+                    batch_indices=batch_indices,
+                    # Pass start_pos as Tensor if position_ids dictates (ragged batching),
+                    # otherwise scalar start_pos (legacy/contiguous).
+                    # If batch_indices is used, we prefer explicit position info.
+                    # If position_ids is Tensor, use it as start_pos for cache update
+                    # (assuming S=1 for Decode, or compatible logic in KVCache).
+                    start_pos=position_ids if (batch_indices is not None and position_ids is not None) else start_pos,
                 )
                 if use_cache:
                     hidden_states, current_kv = block_outputs
