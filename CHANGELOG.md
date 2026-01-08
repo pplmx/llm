@@ -50,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - LoRA adapters remain in fp16/bf16 for training stability
     - `apply_qlora()` and `get_qlora_parameters()` helpers
 
+- **Continuous Batching Engine** (Serving):
+    - `src/llm/serving/engine.py` with `ContinuousBatchingEngine` class
+    - Iteration-level scheduling via `Scheduler` and `SlotAllocator`
+    - Pre-allocated KV cache pool for efficient memory management
+    - Supports mixed prefill/decode batching with automatic padding
+    - Clean API: requires `model` and `tokenizer` instances upfront
+    - `src/llm/serving/scheduler.py` with FCFS scheduling logic
+
 ### Changed
 
 - **SDPA Refactoring**:
