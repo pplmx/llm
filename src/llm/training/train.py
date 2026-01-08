@@ -8,6 +8,7 @@ import torch.multiprocessing as mp
 import typer
 from rich.logging import RichHandler
 
+from llm.data.sft_data_module import SFTDataModule
 from llm.data.synthetic_data_module import SyntheticDataModule
 from llm.data.text_data_module import TextDataModule
 from llm.training.core.callbacks import LRSchedulerCallback, MetricsLogger, TensorBoardLogger
@@ -16,6 +17,7 @@ from llm.training.core.engine import TrainingEngine
 from llm.training.core.utils import DistributedManager
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.regression_task import RegressionTask
+from llm.training.tasks.sft_task import SFTTask
 
 # --- Typer App ---
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -25,12 +27,14 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 class TaskName(str, Enum):
     regression = "regression"
     lm = "lm"
+    sft = "sft"
 
 
 # --- Map task names to task classes ---
 AVAILABLE_TASKS = {
     TaskName.regression: RegressionTask,
     TaskName.lm: LanguageModelingTask,
+    TaskName.sft: SFTTask,
 }
 
 
@@ -49,8 +53,12 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
     try:
         distributed_manager.setup(rank, world_size)
 
-        # Instantiate DataModule based on task type
-        data_module = TextDataModule(config) if task_class == LanguageModelingTask else SyntheticDataModule(config)
+        if task_class == LanguageModelingTask:
+            data_module = TextDataModule(config)
+        elif task_class == SFTTask:
+            data_module = SFTDataModule(config)
+        else:
+            data_module = SyntheticDataModule(config)
         data_module.prepare_data()
         data_module.setup()
 

@@ -90,9 +90,12 @@ class LanguageModelingTask(TrainingTask):
         return nn.CrossEntropyLoss()
 
     def train_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
-        # Batch is expected to be (input_ids, labels)
-        # For causal LM, target is usually the input shifted by one
-        input_ids, targets = batch
+        # Batch is expected to be (input_ids, labels) or dict
+        if isinstance(batch, dict):
+            input_ids = batch["input_ids"]
+            targets = batch["labels"]
+        else:
+            input_ids, targets = batch
 
         logits = model(input_ids)
 
@@ -110,7 +113,11 @@ class LanguageModelingTask(TrainingTask):
         return loss, metrics
 
     def validation_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
-        input_ids, targets = batch
+        if isinstance(batch, dict):
+            input_ids = batch["input_ids"]
+            targets = batch["labels"]
+        else:
+            input_ids, targets = batch
 
         logits = model(input_ids)
         loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
