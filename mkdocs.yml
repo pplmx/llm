@@ -64,6 +64,9 @@ nav:
   - Architecture:
       - Overview: architecture.md
       - Development: development.md
+  - Guides:
+      - Fine-Tuning (LoRA/QLoRA): guide-finetuning.md
+      - Inference Optimization: guide-inference.md
   - Training:
       - Overview: training/README.md
       - Components: training/components.md

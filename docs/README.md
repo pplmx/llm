@@ -13,6 +13,15 @@ Welcome to the LLM project documentation. This index provides quick navigation t
 | [FAQ](faq.md) | Frequently asked questions |
 | [Troubleshooting](troubleshooting.md) | Common issues and solutions |
 
+## Guides
+
+In-depth guides for specific features:
+
+| Guide | Description |
+| ----- | ----------- |
+| [Fine-Tuning (LoRA/QLoRA)](guide-finetuning.md) | Parameter-efficient fine-tuning methods |
+| [Inference Optimization](guide-inference.md) | KVCache, GQA, sliding window attention |
+
 ## Training Framework
 
 Detailed documentation for the training system:
