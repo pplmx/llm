@@ -24,12 +24,18 @@ llm-train --help
 **Examples:**
 
 ```bash
-# Language modeling task
-llm-train --task lm --epochs 5 --batch-size 32
+# Regression task (uses synthetic data, works out of the box)
+llm-train --task regression --epochs 10 --batch-size 32
 
-# Regression task
-llm-train --task regression --epochs 10
+# Language modeling task (requires dataset configuration)
+# Note: The lm task uses TextDataModule which needs a configured dataset.
+# Use a config file or the standalone script below for LM training.
+llm-train --task lm --config-path configs/example.yaml --epochs 5
 ```
+
+> [!NOTE]
+> The `--task lm` option requires dataset configuration via a YAML config file.
+> For quick experimentation, use the standalone decoder training script instead.
 
 ### Standalone Simple Decoder Training
 
