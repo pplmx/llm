@@ -67,25 +67,47 @@ class PositionalEncoding(nn.Module):
 
             self.register_buffer("pe", pe)
 
-    def forward(self, x: torch.Tensor, start_pos: int = 0) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, start_pos: int = 0, position_ids: torch.Tensor | None = None) -> torch.Tensor:
         """
         Args:
             x: Tensor, shape [batch_size, seq_len, hidden_size]
-            start_pos: Initial position index for the sequence.
+            start_pos: Initial position index for the sequence (used if position_ids is None).
+            position_ids: Optional Tensor of shape [batch_size, seq_len] containing explicit position indices.
         """
         seq_len = x.size(1)
-        if start_pos + seq_len > self.max_seq_len:
+
+        # Validation logic (only check start_pos if position_ids not provided)
+        if position_ids is None and start_pos + seq_len > self.max_seq_len:
             raise ValueError(
                 f"Sequence endpoint {start_pos + seq_len} exceeds maximum sequence length {self.max_seq_len}"
             )
 
         if self.learned:
-            # Create position IDs [start_pos, ..., start_pos + seq_len - 1]
-            pos_ids = torch.arange(start_pos, start_pos + seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
+            if position_ids is None:
+                # Create position IDs [start_pos, ..., start_pos + seq_len - 1]
+                # Broadcast across batch
+                pos_ids = torch.arange(start_pos, start_pos + seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
+            else:
+                pos_ids = position_ids
+
             pos_enc = self.pos_embedding(pos_ids)
             x = x + pos_enc
         else:
             # self.pe is [1, max_seq_len, hidden_size]
-            x = x + self.pe[:, start_pos : start_pos + seq_len, :]
+            if position_ids is None:
+                x = x + self.pe[:, start_pos : start_pos + seq_len, :]
+            else:
+                # Gather positional encodings based on position_ids
+                # position_ids shape: [B, S]
+                # self.pe shape: [1, MaxLen, H]
+                # We want [B, S, H]
+
+                # Expand PE to match batch size? No need if we index properly.
+                # self.pe[0] is [MaxLen, H]
+                # We gather rows specified by position_ids
+                # F.embedding can do this if we treat pe[0] as weight matrix?
+                # Or advanced indexing: self.pe[0, position_ids] -> [B, S, H]
+                pos_enc = self.pe[0, position_ids]
+                x = x + pos_enc
 
         return self.dropout(x)

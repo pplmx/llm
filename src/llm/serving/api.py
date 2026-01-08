@@ -14,7 +14,7 @@ from pythonjsonlogger import json
 from starlette.status import HTTP_403_FORBIDDEN
 
 from llm.serving.config import ServingConfig
-from llm.serving.engine import LLMEngine
+from llm.serving.engine import ContinuousBatchingEngine as LLMEngine
 from llm.serving.schemas import (
     BatchGenerationRequest,
     BatchGenerationResponse,
@@ -40,7 +40,12 @@ logger.setLevel(logging.INFO)
 config = ServingConfig()
 logger.setLevel(config.log_level)
 
-engine = LLMEngine(config)
+engine = LLMEngine(
+    model_path=config.model_path or "dummy",
+    tokenizer=None,
+    device=config.device,
+    max_batch_size=config.max_concurrent_requests,
+)
 
 # Concurrency control
 inference_semaphore = asyncio.Semaphore(config.max_concurrent_requests)

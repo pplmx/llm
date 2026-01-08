@@ -1,13 +1,52 @@
 import time
 import uuid
+from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
+class RequestState(Enum):
+    """Internal state of a request in the scheduler."""
+
+    WAITING = auto()
+    RUNNING = auto()
+    FINISHED = auto()
+
+
+@dataclass
+class Sequence:
+    """
+    Internal representation of a sequence state for the engine.
+    """
+
+    request_id: str
+    prompt: str
+    input_ids: list[int]
+
+    status: RequestState = RequestState.WAITING
+    generated_ids: list[int] = field(default_factory=list)
+    output_text: str = ""
+
+    def __post_init__(self):
+        self._prompt_len = len(self.input_ids)
+
+    @property
+    def total_len(self) -> int:
+        return self._prompt_len + len(self.generated_ids)
+
+    def is_finished(self) -> bool:
+        return self.status == RequestState.FINISHED
+
+    def append_token_id(self, token_id: int):
+        self.generated_ids.append(token_id)
+
+
 class GenerationRequest(BaseModel):
     """Generation request model."""
 
+    request_id: str | None = Field(None, description="Client-provided request ID.")
     prompt: str = Field(..., description="Input prompt text.")
     max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum number of tokens to generate.")
     temperature: float = Field(1.0, ge=0.0, description="Controls randomness. 0 for Greedy Search.")

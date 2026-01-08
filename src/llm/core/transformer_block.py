@@ -131,6 +131,8 @@ class TransformerBlock(nn.Module):
         past_key_value: tuple[torch.Tensor, torch.Tensor] | None = None,
         kv_cache: KVCache | None = None,
         use_cache: bool = False,
+        batch_indices: torch.Tensor | None = None,
+        start_pos: int | torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """
         Forward pass of the Transformer block.
@@ -143,6 +145,8 @@ class TransformerBlock(nn.Module):
             past_key_value (tuple[Tensor, Tensor] | None): [DEPRECATED] Tuple of (key, value) from previous steps.
             kv_cache (KVCache | None): Pre-allocated KV cache for efficient autoregressive generation.
             use_cache (bool): Whether to return the updated (key, value) pair.
+            batch_indices(torch.Tensor | None): Cache update indices.
+            start_pos (int | torch.Tensor | None): Cache update position.
 
         Returns:
             torch.Tensor or tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
@@ -167,6 +171,8 @@ class TransformerBlock(nn.Module):
             past_key_value=past_key_value,
             kv_cache=kv_cache,
             use_cache=use_cache,
+            batch_indices=batch_indices,
+            start_pos=start_pos,
         )
 
         if use_cache:

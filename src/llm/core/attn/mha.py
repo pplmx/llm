@@ -96,6 +96,8 @@ class MultiHeadAttention(nn.Module):
         past_key_value: tuple[Tensor, Tensor] | None = None,
         kv_cache: KVCache | None = None,  # noqa: F821
         use_cache: bool = False,
+        batch_indices: Tensor | None = None,
+        start_pos: int | Tensor | None = None,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """
         Forward pass.
@@ -114,6 +116,8 @@ class MultiHeadAttention(nn.Module):
             kv_cache (KVCache | None): Pre-allocated KV cache for efficient autoregressive generation.
                 When provided, updates are done in-place without memory allocation.
             use_cache (bool): Whether to return the updated (key, value) pair.
+            batch_indices (Tensor | None): Indices for specific KV cache slots [B]. Use with update_at_indices.
+            start_pos (int | Tensor | None): Explicit write position for cache update. required if batch_indices is used.
 
         Returns:
             Tensor or tuple[Tensor, tuple[Tensor, Tensor]]:
@@ -153,8 +157,21 @@ class MultiHeadAttention(nn.Module):
         has_past = False
         if kv_cache is not None:
             # Use efficient pre-allocated cache (in-place update)
-            k, v = kv_cache.update(k, v)
-            has_past = kv_cache.seq_len > seq_len
+            if batch_indices is not None:
+                if start_pos is None:
+                    raise ValueError("start_pos must be provided when using batch_indices for KV cache update.")
+                k, v = kv_cache.update_at_indices(batch_indices, k, v, start_pos)
+                # has_past logic for 'update_at_indices' scenario:
+                # It implies we are manually managing positions, so usually we don't rely on global seq_len check?
+                # SDPA 'is_causal' logic:
+                # If we are in Decode (seq_len=1), is_causal=False usually (we attend to all past).
+                # If we are in Prefill, is_causal=True.
+                # Let's assume the caller sets is_causal correctly or we are managing 'has_past' effectively.
+                # For 'update_at_indices', we likely have past data.
+                has_past = True
+            else:
+                k, v = kv_cache.update(k, v)
+                has_past = kv_cache.seq_len > seq_len
         elif past_key_value is not None:
             # Legacy: use torch.cat (allocates memory each step)
             prev_k, prev_v = past_key_value
