@@ -58,6 +58,9 @@ test = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
 ]
+docs = [
+    "mkdocs-material>=9.5.0",
+]
 
 [project.scripts]
 llm-train = "llm.training.train:app"
