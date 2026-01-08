@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+
+- Flash Attention 2 integration
+- Paged Attention for improved memory efficiency
+
+## [0.0.5] - 2026-01-08
+
 ### Added
+
+- **SFT (Supervised Fine-tuning)**:
+    - `SFTDataset` for instruction tuning with input masking
+    - `SFTDataModule` for data loading
+    - `SFTTask` registered as `--task sft` in CLI
+    - Tests for all SFT components
+
+- **DPO (Direct Preference Optimization)**:
+    - `DPODataset` handling chosen/rejected pairs
+    - `DPODataModule` for preference data loading
+    - `DPOTask` with reference model management and DPO loss
+    - Registered as `--task dpo` in CLI
+    - Tests for all DPO components
+
+- **Continuous Batching Engine** (Serving):
+    - `src/llm/serving/engine.py` with `ContinuousBatchingEngine` class
+    - Iteration-level scheduling via `Scheduler` and `SlotAllocator`
+    - Pre-allocated KV cache pool for efficient memory management
+    - Supports mixed prefill/decode batching with automatic padding
+    - Clean API: requires `model` and `tokenizer` instances upfront
+    - `src/llm/serving/scheduler.py` with FCFS scheduling logic
 
 - **LoRA (Low-Rank Adaptation)**:
     - `src/llm/core/lora.py` with `LoRALinear` class for parameter-efficient fine-tuning
@@ -15,11 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Device/dtype handling for CUDA compatibility
     - 17 tests covering training and weight merging
 
-- **Sliding Window Attention**:
-    - `window_size` parameter in `scaled_dot_product_attention`
-    - Propagated through `MultiHeadAttention`, `TransformerBlock`, `DecoderModel`
-    - Reduces memory for long sequences by limiting attention scope
-    - 10 tests
+- **QLoRA (Quantized LoRA)**:
+    - `src/llm/core/qlora.py` with `QLoRALinear` class
+    - NF4 4-bit quantization for base weights (~4x memory reduction)
+    - LoRA adapters remain in fp16/bf16 for training stability
+    - `apply_qlora()` and `get_qlora_parameters()` helpers
 
 - **RoPE (Rotary Position Embedding)**:
     - `src/llm/core/rope.py` with `RotaryPositionEmbedding` class
@@ -33,9 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Cached bias computation for efficiency
     - 13 tests
 
-- **Documentation**:
-    - `notebooks/quick_start.ipynb` interactive tutorial
-    - Covers model building, training, inference, and advanced features
+- **Sliding Window Attention**:
+    - `window_size` parameter in `scaled_dot_product_attention`
+    - Propagated through `MultiHeadAttention`, `TransformerBlock`, `DecoderModel`
+    - Reduces memory for long sequences by limiting attention scope
+    - 10 tests
 
 - **KV Cache Optimization**:
     - `src/llm/core/kv_cache.py` with `KVCache` class for pre-allocated cache buffers
@@ -44,19 +74,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Factory method `KVCache.from_model_config()` for easy instantiation
     - Backward compatible: legacy `past_key_value` tuple format still works
 
-- **QLoRA (Quantized LoRA)**:
-    - `src/llm/core/qlora.py` with `QLoRALinear` class
-    - NF4 4-bit quantization for base weights (~4x memory reduction)
-    - LoRA adapters remain in fp16/bf16 for training stability
-    - `apply_qlora()` and `get_qlora_parameters()` helpers
+- **E2E Testing Infrastructure**:
+    - `tests/e2e/` directory with comprehensive pipeline tests
+    - `test_training.py`, `test_sft.py`, `test_dpo.py`
+    - `test_gradient_accumulation.py`, `test_resume_training.py`
+    - Advanced inference and callback tests
 
-- **Continuous Batching Engine** (Serving):
-    - `src/llm/serving/engine.py` with `ContinuousBatchingEngine` class
-    - Iteration-level scheduling via `Scheduler` and `SlotAllocator`
-    - Pre-allocated KV cache pool for efficient memory management
-    - Supports mixed prefill/decode batching with automatic padding
-    - Clean API: requires `model` and `tokenizer` instances upfront
-    - `src/llm/serving/scheduler.py` with FCFS scheduling logic
+- **Documentation**:
+    - `notebooks/quick_start.ipynb` interactive tutorial
+    - Covers model building, training, inference, and advanced features
 
 ### Changed
 
@@ -64,24 +90,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Consolidated `scaled_dot_product_attention` wrapper into `src/llm/core/attn/sdpa.py`
     - Refactored `MultiHeadAttention` and `MultiLatentAttention` to use common `sdpa` wrapper
     - Archived custom implementation to `_learning/03_lab/experiments/custom_sdpa.py`
-    - Test count: 392 → 385 (removed obsolete dot_product_attn tests)
+
+- **Test Suite Refactoring**:
+    - Organized test files into subdirectories (`tests/training/`, `tests/inference/`, etc.)
+    - Converted to functional testing style (real components over mocks)
+    - Added shared fixtures in `tests/conftest.py`
+    - Test count: 385 → 432
+
+- **TrainingEngine**:
+    - Support for dictionary batches in training/validation loops
+    - Gradient accumulation implementation
+
+- **DPO Reference Model**:
+    - Use model reconstruction instead of `deepcopy` for ref_model creation
 
 - **Documentation**:
     - Added `docs/README.md` as documentation entry point
     - Added MkDocs Material configuration (`mkdocs.yml`) for documentation site
     - Added GitHub Actions workflow for automatic GitHub Pages deployment
-    - Added `guide-finetuning.md` (LoRA/QLoRA) and `guide-inference.md` (KVCache/GQA)
+    - Added `guide-finetuning.md` (LoRA/QLoRA) and `guide-inference.md` (KVCache/GQA/Continuous Batching)
     - Enhanced `architecture.md` with detailed component diagrams and data flow analysis
-    - Added Mermaid diagrams to `architecture.md` (MHA internals, MLP/MoE, data flow)
-    - Fixed broken internal links in training and tutorial docs
-    - Moved attention deep-dive docs to `_learning/01_concepts/`
-    - Fixed `llm-train --task lm` examples in `usage.md` and `faq.md` (requires dataset config)
-    - Removed outdated `htmlcov/` coverage reports
-
-### Planned
-
-- Flash Attention 2 integration
-- Paged Attention for improved memory efficiency
+    - Updated ROADMAP Phase 10.2 (Continuous Batching complete)
 
 ## [0.0.4] - 2026-01-07
 
