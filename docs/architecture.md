@@ -109,3 +109,67 @@ All configuration is managed via Pydantic models in `src/llm/training/core/confi
 * **`TrainingConfig`**: loop params (`epochs`, `lr`).
 * **`DistributedConfig`**: DDP params (`master_addr`, `world_size`).
 * **`OptimizationConfig`**: performance (`use_compile`, `use_amp`).
+
+## Attention Mechanism
+
+The project supports multiple attention variants through the registry pattern:
+
+```mermaid
+graph LR
+    subgraph "Attention Flow"
+        Input[Hidden States] --> QKV[QKV Projection]
+        QKV --> Q[Query]
+        QKV --> K[Key]
+        QKV --> V[Value]
+
+        Q --> SDPA[Scaled Dot-Product Attention]
+        K --> SDPA
+        V --> SDPA
+
+        SDPA --> Out[Output Projection]
+    end
+
+    subgraph "Variants"
+        MHA[MHA: All heads independent]
+        GQA[GQA: Grouped KV heads]
+        MLA[MLA: Latent attention]
+    end
+```
+
+### Supported Features
+
+| Feature | Description |
+| ------- | ----------- |
+| **GQA** | Multiple query heads share KV heads (memory efficient) |
+| **Sliding Window** | Limits attention scope for long sequences |
+| **KV Cache** | Caches key/value for autoregressive generation |
+| **RoPE** | Rotary position embeddings with scaling |
+| **ALiBi** | Attention with linear biases |
+
+## Training Pipeline
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CLI as llm-train
+    participant Engine as TrainingEngine
+    participant DDP as DistributedDataParallel
+    participant Model as DecoderModel
+
+    User->>CLI: llm-train --task lm
+    CLI->>Engine: Initialize with Config
+    Engine->>DDP: Wrap Model
+
+    loop Each Epoch
+        Engine->>Engine: Set epoch for sampler
+        loop Each Batch
+            Engine->>Model: Forward pass
+            Model-->>Engine: Loss
+            Engine->>Engine: Backward + Optimize
+        end
+        Engine->>Engine: Validation
+        Engine->>Engine: Callbacks (logging, checkpointing)
+    end
+
+    Engine-->>User: Training complete
+```
