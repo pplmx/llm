@@ -9,6 +9,7 @@ import typer
 from rich.logging import RichHandler
 
 from llm.data.dpo_data_module import DPODataModule
+from llm.data.reward_data_module import RewardDataModule
 from llm.data.sft_data_module import SFTDataModule
 from llm.data.synthetic_data_module import SyntheticDataModule
 from llm.data.text_data_module import TextDataModule
@@ -19,6 +20,7 @@ from llm.training.core.utils import DistributedManager
 from llm.training.tasks.dpo_task import DPOTask
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.regression_task import RegressionTask
+from llm.training.tasks.reward_task import RewardTask
 from llm.training.tasks.sft_task import SFTTask
 
 # --- Typer App ---
@@ -31,6 +33,7 @@ class TaskName(str, Enum):
     lm = "lm"
     sft = "sft"
     dpo = "dpo"
+    reward = "reward"
 
 
 # --- Map task names to task classes ---
@@ -39,6 +42,7 @@ AVAILABLE_TASKS = {
     TaskName.lm: LanguageModelingTask,
     TaskName.sft: SFTTask,
     TaskName.dpo: DPOTask,
+    TaskName.reward: RewardTask,
 }
 
 
@@ -63,6 +67,8 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
             data_module = SFTDataModule(config)
         elif task_class == DPOTask:
             data_module = DPODataModule(config)
+        elif task_class == RewardTask:
+            data_module = RewardDataModule(config)
         else:
             data_module = SyntheticDataModule(config)
         data_module.prepare_data()
