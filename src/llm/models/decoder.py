@@ -1,9 +1,16 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
 from llm.core.embedding import EmbeddingLayer
 from llm.core.transformer_block import TransformerBlock
+
+if TYPE_CHECKING:
+    pass
 
 
 class DecoderModel(nn.Module):
@@ -120,6 +127,7 @@ class DecoderModel(nn.Module):
         input_ids: torch.Tensor,
         attn_mask: torch.Tensor | None = None,
         past_key_values: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
+        kv_caches: list[KVCache] | None = None,
         use_cache: bool = False,
         # is_causal for individual forward passes is not typically exposed at this level,
         # as the decoder model's causality is a structural property set at init.
@@ -136,7 +144,9 @@ class DecoderModel(nn.Module):
                 `torch.nn.functional.scaled_dot_product_attention`.
                 If `is_causal=True` in blocks, this mask will be combined with the causal mask.
             past_key_values (list[tuple[torch.Tensor, torch.Tensor]] | None):
-                List of (key, value) tuples from previous steps, one for each block.
+                [DEPRECATED] List of (key, value) tuples from previous steps, one for each block.
+            kv_caches (list[KVCache] | None): Pre-allocated KV caches, one per layer.
+                Use `KVCache.from_model_config()` to create.
             use_cache (bool): Whether to return the updated (key, value) pairs.
 
         Returns:
@@ -151,7 +161,9 @@ class DecoderModel(nn.Module):
             raise ValueError("Gradient checkpointing is incompatible with use_cache=True. ")
 
         start_pos = 0
-        if past_key_values is not None:
+        if kv_caches is not None and kv_caches[0].seq_len > 0:
+            start_pos = kv_caches[0].seq_len
+        elif past_key_values is not None:
             # past_key_values[0][0] shape: [B, N, S_prev, D]
             start_pos = past_key_values[0][0].size(2)
 
@@ -163,6 +175,7 @@ class DecoderModel(nn.Module):
             # default. Here, we rely on the block's initialized `is_causal` state.
             # So, we pass `is_causal=None` to the block's forward method.
             past_kv = past_key_values[i] if past_key_values is not None else None
+            kv_cache = kv_caches[i] if kv_caches is not None else None
 
             if self._gradient_checkpointing and self.training:
                 # Use gradient checkpointing to save memory during training
@@ -172,12 +185,18 @@ class DecoderModel(nn.Module):
                     attn_mask,
                     None,  # is_causal
                     past_kv,
+                    None,  # kv_cache (not supported with checkpointing)
                     use_cache,
                     use_reentrant=False,
                 )
             else:
                 block_outputs = block(
-                    hidden_states, attn_mask=attn_mask, is_causal=None, past_key_value=past_kv, use_cache=use_cache
+                    hidden_states,
+                    attn_mask=attn_mask,
+                    is_causal=None,
+                    past_key_value=past_kv,
+                    kv_cache=kv_cache,
+                    use_cache=use_cache,
                 )
                 if use_cache:
                     hidden_states, current_kv = block_outputs

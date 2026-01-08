@@ -1,9 +1,16 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
 from torch import Tensor, nn
 
 from llm.core.registry import ATTENTION_REGISTRY
 
 from .sdpa import sdpa
+
+if TYPE_CHECKING:
+    pass
 
 
 @ATTENTION_REGISTRY.register("mha")
@@ -91,6 +98,7 @@ class MultiHeadAttention(nn.Module):
         attn_mask: Tensor | None = None,
         is_causal: bool | None = None,
         past_key_value: tuple[Tensor, Tensor] | None = None,
+        kv_cache: KVCache | None = None,
         use_cache: bool = False,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """
@@ -105,8 +113,10 @@ class MultiHeadAttention(nn.Module):
             is_causal (bool | None): Whether to enforce causal masking for this forward pass.
                 - If `None` (default), uses the default `self.is_causal` set during initialization.
                 - If `True` or `False`, overrides the default setting.
-            past_key_value (tuple[Tensor, Tensor] | None): Tuple of (key, value) from previous steps.
-                Each has shape [B, N, S_prev, D].
+            past_key_value (tuple[Tensor, Tensor] | None): [DEPRECATED] Tuple of (key, value) from previous steps.
+                Each has shape [B, N, S_prev, D]. Use `kv_cache` for better performance.
+            kv_cache (KVCache | None): Pre-allocated KV cache for efficient autoregressive generation.
+                When provided, updates are done in-place without memory allocation.
             use_cache (bool): Whether to return the updated (key, value) pair.
 
         Returns:
@@ -143,11 +153,18 @@ class MultiHeadAttention(nn.Module):
         k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
 
-        # KV Cache: concatenate with past
-        if past_key_value is not None:
+        # KV Cache handling: prefer KVCache object, fallback to legacy tuple
+        has_past = False
+        if kv_cache is not None:
+            # Use efficient pre-allocated cache (in-place update)
+            k, v = kv_cache.update(k, v)
+            has_past = kv_cache.seq_len > seq_len
+        elif past_key_value is not None:
+            # Legacy: use torch.cat (allocates memory each step)
             prev_k, prev_v = past_key_value
             k = torch.cat([prev_k, k], dim=2)
             v = torch.cat([prev_v, v], dim=2)
+            has_past = True
 
         if use_cache:
             current_kv = (k, v)
@@ -167,7 +184,7 @@ class MultiHeadAttention(nn.Module):
             value=v,
             attn_mask=attn_mask,
             dropout_p=self.p if self.training else 0.0,
-            is_causal=use_causal if past_key_value is None else False,
+            is_causal=use_causal if not has_past else False,
             scale=None,
             window_size=self.window_size,
         )  # Output shape: [B, N, S, D]
