@@ -40,26 +40,33 @@ def test_slot_allocator():
     assert allocator.get_slot("req1") == -1
 
 
-def test_engine_initialization(mock_tokenizer):
-    engine = ContinuousBatchingEngine(model_path="dummy", tokenizer=mock_tokenizer, max_batch_size=4, device="cpu")
+def test_engine_initialization(tiny_model, mock_tokenizer):
+    tiny_model.to("cpu")
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=4,
+        device="cpu",
+    )
     assert engine.max_batch_size == 4
     assert engine.scheduler.max_batch_size == 4
     assert len(engine.slot_allocator.free_slots) == 4
 
 
 def test_engine_step_prefill(tiny_model, mock_tokenizer):
-    # Setup Engine with Tiny Model
-    engine = ContinuousBatchingEngine(model_path="dummy", tokenizer=mock_tokenizer, max_batch_size=2, device="cpu")
-    # Ensure tiny_model is on CPU for this test
     tiny_model.to("cpu")
     tiny_model.eval()
 
-    engine.load_model(tiny_model)
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device="cpu",
+    )
 
     # Add Request
     req = GenerationRequest(prompt="test", max_new_tokens=10)
     req.request_id = "req1"
-
     engine.add_request(req)
 
     # Step 1: Prefill
@@ -68,24 +75,23 @@ def test_engine_step_prefill(tiny_model, mock_tokenizer):
     # Verify Sequence State
     seq = engine.scheduler.get_sequence("req1")
     assert seq.status == RequestState.RUNNING
-    # Assuming "test" -> 4 len prompt (mock tokenizer)
-    assert len(seq.input_ids) == 4
-    # Prefill should generate 1 new token
+    assert len(seq.input_ids) == 4  # "test" -> 4 chars
     assert len(seq.generated_ids) == 1
 
     # Verify Slot Allocation
     assert engine.slot_allocator.get_slot("req1") != -1
 
-    # Verify we can access the sequence again
-    assert seq.request_id == "req1"
-
 
 def test_engine_single_step_decode(tiny_model, mock_tokenizer):
-    # Setup Engine with Tiny Model
-    engine = ContinuousBatchingEngine(model_path="dummy", tokenizer=mock_tokenizer, max_batch_size=2, device="cpu")
     tiny_model.to("cpu")
     tiny_model.eval()
-    engine.load_model(tiny_model)
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device="cpu",
+    )
 
     # Add Request
     req = GenerationRequest(prompt="test", max_new_tokens=10)

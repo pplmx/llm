@@ -1,6 +1,6 @@
 from .api import app
 from .config import ServingConfig
-from .engine import LLMEngine
+from .engine import ContinuousBatchingEngine
 from .schemas import (
     BatchGenerationRequest,
     BatchGenerationResponse,
@@ -14,7 +14,7 @@ from .schemas import (
 
 __all__ = [
     "app",
-    "LLMEngine",
+    "ContinuousBatchingEngine",
     "ServingConfig",
     "GenerationRequest",
     "GenerationResponse",
