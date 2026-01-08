@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `notebooks/quick_start.ipynb` interactive tutorial
     - Covers model building, training, inference, and advanced features
 
+- **KV Cache Optimization**:
+    - `src/llm/core/kv_cache.py` with `KVCache` class for pre-allocated cache buffers
+    - In-place updates during autoregressive generation (avoids O(n²) memory operations)
+    - Integrated into `MHA`, `TransformerBlock`, `DecoderModel`
+    - Factory method `KVCache.from_model_config()` for easy instantiation
+    - Backward compatible: legacy `past_key_value` tuple format still works
+
 ### Changed
 
 - **SDPA Refactoring**:
