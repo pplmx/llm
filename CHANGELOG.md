@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Factory method `KVCache.from_model_config()` for easy instantiation
     - Backward compatible: legacy `past_key_value` tuple format still works
 
+- **QLoRA (Quantized LoRA)**:
+    - `src/llm/core/qlora.py` with `QLoRALinear` class
+    - NF4 4-bit quantization for base weights (~4x memory reduction)
+    - LoRA adapters remain in fp16/bf16 for training stability
+    - `apply_qlora()` and `get_qlora_parameters()` helpers
+
 ### Changed
 
 - **SDPA Refactoring**:
@@ -56,7 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added `docs/README.md` as documentation entry point
     - Added MkDocs Material configuration (`mkdocs.yml`) for documentation site
     - Added GitHub Actions workflow for automatic GitHub Pages deployment
-    - Added Mermaid diagrams to `architecture.md` (Attention Flow, Training Pipeline)
+    - Added `guide-finetuning.md` (LoRA/QLoRA) and `guide-inference.md` (KVCache/GQA)
+    - Enhanced `architecture.md` with detailed component diagrams and data flow analysis
+    - Added Mermaid diagrams to `architecture.md` (MHA internals, MLP/MoE, data flow)
     - Fixed broken internal links in training and tutorial docs
     - Moved attention deep-dive docs to `_learning/01_concepts/`
     - Fixed `llm-train --task lm` examples in `usage.md` and `faq.md` (requires dataset config)
@@ -66,7 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Flash Attention 2 integration
 - Paged Attention for improved memory efficiency
-- QLoRA (Quantized LoRA)
 
 ## [0.0.4] - 2026-01-07
 
