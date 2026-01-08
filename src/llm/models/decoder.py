@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
 from llm.core.embedding import EmbeddingLayer
+from llm.core.kv_cache import KVCache
 from llm.core.transformer_block import TransformerBlock
-
-if TYPE_CHECKING:
-    pass
 
 
 class DecoderModel(nn.Module):

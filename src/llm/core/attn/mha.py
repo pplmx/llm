@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import torch
 from torch import Tensor, nn
 
+from llm.core.kv_cache import KVCache
 from llm.core.registry import ATTENTION_REGISTRY
 
 from .sdpa import sdpa
-
-if TYPE_CHECKING:
-    pass
 
 
 @ATTENTION_REGISTRY.register("mha")
@@ -98,7 +94,7 @@ class MultiHeadAttention(nn.Module):
         attn_mask: Tensor | None = None,
         is_causal: bool | None = None,
         past_key_value: tuple[Tensor, Tensor] | None = None,
-        kv_cache: KVCache | None = None,
+        kv_cache: KVCache | None = None,  # noqa: F821
         use_cache: bool = False,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """
