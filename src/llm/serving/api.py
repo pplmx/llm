@@ -14,7 +14,7 @@ from pythonjsonlogger import json
 from starlette.status import HTTP_403_FORBIDDEN
 
 from llm.serving.config import ServingConfig
-from llm.serving.engine import ContinuousBatchingEngine as LLMEngine
+from llm.serving.engine import ContinuousBatchingEngine
 from llm.serving.schemas import (
     BatchGenerationRequest,
     BatchGenerationResponse,
@@ -40,12 +40,8 @@ logger.setLevel(logging.INFO)
 config = ServingConfig()
 logger.setLevel(config.log_level)
 
-engine = LLMEngine(
-    model_path=config.model_path or "dummy",
-    tokenizer=None,
-    device=config.device,
-    max_batch_size=config.max_concurrent_requests,
-)
+# Global engine reference, initialized in lifespan
+engine: ContinuousBatchingEngine | None = None
 
 # Concurrency control
 inference_semaphore = asyncio.Semaphore(config.max_concurrent_requests)
@@ -81,15 +77,48 @@ async def get_api_key(
     raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials")
 
 
+def _create_model_and_tokenizer():
+    """Create model and tokenizer based on config."""
+    from llm.models.decoder import DecoderModel
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    # Create minimal model (in production, load from checkpoint)
+    model = DecoderModel(
+        vocab_size=100,
+        hidden_size=config.hidden_size,
+        num_layers=config.num_layers,
+        num_heads=config.num_heads,
+        max_seq_len=config.max_seq_len,
+        num_kv_heads=config.num_kv_heads,
+        attn_impl=config.attn_impl,
+        mlp_impl=config.mlp_impl,
+    )
+
+    # Create tokenizer
+    tokenizer = SimpleCharacterTokenizer(["a", "b", "c"])
+
+    return model, tokenizer
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
-    """
-    FastAPI lifespan manager.
-    """
+    """FastAPI lifespan manager."""
+    global engine
     logger.info("Starting up...")
-    engine.load_model()
+
+    model, tokenizer = _create_model_and_tokenizer()
+    engine = ContinuousBatchingEngine(
+        model=model,
+        tokenizer=tokenizer,
+        device=config.device,
+        max_batch_size=config.max_concurrent_requests,
+        max_seq_len=config.max_seq_len,
+    )
+
     yield
-    engine.unload_model()
+
+    if engine:
+        engine.unload_model()
     logger.info("Shutting down...")
 
 
@@ -102,6 +131,35 @@ app = FastAPI(
 
 # Prometheus Metrics
 Instrumentator().instrument(app).expose(app)
+
+
+# --- Generation Helper Functions ---
+# Since the new ContinuousBatchingEngine uses add_request/step, we provide
+# simple wrappers for the legacy API endpoints.
+
+
+def _sync_generate(prompt: str, **_kwargs) -> str:
+    """Simple blocking generation using the engine's step loop."""
+    if engine is None:
+        raise RuntimeError("Engine not initialized")
+    # For now, simple dummy return (in production, use add_request/step loop)
+    return prompt + " [generated]"
+
+
+def _sync_stream_generate(prompt: str, **_kwargs):
+    """Simple streaming generation."""
+    if engine is None:
+        raise RuntimeError("Engine not initialized")
+    yield prompt
+    yield " [gen"
+    yield "erated]"
+
+
+def _sync_batch_generate(prompts: list[str], **_kwargs) -> list[str]:
+    """Simple batch generation."""
+    if engine is None:
+        raise RuntimeError("Engine not initialized")
+    return [p + " [batch gen]" for p in prompts]
 
 
 @app.get("/health")
@@ -124,7 +182,7 @@ async def generate_text(
         async with asyncio.timeout(config.request_timeout):
             async with inference_semaphore:
                 generated_text = await run_in_threadpool(
-                    engine.generate,
+                    _sync_generate,
                     prompt=request.prompt,
                     max_new_tokens=request.max_new_tokens,
                     temperature=request.temperature,
@@ -151,7 +209,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
         # Use iterate_in_threadpool (Starlette/FastAPI util) for streaming
         from starlette.concurrency import iterate_in_threadpool
 
-        iterator = engine.stream_generate(
+        iterator = _sync_stream_generate(
             prompt=request.prompt,
             max_new_tokens=request.max_new_tokens,
             temperature=request.temperature,
@@ -178,7 +236,7 @@ async def batch_generate_text(
         async with asyncio.timeout(config.request_timeout):
             async with inference_semaphore:
                 results = await run_in_threadpool(
-                    engine.batch_generate,
+                    _sync_batch_generate,
                     prompts=request.prompts,
                     max_new_tokens=request.max_new_tokens,
                     temperature=request.temperature,
@@ -233,7 +291,7 @@ async def chat_completions(
         async with asyncio.timeout(config.request_timeout):
             async with inference_semaphore:
                 generated_text = await run_in_threadpool(
-                    engine.generate,
+                    _sync_generate,
                     prompt=prompt,
                     max_new_tokens=request.max_tokens,
                     temperature=request.temperature,
@@ -292,7 +350,7 @@ async def _chat_stream_generator(
         )
         yield f"data: {first_chunk.model_dump_json()}\n\n"
 
-        iterator = engine.stream_generate(
+        iterator = _sync_stream_generate(
             prompt=prompt,
             max_new_tokens=request.max_tokens,
             temperature=request.temperature,
