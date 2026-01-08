@@ -1,4 +1,4 @@
-# 6. Use QLoRA for Memory-Efficient Fine-Tuning
+# 4. Use QLoRA for Memory-Efficient Fine-Tuning
 
 Date: 2026-01-08
 
