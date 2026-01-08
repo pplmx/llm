@@ -1,15 +1,11 @@
 import torch
 
-from llm.training.core.config import Config, ModelConfig
 from llm.training.tasks.dpo_task import DPOTask
 
 
-def test_dpo_task_init_and_build():
-    config = Config(model=ModelConfig(vocab_size=100, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16))
-    task = DPOTask(config, data_module=None)
-
-    # build_model creates BOTH policy and ref model (reconstruction)
-    model = task.build_model()  # This returns policy, creates task.ref_model internally
+def test_dpo_task_init_and_build(tiny_config):
+    task = DPOTask(tiny_config, data_module=None)
+    model = task.build_model()
 
     assert task.ref_model is not None
     assert task.ref_model is not model
@@ -22,20 +18,16 @@ def test_dpo_task_init_and_build():
     assert any(p.requires_grad for p in model.parameters())
 
 
-def test_dpo_task_train_step():
-    config = Config(model=ModelConfig(vocab_size=100, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16))
-    task = DPOTask(config, data_module=None)
-
-    # Needs a built model with ref model set
+def test_dpo_task_train_step(tiny_config):
+    task = DPOTask(tiny_config, data_module=None)
     model = task.build_model()
-
     criterion = None  # DPOTask doesn't use criterion for DPO loss
 
-    B, S, V = 2, 4, 100
+    B, S, V = 2, 4, tiny_config.model.vocab_size
     chosen_ids = torch.randint(0, V, (B, S))
     rejected_ids = torch.randint(0, V, (B, S))
     chosen_labels = chosen_ids.clone()
-    chosen_labels[:, 0] = -100  # Mask first token
+    chosen_labels[:, 0] = -100
     rejected_labels = rejected_ids.clone()
     rejected_labels[:, 0] = -100
 
