@@ -1,0 +1,82 @@
+site_name: LLM Framework Documentation
+site_description: A modular PyTorch framework for training and serving Large Language Models
+site_url: https://pplmx.github.io/llm
+repo_url: https://github.com/pplmx/llm
+repo_name: pplmx/llm
+
+theme:
+  name: material
+  language: zh
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search:
+      lang: zh
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: README.md
+  - Getting Started:
+      - Usage Guide: usage.md
+      - Tutorial: tutorial-cpu-llm.md
+      - FAQ: faq.md
+  - Architecture:
+      - Overview: architecture.md
+      - Development: development.md
+  - Training:
+      - Overview: training/README.md
+      - Components: training/components.md
+      - Training Flow: training/training-flow.md
+      - Callbacks: training/flow-callbacks.md
+      - Configuration: training/guide-configuration.md
+      - Extending: training/guide-extending.md
+      - DDP Deep Dive: training/deep-dive-ddp.md
+      - Troubleshooting: training/troubleshooting.md
+  - ADR:
+      - Overview: adr/README.md
+      - "001: GQA": adr/001-use-gqa.md
+      - "002: SwiGLU": adr/002-use-swiglu.md
+      - "003: prek": adr/003-use-prek.md
+      - "004: ty": adr/004-use-ty.md
+  - Troubleshooting: troubleshooting.md
