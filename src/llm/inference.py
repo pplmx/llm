@@ -16,6 +16,7 @@ def stream_generate(
     top_k: int | None = None,
     top_p: float | None = None,
     repetition_penalty: float = 1.0,
+    use_cache: bool = True,
 ) -> Generator[str]:
     """
     Generator function for incremental text generation.
@@ -27,15 +28,23 @@ def stream_generate(
     device = next(model.parameters()).device
     input_ids = tokenizer.encode(prompt)
     input_tensor = torch.tensor(input_ids, dtype=torch.long, device=device).unsqueeze(0)
+    input_tensor = torch.tensor(input_ids, dtype=torch.long, device=device).unsqueeze(0)
     max_seq_len = getattr(model, "max_seq_len", 512)
     past_key_values = None
 
     # Prefill: truncate if needed to fit max_seq_len
     if input_tensor.size(1) + max_new_tokens > max_seq_len:
         input_tensor = input_tensor[:, -(max_seq_len - max_new_tokens) :]
+        # Update input_ids to match truncated tensor
+        input_ids = input_tensor[0].tolist()
 
-    logits, past_key_values = model(input_tensor, use_cache=True)
-    next_token_logits = logits[0, -1, :]
+    if use_cache:
+        logits, past_key_values = model(input_tensor, use_cache=True)
+        next_token_logits = logits[0, -1, :]
+    else:
+        # Initial forward pass without cache
+        logits = model(input_tensor, use_cache=False)
+        next_token_logits = logits[0, -1, :]
 
     if hasattr(tokenizer, "pad_token_id"):
         next_token_logits[tokenizer.pad_token_id] = -float("inf")
@@ -86,8 +95,16 @@ def stream_generate(
         yield text_chunk
 
         next_input = next_token.unsqueeze(0)
-        logits, past_key_values = model(next_input, past_key_values=past_key_values, use_cache=True)
-        next_token_logits = logits[0, -1, :]
+
+        if use_cache:
+            logits, past_key_values = model(next_input, past_key_values=past_key_values, use_cache=True)
+            next_token_logits = logits[0, -1, :]
+        else:
+            # Without cache, append new token to full sequence and forward pass
+            # generated_ids already has the new token appended
+            full_input = torch.tensor(generated_ids, dtype=torch.long, device=device).unsqueeze(0)
+            logits = model(full_input, use_cache=False)
+            next_token_logits = logits[0, -1, :]
 
         if hasattr(tokenizer, "pad_token_id"):
             next_token_logits[tokenizer.pad_token_id] = -float("inf")
@@ -102,6 +119,7 @@ def generate(
     top_k: int | None = None,
     top_p: float | None = None,
     repetition_penalty: float = 1.0,
+    use_cache: bool = True,
 ) -> str:
     """
     Generate text from a prompt using a trained model.
@@ -115,6 +133,7 @@ def generate(
         top_k=top_k,
         top_p=top_p,
         repetition_penalty=repetition_penalty,
+        use_cache=use_cache,
     )
     return prompt + "".join(list(generator))
 

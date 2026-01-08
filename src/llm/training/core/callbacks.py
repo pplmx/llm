@@ -1,3 +1,4 @@
+import operator
 from pathlib import Path  # Added Path
 from typing import Any
 
@@ -130,16 +131,16 @@ class EarlyStopping(Callback):
         if self.mode not in ["auto", "min", "max"]:
             raise ValueError(f"EarlyStopping mode {self.mode} is unknown, 'auto', 'min' or 'max'.")
         if self.mode == "min":
-            self.monitor_op = torch.lt
+            self.monitor_op = operator.lt
             self.min_delta *= -1
         elif self.mode == "max":
-            self.monitor_op = torch.gt
+            self.monitor_op = operator.gt
         else:  # auto
             if "loss" in self.monitor:
-                self.monitor_op = torch.lt
+                self.monitor_op = operator.lt
                 self.min_delta *= -1
             else:
-                self.monitor_op = torch.gt
+                self.monitor_op = operator.gt
 
     def on_train_start(self, logs: dict[str, Any] | None = None):
         self.wait = 0
