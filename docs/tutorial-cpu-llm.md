@@ -181,4 +181,4 @@ llm-train --task regression --epochs 5 --batch-size 64
 
 ### 七、常见问题与故障排查
 
-如果您在使用过程中遇到问题, 请参考项目的 [故障排查指南](docs/troubleshooting.md).
+如果您在使用过程中遇到问题, 请参考项目的 [故障排查指南](troubleshooting.md).
