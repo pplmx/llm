@@ -225,6 +225,13 @@ class CheckpointManager:
             torch.save(data, temp_path)
             shutil.move(temp_path, path)
 
+        if self.config.save_best and loss < self.best_loss:
+            self.best_loss = loss
+            checkpoint["best_loss"] = self.best_loss
+            best_path = Path(self.config.checkpoint_dir) / "best.pt"
+            atomic_save(checkpoint, best_path)
+            self.logger.info(f"🏆 New best model saved with loss {loss:.4f}")
+
         latest_path = Path(self.config.checkpoint_dir) / "latest.pt"
         atomic_save(checkpoint, latest_path)
 
@@ -234,13 +241,6 @@ class CheckpointManager:
             self.checkpoints_saved.append(epoch_path)
             self._cleanup_old_checkpoints()
             self.logger.debug(f"Checkpoint saved to {epoch_path}")
-
-        if self.config.save_best and loss < self.best_loss:
-            self.best_loss = loss
-            best_path = Path(self.config.checkpoint_dir) / "best.pt"
-            checkpoint["best_loss"] = self.best_loss
-            atomic_save(checkpoint, best_path)
-            self.logger.info(f"🏆 New best model saved with loss {loss:.4f}")
 
     def _cleanup_old_checkpoints(self):
         while len(self.checkpoints_saved) > self.config.keep_last_n:

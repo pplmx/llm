@@ -91,6 +91,7 @@ class OptimizationConfig(BaseModel):
     pin_memory: bool = True
     prefetch_factor: int = 2
     persistent_workers: bool = False
+    gradient_accumulation_steps: int = Field(1, ge=1)
 
 
 class CheckpointConfig(BaseModel):

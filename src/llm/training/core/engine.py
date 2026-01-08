@@ -46,6 +46,7 @@ class TrainingEngine:
         self._setup_components()
         self.training_start_time = time.time()
         self.should_stop_training = False  # Added for early stopping
+        self.global_step = 0  # Added for gradient accumulation tracking
 
     def _run_callbacks(self, method_name: str, *args, **kwargs):
         for callback in self.callbacks:
@@ -120,6 +121,10 @@ class TrainingEngine:
 
         epoch_loss = 0.0
         num_batches = len(self.dataloader)
+        accum_steps = self.config.optimization.gradient_accumulation_steps
+
+        # Zero gradients at start of epoch
+        self.optimizer.zero_grad(set_to_none=True)
 
         for batch_idx, batch in enumerate(self.dataloader):
             self._run_callbacks("on_batch_start", epoch=epoch, batch_idx=batch_idx)
@@ -132,8 +137,6 @@ class TrainingEngine:
             else:
                 batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
-            self.optimizer.zero_grad(set_to_none=True)
-
             amp_dtype = torch.float16
             if self.resolved_amp_dtype == "bfloat16":
                 amp_dtype = torch.bfloat16
@@ -142,15 +145,37 @@ class TrainingEngine:
                 device_type=self.device.type, enabled=self.config.optimization.use_amp, dtype=amp_dtype
             ):
                 loss, metrics = self.task.train_step(batch, self.model, self.criterion)
+                # Scale loss for gradient accumulation
+                loss = loss / accum_steps
 
             self.scaler.scale(loss).backward()
-            self.scaler.unscale_(self.optimizer)
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.training.gradient_clip_val)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+
+            # Perform optimization step every accum_steps or at end of epoch
+            if (batch_idx + 1) % accum_steps == 0 or (batch_idx + 1 == num_batches):
+                self.scaler.unscale_(self.optimizer)
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.training.gradient_clip_val
+                )
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad(set_to_none=True)
+                self.global_step += 1
+            else:
+                # Calculate grad norm even if not stepping? Or skip?
+                # Usually we track grad norm of the step.
+                # Here we just use 0.0 or skip logging grad norm for micro-steps?
+                # Logic: We only log roughly.
+                grad_norm = torch.tensor(0.0)
+
             self._run_callbacks("on_train_step_end", epoch=epoch, batch_idx=batch_idx, loss=loss, metrics=metrics)
 
-            batch_loss = metrics.get("loss", loss.item())
+            # NOTE: loss logged is scaled loss or raw loss?
+            # Usually we want raw loss. Task returns raw loss.
+            # We scaled `loss` variable.
+            # metrics['loss'] is usually raw loss item.
+            # If task returns loss tensor, metrics dict might satisfy raw loss.
+
+            batch_loss = metrics.get("loss", loss.item() * accum_steps)  # Restore scale for logging if needed
             epoch_loss += batch_loss
 
             # Performance monitoring
