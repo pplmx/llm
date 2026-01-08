@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Documentation**:
     - Added `docs/README.md` as documentation entry point
+    - Added MkDocs Material configuration (`mkdocs.yml`) for documentation site
+    - Added GitHub Actions workflow for automatic GitHub Pages deployment
+    - Added Mermaid diagrams to `architecture.md` (Attention Flow, Training Pipeline)
+    - Fixed broken internal links in training and tutorial docs
+    - Moved attention deep-dive docs to `_learning/01_concepts/`
     - Fixed `llm-train --task lm` examples in `usage.md` and `faq.md` (requires dataset config)
     - Removed outdated `htmlcov/` coverage reports
 
