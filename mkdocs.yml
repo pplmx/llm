@@ -82,4 +82,6 @@ nav:
       - "002: SwiGLU": adr/002-use-swiglu.md
       - "003: prek": adr/003-use-prek.md
       - "004: ty": adr/004-use-ty.md
+      - "005: KVCache": adr/005-use-kv-cache.md
+      - "006: QLoRA": adr/006-use-qlora.md
   - Troubleshooting: troubleshooting.md

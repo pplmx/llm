@@ -38,6 +38,8 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-002: Use SwiGLU Activation Function](002-use-swiglu.md)
 - [ADR-003: Use prek for Git Hooks](003-use-prek.md)
 - [ADR-004: Use ty for Type Checking](004-use-ty.md)
+- [ADR-005: Use Pre-Allocated KV Cache](005-use-kv-cache.md)
+- [ADR-006: Use QLoRA for Memory-Efficient Fine-Tuning](006-use-qlora.md)
 
 ## Creating a New ADR
 
