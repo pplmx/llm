@@ -137,12 +137,31 @@ SwiGLU 是一种结合 Swish 激活和门控线性单元的激活函数, 相比�
 
 ### Q: 推理速度慢怎么办？
 
-1. **确保启用 KV Cache**: 默认在 `generate` 函数中启用
+1. **使用 KVCache**: 见 [Inference Optimization Guide](guide-inference.md)
 2. **使用 Top-k 采样**: 减小搜索空间
 3. **批处理推理**: 同时处理多个请求
-4. **等待 Flash Attention**: 将在未来版本中集成
+4. **合并 LoRA 权重**: 推理前调用 `merge_lora(model)`
 
 ---
+
+## LoRA / QLoRA
+
+### Q: LoRA 和 QLoRA 有什么区别？
+
+| 特性 | LoRA | QLoRA |
+|------|------|-------|
+| 基础权重 | FP16/FP32 | 4-bit NF4 |
+| 内存占用 | ~10% 参数 | ~5% 内存 |
+| 推理开销 | 可合并, 无开销 | 需反量化 |
+| 适用场景 | 有足够显存 | 显存严重受限 |
+
+### Q: 如何选择 LoRA rank？
+
+- **rank=4-8**: 简单任务, 快速实验
+- **rank=16-32**: 复杂任务, 更多容量
+- **alpha**: 通常设为 `2 * rank`
+
+详见: [Fine-Tuning Guide](guide-finetuning.md)
 
 ## 开发工具
 
