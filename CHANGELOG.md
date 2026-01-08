@@ -39,7 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Test count: 337 → 392 (+55 tests)
+- **SDPA Refactoring**:
+    - Consolidated `scaled_dot_product_attention` wrapper into `src/llm/core/attn/sdpa.py`
+    - Refactored `MultiHeadAttention` and `MultiLatentAttention` to use common `sdpa` wrapper
+    - Archived custom implementation to `_learning/03_lab/experiments/custom_sdpa.py`
+    - Test count: 392 → 385 (removed obsolete dot_product_attn tests)
+
+- **Documentation**:
+    - Added `docs/README.md` as documentation entry point
+    - Fixed `llm-train --task lm` examples in `usage.md` and `faq.md` (requires dataset config)
+    - Removed outdated `htmlcov/` coverage reports
 
 ### Planned
 
