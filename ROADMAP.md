@@ -133,13 +133,13 @@
 
 ## 阶段九: 文档与社区 🔄
 
-> **状态**: 持续完善 | **最后更新**: 2025-12-21
+> **状态**: 持续完善 | **最后更新**: 2026-01-08
 
 - [x] **基础文档**: `README`, `CONTRIBUTING` 等已存在
 - [x] **训练框架文档**: 8 个详细的训练框架文档 (components, flow, guides 等)
-- [ ] **开发者文档** ⏭️ *阶段十五*
+- [x] **开发者文档**:
     - [ ] 完善代码内文档 (docstrings)
-    - [ ] 使用 `Sphinx` 或 `MkDocs` 生成 API 文档网站
+    - [x] 使用 `MkDocs` 生成文档网站 (Material 主题 + GitHub Pages)
 - [ ] **用户文档**: 编写详细的用户指南和教程
 - [x] **示例**: 提供 `Jupyter Notebook` 示例, 展示框架的核心功能 (`notebooks/quick_start.ipynb`)
 
