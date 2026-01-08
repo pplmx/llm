@@ -50,8 +50,15 @@ make init
 示例：
 
 ```bash
-llm-train --task lm --epochs 10 --batch-size 32
+# Regression task (uses synthetic data, works out of the box)
+llm-train --task regression --epochs 10 --batch-size 32
+
+# Language modeling task (requires dataset configuration)
+llm-train --task lm --config-path configs/example.yaml --epochs 10
 ```
+
+> [!NOTE]
+> `--task lm` 需要通过配置文件指定数据集。快速实验可使用 `scripts/train_simple_decoder.py`。
 
 ### Q: 如何启用分布式训练？
 
