@@ -36,8 +36,12 @@
     - Distributed Data Parallel (DDP) & Automatic Mixed Precision (AMP).
     - Type-safe Configuration via Pydantic & Typer CLI.
     - `torch.compile` optimization integration.
+- **Parameter-Efficient Fine-Tuning**:
+    - **LoRA**: Low-rank adaptation with merge/unmerge support.
+    - **QLoRA**: 4-bit NF4 quantized base + fp16 LoRA adapters (~4x memory reduction).
 - **Inference & Serving**:
     - **OpenAI-Compatible API**: `/v1/chat/completions` endpoint works with OpenAI SDK.
+    - **KVCache**: Pre-allocated cache for efficient autoregressive generation.
     - Streaming support (Server-Sent Events).
     - Prometheus metrics & API key authentication.
 - **Data & Tokenization Abstraction**:
@@ -112,6 +116,8 @@ However, for development, `make init` is the recommended way to set up the envir
 For comprehensive documentation, including detailed usage examples, development guides, and troubleshooting, please refer to our dedicated documentation section:
 
 - [Architecture Guide](docs/architecture.md)
+- [Fine-Tuning Guide (LoRA/QLoRA)](docs/guide-finetuning.md)
+- [Inference Optimization Guide](docs/guide-inference.md)
 - [Development Guide](docs/development.md)
 - [CPU LLM Tutorial](docs/tutorial-cpu-llm.md)
 - [Project Troubleshooting](docs/troubleshooting.md)

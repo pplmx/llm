@@ -34,6 +34,30 @@
 - **问题: 分词器抛出 `KeyError`, 提示字符不在词汇表中.**
     - **解决方案:** 当前的 `SimpleCharacterTokenizer` 是字符级别的, 并且词汇表是根据初始化时提供的语料库构建的. 确保您尝试编码的文本只包含在初始化分词器时语料库中存在的字符. 如果需要处理更广泛的字符集, 您可能需要更新分词器或其初始化语料.
 
+## LoRA / QLoRA 相关问题
+
+- **问题: 应用 LoRA 后模型输出与原始模型完全相同.**
+    - **解决方案:** LoRA 的 B 矩阵初始化为零, 因此初始输出应该相同. 确保:
+    1. 您已正确调用 `apply_lora(model, ...)`.
+    2. 训练时只优化 LoRA 参数: `optimizer = AdamW(get_lora_parameters(model), lr=1e-4)`.
+    3. 确认 LoRA 参数的 `requires_grad=True`.
+
+- **问题: QLoRA 推理速度比预期慢.**
+    - **解决方案:** QLoRA 在每次 forward 时需要反量化权重, 这会增加开销:
+    1. 对于推理, 考虑使用标准 LoRA 并在训练后 `merge_lora(model)`.
+    2. QLoRA 主要优势是训练时的内存节省, 而非推理速度.
+
+## KVCache 相关问题
+
+- **问题: 使用 KVCache 时生成的文本与不使用时不同.**
+    - **解决方案:** 确保:
+    1. 在新序列开始前调用 `cache.reset()` 重置缓存.
+    2. `max_seq_len` 足够大以容纳完整生成.
+    3. 首次 forward 传入完整 prompt, 后续 forward 只传入新生成的 token.
+
+- **问题: KVCache 超出预分配长度导致错误.**
+    - **解决方案:** 增大 `max_seq_len` 或在生成循环中检查 `cache.seq_len < cache.max_seq_len`.
+
 ## 提交问题
 
 如果您在这里找不到解决方案, 请在我们的 GitHub 仓库上提交一个问题: [GitHub Issues](https://github.com/pplmx/llm/issues). 请提供详细的错误信息、复现步骤和您的环境配置.
