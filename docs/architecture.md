@@ -15,6 +15,32 @@ The project follows a **Modular & Composable** design philosophy:
 * **Registry Pattern**: Core components are decoupled and selectable via configuration.
 * **Configuration as Code**: Pydantic models define type-safe, validating configurations.
 
+## Directory Structure
+
+```text
+src/llm/
+├── core/                    # Reusable PyTorch modules
+│   ├── attn/               # Attention mechanisms (MHA, MLA, SDPA)
+│   ├── embedding.py        # Token + positional embeddings (RoPE, ALiBi)
+│   ├── lora.py            # LoRA adapters
+│   ├── qlora.py           # QLoRA with NF4 quantization
+│   ├── kv_cache.py        # Pre-allocated KV cache
+│   ├── mlp.py             # Standard MLP with SwiGLU
+│   ├── moe.py             # Mixture of Experts
+│   ├── norm.py            # RMSNorm, LayerNorm
+│   ├── registry.py        # Component registry
+│   └── transformer_block.py
+├── models/                 # Complete model architectures
+│   └── decoder.py         # Decoder-only transformer
+├── training/              # Training infrastructure
+│   ├── core/              # Engine, callbacks, config
+│   ├── data/              # DataModules, tokenizers
+│   └── tasks/             # Task-specific trainers (LM, SFT)
+├── serving/               # Inference API
+│   └── api.py             # FastAPI with OpenAI-compatible endpoints
+└── inference.py           # Generation utilities
+```
+
 ## System Overview
 
 ```mermaid
@@ -145,6 +171,113 @@ graph LR
 | **KV Cache** | Caches key/value for autoregressive generation |
 | **RoPE** | Rotary position embeddings with scaling |
 | **ALiBi** | Attention with linear biases |
+
+### Multi-Head Attention Internals
+
+The `MultiHeadAttention` class (`src/llm/core/attn/mha.py`) implements:
+
+```mermaid
+graph TD
+    subgraph "MHA Forward Pass"
+        A[Input: hidden_states] --> B[Layer Norm if Pre-LN]
+        B --> C[Unified QKV Projection]
+        C --> D{Split Q, K, V}
+        D --> E[Reshape to heads]
+        E --> F{KV Cache?}
+        F -->|Yes| G[Update cache in-place]
+        F -->|No| H[Use fresh K, V]
+        G --> I[GQA: repeat K,V if needed]
+        H --> I
+        I --> J[SDPA kernel]
+        J --> K[Reshape + Output Projection]
+        K --> L[Dropout + Residual]
+        L --> M[Layer Norm if Post-LN]
+    end
+```
+
+**Key Design Decisions**:
+
+1. **Unified QKV Projection**: Single linear layer for Q, K, V improves memory throughput
+2. **Pre-LN Default**: More stable gradients for deep networks
+3. **SDPA Backend**: Uses `torch.nn.functional.scaled_dot_product_attention` for Flash Attention when available
+
+### MLP / MoE Architecture
+
+```mermaid
+graph LR
+    subgraph "Standard MLP"
+        X1[Input] --> U1[Up Projection 4x]
+        U1 --> A1[Activation]
+        A1 --> D1[Down Projection]
+    end
+
+    subgraph "SwiGLU MLP"
+        X2[Input] --> G[Gate Projection]
+        X2 --> U2[Up Projection]
+        G --> S[SiLU]
+        S --> M[Element-wise Multiply]
+        U2 --> M
+        M --> D2[Down Projection]
+    end
+
+    subgraph "MoE"
+        X3[Input] --> R[Router]
+        R --> E1[Expert 1]
+        R --> E2[Expert 2]
+        R --> En[Expert N]
+        E1 --> C[Combine by weights]
+        E2 --> C
+        En --> C
+    end
+```
+
+## Data Flow Analysis
+
+### Training Data Flow
+
+```mermaid
+graph LR
+    subgraph "Data Pipeline"
+        Raw[Raw Text] --> Tok[Tokenizer]
+        Tok --> DS[TextDataset]
+        DS --> DL[DataLoader]
+        DL --> Batch[Collated Batch]
+    end
+
+    subgraph "Model Forward"
+        Batch --> Emb[Embedding + RoPE]
+        Emb --> Blocks[N x TransformerBlock]
+        Blocks --> Norm[Final Norm]
+        Norm --> LMHead[LM Head]
+        LMHead --> Logits
+    end
+
+    subgraph "Loss & Backward"
+        Logits --> CE[Cross-Entropy Loss]
+        CE --> Grad[Gradients]
+        Grad --> Opt[Optimizer Step]
+    end
+```
+
+### Inference Data Flow
+
+```mermaid
+graph LR
+    subgraph "Prefill Phase"
+        Prompt[Prompt Tokens] --> Model1[Model Forward]
+        Model1 --> Cache[KV Cache Filled]
+        Model1 --> First[First Token]
+    end
+
+    subgraph "Decode Phase"
+        First --> Loop{Generation Loop}
+        Loop --> Token[Single Token]
+        Token --> Model2[Model Forward]
+        Model2 --> CacheUpdate[KV Cache Update]
+        CacheUpdate --> Next[Next Token]
+        Next --> Loop
+    end
+```
 
 ## Training Pipeline
 
