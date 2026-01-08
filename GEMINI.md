@@ -80,11 +80,15 @@ Only write high-value comments if at all. Avoid talking to the user through comm
 - 用户偏好我使用中文进行回复.
 - 用户极其看重代码美感和现代化(如：使用 `pathlib` 替代 `os.path`, 避免冗余注释).
 - 标点符号规范：在代码注释和文档中, 偏好使用英文/半角标点符号(如 `,` `(` `)`), 避免使用全角标点.
-- 测试偏好：在 Python 项目中测试时, 偏好不使用 mock, 直接调用代码, 主要验证功能性, 不关注覆盖率, 只使用 pytest.
+- **测试哲学**:
+    - **Functional over Mock**: 优先使用轻量级真实对象 (`tiny_model`, `tiny_config`) 进行测试, 避免过度 Mock 内部逻辑. 直接调用代码验证功能性.
+    - **Infrastructure**: 使用 `tests/conftest.py` 集中管理共享 Fixtures. 避免在每个测试文件中重复 setup.
+    - **E2E Focus**: 关键训练流程 (Gradient Accumulation, Resume, Checkpointing) 必须有 E2E 测试覆盖 (`tests/e2e/`).
+    - **Refactoring**: 发现由于拷贝粘贴导致的重复测试逻辑时, 必须积极重构 (如提取 `tests/dummies.py`).
 - 架构一致性：任何对 MHA 或 MLP 的修改必须考虑 GQA 和 SwiGLU 的兼容性.
-- **验证流程**：每次 Plan 实施结束后，必须执行 `make test -> make ruff -> make test` 验证流程，确保代码质量和功能正确性.
+- **验证流程**：每次 Plan 实施结束后，必须执行 `make test` (或 `uv run pytest`) -> `make ruff` -> `make test` 验证流程.
 - **Commit 粒度**: 保持小而聚焦的 commit, 除非功能无法合理拆分.
-- **错误驱动测试**: 遇到 bug 或边界情况时, 考虑是否需要添加测试覆盖.
+- **错误驱动测试**: 遇到 bug 或边界情况时, 考虑是否需要添加测试覆盖 (Regression Test).
 
 ---
 
