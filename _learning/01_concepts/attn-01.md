@@ -23,7 +23,7 @@
 
 ### 1.2 概念层次结构
 
-```
+```text
 Attention机制
 ├── Self-Attention (序列内部的注意力)
 │   ├── Scaled Dot-Product Attention (基础计算单元)
@@ -41,12 +41,12 @@ Attention机制
 
 ### 1.4 与传统方法的概念对比
 
-| 概念维度  | 传统RNN/LSTM  | Transformer Attention |
-|-------|-------------|-----------------------|
-| 信息流向  | 顺序传递        | 全局并行访问                |
-| 依赖关系  | 逐步累积        | 直接建立                  |
-| 计算复杂度 | O(n) 时间, 难并行 | O(n²) 空间, 高度并行         |
-| 长程依赖  | 容易衰减        | 直接连接, 无衰减              |
+| 概念维度   | 传统RNN/LSTM      | Transformer Attention |
+| ---------- | ----------------- | --------------------- |
+| 信息流向   | 顺序传递          | 全局并行访问          |
+| 依赖关系   | 逐步累积          | 直接建立              |
+| 计算复杂度 | O(n) 时间, 难并行 | O(n²) 空间, 高度并行  |
+| 长程依赖   | 容易衰减          | 直接连接, 无衰减      |
 
 ---
 
@@ -67,7 +67,7 @@ $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)
 
 #### 步骤1: 线性变换生成Q、K、V
 
-```
+```text
 给定输入X ∈ R^{n×d}, 其中n为序列长度, d为特征维度
 
 Q = XW_Q    # W_Q ∈ R^{d×d_k}
@@ -77,19 +77,19 @@ V = XW_V    # W_V ∈ R^{d×d_v}
 
 #### 步骤2: 计算注意力分数
 
-```
+```text
 Scores = QK^T / √d_k    # 形状: n×n
 ```
 
 #### 步骤3: 应用Softmax
 
-```
+```text
 Weights = softmax(Scores)    # 每行和为1
 ```
 
 #### 步骤4: 加权求和
 
-```
+```text
 Output = WeightsV    # 形状: n×d_v
 ```
 
@@ -97,7 +97,7 @@ Output = WeightsV    # 形状: n×d_v
 
 **核心思想**: 将模型分成h个"头", 每个头学习不同类型的依赖关系.
 
-```
+```text
 MultiHead(Q,K,V) = Concat(head₁, head₂, ..., headₕ)W^O
 
 其中: headᵢ = Attention(QW^Q_i, KW^K_i, VW^V_i)
@@ -202,14 +202,14 @@ mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
 
 ### 4.1 Attention vs RNN/LSTM
 
-| 对比维度      | RNN/LSTM      | Self-Attention  |
-|-----------|---------------|-----------------|
+| 对比维度       | RNN/LSTM           | Self-Attention       |
+| -------------- | ------------------ | -------------------- |
 | **计算复杂度** | 时间O(n), 空间O(1) | 时间O(n²), 空间O(n²) |
-| **并行化程度** | 低(顺序依赖)       | 高(全并行)          |
-| **长程依赖**  | 困难(梯度消失)      | 容易(直接连接)        |
-| **位置敏感性** | 天然具备          | 需要位置编码          |
-| **内存需求**  | 低             | 高               |
-| **训练速度**  | 慢             | 快(并行化)          |
+| **并行化程度** | 低(顺序依赖)       | 高(全并行)           |
+| **长程依赖**   | 困难(梯度消失)     | 容易(直接连接)       |
+| **位置敏感性** | 天然具备           | 需要位置编码         |
+| **内存需求**   | 低                 | 高                   |
+| **训练速度**   | 慢                 | 快(并行化)           |
 
 **适用场景分析**:
 
@@ -218,12 +218,12 @@ mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
 
 ### 4.2 Self-Attention vs Cross-Attention
 
-| 特征          | Self-Attention | Cross-Attention |
-|-------------|----------------|-----------------|
-| **Query来源** | 同一序列           | 不同序列            |
-| **Key来源**   | 同一序列           | 不同序列            |
-| **用途**      | 序列内部建模         | 序列间对齐           |
-| **典型应用**    | 语言模型、编码器       | 机器翻译、多模态        |
+| 特征          | Self-Attention   | Cross-Attention  |
+| ------------- | ---------------- | ---------------- |
+| **Query来源** | 同一序列         | 不同序列         |
+| **Key来源**   | 同一序列         | 不同序列         |
+| **用途**      | 序列内部建模     | 序列间对齐       |
+| **典型应用**  | 语言模型、编码器 | 机器翻译、多模态 |
 
 ### 4.3 不同Attention变体对比
 
@@ -231,7 +231,7 @@ mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
 
 **Dot-Product Attention**:
 
-```
+```text
 score(q,k) = q·k / √d_k
 优点: 计算简单, 易并行
 缺点: 维度敏感
@@ -239,7 +239,7 @@ score(q,k) = q·k / √d_k
 
 **Additive Attention**:
 
-```
+```text
 score(q,k) = v^T tanh(W_q q + W_k k)
 优点: 维度不敏感
 缺点: 参数更多, 计算复杂
@@ -470,7 +470,7 @@ def apply_causal_mask(scores):
 
 **数学推导**:
 
-```
+```text
 假设q,k的每个元素 ~ N(0,1)
 则qk^T = Σ(q_i * k_i) 的方差为d_k
 除以√d_k后方差归一化为1

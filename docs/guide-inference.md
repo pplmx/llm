@@ -89,10 +89,10 @@ reset_all_caches(caches)
 
 ### Memory Benefits
 
-| Approach | Memory Pattern | Fragmentation |
-| -------- | -------------- | ------------- |
-| `torch.cat` (legacy) | Grows each step | High |
-| `KVCache` (pre-alloc) | Fixed upfront | None |
+| Approach              | Memory Pattern  | Fragmentation |
+| --------------------- | --------------- | ------------- |
+| `torch.cat` (legacy)  | Grows each step | High          |
+| `KVCache` (pre-alloc) | Fixed upfront   | None          |
 
 ---
 
@@ -145,12 +145,12 @@ while engine.scheduler.has_pending_work:
 
 ### Key Features
 
-| Feature | Description |
-| ------- | ----------- |
-| Iteration-level scheduling | Multiple requests processed per step |
-| Slot-based KV cache | Pre-allocated memory pool |
-| Mixed prefill/decode | New and ongoing sequences batched together |
-| Automatic padding | Handles variable-length inputs |
+| Feature                    | Description                                |
+| -------------------------- | ------------------------------------------ |
+| Iteration-level scheduling | Multiple requests processed per step       |
+| Slot-based KV cache        | Pre-allocated memory pool                  |
+| Mixed prefill/decode       | New and ongoing sequences batched together |
+| Automatic padding          | Handles variable-length inputs             |
 
 ## Grouped Query Attention (GQA)
 
@@ -188,12 +188,12 @@ model = DecoderModel(
 
 ### Trade-offs
 
-| Window Size | Memory | Long-range Recall |
-| ----------- | ------ | ----------------- |
-| 128 | Very low | Limited |
-| 512 | Low | Good |
-| 2048 | Medium | Excellent |
-| None | High | Full |
+| Window Size | Memory   | Long-range Recall |
+| ----------- | -------- | ----------------- |
+| 128         | Very low | Limited           |
+| 512         | Low      | Good              |
+| 2048        | Medium   | Excellent         |
+| None        | High     | Full              |
 
 ---
 
@@ -209,11 +209,11 @@ model = DecoderModel(
 
 ## Performance Comparison
 
-| Technique | Latency | Memory | Quality |
-| --------- | ------- | ------ | ------- |
-| Baseline | 1.0x | 1.0x | 100% |
-| + KVCache | 0.3x | ~1.0x | 100% |
-| + GQA (4:1) | 0.25x | 0.25x | ~99% |
-| + Sliding Window | 0.2x | 0.15x | ~95%* |
+| Technique        | Latency | Memory | Quality |
+| ---------------- | ------- | ------ | ------- |
+| Baseline         | 1.0x    | 1.0x   | 100%    |
+| + KVCache        | 0.3x    | ~1.0x  | 100%    |
+| + GQA (4:1)      | 0.25x   | 0.25x  | ~99%    |
+| + Sliding Window | 0.2x    | 0.15x  | ~95%*   |
 
 *Quality depends on task; long-range dependencies may suffer.

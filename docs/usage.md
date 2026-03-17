@@ -255,12 +255,12 @@ curl -X POST "http://127.0.0.1:8000/generate" \
 
 You can configure the serving engine using environment variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LLM_SERVING_MODEL_PATH` | Path to model checkpoint file | `None` (Dummy Model) |
-| `LLM_SERVING_DEVICE` | Computation device (`cpu`, `cuda`, `auto`) | `auto` |
-| `LLM_SERVING_API_KEY` | API Key for authentication | `None` (Disabled) |
-| `LLM_SERVING_LOG_LEVEL` | Logging level (`INFO`, `DEBUG`, etc.) | `INFO` |
+| Variable                 | Description                                | Default              |
+| ------------------------ | ------------------------------------------ | -------------------- |
+| `LLM_SERVING_MODEL_PATH` | Path to model checkpoint file              | `None` (Dummy Model) |
+| `LLM_SERVING_DEVICE`     | Computation device (`cpu`, `cuda`, `auto`) | `auto`               |
+| `LLM_SERVING_API_KEY`    | API Key for authentication                 | `None` (Disabled)    |
+| `LLM_SERVING_LOG_LEVEL`  | Logging level (`INFO`, `DEBUG`, etc.)      | `INFO`               |
 
 ### Metrics
 
@@ -311,18 +311,18 @@ The serving module provides an OpenAI-compatible endpoint, allowing you to use t
 
 **Parameters:**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model` | string | `"llm"` | Model identifier (ignored, for compatibility) |
-| `messages` | array | required | List of chat messages |
-| `max_tokens` | int | `50` | Maximum tokens to generate |
-| `temperature` | float | `1.0` | Sampling temperature (0-2) |
-| `top_p` | float | `null` | Nucleus sampling parameter |
-| `top_k` | int | `null` | Top-k sampling parameter |
-| `stream` | bool | `false` | Enable streaming response |
-| `presence_penalty` | float | `0.0` | Mapped to repetition_penalty |
-| `frequency_penalty` | float | `0.0` | Frequency penalty (not implemented, reserved) |
-| `stop` | string/array | `null` | Stop sequences |
+| Parameter           | Type         | Default  | Description                                   |
+| ------------------- | ------------ | -------- | --------------------------------------------- |
+| `model`             | string       | `"llm"`  | Model identifier (ignored, for compatibility) |
+| `messages`          | array        | required | List of chat messages                         |
+| `max_tokens`        | int          | `50`     | Maximum tokens to generate                    |
+| `temperature`       | float        | `1.0`    | Sampling temperature (0-2)                    |
+| `top_p`             | float        | `null`   | Nucleus sampling parameter                    |
+| `top_k`             | int          | `null`   | Top-k sampling parameter                      |
+| `stream`            | bool         | `false`  | Enable streaming response                     |
+| `presence_penalty`  | float        | `0.0`    | Mapped to repetition_penalty                  |
+| `frequency_penalty` | float        | `0.0`    | Frequency penalty (not implemented, reserved) |
+| `stop`              | string/array | `null`   | Stop sequences                                |
 
 ### Response
 

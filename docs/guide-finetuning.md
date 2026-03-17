@@ -4,11 +4,11 @@ This guide covers parameter-efficient fine-tuning methods available in the LLM f
 
 ## Overview
 
-| Method | Memory | Use Case |
-| ------ | ------ | -------- |
-| **Full Fine-Tuning** | 100% | Small models, abundant GPU |
-| **LoRA** | ~10% | General PEFT, good balance |
-| **QLoRA** | ~5% | Large models, limited GPU |
+| Method               | Memory | Use Case                   |
+| -------------------- | ------ | -------------------------- |
+| **Full Fine-Tuning** | 100%   | Small models, abundant GPU |
+| **LoRA**             | ~10%   | General PEFT, good balance |
+| **QLoRA**            | ~5%    | Large models, limited GPU  |
 
 ## LoRA (Low-Rank Adaptation)
 
@@ -41,11 +41,11 @@ merge_lora(model)  # LoRA weights merged into base, no extra latency
 
 ### Configuration Tips
 
-| Parameter | Recommendation |
-| --------- | -------------- |
-| `rank` | 4-16 for most tasks, higher for complex tasks |
-| `alpha` | Usually 2x rank (e.g., rank=8 → alpha=16) |
-| `target_modules` | QKV + Output projections in attention |
+| Parameter        | Recommendation                                |
+| ---------------- | --------------------------------------------- |
+| `rank`           | 4-16 for most tasks, higher for complex tasks |
+| `alpha`          | Usually 2x rank (e.g., rank=8 → alpha=16)     |
+| `target_modules` | QKV + Output projections in attention         |
 
 ---
 
@@ -74,11 +74,11 @@ optimizer = torch.optim.AdamW(get_qlora_parameters(model), lr=1e-4)
 
 For a 7B parameter model:
 
-| Method | Base Weights | Trainable | Total VRAM |
-| ------ | ------------ | --------- | ---------- |
-| Full FT | 14GB (fp16) | 14GB | ~28GB |
-| LoRA | 14GB (fp16) | 0.1GB | ~14GB |
-| QLoRA | 3.5GB (4-bit) | 0.1GB | ~4GB |
+| Method  | Base Weights  | Trainable | Total VRAM |
+| ------- | ------------- | --------- | ---------- |
+| Full FT | 14GB (fp16)   | 14GB      | ~28GB      |
+| LoRA    | 14GB (fp16)   | 0.1GB     | ~14GB      |
+| QLoRA   | 3.5GB (4-bit) | 0.1GB     | ~4GB       |
 
 ### How NF4 Quantization Works
 
@@ -142,20 +142,20 @@ model.load_state_dict(torch.load("lora_weights.pt"), strict=False)
 
 ### LoRA Functions
 
-| Function | Description |
-| -------- | ----------- |
-| `apply_lora(model, ...)` | Apply LoRA to model |
-| `merge_lora(model)` | Merge LoRA into base weights |
-| `unmerge_lora(model)` | Undo merge |
-| `get_lora_parameters(model)` | Get trainable params |
-| `disable_lora(model)` | Temporarily disable |
-| `enable_lora(model)` | Re-enable |
+| Function                     | Description                  |
+| ---------------------------- | ---------------------------- |
+| `apply_lora(model, ...)`     | Apply LoRA to model          |
+| `merge_lora(model)`          | Merge LoRA into base weights |
+| `unmerge_lora(model)`        | Undo merge                   |
+| `get_lora_parameters(model)` | Get trainable params         |
+| `disable_lora(model)`        | Temporarily disable          |
+| `enable_lora(model)`         | Re-enable                    |
 
 ### QLoRA Functions
 
-| Function | Description |
-| -------- | ----------- |
-| `apply_qlora(model, ...)` | Apply QLoRA (quantizes base) |
-| `get_qlora_parameters(model)` | Get trainable params |
-| `quantize_nf4(tensor)` | Manual NF4 quantization |
-| `dequantize_nf4(indices, scales, ...)` | Dequantize NF4 |
+| Function                               | Description                  |
+| -------------------------------------- | ---------------------------- |
+| `apply_qlora(model, ...)`              | Apply QLoRA (quantizes base) |
+| `get_qlora_parameters(model)`          | Get trainable params         |
+| `quantize_nf4(tensor)`                 | Manual NF4 quantization      |
+| `dequantize_nf4(indices, scales, ...)` | Dequantize NF4               |
