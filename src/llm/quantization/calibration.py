@@ -35,7 +35,7 @@ class ActivationStats:
         batch_max = tensor.max().item()
         batch_abs_max = tensor.abs().max().item()
         batch_mean = tensor.mean().item()
-        batch_std = tensor.std().item()
+        batch_std = tensor.std().item()  # noqa: F841 - reserved for future variance calculation
         batch_size = tensor.numel()
 
         # Running statistics
@@ -101,7 +101,7 @@ class CalibrationDataCollector:
     def _make_hook(self, name: str):
         """Create a forward hook for a named layer."""
 
-        def hook(module, input, output):  # noqa: A002 - hook API uses 'input'
+        def hook(_module, _input, output):
             if isinstance(output, tuple):
                 output = output[0]
             self.stats[name].update(output)

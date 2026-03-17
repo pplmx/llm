@@ -1,6 +1,6 @@
 import logging
 import sys
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import torch
@@ -28,7 +28,7 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 # --- Task Enum for Typer choices ---
-class TaskName(str, Enum):
+class TaskName(StrEnum):
     regression = "regression"
     lm = "lm"
     sft = "sft"
