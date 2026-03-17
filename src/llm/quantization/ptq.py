@@ -232,7 +232,7 @@ def compute_model_size(model: nn.Module) -> dict[str, Any]:
     total_bytes = 0
     quantized_layers = 0
 
-    for _name, module in model.named_modules():
+    for module in model.modules():
         if isinstance(module, QuantizedLinear):
             quantized_layers += 1
             # INT8 weights

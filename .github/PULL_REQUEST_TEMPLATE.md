@@ -1,9 +1,9 @@
-## Pull Request
+# Pull Request
 
-### Description
+## Description
 <!-- Provide a brief description of your changes -->
 
-### Type of Change
+## Type of Change
 <!-- Mark the relevant option with an "x" -->
 
 - [ ] Bug fix (non-breaking change which fixes an issue)
@@ -14,17 +14,17 @@
 - [ ] Code refactoring
 - [ ] Test additions/improvements
 
-### Related Issues
+## Related Issues
 <!-- Link to related issues, e.g., Closes #123 -->
 
-### Changes Made
+## Changes Made
 <!-- List the main changes in bullet points -->
 
 -
 -
 -
 
-### Testing
+## Testing
 <!-- Describe the testing you've done -->
 
 - [ ] All existing tests pass (`make test`)

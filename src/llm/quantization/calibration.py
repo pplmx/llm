@@ -35,7 +35,6 @@ class ActivationStats:
         batch_max = tensor.max().item()
         batch_abs_max = tensor.abs().max().item()
         batch_mean = tensor.mean().item()
-        batch_std = tensor.std().item()  # noqa: F841 - reserved for future variance calculation
         batch_size = tensor.numel()
 
         # Running statistics
