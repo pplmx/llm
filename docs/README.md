@@ -41,12 +41,12 @@ Detailed documentation for the training system:
 
 Design decisions and their rationale:
 
-| ADR                          | Topic                         |
-| ---------------------------- | ----------------------------- |
-| [001](adr/001-use-gqa.md)    | Grouped Query Attention (GQA) |
-| [002](adr/002-use-swiglu.md) | SwiGLU Activation             |
-| [003](adr/003-use-prek.md)   | Using prek for Git hooks      |
-| [004](adr/004-use-ty.md)     | Using ty for type checking    |
+| ADR                            | Topic                         |
+| ------------------------------ | ----------------------------- |
+| [001](adr/001-use-gqa.md)      | Grouped Query Attention (GQA) |
+| [002](adr/002-use-swiglu.md)   | SwiGLU Activation             |
+| [003](adr/003-use-kv-cache.md) | Pre-allocated KV Cache        |
+| [004](adr/004-use-qlora.md)    | QLoRA Efficient Fine-tuning   |
 
 ## Deep Dives
 
