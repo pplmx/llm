@@ -160,6 +160,18 @@ make compose-up
 
 ### API Usage
 
+#### GET /health
+
+Check if the inference server is running and healthy.
+
+**Response:**
+
+```json
+{
+  "status": "ok"
+}
+```
+
 #### POST /generate
 
 Generate text from a prompt.
@@ -194,6 +206,35 @@ curl -X POST "http://127.0.0.1:8000/generate" \
 {
   "generated_text": "Hello, world! This is a generated text...",
   "token_count": 12
+}
+```
+
+#### POST /batch_generate
+
+Generate text for multiple prompts in a single request.
+
+**Request Body:**
+
+```json
+{
+  "prompts": ["Hello", "Once upon a time", "The quick brown fox"],
+  "max_new_tokens": 50,
+  "temperature": 0.8,
+  "top_k": 5,
+  "top_p": 0.9,
+  "repetition_penalty": 1.1
+}
+```
+
+**Response:**
+
+```json
+{
+  "results": [
+    {"generated_text": "Hello! How can I help?", "token_count": 5},
+    {"generated_text": "Once upon a time in a distant land...", "token_count": 12},
+    {"generated_text": "The quick brown fox jumps over the lazy dog.", "token_count": 10}
+  ]
 }
 ```
 
@@ -277,8 +318,11 @@ The serving module provides an OpenAI-compatible endpoint, allowing you to use t
 | `max_tokens` | int | `50` | Maximum tokens to generate |
 | `temperature` | float | `1.0` | Sampling temperature (0-2) |
 | `top_p` | float | `null` | Nucleus sampling parameter |
+| `top_k` | int | `null` | Top-k sampling parameter |
 | `stream` | bool | `false` | Enable streaming response |
 | `presence_penalty` | float | `0.0` | Mapped to repetition_penalty |
+| `frequency_penalty` | float | `0.0` | Frequency penalty (not implemented, reserved) |
+| `stop` | string/array | `null` | Stop sequences |
 
 ### Response
 

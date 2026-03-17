@@ -17,20 +17,24 @@
 
 ```bash
 # 运行一个训练任务, 并覆盖学习率和批量大小
-llm-train --task regression --training-lr 0.005 --training-batch-size 256
+llm-train --task regression --lr 0.001 --batch-size 32
 
 # 禁用 torch.compile 以进行调试
-llm-train --task regression --no-optimization-use-compile
+llm-train --task regression --compile false
 
-# 从指定的检查点恢复训练
-llm-train --task regression --checkpoint-resume-from-checkpoint checkpoints/latest.pt
+# 从指定的检查点恢复训练 (通过 YAML 配置)
+llm-train --task regression --config-path config_with_checkpoint.yaml
 
-# 启用 MoE 并设置专家数量和 Top-K
-llm-train --task regression --model-use-moe --model-num-experts 8 --model-top-k 2
+# 使用 YAML 配置进行复杂设置
+llm-train --task sft --config-path config.yaml
+
+# 启用/禁用 AMP 混合精度
+llm-train --task regression --amp true
 ```
 
 - 要查看所有可用的命令行参数, 请运行 `llm-train --help`.
-- 参数命名约定: `--<配置组名称>-<参数名称>`(例如, `--model-hidden-size`, `--training-epochs`). 布尔参数可以通过 `--no-<配置组名称>-<参数名称>` 来禁用(如果默认值为 `True`), 或通过 `--<配置组名称>-<参数名称>` 来启用(如果默认值为 `False`).
+- 当前 CLI 暴露的参数包括: `--task`, `--config-path`, `--epochs`, `--batch-size`, `--lr`, `--num-samples`, `--compile`, `--amp`.
+- 完整的模型配置(如 `hidden_size`, `use_moe`, `num_experts` 等)建议通过 YAML 配置文件设置.
 
 ## 方法二: 使用 YAML 配置文件 (推荐用于可复现的实验)
 
@@ -79,8 +83,8 @@ llm-train --task regression --model-use-moe --model-num-experts 8 --model-top-k 
     # 从 YAML 文件加载配置
     config = Config.from_yaml("path/to/your/config.yaml")
 
-    # 如果需要, 可以通过命令行参数覆盖 YAML 中的设置
-    # config = Config.from_args_and_env(config) # 假设 from_args_and_env 可以接受一个基础 config
+    # CLI 参数会覆盖 YAML 配置 (如上所示)
+    # 直接在命令行中使用 --lr, --batch-size 等参数覆盖 YAML 中的值
     ```
 
     *注意: `train.py` 默认从命令行和环境变量加载配置. 如果您希望使用 YAML 文件, 您需要在自己的脚本中显式调用 `Config.from_yaml()`.*

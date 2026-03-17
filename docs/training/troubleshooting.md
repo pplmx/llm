@@ -4,7 +4,7 @@
 
 ---
 
-### 问题 1: `CUDA out of memory` (显存不足)
+## 问题 1: `CUDA out of memory` (显存不足)
 
 这是训练深度学习模型时最常见的错误之一.
 

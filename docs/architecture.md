@@ -34,8 +34,9 @@ src/llm/
 │   └── decoder.py         # Decoder-only transformer
 ├── training/              # Training infrastructure
 │   ├── core/              # Engine, callbacks, config
-│   ├── data/              # DataModules, tokenizers
 │   └── tasks/             # Task-specific trainers (LM, SFT)
+├── data/                  # DataModules, tokenizers (独立于 training/)
+├── tokenization/          # Tokenizer 实现
 ├── serving/               # Inference API
 │   └── api.py             # FastAPI with OpenAI-compatible endpoints
 └── inference.py           # Generation utilities
@@ -87,7 +88,7 @@ To support rapid experimentation with different architectural variants (e.g., Fl
 
 Located in `src/llm/core/registry.py`, registries allow dynamic selection of implementations:
 
-* **`ATTENTION_REGISTRY`**: `mha` (Standard), `flash` (Planned)
+* **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA)
 * **`MLP_REGISTRY`**: `mlp` (Standard), `moe` (Mixture of Experts)
 * **`NORM_REGISTRY`**: `layer_norm`, `rms_norm`
 
