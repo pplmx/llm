@@ -6,15 +6,15 @@
 
 ## 📋 架构参数说明
 
-| 参数               | 符号  | 说明           |
-|------------------|-----|--------------|
-| Batch Size       | B   | 批次大小         |
-| Sequence Length  | L   | 序列长度         |
-| Hidden Dimension | H   | 隐藏层维度        |
-| Number of Heads  | h   | 注意力头数        |
-| Head Dimension   | d_k | 每个头的维度 (H/h) |
-| FFN Dimension    | 4H  | 前馈网络中间层维度    |
-| Number of Layers | N   | 编码器/解码器层数    |
+| 参数             | 符号 | 说明               |
+| ---------------- | ---- | ------------------ |
+| Batch Size       | B    | 批次大小           |
+| Sequence Length  | L    | 序列长度           |
+| Hidden Dimension | H    | 隐藏层维度         |
+| Number of Heads  | h    | 注意力头数         |
+| Head Dimension   | d_k  | 每个头的维度 (H/h) |
+| FFN Dimension    | 4H   | 前馈网络中间层维度 |
+| Number of Layers | N    | 编码器/解码器层数  |
 
 ---
 

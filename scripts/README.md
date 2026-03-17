@@ -12,11 +12,11 @@ uv run scripts/<script_name>.py [options]
 
 ## Available Scripts
 
-| Script | Description |
-| ------ | ----------- |
-| `e2e_pipeline.py` | End-to-end smoke test (Train → Evaluate → Inference) |
-| `train_simple_decoder.py` | Train a decoder model on text files |
-| `benchmark_inference.py` | Benchmark inference performance |
+| Script                    | Description                                          |
+| ------------------------- | ---------------------------------------------------- |
+| `e2e_pipeline.py`         | End-to-end smoke test (Train → Evaluate → Inference) |
+| `train_simple_decoder.py` | Train a decoder model on text files                  |
+| `benchmark_inference.py`  | Benchmark inference performance                      |
 
 ## Script Details
 

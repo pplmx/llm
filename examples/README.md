@@ -42,12 +42,12 @@ python examples/qlora_finetuning_demo.py
 
 ## 示例文件详解
 
-| 文件 | 功能 | 关键依赖 |
-|------|------|----------|
-| `inference_demo.py` | 基础文本生成 | DecoderModel, SimpleCharacterTokenizer, generate |
-| `openai_client_demo.py` | OpenAI 兼容 API 客户端 | openai SDK, SSE 流式 |
-| `kv_cache_demo.py` | KV Cache 高效推理 | KVCache, GQA (num_kv_heads) |
-| `qlora_finetuning_demo.py` | QLoRA 微调 | apply_qlora, NF4 量化, LoRA 适配器 |
+| 文件                       | 功能                   | 关键依赖                                         |
+| -------------------------- | ---------------------- | ------------------------------------------------ |
+| `inference_demo.py`        | 基础文本生成           | DecoderModel, SimpleCharacterTokenizer, generate |
+| `openai_client_demo.py`    | OpenAI 兼容 API 客户端 | openai SDK, SSE 流式                             |
+| `kv_cache_demo.py`         | KV Cache 高效推理      | KVCache, GQA (num_kv_heads)                      |
+| `qlora_finetuning_demo.py` | QLoRA 微调             | apply_qlora, NF4 量化, LoRA 适配器               |
 
 ## 运行示例
 

@@ -806,7 +806,7 @@ class ExperimentTracker:
 
 ## 项目结构和代码组织
 
-```
+```text
 llm-training/
 ├── .venv/                    # 虚拟环境目录
 ├── data/                     # 数据目录

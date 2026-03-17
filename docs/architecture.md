@@ -165,13 +165,13 @@ graph LR
 
 ### Supported Features
 
-| Feature | Description |
-| ------- | ----------- |
-| **GQA** | Multiple query heads share KV heads (memory efficient) |
-| **Sliding Window** | Limits attention scope for long sequences |
-| **KV Cache** | Caches key/value for autoregressive generation |
-| **RoPE** | Rotary position embeddings with scaling |
-| **ALiBi** | Attention with linear biases |
+| Feature            | Description                                            |
+| ------------------ | ------------------------------------------------------ |
+| **GQA**            | Multiple query heads share KV heads (memory efficient) |
+| **Sliding Window** | Limits attention scope for long sequences              |
+| **KV Cache**       | Caches key/value for autoregressive generation         |
+| **RoPE**           | Rotary position embeddings with scaling                |
+| **ALiBi**          | Attention with linear biases                           |
 
 ### Multi-Head Attention Internals
 
