@@ -7,7 +7,29 @@
 ### 1. 基础推理
 
 ```bash
-python examples/inference_demo.py
+uv run examples/inference_demo.py
+```
+
+### 2. OpenAI SDK 调用
+
+```bash
+# 终端1: 启动推理服务
+uv run llm-serve
+
+# 终端2: 运行客户端
+uv run examples/openai_client_demo.py
+```
+
+### 3. KV Cache 高效推理
+
+```bash
+uv run examples/kv_cache_demo.py
+```
+
+### 4. QLoRA 高效微调
+
+```bash
+uv run examples/qlora_finetuning_demo.py
 ```
 
 功能：使用 DecoderModel + SimpleCharacterTokenizer 进行基础文本生成。
@@ -65,21 +87,21 @@ source .venv/bin/activate
 
 ```bash
 # 基础推理
-python examples/inference_demo.py
+uv run examples/inference_demo.py
 
 # KV Cache 推理
-python examples/kv_cache_demo.py
+uv run examples/kv_cache_demo.py
 
 # 带服务的推理
-llm-serve &
-python examples/openai_client_demo.py
+uv run llm-serve &
+uv run examples/openai_client_demo.py
 ```
 
 ### 微调示例
 
 ```bash
 # QLoRA 微调
-python examples/qlora_finetuning_demo.py
+uv run examples/qlora_finetuning_demo.py
 ```
 
 ## 进阶使用
