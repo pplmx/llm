@@ -10,7 +10,7 @@
 
 这是训练过程的入口点. 其主要职责是:
 
-- **参数解析**: 使用 `argparse` 解析命令行参数, 特别是 `--task` 参数, 用于选择要执行的训练任务.
+- **参数解析**: 使用 `typer` 解析命令行参数, 特别是 `--task` 参数, 用于选择要执行的训练任务.
 - **配置加载**: 从命令行参数和环境变量中加载配置.
 
 - **分布式训练管理**: 初始化 `DistributedManager`, 用于处理 DDP 的设置和清理.
@@ -44,7 +44,7 @@
 
 ### 3. `core/config.py`
 
-该文件使用 `dataclasses` 定义了用于配置训练过程的各个方面:
+该文件使用 `Pydantic` (BaseModel, BaseSettings) 定义了用于配置训练过程的各个方面:
 
 - `ModelConfig`: 模型相关的超参数, 包括隐藏层大小、层数, 以及 **MoE (Mixture of Experts) 相关的参数(`use_moe`、`num_experts`、`top_k`)**.
 - `TrainingConfig`: 训练过程的超参数(例如, 学习率、批量大小、`epochs`).

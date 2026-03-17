@@ -32,7 +32,7 @@
 
 ## 关键代码解析
 
-#### `sampler.set_epoch(epoch)`
+### `sampler.set_epoch(epoch)`
 
 - **为什么需要它？** `DistributedDataSampler` 需要确保在每个 `epoch` 中, 数据的分片方式都是不同的, 否则模型每个 `epoch` 都会看到完全相同的数据子集, 这会损害模型的泛化能力. 通过调用 `sampler.set_epoch(epoch)`, 我们改变了 `sampler` 内部的随机种子, 从而保证了每个 `epoch` 都有一个新的、随机的数据排列和分片方式.
 - **调用时机**: 必须在每个 `epoch` 开始时, 创建 `DataLoader` 之前调用.
