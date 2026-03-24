@@ -1,25 +1,22 @@
-from collections.abc import Callable
 from typing import Any
 
-# A simple dictionary to store registered models
-MODEL_REGISTRY: dict[str, type[Any]] = {}
+from llm.core.registry import ComponentRegistry
+
+# Use ComponentRegistry for consistency
+_model_registry = ComponentRegistry("Model")
+
+# Backward-compatible API
+MODEL_REGISTRY: dict[str, type[Any]] = _model_registry._registry
 
 
-def register_model(name: str) -> Callable[[type[Any]], type[Any]]:
+def register_model(name: str) -> Any:
     """
     A decorator to register a model class with a given name.
 
     Args:
         name (str): The name to register the model under.
     """
-
-    def decorator(model_class: type[Any]) -> type[Any]:
-        if name in MODEL_REGISTRY:
-            raise ValueError(f"Model with name '{name}' already registered.")
-        MODEL_REGISTRY[name] = model_class
-        return model_class
-
-    return decorator
+    return _model_registry.register(name)
 
 
 def get_model(name: str) -> type[Any]:
@@ -35,6 +32,4 @@ def get_model(name: str) -> type[Any]:
     Raises:
         ValueError: If no model with the given name is registered.
     """
-    if name not in MODEL_REGISTRY:
-        raise ValueError(f"No model with name '{name}' registered.")
-    return MODEL_REGISTRY[name]
+    return _model_registry.get(name)

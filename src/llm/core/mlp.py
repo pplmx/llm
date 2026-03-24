@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from llm.core.registry import MLP_REGISTRY
-from llm.utils.common import get_activation_layer
+from llm.utils.common import get_activation_layer, make_factory_kwargs
 
 
 @MLP_REGISTRY.register("mlp")
@@ -80,7 +80,7 @@ class MLP(nn.Module):
                         # be responsible for device/dtype placement.
                         pass
 
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
         self.fc1 = nn.Linear(hidden_size, self.intermediate_size, bias=bias, **factory_kwargs)
         if self.use_glu:
             self.gate_proj = nn.Linear(hidden_size, self.intermediate_size, bias=bias, **factory_kwargs)

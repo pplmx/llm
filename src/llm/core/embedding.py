@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from llm.core.positional_encoding import PositionalEncoding
+from llm.utils.common import make_factory_kwargs
 
 
 class EmbeddingLayer(nn.Module):
@@ -43,7 +44,7 @@ class EmbeddingLayer(nn.Module):
             device (torch.device | str | None, default=None): Target device for the layers.
             dtype (torch.dtype | None, default=None): Target data type for the layers.
         """
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
         super().__init__()
 
         self.hidden_size = hidden_size

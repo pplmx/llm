@@ -10,11 +10,11 @@ Reference: https://arxiv.org/abs/2305.14314
 
 from __future__ import annotations
 
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from llm.utils.common import init_lora_weights
 
 # NF4 quantization constants (Normal Float 4-bit)
 # Values are optimized for normally distributed weights
@@ -180,8 +180,7 @@ class QLoRALinear(nn.Module):
 
     def _init_lora_weights(self) -> None:
         """Initialize LoRA weights following standard LoRA initialization."""
-        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-        nn.init.zeros_(self.lora_B)
+        init_lora_weights(self.lora_A, self.lora_B)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with dequantized base + LoRA adaptation."""

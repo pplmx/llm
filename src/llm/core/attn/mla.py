@@ -3,6 +3,8 @@ import math
 import torch
 from torch import Tensor, nn
 
+from llm.utils.common import make_factory_kwargs
+
 from .sdpa import sdpa
 
 
@@ -46,7 +48,7 @@ class MultiLatentAttention(nn.Module):
         if hidden_size % num_heads != 0:
             raise ValueError(f"hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})")
 
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads

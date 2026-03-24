@@ -28,7 +28,6 @@ def stream_generate(
     device = next(model.parameters()).device
     input_ids = tokenizer.encode(prompt)
     input_tensor = torch.tensor(input_ids, dtype=torch.long, device=device).unsqueeze(0)
-    input_tensor = torch.tensor(input_ids, dtype=torch.long, device=device).unsqueeze(0)
     max_seq_len = getattr(model, "max_seq_len", 512)
     past_key_values = None
 

@@ -9,11 +9,12 @@ Reference: https://arxiv.org/abs/2106.09685
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
+
+from llm.utils.common import init_lora_weights
 
 
 class LoRALinear(nn.Module):
@@ -65,8 +66,7 @@ class LoRALinear(nn.Module):
 
     def _init_lora_weights(self) -> None:
         """Initialize LoRA weights: A with Kaiming, B with zeros."""
-        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-        nn.init.zeros_(self.lora_B)
+        init_lora_weights(self.lora_A, self.lora_B)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass: frozen base + LoRA adaptation."""
