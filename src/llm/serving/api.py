@@ -199,8 +199,15 @@ async def generate_text(
         raise HTTPException(status_code=504, detail="Request timeout")
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log unexpected errors for debugging but return generic message
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.exception("Unexpected error in generate_text")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
@@ -222,7 +229,12 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
             yield chunk
 
     except Exception as e:
-        yield f"Error: {str(e)}"
+        # Log the error but don't expose internal details in stream
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.exception("Error in stream generation")
+        yield f"Error: {type(e).__name__}"
 
 
 @app.post("/batch_generate", response_model=BatchGenerationResponse)
@@ -252,8 +264,15 @@ async def batch_generate_text(
         raise HTTPException(status_code=504, detail="Request timeout")
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log unexpected errors for debugging
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.exception("Unexpected error in batch_generate_text")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # OpenAI-compatible Chat Completions API
@@ -324,8 +343,15 @@ async def chat_completions(
         raise HTTPException(status_code=504, detail="Request timeout")
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log unexpected errors for debugging
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.exception("Unexpected error in chat_completions")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def _chat_stream_generator(
@@ -384,11 +410,17 @@ async def _chat_stream_generator(
         yield "data: [DONE]\n\n"
 
     except Exception as e:
+        # Log the error for debugging
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.exception("Error in chat stream generation")
+
         error_chunk = ChatCompletionChunk(
             id=completion_id,
             created=created,
             model=request.model,
-            choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=f"Error: {e}"))],
+            choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=f"Error: {type(e).__name__}"))],
         )
         yield f"data: {error_chunk.model_dump_json()}\n\n"
         yield "data: [DONE]\n\n"

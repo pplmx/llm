@@ -57,13 +57,17 @@ class SFTDataset(Dataset):
         if not self.file_path.exists():
             raise FileNotFoundError(f"File not found: {self.file_path}")
 
-        data = []
+        data: list[dict[str, Any]] = []
         try:
             with self.file_path.open(encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
                         data.append(json.loads(line))
-        except Exception as e:
+        except FileNotFoundError:
+            raise FileNotFoundError(f"SFT data file not found: {self.file_path}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in SFT file {self.file_path}: {e}")
+        except OSError as e:
             raise OSError(f"Error reading SFT file {self.file_path}: {e}")
 
         logger.info(f"Loaded {len(data)} examples from {self.file_path}")
