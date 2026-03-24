@@ -77,7 +77,11 @@ class TextDataset(Dataset):
         try:
             with Path(self.file_path).open(encoding="utf-8") as f:
                 text_content = f.read()
-        except Exception as e:
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Data file not found: {self.file_path}")
+        except PermissionError:
+            raise PermissionError(f"Permission denied reading file: {self.file_path}")
+        except OSError as e:
             raise OSError(f"Error reading file {self.file_path}: {e}")
 
         if not text_content:  # Handle empty file

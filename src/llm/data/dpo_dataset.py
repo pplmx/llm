@@ -55,7 +55,11 @@ class DPODataset(Dataset):
                             # For now enforce standard DPO keys or we need a map
                             pass
                         data.append(item)
-        except Exception as e:
+        except FileNotFoundError:
+            raise FileNotFoundError(f"DPO data file not found: {self.file_path}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in DPO file {self.file_path}: {e}")
+        except OSError as e:
             raise OSError(f"Error reading DPO file {self.file_path}: {e}")
 
         logger.info(f"Loaded {len(data)} preference pairs from {self.file_path}")

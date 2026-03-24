@@ -75,9 +75,10 @@ class MLP(nn.Module):
                         moved_norm = self.norm.to(device=device, dtype=dtype)
                         # If .to() returned a new module, keep that reference
                         self.norm = moved_norm
-                    except Exception:
+                    except (RuntimeError, TypeError, AttributeError):
                         # If moving fails for some custom module, ignore and let the caller
                         # be responsible for device/dtype placement.
+                        # These are the most common exceptions when .to() fails
                         pass
 
         factory_kwargs = make_factory_kwargs(device, dtype)
