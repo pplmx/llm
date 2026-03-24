@@ -41,7 +41,7 @@ class LayerNorm(nn.Module):
 
         # 将 normalized_shape 统一处理为 tuple
         if isinstance(normalized_shape, int):
-            self.normalized_shape = (normalized_shape,)
+            self.normalized_shape: tuple[int, ...] = (normalized_shape,)
         else:
             self.normalized_shape = tuple(normalized_shape)
 

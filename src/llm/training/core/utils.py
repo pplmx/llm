@@ -153,7 +153,9 @@ class DistributedManager:
 
         # If GPUs are available, calculate based on config
         # Default to 1 GPU per node if not specified, assuming at least one is available.
-        gpus_per_node = self.config.gpus_per_node if self.config.gpus_per_node > 0 else 1
+        gpus_per_node = (
+            self.config.gpus_per_node if self.config.gpus_per_node is not None and self.config.gpus_per_node > 0 else 1
+        )
         num_nodes = self.config.num_nodes if self.config.num_nodes > 0 else 1
 
         calculated_world_size = num_nodes * gpus_per_node
@@ -192,7 +194,7 @@ class CheckpointManager:
         self.rank = rank
         self.logger = logger
         self.best_loss = float("inf")
-        self.checkpoints_saved = []
+        self.checkpoints_saved: list[Path] = []
         if self.rank == 0:
             Path(self.config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 

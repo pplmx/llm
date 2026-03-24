@@ -105,9 +105,9 @@ class MoE(nn.Module):
 
         # Create a list of lists, where each inner list contains the indices
         # of tokens routed to that expert.
-        expert_inputs = [[] for _ in range(self.num_experts)]
-        expert_weights_per_token = [[] for _ in range(self.num_experts)]
-        expert_original_indices = [[] for _ in range(self.num_experts)]
+        expert_inputs: list[list[torch.Tensor]] = [[] for _ in range(self.num_experts)]
+        expert_weights_per_token: list[list[torch.Tensor]] = [[] for _ in range(self.num_experts)]
+        expert_original_indices: list[list[int]] = [[] for _ in range(self.num_experts)]
 
         for i in range(x.size(0)):  # Iterate over each token
             for k_idx in range(self.top_k):
