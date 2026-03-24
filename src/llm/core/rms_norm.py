@@ -47,7 +47,7 @@ class RMSNorm(nn.Module):
 
         # 存储配置
         if isinstance(normalized_shape, int):
-            self.normalized_shape = (normalized_shape,)
+            self.normalized_shape: tuple[int, ...] = (normalized_shape,)
         else:
             self.normalized_shape = tuple(normalized_shape)
 

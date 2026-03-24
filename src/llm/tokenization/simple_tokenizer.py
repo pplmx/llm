@@ -32,14 +32,16 @@ class SimpleCharacterTokenizer:
         # Add PAD token
         self.pad_char: str = "<PAD>"
         if self.pad_char not in self.stoi:
-            self.pad_token_id: int = self.vocab_size
-            self.stoi[self.pad_char] = self.pad_token_id
-            self.itos[self.pad_token_id] = self.pad_char
+            pad_token_id = self.vocab_size
+            self.stoi[self.pad_char] = pad_token_id
+            self.itos[pad_token_id] = self.pad_char
             self.chars.append(self.pad_char)  # Add to the list of characters
             self.vocab_size += 1
         else:
             # If PAD char was part of the corpus, use its existing ID
-            self.pad_token_id: int = self.stoi[self.pad_char]
+            pad_token_id = self.stoi[self.pad_char]
+
+        self.pad_token_id: int = pad_token_id
 
     @property
     def bos_token_id(self) -> int | None:
