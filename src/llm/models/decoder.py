@@ -7,6 +7,7 @@ from torch.utils.checkpoint import checkpoint
 from llm.core.embedding import EmbeddingLayer
 from llm.core.kv_cache import KVCache
 from llm.core.transformer_block import TransformerBlock
+from llm.utils.common import make_factory_kwargs
 
 
 class DecoderModel(nn.Module):
@@ -55,7 +56,7 @@ class DecoderModel(nn.Module):
         Initializes the DecoderModel.
         """
         super().__init__()
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len

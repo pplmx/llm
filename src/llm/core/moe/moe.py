@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from llm.core.mlp import MLP  # Reusing the MLP for experts
 from llm.core.registry import MLP_REGISTRY
+from llm.utils.common import make_factory_kwargs
 
 
 @MLP_REGISTRY.register("moe")
@@ -50,7 +51,7 @@ class MoE(nn.Module):
         self.num_experts = num_experts
         self.top_k = top_k
 
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
 
         # Gating network (router)
         self.gate = nn.Linear(hidden_size, num_experts, bias=False, **factory_kwargs)

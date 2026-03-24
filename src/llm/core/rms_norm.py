@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from llm.utils.common import make_factory_kwargs
+
 
 class RMSNorm(nn.Module):
     """
@@ -52,7 +54,7 @@ class RMSNorm(nn.Module):
         self.eps = eps
         self.elementwise_affine = elementwise_affine
 
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
         if self.elementwise_affine:
             # 初始化可学习的缩放参数 gamma
             self.weight = nn.Parameter(torch.ones(self.normalized_shape, **factory_kwargs))  # gamma

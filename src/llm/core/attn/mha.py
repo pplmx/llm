@@ -5,6 +5,7 @@ from torch import Tensor, nn
 
 from llm.core.kv_cache import KVCache
 from llm.core.registry import ATTENTION_REGISTRY
+from llm.utils.common import make_factory_kwargs
 
 from .sdpa import sdpa
 
@@ -55,7 +56,7 @@ class MultiHeadAttention(nn.Module):
         if hidden_size % num_heads != 0:
             raise ValueError(f"hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})")
 
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads

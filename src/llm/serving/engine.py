@@ -195,7 +195,7 @@ class ContinuousBatchingEngine:
             if (
                 hasattr(self.tokenizer, "eos_token_id")
                 and token_id == self.tokenizer.eos_token_id
-                or len(seq.generated_ids) >= 50
+                or seq.total_len >= self.max_seq_len
             ):
                 seq.status = RequestState.FINISHED
                 self.slot_allocator.free(seq.request_id)

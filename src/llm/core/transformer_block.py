@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from llm.core.kv_cache import KVCache
+from llm.utils.common import make_factory_kwargs
 
 
 class TransformerBlock(nn.Module):
@@ -45,7 +46,7 @@ class TransformerBlock(nn.Module):
         Initializes the TransformerBlock.
         """
         super().__init__()
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
 
         from llm.core.registry import ATTENTION_REGISTRY, MLP_REGISTRY
 

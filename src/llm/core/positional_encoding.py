@@ -3,6 +3,8 @@ import math
 import torch
 import torch.nn as nn
 
+from llm.utils.common import make_factory_kwargs
+
 
 class PositionalEncoding(nn.Module):
     """
@@ -36,7 +38,7 @@ class PositionalEncoding(nn.Module):
         self.learned = learned
         self.dropout = nn.Dropout(p=dropout_p)
 
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = make_factory_kwargs(device, dtype)
 
         if self.learned:
             self.pos_embedding = nn.Embedding(max_seq_len, hidden_size, **factory_kwargs)
