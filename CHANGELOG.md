@@ -12,6 +12,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Flash Attention 2 integration
 - Paged Attention for improved memory efficiency
 
+### Refactored
+
+- **Code Organization**:
+    - Extracted `make_factory_kwargs()` and `init_lora_weights()` utilities
+    - Unified Registry implementation using ComponentRegistry
+    - Migrated all `__main__` demo code to test files (7 new test files)
+    - Added custom exception module with hierarchical exception types
+
+- **Error Handling**:
+    - Replaced broad `except Exception` with specific exception types
+    - Improved API error logging and message handling
+
+- **Type Annotations**:
+    - Fixed `pad_token_id` duplicate definition
+    - Fixed `normalized_shape` tuple type mismatches
+    - Added missing type annotations in MoE module
+    - Fixed None handling in config utilities
+
+- **Code Quality**:
+    - Removed ~600 lines of demo code from source modules
+    - Preserved educational NumPy implementations for learning
+    - Added comprehensive test coverage for demo functionality
+
 ## [0.0.5] - 2026-01-08
 
 ### Added
