@@ -1,7 +1,9 @@
 """Tests for Paged Attention components."""
 
 import pytest
+import torch
 
+from llm.core.paged_attention.attention import paged_attention_forward
 from llm.core.paged_attention.block_allocator import BlockAllocator
 from llm.core.paged_attention.block_manager import BlockManager
 
@@ -198,3 +200,35 @@ class TestBlockManager:
 
         assert len(manager.get_all_sequence_ids()) == 0
         assert manager.num_free_blocks == 100
+
+
+class TestPagedAttentionForward:
+    """Tests for paged_attention_forward."""
+
+    def test_paged_attention_output_shape(self):
+        """Test paged attention output has correct shape."""
+        batch_size = 2
+        num_heads = 4
+        head_dim = 16
+        block_size = 16
+        num_kv_heads = 2
+        num_blocks = 8
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+
+        k_cache = torch.randn(1, num_blocks, num_kv_heads, block_size, head_dim)
+        v_cache = torch.randn(1, num_blocks, num_kv_heads, block_size, head_dim)
+
+        block_tables = torch.tensor([[0, 1], [2, 3]], dtype=torch.long)
+        seq_lens = torch.tensor([20, 25])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
