@@ -4,9 +4,16 @@ import torch
 from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
 
+# Cache device to avoid repeated CUDA checks (session-level)
+_cached_device = None
+
+
 def get_device():
-    """Get available device: cuda if available, else cpu."""
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    """Get available device: cuda if available, else cpu. Cached for performance."""
+    global _cached_device
+    if _cached_device is None:
+        _cached_device = "cuda" if torch.cuda.is_available() else "cpu"
+    return _cached_device
 
 
 # Use a fixture to get device for all tests
@@ -41,7 +48,9 @@ def test_paged_kv_cache_init_different_params():
     assert cache.k_cache.shape == (1, 4, 1, 4, 8)
 
     # Large config
-    cache = PagedKVCache(num_layers=12, num_kv_heads=8, head_dim=128, num_blocks=512, block_size=32, device=get_device())
+    cache = PagedKVCache(
+        num_layers=12, num_kv_heads=8, head_dim=128, num_blocks=512, block_size=32, device=get_device()
+    )
     assert cache.k_cache.shape == (12, 512, 8, 32, 128)
 
 
