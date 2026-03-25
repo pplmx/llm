@@ -133,6 +133,42 @@ generated_text = generate(
 print(generated_text)
 ```
 
+### Streaming Generation
+
+For real-time streaming output, use `stream_generate`:
+
+```python
+from llm.inference import stream_generate
+
+# Generate with streaming (yields tokens as they are generated)
+for token in stream_generate(
+    model=model,
+    tokenizer=tokenizer,
+    prompt="Hello",
+    max_new_tokens=20,
+    temperature=0.8
+):
+    print(token, end="", flush=True)
+```
+
+### Batch Generation
+
+For processing multiple prompts efficiently:
+
+```python
+from llm.inference import batch_generate
+
+# Generate multiple prompts in a single forward pass
+results = batch_generate(
+    model=model,
+    tokenizer=tokenizer,
+    prompts=["Hello world", "Once upon a time", "The quick brown fox"],
+    max_new_tokens=20,
+    temperature=0.8
+)
+# Returns: List of generated strings
+```
+
 ## Inference Serving
 
 This project includes a production-ready REST API for inference service, built with FastAPI.
@@ -156,6 +192,45 @@ llm-serve
 ```bash
 make image
 make compose-up
+```
+
+### Server Configuration
+
+The inference server can be configured via environment variables:
+
+| Environment Variable                  | Default | Description                      |
+| ------------------------------------- | ------- | -------------------------------- |
+| `LLM_SERVING_MODEL_PATH`              | -       | Path to model checkpoint         |
+| `LLM_SERVING_TOKENIZER_PATH`          | -       | Path to tokenizer                |
+| `LLM_SERVING_DEVICE`                  | `auto`  | Device: `cpu`, `cuda`, or `auto` |
+| `LLM_SERVING_API_KEY`                 | -       | API key for authentication       |
+| `LLM_SERVING_LOG_LEVEL`               | `INFO`  | Logging level                    |
+| `LLM_SERVING_COMPILE_MODEL`           | `false` | Enable `torch.compile`           |
+| `LLM_SERVING_MAX_CONCURRENT_REQUESTS` | `4`     | Max concurrent requests          |
+| `LLM_SERVING_REQUEST_TIMEOUT`         | `60.0`  | Request timeout (seconds)        |
+
+**Model Architecture Params (for dummy init):**
+
+| Environment Variable       | Default | Description                  |
+| -------------------------- | ------- | ---------------------------- |
+| `LLM_SERVING_HIDDEN_SIZE`  | `64`    | Model hidden size            |
+| `LLM_SERVING_NUM_LAYERS`   | `2`     | Number of transformer layers |
+| `LLM_SERVING_NUM_HEADS`    | `4`     | Number of attention heads    |
+| `LLM_SERVING_MAX_SEQ_LEN`  | `128`   | Maximum sequence length      |
+| `LLM_SERVING_NUM_KV_HEADS` | -       | KV heads (for GQA)           |
+| `LLM_SERVING_USE_MOE`      | `false` | Enable MoE                   |
+| `LLM_SERVING_NUM_EXPERTS`  | `0`     | Number of MoE experts        |
+| `LLM_SERVING_TOP_K`        | `0`     | Top-k experts for MoE        |
+| `LLM_SERVING_ATTN_IMPL`    | `mha`   | Attention implementation     |
+| `LLM_SERVING_MLP_IMPL`     | `mlp`   | MLP implementation           |
+
+**Example:**
+
+```bash
+LLM_SERVING_MODEL_PATH=./checkpoint.pt \
+LLM_SERVING_COMPILE_MODEL=true \
+LLM_SERVING_MAX_CONCURRENT_REQUESTS=8 \
+llm-serve
 ```
 
 ### API Usage
