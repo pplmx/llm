@@ -4,12 +4,12 @@ import time
 import typer
 
 from llm.serving.config import ServingConfig
-from llm.serving.engine import LLMEngine
+from llm.serving.engine import ContinuousBatchingEngine
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-def run_benchmark(engine: LLMEngine, prompt: str, max_new_tokens: int, num_runs: int, warmup: int = 1):
+def run_benchmark(engine: ContinuousBatchingEngine, prompt: str, max_new_tokens: int, num_runs: int, warmup: int = 1):
     """运行推理基准测试."""
     print("--- Starting Benchmark ---")
     print(f"Prompt: {prompt}")
@@ -62,7 +62,7 @@ def main(
     config = ServingConfig(device=device)
     config.compile_model = compile
 
-    engine = LLMEngine(config)
+    engine = ContinuousBatchingEngine(config)
     engine.load_model()
 
     try:
