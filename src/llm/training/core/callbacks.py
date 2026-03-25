@@ -223,6 +223,28 @@ class TensorBoardLogger(Callback):
             self.engine.logger.info("TensorBoard: Writer closed.")
 
 
+class EvaluationCallback(Callback):
+    """Callback for periodic evaluation during training."""
+
+    def __init__(self, eval_runner, eval_interval: int = 1000):
+        super().__init__()
+        self.eval_runner = eval_runner
+        self.eval_interval = eval_interval
+
+    def on_train_step_end(
+        self,
+        epoch: int,
+        batch_idx: int,
+        loss: torch.Tensor,
+        metrics: dict[str, Any],
+        logs: dict[str, Any] | None = None,
+    ):
+        """Run evaluation every N steps."""
+        if (batch_idx + 1) % self.eval_interval == 0:
+            results = self.eval_runner.run(self.engine.model)
+            self.engine.log_metrics(results)
+
+
 class LRSchedulerCallback(Callback):
     """
     Callback to log learning rate at each step and epoch end.
