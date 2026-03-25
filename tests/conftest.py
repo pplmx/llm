@@ -1,7 +1,16 @@
 import pytest
+import torch
 
 from llm.models.decoder import DecoderModel
 from llm.training.core.config import Config, ModelConfig, OptimizationConfig, TrainingConfig
+
+
+@pytest.fixture(autouse=True)
+def reset_torch_seed():
+    """Reset torch random seed before each test to ensure reproducibility."""
+    torch.manual_seed(42)
+    yield
+    torch.manual_seed(42)
 
 
 @pytest.fixture
