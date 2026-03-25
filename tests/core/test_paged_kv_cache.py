@@ -1,8 +1,8 @@
 # tests/core/test_paged_kv_cache.py
 import pytest
 import torch
-from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
+from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
 # Cache device to avoid repeated CUDA checks (session-level)
 _cached_device = None
@@ -389,3 +389,154 @@ def test_cache_dtype_preserved():
         dtype=torch.bfloat16,
     )
     assert cache.k_cache.dtype == torch.bfloat16
+
+
+def test_prefix_cache_init():
+    """Test PrefixCache initialization."""
+    from llm.core.paged_attention.paged_kv_cache import PrefixCache
+
+    cache = PrefixCache(max_prefixes=5)
+    assert cache.max_prefixes == 5
+    assert len(cache.cache) == 0
+
+
+def test_prefix_cache_add_and_get():
+    """Test adding and retrieving cached prefix blocks."""
+    from llm.core.paged_attention.paged_kv_cache import PrefixCache
+
+    cache = PrefixCache(max_prefixes=5)
+    block_ids = [0, 1, 2]
+    cache.add("hash123", block_ids)
+    assert cache.get("hash123") == block_ids
+
+
+def test_prefix_cache_miss():
+    """Test cache miss returns None."""
+    from llm.core.paged_attention.paged_kv_cache import PrefixCache
+
+    cache = PrefixCache(max_prefixes=5)
+    assert cache.get("nonexistent") is None
+
+
+def test_prefix_cache_lru_eviction():
+    """Test LRU eviction when cache is full."""
+
+    from llm.core.paged_attention.paged_kv_cache import PrefixCache
+
+    cache = PrefixCache(max_prefixes=2)
+    cache.add("hash1", [0])
+    cache.add("hash2", [1])
+    cache.add("hash3", [2])
+
+    assert cache.get("hash1") is None
+    assert cache.get("hash2") == [1]
+    assert cache.get("hash3") == [2]
+
+
+def test_paged_kv_cache_with_prefix_cache():
+    """Test PagedKVCache with prefix cache enabled."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=get_device(),
+        enable_prefix_cache=True,
+    )
+    assert cache.enable_prefix_cache is True
+    assert cache.prefix_cache is not None
+
+
+def test_paged_kv_cache_prefix_cache_disabled():
+    """Test PagedKVCache with prefix cache disabled."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=get_device(),
+        enable_prefix_cache=False,
+    )
+    assert cache.enable_prefix_cache is False
+    assert cache.prefix_cache is None
+
+
+def test_add_prefix_and_get_prefix():
+    """Test adding and retrieving prefix blocks."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=get_device(),
+        enable_prefix_cache=True,
+    )
+
+    prefix_tokens = [1, 2, 3, 4]
+    block_ids = [0, 1]
+
+    cache.add_prefix(seq_id=1, prefix_tokens=prefix_tokens, block_ids=block_ids)
+
+    result = cache.try_get_prefix_blocks(prefix_tokens)
+    assert result == block_ids
+
+
+def test_prefix_cache_hit():
+    """Test cache hit scenario."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=get_device(),
+        enable_prefix_cache=True,
+    )
+
+    prefix_tokens = [1, 2, 3, 4]
+    block_ids = [0, 1]
+
+    cache.add_prefix(seq_id=1, prefix_tokens=prefix_tokens, block_ids=block_ids)
+
+    cached = cache.try_get_prefix_blocks(prefix_tokens)
+    assert cached is not None
+    assert cached == block_ids
+
+
+def test_paged_kv_cache_prefix_cache_miss():
+    """Test cache miss scenario."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=get_device(),
+        enable_prefix_cache=True,
+    )
+
+    prefix_tokens = [1, 2, 3, 4]
+
+    cached = cache.try_get_prefix_blocks(prefix_tokens)
+    assert cached is None
+
+
+def test_prefix_cache_disabled_returns_none():
+    """Test that disabled prefix cache always returns None."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=get_device(),
+        enable_prefix_cache=False,
+    )
+
+    cached = cache.try_get_prefix_blocks([1, 2, 3])
+    assert cached is None
+
+    cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3], block_ids=[0, 1])
