@@ -34,7 +34,7 @@ src/llm/core/paged_attention/
 - Create: `src/llm/core/paged_attention/paged_kv_cache.py`
 - Test: `tests/core/test_paged_kv_cache.py`
 
-- [ ] **Step 1: Write failing tests**
+**Step 1: Write failing tests**
 
 ```python
 # tests/core/test_paged_kv_cache.py
@@ -91,12 +91,12 @@ def test_free_sequence():
     assert cache.block_manager.num_free_blocks == 8
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/core/test_paged_kv_cache.py -v`
 Expected: FAIL with "No module named 'llm.core.paged_attention.paged_kv_cache'"
 
-- [ ] **Step 3: Write PagedKVCache implementation**
+**Step 3: Write PagedKVCache implementation**
 
 ```python
 # src/llm/core/paged_attention/paged_kv_cache.py
@@ -205,12 +205,12 @@ class PagedKVCache:
         self.block_manager.free_sequence(seq_id)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/core/test_paged_kv_cache.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+**Step 5: Commit**
 
 ```bash
 git add src/llm/core/paged_attention/paged_kv_cache.py tests/core/test_paged_kv_cache.py
@@ -226,7 +226,7 @@ git commit -m "feat(inference): add PagedKVCache storage class"
 - Create: `src/llm/core/paged_attention/attention.py`
 - Test: `tests/core/test_paged_attention.py`
 
-- [ ] **Step 1: Write failing tests**
+**Step 1: Write failing tests**
 
 ```python
 # tests/core/test_paged_attention.py
@@ -266,12 +266,12 @@ def test_paged_attention_output_shape():
     assert output.shape == (batch_size, num_heads, 1, head_dim)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/core/test_paged_attention.py -v`
 Expected: FAIL with "No module named 'llm.core.paged_attention.attention'"
 
-- [ ] **Step 3: Write implementation**
+**Step 3: Write implementation**
 
 ```python
 # src/llm/core/paged_attention/attention.py
@@ -362,12 +362,12 @@ def paged_attention_forward(
     return output
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/core/test_paged_attention.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+**Step 5: Commit**
 
 ```bash
 git add src/llm/core/paged_attention/attention.py tests/core/test_paged_attention.py
@@ -383,7 +383,7 @@ git commit -m "feat(inference): add paged attention forward"
 - Modify: `src/llm/serving/config.py`
 - Modify: `src/llm/core/paged_attention/__init__.py`
 
-- [ ] **Step 1: Add config option**
+**Step 1: Add config option**
 
 ```python
 # In ServingConfig, add:
@@ -392,7 +392,7 @@ max_blocks: int = 256
 block_size: int = 16  # tokens per block
 ```
 
-- [ ] **Step 2: Export PagedKVCache**
+**Step 2: Export PagedKVCache**
 
 ```python
 # In __init__.py, add:
@@ -402,7 +402,7 @@ from llm.core.paged_attention.attention import paged_attention_forward
 __all__ = [..., "PagedKVCache", "paged_attention_forward"]
 ```
 
-- [ ] **Step 3: Commit**
+**Step 3: Commit**
 
 ```bash
 git add src/llm/serving/config.py src/llm/core/paged_attention/__init__.py
@@ -417,7 +417,7 @@ git commit -m "feat(inference): add paged attention config and exports"
 
 - Test: `tests/serving/test_paged_integration.py`
 
-- [ ] **Step 1: Write integration test**
+**Step 1: Write integration test**
 
 ```python
 # tests/serving/test_paged_integration.py
@@ -472,12 +472,12 @@ def test_end_to_end_paged_inference():
     cache.free(seq_id=2)
 ```
 
-- [ ] **Step 2: Run test**
+**Step 2: Run test**
 
 Run: `pytest tests/serving/test_paged_integration.py -v`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+**Step 3: Commit**
 
 ```bash
 git add tests/serving/test_paged_integration.py
