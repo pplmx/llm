@@ -25,6 +25,10 @@ class ServingConfig(BaseSettings):
     max_blocks: int = 256
     block_size: int = 16
 
+    # Prefix Cache
+    enable_prefix_cache: bool = False
+    max_prefixes: int = 10
+
     # Model Params (for dummy init if no ckpt)
     hidden_size: int = 64
     num_layers: int = 2
