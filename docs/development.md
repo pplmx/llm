@@ -2,7 +2,7 @@
 
 This guide covers development workflows: testing, building, linting, and Docker.
 
-> For installation prerequisites and setup, see the [README](../README.md#installation).
+> For installation prerequisites and setup, see the main [README](https://github.com/pplmx/llm/blob/main/README.md#installation).
 
 ## Table of Contents
 

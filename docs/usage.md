@@ -2,7 +2,7 @@
 
 This guide covers training models and running inference with the `llm` project.
 
-> For installation instructions, see the [README](../README.md#installation).
+> For installation instructions, see the main [README](https://github.com/pplmx/llm/blob/main/README.md#installation).
 > For development setup (testing, linting, Docker), see the [Development Guide](development.md).
 
 ## Training
