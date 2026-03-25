@@ -1,9 +1,35 @@
 """Paged KV Cache for memory-efficient inference."""
 
+import hashlib
+from collections import OrderedDict
+
 import torch
 from torch import Tensor
 
 from llm.core.paged_attention.block_manager import BlockManager
+
+
+class PrefixCache:
+    """Cache for storing prefix KV blocks (block_ids only)."""
+
+    def __init__(self, max_prefixes: int = 10):
+        self.max_prefixes = max_prefixes
+        self.cache: OrderedDict[str, list[int]] = OrderedDict()
+
+    def add(self, prefix_hash: str, block_ids: list[int]) -> None:
+        """Add prefix blocks to cache."""
+        if len(self.cache) >= self.max_prefixes:
+            self.cache.popitem(last=False)
+
+        self.cache[prefix_hash] = block_ids
+        self.cache.move_to_end(prefix_hash)
+
+    def get(self, prefix_hash: str) -> list[int] | None:
+        """Get cached block IDs for prefix."""
+        if prefix_hash in self.cache:
+            self.cache.move_to_end(prefix_hash)
+            return self.cache[prefix_hash]
+        return None
 
 
 class PagedKVCache:
@@ -18,6 +44,8 @@ class PagedKVCache:
         block_size: int = 16,
         device: str = "cuda",
         dtype: torch.dtype = torch.float16,
+        enable_prefix_cache: bool = False,
+        max_prefixes: int = 10,
     ):
         self.num_layers = num_layers
         self.num_kv_heads = num_kv_heads
@@ -31,6 +59,29 @@ class PagedKVCache:
         self.v_cache = torch.zeros_like(self.k_cache)
 
         self.block_manager = BlockManager(num_blocks, block_size, num_layers)
+
+        self.enable_prefix_cache = enable_prefix_cache
+        self.prefix_cache = PrefixCache(max_prefixes) if enable_prefix_cache else None
+        self._seq_to_hash: dict[int, str] = {}
+
+    def _hash_tokens(self, tokens: list[int]) -> str:
+        """Generate hash for token list."""
+        return hashlib.sha256(bytes(tokens)).hexdigest()
+
+    def add_prefix(self, seq_id: int, prefix_tokens: list[int], block_ids: list[int]) -> None:
+        """Add prefix blocks to cache."""
+        if not self.enable_prefix_cache or self.prefix_cache is None:
+            return
+        prefix_hash = self._hash_tokens(prefix_tokens)
+        self.prefix_cache.add(prefix_hash, block_ids)
+        self._seq_to_hash[seq_id] = prefix_hash
+
+    def try_get_prefix_blocks(self, prefix_tokens: list[int]) -> list[int] | None:
+        """Try to get cached prefix blocks."""
+        if not self.enable_prefix_cache or self.prefix_cache is None:
+            return None
+        prefix_hash = self._hash_tokens(prefix_tokens)
+        return self.prefix_cache.get(prefix_hash)
 
     def update(self, seq_id: int, k_new: Tensor, v_new: Tensor) -> list[int]:
         """Append new tokens to sequence.
