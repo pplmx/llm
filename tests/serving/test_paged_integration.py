@@ -4,6 +4,11 @@ from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 from llm.core.paged_attention.attention import paged_attention_forward
 
 
+def get_device():
+    """Get available device: cuda if available, else cpu."""
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def test_end_to_end_paged_inference():
     """Test paged attention workflow with multiple sequences."""
     cache = PagedKVCache(
@@ -12,7 +17,7 @@ def test_end_to_end_paged_inference():
         head_dim=16,
         num_blocks=32,
         block_size=16,
-        device="cpu",
+        device=get_device(),
         dtype=torch.float32,
     )
 
