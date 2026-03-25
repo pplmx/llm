@@ -232,3 +232,207 @@ class TestPagedAttentionForward:
         )
 
         assert output.shape == (batch_size, num_heads, 1, head_dim)
+
+    def test_single_sequence(self):
+        """Test with single sequence in batch."""
+        batch_size = 1
+        num_heads = 4
+        head_dim = 16
+        num_kv_heads = 2
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+        v_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+
+        block_tables = torch.tensor([[0, 1]], dtype=torch.long)
+        seq_lens = torch.tensor([20])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert output.shape == (1, num_heads, 1, head_dim)
+
+    def test_gqa_expansion(self):
+        """Test GQA (Grouped Query Attention) with num_kv_heads != num_heads."""
+        batch_size = 1
+        num_heads = 8
+        num_kv_heads = 2  # 4x expansion
+        head_dim = 16
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+        v_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+
+        block_tables = torch.tensor([[0, 1]], dtype=torch.long)
+        seq_lens = torch.tensor([20])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
+
+    def test_equal_heads(self):
+        """Test with num_kv_heads == num_heads (no GQA)."""
+        batch_size = 1
+        num_heads = 4
+        num_kv_heads = 4
+        head_dim = 16
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+        v_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+
+        block_tables = torch.tensor([[0, 1]], dtype=torch.long)
+        seq_lens = torch.tensor([20])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
+
+    def test_different_seq_lens(self):
+        """Test with sequences of different lengths."""
+        batch_size = 3
+        num_heads = 4
+        head_dim = 16
+        num_kv_heads = 2
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 6, num_kv_heads, 16, head_dim)
+        v_cache = torch.randn(1, 6, num_kv_heads, 16, head_dim)
+
+        # Different lengths: 10, 32, 50 tokens
+        block_tables = torch.tensor([[0, 1], [2, 3], [4, 5]], dtype=torch.long)
+        seq_lens = torch.tensor([10, 32, 50])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
+
+    def test_single_token_sequence(self):
+        """Test with single token sequence."""
+        batch_size = 1
+        num_heads = 4
+        head_dim = 16
+        num_kv_heads = 2
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 1, num_kv_heads, 16, head_dim)
+        v_cache = torch.randn(1, 1, num_kv_heads, 16, head_dim)
+
+        block_tables = torch.tensor([[0]], dtype=torch.long)
+        seq_lens = torch.tensor([1])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
+
+    def test_large_block_size(self):
+        """Test with large block size."""
+        batch_size = 1
+        num_heads = 4
+        head_dim = 16
+        num_kv_heads = 2
+        block_size = 64
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 2, num_kv_heads, block_size, head_dim)
+        v_cache = torch.randn(1, 2, num_kv_heads, block_size, head_dim)
+
+        block_tables = torch.tensor([[0, 1]], dtype=torch.long)
+        seq_lens = torch.tensor([100])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+            block_size=block_size,
+        )
+
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
+
+    def test_multi_layer_cache(self):
+        """Test with multi-layer KV cache."""
+        batch_size = 1
+        num_heads = 4
+        head_dim = 16
+        num_kv_heads = 2
+        num_layers = 4
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(num_layers, 4, num_kv_heads, 16, head_dim)
+        v_cache = torch.randn(num_layers, 4, num_kv_heads, 16, head_dim)
+
+        block_tables = torch.tensor([[0, 1]], dtype=torch.long)
+        seq_lens = torch.tensor([20])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
+
+    def test_output_values_are_finite(self):
+        """Test that output values are finite (no NaN/Inf)."""
+        batch_size = 2
+        num_heads = 4
+        head_dim = 32
+        num_kv_heads = 2
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim) * 0.1  # Smaller values
+        v_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim) * 0.1
+
+        block_tables = torch.tensor([[0, 1], [2, 3]], dtype=torch.long)
+        seq_lens = torch.tensor([20, 25])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert torch.isfinite(output).all()
