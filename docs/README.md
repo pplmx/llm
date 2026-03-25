@@ -50,13 +50,13 @@ Design decisions and their rationale:
 
 ## Deep Dives
 
-In-depth technical explorations:
+In-depth technical explorations *(在源码目录 `_learning/` 中)*:
 
-- [Attention Mechanisms Part 1](../_learning/01_concepts/attn-01.md)
-- [Attention Mechanisms Part 2](../_learning/01_concepts/attn-02.md)
+- [Attention Mechanisms Part 1](https://github.com/pplmx/llm/blob/main/_learning/01_concepts/attn-01.md)
+- [Attention Mechanisms Part 2](https://github.com/pplmx/llm/blob/main/_learning/01_concepts/attn-02.md)
 
 ---
 
-> **Contributing**: See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines.
+> **Contributing**: See [Contributing Guide](https://github.com/pplmx/llm/blob/main/CONTRIBUTING.md) for contribution guidelines.
 >
 > **Issues**: Report bugs at [GitHub Issues](https://github.com/pplmx/llm/issues).

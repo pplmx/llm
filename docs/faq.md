@@ -195,7 +195,7 @@ make test   # 运行测试
 
 ### Q: 如何贡献代码？
 
-请参考 [Contributing Guide](../CONTRIBUTING.md) 了解详细流程.
+请参考 [Contributing Guide](https://github.com/pplmx/llm/blob/main/CONTRIBUTING.md) 了解详细流程.
 
 ### Q: 在哪里报告 Bug？
 

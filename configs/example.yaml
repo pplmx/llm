@@ -1,0 +1,35 @@
+# Example configuration for LLM training
+# Usage: llm-train --task lm --config-path configs/example.yaml
+
+model:
+  hidden_size: 512
+  num_heads: 8
+  num_layers: 4
+  vocab_size: 50257
+  max_seq_len: 512
+  dropout: 0.1
+
+training:
+  epochs: 5
+  batch_size: 32
+  learning_rate: 0.001
+  gradient_accumulation_steps: 1
+  max_steps: 1000
+  eval_interval: 100
+  save_interval: 500
+
+data:
+  tokenizer_path: null  # Will use default character tokenizer
+  train_path: null
+  val_path: null
+  test_path: null
+  max_seq_len: 512
+
+optimization:
+  use_amp: true
+  use_compile: false
+  gradient_checkpointing: false
+
+distributed:
+  backend: "nccl"
+  find_unused_parameters: false
