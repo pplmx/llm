@@ -19,3 +19,20 @@ def test_f1_basic():
 
     result = metric.compute(predictions, references)
     assert "f1" in result
+
+
+def test_f1_perfect():
+    metric = F1Metric()
+    predictions = ["cat", "dog", "bird"]
+    references = ["cat", "dog", "bird"]
+    result = metric.compute(predictions, references)
+    assert result["f1"] == pytest.approx(1.0)
+
+
+def test_f1_partial():
+    metric = F1Metric()
+    predictions = ["cat", "dog", "cat", "bird"]
+    references = ["cat", "cat", "bird", "bird"]
+    result = metric.compute(predictions, references)
+    assert "f1" in result
+    assert 0 < result["f1"] < 1
