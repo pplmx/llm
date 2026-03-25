@@ -9,5 +9,13 @@ class BaseMetric(ABC):
 
     @abstractmethod
     def compute(self, predictions: Any, references: Any) -> dict:
-        """Compute metric score."""
+        """Compute metric score.
+
+        Args:
+            predictions: Model outputs
+            references: Ground truth
+
+        Returns:
+            Dictionary with metric name and score
+        """
         pass
