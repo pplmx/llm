@@ -4,12 +4,12 @@ import time
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from llm.data.data_module import BaseDataModule  # Added BaseDataModule
+from llm.data.data_module import BaseDataModule
 from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
 from llm.training.tasks.base_task import TrainingTask
-from llm.utils.common import count_parameters  # Added import
+from llm.utils.common import count_parameters
 
 
 class TrainingEngine:
@@ -19,7 +19,7 @@ class TrainingEngine:
         task: TrainingTask,
         rank: int,
         world_size: int,
-        data_module: BaseDataModule,  # Changed to data_module
+        data_module: BaseDataModule,
         callbacks: list[Callback] | None = None,
     ):
         self.config = config
@@ -34,7 +34,7 @@ class TrainingEngine:
         else:
             self.device = torch.device("cpu")
 
-        self.data_module = data_module  # Stored data_module
+        self.data_module = data_module
 
         self.logger = Logger(rank, config.logging)
         self.performance_monitor = PerformanceMonitor(rank, self.device)
@@ -45,8 +45,8 @@ class TrainingEngine:
 
         self._setup_components()
         self.training_start_time = time.time()
-        self.should_stop_training = False  # Added for early stopping
-        self.global_step = 0  # Added for gradient accumulation tracking
+        self.should_stop_training = False
+        self.global_step = 0
 
     def _run_callbacks(self, method_name: str, *args, **kwargs):
         for callback in self.callbacks:

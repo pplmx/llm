@@ -1,10 +1,8 @@
-import sys
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.tokenization.tokenizer import BaseTokenizer
 
 
