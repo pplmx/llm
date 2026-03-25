@@ -1,9 +1,9 @@
 import operator
-from pathlib import Path  # Added Path
+from pathlib import Path
 from typing import Any
 
 import torch
-from torch.utils.tensorboard import SummaryWriter  # Added SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 
 
 # Forward declaration to avoid circular imports
@@ -61,11 +61,11 @@ class Callback:
         """Called after the train_step (forward/backward/optimizer.step) is completed for a batch."""
         pass
 
-    def on_validation_start(self, epoch: int, logs: dict[str, Any] | None = None):  # Added epoch
+    def on_validation_start(self, epoch: int, logs: dict[str, Any] | None = None):
         """Called at the beginning of validation phase."""
         pass
 
-    def on_validation_end(self, epoch: int, logs: dict[str, Any] | None = None):  # Added epoch for consistency
+    def on_validation_end(self, epoch: int, logs: dict[str, Any] | None = None):
         """Called at the end of validation phase."""
         pass
 

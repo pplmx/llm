@@ -1,5 +1,3 @@
-import pytest
-from llm.training.core.callbacks import Callback
 from llm.evaluation.runner import EvaluationRunner
 
 
