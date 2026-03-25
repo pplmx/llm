@@ -70,11 +70,13 @@ class BaseTask(ABC):
     metrics: list[BaseMetric]
     
     @abstractmethod
-    def prepare_data(self, split: str) -> tuple[list, list]:
+    def prepare_data(self, split: str) -> tuple[list[str], list[str]]:
+        """Returns (inputs, references) as raw text strings."""
         pass
     
     @abstractmethod
-    def predict(self, model, inputs: list) -> list:
+    def predict(self, model, inputs: list[str]) -> list[str]:
+        """Takes raw text inputs, returns raw text predictions."""
         pass
 ```
 
@@ -109,7 +111,7 @@ class Evaluator:
 **Training Mode**:
 - Integrates with `TrainingEngine` via callback
 - Runs every N steps/epochs
-- Logs to same metrics backend as training
+- Uses same logger as TrainingEngine (Python logging + optional TensorBoard)
 
 **Inference Mode**:
 - Batch evaluation on test set
@@ -145,7 +147,8 @@ runner.save_report(results, format="markdown")
   "step": 1000,
   "metrics": {
     "perplexity": 12.5,
-    "accuracy": 0.85
+    "accuracy": 0.85,
+    "f1": 0.78
   }
 }
 ```
@@ -176,6 +179,7 @@ runner.save_report(results, format="markdown")
 |--------|-------|
 | ROUGE-L| 0.42  |
 | BLEU   | 0.28  |
+| chrF   | 0.35  |
 ```
 
 ## Implementation Order
