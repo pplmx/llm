@@ -19,7 +19,7 @@
 ## 工具链
 
 - **Linting 和格式化**: `ruff` 用于 linting 和格式化. 配置位于 `ruff.toml`. 遵循 `pathlib` 最佳实践.
-- **类型检查**: `mypy` 用于静态类型检查. 配置位于 `pyproject.toml`.
+- **类型检查**: `ty` 用于静态类型检查. 配置位于 `pyproject.toml`.
 - **测试**: `pytest` 用于运行测试. 配置位于 `pyproject.toml`.
 - **包管理**: `uv` 用于管理依赖.
 - **构建**: 详见 `pyproject.toml` 的 build-system 配置.

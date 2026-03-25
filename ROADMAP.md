@@ -24,7 +24,7 @@
 
 - [x] **核心依赖与环境**: 使用 `uv` 管理 Python 依赖
 - [x] **构建与打包**: 使用 `hatchling` (`pyproject.toml`)
-- [x] **代码质量**: `ruff` (格式化), `mypy` (类型检查), `.editorconfig`
+- [x] **代码质量**: `ruff` (格式化), `ty` (类型检查), `.editorconfig`
 - [x] **测试体系**: `pytest` (单元/集成测试), `pytest-cov` (覆盖率)
 - [x] **自动化 (CI/CD)**: GitHub Actions (`.github/workflows`) 自动执行测试、构建和发布流程
 - [x] **环境管理**: `Dockerfile` 和 `compose.yml` 已完成
