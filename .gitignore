@@ -9,6 +9,7 @@ results
 commit_message.txt
 core.*
 .sisyphus
+.worktrees
 
 ### Python template
 # Byte-compiled / optimized / DLL files
