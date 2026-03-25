@@ -61,8 +61,9 @@ def test_update_allocates_blocks():
         block_size=4,
         device="cpu",
     )
-    k = torch.randn(1, 2, 4, 8)  # [batch, heads, tokens, head_dim]
-    v = torch.randn(1, 2, 4, 8)
+    # [batch, tokens, heads, head_dim]
+    k = torch.randn(1, 4, 2, 8)
+    v = torch.randn(1, 4, 2, 8)
     
     block_ids = cache.update(seq_id=1, k_new=k, v_new=v)
     
@@ -136,10 +137,14 @@ class PagedKVCache:
     def update(self, seq_id: int, k_new: Tensor, v_new: Tensor) -> list[int]:
         """Append new tokens to sequence.
         
+        Args:
+            k_new: [batch, tokens, num_kv_heads, head_dim]
+            v_new: [batch, tokens, num_kv_heads, head_dim]
+            
         Returns:
             List of physical block IDs allocated for this sequence.
         """
-        num_tokens = k_new.shape[2]  # [batch, heads, tokens, head_dim]
+        num_tokens = k_new.shape[1]  # [batch, tokens, heads, head_dim]
         
         if not self.block_manager.can_allocate_sequence(num_tokens):
             raise RuntimeError("No free blocks available for new sequence")
@@ -160,6 +165,38 @@ class PagedKVCache:
     def get_block_table(self, seq_id: int) -> list[int]:
         """Get block IDs for a sequence."""
         return self.block_manager.get_block_table(seq_id)
+        
+    def get(self, seq_id: int, start_idx: int, end_idx: int) -> tuple[Tensor, Tensor]:
+        """Get KV cache slice for a sequence range.
+        
+        Args:
+            seq_id: Sequence ID
+            start_idx: Start token index
+            end_idx: End token index
+            
+        Returns:
+            k: [num_kv_heads, num_tokens, head_dim]
+            v: [num_kv_heads, num_tokens, head_dim]
+        """
+        block_table = self.get_block_table(seq_id)
+        
+        k_seq = []
+        v_seq = []
+        
+        start_block = start_idx // self.block_size
+        end_block = (end_idx - 1) // self.block_size + 1
+        
+        for block_id in block_table[start_block:end_block]:
+            k_seq.append(self.k_cache[:, block_id, :, :self.block_size, :])
+            v_seq.append(self.v_cache[:, block_id, :, :self.block_size, :])
+        
+        k_full = torch.cat(k_seq, dim=2)
+        v_full = torch.cat(v_seq, dim=2)
+        
+        start_offset = start_idx % self.block_size
+        num_tokens = end_idx - start_idx
+        
+        return k_full[0, :, start_offset:start_offset+num_tokens, :], v_full[0, :, start_offset:start_offset+num_tokens, :]
         
     def free(self, seq_id: int):
         """Free blocks when sequence completes."""
@@ -348,6 +385,7 @@ git commit -m "feat(inference): add paged attention forward"
 # In ServingConfig, add:
 use_paged_attention: bool = False
 max_blocks: int = 256
+block_size: int = 16  # tokens per block
 ```
 
 - [ ] **Step 2: Export PagedKVCache**
