@@ -32,34 +32,6 @@ uv run examples/kv_cache_demo.py
 uv run examples/qlora_finetuning_demo.py
 ```
 
-功能：使用 DecoderModel + SimpleCharacterTokenizer 进行基础文本生成。
-
-### 2. OpenAI SDK 调用
-
-```bash
-# 终端1: 启动推理服务
-llm-serve
-
-# 终端2: 运行客户端
-python examples/openai_client_demo.py
-```
-
-功能：通过 OpenAI SDK 调用 llm-serve 推理服务，支持流式输出。
-
-### 3. KV Cache 高效推理
-
-```bash
-python examples/kv_cache_demo.py
-```
-
-功能：使用预分配 KV Cache 进行高效自回归生成，支持 GQA (分组查询注意力)。
-
-### 4. QLoRA 高效微调
-
-```bash
-python examples/qlora_finetuning_demo.py
-```
-
 功能：4-bit NF4 量化 + LoRA 适配器，显存减少约 4 倍。
 
 ## 示例文件详解
