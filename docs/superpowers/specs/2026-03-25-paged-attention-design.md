@@ -18,7 +18,7 @@ Implement vLLM-style Paged Attention for memory-efficient inference. This enable
 
 ## Architecture
 
-```
+```text
 src/llm/core/
 ├── kv_cache.py              # Existing KVCache (contiguous)
 ├── paged_attention/
@@ -38,7 +38,7 @@ src/llm/core/
 ```python
 class PagedKVCache:
     """Block-level KV cache for paged attention."""
-    
+
     def __init__(
         self,
         num_layers: int,
@@ -55,16 +55,16 @@ class PagedKVCache:
             device=device, dtype=dtype
         )
         self.v_cache = torch.zeros_like(self.k_cache)
-        
+
         self.block_manager = BlockManager(num_blocks, block_size, num_layers)
-        
+
     def update(self, seq_id: int, k_new: Tensor, v_new: Tensor) -> list[int]:
         """Append new tokens to sequence.
-        
+
         Returns:
             List of physical block IDs allocated for this sequence (block_table).
             Caller uses this to populate block_tables tensor.
-            
+
         Raises:
             RuntimeError: If no free blocks available (OOM).
         """
@@ -72,10 +72,10 @@ class PagedKVCache:
         num_tokens = k_new.shape[1]
         if not self.block_manager.can_allocate_sequence(num_tokens):
             raise RuntimeError("No free blocks available for new sequence")
-        
+
         # Allocate blocks via block_manager and copy KV to cache
         block_ids = self.block_manager.allocate_sequence(seq_id, num_tokens)
-        
+
         # Copy k_new, v_new to the allocated blocks in cache
         # For each block, copy the corresponding tokens
         for i, block_id in enumerate(block_ids):
@@ -83,22 +83,22 @@ class PagedKVCache:
             end_token = min(start_token + self.block_size, num_tokens)
             self.k_cache[:, block_id, :, :end_token-start_token, :] = k_new[:, :, start_token:end_token, :]
             self.v_cache[:, block_id, :, :end_token-start_token, :] = v_new[:, :, start_token:end_token, :]
-        
+
         return block_ids
-        
+
     def get_block_table(self, seq_id: int) -> list[int]:
         """Get block table (physical block IDs) for a sequence."""
         return self.block_manager.get_block_table(seq_id)
-        
+
     def get(self, seq_id: int, start_idx: int, end_idx: int) -> tuple[Tensor, Tensor]:
         """Get KV cache slice for a sequence range.
-        
+
         Returns:
             k: [num_kv_heads, num_tokens, head_dim]
             v: [num_kv_heads, num_tokens, head_dim]
         """
         pass
-        
+
     def free(self, seq_id: int):
         """Free blocks when sequence completes."""
         self.block_manager.free_sequence(seq_id)
@@ -118,7 +118,7 @@ def paged_attention_forward(
     block_size: int = 16,
 ) -> Tensor:
     """Paged attention forward pass.
-    
+
     Args:
         q: Query tensor for current token(s)
         k_cache: KV cache with block-level storage
@@ -126,7 +126,7 @@ def paged_attention_forward(
         block_tables: [batch, max_blocks] physical block IDs for each sequence.
                       Obtained from PagedKVCache.get_block_table() after each update().
         seq_lens: Current sequence lengths
-        
+
     Returns:
         Attention output tensor
     """
@@ -144,12 +144,14 @@ def paged_attention_forward(
 2. Returns `list[int]` - block IDs for this sequence
 3. Caller maintains `block_tables: dict[str, list[int]]` - request_id → block IDs
 4. When calling forward, caller builds `block_tables` tensor:
+
    ```python
    # batch_size = len(requests)
    block_tables = torch.zeros(batch_size, max_blocks, dtype=torch.long)
    for i, req in enumerate(requests):
        block_tables[i, :len(self.block_map[req.id])] = torch.tensor(self.block_map[req.id])
    ```
+
 5. Pass `block_tables` to `paged_attention_forward()`
 
 **Option**: Create a wrapper that switches between contiguous and paged:
@@ -167,6 +169,7 @@ def forward(self, hidden_states, use_paged_attention=False, **kwargs):
 ### First-Come-First-Served (FCFS)
 
 Simple allocation:
+
 1. New sequence gets free blocks from pool
 2. Blocks are never moved once allocated
 3. On completion, blocks return to pool
@@ -176,18 +179,19 @@ Simple allocation:
 **Strategy**: Fail-fast for simplicity
 
 - When a new sequence requires blocks but none are free:
-  - `update()` raises `RuntimeError("No free blocks available")`
-  - Scheduler catches this and handles (preemption or queue waiting)
-  - This is delegated to the higher-level Scheduler/Engine
+    - `update()` raises `RuntimeError("No free blocks available")`
+    - Scheduler catches this and handles (preemption or queue waiting)
+    - This is delegated to the higher-level Scheduler/Engine
 
 **Note**: Future enhancement could include:
+
 - Block eviction (oldest sequence)
 - Waiting queue (async generation)
 - Memory defragmentation
 
 ### Memory Layout
 
-```
+```text
 Physical Memory (GPU):
 ┌─────────────┬─────────────┬─────────────┬─────────────┐
 │ Block 0    │ Block 1    │ Block 2    │ Block 3    │
@@ -211,18 +215,18 @@ LLM_SERVING_BLOCK_SIZE=16
 ## Testing Strategy
 
 1. **Unit tests**:
-   - Block allocation/deallocation
-   - KV cache update/get
-   - Edge cases (empty sequence, full memory)
+    - Block allocation/deallocation
+    - KV cache update/get
+    - Edge cases (empty sequence, full memory)
 
 2. **Integration tests**:
-   - Forward pass correctness vs standard attention
-   - Memory usage comparison
-   - Batch processing with multiple sequences
+    - Forward pass correctness vs standard attention
+    - Memory usage comparison
+    - Batch processing with multiple sequences
 
 3. **E2E tests**:
-   - Generate text with paged attention
-   - Compare output with standard attention
+    - Generate text with paged attention
+    - Compare output with standard attention
 
 ## Implementation Order
 
@@ -236,6 +240,7 @@ LLM_SERVING_BLOCK_SIZE=16
 ## Dependencies
 
 No new dependencies. Uses existing:
+
 - torch
 - BlockAllocator (existing)
 - BlockManager (existing)
