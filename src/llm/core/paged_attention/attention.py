@@ -66,8 +66,8 @@ def paged_attention_forward(
         k_gathered.append(k_full)
         v_gathered.append(v_full)
 
-    k_full = torch.stack(k_gathered, dim=0)
-    v_full = torch.stack(v_gathered, dim=0)
+    k_full = torch.stack(k_gathered, dim=0).to(q.device)
+    v_full = torch.stack(v_gathered, dim=0).to(q.device)
 
     if num_kv_heads != num_heads:
         repeat_factor = num_heads // num_kv_heads
