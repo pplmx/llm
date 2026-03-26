@@ -11,6 +11,76 @@ import typer
 from llm.data.loader import TextDataset, create_dataloader
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class TrainConfig:
+    """训练配置，用于保存到 checkpoint"""
+
+    hidden_size: int = 128
+    num_layers: int = 4
+    num_heads: int = 4
+    max_seq_len: int = 128
+    batch_size: int = 32
+    epochs: int = 3
+    lr: float = 1e-4
+    file_path: str = ""
+    save_dir: Path = field(default_factory=lambda: Path("./checkpoints"))
+    save_interval: int = 100
+
+
+class CheckpointManager:
+    """Checkpoint 管理器"""
+
+    def __init__(self, save_dir: Path):
+        self.save_dir = save_dir
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+
+    def save(self, model, optimizer, epoch: int, global_step: int, loss: float, config: TrainConfig):
+        """保存 checkpoint"""
+        path = self.save_dir / f"checkpoint_step_{global_step}.pt"
+
+        checkpoint = {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
+            "epoch": epoch,
+            "global_step": global_step,
+            "loss": loss,
+            "config": {
+                "hidden_size": config.hidden_size,
+                "num_layers": config.num_layers,
+                "num_heads": config.num_heads,
+                "max_seq_len": config.max_seq_len,
+                "batch_size": config.batch_size,
+                "epochs": config.epochs,
+                "lr": config.lr,
+            },
+        }
+
+        torch.save(checkpoint, path)
+
+        # 保存最新 checkpoint
+        latest_path = self.save_dir / "latest.pt"
+        torch.save(checkpoint, latest_path)
+
+        return path
+
+    def load(self, path: Path, model, optimizer=None):
+        """加载 checkpoint"""
+        if not path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {path}")
+
+        checkpoint = torch.load(path, map_location="cpu")
+
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+        if optimizer and checkpoint.get("optimizer_state_dict"):
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+        return checkpoint
+
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
