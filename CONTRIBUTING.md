@@ -17,7 +17,7 @@ We encourage contributions through the following ways:
 
 ## Development Guide
 
-Before you start writing code, please make sure to read our [Development Guide](docs/development.md). It contains detailed information on setting up the development environment, running tests, code style, and the contribution process.
+Before you start writing code, please make sure to read our [Development Guide](docs/development/README.md). It contains detailed information on setting up the development environment, running tests, code style, and the contribution process.
 
 ## Code of Conduct
 

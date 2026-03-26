@@ -115,20 +115,20 @@ However, for development, `make init` is the recommended way to set up the envir
 
 For comprehensive documentation, including detailed usage examples, development guides, and troubleshooting, please refer to our dedicated documentation section:
 
-- [Architecture Guide](docs/architecture.md)
-- [Fine-Tuning Guide (LoRA/QLoRA)](docs/guide-finetuning.md)
-- [Inference Optimization Guide](docs/guide-inference.md)
-- [Development Guide](docs/development.md)
-- [CPU LLM Tutorial](docs/tutorial-cpu-llm.md)
+- [Architecture Guide](docs/reference/architecture.md)
+- [Fine-Tuning Guide (LoRA/QLoRA)](docs/guides/finetuning.md)
+- [Inference Optimization Guide](docs/guides/inference.md)
+- [Development Guide](docs/development/README.md)
+- [Quick Start](docs/getting-started.md)
 - [Project Troubleshooting](docs/troubleshooting.md)
-- [Training Framework Documentation](docs/training/README.md)
+- [Tutorials](docs/tutorials/01-pretraining.md)
 - [Examples](examples/README.md)
 - [Scripts](scripts/README.md)
 - [Notebooks](notebooks/README.md)
 
 ## Development
 
-For detailed information on setting up the development environment, running tests, maintaining code quality, and other development workflows, please refer to our comprehensive [Development Guide](docs/development.md).
+For detailed information on setting up the development environment, running tests, maintaining code quality, and other development workflows, please refer to our comprehensive [Development Guide](docs/development/README.md).
 
 ## Troubleshooting
 

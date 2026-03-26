@@ -1,6 +1,7 @@
-import time
 import signal
 import sys
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Original imports that were implicitly removed by the instruction's example, but are necessary and should be kept.
@@ -13,8 +14,6 @@ import typer
 from llm.data.loader import TextDataset, create_dataloader
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass
@@ -142,7 +141,6 @@ def main(
     print(f"Using device: {device_obj}")
 
     # Setup graceful shutdown handler
-    import shutil
 
     _should_save_on_exit = False
 
