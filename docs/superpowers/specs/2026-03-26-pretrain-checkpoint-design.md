@@ -29,11 +29,11 @@
 ```python
 class CheckpointManager:
     """Checkpoint 管理器"""
-    
+
     def __init__(self, save_dir: Path):
         self.save_dir = save_dir
         self.save_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def save(self, model, optimizer, epoch, global_step, loss, config):
         """保存 checkpoint"""
         path = self.save_dir / f"checkpoint_step_{global_step}.pt"
@@ -46,7 +46,7 @@ class CheckpointManager:
             "config": config,
         }, path)
         return path
-    
+
     def load(self, path, model, optimizer=None):
         """加载 checkpoint"""
         checkpoint = torch.load(path, map_location="cpu")
@@ -58,49 +58,49 @@ class CheckpointManager:
 
 ### 2. 新增 CLI 参数
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--save-dir` | Path | `"./checkpoints"` | 保存目录 |
-| `--resume` | Path | None | 恢复的 checkpoint |
-| `--save-interval` | int | 100 | 每 N 步保存一次 |
+| 参数              | 类型 | 默认值            | 说明              |
+| ----------------- | ---- | ----------------- | ----------------- |
+| `--save-dir`      | Path | `"./checkpoints"` | 保存目录          |
+| `--resume`        | Path | None              | 恢复的 checkpoint |
+| `--save-interval` | int  | 100               | 每 N 步保存一次   |
 
 ### 3. 优雅的训练循环
 
 ```python
 def train_loop(model, dataloader, optimizer, config):
     """主训练循环，包含进度显示和优雅退出"""
-    
+
     checkpoint = CheckpointManager(config.save_dir)
     global_step = 0
-    
+
     for epoch in range(config.epochs):
         model.train()
-        
+
         with tqdm(dataloader, desc=f"Epoch {epoch+1}/{config.epochs}") as pbar:
             for batch in pbar:
                 # Forward
                 loss = model(**batch)
-                
+
                 # Backward
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                
+
                 global_step += 1
-                
+
                 # 进度显示
                 pbar.set_postfix({"loss": f"{loss.item():.4f}"})
-                
+
                 # 保存 checkpoint
                 if global_step % config.save_interval == 0:
                     checkpoint.save(model, optimizer, epoch, global_step, loss.item(), config)
-    
+
     return model
 ```
 
 ## 文件修改
 
-```
+```text
 scripts/train_simple_decoder.py
 ├── 新增 CheckpointManager 类
 ├── 新增 CLI 参数解析
@@ -133,10 +133,10 @@ python scripts/train_simple_decoder.py \
 
 ## 优雅细节
 
-| 细节 | 实现 |
-|------|------|
-| **自动设备检测** | `cuda` 可用时自动使用 GPU |
-| **进度条** | tqdm 显示 epoch/step/loss |
-| **简洁日志** | `[Epoch 1/3] Step 100/500 loss=2.34` |
-| **优雅退出** | Ctrl+C 保存 checkpoint 后退出 |
-| **首次运行提示** | 打印关键配置信息 |
+| 细节             | 实现                                 |
+| ---------------- | ------------------------------------ |
+| **自动设备检测** | `cuda` 可用时自动使用 GPU            |
+| **进度条**       | tqdm 显示 epoch/step/loss            |
+| **简洁日志**     | `[Epoch 1/3] Step 100/500 loss=2.34` |
+| **优雅退出**     | Ctrl+C 保存 checkpoint 后退出        |
+| **首次运行提示** | 打印关键配置信息                     |

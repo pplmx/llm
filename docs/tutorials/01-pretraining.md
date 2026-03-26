@@ -5,6 +5,7 @@
 ## 概述
 
 本教程涵盖：
+
 - 数据准备
 - 模型训练
 - Checkpoint 管理
@@ -27,11 +28,11 @@ natural language processing enables computers to understand text
 
 ### 数据量建议
 
-| 场景 | 建议数据量 |
-|------|-----------|
+| 场景     | 建议数据量  |
+| -------- | ----------- |
 | 快速测试 | 1KB - 100KB |
-| 学习演示 | 1MB - 10MB |
-| 实际训练 | 100MB+ |
+| 学习演示 | 1MB - 10MB  |
+| 实际训练 | 100MB+      |
 
 ### 数据预处理
 
@@ -56,15 +57,15 @@ uv run scripts/train_simple_decoder.py \
 
 ### 参数说明
 
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| `--file-path` | 训练数据文件 | 必需 |
-| `--epochs` | 训练轮数 | 3-10 |
-| `--batch-size` | 批次大小 | 16-64 |
-| `--hidden-size` | 隐藏层维度 | 128-512 |
-| `--num-layers` | Transformer 层数 | 2-8 |
-| `--num-heads` | 注意力头数 | 2-8 |
-| `--lr` | 学习率 | 1e-4 到 1e-3 |
+| 参数            | 说明             | 推荐值       |
+| --------------- | ---------------- | ------------ |
+| `--file-path`   | 训练数据文件     | 必需         |
+| `--epochs`      | 训练轮数         | 3-10         |
+| `--batch-size`  | 批次大小         | 16-64        |
+| `--hidden-size` | 隐藏层维度       | 128-512      |
+| `--num-layers`  | Transformer 层数 | 2-8          |
+| `--num-heads`   | 注意力头数       | 2-8          |
+| `--lr`          | 学习率           | 1e-4 到 1e-3 |
 
 ---
 
@@ -81,7 +82,8 @@ uv run scripts/train_simple_decoder.py \
 ```
 
 生成的文件：
-```
+
+```text
 checkpoints/
 ├── checkpoint_step_100.pt
 ├── checkpoint_step_200.pt
@@ -122,13 +124,15 @@ uv run scripts/train_simple_decoder.py \
 ### 进度条
 
 训练时显示实时进度：
-```
+
+```text
 Epoch 1/3: 100%|██████████| 100/100 [00:05<00:00, loss=2.34, step=100]
 ```
 
 ### 损失值
 
 每个 epoch 结束后显示：
+
 - 平均训练损失
 - 学习率
 
@@ -206,8 +210,8 @@ uv run scripts/train_simple_decoder.py \
 
 ## 下一步
 
-| 目标 | 文档 |
-|------|------|
-| 使用多 GPU 训练 | [Guides/分布式训练](guides/distributed.md) |
-| LoRA 微调 | [Tutorials/微调](tutorials/02-finetuning.md) |
-| 优化推理速度 | [Guides/推理优化](guides/optimization.md) |
+| 目标            | 文档                                          |
+| --------------- | --------------------------------------------- |
+| 使用多 GPU 训练 | [Guides/分布式训练](../guides/distributed.md) |
+| LoRA 微调       | [Tutorials/微调](./02-finetuning.md)          |
+| 优化推理速度    | [Guides/推理优化](../guides/inference.md)     |

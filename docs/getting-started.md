@@ -5,6 +5,7 @@
 ## 目标
 
 本指南让你能够：
+
 - 安装环境
 - 训练第一个模型
 - 生成文本
@@ -100,18 +101,19 @@ print(tokenizer.decode(output[0]))
 
 ## 下一步
 
-| 目标 | 文档 |
-|------|------|
+| 目标           | 文档                                            |
+| -------------- | ----------------------------------------------- |
 | 完整预训练流程 | [Tutorials/预训练](tutorials/01-pretraining.md) |
-| 微调现有模型 | [Tutorials/微调](tutorials/02-finetuning.md) |
-| 部署推理服务 | [Tutorials/推理服务](tutorials/03-inference.md) |
-| 了解系统架构 | [Architecture](architecture.md) |
+| 微调现有模型   | [Tutorials/微调](tutorials/02-finetuning.md)    |
+| 部署推理服务   | [Tutorials/推理服务](tutorials/03-inference.md) |
+| 了解系统架构   | [Architecture](reference/architecture.md)       |
 
 ---
 
 ## 常见问题
 
 **Q: GPU 不可用怎么办？**
+
 ```bash
 uv run scripts/train_simple_decoder.py --file-path data.txt --device cpu
 ```
@@ -120,6 +122,7 @@ uv run scripts/train_simple_decoder.py --file-path data.txt --device cpu
 使用 DDP 模式（详见分布式训练指南）
 
 **Q: 训练中断如何恢复？**
+
 ```bash
 uv run scripts/train_simple_decoder.py --file-path data.txt --resume ./checkpoints/latest.pt
 ```

@@ -24,7 +24,7 @@ make init
 
 这会自动创建虚拟环境、安装依赖并配置 pre-commit 钩子.
 
-详见：[Development Guide](development.md)
+详见：[Development Guide](development/README.md)
 
 ### Q: 为什么项目使用 `uv` 而不是 `pip`？
 

@@ -12,7 +12,7 @@
 
 ## 文件结构
 
-```
+```text
 src/llm/core/attn/
 ├── __init__.py                      # 更新导出
 ├── mha.py                           # 修改: 调用后端选择
@@ -26,6 +26,7 @@ src/llm/core/attn/
 ## Task 1: 创建 torch_sdpa.py (从 sdpa.py 重命名)
 
 **Files:**
+
 - Create: `src/llm/core/attn/torch_sdpa.py`
 - Modify: `src/llm/core/attn/sdpa.py` (删除或标记废弃)
 - Test: 新增 `tests/core/attn/test_flash_attention.py`
@@ -54,6 +55,7 @@ git commit -m "refactor: extract torch_sdpa from sdpa"
 ## Task 2: 创建 backend.py 后端选择逻辑
 
 **Files:**
+
 - Create: `src/llm/core/attn/backend.py`
 - Test: `tests/core/attn/test_attention_backend.py`
 
@@ -70,7 +72,7 @@ class TestAttentionBackend:
         q = torch.randn(2, 4, 8, 32)
         result = get_attention_backend(q, q, q)
         assert result == "torch"
-    
+
     def test_returns_flash_when_available(self):
         """Flash 可用时应返回 flash"""
         if not torch.cuda.is_available():
@@ -78,7 +80,7 @@ class TestAttentionBackend:
         # 假设 flash 可用
         result = get_attention_backend(q, q, q)
         assert result in ["flash", "torch"]
-    
+
     def test_returns_torch_with_mask(self):
         """有 mask 时应返回 torch"""
         if not torch.cuda.is_available():
@@ -86,7 +88,7 @@ class TestAttentionBackend:
         mask = torch.zeros(2, 8, dtype=torch.bool)
         result = get_attention_backend(q, q, q, attn_mask=mask)
         assert result == "torch"
-    
+
     def test_returns_torch_with_window(self):
         """有 window_size 时应返回 torch"""
         if not torch.cuda.is_available():
@@ -100,6 +102,7 @@ class TestAttentionBackend:
 ```bash
 pytest tests/core/attn/test_attention_backend.py -v
 ```
+
 Expected: FAIL - ModuleNotFoundError
 
 - [ ] **Step 3: 实现 backend.py**
@@ -116,13 +119,13 @@ def _check_flash_attn():
     global _flash_attn_available
     if _flash_attn_available is not None:
         return _flash_attn_available
-    
+
     try:
         import flash_attn
         _flash_attn_available = True
     except ImportError:
         _flash_attn_available = False
-    
+
     return _flash_attn_available
 
 def get_attention_backend(
@@ -136,7 +139,7 @@ def get_attention_backend(
 ) -> str:
     """
     选择最佳注意力后端
-    
+
     Returns:
         'flash': 使用 Flash Attention
         'torch': 使用 PyTorch SDPA
@@ -144,18 +147,18 @@ def get_attention_backend(
     # 1. CUDA 可用性检查
     if not query.is_cuda:
         return "torch"
-    
+
     # 2. Flash Attention 可用性检查
     if not _check_flash_attn():
         return "torch"
-    
+
     # 3. 场景兼容性检查
     if attn_mask is not None:
         return "torch"
-    
+
     if window_size is not None and window_size > 0:
         return "torch"
-    
+
     # 所有条件满足，使用 Flash Attention
     return "flash"
 ```
@@ -178,6 +181,7 @@ git commit -m "feat: add attention backend selection logic"
 ## Task 3: 创建 flash_attn.py Flash Attention 后端
 
 **Files:**
+
 - Create: `src/llm/core/attn/flash_attn.py`
 - Test: `tests/core/attn/test_flash_attention.py`
 
@@ -195,26 +199,26 @@ class TestFlashAttention:
         q = torch.randn(2, 4, 8, 32)  # [B, N, S, D]
         out = flash_attention(q, q, q)
         assert out.shape == (2, 4, 8, 32)
-    
+
     def test_output_shape_causal(self):
         """验证 causal 模式输出 shape 正确"""
         q = torch.randn(2, 4, 8, 32)
         out = flash_attention(q, q, q, is_causal=True)
         assert out.shape == (2, 4, 8, 32)
-    
+
     def test_output_close_to_torch_sdpa(self):
         """验证输出数值接近 PyTorch SDPA (误差范围内)"""
         torch.manual_seed(42)
         q = torch.randn(2, 4, 8, 32, device="cuda")
-        
+
         # Flash Attention
         out_flash = flash_attention(q, q, q, is_causal=True)
-        
+
         # PyTorch SDPA
         out_torch = torch.nn.functional.scaled_dot_product_attention(
             q, q, q, is_causal=True
         )
-        
+
         # 允许一定误差
         assert torch.allclose(out_flash, out_torch, atol=1e-2)
 ```
@@ -224,6 +228,7 @@ class TestFlashAttention:
 ```bash
 pytest tests/core/attn/test_flash_attention.py -v
 ```
+
 Expected: FAIL - ModuleNotFoundError
 
 - [ ] **Step 3: 实现 flash_attn.py**
@@ -241,14 +246,14 @@ def flash_attention(
 ) -> Tensor:
     """
     Flash Attention 2 后端
-    
+
     Args:
         query: [B, N, S, D]
         key: [B, N, S, D]
         value: [B, N, S, D]
         dropout_p: dropout 概率
         is_causal: 是否 causal
-    
+
     Returns:
         output: [B, N, S, D]
     """
@@ -260,19 +265,19 @@ def flash_attention(
             "Flash Attention is not installed. "
             "Install with: pip install flash-attn"
         )
-    
+
     # 2. 准备输入格式 [B, S, N, D]
     # Flash Attention 需要 [B, S, H] 或 [B, S, N, D]
     q = query.transpose(1, 2).contiguous()
     k = key.transpose(1, 2).contiguous()
     v = value.transpose(1, 2).contiguous()
-    
+
     # 3. 调用 Flash Attention
     out = flash_attn_func(q, k, v, dropout_p=dropout_p, causal=is_causal)
-    
+
     # 4. 转换回输出格式 [B, N, S, D]
     out = out.transpose(1, 2)
-    
+
     return out
 ```
 
@@ -296,6 +301,7 @@ git commit -m "feat: add flash attention backend"
 ## Task 4: 更新 mha.py 集成后端选择
 
 **Files:**
+
 - Modify: `src/llm/core/attn/mha.py`
 - Test: 现有测试 `tests/core/attn/test_mha.py`
 
@@ -311,6 +317,7 @@ from llm.core.attn.torch_sdpa import torch_sdpa as torch_sdpa_impl
 - [ ] **Step 2: 修改 forward 方法中的注意力调用 (约第195行)**
 
 找到原来的:
+
 ```python
 attn_output = sdpa(
     query=q,
@@ -325,6 +332,7 @@ attn_output = sdpa(
 ```
 
 替换为:
+
 ```python
 # 选择后端
 backend = get_attention_backend(
@@ -369,9 +377,10 @@ git commit -m "feat: integrate flash attention backend in MHA"
 
 ---
 
-## Task 5: 更新 __init__.py 导出
+## Task 5: 更新 **init**.py 导出
 
 **Files:**
+
 - Modify: `src/llm/core/attn/__init__.py`
 
 - [ ] **Step 1: 更新导出**
@@ -410,6 +419,7 @@ git commit -m "chore: update attention module exports"
 ## Task 6: 完整集成测试
 
 **Files:**
+
 - Test: 运行所有相关测试
 
 - [ ] **Step 1: 运行完整测试套件**
@@ -435,14 +445,14 @@ git commit -m "feat: complete flash attention integration"
 
 ## 验证清单
 
-| 任务 | 验证项 |
-|------|--------|
-| Task 1 | torch_sdpa 功能正常 |
+| 任务   | 验证项               |
+| ------ | -------------------- |
+| Task 1 | torch_sdpa 功能正常  |
 | Task 2 | backend 选择逻辑正确 |
-| Task 3 | flash_attn 输出正确 |
-| Task 4 | MHA 集成后端选择 |
-| Task 5 | 导出更新 |
-| Task 6 | 完整测试通过 |
+| Task 3 | flash_attn 输出正确  |
+| Task 4 | MHA 集成后端选择     |
+| Task 5 | 导出更新             |
+| Task 6 | 完整测试通过         |
 
 ---
 

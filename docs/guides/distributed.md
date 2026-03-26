@@ -5,6 +5,7 @@
 ## 概述
 
 支持两种分布式训练方式：
+
 - **DDP (Distributed Data Parallel)** - 数据并行
 - **FSDP (Fully Sharded Data Parallel)** - 即将支持
 
@@ -52,17 +53,17 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 def train():
     # 1. 初始化进程组
     dist.init_process_group(backend="nccl")
-    
+
     # 2. 创建模型并移动到 GPU
     model = model.cuda(local_rank)
     model = DDP(model, device_ids=[local_rank])
-    
+
     # 3. 训练循环
     for batch in dataloader:
         loss = model(batch)
         loss.backward()
         optimizer.step()
-    
+
     # 4. 清理
     dist.destroy_process_group()
 ```
@@ -73,21 +74,21 @@ def train():
 
 ### 环境变量
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `NCCL_DEBUG` | NCCL 调试信息 | WARN |
-| `NCCL_IB_DISABLE` | 禁用 InfiniBand | 0 |
-| `NCCL_NET_GDR_LEVEL` | RDMA 级别 | 2 |
+| 变量                 | 说明            | 默认值 |
+| -------------------- | --------------- | ------ |
+| `NCCL_DEBUG`         | NCCL 调试信息   | WARN   |
+| `NCCL_IB_DISABLE`    | 禁用 InfiniBand | 0      |
+| `NCCL_NET_GDR_LEVEL` | RDMA 级别       | 2      |
 
 ### 启动参数
 
-| 参数 | 说明 |
-|------|------|
-| `--nnodes` | 节点数量 |
+| 参数               | 说明                  |
+| ------------------ | --------------------- |
+| `--nnodes`         | 节点数量              |
 | `--nproc_per_node` | 每节点进程数 (GPU 数) |
-| `--node_rank` | 节点编号 |
-| `--master_addr` | 主节点地址 |
-| `--master_port` | 主节点端口 |
+| `--node_rank`      | 节点编号              |
+| `--master_addr`    | 主节点地址            |
+| `--master_port`    | 主节点端口            |
 
 ---
 
@@ -139,15 +140,18 @@ torchrun script.py
 ## 常见问题
 
 **Q: NCCL 连接失败？**
+
 - 检查 GPU 是否可见 `nvidia-smi`
 - 使用 `NCCL_DEBUG=INFO` 调试
 
 **Q: 显存不足？**
+
 - 减小 batch size
 - 使用 gradient accumulation
 - 启用 mixed precision
 
 **Q: 训练变慢？**
+
 - 检查网络延迟
 - 使用 Profiler 分析
 - 确认使用 NCCL backend

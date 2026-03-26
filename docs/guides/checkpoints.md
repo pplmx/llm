@@ -5,6 +5,7 @@
 ## 概述
 
 Checkpoint 包含：
+
 - 模型权重
 - 优化器状态
 - 训练进度 (epoch, step)
@@ -25,7 +26,8 @@ uv run scripts/train_simple_decoder.py \
 ```
 
 保存位置：
-```
+
+```text
 checkpoints/
 ├── checkpoint_step_100.pt
 ├── checkpoint_step_200.pt
@@ -135,14 +137,17 @@ ls -t checkpoints/*.pt | tail -n +5 | xargs rm
 ## 故障排除
 
 **Q: Checkpoint 损坏？**
+
 - 检查文件完整性 `ls -la checkpoint.pt`
 - 尝试加载看是否报错
 
 **Q: 模型不匹配？**
+
 - 确保 checkpoint 的 config 与当前模型配置一致
 - 检查 hidden_size, num_layers 等
 
 **Q: 训练中断？**
+
 - 使用 `--resume` 从 latest.pt 恢复
 - 确保 --save-dir 路径正确
 

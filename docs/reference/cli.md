@@ -18,44 +18,44 @@ scripts/train_simple_decoder.py
 
 #### 必需参数
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
+| 参数          | 类型 | 说明             |
+| ------------- | ---- | ---------------- |
 | `--file-path` | Path | 训练数据文件路径 |
 
 #### 模型参数
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--hidden-size` | 64 | 隐藏层维度 |
-| `--num-layers` | 2 | Transformer 层数 |
-| `--num-heads` | 2 | 注意力头数 |
-| `--max-seq-len` | 32 | 最大序列长度 |
+| 参数            | 默认值 | 说明             |
+| --------------- | ------ | ---------------- |
+| `--hidden-size` | 64     | 隐藏层维度       |
+| `--num-layers`  | 2      | Transformer 层数 |
+| `--num-heads`   | 2      | 注意力头数       |
+| `--max-seq-len` | 32     | 最大序列长度     |
 
 #### 训练参数
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--batch-size` | 16 | 批次大小 |
-| `--epochs` | 1 | 训练轮数 |
-| `--lr` | 1e-3 | 学习率 |
-| `--device` | auto | 设备 (cpu/cuda) |
-| `--log-interval` | 10 | 日志输出间隔 |
+| 参数             | 默认值 | 说明            |
+| ---------------- | ------ | --------------- |
+| `--batch-size`   | 16     | 批次大小        |
+| `--epochs`       | 1      | 训练轮数        |
+| `--lr`           | 1e-3   | 学习率          |
+| `--device`       | auto   | 设备 (cpu/cuda) |
+| `--log-interval` | 10     | 日志输出间隔    |
 
 #### Checkpoint 参数
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--save-dir` | ./checkpoints | 保存目录 |
-| `--save-interval` | 100 | 保存间隔 (步数) |
-| `--resume` | None | 恢复的 checkpoint 路径 |
+| 参数              | 默认值        | 说明                   |
+| ----------------- | ------------- | ---------------------- |
+| `--save-dir`      | ./checkpoints | 保存目录               |
+| `--save-interval` | 100           | 保存间隔 (步数)        |
+| `--resume`        | None          | 恢复的 checkpoint 路径 |
 
 #### 早停参数
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--val-file-path` | None | 验证数据文件 |
-| `--early-stopping-patience` | 3 | 早停耐心值 |
-| `--early-stopping-min-delta` | 0.001 | 最小改善阈值 |
+| 参数                         | 默认值 | 说明         |
+| ---------------------------- | ------ | ------------ |
+| `--val-file-path`            | None   | 验证数据文件 |
+| `--early-stopping-patience`  | 3      | 早停耐心值   |
+| `--early-stopping-min-delta` | 0.001  | 最小改善阈值 |
 
 ### 使用示例
 
@@ -106,8 +106,8 @@ distributed:
 
 ## 环境变量
 
-| 变量 | 说明 |
-|------|------|
-| `CUDA_VISIBLE_DEVICES` | 可见 GPU 设备 |
-| `NCCL_DEBUG` | NCCL 调试级别 |
+| 变量                     | 说明          |
+| ------------------------ | ------------- |
+| `CUDA_VISIBLE_DEVICES`   | 可见 GPU 设备 |
+| `NCCL_DEBUG`             | NCCL 调试级别 |
 | `TORCH_CUDNN_V8_ENABLED` | cuDNN v8 优化 |
