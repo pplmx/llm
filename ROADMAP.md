@@ -1,6 +1,6 @@
 # LLM 项目完整生命周期路线图
 
-**最后更新**: 2026-03-28
+**最后更新**: 2026-03-26
 
 这是一个动态更新的路线图, 用于追踪整个项目的进展. 项目采用迭代式开发, 每个阶段完成后都会有可用的功能增量.
 
@@ -485,8 +485,8 @@
 
 ## 版本历史
 
-- **v0.0.7** (2026-03-28): 验证并修正 ROADMAP 状态, 完善 torch.compile, PriorityScheduler 标记
-- **v0.0.6** (2026-03-27): HuggingFace 兼容性, ONNX 导出, Priority Scheduler, TensorBoard
+- **v0.0.7** (2026-03-26): 验证并修正 ROADMAP 状态, 完善 torch.compile, PriorityScheduler 标记
+- **v0.0.6** (2026-03-26): HuggingFace 兼容性, ONNX 导出, Priority Scheduler, TensorBoard
 - **v0.0.5** (2026-03-26): Paged Attention, Prefix Caching, PPO Trainer, PTQ (INT8/INT4), Checkpoint System
 - **v0.0.4** (2026-01-07): Gradient Checkpointing, E2E Pipeline, OpenAI Chat API, Batch Inference, 测试数 337
 - **v0.0.3** (2026-01-05): 同步路线图与实际状态, 修复 train.py 任务注册, 更新测试计数
