@@ -9,6 +9,7 @@ Welcome to the LLM project documentation. This index provides quick navigation t
 | [Usage Guide](usage.md)               | Training, inference, and serving instructions |
 | [Architecture](architecture.md)       | System design and component overview          |
 | [Tutorial](tutorial-cpu-llm.md)       | Step-by-step CPU LLM training tutorial        |
+| [Pretraining](tutorial-pretraining.md) | Train a model from scratch with checkpoint |
 | [Development](development.md)         | Setting up the development environment        |
 | [FAQ](faq.md)                         | Frequently asked questions                    |
 | [Troubleshooting](troubleshooting.md) | Common issues and solutions                   |

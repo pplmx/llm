@@ -47,10 +47,54 @@ uv run scripts/train_simple_decoder.py --file-path data/dummy_corpus.txt --epoch
 
 **Common Options:**
 
-- `--file-path`: Path to the training text file (Required)
-- `--val-file-path`: Path to the validation text file
-- `--device`: `cpu` or `cuda` (auto-detect by default)
-- `--epochs`, `--batch-size`, `--lr`: Training hyperparameters
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--file-path` | Path | **必需** | 训练文本文件路径 |
+| `--val-file-path` | Path | None | 验证文本文件路径 |
+| `--device` | str | auto | `cpu` 或 `cuda` |
+| `--epochs` | int | 1 | 训练轮数 |
+| `--batch-size` | int | 16 | 批次大小 |
+| `--lr` | float | 1e-3 | 学习率 |
+| `--hidden-size` | int | 64 | 模型隐藏层大小 |
+| `--num-layers` | int | 2 | Transformer 层数 |
+| `--num-heads` | int | 2 | 注意力头数 |
+| `--max-seq-len` | int | 32 | 最大序列长度 |
+
+#### Checkpoint 功能
+
+支持训练过程中自动保存和恢复 checkpoint：
+
+```bash
+# 训练并自动保存 checkpoint (每100步保存一次)
+uv run scripts/train_simple_decoder.py \
+    --file-path data/train.txt \
+    --save-dir ./checkpoints \
+    --save-interval 100 \
+    --epochs 3
+
+# 从 checkpoint 恢复训练
+uv run scripts/train_simple_decoder.py \
+    --file-path data/train.txt \
+    --resume ./checkpoints/latest.pt \
+    --epochs 3
+```
+
+**Checkpoint 参数：**
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--save-dir` | Path | `./checkpoints` | checkpoint 保存目录 |
+| `--save-interval` | int | 100 | 每 N 步保存一次 |
+| `--resume` | Path | None | 从 checkpoint 恢复 |
+
+**Checkpoint 包含：**
+- 模型权重 (`model_state_dict`)
+- 优化器状态 (`optimizer_state_dict`)
+- 训练轮数、步数、loss
+- 模型配置 (用于恢复训练)
+
+**优雅退出：**
+支持 Ctrl+C 中断训练，系统会自动保存当前 checkpoint 后再退出。
 
 ## Inference
 
