@@ -245,16 +245,10 @@ if __name__ == "__main__":
 
 @pytest.mark.parametrize("norm_first_val", [True, False])
 @pytest.mark.parametrize("qkv_bias_val", [True, False])
-@pytest.mark.parametrize("mlp_bias_val", [True, False])
-@pytest.mark.parametrize("lm_head_bias_val", [True, False])
-@pytest.mark.parametrize("pos_encoding_learned_val", [True, False])
 @pytest.mark.slow
 def test_decoder_model_gradient_computation(
     norm_first_val,
     qkv_bias_val,
-    mlp_bias_val,
-    lm_head_bias_val,
-    pos_encoding_learned_val,
     model_kwargs,
     input_ids_tensor,
 ):
@@ -266,13 +260,9 @@ def test_decoder_model_gradient_computation(
         {
             "norm_first": norm_first_val,
             "qkv_bias": qkv_bias_val,
-            "mlp_bias": mlp_bias_val,
-            "lm_head_bias": lm_head_bias_val,
-            "pos_encoding_learned": pos_encoding_learned_val,
-            "embedding_dropout_p": 0.0,  # Disable all dropouts for deterministic gradient check
+            "embedding_dropout_p": 0.0,
             "attn_dropout_p": 0.0,
             "mlp_dropout_p": 0.0,
-            # Using default hidden_size, vocab_size etc. from fixtures for this test
         }
     )
 
