@@ -12,7 +12,7 @@
 
 ## 文件结构
 
-```
+```text
 scripts/train_simple_decoder.py
 ├── 新增: CheckpointManager 类
 ├── 新增: CLI 参数 (--save-dir, --resume, --save-interval)
@@ -24,6 +24,7 @@ scripts/train_simple_decoder.py
 ## Task 1: 添加 CLI 参数
 
 **Files:**
+
 - Modify: `scripts/train_simple_decoder.py:18-45`
 
 - [ ] **Step 1: 读取现有代码结构**
@@ -56,6 +57,7 @@ head -50 scripts/train_simple_decoder.py
 ```bash
 python scripts/train_simple_decoder.py --help
 ```
+
 Expected: 显示新参数
 
 - [ ] **Step 4: 提交**
@@ -70,6 +72,7 @@ git commit -m "feat: add checkpoint CLI parameters"
 ## Task 2: 实现 CheckpointManager 类
 
 **Files:**
+
 - Modify: `scripts/train_simple_decoder.py` (在文件顶部添加)
 
 - [ ] **Step 1: 添加 CheckpointManager 类**
@@ -101,15 +104,15 @@ class TrainConfig:
 
 class CheckpointManager:
     """Checkpoint 管理器"""
-    
+
     def __init__(self, save_dir: Path):
         self.save_dir = save_dir
         self.save_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def save(self, model, optimizer, epoch: int, global_step: int, loss: float, config: TrainConfig):
         """保存 checkpoint"""
         path = self.save_dir / f"checkpoint_step_{global_step}.pt"
-        
+
         torch.save({
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
@@ -126,7 +129,7 @@ class CheckpointManager:
                 "lr": config.lr,
             },
         }, path)
-        
+
         # 同时保存最新 checkpoint 链接
         latest_link = self.save_dir / "latest.pt"
         if latest_link.exists():
@@ -134,21 +137,21 @@ class CheckpointManager:
         # 简单复制 (Windows 不支持 symlink)
         import shutil
         shutil.copy(path, latest_link)
-        
+
         return path
-    
+
     def load(self, path: Path, model, optimizer=None):
         """加载 checkpoint"""
         if not path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {path}")
-        
+
         checkpoint = torch.load(path, map_location="cpu")
-        
+
         model.load_state_dict(checkpoint["model_state_dict"])
-        
+
         if optimizer and checkpoint.get("optimizer_state_dict"):
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        
+
         return checkpoint
 ```
 
@@ -164,6 +167,7 @@ git commit -m "feat: add CheckpointManager class"
 ## Task 3: 集成 Checkpoint 到训练循环
 
 **Files:**
+
 - Modify: `scripts/train_simple_decoder.py` (主训练循环部分)
 
 - [ ] **Step 1: 找到训练循环位置**
@@ -207,11 +211,13 @@ if (global_step + 1) % config.save_interval == 0:
 - [ ] **Step 4: 修改 epoch 循环起始**
 
 找到:
+
 ```python
 for epoch in range(epochs):
 ```
 
 改为:
+
 ```python
 for epoch in range(start_epoch, epochs):
 ```
@@ -228,6 +234,7 @@ git commit -m "feat: integrate checkpoint into training loop"
 ## Task 4: 添加优雅退出处理
 
 **Files:**
+
 - Modify: `scripts/train_simple_decoder.py`
 
 - [ ] **Step 1: 添加 signal 处理**
@@ -270,6 +277,7 @@ git commit -m "feat: add graceful shutdown with checkpoint"
 ## Task 5: 添加进度条 (可选)
 
 **Files:**
+
 - Modify: `scripts/train_simple_decoder.py`
 
 - [ ] **Step 1: 添加 tqdm 进度条**
@@ -283,13 +291,13 @@ from tqdm import tqdm
 # 在训练循环处
 for epoch in range(start_epoch, epochs):
     model.train()
-    
+
     # 使用 tqdm 包装 dataloader
     pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}")
-    
+
     for batch in pbar:
         # ... 训练代码 ...
-        
+
         # 更新进度条
         pbar.set_postfix({
             "loss": f"{loss.item():.4f}",
@@ -309,6 +317,7 @@ git commit -m "feat: add progress bar to training"
 ## Task 6: 测试验证
 
 **Files:**
+
 - Test: 运行脚本验证功能
 
 - [ ] **Step 1: 运行帮助命令**
@@ -316,6 +325,7 @@ git commit -m "feat: add progress bar to training"
 ```bash
 python scripts/train_simple_decoder.py --help
 ```
+
 Expected: 显示所有参数包括新参数
 
 - [ ] **Step 2: 创建测试数据**
@@ -333,6 +343,7 @@ python scripts/train_simple_decoder.py \
     --save-interval 1 \
     --save-dir /tmp/test_ckpt
 ```
+
 Expected: 训练完成，生成 checkpoint
 
 - [ ] **Step 4: 验证 checkpoint 存在**
@@ -340,6 +351,7 @@ Expected: 训练完成，生成 checkpoint
 ```bash
 ls -la /tmp/test_ckpt/
 ```
+
 Expected: checkpoint_step_*.pt 和 latest.pt
 
 - [ ] **Step 5: 从 checkpoint 恢复训练**
@@ -351,6 +363,7 @@ python scripts/train_simple_decoder.py \
     --resume /tmp/test_ckpt/latest.pt \
     --save-dir /tmp/test_ckpt2
 ```
+
 Expected: 从 checkpoint 恢复训练
 
 - [ ] **Step 6: 清理测试文件**
@@ -370,14 +383,14 @@ git commit -m "feat: complete checkpoint support for pretraining"
 
 ## 验证清单
 
-| 任务 | 验证项 |
-|------|--------|
-| Task 1 | CLI 参数正确解析 |
+| 任务   | 验证项                       |
+| ------ | ---------------------------- |
+| Task 1 | CLI 参数正确解析             |
 | Task 2 | CheckpointManager 类正常工作 |
-| Task 3 | 训练中 checkpoint 自动保存 |
-| Task 4 | Ctrl+C 优雅退出 |
-| Task 5 | 进度条显示 (可选) |
-| Task 6 | 完整功能测试通过 |
+| Task 3 | 训练中 checkpoint 自动保存   |
+| Task 4 | Ctrl+C 优雅退出              |
+| Task 5 | 进度条显示 (可选)            |
+| Task 6 | 完整功能测试通过             |
 
 ---
 

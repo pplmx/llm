@@ -5,6 +5,7 @@
 ## 概述
 
 本教程涵盖：
+
 - 基础推理
 - 采样策略
 - 推理服务部署
@@ -52,21 +53,21 @@ print(tokenizer.decode(output))
 
 ## 2. 生成参数
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `max_new_tokens` | int | 50 | 生成的最大 token 数 |
-| `temperature` | float | 1.0 | 采样温度，越高越随机 |
-| `top_k` | int | None | top-k 采样 |
-| `top_p` | float | None | nucleus 采样 |
-| `repetition_penalty` | float | 1.0 | 重复惩罚 |
+| 参数                 | 类型  | 默认值 | 说明                 |
+| -------------------- | ----- | ------ | -------------------- |
+| `max_new_tokens`     | int   | 50     | 生成的最大 token 数  |
+| `temperature`        | float | 1.0    | 采样温度，越高越随机 |
+| `top_k`              | int   | None   | top-k 采样           |
+| `top_p`              | float | None   | nucleus 采样         |
+| `repetition_penalty` | float | 1.0    | 重复惩罚             |
 
 ### 采样策略选择
 
-| 场景 | 建议参数 |
-|------|---------|
-| 创意写作 | temperature=0.8-1.0 |
+| 场景     | 建议参数                        |
+| -------- | ------------------------------- |
+| 创意写作 | temperature=0.8-1.0             |
 | 精确问答 | temperature=0.1-0.3, top_p=0.95 |
-| 代码生成 | temperature=0.2, top_p=0.95 |
+| 代码生成 | temperature=0.2, top_p=0.95     |
 
 ---
 
@@ -136,7 +137,6 @@ for ids in input_ids_list:
 
 ## 下一步
 
-| 目标 | 文档 |
-|------|------|
-| 部署到生产 | [Guides/部署](guides/deployment.md) |
-| 性能优化 | [Guides/推理优化](guides/optimization.md) |
+| 目标     | 文档                                      |
+| -------- | ----------------------------------------- |
+| 性能优化 | [Guides/推理优化](../guides/inference.md) |

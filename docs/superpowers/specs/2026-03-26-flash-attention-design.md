@@ -21,7 +21,7 @@
 
 ## 架构
 
-```
+```text
 mha.py (MultiHeadAttention)
     │
     ├── backend.py (后端选择逻辑)
@@ -35,7 +35,7 @@ mha.py (MultiHeadAttention)
 
 ## 文件结构
 
-```
+```text
 src/llm/core/attn/
 ├── __init__.py
 ├── mha.py                 # MultiHeadAttention，调用 backend
@@ -60,7 +60,7 @@ def get_attention_backend(
 ) -> str:
     """
     选择最佳后端: 'flash' 或 'torch'
-    
+
     Returns:
         'flash': 使用 Flash Attention
         'torch': 使用 PyTorch SDPA
@@ -79,12 +79,12 @@ def flash_attention(
 ) -> Tensor:
     """
     Flash Attention 2 后端
-    
+
     Args:
         query, key, value: [B, N, S, D]
         dropout_p: dropout 概率
         is_causal: 是否 causal
-    
+
     Returns:
         output: [B, N, S, D] (统一格式，与 PyTorch SDPA 相同)
     """
@@ -119,10 +119,10 @@ def flash_attention(query, key, value, ...):
     q = query.transpose(1, 2).contiguous()
     k = key.transpose(1, 2).contiguous()
     v = value.transpose(1, 2).contiguous()
-    
+
     # 调用 flash_attn
     out = flash_attn_func(q, k, v, dropout_p=dropout_p, causal=is_causal)
-    
+
     # 输出: [B, S, N, D] → 转回 [B, N, S, D]
     return out.transpose(1, 2)
 ```
@@ -134,19 +134,19 @@ def get_attention_backend(...):
     # 1. 检查 CUDA 可用
     if not query.is_cuda:
         return 'torch'
-    
+
     # 2. 检查 Flash Attention 可用
     try:
         import flash_attn
     except ImportError:
         return 'torch'
-    
+
     # 3. 检查是否支持当前场景
     if attn_mask is not None:
         return 'torch'  # Flash 不支持自定义 mask
     if window_size is not None:
         return 'torch'  # Flash 不支持 sliding window
-    
+
     return 'flash'
 ```
 
@@ -162,16 +162,16 @@ def forward(self, hidden_states, ...):
     ...
     # 1. 计算 QKV
     q, k, v = self._compute_qkv(x_for_qkv)
-    
+
     # 2. 选择后端
     backend = get_attention_backend(q, k, v, attn_mask, self.p, use_causal, self.window_size)
-    
+
     # 3. 执行注意力
     if backend == 'flash':
         attn_output = flash_attention(q, k, v, dropout_p, is_causal)
     else:
         attn_output = torch_sdpa(q, k, v, attn_mask, ..., window_size)
-    
+
     # 4. 后续处理 (不变)
     attn_output = attn_output.transpose(1, 2).reshape(...)
 ```
@@ -203,10 +203,10 @@ def test_flash_attention_output_value():
     """验证输出数值正确 (与 PyTorch SDPA 对比)"""
     torch.manual_seed(42)
     q = torch.randn(2, 4, 8, 32)
-    
+
     out_flash = flash_attention(q, q, q, is_causal=True)
     out_torch = torch_sdpa(q, q, q, is_causal=True)
-    
+
     # 允许一定误差
     assert torch.allclose(out_flash, out_torch, atol=1e-2)
 
@@ -225,8 +225,8 @@ def test_backend_selection():
 
 ## 风险
 
-| 风险 | 缓解 |
-|------|------|
-| Flash Attention 安装困难 | 保持自动回退 |
-| 版本兼容性 | 检测版本，版本不兼容时回退 |
-| 数值精度差异 | 允许误差范围测试 |
+| 风险                     | 缓解                       |
+| ------------------------ | -------------------------- |
+| Flash Attention 安装困难 | 保持自动回退               |
+| 版本兼容性               | 检测版本，版本不兼容时回退 |
+| 数值精度差异             | 允许误差范围测试           |
