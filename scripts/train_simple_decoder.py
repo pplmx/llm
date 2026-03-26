@@ -36,6 +36,18 @@ def main(
     early_stopping_min_delta: float = typer.Option(
         0.001, help="Minimum change in validation loss to be considered an improvement for early stopping."
     ),
+    save_dir: Path = typer.Option(
+        Path("./checkpoints"),
+        help="Directory to save checkpoints.",
+    ),
+    resume: Path | None = typer.Option(
+        None,
+        help="Path to checkpoint to resume from.",
+    ),
+    save_interval: int = typer.Option(
+        100,
+        help="Save checkpoint every N steps.",
+    ),
 ):
     """
     Train a simple Decoder-only Transformer model.
