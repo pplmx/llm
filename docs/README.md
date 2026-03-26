@@ -89,7 +89,7 @@ make ruff
 
 - [FAQ](faq.md) - 常见问题
 - [Troubleshooting](troubleshooting.md) - 故障排除
-- [GitHub Issues](https://github.com/your-repo/llm/issues) - 报告问题
+- [GitHub Issues](https://github.com/pplmx/llm/issues) - 报告问题
 
 ---
 
