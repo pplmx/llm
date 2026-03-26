@@ -137,9 +137,9 @@
 
 在理解了核心概念后，建议您深入学习本项目的正式框架：
 
-- [LLM 框架全流程教程](../docs/tutorial-cpu-llm.md)
+- [LLM 框架全流程教程](../docs/getting-started.md)
     - 学习如何使用配置系统、分布式训练 (DDP) 和混合精度训练 (AMP)。
-- [架构设计深度解析](../docs/architecture.md)
+- [架构设计深度解析](../docs/reference/architecture.md)
     - 理解项目的模块化设计、注册机制和抽象层。
 - [架构决策记录 (ADR)](../docs/adr/)
     - 阅读 ADR 文档，了解我们为什么选择 SwiGLU、GQA 等具体技术方案。

@@ -30,7 +30,6 @@ src/llm/core/attn/
 - Create: `src/llm/core/attn/torch_sdpa.py`
 - Modify: `src/llm/core/attn/sdpa.py` (删除或标记废弃)
 - Test: 新增 `tests/core/attn/test_flash_attention.py`
-
 - [ ] **Step 1: 复制 sdpa.py 为 torch_sdpa.py**
 
 ```bash
@@ -58,7 +57,6 @@ git commit -m "refactor: extract torch_sdpa from sdpa"
 
 - Create: `src/llm/core/attn/backend.py`
 - Test: `tests/core/attn/test_attention_backend.py`
-
 - [ ] **Step 1: 编写测试文件 tests/core/attn/test_attention_backend.py**
 
 ```python
@@ -184,7 +182,6 @@ git commit -m "feat: add attention backend selection logic"
 
 - Create: `src/llm/core/attn/flash_attn.py`
 - Test: `tests/core/attn/test_flash_attention.py`
-
 - [ ] **Step 1: 编写测试文件 tests/core/attn/test_flash_attention.py**
 
 ```python
@@ -304,7 +301,6 @@ git commit -m "feat: add flash attention backend"
 
 - Modify: `src/llm/core/attn/mha.py`
 - Test: 现有测试 `tests/core/attn/test_mha.py`
-
 - [ ] **Step 1: 修改 mha.py 导入**
 
 在文件顶部添加:
