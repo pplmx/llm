@@ -16,10 +16,6 @@ class TestMoEIntegration:
     """Integration tests for MoE layer."""
 
     @pytest.fixture
-    def device(self):
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    @pytest.fixture
     def dtype(self):
         return torch.float32
 

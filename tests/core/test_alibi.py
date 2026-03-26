@@ -2,7 +2,6 @@
 Tests for ALiBi (Attention with Linear Biases) module.
 """
 
-import pytest
 import torch
 
 from llm.core.alibi import (
@@ -37,10 +36,6 @@ class TestGetALiBiSlopes:
 class TestBuildALiBiBias:
     """Tests for build_alibi_bias function."""
 
-    @pytest.fixture
-    def device(self):
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     def test_bias_shape(self, device):
         """Test bias matrix shape."""
         bias = build_alibi_bias(8, 16, device=device)
@@ -72,10 +67,6 @@ class TestBuildALiBiBias:
 
 class TestALiBiPositionBias:
     """Tests for ALiBiPositionBias class."""
-
-    @pytest.fixture
-    def device(self):
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def test_init(self, device):
         """Test initialization."""
