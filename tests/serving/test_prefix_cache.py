@@ -2,15 +2,9 @@
 Tests for PrefixCache - shared prompt optimization.
 """
 
-import pytest
 import torch
 
 from llm.serving.prefix_cache import PrefixCache, PrefixCacheEntry
-
-
-@pytest.fixture
-def device():
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class TestPrefixCacheEntry:

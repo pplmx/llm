@@ -53,10 +53,6 @@ class TestApplyRotaryPosEmb:
 class TestRotaryPositionEmbedding:
     """Tests for RotaryPositionEmbedding class."""
 
-    @pytest.fixture
-    def device(self):
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     def test_init_default(self, device):
         """Test default initialization."""
         rope = RotaryPositionEmbedding(dim=64, device=device)

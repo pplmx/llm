@@ -6,7 +6,6 @@ Uses core functions from llm.utils.e2e module.
 """
 
 import pytest
-import torch
 
 from llm.inference import generate, stream_generate
 from llm.models.decoder import DecoderModel
@@ -39,10 +38,6 @@ class TestE2EPipeline:
         """Create a simple tokenizer for testing."""
         corpus = ["hello world", "the quick brown fox", "testing one two three"]
         return SimpleCharacterTokenizer(corpus)
-
-    @pytest.fixture
-    def device(self) -> torch.device:
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def test_e2e_train_evaluate_inference(self, small_config: E2EConfig, tokenizer, device):
         """

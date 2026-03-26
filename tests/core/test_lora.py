@@ -258,10 +258,8 @@ class TestLoRATraining:
             if isinstance(module, LoRALinear):
                 assert torch.allclose(module.base_layer.weight, original_weights[name])
 
-    def test_decoder_model_training_with_lora(self):
+    def test_decoder_model_training_with_lora(self, device):
         """Test training DecoderModel with LoRA."""
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         model = DecoderModel(
             vocab_size=100,
             hidden_size=64,

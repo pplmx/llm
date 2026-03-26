@@ -2,7 +2,6 @@
 Tests for Sliding Window Attention.
 """
 
-import pytest
 import torch
 
 from llm.core.attn.mha import MultiHeadAttention
@@ -11,10 +10,6 @@ from llm.models.decoder import DecoderModel
 
 class TestMHAWithWindowSize:
     """Tests for MultiHeadAttention with sliding window."""
-
-    @pytest.fixture
-    def device(self):
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def test_mha_with_window_size(self, device):
         """Test MHA with window_size parameter."""
@@ -53,10 +48,6 @@ class TestMHAWithWindowSize:
 
 class TestDecoderWithWindowSize:
     """Tests for DecoderModel with sliding window attention."""
-
-    @pytest.fixture
-    def device(self):
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def test_decoder_model_with_window_size(self, device):
         """Test DecoderModel forward pass with window_size."""

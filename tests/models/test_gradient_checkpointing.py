@@ -24,10 +24,6 @@ class TestGradientCheckpointing:
             "max_seq_len": 32,
         }
 
-    @pytest.fixture
-    def device(self):
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     def test_gradient_checkpointing_init_disabled(self, small_model_config, device):
         """Test that gradient checkpointing is disabled by default."""
         model = DecoderModel(**small_model_config, device=device)
