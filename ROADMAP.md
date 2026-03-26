@@ -18,6 +18,37 @@
 
 ---
 
+## 下一步探索方向 🔭
+
+### 1. 预训练完善
+- [ ] 流式数据加载器 (支持大规模预训练)
+- [ ] 集成 C4/The Pile/RedPajama 数据集
+- [ ] 数据质量过滤和去重工具
+- [ ] 数据版本控制 (DVC)
+
+### 2. 生态系统集成 (阶段十四)
+- [ ] HuggingFace PreTrainedModel 接口兼容
+- [ ] ONNX/TorchScript 导出
+- [ ] LangChain/LlamaIndex 集成
+- [ ] 发布预训练模型到 HuggingFace Hub
+
+### 3. 多模态扩展 (阶段十二)
+- [ ] 视觉编码器集成 (CLIP/SigLIP)
+- [ ] 图像-文本对齐模块
+- [ ] Visual Instruction Tuning
+
+### 4. 高效微调
+- [ ] QLoRA 完整流程
+- [ ] AdaLoRA
+- [ ] Prefix Tuning / P-Tuning
+
+### 5. 高级分布式训练
+- [ ] FSDP (Fully Sharded Data Parallel)
+- [ ] Pipeline Parallelism
+- [ ] DeepSpeed ZeRO 集成
+
+---
+
 ## 阶段一: 基础建设 ✅
 
 > **状态**: 已完成 | **完成时间**: 2024 年
@@ -225,7 +256,7 @@
 - [x] 实现 Reward Model 训练
 - [x] 实现 PPO (Proximal Policy Optimization) 训练器
 - [x] 添加 KL 散度约束和 Value Head
-- [ ] 实现经验回放和优势估计
+- [x] 实现经验回放和优势估计 (GAE)
 
 #### 11.3 DPO (Direct Preference Optimization)
 
