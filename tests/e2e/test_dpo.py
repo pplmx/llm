@@ -65,4 +65,6 @@ def test_dpo_e2e_flow(tmp_path, device):
 
     # Run
     engine.run()
-    assert True
+
+    # Verify training completed
+    assert engine.global_step > 0, "Training should have executed at least one step"
