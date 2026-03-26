@@ -82,7 +82,6 @@
     - 论文: "RoFormer: Enhanced Transformer with Rotary Position Embedding"
     - 理解复数域旋转的几何意义
     - 为什么RoPE能外推到更长序列
-    - 为什么RoPE能外推到更长序列
 - ALiBi(Attention with Linear Biases) (参考: [`alibi.py`](../src/llm/core/alibi.py))
     - 线性偏置带来的外推性
     - 为什么不需要位置Embedding
@@ -133,7 +132,7 @@
 - 实现GQA并对比MHA的显存占用 (参考: [`attn/mha.py`](../src/llm/core/attn/mha.py))
 - 训练一个简单的MoE模型 (参考: [`moe/`](../src/llm/core/moe/))
 
-### 第四阶段: 掌握正式框架 (Mastering the Framework)
+### 第五阶段: 掌握正式框架 (Mastering the Framework)
 
 在理解了核心概念后，建议您深入学习本项目的正式框架：
 
@@ -146,7 +145,7 @@
 
 ---
 
-### 第五阶段: 前沿技术深度解析(4-6周)
+### 第六阶段: 前沿技术深度解析(4-6周)
 
 #### **5.1 Multi-Head Latent Attention (MLA)**
 

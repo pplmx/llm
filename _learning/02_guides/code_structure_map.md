@@ -17,11 +17,11 @@
 | `rms_norm.py`          | RMSNorm                          | LLaMA 等模型使用的归一化变体                            |
 | `transformer_block.py` | Transformer Layer                | 将 Attention 和 MLP 组合成一个完整的 Encoder/Decoder 层 |
 
-## 模型架构 (`src/llm/model`)
+## 模型架构 (`src/llm/models`)
 
 这里展示了如何将核心组件组装成完整的语言模型。
 
-- `decoder_model.py`: 类似于 GPT/LLaMA 的 Decoder-only架构实现。它是理解现代 LLM 如何工作的最佳切入点。
+- `decoder.py`: 类似于 GPT/LLaMA 的 Decoder-only架构实现。它是理解现代 LLM 如何工作的最佳切入点。
 
 ## 使用建议
 
