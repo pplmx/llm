@@ -1,63 +1,97 @@
-# LLM Project Documentation
+# LLM 项目文档
 
-Welcome to the LLM project documentation. This index provides quick navigation to all available guides and references.
-
-## Quick Links
-
-| Document                              | Description                                   |
-| ------------------------------------- | --------------------------------------------- |
-| [Usage Guide](usage.md)               | Training, inference, and serving instructions |
-| [Architecture](architecture.md)       | System design and component overview          |
-| [Tutorial](tutorial-cpu-llm.md)       | Step-by-step CPU LLM training tutorial        |
-| [Pretraining](tutorial-pretraining.md) | Train a model from scratch with checkpoint |
-| [Development](development.md)         | Setting up the development environment        |
-| [FAQ](faq.md)                         | Frequently asked questions                    |
-| [Troubleshooting](troubleshooting.md) | Common issues and solutions                   |
-
-## Guides
-
-In-depth guides for specific features:
-
-| Guide                                           | Description                             |
-| ----------------------------------------------- | --------------------------------------- |
-| [Fine-Tuning (LoRA/QLoRA)](guide-finetuning.md) | Parameter-efficient fine-tuning methods |
-| [Inference Optimization](guide-inference.md)    | KVCache, GQA, sliding window attention  |
-
-## Training Framework
-
-Detailed documentation for the training system:
-
-| Document                                         | Description                       |
-| ------------------------------------------------ | --------------------------------- |
-| [Overview](training/README.md)                   | Training framework introduction   |
-| [Components](training/components.md)             | Core training components          |
-| [Training Flow](training/training-flow.md)       | End-to-end training process       |
-| [Callbacks](training/flow-callbacks.md)          | Callback system for extensibility |
-| [Configuration](training/guide-configuration.md) | Configuration guide               |
-| [Extending](training/guide-extending.md)         | How to extend the framework       |
-| [DDP Deep Dive](training/deep-dive-ddp.md)       | Distributed training details      |
-| [Troubleshooting](training/troubleshooting.md)   | Training-specific issues          |
-
-## Architecture Decision Records (ADR)
-
-Design decisions and their rationale:
-
-| ADR                            | Topic                         |
-| ------------------------------ | ----------------------------- |
-| [001](adr/001-use-gqa.md)      | Grouped Query Attention (GQA) |
-| [002](adr/002-use-swiglu.md)   | SwiGLU Activation             |
-| [003](adr/003-use-kv-cache.md) | Pre-allocated KV Cache        |
-| [004](adr/004-use-qlora.md)    | QLoRA Efficient Fine-tuning   |
-
-## Deep Dives
-
-In-depth technical explorations *(在源码目录 `_learning/` 中)*:
-
-- [Attention Mechanisms Part 1](https://github.com/pplmx/llm/blob/main/_learning/01_concepts/attn-01.md)
-- [Attention Mechanisms Part 2](https://github.com/pplmx/llm/blob/main/_learning/01_concepts/attn-02.md)
+欢迎来到 LLM 项目文档。根据你的需求选择合适的入口：
 
 ---
 
-> **Contributing**: See [Contributing Guide](https://github.com/pplmx/llm/blob/main/CONTRIBUTING.md) for contribution guidelines.
->
-> **Issues**: Report bugs at [GitHub Issues](https://github.com/pplmx/llm/issues).
+## 🎯 我要做什么？
+
+### 🚀 快速开始 (5分钟)
+
+还不知道这是什么？先看这里：
+
+- [快速开始](getting-started.md) - 5分钟运行第一个训练
+
+### 📖 学习教程
+
+一步步跟着做：
+
+| 教程 | 说明 | 预计时间 |
+|------|------|---------|
+| [预训练](tutorials/01-pretraining.md) | 从零训练模型 | 15分钟 |
+| [微调](tutorials/02-finetuning.md) | LoRA/QLoRA 微调 | 20分钟 |
+| [推理](tutorials/03-inference.md) | 模型推理和部署 | 10分钟 |
+
+### 🔧 功能指南
+
+深入了解特定功能：
+
+| 指南 | 说明 |
+|------|------|
+| [Checkpoints](guides/checkpoints.md) | 模型保存与恢复 |
+| [分布式训练](guides/distributed.md) | 多 GPU 训练 |
+| [Fine-Tuning](guide-finetuning.md) | LoRA/QLoRA 详解 |
+| [Inference](guide-inference.md) | 推理优化 |
+
+### 📚 参考文档
+
+快速查找：
+
+| 文档 | 说明 |
+|------|------|
+| [CLI 命令](reference/cli.md) | 命令行参数 |
+| [Architecture](architecture.md) | 系统架构 |
+| [Development](development.md) | 开发环境 |
+
+---
+
+## 📁 文档结构
+
+```
+docs/
+├── getting-started.md          # 🚀 快速开始
+├── tutorials/                # 📖 入门教程
+│   ├── 01-pretraining.md   # 预训练
+│   ├── 02-finetuning.md   # 微调
+│   └── 03-inference.md   # 推理
+├── guides/                  # 🔧 功能指南
+│   ├── checkpoints.md
+│   └── distributed.md
+├── reference/               # 📚 参考
+│   └── cli.md
+├── development.md          # 开发者文档
+├── architecture.md        # 架构设计
+└── development/           # 开发者文档 (高级)
+```
+
+---
+
+## 快速命令
+
+```bash
+# 安装
+make init
+
+# 训练
+uv run scripts/train_simple_decoder.py --file-path data.txt
+
+# 测试
+make test
+
+# Lint
+make ruff
+```
+
+---
+
+## 需要帮助？
+
+- [FAQ](faq.md) - 常见问题
+- [Troubleshooting](troubleshooting.md) - 故障排除
+- [GitHub Issues](https://github.com/your-repo/llm/issues) - 报告问题
+
+---
+
+## 贡献
+
+欢迎贡献！请阅读 [CONTRIBUTING.md](../CONTRIBUTING.md) 了解如何参与。
