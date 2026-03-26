@@ -485,9 +485,7 @@
 
 ## 版本历史
 
-- **v0.0.7** (2026-03-26): 验证并修正 ROADMAP 状态, 完善 torch.compile, PriorityScheduler 标记
-- **v0.0.6** (2026-03-26): HuggingFace 兼容性, ONNX 导出, Priority Scheduler, TensorBoard
-- **v0.0.5** (2026-03-26): Paged Attention, Prefix Caching, PPO Trainer, PTQ (INT8/INT4), Checkpoint System
+- **v0.0.5** (2026-03-26): Paged Attention, Prefix Caching, PPO Trainer, PTQ, Checkpoint System, HuggingFace 兼容性, ONNX 导出, Priority Scheduler, TensorBoard
 - **v0.0.4** (2026-01-07): Gradient Checkpointing, E2E Pipeline, OpenAI Chat API, Batch Inference, 测试数 337
 - **v0.0.3** (2026-01-05): 同步路线图与实际状态, 修复 train.py 任务注册, 更新测试计数
 - **v0.0.2** (2025-12-21): 全面更新路线图, 添加 10-15 阶段的详细规划
