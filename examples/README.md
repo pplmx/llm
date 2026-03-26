@@ -80,6 +80,6 @@ uv run examples/qlora_finetuning_demo.py
 
 如需更复杂的使用场景，请参考：
 
-- 训练文档: `docs/training/README.md`
-- 微调指南: `docs/guide-finetuning.md`
-- 推理指南: `docs/guide-inference.md`
+- 训练文档: `docs/development/README.md`
+- 微调指南: `docs/guides/finetuning.md`
+- 推理指南: `docs/guides/inference.md`
