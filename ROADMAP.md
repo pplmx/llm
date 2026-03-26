@@ -1,6 +1,6 @@
 # LLM 项目完整生命周期路线图
 
-**最后更新**: 2026-03-26
+**最后更新**: 2026-03-27
 
 这是一个动态更新的路线图, 用于追踪整个项目的进展. 项目采用迭代式开发, 每个阶段完成后都会有可用的功能增量.
 
@@ -27,9 +27,11 @@
 - [ ] 数据版本控制 (DVC)
 
 ### 2. 生态系统集成 (阶段十四)
-- [ ] HuggingFace PreTrainedModel 接口兼容
-- [ ] ONNX/TorchScript 导出
+- [x] HuggingFace 权重加载 (from_pretrained)
+- [x] ONNX 导出
+- [ ] TorchScript 导出
 - [ ] LangChain/LlamaIndex 集成
+- [ ] safetensors 格式支持
 - [ ] 发布预训练模型到 HuggingFace Hub
 
 ### 3. 多模态扩展 (阶段十二)
@@ -38,7 +40,7 @@
 - [ ] Visual Instruction Tuning
 
 ### 4. 高效微调
-- [ ] QLoRA 完整流程
+- [x] QLoRA (NF4 量化 + LoRA)
 - [ ] AdaLoRA
 - [ ] Prefix Tuning / P-Tuning
 
@@ -113,6 +115,7 @@
     - [x] **分布式训练**: 实现并验证 `DDP` (数据并行) 基础流程
     - [x] **混合精度**: 实现自动 BF16/FP16 检测及 `torch.cuda.amp` 支持
     - [x] **检查点系统**: 实现 CheckpointManager 支持训练中断恢复
+    - [x] **监控与日志**: TensorBoard 集成 (`TensorBoardCallback`)
 - [ ] **训练策略** ⏭️ *阶段十一*
     - [ ] **预训练 (Pre-training)**: 设计并执行在大型通用语料库上的预训练流程
     - [ ] **指令微调 (Instruction Fine-tuning)**: 设计并执行在特定指令数据集上的微调流程
@@ -150,6 +153,7 @@
     - [x] API Key 认证
     - [x] 实现批处理推理支持 (`/batch_generate` 端点)
     - [x] 添加请求队列和并发控制 (`asyncio.Semaphore` + timeout)
+    - [x] 实现优先级调度 (`PriorityScheduler`)
 - [x] **性能优化** (基础) ✅ *阶段十*
     - [x] 集成 `torch.compile` 到推理流程 (可选配置)
     - [x] 优化 KV Cache 内存管理 (Paged Attention)
@@ -165,7 +169,7 @@
 - [x] **代码质量**: 全面应用 `ruff` 规范并修复所有 lint 问题
 - [x] **集成测试**:
     - [x] 完善 `MoE` 动态专家路由的深度集成测试
-- [x] **端到端 (E2E) 测试**: 创建一个脚本, 自动完成"训练-评估-推理"的全流程, 作为最终的冒烟测试
+- [x] **端到端 (E2E) 测试**: 完整的 "训练-评估-推理" 全流程 (`utils/e2e.py`)
 
 ---
 
@@ -352,9 +356,9 @@
 
 ---
 
-## 阶段十四: 生态系统集成 ⏭️
+## 阶段十四: 生态系统集成 🚀
 
-> **优先级**: P3 (高) | **预计时间**: 2025 Q3-2026 Q2 | **预计工作量**: 4-6 个月
+> **优先级**: P2 (高) | **状态**: 进行中 | **预计时间**: 2025 Q3-2026 Q2 | **预计工作量**: 4-6 个月
 
 ### 目标
 
@@ -370,14 +374,15 @@
 
 #### 14.1 HuggingFace 集成
 
-- [ ] 实现 `PreTrainedModel` 接口兼容
-- [ ] 支持 `transformers` 库直接加载
+- [x] 实现 `from_pretrained` 加载功能
+- [x] 支持 HuggingFace 权重转换
+- [x] 实现模型架构检测和映射
 - [ ] 实现 `safetensors` 格式支持
 - [ ] 发布模型到 HuggingFace Hub
 
 #### 14.2 模型导出
 
-- [ ] 实现 ONNX 导出
+- [x] 实现 ONNX 导出
 - [ ] 实现 TorchScript 导出
 - [ ] 支持 TensorRT 优化
 - [ ] 探索 Core ML 支持 (iOS 部署)
@@ -425,7 +430,7 @@
 #### 15.3 高效微调技术
 
 - [x] 实现 LoRA (Low-Rank Adaptation)
-- [ ] 实现 QLoRA (Quantized LoRA)
+- [x] 实现 QLoRA (Quantized LoRA)
 - [ ] 实现 AdaLoRA (Adaptive LoRA)
 - [ ] 探索 Prefix Tuning / P-Tuning
 
@@ -445,8 +450,8 @@
 
 #### 15.6 文档与社区
 
-- [ ] 使用 Sphinx/MkDocs 生成 API 文档网站
-- [ ] 创建互动式 Jupyter 教程
+- [x] 使用 MkDocs 生成 API 文档网站
+- [x] 创建互动式 Jupyter 教程 (notebooks/quick_start.ipynb)
 - [ ] 发布技术博客和论文解读
 - [ ] 建立社区论坛 (Discord/GitHub Discussions)
 
@@ -480,6 +485,7 @@
 
 ## 版本历史
 
+- **v0.0.6** (2026-03-27): HuggingFace 兼容性, ONNX 导出, Priority Scheduler, TensorBoard
 - **v0.0.5** (2026-03-26): Paged Attention, Prefix Caching, PPO Trainer, PTQ (INT8/INT4), Checkpoint System
 - **v0.0.4** (2026-01-07): Gradient Checkpointing, E2E Pipeline, OpenAI Chat API, Batch Inference, 测试数 337
 - **v0.0.3** (2026-01-05): 同步路线图与实际状态, 修复 train.py 任务注册, 更新测试计数
