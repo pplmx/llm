@@ -56,30 +56,41 @@ markdown_extensions:
   - md_in_html
 
 nav:
-  - Home: README.md
-  - Getting Started:
-      - Usage Guide: usage.md
+  - 🚀 快速开始:
+      - getting-started.md
+      - tutorials/01-pretraining.md
+      - tutorials/02-finetuning.md
+      - tutorials/03-inference.md
+  
+  - 📖 教程:
       - Tutorial: tutorial-cpu-llm.md
       - FAQ: faq.md
-  - Architecture:
-      - Overview: architecture.md
-      - Development: development.md
-  - Guides:
-      - Fine-Tuning (LoRA/QLoRA): guide-finetuning.md
-      - Inference Optimization: guide-inference.md
-  - Training:
-      - Overview: training/README.md
-      - Components: training/components.md
-      - Training Flow: training/training-flow.md
-      - Callbacks: training/flow-callbacks.md
-      - Configuration: training/guide-configuration.md
-      - Extending: training/guide-extending.md
-      - DDP Deep Dive: training/deep-dive-ddp.md
-      - Troubleshooting: training/troubleshooting.md
-  - ADR:
-      - Overview: adr/README.md
+  
+  - 🔧 指南:
+      - Checkpoints: guides/checkpoints.md
+      - 分布式训练: guides/distributed.md
+      - Fine-Tuning: guide-finetuning.md
+      - Inference: guide-inference.md
+  
+  - 📚 参考:
+      - CLI 命令: reference/cli.md
+      - Architecture: architecture.md
+  
+  - 💻 开发:
+      - development/README.md
+      - development/components.md
+      - development/training-flow.md
+      - development/flow-callbacks.md
+      - development/guide-configuration.md
+      - development/guide-extending.md
+      - development/deep-dive-ddp.md
+      - development/troubleshooting.md
+  
+  - 📝 ADR:
+      - adr/README.md
       - "001: GQA": adr/001-use-gqa.md
       - "002: SwiGLU": adr/002-use-swiglu.md
       - "003: KVCache": adr/003-use-kv-cache.md
       - "004: QLoRA": adr/004-use-qlora.md
-  - Troubleshooting: troubleshooting.md
+  
+  - ❓ 故障排除: troubleshooting.md
