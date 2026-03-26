@@ -68,7 +68,7 @@ llm-train --task lm --config-path configs/example.yaml --epochs 10
 torchrun --nproc_per_node=4 src/llm/training/train.py --task lm
 ```
 
-详见：[DDP Deep Dive](training/deep-dive-ddp.md)
+详见：[DDP Deep Dive](development/deep-dive-ddp.md)
 
 ### Q: 内存不足 (OOM) 怎么办？
 
