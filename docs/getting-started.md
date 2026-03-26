@@ -16,7 +16,7 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-repo/llm.git
+git clone https://github.com/pplmx/llm.git
 cd llm
 
 # 安装依赖
