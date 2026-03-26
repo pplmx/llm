@@ -130,7 +130,7 @@ for ids in input_ids_list:
 
 ### 详细优化指南
 
-请参考 [Inference Optimization](../guide-inference.md)
+请参考 [Inference Optimization](../guides/inference.md)
 
 ---
 
