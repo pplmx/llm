@@ -1,6 +1,6 @@
 # LLM 项目完整生命周期路线图
 
-**最后更新**: 2026-03-27
+**最后更新**: 2026-03-28
 
 这是一个动态更新的路线图, 用于追踪整个项目的进展. 项目采用迭代式开发, 每个阶段完成后都会有可用的功能增量.
 
@@ -14,7 +14,7 @@
 - 基础推理能力 (KV Cache, Top-k/Top-p 采样)
 - 完整的模型评估框架 (Perplexity, Accuracy, F1, ROUGE, BLEU, chrF, lm-eval)
 
-🚀 **当前重点**: 预训练完善 & 生态系统集成
+🚀 **当前重点**: 预训练完善 & 流式数据加载
 
 ---
 
@@ -116,9 +116,9 @@
     - [x] **混合精度**: 实现自动 BF16/FP16 检测及 `torch.cuda.amp` 支持
     - [x] **检查点系统**: 实现 CheckpointManager 支持训练中断恢复
     - [x] **监控与日志**: TensorBoard 集成 (`TensorBoardCallback`)
-- [ ] **训练策略** ⏭️ *阶段十一*
-    - [ ] **预训练 (Pre-training)**: 设计并执行在大型通用语料库上的预训练流程
-    - [ ] **指令微调 (Instruction Fine-tuning)**: 设计并执行在特定指令数据集上的微调流程
+- [ ] **训练策略** ⏭️ *下一阶段*
+    - [ ] **预训练 (Pre-training)**: 大规模通用语料库训练 (需流式数据加载)
+    - [x] **指令微调 (Instruction Fine-tuning)**: SFT task 已实现 (`training/tasks/sft_task.py`)
 
 ---
 
@@ -217,18 +217,18 @@
 - [x] 实现 Paged Attention (vLLM style)
 - [x] 优化 KV Cache 内存布局和管理
 - [x] 实现 Continuous Batching (`ContinuousBatchingEngine`)
-- [ ] 添加请求级别的动态调度
+- [x] 实现请求级别动态调度 (`PriorityScheduler`)
 
 #### 10.3 编译优化
 
-- [ ] 深度集成 `torch.compile` (推理和训练)
+- [x] 深度集成 `torch.compile` (推理和训练)
 - [ ] 自定义 CUDA kernels (关键路径)
 - [ ] 优化算子融合策略
 
 #### 10.4 内存优化
 
 - [x] 实现 Gradient Checkpointing
-- [ ] 优化激活值重计算策略
+- [x] 优化激活值重计算策略 (通过 Gradient Checkpointing)
 - [ ] 减少峰值显存占用
 
 ---
@@ -485,6 +485,7 @@
 
 ## 版本历史
 
+- **v0.0.7** (2026-03-28): 验证并修正 ROADMAP 状态, 完善 torch.compile, PriorityScheduler 标记
 - **v0.0.6** (2026-03-27): HuggingFace 兼容性, ONNX 导出, Priority Scheduler, TensorBoard
 - **v0.0.5** (2026-03-26): Paged Attention, Prefix Caching, PPO Trainer, PTQ (INT8/INT4), Checkpoint System
 - **v0.0.4** (2026-01-07): Gradient Checkpointing, E2E Pipeline, OpenAI Chat API, Batch Inference, 测试数 337
