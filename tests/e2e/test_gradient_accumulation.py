@@ -7,7 +7,7 @@ from tests.dummies import DummyLMDataModule
 
 
 @pytest.mark.e2e
-def test_gradient_accumulation(tiny_config):
+def test_gradient_accumulation(tiny_config, device):
     # Setup for grad accumulation
     # Batch size 2, Acc steps 2 -> Global Batch Size 4
     tiny_config.training.batch_size = 2
@@ -20,6 +20,10 @@ def test_gradient_accumulation(tiny_config):
     data_module = DummyLMDataModule(tiny_config)
 
     task = LanguageModelingTask(tiny_config, data_module)
+
+    # Use backend based on device
+    backend = "nccl" if device.type == "cuda" else "gloo"
+    tiny_config.distributed.backend = backend
 
     engine = TrainingEngine(
         config=tiny_config, task=task, rank=0, world_size=1, data_module=data_module, callbacks=[MetricsLogger()]

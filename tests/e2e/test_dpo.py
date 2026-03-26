@@ -20,7 +20,7 @@ from llm.training.tasks.dpo_task import DPOTask
 
 
 @pytest.mark.e2e
-def test_dpo_e2e_flow(tmp_path):
+def test_dpo_e2e_flow(tmp_path, device):
     # 0. Setup Tokenizer
     tokenizer = SimpleCharacterTokenizer([printable])
     tokenizer_path = tmp_path / "tokenizer.pt"
@@ -37,7 +37,8 @@ def test_dpo_e2e_flow(tmp_path):
         for item in data:
             f.write(json.dumps(item) + "\n")
 
-    # 2. Setup Config
+    # 2. Setup Config - use backend based on device
+    backend = "nccl" if device.type == "cuda" else "gloo"
     config = Config(
         model=ModelConfig(
             hidden_size=32, num_layers=2, num_heads=4, vocab_size=tokenizer.vocab_size + 10, max_seq_len=64
@@ -47,7 +48,7 @@ def test_dpo_e2e_flow(tmp_path):
             dataset_path=str(data_path), max_seq_len=64, tokenizer_type="simple", tokenizer_path=str(tokenizer_path)
         ),
         optimization=OptimizationConfig(use_compile=False, use_amp=False, num_workers=0),
-        distributed=DistributedConfig(backend="gloo"),
+        distributed=DistributedConfig(backend=backend),
     )
 
     # 3. Setup Components

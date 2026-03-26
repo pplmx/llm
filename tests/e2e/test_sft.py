@@ -20,7 +20,7 @@ from llm.training.tasks.sft_task import SFTTask
 
 
 @pytest.mark.e2e
-def test_sft_e2e_flow(tmp_path):
+def test_sft_e2e_flow(tmp_path, device):
     # 0. Setup Tokenizer
     tokenizer = SimpleCharacterTokenizer([printable])
     tokenizer_path = tmp_path / "tokenizer.pt"
@@ -37,7 +37,8 @@ def test_sft_e2e_flow(tmp_path):
         for item in data:
             f.write(json.dumps(item) + "\n")
 
-    # 2. Setup Config
+    # 2. Setup Config - use backend based on device
+    backend = "nccl" if device.type == "cuda" else "gloo"
     config = Config(
         model=ModelConfig(
             hidden_size=32,
@@ -55,7 +56,7 @@ def test_sft_e2e_flow(tmp_path):
             use_amp=False,
             num_workers=0,
         ),
-        distributed=DistributedConfig(backend="gloo"),
+        distributed=DistributedConfig(backend=backend),
     )
 
     # 3. Setup Components

@@ -6,13 +6,17 @@ from tests.dummies import DummyLMDataModule
 
 
 @pytest.mark.e2e
-def test_resume_training(tmp_path, tiny_config):
+def test_resume_training(tmp_path, tiny_config, device):
     # Setup
     tiny_config.training.batch_size = 2
     tiny_config.training.num_samples = 8
     tiny_config.training.epochs = 2
     tiny_config.checkpoint.save_interval = 1
     tiny_config.checkpoint.checkpoint_dir = str(tmp_path / "checkpoints")
+
+    # Use backend based on device
+    backend = "nccl" if device.type == "cuda" else "gloo"
+    tiny_config.distributed.backend = backend
 
     # 1. First Run: Train 1 epoch
     tiny_config.training.epochs = 1
