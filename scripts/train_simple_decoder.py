@@ -250,12 +250,25 @@ def main(
     print("\nStarting training...")
     model.train()  # Set model to training mode
 
+    # Initialize Checkpoint Manager
+    checkpoint_mgr = CheckpointManager(save_dir)
+
+    # Resume from checkpoint if specified
+    start_epoch = 0
+    global_step = 0
+    if resume:
+        print(f"Resuming from checkpoint: {resume}")
+        checkpoint = checkpoint_mgr.load(resume, model, optimizer)
+        start_epoch = checkpoint.get("epoch", 0)
+        global_step = checkpoint.get("global_step", 0)
+        print(f"Resumed from epoch {start_epoch}, step {global_step}")
+
     # Early stopping variables (only relevant if val_dataloader is used)
     best_val_loss = float("inf")
     epochs_no_improve = 0
     early_stop = False
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         epoch_start_time = time.time()
         total_epoch_loss = 0
         batch_count = 0
@@ -279,6 +292,26 @@ def main(
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Clip gradients
             optimizer.step()
+
+            # Increment global step
+            global_step += 1
+
+            # Save checkpoint periodically
+            if global_step % save_interval == 0:
+                config_obj = TrainConfig(
+                    hidden_size=hidden_size,
+                    num_layers=num_layers,
+                    num_heads=num_heads,
+                    max_seq_len=max_seq_len,
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    lr=lr,
+                    file_path=str(file_path),
+                    save_dir=save_dir,
+                    save_interval=save_interval,
+                )
+                checkpoint_path = checkpoint_mgr.save(model, optimizer, epoch, global_step, loss.item(), config_obj)
+                print(f"\n[Checkpoint saved] Step {global_step}: {checkpoint_path}")
 
             total_epoch_loss += loss.item()
             batch_count += 1
