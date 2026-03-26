@@ -279,6 +279,9 @@ def main(
         global_step = checkpoint.get("global_step", 0)
         print(f"Resumed from epoch {start_epoch}, step {global_step}")
 
+    # Import tqdm for progress bar
+    from tqdm import tqdm
+
     # Early stopping variables (only relevant if val_dataloader is used)
     best_val_loss = float("inf")
     epochs_no_improve = 0
@@ -289,7 +292,10 @@ def main(
         total_epoch_loss = 0
         batch_count = 0
 
-        for i, batch in enumerate(dataloader):
+        # Use tqdm for progress bar
+        pbar = tqdm(dataloader, desc=f"Epoch {epoch + 1}/{epochs}")
+
+        for i, batch in enumerate(pbar):
             input_ids = batch["input_ids"].to(device_obj)
             labels = batch["labels"].to(device_obj)  # Labels are also token IDs
 
@@ -311,6 +317,9 @@ def main(
 
             # Increment global step
             global_step += 1
+
+            # Update progress bar
+            pbar.set_postfix({"loss": f"{loss.item():.4f}", "step": global_step})
 
             # Save checkpoint periodically
             if global_step % save_interval == 0:
