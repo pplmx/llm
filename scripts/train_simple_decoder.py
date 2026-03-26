@@ -1,4 +1,6 @@
 import time
+import signal
+import sys
 from pathlib import Path
 
 # Original imports that were implicitly removed by the instruction's example, but are necessary and should be kept.
@@ -138,6 +140,20 @@ def main(
 
     device_obj = torch.device(device_str)
     print(f"Using device: {device_obj}")
+
+    # Setup graceful shutdown handler
+    import shutil
+
+    _should_save_on_exit = False
+
+    def _signal_handler(signum, frame):
+        global _should_save_on_exit
+        print("\n\nReceived interrupt signal. Saving checkpoint before exit...")
+        _should_save_on_exit = True
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
 
     # 2. Initialize Tokenizer
     print("Initializing tokenizer...")
