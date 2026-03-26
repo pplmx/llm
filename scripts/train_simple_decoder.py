@@ -144,7 +144,7 @@ def main(
 
     _should_save_on_exit = False
 
-    def _signal_handler(signum, frame):
+    def _signal_handler(_signum, _frame):
         global _should_save_on_exit
         print("\n\nReceived interrupt signal. Saving checkpoint before exit...")
         _should_save_on_exit = True
