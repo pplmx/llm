@@ -1,6 +1,6 @@
 # LLM 项目完整生命周期路线图
 
-**最后更新**: 2026-03-25
+**最后更新**: 2026-03-26
 
 这是一个动态更新的路线图, 用于追踪整个项目的进展. 项目采用迭代式开发, 每个阶段完成后都会有可用的功能增量.
 
@@ -14,7 +14,7 @@
 - 基础推理能力 (KV Cache, Top-k/Top-p 采样)
 - 完整的模型评估框架 (Perplexity, Accuracy, F1, ROUGE, BLEU, chrF, lm-eval)
 
-🚀 **当前重点**: 性能优化 & RLHF
+🚀 **当前重点**: 预训练完善 & 生态系统集成
 
 ---
 
@@ -81,6 +81,7 @@
 - [x] **大规模训练支持**:
     - [x] **分布式训练**: 实现并验证 `DDP` (数据并行) 基础流程
     - [x] **混合精度**: 实现自动 BF16/FP16 检测及 `torch.cuda.amp` 支持
+    - [x] **检查点系统**: 实现 CheckpointManager 支持训练中断恢复
 - [ ] **训练策略** ⏭️ *阶段十一*
     - [ ] **预训练 (Pre-training)**: 设计并执行在大型通用语料库上的预训练流程
     - [ ] **指令微调 (Instruction Fine-tuning)**: 设计并执行在特定指令数据集上的微调流程
@@ -104,9 +105,9 @@
 
 ---
 
-## 阶段七: 推理与部署 🚀
+## 阶段七: 推理与部署 ✅
 
-> **状态**: 进行中 (当前重点) | **预计完成**: 2025 Q2
+> **状态**: 基本完成 | **完成时间**: 2026 Q1
 
 - [x] **推理 API**:
     - [x] **基础实现**: `inference.py` 已创建
@@ -118,10 +119,10 @@
     - [x] API Key 认证
     - [x] 实现批处理推理支持 (`/batch_generate` 端点)
     - [x] 添加请求队列和并发控制 (`asyncio.Semaphore` + timeout)
-- [ ] **性能优化** (基础) ⏭️ *阶段十*
+- [x] **性能优化** (基础) ✅ *阶段十*
     - [x] 集成 `torch.compile` 到推理流程 (可选配置)
-    - [ ] 优化 KV Cache 内存管理
-    - [ ] 实现推理缓存机制
+    - [x] 优化 KV Cache 内存管理 (Paged Attention)
+    - [x] 实现推理缓存机制 (Prefix Caching)
 
 ---
 
@@ -151,9 +152,9 @@
 
 ---
 
-## 阶段十: 性能优化与加速 ⏭️
+## 阶段十: 性能优化与加速 🚀
 
-> **优先级**: P1 (高) | **预计时间**: 2025 Q2-Q3 | **预计工作量**: 2-3 个月
+> **优先级**: P1 (高) | **状态**: 进行中 | **预计时间**: 2025 Q2-Q3 | **预计工作量**: 2-3 个月
 
 ### 目标
 
@@ -178,8 +179,8 @@
 
 #### 10.2 高级推理优化
 
-- [ ] 实现 Paged Attention (vLLM style)
-- [ ] 优化 KV Cache 内存布局和管理
+- [x] 实现 Paged Attention (vLLM style)
+- [x] 优化 KV Cache 内存布局和管理
 - [x] 实现 Continuous Batching (`ContinuousBatchingEngine`)
 - [ ] 添加请求级别的动态调度
 
@@ -197,9 +198,9 @@
 
 ---
 
-## 阶段十一: 模型对齐与 RLHF ⏭️
+## 阶段十一: 模型对齐与 RLHF 🚀
 
-> **优先级**: P2 (高) | **预计时间**: 2025 Q3-Q4 | **预计工作量**: 3-4 个月
+> **优先级**: P1 (高) | **状态**: 进行中 | **预计时间**: 2025 Q3-Q4 | **预计工作量**: 3-4 个月
 
 ### 目标
 
@@ -221,9 +222,9 @@
 
 #### 11.2 RLHF (Reinforcement Learning from Human Feedback)
 
-- [ ] 实现 Reward Model 训练
-- [ ] 实现 PPO (Proximal Policy Optimization) 训练器
-- [ ] 添加 KL 散度约束和 Value Head
+- [x] 实现 Reward Model 训练
+- [x] 实现 PPO (Proximal Policy Optimization) 训练器
+- [x] 添加 KL 散度约束和 Value Head
 - [ ] 实现经验回放和优势估计
 
 #### 11.3 DPO (Direct Preference Optimization)
@@ -277,9 +278,9 @@
 
 ---
 
-## 阶段十三: 量化与压缩 ⏭️
+## 阶段十三: 量化与压缩 🚀
 
-> **优先级**: P3 (中) | **预计时间**: 2025 Q4-2026 Q2 | **预计工作量**: 3-5 个月
+> **优先级**: P2 (中) | **状态**: 进行中 | **预计时间**: 2025 Q4-2026 Q2 | **预计工作量**: 3-5 个月
 
 ### 目标
 
@@ -295,8 +296,8 @@
 
 #### 13.1 Post-Training Quantization (PTQ)
 
-- [ ] 实现 INT8 PTQ
-- [ ] 实现 INT4 PTQ
+- [x] 实现 INT8 PTQ
+- [x] 实现 INT4 PTQ
 - [ ] 支持混合精度量化
 
 #### 13.2 Quantization-Aware Training (QAT)
@@ -448,6 +449,7 @@
 
 ## 版本历史
 
+- **v0.0.5** (2026-03-26): Paged Attention, Prefix Caching, PPO Trainer, PTQ (INT8/INT4), Checkpoint System
 - **v0.0.4** (2026-01-07): Gradient Checkpointing, E2E Pipeline, OpenAI Chat API, Batch Inference, 测试数 337
 - **v0.0.3** (2026-01-05): 同步路线图与实际状态, 修复 train.py 任务注册, 更新测试计数
 - **v0.0.2** (2025-12-21): 全面更新路线图, 添加 10-15 阶段的详细规划
