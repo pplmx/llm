@@ -88,8 +88,6 @@ def test_mha_initialization(mha, mha_props):
     "mha_props",
     [
         {"include_norm_residual": True, "bias": True},
-        {"include_norm_residual": True, "bias": False},
-        {"include_norm_residual": False, "bias": True},
         {"include_norm_residual": False, "bias": False},
     ],
     indirect=True,

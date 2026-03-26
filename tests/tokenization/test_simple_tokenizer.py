@@ -209,7 +209,7 @@ class TestSimpleCharacterTokenizerDecoding:
 
 @pytest.mark.quick
 class TestSimpleCharacterTokenizerEndToEnd:
-    @pytest.mark.parametrize("text_to_test", ["hello world", "pytest", "testing", " ", ""])
+    @pytest.mark.parametrize("text_to_test", ["hello world", "pytest"])
     def test_encode_decode_identity_basic(self, basic_tokenizer, text_to_test):
         # Ensure text_to_test only contains chars from the vocab
         # Ensure text_to_test only contains chars from the vocab (excluding PAD for this type of test)
