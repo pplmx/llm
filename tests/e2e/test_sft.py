@@ -76,7 +76,6 @@ def test_sft_e2e_flow(tmp_path, device):
     # Run
     engine.run()
 
-    # Check if model updated?
-    # Or just that it ran without error.
-    # We can check if loss log exists or just pass.
-    assert True
+    # Verify training completed
+    assert engine.global_step > 0, "Training should have executed at least one step"
+    assert engine.start_epoch == 0, "Should start from epoch 0"

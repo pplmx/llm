@@ -80,6 +80,7 @@ def ddp_test_worker(rank, world_size, config, results):
 
 
 @pytest.mark.need_gpu(2)
+@pytest.mark.slow
 def test_ddp_two_gpu():
     """Test DDP with 2 GPUs."""
     if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
@@ -113,6 +114,7 @@ def test_ddp_two_gpu():
 
 
 @pytest.mark.full_cluster
+@pytest.mark.slow
 def test_ddp_eight_gpu():
     """Test DDP with all 8 GPUs (full cluster)."""
     if not torch.cuda.is_available() or torch.cuda.device_count() < 8:
@@ -144,6 +146,7 @@ def test_ddp_eight_gpu():
 
 
 @pytest.mark.multi_gpu
+@pytest.mark.slow
 def test_ddp_all_available_gpus():
     """Test DDP with all available GPUs (2+)."""
     if not torch.cuda.is_available():
