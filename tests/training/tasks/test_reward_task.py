@@ -60,14 +60,14 @@ def test_reward_dataset_loads_data(sample_reward_data, mock_tokenizer):
     assert sample["rejected_input_ids"].shape == (64,)
 
 
-def test_reward_model_forward(tiny_model):
+def test_reward_model_forward(tiny_model, device):
     """Test RewardModel forward pass."""
-    reward_model = RewardModel(tiny_model)
+    reward_model = RewardModel(tiny_model).to(device)
 
     batch_size = 2
     seq_len = 16
-    input_ids = torch.randint(0, 100, (batch_size, seq_len))
-    attention_mask = torch.ones(batch_size, seq_len)
+    input_ids = torch.randint(0, 100, (batch_size, seq_len), device=device)
+    attention_mask = torch.ones(batch_size, seq_len, device=device)
 
     rewards = reward_model(input_ids, attention_mask)
 
@@ -75,16 +75,16 @@ def test_reward_model_forward(tiny_model):
     assert rewards.dtype == torch.float32
 
 
-def test_reward_model_handles_padding(tiny_model):
+def test_reward_model_handles_padding(tiny_model, device):
     """Test RewardModel correctly handles padded sequences."""
-    reward_model = RewardModel(tiny_model)
+    reward_model = RewardModel(tiny_model).to(device)
 
     batch_size = 2
     seq_len = 16
-    input_ids = torch.randint(0, 100, (batch_size, seq_len))
+    input_ids = torch.randint(0, 100, (batch_size, seq_len), device=device)
 
     # Sequence 1: 10 tokens, Sequence 2: 5 tokens
-    attention_mask = torch.zeros(batch_size, seq_len)
+    attention_mask = torch.zeros(batch_size, seq_len, device=device)
     attention_mask[0, :10] = 1
     attention_mask[1, :5] = 1
 
@@ -95,16 +95,16 @@ def test_reward_model_handles_padding(tiny_model):
     # (This is a weak test, but ensures the mask is used)
 
 
-def test_reward_model_value_head_trainable(tiny_model):
+def test_reward_model_value_head_trainable(tiny_model, device):
     """Test that value head is trainable."""
-    reward_model = RewardModel(tiny_model)
+    reward_model = RewardModel(tiny_model).to(device)
 
     # Check value head parameters are trainable
     for param in reward_model.value_head.parameters():
         assert param.requires_grad
 
     # Forward and backward pass
-    input_ids = torch.randint(0, 100, (2, 8))
+    input_ids = torch.randint(0, 100, (2, 8), device=device)
     rewards = reward_model(input_ids)
     loss = rewards.mean()
     loss.backward()

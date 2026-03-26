@@ -11,15 +11,18 @@ class DummyLMDataModule(BaseDataModule):
     def setup(self, stage=None):
         pass
 
-    def train_dataloader(self, rank, world_size):
-        # Create samples
+    def train_dataloader(self, rank, world_size, device=None):
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Create samples on the specified device
         num_samples = self.config.training.num_samples
         S = self.config.model.max_seq_len
         V = self.config.model.vocab_size
 
-        # input_ids: (num_samples, S)
-        input_ids = torch.randint(0, V, (num_samples, S), dtype=torch.long)
-        labels = torch.randint(0, V, (num_samples, S), dtype=torch.long)
+        # input_ids: (num_samples, S) - create on device
+        input_ids = torch.randint(0, V, (num_samples, S), dtype=torch.long, device=device)
+        labels = torch.randint(0, V, (num_samples, S), dtype=torch.long, device=device)
 
         dataset = TensorDataset(input_ids, labels)
 
