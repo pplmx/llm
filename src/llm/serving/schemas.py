@@ -12,6 +12,7 @@ class RequestState(Enum):
 
     WAITING = auto()
     RUNNING = auto()
+    PENDING = auto()  # Waiting for preemption to complete
     FINISHED = auto()
 
 
