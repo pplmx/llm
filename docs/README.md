@@ -30,8 +30,8 @@
 |------|------|
 | [Checkpoints](guides/checkpoints.md) | 模型保存与恢复 |
 | [分布式训练](guides/distributed.md) | 多 GPU 训练 |
-| [Fine-Tuning](guide-finetuning.md) | LoRA/QLoRA 详解 |
-| [Inference](guide-inference.md) | 推理优化 |
+| [Fine-Tuning](guides/finetuning.md) | LoRA/QLoRA 详解 |
+| [Inference](guides/inference.md) | 推理优化 |
 
 ### 📚 参考文档
 
@@ -40,8 +40,8 @@
 | 文档 | 说明 |
 |------|------|
 | [CLI 命令](reference/cli.md) | 命令行参数 |
-| [Architecture](architecture.md) | 系统架构 |
-| [Development](development.md) | 开发环境 |
+| [Architecture](reference/architecture.md) | 系统架构 |
+| [Development](development/README.md) | 开发者文档 |
 
 ---
 
@@ -56,12 +56,13 @@ docs/
 │   └── 03-inference.md   # 推理
 ├── guides/                  # 🔧 功能指南
 │   ├── checkpoints.md
-│   └── distributed.md
+│   ├── distributed.md
+│   ├── finetuning.md
+│   └── inference.md
 ├── reference/               # 📚 参考
+│   ├── architecture.md
 │   └── cli.md
-├── development.md          # 开发者文档
-├── architecture.md        # 架构设计
-└── development/           # 开发者文档 (高级)
+└── development/            # 💻 开发者文档 (高级)
 ```
 
 ---

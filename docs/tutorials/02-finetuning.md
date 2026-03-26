@@ -98,8 +98,8 @@ optimizer = torch.optim.AdamW(
 ## 详细文档
 
 完整的微调指南请参考：
-- [Fine-Tuning Guide](../guide-finetuning.md) - 详细参数说明
-- [QLoRA Guide](../guide-finetuning.md#qlora-quantized-lora) - 量化微调
+- [Fine-Tuning Guide](../guides/finetuning.md) - 详细参数说明
+- [QLoRA Guide](../guides/finetuning.md#qlora-quantized-lora) - 量化微调
 
 ---
 

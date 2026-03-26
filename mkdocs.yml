@@ -62,19 +62,11 @@ nav:
       - tutorials/02-finetuning.md
       - tutorials/03-inference.md
   
-  - 📖 教程:
-      - Tutorial: tutorial-cpu-llm.md
-      - FAQ: faq.md
-  
   - 🔧 指南:
-      - Checkpoints: guides/checkpoints.md
-      - 分布式训练: guides/distributed.md
-      - Fine-Tuning: guide-finetuning.md
-      - Inference: guide-inference.md
-  
-  - 📚 参考:
-      - CLI 命令: reference/cli.md
-      - Architecture: architecture.md
+      - guides/checkpoints.md
+      - guides/distributed.md
+      - guides/finetuning.md
+      - guides/inference.md
   
   - 💻 开发:
       - development/README.md
@@ -86,6 +78,10 @@ nav:
       - development/deep-dive-ddp.md
       - development/troubleshooting.md
   
+  - 📚 参考:
+      - reference/architecture.md
+      - reference/cli.md
+  
   - 📝 ADR:
       - adr/README.md
       - "001: GQA": adr/001-use-gqa.md
@@ -93,4 +89,5 @@ nav:
       - "003: KVCache": adr/003-use-kv-cache.md
       - "004: QLoRA": adr/004-use-qlora.md
   
-  - ❓ 故障排除: troubleshooting.md
+  - ❓ FAQ: faq.md
+  - 🔧 故障排除: troubleshooting.md
