@@ -73,7 +73,7 @@ def test_lm_task_validation(mock_config):
     labels = torch.randint(0, vocab_size, (batch_size, seq_len))
     batch = (input_ids, labels)
 
-    loss, metrics = task.validation_step(batch, model, criterion)
+    _loss, metrics = task.validation_step(batch, model, criterion)
 
     assert "val_loss" in metrics
     assert "val_ppl" in metrics

@@ -12,7 +12,7 @@ select = [
     "UP", # pyupgrade
     "ARG001", # unused arguments in functions
     "SIM",   # flake8-simplify
-    # "RUF",   # Ruff-specific rules
+    "RUF",   # Ruff-specific rules
     "PTH",   # pathlib best practice
 ]
 

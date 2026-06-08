@@ -18,7 +18,7 @@ class LMTask(BaseTask):
 
         text = Path(dataset_path).read_text()
         chars = sorted(set(text))
-        corpus = ["<PAD>", "<EOS>", "<BOS>"] + chars
+        corpus = ["<PAD>", "<EOS>", "<BOS>", *chars]
         self.tokenizer = SimpleCharacterTokenizer(corpus)
 
         self.val_dataset = TextDataset(

@@ -60,5 +60,5 @@ def test_inference_batch_generation(model_and_tokenizer):
 
     # Update step
     next_token = torch.randint(0, tokenizer.vocab_size, (2, 1))
-    logits_next, past_key_values_next = model(next_token, past_key_values=past_key_values, use_cache=True)
+    logits_next, _past_key_values_next = model(next_token, past_key_values=past_key_values, use_cache=True)
     assert logits_next.shape == (2, 1, tokenizer.vocab_size)

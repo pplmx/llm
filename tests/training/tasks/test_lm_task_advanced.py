@@ -22,7 +22,7 @@ def task_context():
 @pytest.mark.heavy
 def test_lm_task_perplexity_masked_entirely(task_context):
     """Test perplexity calculation when targets are entirely masked (ignore_index)."""
-    task, model_cfg = task_context
+    task, _model_cfg = task_context
     model = task.build_model()
     criterion = task.build_criterion()
 
@@ -38,7 +38,7 @@ def test_lm_task_perplexity_masked_entirely(task_context):
 @pytest.mark.heavy
 def test_lm_task_perplexity_extreme_values(task_context):
     """Test perplexity with high loss."""
-    task, model_cfg = task_context
+    task, _model_cfg = task_context
     model = task.build_model()
     criterion = task.build_criterion()
 
@@ -60,7 +60,7 @@ def test_lm_task_perplexity_extreme_values(task_context):
 @pytest.mark.heavy
 def test_lm_task_target_creation(task_context):
     """Verify that targets are handled correctly in train_step."""
-    task, model_cfg = task_context
+    task, _model_cfg = task_context
     model = task.build_model()
     criterion = task.build_criterion()
 
@@ -69,6 +69,6 @@ def test_lm_task_target_creation(task_context):
     input_ids = torch.tensor([[1, 2, 3]])
     targets = torch.tensor([[2, 3, 4]])
 
-    loss, metrics = task.train_step((input_ids, targets), model, criterion)
+    _loss, metrics = task.train_step((input_ids, targets), model, criterion)
     assert "loss" in metrics
     assert "ppl" in metrics

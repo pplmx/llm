@@ -371,8 +371,8 @@ def test_mha_dropout_train_eval_modes(mha, input_tensor, mha_props):
 @pytest.mark.slow
 def test_mha_initialization_invalid_hidden_size_num_heads():
     """Test MHA initialization with hidden_size not divisible by num_heads."""
-    with pytest.raises(ValueError, match="hidden_size .* must be divisible by num_heads .*"):
+    with pytest.raises(ValueError, match=r"hidden_size .* must be divisible by num_heads .*"):
         MultiHeadAttention(hidden_size=60, num_heads=8)  # 60 is not divisible by 8
 
-    with pytest.raises(ValueError, match="hidden_size .* must be divisible by num_heads .*"):
+    with pytest.raises(ValueError, match=r"hidden_size .* must be divisible by num_heads .*"):
         MultiHeadAttention(hidden_size=32, num_heads=3)  # 32 is not divisible by 3

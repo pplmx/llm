@@ -8,4 +8,4 @@ from llm.training.rlhf.config import PPOConfig
 from llm.training.rlhf.ppo_trainer import PPOTrainer
 from llm.training.rlhf.rollout_buffer import RolloutBatch, RolloutBuffer, RolloutSample
 
-__all__ = ["PPOConfig", "PPOTrainer", "RolloutBuffer", "RolloutBatch", "RolloutSample"]
+__all__ = ["PPOConfig", "PPOTrainer", "RolloutBatch", "RolloutBuffer", "RolloutSample"]

@@ -28,7 +28,7 @@ def paged_attention_forward(
         Attention output tensor [batch, num_heads, 1, head_dim]
     """
     batch_size, num_heads, _, head_dim = q.shape
-    num_layers, num_blocks, _, _, _ = k_cache.shape
+    _num_layers, num_blocks, _, _, _ = k_cache.shape
 
     k_cache = k_cache[0]
     v_cache = v_cache[0]

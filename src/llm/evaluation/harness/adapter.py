@@ -12,7 +12,7 @@ class LmEvalAdapter:
         """List available benchmark tasks."""
         return sorted(self._task_manager.all_tasks)
 
-    def evaluate(self, model, tasks: list[str] = None, **kwargs):
+    def evaluate(self, model, tasks: list[str] | None = None, **kwargs):
         """Run evaluation on specified tasks."""
         results = evaluator.evaluate(model=model, tasks=tasks or ["mmlu"], **kwargs)
 

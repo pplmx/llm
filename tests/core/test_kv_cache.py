@@ -46,7 +46,7 @@ class TestKVCache:
         # First update: prompt with 10 tokens
         k1 = torch.randn(1, 2, 10, 16)
         v1 = torch.randn(1, 2, 10, 16)
-        k_out, v_out = cache.update(k1, v1)
+        k_out, _v_out = cache.update(k1, v1)
 
         assert cache.seq_len == 10
         assert k_out.shape == (1, 2, 10, 16)
@@ -54,7 +54,7 @@ class TestKVCache:
         # Second update: 1 new token
         k2 = torch.randn(1, 2, 1, 16)
         v2 = torch.randn(1, 2, 1, 16)
-        k_out, v_out = cache.update(k2, v2)
+        k_out, _v_out = cache.update(k2, v2)
 
         assert cache.seq_len == 11
         assert k_out.shape == (1, 2, 11, 16)

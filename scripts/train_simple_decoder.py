@@ -18,7 +18,7 @@ from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 @dataclass
 class TrainConfig:
-    """训练配置，用于保存到 checkpoint"""
+    """训练配置, 用于保存到 checkpoint"""
 
     hidden_size: int = 128
     num_layers: int = 4

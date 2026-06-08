@@ -91,7 +91,7 @@ class TestRotaryPositionEmbedding:
         for seq_len in [8, 32, 64, 128]:
             q = torch.randn(2, 4, seq_len, 64, device=device)
             k = torch.randn(2, 4, seq_len, 64, device=device)
-            q_rot, k_rot = rope(q, k)
+            q_rot, _k_rot = rope(q, k)
             assert q_rot.shape == q.shape
 
     def test_forward_with_position_ids(self, device):
@@ -101,7 +101,7 @@ class TestRotaryPositionEmbedding:
         k = torch.randn(2, 4, 8, 64, device=device)
         position_ids = torch.arange(8, device=device).unsqueeze(0).expand(2, -1)
 
-        q_rot, k_rot = rope(q, k, position_ids)
+        q_rot, _k_rot = rope(q, k, position_ids)
         assert q_rot.shape == q.shape
 
     def test_linear_scaling(self, device):
@@ -117,8 +117,8 @@ class TestRotaryPositionEmbedding:
         q = torch.randn(2, 4, 16, 64, device=device)
         k = torch.randn(2, 4, 16, 64, device=device)
 
-        q_no_scale, k_no_scale = rope_no_scale(q, k)
-        q_scaled, k_scaled = rope_scaled(q, k)
+        q_no_scale, _k_no_scale = rope_no_scale(q, k)
+        q_scaled, _k_scaled = rope_scaled(q, k)
 
         # Results should differ
         assert not torch.allclose(q_no_scale, q_scaled)
@@ -135,7 +135,7 @@ class TestRotaryPositionEmbedding:
         q = torch.randn(2, 4, 16, 64, device=device)
         k = torch.randn(2, 4, 16, 64, device=device)
 
-        q_rot, k_rot = rope_ntk(q, k)
+        q_rot, _k_rot = rope_ntk(q, k)
         assert q_rot.shape == q.shape
 
     def test_dynamic_scaling(self, device):
@@ -151,7 +151,7 @@ class TestRotaryPositionEmbedding:
         q = torch.randn(2, 4, 128, 64, device=device)
         k = torch.randn(2, 4, 128, 64, device=device)
 
-        q_rot, k_rot = rope(q, k)
+        q_rot, _k_rot = rope(q, k)
         assert q_rot.shape == q.shape
 
 

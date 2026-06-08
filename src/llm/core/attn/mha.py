@@ -95,7 +95,7 @@ class MultiHeadAttention(nn.Module):
         attn_mask: Tensor | None = None,
         is_causal: bool | None = None,
         past_key_value: tuple[Tensor, Tensor] | None = None,
-        kv_cache: KVCache | None = None,  # noqa: F821
+        kv_cache: KVCache | None = None,
         use_cache: bool = False,
         batch_indices: Tensor | None = None,
         start_pos: int | Tensor | None = None,

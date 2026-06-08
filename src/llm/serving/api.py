@@ -200,7 +200,7 @@ async def generate_text(
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e!s}")
     except Exception:
         # Log unexpected errors for debugging but return generic message
         import logging
@@ -265,7 +265,7 @@ async def batch_generate_text(
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e!s}")
     except Exception:
         # Log unexpected errors for debugging
         import logging
@@ -344,7 +344,7 @@ async def chat_completions(
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e!s}")
     except Exception:
         # Log unexpected errors for debugging
         import logging

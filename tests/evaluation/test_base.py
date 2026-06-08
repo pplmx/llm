@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from llm.evaluation.metrics.base import BaseMetric
 from llm.evaluation.tasks.base import BaseTask
 
@@ -11,7 +13,7 @@ class MockMetric(BaseMetric):
 
 class MockTask(BaseTask):
     name = "mock"
-    metrics = []
+    metrics: ClassVar[list] = []
 
     def prepare_data(self, split: str):
         return (["input1", "input2"], ["ref1", "ref2"])
