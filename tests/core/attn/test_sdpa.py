@@ -27,7 +27,7 @@ def test_sdpa_basic(sample_qkv_tensors):
 def test_sdpa_with_attn_mask_bool(sample_qkv_tensors):
     """Test with boolean attention mask (True=Mask Out)."""
     q, k, v = sample_qkv_tensors
-    batch_size, num_heads, seq_len, _ = q.shape
+    batch_size, _num_heads, seq_len, _ = q.shape
 
     # Mask last token
     mask = torch.zeros(batch_size, 1, 1, seq_len, dtype=torch.bool)
@@ -40,7 +40,7 @@ def test_sdpa_with_attn_mask_bool(sample_qkv_tensors):
 def test_sdpa_with_attn_mask_float(sample_qkv_tensors):
     """Test with float attention mask (0/-inf)."""
     q, k, v = sample_qkv_tensors
-    batch_size, num_heads, seq_len, _ = q.shape
+    batch_size, _num_heads, seq_len, _ = q.shape
 
     # Mask last token with large negative value
     mask = torch.zeros(batch_size, 1, 1, seq_len, dtype=torch.float32)

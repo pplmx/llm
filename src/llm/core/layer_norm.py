@@ -15,7 +15,7 @@ class LayerNorm(nn.Module):
         μ = (1/H) * Σ(x_i)  (在归一化维度 H 上求均值)
         σ² = (1/H) * Σ((x_i - μ)²) (在归一化维度 H 上求方差)
         x_normalized = (x - μ) / sqrt(σ² + ε)
-        output = γ * x_normalized + β
+        output = gamma * x_normalized + beta
 
     参数:
         normalized_shape (int 或 list/tuple of ints):
@@ -26,8 +26,8 @@ class LayerNorm(nn.Module):
         eps (float):
             加在分母中的小常数, 防止除零错误并提高数值稳定性. 默认为 1e-5.
         elementwise_affine (bool):
-            如果为 True, 则此模块包含可学习的仿射参数 γ (gamma/weight) 和 β (beta/bias),
-            形状与 `normalized_shape` 相同. γ 初始化为 1, β 初始化为 0.
+            如果为 True, 则此模块包含可学习的仿射参数 gamma (weight) 和 beta (bias),
+            形状与 `normalized_shape` 相同. gamma 初始化为 1, beta 初始化为 0.
             默认为 True.
     """
 
@@ -49,7 +49,7 @@ class LayerNorm(nn.Module):
         self.elementwise_affine = elementwise_affine
 
         if self.elementwise_affine:
-            # 初始化可学习的缩放参数 γ (gamma) 和偏移参数 β (beta)
+            # 初始化可学习的缩放参数 gamma 和偏移参数 beta
             # 形状与需要归一化的维度一致
             self.weight = nn.Parameter(torch.ones(self.normalized_shape))  # gamma
             self.bias = nn.Parameter(torch.zeros(self.normalized_shape))  # beta
@@ -88,7 +88,7 @@ class LayerNorm(nn.Module):
         # (x - μ) / sqrt(σ² + ε)
         x_normalized = (hidden_states - mean) / torch.sqrt(var + self.eps)
 
-        # 4. 应用仿射变换 (γ * x_normalized + β)
+        # 4. 应用仿射变换 (gamma * x_normalized + beta)
         if self.elementwise_affine:
             # self.weight (gamma) 和 self.bias (beta) 的形状是 normalized_shape
             # PyTorch 的广播机制会自动将它们应用到 x_normalized 的对应维度上
@@ -113,8 +113,8 @@ def layer_norm_numpy(
 
     参数:
         x: 输入 NumPy 数组, 形状例如 [batch_size, ..., feature_dim]
-        gamma: 缩放参数 γ (如果提供), 形状应为 [feature_dim]
-        beta: 偏移参数 β (如果提供), 形状应为 [feature_dim]
+        gamma: 缩放参数 (如果提供), 形状应为 [feature_dim]
+        beta: 偏移参数 (如果提供), 形状应为 [feature_dim]
         eps: 防止除零错误的小常数
 
     返回:

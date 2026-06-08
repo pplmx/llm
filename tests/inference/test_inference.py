@@ -7,7 +7,7 @@ from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 @pytest.fixture
 def model_and_tokenizer():
-    corpus = ["hello world!", "this is a test.", "你好 世界！"]
+    corpus = ["hello world!", "this is a test.", "你好 世界!"]
     tokenizer = SimpleCharacterTokenizer(corpus)
     model = DecoderModel(
         vocab_size=tokenizer.vocab_size,

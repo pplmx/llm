@@ -214,7 +214,7 @@ class SingleHeadAttention(nn.Module):
             3. 计算注意力
             4. 输出投影
         """
-        B, S, _ = x.shape
+        _B, _S, _ = x.shape
         qkv = self.qkv_proj(x)  # (B, S, 3*H)
         q, k, v = qkv.chunk(3, dim=-1)  # 每个(B, S, H)
 

@@ -37,7 +37,7 @@ def attention_score(query: Tensor, key: Tensor) -> Tensor:
 
     类比理解:
     就像用你的问题(Q)去匹配书籍目录(K), 得到每本书的相关分数
-    - Q: 你的问题(例如: "如何学习深度学习？")
+    - Q: 你的问题(例如: "如何学习深度学习?")
     - K: 书籍目录的关键词(例如: "深度学习基础"、"机器学习入门")
     - 分数: 每本书与你的问题的相关程度
 
@@ -461,9 +461,9 @@ def check_understanding():
 
     print(f"\n你的得分: {score}/{len(questions)}")
     if score == len(questions):
-        print("太棒了！你对注意力机制理解很透彻！")
+        print("太棒了!你对注意力机制理解很透彻!")
     elif score >= len(questions) / 2:
-        print("不错！但还有一些概念需要加强理解")
+        print("不错!但还有一些概念需要加强理解")
     else:
         print("建议回顾注意力机制的基本概念")
 

@@ -3,10 +3,10 @@ from llm.evaluation.metrics.base import BaseMetric
 from llm.evaluation.metrics.generation import BleuMetric, ChrFMetric, RougeMetric
 
 __all__ = [
-    "BaseMetric",
     "AccuracyMetric",
-    "F1Metric",
+    "BaseMetric",
     "BleuMetric",
     "ChrFMetric",
+    "F1Metric",
     "RougeMetric",
 ]

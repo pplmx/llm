@@ -280,7 +280,7 @@ def test_get_kv_slice_partial_block():
     cache.update(seq_id=1, k_new=k, v_new=v)
 
     # Get tokens 2-6 (spans block 0 and block 1)
-    k_slice, v_slice = cache.get(seq_id=1, start_idx=2, end_idx=6)
+    k_slice, _v_slice = cache.get(seq_id=1, start_idx=2, end_idx=6)
     assert k_slice.shape == (2, 4, 8)
 
 

@@ -6,9 +6,9 @@ from .rms_norm import RMSNorm
 from .transformer_block import TransformerBlock
 
 __all__ = [
+    "MLP",
     "EmbeddingLayer",
     "LayerNorm",
-    "MLP",
     "PositionalEncoding",
     "RMSNorm",
     "TransformerBlock",

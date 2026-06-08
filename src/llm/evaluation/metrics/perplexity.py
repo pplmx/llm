@@ -19,7 +19,7 @@ class PerplexityMetric(BaseMetric):
         Returns:
             Dictionary with perplexity score
         """
-        batch_size, seq_len, vocab_size = predictions.shape
+        _batch_size, _seq_len, vocab_size = predictions.shape
 
         logits = predictions[:, :-1, :].contiguous().view(-1, vocab_size)
         labels = references[:, 1:].contiguous().view(-1)

@@ -30,11 +30,11 @@ def test_gqa_invalid_config():
     num_heads = 8
 
     # num_heads must be divisible by num_kv_heads
-    with pytest.raises(ValueError, match="num_heads .* must be divisible by num_kv_heads"):
+    with pytest.raises(ValueError, match=r"num_heads .* must be divisible by num_kv_heads"):
         MultiHeadAttention(hidden_size=hidden_size, num_heads=num_heads, num_kv_heads=3)
 
     # num_kv_heads cannot be greater than num_heads
-    with pytest.raises(ValueError, match="num_heads .* must be divisible by num_kv_heads"):
+    with pytest.raises(ValueError, match=r"num_heads .* must be divisible by num_kv_heads"):
         MultiHeadAttention(hidden_size=hidden_size, num_heads=num_heads, num_kv_heads=16)
 
 

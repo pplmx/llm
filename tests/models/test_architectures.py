@@ -59,7 +59,7 @@ def test_gqa_kv_cache():
     mha = MultiHeadAttention(hidden_size=hidden_size, num_heads=num_heads, num_kv_heads=num_kv_heads)
 
     x_initial = torch.randn(1, 5, hidden_size)
-    output_initial, kv_cache = mha(x_initial, use_cache=True)
+    _output_initial, kv_cache = mha(x_initial, use_cache=True)
 
     x_next = torch.randn(1, 1, hidden_size)
     output_next, _ = mha(x_next, past_key_value=kv_cache, use_cache=True)

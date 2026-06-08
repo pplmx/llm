@@ -51,7 +51,7 @@ def create_test_mlp(
         input_dims = [2, 8]  # Default batch_size=2, seq_len=8
 
     # Input shape includes hidden_size as the last dimension
-    input_shape = input_dims + [hidden_size]
+    input_shape = [*input_dims, hidden_size]
     input_tensor = torch.randn(input_shape, dtype=dtype, device=device)
 
     # Create and configure MLP
