@@ -45,6 +45,15 @@ class GenerationBackend(abc.ABC):
         chunks = list(self.stream(model, tokenizer, prompt, config))
         return prompt + "".join(chunks)
 
+    def batch_generate(
+        self,
+        model: DecoderModel,
+        tokenizer: Any,
+        prompts: list[str],
+        config: GenerationConfig,
+    ) -> list[str]:
+        return [self.generate(model, tokenizer, prompt, config) for prompt in prompts]
+
 
 class EagerGenerationBackend(GenerationBackend):
     """Default in-process generation using the library stream_generate path."""
@@ -68,6 +77,26 @@ class EagerGenerationBackend(GenerationBackend):
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
             use_cache=config.use_cache,
+        )
+
+    def batch_generate(
+        self,
+        model: DecoderModel,
+        tokenizer: Any,
+        prompts: list[str],
+        config: GenerationConfig,
+    ) -> list[str]:
+        from llm.generation.eager import batch_generate
+
+        return batch_generate(
+            model=model,
+            tokenizer=tokenizer,
+            prompts=prompts,
+            max_new_tokens=config.max_new_tokens,
+            temperature=config.temperature,
+            top_k=config.top_k,
+            top_p=config.top_p,
+            repetition_penalty=config.repetition_penalty,
         )
 
 

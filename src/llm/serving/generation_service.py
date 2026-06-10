@@ -1,0 +1,131 @@
+"""Serving-side generation service backed by GenerationBackend."""
+
+from __future__ import annotations
+
+import string
+from dataclasses import dataclass
+from typing import Any
+
+import torch
+
+from llm.generation.backends import GenerationBackend, GenerationConfig, get_generation_backend
+from llm.models.decoder import DecoderModel
+from llm.serving.config import ServingConfig
+
+
+def _resolve_device(device: str) -> torch.device:
+    if device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(device)
+
+
+def create_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
+    """Build a model and tokenizer for serving (checkpoint loading TBD)."""
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tokenizer = SimpleCharacterTokenizer([string.printable])
+    model = DecoderModel(
+        vocab_size=tokenizer.vocab_size,
+        hidden_size=config.hidden_size,
+        num_layers=config.num_layers,
+        num_heads=config.num_heads,
+        max_seq_len=config.max_seq_len,
+        num_kv_heads=config.num_kv_heads,
+        attn_impl=config.attn_impl,
+        mlp_impl=config.mlp_impl,
+    )
+    return model, tokenizer
+
+
+@dataclass
+class ServingGenerationService:
+    """Shared generation entry point for REST and chat APIs."""
+
+    model: DecoderModel
+    tokenizer: Any
+    backend: GenerationBackend
+    device: torch.device
+
+    @classmethod
+    def from_config(cls, config: ServingConfig) -> ServingGenerationService:
+        device = _resolve_device(config.device)
+        model, tokenizer = create_model_and_tokenizer(config)
+        model.to(device)
+        model.eval()
+        backend = get_generation_backend(config.generation_backend)
+        return cls(model=model, tokenizer=tokenizer, backend=backend, device=device)
+
+    def _generation_config(
+        self,
+        *,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
+        repetition_penalty: float = 1.0,
+    ) -> GenerationConfig:
+        return GenerationConfig(
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+            use_cache=True,
+        )
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
+        repetition_penalty: float = 1.0,
+    ) -> str:
+        gen_config = self._generation_config(
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+        )
+        return self.backend.generate(self.model, self.tokenizer, prompt, gen_config)
+
+    def stream(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
+        repetition_penalty: float = 1.0,
+    ):
+        gen_config = self._generation_config(
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+        )
+        yield from self.backend.stream(self.model, self.tokenizer, prompt, gen_config)
+
+    def batch_generate(
+        self,
+        prompts: list[str],
+        *,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
+        repetition_penalty: float = 1.0,
+    ) -> list[str]:
+        gen_config = self._generation_config(
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+        )
+        return self.backend.batch_generate(self.model, self.tokenizer, prompts, gen_config)
