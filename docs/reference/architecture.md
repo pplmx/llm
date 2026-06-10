@@ -57,6 +57,7 @@ src/llm/
 ├── tokenization/          # Tokenizer 实现
 ├── serving/               # Inference API
 │   ├── api.py             # FastAPI with OpenAI-compatible endpoints
+│   ├── loader.py          # Training checkpoint + tokenizer loading
 │   ├── generation_service.py  # REST/chat → GenerationBackend
 │   └── batch_engine.py    # ContinuousBatchingEngine (continuous batching path)
 └── inference.py           # Backward-compat shim → generation.eager

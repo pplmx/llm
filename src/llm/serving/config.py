@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,8 +8,9 @@ class ServingConfig(BaseSettings):
     """
 
     # Model configuration
-    model_path: str | None = None  # Path to model checkpoint
-    tokenizer_path: str | None = None  # Path to tokenizer (if different)
+    model_path: str | None = None  # Path to training checkpoint (.pt)
+    tokenizer_path: str | None = None  # Path to tokenizer pickle or HF repo
+    tokenizer_type: str = Field("simple", pattern="^(simple|hf)$")
     device: str = "auto"
 
     # Security & Observability

@@ -90,6 +90,30 @@ def test_load_checkpoint_saves_extra_state(checkpoint_manager):
     assert checkpoint_manager.loaded_extra_state["stream_data"]["0"]["line_index"] == 42
 
 
+def test_save_checkpoint_includes_model_config(checkpoint_manager):
+    model = DummyState()
+    optimizer = DummyState()
+    scheduler = DummyState()
+    scaler = DummyState()
+
+    checkpoint_manager.save_checkpoint(
+        0,
+        model,
+        optimizer,
+        scheduler,
+        scaler,
+        loss=0.5,
+        model_config={"vocab_size": 100, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16},
+    )
+
+    payload = torch.load(
+        Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    assert payload["model_config"]["vocab_size"] == 100
+
+
 def test_load_checkpoint(checkpoint_manager):
     # Setup: Save one
     model = DummyState()

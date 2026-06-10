@@ -361,6 +361,7 @@ class TrainingEngine:
                         self.scaler,
                         metric_for_checkpoint,
                         extra_state=extra_state,
+                        model_config=self.config.model.model_dump(),
                     )
                     self._run_callbacks("on_save_checkpoint", epoch=epoch)
 
