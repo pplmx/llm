@@ -35,11 +35,27 @@ src/llm/
 ├── training/              # Training infrastructure
 │   ├── core/              # Engine, callbacks, config
 │   └── tasks/             # Task-specific trainers (LM, SFT)
-├── data/                  # DataModules, tokenizers (独立于 training/)
+├── data/                  # Data layer (datasets + modules + sources)
+│   ├── base.py            # BaseDataModule, MapDataModule, StreamDataModule
+│   ├── sources.py         # Pluggable text sources (local, HF streaming)
+│   ├── datasets/          # PyTorch Dataset implementations
+│   └── modules/           # DataModule implementations (text, sft, dpo, …)
+├── generation/            # Generation backends and eager inference
+│   ├── eager.py           # stream_generate, batch_generate
+│   └── backends.py        # GenerationBackend abstraction
+├── export/                # ONNX export utilities
+│   └── onnx.py
+├── evaluation/            # Offline evaluation
+│   └── eval_tasks/        # Per-task evaluators (lm, infer)
+├── training/              # Training infrastructure
+│   ├── core/              # Engine, callbacks, config
+│   ├── task_registry.py   # TaskRegistry (task + data_module factory)
+│   └── tasks/             # Task trainers + builtin registration
 ├── tokenization/          # Tokenizer 实现
 ├── serving/               # Inference API
-│   └── api.py             # FastAPI with OpenAI-compatible endpoints
-└── inference.py           # Generation utilities
+│   ├── api.py             # FastAPI with OpenAI-compatible endpoints
+│   └── batch_engine.py    # ContinuousBatchingEngine
+└── inference.py           # Backward-compat shim → generation.eager
 ```
 
 ## System Overview

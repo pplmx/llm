@@ -10,6 +10,8 @@ from typing import Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
+from torch.optim.lr_scheduler import LRScheduler
 
 from llm.models.decoder import DecoderModel
 from llm.training.tasks.base_task import TrainingTask
@@ -90,22 +92,58 @@ class RewardTask(TrainingTask):
 
     def build_model(self) -> nn.Module:
         """Build the RewardModel."""
-        from llm.models.decoder import DecoderModel
-
+        model_config = self.config.model
         base_model = DecoderModel(
-            vocab_size=self.config.model.vocab_size,
-            hidden_size=self.config.model.hidden_size,
-            num_layers=self.config.model.num_layers,
-            num_heads=self.config.model.num_heads,
+            vocab_size=model_config.vocab_size,
+            hidden_size=model_config.hidden_size,
+            num_layers=model_config.num_layers,
+            num_heads=model_config.num_heads,
+            intermediate_size=model_config.intermediate_size,
+            embedding_dropout_p=model_config.dropout,
+            attn_dropout_p=model_config.dropout,
+            mlp_dropout_p=model_config.dropout,
             max_seq_len=self.config.data.max_seq_len,
-            dropout=getattr(self.config.model, "dropout", 0.1),
-            num_kv_heads=getattr(self.config.model, "num_kv_heads", None),
-            attn_impl=getattr(self.config.model, "attn_impl", "mha"),
-            mlp_impl=getattr(self.config.model, "mlp_impl", "standard"),
-            mlp_ratio=getattr(self.config.model, "mlp_ratio", 4.0),
+            num_kv_heads=model_config.num_kv_heads,
+            use_glu=model_config.use_glu,
+            attn_impl=model_config.attn_impl,
+            mlp_impl=model_config.mlp_impl,
+        )
+        return RewardModel(base_model)
+
+    def build_optimizer(self, model: nn.Module) -> optim.Optimizer:
+        param_groups = [
+            {
+                "params": [p for p in model.parameters() if p.requires_grad],
+                "weight_decay": self.config.training.weight_decay,
+            }
+        ]
+        return optim.AdamW(
+            param_groups,
+            lr=self.config.training.lr,
+            eps=1e-8,
+            betas=(0.9, 0.95),
+            fused=torch.cuda.is_available(),
         )
 
-        return RewardModel(base_model)
+    def build_scheduler(self, optimizer: optim.Optimizer) -> LRScheduler | None:
+        if self.config.training.scheduler_type != "cosine":
+            return None
+
+        main_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, self.config.training.epochs - self.config.training.warmup_epochs),
+            eta_min=self.config.training.lr * 0.1,
+        )
+        if self.config.training.warmup_epochs > 0:
+            warmup_scheduler = optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=1e-6, end_factor=1.0, total_iters=self.config.training.warmup_epochs
+            )
+            return optim.lr_scheduler.SequentialLR(
+                optimizer,
+                [warmup_scheduler, main_scheduler],
+                milestones=[self.config.training.warmup_epochs],
+            )
+        return main_scheduler
 
     def build_criterion(self) -> nn.Module:
         """Criterion is embedded in train_step, return dummy."""

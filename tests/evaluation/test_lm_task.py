@@ -1,7 +1,7 @@
 import torch
 
+from llm.evaluation.eval_tasks.lm_task import LMTask
 from llm.evaluation.evaluator import Evaluator
-from llm.evaluation.tasks.lm_task import LMTask
 
 
 def test_lm_task_prepare_data():

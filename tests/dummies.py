@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
-from llm.data.data_module import BaseDataModule
+from llm.data.base import BaseDataModule
 
 
 class DummyLMDataModule(BaseDataModule):

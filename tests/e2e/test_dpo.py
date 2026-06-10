@@ -4,7 +4,7 @@ from string import printable
 import pytest
 import torch
 
-from llm.data.dpo_data_module import DPODataModule
+from llm.data.modules.dpo import DPODataModule
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.core.callbacks import MetricsLogger
 from llm.training.core.config import (

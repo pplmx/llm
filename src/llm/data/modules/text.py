@@ -4,13 +4,13 @@ from typing import Any
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
-from llm.data.data_module import BaseDataModule
-from llm.data.loader import TextDataset
+from llm.data.base import MapDataModule
+from llm.data.datasets.text import TextDataset
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
 
 
-class TextDataModule(BaseDataModule):
+class TextDataModule(MapDataModule):
     """
     DataModule for Language Modeling using TextDataset.
     """

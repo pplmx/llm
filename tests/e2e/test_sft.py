@@ -4,7 +4,7 @@ from string import printable
 import pytest
 import torch
 
-from llm.data.sft_data_module import SFTDataModule
+from llm.data.modules.sft import SFTDataModule
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.core.callbacks import MetricsLogger
 from llm.training.core.config import (

@@ -1,6 +1,6 @@
 import pytest
 
-from llm.data.text_data_module import TextDataModule
+from llm.data.modules.text import TextDataModule
 from llm.tokenization.tokenizer import HFTokenizer
 from llm.training.core.config import Config
 

@@ -1,5 +1,5 @@
+from llm.evaluation.eval_tasks.base import BaseTask
 from llm.evaluation.metrics.generation import BleuMetric, RougeMetric
-from llm.evaluation.tasks.base import BaseTask
 
 
 class InferTask(BaseTask):

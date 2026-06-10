@@ -2,9 +2,9 @@ from pathlib import Path
 
 import torch
 
-from llm.data.loader import TextDataset
+from llm.data.datasets.text import TextDataset
+from llm.evaluation.eval_tasks.base import BaseTask
 from llm.evaluation.metrics.perplexity import PerplexityMetric
-from llm.evaluation.tasks.base import BaseTask
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 

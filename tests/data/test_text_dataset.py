@@ -5,7 +5,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from llm.data.loader import TextDataset, create_dataloader
+from llm.data.datasets.text import TextDataset, create_dataloader
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 # Constants for tests

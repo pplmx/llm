@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 
-from llm.data.loader import TextDataset, create_dataloader
+from llm.data.datasets.text import TextDataset, create_dataloader
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 

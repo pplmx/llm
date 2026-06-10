@@ -2,7 +2,7 @@ import json
 
 import torch
 
-from llm.data.sft_dataset import SFTDataset
+from llm.data.datasets.sft import SFTDataset
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 

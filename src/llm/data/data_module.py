@@ -1,38 +1,8 @@
-import abc
-from typing import Any
+"""Deprecated shim — use ``llm.data.base`` instead."""
 
-from torch.utils.data import DataLoader, DistributedSampler
+from llm.compat.legacy_imports import warn_deprecated
+from llm.data.base import BaseDataModule, MapDataModule, StreamDataModule
 
+warn_deprecated("llm.data.data_module", "llm.data.base")
 
-class BaseDataModule(abc.ABC):
-    """
-    Abstract base class for defining a DataModule.
-
-    A DataModule encapsulates all the steps needed to process data:
-    - Downloading/preparing data (prepare_data)
-    - Loading/splitting data (setup)
-    - Creating DataLoaders for training and validation.
-    """
-
-    def __init__(self, config: Any):
-        self.config = config
-
-    @abc.abstractmethod
-    def prepare_data(self):
-        """Download or prepare data. Only called once per node in DDP."""
-        pass
-
-    @abc.abstractmethod
-    def setup(self, stage: str | None = None):
-        """Load and split data. Called on every GPU. Stage can be 'fit', 'validate', 'test', 'predict'."""
-        pass
-
-    @abc.abstractmethod
-    def train_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader, DistributedSampler]:
-        """Returns the DataLoader and DistributedSampler for training."""
-        pass
-
-    @abc.abstractmethod
-    def val_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader, DistributedSampler]:
-        """Returns the DataLoader and DistributedSampler for validation."""
-        pass
+__all__ = ["BaseDataModule", "MapDataModule", "StreamDataModule"]

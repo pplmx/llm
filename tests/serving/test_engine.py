@@ -1,6 +1,6 @@
 import pytest
 
-from llm.serving.engine import ContinuousBatchingEngine, SlotAllocator
+from llm.serving.batch_engine import ContinuousBatchingEngine, SlotAllocator
 from llm.serving.schemas import GenerationRequest, RequestState
 
 

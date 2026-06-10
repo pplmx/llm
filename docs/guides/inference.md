@@ -103,7 +103,7 @@ For high-throughput serving, use the `ContinuousBatchingEngine` which supports i
 ### Engine Setup
 
 ```python
-from llm.serving.engine import ContinuousBatchingEngine
+from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 

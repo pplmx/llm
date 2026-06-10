@@ -3,10 +3,10 @@ from typing import Any
 import torch
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
-from llm.data.data_module import BaseDataModule
+from llm.data.base import MapDataModule
 
 
-class SyntheticDataModule(BaseDataModule):
+class SyntheticDataModule(MapDataModule):
     """
     A DataModule for generating synthetic regression data.
     """

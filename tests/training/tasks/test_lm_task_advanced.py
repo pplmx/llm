@@ -12,7 +12,7 @@ def task_context():
     model_cfg = ModelConfig(vocab_size=16, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=64)
     cfg = Config(model=model_cfg)
     # SyntheticDataModule is fine for providing dummy structure
-    from llm.data.synthetic_data_module import SyntheticDataModule
+    from llm.data.modules.synthetic import SyntheticDataModule
 
     dm = SyntheticDataModule(cfg)
     task = LanguageModelingTask(cfg, dm)
