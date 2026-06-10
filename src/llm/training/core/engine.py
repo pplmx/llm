@@ -2,13 +2,12 @@ import sys
 import time
 
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
 
 from llm.data.base import BaseDataModule
 from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
-from llm.training.distributed import wrap_model_for_training
+from llm.training.distributed import model_for_checkpoint_io, wrap_model_for_training
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
@@ -118,7 +117,7 @@ class TrainingEngine:
         )
         self.scaler = torch.amp.GradScaler(enabled=use_scaler)
 
-        model_to_load = self.model.module if isinstance(self.model, DDP) else self.model
+        model_to_load = model_for_checkpoint_io(self.model)
 
         if self.use_standard_loop:
             self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(

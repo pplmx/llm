@@ -43,6 +43,7 @@ src/llm/
 │   └── modules/           # DataModule implementations (text, sft, dpo, …)
 ├── generation/            # Generation backends and eager inference
 │   ├── eager.py           # stream_generate, batch_generate
+│   ├── sampling.py        # Shared temperature/top-k/top-p sampling
 │   └── backends.py        # EagerGenerationBackend + BatchedGenerationBackend
 ├── export/                # ONNX export utilities
 │   └── onnx.py

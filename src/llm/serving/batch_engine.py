@@ -3,6 +3,7 @@ import uuid
 import torch
 
 from llm.core.kv_cache import KVCache
+from llm.generation.sampling import apply_repetition_penalty, sample_next_token
 from llm.models.decoder import DecoderModel
 from llm.serving.scheduler import Scheduler
 from llm.serving.schemas import GenerationRequest, RequestState, Sequence
@@ -114,6 +115,10 @@ class ContinuousBatchingEngine:
             input_ids=input_ids,
             status=RequestState.WAITING,
             max_new_tokens=request.max_new_tokens,
+            temperature=request.temperature,
+            top_k=request.top_k,
+            top_p=request.top_p,
+            repetition_penalty=request.repetition_penalty,
         )
         self.scheduler.add_sequence(seq)
         return req_id
@@ -224,9 +229,19 @@ class ContinuousBatchingEngine:
 
         next_token_ids = []
         for i, length in enumerate(seq_input_lengths):
+            seq = running_sequences[i]
             seq_logits = logits[i, length - 1, :]
-            next_token_eval = torch.argmax(seq_logits, dim=-1).item()
-            next_token_ids.append(next_token_eval)
+            context_ids = seq.input_ids + seq.generated_ids
+            if seq.repetition_penalty != 1.0:
+                seq_logits = apply_repetition_penalty(seq_logits, context_ids, seq.repetition_penalty)
+            next_token_ids.append(
+                sample_next_token(
+                    seq_logits,
+                    temperature=seq.temperature,
+                    top_k=seq.top_k,
+                    top_p=seq.top_p,
+                )
+            )
 
         for i, seq in enumerate(running_sequences):
             token_id = next_token_ids[i]
