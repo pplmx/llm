@@ -16,7 +16,7 @@ class ServingConfig(BaseSettings):
     log_level: str = "INFO"
 
     # Generation
-    generation_backend: str = "eager"  # eager | (future: batched)
+    generation_backend: str = "eager"  # eager | batched
 
     # Performance
     compile_model: bool = False  # Enable torch.compile for acceleration

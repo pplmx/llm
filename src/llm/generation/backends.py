@@ -5,9 +5,12 @@ from __future__ import annotations
 import abc
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from llm.models.decoder import DecoderModel
+
+if TYPE_CHECKING:
+    from llm.serving.batch_engine import ContinuousBatchingEngine
 
 
 @dataclass(frozen=True)
@@ -100,12 +103,64 @@ class EagerGenerationBackend(GenerationBackend):
         )
 
 
-def get_generation_backend(name: str = "eager") -> GenerationBackend:
+class BatchedGenerationBackend(GenerationBackend):
+    """Generation via ContinuousBatchingEngine (iteration-level scheduling)."""
+
+    def __init__(self, engine: ContinuousBatchingEngine):
+        self.engine = engine
+
+    def stream(
+        self,
+        model: DecoderModel,
+        tokenizer: Any,
+        prompt: str,
+        config: GenerationConfig,
+    ) -> Generator[str]:
+        from llm.serving.schemas import GenerationRequest
+
+        request = GenerationRequest(
+            prompt=prompt,
+            max_new_tokens=config.max_new_tokens,
+            temperature=config.temperature,
+            top_k=config.top_k,
+            top_p=config.top_p,
+            repetition_penalty=config.repetition_penalty,
+        )
+        yield from self.engine.stream_request(request)
+
+    def batch_generate(
+        self,
+        model: DecoderModel,
+        tokenizer: Any,
+        prompts: list[str],
+        config: GenerationConfig,
+    ) -> list[str]:
+        from llm.serving.schemas import GenerationRequest
+
+        requests = [
+            GenerationRequest(
+                prompt=prompt,
+                max_new_tokens=config.max_new_tokens,
+                temperature=config.temperature,
+                top_k=config.top_k,
+                top_p=config.top_p,
+                repetition_penalty=config.repetition_penalty,
+            )
+            for prompt in prompts
+        ]
+        return self.engine.batch_generate_requests(requests)
+
+
+def get_generation_backend(
+    name: str = "eager",
+    *,
+    engine: ContinuousBatchingEngine | None = None,
+) -> GenerationBackend:
     """Resolve a generation backend by name."""
-    backends: dict[str, GenerationBackend] = {
-        "eager": EagerGenerationBackend(),
-    }
-    if name not in backends:
-        available = ", ".join(sorted(backends))
-        raise ValueError(f"Unknown generation backend '{name}'. Available: {available}")
-    return backends[name]
+    if name == "eager":
+        return EagerGenerationBackend()
+    if name == "batched":
+        if engine is None:
+            raise ValueError("batched generation backend requires a ContinuousBatchingEngine instance")
+        return BatchedGenerationBackend(engine)
+    raise ValueError(f"Unknown generation backend '{name}'. Available: batched, eager")

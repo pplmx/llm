@@ -1,11 +1,30 @@
 """Tests for generation backend abstraction."""
 
+import pytest
+
 from llm.generation.backends import EagerGenerationBackend, GenerationConfig, get_generation_backend
 
 
 def test_get_generation_backend_eager():
     backend = get_generation_backend("eager")
     assert isinstance(backend, EagerGenerationBackend)
+
+
+def test_get_generation_backend_batched_requires_engine(tiny_model, device):
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+
+    with pytest.raises(ValueError, match="requires a ContinuousBatchingEngine"):
+        get_generation_backend("batched")
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model.to(device),
+        tokenizer=object(),
+        device=device,
+    )
+    backend = get_generation_backend("batched", engine=engine)
+    from llm.generation.backends import BatchedGenerationBackend
+
+    assert isinstance(backend, BatchedGenerationBackend)
 
 
 def test_generation_config_defaults():

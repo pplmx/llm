@@ -8,6 +8,7 @@ from llm.data.base import BaseDataModule
 from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
+from llm.training.distributed import wrap_model_for_training
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
@@ -70,12 +71,12 @@ class TrainingEngine:
             except Exception as e:
                 self.logger.warning(f"torch.compile failed: {e}. Continuing without it.")
 
-        # DDP wrapper
-        if self.world_size > 1 and self.device.type == "cuda":
-            # Ensure device_ids is only passed if actually using CUDA and DDP
-            self.model = DDP(model, device_ids=[self.device.index], find_unused_parameters=False)
-        else:
-            self.model = model  # No DDP for CPU or single GPU / single process
+        self.model = wrap_model_for_training(
+            model,
+            parallel_strategy=self.config.distributed.parallel_strategy,
+            device=self.device,
+            world_size=self.world_size,
+        )
 
         self.use_standard_loop = self.task.uses_standard_training_loop()
 
@@ -123,6 +124,8 @@ class TrainingEngine:
             self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(
                 model_to_load, self.optimizer, self.scheduler, self.scaler, self.device
             )
+            if self.checkpoint_manager.loaded_extra_state and hasattr(self.data_module, "load_checkpoint_state"):
+                self.data_module.load_checkpoint_state(self.checkpoint_manager.loaded_extra_state)
         else:
             self.start_epoch = 0
             self.best_loss = float("inf")
@@ -348,8 +351,17 @@ class TrainingEngine:
 
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
+                    extra_state = None
+                    if hasattr(self.data_module, "get_checkpoint_state"):
+                        extra_state = self.data_module.get_checkpoint_state()
                     self.checkpoint_manager.save_checkpoint(
-                        epoch, self.model, self.optimizer, self.scheduler, self.scaler, metric_for_checkpoint
+                        epoch,
+                        self.model,
+                        self.optimizer,
+                        self.scheduler,
+                        self.scaler,
+                        metric_for_checkpoint,
+                        extra_state=extra_state,
                     )
                     self._run_callbacks("on_save_checkpoint", epoch=epoch)
 

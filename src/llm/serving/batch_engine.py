@@ -108,9 +108,49 @@ class ContinuousBatchingEngine:
 
         req_id = request.request_id or uuid.uuid4().hex
 
-        seq = Sequence(request_id=req_id, prompt=request.prompt, input_ids=input_ids, status=RequestState.WAITING)
+        seq = Sequence(
+            request_id=req_id,
+            prompt=request.prompt,
+            input_ids=input_ids,
+            status=RequestState.WAITING,
+            max_new_tokens=request.max_new_tokens,
+        )
         self.scheduler.add_sequence(seq)
         return req_id
+
+    def stream_request(
+        self,
+        request: GenerationRequest,
+    ):
+        """Run a request to completion, yielding decoded text chunks."""
+        req_id = self.add_request(request)
+        emitted = 0
+        while True:
+            seq = self.scheduler.get_sequence(req_id)
+            if seq is None:
+                break
+            if seq.is_finished():
+                for token_id in seq.generated_ids[emitted:]:
+                    yield self.tokenizer.decode([token_id])
+                break
+            self.step()
+            seq = self.scheduler.get_sequence(req_id)
+            if seq is None:
+                break
+            for token_id in seq.generated_ids[emitted:]:
+                yield self.tokenizer.decode([token_id])
+            emitted = len(seq.generated_ids)
+            if seq.is_finished():
+                break
+
+    def generate_request(self, request: GenerationRequest) -> str:
+        """Run a request to completion and return prompt + generated text."""
+        chunks = list(self.stream_request(request))
+        return request.prompt + "".join(chunks)
+
+    def batch_generate_requests(self, requests: list[GenerationRequest]) -> list[str]:
+        """Run multiple requests sequentially through the batching engine."""
+        return [self.generate_request(request) for request in requests]
 
     @torch.no_grad()
     def step(self):
@@ -193,8 +233,10 @@ class ContinuousBatchingEngine:
             seq.append_token_id(token_id)
 
             if (
-                hasattr(self.tokenizer, "eos_token_id") and token_id == self.tokenizer.eos_token_id
-            ) or seq.total_len >= self.max_seq_len:
+                (hasattr(self.tokenizer, "eos_token_id") and token_id == self.tokenizer.eos_token_id)
+                or len(seq.generated_ids) >= seq.max_new_tokens
+                or seq.total_len >= self.max_seq_len
+            ):
                 seq.status = RequestState.FINISHED
                 self.slot_allocator.free(seq.request_id)
 

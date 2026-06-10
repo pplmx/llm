@@ -15,7 +15,7 @@ from starlette.status import HTTP_403_FORBIDDEN
 
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
-from llm.serving.generation_service import ServingGenerationService
+from llm.serving.generation_service import ServingGenerationService, create_model_and_tokenizer
 from llm.serving.schemas import (
     BatchGenerationRequest,
     BatchGenerationResponse,
@@ -85,14 +85,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     global engine, generation_service
     logger.info("Starting up...")
 
-    generation_service = ServingGenerationService.from_config(config)
+    model, tokenizer = create_model_and_tokenizer(config)
     engine = ContinuousBatchingEngine(
-        model=generation_service.model,
-        tokenizer=generation_service.tokenizer,
+        model=model,
+        tokenizer=tokenizer,
         device=config.device,
         max_batch_size=config.max_concurrent_requests,
         max_seq_len=config.max_seq_len,
     )
+    generation_service = ServingGenerationService.from_config(config, engine=engine)
 
     yield
 
