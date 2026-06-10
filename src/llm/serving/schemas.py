@@ -29,6 +29,7 @@ class Sequence:
     status: RequestState = RequestState.WAITING
     generated_ids: list[int] = field(default_factory=list)
     output_text: str = ""
+    max_new_tokens: int = 50
 
     def __post_init__(self):
         self._prompt_len = len(self.input_ids)

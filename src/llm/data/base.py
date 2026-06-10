@@ -53,3 +53,9 @@ class StreamDataModule(BaseDataModule):
         steps = getattr(self.config.data, "steps_per_epoch", None)
         if steps is None or steps <= 0:
             raise ValueError("Streaming DataModules require data.steps_per_epoch > 0.")
+
+    def get_checkpoint_state(self) -> dict | None:
+        return None
+
+    def load_checkpoint_state(self, state: dict | None) -> None:
+        pass

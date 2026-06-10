@@ -69,6 +69,7 @@ class DistributedConfig(BaseSettings):
     gpus_per_node: int | None = None  # Lazy init
     node_rank: int = 0
     backend: str = "nccl"
+    parallel_strategy: str = Field("ddp", pattern="^(ddp|fsdp)$")
 
     @field_validator("gpus_per_node", mode="before")
     @classmethod

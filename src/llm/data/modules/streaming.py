@@ -12,6 +12,7 @@ from llm.data.base import StreamDataModule
 from llm.data.datasets.streaming import StreamingTextDataset
 from llm.data.datasets.text import TextDataset
 from llm.data.sources import build_text_source
+from llm.data.stream_state import StreamDataState
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
 
@@ -24,6 +25,7 @@ class StreamingTextDataModule(StreamDataModule):
         self.tokenizer: BaseTokenizer | None = None
         self.train_dataset: StreamingTextDataset | None = None
         self.val_dataset: TextDataset | None = None
+        self.stream_data_state = StreamDataState()
 
     def prepare_data(self):
         data_config = self.config.data
@@ -39,6 +41,7 @@ class StreamingTextDataModule(StreamDataModule):
             text_source=text_source,
             tokenizer=self.tokenizer,
             max_seq_len=self.config.data.max_seq_len,
+            stream_data_state=self.stream_data_state,
         )
 
         val_path = self.config.data.val_dataset_path
@@ -96,3 +99,13 @@ class StreamingTextDataModule(StreamDataModule):
             pin_memory=self.config.optimization.pin_memory and torch.cuda.is_available(),
         )
         return loader, val_sampler
+
+    def get_checkpoint_state(self) -> dict | None:
+        return {"stream_data": self.stream_data_state.to_dict()}
+
+    def load_checkpoint_state(self, state: dict | None) -> None:
+        if not state:
+            return
+        self.stream_data_state = StreamDataState.from_dict(state.get("stream_data"))
+        if self.train_dataset is not None:
+            self.train_dataset.stream_data_state = self.stream_data_state

@@ -10,6 +10,7 @@ import torch
 
 from llm.generation.backends import GenerationBackend, GenerationConfig, get_generation_backend
 from llm.models.decoder import DecoderModel
+from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
 
 
@@ -47,12 +48,21 @@ class ServingGenerationService:
     device: torch.device
 
     @classmethod
-    def from_config(cls, config: ServingConfig) -> ServingGenerationService:
+    def from_config(
+        cls,
+        config: ServingConfig,
+        *,
+        engine: ContinuousBatchingEngine | None = None,
+    ) -> ServingGenerationService:
         device = _resolve_device(config.device)
         model, tokenizer = create_model_and_tokenizer(config)
-        model.to(device)
-        model.eval()
-        backend = get_generation_backend(config.generation_backend)
+        if engine is None:
+            model.to(device)
+            model.eval()
+        else:
+            model = engine.model
+            device = engine.device
+        backend = get_generation_backend(config.generation_backend, engine=engine)
         return cls(model=model, tokenizer=tokenizer, backend=backend, device=device)
 
     def _generation_config(

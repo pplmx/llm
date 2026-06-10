@@ -38,11 +38,12 @@ src/llm/
 ├── data/                  # Data layer (datasets + modules + sources)
 │   ├── base.py            # BaseDataModule, MapDataModule, StreamDataModule
 │   ├── sources.py         # Pluggable text sources (local, HF streaming)
+│   ├── stream_state.py    # Checkpointable cursors for streaming shards
 │   ├── datasets/          # PyTorch Dataset implementations
 │   └── modules/           # DataModule implementations (text, sft, dpo, …)
 ├── generation/            # Generation backends and eager inference
 │   ├── eager.py           # stream_generate, batch_generate
-│   └── backends.py        # GenerationBackend abstraction
+│   └── backends.py        # EagerGenerationBackend + BatchedGenerationBackend
 ├── export/                # ONNX export utilities
 │   └── onnx.py
 ├── evaluation/            # Offline evaluation
@@ -50,6 +51,7 @@ src/llm/
 ├── training/              # Training infrastructure
 │   ├── core/              # Engine, callbacks, config
 │   ├── task_registry.py   # TaskRegistry (task + data_module factory)
+│   ├── distributed/       # DDP / FSDP wrap helpers
 │   └── tasks/             # Task trainers + builtin registration
 ├── tokenization/          # Tokenizer 实现
 ├── serving/               # Inference API

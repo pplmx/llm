@@ -13,6 +13,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.training.core.config import CheckpointConfig, DistributedConfig, LoggingConfig
+from llm.training.distributed import model_state_dict
 
 
 class PerformanceMonitor:
@@ -194,6 +195,7 @@ class CheckpointManager:
         self.rank = rank
         self.logger = logger
         self.best_loss = float("inf")
+        self.loaded_extra_state: dict | None = None
         self.checkpoints_saved: list[Path] = []
         if self.rank == 0:
             Path(self.config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
@@ -206,11 +208,12 @@ class CheckpointManager:
         scheduler: LRScheduler,
         scaler: torch.amp.GradScaler,
         loss: float,
+        extra_state: dict | None = None,
     ):
         if self.rank != 0:
             return
 
-        model_state_to_save = model.module.state_dict() if isinstance(model, DDP) else model.state_dict()
+        model_state_to_save = model_state_dict(model)
         checkpoint = {
             "epoch": epoch,
             "loss": loss,
@@ -220,6 +223,8 @@ class CheckpointManager:
             "scheduler_state": scheduler.state_dict() if scheduler is not None else None,
             "scaler_state": scaler.state_dict() if scaler is not None else None,
         }
+        if extra_state:
+            checkpoint["extra_state"] = extra_state
 
         # Atomic save: write to temp file then move
         def atomic_save(data, path):
@@ -282,6 +287,7 @@ class CheckpointManager:
             start_epoch = checkpoint["epoch"] + 1
             best_loss = checkpoint.get("best_loss", float("inf"))
             self.best_loss = best_loss
+            self.loaded_extra_state = checkpoint.get("extra_state")
             self.logger.info(f"✅ Resumed training from epoch {start_epoch} using checkpoint {ckp_path}")
             return start_epoch, best_loss
         except Exception as e:
