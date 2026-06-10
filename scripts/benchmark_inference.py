@@ -3,8 +3,8 @@ import time
 
 import typer
 
+from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
-from llm.serving.engine import ContinuousBatchingEngine
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 

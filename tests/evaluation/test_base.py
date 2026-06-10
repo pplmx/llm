@@ -1,7 +1,7 @@
 from typing import ClassVar
 
+from llm.evaluation.eval_tasks.base import BaseTask
 from llm.evaluation.metrics.base import BaseMetric
-from llm.evaluation.tasks.base import BaseTask
 
 
 class MockMetric(BaseMetric):

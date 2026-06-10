@@ -4,38 +4,32 @@ from typing import Any
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
-from llm.data.data_module import BaseDataModule
-from llm.data.sft_dataset import SFTDataset
+from llm.data.base import MapDataModule
+from llm.data.datasets.dpo import DPODataset
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
 
 
-class SFTDataModule(BaseDataModule):
+class DPODataModule(MapDataModule):
     """
-    DataModule for Supervised Fine-Tuning (SFT) using SFTDataset.
+    DataModule for Direct Preference Optimization (DPO).
     """
 
     def __init__(self, config: Any):
         super().__init__(config)
         self.tokenizer: BaseTokenizer | None = None
-        self.train_dataset: SFTDataset | None = None
-        self.val_dataset: SFTDataset | None = None
+        self.train_dataset: DPODataset | None = None
+        self.val_dataset: DPODataset | None = None
 
     def prepare_data(self):
-        """
-        Download tokenizer if needed.
-        """
         data_config = self.config.data
         if data_config.tokenizer_type == "hf" and data_config.tokenizer_path:
             HFTokenizer.from_pretrained(data_config.tokenizer_path)
 
     def setup(self, stage: str | None = None):
-        """
-        Load tokenizer and create datasets.
-        """
         data_config = self.config.data
 
-        # 1. Load Tokenizer
+        # 1. Tokenizer
         if data_config.tokenizer_type == "hf":
             if not data_config.tokenizer_path:
                 raise ValueError("tokenizer_path must be specified for HF tokenizer.")
@@ -43,23 +37,19 @@ class SFTDataModule(BaseDataModule):
         elif data_config.tokenizer_path and Path(data_config.tokenizer_path).exists():
             self.tokenizer = torch.load(data_config.tokenizer_path, weights_only=False)
         else:
-            # Fallback
             corpus = ["<PAD>", "<EOS>", "<BOS>"]
             self.tokenizer = SimpleCharacterTokenizer(corpus)
 
-        # 2. Create Datasets
+        # 2. Datasets
         if not data_config.dataset_path:
             return
 
-        # Assuming dataset_path is the jsonl file
-        full_dataset = SFTDataset(
+        full_dataset = DPODataset(
             file_path=data_config.dataset_path,
             tokenizer=self.tokenizer,
             max_seq_len=self.config.data.max_seq_len,
-            # template_fn can be added based on config if needed, defaulting to Alpaca
         )
 
-        # Split
         train_size = int(0.9 * len(full_dataset))
         val_size = len(full_dataset) - train_size
         self.train_dataset, self.val_dataset = torch.utils.data.random_split(full_dataset, [train_size, val_size])

@@ -3,7 +3,7 @@ from string import printable
 
 import torch
 
-from llm.data.dpo_dataset import DPODataset
+from llm.data.datasets.dpo import DPODataset
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 

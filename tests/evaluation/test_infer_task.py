@@ -1,4 +1,4 @@
-from llm.evaluation.tasks.infer_task import InferTask
+from llm.evaluation.eval_tasks.infer_task import InferTask
 
 
 def test_infer_task_prepare_data():

@@ -1,6 +1,6 @@
 from .api import app
+from .batch_engine import ContinuousBatchingEngine
 from .config import ServingConfig
-from .engine import ContinuousBatchingEngine
 from .schemas import (
     BatchGenerationRequest,
     BatchGenerationResponse,

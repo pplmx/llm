@@ -1,23 +1,42 @@
 import abc
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
-from llm.data.data_module import BaseDataModule
+from llm.data.base import BaseDataModule
 from llm.training.core.config import Config
+
+if TYPE_CHECKING:
+    from llm.training.core.engine import TrainingEngine
 
 
 class TrainingTask(abc.ABC):
     """
     An abstract base class for defining a training task.
-    Users should subclass this and implement the abstract methods.
+
+    Standard tasks implement build_* + train_step and run through TrainingEngine.
+    Custom-loop tasks (e.g. PPO) set ``uses_standard_loop = False`` and override
+    ``run_training``.
     """
+
+    uses_standard_loop: bool = True
 
     def __init__(self, config: Config, data_module: BaseDataModule):
         self.config = config
-        self.data_module = data_module  # Stored data_module
+        self.data_module = data_module
+
+    def uses_standard_training_loop(self) -> bool:
+        return self.uses_standard_loop
+
+    def prepare_training(self, engine: "TrainingEngine") -> None:  # noqa: B027
+        """Hook for custom-loop tasks after the model is on device."""
+
+    def run_training(self, engine: "TrainingEngine") -> None:
+        """Execute a non-standard training loop."""
+        raise NotImplementedError(f"{type(self).__name__} must implement run_training().")
 
     @abc.abstractmethod
     def build_model(self) -> nn.Module:
@@ -44,31 +63,12 @@ class TrainingTask(abc.ABC):
         """
         Performs a single training step.
 
-        Args:
-            batch: The data batch from the dataloader.
-            model: The model to train.
-            criterion: The loss function.
-
         Returns:
-            A tuple containing:
-            - The loss tensor for backpropagation.
-            - A dictionary of metrics to log (e.g., {'loss': loss.item()}).
+            A tuple of (loss tensor, metrics dict).
         """
         pass
 
     @abc.abstractmethod
     def validation_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
-        """
-        Performs a single validation step.
-
-        Args:
-            batch: The data batch from the dataloader.
-            model: The model to validate.
-            criterion: The loss function.
-
-        Returns:
-            A tuple containing:
-            - The loss tensor for backpropagation (or just for logging).
-            - A dictionary of metrics to log (e.g., {'loss': loss.item()}).
-        """
+        """Performs a single validation step."""
         pass

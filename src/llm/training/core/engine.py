@@ -4,7 +4,7 @@ import time
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from llm.data.data_module import BaseDataModule
+from llm.data.base import BaseDataModule
 from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
@@ -77,14 +77,25 @@ class TrainingEngine:
         else:
             self.model = model  # No DDP for CPU or single GPU / single process
 
-        # Build other components from task
-        self.optimizer = self.task.build_optimizer(self.model)  # Optimizer should work with model or model.module
-        self.scheduler = self.task.build_scheduler(self.optimizer)
-        self.criterion = self.task.build_criterion().to(self.device)
+        self.use_standard_loop = self.task.uses_standard_training_loop()
 
         # Use data_module to get dataloaders
+        self.is_streaming = getattr(self.data_module, "is_streaming", False)
         self.dataloader, self.sampler = self.data_module.train_dataloader(self.rank, self.world_size)
         self.val_dataloader, self.val_sampler = self.data_module.val_dataloader(self.rank, self.world_size)
+
+        if self.is_streaming and self.config.data.steps_per_epoch is None:
+            raise ValueError("Streaming DataModules require data.steps_per_epoch to be set.")
+
+        if self.use_standard_loop:
+            self.optimizer = self.task.build_optimizer(self.model)
+            self.scheduler = self.task.build_scheduler(self.optimizer)
+            self.criterion = self.task.build_criterion().to(self.device)
+        else:
+            self.optimizer = None
+            self.scheduler = None
+            self.criterion = None
+            self.task.prepare_training(self)
 
         # Resolve 'auto' dtype
         self.resolved_amp_dtype = self.config.optimization.amp_dtype
@@ -106,27 +117,50 @@ class TrainingEngine:
         )
         self.scaler = torch.amp.GradScaler(enabled=use_scaler)
 
-        # Determine the model to pass for checkpoint loading (unwrap if DDP)
         model_to_load = self.model.module if isinstance(self.model, DDP) else self.model
 
-        self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(
-            model_to_load, self.optimizer, self.scheduler, self.scaler, self.device
-        )
+        if self.use_standard_loop:
+            self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(
+                model_to_load, self.optimizer, self.scheduler, self.scaler, self.device
+            )
+        else:
+            self.start_epoch = 0
+            self.best_loss = float("inf")
+
         self.checkpoint_manager.best_loss = self.best_loss
 
+    def _iter_training_batches(self):
+        if self.is_streaming:
+            data_iter = iter(self.dataloader)
+            num_batches = self.config.data.steps_per_epoch
+            for batch_idx in range(num_batches):
+                try:
+                    batch = next(data_iter)
+                except StopIteration:
+                    data_iter = iter(self.dataloader)
+                    batch = next(data_iter)
+                yield batch_idx, batch, num_batches
+            return
+
+        num_batches = len(self.dataloader)
+        for batch_idx, batch in enumerate(self.dataloader):
+            yield batch_idx, batch, num_batches
+
     def _run_epoch(self, epoch: int) -> float:
-        self.sampler.set_epoch(epoch)
+        if self.sampler is not None:
+            self.sampler.set_epoch(epoch)
         self.model.train()
         self.performance_monitor.reset_epoch_stats()
 
         epoch_loss = 0.0
-        num_batches = len(self.dataloader)
         accum_steps = self.config.optimization.gradient_accumulation_steps
+        batch_count = 0
 
         # Zero gradients at start of epoch
         self.optimizer.zero_grad(set_to_none=True)
 
-        for batch_idx, batch in enumerate(self.dataloader):
+        for batch_idx, batch, num_batches in self._iter_training_batches():
+            batch_count = num_batches
             self._run_callbacks("on_batch_start", epoch=epoch, batch_idx=batch_idx)
             batch_start_time = time.time()
             # Move batch to device
@@ -187,7 +221,10 @@ class TrainingEngine:
                 self._log_batch_stats(epoch, batch_idx, num_batches, metrics)
             self._run_callbacks("on_batch_end", epoch=epoch, batch_idx=batch_idx)
 
-        loss_tensor = torch.tensor(epoch_loss / num_batches, device=self.device)
+        if batch_count == 0:
+            return 0.0
+
+        loss_tensor = torch.tensor(epoch_loss / batch_count, device=self.device)
         global_avg_loss = DistributedManager.reduce_mean(loss_tensor).item()
 
         return global_avg_loss
@@ -256,6 +293,19 @@ class TrainingEngine:
         self._run_callbacks("on_train_start")
         if self.rank == 0:
             self.logger.info("🎉 Starting training...")
+
+        if not self.use_standard_loop:
+            try:
+                self.task.run_training(self)
+            except Exception as e:
+                self._run_callbacks("on_exception", exception=e)
+                raise
+            finally:
+                if self.rank == 0:
+                    total_time = time.time() - self.training_start_time
+                    self.logger.info(f"✅ Training completed in {total_time / 3600:.2f} hours.")
+                self._run_callbacks("on_train_end")
+            return
 
         try:
             for epoch in range(self.start_epoch, self.config.training.epochs):

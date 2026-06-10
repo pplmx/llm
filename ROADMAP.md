@@ -68,8 +68,8 @@
 
 > **状态**: 基础完成 | **完成时间**: 2024 年
 
-- [x] **数据加载**: `src/llm/data/loader.py` 用于读取和初步处理数据
-- [x] **数据抽象**: `DataModule` (`data_module.py`) 封装数据集和数据加载器
+- [x] **数据加载**: `src/llm/data/datasets/text.py` 用于读取和初步处理数据
+- [x] **数据抽象**: `DataModule` (`data/base.py`) 封装数据集和数据加载器；`datasets/` 与 `modules/` 分层
 - [ ] **流式数据处理** ⏭️ *下一阶段*
     - [ ] 实现流式数据加载器, 支持大规模预训练
     - [ ] 集成常见预训练数据集 (C4, The Pile, RedPajama)

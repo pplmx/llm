@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from llm.data.reward_dataset import RewardDataset
+from llm.data.datasets.reward import RewardDataset
 from llm.training.tasks.reward_task import RewardModel
 
 

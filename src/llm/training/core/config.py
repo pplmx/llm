@@ -116,10 +116,53 @@ class LoggingConfig(BaseModel):
 class DataConfig(BaseModel):
     """Data configuration"""
 
+    data_source: str = Field("local", pattern="^(local|hf)$")
     tokenizer_type: str = Field("simple", pattern="^(simple|hf)$")
     tokenizer_path: str | None = None  # Path to file (simple) or repo_id/path (hf)
     dataset_path: str | None = None
-    max_seq_len: int = 512  # Redundant with ModelConfig? Maybe, but data loading needs it.
+    val_dataset_path: str | None = None  # Optional explicit validation file
+    dataset_name: str | None = None  # HuggingFace dataset id when data_source='hf'
+    dataset_config: str | None = None
+    dataset_split: str = "train"
+    text_column: str = "text"
+    max_seq_len: int = 512
+    steps_per_epoch: int | None = Field(
+        None,
+        gt=0,
+        description="Fixed optimizer steps per epoch for streaming DataModules",
+    )
+
+
+class PPOSettings(BaseModel):
+    """PPO hyperparameters for RLHF training."""
+
+    clip_epsilon: float = 0.2
+    kl_coef: float = 0.1
+    value_coef: float = 0.5
+    entropy_coef: float = 0.01
+    gae_lambda: float = 0.95
+    gamma: float = 1.0
+    ppo_epochs: int = 4
+    mini_batch_size: int = 64
+    max_grad_norm: float = 1.0
+    target_kl: float | None = None
+    rollout_batch_size: int = 16
+    response_max_len: int = 256
+    temperature: float = 1.0
+    top_k: int | None = None
+    top_p: float | None = None
+    normalize_advantages: bool = True
+    normalize_rewards: bool = False
+    policy_lr: float | None = None
+    value_lr: float | None = None
+    use_ref_model: bool = True
+    ref_model_update_freq: int = 0
+
+
+class RLHFSettings(BaseModel):
+    """RLHF-specific paths and options."""
+
+    reward_model_path: str | None = None
 
 
 class Config(BaseSettings):
@@ -132,6 +175,8 @@ class Config(BaseSettings):
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
     checkpoint: CheckpointConfig = Field(default_factory=CheckpointConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    ppo: PPOSettings = Field(default_factory=PPOSettings)
+    rlhf: RLHFSettings = Field(default_factory=RLHFSettings)
 
     model_config = SettingsConfigDict(
         env_prefix="LLM_",

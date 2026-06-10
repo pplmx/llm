@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from llm.evaluation.tasks.base import BaseTask
+from llm.evaluation.eval_tasks.base import BaseTask
 
 
 class EvaluationRunner:

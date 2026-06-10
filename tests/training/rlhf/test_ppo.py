@@ -193,3 +193,33 @@ class TestPPOTrainer:
 
         assert len(rewards) == 1
         assert rewards[0].dim() == 0  # Scalar
+
+    def test_ppo_step_with_entropy_bonus(self, tiny_setup):
+        """PPO step should work when entropy_coef > 0 (shifted mask alignment)."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        config.entropy_coef = 0.01
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device="cpu",
+        )
+
+        buffer = RolloutBuffer(normalize_advantages=False)
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+        )
+        buffer.compute_advantages()
+        batch = next(iter(buffer.get_batches(mini_batch_size=1, shuffle=False, device="cpu")))
+
+        metrics = trainer.ppo_step(batch)
+
+        assert "loss" in metrics
+        assert torch.isfinite(torch.tensor(metrics["loss"]))

@@ -1,6 +1,6 @@
 import pytest
 
-from llm.data.synthetic_data_module import SyntheticDataModule
+from llm.data.modules.synthetic import SyntheticDataModule
 from llm.training.core.config import Config, LoggingConfig, ModelConfig, OptimizationConfig, TrainingConfig
 from llm.training.core.engine import TrainingEngine
 from llm.training.tasks.regression_task import RegressionTask

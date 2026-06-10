@@ -11,7 +11,7 @@ import torch.optim as optim
 import typer
 
 # Import llm package to ensure core components are registered
-from llm.data.loader import TextDataset, create_dataloader
+from llm.data.datasets.text import TextDataset, create_dataloader
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 

@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from llm.data.synthetic_data_module import SyntheticDataModule
+from llm.data.modules.synthetic import SyntheticDataModule
 from llm.training.core.config import Config, ModelConfig, OptimizationConfig, TrainingConfig
 from llm.training.core.engine import TrainingEngine
 from llm.training.tasks.lm_task import LanguageModelingTask

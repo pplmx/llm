@@ -217,8 +217,8 @@ class CheckpointManager:
             "best_loss": self.best_loss,
             "model_state": model_state_to_save,
             "optimizer_state": optimizer.state_dict(),
-            "scheduler_state": scheduler.state_dict(),
-            "scaler_state": scaler.state_dict(),
+            "scheduler_state": scheduler.state_dict() if scheduler is not None else None,
+            "scaler_state": scaler.state_dict() if scaler is not None else None,
         }
 
         # Atomic save: write to temp file then move
@@ -275,8 +275,10 @@ class CheckpointManager:
             checkpoint = torch.load(ckp_path, map_location=map_location)
             model.load_state_dict(checkpoint["model_state"])
             optimizer.load_state_dict(checkpoint["optimizer_state"])
-            scheduler.load_state_dict(checkpoint["scheduler_state"])
-            scaler.load_state_dict(checkpoint["scaler_state"])
+            if scheduler is not None and checkpoint.get("scheduler_state") is not None:
+                scheduler.load_state_dict(checkpoint["scheduler_state"])
+            if scaler is not None and checkpoint.get("scaler_state") is not None:
+                scaler.load_state_dict(checkpoint["scaler_state"])
             start_epoch = checkpoint["epoch"] + 1
             best_loss = checkpoint.get("best_loss", float("inf"))
             self.best_loss = best_loss

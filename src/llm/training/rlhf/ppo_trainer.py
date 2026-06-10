@@ -239,13 +239,10 @@ class PPOTrainer:
         # Forward pass
         logits = self.policy(input_ids)
 
-        # Compute new log probabilities
-        log_probs = F.log_softmax(logits, dim=-1)
-
         # Get log probs for actual tokens (shifted)
         shift_logits = logits[:, :-1, :]
         shift_labels = input_ids[:, 1:]
-        shift_response_mask = response_mask[:, 1:]  # noqa: F841 - prepared for masked loss
+        shift_response_mask = response_mask[:, 1:]
 
         new_log_probs = F.log_softmax(shift_logits, dim=-1)
         token_log_probs = torch.gather(
@@ -290,10 +287,10 @@ class PPOTrainer:
         # Total loss
         loss = policy_loss + kl_loss
 
-        # Entropy bonus (optional)
+        # Entropy bonus (optional) — align with shifted token positions
         if self.config.entropy_coef > 0:
-            entropy = -(log_probs.exp() * log_probs).sum(dim=-1)
-            entropy = (entropy * response_mask[:, :-1]).sum() / response_mask[:, :-1].sum().clamp(min=1)
+            token_entropy = -(new_log_probs.exp() * new_log_probs).sum(dim=-1)
+            entropy = (token_entropy * shift_response_mask).sum() / shift_response_mask.sum().clamp(min=1)
             loss = loss - self.config.entropy_coef * entropy
         else:
             entropy = torch.tensor(0.0)

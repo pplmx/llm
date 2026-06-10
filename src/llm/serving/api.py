@@ -13,8 +13,8 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import json
 from starlette.status import HTTP_403_FORBIDDEN
 
+from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
-from llm.serving.engine import ContinuousBatchingEngine
 from llm.serving.schemas import (
     BatchGenerationRequest,
     BatchGenerationResponse,
