@@ -12,9 +12,13 @@ class TextSource(abc.ABC):
     """Abstract source of text records for streaming datasets."""
 
     @abc.abstractmethod
-    def iter_texts(self) -> Iterator[str]:
-        """Yield non-empty text records."""
+    def iter_texts(self, skip: int = 0) -> Iterator[str]:
+        """Yield non-empty text records, optionally skipping the first ``skip`` records."""
         pass
+
+    def source_fingerprint(self) -> dict[str, Any]:
+        """Return metadata for validating checkpoint resume against the same source."""
+        return {"type": self.__class__.__name__}
 
 
 class LocalLineTextSource(TextSource):
@@ -25,12 +29,23 @@ class LocalLineTextSource(TextSource):
         if not self.file_path.exists():
             raise FileNotFoundError(f"File not found: {self.file_path}")
 
-    def iter_texts(self) -> Iterator[str]:
+    def source_fingerprint(self) -> dict[str, Any]:
+        return {
+            "type": "local",
+            "dataset_path": str(self.file_path.resolve()),
+        }
+
+    def iter_texts(self, skip: int = 0) -> Iterator[str]:
+        skipped = 0
         with self.file_path.open(encoding="utf-8") as handle:
             for line in handle:
                 stripped = line.strip()
-                if stripped:
-                    yield stripped
+                if not stripped:
+                    continue
+                if skipped < skip:
+                    skipped += 1
+                    continue
+                yield stripped
 
 
 class HFStreamTextSource(TextSource):
@@ -48,7 +63,16 @@ class HFStreamTextSource(TextSource):
         self.text_column = text_column
         self.dataset_config = dataset_config
 
-    def iter_texts(self) -> Iterator[str]:
+    def source_fingerprint(self) -> dict[str, Any]:
+        return {
+            "type": "hf",
+            "dataset_name": self.dataset_name,
+            "dataset_config": self.dataset_config,
+            "dataset_split": self.split,
+            "text_column": self.text_column,
+        }
+
+    def iter_texts(self, skip: int = 0) -> Iterator[str]:
         try:
             from datasets import load_dataset
         except ImportError as exc:
@@ -62,6 +86,9 @@ class HFStreamTextSource(TextSource):
             split=self.split,
             streaming=True,
         )
+        if skip > 0:
+            dataset = dataset.skip(skip)
+
         for row in dataset:
             text = row.get(self.text_column)
             if isinstance(text, str) and text.strip():
@@ -86,3 +113,20 @@ def build_text_source(data_config: Any) -> TextSource:
     if not data_config.dataset_path:
         raise ValueError("data.dataset_path is required when data_source='local'")
     return LocalLineTextSource(data_config.dataset_path)
+
+
+def source_fingerprint_from_config(data_config: Any) -> dict[str, Any]:
+    """Build a stable fingerprint for the configured text source without loading data."""
+    return build_text_source(data_config).source_fingerprint()
+
+
+def validate_source_fingerprint(expected: dict[str, Any] | None, actual: dict[str, Any]) -> None:
+    """Raise if checkpoint source metadata does not match the active DataModule config."""
+    if not expected:
+        return
+    if expected != actual:
+        raise ValueError(
+            "Streaming checkpoint source fingerprint mismatch. "
+            f"expected={expected}, actual={actual}. "
+            "Use the same dataset configuration when resuming."
+        )

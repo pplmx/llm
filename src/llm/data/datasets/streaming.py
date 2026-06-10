@@ -67,9 +67,10 @@ class StreamingTextDataset(IterableDataset):
         state = self.stream_data_state.get_shard(self.rank, worker_id, num_workers)
         token_buffer = list(state.token_buffer)
 
-        for line_idx, line in enumerate(self.text_source.iter_texts()):
-            if line_idx < state.line_index:
-                continue
+        for line_idx, line in enumerate(
+            self.text_source.iter_texts(skip=state.line_index),
+            start=state.line_index,
+        ):
             if line_idx % num_shards != shard_id:
                 state.line_index = line_idx + 1
                 continue
