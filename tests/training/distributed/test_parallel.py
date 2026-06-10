@@ -33,6 +33,17 @@ def test_model_state_dict_bare_module():
     assert "linear.weight" in state
 
 
+def test_load_model_state_dict_roundtrip():
+    from llm.training.distributed import load_model_state_dict, model_state_dict
+
+    model = torch.nn.Linear(4, 2)
+    state = model_state_dict(model)
+    model2 = torch.nn.Linear(4, 2)
+    load_model_state_dict(model2, state)
+    for key, value in model.state_dict().items():
+        assert torch.allclose(value, model2.state_dict()[key])
+
+
 def test_unknown_parallel_strategy_raises():
     if not torch.cuda.is_available():
         pytest.skip("CUDA required for distributed wrap path")

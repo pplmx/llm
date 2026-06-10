@@ -67,6 +67,29 @@ def test_checkpoint_rotation(checkpoint_manager):
     assert not (ckpt_dir / "epoch_1.pt").exists()
 
 
+def test_load_checkpoint_saves_extra_state(checkpoint_manager):
+    model = DummyState()
+    optimizer = DummyState()
+    scheduler = DummyState()
+    scaler = DummyState()
+
+    checkpoint_manager.save_checkpoint(
+        0,
+        model,
+        optimizer,
+        scheduler,
+        scaler,
+        loss=0.25,
+        extra_state={"stream_data": {"0": {"line_index": 42, "token_buffer": [1, 2]}}},
+    )
+
+    checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
+    _, best_loss = checkpoint_manager.load_checkpoint(model, optimizer, scheduler, scaler, device=torch.device("cpu"))
+
+    assert best_loss == 0.25
+    assert checkpoint_manager.loaded_extra_state["stream_data"]["0"]["line_index"] == 42
+
+
 def test_load_checkpoint(checkpoint_manager):
     # Setup: Save one
     model = DummyState()

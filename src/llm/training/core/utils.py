@@ -13,7 +13,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.training.core.config import CheckpointConfig, DistributedConfig, LoggingConfig
-from llm.training.distributed import model_state_dict
+from llm.training.distributed import load_model_state_dict, model_state_dict
 
 
 class PerformanceMonitor:
@@ -278,7 +278,7 @@ class CheckpointManager:
         try:
             map_location = device
             checkpoint = torch.load(ckp_path, map_location=map_location)
-            model.load_state_dict(checkpoint["model_state"])
+            load_model_state_dict(model, checkpoint["model_state"])
             optimizer.load_state_dict(checkpoint["optimizer_state"])
             if scheduler is not None and checkpoint.get("scheduler_state") is not None:
                 scheduler.load_state_dict(checkpoint["scheduler_state"])
