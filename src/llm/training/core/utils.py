@@ -209,6 +209,7 @@ class CheckpointManager:
         scaler: torch.amp.GradScaler,
         loss: float,
         extra_state: dict | None = None,
+        model_config: dict | None = None,
     ):
         if self.rank != 0:
             return
@@ -219,6 +220,7 @@ class CheckpointManager:
             "loss": loss,
             "best_loss": self.best_loss,
             "model_state": model_state_to_save,
+            "model_config": model_config,
             "optimizer_state": optimizer.state_dict(),
             "scheduler_state": scheduler.state_dict() if scheduler is not None else None,
             "scaler_state": scaler.state_dict() if scaler is not None else None,

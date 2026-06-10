@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import string
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,30 +11,13 @@ from llm.generation.backends import GenerationBackend, GenerationConfig, get_gen
 from llm.models.decoder import DecoderModel
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
+from llm.serving.loader import load_model_and_tokenizer
 
 
 def _resolve_device(device: str) -> torch.device:
     if device == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device)
-
-
-def create_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
-    """Build a model and tokenizer for serving (checkpoint loading TBD)."""
-    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-
-    tokenizer = SimpleCharacterTokenizer([string.printable])
-    model = DecoderModel(
-        vocab_size=tokenizer.vocab_size,
-        hidden_size=config.hidden_size,
-        num_layers=config.num_layers,
-        num_heads=config.num_heads,
-        max_seq_len=config.max_seq_len,
-        num_kv_heads=config.num_kv_heads,
-        attn_impl=config.attn_impl,
-        mlp_impl=config.mlp_impl,
-    )
-    return model, tokenizer
 
 
 @dataclass
@@ -55,7 +37,7 @@ class ServingGenerationService:
         engine: ContinuousBatchingEngine | None = None,
     ) -> ServingGenerationService:
         device = _resolve_device(config.device)
-        model, tokenizer = create_model_and_tokenizer(config)
+        model, tokenizer = load_model_and_tokenizer(config)
         if engine is None:
             model.to(device)
             model.eval()
