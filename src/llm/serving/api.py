@@ -15,6 +15,7 @@ from starlette.status import HTTP_403_FORBIDDEN
 
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
+from llm.serving.generation_service import ServingGenerationService
 from llm.serving.schemas import (
     BatchGenerationRequest,
     BatchGenerationResponse,
@@ -40,8 +41,9 @@ logger.setLevel(logging.INFO)
 config = ServingConfig()
 logger.setLevel(config.log_level)
 
-# Global engine reference, initialized in lifespan
+# Global references, initialized in lifespan
 engine: ContinuousBatchingEngine | None = None
+generation_service: ServingGenerationService | None = None
 
 # Concurrency control
 inference_semaphore = asyncio.Semaphore(config.max_concurrent_requests)
@@ -77,39 +79,16 @@ async def get_api_key(
     raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials")
 
 
-def _create_model_and_tokenizer():
-    """Create model and tokenizer based on config."""
-    from llm.models.decoder import DecoderModel
-    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-
-    # Create minimal model (in production, load from checkpoint)
-    model = DecoderModel(
-        vocab_size=100,
-        hidden_size=config.hidden_size,
-        num_layers=config.num_layers,
-        num_heads=config.num_heads,
-        max_seq_len=config.max_seq_len,
-        num_kv_heads=config.num_kv_heads,
-        attn_impl=config.attn_impl,
-        mlp_impl=config.mlp_impl,
-    )
-
-    # Create tokenizer
-    tokenizer = SimpleCharacterTokenizer(["a", "b", "c"])
-
-    return model, tokenizer
-
-
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     """FastAPI lifespan manager."""
-    global engine
+    global engine, generation_service
     logger.info("Starting up...")
 
-    model, tokenizer = _create_model_and_tokenizer()
+    generation_service = ServingGenerationService.from_config(config)
     engine = ContinuousBatchingEngine(
-        model=model,
-        tokenizer=tokenizer,
+        model=generation_service.model,
+        tokenizer=generation_service.tokenizer,
         device=config.device,
         max_batch_size=config.max_concurrent_requests,
         max_seq_len=config.max_seq_len,
@@ -134,32 +113,27 @@ Instrumentator().instrument(app).expose(app)
 
 
 # --- Generation Helper Functions ---
-# Since the new ContinuousBatchingEngine uses add_request/step, we provide
-# simple wrappers for the legacy API endpoints.
 
 
-def _sync_generate(prompt: str, **_kwargs) -> str:
-    """Simple blocking generation using the engine's step loop."""
-    if engine is None:
-        raise RuntimeError("Engine not initialized")
-    # For now, simple dummy return (in production, use add_request/step loop)
-    return prompt + " [generated]"
+def _require_generation_service() -> ServingGenerationService:
+    if generation_service is None:
+        raise RuntimeError("Generation service not initialized")
+    return generation_service
 
 
-def _sync_stream_generate(prompt: str, **_kwargs):
-    """Simple streaming generation."""
-    if engine is None:
-        raise RuntimeError("Engine not initialized")
-    yield prompt
-    yield " [gen"
-    yield "erated]"
+def _sync_generate(prompt: str, **kwargs) -> str:
+    service = _require_generation_service()
+    return service.generate(prompt=prompt, **kwargs)
 
 
-def _sync_batch_generate(prompts: list[str], **_kwargs) -> list[str]:
-    """Simple batch generation."""
-    if engine is None:
-        raise RuntimeError("Engine not initialized")
-    return [p + " [batch gen]" for p in prompts]
+def _sync_stream_generate(prompt: str, **kwargs):
+    service = _require_generation_service()
+    yield from service.stream(prompt=prompt, **kwargs)
+
+
+def _sync_batch_generate(prompts: list[str], **kwargs) -> list[str]:
+    service = _require_generation_service()
+    return service.batch_generate(prompts=prompts, **kwargs)
 
 
 @app.get("/health")

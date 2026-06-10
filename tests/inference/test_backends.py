@@ -32,3 +32,24 @@ def test_eager_backend_generate(tiny_model, device):
         config=GenerationConfig(max_new_tokens=2, use_cache=False),
     )
     assert output.startswith("hi")
+
+
+def test_eager_backend_batch_generate(tiny_model, device):
+    class _Tok:
+        def encode(self, text: str) -> list[int]:
+            return [1, 2, 3]
+
+        def decode(self, ids: list[int]) -> str:
+            return "x"
+
+        pad_token_id = 0
+
+    backend = EagerGenerationBackend()
+    outputs = backend.batch_generate(
+        model=tiny_model.to(device),
+        tokenizer=_Tok(),
+        prompts=["a", "b"],
+        config=GenerationConfig(max_new_tokens=1, temperature=0.0, use_cache=False),
+    )
+    assert len(outputs) == 2
+    assert all(text.startswith("x") or len(text) >= 1 for text in outputs)

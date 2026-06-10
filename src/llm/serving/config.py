@@ -15,6 +15,9 @@ class ServingConfig(BaseSettings):
     api_key: str | None = None  # If set, requires this key for access
     log_level: str = "INFO"
 
+    # Generation
+    generation_backend: str = "eager"  # eager | (future: batched)
+
     # Performance
     compile_model: bool = False  # Enable torch.compile for acceleration
     max_concurrent_requests: int = 4  # Max concurrent inference requests
