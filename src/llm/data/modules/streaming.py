@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from llm.data.base import StreamDataModule
 from llm.data.datasets.streaming import StreamingTextDataset
 from llm.data.datasets.text import TextDataset
-from llm.data.sources import build_text_source
+from llm.data.sources import build_text_source, source_fingerprint_from_config, validate_source_fingerprint
 from llm.data.stream_state import StreamDataState
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
@@ -101,11 +101,18 @@ class StreamingTextDataModule(StreamDataModule):
         return loader, val_sampler
 
     def get_checkpoint_state(self) -> dict | None:
-        return {"stream_data": self.stream_data_state.to_dict()}
+        return {
+            "stream_data": self.stream_data_state.to_dict(),
+            "stream_source": source_fingerprint_from_config(self.config.data),
+        }
 
     def load_checkpoint_state(self, state: dict | None) -> None:
         if not state:
             return
+        validate_source_fingerprint(
+            state.get("stream_source"),
+            source_fingerprint_from_config(self.config.data),
+        )
         self.stream_data_state = StreamDataState.from_dict(state.get("stream_data"))
         if self.train_dataset is not None:
             self.train_dataset.stream_data_state = self.stream_data_state
