@@ -18,6 +18,7 @@ from llm.compat.weight_mapping import (
     get_config_mapping,
 )
 from llm.models.decoder import DecoderModel
+from llm.runtime import ModelFactory
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,8 @@ def _load_from_local(
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Create model
-    model = DecoderModel(
+    model = ModelFactory.build(
+        "decoder",
         vocab_size=our_config["vocab_size"],
         hidden_size=our_config["hidden_size"],
         num_layers=our_config["num_layers"],
@@ -101,7 +103,7 @@ def _load_from_local(
         intermediate_size=our_config.get("intermediate_size"),
         norm_eps=our_config.get("rms_norm_eps", 1e-5),
         attn_impl="gqa" if our_config.get("num_kv_heads") else "mha",
-        mlp_impl="swiglu",  # Most modern LLMs use SwiGLU
+        mlp_impl="swiglu",
         device=device,
         dtype=dtype,
     )

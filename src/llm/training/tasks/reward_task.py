@@ -14,6 +14,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.models.decoder import DecoderModel
+from llm.runtime import ModelFactory
 from llm.training.tasks.base_task import TrainingTask
 
 
@@ -92,21 +93,9 @@ class RewardTask(TrainingTask):
 
     def build_model(self) -> nn.Module:
         """Build the RewardModel."""
-        model_config = self.config.model
-        base_model = DecoderModel(
-            vocab_size=model_config.vocab_size,
-            hidden_size=model_config.hidden_size,
-            num_layers=model_config.num_layers,
-            num_heads=model_config.num_heads,
-            intermediate_size=model_config.intermediate_size,
-            embedding_dropout_p=model_config.dropout,
-            attn_dropout_p=model_config.dropout,
-            mlp_dropout_p=model_config.dropout,
+        base_model = ModelFactory.from_config(
+            self.config.model,
             max_seq_len=self.config.data.max_seq_len,
-            num_kv_heads=model_config.num_kv_heads,
-            use_glu=model_config.use_glu,
-            attn_impl=model_config.attn_impl,
-            mlp_impl=model_config.mlp_impl,
         )
         return RewardModel(base_model)
 
