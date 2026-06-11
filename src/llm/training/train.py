@@ -8,12 +8,15 @@ import torch.multiprocessing as mp
 import typer
 from rich.logging import RichHandler
 
+from llm.runtime.plugins import load_entry_point_hooks
 from llm.training.core.callbacks import LRSchedulerCallback, MetricsLogger, TensorBoardLogger
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
 from llm.training.core.utils import DistributedManager
 from llm.training.task_registry import TASK_REGISTRY
 from llm.training.tasks import builtin as _task_registry  # noqa: F401 — register built-in tasks
+
+load_entry_point_hooks("llm.tasks")
 
 # --- Typer App ---
 app = typer.Typer(pretty_exceptions_show_locals=False)

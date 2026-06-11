@@ -14,7 +14,6 @@ from torch.optim.lr_scheduler import LRScheduler
 from llm.runtime.checkpoint import collect_extra_state
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.tokenizer import BaseTokenizer
-from llm.training.rlhf.config import PPOConfig
 from llm.training.rlhf.ppo_trainer import PPOTrainer
 from llm.training.tasks.base_task import TrainingTask
 from llm.training.tasks.lm_task import LanguageModelingTask
@@ -86,32 +85,6 @@ class PPOTask(TrainingTask):
 
         return reward_model
 
-    def _to_ppo_config(self) -> PPOConfig:
-        ppo = self.config.ppo
-        return PPOConfig(
-            clip_epsilon=ppo.clip_epsilon,
-            kl_coef=ppo.kl_coef,
-            value_coef=ppo.value_coef,
-            entropy_coef=ppo.entropy_coef,
-            gae_lambda=ppo.gae_lambda,
-            gamma=ppo.gamma,
-            ppo_epochs=ppo.ppo_epochs,
-            mini_batch_size=ppo.mini_batch_size,
-            max_grad_norm=ppo.max_grad_norm,
-            target_kl=ppo.target_kl,
-            rollout_batch_size=ppo.rollout_batch_size,
-            response_max_len=ppo.response_max_len,
-            temperature=ppo.temperature,
-            top_k=ppo.top_k,
-            top_p=ppo.top_p,
-            normalize_advantages=ppo.normalize_advantages,
-            normalize_rewards=ppo.normalize_rewards,
-            policy_lr=ppo.policy_lr,
-            value_lr=ppo.value_lr,
-            use_ref_model=ppo.use_ref_model,
-            ref_model_update_freq=ppo.ref_model_update_freq,
-        )
-
     def prepare_training(self, engine: TrainingEngine) -> None:
         self.tokenizer = self._load_tokenizer()
         policy = self._unwrap_model(engine.model)
@@ -121,7 +94,7 @@ class PPOTask(TrainingTask):
             policy_model=policy,
             reward_model=reward_model,
             tokenizer=self.tokenizer,
-            config=self._to_ppo_config(),
+            config=self.config.ppo,
             device=engine.device,
         )
 

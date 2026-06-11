@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from llm.inference import generate
+from llm.generation import generate
 from llm.runtime import ModelFactory
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 

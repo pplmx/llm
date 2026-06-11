@@ -9,7 +9,7 @@ for memory-efficient and fast text generation.
 import torch
 
 from llm.core.kv_cache import KVCache
-from llm.inference import generate
+from llm.generation import generate
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 

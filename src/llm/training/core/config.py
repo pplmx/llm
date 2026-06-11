@@ -134,7 +134,7 @@ class DataConfig(BaseModel):
     )
 
 
-class PPOSettings(BaseModel):
+class PPOConfig(BaseModel):
     """PPO hyperparameters for RLHF training."""
 
     clip_epsilon: float = 0.2
@@ -160,6 +160,10 @@ class PPOSettings(BaseModel):
     ref_model_update_freq: int = 0
 
 
+# Backward-compatible alias for YAML configs and external imports.
+PPOSettings = PPOConfig
+
+
 class RLHFSettings(BaseModel):
     """RLHF-specific paths and options."""
 
@@ -176,7 +180,7 @@ class Config(BaseSettings):
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
     checkpoint: CheckpointConfig = Field(default_factory=CheckpointConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
-    ppo: PPOSettings = Field(default_factory=PPOSettings)
+    ppo: PPOConfig = Field(default_factory=PPOConfig)
     rlhf: RLHFSettings = Field(default_factory=RLHFSettings)
 
     model_config = SettingsConfigDict(

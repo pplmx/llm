@@ -151,16 +151,23 @@ class BatchedGenerationBackend(GenerationBackend):
         return self.engine.batch_generate_requests(requests)
 
 
-def get_generation_backend(
-    name: str = "eager",
-    *,
-    engine: ContinuousBatchingEngine | None = None,
-) -> GenerationBackend:
-    """Resolve a generation backend by name."""
-    if name == "eager":
-        return EagerGenerationBackend()
-    if name == "batched":
-        if engine is None:
-            raise ValueError("batched generation backend requires a ContinuousBatchingEngine instance")
-        return BatchedGenerationBackend(engine)
-    raise ValueError(f"Unknown generation backend '{name}'. Available: batched, eager")
+# Re-export registry helpers for backward compatibility.
+from llm.generation.registry import (  # noqa: E402
+    BACKEND_REGISTRY,
+    build_batched_backend,
+    build_eager_backend,
+    ensure_backends_registered,
+    get_generation_backend,
+)
+
+__all__ = [
+    "BACKEND_REGISTRY",
+    "BatchedGenerationBackend",
+    "EagerGenerationBackend",
+    "GenerationBackend",
+    "GenerationConfig",
+    "build_batched_backend",
+    "build_eager_backend",
+    "ensure_backends_registered",
+    "get_generation_backend",
+]

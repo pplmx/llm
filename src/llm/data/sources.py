@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+from llm.runtime.plugins import load_entry_point_registry
 from llm.runtime.registry import Registry
 
 TextSourceBuilder = Callable[[Any], "TextSource"]
@@ -128,6 +129,7 @@ def ensure_sources_registered() -> None:
 
     SOURCE_REGISTRY.register("local", _build_local_source)
     SOURCE_REGISTRY.register("hf", _build_hf_source)
+    load_entry_point_registry("llm.data_sources", SOURCE_REGISTRY)
     _sources_registered = True
 
 

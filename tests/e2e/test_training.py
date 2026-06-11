@@ -7,7 +7,7 @@ Uses core functions from llm.utils.e2e module.
 
 import pytest
 
-from llm.inference import generate, stream_generate
+from llm.generation import generate, stream_generate
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.utils.e2e import E2EConfig, run_e2e_pipeline
