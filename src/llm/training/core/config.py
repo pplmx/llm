@@ -21,7 +21,7 @@ class ModelConfig(BaseModel):
     num_experts: int = Field(0, description="Number of experts when mlp_impl='moe'")
     top_k: int = Field(0, description="Top-k experts when mlp_impl='moe'")
 
-    # Registry keys
+    # Registry keys (attn_impl='mla' does not support KV cache / generation)
     attn_impl: str = "mha"
     mlp_impl: str = "mlp"
     norm_impl: str = "layer_norm"  # Resolved via NORM_REGISTRY in ModelFactory

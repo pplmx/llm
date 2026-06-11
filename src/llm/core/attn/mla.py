@@ -3,13 +3,13 @@ import math
 import torch
 from torch import Tensor, nn
 
-from llm.core.registry import ATTENTION_REGISTRY
+from llm.core.registry import register_attention
 from llm.utils.common import make_factory_kwargs
 
 from .sdpa import sdpa
 
 
-@ATTENTION_REGISTRY.register("mla")
+@register_attention("mla")
 class MultiLatentAttention(nn.Module):
     """
     Multi-Latent Attention mechanism implementation.

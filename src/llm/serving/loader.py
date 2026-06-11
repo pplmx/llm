@@ -10,7 +10,7 @@ from typing import Any
 import torch
 
 from llm.models.decoder import DecoderModel
-from llm.runtime import ModelFactory
+from llm.runtime.model_factory import ModelFactory
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.serving.config import ServingConfig
 from llm.training.core.config import ModelConfig
@@ -136,11 +136,7 @@ def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
 
 def _create_dummy_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
     """Fallback demo model when no checkpoint is configured."""
-    import string
-
-    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-
-    tokenizer = SimpleCharacterTokenizer([string.printable])
+    tokenizer = TokenizerFactory.from_printable_corpus()
     model = ModelFactory.build(
         "decoder",
         vocab_size=tokenizer.vocab_size,

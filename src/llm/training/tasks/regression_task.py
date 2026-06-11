@@ -3,26 +3,15 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
-from llm.core.mlp import MLP
+from llm.runtime.model_factory import ModelFactory
 from llm.training.tasks.base_task import TrainingTask
 
 
 class RegressionTask(TrainingTask):
-    """A concrete task for the SimpleMLP regression problem."""
+    """Synthetic regression demo task using the registered regression_mlp builder."""
 
     def build_model(self) -> nn.Module:
-        model_config = self.config.model
-        # Assuming MLP is a generic block. If input/output features are different
-        # from hidden_size for the regression task, additional layers or a
-        # different MLP structure might be needed.
-        return MLP(
-            hidden_size=model_config.hidden_size,
-            intermediate_size=model_config.intermediate_size,
-            dropout_p=model_config.dropout,
-            use_glu=getattr(model_config, "use_glu", False),
-            # Other MLP params like activation, norm_type, etc., will use defaults
-            # as they are not specified in ModelConfig.
-        )
+        return ModelFactory.from_config(self.config.model, model_type="regression_mlp")
 
     def build_optimizer(self, model: nn.Module) -> optim.Optimizer:
         return optim.AdamW(

@@ -144,7 +144,7 @@
 - [x] **评估框架**: 建立标准化的评估流程, 支持训练时周期性评估和推理批量评估
     - [x] `BaseMetric` / `BaseTask` 抽象基类
     - [x] `LMTask` / `InferTask` 任务实现
-    - [x] `Evaluator` / `EvaluationRunner` 运行器
+    - [x] `EvaluationRunner` 统一评估运行器
     - [x] `EvaluationCallback` 训练集成
 - [x] **lm-eval 集成**: 支持 MMLU, ARC, BoolQ, HumanEval 等标准基准
 

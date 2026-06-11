@@ -65,6 +65,7 @@ docs = [
 
 [project.entry-points."llm.models"]
 decoder = "llm.runtime.model_factory:build_decoder"
+regression_mlp = "llm.runtime.model_factory:build_regression_mlp"
 
 [project.entry-points."llm.generation_backends"]
 eager = "llm.generation.registry:build_eager_backend"

@@ -3,11 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from llm.core.mlp import MLP  # Reusing the MLP for experts
-from llm.core.registry import MLP_REGISTRY
+from llm.core.registry import register_mlp
 from llm.utils.common import make_factory_kwargs
 
 
-@MLP_REGISTRY.register("moe")
+@register_mlp("moe")
 class MoE(nn.Module):
     """
     Mixture of Experts (MoE) Layer.

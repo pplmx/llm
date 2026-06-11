@@ -140,3 +140,17 @@ def test_engine_prefix_cache_reuses_kv(tiny_model, mock_tokenizer):
     seq2 = engine.scheduler.get_sequence("req-b")
     assert seq2 is not None
     assert len(seq2.generated_ids) == 1
+
+
+def test_engine_paged_attention_sidecar(tiny_model, mock_tokenizer):
+    tiny_model.to("cpu")
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device="cpu",
+        use_paged_attention=True,
+        enable_prefix_cache=True,
+    )
+    assert engine.paged_kv_cache is not None
+    assert engine.prefix_cache is not None

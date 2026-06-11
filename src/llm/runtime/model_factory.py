@@ -65,6 +65,25 @@ def build_decoder(
     )
 
 
+def build_regression_mlp(
+    *,
+    hidden_size: int,
+    intermediate_size: int | None = None,
+    dropout_p: float = 0.1,
+    use_glu: bool = False,
+    **_: Any,
+) -> nn.Module:
+    """Construct a standalone MLP for the synthetic regression demo task."""
+    from llm.core.mlp import MLP
+
+    return MLP(
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        dropout_p=dropout_p,
+        use_glu=use_glu,
+    )
+
+
 def decoder_kwargs_from_config(config: ModelConfig, **overrides: Any) -> dict[str, Any]:
     """Map a ModelConfig into DecoderModel constructor kwargs."""
     kwargs: dict[str, Any] = {
@@ -94,7 +113,16 @@ class ModelFactory:
 
     @staticmethod
     def from_config(config: ModelConfig, *, model_type: str = "decoder", **overrides: Any) -> nn.Module:
-        kwargs = decoder_kwargs_from_config(config, **overrides)
+        if model_type == "decoder":
+            kwargs = decoder_kwargs_from_config(config, **overrides)
+        else:
+            kwargs = {
+                "hidden_size": config.hidden_size,
+                "intermediate_size": config.intermediate_size,
+                "dropout_p": config.dropout,
+                "use_glu": config.use_glu,
+            }
+            kwargs.update(overrides)
         return ModelFactory.build(model_type, **kwargs)
 
     @staticmethod

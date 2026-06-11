@@ -94,24 +94,19 @@ class BaseTask(ABC):
 - Provides standardized interface
 - Supports: MMLU, ARC, BoolQ, HumanEval, MBPP
 
-### 4. Evaluator
+### 4. EvaluationRunner (unified)
 
-**Evaluator** (evaluator.py):
+**EvaluationRunner** (`evaluation/runner.py`) replaces the former standalone `Evaluator`:
 
 ```python
-class Evaluator:
-    def __init__(self, task: BaseTask):
-        self.task = task
-
-    def evaluate(self, model) -> dict:
-        # 1. Get predictions
-        # 2. Compute all metrics
+class EvaluationRunner:
+    def evaluate(self, model, task: BaseTask) -> dict:
+        # 1. Get predictions via task.predict()
+        # 2. Compute all metrics on task.metrics
         # 3. Return aggregated results
 ```
 
-### 5. Runner
-
-**EvaluationRunner** (runner.py):
+### 5. Training / Inference Hooks
 
 **Training Mode**:
 
@@ -135,8 +130,8 @@ evaluation:
   eval_interval: 1000  # steps
   eval_batch_size: 8
 
-# Evaluator registered as callback
-engine = TrainingEngine(..., evaluators=[evaluator])
+# EvaluationRunner registered as callback
+engine = TrainingEngine(..., eval_runner=runner)
 ```
 
 ### Inference Integration
@@ -200,9 +195,9 @@ runner.save_report(results, format="markdown")
 
 1. Base classes (BaseMetric, BaseTask)
 2. Core metrics (Perplexity, Accuracy, F1)
-3. LMTask + Evaluator (training eval)
+3. LMTask + EvaluationRunner (training eval)
 4. Generation metrics (ROUGE, BLEU)
-5. InferTask + Runner (inference eval)
+5. Benchmark tasks + Runner (inference eval)
 6. lm-eval integration (benchmarks)
 7. Report generation
 

@@ -31,3 +31,19 @@ def test_unknown_model_type_raises():
 def test_duplicate_registration_raises():
     with pytest.raises(ValueError, match="already registered"):
         MODEL_REGISTRY.register("decoder", lambda **kwargs: torch.nn.Linear(1, 1))
+
+
+def test_regression_mlp_is_registered():
+    from llm.runtime.bootstrap import ensure_builtins_registered
+
+    ensure_builtins_registered()
+    assert "regression_mlp" in MODEL_REGISTRY.names()
+
+
+def test_from_config_builds_regression_mlp(tiny_config):
+    from llm.core.mlp import MLP
+    from llm.runtime.bootstrap import ensure_builtins_registered
+
+    ensure_builtins_registered()
+    model = ModelFactory.from_config(tiny_config.model, model_type="regression_mlp")
+    assert isinstance(model, MLP)

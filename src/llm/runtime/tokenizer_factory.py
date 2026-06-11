@@ -42,8 +42,6 @@ class TokenizerFactory:
 
     @staticmethod
     def from_serving_config(config: Any) -> Any:
-        import string
-
         if config.tokenizer_path:
             path = Path(config.tokenizer_path)
             if config.tokenizer_type == "hf":
@@ -55,7 +53,23 @@ class TokenizerFactory:
         if getattr(config, "model_path", None):
             raise ValueError("tokenizer_path is required when model_path is set for serving")
 
+        return TokenizerFactory.from_printable_corpus()
+
+    @staticmethod
+    def from_printable_corpus() -> SimpleCharacterTokenizer:
+        import string
+
         return SimpleCharacterTokenizer([string.printable])
+
+    @staticmethod
+    def from_default_test_corpus() -> SimpleCharacterTokenizer:
+        corpus = [
+            "hello world",
+            "the quick brown fox",
+            "testing one two three",
+            "abcdefghijklmnopqrstuvwxyz",
+        ]
+        return SimpleCharacterTokenizer(corpus)
 
     @staticmethod
     def from_dataset_text(dataset_path: str | Path) -> SimpleCharacterTokenizer:
