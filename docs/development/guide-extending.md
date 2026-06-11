@@ -146,17 +146,17 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
     class ClassificationTask(TrainingTask):
         def build_model(self) -> nn.Module:
             # 示例: 根据配置构建模型
-            if self.config.model.use_moe:
-                # 如果配置中启用了 MoE, 则构建一个带有 MoE 的 DecoderModel
+            if self.config.model.mlp_impl == "moe":
+                # If MoE is configured, build a DecoderModel with MoE layers
                 return DecoderModel(
-                    vocab_size=self.config.model.vocab_size, # 假设 vocab_size 在 ModelConfig 中
+                    vocab_size=self.config.model.vocab_size, # assume vocab_size in ModelConfig
                     hidden_size=self.config.model.hidden_size,
                     num_layers=self.config.model.num_layers,
                     num_heads=self.config.model.num_heads,
-                    use_moe=self.config.model.use_moe,
+                    mlp_impl="moe",
                     num_experts=self.config.model.num_experts,
                     top_k=self.config.model.top_k,
-                    # ... 其他参数
+                    # ... other params
                 )
             else:
                 # 否则, 构建一个标准的 DecoderModel
@@ -214,7 +214,7 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
 
 **第1步: 在 `Config` 中配置 MoE 参数**
 
-在 `core/config.py` 的 `ModelConfig` 中, 设置 `use_moe` 为 `True`, 并指定 `num_experts` 和 `top_k`.
+在 `core/config.py` 的 `ModelConfig` 中, 设置 `mlp_impl` 为 `"moe"`, 并指定 `num_experts` 和 `top_k`.
 
 ```python
 # in config.yaml (或通过命令行参数)
@@ -222,7 +222,7 @@ model:
   hidden_size: 512
   num_layers: 2
   # ... 其他模型参数
-  use_moe: true       # 启用 MoE
+  mlp_impl: moe      # Enable MoE
   num_experts: 8      # 专家总数
   top_k: 2            # 每个 token 激活的专家数量
 ```

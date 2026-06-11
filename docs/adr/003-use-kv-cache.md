@@ -44,4 +44,4 @@ return self.k_cache[:, :, :pos+seq_len, :]
 - 需要预先知道 `max_seq_len`
 - 可能分配超过实际需要的内存
 
-**兼容性**: 保留 `past_key_value` 元组格式作为向后兼容选项。
+**兼容性**: 推理路径统一使用 ``KVCache`` 对象列表 (``kv_caches``); 不再支持 ``past_key_value`` tuple 格式.

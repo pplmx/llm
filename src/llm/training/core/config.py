@@ -24,7 +24,7 @@ class ModelConfig(BaseModel):
     # Registry keys
     attn_impl: str = "mha"
     mlp_impl: str = "mlp"
-    norm_impl: str = "layer_norm"  # Placeholder, currently not strictly used in config-to-model mapping yet except via kwargs or manual pass
+    norm_impl: str = "layer_norm"  # Resolved via NORM_REGISTRY in ModelFactory
 
     @model_validator(mode="after")
     def check_consistency(self) -> "ModelConfig":

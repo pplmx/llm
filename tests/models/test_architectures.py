@@ -41,7 +41,9 @@ def test_rmsnorm_decoder():
     # Use RMSNorm in DecoderModel
     vocab_size = 100
     hidden_size = 64
-    model = DecoderModel(vocab_size=vocab_size, hidden_size=hidden_size, num_layers=1, num_heads=4, norm_type=RMSNorm)
+    model = DecoderModel(
+        vocab_size=vocab_size, hidden_size=hidden_size, num_layers=1, num_heads=4, norm_impl="rms_norm"
+    )
     x = torch.randint(0, vocab_size, (2, 10))
     output = model(x)
     assert output.shape == (2, 10, vocab_size)
@@ -53,17 +55,20 @@ def test_rmsnorm_decoder():
 
 @pytest.mark.slow
 def test_gqa_kv_cache():
+    from llm.core.kv_cache import KVCache
+
     hidden_size = 64
     num_heads = 4
-    num_kv_heads = 1  # MQA style GQA
+    num_kv_heads = 1
+    head_dim = hidden_size // num_heads
     mha = MultiHeadAttention(hidden_size=hidden_size, num_heads=num_heads, num_kv_heads=num_kv_heads)
 
+    kv_cache = KVCache(max_batch_size=1, max_seq_len=16, num_kv_heads=num_kv_heads, head_dim=head_dim)
     x_initial = torch.randn(1, 5, hidden_size)
-    _output_initial, kv_cache = mha(x_initial, use_cache=True)
+    _output_initial, _ = mha(x_initial, kv_cache=kv_cache, use_cache=True)
 
     x_next = torch.randn(1, 1, hidden_size)
-    output_next, _ = mha(x_next, past_key_value=kv_cache, use_cache=True)
+    output_next, _ = mha(x_next, kv_cache=kv_cache, use_cache=True)
 
     assert output_next.shape == (1, 1, hidden_size)
-    # The KV cache keys/values should have num_kv_heads
-    assert kv_cache[0].shape == (1, num_kv_heads, 5, hidden_size // num_heads)
+    assert kv_cache.seq_len == 6

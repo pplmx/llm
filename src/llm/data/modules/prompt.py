@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from torch.utils.data import DataLoader, DistributedSampler, random_split
-
 from llm.data.base import MapDataModule
 from llm.data.datasets.prompt import PromptDataset
+from llm.data.modules.map_base import TokenizedMapDataModule
 
 
 def collate_prompts(batch: list[dict[str, str]]) -> dict[str, list[str]]:
@@ -30,50 +29,43 @@ class PromptDataModule(MapDataModule):
         if not data_config.dataset_path:
             raise ValueError("data.dataset_path is required for PPO prompt data.")
 
-        self.train_dataset = PromptDataset(data_config.dataset_path)
-
-        val_path = data_config.val_dataset_path
-        if val_path:
-            self.val_dataset = PromptDataset(val_path)
+        full_dataset = PromptDataset(data_config.dataset_path)
+        if data_config.val_dataset_path:
+            self.train_dataset = full_dataset
+            self.val_dataset = PromptDataset(data_config.val_dataset_path)
         else:
-            train_size = int(0.9 * len(self.train_dataset))
-            val_size = len(self.train_dataset) - train_size
-            if val_size > 0:
-                self.train_dataset, val_dataset = random_split(self.train_dataset, [train_size, val_size])
-                self.val_dataset = val_dataset
-            else:
-                self.val_dataset = None
+            self.train_dataset, self.val_dataset = TokenizedMapDataModule.split_train_val(full_dataset)
 
-    def train_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader, DistributedSampler | None]:
+    def train_dataloader(self, rank: int, world_size: int):
         if self.train_dataset is None:
             raise ValueError("Train dataset not initialized.")
+
+        from torch.utils.data import DistributedSampler
 
         sampler = DistributedSampler(
             self.train_dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=True
         )
-        loader = DataLoader(
+        loader = TokenizedMapDataModule.build_dataloader(
+            self,
             self.train_dataset,
-            batch_size=self.config.training.batch_size,
-            sampler=sampler,
+            sampler,
             collate_fn=collate_prompts,
-            num_workers=self.config.optimization.num_workers,
-            pin_memory=self.config.optimization.pin_memory,
         )
         return loader, sampler
 
-    def val_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader | None, DistributedSampler | None]:
+    def val_dataloader(self, rank: int, world_size: int):
         if self.val_dataset is None:
             return None, None
+
+        from torch.utils.data import DistributedSampler
 
         sampler = DistributedSampler(
             self.val_dataset, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False
         )
-        loader = DataLoader(
+        loader = TokenizedMapDataModule.build_dataloader(
+            self,
             self.val_dataset,
-            batch_size=self.config.training.batch_size,
-            sampler=sampler,
+            sampler,
             collate_fn=collate_prompts,
-            num_workers=self.config.optimization.num_workers,
-            pin_memory=self.config.optimization.pin_memory,
         )
         return loader, sampler

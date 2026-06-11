@@ -48,17 +48,14 @@ def test_inference_batch_generation(model_and_tokenizer):
     assert logits.shape == (2, 10, tokenizer.vocab_size)
 
     # Cache batch check
-    past_key_values = None
-    logits, past_key_values = model(input_ids, use_cache=True)
+    from llm.core.kv_cache import create_decoder_kv_caches
 
-    # Check return type (logits, kv_caches)
-    assert isinstance(past_key_values, list)
-    assert len(past_key_values) == len(model.transformer_blocks)
+    kv_caches = create_decoder_kv_caches(model, batch_size=2)
+    logits, kv_caches = model(input_ids, kv_caches=kv_caches, use_cache=True)
 
-    # Assert model.transformer_blocks access
-    assert len(past_key_values) == len(model.transformer_blocks)
+    assert isinstance(kv_caches, list)
+    assert len(kv_caches) == len(model.transformer_blocks)
 
-    # Update step
     next_token = torch.randint(0, tokenizer.vocab_size, (2, 1))
-    logits_next, _past_key_values_next = model(next_token, past_key_values=past_key_values, use_cache=True)
+    logits_next, kv_caches = model(next_token, kv_caches=kv_caches, use_cache=True)
     assert logits_next.shape == (2, 1, tokenizer.vocab_size)

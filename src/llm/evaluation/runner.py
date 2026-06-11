@@ -1,10 +1,14 @@
 import json
 from pathlib import Path
 
+import torch
+
 from llm.evaluation.eval_tasks.base import BaseTask
 
 
 class EvaluationRunner:
+    """Run evaluation tasks and persist reports."""
+
     def __init__(self, task: BaseTask, output_dir: str = "results"):
         self.task = task
         self.output_dir = Path(output_dir)
@@ -12,7 +16,6 @@ class EvaluationRunner:
 
     def run(self, model, split: str = "test") -> dict:
         inputs, references = self.task.prepare_data(split)
-
         predictions = self.task.predict(model, inputs)
 
         results = {"num_samples": len(inputs)}
@@ -20,6 +23,19 @@ class EvaluationRunner:
             metric_result = metric.compute(predictions, references)
             results.update(metric_result)
 
+        return results
+
+    def evaluate(self, model, split: str = "val") -> dict:
+        """Evaluate on a split, coercing tensor inputs when needed."""
+        inputs, references = self.task.prepare_data(split)
+        tensor_inputs = [torch.as_tensor(x, dtype=torch.long) for x in inputs]
+        predictions = self.task.predict(model, tensor_inputs)
+
+        refs = torch.stack([torch.as_tensor(x, dtype=torch.long) for x in references])
+        results = {}
+        for metric in self.task.metrics:
+            result = metric.compute(predictions, refs)
+            results.update(result)
         return results
 
     def save_report(self, results: dict, format: str = "json"):
@@ -35,7 +51,3 @@ class EvaluationRunner:
 
             with output_file.open("w") as f:
                 f.write("\n".join(lines))
-
-
-class InferenceEvaluationRunner(EvaluationRunner):
-    pass

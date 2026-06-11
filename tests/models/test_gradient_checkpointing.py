@@ -8,6 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from llm.core.kv_cache import create_decoder_kv_caches
 from llm.models.decoder import DecoderModel
 
 
@@ -90,7 +91,8 @@ class TestGradientCheckpointing:
         model.disable_gradient_checkpointing()
 
         input_ids = torch.randint(0, small_model_config["vocab_size"], (2, 8), device=device)
-        logits, kv_cache = model(input_ids, use_cache=True)
+        kv_caches = create_decoder_kv_caches(model, batch_size=2)
+        logits, kv_cache = model(input_ids, use_cache=True, kv_caches=kv_caches)
 
         assert logits.shape == (2, 8, small_model_config["vocab_size"])
         assert len(kv_cache) == small_model_config["num_layers"]

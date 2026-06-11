@@ -7,6 +7,8 @@ during token generation, significantly improving inference performance.
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 from torch import Tensor
 
@@ -197,6 +199,24 @@ class KVCache:
             List of KVCache objects, one for each layer.
         """
         return [cls(max_batch_size, max_seq_len, num_kv_heads, head_dim, device, dtype) for _ in range(num_layers)]
+
+
+def create_decoder_kv_caches(model: Any, batch_size: int) -> list[KVCache]:
+    """Create per-layer KV caches sized for a DecoderModel."""
+    block = model.transformer_blocks[0]
+    num_kv_heads = block.self_attn.num_kv_heads
+    head_dim = block.self_attn.head_dim
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+    return KVCache.from_model_config(
+        max_batch_size=batch_size,
+        max_seq_len=model.max_seq_len,
+        num_layers=len(model.transformer_blocks),
+        num_kv_heads=num_kv_heads,
+        head_dim=head_dim,
+        device=device,
+        dtype=dtype,
+    )
 
 
 def reset_all_caches(caches: list[KVCache]) -> None:
