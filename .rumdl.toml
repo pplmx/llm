@@ -1,7 +1,16 @@
 [global]
 disable = ["MD029", "MD034", "MD036", "MD059", "MD033", "MD025"]
 respect_gitignore = true
-exclude = ["themes"]
+exclude = [
+    ".planning",
+    "docs/superpowers",
+    "docs/infographic",
+    "CLAUDE.md",
+    "AGENTS.md",
+]
+
+[MD004]
+style = "dash"
 
 [MD007]
 indent = 4
@@ -18,7 +27,9 @@ siblings-only = true
 [MD026]
 punctuation = ".,;:!。，；：！"
 
+[MD046]
+style = "fenced"
+
 [MD060]
 enabled = true
 style = "aligned"
-
