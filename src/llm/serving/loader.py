@@ -11,6 +11,7 @@ import torch
 
 from llm.models.decoder import DecoderModel
 from llm.runtime import ModelFactory
+from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.serving.config import ServingConfig
 from llm.training.core.config import ModelConfig
 
@@ -116,21 +117,7 @@ def _build_decoder(
 
 def load_tokenizer(config: ServingConfig) -> Any:
     """Load tokenizer from config or fall back to a printable character tokenizer."""
-    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-    from llm.tokenization.tokenizer import HFTokenizer
-
-    if config.tokenizer_path:
-        path = Path(config.tokenizer_path)
-        if config.tokenizer_type == "hf":
-            return HFTokenizer.from_pretrained(config.tokenizer_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Tokenizer file not found: {path}")
-        return torch.load(path, map_location="cpu", weights_only=False)
-
-    if config.model_path:
-        raise ValueError("tokenizer_path is required when model_path is set for serving")
-
-    return SimpleCharacterTokenizer([__import__("string").printable])
+    return TokenizerFactory.from_serving_config(config)
 
 
 def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:

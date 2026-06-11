@@ -1,6 +1,7 @@
 """DataModules that wire datasets into the training engine."""
 
 from llm.data.modules.dpo import DPODataModule
+from llm.data.modules.map_base import TokenizedMapDataModule
 from llm.data.modules.prompt import PromptDataModule
 from llm.data.modules.reward import RewardDataModule
 from llm.data.modules.sft import SFTDataModule
@@ -16,4 +17,5 @@ __all__ = [
     "StreamingTextDataModule",
     "SyntheticDataModule",
     "TextDataModule",
+    "TokenizedMapDataModule",
 ]

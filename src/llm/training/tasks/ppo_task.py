@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -12,8 +11,8 @@ import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LRScheduler
 
-from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
+from llm.runtime.tokenizer_factory import TokenizerFactory
+from llm.tokenization.tokenizer import BaseTokenizer
 from llm.training.rlhf.config import PPOConfig
 from llm.training.rlhf.ppo_trainer import PPOTrainer
 from llm.training.tasks.base_task import TrainingTask
@@ -54,16 +53,7 @@ class PPOTask(TrainingTask):
         raise RuntimeError("PPOTask uses run_training() instead of validation_step().")
 
     def _load_tokenizer(self) -> BaseTokenizer:
-        data_config = self.config.data
-        if data_config.tokenizer_type == "hf":
-            if not data_config.tokenizer_path:
-                raise ValueError("tokenizer_path must be specified for HF tokenizer.")
-            return HFTokenizer.from_pretrained(data_config.tokenizer_path)
-
-        if data_config.tokenizer_path and Path(data_config.tokenizer_path).exists():
-            return torch.load(data_config.tokenizer_path, weights_only=False)
-
-        return SimpleCharacterTokenizer(corpus=["<PAD>", "<EOS>", "<BOS>"])
+        return TokenizerFactory.from_data_config(self.config.data)
 
     def _unwrap_model(self, model: nn.Module) -> nn.Module:
         return model.module if isinstance(model, DDP) else model

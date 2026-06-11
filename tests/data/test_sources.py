@@ -2,7 +2,7 @@
 
 import pytest
 
-from llm.data.sources import LocalLineTextSource, build_text_source
+from llm.data.sources import SOURCE_REGISTRY, LocalLineTextSource, build_text_source
 from llm.training.core.config import Config
 
 
@@ -91,6 +91,11 @@ def test_build_text_source_hf_requires_dataset_name():
 
     with pytest.raises(ValueError, match="dataset_name"):
         build_text_source(config.data)
+
+
+def test_source_registry_contains_builtin_sources():
+    assert "local" in SOURCE_REGISTRY.names()
+    assert "hf" in SOURCE_REGISTRY.names()
 
 
 def test_hf_stream_text_source_class():
