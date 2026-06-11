@@ -1,5 +1,5 @@
 import abc
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
@@ -7,13 +7,14 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.data.base import BaseDataModule
+from llm.runtime.checkpoint import CheckpointContributor
 from llm.training.core.config import Config
 
 if TYPE_CHECKING:
     from llm.training.core.engine import TrainingEngine
 
 
-class TrainingTask(abc.ABC):
+class TrainingTask(abc.ABC, CheckpointContributor):
     """
     An abstract base class for defining a training task.
 
@@ -31,8 +32,18 @@ class TrainingTask(abc.ABC):
     def uses_standard_training_loop(self) -> bool:
         return self.uses_standard_loop
 
-    def prepare_training(self, engine: "TrainingEngine") -> None:  # noqa: B027
+    def prepare_training(self, engine: "TrainingEngine") -> None:
         """Hook for custom-loop tasks after the model is on device."""
+
+    def get_resume_optimizer(self) -> optim.Optimizer | None:
+        """Return the optimizer used when resuming a custom training loop."""
+        return None
+
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        return None
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        pass
 
     def run_training(self, engine: "TrainingEngine") -> None:
         """Execute a non-standard training loop."""

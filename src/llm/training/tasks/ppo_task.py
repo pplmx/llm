@@ -11,6 +11,7 @@ import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import LRScheduler
 
+from llm.runtime.checkpoint import collect_extra_state
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.tokenizer import BaseTokenizer
 from llm.training.rlhf.config import PPOConfig
@@ -54,6 +55,22 @@ class PPOTask(TrainingTask):
 
     def _load_tokenizer(self) -> BaseTokenizer:
         return TokenizerFactory.from_data_config(self.config.data)
+
+    def get_resume_optimizer(self) -> optim.Optimizer | None:
+        if self.ppo_trainer is None:
+            return None
+        return self.ppo_trainer.optimizer
+
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        if self.ppo_trainer is None:
+            return None
+        ppo_state = self.ppo_trainer.get_checkpoint_state()
+        return {"ppo": ppo_state} if ppo_state else None
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        if self.ppo_trainer is None or not state:
+            return
+        self.ppo_trainer.load_checkpoint_state(state.get("ppo"))
 
     def _unwrap_model(self, model: nn.Module) -> nn.Module:
         return model.module if isinstance(model, DDP) else model
@@ -148,6 +165,8 @@ class PPOTask(TrainingTask):
                     None,
                     None,
                     avg_loss,
+                    extra_state=collect_extra_state(self, engine.data_module),
+                    model_config=engine.config.model.model_dump(),
                 )
 
         if engine.rank == 0:

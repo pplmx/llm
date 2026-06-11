@@ -109,6 +109,34 @@ class PPOTrainer:
         self.global_step = 0
         self.kl_ctl = config.kl_coef
 
+    @staticmethod
+    def _snapshot_state(state: Any) -> Any:
+        """Deep-copy checkpoint payloads so later in-place updates do not alias saved tensors."""
+        if isinstance(state, torch.Tensor):
+            return state.detach().cpu().clone()
+        if isinstance(state, dict):
+            return {key: PPOTrainer._snapshot_state(value) for key, value in state.items()}
+        if isinstance(state, list):
+            return [PPOTrainer._snapshot_state(value) for value in state]
+        return state
+
+    def get_checkpoint_state(self) -> dict[str, Any]:
+        state: dict[str, Any] = {"global_step": self.global_step}
+        if self.value_model is not None:
+            state["value_model"] = self._snapshot_state(self.value_model.state_dict())
+        if self.value_optimizer is not None:
+            state["value_optimizer"] = self._snapshot_state(self.value_optimizer.state_dict())
+        return state
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        if not state:
+            return
+        self.global_step = int(state.get("global_step", self.global_step))
+        if self.value_model is not None and "value_model" in state:
+            self.value_model.load_state_dict(state["value_model"])
+        if self.value_optimizer is not None and "value_optimizer" in state:
+            self.value_optimizer.load_state_dict(state["value_optimizer"])
+
     def _create_ref_model(self) -> nn.Module:
         """Create a frozen copy of the policy model."""
         import copy

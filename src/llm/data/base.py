@@ -3,6 +3,8 @@ from typing import Any
 
 from torch.utils.data import DataLoader, DistributedSampler
 
+from llm.runtime.checkpoint import CheckpointContributor
+
 
 class BaseDataModule(abc.ABC):
     """
@@ -44,7 +46,7 @@ class MapDataModule(BaseDataModule):
     is_streaming = False
 
 
-class StreamDataModule(BaseDataModule):
+class StreamDataModule(BaseDataModule, CheckpointContributor):
     """Iterable dataset module for unbounded / large corpora."""
 
     is_streaming = True
