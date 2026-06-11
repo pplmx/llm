@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from llm.inference import generate
-from llm.models.decoder import DecoderModel
+from llm.runtime import ModelFactory
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 
@@ -182,7 +182,8 @@ def run_e2e_pipeline(
         corpus = ["hello world", "the quick brown fox", "testing one two three", "abcdefghijklmnopqrstuvwxyz"]
         tokenizer = SimpleCharacterTokenizer(corpus)
 
-    model = DecoderModel(
+    model = ModelFactory.build(
+        "decoder",
         vocab_size=tokenizer.vocab_size,
         hidden_size=config.hidden_size,
         num_layers=config.num_layers,

@@ -10,6 +10,7 @@ from typing import Any
 import torch
 
 from llm.models.decoder import DecoderModel
+from llm.runtime import ModelFactory
 from llm.serving.config import ServingConfig
 from llm.training.core.config import ModelConfig
 
@@ -77,58 +78,34 @@ def _build_decoder(
 ) -> DecoderModel:
     if model_config is not None:
         cfg = ModelConfig.model_validate(model_config)
-        vocab_size = cfg.vocab_size
-        hidden_size = cfg.hidden_size
-        num_layers = cfg.num_layers
-        num_heads = cfg.num_heads
-        max_seq_len = cfg.max_seq_len
-        num_kv_heads = cfg.num_kv_heads
-        attn_impl = cfg.attn_impl
-        mlp_impl = cfg.mlp_impl
-        use_moe = cfg.use_moe
-        num_experts = cfg.num_experts
-        top_k = cfg.top_k
-        use_glu = cfg.use_glu
-        intermediate_size = cfg.intermediate_size
-        dropout = cfg.dropout
+        model = ModelFactory.from_config(cfg)
     else:
         vocab_size = infer_vocab_size(state_dict)
-        hidden_size = serving_config.hidden_size
         num_layers = infer_num_layers(state_dict) or serving_config.num_layers
-        num_heads = serving_config.num_heads
-        max_seq_len = serving_config.max_seq_len
-        num_kv_heads = serving_config.num_kv_heads
-        attn_impl = serving_config.attn_impl
-        mlp_impl = serving_config.mlp_impl
-        use_moe = serving_config.use_moe
-        num_experts = serving_config.num_experts
-        top_k = serving_config.top_k
-        use_glu = False
-        intermediate_size = None
-        dropout = 0.0
         logger.warning(
             "Checkpoint has no model_config; using ServingConfig architecture with inferred vocab_size=%s",
             vocab_size,
         )
+        model = ModelFactory.build(
+            "decoder",
+            vocab_size=vocab_size,
+            hidden_size=serving_config.hidden_size,
+            num_layers=num_layers,
+            num_heads=serving_config.num_heads,
+            max_seq_len=serving_config.max_seq_len,
+            num_kv_heads=serving_config.num_kv_heads,
+            attn_impl=serving_config.attn_impl,
+            mlp_impl=serving_config.mlp_impl,
+            use_moe=serving_config.use_moe,
+            num_experts=serving_config.num_experts,
+            top_k=serving_config.top_k,
+            use_glu=False,
+            intermediate_size=None,
+            embedding_dropout_p=0.0,
+            attn_dropout_p=0.0,
+            mlp_dropout_p=0.0,
+        )
 
-    model = DecoderModel(
-        vocab_size=vocab_size,
-        hidden_size=hidden_size,
-        num_layers=num_layers,
-        num_heads=num_heads,
-        max_seq_len=max_seq_len,
-        intermediate_size=intermediate_size,
-        embedding_dropout_p=dropout,
-        attn_dropout_p=dropout,
-        mlp_dropout_p=dropout,
-        use_moe=use_moe,
-        num_experts=num_experts,
-        top_k=top_k,
-        num_kv_heads=num_kv_heads,
-        use_glu=use_glu,
-        attn_impl=attn_impl,
-        mlp_impl=mlp_impl,
-    )
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     if missing:
         logger.warning("Missing keys when loading checkpoint: %s", missing[:5])
@@ -178,7 +155,8 @@ def _create_dummy_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderMod
     from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
     tokenizer = SimpleCharacterTokenizer([string.printable])
-    model = DecoderModel(
+    model = ModelFactory.build(
+        "decoder",
         vocab_size=tokenizer.vocab_size,
         hidden_size=config.hidden_size,
         num_layers=config.num_layers,

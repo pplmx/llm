@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
-from llm.models.decoder import DecoderModel
+from llm.runtime import ModelFactory
 from llm.training.tasks.base_task import TrainingTask
 
 
@@ -13,37 +13,7 @@ class LanguageModelingTask(TrainingTask):
     """
 
     def build_model(self) -> nn.Module:
-        model_config = self.config.model
-        # We assume vocab_size is provided in the model_config or derived elsewhere.
-        # For now, let's assume it's in model_config.
-        # If not, it might need to be passed during task initialization.
-        vocab_size = getattr(model_config, "vocab_size", 50257)  # Default GPT-2 vocab size
-
-        return DecoderModel(
-            vocab_size=vocab_size,
-            hidden_size=model_config.hidden_size,
-            num_layers=model_config.num_layers,
-            num_heads=model_config.num_heads if hasattr(model_config, "num_heads") else 8,
-            intermediate_size=model_config.intermediate_size,
-            embedding_dropout_p=model_config.dropout,
-            attn_dropout_p=model_config.dropout,
-            mlp_dropout_p=model_config.dropout,
-            use_moe=model_config.use_moe,
-            num_experts=model_config.num_experts,
-            top_k=model_config.top_k,
-            # New architectural params
-            num_kv_heads=model_config.num_kv_heads,
-            use_glu=model_config.use_glu,
-            norm_type=getattr(
-                model_config, "norm_type", nn.LayerNorm
-            ),  # Still relying on strict type or manual map? Config usually has strings.
-            # Convert string norm_impl to class if we had a registry for norms.
-            # For now DecoderModel accepts type or module. Config has no way to pass type class directly safely from YAML.
-            # We'll ignore norm_impl for now or handle it later.
-            max_seq_len=model_config.max_seq_len,
-            attn_impl=model_config.attn_impl,
-            mlp_impl=model_config.mlp_impl,
-        )
+        return ModelFactory.from_config(self.config.model)
 
     def build_optimizer(self, model: nn.Module) -> optim.Optimizer:
         # Filter parameters that require gradients
