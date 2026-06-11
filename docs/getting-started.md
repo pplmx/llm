@@ -23,10 +23,16 @@ cd llm
 make init
 ```
 
-或者使用 uv：
+或者使用 uv（默认包含 test 依赖组, 可直接 `make test`）:
 
 ```bash
 uv sync
+```
+
+流式预训练等可选能力:
+
+```bash
+uv sync --group streaming
 ```
 
 ---

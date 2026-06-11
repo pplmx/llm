@@ -15,7 +15,10 @@ jobs:
                 uses: actions/checkout@v6
 
             -   name: Set up UV Environment
-                uses: astral-sh/setup-uv@v7
+                uses: astral-sh/setup-uv@v8.2.0
+
+            -   name: Verify lockfile is up to date
+                run: uv lock --check
 
             -   name: Synchronize Dependencies for Linting
                 run: uv sync --quiet
@@ -40,8 +43,11 @@ jobs:
             -   name: Set up UV Environment
                 uses: astral-sh/setup-uv@v8.2.0
 
+            -   name: Verify lockfile is up to date
+                run: uv lock --check
+
             -   name: Synchronize Dependencies
-                run: uv sync
+                run: uv sync --frozen
 
             -   name: Build Project
                 run: uv build

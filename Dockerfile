@@ -1,19 +1,19 @@
 # Base image for building the virtual environment
 FROM python:3.13-bookworm AS builder
 
-ENV PATH="/root/.cargo/bin:$PATH" \
+ENV PATH="/root/.local/bin:$PATH" \
     UV_INDEX_URL="https://mirrors.cernet.edu.cn/pypi/web/simple" \
     PIP_INDEX_URL="https://mirrors.cernet.edu.cn/pypi/web/simple"
 
-# Install uv and tools
+# Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY pyproject.toml uv.lock ./
 
-# Create and install dependencies in the virtual environment
-RUN uv sync
+# Production runtime deps only (exclude optional groups)
+RUN uv sync --frozen --no-group test --no-group docs --no-group streaming
 
 # Separate stage for validation (build and test)
 FROM builder AS validator
@@ -21,7 +21,9 @@ FROM builder AS validator
 WORKDIR /app
 COPY . .
 
-# Run build and test as part of the validation
+# Install test deps (default-groups) for make test
+RUN uv sync --frozen
+
 RUN make build && make test
 
 # Final image for running the application
