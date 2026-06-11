@@ -1,6 +1,5 @@
 """Reward Model DataModule for RLHF."""
 
-
 from torch.utils.data import random_split
 
 from llm.data.datasets.reward import RewardDataset

@@ -44,6 +44,21 @@ def test_duplicate_registration_raises():
         TASK_REGISTRY.register("lm", LanguageModelingTask, TextDataModule)
 
 
+def test_register_with_custom_data_module_factory():
+    from llm.data.modules.synthetic import SyntheticDataModule
+    from llm.training.core.config import Config
+
+    TASK_REGISTRY.register(
+        "_test_custom_factory",
+        LanguageModelingTask,
+        data_module_factory=lambda config: SyntheticDataModule(config),
+        description="custom factory test task",
+    )
+    spec = TASK_REGISTRY.get("_test_custom_factory")
+    data_module = spec.data_module_factory(Config())
+    assert isinstance(data_module, SyntheticDataModule)
+
+
 def test_reward_task_has_optimizer_and_scheduler():
     reward_spec = TASK_REGISTRY.get("reward")
     assert reward_spec.task_cls is RewardTask

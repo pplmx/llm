@@ -1,10 +1,9 @@
 """Tests for TokenizerFactory."""
 
-
 import pytest
 import torch
 
-from llm.runtime.tokenizer_factory import DEFAULT_SIMPLE_CORPUS, TokenizerFactory
+from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.serving.config import ServingConfig
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.core.config import Config

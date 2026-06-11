@@ -1,8 +1,8 @@
 import logging
 import sys
-from enum import StrEnum
 from pathlib import Path
 
+import click
 import torch
 import torch.multiprocessing as mp
 import typer
@@ -17,16 +17,6 @@ from llm.training.tasks import builtin as _task_registry  # noqa: F401 — regis
 
 # --- Typer App ---
 app = typer.Typer(pretty_exceptions_show_locals=False)
-
-
-class TaskName(StrEnum):
-    regression = "regression"
-    lm = "lm"
-    stream_lm = "stream_lm"
-    sft = "sft"
-    dpo = "dpo"
-    reward = "reward"
-    ppo = "ppo"
 
 
 def configure_logging(log_level: str = "INFO"):
@@ -77,7 +67,11 @@ def train_worker(rank: int, world_size: int, config: Config, task_name: str):
 
 @app.command()
 def main(
-    task: TaskName = typer.Option(..., help="Name of the task to run."),
+    task: str = typer.Option(
+        ...,
+        help="Name of the task to run.",
+        click_type=click.Choice(TASK_REGISTRY.names(), case_sensitive=True),
+    ),
     config_path: Path | None = typer.Option(None, help="Path to YAML config file."),
     epochs: int | None = typer.Option(None, help="Override training epochs"),
     batch_size: int | None = typer.Option(None, help="Override batch size"),
@@ -115,7 +109,7 @@ def main(
     distributed_manager = DistributedManager(config.distributed)
     world_size = distributed_manager.get_world_size()
 
-    logger.info(f"Selected Task: {task.value}")
+    logger.info(f"Selected Task: {task}")
     logger.info(f"Determined world_size: {world_size}")
     logger.info(f"CUDA Available: {torch.cuda.is_available()}, Count: {torch.cuda.device_count()}")
 
@@ -125,13 +119,13 @@ def main(
             sys.exit(1)
 
         logger.info(f"🚀 Spawning {world_size} DDP processes...")
-        mp.spawn(train_worker, args=(world_size, config, task.value), nprocs=world_size, join=True)
+        mp.spawn(train_worker, args=(world_size, config, task), nprocs=world_size, join=True)
     elif world_size == 1:
         if torch.cuda.is_available() and torch.cuda.device_count() > 0:
             logger.info("🚀 Single-process GPU training...")
         else:
             logger.info("🚀 Single-process CPU training...")
-        train_worker(0, 1, config, task.value)
+        train_worker(0, 1, config, task)
     else:
         logger.error(f"❌ Invalid world_size ({world_size}).")
         sys.exit(1)

@@ -281,7 +281,8 @@ class CheckpointManager:
             map_location = device
             checkpoint = torch.load(ckp_path, map_location=map_location)
             load_model_state_dict(model, checkpoint["model_state"])
-            optimizer.load_state_dict(checkpoint["optimizer_state"])
+            if optimizer is not None:
+                optimizer.load_state_dict(checkpoint["optimizer_state"])
             if scheduler is not None and checkpoint.get("scheduler_state") is not None:
                 scheduler.load_state_dict(checkpoint["scheduler_state"])
             if scaler is not None and checkpoint.get("scaler_state") is not None:

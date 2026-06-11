@@ -4,6 +4,7 @@ import time
 import torch
 
 from llm.data.base import BaseDataModule
+from llm.runtime.checkpoint import collect_extra_state, load_extra_state
 from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
@@ -95,7 +96,6 @@ class TrainingEngine:
             self.optimizer = None
             self.scheduler = None
             self.criterion = None
-            self.task.prepare_training(self)
 
         # Resolve 'auto' dtype
         self.resolved_amp_dtype = self.config.optimization.amp_dtype
@@ -123,11 +123,33 @@ class TrainingEngine:
             self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(
                 model_to_load, self.optimizer, self.scheduler, self.scaler, self.device
             )
-            if self.checkpoint_manager.loaded_extra_state and hasattr(self.data_module, "load_checkpoint_state"):
-                self.data_module.load_checkpoint_state(self.checkpoint_manager.loaded_extra_state)
+            load_extra_state(
+                self.checkpoint_manager.loaded_extra_state,
+                self.data_module,
+                self.task,
+            )
         else:
             self.start_epoch = 0
             self.best_loss = float("inf")
+            self.task.prepare_training(self)
+            if self.config.checkpoint.resume_from_checkpoint:
+                resume_optimizer = self.task.get_resume_optimizer()
+                if resume_optimizer is None:
+                    raise ValueError(
+                        f"{type(self.task).__name__} must implement get_resume_optimizer() when resuming training."
+                    )
+                self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(
+                    model_to_load,
+                    resume_optimizer,
+                    None,
+                    self.scaler,
+                    self.device,
+                )
+                load_extra_state(
+                    self.checkpoint_manager.loaded_extra_state,
+                    self.data_module,
+                    self.task,
+                )
 
         self.checkpoint_manager.best_loss = self.best_loss
 
@@ -350,9 +372,7 @@ class TrainingEngine:
 
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
-                    extra_state = None
-                    if hasattr(self.data_module, "get_checkpoint_state"):
-                        extra_state = self.data_module.get_checkpoint_state()
+                    extra_state = collect_extra_state(self.data_module, self.task)
                     self.checkpoint_manager.save_checkpoint(
                         epoch,
                         self.model,
