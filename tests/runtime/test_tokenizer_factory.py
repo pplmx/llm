@@ -49,3 +49,17 @@ def test_from_serving_config_default_simple():
     config = ServingConfig()
     tokenizer = TokenizerFactory.from_serving_config(config)
     assert isinstance(tokenizer, SimpleCharacterTokenizer)
+
+
+def test_from_dataset_text_builds_char_vocab(tmp_path):
+    data_file = tmp_path / "corpus.txt"
+    data_file.write_text("cab", encoding="utf-8")
+
+    tokenizer = TokenizerFactory.from_dataset_text(data_file)
+
+    assert isinstance(tokenizer, SimpleCharacterTokenizer)
+    assert tokenizer.encode("cab") == [
+        tokenizer.stoi["c"],
+        tokenizer.stoi["a"],
+        tokenizer.stoi["b"],
+    ]

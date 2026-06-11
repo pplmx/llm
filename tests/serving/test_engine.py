@@ -154,3 +154,33 @@ def test_engine_paged_attention_sidecar(tiny_model, mock_tokenizer):
     )
     assert engine.paged_kv_cache is not None
     assert engine.prefix_cache is not None
+
+
+def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
+    from llm.serving.config import ServingConfig
+
+    tiny_model.to("cpu")
+    config = ServingConfig(
+        max_concurrent_requests=3,
+        max_seq_len=64,
+        enable_prefix_cache=True,
+        max_prefixes=5,
+        use_paged_attention=True,
+        max_blocks=32,
+        block_size=8,
+    )
+
+    engine = ContinuousBatchingEngine.from_serving_config(
+        config,
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+    )
+
+    assert engine.max_batch_size == 3
+    assert engine.max_seq_len == 64
+    assert engine.enable_prefix_cache is True
+    assert engine.prefix_cache is not None
+    assert engine.prefix_cache.max_prefixes == 5
+    assert engine.paged_kv_cache is not None
+    assert engine.paged_kv_cache.num_blocks == 32
+    assert engine.paged_kv_cache.block_size == 8
