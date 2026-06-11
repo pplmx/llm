@@ -32,7 +32,7 @@ class TrainingTask(abc.ABC, CheckpointContributor):
     def uses_standard_training_loop(self) -> bool:
         return self.uses_standard_loop
 
-    def prepare_training(self, engine: "TrainingEngine") -> None:
+    def prepare_training(self, engine: TrainingEngine) -> None:
         """Hook for custom-loop tasks after the model is on device."""
 
     def get_resume_optimizer(self) -> optim.Optimizer | None:
@@ -45,7 +45,7 @@ class TrainingTask(abc.ABC, CheckpointContributor):
     def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
         pass
 
-    def run_training(self, engine: "TrainingEngine") -> None:
+    def run_training(self, engine: TrainingEngine) -> None:
         """Execute a non-standard training loop."""
         raise NotImplementedError(f"{type(self).__name__} must implement run_training().")
 

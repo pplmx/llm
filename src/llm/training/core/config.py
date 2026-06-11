@@ -27,7 +27,7 @@ class ModelConfig(BaseModel):
     norm_impl: str = "layer_norm"  # Resolved via NORM_REGISTRY in ModelFactory
 
     @model_validator(mode="after")
-    def check_consistency(self) -> "ModelConfig":
+    def check_consistency(self) -> ModelConfig:
         if self.intermediate_size is None:
             self.intermediate_size = self.hidden_size * 4
 
@@ -195,7 +195,7 @@ class Config(BaseSettings):
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "Config":
+    def from_yaml(cls, path: str | Path) -> Config:
         """Load configuration from YAML file"""
         path = Path(path)
         if not path.exists():

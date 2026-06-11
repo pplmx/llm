@@ -61,5 +61,5 @@ class HFTokenizer:
         self._tokenizer.save_pretrained(save_directory)
 
     @classmethod
-    def from_pretrained(cls, path: str) -> "HFTokenizer":
+    def from_pretrained(cls, path: str) -> HFTokenizer:
         return cls(path)
