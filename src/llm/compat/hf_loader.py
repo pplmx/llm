@@ -102,8 +102,9 @@ def _load_from_local(
         num_kv_heads=our_config.get("num_kv_heads"),
         intermediate_size=our_config.get("intermediate_size"),
         norm_eps=our_config.get("rms_norm_eps", 1e-5),
-        attn_impl="gqa" if our_config.get("num_kv_heads") else "mha",
-        mlp_impl="swiglu",
+        attn_impl="mha",
+        use_glu=True,
+        mlp_impl="mlp",
         device=device,
         dtype=dtype,
     )

@@ -84,24 +84,18 @@ class TestConfig:
             CheckpointConfig(keep_last_n=0)
 
     def test_model_config_moe_validation(self):
-        # Test invalid num_experts
-        with pytest.raises(ValidationError, match="num_experts must be positive if use_moe is True"):
-            ModelConfig(use_moe=True, num_experts=0, top_k=2)
+        with pytest.raises(ValidationError, match="num_experts must be positive when mlp_impl='moe'"):
+            ModelConfig(mlp_impl="moe", num_experts=0, top_k=2)
 
-        # Test invalid top_k
-        with pytest.raises(
-            ValidationError, match="top_k must be positive and less than or equal to num_experts if use_moe is True"
-        ):
-            ModelConfig(use_moe=True, num_experts=4, top_k=0)
+        with pytest.raises(ValidationError, match="top_k must be positive and <= num_experts when mlp_impl='moe'"):
+            ModelConfig(mlp_impl="moe", num_experts=4, top_k=0)
 
-        with pytest.raises(
-            ValidationError, match="top_k must be positive and less than or equal to num_experts if use_moe is True"
-        ):
-            ModelConfig(use_moe=True, num_experts=4, top_k=5)
+        with pytest.raises(ValidationError, match="top_k must be positive and <= num_experts when mlp_impl='moe'"):
+            ModelConfig(mlp_impl="moe", num_experts=4, top_k=5)
 
     def test_config_save_and_load_yaml(self, tmp_path):
         config = Config(
-            model=ModelConfig(hidden_size=128, use_moe=True, num_experts=8, top_k=4),
+            model=ModelConfig(hidden_size=128, mlp_impl="moe", num_experts=8, top_k=4),
             training=TrainingConfig(batch_size=64, epochs=3),
         )
         yaml_path = tmp_path / "test_config.yaml"
@@ -110,7 +104,7 @@ class TestConfig:
         loaded_config = Config.from_yaml(yaml_path)
 
         assert loaded_config.model.hidden_size == config.model.hidden_size
-        assert loaded_config.model.use_moe == config.model.use_moe
+        assert loaded_config.model.mlp_impl == config.model.mlp_impl
         assert loaded_config.model.num_experts == config.model.num_experts
         assert loaded_config.model.top_k == config.model.top_k
         assert loaded_config.training.batch_size == config.training.batch_size
@@ -125,7 +119,7 @@ class TestConfig:
         assert config.mlp_impl == "mlp"
 
         # Test custom values
-        config = ModelConfig(attn_impl="flash_attn", mlp_impl="moe", num_kv_heads=4)
+        config = ModelConfig(attn_impl="flash_attn", mlp_impl="moe", num_kv_heads=4, num_experts=8, top_k=2)
         assert config.attn_impl == "flash_attn"
         assert config.mlp_impl == "moe"
         assert config.num_kv_heads == 4

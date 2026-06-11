@@ -80,7 +80,6 @@ class TestMoEIntegration:
             num_heads=4,
             intermediate_size=128,
             mlp_impl="moe",
-            use_moe=True,
             num_experts=4,
             top_k=2,
             device=device,

@@ -39,10 +39,9 @@ class DecoderModel(nn.Module):
         qkv_bias: bool = True,  # Bias for QKV in MHA within TransformerBlock
         mlp_bias: bool = True,  # Bias for MLP in TransformerBlock
         lm_head_bias: bool = True,  # Bias for the final LM head
-        use_moe: bool = False,  # New: Whether to use MoE in TransformerBlocks
-        num_experts: int = 0,  # New: Number of experts if use_moe is True
-        top_k: int = 0,  # New: Number of top experts to select if use_moe is True
-        num_kv_heads: int | None = None,  # New: For GQA support
+        num_experts: int = 0,
+        top_k: int = 0,
+        num_kv_heads: int | None = None,  # For GQA support
         use_glu: bool = False,  # New: For SwiGLU support
         norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # New: For RMSNorm support
         device: torch.device | str | None = None,
@@ -76,10 +75,6 @@ class DecoderModel(nn.Module):
         if intermediate_size is None:
             intermediate_size = 4 * hidden_size
 
-        # Backward compatibility for use_moe
-        if use_moe:
-            mlp_impl = "moe"
-
         self.transformer_blocks = nn.ModuleList(
             [
                 TransformerBlock(
@@ -94,10 +89,9 @@ class DecoderModel(nn.Module):
                     is_causal=is_causal,  # Pass overall model's causality default
                     qkv_bias=qkv_bias,
                     mlp_bias=mlp_bias,
-                    use_moe=use_moe,  # Pass MoE flag (legacy)
-                    num_experts=num_experts,  # Pass num_experts
-                    top_k=top_k,  # Pass top_k
-                    num_kv_heads=num_kv_heads,  # Pass num_kv_heads
+                    num_experts=num_experts,
+                    top_k=top_k,
+                    num_kv_heads=num_kv_heads,
                     use_glu=use_glu,  # Pass use_glu
                     norm_type=norm_type,  # Pass norm_type
                     window_size=window_size,  # Pass window_size

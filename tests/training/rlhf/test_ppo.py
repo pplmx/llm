@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from llm.training.rlhf.config import PPOConfig
+from llm.training.core.config import PPOConfig
 from llm.training.rlhf.rollout_buffer import RolloutBuffer
 
 

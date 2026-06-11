@@ -15,8 +15,8 @@ import llm
 from llm.core.registry import ATTENTION_REGISTRY, MLP_REGISTRY
 
 # Check if registries are populated
-attn_keys = list(ATTENTION_REGISTRY._registry.keys())
-mlp_keys = list(MLP_REGISTRY._registry.keys())
+attn_keys = ATTENTION_REGISTRY.names()
+mlp_keys = MLP_REGISTRY.names()
 
 print(f"ATTENTION: {attn_keys}")
 print(f"MLP: {mlp_keys}")

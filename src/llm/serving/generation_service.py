@@ -7,7 +7,8 @@ from typing import Any
 
 import torch
 
-from llm.generation.backends import GenerationBackend, GenerationConfig, get_generation_backend
+from llm.generation.backends import GenerationBackend, GenerationConfig
+from llm.generation.registry import get_generation_backend
 from llm.models.decoder import DecoderModel
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig

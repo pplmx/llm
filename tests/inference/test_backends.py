@@ -2,7 +2,8 @@
 
 import pytest
 
-from llm.generation.backends import EagerGenerationBackend, GenerationConfig, get_generation_backend
+from llm.generation.backends import BatchedGenerationBackend, EagerGenerationBackend, GenerationConfig
+from llm.generation.registry import get_generation_backend
 
 
 def test_get_generation_backend_eager():
@@ -22,7 +23,6 @@ def test_get_generation_backend_batched_requires_engine(tiny_model, device):
         device=device,
     )
     backend = get_generation_backend("batched", engine=engine)
-    from llm.generation.backends import BatchedGenerationBackend
 
     assert isinstance(backend, BatchedGenerationBackend)
 

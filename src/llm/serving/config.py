@@ -42,7 +42,6 @@ class ServingConfig(BaseSettings):
 
     # Advanced Arch Params
     num_kv_heads: int | None = None
-    use_moe: bool = False
     num_experts: int = 0
     top_k: int = 0
     attn_impl: str = "mha"
