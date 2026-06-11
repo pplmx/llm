@@ -32,6 +32,23 @@ class ComponentRegistry:
         return name in self._registry
 
 
+def register_component(registry: ComponentRegistry, name: str, cls: type) -> type:
+    """Register a component class without using a decorator."""
+    registry._registry.register(name, cls)
+    return cls
+
+
 ATTENTION_REGISTRY = ComponentRegistry("Attention")
 MLP_REGISTRY = ComponentRegistry("MLP")
 NORM_REGISTRY = ComponentRegistry("Normalization")
+
+
+def ensure_norms_registered() -> None:
+    import torch.nn as nn
+
+    from llm.core.rms_norm import RMSNorm
+
+    if "layer_norm" not in NORM_REGISTRY:
+        register_component(NORM_REGISTRY, "layer_norm", nn.LayerNorm)
+    if "rms_norm" not in NORM_REGISTRY:
+        register_component(NORM_REGISTRY, "rms_norm", RMSNorm)

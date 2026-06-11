@@ -30,7 +30,7 @@
 5. **训练引擎初始化 (`TrainingEngine.__init__`)**
     - 引擎接收 `config`, `task`, `data_module`, `callbacks` 等对象.
     - 调用 `_setup_components()` 方法, 该方法会:
-        - 调用 `task.build_model()` 创建模型, 并移至当前进程对应的设备. **模型构建时, `TransformerBlock` 会根据配置(`use_moe`、`num_experts`、`top_k`)来决定使用标准 MLP 还是 MoE 层.**
+        - 调用 `task.build_model()` 创建模型, 并移至当前进程对应的设备. **模型构建时, `TransformerBlock` 会根据配置(`mlp_impl`、`num_experts`、`top_k`)来决定使用标准 MLP 还是 MoE 层.**
         - (可选)编译模型 (`torch.compile`).
         - (可选)用 `DDP` 包装模型.
         - 调用 `task.build_optimizer()`, `task.build_scheduler()`, `task.build_criterion()` 创建优化器、调度器和损失函数.

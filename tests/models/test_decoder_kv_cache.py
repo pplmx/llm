@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from llm.core.kv_cache import KVCache, create_decoder_kv_caches
 from llm.models.decoder import DecoderModel
 
 
@@ -31,23 +32,20 @@ def test_kv_cache_consistency():
 
     input_ids = torch.randint(0, vocab_size, (1, seq_len))
 
-    # 1. Full-sequence forward pass
     with torch.no_grad():
         full_logits = model(input_ids)
 
-    # 2. Incremental forward pass with KV cache
-    past_key_values = None
+    kv_caches = create_decoder_kv_caches(model, batch_size=1)
     incremental_logits = []
 
     for i in range(seq_len):
         curr_input_id = input_ids[:, i : i + 1]
         with torch.no_grad():
-            logits, past_key_values = model(curr_input_id, past_key_values=past_key_values, use_cache=True)
+            logits, kv_caches = model(curr_input_id, kv_caches=kv_caches, use_cache=True)
             incremental_logits.append(logits)
 
     incremental_logits = torch.cat(incremental_logits, dim=1)
 
-    # Compare
     assert torch.allclose(full_logits, incremental_logits, atol=1e-5), (
         "KV cache consistency failed: incremental logits do not match full-sequence logits."
     )
@@ -55,9 +53,7 @@ def test_kv_cache_consistency():
 
 @pytest.mark.slow
 def test_kv_cache_dimensions():
-    """
-    Verify the dimensions of the returned KV cache.
-    """
+    """Verify KVCache state after a cached forward pass."""
     vocab_size = 50
     hidden_size = 32
     num_layers = 2
@@ -76,15 +72,14 @@ def test_kv_cache_dimensions():
     model.eval()
 
     input_ids = torch.randint(0, vocab_size, (1, seq_len))
+    kv_caches = create_decoder_kv_caches(model, batch_size=1)
 
     with torch.no_grad():
-        _, kv_cache = model(input_ids, use_cache=True)
+        _, kv_caches = model(input_ids, kv_caches=kv_caches, use_cache=True)
 
-    # kv_cache is a list of tuples (key, value) for each layer
-    assert len(kv_cache) == num_layers
-    for layer_cache in kv_cache:
-        k, v = layer_cache
-        # Expected shape: [batch, num_kv_heads, seq_len, head_dim]
-        # head_dim = hidden_size // num_heads = 32 // 4 = 8
-        assert k.shape == (1, num_kv_heads, seq_len, 8)
-        assert v.shape == (1, num_kv_heads, seq_len, 8)
+    assert len(kv_caches) == num_layers
+    for cache in kv_caches:
+        assert isinstance(cache, KVCache)
+        assert cache.seq_len == seq_len
+        assert cache.k_cache.shape[1] == num_kv_heads
+        assert cache.k_cache.shape[3] == hidden_size // num_heads

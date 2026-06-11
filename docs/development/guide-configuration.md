@@ -34,7 +34,7 @@ llm-train --task regression --amp true
 
 - 要查看所有可用的命令行参数, 请运行 `llm-train --help`.
 - 当前 CLI 暴露的参数包括: `--task`, `--config-path`, `--epochs`, `--batch-size`, `--lr`, `--num-samples`, `--compile`, `--amp`.
-- 完整的模型配置(如 `hidden_size`, `use_moe`, `num_experts` 等)建议通过 YAML 配置文件设置.
+- 完整的模型配置(如 `hidden_size`, `mlp_impl`, `num_experts` 等)建议通过 YAML 配置文件设置.
 
 ## 方法二: 使用 YAML 配置文件 (推荐用于可复现的实验)
 
@@ -48,7 +48,7 @@ llm-train --task regression --amp true
       hidden_size: 256
       num_layers: 4
       dropout: 0.15
-      use_moe: true # 启用 MoE
+      mlp_impl: moe # Enable MoE
       num_experts: 8
       top_k: 2
 

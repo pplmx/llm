@@ -27,7 +27,7 @@
 
 - **初始化**: 设置设备(CPU 或 GPU)、日志记录器、性能监视器、检查点管理器和回调.
 - **组件设置**:
-    - 从 `TrainingTask` 实例中构建模型、优化器、学习率调度器和损失函数. **模型构建时, `TransformerBlock` 会根据配置(`use_moe`、`num_experts`、`top_k`)来决定使用标准 MLP 还是 MoE 层.**
+    - 从 `TrainingTask` 实例中构建模型、优化器、学习率调度器和损失函数. **模型构建时, `TransformerBlock` 会根据配置(`mlp_impl`、`num_experts`、`top_k`)来决定使用标准 MLP 还是 MoE 层.**
     - (可选)编译模型 (`torch.compile`).
     - (可选)用 `DDP` 包装模型.
     - 从数据模块中获取数据加载器.
@@ -45,7 +45,7 @@
 
 该文件使用 `Pydantic` (BaseModel, BaseSettings) 定义了用于配置训练过程的各个方面:
 
-- `ModelConfig`: 模型相关的超参数, 包括隐藏层大小、层数, 以及 **MoE (Mixture of Experts) 相关的参数(`use_moe`、`num_experts`、`top_k`)**.
+- `ModelConfig`: 模型相关的超参数, 包括隐藏层大小、层数, 以及 **MoE (Mixture of Experts) 相关的参数(`mlp_impl`、`num_experts`、`top_k`)**.
 - `TrainingConfig`: 训练过程的超参数(例如, 学习率、批量大小、`epochs`).
 - `DistributedConfig`: 分布式训练的配置(例如, `master_addr`、`master_port`).
 - `OptimizationConfig`: 性能优化的配置(例如, 是否使用 `torch.compile` 和 AMP).

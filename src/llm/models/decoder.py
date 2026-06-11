@@ -10,6 +10,15 @@ from llm.core.transformer_block import TransformerBlock
 from llm.utils.common import make_factory_kwargs
 
 
+def _resolve_norm_type(norm_impl: str, norm_type: type[nn.Module] | nn.Module | None) -> type[nn.Module] | nn.Module:
+    if norm_type is not None:
+        return norm_type
+    from llm.core.registry import NORM_REGISTRY, ensure_norms_registered
+
+    ensure_norms_registered()
+    return NORM_REGISTRY.get(norm_impl)
+
+
 class DecoderModel(nn.Module):
     """
     A Transformer-based decoder model.
@@ -42,8 +51,9 @@ class DecoderModel(nn.Module):
         num_experts: int = 0,
         top_k: int = 0,
         num_kv_heads: int | None = None,  # For GQA support
-        use_glu: bool = False,  # New: For SwiGLU support
-        norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,  # New: For RMSNorm support
+        use_glu: bool = False,
+        norm_impl: str = "layer_norm",
+        norm_type: type[nn.Module] | nn.Module | None = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
         attn_impl: str = "mha",
@@ -56,6 +66,7 @@ class DecoderModel(nn.Module):
         """
         super().__init__()
         factory_kwargs = make_factory_kwargs(device, dtype)
+        resolved_norm_type = _resolve_norm_type(norm_impl, norm_type)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
@@ -93,7 +104,7 @@ class DecoderModel(nn.Module):
                     top_k=top_k,
                     num_kv_heads=num_kv_heads,
                     use_glu=use_glu,  # Pass use_glu
-                    norm_type=norm_type,  # Pass norm_type
+                    norm_type=resolved_norm_type,
                     window_size=window_size,  # Pass window_size
                     attn_impl=attn_impl,  # Pass attn_impl
                     mlp_impl=mlp_impl,  # Pass mlp_impl
@@ -105,10 +116,10 @@ class DecoderModel(nn.Module):
 
         self.final_norm = None
         if self.norm_first:
-            if isinstance(norm_type, type):
-                self.final_norm = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
+            if isinstance(resolved_norm_type, type):
+                self.final_norm = resolved_norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
             else:
-                self.final_norm = norm_type
+                self.final_norm = resolved_norm_type
 
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=lm_head_bias, **factory_kwargs)
         self.max_seq_len = max_seq_len
@@ -117,73 +128,48 @@ class DecoderModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         attn_mask: torch.Tensor | None = None,
-        past_key_values: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
         kv_caches: list[KVCache] | None = None,
         use_cache: bool = False,
         position_ids: torch.Tensor | None = None,
         batch_indices: torch.Tensor | None = None,
-        # is_causal for individual forward passes is not typically exposed at this level,
-        # as the decoder model's causality is a structural property set at init.
-        # If a block needs dynamic causality, it would be an argument to the block's forward.
-        # Here, attn_mask is the primary way to influence attention beyond the default causality.
-    ) -> torch.Tensor | tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
+    ) -> torch.Tensor | tuple[torch.Tensor, list[KVCache]]:
         """
         Forward pass of the DecoderModel.
 
         Args:
-            input_ids (torch.Tensor): Input token IDs of shape [B, S].
-            attn_mask (torch.Tensor, optional): Attention mask, typically a padding mask.
-                Shape should be broadcastable to [B, N, S, S] or compatible with
-                `torch.nn.functional.scaled_dot_product_attention`.
-                If `is_causal=True` in blocks, this mask will be combined with the causal mask.
-            past_key_values (list[tuple[torch.Tensor, torch.Tensor]] | None):
-                [DEPRECATED] List of (key, value) tuples from previous steps, one for each block.
-            kv_caches (list[KVCache] | None): Pre-allocated KV caches, one per layer.
-                Use `KVCache.from_model_config()` to create.
-            use_cache (bool): Whether to return the updated (key, value) pairs.
-            position_ids (torch.Tensor, optional): Explicit position IDs of shape [B, S].
-                If not provided, inferred from `start_pos` or `past_key_values`.
-            batch_indices (torch.Tensor, optional): Indices for KV cache update [B].
-                Used for continuous batching.
+            input_ids: Input token IDs of shape [B, S].
+            attn_mask: Optional attention mask broadcastable to SDPA.
+            kv_caches: Pre-allocated KV caches, one per transformer layer.
+            use_cache: When True, update ``kv_caches`` in place and return them.
+            position_ids: Explicit position IDs of shape [B, S].
+            batch_indices: Cache slot indices for continuous batching.
 
         Returns:
-            torch.Tensor or tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
-                - If use_cache=False: Logits tensor of shape [B, S, vocab_size].
-                - If use_cache=True: (Logits tensor, current_key_values)
-
-        Raises:
-            ValueError: If gradient_checkpointing and use_cache are both enabled.
+            Logits tensor, or ``(logits, kv_caches)`` when ``use_cache=True``.
         """
         if self._gradient_checkpointing and use_cache:
             raise ValueError("Gradient checkpointing is incompatible with use_cache=True. ")
 
+        if use_cache and kv_caches is None:
+            raise ValueError("kv_caches is required when use_cache=True.")
+
         start_pos = 0
         if kv_caches is not None and kv_caches[0].seq_len > 0:
             start_pos = kv_caches[0].seq_len
-        elif past_key_values is not None:
-            # past_key_values[0][0] shape: [B, N, S_prev, D]
-            start_pos = past_key_values[0][0].size(2)
 
         hidden_states = self.embedding_layer(input_ids, start_pos=start_pos, position_ids=position_ids)
 
-        current_key_values = []
         for i, block in enumerate(self.transformer_blocks):
-            # The `is_causal` parameter in block.forward() can override the block's
-            # default. Here, we rely on the block's initialized `is_causal` state.
-            # So, we pass `is_causal=None` to the block's forward method.
-            past_kv = past_key_values[i] if past_key_values is not None else None
             kv_cache = kv_caches[i] if kv_caches is not None else None
 
             if self._gradient_checkpointing and self.training:
-                # Use gradient checkpointing to save memory during training
                 hidden_states = checkpoint(
                     block,
                     hidden_states,
                     attn_mask,
-                    None,  # is_causal
-                    past_kv,
-                    None,  # kv_cache (not supported with checkpointing)
-                    use_cache,
+                    None,
+                    None,
+                    False,
                     use_reentrant=False,
                 )
             else:
@@ -191,30 +177,23 @@ class DecoderModel(nn.Module):
                     hidden_states,
                     attn_mask=attn_mask,
                     is_causal=None,
-                    past_key_value=past_kv,
                     kv_cache=kv_cache,
                     use_cache=use_cache,
                     batch_indices=batch_indices,
-                    # Pass start_pos as Tensor if position_ids dictates (ragged batching),
-                    # otherwise scalar start_pos (legacy/contiguous).
-                    # If batch_indices is used, we prefer explicit position info.
-                    # If position_ids is Tensor, use it as start_pos for cache update
-                    # (assuming S=1 for Decode, or compatible logic in KVCache).
                     start_pos=position_ids if (batch_indices is not None and position_ids is not None) else start_pos,
                 )
                 if use_cache:
-                    hidden_states, current_kv = block_outputs
-                    current_key_values.append(current_kv)
+                    hidden_states, _current_kv = block_outputs
                 else:
                     hidden_states = block_outputs
 
-        if self.final_norm is not None:  # Applied only in Pre-LN architectures
+        if self.final_norm is not None:
             hidden_states = self.final_norm(hidden_states)
 
         logits = self.lm_head(hidden_states)
 
         if use_cache:
-            return logits, current_key_values
+            return logits, kv_caches
         return logits
 
     @property

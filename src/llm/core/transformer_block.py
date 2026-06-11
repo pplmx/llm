@@ -124,7 +124,6 @@ class TransformerBlock(nn.Module):
         hidden_states: torch.Tensor,
         attn_mask: torch.Tensor | None = None,
         is_causal: bool | None = None,
-        past_key_value: tuple[torch.Tensor, torch.Tensor] | None = None,
         kv_cache: KVCache | None = None,
         use_cache: bool = False,
         batch_indices: torch.Tensor | None = None,
@@ -138,7 +137,6 @@ class TransformerBlock(nn.Module):
             attn_mask (torch.Tensor, optional): Attention mask for MHA.
             is_causal (bool, optional): Overrides the default MHA causality for this pass.
                                         If None, MHA's default `is_causal` is used.
-            past_key_value (tuple[Tensor, Tensor] | None): [DEPRECATED] Tuple of (key, value) from previous steps.
             kv_cache (KVCache | None): Pre-allocated KV cache for efficient autoregressive generation.
             use_cache (bool): Whether to return the updated (key, value) pair.
             batch_indices(torch.Tensor | None): Cache update indices.
@@ -163,8 +161,7 @@ class TransformerBlock(nn.Module):
         attn_outputs = self.self_attn(
             hidden_states,
             attn_mask=attn_mask,
-            is_causal=is_causal,  # Pass through, MHA handles None
-            past_key_value=past_key_value,
+            is_causal=is_causal,
             kv_cache=kv_cache,
             use_cache=use_cache,
             batch_indices=batch_indices,

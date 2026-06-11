@@ -35,6 +35,7 @@ def build_decoder(
     attn_impl: str = "mha",
     mlp_impl: str = "mlp",
     norm_eps: float = 1e-5,
+    norm_impl: str = "layer_norm",
     device: torch.device | str | None = None,
     dtype: torch.dtype | None = None,
     **kwargs: Any,
@@ -57,6 +58,7 @@ def build_decoder(
         attn_impl=attn_impl,
         mlp_impl=mlp_impl,
         norm_eps=norm_eps,
+        norm_impl=norm_impl,
         device=device,
         dtype=dtype,
         **kwargs,
@@ -81,6 +83,7 @@ def decoder_kwargs_from_config(config: ModelConfig, **overrides: Any) -> dict[st
         "use_glu": config.use_glu,
         "attn_impl": config.attn_impl,
         "mlp_impl": config.mlp_impl,
+        "norm_impl": config.norm_impl,
     }
     kwargs.update(overrides)
     return kwargs

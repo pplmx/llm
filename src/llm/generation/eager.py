@@ -2,6 +2,7 @@ from collections.abc import Generator
 
 import torch
 
+from llm.core.kv_cache import create_decoder_kv_caches
 from llm.generation.sampling import apply_repetition_penalty, sample_next_token
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
@@ -42,7 +43,7 @@ def stream_generate(
     input_ids = tokenizer.encode(prompt)
     input_tensor = torch.tensor(input_ids, dtype=torch.long, device=device).unsqueeze(0)
     max_seq_len = getattr(model, "max_seq_len", 512)
-    past_key_values = None
+    kv_caches = create_decoder_kv_caches(model, batch_size=1) if use_cache else None
 
     # Prefill: truncate if needed to fit max_seq_len
     if input_tensor.size(1) + max_new_tokens > max_seq_len:
@@ -51,7 +52,7 @@ def stream_generate(
         input_ids = input_tensor[0].tolist()
 
     if use_cache:
-        logits, past_key_values = model(input_tensor, use_cache=True)
+        logits, kv_caches = model(input_tensor, kv_caches=kv_caches, use_cache=True)
         next_token_logits = logits[0, -1, :]
     else:
         # Initial forward pass without cache
@@ -79,7 +80,7 @@ def stream_generate(
         next_input = torch.tensor([token_id], dtype=torch.long, device=device).unsqueeze(0)
 
         if use_cache:
-            logits, past_key_values = model(next_input, past_key_values=past_key_values, use_cache=True)
+            logits, kv_caches = model(next_input, kv_caches=kv_caches, use_cache=True)
             next_token_logits = logits[0, -1, :]
         else:
             # Without cache, append new token to full sequence and forward pass
@@ -178,7 +179,8 @@ def batch_generate(
         truncate_len = max_seq_len - max_new_tokens
         input_tensor = input_tensor[:, -truncate_len:]
 
-    logits, past_key_values = model(input_tensor, use_cache=True)
+    kv_caches = create_decoder_kv_caches(model, batch_size=batch_size)
+    logits, kv_caches = model(input_tensor, kv_caches=kv_caches, use_cache=True)
     next_token_logits = logits[:, -1, :]  # [B, vocab_size]
 
     _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
@@ -202,7 +204,7 @@ def batch_generate(
             device=device,
         )
 
-        logits, past_key_values = model(next_tokens, past_key_values=past_key_values, use_cache=True)
+        logits, kv_caches = model(next_tokens, kv_caches=kv_caches, use_cache=True)
         next_token_logits = logits[:, -1, :]
 
         _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))

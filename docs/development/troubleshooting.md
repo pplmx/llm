@@ -106,5 +106,5 @@
 - **原因**: 您在命令行中提供的参数名称或格式与框架期望的不匹配.
 - **解决方案**:
     - **检查参数名称**: 确保您使用的参数名称符合 `--<配置组名称>-<参数名称>` 的约定(例如, `--model-hidden-size`, `--training-epochs`).
-    - **布尔参数格式**: 布尔参数(`True`/`False`)不应带值. 如果参数默认值为 `False`, 使用 `--<参数名>` 启用；如果默认值为 `True`, 使用 `--no-<参数名>` 禁用. 例如, 启用 `use_moe` 使用 `--model-use-moe`, 禁用 `use_compile` 使用 `--no-optimization-use-compile`.
+    - **布尔参数格式**: 布尔参数(`True`/`False`)不应带值. 如果参数默认值为 `False`, 使用 `--<参数名>` 启用；如果默认值为 `True`, 使用 `--no-<参数名>` 禁用. 例如, 启用 MoE 使用 `--model-mlp-impl moe`, 禁用 `use_compile` 使用 `--no-optimization-use-compile`.
     - **查看帮助**: 运行 `python -m llm.training.train --help` 查看所有可用的命令行参数及其正确的格式.

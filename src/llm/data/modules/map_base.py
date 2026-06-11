@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import torch
@@ -34,6 +35,24 @@ class TokenizedMapDataModule(MapDataModule):
         if val_size <= 0:
             return dataset, None
         return random_split(dataset, [train_size, val_size])
+
+    def assign_train_val_datasets(
+        self,
+        full_dataset: Dataset,
+        *,
+        val_path: str | None = None,
+        build_val_dataset: Callable[[str], Dataset] | None = None,
+        train_ratio: float = 0.9,
+    ) -> None:
+        """Assign train/val datasets from a full dataset or explicit val path."""
+        if val_path:
+            if build_val_dataset is None:
+                raise ValueError("build_val_dataset is required when val_path is set.")
+            self.train_dataset = full_dataset
+            self.val_dataset = build_val_dataset(val_path)
+            return
+
+        self.train_dataset, self.val_dataset = self.split_train_val(full_dataset, train_ratio)
 
     def build_dataloader(
         self,
