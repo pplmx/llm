@@ -28,7 +28,7 @@ src/llm/
 │   ├── mlp.py             # Standard MLP with SwiGLU
 │   ├── moe.py             # Mixture of Experts
 │   ├── norm.py            # RMSNorm, LayerNorm
-│   ├── registry.py        # Component registry
+│   ├── registry.py        # ATTENTION/MLP/NORM registries (runtime.Registry)
 │   └── transformer_block.py
 ├── models/                 # Complete model architectures
 │   └── decoder.py         # Decoder-only transformer
@@ -56,7 +56,8 @@ src/llm/
 ├── export/                # ONNX export utilities
 │   └── onnx.py
 ├── evaluation/            # Offline evaluation
-│   └── eval_tasks/        # Per-task evaluators (lm, infer)
+│   ├── runner.py          # EvaluationRunner (unified entry)
+│   └── eval_tasks/        # Per-task evaluators (lm)
 ├── training/              # Training infrastructure
 │   ├── core/              # Engine, callbacks, config
 │   ├── task_registry.py   # TaskRegistry (task + data_module factory)
@@ -110,20 +111,20 @@ graph TD
 
 ## Core Components & Registry
 
-To support rapid experimentation with different architectural variants (e.g., Flash Attention, SwiGLU, MoE), we employ a **Registry Pattern**.
+To support rapid experimentation with different architectural variants (e.g., Flash Attention, SwiGLU, MoE), we employ a **Registry Pattern** backed by `runtime.Registry`.
 
-### Component Registry
+### Component Registries
 
-Located in `src/llm/core/registry.py`, registries allow dynamic selection of implementations:
+Located in `src/llm/core/registry.py`:
 
-* **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA)
+* **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention; **no KV cache**)
 * **`MLP_REGISTRY`**: `mlp` (Standard), `moe` (Mixture of Experts)
-* **`NORM_REGISTRY`**: `layer_norm`, `rms_norm`
+* **`NORM_REGISTRY`**: `layer_norm`, `rms_norm` (via `norm_impl` in config)
 
 Components register themselves via decorators:
 
 ```python
-@ATTENTION_REGISTRY.register("mha")
+@register_attention("mha")
 class MultiHeadAttention(nn.Module): ...
 ```
 
@@ -133,7 +134,10 @@ Configuration controls which implementation is used:
 model:
   attn_impl: "mha"
   mlp_impl: "moe"
+  norm_impl: "rms_norm"
 ```
+
+> **Note**: `attn_impl: mla` raises when `use_cache=True` — MLA does not support KV cache yet.
 
 ## Data Abstraction
 
@@ -171,12 +175,12 @@ Third-party and built-in extensions register through a shared **`Registry[T]`** 
 
 | Entry point group | Registry | Example |
 |-------------------|----------|---------|
-| `llm.models` | `MODEL_REGISTRY` | `decoder` builder |
+| `llm.models` | `MODEL_REGISTRY` | `decoder`, `regression_mlp` builders |
 | `llm.generation_backends` | `BACKEND_REGISTRY` | `eager`, `batched` |
 | `llm.data_sources` | `SOURCE_REGISTRY` | `local`, `hf` streaming |
 | `llm.tasks` | hooks via `load_entry_point_hooks` | third-party `TASK_REGISTRY.register(...)` |
 
-Built-in modules register on import (`bootstrap.py`, `generation/registry.py`, `data/sources.py`, `tasks/builtin.py`). `train.py` additionally invokes `llm.tasks` hooks so external packages can add CLI tasks without editing core code.
+Built-in model builders register via **setuptools entry points** only (`bootstrap.ensure_builtins_registered()` → `load_entry_point_registry("llm.models", ...)`). Attention/MLP/NORM register on module import. `train.py` additionally invokes `llm.tasks` hooks so external packages can add CLI tasks without editing core code.
 
 ## Attention Mechanism
 

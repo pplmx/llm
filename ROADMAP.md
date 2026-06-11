@@ -10,7 +10,7 @@
 
 - 现代化 Decoder-only Transformer 架构 (GQA, SwiGLU, MoE)
 - 完善的分布式训练框架 (DDP, AMP)
-- 高质量工程实践 (680+ 测试用例全部通过)
+- 高质量工程实践 (645+ 测试用例全部通过)
 - 插件内核架构 (`runtime/` registries + setuptools entry points)
 - 基础推理能力 (KV Cache, Top-k/Top-p 采样, GenerationBackend registry)
 - 完整的模型评估框架 (Perplexity, Accuracy, F1, ROUGE, BLEU, chrF, lm-eval)

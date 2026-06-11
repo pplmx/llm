@@ -10,14 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 
 - Flash Attention 2 integration
-- Paged Attention for improved memory efficiency
+- Paged Attention full model forward path (sidecar exists; see ADR-004)
+
+### Changed
+
+- **2026 Q2 architecture convergence** (Phases 1–4, Waves 1–3, P2 cleanup):
+    - Unified `runtime.Registry` for all component registries; removed legacy `ComponentRegistry`
+    - KV cache: single `KVCache` / `kv_caches` API; removed `past_key_value` tuple path
+    - Norm: `norm_impl` config + `NORM_REGISTRY` wiring (`layer_norm`, `rms_norm`)
+    - Eval: removed `evaluator.py` / `infer_task.py`; unified `EvaluationRunner`
+    - Serving: removed `priority_scheduler.py`, `serving/prefix_cache.py`; `ContinuousBatchingEngine` gains `SlotPrefixCache`, `from_serving_config()`
+    - Data: `TokenizedMapDataModule.setup_tokenized_file_dataset()`, `SamplerMapDataModule`, `TokenizerFactory` helpers
+    - Tasks: `regression_mlp` via `llm.models` entry point; `RegressionTask` uses `ModelFactory`
+    - Bootstrap: model registration via setuptools entry points only (`decoder`, `regression_mlp`)
+    - MLA: registered as `@register_attention("mla")`; raises on `use_cache=True` (documented exception)
 
 ### Refactored
 
 - **Code Organization**:
     - Extracted `make_factory_kwargs()` and `init_lora_weights()` utilities
-    - Unified Registry implementation using ComponentRegistry
-    - Migrated all `__main__` demo code to test files (7 new test files)
+    - Migrated all `__main__` demo code to test files
     - Added custom exception module with hierarchical exception types
 
 - **Error Handling**:

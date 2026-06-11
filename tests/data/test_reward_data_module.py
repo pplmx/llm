@@ -89,17 +89,7 @@ def test_reward_data_module_explicit_val_file(tmp_path):
     config.optimization.num_workers = 0
 
     data_module = RewardDataModule(config)
-    data_module.tokenizer = SimpleCharacterTokenizer(corpus=[printable])
-    data_module.train_dataset = RewardDataset(
-        file_path=str(train_file),
-        tokenizer=data_module.tokenizer,
-        max_seq_len=config.data.max_seq_len,
-    )
-    data_module.val_dataset = RewardDataset(
-        file_path=str(val_file),
-        tokenizer=data_module.tokenizer,
-        max_seq_len=config.data.max_seq_len,
-    )
+    data_module.setup()
 
     assert isinstance(data_module.train_dataset, RewardDataset)
     assert len(data_module.train_dataset) == 1
