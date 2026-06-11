@@ -55,10 +55,7 @@ def test_generate_stream(client):
         # 检查是否为流式响应
         assert "text/event-stream" in response.headers["content-type"]
 
-        chunks = []
-        for line in response.iter_lines():
-            if line:
-                chunks.append(line)
+        chunks = [line for line in response.iter_lines() if line]
 
         # 验证确实收到了数据 chunk
         assert len(chunks) > 0

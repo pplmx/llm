@@ -71,7 +71,7 @@ def ddp_test_worker(rank, world_size, config, results):
 
         results[rank] = {"success": True, "device": str(device)}
 
-    except Exception as e:
+    except (RuntimeError, OSError, ValueError, TypeError) as e:
         results[rank] = {"success": False, "error": str(e)}
 
     finally:

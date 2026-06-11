@@ -15,7 +15,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
@@ -201,7 +201,7 @@ class Config:
         for group_name, group_config in config.__dict__.items():
             if group_name.startswith("_"):
                 continue
-            for key, _ in group_config.__annotations__.items():
+            for key in group_config.__annotations__:
                 arg_val = getattr(args, key, None)
                 if arg_val is not None:
                     setattr(group_config, key, arg_val)
@@ -437,7 +437,7 @@ class CheckpointManager:
     def save_checkpoint(
         self,
         epoch: int,
-        model: DDP,
+        model: DistributedDataParallel,
         optimizer: optim.Optimizer,
         scheduler: LRScheduler,
         scaler: torch.amp.GradScaler,
@@ -520,7 +520,7 @@ class CheckpointManager:
             self.best_loss = best_loss
             self.logger.info(f"✅ Resumed training from epoch {start_epoch} using checkpoint {ckp_path}")
             return start_epoch, best_loss
-        except Exception as e:
+        except (OSError, RuntimeError, KeyError, ValueError) as e:
             self.logger.error(f"Failed to load checkpoint from {ckp_path}: {e}")
             self.logger.warning("Starting from scratch due to checkpoint loading error.")
             return 0, float("inf")
@@ -559,13 +559,13 @@ class Trainer:
             try:
                 # DDP after compilation is the recommended practice
                 model = torch.compile(model, mode="reduce-overhead")
-            except Exception as e:
+            except (RuntimeError, TypeError, AttributeError) as e:
                 self.logger.warning(f"torch.compile failed: {e}. Continuing without it.")
 
         # DDP wrapper
         # find_unused_parameters=False is a performance gain, but can cause errors
         # if some model parameters are not used in the forward pass.
-        self.model = DDP(model, device_ids=[self.device.index], find_unused_parameters=False)
+        self.model = DistributedDataParallel(model, device_ids=[self.device.index], find_unused_parameters=False)
 
     def _setup_training_components(self):
         self.optimizer = optim.AdamW(
@@ -725,7 +725,7 @@ def train_worker(rank: int, world_size: int, config: Config):
         distributed_manager.setup(rank, world_size)
         trainer = Trainer(config, rank, world_size)
         trainer.train()
-    except Exception:
+    except RuntimeError, OSError, ValueError, TypeError, AttributeError:
         # 使用根logger记录异常, 确保即使自定义logger失败也能看到错误
         logging.getLogger().exception(f"An error occurred in rank {rank}")
         # 抛出异常以终止进程

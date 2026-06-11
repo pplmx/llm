@@ -1,5 +1,5 @@
 """
-Reward Model Task for RLHF.
+Reward Model Task for RLHfunctional.
 
 Trains a reward model that scores responses given prompts.
 Uses Bradley-Terry loss for preference comparison.
@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
@@ -167,7 +167,7 @@ class RewardTask(TrainingTask):
         rejected_rewards = model(rejected_input_ids, rejected_attention_mask)
 
         # Bradley-Terry loss
-        loss = -F.logsigmoid(chosen_rewards - rejected_rewards).mean()
+        loss = -functional.logsigmoid(chosen_rewards - rejected_rewards).mean()
 
         # Metrics
         reward_diff = chosen_rewards - rejected_rewards

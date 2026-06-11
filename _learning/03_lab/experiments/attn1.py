@@ -23,7 +23,7 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 from torch import Tensor
 
 # ---------------------------- 第1部分: 基础函数 ----------------------------
@@ -129,11 +129,11 @@ def scaled_dot_product_attention(
             attn_scores = attn_scores + attn_mask
 
     # 4. softmax归一化
-    attn_weights = F.softmax(attn_scores, dim=-1)
+    attn_weights = functional.softmax(attn_scores, dim=-1)
 
     # 5. dropout
     if dropout_p > 0.0 and torch.is_grad_enabled():  # 只在训练时dropout
-        attn_weights = F.dropout(attn_weights, p=dropout_p)
+        attn_weights = functional.dropout(attn_weights, p=dropout_p)
 
     # 6. 加权求和
     return torch.matmul(attn_weights, value)
@@ -214,7 +214,7 @@ class SingleHeadAttention(nn.Module):
             3. 计算注意力
             4. 输出投影
         """
-        _B, _S, _ = x.shape
+        _, _, _ = x.shape
         qkv = self.qkv_proj(x)  # (B, S, 3*H)
         q, k, v = qkv.chunk(3, dim=-1)  # 每个(B, S, H)
 
@@ -308,14 +308,14 @@ class MultiHeadAttention(nn.Module):
         计算图:
             x → qkv_proj → split → reshape → attention → reshape → out_proj
         """
-        B, S, _ = x.shape
+        batch_size, seq_len, _ = x.shape
         qkv = self.qkv_proj(x)  # (B, S, 3*H)
         q, k, v = qkv.chunk(3, dim=-1)  # 每个 (B, S, H)
 
         # 重塑为多头形式
-        q = q.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)  # (B, N, S, D)
-        k = k.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
-        v = v.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)  # (B, N, S, D)
+        k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
 
         # 调整掩码
         if attn_mask is not None and attn_mask.dim() == 3:
@@ -327,8 +327,7 @@ class MultiHeadAttention(nn.Module):
         )  # (B, N, S, D)
 
         # 合并多头
-        attn_output = attn_output.transpose(1, 2).contiguous()  # (B, S, N, D)
-        attn_output = attn_output.view(B, S, self.hidden_size)  # (B, S, H)
+        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.hidden_size)
 
         # 输出投影
         return self.out_proj(attn_output)

@@ -19,7 +19,7 @@ import torch.optim as optim
 from rich.logging import RichHandler
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 
@@ -167,7 +167,7 @@ class Trainer:
         if self.config.use_compile and sys.version_info >= (3, 8):
             self.logger.info("Compiling model with torch.compile...")
             model = torch.compile(model)
-        self.model = DDP(model, device_ids=[self.rank])
+        self.model = DistributedDataParallel(model, device_ids=[self.rank])
 
         self.train_loader, self.sampler = self._create_dataloader()
 

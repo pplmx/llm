@@ -214,7 +214,7 @@ def main(
                 print("Warning: Validation dataset is empty. Skipping validation.")
         except FileNotFoundError:
             print(f"Error: Validation file not found at {val_file_path}. Skipping validation.")
-        except Exception as e:
+        except (OSError, ValueError, KeyError, RuntimeError) as e:
             print(f"Error creating validation dataset/loader: {e}. Skipping validation.")
 
     # 4. Initialize Model

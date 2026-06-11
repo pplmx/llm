@@ -21,9 +21,9 @@ def test_dpo_task_train_step(tiny_config):
     model = task.build_model()
     criterion = None  # DPOTask doesn't use criterion for DPO loss
 
-    B, S, V = 2, 4, tiny_config.model.vocab_size
-    chosen_ids = torch.randint(0, V, (B, S))
-    rejected_ids = torch.randint(0, V, (B, S))
+    batch_size, seq_len, vocab_size = 2, 4, tiny_config.model.vocab_size
+    chosen_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+    rejected_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
     chosen_labels = chosen_ids.clone()
     chosen_labels[:, 0] = -100
     rejected_labels = rejected_ids.clone()

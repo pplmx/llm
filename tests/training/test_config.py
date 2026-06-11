@@ -39,7 +39,7 @@ class TestConfig:
         assert model_config_custom_ffn.intermediate_size == 512
 
     @pytest.mark.parametrize(
-        "hidden_size, intermediate_size, num_layers",
+        ("hidden_size", "intermediate_size", "num_layers"),
         [
             (100, 10, 1),  # Invalid hidden_size (not divisible by 8 heads default)
             (100, 0, 1),  # Invalid intermediate_size
@@ -47,11 +47,11 @@ class TestConfig:
         ],
     )
     def test_model_config_validation_errors(self, hidden_size, intermediate_size, num_layers):
-        with pytest.raises(ValueError):
+        with pytest.raises((ValueError, ValidationError), match=r"hidden_size|Intermediate size|num_layers"):
             ModelConfig(hidden_size=hidden_size, intermediate_size=intermediate_size, num_layers=num_layers)
 
     @pytest.mark.parametrize(
-        "batch_size, lr, epochs",
+        ("batch_size", "lr", "epochs"),
         [
             (0, 1e-3, 1),  # Invalid batch_size
             (32, 0, 1),  # Invalid lr

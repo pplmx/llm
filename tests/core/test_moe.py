@@ -38,18 +38,18 @@ class TestMoE:
             assert expert.hidden_size == hidden_size
 
     @pytest.mark.parametrize(
-        "top_k, num_experts",
+        ("top_k", "num_experts"),
         [
             (5, 4),  # top_k > num_experts
             (0, 4),  # top_k = 0
         ],
     )
     def test_moe_init_invalid_params(self, top_k, num_experts):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"top_k|num_experts"):
             MoE(hidden_size=64, num_experts=num_experts, top_k=top_k)
 
     @pytest.mark.parametrize(
-        "batch_size, seq_len",
+        ("batch_size", "seq_len"),
         [
             (2, 10),
             (1, 1),

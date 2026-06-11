@@ -9,7 +9,7 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.training.core.config import CheckpointConfig, DistributedConfig, LoggingConfig
@@ -203,7 +203,7 @@ class CheckpointManager:
     def save_checkpoint(
         self,
         epoch: int,
-        model: DDP,
+        model: DistributedDataParallel,
         optimizer: optim.Optimizer,
         scheduler: LRScheduler,
         scaler: torch.amp.GradScaler,
@@ -293,7 +293,7 @@ class CheckpointManager:
             self.loaded_extra_state = checkpoint.get("extra_state")
             self.logger.info(f"✅ Resumed training from epoch {start_epoch} using checkpoint {ckp_path}")
             return start_epoch, best_loss
-        except Exception as e:
+        except (OSError, RuntimeError, KeyError, ValueError) as e:
             self.logger.error(f"Failed to load checkpoint from {ckp_path}: {e}")
             self.logger.warning("Starting from scratch due to checkpoint loading error.")
             return 0, float("inf")

@@ -68,7 +68,7 @@ class TrainingEngine:
             self.logger.info("🚀 Compiling model with torch.compile...")
             try:
                 model = torch.compile(model, mode="reduce-overhead")
-            except Exception as e:
+            except (RuntimeError, TypeError, AttributeError) as e:
                 self.logger.warning(f"torch.compile failed: {e}. Continuing without it.")
 
         self.model = wrap_model_for_training(

@@ -1,5 +1,5 @@
 """
-PPO Trainer for RLHF.
+PPO Trainer for RLHfunctional.
 
 Implements Proximal Policy Optimization for language model alignment.
 """
@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 from torch.optim import AdamW
 
 from llm.training.core.config import PPOConfig
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 class PPOTrainer:
     """
-    Proximal Policy Optimization trainer for RLHF.
+    Proximal Policy Optimization trainer for RLHfunctional.
 
     Trains a policy model using PPO with rewards from a reward model.
     Optionally uses a reference model for KL divergence penalty.
@@ -247,11 +247,11 @@ class PPOTrainer:
                         next_token_logits = next_token_logits / self.config.temperature
 
                     # Sample next token
-                    probs = F.softmax(next_token_logits, dim=-1)
+                    probs = functional.softmax(next_token_logits, dim=-1)
                     next_token = torch.multinomial(probs, num_samples=1)
 
                     # Get log probability
-                    log_prob = F.log_softmax(next_token_logits, dim=-1)[next_token]
+                    log_prob = functional.log_softmax(next_token_logits, dim=-1)[next_token]
 
                     response_ids.append(next_token.item())
                     log_probs.append(log_prob.item())
@@ -313,8 +313,8 @@ class PPOTrainer:
         policy_logits = self.policy(input_ids)
 
         # Compute KL divergence on response tokens only
-        ref_log_probs = F.log_softmax(ref_logits, dim=-1)
-        policy_log_probs = F.log_softmax(policy_logits, dim=-1)
+        ref_log_probs = functional.log_softmax(ref_logits, dim=-1)
+        policy_log_probs = functional.log_softmax(policy_logits, dim=-1)
 
         # KL = sum(p * (log p - log q))
         kl = (policy_log_probs.exp() * (policy_log_probs - ref_log_probs)).sum(dim=-1)
@@ -346,7 +346,7 @@ class PPOTrainer:
         shift_labels = input_ids[:, 1:]
         shift_response_mask = response_mask[:, 1:]
 
-        new_log_probs = F.log_softmax(shift_logits, dim=-1)
+        new_log_probs = functional.log_softmax(shift_logits, dim=-1)
         token_log_probs = torch.gather(
             new_log_probs,
             dim=-1,
@@ -396,7 +396,7 @@ class PPOTrainer:
                 response_len,
             )
             target_returns = returns[:, :response_len]
-            value_loss = F.mse_loss(pred_values, target_returns)
+            value_loss = functional.mse_loss(pred_values, target_returns)
             value_loss = self.config.value_coef * value_loss
 
         # Total loss

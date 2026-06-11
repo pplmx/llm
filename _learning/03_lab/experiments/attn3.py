@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as functional
 from torch import Tensor, nn
 
 
@@ -375,7 +375,7 @@ class EnhancedMultiHeadAttention(nn.Module):
 
         # --- 4. 注意力计算 ---
         # 使用PyTorch的原生scaled_dot_product_attention优化实现
-        attn_output = F.scaled_dot_product_attention(
+        attn_output = functional.scaled_dot_product_attention(
             query=q,
             key=k,
             value=v,
@@ -472,7 +472,8 @@ def test_rotary_embeddings():
     print(f"RoPE维度: {config.rotary_dim}, 位置ID形状: {position_ids.shape}")
 
     # 验证输出形状和输入相同
-    assert output.shape == x.shape, "RoPE输出形状应与输入相同"
+    if output.shape != x.shape:
+        raise ValueError("RoPE output shape must match input shape")
 
 
 def test_causal_masking():
@@ -497,7 +498,8 @@ def test_causal_masking():
     print(f"因果掩码测试 - 输入形状: {x.shape}, 输出形状: {output.shape}")
 
     # 验证输出形状和输入相同
-    assert output.shape == x.shape, "因果掩码输出形状应与输入相同"
+    if output.shape != x.shape:
+        raise ValueError("Causal mask output shape must match input shape")
 
     # 测试覆盖因果掩码设置
     mha(x, is_causal=False)
@@ -527,7 +529,8 @@ def test_separate_qkv():
     print(f"使用Post-LN结构: {not config.use_norm_first}")
 
     # 验证输出形状和输入相同
-    assert output.shape == x.shape, "分离QKV输出形状应与输入相同"
+    if output.shape != x.shape:
+        raise ValueError("Separate QKV output shape must match input shape")
 
 
 def test_rope_with_kv_cache():

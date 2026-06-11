@@ -2,7 +2,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 
 from llm.training.tasks.lm_task import LanguageModelingTask
 
@@ -52,7 +52,7 @@ class DPOTask(LanguageModelingTask):
         shift_labels = labels[..., 1:].contiguous()
 
         # Compute log_softmax
-        log_probs = F.log_softmax(shift_logits, dim=-1)
+        log_probs = functional.log_softmax(shift_logits, dim=-1)
 
         # Gather log probs of the labels
         # Create mask where labels != -100
@@ -109,7 +109,7 @@ class DPOTask(LanguageModelingTask):
 
         logits = pi_logratios - ref_logratios
 
-        losses = -F.logsigmoid(self.beta * logits)
+        losses = -functional.logsigmoid(self.beta * logits)
         loss = losses.mean()
 
         chosen_rewards = self.beta * (policy_chosen_logps - ref_chosen_logps).detach()

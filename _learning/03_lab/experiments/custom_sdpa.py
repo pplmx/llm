@@ -1,7 +1,7 @@
 import math
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as functional
 from torch import Tensor
 
 
@@ -85,11 +85,11 @@ def scaled_dot_product_attention(
 
     # 4. 计算注意力权重: softmax(scores)
     # 在最后一个维度 (key 序列长度维度 Sk) 上进行 softmax
-    attn_weights = F.softmax(attn_scores, dim=-1)
+    attn_weights = functional.softmax(attn_scores, dim=-1)
 
     # 5. 应用 Dropout (仅在 dropout_p > 0 时)
     if dropout_p > 0.0:
-        attn_weights = F.dropout(attn_weights, p=dropout_p)  # 训练/评估模式由外部模块控制
+        attn_weights = functional.dropout(attn_weights, p=dropout_p)  # 训练/评估模式由外部模块控制
 
     # 6. 计算加权值: weights @ V
     # (B, N, Sq, Sk) @ (B, N, Sv, D) -> (B, N, Sq, D)  (假定 Sk == Sv)

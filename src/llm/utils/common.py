@@ -76,15 +76,15 @@ def count_parameters(model: nn.Module) -> tuple[int, int]:
     return total_params, trainable_params
 
 
-def init_lora_weights(lora_A: nn.Parameter, lora_B: nn.Parameter) -> None:
+def init_lora_weights(lora_a: nn.Parameter, lora_b: nn.Parameter) -> None:
     """
     Initialize LoRA weights: A with Kaiming uniform, B with zeros.
 
     This ensures the LoRA adaptation starts at zero (output = base_output initially).
 
     Args:
-        lora_A: LoRA A matrix (in_features x rank)
-        lora_B: LoRA B matrix (rank x out_features)
+        lora_a: LoRA A matrix (in_features x rank)
+        lora_b: LoRA B matrix (rank x out_features)
     """
-    nn.init.kaiming_uniform_(lora_A, a=math.sqrt(5))
-    nn.init.zeros_(lora_B)
+    nn.init.kaiming_uniform_(lora_a, a=math.sqrt(5))
+    nn.init.zeros_(lora_b)

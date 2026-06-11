@@ -275,7 +275,7 @@ class TestDeviceAndDtypePropagation:
 @pytest.mark.parametrize("qkv_bias_val", [True, False])
 @pytest.mark.parametrize("mlp_bias_val", [True, False])
 @pytest.mark.parametrize(
-    "mlp_impl_val, num_experts_val, top_k_val",
+    ("mlp_impl_val", "num_experts_val", "top_k_val"),
     [
         ("mlp", 0, 0),
         ("moe", 4, 2),

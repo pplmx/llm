@@ -18,7 +18,7 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 from torch import Tensor
 
 # ---------------------------- 第1部分: 基础函数 (教学核心) ----------------------------
@@ -138,12 +138,12 @@ def scaled_dot_product_attention(
     # 4. Softmax归一化
     # 将分数转换为概率分布, 和为1
     # dim=-1表示对最后一个维度(键的维度)进行softmax
-    attn_weights = F.softmax(attn_scores, dim=-1)
+    attn_weights = functional.softmax(attn_scores, dim=-1)
 
     # 5. Dropout应用
     # 训练时随机丢弃部分注意力权重
     if dropout_p > 0.0:
-        attn_weights = F.dropout(attn_weights, p=dropout_p)
+        attn_weights = functional.dropout(attn_weights, p=dropout_p)
 
     # 6. 加权求和
     # 使用注意力权重对value进行加权求和
@@ -279,7 +279,8 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, hidden_size: int, num_heads: int, dropout_p: float = 0.1, is_causal: bool = False):
         super().__init__()
         # 参数验证 (教学提示: 确保可分割)
-        assert hidden_size % num_heads == 0, "hidden_size必须能被num_heads整除"
+        if hidden_size % num_heads != 0:
+            raise ValueError("hidden_size must be divisible by num_heads")
 
         self.hidden_size = hidden_size
         self.num_heads = num_heads
@@ -323,7 +324,7 @@ class MultiHeadAttention(nn.Module):
         返回:
             输出张量, 形状与输入相同[batch_size, seq_len, hidden_size]
         """
-        B, S, _ = x.shape  # 批大小, 序列长度, 特征维度
+        batch_size, seq_len, _ = x.shape  # 批大小, 序列长度, 特征维度
 
         # 1. 投影
         # 将输入x通过线性层投影到QKV空间
@@ -335,9 +336,9 @@ class MultiHeadAttention(nn.Module):
 
         # 重塑为 [B, S, N, D] -> [B, N, S, D]
         # 其中N是头数, D是每个头的维度
-        q = q.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
-        k = k.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
-        v = v.view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
 
         # 3. 调整掩码形状 (教学提示: 广播机制)
         # 如果提供了掩码, 需要增加一个头维度以广播到所有头
@@ -352,8 +353,7 @@ class MultiHeadAttention(nn.Module):
 
         # 5. 合并多头
         # 将多头输出合并回原始形状
-        attn_output = attn_output.transpose(1, 2).contiguous()  # [B, S, N, D]
-        attn_output = attn_output.view(B, S, self.hidden_size)  # [B, S, H]
+        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.hidden_size)
 
         # 6. 输出投影
         # 将合并后的输出映射回原始维度
@@ -370,15 +370,15 @@ def interactive_attention():
     print("这样可以手动验证计算过程")
 
     # 简单示例数据
-    Q = torch.tensor([[1.0, 0.5], [0.2, 1.2]])
-    K = torch.tensor([[0.8, 0.3], [1.2, 0.4]])
-    V = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+    query = torch.tensor([[1.0, 0.5], [0.2, 1.2]])
+    key = torch.tensor([[0.8, 0.3], [1.2, 0.4]])
+    value = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
 
     print("\n1. 原始分数计算:")
-    print("Q:", Q)
-    print("K:", K)
+    print("Q:", query)
+    print("K:", key)
     print("Q @ K.T =")
-    raw_scores = attention_score(Q, K)
+    raw_scores = attention_score(query, key)
     print(raw_scores)
 
     print("\n2. 缩放后分数:")
@@ -388,13 +388,13 @@ def interactive_attention():
 
     print("\n3. Softmax权重:")
     print("对每一行进行softmax:")
-    weights = F.softmax(scaled_scores, dim=-1)
+    weights = functional.softmax(scaled_scores, dim=-1)
     print(weights)
 
     print("\n4. 最终输出:")
-    print("V:", V)
+    print("V:", value)
     print("权重 @ V =")
-    output = torch.matmul(weights, V)
+    output = torch.matmul(weights, value)
     print(output)
 
     print("\n总结:")
