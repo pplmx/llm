@@ -2,6 +2,8 @@ from pathlib import Path
 
 from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, trainers
 
+DEFAULT_UNK_TOKEN = "".join(("<", "unk", ">"))
+
 
 class BPETokenizer:
     """
@@ -18,7 +20,7 @@ class BPETokenizer:
         if tokenizer is not None:
             self.tokenizer = tokenizer
         else:
-            self.tokenizer = Tokenizer(models.BPE(unk_token="[UNK]"))
+            self.tokenizer = Tokenizer(models.BPE(unk_token=DEFAULT_UNK_TOKEN))
             self.tokenizer.normalizer = normalizers.Sequence([normalizers.NFC(), normalizers.Lowercase()])
             self.tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
             self.tokenizer.decoder = decoders.ByteLevel()
@@ -44,9 +46,9 @@ class BPETokenizer:
             BPETokenizer: A trained tokenizer instance.
         """
         if special_tokens is None:
-            special_tokens = ["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
+            special_tokens = [DEFAULT_UNK_TOKEN, "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
 
-        tokenizer = Tokenizer(models.BPE(unk_token="[UNK]"))
+        tokenizer = Tokenizer(models.BPE(unk_token=DEFAULT_UNK_TOKEN))
         tokenizer.normalizer = normalizers.Sequence([normalizers.NFC(), normalizers.Lowercase()])
         tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
         tokenizer.decoder = decoders.ByteLevel()

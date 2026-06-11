@@ -16,6 +16,7 @@ class ServingConfig(BaseSettings):
     # Security & Observability
     api_key: str | None = None  # If set, requires this key for access
     log_level: str = "INFO"
+    host: str = "127.0.0.1"  # Set LLM_SERVING_HOST=0.0.0.0 for container bind-all
 
     # Generation
     generation_backend: str = "eager"  # eager | batched

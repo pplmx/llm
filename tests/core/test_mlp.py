@@ -299,7 +299,7 @@ def test_mlp_dropout_train_eval_modes(include_norm_residual_val):
 
 # --- Test Case 7: Hidden Size and Intermediate Size ---
 @pytest.mark.parametrize(
-    "hidden_size,intermediate_factor",
+    ("hidden_size", "intermediate_factor"),
     [
         (32, 2),  # Small hidden, small expansion
         (64, 4),  # Medium hidden, standard expansion

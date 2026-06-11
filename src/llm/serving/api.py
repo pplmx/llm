@@ -3,7 +3,7 @@ import contextlib
 import logging
 import sys
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.concurrency import run_in_threadpool
@@ -32,10 +32,10 @@ from llm.serving.schemas import (
 )
 
 logger = logging.getLogger()
-logHandler = logging.StreamHandler(sys.stdout)
+log_handler = logging.StreamHandler(sys.stdout)
 formatter = json.JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-logHandler.setFormatter(formatter)
-logger.addHandler(logHandler)
+log_handler.setFormatter(formatter)
+logger.addHandler(log_handler)
 logger.setLevel(logging.INFO)
 
 config = ServingConfig()
@@ -142,7 +142,7 @@ async def health_check() -> dict[str, str]:
 
 @app.post("/generate", response_model=GenerationResponse)
 async def generate_text(
-    request: GenerationRequest, _api_key: str = Depends(get_api_key)
+    request: GenerationRequest, _api_key: Annotated[str, Depends(get_api_key)]
 ) -> GenerationResponse | StreamingResponse:
     """
     Text generation endpoint. Supports streaming and non-streaming.
@@ -211,7 +211,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
 
 @app.post("/batch_generate", response_model=BatchGenerationResponse)
 async def batch_generate_text(
-    request: BatchGenerationRequest, _api_key: str = Depends(get_api_key)
+    request: BatchGenerationRequest, _api_key: Annotated[str, Depends(get_api_key)]
 ) -> BatchGenerationResponse:
     """
     Batch text generation endpoint for multiple prompts.
@@ -266,7 +266,7 @@ def _messages_to_prompt(messages: list) -> str:
 
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
 async def chat_completions(
-    request: ChatCompletionRequest, _api_key: str = Depends(get_api_key)
+    request: ChatCompletionRequest, _api_key: Annotated[str, Depends(get_api_key)]
 ) -> ChatCompletionResponse | StreamingResponse:
     """OpenAI-compatible chat completions endpoint."""
     prompt = _messages_to_prompt(request.messages)
@@ -402,7 +402,7 @@ def main():
     """Entry point for llm-serve CLI."""
     import uvicorn
 
-    uvicorn.run("llm.serving.api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("llm.serving.api:app", host=config.host, port=8000, reload=True)
 
 
 if __name__ == "__main__":

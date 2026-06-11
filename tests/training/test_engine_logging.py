@@ -58,7 +58,7 @@ def test_log_batch_stats_handles_empty_gradients(tmp_path):
         engine._log_batch_stats(epoch=0, batch_idx=0, num_batches=10, metrics={"loss": 0.5})
     except IndexError:
         pytest.fail("_log_batch_stats raised IndexError with empty gradient_norms")
-    except Exception as e:
+    except (RuntimeError, TypeError, AttributeError, ValueError, OSError) as e:
         pytest.fail(f"_log_batch_stats raised unexpected exception: {e}")
     finally:
         # Cleanup log handlers to avoid polluting other tests

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.runtime.checkpoint import collect_extra_state
@@ -72,7 +72,7 @@ class PPOTask(TrainingTask):
         self.ppo_trainer.load_checkpoint_state(state.get("ppo"))
 
     def _unwrap_model(self, model: nn.Module) -> nn.Module:
-        return model.module if isinstance(model, DDP) else model
+        return model.module if isinstance(model, DistributedDataParallel) else model
 
     def _build_reward_model(self) -> RewardModel:
         policy = self.build_model()

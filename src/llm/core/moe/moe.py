@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 
 from llm.core.mlp import MLP  # Reusing the MLP for experts
 from llm.core.registry import register_mlp
@@ -98,7 +98,7 @@ class MoE(nn.Module):
 
         # 3. Apply softmax to get weights for selected experts
         # expert_weights: [batch_size * seq_len, top_k]
-        expert_weights = F.softmax(top_k_logits, dim=-1, dtype=x.dtype)
+        expert_weights = functional.softmax(top_k_logits, dim=-1, dtype=x.dtype)
 
         # Initialize output tensor
         output = torch.zeros_like(x)  # [batch_size * seq_len, hidden_size]

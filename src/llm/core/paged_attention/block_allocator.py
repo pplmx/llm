@@ -79,10 +79,7 @@ class BlockAllocator:
         if len(self.free_blocks) < n:
             raise RuntimeError(f"Not enough free blocks: requested {n}, available {len(self.free_blocks)}")
 
-        blocks = []
-        for _ in range(n):
-            blocks.append(self.allocate())
-        return blocks
+        return [self.allocate() for _ in range(n)]
 
     def free(self, block_id: int) -> None:
         """

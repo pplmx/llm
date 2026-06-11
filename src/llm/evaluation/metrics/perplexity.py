@@ -1,5 +1,5 @@
 import torch
-from torch.nn import functional as F
+from torch.nn import functional
 
 from llm.evaluation.metrics.base import BaseMetric
 
@@ -24,7 +24,7 @@ class PerplexityMetric(BaseMetric):
         logits = predictions[:, :-1, :].contiguous().view(-1, vocab_size)
         labels = references[:, 1:].contiguous().view(-1)
 
-        loss = F.cross_entropy(logits, labels, reduction="mean")
+        loss = functional.cross_entropy(logits, labels, reduction="mean")
         perplexity = torch.exp(loss).item()
 
         return {"perplexity": perplexity}

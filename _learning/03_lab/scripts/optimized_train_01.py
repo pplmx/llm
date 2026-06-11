@@ -15,7 +15,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 # ============================================================================
@@ -282,7 +282,12 @@ class CheckpointManager:
         self.logger = logger
 
     def save_checkpoint(
-        self, epoch: int, model: DDP, optimizer: optim.Optimizer, scaler: torch.amp.GradScaler, loss: float
+        self,
+        epoch: int,
+        model: DistributedDataParallel,
+        optimizer: optim.Optimizer,
+        scaler: torch.amp.GradScaler,
+        loss: float,
     ):
         """保存检查点"""
         if self.rank != 0:
@@ -368,7 +373,7 @@ class Trainer:
             model = torch.compile(model, mode="reduce-overhead")
 
         # 包装为DDP
-        self.model = DDP(model, device_ids=[self.device.index])
+        self.model = DistributedDataParallel(model, device_ids=[self.device.index])
 
     def _setup_training_components(self):
         """设置训练组件"""

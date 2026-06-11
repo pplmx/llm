@@ -60,9 +60,7 @@ class SFTDataset(Dataset):
         data: list[dict[str, Any]] = []
         try:
             with self.file_path.open(encoding="utf-8") as f:
-                for line in f:
-                    if line.strip():
-                        data.append(json.loads(line))
+                data.extend(json.loads(line) for line in f if line.strip())
         except FileNotFoundError:
             raise FileNotFoundError(f"SFT data file not found: {self.file_path}")
         except json.JSONDecodeError as e:

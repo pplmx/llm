@@ -87,10 +87,7 @@ def test_chat_completions_stream(client):
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]
 
-        chunks = []
-        for line in response.iter_lines():
-            if line and line.startswith("data: "):
-                chunks.append(line)
+        chunks = [line for line in response.iter_lines() if line and line.startswith("data: ")]
 
         # Should have at least: first chunk (role), content chunks, final chunk, [DONE]
         assert len(chunks) >= 2

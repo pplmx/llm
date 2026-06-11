@@ -13,6 +13,7 @@ HIDDEN_SIZE = 64
 MAX_SEQ_LEN = 128
 DROPOUT_P_TEST = 0.15  # Distinct from default 0.1 to ensure it's passed
 BATCH_SIZE = 4
+_TORCH_DTYPES = {"torch.float32": torch.float32, "torch.float64": torch.float64}
 TEST_SEQ_LEN = MAX_SEQ_LEN // 2
 
 # Available devices and dtypes for testing
@@ -147,7 +148,7 @@ class TestEmbeddingLayer:
     @pytest.mark.parametrize("pos_learned", [True, False])
     def test_device_and_dtype_propagation(self, device, dtype_str, pos_learned):
         """Test if device and dtype are correctly propagated to submodules."""
-        dtype = eval(dtype_str)
+        dtype = _TORCH_DTYPES[dtype_str]
 
         if (
             device == "cuda"

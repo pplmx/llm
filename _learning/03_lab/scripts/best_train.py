@@ -12,7 +12,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
@@ -197,7 +197,7 @@ class CheckpointManager:
         self,
         epoch: int,
         metric: float,
-        model: DDP,
+        model: DistributedDataParallel,
         optimizer: optim.Optimizer,
         scheduler: LRScheduler,
         scaler: torch.amp.GradScaler,
@@ -268,7 +268,7 @@ class CheckpointManager:
             start_epoch = checkpoint["epoch"] + 1
             self.logger.info(f"✅ Resumed from epoch {start_epoch} using {ckp_path}")
             return start_epoch
-        except Exception as e:
+        except (OSError, RuntimeError, KeyError, ValueError) as e:
             self.logger.error(f"Failed to load checkpoint from {ckp_path}: {e}. Starting from scratch.")
             return 0
 
@@ -307,7 +307,7 @@ class Trainer:
             model = torch.compile(model, mode="reduce-overhead")
 
         # 5. DDP包装
-        self.model = DDP(model, device_ids=[self.rank])
+        self.model = DistributedDataParallel(model, device_ids=[self.rank])
 
         # 6. 准备数据
         self.dataloader, self.sampler = self._create_dataloader()

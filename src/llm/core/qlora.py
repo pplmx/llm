@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 
 from llm.utils.common import init_lora_weights
 
@@ -61,7 +61,7 @@ def quantize_nf4(weight: torch.Tensor, block_size: int = 64) -> tuple[torch.Tens
     n_blocks = (n_elements + block_size - 1) // block_size
     padded_size = n_blocks * block_size
     if padded_size > n_elements:
-        weight_flat = F.pad(weight_flat, (0, padded_size - n_elements))
+        weight_flat = functional.pad(weight_flat, (0, padded_size - n_elements))
 
     # Reshape to blocks
     weight_blocks = weight_flat.view(n_blocks, block_size)
@@ -110,7 +110,7 @@ def dequantize_nf4(
     # Pad to match blocks
     padded_size = n_blocks * block_size
     if padded_size > n_elements:
-        weight_flat = F.pad(weight_flat, (0, padded_size - n_elements))
+        weight_flat = functional.pad(weight_flat, (0, padded_size - n_elements))
 
     # Apply scales
     weight_blocks = weight_flat.view(n_blocks, block_size)
@@ -194,7 +194,7 @@ class QLoRALinear(nn.Module):
         )
 
         # Base layer output
-        base_output = F.linear(x, weight, self.bias)
+        base_output = functional.linear(x, weight, self.bias)
 
         # LoRA output
         lora_output = self.lora_dropout(x) @ self.lora_A @ self.lora_B

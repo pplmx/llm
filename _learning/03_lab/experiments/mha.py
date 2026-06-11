@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 from torch import Tensor
 
 
@@ -133,7 +133,7 @@ class MultiHeadAttention(nn.Module):
             q, k, v = [qkv[:, :, i].transpose(1, 2) for i in range(3)]  # 每个 [B, N, S, D]
 
         # --- 3. 注意力计算 ---
-        attn_output = F.scaled_dot_product_attention(
+        attn_output = functional.scaled_dot_product_attention(
             query=q,
             key=k,
             value=v,

@@ -1,5 +1,5 @@
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as functional
 from torch import Tensor
 
 
@@ -92,7 +92,7 @@ def sdpa(
         if full_mask is not None:
             torch_mask = ~full_mask if full_mask.dtype == torch.bool else full_mask
 
-        return F.scaled_dot_product_attention(
+        return functional.scaled_dot_product_attention(
             query,
             key,
             value,
@@ -111,6 +111,6 @@ def sdpa(
         # Torch convention: True = Keep
         torch_attn_mask = ~attn_mask if attn_mask.dtype == torch.bool else attn_mask
 
-    return F.scaled_dot_product_attention(
+    return functional.scaled_dot_product_attention(
         query, key, value, attn_mask=torch_attn_mask, dropout_p=dropout_p, is_causal=is_causal, scale=scale
     )
