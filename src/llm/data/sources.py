@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import abc
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
+
+from llm.runtime.registry import Registry
+
+TextSourceBuilder = Callable[[Any], "TextSource"]
+
+SOURCE_REGISTRY: Registry[TextSourceBuilder] = Registry("TextSource")
+
+_sources_registered = False
 
 
 class TextSource(abc.ABC):
@@ -95,24 +103,39 @@ class HFStreamTextSource(TextSource):
                 yield text.strip()
 
 
-def build_text_source(data_config: Any) -> TextSource:
-    """Factory: resolve TextSource from DataConfig."""
-    source_type = getattr(data_config, "data_source", "local")
-
-    if source_type == "hf":
-        dataset_name = getattr(data_config, "dataset_name", None)
-        if not dataset_name:
-            raise ValueError("data.dataset_name is required when data_source='hf'")
-        return HFStreamTextSource(
-            dataset_name=dataset_name,
-            split=getattr(data_config, "dataset_split", "train"),
-            text_column=getattr(data_config, "text_column", "text"),
-            dataset_config=getattr(data_config, "dataset_config", None),
-        )
-
+def _build_local_source(data_config: Any) -> TextSource:
     if not data_config.dataset_path:
         raise ValueError("data.dataset_path is required when data_source='local'")
     return LocalLineTextSource(data_config.dataset_path)
+
+
+def _build_hf_source(data_config: Any) -> TextSource:
+    dataset_name = getattr(data_config, "dataset_name", None)
+    if not dataset_name:
+        raise ValueError("data.dataset_name is required when data_source='hf'")
+    return HFStreamTextSource(
+        dataset_name=dataset_name,
+        split=getattr(data_config, "dataset_split", "train"),
+        text_column=getattr(data_config, "text_column", "text"),
+        dataset_config=getattr(data_config, "dataset_config", None),
+    )
+
+
+def ensure_sources_registered() -> None:
+    global _sources_registered
+    if _sources_registered:
+        return
+
+    SOURCE_REGISTRY.register("local", _build_local_source)
+    SOURCE_REGISTRY.register("hf", _build_hf_source)
+    _sources_registered = True
+
+
+def build_text_source(data_config: Any) -> TextSource:
+    """Resolve TextSource from DataConfig via SOURCE_REGISTRY."""
+    ensure_sources_registered()
+    source_type = getattr(data_config, "data_source", "local")
+    return SOURCE_REGISTRY.get(source_type)(data_config)
 
 
 def source_fingerprint_from_config(data_config: Any) -> dict[str, Any]:
@@ -130,3 +153,6 @@ def validate_source_fingerprint(expected: dict[str, Any] | None, actual: dict[st
             f"expected={expected}, actual={actual}. "
             "Use the same dataset configuration when resuming."
         )
+
+
+ensure_sources_registered()

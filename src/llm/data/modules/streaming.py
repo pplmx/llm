@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -13,8 +12,8 @@ from llm.data.datasets.streaming import StreamingTextDataset
 from llm.data.datasets.text import TextDataset
 from llm.data.sources import build_text_source, source_fingerprint_from_config, validate_source_fingerprint
 from llm.data.stream_state import StreamDataState
-from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
+from llm.runtime.tokenizer_factory import TokenizerFactory
+from llm.tokenization.tokenizer import BaseTokenizer
 
 
 class StreamingTextDataModule(StreamDataModule):
@@ -28,9 +27,7 @@ class StreamingTextDataModule(StreamDataModule):
         self.stream_data_state = StreamDataState()
 
     def prepare_data(self):
-        data_config = self.config.data
-        if data_config.tokenizer_type == "hf" and data_config.tokenizer_path:
-            HFTokenizer.from_pretrained(data_config.tokenizer_path)
+        TokenizerFactory.cache_hf_tokenizer(self.config.data)
 
     def setup(self, stage: str | None = None):
         self.validate_streaming_config()
@@ -53,17 +50,7 @@ class StreamingTextDataModule(StreamDataModule):
             )
 
     def _load_tokenizer(self) -> BaseTokenizer:
-        data_config = self.config.data
-        if data_config.tokenizer_type == "hf":
-            if not data_config.tokenizer_path:
-                raise ValueError("tokenizer_path must be specified for HF tokenizer.")
-            return HFTokenizer.from_pretrained(data_config.tokenizer_path)
-
-        if data_config.tokenizer_path and Path(data_config.tokenizer_path).exists():
-            return torch.load(data_config.tokenizer_path, weights_only=False)
-
-        corpus = ["<PAD>", "<EOS>", "<BOS>"]
-        return SimpleCharacterTokenizer(corpus)
+        return TokenizerFactory.from_data_config(self.config.data)
 
     def train_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader, None]:
         if self.train_dataset is None:
@@ -72,14 +59,13 @@ class StreamingTextDataModule(StreamDataModule):
         self.train_dataset.rank = rank
         self.train_dataset.world_size = world_size
 
-        use_persistent_workers = (
-            self.config.optimization.persistent_workers and self.config.optimization.num_workers > 0
-        )
+        optimization = self.config.optimization
+        use_persistent_workers = optimization.persistent_workers and optimization.num_workers > 0
         loader = DataLoader(
             self.train_dataset,
             batch_size=self.config.training.batch_size,
-            num_workers=self.config.optimization.num_workers,
-            pin_memory=self.config.optimization.pin_memory and torch.cuda.is_available(),
+            num_workers=optimization.num_workers,
+            pin_memory=optimization.pin_memory and torch.cuda.is_available(),
             persistent_workers=use_persistent_workers,
         )
         return loader, None
