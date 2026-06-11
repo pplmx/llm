@@ -97,7 +97,6 @@ def _build_decoder(
             num_kv_heads=serving_config.num_kv_heads,
             attn_impl=serving_config.attn_impl,
             mlp_impl=serving_config.mlp_impl,
-            use_moe=serving_config.use_moe,
             num_experts=serving_config.num_experts,
             top_k=serving_config.top_k,
             use_glu=False,

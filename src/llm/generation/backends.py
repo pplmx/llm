@@ -149,25 +149,3 @@ class BatchedGenerationBackend(GenerationBackend):
             for prompt in prompts
         ]
         return self.engine.batch_generate_requests(requests)
-
-
-# Re-export registry helpers for backward compatibility.
-from llm.generation.registry import (  # noqa: E402
-    BACKEND_REGISTRY,
-    build_batched_backend,
-    build_eager_backend,
-    ensure_backends_registered,
-    get_generation_backend,
-)
-
-__all__ = [
-    "BACKEND_REGISTRY",
-    "BatchedGenerationBackend",
-    "EagerGenerationBackend",
-    "GenerationBackend",
-    "GenerationConfig",
-    "build_batched_backend",
-    "build_eager_backend",
-    "ensure_backends_registered",
-    "get_generation_backend",
-]

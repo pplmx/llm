@@ -40,7 +40,7 @@ def block_kwargs(request):
         "is_causal": False,
         "qkv_bias": True,
         "mlp_bias": True,
-        "use_moe": False,  # Default to not use MoE
+        "mlp_impl": "mlp",
         "num_experts": 4,  # Default for MoE if enabled
         "top_k": 2,  # Default for MoE if enabled
         "device": "cpu",  # Default device
@@ -84,13 +84,13 @@ class TestTransformerBlockInitialization:
     @pytest.mark.parametrize(
         "block_kwargs",
         [
-            {"use_moe": False},
-            {"use_moe": True, "num_experts": 4, "top_k": 2},
+            {"mlp_impl": "mlp"},
+            {"mlp_impl": "moe", "num_experts": 4, "top_k": 2},
         ],
         indirect=True,
     )
     def test_mlp_or_moe_instance(self, transformer_block, block_kwargs):
-        if block_kwargs["use_moe"]:
+        if block_kwargs["mlp_impl"] == "moe":
             assert isinstance(transformer_block.mlp, MoE)
             assert transformer_block.mlp.num_experts == block_kwargs["num_experts"]
             assert transformer_block.mlp.top_k == block_kwargs["top_k"]
@@ -151,10 +151,10 @@ class TestTransformerBlockForwardPass:
     @pytest.mark.parametrize(
         "block_kwargs",
         [
-            {"norm_first": True, "use_moe": False},
-            {"norm_first": False, "use_moe": False},
-            {"norm_first": True, "use_moe": True, "num_experts": 4, "top_k": 2},
-            {"norm_first": False, "use_moe": True, "num_experts": 4, "top_k": 2},
+            {"norm_first": True, "mlp_impl": "mlp"},
+            {"norm_first": False, "mlp_impl": "mlp"},
+            {"norm_first": True, "mlp_impl": "moe", "num_experts": 4, "top_k": 2},
+            {"norm_first": False, "mlp_impl": "moe", "num_experts": 4, "top_k": 2},
         ],
         indirect=True,
     )
@@ -198,16 +198,16 @@ class TestTransformerBlockForwardPass:
     @pytest.mark.parametrize(
         "block_kwargs",
         [
-            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.0, "norm_first": True, "use_moe": False},
-            {"attn_dropout_p": 0.0, "mlp_dropout_p": 0.5, "norm_first": True, "use_moe": False},
-            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5, "norm_first": True, "use_moe": False},
-            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5, "norm_first": False, "use_moe": False},
-            {"attn_dropout_p": 0.0, "mlp_dropout_p": 0.0, "norm_first": True, "use_moe": False},  # Control: no dropout
+            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.0, "norm_first": True, "mlp_impl": "mlp"},
+            {"attn_dropout_p": 0.0, "mlp_dropout_p": 0.5, "norm_first": True, "mlp_impl": "mlp"},
+            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5, "norm_first": True, "mlp_impl": "mlp"},
+            {"attn_dropout_p": 0.5, "mlp_dropout_p": 0.5, "norm_first": False, "mlp_impl": "mlp"},
+            {"attn_dropout_p": 0.0, "mlp_dropout_p": 0.0, "norm_first": True, "mlp_impl": "mlp"},  # Control: no dropout
             {
                 "attn_dropout_p": 0.5,
                 "mlp_dropout_p": 0.0,
                 "norm_first": True,
-                "use_moe": True,
+                "mlp_impl": "moe",
                 "num_experts": 4,
                 "top_k": 2,
             },
@@ -215,7 +215,7 @@ class TestTransformerBlockForwardPass:
                 "attn_dropout_p": 0.0,
                 "mlp_dropout_p": 0.5,
                 "norm_first": True,
-                "use_moe": True,
+                "mlp_impl": "moe",
                 "num_experts": 4,
                 "top_k": 2,
             },
@@ -230,7 +230,7 @@ class TestTransformerBlockForwardPass:
         attn_p = block_kwargs["attn_dropout_p"]
         mlp_p = block_kwargs["mlp_dropout_p"]
         norm_f = block_kwargs["norm_first"]
-        use_moe = block_kwargs["use_moe"]
+        mlp_impl = block_kwargs["mlp_impl"]
 
         # Eval mode: Dropout should be disabled, outputs should be identical.
         transformer_block.eval()  # Fixture already sets to eval, but explicit here
@@ -238,7 +238,7 @@ class TestTransformerBlockForwardPass:
             output_eval_1 = transformer_block(input_tensor)
             output_eval_2 = transformer_block(input_tensor)
         assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), (
-            f"Outputs in eval mode should be identical (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f}, use_moe={use_moe})"
+            f"Outputs in eval mode should be identical (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f}, mlp_impl={mlp_impl})"
         )
 
         # Train mode: Dropout should be active if p > 0.
@@ -250,12 +250,12 @@ class TestTransformerBlockForwardPass:
 
         if attn_p > 0 or mlp_p > 0:
             assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), (
-                f"Outputs in train mode should differ due to dropout (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f}, use_moe={use_moe})"
+                f"Outputs in train mode should differ due to dropout (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f}, mlp_impl={mlp_impl})"
             )
         else:
             # If both dropout probabilities are 0, outputs in train mode should also be identical.
             assert torch.allclose(output_train_1, output_train_2, atol=1e-7), (
-                f"Outputs in train mode should be identical if all dropout_p are 0 (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f}, use_moe={use_moe})"
+                f"Outputs in train mode should be identical if all dropout_p are 0 (attn_p={attn_p}, mlp_p={mlp_p}, norm_first={norm_f}, mlp_impl={mlp_impl})"
             )
 
 
@@ -323,15 +323,15 @@ if __name__ == "__main__":
 @pytest.mark.parametrize("qkv_bias_val", [True, False])
 @pytest.mark.parametrize("mlp_bias_val", [True, False])
 @pytest.mark.parametrize(
-    "use_moe_val, num_experts_val, top_k_val",
+    "mlp_impl_val, num_experts_val, top_k_val",
     [
-        (False, 0, 0),
-        (True, 4, 2),
+        ("mlp", 0, 0),
+        ("moe", 4, 2),
     ],
 )
 @pytest.mark.slow
 def test_transformer_block_gradient_computation(
-    norm_first_val, qkv_bias_val, mlp_bias_val, use_moe_val, num_experts_val, top_k_val, block_kwargs
+    norm_first_val, qkv_bias_val, mlp_bias_val, mlp_impl_val, num_experts_val, top_k_val, block_kwargs
 ):
     """Tests if gradients are computed correctly for all trainable parameters."""
     torch.manual_seed(42)
@@ -344,7 +344,7 @@ def test_transformer_block_gradient_computation(
             "mlp_bias": mlp_bias_val,
             "attn_dropout_p": 0.0,  # Disable dropout for deterministic gradient check
             "mlp_dropout_p": 0.0,
-            "use_moe": use_moe_val,
+            "mlp_impl": mlp_impl_val,
             "num_experts": num_experts_val,
             "top_k": top_k_val,
             # Use a smaller hidden_size for faster test if desired, but ensure it's divisible by num_heads

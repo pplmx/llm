@@ -29,10 +29,9 @@ class TransformerBlock(nn.Module):
         is_causal: bool = False,  # Default causality for MHA within this block
         qkv_bias: bool = True,  # Bias for QKV projections in MHA
         mlp_bias: bool = True,  # Bias for Linear layers in MLP
-        use_moe: bool = False,  # New: Whether to use MoE instead of MLP
-        num_experts: int = 0,  # New: Number of experts if use_moe is True
-        top_k: int = 0,  # New: Number of top experts to select if use_moe is True
-        num_kv_heads: int | None = None,  # New: For GQA support
+        num_experts: int = 0,
+        top_k: int = 0,
+        num_kv_heads: int | None = None,  # For GQA support
         use_glu: bool = False,  # New: For SwiGLU support
         norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,
         window_size: int | None = None,  # Sliding window attention
@@ -83,10 +82,6 @@ class TransformerBlock(nn.Module):
         )
 
         # Initialize MLP via Registry
-        # Support legacy use_moe arg if passed, but prefer mlp_impl
-        if use_moe:
-            mlp_impl = "moe"
-
         if intermediate_size is None:
             intermediate_size = 4 * hidden_size
 

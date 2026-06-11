@@ -18,9 +18,8 @@ class ModelConfig(BaseModel):
     use_glu: bool = False
     vocab_size: int = Field(50257, gt=0)
     max_seq_len: int = Field(512, gt=0)
-    use_moe: bool = Field(False, description="Whether to use MoE in TransformerBlocks")
-    num_experts: int = Field(0, description="Number of experts if use_moe is True")
-    top_k: int = Field(0, description="Number of top experts to select if use_moe is True")
+    num_experts: int = Field(0, description="Number of experts when mlp_impl='moe'")
+    top_k: int = Field(0, description="Top-k experts when mlp_impl='moe'")
 
     # Registry keys
     attn_impl: str = "mha"
@@ -38,11 +37,11 @@ class ModelConfig(BaseModel):
         if self.hidden_size % self.num_heads != 0:
             raise ValueError("hidden_size must be divisible by num_heads")
 
-        if self.use_moe:
+        if self.mlp_impl == "moe":
             if self.num_experts <= 0:
-                raise ValueError("num_experts must be positive if use_moe is True.")
+                raise ValueError("num_experts must be positive when mlp_impl='moe'.")
             if self.top_k <= 0 or self.top_k > self.num_experts:
-                raise ValueError("top_k must be positive and less than or equal to num_experts if use_moe is True.")
+                raise ValueError("top_k must be positive and <= num_experts when mlp_impl='moe'.")
         return self
 
 
@@ -158,10 +157,6 @@ class PPOConfig(BaseModel):
     value_lr: float | None = None
     use_ref_model: bool = True
     ref_model_update_freq: int = 0
-
-
-# Backward-compatible alias for YAML configs and external imports.
-PPOSettings = PPOConfig
 
 
 class RLHFSettings(BaseModel):
