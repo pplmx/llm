@@ -2,7 +2,7 @@ import pytest
 
 from llm.training.core.engine import TrainingEngine
 from llm.training.tasks.lm_task import LanguageModelingTask
-from tests.dummies import DummyLMDataModule
+from tests.support.data import DummyLMDataModule
 
 
 @pytest.mark.e2e

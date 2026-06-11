@@ -10,6 +10,7 @@ import torch.nn as nn
 
 from llm.core.kv_cache import create_decoder_kv_caches
 from llm.models.decoder import DecoderModel
+from tests.support.models import decoder_model_kwargs
 
 
 class TestGradientCheckpointing:
@@ -17,13 +18,16 @@ class TestGradientCheckpointing:
 
     @pytest.fixture
     def small_model_config(self):
-        return {
-            "vocab_size": 100,
-            "hidden_size": 64,
-            "num_layers": 2,
-            "num_heads": 2,
-            "max_seq_len": 32,
-        }
+        kwargs = decoder_model_kwargs(
+            vocab_size=100,
+            hidden_size=64,
+            num_layers=2,
+            num_heads=2,
+            max_seq_len=32,
+        )
+        kwargs.pop("device", None)
+        kwargs.pop("dtype", None)
+        return kwargs
 
     def test_gradient_checkpointing_init_disabled(self, small_model_config, device):
         """Test that gradient checkpointing is disabled by default."""

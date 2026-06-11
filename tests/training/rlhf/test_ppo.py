@@ -61,8 +61,8 @@ class TestRolloutBuffer:
 
         buffer.compute_advantages()
 
-        assert buffer.samples[0].advantages is not None
         assert len(buffer.samples[0].advantages) == 2
+        assert torch.isfinite(buffer.samples[0].advantages).all()
 
     def test_gae_with_values(self):
         """GAE should use sparse terminal reward and bootstrap with zero."""
@@ -168,9 +168,9 @@ class TestPPOTrainer:
 
         assert trainer.policy is policy
         assert trainer.reward_model is reward_model
-        assert trainer.ref_model is not None  # Should create ref model
-        assert trainer.value_model is not None  # Default value_coef > 0
-        assert trainer.value_optimizer is not None
+        assert type(trainer.ref_model) is type(policy)
+        assert trainer.ref_model is not policy
+        assert trainer.value_optimizer.param_groups[0]["lr"] == 1e-5
 
     def test_compute_response_values(self, tiny_setup):
         """Critic should emit one value per response token."""

@@ -1,8 +1,4 @@
-"""
-Layer Normalization Demo Tests
-
-Demonstrates and validates Layer Normalization implementation against PyTorch built-in.
-"""
+"""LayerNorm implementation vs PyTorch and NumPy reference."""
 
 import numpy as np
 import torch

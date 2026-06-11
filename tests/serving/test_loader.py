@@ -5,7 +5,6 @@ import string
 import pytest
 import torch
 
-from llm.models.decoder import DecoderModel
 from llm.serving.config import ServingConfig
 from llm.serving.loader import (
     infer_num_layers,
@@ -40,7 +39,7 @@ def test_load_training_checkpoint_roundtrip(tmp_path, tiny_model, tiny_config):
     )
 
     checkpoint = load_training_checkpoint(ckpt_path)
-    assert checkpoint.model_config is not None
+    assert checkpoint.model_config["hidden_size"] == tiny_config.model.hidden_size
     assert checkpoint.epoch == 0
 
 
@@ -65,9 +64,8 @@ def test_load_model_and_tokenizer_from_checkpoint(tmp_path, tiny_model, tiny_con
     )
     model, loaded_tokenizer = load_model_and_tokenizer(config)
 
-    assert isinstance(model, DecoderModel)
     assert model.lm_head.out_features == tiny_config.model.vocab_size
-    assert hasattr(loaded_tokenizer, "encode")
+    assert loaded_tokenizer.decode(loaded_tokenizer.encode("ab")) == "ab"
 
 
 def test_load_model_requires_tokenizer_path(tmp_path, tiny_model, tiny_config):

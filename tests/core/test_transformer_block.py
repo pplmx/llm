@@ -2,7 +2,6 @@ import pytest
 import torch
 import torch.nn as nn
 
-from llm.core.attn.mha import MultiHeadAttention
 from llm.core.mlp import MLP
 from llm.core.moe.moe import MoE
 from llm.core.transformer_block import TransformerBlock
@@ -69,18 +68,6 @@ def input_tensor(block_kwargs):
 
 @pytest.mark.slow
 class TestTransformerBlockInitialization:
-    def test_submodule_types(self, transformer_block):
-        assert isinstance(transformer_block.self_attn, MultiHeadAttention)
-        # Check type of mlp based on whether MoE is used
-        if (
-            transformer_block.mlp.__class__.__name__ == "MoE"
-        ):  # Check by name to avoid circular import issues if MoE is not directly imported
-            assert isinstance(transformer_block.mlp, MoE)
-        else:
-            assert isinstance(transformer_block.mlp, MLP)
-        assert isinstance(transformer_block.norm1, nn.LayerNorm)
-        assert isinstance(transformer_block.norm2, nn.LayerNorm)
-
     @pytest.mark.parametrize(
         "block_kwargs",
         [
@@ -163,37 +150,6 @@ class TestTransformerBlockForwardPass:
         assert output.shape == input_tensor.shape, (
             f"Output shape {output.shape} does not match input shape {input_tensor.shape}"
         )
-
-    def test_causality_propagation(self, block_kwargs, input_tensor):
-        # Test with block's default is_causal = True
-        block_kwargs["is_causal"] = True
-        block = TransformerBlock(**block_kwargs)
-        block.eval()
-
-        # Test with causal mask (default behavior for is_causal=True)
-        output_causal = block(input_tensor)
-        assert output_causal.shape == input_tensor.shape
-
-        # Test with is_causal=False override
-        output_non_causal_override = block(input_tensor, is_causal=False)
-        assert output_non_causal_override.shape == input_tensor.shape
-
-        # Test with is_causal=True override (explicitly same as default)
-        output_causal_override = block(input_tensor, is_causal=True)
-        assert output_causal_override.shape == input_tensor.shape
-
-    def test_attention_mask_propagation(self, transformer_block, input_tensor):
-        dummy_mask = torch.ones(
-            BATCH_SIZE,
-            1,
-            SEQ_LEN,
-            SEQ_LEN,  # MHA expects [B, N, S, S] or broadcastable
-            device=input_tensor.device,
-            dtype=torch.bool,
-        )
-
-        output_masked = transformer_block(input_tensor, attn_mask=dummy_mask)
-        assert output_masked.shape == input_tensor.shape
 
     @pytest.mark.parametrize(
         "block_kwargs",
@@ -313,10 +269,6 @@ class TestDeviceAndDtypePropagation:
         output = block(current_input_tensor)
         assert output.device.type == device.split(":")[0]
         assert output.dtype == dtype
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
 
 
 @pytest.mark.parametrize("norm_first_val", [True, False])

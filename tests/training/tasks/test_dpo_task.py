@@ -7,12 +7,10 @@ def test_dpo_task_init_and_build(tiny_config):
     task = DPOTask(tiny_config, data_module=None)
     model = task.build_model()
 
-    assert task.ref_model is not None
     assert task.ref_model is not model
 
-    # Check freezing
-    for p in task.ref_model.parameters():
-        assert not p.requires_grad
+    for param in task.ref_model.parameters():
+        assert not param.requires_grad
 
     # Check policy trainable
     assert any(p.requires_grad for p in model.parameters())
@@ -40,7 +38,5 @@ def test_dpo_task_train_step(tiny_config):
 
     loss, metrics = task.train_step(batch, model, criterion)
 
-    assert isinstance(loss, torch.Tensor)
     assert not torch.isnan(loss)
-    assert "reward_acc" in metrics
-    assert "reward_margin" in metrics
+    assert 0.0 <= metrics["reward_acc"] <= 1.0

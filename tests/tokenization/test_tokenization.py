@@ -17,14 +17,11 @@ def test_bpe_tokenizer_train_save_load(sample_text_file, tmp_path):
     # Train
     tokenizer = BPETokenizer.train([sample_text_file], vocab_size=100, min_frequency=1)
 
-    assert tokenizer.vocab_size > 0
-    assert tokenizer.pad_token_id is not None
-
-    # Encode / Decode
     text = "hello world"
     encoded = tokenizer.encode(text)
-    decoded = tokenizer.decode(encoded)
-    assert decoded == text
+    assert tokenizer.vocab_size > len(encoded)
+    assert tokenizer.pad_token_id >= 0
+    assert tokenizer.decode(encoded) == text
 
     # Save
     save_path = tmp_path / "tokenizer.json"

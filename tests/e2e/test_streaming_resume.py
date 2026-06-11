@@ -8,17 +8,8 @@ from llm.training.core.engine import TrainingEngine
 from llm.training.tasks.lm_task import LanguageModelingTask
 
 
-class _LineTokenizer:
-    def encode(self, text: str) -> list[int]:
-        return [ord(char) % 50 for char in text]
-
-    @property
-    def pad_token_id(self) -> int:
-        return 0
-
-
 @pytest.mark.e2e
-def test_streaming_training_resume_preserves_data_cursor(tmp_path, tiny_config, monkeypatch):
+def test_streaming_training_resume_preserves_data_cursor(tmp_path, tiny_config, monkeypatch, line_tokenizer):
     corpus = tmp_path / "corpus.txt"
     corpus.write_text("".join(f"line-{idx:03d}\n" for idx in range(200)), encoding="utf-8")
 
@@ -33,7 +24,7 @@ def test_streaming_training_resume_preserves_data_cursor(tmp_path, tiny_config, 
     tiny_config.checkpoint.checkpoint_dir = str(tmp_path / "checkpoints")
 
     data_module = StreamingTextDataModule(tiny_config)
-    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: _LineTokenizer())
+    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: line_tokenizer)
     data_module.prepare_data()
     data_module.setup()
 
@@ -55,7 +46,7 @@ def test_streaming_training_resume_preserves_data_cursor(tmp_path, tiny_config, 
     assert checkpoint["extra_state"]["stream_data"]["0"]["line_index"] > 0
 
     resumed_module = StreamingTextDataModule(tiny_config)
-    monkeypatch.setattr(resumed_module, "_load_tokenizer", lambda: _LineTokenizer())
+    monkeypatch.setattr(resumed_module, "_load_tokenizer", lambda: line_tokenizer)
     resumed_module.prepare_data()
     resumed_module.setup()
 

@@ -28,6 +28,23 @@
 
 每次改动后执行: `make test` → `make ruff` → `make test`
 
+### 测试架构
+
+```
+tests/
+  conftest.py          # 全局 fixture: device, tiny_config, stub_tokenizer, model_and_tokenizer
+  support/             # 纯 Python 测试工具 (无 pytest 依赖)
+    tokenizers.py      # StubTokenizer, LineTokenizer, CharBoundTokenizer
+    corpus.py          # 共享语料常量
+    data.py            # DummyLMDataModule
+    models.py          # decoder_model_kwargs(), DEFAULT_DECODER_KWARGS
+  models/conftest.py   # DecoderModel 参数化 fixture
+  data/conftest.py     # 数据层 fixture (sample_text_tokenizer, line_tokenizer)
+```
+
+- 新增 stub tokenizer 时用 `stub_tokenizer` / `line_tokenizer` fixture，勿内联 `_Tok`
+- 构造 DecoderModel 时优先 `decoder_model_kwargs(**overrides)`
+
 ## 用户偏好
 
 - 使用**中文**交流

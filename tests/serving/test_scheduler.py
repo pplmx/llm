@@ -113,7 +113,6 @@ class TestScheduler:
         scheduler.schedule()
 
         found = scheduler.get_sequence("req1")
-        assert found is not None
         assert found.request_id == "req1"
 
     def test_get_sequence_in_waiting(self):
@@ -123,7 +122,6 @@ class TestScheduler:
         # Don't schedule, keep in waiting
 
         found = scheduler.get_sequence("req1")
-        assert found is not None
         assert found.request_id == "req1"
 
     def test_get_sequence_not_found(self):

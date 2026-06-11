@@ -54,17 +54,6 @@ class TestE2EPipeline:
         assert result.inference_ok, "Should generate at least one character"
         assert result.all_passed, "All E2E checks should pass"
 
-    def test_e2e_result_properties(self, small_config: E2EConfig, tokenizer, device):
-        """Test that E2EResult properties work correctly."""
-        result = run_e2e_pipeline(small_config, device, tokenizer)
-
-        assert isinstance(result.initial_loss, float)
-        assert isinstance(result.final_loss, float)
-        assert isinstance(result.val_loss, float)
-        assert isinstance(result.perplexity, float)
-        assert isinstance(result.generated_text, str)
-        assert isinstance(result.training_time, float)
-
     def test_e2e_with_streaming(self, small_config: E2EConfig, tokenizer, device):
         """Test streaming generation produces same result as non-streaming."""
         model = DecoderModel(

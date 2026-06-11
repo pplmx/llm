@@ -7,16 +7,7 @@ from llm.data.sources import LocalLineTextSource
 from llm.data.stream_state import StreamDataState
 
 
-class _LineTokenizer:
-    def encode(self, text: str) -> list[int]:
-        return [ord(char) % 50 for char in text]
-
-    @property
-    def pad_token_id(self) -> int:
-        return 0
-
-
-def test_streaming_dataset_resumes_from_saved_state(tmp_path):
+def test_streaming_dataset_resumes_from_saved_state(tmp_path, line_tokenizer):
     text_file = tmp_path / "corpus.txt"
     text_file.write_text("abcdefghij\nklmnopqrst\nuvwxyzab\n", encoding="utf-8")
 
@@ -25,7 +16,7 @@ def test_streaming_dataset_resumes_from_saved_state(tmp_path):
 
     dataset = StreamingTextDataset(
         text_source=source,
-        tokenizer=_LineTokenizer(),
+        tokenizer=line_tokenizer,
         max_seq_len=8,
         rank=0,
         world_size=1,
@@ -40,7 +31,7 @@ def test_streaming_dataset_resumes_from_saved_state(tmp_path):
     resumed_state = StreamDataState.from_dict(saved)
     resumed_dataset = StreamingTextDataset(
         text_source=LocalLineTextSource(text_file),
-        tokenizer=_LineTokenizer(),
+        tokenizer=line_tokenizer,
         max_seq_len=8,
         rank=0,
         world_size=1,
@@ -51,7 +42,7 @@ def test_streaming_dataset_resumes_from_saved_state(tmp_path):
     assert second_run == []
 
 
-def test_streaming_module_checkpoint_roundtrip(tmp_path, monkeypatch):
+def test_streaming_module_checkpoint_roundtrip(tmp_path, monkeypatch, line_tokenizer):
     from llm.data.modules.streaming import StreamingTextDataModule
     from llm.training.core.config import Config
 
@@ -65,7 +56,7 @@ def test_streaming_module_checkpoint_roundtrip(tmp_path, monkeypatch):
     config.optimization.num_workers = 0
 
     data_module = StreamingTextDataModule(config)
-    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: _LineTokenizer())
+    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: line_tokenizer)
     data_module.setup()
 
     loader, _ = data_module.train_dataloader(rank=0, world_size=1)
@@ -79,7 +70,7 @@ def test_streaming_module_checkpoint_roundtrip(tmp_path, monkeypatch):
     assert data_module.stream_data_state.shards["0"].line_index > 0
 
 
-def test_streaming_module_rejects_source_fingerprint_mismatch(tmp_path, monkeypatch):
+def test_streaming_module_rejects_source_fingerprint_mismatch(tmp_path, monkeypatch, line_tokenizer):
     from llm.data.modules.streaming import StreamingTextDataModule
     from llm.training.core.config import Config
 
@@ -92,7 +83,7 @@ def test_streaming_module_rejects_source_fingerprint_mismatch(tmp_path, monkeypa
     config.data.steps_per_epoch = 2
 
     data_module = StreamingTextDataModule(config)
-    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: _LineTokenizer())
+    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: line_tokenizer)
     data_module.setup()
 
     bad_state = {

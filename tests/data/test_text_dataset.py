@@ -6,25 +6,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from llm.data.datasets.text import TextDataset, create_dataloader
-from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 # Constants for tests
 MAX_SEQ_LEN = 10
 DEFAULT_OVERLAP = 2
-SAMPLE_CORPUS = ["abcdefghijklmnopqrstuvwxyz .,<PAD>"]  # Ensure PAD is part of corpus for consistent tokenizer
-
-
-@pytest.fixture(scope="session")
-def dummy_tokenizer():
-    """A session-scoped tokenizer based on a small fixed corpus."""
-    # SimpleCharacterTokenizer now adds <PAD> if not present.
-    # If corpus is ["a", "b"], vocab will be ['a', 'b', '<PAD>']
-    # pad_token_id will be 2.
-    # If corpus is ["a", "b", "<PAD>"], vocab will be ['<PAD>', 'a', 'b'] (sorted) or similar,
-    # and pad_token_id will be its index.
-    # The current SimpleCharacterTokenizer appends <PAD> if not in corpus chars.
-    # So, for corpus ["a","b"], chars=['a','b'], then pad_char="<PAD>", pad_token_id=2, chars=['a','b','<PAD>']
-    return SimpleCharacterTokenizer(SAMPLE_CORPUS)
 
 
 @pytest.fixture
@@ -46,42 +31,44 @@ def dummy_text_file(request):
 @pytest.mark.slow
 class TestTextDatasetInitialization:
     @pytest.mark.parametrize("dummy_text_file", ["short example text."], indirect=True)
-    def test_dataset_creation(self, dummy_text_file, dummy_tokenizer):
-        dataset = TextDataset(file_path=str(dummy_text_file), tokenizer=dummy_tokenizer, max_seq_len=MAX_SEQ_LEN)
+    def test_dataset_creation(self, dummy_text_file, sample_text_tokenizer):
+        dataset = TextDataset(file_path=str(dummy_text_file), tokenizer=sample_text_tokenizer, max_seq_len=MAX_SEQ_LEN)
         assert len(dataset) > 0  # Should have at least one sequence
-        assert dataset.padding_value == dummy_tokenizer.pad_token_id
+        assert dataset.padding_value == sample_text_tokenizer.pad_token_id
 
     @pytest.mark.parametrize(
         "dummy_text_file", ["a b c d e f g h i j k l m n o p q r s t"], indirect=True
     )  # 20 tokens if space is token
-    def test_chunking_no_overlap(self, dummy_text_file, dummy_tokenizer):
+    def test_chunking_no_overlap(self, dummy_text_file, sample_text_tokenizer):
         # Assuming tokenizer splits by space for simplicity of token counting here
         # SimpleCharacterTokenizer will tokenize each char. Content: "a b c..." (39 chars)
         # Vocab: ' ', 'a', 'b', ..., 't', '<PAD>'
         # Encoded length will be 39.
         # max_seq_len = 10, overlap = 0. Expected chunks: 39 // 10 + (1 if 39 % 10 else 0) = 3 + 1 = 4
-        dataset = TextDataset(file_path=str(dummy_text_file), tokenizer=dummy_tokenizer, max_seq_len=10, overlap=0)
+        dataset = TextDataset(
+            file_path=str(dummy_text_file), tokenizer=sample_text_tokenizer, max_seq_len=10, overlap=0
+        )
         # text = "a b c d e f g h i j k l m n o p q r s t" (length 39 chars)
         # tokens = tokenizer.encode(text) -> len(tokens) = 39
         # Chunks (max_len=10, step=10): [0:10], [10:20], [20:30], [30:39] -> 4 sequences
         assert len(dataset) == 4
         # First sequence should be first 10 tokens of encoded text
         text_content = dummy_text_file.read_text(encoding="utf-8")
-        all_tokens = dummy_tokenizer.encode(text_content)
+        all_tokens = sample_text_tokenizer.encode(text_content)
         expected_first_seq = all_tokens[:10]
         actual_first_seq_raw = dataset.sequences[0]  # Before padding in __getitem__
         assert actual_first_seq_raw == expected_first_seq
 
     @pytest.mark.parametrize("dummy_text_file", ["a b c d e f g h i j k l m n o p q r s t"], indirect=True)  # 39 chars
-    def test_chunking_with_overlap(self, dummy_text_file, dummy_tokenizer):
+    def test_chunking_with_overlap(self, dummy_text_file, sample_text_tokenizer):
         max_len = 10
         overlap = 2
         step = max_len - overlap  # 8
         dataset = TextDataset(
-            file_path=str(dummy_text_file), tokenizer=dummy_tokenizer, max_seq_len=max_len, overlap=overlap
+            file_path=str(dummy_text_file), tokenizer=sample_text_tokenizer, max_seq_len=max_len, overlap=overlap
         )
         text_content = dummy_text_file.read_text(encoding="utf-8")
-        all_tokens = dummy_tokenizer.encode(text_content)  # len 39
+        all_tokens = sample_text_tokenizer.encode(text_content)  # len 39
         # Chunks (max_len=10, step=8):
         # 0: [0:10]
         # 1: [8:18]
@@ -114,39 +101,39 @@ class TestTextDatasetInitialization:
         assert dataset.sequences[1] == all_tokens[step : step + max_len]
 
     @pytest.mark.parametrize("dummy_text_file", [""], indirect=True)  # Empty file
-    def test_empty_file(self, dummy_text_file, dummy_tokenizer):
-        dataset = TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN)
+    def test_empty_file(self, dummy_text_file, sample_text_tokenizer):
+        dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN)
         assert len(dataset) == 0
 
     @pytest.mark.parametrize("dummy_text_file", ["short"], indirect=True)  # Text shorter than max_seq_len
-    def test_text_shorter_than_max_seq_len(self, dummy_text_file, dummy_tokenizer):
-        dataset = TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN)
+    def test_text_shorter_than_max_seq_len(self, dummy_text_file, sample_text_tokenizer):
+        dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN)
         assert len(dataset) == 1
         item = dataset[0]  # Test __getitem__ padding
         assert item["input_ids"].shape == (MAX_SEQ_LEN,)
 
         text_content = dummy_text_file.read_text(encoding="utf-8")
-        expected_raw_tokens = dummy_tokenizer.encode(text_content)
+        expected_raw_tokens = sample_text_tokenizer.encode(text_content)
         num_actual_tokens = len(expected_raw_tokens)
 
         assert torch.equal(item["input_ids"][:num_actual_tokens], torch.LongTensor(expected_raw_tokens))
-        assert torch.all(item["input_ids"][num_actual_tokens:] == dummy_tokenizer.pad_token_id)
+        assert torch.all(item["input_ids"][num_actual_tokens:] == sample_text_tokenizer.pad_token_id)
 
-    def test_invalid_params(self, dummy_text_file, dummy_tokenizer):
+    def test_invalid_params(self, dummy_text_file, sample_text_tokenizer):
         with pytest.raises(ValueError, match="overlap must be less than max_seq_len"):
-            TextDataset(str(dummy_text_file), dummy_tokenizer, 5, overlap=5)
+            TextDataset(str(dummy_text_file), sample_text_tokenizer, 5, overlap=5)
         with pytest.raises(FileNotFoundError):
-            TextDataset("non_existent_file.txt", dummy_tokenizer, MAX_SEQ_LEN)
+            TextDataset("non_existent_file.txt", sample_text_tokenizer, MAX_SEQ_LEN)
         with pytest.raises(ValueError, match="max_seq_len must be a positive integer"):
-            TextDataset(str(dummy_text_file), dummy_tokenizer, 0)
+            TextDataset(str(dummy_text_file), sample_text_tokenizer, 0)
         with pytest.raises(ValueError, match="max_seq_len must be a positive integer"):
-            TextDataset(str(dummy_text_file), dummy_tokenizer, -1)
+            TextDataset(str(dummy_text_file), sample_text_tokenizer, -1)
         with pytest.raises(ValueError, match="overlap must be a non-negative integer"):
-            TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN, overlap=-1)
+            TextDataset(str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN, overlap=-1)
         with pytest.raises(TypeError, match="file_path must be a string or Path object"):
-            TextDataset(123, dummy_tokenizer, MAX_SEQ_LEN)  # type: ignore
+            TextDataset(123, sample_text_tokenizer, MAX_SEQ_LEN)  # type: ignore
 
-    def test_tokenizer_validation(self, dummy_text_file, dummy_tokenizer):
+    def test_tokenizer_validation(self, dummy_text_file, sample_text_tokenizer):
         # Test with a tokenizer missing 'encode'
         class MockTokenizerNoEncode:
             pad_token_id = 0
@@ -177,15 +164,17 @@ class TestTextDatasetInitialization:
         )
 
         # Test that if padding_value is explicitly provided, it's used
-        dataset_explicit_padding = TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN, padding_value=999)
+        dataset_explicit_padding = TextDataset(
+            str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN, padding_value=999
+        )
         assert dataset_explicit_padding.padding_value == 999
 
 
 @pytest.mark.slow
 class TestTextDatasetGetItem:
     @pytest.mark.parametrize("dummy_text_file", ["hello there general kenobi"], indirect=True)
-    def test_getitem_output(self, dummy_text_file, dummy_tokenizer):
-        dataset = TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN)
+    def test_getitem_output(self, dummy_text_file, sample_text_tokenizer):
+        dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN)
         item = dataset[0]
         assert "input_ids" in item
         assert "labels" in item
@@ -195,7 +184,7 @@ class TestTextDatasetGetItem:
         assert torch.equal(item["input_ids"], item["labels"])
 
     @pytest.mark.parametrize("dummy_text_file", ["this is the last sequence, and it is short"], indirect=True)
-    def test_getitem_padding_last_sequence(self, dummy_text_file, dummy_tokenizer):
+    def test_getitem_padding_last_sequence(self, dummy_text_file, sample_text_tokenizer):
         # Choose max_seq_len and overlap such that the last sequence is shorter.
         # Text length: 46. Tokens: 46.
         # max_len=20, overlap=5, step=15
@@ -203,24 +192,24 @@ class TestTextDatasetGetItem:
         # seq2: [15:35]
         # seq3: [30:46] (length 16, needs padding)
         max_len = 20
-        dataset = TextDataset(str(dummy_text_file), dummy_tokenizer, max_len, overlap=5)
+        dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, max_len, overlap=5)
         assert len(dataset) == 3
 
         last_item = dataset[2]
         assert last_item["input_ids"].shape == (max_len,)
 
         text_content = dummy_text_file.read_text(encoding="utf-8")
-        all_tokens = dummy_tokenizer.encode(text_content)
+        all_tokens = sample_text_tokenizer.encode(text_content)
         expected_last_raw_seq = all_tokens[30:]  # Tokens from index 30 to end
         num_actual_tokens = len(expected_last_raw_seq)
         assert num_actual_tokens < max_len  # Ensure it was indeed shorter
 
         assert torch.equal(last_item["input_ids"][:num_actual_tokens], torch.LongTensor(expected_last_raw_seq))
-        assert torch.all(last_item["input_ids"][num_actual_tokens:] == dummy_tokenizer.pad_token_id)
+        assert torch.all(last_item["input_ids"][num_actual_tokens:] == sample_text_tokenizer.pad_token_id)
 
     @pytest.mark.parametrize("dummy_text_file", ["some data"], indirect=True)
-    def test_getitem_out_of_bounds(self, dummy_text_file, dummy_tokenizer):
-        dataset = TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN)
+    def test_getitem_out_of_bounds(self, dummy_text_file, sample_text_tokenizer):
+        dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN)
         with pytest.raises(IndexError):
             _ = dataset[len(dataset)]  # Access one index beyond the end
 
@@ -228,8 +217,8 @@ class TestTextDatasetGetItem:
 @pytest.mark.slow
 class TestCreateDataLoader:
     @pytest.mark.parametrize("dummy_text_file", ["batch data " * 20], indirect=True)  # Enough for multiple batches
-    def test_dataloader_creation_and_iteration(self, dummy_text_file, dummy_tokenizer):
-        dataset = TextDataset(str(dummy_text_file), dummy_tokenizer, MAX_SEQ_LEN, overlap=DEFAULT_OVERLAP)
+    def test_dataloader_creation_and_iteration(self, dummy_text_file, sample_text_tokenizer):
+        dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN, overlap=DEFAULT_OVERLAP)
         batch_size = 2
         dataloader = create_dataloader(dataset, batch_size=batch_size, shuffle=False)
 
@@ -244,12 +233,12 @@ class TestCreateDataLoader:
         assert batch["labels"].dtype == torch.long
 
     @pytest.mark.parametrize("dummy_text_file", ["single item dataset"], indirect=True)
-    def test_dataloader_last_batch_handling(self, dummy_text_file, dummy_tokenizer):
+    def test_dataloader_last_batch_handling(self, dummy_text_file, sample_text_tokenizer):
         # If dataset size is not a multiple of batch_size.
         # This text creates 1 sequence of length 19. Padded to MAX_SEQ_LEN=10 (oops, this is too short)
         # Let's make MAX_SEQ_LEN = 20 for this test.
         current_max_seq_len = 20
-        dataset = TextDataset(str(dummy_text_file), dummy_tokenizer, current_max_seq_len, overlap=0)
+        dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, current_max_seq_len, overlap=0)
         # Content "single item dataset" is 19 chars. So 1 sequence.
         assert len(dataset) == 1
 
