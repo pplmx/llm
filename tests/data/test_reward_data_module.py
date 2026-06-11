@@ -1,11 +1,11 @@
 """Tests for RewardDataModule contract compliance."""
 
 import json
-from string import printable
 
-from llm.data.datasets.reward import RewardDataset
+import torch
+
 from llm.data.modules.reward import RewardDataModule
-from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.training.core.config import Config
 
 
@@ -15,33 +15,22 @@ def _write_reward_jsonl(path, rows):
             handle.write(json.dumps(row) + "\n")
 
 
-def _build_data_module(config: Config) -> RewardDataModule:
-    data_module = RewardDataModule(config)
-    data_module.prepare_data()
-    data_module.tokenizer = SimpleCharacterTokenizer(corpus=[printable])
+def _config_with_printable_tokenizer(tmp_path, *, train_path: str, val_path: str | None = None) -> Config:
+    tokenizer_path = tmp_path / "tokenizer.pt"
+    torch.save(TokenizerFactory.from_printable_corpus(), tokenizer_path)
 
-    if not config.data.dataset_path:
-        return data_module
-
-    full_dataset = RewardDataset(
-        file_path=config.data.dataset_path,
-        tokenizer=data_module.tokenizer,
-        max_seq_len=config.data.max_seq_len,
-    )
-    train_size = int(0.9 * len(full_dataset))
-    val_size = len(full_dataset) - train_size
-    if val_size > 0:
-        from torch.utils.data import random_split
-
-        data_module.train_dataset, data_module.val_dataset = random_split(full_dataset, [train_size, val_size])
-    else:
-        data_module.train_dataset = full_dataset
-        data_module.val_dataset = None
-
-    return data_module
+    config = Config()
+    config.data.dataset_path = train_path
+    config.data.val_dataset_path = val_path
+    config.data.tokenizer_path = str(tokenizer_path)
+    config.data.max_seq_len = 32
+    config.training.batch_size = 2
+    config.optimization.num_workers = 0
+    return config
 
 
-def test_reward_data_module_uses_base_contract(tmp_path):
+def test_reward_data_module_setup_splits_train_and_val(tmp_path):
+    """Requirement: RewardDataModule.setup applies 90/10 split for three preference pairs."""
     data_file = tmp_path / "reward.jsonl"
     _write_reward_jsonl(
         data_file,
@@ -52,45 +41,39 @@ def test_reward_data_module_uses_base_contract(tmp_path):
         ],
     )
 
-    config = Config()
-    config.data.dataset_path = str(data_file)
-    config.data.max_seq_len = 32
-    config.training.batch_size = 2
-    config.optimization.num_workers = 0
+    data_module = RewardDataModule(_config_with_printable_tokenizer(tmp_path, train_path=str(data_file)))
+    data_module.setup()
 
-    data_module = _build_data_module(config)
+    assert len(data_module.train_dataset) == 2
+    assert len(data_module.val_dataset) == 1
 
     train_loader, train_sampler = data_module.train_dataloader(rank=0, world_size=1)
-    val_loader, val_sampler = data_module.val_dataloader(rank=0, world_size=1)
+    val_loader, _ = data_module.val_dataloader(rank=0, world_size=1)
 
-    assert train_sampler is not None
-    assert val_sampler is not None
+    assert len(train_sampler) == 2
+    assert len(val_loader.dataset) == 1
     batch = next(iter(train_loader))
-    assert "chosen_input_ids" in batch
-    assert "rejected_input_ids" in batch
-    assert batch["chosen_input_ids"].shape[0] == 2
-
-    if val_loader is not None:
-        val_batch = next(iter(val_loader))
-        assert val_batch["chosen_input_ids"].shape[0] <= 2
+    assert batch["chosen_input_ids"].shape == (2, 32)
+    assert batch["rejected_input_ids"].shape == (2, 32)
 
 
 def test_reward_data_module_explicit_val_file(tmp_path):
+    """Requirement: val_dataset_path loads validation JSONL without random split."""
     train_file = tmp_path / "train.jsonl"
     val_file = tmp_path / "val.jsonl"
     _write_reward_jsonl(train_file, [{"prompt": "Q", "chosen": "A", "rejected": "B"}])
     _write_reward_jsonl(val_file, [{"prompt": "Q2", "chosen": "C", "rejected": "D"}])
 
-    config = Config()
-    config.data.dataset_path = str(train_file)
-    config.data.val_dataset_path = str(val_file)
-    config.data.max_seq_len = 16
-    config.training.batch_size = 1
-    config.optimization.num_workers = 0
-
-    data_module = RewardDataModule(config)
+    data_module = RewardDataModule(
+        _config_with_printable_tokenizer(
+            tmp_path,
+            train_path=str(train_file),
+            val_path=str(val_file),
+        )
+    )
     data_module.setup()
 
-    assert isinstance(data_module.train_dataset, RewardDataset)
     assert len(data_module.train_dataset) == 1
     assert len(data_module.val_dataset) == 1
+    assert data_module.train_dataset.data[0]["prompt"] == "Q"
+    assert data_module.val_dataset.data[0]["prompt"] == "Q2"

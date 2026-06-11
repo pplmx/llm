@@ -2,7 +2,10 @@ import pytest
 import torch
 
 from llm.models.decoder import DecoderModel
+from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.core.config import Config, ModelConfig, OptimizationConfig, TrainingConfig
+from tests.support.corpus import DEFAULT_INFERENCE_CORPUS
+from tests.support.tokenizers import LineTokenizer, StubTokenizer
 
 
 def pytest_configure(config):
@@ -86,3 +89,29 @@ def tiny_model(tiny_config, device):
         max_seq_len=tiny_config.model.max_seq_len,
         device=device,
     )
+
+
+@pytest.fixture
+def stub_tokenizer():
+    """Minimal tokenizer for generation/serving tests."""
+    return StubTokenizer()
+
+
+@pytest.fixture
+def line_tokenizer():
+    """Ord-based tokenizer for streaming tests outside tests/data/."""
+    return LineTokenizer()
+
+
+@pytest.fixture
+def model_and_tokenizer():
+    """Real character tokenizer + small decoder for inference tests."""
+    tokenizer = SimpleCharacterTokenizer(DEFAULT_INFERENCE_CORPUS)
+    model = DecoderModel(
+        vocab_size=tokenizer.vocab_size,
+        hidden_size=32,
+        num_layers=2,
+        num_heads=4,
+        max_seq_len=64,
+    )
+    return model, tokenizer

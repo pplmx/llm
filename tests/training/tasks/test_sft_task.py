@@ -17,7 +17,6 @@ def test_sft_task_train_step(tiny_config, tiny_model, device):
 
     loss, metrics = task.train_step(batch, tiny_model, criterion)
 
-    assert isinstance(loss, torch.Tensor)
     assert not torch.isnan(loss)
-    assert "loss" in metrics
-    assert "ppl" in metrics
+    assert metrics["loss"] > 0
+    assert metrics["ppl"] >= 1.0

@@ -51,9 +51,7 @@ def test_lm_task_step(mock_config):
 
     loss, metrics = task.train_step(batch, model, criterion)
 
-    assert isinstance(loss, torch.Tensor)
-    assert "loss" in metrics
-    assert "ppl" in metrics
+    assert not torch.isnan(loss)
     assert metrics["loss"] > 0
     assert metrics["ppl"] >= 1.0
 

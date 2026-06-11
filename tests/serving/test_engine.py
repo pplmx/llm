@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 
 from llm.serving.batch_engine import ContinuousBatchingEngine, SlotAllocator
@@ -10,8 +12,8 @@ class MockTokenizer:
         self.pad_token_id = 0
 
     def encode(self, text):
-        # Return dummy ids based on length of text
-        return [1] * len(text)
+        # Deterministic ids: one distinct id per character position
+        return list(range(1, len(text) + 1))
 
     def decode(self, ids):
         return " ".join(map(str, ids))
@@ -22,17 +24,16 @@ def mock_tokenizer():
     return MockTokenizer()
 
 
-def test_slot_allocator():
+def test_slot_allocator_allocate_and_free_round_trip():
     allocator = SlotAllocator(total_slots=4)
-    assert len(allocator.free_slots) == 4
 
     slot1 = allocator.allocate("req1")
-    assert slot1 in range(4)
+    assert slot1 in {0, 1, 2, 3}
     assert len(allocator.free_slots) == 3
     assert allocator.get_slot("req1") == slot1
 
     slot2 = allocator.allocate("req2")
-    assert slot2 != slot1
+    assert slot2 == 1
     assert len(allocator.free_slots) == 2
 
     allocator.free("req1")
@@ -40,20 +41,8 @@ def test_slot_allocator():
     assert allocator.get_slot("req1") == -1
 
 
-def test_engine_initialization(tiny_model, mock_tokenizer):
-    tiny_model.to("cpu")
-    engine = ContinuousBatchingEngine(
-        model=tiny_model,
-        tokenizer=mock_tokenizer,
-        max_batch_size=4,
-        device="cpu",
-    )
-    assert engine.max_batch_size == 4
-    assert engine.scheduler.max_batch_size == 4
-    assert len(engine.slot_allocator.free_slots) == 4
-
-
-def test_engine_step_prefill(tiny_model, mock_tokenizer):
+def test_engine_prefill_populates_sequence_and_allocates_slot(tiny_model, mock_tokenizer):
+    """Requirement: first step tokenizes prompt, runs prefill, and assigns a KV slot."""
     tiny_model.to("cpu")
     tiny_model.eval()
 
@@ -64,25 +53,20 @@ def test_engine_step_prefill(tiny_model, mock_tokenizer):
         device="cpu",
     )
 
-    # Add Request
-    req = GenerationRequest(prompt="test", max_new_tokens=10)
+    req = GenerationRequest(prompt="abcd", max_new_tokens=10)
     req.request_id = "req1"
     engine.add_request(req)
-
-    # Step 1: Prefill
     engine.step()
 
-    # Verify Sequence State
     seq = engine.scheduler.get_sequence("req1")
     assert seq.status == RequestState.RUNNING
-    assert len(seq.input_ids) == 4  # "test" -> 4 chars
+    assert seq.input_ids == [1, 2, 3, 4]
     assert len(seq.generated_ids) == 1
-
-    # Verify Slot Allocation
-    assert engine.slot_allocator.get_slot("req1") != -1
+    assert engine.slot_allocator.get_slot("req1") >= 0
 
 
-def test_engine_single_step_decode(tiny_model, mock_tokenizer):
+def test_engine_decode_step_appends_generated_token(tiny_model, mock_tokenizer):
+    """Requirement: second step appends one decode token while keeping the same slot."""
     tiny_model.to("cpu")
     tiny_model.eval()
 
@@ -93,29 +77,22 @@ def test_engine_single_step_decode(tiny_model, mock_tokenizer):
         device="cpu",
     )
 
-    # Add Request
-    req = GenerationRequest(prompt="test", max_new_tokens=10)
+    req = GenerationRequest(prompt="abcd", max_new_tokens=10)
     req.request_id = "req2"
     engine.add_request(req)
+    engine.step()
+    slot = engine.slot_allocator.get_slot("req2")
 
-    # Step 1: Prefill
     engine.step()
 
     seq = engine.scheduler.get_sequence("req2")
-    assert len(seq.generated_ids) == 1
-
-    # Step 2: Decode
-    engine.step()
-
-    # Verify Sequence State updated
     assert len(seq.generated_ids) == 2
     assert seq.status == RequestState.RUNNING
-
-    # Verify we are still in the same slot
-    assert engine.slot_allocator.get_slot("req2") != -1
+    assert engine.slot_allocator.get_slot("req2") == slot
 
 
-def test_engine_prefix_cache_reuses_kv(tiny_model, mock_tokenizer):
+def test_engine_prefix_cache_reuses_kv_on_matching_prompt(tiny_model, mock_tokenizer):
+    """Requirement: identical prompts reuse cached KV via _copy_kv_between_slots."""
     tiny_model.to("cpu")
     tiny_model.eval()
 
@@ -132,17 +109,28 @@ def test_engine_prefix_cache_reuses_kv(tiny_model, mock_tokenizer):
     engine.add_request(req1)
     engine.step()
 
+    slot_a = engine.slot_allocator.get_slot("req-a")
+    cached = engine.prefix_cache.get([1, 2, 3, 4, 5])
+    assert cached == (slot_a, 5)
+
     req2 = GenerationRequest(prompt="hello", max_new_tokens=3)
     req2.request_id = "req-b"
     engine.add_request(req2)
-    engine.step()
+
+    with patch.object(engine, "_copy_kv_between_slots", wraps=engine._copy_kv_between_slots) as copy_kv:
+        engine.step()
+        copy_kv.assert_called_once()
+        src_slot, dst_slot, prefix_len = copy_kv.call_args.args
+        assert src_slot == slot_a
+        assert prefix_len == 5
+        assert dst_slot == engine.slot_allocator.get_slot("req-b")
 
     seq2 = engine.scheduler.get_sequence("req-b")
-    assert seq2 is not None
     assert len(seq2.generated_ids) == 1
 
 
-def test_engine_paged_attention_sidecar(tiny_model, mock_tokenizer):
+def test_engine_paged_attention_sidecar_uses_configured_pool(tiny_model, mock_tokenizer):
+    """Requirement: use_paged_attention attaches a PagedKVCache sidecar with configured size."""
     tiny_model.to("cpu")
     engine = ContinuousBatchingEngine(
         model=tiny_model,
@@ -150,13 +138,17 @@ def test_engine_paged_attention_sidecar(tiny_model, mock_tokenizer):
         max_batch_size=2,
         device="cpu",
         use_paged_attention=True,
-        enable_prefix_cache=True,
+        max_blocks=64,
+        block_size=8,
+        enable_prefix_cache=False,
     )
-    assert engine.paged_kv_cache is not None
-    assert engine.prefix_cache is not None
+    assert engine.paged_kv_cache.num_blocks == 64
+    assert engine.paged_kv_cache.block_size == 8
+    assert engine.prefix_cache is None
 
 
 def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
+    """Requirement: from_serving_config maps ServingConfig fields onto engine state."""
     from llm.serving.config import ServingConfig
 
     tiny_model.to("cpu")
@@ -179,8 +171,6 @@ def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
     assert engine.max_batch_size == 3
     assert engine.max_seq_len == 64
     assert engine.enable_prefix_cache is True
-    assert engine.prefix_cache is not None
     assert engine.prefix_cache.max_prefixes == 5
-    assert engine.paged_kv_cache is not None
     assert engine.paged_kv_cache.num_blocks == 32
     assert engine.paged_kv_cache.block_size == 8

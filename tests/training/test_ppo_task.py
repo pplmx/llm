@@ -8,7 +8,9 @@ import pytest
 from llm.data.modules.prompt import PromptDataModule
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
+from llm.training.rlhf.ppo_trainer import PPOTrainer
 from llm.training.tasks.ppo_task import PPOTask
+from tests.support.tokenizers import CharBoundTokenizer
 
 
 def _write_prompts(path, prompts):
@@ -21,15 +23,7 @@ def _write_prompts(path, prompts):
 def test_ppo_task_uses_custom_loop(tmp_path, tiny_model, monkeypatch):
     prompt_file = tmp_path / "prompts.jsonl"
     _write_prompts(prompt_file, ["Hello", "Hi there", "Test prompt"])
-
-    class _Tok:
-        def encode(self, text: str) -> list[int]:
-            return [ord(c) % 50 for c in text[:16]]
-
-        def decode(self, ids: list[int]) -> str:
-            return "x"
-
-        eos_id = 0
+    tokenizer = CharBoundTokenizer()
 
     config = Config()
     config.data.dataset_path = str(prompt_file)
@@ -56,7 +50,7 @@ def test_ppo_task_uses_custom_loop(tmp_path, tiny_model, monkeypatch):
         return reward_base
 
     monkeypatch.setattr(PPOTask, "build_model", fake_build_model)
-    monkeypatch.setattr(PPOTask, "_load_tokenizer", lambda self: _Tok())
+    monkeypatch.setattr(PPOTask, "_load_tokenizer", lambda self: tokenizer)
 
     engine = TrainingEngine(
         config=config,
@@ -68,5 +62,5 @@ def test_ppo_task_uses_custom_loop(tmp_path, tiny_model, monkeypatch):
     )
 
     assert engine.use_standard_loop is False
-    assert task.ppo_trainer is not None
+    assert type(task.ppo_trainer) is PPOTrainer
     engine.run()

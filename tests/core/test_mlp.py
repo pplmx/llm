@@ -221,39 +221,6 @@ def test_mlp_no_norm_residual_output():
         )
 
 
-@pytest.mark.slow
-def test_mlp_no_norm_residual_dropout_still_active():
-    """Tests that dropout is still active in MLP when include_norm_residual is False."""
-    torch.manual_seed(42)
-    dropout_val = 0.5
-    mlp, input_tensor = create_test_mlp(include_norm_residual=False, dropout_p=dropout_val)
-
-    # Test in eval mode (dropout should be disabled)
-    mlp.eval()
-    with torch.no_grad():
-        output_eval_1 = mlp(input_tensor)
-        output_eval_2 = mlp(input_tensor)
-    assert torch.allclose(output_eval_1, output_eval_2, atol=1e-7), (
-        "Outputs in eval mode should be identical (no norm/res)."
-    )
-
-    # Test in train mode (dropout should be active)
-    mlp.train()
-    # Ensure different random seeds for dropout mask generation if not handled by PyTorch's global seed already
-    # However, multiple calls to dropout in train() should yield different masks for the same input.
-    torch.manual_seed(43)  # Change seed slightly for first train output if necessary
-    with torch.no_grad():
-        output_train_1 = mlp(input_tensor)
-    torch.manual_seed(44)  # And for second
-    with torch.no_grad():
-        output_train_2 = mlp(input_tensor)
-
-    if dropout_val > 0:
-        assert not torch.allclose(output_train_1, output_train_2, atol=1e-6), (
-            "Outputs in train mode should differ due to dropout (no norm/res)."
-        )
-
-
 # --- Test Case 4: Activation Functions ---
 @pytest.mark.parametrize("activation", ["relu", "gelu", "silu"])
 @pytest.mark.slow
@@ -433,3 +400,64 @@ def test_mlp_norm_type_as_instance():
             found_norm_params = True
             break
     assert found_norm_params, "Custom norm layer parameters not found in MLP parameters"
+
+
+@pytest.mark.slow
+def test_mlp_swiglu_initialization():
+    hidden_size = 64
+    intermediate_size = 128
+
+    mlp_glu = MLP(hidden_size=hidden_size, intermediate_size=intermediate_size, use_glu=True)
+    assert hasattr(mlp_glu, "gate_proj")
+    assert mlp_glu.gate_proj.out_features == intermediate_size
+
+    mlp_no_glu = MLP(hidden_size=hidden_size, intermediate_size=intermediate_size, use_glu=False)
+    assert not hasattr(mlp_no_glu, "gate_proj")
+
+
+@pytest.mark.slow
+def test_mlp_swiglu_forward():
+    hidden_size = 64
+    intermediate_size = 128
+    mlp = MLP(hidden_size=hidden_size, intermediate_size=intermediate_size, activation="silu", use_glu=True)
+    mlp.eval()
+
+    x = torch.randn(2, 5, hidden_size)
+    with torch.no_grad():
+        output = mlp(x)
+
+    assert output.shape == (2, 5, hidden_size)
+
+
+@pytest.mark.parametrize("activation", ["silu", "gelu", "relu"])
+@pytest.mark.slow
+def test_mlp_swiglu_with_varied_activations(activation):
+    hidden_size = 32
+    intermediate_size = 64
+    mlp = MLP(hidden_size=hidden_size, intermediate_size=intermediate_size, activation=activation, use_glu=True)
+    x = torch.randn(1, 4, hidden_size)
+    output = mlp(x)
+    assert output.shape == (1, 4, hidden_size)
+
+
+@pytest.mark.slow
+def test_mlp_numerical_consistency_glu():
+    hidden_size = 16
+    intermediate_size = 32
+    mlp = MLP(
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        activation="relu",
+        use_glu=True,
+        dropout_p=0.0,
+        include_norm_residual=False,
+    )
+    mlp.eval()
+
+    x = torch.randn(1, 1, hidden_size)
+    with torch.no_grad():
+        res_fc1 = mlp.activation(mlp.fc1(x))
+        res_gate = mlp.gate_proj(x)
+        expected = mlp.fc2(res_fc1 * res_gate)
+        actual = mlp(x)
+        assert torch.allclose(actual, expected, atol=1e-6)

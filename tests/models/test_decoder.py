@@ -4,112 +4,27 @@ import pytest
 import torch
 import torch.nn as nn
 
-from llm.core.embedding import EmbeddingLayer
-from llm.core.transformer_block import TransformerBlock
 from llm.models.decoder import DecoderModel
+from tests.support.models import DECODER_BATCH_SIZE, DECODER_SEQ_LEN, DEVICES
 
-# Test Constants
-VOCAB_SIZE = 500
-HIDDEN_SIZE = 64
-NUM_LAYERS = 2
-NUM_HEADS = 4
-MAX_SEQ_LEN = 128
-MLP_INTERMEDIATE_SIZE = HIDDEN_SIZE * 4
-DROPOUT_P = 0.0  # Default to 0 for deterministic tests unless specified
-NORM_EPS = 1e-5
-BATCH_SIZE = 2
-SEQ_LEN = 10
-
-# Available devices for testing
-DEVICES = ["cpu"]
-if torch.cuda.is_available():
-    DEVICES.append("cuda")
-
+BATCH_SIZE = DECODER_BATCH_SIZE
+SEQ_LEN = DECODER_SEQ_LEN
 DTYPES = [torch.float32]
-
-
-@pytest.fixture
-def model_kwargs(request):
-    """Fixture to provide default and overridable kwargs for DecoderModel."""
-    default = {
-        "vocab_size": VOCAB_SIZE,
-        "hidden_size": HIDDEN_SIZE,
-        "num_layers": NUM_LAYERS,
-        "num_heads": NUM_HEADS,
-        "max_seq_len": MAX_SEQ_LEN,
-        "intermediate_size": MLP_INTERMEDIATE_SIZE,
-        "pos_encoding_learned": False,
-        "embedding_dropout_p": DROPOUT_P,
-        "attn_dropout_p": DROPOUT_P,
-        "mlp_dropout_p": DROPOUT_P,
-        "mlp_activation": "gelu",
-        "norm_eps": NORM_EPS,
-        "norm_first": True,
-        "is_causal": True,  # Default for DecoderModel
-        "padding_idx": None,
-        "qkv_bias": True,
-        "mlp_bias": True,
-        "lm_head_bias": True,
-        "device": "cpu",
-        "dtype": torch.float32,
-    }
-    if hasattr(request, "param"):
-        default.update(request.param)
-    return default
-
-
-@pytest.fixture
-def decoder_model(model_kwargs):
-    """Creates a DecoderModel instance based on model_kwargs."""
-    model = DecoderModel(**model_kwargs)
-    model.eval()  # Default to eval mode
-    return model
-
-
-@pytest.fixture
-def input_ids_tensor(model_kwargs):
-    """Creates dummy input_ids based on model_kwargs."""
-    return torch.randint(
-        0, model_kwargs["vocab_size"], (BATCH_SIZE, SEQ_LEN), device=model_kwargs["device"], dtype=torch.long
-    )
-
-
-@pytest.fixture
-def attention_mask_tensor(model_kwargs):
-    """Creates a dummy attention mask (padding mask)."""
-    # True means masked (ignored by attention)
-    mask = torch.zeros(BATCH_SIZE, SEQ_LEN, device=model_kwargs["device"], dtype=torch.bool)
-    # Example: mask the last token for the first batch item
-    if SEQ_LEN > 1:
-        mask[0, -1] = True
-    # Reshape for MHA: [B, 1, 1, S_key] or [B, 1, S_q, S_k] for SDPA
-    # For simplicity, let's use a mask that can be broadcasted by SDPA: [B, 1, 1, S]
-    return mask.unsqueeze(1).unsqueeze(1)  # [B, 1, 1, S]
 
 
 @pytest.mark.slow
 class TestDecoderModelInitialization:
-    def test_submodule_types_and_counts(self, decoder_model, model_kwargs):
-        assert isinstance(decoder_model.embedding_layer, EmbeddingLayer)
-        assert isinstance(decoder_model.transformer_blocks, nn.ModuleList)
+    def test_module_counts_and_causality(self, decoder_model, model_kwargs):
         assert len(decoder_model.transformer_blocks) == model_kwargs["num_layers"]
+        assert decoder_model.lm_head.out_features == model_kwargs["vocab_size"]
+        expected_causality = model_kwargs.get("is_causal", True)
         for block in decoder_model.transformer_blocks:
-            assert isinstance(block, TransformerBlock)
+            assert block.self_attn.is_causal == expected_causality
 
         if model_kwargs["norm_first"]:
-            assert isinstance(decoder_model.final_norm, nn.LayerNorm)
+            assert type(decoder_model.final_norm) is nn.LayerNorm
         else:
             assert decoder_model.final_norm is None
-
-        assert isinstance(decoder_model.lm_head, nn.Linear)
-        assert decoder_model.lm_head.out_features == model_kwargs["vocab_size"]
-
-    def test_transformer_block_is_causal_setting(self, decoder_model, model_kwargs):
-        expected_causality = model_kwargs.get("is_causal", True)  # Default is True for DecoderModel
-        for block in decoder_model.transformer_blocks:
-            # TransformerBlock's __init__ takes is_causal and passes it to MHA
-            # MHA's __init__ stores it as self.is_causal
-            assert block.self_attn.is_causal == expected_causality
 
     @pytest.mark.parametrize("model_kwargs", [{"lm_head_bias": True}, {"lm_head_bias": False}], indirect=True)
     def test_lm_head_bias(self, decoder_model, model_kwargs):
@@ -130,11 +45,9 @@ class TestDecoderModelForwardPass:
         )
 
     def test_final_norm_application(self, model_kwargs, input_ids_tensor):
-        # Test Pre-LN: final_norm should be called
         model_kwargs["norm_first"] = True
         pre_ln_model = DecoderModel(**model_kwargs)
         pre_ln_model.eval()
-        assert pre_ln_model.final_norm is not None
 
         with patch.object(
             pre_ln_model.final_norm, "forward", wraps=pre_ln_model.final_norm.forward
@@ -142,12 +55,10 @@ class TestDecoderModelForwardPass:
             _ = pre_ln_model(input_ids_tensor)
             spy_final_norm_fwd.assert_called_once()
 
-        # Test Post-LN: final_norm should be None and thus not called
         model_kwargs["norm_first"] = False
         post_ln_model = DecoderModel(**model_kwargs)
         post_ln_model.eval()
         assert post_ln_model.final_norm is None
-        # No need to mock if it's None, it won't be called.
 
     def test_padding_mask_handling(self, decoder_model, input_ids_tensor, attention_mask_tensor):
         # Spy on the forward method of the first TransformerBlock
@@ -237,10 +148,6 @@ class TestDeviceAndDtypePropagation:
         output = model(current_input_ids)
         assert output.device.type == device.split(":")[0]
         assert output.dtype == dtype
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
 
 
 @pytest.mark.parametrize("norm_first_val", [True, False])

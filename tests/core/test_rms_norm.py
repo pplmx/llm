@@ -1,8 +1,4 @@
-"""
-RMS Normalization Demo Tests
-
-Demonstrates and validates RMS Normalization implementation.
-"""
+"""RMSNorm implementation vs NumPy reference."""
 
 import numpy as np
 import torch

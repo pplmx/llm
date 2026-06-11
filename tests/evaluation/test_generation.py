@@ -9,7 +9,7 @@ def test_rouge_basic():
     references = ["the cat sat on the rug"]
 
     result = metric.compute(predictions, references)
-    assert "rouge-1" in result or "rouge-l" in result
+    assert result["rouge-l"] > 0.5
 
 
 def test_bleu_basic():

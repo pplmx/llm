@@ -7,9 +7,9 @@ from llm.training.core.config import (
     CheckpointConfig,
     Config,
     DistributedConfig,
-    LoggingConfig,
     ModelConfig,
     OptimizationConfig,
+    PPOConfig,
     TrainingConfig,
 )
 
@@ -18,12 +18,18 @@ from llm.training.core.config import (
 class TestConfig:
     def test_default_config_creation(self):
         config = Config()
-        assert isinstance(config.model, ModelConfig)
-        assert isinstance(config.training, TrainingConfig)
-        assert isinstance(config.distributed, DistributedConfig)
-        assert isinstance(config.optimization, OptimizationConfig)
-        assert isinstance(config.checkpoint, CheckpointConfig)
-        assert isinstance(config.logging, LoggingConfig)
+        assert config.model.hidden_size == 512
+        assert config.training.batch_size == 128
+        assert config.training.lr == 1e-3
+        assert config.optimization.num_workers == 4
+        assert config.checkpoint.save_interval == 1
+        assert config.logging.log_interval == 10
+        assert config.ppo.clip_epsilon == 0.2
+
+    def test_nested_config_defaults_without_env(self):
+        assert ModelConfig().attn_impl == "mha"
+        assert ModelConfig().mlp_impl == "mlp"
+        assert PPOConfig().ppo_epochs == 4
 
     def test_model_config_post_init_ffn_size(self):
         model_config = ModelConfig(hidden_size=128, intermediate_size=None)
