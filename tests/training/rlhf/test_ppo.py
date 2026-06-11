@@ -64,6 +64,29 @@ class TestRolloutBuffer:
         assert buffer.samples[0].advantages is not None
         assert len(buffer.samples[0].advantages) == 2
 
+    def test_gae_with_values(self):
+        """GAE should use sparse terminal reward and bootstrap with zero."""
+        buffer = RolloutBuffer(gae_lambda=1.0, gamma=1.0, normalize_advantages=False)
+        values = torch.tensor([0.5, 0.3])
+
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+            values=values,
+        )
+
+        buffer.compute_advantages()
+
+        expected = torch.tensor([0.5, 0.7])
+        assert torch.allclose(buffer.samples[0].advantages, expected, atol=1e-5)
+        assert torch.allclose(
+            buffer.samples[0].advantages + values,
+            torch.tensor([1.0, 1.0]),
+            atol=1e-5,
+        )
+
     def test_get_batches(self):
         """Test mini-batch generation."""
         buffer = RolloutBuffer()
@@ -146,6 +169,32 @@ class TestPPOTrainer:
         assert trainer.policy is policy
         assert trainer.reward_model is reward_model
         assert trainer.ref_model is not None  # Should create ref model
+        assert trainer.value_model is not None  # Default value_coef > 0
+        assert trainer.value_optimizer is not None
+
+    def test_compute_response_values(self, tiny_setup):
+        """Critic should emit one value per response token."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+        from llm.training.rlhf.value_model import ValueModel
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        value_model = ValueModel(policy)
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            value_model=value_model,
+            device="cpu",
+        )
+
+        prompt_ids = torch.tensor([1, 2, 3])
+        response_ids = torch.tensor([4, 5, 6])
+        values = trainer.compute_response_values(prompt_ids, response_ids)
+
+        assert values.shape == (3,)
+        assert torch.isfinite(values).all()
 
     def test_generate_responses(self, tiny_setup):
         """Test response generation."""
@@ -223,3 +272,37 @@ class TestPPOTrainer:
 
         assert "loss" in metrics
         assert torch.isfinite(torch.tensor(metrics["loss"]))
+
+    def test_ppo_step_with_value_loss(self, tiny_setup):
+        """PPO step should include value loss when critic is enabled."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+        from llm.training.rlhf.value_model import ValueModel
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        value_model = ValueModel(policy)
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            value_model=value_model,
+            device="cpu",
+        )
+
+        buffer = RolloutBuffer(normalize_advantages=False, gae_lambda=1.0, gamma=1.0)
+        values = torch.tensor([0.1, 0.2])
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+            values=values,
+        )
+        buffer.compute_advantages()
+        batch = next(iter(buffer.get_batches(mini_batch_size=1, shuffle=False, device="cpu")))
+
+        metrics = trainer.ppo_step(batch)
+
+        assert metrics["value_loss"] > 0.0
+        assert torch.isfinite(torch.tensor(metrics["value_loss"]))
