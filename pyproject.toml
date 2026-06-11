@@ -84,6 +84,9 @@ Documentation = "https://github.com/pplmx/llm#readme"
 Issues = "https://github.com/pplmx/llm/issues"
 Source = "https://github.com/pplmx/llm"
 
+[tool.uv]
+default-groups = ["test"]
+
 [tool.uv.build-backend]
 module-name = "llm"
 

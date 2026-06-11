@@ -7,13 +7,13 @@ APP_NAME := llm
 init: sync
 	@uvx prek install --hook-type commit-msg --hook-type pre-commit --hook-type pre-push
 
-# Sync the project with the venv
+# Sync the project with the venv (includes default test group)
 sync:
 	@uv sync
 
-# Sync the project with dev dependencies
+# Sync all dependency groups (test, streaming, docs, dev)
 dev:
-	@uv sync --all-extras --all-groups
+	@uv sync --all-groups
 
 # Build wheel
 build:

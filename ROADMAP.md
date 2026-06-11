@@ -1,6 +1,6 @@
 # LLM 项目完整生命周期路线图
 
-**最后更新**: 2026-03-26
+**最后更新**: 2026-06-10
 
 这是一个动态更新的路线图, 用于追踪整个项目的进展. 项目采用迭代式开发, 每个阶段完成后都会有可用的功能增量.
 
@@ -10,12 +10,20 @@
 
 - 现代化 Decoder-only Transformer 架构 (GQA, SwiGLU, MoE)
 - 完善的分布式训练框架 (DDP, AMP)
-- 高质量工程实践 (600+ 测试用例全部通过)
+- 高质量工程实践 (608 测试用例全部通过)
 - 插件内核架构 (`runtime/` registries + setuptools entry points)
 - 基础推理能力 (KV Cache, Top-k/Top-p 采样, GenerationBackend registry)
 - 完整的模型评估框架 (Perplexity, Accuracy, F1, ROUGE, BLEU, chrF, lm-eval)
 
-🚀 **当前重点**: 预训练完善 & 流式数据加载
+- 流式预训练骨架 (`StreamDataModule`, `SOURCE_REGISTRY`, checkpoint resume)
+- safetensors 权重加载 (`compat/hf_loader`)
+
+🚀 **当前重点 (P0)**: 预训练 productization — 大数据集 preset、dedup 工具、主训练路径文档
+
+> **架构边界** (详见 [docs/reference/architecture.md](docs/reference/architecture.md)):
+> - `attn_impl=mla` 暂不支持 KV cache
+> - Paged Attention serving 侧为 partial 实现 ([ADR-004](docs/adr/004-paged-attention-serving.md))
+> - 多模态 / 3D 并行尚无 registry 抽象, 需先补设计再开发
 
 ### 插件内核重构 (2026 Q2) ✅
 
@@ -31,32 +39,40 @@
 
 ## 下一步探索方向 🔭
 
-### 1. 预训练完善
-- [ ] 流式数据加载器 (支持大规模预训练)
-- [ ] 集成 C4/The Pile/RedPajama 数据集
-- [ ] 数据质量过滤和去重工具
-- [ ] 数据版本控制 (DVC)
+> 优先级: **P0** 预训练 preset → **P1** FSDP 验证 / export registry / Hub 发布 → **P2** 量化深化 / 多模态 spike → **P3** DeepSpeed / PP / 3D
 
-### 2. 生态系统集成 (阶段十四)
-- [x] HuggingFace 权重加载 (from_pretrained)
+### 1. 预训练完善 (P0)
+- [x] 流式数据加载骨架 (`StreamingTextDataset`, `StreamingTextDataModule`, `HFStreamTextSource`)
+- [x] 流式 checkpoint resume (`CheckpointContributor` + `stream_data_state`)
+- [ ] C4 / The Pile / RedPajama 预设配置 (CLI/YAML 模板, 复用 `SOURCE_REGISTRY`)
+- [ ] 数据质量过滤和去重工具 (新 `TextSource` 装饰器或 pipeline)
+- [ ] 数据版本控制 (DVC, 配合 `source_fingerprint()`)
+- [ ] 主路径预训练教程与 e2e (对齐 `llm-train`, 非仅独立脚本)
+
+### 2. 生态系统集成 (P1, 阶段十四)
+- [x] HuggingFace 权重加载 (`from_pretrained`)
+- [x] safetensors **加载** (`compat/hf_loader`)
 - [x] ONNX 导出
-- [ ] TorchScript 导出
-- [ ] LangChain/LlamaIndex 集成
-- [ ] safetensors 格式支持
+- [x] OpenAI 兼容 Serving API (LangChain/LlamaIndex 可直接对接 HTTP)
+- [ ] safetensors **保存** / checkpoint 格式统一
+- [ ] TorchScript 导出 (可扩 `export/` 模块)
+- [ ] Export registry (与 `BACKEND_REGISTRY` 对称)
 - [ ] 发布预训练模型到 HuggingFace Hub
 
-### 3. 多模态扩展 (阶段十二)
+### 3. 多模态扩展 (P2, 阶段十二)
+> 前置: `MultimodalDataModule` + `ModalityEncoderRegistry` 设计 spike
+
 - [ ] 视觉编码器集成 (CLIP/SigLIP)
 - [ ] 图像-文本对齐模块
 - [ ] Visual Instruction Tuning
 
-### 4. 高效微调
+### 4. 高效微调 (P2)
 - [x] QLoRA (NF4 量化 + LoRA)
 - [ ] AdaLoRA
 - [ ] Prefix Tuning / P-Tuning
 
-### 5. 高级分布式训练
-- [ ] FSDP (Fully Sharded Data Parallel)
+### 5. 高级分布式训练 (P1–P3)
+- [~] FSDP — `parallel_strategy=fsdp` + `wrap_model_for_training()` 已接线, 待 e2e 与文档
 - [ ] Pipeline Parallelism
 - [ ] DeepSpeed ZeRO 集成
 
@@ -75,16 +91,17 @@
 
 ---
 
-## 阶段二: 数据工程 ✅
+## 阶段二: 数据工程 🔄
 
-> **状态**: 基础完成 | **完成时间**: 2024 年
+> **状态**: 流式骨架已完成, preset/工具待补 | **最后更新**: 2026-06-10
 
 - [x] **数据加载**: `src/llm/data/datasets/text.py` 用于读取和初步处理数据
 - [x] **数据抽象**: `DataModule` (`data/base.py`) 封装数据集和数据加载器；`datasets/` 与 `modules/` 分层
-- [ ] **流式数据处理** ⏭️ *下一阶段*
-    - [ ] 实现流式数据加载器, 支持大规模预训练
-    - [ ] 集成常见预训练数据集 (C4, The Pile, RedPajama)
-    - [ ] 添加数据质量过滤和去重工具
+- [x] **流式数据处理** (基础)
+    - [x] `StreamingTextDataset` + `StreamingTextDataModule` + `StreamDataState` resume
+    - [x] `SOURCE_REGISTRY` (`local` / `hf` entry points)
+    - [ ] C4 / The Pile / RedPajama 预设配置
+    - [ ] 数据质量过滤和去重工具
 - [ ] **数据版本控制** ⏭️ *下一阶段*
     - [ ] 引入 `DVC` 或类似工具, 对数据集和预处理脚本进行版本管理
 
@@ -127,8 +144,8 @@
     - [x] **混合精度**: 实现自动 BF16/FP16 检测及 `torch.cuda.amp` 支持
     - [x] **检查点系统**: 实现 CheckpointManager 支持训练中断恢复
     - [x] **监控与日志**: TensorBoard 集成 (`TensorBoardCallback`)
-- [ ] **训练策略** ⏭️ *下一阶段*
-    - [ ] **预训练 (Pre-training)**: 大规模通用语料库训练 (需流式数据加载)
+- [ ] **训练策略** ⏭️ *进行中*
+    - [~] **预训练 (Pre-training)**: 流式骨架已通, 待大数据 preset + 主路径文档
     - [x] **指令微调 (Instruction Fine-tuning)**: SFT task 已实现 (`training/tasks/sft_task.py`)
 
 ---
@@ -167,16 +184,17 @@
     - [x] 实现优先级调度 (`PriorityScheduler`)
 - [x] **性能优化** (基础) ✅ *阶段十*
     - [x] 集成 `torch.compile` 到推理流程 (可选配置)
-    - [x] 优化 KV Cache 内存管理 (Paged Attention)
+    - [~] Paged Attention — prefix cache ✅; forward 全链路待接 ([ADR-004](docs/adr/004-paged-attention-serving.md))
     - [x] 实现推理缓存机制 (Prefix Caching)
 
 ---
 
 ## 阶段八: 测试与质量保证 ✅
 
-> **状态**: 持续进行 | **最后更新**: 2026-01-07
+> **状态**: 持续进行 | **最后更新**: 2026-06-10
 
-- [x] **单元测试**: 核心模块覆盖, 目前 385 个测试用例全部通过
+- [x] **单元测试**: 核心模块覆盖, 目前 608 个测试用例全部通过
+- [x] **测试架构**: `tests/support/` 共享层 + 分层 conftest (见 `AGENTS.md`)
 - [x] **代码质量**: 全面应用 `ruff` 规范并修复所有 lint 问题
 - [x] **集成测试**:
     - [x] 完善 `MoE` 动态专家路由的深度集成测试
@@ -225,10 +243,11 @@
 
 #### 10.2 高级推理优化
 
-- [x] 实现 Paged Attention (vLLM style)
-- [x] 优化 KV Cache 内存布局和管理
+- [~] Paged Attention — block allocator + prefix sidecar 已实现; model forward 仍用 `list[KVCache]` ([ADR-004](docs/adr/004-paged-attention-serving.md))
+- [x] 优化 KV Cache 内存布局和管理 (`KVCache`, per-slot buffers)
 - [x] 实现 Continuous Batching (`ContinuousBatchingEngine`)
 - [x] 实现请求级别动态调度 (`PriorityScheduler`)
+- [x] Prefix Caching (`SlotPrefixCache`)
 
 #### 10.3 编译优化
 
@@ -289,7 +308,9 @@
 
 ## 阶段十二: 多模态扩展 ⏭️
 
-> **优先级**: P2 (中) | **预计时间**: 2025 Q4-2026 Q1 | **预计工作量**: 3-4 个月
+> **优先级**: P2 (中) | **预计时间**: 2026 H2 | **预计工作量**: 3-4 个月
+>
+> **前置条件**: 设计 `MultimodalDataModule` + 模态 encoder registry, 再集成 CLIP/SigLIP
 
 ### 目标
 
@@ -388,22 +409,22 @@
 - [x] 实现 `from_pretrained` 加载功能
 - [x] 支持 HuggingFace 权重转换
 - [x] 实现模型架构检测和映射
-- [ ] 实现 `safetensors` 格式支持
+- [x] safetensors **加载** (`compat/hf_loader`)
+- [ ] safetensors **保存** / 训练 checkpoint 统一格式
 - [ ] 发布模型到 HuggingFace Hub
 
 #### 14.2 模型导出
 
-- [x] 实现 ONNX 导出
+- [x] 实现 ONNX 导出 (`export/onnx.py`)
+- [ ] Export registry (统一 ONNX / TorchScript / 未来格式)
 - [ ] 实现 TorchScript 导出
 - [ ] 支持 TensorRT 优化
 - [ ] 探索 Core ML 支持 (iOS 部署)
 
 #### 14.3 应用框架集成
 
-- [ ] 集成 LangChain
-- [ ] 集成 LlamaIndex
-- [ ] 提供标准化 API 接口
-- [x] 实现 OpenAI API 兼容层
+- [ ] LangChain / LlamaIndex 官方 adapter 示例 (Serving OpenAI API 已可用)
+- [x] 提供标准化 HTTP API (OpenAI 兼容层)
 
 #### 14.4 模型共享
 
@@ -454,8 +475,8 @@
 
 #### 15.5 高级分布式训练
 
-- [ ] 实现 FSDP (Fully Sharded Data Parallel)
-- [ ] 实现 Pipeline Parallelism
+- [~] FSDP — config + `wrap_model_for_training()` 已接线, 待 e2e 验证与 tuning
+- [ ] Pipeline Parallelism
 - [ ] 集成 DeepSpeed ZeRO (Stage 2/3)
 - [ ] 探索 3D Parallelism (DP + PP + TP)
 
@@ -496,6 +517,7 @@
 
 ## 版本历史
 
+- **v0.0.6** (2026-06-10): 路线图与实现对齐 (流式/safetensors/FSDP/Paged Attn partial), 测试 608, `tests/support/` 架构
 - **v0.0.5** (2026-03-26): Paged Attention, Prefix Caching, PPO Trainer, PTQ, Checkpoint System, HuggingFace 兼容性, ONNX 导出, Priority Scheduler, TensorBoard
 - **v0.0.4** (2026-01-07): Gradient Checkpointing, E2E Pipeline, OpenAI Chat API, Batch Inference, 测试数 337
 - **v0.0.3** (2026-01-05): 同步路线图与实际状态, 修复 train.py 任务注册, 更新测试计数
