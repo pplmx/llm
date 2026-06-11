@@ -3,11 +3,11 @@ import math
 import torch
 from torch import nn
 
-from llm.core.registry import MLP_REGISTRY
+from llm.core.registry import register_mlp
 from llm.utils.common import get_activation_layer, make_factory_kwargs
 
 
-@MLP_REGISTRY.register("mlp")
+@register_mlp("mlp")
 class MLP(nn.Module):
     """
         Multi-Layer Perceptron (MLP).

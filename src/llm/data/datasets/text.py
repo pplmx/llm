@@ -161,19 +161,27 @@ def create_dataloader(
     num_workers: int = 0,
     pin_memory: bool = False,
 ) -> DataLoader:
+    """Build a simple DataLoader for a TextDataset (scripts / legacy tests)."""
+    return build_text_dataloader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
+
+
+def build_text_dataloader(
+    dataset: TextDataset,
+    batch_size: int,
+    shuffle: bool = True,
+    num_workers: int = 0,
+    pin_memory: bool = False,
+) -> DataLoader:
     """
-    Creates a PyTorch DataLoader for a TextDataset.
+    Build a PyTorch DataLoader for a TextDataset.
 
-    Args:
-        dataset (TextDataset): The dataset to load.
-        batch_size (int): Number of samples per batch.
-        shuffle (bool, default=True): Whether to shuffle the data at every epoch.
-        num_workers (int, default=0): Number of subprocesses to use for data loading.
-        pin_memory (bool, default=False): If True, copies Tensors into CUDA pinned memory
-                                          before returning them (if using CUDA).
-
-    Returns:
-        DataLoader: A PyTorch DataLoader instance.
+    Prefer ``TokenizedMapDataModule`` for training; this helper is for scripts.
     """
     if not isinstance(dataset, TextDataset):
         raise TypeError("dataset must be an instance of TextDataset.")

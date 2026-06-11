@@ -5,7 +5,7 @@ from llm.data.datasets.prompt import PromptDataset
 from llm.data.datasets.reward import RewardDataset
 from llm.data.datasets.sft import SFTDataset
 from llm.data.datasets.streaming import StreamingTextDataset
-from llm.data.datasets.text import TextDataset, create_dataloader
+from llm.data.datasets.text import TextDataset, build_text_dataloader, create_dataloader
 
 __all__ = [
     "DPODataset",
@@ -14,5 +14,6 @@ __all__ = [
     "SFTDataset",
     "StreamingTextDataset",
     "TextDataset",
+    "build_text_dataloader",
     "create_dataloader",
 ]

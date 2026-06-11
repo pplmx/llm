@@ -25,7 +25,7 @@ class ServingConfig(BaseSettings):
     max_concurrent_requests: int = 4  # Max concurrent inference requests
     request_timeout: float = 60.0  # Request timeout in seconds
 
-    # Paged Attention
+    # Paged Attention (block allocator sidecar; model forward still uses KVCache)
     use_paged_attention: bool = False
     max_blocks: int = 256
     block_size: int = 16

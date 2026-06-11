@@ -16,7 +16,8 @@ import torch.nn as nn
 import torch.optim as optim
 
 from llm.generation import generate
-from llm.runtime import ModelFactory
+from llm.runtime.model_factory import ModelFactory
+from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 
@@ -179,8 +180,7 @@ def run_e2e_pipeline(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if tokenizer is None:
-        corpus = ["hello world", "the quick brown fox", "testing one two three", "abcdefghijklmnopqrstuvwxyz"]
-        tokenizer = SimpleCharacterTokenizer(corpus)
+        tokenizer = TokenizerFactory.from_default_test_corpus()
 
     model = ModelFactory.build(
         "decoder",
