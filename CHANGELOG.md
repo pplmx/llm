@@ -95,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - In-place updates during autoregressive generation (avoids O(n²) memory operations)
     - Integrated into `MHA`, `TransformerBlock`, `DecoderModel`
     - Factory method `KVCache.from_model_config()` for easy instantiation
-    - Backward compatible: legacy `past_key_value` tuple format still works
+    - Unified `kv_caches` API; legacy tuple format removed in Wave 3
 
 - **E2E Testing Infrastructure**:
     - `tests/e2e/` directory with comprehensive pipeline tests

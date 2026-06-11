@@ -38,11 +38,6 @@ def ensure_backends_registered() -> None:
     if _backends_registered:
         return
 
-    if "eager" not in BACKEND_REGISTRY:
-        BACKEND_REGISTRY.register("eager", build_eager_backend)
-    if "batched" not in BACKEND_REGISTRY:
-        BACKEND_REGISTRY.register("batched", build_batched_backend)
-
     load_entry_point_registry("llm.generation_backends", BACKEND_REGISTRY)
     _backends_registered = True
 

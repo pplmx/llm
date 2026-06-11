@@ -25,6 +25,7 @@
 - [x] **Phase 2**: `TokenizerFactory`, `TokenizedMapDataModule`, `SOURCE_REGISTRY`
 - [x] **Phase 3**: `CheckpointContributor`, 动态 task CLI, PPO resume extra_state
 - [x] **Phase 4**: `BACKEND_REGISTRY`, 合并 `PPOConfig`, 删除 `inference.py` shim, `pyproject.toml` entry points
+- [x] **Wave 1–3**: 删 compat shim, 统一 Registry/KV/MoE, DataModule/Eval/Serving 收敛
 
 ---
 

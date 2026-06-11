@@ -86,12 +86,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     logger.info("Starting up...")
 
     generation_service = ServingGenerationService.from_config(config)
-    engine = ContinuousBatchingEngine(
+    engine = ContinuousBatchingEngine.from_serving_config(
+        config,
         model=generation_service.model,
         tokenizer=generation_service.tokenizer,
-        device=config.device,
-        max_batch_size=config.max_concurrent_requests,
-        max_seq_len=config.max_seq_len,
     )
 
     yield

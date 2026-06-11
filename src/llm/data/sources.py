@@ -127,8 +127,6 @@ def ensure_sources_registered() -> None:
     if _sources_registered:
         return
 
-    SOURCE_REGISTRY.register("local", _build_local_source)
-    SOURCE_REGISTRY.register("hf", _build_hf_source)
     load_entry_point_registry("llm.data_sources", SOURCE_REGISTRY)
     _sources_registered = True
 
@@ -155,6 +153,3 @@ def validate_source_fingerprint(expected: dict[str, Any] | None, actual: dict[st
             f"expected={expected}, actual={actual}. "
             "Use the same dataset configuration when resuming."
         )
-
-
-ensure_sources_registered()
