@@ -7,6 +7,18 @@ from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 
+def _mask_pad_logits(logits: torch.Tensor, pad_token_id: int | None) -> None:
+    """Mask PAD token logits when the id is within model vocabulary bounds."""
+    if pad_token_id is None:
+        return
+    vocab_size = logits.size(-1)
+    if 0 <= pad_token_id < vocab_size:
+        if logits.dim() == 1:
+            logits[pad_token_id] = -float("inf")
+        else:
+            logits[:, pad_token_id] = -float("inf")
+
+
 @torch.no_grad()
 def stream_generate(
     model: DecoderModel,
@@ -46,8 +58,7 @@ def stream_generate(
         logits = model(input_tensor, use_cache=False)
         next_token_logits = logits[0, -1, :]
 
-    if hasattr(tokenizer, "pad_token_id"):
-        next_token_logits[tokenizer.pad_token_id] = -float("inf")
+    _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
 
     generated_ids = input_ids.copy()
 
@@ -77,8 +88,7 @@ def stream_generate(
             logits = model(full_input, use_cache=False)
             next_token_logits = logits[0, -1, :]
 
-        if hasattr(tokenizer, "pad_token_id"):
-            next_token_logits[tokenizer.pad_token_id] = -float("inf")
+        _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
 
 
 def generate(
@@ -171,8 +181,7 @@ def batch_generate(
     logits, past_key_values = model(input_tensor, use_cache=True)
     next_token_logits = logits[:, -1, :]  # [B, vocab_size]
 
-    if hasattr(tokenizer, "pad_token_id"):
-        next_token_logits[:, tokenizer.pad_token_id] = -float("inf")
+    _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
 
     for _ in range(max_new_tokens):
         for i in range(batch_size):
@@ -196,8 +205,7 @@ def batch_generate(
         logits, past_key_values = model(next_tokens, past_key_values=past_key_values, use_cache=True)
         next_token_logits = logits[:, -1, :]
 
-        if hasattr(tokenizer, "pad_token_id"):
-            next_token_logits[:, tokenizer.pad_token_id] = -float("inf")
+        _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
 
     # Decode results
     return [tokenizer.decode(ids) for ids in generated_ids]
