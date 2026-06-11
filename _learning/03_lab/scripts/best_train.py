@@ -68,7 +68,7 @@ class Config:
             self.ffn_hidden_size = self.hidden_size * 4
 
     @classmethod
-    def from_args(cls) -> "Config":
+    def from_args(cls) -> Config:
         """从命令行参数创建配置, 并从环境变量加载分布式设置"""
         parser = argparse.ArgumentParser(description="An elegant PyTorch DDP Training Script")
         # 从Config类的字段动态添加命令行参数
@@ -87,7 +87,7 @@ class Config:
                     parser.add_argument(arg_name, action="store_true", default=None)
                 else:
                     parser.add_argument(arg_name, type=arg_type)
-            except (TypeError, AttributeError):
+            except TypeError, AttributeError:
                 continue  # 跳过无法解析的类型
 
         args = parser.parse_args()

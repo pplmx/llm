@@ -30,7 +30,7 @@ class BPETokenizer:
         vocab_size: int = 5000,
         min_frequency: int = 2,
         special_tokens: list[str] | None = None,
-    ) -> "BPETokenizer":
+    ) -> BPETokenizer:
         """
         Trains a BPE tokenizer on the given files.
 
@@ -99,7 +99,7 @@ class BPETokenizer:
         self.tokenizer.save(str(p))
 
     @classmethod
-    def load(cls, path: str) -> "BPETokenizer":
+    def load(cls, path: str) -> BPETokenizer:
         """
         Loads a tokenizer from a file.
 

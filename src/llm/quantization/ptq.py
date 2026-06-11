@@ -95,7 +95,7 @@ class QuantizedLinear(nn.Module):
         linear: nn.Linear,
         config: QuantConfig | None = None,
         scale: float | None = None,
-    ) -> "QuantizedLinear":
+    ) -> QuantizedLinear:
         """
         Create QuantizedLinear from a regular Linear layer.
 

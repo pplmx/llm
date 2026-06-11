@@ -141,7 +141,7 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     @classmethod
-    def from_args_and_env(cls) -> "Config":
+    def from_args_and_env(cls) -> Config:
         """从命令行参数和环境变量创建配置"""
         parser = argparse.ArgumentParser(description="PyTorch DDP Training Script")
 
