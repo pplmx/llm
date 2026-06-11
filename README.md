@@ -80,7 +80,7 @@ To quickly get started with training a model using the framework, follow these s
 
 ### Requirements
 
-- Python 3.13+
+- Python 3.14+
 - [uv](https://github.com/astral-sh/uv): A fast Python package installer and resolver, written in Rust.
 - [make](https://www.gnu.org/software/make/): A build automation tool (typically pre-installed on Linux/macOS, available via Chocolatey/Scoop on Windows).
 

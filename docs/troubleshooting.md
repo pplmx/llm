@@ -6,7 +6,7 @@
 
 - **问题: `make init` 或 `make sync` 失败, 或遇到依赖冲突.**
     - **解决方案:**
-    1. 确保您的 Python 版本符合 `pyproject.toml` 中 `requires-python` 的要求(当前为 3.13+).
+    1. 确保您的 Python 版本符合 `pyproject.toml` 中 `requires-python` 的要求(当前为 3.14+).
     2. 尝试清理 `uv` 缓存: `uv clean`.
     3. 检查 `pyproject.toml` 和 `uv.lock` 文件, 手动解决潜在的依赖冲突.
     4. 确保您的网络连接正常, 可以访问 PyPI.
