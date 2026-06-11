@@ -7,7 +7,7 @@ name = "llm"
 version = "0.0.5"
 description = "A modular PyTorch framework for training and serving Large Language Models"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = "MIT"
 authors = [
     { name = "Mystvio" },
@@ -27,7 +27,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "fastapi[standard]>=0.136.3",
