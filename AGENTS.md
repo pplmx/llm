@@ -1,93 +1,134 @@
 # Agent 指南
 
-参与本项目的 AI Agent 快速上下文入口。细节以链接文档为准，此处只保留高频决策点。
+本文件是 AI Agent 的**决策入口**：只保留高频路径与约束，细节读链接文档。
 
 ## 快速索引
 
-| 文件 | 用途 |
+| 文件 | 何时读 |
 | --- | --- |
-| [ROADMAP.md](ROADMAP.md) | 项目状态、优先级、已知架构边界 |
-| [docs/reference/architecture.md](docs/reference/architecture.md) | 分层架构、Registry、扩展点 |
-| [docs/development/guide-extending.md](docs/development/guide-extending.md) | 添加 task / callback / scheduler 食谱 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| [pyproject.toml](pyproject.toml) | 依赖、pytest markers、entry points |
+| [ROADMAP.md](ROADMAP.md) | 当前优先级 P0–P3、阶段完成度 |
+| [docs/reference/architecture.md](docs/reference/architecture.md) | 分层设计、数据流、Registry 机制 |
+| [docs/development/guide-extending.md](docs/development/guide-extending.md) | 加 task / callback / scheduler / metric |
+| [docs/adr/](docs/adr/) | 已锁定架构决策（GQA、KV cache、Paged Attn、QLoRA） |
+| [CHANGELOG.md](CHANGELOG.md) | 近期功能与 breaking changes |
+| [pyproject.toml](pyproject.toml) | 依赖 groups、pytest markers、entry points |
+| [Makefile](Makefile) | 所有 `make` 目标定义 |
 
-## 源码分层 (`src/llm/`)
+## 当前焦点 (P0)
 
-| 层 | 职责 | 扩展方式 |
+预训练 **productization**（流式骨架已完成，见 `stream_lm` task）：
+
+- C4 / Pile / RedPajama **preset**（复用 `SOURCE_REGISTRY` + `HFStreamTextSource`）
+- 数据 dedup / 过滤（`TextSource` 装饰器或 pipeline）
+- 主路径文档与 e2e（`llm-train --task stream_lm`，非仅 `scripts/`）
+
+完整 backlog 见 [ROADMAP.md § 下一步探索方向](ROADMAP.md#下一步探索方向-).
+
+## 源码分层
+
+| 层 | 职责 | 扩展点 |
 | --- | --- | --- |
-| `core/` | Attention、MLP、Norm、KV cache 等纯模块 | `ATTENTION_REGISTRY` / `MLP_REGISTRY` / `NORM_REGISTRY` |
-| `models/` | `DecoderModel` 组装 | `ModelFactory` + `llm.models` entry point |
-| `data/` | Dataset、DataModule、流式 source | `SOURCE_REGISTRY` + `StreamDataModule` |
-| `training/` | Engine、Task、DDP/FSDP | `TaskRegistry` + `llm.training.tasks` |
-| `generation/` | 采样、eager/batched 推理 | `BACKEND_REGISTRY` |
-| `runtime/` | Registry、bootstrap、plugins | setuptools entry points |
-| `serving/` | FastAPI、continuous batching | `ServingConfig` |
-| `evaluation/` | 离线评估 runner | `BaseTask` / `BaseMetric` |
+| `core/` | Attention、MLP、Norm、KV cache | `ATTENTION_REGISTRY` / `MLP_REGISTRY` / `NORM_REGISTRY` |
+| `models/` | `DecoderModel` | `ModelFactory` · entry point `llm.models` |
+| `data/` | Dataset、DataModule、流式 source | `SOURCE_REGISTRY` · entry point `llm.data_sources` |
+| `training/` | Engine、Task、DDP/FSDP | `TASK_REGISTRY` · `training/tasks/builtin.py` |
+| `generation/` | 采样、推理 backend | `BACKEND_REGISTRY` · entry point `llm.generation_backends` |
+| `runtime/` | Registry 基础设施、plugins | `registry.py` / `plugins.py` |
+| `serving/` | FastAPI、continuous batching | `ServingConfig` / `batch_engine.py` |
+| `evaluation/` | 离线评估 | `EvaluationRunner` · `eval_tasks/` |
+| `compat/` | HF 权重加载、safetensors read | `hf_loader.py` |
+| `export/` | ONNX 等导出 | `export/onnx.py`（尚无 export registry） |
 
-**架构边界**（改代码前确认）:
+### 架构边界（违反前需新 ADR）
 
-- `attn_impl=mla` 不支持 KV cache
-- Paged Attention 为 partial 实现（prefix cache ✅，forward 全链路待接，见 [ADR-004](docs/adr/004-paged-attention-serving.md)）
-- 多模态 / 3D 并行尚无 registry，勿硬塞进 `DecoderModel`
+| 约束 | 说明 |
+| --- | --- |
+| `attn_impl=mla` | 不支持 KV cache |
+| Paged Attention | partial：[ADR-004](docs/adr/004-paged-attention-serving.md) — prefix cache ✅，model forward 仍用 `list[KVCache]` |
+| 多模态 / 3D 并行 | 无 registry；需先设计 `MultimodalDataModule` 等，勿硬改 `DecoderModel` |
+| compat shim | Wave 3 已删；新代码走 `runtime/` / factory，不恢复旧路径 |
+
+## 扩展地图
+
+| 目标 | 主要改动位置 |
+| --- | --- |
+| 新训练 task | `training/tasks/` + `TASK_REGISTRY.register` in `builtin.py` |
+| 新 DataModule | `data/modules/` + 与 task 配对注册 |
+| 新流式数据源 | `data/sources.py` + `llm.data_sources` entry point |
+| 新注意力/MLP/Norm | `core/` + `@register_*` in `core/registry.py` |
+| 新推理 backend | `generation/` + `BACKEND_REGISTRY` + entry point |
+| 新评估指标/任务 | `evaluation/metrics/` / `evaluation/eval_tasks/` |
+| 新 CLI 能力 | 优先扩 `llm-train` / `llm-serve`，脚本仅作 demo |
+
+### 内置训练 task
+
+| CLI `--task` | 用途 |
+| --- | --- |
+| `lm` | Map-style 语言建模 |
+| `stream_lm` | 流式大规模预训练 |
+| `sft` / `dpo` / `reward` / `ppo` | 对齐流程 |
+| `regression` | 合成回归 demo |
+
+```bash
+uv run llm-train --task stream_lm --help
+uv run llm-serve
+```
 
 ## 常用命令
 
 | 命令 | 说明 |
 | --- | --- |
-| `make init` | 首次：`uv sync` + pre-commit hooks |
-| `make sync` | 同步依赖（含默认 test group） |
-| `make dev` | 全部 dependency groups（streaming、docs 等） |
-| `make test` | 全量测试（608+） |
-| `make test-fast` | 排除 heavy / e2e |
+| `make init` | 首次：依赖 + pre-commit |
+| `make sync` / `make dev` | 默认 groups / 全部 groups |
+| `make test` | 全量（608+，须全绿） |
+| `make test-fast` | 排除 `heavy`、`e2e` |
+| `make test-e2e` | 仅 e2e |
 | `make ruff` | format + lint |
-| `uv sync --group streaming` | HF 流式预训练额外依赖 |
-| `uv lock --check` | CI 用：验证 lock 与 pyproject 一致 |
+| `make ty` | 类型检查 |
+| `uv sync --group streaming` | HF `datasets` 流式依赖 |
+| `uv lock --check` | 验证 lock 与 pyproject 同步 |
 
-## 环境与依赖 (uv)
+**改动后验证顺序**: `make test` → `make ruff` → `make test`
 
-- **包管理**: 只用 `uv`，不要引入 pip/requirements.txt
-- **默认 group**: `[tool.uv] default-groups = ["test"]`，`uv sync` 后可直接 `make test`
-- **可选 groups**: `streaming`（datasets）、`docs`（mkdocs）
-- **锁文件**: 改 `pyproject.toml` 后运行 `uv lock`；CI/Docker 用 `uv sync --frozen`
-- **Docker**: builder 仅装运行时依赖；validator stage 再 sync test group 跑测试
+## uv 约定
 
-## 代码质量
+- 唯一包管理器：`uv`（不新增 `requirements.txt` / pip workflow）
+- `default-groups = ["test"]` → 普通 `uv sync` 含 pytest
+- 改依赖后：`uv lock` + 提交 `uv.lock`
+- CI / Docker：`uv sync --frozen`；Docker builder 排除 test/docs/streaming group
 
-- 路径处理用 `pathlib.Path`
-- 改动后验证: `make test` → `make ruff` → `make test`
-- 注释与日志用**英文**；与用户交流用**中文**
-- 测试优先调真实代码，避免无意义 mock
-- 测试数目标: 保持全绿，不堆弱断言（`is not None`、纯 `isinstance`）
-
-## 测试架构 (`tests/`)
+## 测试约定
 
 ```
 tests/
-  conftest.py          # device, tiny_config, stub_tokenizer, model_and_tokenizer
-  support/             # 纯 Python 工具（无 pytest 依赖）
-    tokenizers.py      # StubTokenizer, LineTokenizer, CharBoundTokenizer
-    corpus.py          # 共享语料
-    data.py            # DummyLMDataModule
-    models.py          # decoder_model_kwargs()
-  models/conftest.py   # DecoderModel 参数化 fixture
-  data/conftest.py     # sample_text_tokenizer, line_tokenizer
+  support/          # 纯 Python  helper（无 pytest）
+  conftest.py       # device, tiny_*, stub_tokenizer, model_and_tokenizer
+  models/conftest.py
+  data/conftest.py
 ```
 
-- stub tokenizer → 用 `stub_tokenizer` / `line_tokenizer` fixture，勿内联 `_Tok`
-- 构造 DecoderModel → `decoder_model_kwargs(**overrides)` 或 `models/conftest` fixture
-- pytest markers: `quick` / `slow` / `heavy` / `e2e` / `gpu`（见 `pyproject.toml`）
+| 场景 | 做法 |
+| --- | --- |
+| stub tokenizer | `stub_tokenizer` / `line_tokenizer` fixture |
+| DecoderModel 参数 | `decoder_model_kwargs(**overrides)` 或 `models/conftest` |
+| 弱断言 | 避免纯 `isinstance` / `is not None`；断言具体行为或数值 |
+| mock | 默认不用；直接跑真实模块 |
 
-## 提交规范
+Markers（`pyproject.toml`）：`quick` · `slow` · `heavy` · `e2e` · `gpu` · `multi_gpu`
 
-- [Conventional Commits](https://www.conventionalcommits.org/)
-- 工作流: 写 `commit_message.txt` → `git commit -F commit_message.txt` → 删除
-- 小而聚焦；**仅在用户明确要求时 commit**
-- 不要 `--no-verify`、不要 force push main
+## 代码与协作规范
 
-## 用户偏好
+- 路径：`pathlib.Path`
+- 注释 / 日志：**英文**；与用户交流：**中文**
+- 遵循 [Conventional Commits](https://www.conventionalcommits.org/)
+- Commit 工作流：`commit_message.txt` → `git commit -F` → 删除
+- **仅在用户明确要求时 commit**；禁止 `--no-verify`、force push `main`
+- Bug 修复：评估是否补回归测试（测行为，非测实现细节）
 
-- 使用**中文**交流
-- 代码注释使用**英文/半角标点**
-- 不使用 mock，直接调用真实代码测试
-- 遇到 bug 时考虑是否需要添加测试覆盖
+## 反模式（避免）
+
+- 内联 `_Tok` / `_LineTokenizer`（用 `tests/support/tokenizers.py`）
+- 在 `DecoderModel` 里为多模态打补丁
+- 恢复已删除的 compat shim 或 duplicate registry
+- 为覆盖率堆 demo 测试或重复 e2e
+- 未跑 `make test` 就声称完成
