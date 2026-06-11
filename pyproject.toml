@@ -63,6 +63,17 @@ docs = [
     "mkdocs-material>=9.7.0",
 ]
 
+[project.entry-points."llm.models"]
+decoder = "llm.runtime.model_factory:build_decoder"
+
+[project.entry-points."llm.generation_backends"]
+eager = "llm.generation.registry:build_eager_backend"
+batched = "llm.generation.registry:build_batched_backend"
+
+[project.entry-points."llm.data_sources"]
+local = "llm.data.sources:_build_local_source"
+hf = "llm.data.sources:_build_hf_source"
+
 [project.scripts]
 llm-train = "llm.training.train:app"
 llm-serve = "llm.serving.api:main"

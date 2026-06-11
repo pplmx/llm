@@ -44,7 +44,15 @@ src/llm/
 ├── generation/            # Generation backends and eager inference
 │   ├── eager.py           # stream_generate, batch_generate
 │   ├── sampling.py        # Shared temperature/top-k/top-p sampling
+│   ├── registry.py        # BACKEND_REGISTRY + get_generation_backend
 │   └── backends.py        # EagerGenerationBackend + BatchedGenerationBackend
+├── runtime/               # Plugin kernel (registries, factories, entry points)
+│   ├── registry.py        # Generic Registry[T]
+│   ├── bootstrap.py       # Built-in model builder registration
+│   ├── plugins.py         # setuptools entry point discovery
+│   ├── model_factory.py   # ModelFactory / MODEL_REGISTRY
+│   ├── tokenizer_factory.py
+│   └── checkpoint.py      # CheckpointContributor protocol
 ├── export/                # ONNX export utilities
 │   └── onnx.py
 ├── evaluation/            # Offline evaluation
@@ -60,7 +68,6 @@ src/llm/
 │   ├── loader.py          # Training checkpoint + tokenizer loading
 │   ├── generation_service.py  # REST/chat → GenerationBackend
 │   └── batch_engine.py    # ContinuousBatchingEngine (continuous batching path)
-└── inference.py           # Backward-compat shim → generation.eager
 ```
 
 ## System Overview
@@ -157,6 +164,19 @@ All configuration is managed via Pydantic models in `src/llm/training/core/confi
 * **`TrainingConfig`**: loop params (`epochs`, `lr`).
 * **`DistributedConfig`**: DDP params (`master_addr`, `world_size`).
 * **`OptimizationConfig`**: performance (`use_compile`, `use_amp`).
+
+## Plugin Kernel (`runtime/`)
+
+Third-party and built-in extensions register through a shared **`Registry[T]`** and optional **setuptools entry points** in `pyproject.toml`:
+
+| Entry point group | Registry | Example |
+|-------------------|----------|---------|
+| `llm.models` | `MODEL_REGISTRY` | `decoder` builder |
+| `llm.generation_backends` | `BACKEND_REGISTRY` | `eager`, `batched` |
+| `llm.data_sources` | `SOURCE_REGISTRY` | `local`, `hf` streaming |
+| `llm.tasks` | hooks via `load_entry_point_hooks` | third-party `TASK_REGISTRY.register(...)` |
+
+Built-in modules register on import (`bootstrap.py`, `generation/registry.py`, `data/sources.py`, `tasks/builtin.py`). `train.py` additionally invokes `llm.tasks` hooks so external packages can add CLI tasks without editing core code.
 
 ## Attention Mechanism
 

@@ -1,6 +1,6 @@
 import pytest
 
-from llm.inference import generate
+from llm.generation import generate
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 

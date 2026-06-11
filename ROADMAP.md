@@ -10,11 +10,21 @@
 
 - 现代化 Decoder-only Transformer 架构 (GQA, SwiGLU, MoE)
 - 完善的分布式训练框架 (DDP, AMP)
-- 高质量工程实践 (385+ 测试用例全部通过)
-- 基础推理能力 (KV Cache, Top-k/Top-p 采样)
+- 高质量工程实践 (680+ 测试用例全部通过)
+- 插件内核架构 (`runtime/` registries + setuptools entry points)
+- 基础推理能力 (KV Cache, Top-k/Top-p 采样, GenerationBackend registry)
 - 完整的模型评估框架 (Perplexity, Accuracy, F1, ROUGE, BLEU, chrF, lm-eval)
 
 🚀 **当前重点**: 预训练完善 & 流式数据加载
+
+### 插件内核重构 (2026 Q2) ✅
+
+四阶段收敛式 refactor, 统一扩展点而不大搬家:
+
+- [x] **Phase 1**: `runtime/` + `ModelFactory`, 统一 `DecoderModel` 构造
+- [x] **Phase 2**: `TokenizerFactory`, `TokenizedMapDataModule`, `SOURCE_REGISTRY`
+- [x] **Phase 3**: `CheckpointContributor`, 动态 task CLI, PPO resume extra_state
+- [x] **Phase 4**: `BACKEND_REGISTRY`, 合并 `PPOConfig`, 删除 `inference.py` shim, `pyproject.toml` entry points
 
 ---
 
@@ -144,7 +154,7 @@
 > **状态**: 基本完成 | **完成时间**: 2026 Q1
 
 - [x] **推理 API**:
-    - [x] **基础实现**: `inference.py` 已创建
+    - [x] **基础实现**: `generation/` 模块 (`eager.py` + `BACKEND_REGISTRY`)
     - [x] **核心功能**: 实现 `Greedy Search`, `KV Cache`, `Top-k/Top-p` 采样
 - [x] **模型服务化**:
     - [x] 使用 `FastAPI` 将推理功能封装成一个 REST API 服务

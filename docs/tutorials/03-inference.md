@@ -20,7 +20,7 @@
 import torch
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-from llm.inference import generate
+from llm.generation import generate
 
 # 1. 加载模型和分词器
 model = DecoderModel(

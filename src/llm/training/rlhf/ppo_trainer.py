@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import AdamW
 
-from llm.training.rlhf.config import PPOConfig
+from llm.training.core.config import PPOConfig
 from llm.training.rlhf.rollout_buffer import RolloutBatch, RolloutBuffer
 from llm.training.rlhf.value_model import ValueModel
 
