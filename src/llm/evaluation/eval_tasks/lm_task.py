@@ -1,11 +1,9 @@
-from pathlib import Path
-
 import torch
 
 from llm.data.datasets.text import TextDataset
 from llm.evaluation.eval_tasks.base import BaseTask
 from llm.evaluation.metrics.perplexity import PerplexityMetric
-from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.runtime.tokenizer_factory import TokenizerFactory
 
 
 class LMTask(BaseTask):
@@ -15,11 +13,7 @@ class LMTask(BaseTask):
         self.dataset_path = dataset_path
         self.batch_size = batch_size
         self.metrics = [PerplexityMetric()]
-
-        text = Path(dataset_path).read_text()
-        chars = sorted(set(text))
-        corpus = ["<PAD>", "<EOS>", "<BOS>", *chars]
-        self.tokenizer = SimpleCharacterTokenizer(corpus)
+        self.tokenizer = TokenizerFactory.from_dataset_text(dataset_path)
 
         self.val_dataset = TextDataset(
             file_path=dataset_path,

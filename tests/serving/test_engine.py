@@ -113,3 +113,30 @@ def test_engine_single_step_decode(tiny_model, mock_tokenizer):
 
     # Verify we are still in the same slot
     assert engine.slot_allocator.get_slot("req2") != -1
+
+
+def test_engine_prefix_cache_reuses_kv(tiny_model, mock_tokenizer):
+    tiny_model.to("cpu")
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device="cpu",
+        enable_prefix_cache=True,
+    )
+
+    req1 = GenerationRequest(prompt="hello", max_new_tokens=3)
+    req1.request_id = "req-a"
+    engine.add_request(req1)
+    engine.step()
+
+    req2 = GenerationRequest(prompt="hello", max_new_tokens=3)
+    req2.request_id = "req-b"
+    engine.add_request(req2)
+    engine.step()
+
+    seq2 = engine.scheduler.get_sequence("req-b")
+    assert seq2 is not None
+    assert len(seq2.generated_ids) == 1

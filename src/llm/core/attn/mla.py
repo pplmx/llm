@@ -3,11 +3,13 @@ import math
 import torch
 from torch import Tensor, nn
 
+from llm.core.registry import ATTENTION_REGISTRY
 from llm.utils.common import make_factory_kwargs
 
 from .sdpa import sdpa
 
 
+@ATTENTION_REGISTRY.register("mla")
 class MultiLatentAttention(nn.Module):
     """
     Multi-Latent Attention mechanism implementation.
@@ -33,15 +35,19 @@ class MultiLatentAttention(nn.Module):
         self,
         hidden_size: int,
         num_heads: int = 8,
-        num_latents: int = 16,
-        latent_dim: int | None = None,
-        dropout_p: float = 0.1,
+        p: float = 0.1,
         bias: bool = True,
         eps: float = 1e-5,
         norm_first: bool = True,
         is_causal: bool = False,
+        include_norm_residual: bool = True,
+        num_kv_heads: int | None = None,
+        window_size: int | None = None,
+        num_latents: int = 16,
+        latent_dim: int | None = None,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
+        **_: object,
     ):
         super().__init__()
 
@@ -51,13 +57,15 @@ class MultiLatentAttention(nn.Module):
         factory_kwargs = make_factory_kwargs(device, dtype)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
+        self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
         self.head_dim = hidden_size // num_heads
         self.scale = 1 / math.sqrt(self.head_dim)
         self.norm_first = norm_first
         self.num_latents = num_latents
         self.latent_dim = latent_dim if latent_dim is not None else hidden_size
         self.is_causal = is_causal
-        self.dropout_p = dropout_p
+        self.dropout_p = p
+        self.include_norm_residual = include_norm_residual
 
         # Layer Normalization - shared for all attention operations
         self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
@@ -77,7 +85,7 @@ class MultiLatentAttention(nn.Module):
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, **factory_kwargs)
 
         # Single dropout layer
-        self.dropout = nn.Dropout(dropout_p)
+        self.dropout = nn.Dropout(p)
 
         # Initialize weights
         self._init_weights()
@@ -100,7 +108,15 @@ class MultiLatentAttention(nn.Module):
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
 
-    def _latent_attention(self, k: Tensor, v: Tensor, batch_size: int, attn_mask: Tensor | None = None) -> Tensor:
+    def _latent_attention(
+        self,
+        k: Tensor,
+        v: Tensor,
+        batch_size: int,
+        attn_mask: Tensor | None = None,
+        *,
+        is_causal: bool,
+    ) -> Tensor:
         """
         Process latent attention computation as a separate method for clarity.
         This function computes the attention between latent queries and input sequence.
@@ -131,7 +147,7 @@ class MultiLatentAttention(nn.Module):
             value=v,
             attn_mask=attn_mask,
             dropout_p=self.dropout_p if self.training else 0.0,
-            is_causal=self.is_causal,
+            is_causal=is_causal,
             scale=self.scale,
         )  # [batch_size, num_heads, num_latents, head_dim]
 
@@ -148,6 +164,12 @@ class MultiLatentAttention(nn.Module):
         self,
         hidden_states: Tensor,
         attn_mask: Tensor | None = None,
+        is_causal: bool | None = None,
+        kv_cache: object | None = None,
+        use_cache: bool = False,
+        batch_indices: Tensor | None = None,
+        start_pos: int | Tensor | None = None,
+        **_: object,
     ) -> Tensor:
         """
         Optimized forward pass for the multi-latent attention mechanism.
@@ -160,6 +182,9 @@ class MultiLatentAttention(nn.Module):
         Returns:
             Output tensor with shape [batch_size, seq_len, hidden_size].
         """
+        if use_cache or kv_cache is not None:
+            raise ValueError("MultiLatentAttention does not support KV cache.")
+        use_causal = self.is_causal if is_causal is None else is_causal
         # Store residual connection
         residual = hidden_states
 
@@ -177,7 +202,7 @@ class MultiLatentAttention(nn.Module):
         k, v = kv_proj[0], kv_proj[1]  # [batch_size, num_heads, seq_len, head_dim]
 
         # Process latent attention
-        latent_output = self._latent_attention(k, v, batch_size, attn_mask)
+        latent_output = self._latent_attention(k, v, batch_size, attn_mask, is_causal=use_causal)
 
         # Compute uniform weights across latents by default
         latent_weights = torch.ones(batch_size, 1, self.num_latents, device=latent_output.device) / self.num_latents

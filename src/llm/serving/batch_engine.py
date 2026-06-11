@@ -1,4 +1,8 @@
+from __future__ import annotations
+
+import hashlib
 import uuid
+from collections import OrderedDict
 
 import torch
 
@@ -7,6 +11,33 @@ from llm.generation.sampling import apply_repetition_penalty, sample_next_token
 from llm.models.decoder import DecoderModel
 from llm.serving.scheduler import Scheduler
 from llm.serving.schemas import GenerationRequest, RequestState, Sequence
+
+
+class SlotPrefixCache:
+    """Maps token prefixes to KV cache slots for reuse across requests."""
+
+    def __init__(self, max_prefixes: int = 10, min_prefix_len: int = 4) -> None:
+        self.max_prefixes = max_prefixes
+        self.min_prefix_len = min_prefix_len
+        self._entries: OrderedDict[str, tuple[int, int]] = OrderedDict()
+
+    @staticmethod
+    def hash_tokens(tokens: list[int]) -> str:
+        return hashlib.sha256(bytes(tokens)).hexdigest()
+
+    def get(self, tokens: list[int]) -> tuple[int, int] | None:
+        if len(tokens) < self.min_prefix_len:
+            return None
+        return self._entries.get(self.hash_tokens(tokens))
+
+    def put(self, tokens: list[int], slot: int, prefix_len: int) -> None:
+        if len(tokens) < self.min_prefix_len:
+            return
+        key = self.hash_tokens(tokens)
+        if len(self._entries) >= self.max_prefixes and key not in self._entries:
+            self._entries.popitem(last=False)
+        self._entries[key] = (slot, prefix_len)
+        self._entries.move_to_end(key)
 
 
 class SlotAllocator:
@@ -51,6 +82,12 @@ class ContinuousBatchingEngine:
         max_batch_size: int = 16,
         max_seq_len: int = 512,
         dtype: torch.dtype = torch.float16,
+        *,
+        enable_prefix_cache: bool = False,
+        max_prefixes: int = 10,
+        use_paged_attention: bool = False,
+        max_blocks: int = 256,
+        block_size: int = 16,
     ):
         """
         Initialize the engine with an already-loaded model and tokenizer.
@@ -94,6 +131,45 @@ class ContinuousBatchingEngine:
             device=self.device,
             dtype=self.dtype,
         )
+
+        self.enable_prefix_cache = enable_prefix_cache
+        self.prefix_cache = SlotPrefixCache(max_prefixes=max_prefixes) if enable_prefix_cache else None
+        self.paged_kv_cache = None
+        if use_paged_attention:
+            from llm.core.paged_attention.paged_kv_cache import PagedKVCache
+
+            self.paged_kv_cache = PagedKVCache(
+                num_layers=len(self.model.transformer_blocks),
+                num_kv_heads=self.model.transformer_blocks[0].self_attn.num_kv_heads,
+                head_dim=self.model.transformer_blocks[0].self_attn.head_dim,
+                num_blocks=max_blocks,
+                block_size=block_size,
+                device=str(self.device),
+                dtype=self.dtype,
+                enable_prefix_cache=enable_prefix_cache,
+                max_prefixes=max_prefixes,
+            )
+
+    @classmethod
+    def from_serving_config(cls, config, model: DecoderModel, tokenizer: object) -> ContinuousBatchingEngine:
+        """Build an engine from ServingConfig flags."""
+        return cls(
+            model=model,
+            tokenizer=tokenizer,
+            device=config.device,
+            max_batch_size=config.max_concurrent_requests,
+            max_seq_len=config.max_seq_len,
+            enable_prefix_cache=config.enable_prefix_cache,
+            max_prefixes=config.max_prefixes,
+            use_paged_attention=config.use_paged_attention,
+            max_blocks=config.max_blocks,
+            block_size=config.block_size,
+        )
+
+    def _copy_kv_between_slots(self, src_slot: int, dst_slot: int, length: int) -> None:
+        for cache in self.kv_caches:
+            cache.k_cache[dst_slot, :, :length, :] = cache.k_cache[src_slot, :, :length, :].clone()
+            cache.v_cache[dst_slot, :, :length, :] = cache.v_cache[src_slot, :, :length, :].clone()
 
     def add_request(self, request: GenerationRequest) -> str:
         """Add a request to the engine."""
@@ -170,17 +246,26 @@ class ContinuousBatchingEngine:
         batch_position_ids_list = []
         batch_slots_list = []
         seq_input_lengths = []
+        prefix_full_hits: list[bool] = []
 
         for seq in running_sequences:
             slot = self.slot_allocator.allocate(seq.request_id)
             batch_slots_list.append(slot)
+            prefix_full_hit = False
 
             if len(seq.generated_ids) == 0:
-                # Prefill Phase
-                ids = seq.input_ids
-                pos_ids = list(range(len(ids)))
+                cached = self.prefix_cache.get(seq.input_ids) if self.prefix_cache else None
+                if cached is not None and cached[1] == len(seq.input_ids):
+                    src_slot, prefix_len = cached
+                    if src_slot != slot:
+                        self._copy_kv_between_slots(src_slot, slot, prefix_len)
+                    ids = [seq.input_ids[-1]]
+                    pos_ids = [prefix_len - 1]
+                    prefix_full_hit = True
+                else:
+                    ids = seq.input_ids
+                    pos_ids = list(range(len(ids)))
             else:
-                # Decode Phase
                 ids = [seq.generated_ids[-1]]
                 pos_val = seq.total_len - 1
                 pos_ids = [pos_val]
@@ -188,6 +273,7 @@ class ContinuousBatchingEngine:
             batch_input_ids_list.append(ids)
             batch_position_ids_list.append(pos_ids)
             seq_input_lengths.append(len(ids))
+            prefix_full_hits.append(prefix_full_hit)
 
         max_len = max(seq_input_lengths)
 
@@ -246,6 +332,9 @@ class ContinuousBatchingEngine:
         for i, seq in enumerate(running_sequences):
             token_id = next_token_ids[i]
             seq.append_token_id(token_id)
+
+            if self.prefix_cache and len(seq.generated_ids) == 1 and not prefix_full_hits[i]:
+                self.prefix_cache.put(seq.input_ids, batch_slots_list[i], len(seq.input_ids))
 
             if (
                 (hasattr(self.tokenizer, "eos_token_id") and token_id == self.tokenizer.eos_token_id)

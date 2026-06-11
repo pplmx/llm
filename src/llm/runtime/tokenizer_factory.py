@@ -58,6 +58,14 @@ class TokenizerFactory:
         return SimpleCharacterTokenizer([string.printable])
 
     @staticmethod
+    def from_dataset_text(dataset_path: str | Path) -> SimpleCharacterTokenizer:
+        """Build a character tokenizer from the unique characters in a text file."""
+        text = Path(dataset_path).read_text()
+        chars = sorted(set(text))
+        corpus = ["<PAD>", "<EOS>", "<BOS>", *chars]
+        return SimpleCharacterTokenizer(corpus)
+
+    @staticmethod
     def cache_hf_tokenizer(data_config: TokenizerConfig) -> None:
         if data_config.tokenizer_type == "hf" and data_config.tokenizer_path:
             HFTokenizer.from_pretrained(data_config.tokenizer_path)

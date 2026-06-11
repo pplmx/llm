@@ -2,6 +2,7 @@ __version__ = "0.0.5"
 
 # Core components (import to trigger registration)
 import llm.core.attn.mha
+import llm.core.attn.mla
 import llm.core.mlp
 import llm.core.moe  # noqa: F401
 

@@ -10,9 +10,7 @@ from llm.core.transformer_block import TransformerBlock
 from llm.utils.common import make_factory_kwargs
 
 
-def _resolve_norm_type(norm_impl: str, norm_type: type[nn.Module] | nn.Module | None) -> type[nn.Module] | nn.Module:
-    if norm_type is not None:
-        return norm_type
+def _resolve_norm_type(norm_impl: str) -> type[nn.Module]:
     from llm.core.registry import NORM_REGISTRY, ensure_norms_registered
 
     ensure_norms_registered()
@@ -53,7 +51,6 @@ class DecoderModel(nn.Module):
         num_kv_heads: int | None = None,  # For GQA support
         use_glu: bool = False,
         norm_impl: str = "layer_norm",
-        norm_type: type[nn.Module] | nn.Module | None = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
         attn_impl: str = "mha",
@@ -66,7 +63,7 @@ class DecoderModel(nn.Module):
         """
         super().__init__()
         factory_kwargs = make_factory_kwargs(device, dtype)
-        resolved_norm_type = _resolve_norm_type(norm_impl, norm_type)
+        resolved_norm_type = _resolve_norm_type(norm_impl)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
