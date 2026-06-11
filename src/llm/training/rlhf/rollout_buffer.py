@@ -31,6 +31,7 @@ class RolloutBatch:
     attention_mask: torch.Tensor  # [batch_size, max_len]
     response_mask: torch.Tensor  # [batch_size, max_len] mask for response tokens only
     old_log_probs: torch.Tensor  # [batch_size, max_response_len]
+    old_values: torch.Tensor  # [batch_size, max_response_len]
     rewards: torch.Tensor  # [batch_size]
     advantages: torch.Tensor  # [batch_size, max_response_len]
     returns: torch.Tensor  # [batch_size, max_response_len]
@@ -92,24 +93,30 @@ class RolloutBuffer:
             reward = sample.rewards.item()
 
             if sample.values is not None:
-                # Full GAE computation
+                # Full GAE with sparse terminal reward
                 values = sample.values
-                advantages = torch.zeros(response_len)
+                advantages = torch.zeros(response_len, device=values.device, dtype=values.dtype)
                 last_gae = 0.0
 
                 for t in reversed(range(response_len)):
                     if t == response_len - 1:
                         next_value = 0.0
-                        delta = reward - values[t]
+                        reward_t = reward
                     else:
-                        next_value = values[t + 1]
-                        delta = self.gamma * next_value - values[t]
+                        next_value = values[t + 1].item()
+                        reward_t = 0.0
 
+                    delta = reward_t + self.gamma * next_value - values[t].item()
                     last_gae = delta + self.gamma * self.gae_lambda * last_gae
                     advantages[t] = last_gae
             else:
+                device = sample.rewards.device
                 # Simplified: uniform advantage based on final reward
-                advantages = torch.full((response_len,), reward / response_len)
+                advantages = torch.full(
+                    (response_len,),
+                    reward / response_len,
+                    device=device,
+                )
 
             sample.advantages = advantages
 
@@ -167,6 +174,7 @@ class RolloutBuffer:
         attention_mask = torch.zeros(batch_size, max_total_len, dtype=torch.long)
         response_mask = torch.zeros(batch_size, max_total_len, dtype=torch.long)
         old_log_probs = torch.zeros(batch_size, max_response_len)
+        old_values = torch.zeros(batch_size, max_response_len)
         advantages = torch.zeros(batch_size, max_response_len)
         returns = torch.zeros(batch_size, max_response_len)
         rewards = torch.zeros(batch_size)
@@ -183,9 +191,11 @@ class RolloutBuffer:
             old_log_probs[i, :response_len] = sample.old_log_probs
             rewards[i] = sample.rewards
 
+            if sample.values is not None:
+                old_values[i, :response_len] = sample.values
+
             if sample.advantages is not None:
                 advantages[i, :response_len] = sample.advantages
-                # Returns = advantages + values (or just rewards for simplified case)
                 if sample.values is not None:
                     returns[i, :response_len] = sample.advantages + sample.values
                 else:
@@ -196,6 +206,7 @@ class RolloutBuffer:
             attention_mask=attention_mask.to(device),
             response_mask=response_mask.to(device),
             old_log_probs=old_log_probs.to(device),
+            old_values=old_values.to(device),
             rewards=rewards.to(device),
             advantages=advantages.to(device),
             returns=returns.to(device),

@@ -14,6 +14,7 @@ from torch.optim import AdamW
 
 from llm.training.rlhf.config import PPOConfig
 from llm.training.rlhf.rollout_buffer import RolloutBatch, RolloutBuffer
+from llm.training.rlhf.value_model import ValueModel
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +65,13 @@ class PPOTrainer:
         else:
             self.ref_model = None
 
-        # Value model (shares backbone with policy if not provided)
-        self.value_model = value_model
+        # Value model (separate critic when value_coef > 0)
+        if value_model is not None:
+            self.value_model = value_model
+        elif config.value_coef > 0:
+            self.value_model = self._create_value_model()
+        else:
+            self.value_model = None
 
         # Move models to device
         self.policy.to(self.device)
@@ -77,11 +83,20 @@ class PPOTrainer:
         if self.value_model is not None:
             self.value_model.to(self.device)
 
-        # Optimizer
+        # Optimizers
+        policy_lr = config.policy_lr or 1e-5
         self.optimizer = AdamW(
             self.policy.parameters(),
-            lr=config.policy_lr or 1e-5,
+            lr=policy_lr,
         )
+        if self.value_model is not None:
+            value_lr = config.value_lr or policy_lr
+            self.value_optimizer = AdamW(
+                self.value_model.parameters(),
+                lr=value_lr,
+            )
+        else:
+            self.value_optimizer = None
 
         # Rollout buffer
         self.buffer = RolloutBuffer(
@@ -103,6 +118,65 @@ class PPOTrainer:
         for param in ref_model.parameters():
             param.requires_grad = False
         return ref_model
+
+    def _create_value_model(self) -> ValueModel:
+        """Create a trainable critic with the same architecture as the policy."""
+        import copy
+
+        value_base = copy.deepcopy(self.policy)
+        return ValueModel(value_base)
+
+    def _extract_response_values(
+        self,
+        all_values: torch.Tensor,
+        response_mask: torch.Tensor,
+        max_response_len: int,
+    ) -> torch.Tensor:
+        """Extract per-response-token value estimates from full-sequence critic output."""
+        batch_size = all_values.size(0)
+        response_values = torch.zeros(
+            batch_size,
+            max_response_len,
+            device=all_values.device,
+            dtype=all_values.dtype,
+        )
+
+        for i in range(batch_size):
+            prompt_len = (1 - response_mask[i]).sum().long()
+            resp_len = response_mask[i].sum().long()
+            if resp_len > 0:
+                positions = prompt_len - 1 + torch.arange(resp_len, device=all_values.device)
+                response_values[i, :resp_len] = all_values[i, positions]
+
+        return response_values
+
+    def compute_response_values(
+        self,
+        prompt_ids: torch.Tensor,
+        response_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Replay a prompt-response pair and collect critic values before each response token.
+        """
+        if self.value_model is None:
+            raise RuntimeError("value_model is required to compute response values")
+
+        self.value_model.eval()
+        values: list[torch.Tensor] = []
+        input_ids = prompt_ids.unsqueeze(0)
+
+        with torch.no_grad():
+            for token in response_ids:
+                attention_mask = torch.ones_like(input_ids)
+                token_values = self.value_model(input_ids, attention_mask)
+                values.append(token_values[0, -1])
+                input_ids = torch.cat(
+                    [input_ids, token.reshape(1, 1)],
+                    dim=1,
+                )
+
+        self.value_model.train()
+        return torch.stack(values)
 
     def generate_responses(
         self,
@@ -234,7 +308,7 @@ class PPOTrainer:
         response_mask = batch.response_mask
         old_log_probs = batch.old_log_probs
         advantages = batch.advantages
-        returns = batch.returns  # noqa: F841 - prepared for value function updates
+        returns = batch.returns
 
         # Forward pass
         logits = self.policy(input_ids)
@@ -284,8 +358,21 @@ class PPOTrainer:
         kl = self.compute_kl_penalty(input_ids, attention_mask, response_mask)
         kl_loss = self.kl_ctl * kl
 
+        # Value loss
+        value_loss = torch.tensor(0.0, device=self.device)
+        if self.value_model is not None and self.config.value_coef > 0:
+            all_values = self.value_model(input_ids, attention_mask)
+            pred_values = self._extract_response_values(
+                all_values,
+                response_mask,
+                response_len,
+            )
+            target_returns = returns[:, :response_len]
+            value_loss = F.mse_loss(pred_values, target_returns)
+            value_loss = self.config.value_coef * value_loss
+
         # Total loss
-        loss = policy_loss + kl_loss
+        loss = policy_loss + kl_loss + value_loss
 
         # Entropy bonus (optional) — align with shifted token positions
         if self.config.entropy_coef > 0:
@@ -297,6 +384,8 @@ class PPOTrainer:
 
         # Backward pass
         self.optimizer.zero_grad()
+        if self.value_optimizer is not None:
+            self.value_optimizer.zero_grad()
         loss.backward()
 
         # Gradient clipping
@@ -305,8 +394,15 @@ class PPOTrainer:
                 self.policy.parameters(),
                 self.config.max_grad_norm,
             )
+            if self.value_model is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    self.value_model.parameters(),
+                    self.config.max_grad_norm,
+                )
 
         self.optimizer.step()
+        if self.value_optimizer is not None:
+            self.value_optimizer.step()
 
         # Metrics
         with torch.no_grad():
@@ -315,6 +411,7 @@ class PPOTrainer:
         return {
             "loss": loss.item(),
             "policy_loss": policy_loss.item(),
+            "value_loss": value_loss.item() if isinstance(value_loss, torch.Tensor) else value_loss,
             "kl": kl.item(),
             "kl_loss": kl_loss.item(),
             "entropy": entropy.item() if isinstance(entropy, torch.Tensor) else entropy,
@@ -346,11 +443,15 @@ class PPOTrainer:
         # 3. Store in buffer
         self.buffer.clear()
         for p_ids, r_ids, lp, reward in zip(prompt_ids, response_ids, log_probs, rewards, strict=True):
+            values = None
+            if self.value_model is not None:
+                values = self.compute_response_values(p_ids, r_ids)
             self.buffer.add(
                 prompt_ids=p_ids,
                 response_ids=r_ids,
                 rewards=reward,
                 old_log_probs=lp,
+                values=values,
             )
 
         # 4. Compute advantages
