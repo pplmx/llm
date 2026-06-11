@@ -6,7 +6,6 @@
 
 | 文件                             | 用途                        |
 | -------------------------------- | --------------------------- |
-| [GEMINI.md](GEMINI.md)           | Gemini 专属完整规范         |
 | [ROADMAP.md](ROADMAP.md)         | 项目状态与开发路线图        |
 | [docs/](docs/)                   | 技术文档 (架构、训练、教程) |
 | [pyproject.toml](pyproject.toml) | 项目配置与依赖              |
