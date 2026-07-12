@@ -403,6 +403,17 @@ async def _chat_stream_generator(
         yield "data: [DONE]\n\n"
 
 
+def _is_loopback(host: str) -> bool:
+    """Return True if ``host`` is a loopback address.
+
+    Covers the common cases: ``127.0.0.0/8`` and ``::1``. Anything else
+    (``0.0.0.0``, ``*``, LAN IPs, public hostnames) is treated as non-loopback.
+    """
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return True
+    return bool(host.startswith("127."))
+
+
 def main():
     """Entry point for llm-serve CLI.
 
@@ -412,10 +423,23 @@ def main():
     run uvicorn directly::
 
         uvicorn llm.serving.api:app --reload --host 127.0.0.1 --port 8000
+
+    Refuses to start when the server would bind to a non-loopback address
+    without an ``api_key`` configured. ``host=0.0.0.0`` without auth exposes
+    the inference endpoint to the network; this guard makes that mistake fail
+    loudly at startup rather than silently at runtime.
     """
     import os
 
     import uvicorn
+
+    if not _is_loopback(config.host) and not config.api_key:
+        raise RuntimeError(
+            f"Refusing to start: ServingConfig.host='{config.host}' binds to a "
+            f"non-loopback address but api_key is not set. Anonymous access on a "
+            f"public interface is unsafe. Either set LLM_SERVING_HOST to a loopback "
+            f"address (127.0.0.1) or set LLM_SERVING_API_KEY."
+        )
 
     reload = os.environ.get("LLM_SERVING_RELOAD", "").lower() in ("1", "true", "yes")
     uvicorn.run("llm.serving.api:app", host=config.host, port=8000, reload=reload)
