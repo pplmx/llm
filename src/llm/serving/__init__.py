@@ -1,5 +1,5 @@
 from .api import app
-from .batch_engine import ContinuousBatchingEngine
+from .batch_engine import ContinuousBatchingEngine, StepStats
 from .config import ServingConfig
 from .schemas import (
     BatchGenerationRequest,
@@ -23,5 +23,6 @@ __all__ = [
     "GenerationRequest",
     "GenerationResponse",
     "ServingConfig",
+    "StepStats",
     "app",
 ]

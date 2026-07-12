@@ -4,6 +4,8 @@ import hashlib
 import threading
 import uuid
 from collections import OrderedDict
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import torch
 
@@ -12,6 +14,20 @@ from llm.generation.sampling import apply_repetition_penalty, sample_next_token
 from llm.models.decoder import DecoderModel
 from llm.serving.scheduler import Scheduler
 from llm.serving.schemas import GenerationRequest, RequestState, Sequence
+
+
+@dataclass(frozen=True)
+class StepStats:
+    """Per-step stats returned by :meth:`ContinuousBatchingEngine.step`.
+
+    ``scheduled`` is the number of sequences that ran a forward pass in
+    the step (a.k.a. effective batch size). ``total_active_slots`` is the
+    engine's full slot pool — used as the denominator for the
+    ``llm_batch_fill_ratio`` Prometheus gauge.
+    """
+
+    scheduled: int
+    total_active_slots: int
 
 
 class SlotPrefixCache:
@@ -159,6 +175,11 @@ class ContinuousBatchingEngine:
         # only guards the Python-side state machine. Future async refactors
         # should release this lock during the inner model forward.
         self._step_lock = threading.Lock()
+        # Optional callback invoked once per ``step()`` with the resulting
+        # :class:`StepStats`. The serving tier uses it to publish
+        # ``llm_batch_fill_ratio``. Called under ``self._step_lock`` so the
+        # callback sees consistent post-step state.
+        self._on_step: Callable[[StepStats], None] | None = None
 
     @classmethod
     def from_serving_config(cls, config, model: DecoderModel, tokenizer: object) -> ContinuousBatchingEngine:
@@ -257,22 +278,41 @@ class ContinuousBatchingEngine:
         return [self.generate_request(request) for request in requests]
 
     @torch.no_grad()
-    def step(self):
+    def step(self) -> StepStats:
         """Run one inference step.
 
         Holds ``self._step_lock`` for the duration of the call to serialize
         concurrent worker threads. ``run_in_threadpool`` offloads each request
         to a separate thread; without the lock, mutations to ``scheduler``,
         ``slot_allocator``, ``kv_caches``, and ``prefix_cache`` would race.
+
+        Returns:
+            :class:`StepStats` describing the step. ``scheduled`` is the
+            effective batch size; ``total_active_slots`` is the engine's
+            full slot pool (denominator for ``llm_batch_fill_ratio``).
+
+        The engine optionally invokes ``self._on_step(stats)`` after the
+        forward pass, under the step lock, so observers see consistent
+        post-step state. The serving tier wires this to publish metrics.
         """
         with self._step_lock:
-            self._step_locked()
+            stats = self._step_locked()
+            if self._on_step is not None:
+                self._on_step(stats)
+            return stats
 
-    def _step_locked(self):
-        """Body of :meth:`step`. Caller MUST hold ``self._step_lock``."""
+    def _step_locked(self) -> StepStats:
+        """Body of :meth:`step`. Caller MUST hold ``self._step_lock``.
+
+        Returns:
+            :class:`StepStats` summarising this step. Always returned
+            (never ``None``) so callers can compute fill-ratio even when
+            the scheduler had no work — a fully idle engine reports
+            ``scheduled=0`` rather than crashing the metric pipeline.
+        """
         running_sequences = self.scheduler.schedule()
         if not running_sequences:
-            return
+            return StepStats(scheduled=0, total_active_slots=self.slot_allocator.total_slots)
 
         batch_size = len(running_sequences)
 
@@ -377,6 +417,20 @@ class ContinuousBatchingEngine:
             ):
                 seq.status = RequestState.FINISHED
                 self.slot_allocator.free(seq.request_id)
+
+        return StepStats(
+            scheduled=batch_size,
+            total_active_slots=self.slot_allocator.total_slots,
+        )
+
+    def set_step_observer(self, callback: Callable[[StepStats], None] | None) -> None:
+        """Install or clear a per-step observer (used for metric publishing).
+
+        The callback runs at the end of every :meth:`step` call, under
+        ``self._step_lock``, with the :class:`StepStats` for that step.
+        Pass ``None`` to remove a previously installed observer.
+        """
+        self._on_step = callback
 
     def unload_model(self):
         """Unload model."""

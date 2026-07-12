@@ -152,6 +152,73 @@ while engine.scheduler.has_pending_work:
 | Mixed prefill/decode       | New and ongoing sequences batched together |
 | Automatic padding          | Handles variable-length inputs             |
 
+## Serving Metrics (Prometheus)
+
+`prometheus-fastapi-instrumentator` already emits generic HTTP RED
+metrics (rate, errors, duration) per route. The serving tier also
+publishes domain-specific metrics so operators can see what the model
+is actually doing — not just that the route returned 200.
+
+All metrics live in `src/llm/serving/metrics.py` and are exposed at
+`/metrics` alongside the HTTP RED metrics.
+
+### Metrics reference
+
+| Metric                            | Type      | Labels             | Source                                         |
+| --------------------------------- | --------- | ------------------ | ---------------------------------------------- |
+| `llm_tokens_generated_total`      | Counter   | `endpoint`         | observed per successful generation             |
+| `llm_tokens_per_request`          | Histogram | `endpoint`         | distribution of completion tokens (16/64/256/1024/4096 buckets) |
+| `llm_request_duration_seconds`    | Histogram | `endpoint`, `status` | end-to-end request duration (0.05/0.25/1/5/30 buckets) |
+| `llm_batch_fill_ratio`            | Gauge     | —                  | `ContinuousBatchingEngine.set_step_observer` callback |
+| `llm_kv_cache_hit_ratio`          | Gauge     | —                  | set by callers observing prefix-cache hits     |
+| `llm_inflight_requests`           | Gauge     | —                  | incremented while a request holds the semaphore |
+
+Endpoints contributing to the `endpoint` label: `generate`,
+`batch_generate`, `chat_completions`.
+
+### Example PromQL queries
+
+```promql
+# p95 latency per endpoint (seconds)
+histogram_quantile(0.95,
+  sum by (le, endpoint) (rate(llm_request_duration_seconds_bucket[5m]))
+)
+
+# Throughput (tokens / second) by endpoint
+sum by (endpoint) (rate(llm_tokens_generated_total[1m]))
+
+# Batch utilization — fraction of slots in use over time
+avg_over_time(llm_batch_fill_ratio[5m])
+
+# Saturation signal — sustained near-100% fill with rising p95
+# means the engine is throughput-bound.
+llm_batch_fill_ratio > 0.8
+  and
+histogram_quantile(0.95,
+  sum by (le) (rate(llm_request_duration_seconds_bucket[5m]))
+) > 10
+
+# KV-cache hit rate — fraction of prefix lookups served from cache
+avg_over_time(llm_kv_cache_hit_ratio[10m])
+```
+
+### Wiring a custom observer
+
+The engine's `set_step_observer(callback)` hook fires once per
+`engine.step()` under the step lock, with the latest `StepStats`. Use
+it to publish gauges (e.g. slot utilization) or to drive
+adaptive batching decisions:
+
+```python
+from llm.serving.batch_engine import ContinuousBatchingEngine
+from llm.serving.metrics import METRICS
+
+engine = ContinuousBatchingEngine.from_serving_config(config, model, tokenizer)
+engine.set_step_observer(METRICS.record_batch_fill_ratio)
+```
+
+Pass `None` to clear a previously installed observer.
+
 ## Grouped Query Attention (GQA)
 
 GQA reduces KV cache memory by sharing KV heads across multiple query heads.
