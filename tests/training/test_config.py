@@ -123,9 +123,35 @@ class TestConfig:
         config = ModelConfig()
         assert config.attn_impl == "mha"
         assert config.mlp_impl == "mlp"
+        assert config.use_kv_cache is False
 
-        # Test custom values
-        config = ModelConfig(attn_impl="flash_attn", mlp_impl="moe", num_kv_heads=4, num_experts=8, top_k=2)
-        assert config.attn_impl == "flash_attn"
+        # Test custom values (mla is a registered attention impl; flash_attn is not)
+        config = ModelConfig(attn_impl="mla", mlp_impl="moe", num_kv_heads=4, num_experts=8, top_k=2)
+        assert config.attn_impl == "mla"
         assert config.mlp_impl == "moe"
         assert config.num_kv_heads == 4
+
+    def test_model_config_rejects_unknown_attn_impl(self):
+        """Unknown attn_impl fails at config-load time, not deep in forward.
+
+        Regression for Finding E (audit 2026-07-12).
+        """
+        with pytest.raises(ValueError, match="Unknown attn_impl"):
+            ModelConfig(attn_impl="flash_attn")
+
+    def test_model_config_mla_with_kv_cache_rejected(self):
+        """MLA + KV cache is not yet supported; fail fast at config-load."""
+        with pytest.raises(ValueError, match="does not support KV cache"):
+            ModelConfig(attn_impl="mla", use_kv_cache=True)
+
+    def test_model_config_mla_without_kv_cache_ok(self):
+        """MLA without KV cache is fine — research/training use case."""
+        config = ModelConfig(attn_impl="mla", use_kv_cache=False)
+        assert config.attn_impl == "mla"
+        assert config.use_kv_cache is False
+
+    def test_model_config_mha_with_kv_cache_ok(self):
+        """MHA + KV cache is the canonical serving path."""
+        config = ModelConfig(attn_impl="mha", use_kv_cache=True)
+        assert config.attn_impl == "mha"
+        assert config.use_kv_cache is True

@@ -26,6 +26,12 @@ class ModelConfig(BaseModel):
     mlp_impl: str = "mlp"
     norm_impl: str = "layer_norm"  # Resolved via NORM_REGISTRY in ModelFactory
 
+    # Downstream hint for the continuous batching engine and serving API.
+    # When True, the model is expected to write into a KV cache during
+    # autoregressive decoding; ``check_consistency`` will reject configurations
+    # where ``attn_impl`` does not support that.
+    use_kv_cache: bool = False
+
     @model_validator(mode="after")
     def check_consistency(self) -> ModelConfig:
         if self.intermediate_size is None:
@@ -42,6 +48,27 @@ class ModelConfig(BaseModel):
                 raise ValueError("num_experts must be positive when mlp_impl='moe'.")
             if self.top_k <= 0 or self.top_k > self.num_experts:
                 raise ValueError("top_k must be positive and <= num_experts when mlp_impl='moe'.")
+
+        # Validate attn_impl is a known registry entry.
+        # We import lazily to avoid a circular import (config.py is imported
+        # by the attention modules' own registration paths).
+        from llm.core.registry import ATTENTION_KV_CACHE_CAPABILITY
+
+        if self.attn_impl not in ATTENTION_KV_CACHE_CAPABILITY:
+            available = ", ".join(sorted(ATTENTION_KV_CACHE_CAPABILITY))
+            raise ValueError(
+                f"Unknown attn_impl '{self.attn_impl}'. "
+                f"Available: {available}. Register a new attention impl via "
+                f"@register_attention and declare its KV-cache capability via "
+                f"set_attention_kv_cache_capability."
+            )
+
+        if self.use_kv_cache and not ATTENTION_KV_CACHE_CAPABILITY[self.attn_impl]:
+            raise ValueError(
+                f"attn_impl='{self.attn_impl}' does not support KV cache "
+                f"(capability=False). Set model.use_kv_cache=False or switch "
+                f"to an attention impl that supports KV cache (currently: mha)."
+            )
         return self
 
 
