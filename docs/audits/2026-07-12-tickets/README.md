@@ -1,6 +1,6 @@
-# 2026-07-12 Audit — Tier 1 Issue Backlog
+# 2026-07-12 Audit — Issue Backlog (Tier 1 + Tier 2)
 
-These are the Tier 1 (1–2 week) issues derived from
+These are the Tier 1 (1–2 week) and Tier 2 (1–2 month) issues derived from
 [docs/audits/2026-07-12-technical-due-diligence.md](../2026-07-12-technical-due-diligence.md).
 
 Each ticket is a self-contained markdown file ready to be pasted into a GitHub issue
@@ -23,21 +23,19 @@ for f in docs/audits/2026-07-12-tickets/*.md; do
   gh issue create \
     --title "$title" \
     --body "$body" \
-    --label "audit-2026-07,v0.0.6-audit-followup"
+    --label "audit-2026-07"
 done
 ```
 
-> **Note**: create the milestone `v0.0.6-audit-followup` first (via
-> `gh api -X POST .../milestones -f title=v0.0.6-audit-followup ...`) and the label
-> `audit-2026-07` first (via `gh label create audit-2026-07`). Then add `--milestone
-> v0.0.6-audit-followup` to the loop.
+> **Note**: create the milestone `v0.0.6-audit-followup` first and the label
+> `audit-2026-07` first; then add `--milestone v0.0.6-audit-followup` to the loop.
 
 ### Option B — Manual paste
 
 Open each `.md` file, copy the body (everything after the first `# title` line), and
 create an issue in GitHub Issues with the matching title and the listed labels.
 
-## Index
+## Tier 1 — Index (1–2 weeks)
 
 | # | File | Title (short) | Severity |
 |---|---|---|---|
@@ -55,3 +53,23 @@ create an issue in GitHub Issues with the matching title and the listed labels.
 | 12 | `12-log-startup-config.md` | Log model version + config on startup | HIGH |
 | 13 | `13-eval-logging-dep-groups.md` | Split heavy deps into groups | MEDIUM |
 | 14 | `14-threadlock-batch-engine.md` | Add threading.Lock around `step()` | HIGH |
+
+## Tier 2 — Index (1–2 months)
+
+| # | File | Title (short) | Severity |
+|---|---|---|---|
+| 15 | `15-structured-api-errors.md` | Structured APIError envelope + request IDs (K) | MEDIUM |
+| 16 | `16-split-serving-api.md` | Split `serving/api.py` into focused modules (H) | MEDIUM |
+| 17 | `17-custom-loop-callbacks.md` | Custom-loop task callback bridge (F, RLHF) | MEDIUM |
+| 18 | `18-kv-cache-prefill-optim.md` | Optimize `KVCache.update_at_indices` for prefill (AM) | MEDIUM |
+| 19 | `19-hypothesis-invariant-tests.md` | Hypothesis invariant tests for core invariants (AD) | MEDIUM |
+| 20 | `20-mkdocstrings-api-reference.md` | `mkdocstrings` API reference (AJ) | HIGH |
+| 21 | `21-docs-github-pages.md` | Deploy docs to GitHub Pages (AI) | MEDIUM |
+| 22 | `22-custom-prometheus-metrics.md` | Custom Prometheus metrics for serving (AX) | MEDIUM |
+| 23 | `23-async-batch-engine.md` | Make `ContinuousBatchingEngine.step` truly async (M) | HIGH |
+
+## Status snapshot (2026-07-12)
+
+- **Tier 1**: 14/14 implemented in commits `23b3018`–`817dd86` (main).
+- **Tier 2**: 5/14 already in main (`#3, #4, #5, #11, #14` from the audit table).
+- **Remaining**: tickets 15–23 above.

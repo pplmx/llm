@@ -1,5 +1,5 @@
 import abc
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import torch
 import torch.nn as nn
@@ -12,6 +12,12 @@ from llm.training.core.config import Config
 
 if TYPE_CHECKING:
     from llm.training.core.engine import TrainingEngine
+
+# A custom-loop epoch callback. Receives the current epoch index and runs
+# the per-epoch work (data loading, optimizer steps, etc.). It is expected
+# to call ``self._emit_step_callbacks(...)`` after each optimizer step so
+# step-level observers (TensorBoardLogger, LRSchedulerCallback, ...) fire.
+EpochFn = Callable[[int], None]
 
 
 class TrainingTask(abc.ABC, CheckpointContributor):
@@ -46,8 +52,80 @@ class TrainingTask(abc.ABC, CheckpointContributor):
         pass
 
     def run_training(self, engine: TrainingEngine) -> None:
-        """Execute a non-standard training loop."""
+        """Execute a non-standard training loop.
+
+        Subclasses that implement a custom loop should delegate the
+        per-epoch structure to :meth:`run_with_callbacks` so that
+        ``on_epoch_start`` / ``on_epoch_end`` / ``on_train_step_end``
+        / ``should_stop_training`` behave identically to the standard
+        loop. See :class:`llm.training.tasks.ppo_task.PPOTask` for the
+        canonical example.
+        """
         raise NotImplementedError(f"{type(self).__name__} must implement run_training().")
+
+    def run_with_callbacks(self, engine: TrainingEngine, epoch_fn: EpochFn) -> None:
+        """Execute a custom training loop with full callback integration.
+
+        This wraps the per-epoch work in ``epoch_fn(epoch)`` with the same
+        callback contract as :class:`TrainingEngine`'s standard loop:
+
+        - ``on_epoch_start(epoch)`` fires before the epoch
+        - ``on_epoch_end(epoch, logs={"avg_loss": ...})`` fires after
+        - ``engine.should_stop_training`` is honored between epochs (set
+          by callbacks like ``EarlyStopping``)
+        - Exceptions propagate after ``on_exception`` fires (handled by
+          ``engine.run()``)
+
+        Inside ``epoch_fn``, call :meth:`_emit_step_callbacks` after each
+        optimizer step so step-level observers fire.
+
+        Args:
+            engine: The active :class:`TrainingEngine`.
+            epoch_fn: Callable invoked once per epoch with the epoch index.
+        """
+        epoch_logs: dict[str, Any] = {}
+        for epoch in range(engine.start_epoch, engine.config.training.epochs):
+            engine._run_callbacks("on_epoch_start", epoch=epoch)
+            epoch_fn(epoch)
+            engine._run_callbacks("on_epoch_end", epoch=epoch, logs=epoch_logs)
+            epoch_logs = {}
+            if engine.should_stop_training:
+                if engine.rank == 0:
+                    engine.logger.info(
+                        f"Training stopped early at epoch {epoch + 1} by callback."
+                    )
+                break
+
+    def _emit_step_callbacks(
+        self,
+        engine: TrainingEngine,
+        epoch: int,
+        batch_idx: int,
+        loss: torch.Tensor,
+        metrics: dict[str, Any],
+    ) -> None:
+        """Fire ``on_train_step_end`` for custom-loop tasks.
+
+        Custom-loop tasks (PPO/RLHF) call this from inside their per-step
+        code so that observers like :class:`TensorBoardLogger`,
+        :class:`LRSchedulerCallback`, and :class:`EvaluationCallback`
+        receive the same hook as standard tasks.
+
+        Args:
+            engine: The active :class:`TrainingEngine`.
+            epoch: Current epoch index.
+            batch_idx: Current batch index within the epoch.
+            loss: Loss tensor from this step (synthetic tensors are OK
+                for tasks that don't have a single loss, e.g. RLHF).
+            metrics: Metrics dict from this step.
+        """
+        engine._run_callbacks(
+            "on_train_step_end",
+            epoch=epoch,
+            batch_idx=batch_idx,
+            loss=loss,
+            metrics=metrics,
+        )
 
     @abc.abstractmethod
     def build_model(self) -> nn.Module:

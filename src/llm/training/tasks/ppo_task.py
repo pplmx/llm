@@ -102,13 +102,13 @@ class PPOTask(TrainingTask):
         if self.ppo_trainer is None:
             raise RuntimeError("prepare_training() must be called before run_training().")
 
-        dataloader = engine.dataloader
         training_start = time.time()
 
-        for epoch in range(engine.start_epoch, engine.config.training.epochs):
+        def _epoch(epoch: int) -> None:
             if engine.sampler is not None:
                 engine.sampler.set_epoch(epoch)
 
+            dataloader = engine.dataloader
             epoch_metrics: list[dict[str, float]] = []
             num_batches = len(dataloader)
 
@@ -117,9 +117,18 @@ class PPOTask(TrainingTask):
                 metrics = self.ppo_trainer.train_step(prompts)
                 epoch_metrics.append(metrics)
 
+                # Synthetic scalar loss so step-level observers
+                # (TensorBoardLogger, LRSchedulerCallback, ...) receive
+                # the same hook as standard-loop tasks. PPO loss is a
+                # plain float, not a graph-attached tensor.
+                step_loss = torch.tensor(metrics.get("loss", 0.0), dtype=torch.float32)
+                self._emit_step_callbacks(engine, epoch, batch_idx, step_loss, metrics)
+
                 if (batch_idx + 1) % engine.config.logging.log_interval == 0 and engine.rank == 0:
                     metrics_str = " | ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
-                    engine.logger.info(f"Epoch {epoch + 1:2d} | Batch {batch_idx + 1:4d}/{num_batches} | {metrics_str}")
+                    engine.logger.info(
+                        f"Epoch {epoch + 1:2d} | Batch {batch_idx + 1:4d}/{num_batches} | {metrics_str}"
+                    )
 
             avg_loss = 0.0
             if epoch_metrics:
@@ -141,6 +150,9 @@ class PPOTask(TrainingTask):
                     extra_state=collect_extra_state(self, engine.data_module),
                     model_config=engine.config.model.model_dump(),
                 )
+                engine._run_callbacks("on_save_checkpoint", epoch=epoch)
+
+        self.run_with_callbacks(engine, _epoch)
 
         if engine.rank == 0:
             total_time = time.time() - training_start
