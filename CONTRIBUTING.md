@@ -23,4 +23,17 @@ Before you start writing code, please make sure to read our [Development Guide](
 
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) to understand the expected behavior within our community.
 
+## Testing Policy
+
+- **Test coverage gate**: `pyproject.toml` sets `tool.coverage.report.fail_under = 62`,
+  which is the current measured coverage for the CPU-friendly test subset
+  (the full suite, including GPU paths, cannot run in this CI). Any PR that
+  drops coverage below this bar will fail. New code should come with tests
+  that keep coverage at or above the current floor.
+- **Ruff**: `make ruff` runs `ruff format` and `ruff check`. CI runs both.
+- **Type checks**: `make ty` runs `ty check`. CI runs it.
+- **Markers**: when adding tests, mark them with the appropriate marker
+  (`quick`, `slow`, `heavy`, `e2e`, `gpu`, `multi_gpu`) so the local test
+  loop (`make test-fast`) stays fast for daily development.
+
 Thank you for your contributions!
