@@ -29,6 +29,15 @@ jobs:
             -   name: Lint Code
                 run: uvx ruff check .
 
+            -   name: Type Check (ty)
+                # `continue-on-error` because the project has ~170 existing
+                # type diagnostics that pre-date the audit. Treat failures
+                # as advisory until Tier 2 cleanup work brings them down to
+                # zero, then remove `continue-on-error`. Tracked in
+                # docs/audits/2026-07-12-technical-due-diligence.md Finding W.
+                run: uvx ty check src/llm/
+                continue-on-error: true
+
     build-and-test:
         runs-on: ${{ matrix.os }}
         strategy:
