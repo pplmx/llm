@@ -117,7 +117,12 @@ class KVCache:
             batch_indices: Tensor of shape [B_curr] containing the cache slot indices.
             k_new: New key tensor of shape [B_curr, N_kv, S_new, D].
             v_new: New value tensor of shape [B_curr, N_kv, S_new, D].
-            start_pos: Starting position to write to. Can be an int (broadcast) or Tensor [B_curr].
+            start_pos: Starting position to write to. Can be an int (broadcast) or
+                Tensor of shape ``[B_curr, S_new]`` (one position per batch slot
+                and token). When a per-batch tensor is provided, the same value
+                is written for every S_new position; we rely on the caller to
+                pass position_ids so we never need a host-device ``.item()``
+                sync on the happy path.
 
         Returns:
              Tuple of (k_out, v_out) for the current batch.
@@ -126,39 +131,63 @@ class KVCache:
              Since different sequences have different lengths, we return up to max(start_pos + S_new).
              Correct handling usually implies the model knows how to mask using attention mask.
         """
-        # Validate shapes
         seq_len_new = k_new.size(2)
 
         if isinstance(start_pos, int):
+            # Scalar start_pos: every batch slot writes the same contiguous range.
+            # This is the typical prefill path (all slots start at 0).
             pos_end = start_pos + seq_len_new
-            # Simple slice assignment if start_pos is scalar
+            if pos_end > self.max_seq_len:
+                raise ValueError(
+                    f"Cache overflow: trying to cache {pos_end} tokens, "
+                    f"but max_seq_len is {self.max_seq_len}"
+                )
             self.k_cache[batch_indices, :, start_pos:pos_end] = k_new
             self.v_cache[batch_indices, :, start_pos:pos_end] = v_new
+        elif seq_len_new == 1:
+            # Decode path: one position per batch slot, advanced indexing is
+            # already a single fused op with no host sync.
+            self.k_cache[batch_indices, :, start_pos] = k_new.squeeze(2)
+            self.v_cache[batch_indices, :, start_pos] = v_new.squeeze(2)
         else:
-            # Tensor start_pos: we need to iterate or use scatter?
-            # Since seq_len_new is usually small (1 for decode, N for prefill), iteration might be fine?
-            # But prefill usually has start_pos=0 (scalar).
-            # Decode usually has start_pos=N (varies per seq).
-            # If seq_len_new == 1 (Decode), we can use scatter / advanced indexing easily.
-            if seq_len_new == 1:
-                # start_pos is [B_curr]
-                # We want self.k_cache[batch_indices[i], :, start_pos[i], :] = k_new[i, :, 0, :]
-                self.k_cache[batch_indices, :, start_pos] = k_new.squeeze(2)
-                self.v_cache[batch_indices, :, start_pos] = v_new.squeeze(2)
-            else:
-                # Fallback for SeqLen > 1 (e.g. Prefill)
-                # We assume contiguous writes for each sequence starting at start_pos[b, 0]
-                # This logic assumes position_ids[b] is [s, s+1, ..., s+L-1]
-                for b_i, slot_idx in enumerate(batch_indices):
-                    # Extract scalar start position for this batch item
-                    s = start_pos[b_i, 0].item()
-                    # Check if s is valid?
-                    # Perform slice assignment
-                    if s + seq_len_new <= self.max_seq_len:
-                        self.k_cache[slot_idx, :, s : s + seq_len_new] = k_new[b_i]
-                        self.v_cache[slot_idx, :, s : s + seq_len_new] = v_new[b_i]
-                    else:
-                        raise ValueError(f"Cache overflow for slot {slot_idx}")
+            # Mixed batch prefill path: each slot writes its own contiguous
+            # range starting at start_pos[b, 0]. The previous implementation
+            # used a Python-level ``for`` loop with ``.item()`` to materialize
+            # one scalar start position per batch — that stalled the pipeline
+            # on every step. Here we keep the whole thing on-device with one
+            # advanced-indexed assignment per cache (k, v).
+            #
+            # We assume start_pos[b] is the contiguous range
+            # [s, s+1, ..., s+seq_len_new-1] (i.e. ``position_ids``). The
+            # overflow check uses ``start_pos[:, 0]`` (one tensor op, no sync).
+            batch_starts = start_pos[:, 0]
+            overflow_mask = (batch_starts + seq_len_new) > self.max_seq_len
+            if overflow_mask.any():
+                overflow_slots = batch_indices[overflow_mask].tolist()
+                raise ValueError(
+                    f"Cache overflow for slots {overflow_slots} (start_pos + "
+                    f"seq_len_new > max_seq_len={self.max_seq_len})"
+                )
+
+            b_curr = batch_indices.size(0)
+            n_kv = k_new.size(1)
+            d_dim = k_new.size(3)
+
+            # Flatten [B, S] -> [B*S]
+            b_idx = batch_indices.view(b_curr, 1).expand(b_curr, seq_len_new).reshape(-1)
+            s_idx = start_pos.reshape(-1)
+
+            # Permute [B, N_kv, S, D] -> [B, S, N_kv, D] then flatten -> [B*S, N_kv, D]
+            # The reshape is a view when memory is contiguous (it is here because
+            # permute + reshape is followed by assignment, not by a graph op).
+            k_flat = k_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)
+            v_flat = v_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)
+
+            # Advanced indexing with broadcasting on the head dim. The whole
+            # write happens in one scatter-style kernel per cache; no host sync.
+            n_kv_idx = torch.arange(n_kv, device=k_new.device)
+            self.k_cache[b_idx[:, None], n_kv_idx[None, :], s_idx[:, None]] = k_flat
+            self.v_cache[b_idx[:, None], n_kv_idx[None, :], s_idx[:, None]] = v_flat
 
         # Return the updated cache for these indices.
         # We return the full pre-allocated buffer [B_curr, N_kv, max_seq_len, D]
