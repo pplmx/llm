@@ -1,0 +1,46 @@
+# CODEOWNERS — assigns reviewers to paths.
+#
+# Format: <pattern> <owner1> <owner2> ...
+# See https://docs.github.com/en/repositories/creating-and-managing-borders/configuring-code-owners
+#
+# Status: the project currently has a single human maintainer
+# (@Mystvio, see pyproject.toml `authors`). This file is a placeholder so
+# that:
+#   1. GitHub surfaces the CODEOWNERS file under Settings → Code owners.
+#   2. The maintainer has an explicit list of areas to delegate when a
+#      second human maintainer joins (see docs/audits/2026-07-12-technical-
+#      due-diligence.md Finding BC "Bus factor = 1").
+#
+# When a new maintainer joins, replace the placeholders below with their
+# GitHub handles (or team handles, if a team is set up).
+
+# Default: the lead maintainer
+# @Mystvio
+
+# Core architecture — extensions to ATTENTION_REGISTRY / MLP_REGISTRY /
+# NORM_REGISTRY, DecoderModel changes, registry protocol changes.
+# /src/llm/core/                @TBD-core-maintainer
+# /src/llm/models/              @TBD-models-maintainer
+# /src/llm/runtime/             @TBD-runtime-maintainer
+
+# Training loop, DDP/FSDP, RLHF tasks
+# /src/llm/training/            @TBD-training-maintainer
+
+# Serving — FastAPI, batch engine, paged attention
+# /src/llm/serving/             @TBD-serving-maintainer
+
+# Inference / generation backends
+# /src/llm/generation/          @TBD-generation-maintainer
+
+# Data sources / datasets / streaming
+# /src/llm/data/                @TBD-data-maintainer
+
+# Documentation, audit archives
+# /docs/                        @TBD-docs-maintainer
+
+# CI/CD, build, packaging
+# /pyproject.toml               @TBD-build-maintainer
+# /uv.lock                      @TBD-build-maintainer
+# /.github/                     @TBD-build-maintainer
+# /Makefile                     @TBD-build-maintainer
+# /Dockerfile                   @TBD-build-maintainer
