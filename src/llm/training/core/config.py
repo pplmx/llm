@@ -112,6 +112,25 @@ class OptimizationConfig(BaseModel):
     """Performance optimization configuration"""
 
     use_compile: bool = True
+    # ``torch.compile`` mode. See torch docs for full semantics.
+    #   - ``default``: best general-purpose starting point
+    #   - ``reduce-overhead``: uses CUDA graphs — incompatible with
+    #     variable-length sequences and KV-cache eviction; only safe for
+    #     pure fixed-shape training (no inference with use_cache=True)
+    #   - ``max-autotune``: long warmup, picks best kernel per shape
+    #   - ``max-autotune-no-cudagraphs``: like max-autotune without graphs
+    compile_mode: str = Field(
+        "default",
+        pattern="^(default|reduce-overhead|max-autotune|max-autotune-no-cudagraphs)$",
+        description="torch.compile mode. 'default' is recommended for variable-length training.",
+    )
+    compile_dynamic: bool | None = Field(
+        default=None,
+        description=(
+            "Mark dynamic dimensions for torch.compile (e.g., the sequence length). "
+            "If None, PyTorch's default heuristic is used."
+        ),
+    )
     use_amp: bool = True
     amp_dtype: str = Field("auto", pattern="^(auto|float16|bfloat16)$")
     num_workers: int = Field(4, ge=0)
