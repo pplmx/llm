@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import torch.nn as nn
 
 from llm.core.rms_norm import RMSNorm
@@ -9,7 +12,11 @@ from llm.runtime.registry import Registry, decorator_register
 
 ATTENTION_REGISTRY: Registry[type] = Registry("Attention")
 MLP_REGISTRY: Registry[type] = Registry("MLP")
-NORM_REGISTRY: Registry[type] = Registry("Normalization")
+# NORM_REGISTRY stores factory callables ``(**kwargs) -> nn.Module`` rather
+# than the module class itself. This matches MODEL_REGISTRY (which also
+# stores callables) and lets future norms do shape inference or context-
+# aware construction without changing the registry contract.
+NORM_REGISTRY: Registry[Callable[..., nn.Module]] = Registry("Normalization")
 
 register_attention = decorator_register(ATTENTION_REGISTRY)
 register_mlp = decorator_register(MLP_REGISTRY)
@@ -46,8 +53,23 @@ def attention_supports_kv_cache(name: str) -> bool:
     return ATTENTION_KV_CACHE_CAPABILITY[name]
 
 
+def _make_layer_norm(*args: Any, **kwargs: Any) -> nn.Module:
+    """Factory for ``nn.LayerNorm`` accepting both positional and keyword args.
+
+    The caller pattern from ``TransformerBlock`` is
+    ``factory(hidden_size, eps=norm_eps, **factory_kwargs)``, where the
+    first positional is ``normalized_shape``.
+    """
+    return nn.LayerNorm(*args, **kwargs)
+
+
+def _make_rms_norm(*args: Any, **kwargs: Any) -> nn.Module:
+    """Factory for ``RMSNorm`` accepting both positional and keyword args."""
+    return RMSNorm(*args, **kwargs)
+
+
 def ensure_norms_registered() -> None:
     if "layer_norm" not in NORM_REGISTRY:
-        NORM_REGISTRY.register("layer_norm", nn.LayerNorm)
+        NORM_REGISTRY.register("layer_norm", _make_layer_norm)
     if "rms_norm" not in NORM_REGISTRY:
-        NORM_REGISTRY.register("rms_norm", RMSNorm)
+        NORM_REGISTRY.register("rms_norm", _make_rms_norm)
