@@ -26,6 +26,30 @@ class ServingConfig(BaseSettings):
     max_concurrent_requests: int = 4  # Max concurrent inference requests
     request_timeout: float = 60.0  # Request timeout in seconds
 
+    # Chat template (OpenAI /v1/chat/completions).
+    # Each message is rendered using ``chat_message_template.format(role=...,
+    # content=...)``. The rendered messages are joined with newlines and the
+    # ``chat_generation_prefix`` is appended at the end so the model knows
+    # where to start producing assistant tokens. Override either field to
+    # match your fine-tuned model's expected format (e.g., ChatML,
+    # Llama-2-chat, Vicuna). None means: use the built-in defaults.
+    chat_message_template: str | None = Field(
+        default=None,
+        description=(
+            "Python format string applied to each chat message. "
+            "Available placeholders: {role}, {content}. "
+            "If None, falls back to '{role}: {content}'."
+        ),
+    )
+    chat_generation_prefix: str | None = Field(
+        default=None,
+        description=(
+            "String appended after all messages, signaling the model to "
+            "start generating the assistant response. "
+            "If None, falls back to 'Assistant: '."
+        ),
+    )
+
     # Paged Attention (block allocator sidecar; model forward still uses KVCache)
     use_paged_attention: bool = False
     max_blocks: int = 256

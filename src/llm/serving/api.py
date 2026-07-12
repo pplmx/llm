@@ -301,17 +301,30 @@ async def batch_generate_text(
 # OpenAI-compatible Chat Completions API
 
 
-def _messages_to_prompt(messages: list) -> str:
-    """Convert chat messages to a simple prompt string."""
-    parts = []
-    for msg in messages:
-        if msg.role == "system":
-            parts.append(f"[System]: {msg.content}")
-        elif msg.role == "user":
-            parts.append(f"[User]: {msg.content}")
-        elif msg.role == "assistant":
-            parts.append(f"[Assistant]: {msg.content}")
-    parts.append("[Assistant]:")
+DEFAULT_CHAT_MESSAGE_TEMPLATE = "{role}: {content}"
+DEFAULT_CHAT_GENERATION_PREFIX = "Assistant: "
+
+
+def _messages_to_prompt(
+    messages: list,
+    *,
+    message_template: str | None = None,
+    generation_prefix: str | None = None,
+) -> str:
+    """Convert chat messages to a single prompt string.
+
+    Each message is rendered with ``message_template.format(role=..., content=...)``
+    (default: ``"{role}: {content}"``). The rendered messages are joined with
+    newlines and ``generation_prefix`` (default: ``"Assistant: "``) is appended
+    so the model knows where to start producing assistant tokens.
+
+    Override ``message_template`` and ``generation_prefix`` to match a
+    fine-tuned model's expected format (ChatML, Llama-2-chat, Vicuna, …).
+    """
+    mt = message_template or DEFAULT_CHAT_MESSAGE_TEMPLATE
+    gp = generation_prefix or DEFAULT_CHAT_GENERATION_PREFIX
+    parts = [mt.format(role=msg.role, content=msg.content) for msg in messages]
+    parts.append(gp)
     return "\n".join(parts)
 
 
@@ -320,7 +333,11 @@ async def chat_completions(
     request: ChatCompletionRequest, _api_key: Annotated[str, Depends(get_api_key)]
 ) -> ChatCompletionResponse | StreamingResponse:
     """OpenAI-compatible chat completions endpoint."""
-    prompt = _messages_to_prompt(request.messages)
+    prompt = _messages_to_prompt(
+        request.messages,
+        message_template=config.chat_message_template,
+        generation_prefix=config.chat_generation_prefix,
+    )
     repetition_penalty = 1.0 + request.presence_penalty
 
     if request.stream:
