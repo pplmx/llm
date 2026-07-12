@@ -3,7 +3,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from llm.core.registry import register_attention
+from llm.core.registry import register_attention, set_attention_kv_cache_capability
 from llm.utils.common import make_factory_kwargs
 
 from .sdpa import sdpa
@@ -11,6 +11,11 @@ from .sdpa import sdpa
 
 @register_attention("mla")
 class MultiLatentAttention(nn.Module):
+    # MLA does not yet integrate with the KV-cache pool; the attention forward
+    # path writes keys/values into a different structure (latent vectors). The
+    # continuous batching engine would crash mid-stream if this combination was
+    # silently enabled. ``ModelConfig.check_consistency`` enforces this.
+    set_attention_kv_cache_capability("mla", supports=False)
     """
     Multi-Latent Attention mechanism implementation.
 

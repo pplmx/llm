@@ -4,7 +4,7 @@ import torch
 from torch import Tensor, nn
 
 from llm.core.kv_cache import KVCache
-from llm.core.registry import register_attention
+from llm.core.registry import register_attention, set_attention_kv_cache_capability
 from llm.utils.common import make_factory_kwargs
 
 from .sdpa import sdpa
@@ -12,6 +12,9 @@ from .sdpa import sdpa
 
 @register_attention("mha")
 class MultiHeadAttention(nn.Module):
+    # Standard MHA writes into the KV-cache pool during autoregressive decoding.
+    # The continuous batching engine and training engine both depend on this.
+    set_attention_kv_cache_capability("mha", supports=True)
     """
     Multi-Head Attention (MHA) mechanism.
 
