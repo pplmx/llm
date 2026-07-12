@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 import uuid
 from collections import OrderedDict
 
@@ -150,6 +151,15 @@ class ContinuousBatchingEngine:
                 max_prefixes=max_prefixes,
             )
 
+        # Concurrency control. ``step()`` mutates Python bookkeeping
+        # (``self._seq_len``, ``self.free_slots``, ``self.kv_caches``, prefix
+        # cache) that is not thread-safe. FastAPI's ``run_in_threadpool`` calls
+        # ``service.generate`` from multiple worker threads, so we serialize.
+        # PyTorch CUDA ops have their own internal serialization; this lock
+        # only guards the Python-side state machine. Future async refactors
+        # should release this lock during the inner model forward.
+        self._step_lock = threading.Lock()
+
     @classmethod
     def from_serving_config(cls, config, model: DecoderModel, tokenizer: object) -> ContinuousBatchingEngine:
         """Build an engine from ServingConfig flags.
@@ -248,7 +258,18 @@ class ContinuousBatchingEngine:
 
     @torch.no_grad()
     def step(self):
-        """Run one inference step."""
+        """Run one inference step.
+
+        Holds ``self._step_lock`` for the duration of the call to serialize
+        concurrent worker threads. ``run_in_threadpool`` offloads each request
+        to a separate thread; without the lock, mutations to ``scheduler``,
+        ``slot_allocator``, ``kv_caches``, and ``prefix_cache`` would race.
+        """
+        with self._step_lock:
+            self._step_locked()
+
+    def _step_locked(self):
+        """Body of :meth:`step`. Caller MUST hold ``self._step_lock``."""
         running_sequences = self.scheduler.schedule()
         if not running_sequences:
             return
