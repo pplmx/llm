@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
@@ -10,7 +12,13 @@ from llm.core.transformer_block import TransformerBlock
 from llm.utils.common import make_factory_kwargs
 
 
-def _resolve_norm_type(norm_impl: str) -> type[nn.Module]:
+def _resolve_norm_factory(norm_impl: str) -> Callable[..., nn.Module]:
+    """Return the registered norm factory for ``norm_impl``.
+
+    NORM_REGISTRY stores callables ``(**kwargs) -> nn.Module``. The caller
+    invokes the factory with ``normalized_shape``, ``eps``, and any
+    ``factory_kwargs`` (device, dtype). See ``core.registry.ensure_norms_registered``.
+    """
     from llm.core.registry import NORM_REGISTRY, ensure_norms_registered
 
     ensure_norms_registered()
@@ -63,7 +71,7 @@ class DecoderModel(nn.Module):
         """
         super().__init__()
         factory_kwargs = make_factory_kwargs(device, dtype)
-        resolved_norm_type = _resolve_norm_type(norm_impl)
+        resolved_norm_factory = _resolve_norm_factory(norm_impl)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
@@ -101,7 +109,7 @@ class DecoderModel(nn.Module):
                     top_k=top_k,
                     num_kv_heads=num_kv_heads,
                     use_glu=use_glu,  # Pass use_glu
-                    norm_type=resolved_norm_type,
+                    norm_type=resolved_norm_factory,
                     window_size=window_size,  # Pass window_size
                     attn_impl=attn_impl,  # Pass attn_impl
                     mlp_impl=mlp_impl,  # Pass mlp_impl
@@ -113,10 +121,7 @@ class DecoderModel(nn.Module):
 
         self.final_norm = None
         if self.norm_first:
-            if isinstance(resolved_norm_type, type):
-                self.final_norm = resolved_norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
-            else:
-                self.final_norm = resolved_norm_type
+            self.final_norm = resolved_norm_factory(hidden_size, eps=norm_eps, **factory_kwargs)
 
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=lm_head_bias, **factory_kwargs)
         self.max_seq_len = max_seq_len

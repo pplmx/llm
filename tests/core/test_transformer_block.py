@@ -120,17 +120,45 @@ class TestTransformerBlockInitialization:
 
         assert transformer_block.norm_first == block_kwargs["norm_first"]
 
-    def test_shared_norm_instance_cloning(self, block_kwargs):
-        """Test that passing a norm instance results in distinct norm layers."""
-        norm_instance = nn.LayerNorm(HIDDEN_SIZE, eps=NORM_EPS)
-        block_kwargs["norm_type"] = norm_instance
+    def test_norm_type_factory_invoked_twice(self, block_kwargs):
+        """The factory callable is invoked once per norm slot so each block
+        owns distinct nn.Parameter instances.
+
+        Pre-audit, ``norm_type`` accepted either a class or an instance; the
+        latter path deep-copied the instance. The new contract requires a
+        factory callable, so two independent invocations produce two
+        independent modules.
+        """
+        calls: list[int] = []
+
+        def factory(*_args, **_kwargs):
+            calls.append(1)
+            return nn.LayerNorm(HIDDEN_SIZE, eps=NORM_EPS)
+
+        block_kwargs["norm_type"] = factory
         block = TransformerBlock(**block_kwargs)
 
-        # Verify strict object identity is different
+        assert len(calls) == 2, f"expected two factory invocations, got {len(calls)}"
         assert block.norm1 is not block.norm2
-        # Verify they are still instances of the same class
         assert isinstance(block.norm1, nn.LayerNorm)
         assert isinstance(block.norm2, nn.LayerNorm)
+        # Parameters must NOT be shared between the two norms — this is what
+        # the deep-copy branch used to guarantee.
+        norm1_params = {id(p) for p in block.norm1.parameters()}
+        norm2_params = {id(p) for p in block.norm2.parameters()}
+        assert norm1_params.isdisjoint(norm2_params), (
+            "norm1 and norm2 share parameters; factory pattern broken"
+        )
+
+    def test_norm_type_instance_rejected(self, block_kwargs):
+        """Passing an instance (the old path) is now a TypeError.
+
+        Closes the audit's Finding C: the previous isinstance branch was a
+        code smell; factories are the only supported contract.
+        """
+        block_kwargs["norm_type"] = nn.LayerNorm(HIDDEN_SIZE, eps=NORM_EPS)
+        with pytest.raises(TypeError, match="must be a factory callable"):
+            TransformerBlock(**block_kwargs)
 
 
 @pytest.mark.slow

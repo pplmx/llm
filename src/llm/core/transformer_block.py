@@ -52,18 +52,23 @@ class TransformerBlock(nn.Module):
         self.norm_first = norm_first
         self.hidden_size = hidden_size
 
-        # Initialize Norms
-        if isinstance(norm_type, type):
-            self.norm1 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
-            self.norm2 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
-        else:
-            import copy
-
-            self.norm1 = copy.deepcopy(norm_type)
-            self.norm2 = copy.deepcopy(norm_type)
-            if device is not None or dtype is not None:
-                self.norm1 = self.norm1.to(device=device, dtype=dtype)
-                self.norm2 = self.norm2.to(device=device, dtype=dtype)
+        # Initialize Norms. ``norm_type`` must be a factory callable
+        # ``(**kwargs) -> nn.Module`` — typically one of the entries in
+        # ``NORM_REGISTRY``. Already-instantiated ``nn.Module`` instances are
+        # rejected because the previous isinstance(type) branch that
+        # deep-copied them was a code smell (Finding C).
+        if isinstance(norm_type, nn.Module):
+            raise TypeError(
+                "norm_type must be a factory callable (e.g. from NORM_REGISTRY), "
+                "not an already-constructed nn.Module. Pass norm_impl='rms_norm' "
+                "or 'layer_norm' to DecoderModel instead of pre-constructed norm modules."
+            )
+        if not callable(norm_type):
+            raise TypeError(
+                f"norm_type must be a callable factory, got {type(norm_type).__name__}."
+            )
+        self.norm1 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
+        self.norm2 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
 
         # Initialize Attention via Registry
         attn_cls = ATTENTION_REGISTRY.get(attn_impl)
