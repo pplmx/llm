@@ -5,6 +5,11 @@ on:
         branches:
             - main
     pull_request:
+    # Weekly schedule for dependency-vulnerability scanning (Tier-1 audit
+    # item #09 / Finding X). The cron picks up newly-published CVEs that
+    # land after the PR that introduced the dependency.
+    schedule:
+        -   cron: "0 6 * * 1"  # Mondays 06:00 UTC
     workflow_dispatch:
 
 jobs:
@@ -72,3 +77,38 @@ jobs:
                     path: |
                         coverage.xml
                         htmlcov/
+
+    security:
+        # Tier-1 audit item #09 / Finding X. Two gates:
+        #   - pip-audit: scans the locked dependency set for known CVEs
+        #   - bandit:   static security analysis of the source tree
+        # pip-audit runs on PR, push, AND weekly cron (the cron catches
+        # CVEs that are published after a dependency lands). bandit runs
+        # on PR and push only.
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Checkout repository
+                uses: actions/checkout@v6
+
+            -   name: Set up UV Environment
+                uses: astral-sh/setup-uv@v8.2.0
+
+            -   name: Verify lockfile is up to date
+                run: uv lock --check
+
+            -   name: Synchronize Dependencies
+                run: uv sync --frozen
+
+            -   name: Install pip-audit and bandit
+                run: uv tool install pip-audit bandit
+
+            -   name: Audit locked dependencies (pip-audit)
+                # Strict: any known CVE in the lockfile fails the build.
+                # Renovate also updates dependencies weekly, but pip-audit
+                # adds a second layer for transitive vulnerabilities.
+                run: uv tool run pip-audit --strict
+
+            -   name: Static security analysis (bandit)
+                # High+ severity findings fail the build. Lower severities
+                # are reported as warnings.
+                run: uv tool run bandit -r src/llm/ --severity-level high
