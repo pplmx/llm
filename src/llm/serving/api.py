@@ -97,11 +97,57 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
         tokenizer=generation_service.tokenizer,
     )
 
+    _log_server_config(generation_service, config)
+
     yield
 
     if engine:
         engine.unload_model()
     logger.info("Shutting down...")
+
+
+def _log_server_config(
+    generation_service: ServingGenerationService,
+    config: ServingConfig,
+) -> None:
+    """Emit a single structured JSON line describing the running server.
+
+    Operators rely on this for incident triage: which model is loaded, on which
+    device, with which attention impl, with prefix cache on/off, etc. Never
+    log the api_key value itself — only whether it is set.
+    """
+    from llm.utils.common import count_parameters
+
+    model = generation_service.model
+    total_params, trainable_params = count_parameters(model)
+    # Discover dtype + device from the first parameter — robust to whichever
+    # backend (DDP wrapper, FSDP, raw model) the engine handed us.
+    try:
+        first_param = next(model.parameters())
+        dtype_str = str(first_param.dtype)
+        device_str = str(first_param.device)
+    except StopIteration:
+        dtype_str = "unknown"
+        device_str = "unknown"
+
+    logger.info(
+        "server_config",
+        extra={
+            "event": "server_config",
+            "model_class": type(model).__name__,
+            "param_count_total": total_params,
+            "param_count_trainable": trainable_params,
+            "dtype": dtype_str,
+            "device": device_str,
+            "max_seq_len": config.max_seq_len,
+            "attn_impl": config.attn_impl,
+            "mlp_impl": config.mlp_impl,
+            "generation_backend": config.generation_backend,
+            "enable_prefix_cache": config.enable_prefix_cache,
+            "use_paged_attention": config.use_paged_attention,
+            "api_key_set": bool(config.api_key),
+        },
+    )
 
 
 app = FastAPI(
