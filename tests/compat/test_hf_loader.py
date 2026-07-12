@@ -167,3 +167,47 @@ class TestHFLoader:
 
         with pytest.raises(FileNotFoundError):
             _load_weights(tmp_path)
+
+    def test_load_from_hub_excludes_bin_files(self, tmp_path, monkeypatch):
+        """Hub downloads must skip ``*.bin`` because they are pickled and execute
+        arbitrary code on load. Only ``*.json`` and ``*.safetensors`` are allowed.
+
+        This is a regression test for Finding AR in the technical due diligence.
+        """
+        import sys
+
+        from llm.compat import hf_loader
+
+        captured_kwargs: dict = {}
+
+        class _FakeHub:
+            @staticmethod
+            def snapshot_download(repo_id, **kwargs):
+                captured_kwargs.update(kwargs)
+                # Return a path with a config so _load_from_local gets past the
+                # first check, but we'll stub _load_from_local to raise immediately
+                # so we don't actually build a model.
+                return str(tmp_path)
+
+        sys.modules["huggingface_hub"] = _FakeHub  # type: ignore[assignment]
+        try:
+            def fake_load_local(*_args, **_kwargs):
+                raise RuntimeError("stop_after_download")
+
+            monkeypatch.setattr(hf_loader, "_load_from_local", fake_load_local)
+
+            with pytest.raises(RuntimeError, match="stop_after_download"):
+                hf_loader._load_from_hub("fake/model", "cpu", None, False)
+        finally:
+            sys.modules.pop("huggingface_hub", None)
+
+        assert "allow_patterns" in captured_kwargs, "snapshot_download was called without allow_patterns"
+        patterns = captured_kwargs["allow_patterns"]
+        assert isinstance(patterns, list)
+        # Must include config + safetensors
+        assert "*.json" in patterns
+        assert "*.safetensors" in patterns
+        # Must NOT include .bin
+        assert "*.bin" not in patterns, (
+            f"Hub downloads must skip .bin files (pickle RCE); got patterns={patterns}"
+        )

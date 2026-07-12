@@ -152,7 +152,20 @@ class ContinuousBatchingEngine:
 
     @classmethod
     def from_serving_config(cls, config, model: DecoderModel, tokenizer: object) -> ContinuousBatchingEngine:
-        """Build an engine from ServingConfig flags."""
+        """Build an engine from ServingConfig flags.
+
+        Raises ``NotImplementedError`` when ``config.use_paged_attention`` is True.
+        Paged Attention is currently sidecar-only — the model forward path still
+        uses the standard ``KVCache`` pool, so enabling it provides no benefit.
+        See ``docs/adr/004-paged-attention-serving.md`` for the implementation plan.
+        """
+        if getattr(config, "use_paged_attention", False):
+            raise NotImplementedError(
+                "Paged Attention is not yet supported in the continuous batching engine "
+                "forward path (sidecar-only). See "
+                "docs/adr/004-paged-attention-serving.md for the current state. "
+                "Set ServingConfig.use_paged_attention=False."
+            )
         return cls(
             model=model,
             tokenizer=tokenizer,

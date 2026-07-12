@@ -36,6 +36,11 @@ def from_pretrained(
     - Local directory with config.json and model weights
     - HuggingFace Hub model ID (requires huggingface_hub)
 
+    When loading from the Hub, only ``*.json`` and ``*.safetensors`` are
+    downloaded. ``*.bin`` files are intentionally skipped because they are
+    pickled and can execute arbitrary code on load. Local ``*.bin`` files
+    are still accepted (you opted into that file by putting it on disk).
+
     Args:
         model_path: Local path or HuggingFace model ID.
         device: Device to load model on ("auto", "cuda", "cpu").
@@ -149,9 +154,12 @@ def _load_from_hub(
     logger.info(f"Downloading model from Hub: {model_id}")
 
     # Download model files
+    # Note: `.bin` is intentionally excluded because PyTorch bin files are pickled
+    # and execute arbitrary code on load. Safetensors is the safe, modern format
+    # and is what every current HF model ships. See ``from_pretrained`` docstring.
     local_dir = snapshot_download(
         repo_id=model_id,
-        allow_patterns=["*.json", "*.safetensors", "*.bin"],
+        allow_patterns=["*.json", "*.safetensors"],
     )
 
     return _load_from_local(Path(local_dir), device, dtype)

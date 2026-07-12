@@ -157,7 +157,7 @@ def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
         max_seq_len=64,
         enable_prefix_cache=True,
         max_prefixes=5,
-        use_paged_attention=True,
+        use_paged_attention=False,
         max_blocks=32,
         block_size=8,
     )
@@ -172,5 +172,29 @@ def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
     assert engine.max_seq_len == 64
     assert engine.enable_prefix_cache is True
     assert engine.prefix_cache.max_prefixes == 5
-    assert engine.paged_kv_cache.num_blocks == 32
-    assert engine.paged_kv_cache.block_size == 8
+
+
+def test_from_serving_config_raises_on_paged_attention():
+    """Paged Attention is sidecar-only; from_serving_config must refuse.
+
+    Users who flip ``use_paged_attention=True`` get no benefit today and may
+    not realize it. ``from_serving_config`` raises ``NotImplementedError`` so
+    the failure surfaces at startup rather than at the first forward pass.
+    Direct construction (e.g., from tests) still works.
+
+    The check fires before any model/tokenizer access, so we pass sentinels.
+    """
+    from llm.serving.config import ServingConfig
+
+    config = ServingConfig(
+        use_paged_attention=True,
+        max_blocks=32,
+        block_size=8,
+    )
+
+    with pytest.raises(NotImplementedError, match="Paged Attention is not yet supported"):
+        ContinuousBatchingEngine.from_serving_config(
+            config,
+            model=None,  # sentinel — check fires before engine is built
+            tokenizer=None,
+        )
