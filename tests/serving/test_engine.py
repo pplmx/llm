@@ -198,3 +198,61 @@ def test_from_serving_config_raises_on_paged_attention():
             model=None,  # sentinel — check fires before engine is built
             tokenizer=None,
         )
+
+
+# --- step() return contract + observer hook (T2 #22) ------------------------
+
+
+def test_step_returns_stepstats_with_fill_ratio_fields(tiny_model, mock_tokenizer):
+    """step() returns a StepStats dataclass with scheduled + total_active_slots."""
+    from llm.serving.batch_engine import StepStats
+
+    tiny_model.to("cpu")
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=4,
+        device="cpu",
+    )
+
+    # Idle engine: scheduled=0, total = max_batch_size.
+    stats = engine.step()
+    assert isinstance(stats, StepStats)
+    assert stats.scheduled == 0
+    assert stats.total_active_slots == 4
+
+    # After adding a request and stepping, scheduled reflects the batch size.
+    req = GenerationRequest(prompt="abcd", max_new_tokens=2)
+    req.request_id = "stats-req"
+    engine.add_request(req)
+    stats = engine.step()
+    assert stats.scheduled == 1
+    assert stats.total_active_slots == 4
+
+
+def test_step_observer_invoked_with_stepstats(tiny_model, mock_tokenizer):
+    """set_step_observer receives the StepStats for each call to step()."""
+    tiny_model.to("cpu")
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device="cpu",
+    )
+
+    observed: list = []
+    engine.set_step_observer(observed.append)
+
+    engine.step()
+    engine.step()
+    assert len(observed) == 2
+    assert all(s.total_active_slots == 2 for s in observed)
+
+    # Clearing the observer stops future invocations.
+    engine.set_step_observer(None)
+    engine.step()
+    assert len(observed) == 2

@@ -44,6 +44,7 @@ from llm.serving.chat_template import (
 from llm.serving.config import ServingConfig
 from llm.serving.errors import register_exception_handlers
 from llm.serving.generation_service import ServingGenerationService
+from llm.serving.metrics import METRICS
 from llm.serving.middleware import RequestIDMiddleware
 from llm.serving.routers import chat as chat_router
 from llm.serving.routers import generate as generate_router
@@ -105,11 +106,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
         tokenizer=generation_service.tokenizer,
     )
 
+    # Publish ``llm_batch_fill_ratio`` after every ``engine.step()``.
+    # Called under the engine's step lock so observers see a consistent
+    # post-step snapshot of the slot allocator.
+    engine.set_step_observer(METRICS.record_batch_fill_ratio)
+
     # Inject dependencies into the routers. Done here (not at import time)
     # so unit tests can replace them via ``monkeypatch.setattr`` on the
     # module-level attributes without instantiating a real model.
-    generate_router.configure(config, generation_service, inference_semaphore)
-    chat_router.configure(config, inference_semaphore)
+    generate_router.configure(config, generation_service, inference_semaphore, METRICS)
+    chat_router.configure(config, inference_semaphore, METRICS)
 
     _log_server_config(generation_service, config)
 
