@@ -1,5 +1,6 @@
 import sys
 import time
+from typing import Any
 
 import torch
 
@@ -63,11 +64,21 @@ class TrainingEngine:
             total, trainable = count_parameters(model)  # Use the utility function
             self.logger.info(f"🏗️  Model: {total:,} total params, {trainable:,} trainable")
 
-        # Compile model if enabled
+        # Compile model if enabled. Mode and dynamic-shape marking come from
+        # OptimizationConfig (Finding AL). Default mode is "default" — the
+        # previous hardcoded "reduce-overhead" used CUDA graphs, which is
+        # incompatible with variable-length sequences and KV-cache eviction.
+        # Users who want CUDA-graph capture can still opt in explicitly.
         if self.config.optimization.use_compile and sys.version_info >= (3, 8):
-            self.logger.info("🚀 Compiling model with torch.compile...")
+            self.logger.info(
+                f"🚀 Compiling model with torch.compile (mode="
+                f"{self.config.optimization.compile_mode!r})..."
+            )
+            compile_kwargs: dict[str, Any] = {"mode": self.config.optimization.compile_mode}
+            if self.config.optimization.compile_dynamic is not None:
+                compile_kwargs["dynamic"] = self.config.optimization.compile_dynamic
             try:
-                model = torch.compile(model, mode="reduce-overhead")
+                model = torch.compile(model, **compile_kwargs)
             except (RuntimeError, TypeError, AttributeError) as e:
                 self.logger.warning(f"torch.compile failed: {e}. Continuing without it.")
 

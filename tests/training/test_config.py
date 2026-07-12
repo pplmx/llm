@@ -83,6 +83,32 @@ class TestConfig:
         with pytest.raises(ValidationError, match="Input should be greater than or equal to 0"):
             OptimizationConfig(num_workers=-1)
 
+    def test_optimization_compile_mode_default(self):
+        """Default compile_mode is 'default', not 'reduce-overhead'.
+
+        Regression for Finding AL: the hardcoded 'reduce-overhead' mode used
+        CUDA graphs that broke variable-length training and KV-cache eviction.
+        """
+        cfg = OptimizationConfig()
+        assert cfg.use_compile is True
+        assert cfg.compile_mode == "default"
+        assert cfg.compile_dynamic is None
+
+    @pytest.mark.parametrize(
+        "mode",
+        ["default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"],
+    )
+    def test_optimization_compile_mode_accepts_valid(self, mode):
+        OptimizationConfig(compile_mode=mode)
+
+    def test_optimization_compile_mode_rejects_unknown(self):
+        with pytest.raises(ValidationError, match="String should match pattern"):
+            OptimizationConfig(compile_mode="bogus")
+
+    def test_optimization_compile_dynamic_explicit(self):
+        cfg = OptimizationConfig(compile_dynamic=False)
+        assert cfg.compile_dynamic is False
+
     def test_checkpoint_config_validation_errors(self):
         with pytest.raises(ValidationError, match="Input should be greater than 0"):
             CheckpointConfig(save_interval=0)
