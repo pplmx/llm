@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import hmac
 import logging
 import sys
 from collections.abc import AsyncGenerator
@@ -63,17 +64,21 @@ async def get_api_key(
     api_key_header: str | None = Security(api_key_header),
     auth_header: str | None = Security(authorization_header),
 ):
-    """Verify API Key (supports X-API-Key and Bearer token)."""
+    """Verify API Key (supports X-API-Key and Bearer token).
+
+    Comparison uses ``hmac.compare_digest`` to avoid leaking key bytes via timing.
+    """
     if not config.api_key:
         return None
 
+    expected = config.api_key
     # Check X-API-Key header first
-    if api_key_header == config.api_key:
+    if api_key_header is not None and hmac.compare_digest(api_key_header, expected):
         return api_key_header
 
     # Check Bearer token
     bearer_token = _extract_bearer_token(auth_header)
-    if bearer_token == config.api_key:
+    if bearer_token is not None and hmac.compare_digest(bearer_token, expected):
         return bearer_token
 
     raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials")
@@ -399,10 +404,21 @@ async def _chat_stream_generator(
 
 
 def main():
-    """Entry point for llm-serve CLI."""
+    """Entry point for llm-serve CLI.
+
+    ``reload=True`` is intentionally disabled because uvicorn's file-watcher
+    conflicts with ``from llm.serving.api import app`` (the watch import path is
+    incompatible with production use). For local development with auto-reload,
+    run uvicorn directly::
+
+        uvicorn llm.serving.api:app --reload --host 127.0.0.1 --port 8000
+    """
+    import os
+
     import uvicorn
 
-    uvicorn.run("llm.serving.api:app", host=config.host, port=8000, reload=True)
+    reload = os.environ.get("LLM_SERVING_RELOAD", "").lower() in ("1", "true", "yes")
+    uvicorn.run("llm.serving.api:app", host=config.host, port=8000, reload=reload)
 
 
 if __name__ == "__main__":
