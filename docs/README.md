@@ -96,3 +96,11 @@ make ruff
 ## 贡献
 
 欢迎贡献！请阅读 [CONTRIBUTING.md](../CONTRIBUTING.md) 了解如何参与。
+
+---
+
+## 🔍 项目审计
+
+历史技术审计报告归档：
+
+- [2026-07-12 技术尽调](audits/2026-07-12-technical-due-diligence.md) — 架构、API、安全、可维护性、可扩展性评估。Tier 1 项已拆为 `audit-2026-07` label 的 issues。
