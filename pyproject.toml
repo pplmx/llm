@@ -159,6 +159,13 @@ llm = ["src/llm", "*/llm/src/llm"]
 tests = ["tests", "*/llm/tests"]
 
 [tool.coverage.report]
+# Current measured coverage (CPU-friendly subset, see Ticket #11 in
+# docs/audits/2026-07-12-tickets/11-coverage-fail-under.md). The full suite
+# (including GPU-only paths) cannot run in this CI; the bar should be raised
+# as Tier 2 work adds tests for the uncovered modules. Track progress in
+# Tier 2 Finding AD ("hypothesis invariant tests") and Finding G/H (utils
+# + api split).
+fail_under = 62
 exclude_lines = [
     "if __name__ == .__main__.:",
     "if self.debug:",
