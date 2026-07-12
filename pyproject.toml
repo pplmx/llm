@@ -31,19 +31,15 @@ classifiers = [
 ]
 dependencies = [
     "fastapi[standard]>=0.136.3",
-    "lm_eval>=0.4.12",
     "openai>=2.41.0",
     "prometheus-fastapi-instrumentator>=8.0.0",
     "python-json-logger>=4.1.0",
-    "rouge-score>=0.1.2",
-    "sacrebleu>=2.6.0",
-    "scikit-learn>=1.9.0",
-    "seaborn>=0.13.2",
-    "tensorboard>=2.20.0",
     "torch>=2.12.0,<3.0.0",
     "transformers>=5.10.2,<6.0.0",
 ]
 
+# Mirrored under [project.optional-dependencies] so `pip install llm[eval]`
+# works for users who do not use uv. Keep the two lists in sync.
 [dependency-groups]
 dev = [
   {include-group = "test"},
@@ -56,11 +52,41 @@ test = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
 ]
+# Evaluation metric libraries. Only needed when running offline evaluation
+# (ROUGE, BLEU, chrF, F1, lm-eval harness). Core training + serving install
+# does not require them.
+eval = [
+    "lm_eval>=0.4.12",
+    "rouge-score>=0.1.2",
+    "sacrebleu>=2.6.0",
+    "scikit-learn>=1.9.0",
+]
+# Optional training-log backends. ``TensorBoardLogger`` requires tensorboard;
+# core training works without it (callbacks no-op is not acceptable — the
+# logger will raise a clear error if the package is missing).
+logging = [
+    "tensorboard>=2.20.0",
+]
 streaming = [
     "datasets>=3.0.0",
 ]
 docs = [
     "mkdocs-material>=9.7.0",
+]
+
+[project.optional-dependencies]
+# Non-uv users: ``pip install llm[eval]``. Keep in sync with the groups above.
+eval = [
+    "lm_eval>=0.4.12",
+    "rouge-score>=0.1.2",
+    "sacrebleu>=2.6.0",
+    "scikit-learn>=1.9.0",
+]
+logging = [
+    "tensorboard>=2.20.0",
+]
+streaming = [
+    "datasets>=3.0.0",
 ]
 
 [project.entry-points."llm.models"]

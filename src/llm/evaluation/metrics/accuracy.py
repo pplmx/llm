@@ -14,7 +14,10 @@ class AccuracyMetric(BaseMetric):
 
 
 class F1Metric(BaseMetric):
-    """F1 score metric for classification tasks."""
+    """F1 score metric for classification tasks.
+
+    Requires the ``scikit-learn`` package, available via the ``[eval]`` extra.
+    """
 
     name = "f1"
 
