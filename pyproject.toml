@@ -74,6 +74,11 @@ streaming = [
 ]
 docs = [
     "mkdocs-material>=9.7.0",
+    # mkdocstrings auto-generates API reference pages from docstrings.
+    # ``mkdocstrings-python`` is the Python handler; ``mkdocstrings[python]``
+    # pulls in both. Pinned to >=0.27 because the handler API stabilized
+    # there.
+    "mkdocstrings[python]>=0.27.0",
 ]
 
 [project.optional-dependencies]

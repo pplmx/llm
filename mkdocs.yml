@@ -36,6 +36,34 @@ theme:
 plugins:
   - search:
       lang: zh
+  # mkdocstrings auto-generates API reference pages from Python
+  # docstrings. Pages live under docs/api/ and use the
+  # ```:: llm.something ``` fenced-block directive.
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          # Some subpackages (e.g. ``llm.training``) are namespace
+          # packages — they don't ship ``__init__.py``. The
+          # ``forgiving_parsing`` + ``new_path_syntax`` flags below
+          # let mkdocstrings resolve them anyway.
+          new_path_syntax: true
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            separate_signature: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            # Avoid generating docs for private helpers; use
+            # ::: llm.module filter when you need them on a specific page.
+            filters: ["!^_"]
+            # Cap the inherited-members list at 2 levels so the page
+            # doesn't get dominated by ``object`` machinery.
+            inherited_members: false
 
 markdown_extensions:
   - admonition
@@ -81,6 +109,14 @@ nav:
   - 📚 参考:
       - reference/architecture.md
       - reference/cli.md
+      - 🔌 API Reference:
+          - api/index.md
+          - api/core.md
+          - api/runtime.md
+          - api/models.md
+          - api/generation.md
+          - api/serving.md
+          - api/training.md
   
   - 📝 ADR:
       - adr/README.md
