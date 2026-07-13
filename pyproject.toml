@@ -43,9 +43,11 @@ dependencies = [
 [dependency-groups]
 dev = [
   {include-group = "test"},
+  "hypothesis>=6.156.6",
 ]
 test = [
     "allure-pytest>=2.16.0",
+    "hypothesis>=6.0",
     "ipykernel>=7.2.0",
     "onnx>=1.21.0",
     "onnxruntime>=1.26.0",
