@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import threading
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -14,6 +16,9 @@ from llm.generation.sampling import apply_repetition_penalty, sample_next_token
 from llm.models.decoder import DecoderModel
 from llm.serving.scheduler import Scheduler
 from llm.serving.schemas import GenerationRequest, RequestState, Sequence
+
+if TYPE_CHECKING:
+    pass
 
 
 @dataclass(frozen=True)
@@ -28,6 +33,40 @@ class StepStats:
 
     scheduled: int
     total_active_slots: int
+
+
+@dataclass
+class _StepInputs:
+    """Inputs handed from the pre-compute (lock-protected) to the forward.
+
+    Holds the dense batch tensors plus references to the running
+    sequences — no Python-side state in the slot allocator or
+    scheduler. The forward phase is free to mutate these tensors and
+    produce a :class:`_StepResult` without holding the lock.
+    """
+
+    running_sequences: list[Sequence]
+    batch_slots_list: list[int]
+    seq_input_lengths: list[int]
+    prefix_full_hits: list[bool]
+    padded_input_ids: torch.Tensor
+    padded_position_ids: torch.Tensor
+    batch_indices: torch.Tensor
+    run_attn_mask: torch.Tensor
+    batch_size: int
+
+
+@dataclass
+class _StepResult:
+    """Outputs handed from the forward (lock-free) to the post-compute.
+
+    The post-compute mutates sequence status and frees slots, so it
+    MUST re-acquire the lock before touching :class:`_StepResult`.
+    """
+
+    inputs: _StepInputs
+    next_token_ids: list[int] = field(default_factory=list)
+    forward_failed: BaseException | None = None
 
 
 class SlotPrefixCache:
@@ -279,47 +318,74 @@ class ContinuousBatchingEngine:
 
     @torch.no_grad()
     def step(self) -> StepStats:
-        """Run one inference step.
+        """Run one inference step (sync wrapper).
 
-        Holds ``self._step_lock`` for the duration of the call to serialize
-        concurrent worker threads. ``run_in_threadpool`` offloads each request
-        to a separate thread; without the lock, mutations to ``scheduler``,
-        ``slot_allocator``, ``kv_caches``, and ``prefix_cache`` would race.
+        Bookend the model forward with lock acquire/release: lock for
+        pre-compute (slot allocation, prefix-cache lookup, batch tensor
+        construction), release for the forward, re-acquire for
+        post-compute (append tokens, free slots, mark finished). The
+        forward is the expensive part; freeing the lock around it lets
+        other worker threads enqueue / dequeue requests in parallel.
 
         Returns:
             :class:`StepStats` describing the step. ``scheduled`` is the
             effective batch size; ``total_active_slots`` is the engine's
             full slot pool (denominator for ``llm_batch_fill_ratio``).
-
-        The engine optionally invokes ``self._on_step(stats)`` after the
-        forward pass, under the step lock, so observers see consistent
-        post-step state. The serving tier wires this to publish metrics.
         """
         with self._step_lock:
-            stats = self._step_locked()
-            if self._on_step is not None:
+            inputs = self._lock_step_pre()
+        if inputs is None:
+            stats = StepStats(scheduled=0, total_active_slots=self.slot_allocator.total_slots)
+        else:
+            result = self._forward_and_sample(inputs)
+            with self._step_lock:
+                stats = self._lock_step_post(result)
+        if self._on_step is not None:
+            with self._step_lock:
                 self._on_step(stats)
-            return stats
+        return stats
 
-    def _step_locked(self) -> StepStats:
-        """Body of :meth:`step`. Caller MUST hold ``self._step_lock``.
+    async def step_async(self) -> StepStats:
+        """Run one inference step, yielding to the event loop during the forward.
+
+        Identical contract to :meth:`step`, but the model forward runs
+        in a worker thread via :func:`asyncio.to_thread`. The lock is
+        only held for the bookkeeping portions (pre + post). This lets
+        the FastAPI event loop keep processing I/O (other requests,
+        health checks, /metrics scrapes) while a forward pass runs.
 
         Returns:
-            :class:`StepStats` summarising this step. Always returned
-            (never ``None``) so callers can compute fill-ratio even when
-            the scheduler had no work — a fully idle engine reports
-            ``scheduled=0`` rather than crashing the metric pipeline.
+            :class:`StepStats` (same fields as :meth:`step`).
+        """
+        with self._step_lock:
+            inputs = self._lock_step_pre()
+        if inputs is None:
+            stats = StepStats(scheduled=0, total_active_slots=self.slot_allocator.total_slots)
+        else:
+            result = await asyncio.to_thread(self._forward_and_sample, inputs)
+            with self._step_lock:
+                stats = self._lock_step_post(result)
+        if self._on_step is not None:
+            with self._step_lock:
+                self._on_step(stats)
+        return stats
+
+    def _lock_step_pre(self) -> _StepInputs | None:
+        """Acquire work from the scheduler and build the dense batch.
+
+        Caller MUST hold ``self._step_lock``. Returns ``None`` when
+        there is no work to do (idle engine).
         """
         running_sequences = self.scheduler.schedule()
         if not running_sequences:
-            return StepStats(scheduled=0, total_active_slots=self.slot_allocator.total_slots)
+            return None
 
         batch_size = len(running_sequences)
 
-        batch_input_ids_list = []
-        batch_position_ids_list = []
-        batch_slots_list = []
-        seq_input_lengths = []
+        batch_input_ids_list: list[list[int]] = []
+        batch_position_ids_list: list[list[int]] = []
+        batch_slots_list: list[int] = []
+        seq_input_lengths: list[int] = []
         prefix_full_hits: list[bool] = []
 
         for seq in running_sequences:
@@ -378,37 +444,91 @@ class ContinuousBatchingEngine:
             if length < q_len:
                 run_attn_mask[i, :, length:, :] = True
 
-        logits, _ = self.model(
-            input_ids=padded_input_ids,
-            position_ids=padded_position_ids,
-            kv_caches=self.kv_caches,
-            use_cache=True,
+        return _StepInputs(
+            running_sequences=running_sequences,
+            batch_slots_list=batch_slots_list,
+            seq_input_lengths=seq_input_lengths,
+            prefix_full_hits=prefix_full_hits,
+            padded_input_ids=padded_input_ids,
+            padded_position_ids=padded_position_ids,
             batch_indices=batch_indices,
-            attn_mask=run_attn_mask,
+            run_attn_mask=run_attn_mask,
+            batch_size=batch_size,
         )
 
-        next_token_ids = []
-        for i, length in enumerate(seq_input_lengths):
-            seq = running_sequences[i]
-            seq_logits = logits[i, length - 1, :]
-            context_ids = seq.input_ids + seq.generated_ids
-            if seq.repetition_penalty != 1.0:
-                seq_logits = apply_repetition_penalty(seq_logits, context_ids, seq.repetition_penalty)
-            next_token_ids.append(
-                sample_next_token(
-                    seq_logits,
-                    temperature=seq.temperature,
-                    top_k=seq.top_k,
-                    top_p=seq.top_p,
-                )
+    def _forward_and_sample(self, inputs: _StepInputs) -> _StepResult:
+        """Run the model forward and sampling WITHOUT holding the lock.
+
+        This is the expensive path: ~ ms of GPU/CPU work depending on
+        batch size and model size. The lock is released for the entire
+        duration so other threads can pre-/post-compute in parallel.
+
+        On forward failure we record the exception in the result so
+        the caller can free slots + clean up state under the lock
+        (so the engine stays consistent even when a forward raises).
+        """
+        try:
+            logits, _ = self.model(
+                input_ids=inputs.padded_input_ids,
+                position_ids=inputs.padded_position_ids,
+                kv_caches=self.kv_caches,
+                use_cache=True,
+                batch_indices=inputs.batch_indices,
+                attn_mask=inputs.run_attn_mask,
             )
 
-        for i, seq in enumerate(running_sequences):
-            token_id = next_token_ids[i]
+            next_token_ids: list[int] = []
+            for i, length in enumerate(inputs.seq_input_lengths):
+                seq = inputs.running_sequences[i]
+                seq_logits = logits[i, length - 1, :]
+                context_ids = seq.input_ids + seq.generated_ids
+                if seq.repetition_penalty != 1.0:
+                    seq_logits = apply_repetition_penalty(
+                        seq_logits, context_ids, seq.repetition_penalty
+                    )
+                next_token_ids.append(
+                    sample_next_token(
+                        seq_logits,
+                        temperature=seq.temperature,
+                        top_k=seq.top_k,
+                        top_p=seq.top_p,
+                    )
+                )
+        except BaseException as exc:  # noqa: BLE001 - propagate via result
+            return _StepResult(inputs=inputs, forward_failed=exc)
+
+        return _StepResult(inputs=inputs, next_token_ids=next_token_ids)
+
+    def _lock_step_post(self, result: _StepResult) -> StepStats:
+        """Append sampled tokens, free slots, mark finished sequences.
+
+        Caller MUST hold ``self._step_lock``. If the forward failed,
+        we free the slots we allocated in pre but don't append any
+        token — the sequences are left in their previous state.
+        """
+        inputs = result.inputs
+        if result.forward_failed is not None:
+            # Free the slots we allocated in pre so the engine stays
+            # leak-free even when the model raises mid-forward. The
+            # sequences themselves remain in their last-known state;
+            # callers are expected to clean them up via the timeout
+            # path.
+            for seq in inputs.running_sequences:
+                self.slot_allocator.free(seq.request_id)
+            raise result.forward_failed
+
+        for i, seq in enumerate(inputs.running_sequences):
+            token_id = result.next_token_ids[i]
             seq.append_token_id(token_id)
 
-            if self.prefix_cache and len(seq.generated_ids) == 1 and not prefix_full_hits[i]:
-                self.prefix_cache.put(seq.input_ids, batch_slots_list[i], len(seq.input_ids))
+            if (
+                self.prefix_cache
+                and len(seq.generated_ids) == 1
+                and not inputs.prefix_full_hits[i]
+            ):
+                self.prefix_cache.put(
+                    seq.input_ids, inputs.batch_slots_list[i], len(seq.input_ids)
+                )
 
             if (
                 (hasattr(self.tokenizer, "eos_token_id") and token_id == self.tokenizer.eos_token_id)
@@ -419,7 +539,7 @@ class ContinuousBatchingEngine:
                 self.slot_allocator.free(seq.request_id)
 
         return StepStats(
-            scheduled=batch_size,
+            scheduled=inputs.batch_size,
             total_active_slots=self.slot_allocator.total_slots,
         )
 

@@ -152,6 +152,42 @@ while engine.scheduler.has_pending_work:
 | Mixed prefill/decode       | New and ongoing sequences batched together |
 | Automatic padding          | Handles variable-length inputs             |
 
+### Async Lifecycle (T2 #23)
+
+Since the T2 #23 refactor, the engine exposes two complementary APIs:
+
+- `engine.step()` — synchronous, for scripts / tests.
+- `engine.step_async()` — asynchronous wrapper for FastAPI handlers.
+
+Both APIs decompose into three phases:
+
+```
+[lock]  _lock_step_pre       — slot alloc, prefix-cache lookup,
+                              batch tensor construction
+[free]  _forward_and_sample  — model forward + sampling (expensive)
+[lock]  _lock_step_post      — append tokens, free slots, set status
+```
+
+The lock is **released during the model forward** so other workers
+can pre-/post-compute in parallel. `step_async` offloads the forward
+to a thread via `asyncio.to_thread(...)`, letting the FastAPI
+event loop keep serving health checks, `/metrics` scrapes, and other
+in-flight requests while a forward pass runs.
+
+```python
+# Async usage in a FastAPI handler
+from fastapi.concurrency import run_in_threadpool
+
+async def stream_one(prompt: str):
+    while True:
+        stats = await engine.step_async()
+        # ... yield decoded token to the client ...
+```
+
+The `StepStats(scheduled, total_active_slots)` returned by either
+path feeds the `llm_batch_fill_ratio` gauge (see
+[Serving Metrics](#serving-metrics-prometheus)).
+
 ## Serving Metrics (Prometheus)
 
 `prometheus-fastapi-instrumentator` already emits generic HTTP RED
