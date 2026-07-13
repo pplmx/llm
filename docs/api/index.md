@@ -19,6 +19,7 @@ slice of the framework.
 | `llm.generation` | Sampling, generation backends, registry | [generation.md](generation.md) |
 | `llm.serving` | FastAPI app, routers, batched engine, metrics | [serving.md](serving.md) |
 | `llm.training` | Trainer, configs, callbacks, RLHF | [training.md](training.md) |
+| `llm.evaluation` | Metrics, offline tasks, lm-eval-harness adapter (optional) | [evaluation.md](evaluation.md) |
 
 ## Stability
 
