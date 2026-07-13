@@ -523,6 +523,15 @@ wheels = [
 ]
 
 [[package]]
+name = "einops"
+version = "0.8.2"
+source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/2c/77/850bef8d72ffb9219f0b1aac23fbc1bf7d038ee6ea666f331fa273031aa2/einops-0.8.2.tar.gz", hash = "sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827", size = 56261, upload-time = "2026-01-26T04:13:17.638Z" }
+wheels = [
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl", hash = "sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193", size = 65638, upload-time = "2026-01-26T04:13:18.546Z" },
+]
+
+[[package]]
 name = "email-validator"
 version = "2.3.0"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
@@ -683,6 +692,16 @@ sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/91/f5/35
 wheels = [
     { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/81/8f/b61d427c4f49a8bdadc93f4e7e74df8a6df6f77ee6e26bf0df53d3925363/filelock-3.29.3-py3-none-any.whl", hash = "sha256:e58333029cc9b925f39aad59b1d8f0a1ad836af4e60d7217f4a4dba87461261d", size = 42324, upload-time = "2026-06-10T17:37:10.37Z" },
 ]
+
+[[package]]
+name = "flash-attn"
+version = "2.8.3.post1"
+source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
+dependencies = [
+    { name = "einops" },
+    { name = "torch" },
+]
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/01/7a/92a46e7cd6bbb4d7b2855a457c3b855df54a97af5656d98fc92e58e61065/flash_attn-2.8.3.post1.tar.gz", hash = "sha256:55d5103ed846da8b56e0797acf4bde07dee4b1c7e8907fcfc6699c203030c348", size = 8451657, upload-time = "2026-06-11T04:35:21.318Z" }
 
 [[package]]
 name = "flatbuffers"
@@ -1125,6 +1144,9 @@ eval = [
 logging = [
     { name = "tensorboard" },
 ]
+perf = [
+    { name = "flash-attn" },
+]
 streaming = [
     { name = "datasets" },
 ]
@@ -1152,6 +1174,9 @@ eval = [
 logging = [
     { name = "tensorboard" },
 ]
+perf = [
+    { name = "flash-attn" },
+]
 streaming = [
     { name = "datasets" },
 ]
@@ -1169,6 +1194,7 @@ test = [
 requires-dist = [
     { name = "datasets", marker = "extra == 'streaming'", specifier = ">=3.0.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.136.3" },
+    { name = "flash-attn", marker = "extra == 'perf'", specifier = ">=2.5.0" },
     { name = "lm-eval", marker = "extra == 'eval'", specifier = ">=0.4.12" },
     { name = "openai", specifier = ">=2.41.0" },
     { name = "prometheus-fastapi-instrumentator", specifier = ">=8.0.0" },
@@ -1180,7 +1206,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.12.0,<3.0.0" },
     { name = "transformers", specifier = ">=5.10.2,<6.0.0" },
 ]
-provides-extras = ["eval", "logging", "streaming"]
+provides-extras = ["eval", "logging", "perf", "streaming"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1204,6 +1230,7 @@ eval = [
     { name = "scikit-learn", specifier = ">=1.9.0" },
 ]
 logging = [{ name = "tensorboard", specifier = ">=2.20.0" }]
+perf = [{ name = "flash-attn", specifier = ">=2.5.0" }]
 streaming = [{ name = "datasets", specifier = ">=3.0.0" }]
 test = [
     { name = "allure-pytest", specifier = ">=2.16.0" },
