@@ -71,5 +71,4 @@ create an issue in GitHub Issues with the matching title and the listed labels.
 ## Status snapshot (2026-07-12)
 
 - **Tier 1**: 14/14 implemented in commits `23b3018`–`817dd86` (main).
-- **Tier 2**: 13/14 already in main (`#3, #4, #5, #11, #14, #15, #16, #17, #18, #19, #20, #21, #22`).
-- **Remaining**: ticket 23.
+- **Tier 2**: 14/14 already in main (`#3, #4, #5, #11, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23`).
