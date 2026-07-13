@@ -428,6 +428,66 @@ translation, is exercised in
 
 ---
 
+## Speculative decoding
+
+For long-context decode on large target models, speculative decoding
+(Leviathan et al., 2023) can give 2–3× throughput. A small **draft**
+model speculates `gamma` candidate tokens ahead of the large
+**target** model; the target scores all candidates in a single
+forward pass and either accepts (probabilistically, preserving the
+target distribution) or samples a correction token.
+
+### Configuration
+
+```python
+from llm.generation.backends import SpeculativeDecodingBackend
+
+backend = SpeculativeDecodingBackend(
+    target_model=target,   # the "expensive" model
+    draft_model=draft,     # smaller model, same vocab
+    gamma=5,               # speculative tokens per round
+)
+
+# Or via the registry:
+from llm.generation.registry import get_generation_backend
+backend = get_generation_backend(
+    "speculative",
+    target_model=target,
+    draft_model=draft,
+    gamma=5,
+)
+```
+
+### When it helps
+
+| Scenario | Speedup? |
+|---|---|
+| Long-context decode (≥ 256 tokens), draft well-aligned with target | ✓ 2–3× typical |
+| Short prompts (< 32 tokens) | ✗ overhead dominates |
+| Draft very different from target (e.g., mixed-model families) | ✗ acceptance rate collapses |
+| Greedy decoding | Marginal — most tokens already accepted in eager mode |
+
+### Sampling
+
+Speculative decoding is **distribution-preserving**: sampling from
+`SpeculativeDecodingBackend` with the same `temperature` / `top_k` /
+`top_p` as the eager backend produces text from the same
+distribution as the target model alone. Greedy
+(`temperature=0.0`) makes the draft's argmax match the target's
+argmax on every accepted position, so all `gamma` tokens are
+accepted and one bonus is appended per round.
+
+### Limitations
+
+- Both models must share vocabulary. The draft is not auto-trained
+  — pick a smaller sibling or distill the target.
+- The current slice runs the **eager** algorithm (each round
+  rebuilds the context tensor). Wiring it into
+  `ContinuousBatchingEngine` for serving-tier concurrency is a
+  Tier 3 follow-up.
+
+---
+
 ## Inference Checklist
 
 1. ✅ **Use KVCache** for autoregressive generation
