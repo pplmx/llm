@@ -95,6 +95,7 @@ nav:
       - guides/distributed.md
       - guides/finetuning.md
       - guides/inference.md
+      - guides/evaluation.md
   
   - 💻 开发:
       - development/README.md
@@ -117,6 +118,7 @@ nav:
           - api/generation.md
           - api/serving.md
           - api/training.md
+          - api/evaluation.md
   
   - 📝 ADR:
       - adr/README.md
