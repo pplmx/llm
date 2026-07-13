@@ -80,6 +80,14 @@ docs = [
     # there.
     "mkdocstrings[python]>=0.27.0",
 ]
+# Optional performance backends. ``flash-attn`` enables
+# ``attn_impl="flash_attn"`` through :class:`llm.core.attn.FlashAttention`;
+# without it the registry entry exists but instantiation raises a clear
+# ``ImportError``. ``flash-attn`` ships CUDA wheels only — installation
+# on CPU-only hosts is a no-op.
+perf = [
+    "flash-attn>=2.5.0",
+]
 
 [project.optional-dependencies]
 # Non-uv users: ``pip install llm[eval]``. Keep in sync with the groups above.
@@ -91,6 +99,9 @@ eval = [
 ]
 logging = [
     "tensorboard>=2.20.0",
+]
+perf = [
+    "flash-attn>=2.5.0",
 ]
 streaming = [
     "datasets>=3.0.0",

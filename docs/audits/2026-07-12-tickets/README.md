@@ -1,10 +1,13 @@
-# 2026-07-12 Audit — Issue Backlog (Tier 1 + Tier 2)
+# 2026-07-12 Audit — Issue Backlog (Tier 1 + Tier 2 + Tier 3)
 
-These are the Tier 1 (1–2 week) and Tier 2 (1–2 month) issues derived from
+These are the Tier 1 (1–2 week), Tier 2 (1–2 month), and Tier 3 (3–6 month)
+issues derived from
 [docs/audits/2026-07-12-technical-due-diligence.md](../2026-07-12-technical-due-diligence.md).
 
-Each ticket is a self-contained markdown file ready to be pasted into a GitHub issue
-(with the title on the first `#` line).
+Tier 1 + Tier 2 tickets are self-contained markdown files ready to be pasted
+into a GitHub issue (with the title on the first `#` line). Tier 3 tickets
+follow the same format but each item is a foundation slice — full
+implementation is multi-week per the audit.
 
 ## How to import
 
@@ -68,7 +71,25 @@ create an issue in GitHub Issues with the matching title and the listed labels.
 | 22 | `22-custom-prometheus-metrics.md` | Custom Prometheus metrics for serving (AX) | MEDIUM |
 | 23 | `23-async-batch-engine.md` | Make `ContinuousBatchingEngine.step` truly async (M) | HIGH |
 
-## Status snapshot (2026-07-12)
+## Tier 3 — Index (3–6 months, foundation slices)
+
+Tier 3 items are larger architectural work. The audit lists 9 items
+(Tier 3 #1–9); the table below shows the foundation-slice tickets
+that have been carved out as in-scope for one focused iteration. The
+audit references each item by the letter code from the due-diligence
+document (e.g. Finding AO = Flash Attention).
+
+| # | File | Title (short) | Audit ref |
+|---|---|---|---|
+| 24 | `24-flash-attention-registry.md` | Flash Attention 2 via ATTENTION_REGISTRY | Finding AO |
+
+Remaining Tier 3 items (self-hosted GPU runner, FSDP e2e, Paged
+Attention full forward path, MLA + KV cache, lm-eval pipeline, HF Hub
+publish, eval presets, speculative decoding) are tracked in
+[ROADMAP.md](../../ROADMAP.md) §阶段十/十四.
+
+## Status snapshot (2026-07-13)
 
 - **Tier 1**: 14/14 implemented in commits `23b3018`–`817dd86` (main).
 - **Tier 2**: 14/14 already in main (`#3, #4, #5, #11, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23`).
+- **Tier 3**: 1/9 foundation slice started — `#24` (Flash Attention 2 registry entry).
