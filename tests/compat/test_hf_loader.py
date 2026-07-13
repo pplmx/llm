@@ -86,7 +86,11 @@ class TestWeightMapping:
         assert "embedding_layer.token_embeddings.weight" in converted
         assert "final_norm.weight" in converted
         assert "lm_head.weight" in converted
-        assert "transformer_blocks.0.attn.q_proj.weight" in converted
+        # The mapping writes to ``self_attn.q_proj`` (our model's
+        # attribute name); the concat helper then combines q/k/v into
+        # ``qkv_proj`` (see ``convert_hf_to_combined_qkv``).
+        assert "transformer_blocks.0.self_attn.q_proj.weight" in converted
+        assert "transformer_blocks.0.self_attn.k_proj.weight" in converted
 
     def test_get_config_mapping(self):
         """Test config mapping from HF format."""

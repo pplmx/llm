@@ -354,6 +354,80 @@ with `mha` until `flash_attn_varlen_func` lands (see Tier 3 follow-up).
 
 ---
 
+## Publishing models to HuggingFace Hub
+
+The reverse of `compat/hf_loader.from_pretrained` is in
+`compat/hf_publisher.py`. Trained `DecoderModel`s can be saved
+locally in HF-compatible format and pushed to a Hub repo, so the
+model is loadable by **both** this project and HF's transformers.
+
+### Install
+
+```bash
+# uv
+uv sync --group compat
+
+# pip
+pip install 'llm[compat]'
+# or, directly:
+pip install safetensors huggingface_hub
+```
+
+### Save locally
+
+```python
+from llm.compat.hf_publisher import save_pretrained
+from llm.models.decoder import DecoderModel
+
+model = DecoderModel(
+    vocab_size=32000, hidden_size=4096, num_layers=32, num_heads=32,
+    attn_impl="mha", mlp_impl="mlp", use_glu=True,
+)
+# ... train model ...
+
+save_pretrained(model, save_directory="./my-llm")
+# → writes config.json + model.safetensors (Llama-shaped)
+```
+
+### Push to Hub
+
+```bash
+# one-time auth (uses HF_TOKEN env var)
+huggingface-cli login
+```
+
+```python
+from llm.compat.hf_publisher import push_to_hub
+
+push_to_hub(
+    model,
+    repo_id="alice/my-llm",
+    private=False,
+    commit_message="Initial upload",
+)
+# Returns "https://huggingface.co/alice/my-llm"
+```
+
+### Roundtrip guarantee
+
+`save_pretrained` writes a directory that the existing
+`from_pretrained` can load back into an equivalent model. The
+q/k/v split + concat, plus `fc1` ↔ `up_proj` / `fc2` ↔ `down_proj`
+translation, is exercised in
+`tests/compat/test_hf_publisher.py::test_save_pretrained_roundtrip_through_from_pretrained`.
+
+### Limitations (Tier 3 follow-ups)
+
+- Only `architecture="llama"` is wired through. Qwen/Mistral
+  architectures are recognized by `detect_architecture` but the
+  publisher raises `ValueError`. Full support lands with the
+  FSDP-e2e + multi-arch work (Tier 3 #2).
+- Tokenizer artifacts are not yet auto-saved alongside the model.
+  Bundle them with `tokenizer.save_pretrained(save_directory)`
+  before pushing, or open a follow-up.
+
+---
+
 ## Inference Checklist
 
 1. ✅ **Use KVCache** for autoregressive generation
