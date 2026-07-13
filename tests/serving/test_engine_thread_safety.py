@@ -112,27 +112,48 @@ def test_step_lock_is_allocated(fake_engine):
 
 
 def test_step_serializes_concurrent_invocations(fake_engine):
-    """Two concurrent ``step()`` calls cannot interleave.
+    """Two concurrent ``step()`` calls cannot interleave their bookkeeping.
 
-    We instrument both sides of the lock by tracking hold time. If both
-    threads enter the critical section simultaneously, the test fails.
+    After T2 #23 the lock is held only for ``_lock_step_pre`` and
+    ``_lock_step_post`` (the model forward runs with the lock released).
+    We instrument BOTH pre and post to verify the bookkeeping sections
+    serialise: if both threads enter the critical section simultaneously,
+    the test fails.
     """
     hold_log: list[tuple[str, float]] = []
     hold_lock = threading.Lock()
-    original_locked = fake_engine._step_locked
+    original_pre = fake_engine._lock_step_pre
+    original_post = fake_engine._lock_step_post
 
-    def instrumented():
+    def instrumented_pre():
         with hold_lock:
             hold_log.append(("enter", time.monotonic()))
         # Hold the lock briefly so a racing thread has time to overlap
         # if the lock is broken.
         time.sleep(0.05)
-        result = original_locked()
+        result = original_pre()
         with hold_lock:
             hold_log.append(("exit", time.monotonic()))
         return result
 
-    fake_engine._step_locked = instrumented  # type: ignore[assignment]
+    def instrumented_post(result):
+        with hold_lock:
+            hold_log.append(("enter", time.monotonic()))
+        time.sleep(0.05)
+        out = original_post(result)
+        with hold_lock:
+            hold_log.append(("exit", time.monotonic()))
+        return out
+
+    fake_engine._lock_step_pre = instrumented_pre  # type: ignore[assignment]
+    fake_engine._lock_step_post = instrumented_post  # type: ignore[assignment]
+
+    # Pre-compute only: idle engine returns None which short-circuits
+    # ``step()`` before ``_lock_step_post`` is called. To exercise both
+    # critical sections we need at least one request.
+    req = GenerationRequest(prompt="x", max_new_tokens=2)
+    req.request_id = "thread-safety-req"
+    fake_engine.add_request(req)
 
     errors: list[BaseException] = []
 
@@ -153,7 +174,7 @@ def test_step_serializes_concurrent_invocations(fake_engine):
     # must be strictly after the previous exit (with no concurrent entries).
     enters = [t for kind, t in hold_log if kind == "enter"]
     exits = [t for kind, t in hold_log if kind == "exit"]
-    assert len(enters) == len(exits) == 4
+    assert len(enters) == len(exits) >= 4
     for enter, exit in zip(enters, exits, strict=True):
         assert enter <= exit, "lock entered before previous exit"
 
