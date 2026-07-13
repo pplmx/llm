@@ -149,3 +149,75 @@ class BatchedGenerationBackend(GenerationBackend):
             for prompt in prompts
         ]
         return self.engine.batch_generate_requests(requests)
+
+
+class SpeculativeDecodingBackend(GenerationBackend):
+    """Speculative decoding: small draft model proposes, large target verifies.
+
+    Implements Leviathan et al. 2023 — the draft model speculates
+    ``gamma`` tokens ahead; the target scores them in a single
+    forward pass and accepts each with probability
+    ``min(1, q_target / q_draft)``. On rejection, sample a
+    correction token from ``(q_target - q_draft)+``. The output
+    distribution exactly matches the target distribution under the
+    same sampling parameters.
+
+    The ``model`` argument to :meth:`stream` / :meth:`batch_generate`
+    is **ignored** — the target and draft models are bound at
+    construction time. ``tokenizer`` must be the shared tokenizer
+    used by both models (same vocab, pad id, eos id).
+
+    Args:
+        target_model: The "expensive" model whose distribution is
+            the canonical output distribution.
+        draft_model: The "cheap" model used for speculation. Must
+            share vocabulary with ``target_model``.
+        gamma: Number of speculative tokens per round (default 5).
+            Typical values: 4–8.
+    """
+
+    def __init__(
+        self,
+        target_model: DecoderModel,
+        draft_model: DecoderModel,
+        *,
+        gamma: int = 5,
+    ) -> None:
+        if gamma < 1:
+            raise ValueError(f"gamma must be >= 1, got {gamma}")
+        self.target_model = target_model
+        self.draft_model = draft_model
+        self.gamma = gamma
+
+    def stream(
+        self,
+        model: DecoderModel,
+        tokenizer: Any,
+        prompt: str,
+        config: GenerationConfig,
+    ) -> Generator[str]:
+        from llm.generation.speculative import speculative_generate
+
+        yield from speculative_generate(
+            target=self.target_model,
+            draft=self.draft_model,
+            tokenizer=tokenizer,
+            prompt=prompt,
+            max_new_tokens=config.max_new_tokens,
+            gamma=self.gamma,
+            temperature=config.temperature,
+            top_k=config.top_k,
+            top_p=config.top_p,
+            repetition_penalty=config.repetition_penalty,
+        )
+
+    def batch_generate(
+        self,
+        model: DecoderModel,
+        tokenizer: Any,
+        prompts: list[str],
+        config: GenerationConfig,
+    ) -> list[str]:
+        return [
+            self.generate(model, tokenizer, prompt, config) for prompt in prompts
+        ]
