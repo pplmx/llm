@@ -300,13 +300,68 @@ model = DecoderModel(
 
 ---
 
+## Flash Attention 2 (opt-in)
+
+For Ampere / Hopper hardware, the project exposes an explicit Flash
+Attention 2 backend through `ATTENTION_REGISTRY` as `attn_impl="flash_attn"`.
+It is **opt-in** because `flash-attn` ships CUDA wheels only and
+should not be a hard runtime dependency.
+
+### Install
+
+```bash
+# uv
+uv sync --group perf
+
+# pip
+pip install 'llm[perf]'
+# or, on a CUDA host:
+pip install flash-attn
+```
+
+### Configuration
+
+```python
+from llm.models.decoder import DecoderModel
+
+model = DecoderModel(
+    vocab_size=32000,
+    hidden_size=1024,
+    num_layers=12,
+    num_heads=16,
+    attn_impl="flash_attn",  # uses FlashAttention when CUDA is available
+)
+```
+
+If `flash-attn` is not installed, the registry entry still resolves
+but constructing the module raises a clear `ImportError` pointing to
+the install command. CPU-only hosts should keep the default
+`attn_impl="mha"`.
+
+### Trade-offs vs. `mha`
+
+| Aspect            | `mha` (default)    | `flash_attn`            |
+| ----------------- | ------------------ | ----------------------- |
+| Backend           | `torch.nn.functional.scaled_dot_product_attention` | `flash_attn.flash_attn_func` |
+| Custom attn_mask  | Supported          | **Not supported** — falls back via the engine layer if you need padding masks |
+| Sliding window    | Supported (PyTorch SDPA) | Not supported yet (`flash_attn_varlen_func` is a future-work path) |
+| Hardware          | CPU + CUDA + MPS   | CUDA only               |
+| Long-context perf | O(S²) memory peaks | Streaming softmax, O(S) memory |
+
+For training or long-context decode on supported hardware, prefer
+`flash_attn`. For variable-length sequences with padding masks, stick
+with `mha` until `flash_attn_varlen_func` lands (see Tier 3 follow-up).
+
+---
+
 ## Inference Checklist
 
 1. ✅ **Use KVCache** for autoregressive generation
 2. ✅ **Enable GQA** if model supports it (check num_kv_heads)
 3. ✅ **Consider sliding window** for very long sequences
 4. ✅ **Use appropriate dtype** (fp16/bf16 for GPU)
-5. ✅ **Merge LoRA weights** before inference (`merge_lora()`)
+5. ✅ **Consider Flash Attention 2** on Ampere/Hopper (`attn_impl="flash_attn"`)
+6. ✅ **Merge LoRA weights** before inference (`merge_lora()`)
 
 ---
 
