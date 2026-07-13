@@ -13,6 +13,7 @@ from typing import Any
 import torch
 
 from llm.compat.weight_mapping import (
+    convert_hf_to_combined_qkv,
     convert_hf_weights,
     detect_architecture,
     get_config_mapping,
@@ -122,6 +123,20 @@ def _load_from_local(
         state_dict,
         architecture=architecture,
         num_layers=our_config["num_layers"],
+    )
+
+    # Concatenate HF's separate q/k/v projections into our combined
+    # ``qkv_proj`` (MHA uses one Linear; HF Llama uses three). Without
+    # this step ``load_state_dict`` would warn about a missing
+    # ``qkv_proj.weight`` and the model would run with random init on
+    # the attention path.
+    attn0 = model.transformer_blocks[0].self_attn
+    converted_state_dict = convert_hf_to_combined_qkv(
+        converted_state_dict,
+        num_layers=our_config["num_layers"],
+        num_heads=attn0.num_heads,
+        num_kv_heads=attn0.num_kv_heads,
+        head_dim=attn0.head_dim,
     )
 
     # Load into model

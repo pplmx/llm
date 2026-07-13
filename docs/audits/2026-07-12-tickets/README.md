@@ -82,14 +82,15 @@ document (e.g. Finding AO = Flash Attention).
 | # | File | Title (short) | Audit ref |
 |---|---|---|---|
 | 24 | `24-flash-attention-registry.md` | Flash Attention 2 via ATTENTION_REGISTRY | Finding AO |
+| 25 | `25-hf-hub-publish.md` | HF Hub publish pipeline (`save_pretrained` + `push_to_hub`) | Tier 3 #7 |
 
 Remaining Tier 3 items (self-hosted GPU runner, FSDP e2e, Paged
-Attention full forward path, MLA + KV cache, lm-eval pipeline, HF Hub
-publish, eval presets, speculative decoding) are tracked in
+Attention full forward path, MLA + KV cache, lm-eval pipeline, eval
+presets, speculative decoding) are tracked in
 [ROADMAP.md](../../ROADMAP.md) §阶段十/十四.
 
 ## Status snapshot (2026-07-13)
 
 - **Tier 1**: 14/14 implemented in commits `23b3018`–`817dd86` (main).
 - **Tier 2**: 14/14 already in main (`#3, #4, #5, #11, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23`).
-- **Tier 3**: 1/9 foundation slice started — `#24` (Flash Attention 2 registry entry).
+- **Tier 3**: 2/9 foundation slices shipped — `#24` (Flash Attention 2 registry entry), `#25` (HF Hub publish).

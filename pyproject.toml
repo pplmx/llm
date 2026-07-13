@@ -88,6 +88,16 @@ docs = [
 perf = [
     "flash-attn>=2.5.0",
 ]
+# Optional HuggingFace compat layer. ``safetensors`` enables
+# :func:`llm.compat.hf_publisher.save_pretrained`; ``huggingface_hub``
+# enables :func:`llm.compat.hf_publisher.push_to_hub` and
+# :func:`llm.compat.hf_loader.from_pretrained`'s Hub-path. Both
+# modules degrade to clear ``ImportError``s when the corresponding
+# package is missing.
+compat = [
+    "huggingface_hub>=0.20.0",
+    "safetensors>=0.4.0",
+]
 
 [project.optional-dependencies]
 # Non-uv users: ``pip install llm[eval]``. Keep in sync with the groups above.
@@ -102,6 +112,10 @@ logging = [
 ]
 perf = [
     "flash-attn>=2.5.0",
+]
+compat = [
+    "huggingface_hub>=0.20.0",
+    "safetensors>=0.4.0",
 ]
 streaming = [
     "datasets>=3.0.0",

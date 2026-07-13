@@ -1135,6 +1135,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+compat = [
+    { name = "huggingface-hub" },
+    { name = "safetensors" },
+]
 eval = [
     { name = "lm-eval" },
     { name = "rouge-score" },
@@ -1152,6 +1156,10 @@ streaming = [
 ]
 
 [package.dev-dependencies]
+compat = [
+    { name = "huggingface-hub" },
+    { name = "safetensors" },
+]
 dev = [
     { name = "allure-pytest" },
     { name = "hypothesis" },
@@ -1195,20 +1203,26 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'streaming'", specifier = ">=3.0.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.136.3" },
     { name = "flash-attn", marker = "extra == 'perf'", specifier = ">=2.5.0" },
+    { name = "huggingface-hub", marker = "extra == 'compat'", specifier = ">=0.20.0" },
     { name = "lm-eval", marker = "extra == 'eval'", specifier = ">=0.4.12" },
     { name = "openai", specifier = ">=2.41.0" },
     { name = "prometheus-fastapi-instrumentator", specifier = ">=8.0.0" },
     { name = "python-json-logger", specifier = ">=4.1.0" },
     { name = "rouge-score", marker = "extra == 'eval'", specifier = ">=0.1.2" },
     { name = "sacrebleu", marker = "extra == 'eval'", specifier = ">=2.6.0" },
+    { name = "safetensors", marker = "extra == 'compat'", specifier = ">=0.4.0" },
     { name = "scikit-learn", marker = "extra == 'eval'", specifier = ">=1.9.0" },
     { name = "tensorboard", marker = "extra == 'logging'", specifier = ">=2.20.0" },
     { name = "torch", specifier = ">=2.12.0,<3.0.0" },
     { name = "transformers", specifier = ">=5.10.2,<6.0.0" },
 ]
-provides-extras = ["eval", "logging", "perf", "streaming"]
+provides-extras = ["eval", "logging", "perf", "compat", "streaming"]
 
 [package.metadata.requires-dev]
+compat = [
+    { name = "huggingface-hub", specifier = ">=0.20.0" },
+    { name = "safetensors", specifier = ">=0.4.0" },
+]
 dev = [
     { name = "allure-pytest", specifier = ">=2.16.0" },
     { name = "hypothesis", specifier = ">=6.0" },
