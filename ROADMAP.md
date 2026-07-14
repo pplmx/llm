@@ -22,7 +22,7 @@
 
 > **架构边界** (详见 [docs/reference/architecture.md](docs/reference/architecture.md)):
 > - `attn_impl=mla` 暂不支持 KV cache
-> - Paged Attention serving 侧为 partial 实现 ([ADR-004](docs/adr/004-paged-attention-serving.md))
+> - Paged Attention serving 全链路已实现 ([ADR-004](docs/adr/004-paged-attention-serving.md))
 > - 多模态 / 3D 并行尚无 registry 抽象, 需先补设计再开发
 
 ### 插件内核重构 (2026 Q2) ✅
@@ -184,7 +184,7 @@
     - [x] 实现优先级调度 (`PriorityScheduler`)
 - [x] **性能优化** (基础) ✅ *阶段十*
     - [x] 集成 `torch.compile` 到推理流程 (可选配置)
-    - [~] Paged Attention — prefix cache ✅; forward 全链路待接 ([ADR-004](docs/adr/004-paged-attention-serving.md))
+    - [x] Paged Attention — full forward path ([ADR-004](docs/adr/004-paged-attention-serving.md))
     - [x] 实现推理缓存机制 (Prefix Caching)
 
 ---
@@ -243,11 +243,12 @@
 
 #### 10.2 高级推理优化
 
-- [~] Paged Attention — block allocator + prefix sidecar 已实现; model forward 仍用 `list[KVCache]` ([ADR-004](docs/adr/004-paged-attention-serving.md))
 - [x] 优化 KV Cache 内存布局和管理 (`KVCache`, per-slot buffers)
 - [x] 实现 Continuous Batching (`ContinuousBatchingEngine`)
 - [x] 实现请求级别动态调度 (`PriorityScheduler`)
 - [x] Prefix Caching (`SlotPrefixCache`)
+- [x] Paged Attention — full forward path through `MultiHeadAttention` /
+      `ContinuousBatchingEngine` ([ADR-004](docs/adr/004-paged-attention-serving.md))
 
 #### 10.3 编译优化
 

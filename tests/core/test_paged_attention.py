@@ -436,3 +436,90 @@ class TestPagedAttentionForward:
         )
 
         assert torch.isfinite(output).all()
+
+    def test_prefill_multi_query_tokens(self):
+        """Prefill: ``q`` carries ``S_q > 1`` query tokens per row.
+
+        For prefill the model attends each query token to the full
+        cached context of its sequence. The kernel already gathered
+        the whole k/v slice per row — the multi-token generalisation
+        just lets the matmul produce ``S_q`` outputs.
+        """
+        batch_size = 2
+        num_heads = 4
+        head_dim = 16
+        block_size = 16
+        num_kv_heads = 2
+        num_blocks = 8
+        query_len = 5  # prefill-style: 5 query tokens per row
+
+        q = torch.randn(batch_size, num_heads, query_len, head_dim)
+        k_cache = torch.randn(1, num_blocks, num_kv_heads, block_size, head_dim)
+        v_cache = torch.randn(1, num_blocks, num_kv_heads, block_size, head_dim)
+
+        block_tables = torch.tensor([[0, 1], [2, 3]], dtype=torch.long)
+        seq_lens = torch.tensor([20, 25])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        assert output.shape == (batch_size, num_heads, query_len, head_dim)
+        assert torch.isfinite(output).all()
+
+    def test_prefill_matches_decode_per_token(self):
+        """Each prefill output token equals a single decode forward over the same context.
+
+        Loops one query token at a time and concatenates; this must
+        match a single ``query_len``-shot prefill call (within fp32
+        tolerance). Pins the multi-token generalisation to the
+        single-token reference behaviour.
+        """
+        torch.manual_seed(0)
+        batch_size = 1
+        num_heads = 2
+        head_dim = 8
+        block_size = 16
+        num_kv_heads = 2
+        num_blocks = 4
+        query_len = 3
+
+        q = torch.randn(batch_size, num_heads, query_len, head_dim)
+        k_cache = torch.randn(1, num_blocks, num_kv_heads, block_size, head_dim)
+        v_cache = torch.randn(1, num_blocks, num_kv_heads, block_size, head_dim)
+        block_tables = torch.tensor([[0, 1]], dtype=torch.long)
+        # Sequence is exactly ``query_len`` tokens so the prefill covers
+        # the full context (no past beyond the new tokens themselves).
+        seq_lens = torch.tensor([query_len])
+
+        prefill_out = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+
+        # Decode reference: one query token at a time, same context.
+        decode_outs = []
+        for t in range(query_len):
+            decode_outs.append(
+                paged_attention_forward(
+                    q=q[:, :, t : t + 1, :],
+                    k_cache=k_cache,
+                    v_cache=v_cache,
+                    block_tables=block_tables,
+                    seq_lens=seq_lens,
+                    num_kv_heads=num_kv_heads,
+                )
+            )
+        decode_out = torch.cat(decode_outs, dim=2)
+
+        assert prefill_out.shape == decode_out.shape
+        assert torch.allclose(prefill_out, decode_out, atol=1e-5)

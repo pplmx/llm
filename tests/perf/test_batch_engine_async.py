@@ -82,6 +82,7 @@ class _FakeModel(nn.Module):
         use_cache: bool,
         batch_indices: torch.Tensor,
         attn_mask: torch.Tensor,
+        paged_kv_cache: object | None = None,
     ) -> tuple[torch.Tensor, None]:
         # Deterministic logits: input_ids is [B, q_len] — return logits
         # of shape [B, q_len, vocab_size]. Always predict token 3 (well

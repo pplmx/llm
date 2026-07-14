@@ -152,6 +152,8 @@ class FlashAttention(nn.Module):
         use_cache: bool = False,
         batch_indices: Tensor | None = None,
         start_pos: int | Tensor | None = None,
+        paged_kv_cache: object | None = None,
+        layer_idx: int | None = None,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """Forward pass.
 
@@ -166,7 +168,15 @@ class FlashAttention(nn.Module):
             sequences use ``is_causal=False`` and pre-pad, or fall back
             to ``attn_impl="mha"``. Sliding-window / padded-mask
             support requires ``flash_attn_varlen_func`` (future work).
+            ``paged_kv_cache`` is also rejected on this path — flash-attn
+            does not expose a paged-attn kernel; use ``attn_impl="mha"``
+            when serving with paged KV.
         """
+        if paged_kv_cache is not None:
+            raise NotImplementedError(
+                "FlashAttention does not support paged_kv_cache; "
+                "use attn_impl='mha' (which routes through paged_attention_forward)."
+            )
         # Local import so an uninstalled ``flash-attn`` does not crash
         # the package at import time (we already gated on
         # ``FLASH_ATTN_AVAILABLE`` in ``__init__``).

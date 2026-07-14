@@ -133,6 +133,8 @@ class TransformerBlock(nn.Module):
         use_cache: bool = False,
         batch_indices: torch.Tensor | None = None,
         start_pos: int | torch.Tensor | None = None,
+        paged_kv_cache: object | None = None,
+        layer_idx: int | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """
         Forward pass of the Transformer block.
@@ -146,6 +148,11 @@ class TransformerBlock(nn.Module):
             use_cache (bool): Whether to return the updated (key, value) pair.
             batch_indices(torch.Tensor | None): Cache update indices.
             start_pos (int | torch.Tensor | None): Cache update position.
+            paged_kv_cache (object | None): Block-allocator KV cache; ignored
+                when ``None``. When set, ``kv_cache`` is unused and ``layer_idx``
+                must point at this block's index in the decoder.
+            layer_idx (int | None): Index of this block in the decoder; required
+                when ``paged_kv_cache`` is set.
 
         Returns:
             torch.Tensor or tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
@@ -171,9 +178,16 @@ class TransformerBlock(nn.Module):
             use_cache=use_cache,
             batch_indices=batch_indices,
             start_pos=start_pos,
+            paged_kv_cache=paged_kv_cache,
+            layer_idx=layer_idx,
         )
 
-        if use_cache:
+        if paged_kv_cache is not None:
+            # Paged path returns the output directly (no separate kv
+            # tuple to surface — the cache is mutated in place).
+            attn_output = attn_outputs
+            current_kv = None
+        elif use_cache:
             attn_output, current_kv = attn_outputs
         else:
             attn_output = attn_outputs
@@ -197,6 +211,10 @@ class TransformerBlock(nn.Module):
         # Apply residual connection
         output = residual + mlp_output if self.norm_first else self.norm2(residual + mlp_output)
 
+        if paged_kv_cache is not None:
+            # The paged cache is mutated in place; there is no per-block
+            # KV tuple to surface to the caller.
+            return output
         if use_cache:
             return output, current_kv
         return output

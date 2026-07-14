@@ -134,6 +134,7 @@ class DecoderModel(nn.Module):
         use_cache: bool = False,
         position_ids: torch.Tensor | None = None,
         batch_indices: torch.Tensor | None = None,
+        paged_kv_cache: object | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, list[KVCache]]:
         """
         Forward pass of the DecoderModel.
@@ -145,6 +146,9 @@ class DecoderModel(nn.Module):
             use_cache: When True, update ``kv_caches`` in place and return them.
             position_ids: Explicit position IDs of shape [B, S].
             batch_indices: Cache slot indices for continuous batching.
+            paged_kv_cache: Block-allocator KV cache; when set, ``kv_caches``
+                is unused and the model routes K/V through the block
+                allocator + ``paged_attention_forward``.
 
         Returns:
             Logits tensor, or ``(logits, kv_caches)`` when ``use_cache=True``.
@@ -152,8 +156,15 @@ class DecoderModel(nn.Module):
         if self._gradient_checkpointing and use_cache:
             raise ValueError("Gradient checkpointing is incompatible with use_cache=True. ")
 
-        if use_cache and kv_caches is None:
-            raise ValueError("kv_caches is required when use_cache=True.")
+        if use_cache and kv_caches is None and paged_kv_cache is None:
+            raise ValueError(
+                "use_cache=True requires either kv_caches or paged_kv_cache to be set."
+            )
+
+        if kv_caches is not None and paged_kv_cache is not None:
+            raise ValueError(
+                "Pass either kv_caches or paged_kv_cache, not both."
+            )
 
         start_pos = 0
         if kv_caches is not None and kv_caches[0].seq_len > 0:
@@ -183,8 +194,13 @@ class DecoderModel(nn.Module):
                     use_cache=use_cache,
                     batch_indices=batch_indices,
                     start_pos=position_ids if (batch_indices is not None and position_ids is not None) else start_pos,
+                    paged_kv_cache=paged_kv_cache,
+                    layer_idx=i,
                 )
-                if use_cache:
+                if paged_kv_cache is not None:
+                    # Paged path returns the output directly.
+                    hidden_states = block_outputs
+                elif use_cache:
                     hidden_states, _current_kv = block_outputs
                 else:
                     hidden_states = block_outputs

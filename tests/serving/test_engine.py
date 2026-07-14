@@ -129,8 +129,8 @@ def test_engine_prefix_cache_reuses_kv_on_matching_prompt(tiny_model, mock_token
     assert len(seq2.generated_ids) == 1
 
 
-def test_engine_paged_attention_sidecar_uses_configured_pool(tiny_model, mock_tokenizer):
-    """Requirement: use_paged_attention attaches a PagedKVCache sidecar with configured size."""
+def test_engine_paged_attention_uses_configured_pool(tiny_model, mock_tokenizer):
+    """``use_paged_attention=True`` builds the paged pool and skips the dense one."""
     tiny_model.to("cpu")
     engine = ContinuousBatchingEngine(
         model=tiny_model,
@@ -142,8 +142,11 @@ def test_engine_paged_attention_sidecar_uses_configured_pool(tiny_model, mock_to
         block_size=8,
         enable_prefix_cache=False,
     )
+    # Paged pool wired through.
     assert engine.paged_kv_cache.num_blocks == 64
     assert engine.paged_kv_cache.block_size == 8
+    # Dense pool is skipped — the model now writes into the paged blocks.
+    assert engine.kv_caches == []
     assert engine.prefix_cache is None
 
 
@@ -174,15 +177,13 @@ def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
     assert engine.prefix_cache.max_prefixes == 5
 
 
-def test_from_serving_config_raises_on_paged_attention():
-    """Paged Attention is sidecar-only; from_serving_config must refuse.
+def test_from_serving_config_wires_paged_attention_through(tiny_model, mock_tokenizer):
+    """``use_paged_attention=True`` no longer raises — it wires the paged path.
 
-    Users who flip ``use_paged_attention=True`` get no benefit today and may
-    not realize it. ``from_serving_config`` raises ``NotImplementedError`` so
-    the failure surfaces at startup rather than at the first forward pass.
-    Direct construction (e.g., from tests) still works.
-
-    The check fires before any model/tokenizer access, so we pass sentinels.
+    After T3 #3 Paged Attention is fully wired through the engine forward:
+    ``from_serving_config`` builds the engine with a ``PagedKVCache`` and the
+    dense ``KVCache`` pool is skipped (no double allocation). A smoke
+    ``step()`` runs end-to-end.
     """
     from llm.serving.config import ServingConfig
 
@@ -190,14 +191,28 @@ def test_from_serving_config_raises_on_paged_attention():
         use_paged_attention=True,
         max_blocks=32,
         block_size=8,
+        max_concurrent_requests=2,
+        max_seq_len=tiny_model.max_seq_len,
     )
 
-    with pytest.raises(NotImplementedError, match="Paged Attention is not yet supported"):
-        ContinuousBatchingEngine.from_serving_config(
-            config,
-            model=None,  # sentinel — check fires before engine is built
-            tokenizer=None,
-        )
+    engine = ContinuousBatchingEngine.from_serving_config(
+        config,
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+    )
+
+    # Dense pool is skipped in favour of the paged pool.
+    assert engine.kv_caches == []
+    assert engine.paged_kv_cache is not None
+    assert engine.paged_kv_cache.num_blocks == 32
+    assert engine.paged_kv_cache.block_size == 8
+
+    # End-to-end smoke: a single ``step()`` runs the paged forward path.
+    req_id = engine.add_request(GenerationRequest(prompt="abcd", max_new_tokens=3))
+    engine.step()
+    seq = engine.scheduler.get_sequence(req_id)
+    assert seq is not None
+    assert len(seq.generated_ids) == 1
 
 
 # --- step() return contract + observer hook (T2 #22) ------------------------
