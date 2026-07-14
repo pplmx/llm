@@ -92,6 +92,7 @@ nav:
   
   - 🔧 指南:
       - guides/checkpoints.md
+      - guides/data.md
       - guides/distributed.md
       - guides/finetuning.md
       - guides/inference.md
@@ -119,6 +120,7 @@ nav:
           - api/serving.md
           - api/training.md
           - api/evaluation.md
+          - api/data.md
   
   - 📝 ADR:
       - adr/README.md

@@ -85,6 +85,7 @@ document (e.g. Finding AO = Flash Attention).
 | 25 | `25-hf-hub-publish.md` | HF Hub publish pipeline (`save_pretrained` + `push_to_hub`) | Tier 3 #7 |
 | 26 | `26-speculative-decoding.md` | Speculative decoding (Leviathan 2023) for serving | Tier 3 #9 |
 | 27 | `27-lm-eval-pipeline.md` | lm-eval-harness pipeline (LlamaLmEvalLM + presets) | Tier 3 #6 |
+| 28 | `28-data-presets.md` | Data preset files (C4 / Pile / RedPajama) | Tier 3 #8 |
 
 Remaining Tier 3 items (self-hosted GPU runner, FSDP e2e, Paged
 Attention full forward path, MLA + KV cache, lm-eval pipeline, eval
@@ -94,4 +95,4 @@ presets) are tracked in [ROADMAP.md](../../ROADMAP.md) §阶段十/十四.
 
 - **Tier 1**: 14/14 implemented in commits `23b3018`–`817dd86` (main).
 - **Tier 2**: 14/14 already in main (`#3, #4, #5, #11, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23`).
-- **Tier 3**: 4/9 foundation slices shipped — `#24` (Flash Attention 2 registry entry), `#25` (HF Hub publish), `#26` (Speculative decoding), `#27` (lm-eval-harness pipeline).
+- **Tier 3**: 5/9 foundation slices shipped — `#24` (Flash Attention 2 registry entry), `#25` (HF Hub publish), `#26` (Speculative decoding), `#27` (lm-eval-harness pipeline), `#28` (data presets for C4 / Pile / RedPajama).

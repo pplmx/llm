@@ -20,6 +20,7 @@ slice of the framework.
 | `llm.serving` | FastAPI app, routers, batched engine, metrics | [serving.md](serving.md) |
 | `llm.training` | Trainer, configs, callbacks, RLHF | [training.md](training.md) |
 | `llm.evaluation` | Metrics, offline tasks, lm-eval-harness adapter (optional) | [evaluation.md](evaluation.md) |
+| `llm.data` | Datasets, DataModules, streaming sources, dataset presets | [data.md](data.md) |
 
 ## Stability
 
