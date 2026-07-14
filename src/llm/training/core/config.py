@@ -97,6 +97,40 @@ class DistributedConfig(BaseSettings):
     backend: str = "nccl"
     parallel_strategy: str = Field("ddp", pattern="^(ddp|fsdp)$")
 
+    # FSDP-specific knobs. Only consulted when ``parallel_strategy="fsdp"``.
+    # The defaults are conservative: BF16 mixed precision matches what
+    # ``DistributedConfig`` already picks for AMP, the auto-wrap threshold
+    # is large enough to keep tiny submodules unwrapped (matching common
+    # practice for transformer block FSDP), and CPU offload is opt-in
+    # because it slows training significantly.
+    fsdp_mixed_precision: str = Field(
+        "bf16",
+        pattern="^(fp32|bf16|fp16)$",
+        description=(
+            "FSDP parameter / gradient / buffer dtype. 'bf16' is the "
+            "recommended default for modern GPUs; 'fp16' requires a "
+            "loss scaler and is rarely worth the complexity."
+        ),
+    )
+    fsdp_auto_wrap_min_params: int = Field(
+        10_000_000,
+        ge=0,
+        description=(
+            "FSDP size-based auto-wrap threshold. Modules with at "
+            "least this many parameters are wrapped as their own FSDP "
+            "unit; smaller submodules stay inside the parent unit. "
+            "Set to 0 to wrap every leaf module (rarely useful)."
+        ),
+    )
+    fsdp_cpu_offload: bool = Field(
+        False,
+        description=(
+            "Offload FSDP parameters to CPU when not in use. Trades "
+            "training throughput for GPU memory; useful only when "
+            "the model is too big to fit even after BF16 sharding."
+        ),
+    )
+
     @field_validator("gpus_per_node", mode="before")
     @classmethod
     def set_gpus_per_node(cls, v: int | None) -> int:
