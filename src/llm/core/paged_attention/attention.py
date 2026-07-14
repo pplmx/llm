@@ -15,23 +15,40 @@ def paged_attention_forward(
 ) -> Tensor:
     """Paged attention forward pass.
 
+    Supports both prefill (``q`` with multiple query tokens) and decode
+    (``q`` with a single query token per sequence). Each row of ``q``
+    attends to its full cached context (the first ``seq_lens[b]`` tokens
+    of sequence ``b``), regardless of how many query tokens that row
+    carries. The original Python-fallback kernel gathered the whole k/v
+    slice per sequence regardless of ``S_q``; the multi-token generalisation
+    just lets the matmul produce ``S_q`` outputs instead of one.
+
     Args:
-        q: Query tensor for current token(s)
-        k_cache: KV cache with block-level storage
-        v_cache: Same as k_cache
-        block_tables: [batch, max_blocks] physical block IDs for each sequence
-        seq_lens: Current sequence lengths
-        num_kv_heads: Number of KV heads
-        block_size: Tokens per block
+        q: Query tensor [batch, num_heads, query_len, head_dim].
+        k_cache: KV cache tensor. Either the per-layer slice
+            ``[num_blocks, num_kv_heads, block_size, head_dim]`` (the
+            production path — caller slices ``PagedKVCache.k_cache[layer_idx]``
+            before passing) or the full ``PagedKVCache`` shape
+            ``[num_layers, num_blocks, num_kv_heads, block_size, head_dim]``
+            (legacy / direct tests). When 5-D, the layer axis is collapsed
+            by taking index 0; for a multi-layer model the caller must slice.
+        v_cache: Same shape as ``k_cache``.
+        block_tables: [batch, max_blocks] physical block IDs per sequence.
+        seq_lens: Current sequence lengths [batch].
+        num_kv_heads: Number of KV heads.
+        block_size: Tokens per block.
 
     Returns:
-        Attention output tensor [batch, num_heads, 1, head_dim]
+        Attention output tensor [batch, num_heads, query_len, head_dim].
     """
-    batch_size, num_heads, _, head_dim = q.shape
-    _num_layers, num_blocks, _, _, _ = k_cache.shape
-
-    k_cache = k_cache[0]
-    v_cache = v_cache[0]
+    batch_size, num_heads, query_len, head_dim = q.shape
+    if k_cache.ndim == 5:
+        # Legacy / direct-test path: full ``PagedKVCache`` buffer.
+        # The caller should have sliced already for a multi-layer model;
+        # we fall back to layer 0 to match the historical behaviour.
+        k_cache = k_cache[0]
+        v_cache = v_cache[0]
+    num_blocks = k_cache.shape[0]
 
     max_seq_len = seq_lens.max().item()
 

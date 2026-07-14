@@ -376,3 +376,131 @@ def test_mha_initialization_invalid_hidden_size_num_heads():
 
     with pytest.raises(ValueError, match=r"hidden_size .* must be divisible by num_heads .*"):
         MultiHeadAttention(hidden_size=32, num_heads=3)  # 32 is not divisible by 3
+
+
+# --- Paged KV cache forward path (T3 #3) ----------------------------------
+
+
+def _build_paged_cache_for_test(num_layers: int, num_kv_heads: int, head_dim: int,
+                                num_blocks: int = 8, block_size: int = 4,
+                                device: str = "cpu") -> "PagedKVCache":
+    """Construct a small ``PagedKVCache`` for unit tests."""
+    from llm.core.paged_attention.paged_kv_cache import PagedKVCache
+
+    return PagedKVCache(
+        num_layers=num_layers,
+        num_kv_heads=num_kv_heads,
+        head_dim=head_dim,
+        num_blocks=num_blocks,
+        block_size=block_size,
+        device=device,
+        dtype=torch.float32,
+    )
+
+
+def test_mha_paged_kv_cache_roundtrip_writes_and_reads():
+    """Forward with ``paged_kv_cache`` writes K/V into blocks and reads back.
+
+    After a prefill call the per-row block table for the slot id used
+    by the test must be non-empty (blocks were allocated) and the
+    output shape must match ``[B, S, hidden_size]``.
+    """
+    torch.manual_seed(0)
+    hidden_size = 16
+    num_heads = 2
+    num_kv_heads = 2
+    head_dim = hidden_size // num_heads
+    batch_size = 1
+    seq_len = 5
+    seq_id = 0
+
+    mha = MultiHeadAttention(
+        hidden_size=hidden_size,
+        num_heads=num_heads,
+        num_kv_heads=num_kv_heads,
+        p=0.0,
+        is_causal=False,
+        include_norm_residual=False,
+        bias=False,
+    ).eval()
+
+    paged = _build_paged_cache_for_test(
+        num_layers=1, num_kv_heads=num_kv_heads, head_dim=head_dim
+    )
+
+    x = torch.randn(batch_size, seq_len, hidden_size)
+    out = mha(
+        x,
+        paged_kv_cache=paged,
+        layer_idx=0,
+        batch_indices=torch.tensor([seq_id], dtype=torch.long),
+        use_cache=False,
+    )
+
+    assert out.shape == (batch_size, seq_len, hidden_size)
+    # The write into the paged cache allocated blocks for ``seq_id``.
+    assert paged.get_block_table(seq_id)  # non-empty
+    # And the new tokens are reflected in the BlockManager's per-seq count.
+    assert paged.block_manager.get_num_tokens(seq_id) == seq_len
+
+
+def test_mha_paged_kv_cache_decode_step_appends_block():
+    """Second forward with a single token extends the existing block table.
+
+    After a prefill of 5 tokens the sequence occupies 2 blocks
+    (block_size=4). A single-token decode should NOT allocate a new
+    block — the existing one has room for one more token.
+    """
+    torch.manual_seed(0)
+    hidden_size = 16
+    num_heads = 2
+    num_kv_heads = 2
+    head_dim = hidden_size // num_heads
+    seq_id = 0
+
+    mha = MultiHeadAttention(
+        hidden_size=hidden_size,
+        num_heads=num_heads,
+        num_kv_heads=num_kv_heads,
+        p=0.0,
+        is_causal=False,
+        include_norm_residual=False,
+        bias=False,
+    ).eval()
+
+    paged = _build_paged_cache_for_test(
+        num_layers=1, num_kv_heads=num_kv_heads, head_dim=head_dim, block_size=4
+    )
+
+    # Prefill
+    prefill = torch.randn(1, 5, hidden_size)
+    mha(prefill, paged_kv_cache=paged, layer_idx=0,
+        batch_indices=torch.tensor([seq_id], dtype=torch.long))
+
+    blocks_after_prefill = paged.get_block_table(seq_id)
+    assert len(blocks_after_prefill) == 2  # ceil(5/4)
+
+    # Decode one token
+    decode = torch.randn(1, 1, hidden_size)
+    mha(decode, paged_kv_cache=paged, layer_idx=0,
+        batch_indices=torch.tensor([seq_id], dtype=torch.long))
+
+    # No new block allocated; only the existing block is reused.
+    assert paged.get_block_table(seq_id) == blocks_after_prefill
+    assert paged.block_manager.get_num_tokens(seq_id) == 6
+
+
+def test_mha_paged_kv_cache_requires_layer_idx_and_batch_indices():
+    """The paged branch rejects callers that omit ``layer_idx`` or ``batch_indices``."""
+    mha = MultiHeadAttention(
+        hidden_size=16, num_heads=2, num_kv_heads=2,
+        p=0.0, include_norm_residual=False, is_causal=False, bias=False,
+    ).eval()
+    paged = _build_paged_cache_for_test(num_layers=1, num_kv_heads=2, head_dim=8)
+
+    x = torch.randn(1, 1, 16)
+    with pytest.raises(ValueError, match="layer_idx is required"):
+        mha(x, paged_kv_cache=paged, layer_idx=None,
+            batch_indices=torch.tensor([0], dtype=torch.long))
+    with pytest.raises(ValueError, match="batch_indices is required"):
+        mha(x, paged_kv_cache=paged, layer_idx=0, batch_indices=None)

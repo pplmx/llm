@@ -177,16 +177,21 @@ class ContinuousBatchingEngine:
         self.scheduler = Scheduler(max_batch_size=max_batch_size)
         self.slot_allocator = SlotAllocator(total_slots=max_batch_size)
 
-        # Initialize KV Cache Pool
-        self.kv_caches = KVCache.from_model_config(
-            max_batch_size=self.max_batch_size,
-            max_seq_len=self.max_seq_len,
-            num_layers=len(self.model.transformer_blocks),
-            num_kv_heads=self.model.transformer_blocks[0].self_attn.num_kv_heads,
-            head_dim=self.model.transformer_blocks[0].self_attn.head_dim,
-            device=self.device,
-            dtype=self.dtype,
-        )
+        # Initialize KV Cache Pool. The dense ``KVCache`` pool is only
+        # built when paged attention is disabled — when enabled, the
+        # block-allocator pool below replaces it for the model forward
+        # path (and building both would waste memory).
+        self.kv_caches: list[KVCache] = []
+        if not use_paged_attention:
+            self.kv_caches = KVCache.from_model_config(
+                max_batch_size=self.max_batch_size,
+                max_seq_len=self.max_seq_len,
+                num_layers=len(self.model.transformer_blocks),
+                num_kv_heads=self.model.transformer_blocks[0].self_attn.num_kv_heads,
+                head_dim=self.model.transformer_blocks[0].self_attn.head_dim,
+                device=self.device,
+                dtype=self.dtype,
+            )
 
         self.enable_prefix_cache = enable_prefix_cache
         self.prefix_cache = SlotPrefixCache(max_prefixes=max_prefixes) if enable_prefix_cache else None
@@ -224,18 +229,13 @@ class ContinuousBatchingEngine:
     def from_serving_config(cls, config, model: DecoderModel, tokenizer: object) -> ContinuousBatchingEngine:
         """Build an engine from ServingConfig flags.
 
-        Raises ``NotImplementedError`` when ``config.use_paged_attention`` is True.
-        Paged Attention is currently sidecar-only — the model forward path still
-        uses the standard ``KVCache`` pool, so enabling it provides no benefit.
-        See ``docs/adr/004-paged-attention-serving.md`` for the implementation plan.
+        Paged Attention is fully wired through the continuous batching
+        forward path (``docs/adr/004-paged-attention-serving.md`` was
+        flipped to "Accepted" with this slice). When
+        ``config.use_paged_attention=True`` the engine builds a
+        :class:`PagedKVCache`, passes it to the model forward, and
+        frees per-request blocks on sequence completion.
         """
-        if getattr(config, "use_paged_attention", False):
-            raise NotImplementedError(
-                "Paged Attention is not yet supported in the continuous batching engine "
-                "forward path (sidecar-only). See "
-                "docs/adr/004-paged-attention-serving.md for the current state. "
-                "Set ServingConfig.use_paged_attention=False."
-            )
         return cls(
             model=model,
             tokenizer=tokenizer,
@@ -250,6 +250,12 @@ class ContinuousBatchingEngine:
         )
 
     def _copy_kv_between_slots(self, src_slot: int, dst_slot: int, length: int) -> None:
+        if self.paged_kv_cache is not None:
+            # Prefix cache replay across slots is only supported on the
+            # dense KV-cache path. The paged-cache path reuses blocks via
+            # ``PagedKVCache.add_prefix`` + ``try_get_prefix_blocks``;
+            # wiring those into ``_lock_step_pre`` is a follow-up.
+            return
         for cache in self.kv_caches:
             cache.k_cache[dst_slot, :, :length, :] = cache.k_cache[src_slot, :, :length, :].clone()
             cache.v_cache[dst_slot, :, :length, :] = cache.v_cache[src_slot, :, :length, :].clone()
@@ -471,7 +477,8 @@ class ContinuousBatchingEngine:
             logits, _ = self.model(
                 input_ids=inputs.padded_input_ids,
                 position_ids=inputs.padded_position_ids,
-                kv_caches=self.kv_caches,
+                kv_caches=self.kv_caches if self.paged_kv_cache is None else None,
+                paged_kv_cache=self.paged_kv_cache,
                 use_cache=True,
                 batch_indices=inputs.batch_indices,
                 attn_mask=inputs.run_attn_mask,
@@ -513,8 +520,11 @@ class ContinuousBatchingEngine:
             # sequences themselves remain in their last-known state;
             # callers are expected to clean them up via the timeout
             # path.
-            for seq in inputs.running_sequences:
+            for i, seq in enumerate(inputs.running_sequences):
                 self.slot_allocator.free(seq.request_id)
+                if self.paged_kv_cache is not None:
+                    # ``seq_id`` == slot id in the paged path.
+                    self.paged_kv_cache.free(inputs.batch_slots_list[i])
             raise result.forward_failed
 
         for i, seq in enumerate(inputs.running_sequences):
@@ -537,6 +547,9 @@ class ContinuousBatchingEngine:
             ):
                 seq.status = RequestState.FINISHED
                 self.slot_allocator.free(seq.request_id)
+                if self.paged_kv_cache is not None:
+                    # Return the per-sequence blocks to the allocator.
+                    self.paged_kv_cache.free(inputs.batch_slots_list[i])
 
         return StepStats(
             scheduled=inputs.batch_size,

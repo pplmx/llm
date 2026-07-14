@@ -4,6 +4,7 @@ import torch
 from torch import Tensor, nn
 
 from llm.core.kv_cache import KVCache
+from llm.core.paged_attention.attention import paged_attention_forward
 from llm.core.registry import register_attention, set_attention_kv_cache_capability
 from llm.utils.common import make_factory_kwargs
 
@@ -101,6 +102,8 @@ class MultiHeadAttention(nn.Module):
         use_cache: bool = False,
         batch_indices: Tensor | None = None,
         start_pos: int | Tensor | None = None,
+        paged_kv_cache: object | None = None,
+        layer_idx: int | None = None,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """
         Forward pass.
@@ -119,6 +122,14 @@ class MultiHeadAttention(nn.Module):
             use_cache (bool): Whether to return the updated (key, value) pair.
             batch_indices (Tensor | None): Indices for specific KV cache slots [B]. Use with update_at_indices.
             start_pos (int | Tensor | None): Explicit write position for cache update. required if batch_indices is used.
+            paged_kv_cache (PagedKVCache | None): Block-allocator KV cache. When set
+                the linear ``kv_cache`` argument is ignored — the model writes K/V
+                into the paged blocks and reads via ``paged_attention_forward``.
+                ``batch_indices`` doubles as the per-row ``seq_id`` (the engine
+                passes slot ids that we treat as ``PagedKVCache`` sequence ids).
+            layer_idx (int | None): Index of this block in the decoder. Required
+                when ``paged_kv_cache`` is set; used to slice the per-layer K/V
+                tensor out of ``PagedKVCache.k_cache[layer_idx]``.
 
         Returns:
             Tensor or tuple[Tensor, tuple[Tensor, Tensor]]:
@@ -155,6 +166,17 @@ class MultiHeadAttention(nn.Module):
         v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
 
         # KV Cache handling
+        if paged_kv_cache is not None:
+            return self._forward_paged(
+                q=q,
+                k=k,
+                v=v,
+                paged_kv_cache=paged_kv_cache,
+                batch_indices=batch_indices,
+                layer_idx=layer_idx,
+                residual=residual if self.include_norm_residual and self.norm is not None else None,
+            )
+
         has_past = False
         if kv_cache is not None:
             # Use efficient pre-allocated cache (in-place update)
@@ -217,4 +239,106 @@ class MultiHeadAttention(nn.Module):
 
         if use_cache:
             return output, current_kv
+        return output
+
+    def _forward_paged(
+        self,
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        paged_kv_cache: object,
+        batch_indices: Tensor | None,
+        layer_idx: int | None,
+        residual: Tensor | None,
+    ) -> Tensor:
+        """Run the attention computation through a :class:`PagedKVCache`.
+
+        Per-row write: ``paged_kv_cache.update(seq_id, k_b.T, v_b.T)``
+        appends the new tokens to that sequence's block table. The
+        sequence id is taken from ``batch_indices`` (the engine passes
+        slot ids; ``PagedKVCache`` treats them as sequence ids). After
+        the writes we read the per-row block tables / seq lengths and
+        call :func:`paged_attention_forward` to compute attention over
+        the gathered context.
+
+        Args:
+            q: Projected query tensor ``[B, N_q, S, D]``.
+            k: Projected key tensor ``[B, N_kv, S, D]``.
+            v: Projected value tensor ``[B, N_kv, S, D]``.
+            paged_kv_cache: The block-allocator cache (typed ``object``
+                to avoid a circular import on ``core.paged_attention``).
+            batch_indices: Slot ids per row ``[B]``; doubles as the
+                ``seq_id`` for ``PagedKVCache.update``.
+            layer_idx: Index of this block in the decoder; slices
+                ``paged_kv_cache.k_cache[layer_idx]``.
+            residual: Pre-norm residual tensor (``None`` when this
+                block does not own the residual).
+
+        Returns:
+            Attention output ``[B, S, H]`` after output projection.
+        """
+        if layer_idx is None:
+            raise ValueError(
+                "layer_idx is required when paged_kv_cache is set; "
+                "DecoderModel threads it through TransformerBlock."
+            )
+        if batch_indices is None:
+            raise ValueError(
+                "batch_indices is required when paged_kv_cache is set; "
+                "the engine passes slot ids per row."
+            )
+
+        batch_size, _, seq_len, _ = q.shape
+
+        # 1. Per-row write into the paged cache. ``PagedKVCache.update``
+        #    expects ``[B, T, N_kv, D]`` (it transposes internally), so
+        #    transpose our ``[B, N_kv, T, D]`` k/v to match.
+        seq_ids = batch_indices.tolist()
+        for b, seq_id in enumerate(seq_ids):
+            paged_kv_cache.update(
+                seq_id=int(seq_id),
+                k_new=k[b : b + 1].transpose(1, 2),
+                v_new=v[b : b + 1].transpose(1, 2),
+            )
+
+        # 2. Build ``block_tables`` and ``seq_lens`` per row from the
+        #    BlockManager's view of each sequence.
+        block_size = paged_kv_cache.block_size
+        max_blocks = max(
+            (len(paged_kv_cache.get_block_table(int(sid))) for sid in seq_ids),
+            default=1,
+        )
+        # Pad block-table columns to a single tensor shape.
+        block_tables = torch.full(
+            (batch_size, max_blocks), -1, dtype=torch.long, device=q.device
+        )
+        seq_lens = torch.zeros(batch_size, dtype=torch.long, device=q.device)
+        for b, seq_id in enumerate(seq_ids):
+            table = paged_kv_cache.get_block_table(int(seq_id))
+            block_tables[b, : len(table)] = torch.tensor(table, dtype=torch.long)
+            seq_lens[b] = paged_kv_cache.block_manager.get_num_tokens(int(seq_id))
+
+        # 3. Run the paged attention kernel over the per-layer slice.
+        k_layer = paged_kv_cache.k_cache[layer_idx]
+        v_layer = paged_kv_cache.v_cache[layer_idx]
+        attn_output = paged_attention_forward(
+            q=q,
+            k_cache=k_layer,
+            v_cache=v_layer,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=self.num_kv_heads,
+            block_size=block_size,
+        )  # [B, N_q, S, D]
+
+        # 4. Reshape and project — same post-processing as the linear path.
+        attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_len, self.hidden_size)
+        projected_output = self.dropout(self.out_proj(attn_output))
+
+        if self.include_norm_residual and self.norm is not None and residual is not None:
+            output = residual + projected_output
+            if not self.norm_first:
+                output = self.norm(output)
+        else:
+            output = projected_output
         return output

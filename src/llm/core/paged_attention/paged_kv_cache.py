@@ -86,33 +86,47 @@ class PagedKVCache:
     def update(self, seq_id: int, k_new: Tensor, v_new: Tensor) -> list[int]:
         """Append new tokens to sequence.
 
+        For a brand-new sequence this allocates fresh blocks; for an
+        existing sequence it extends the block table only if the new
+        tokens cross a block boundary.
+
         Args:
             seq_id: Sequence identifier.
             k_new: [batch, tokens, num_kv_heads, head_dim]
             v_new: [batch, tokens, num_kv_heads, head_dim]
 
         Returns:
-            List of physical block IDs allocated for this sequence.
+            List of physical block IDs allocated for this sequence
+            (initial allocation) or the current full block table
+            (extension).
         """
-        num_tokens = k_new.shape[1]
-
-        if not self.block_manager.can_allocate_sequence(num_tokens):
-            raise RuntimeError("No free blocks available for new sequence")
-
-        block_ids = self.block_manager.allocate_sequence(seq_id, num_tokens)
-
+        num_new_tokens = k_new.shape[1]
         k_transposed = k_new.transpose(1, 2)
         v_transposed = v_new.transpose(1, 2)
 
-        for i, block_id in enumerate(block_ids):
-            start_token = i * self.block_size
-            end_token = min(start_token + self.block_size, num_tokens)
-            num_tokens_in_block = end_token - start_token
+        if seq_id in self.block_manager.sequences:
+            # Extend an existing sequence.
+            existing_num_tokens = self.block_manager.get_num_tokens(seq_id)
+            block_table = self.block_manager.extend_sequence(seq_id, num_new_tokens)
+            start_token_offset = existing_num_tokens
+        else:
+            if not self.block_manager.can_allocate_sequence(num_new_tokens):
+                raise RuntimeError("No free blocks available for new sequence")
+            block_table = self.block_manager.allocate_sequence(seq_id, num_new_tokens)
+            start_token_offset = 0
 
-            self.k_cache[:, block_id, :, :num_tokens_in_block, :] = k_transposed[:, :, start_token:end_token, :]
-            self.v_cache[:, block_id, :, :num_tokens_in_block, :] = v_transposed[:, :, start_token:end_token, :]
+        # Write the new tokens into the (possibly extended) block table.
+        # Each new token goes into the block whose relative index matches
+        # ``(start_token_offset + i) // block_size``.
+        for i in range(num_new_tokens):
+            global_pos = start_token_offset + i
+            block_idx = global_pos // self.block_size
+            in_block_offset = global_pos % self.block_size
+            block_id = block_table[block_idx]
+            self.k_cache[:, block_id, :, in_block_offset, :] = k_transposed[:, :, i, :]
+            self.v_cache[:, block_id, :, in_block_offset, :] = v_transposed[:, :, i, :]
 
-        return block_ids
+        return block_table
 
     def get_block_table(self, seq_id: int) -> list[int]:
         """Get block IDs for a sequence."""

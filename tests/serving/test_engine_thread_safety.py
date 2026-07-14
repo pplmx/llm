@@ -72,6 +72,7 @@ class _FakeModel(nn.Module):
         use_cache: bool = False,
         batch_indices: torch.Tensor | None = None,
         attn_mask: torch.Tensor | None = None,
+        paged_kv_cache: Any = None,
     ) -> tuple[torch.Tensor, Any]:
         # Deterministic logits: argmax over input ids mod vocab_size.
         bs, seq_len = input_ids.shape
