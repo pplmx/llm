@@ -134,11 +134,19 @@ local = "llm.data.sources:_build_local_source"
 hf = "llm.data.sources:_build_hf_source"
 
 # ``llm.export_backends`` — third-party export targets (e.g.
-# ``torch.compile``, ``vLLM``, ``TensorRT-LLM``). The built-in ``onnx``
-# target is registered in code (see ``llm/export/registry.py``) so a
-# vanilla install works without plugin packages; this group is
-# intentionally empty by default.
+# ``torch.compile``, ``vLLM``, ``TensorRT-LLM``) plus the built-in
+# ``torchscript`` target (Tier 3 #11). The ``onnx`` target stays
+# registered in code (see ``llm/export/registry.py``) because it is
+# the reference implementation and we want it to resolve even when
+# no entry-point machinery runs (e.g. minimal test environments).
+#
+# Entry points here point at the factory itself
+# (``build_<target>_exporter``), which is the contract expected by
+# ``llm.runtime.plugins.load_entry_point_registry`` — the loader
+# resolves each entry point with ``ep.load()`` and registers the
+# returned callable directly into ``EXPORT_REGISTRY``.
 [project.entry-points."llm.export_backends"]
+torchscript = "llm.export.torchscript:build_torchscript_exporter"
 
 [project.scripts]
 llm-train = "llm.training.train:app"

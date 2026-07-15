@@ -3,6 +3,9 @@
 Public surface:
     - ``export_to_onnx`` / ``verify_onnx`` / ``get_onnx_info`` — the
       ONNX reference implementation (preserved as a stable API).
+    - ``export_to_torchscript`` — the TorchScript export target
+      (Tier 3 #11). Registered via the ``llm.export_backends``
+      setuptools entry point.
     - :data:`EXPORT_REGISTRY` and :func:`export_model` — the
       registry-driven dispatch for any export target (built-in
       ``onnx`` plus third-party plugins via the
@@ -17,14 +20,17 @@ from llm.export.registry import (
     ensure_exporters_registered,
     export_model,
 )
+from llm.export.torchscript import build_torchscript_exporter, export_to_torchscript
 
 __all__ = [
     "EXPORT_REGISTRY",
     "ExportBackendFactory",
     "build_onnx_exporter",
+    "build_torchscript_exporter",
     "ensure_exporters_registered",
     "export_model",
     "export_to_onnx",
+    "export_to_torchscript",
     "get_onnx_info",
     "verify_onnx",
 ]

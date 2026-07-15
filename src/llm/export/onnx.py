@@ -6,21 +6,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-
-class _ExportWrapper(nn.Module):
-    """Wrapper that fixes use_cache=False to avoid TracerWarning."""
-
-    def __init__(self, model: nn.Module):
-        super().__init__()
-        self.model = model
-
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-        # Call with use_cache=False to avoid tracing boolean conditionals
-        output = self.model(input_ids, use_cache=False)
-        # Handle tuple return (logits, kv_cache) or just logits
-        if isinstance(output, tuple):
-            return output[0]
-        return output
+from llm.export._wrapper import ExportCacheWrapper
 
 
 def export_to_onnx(
@@ -56,7 +42,7 @@ def export_to_onnx(
     device = next(model.parameters()).device
 
     # Wrap model to fix use_cache=False (avoids TracerWarning)
-    wrapped_model = _ExportWrapper(model)
+    wrapped_model = ExportCacheWrapper(model)
     wrapped_model.eval()
 
     # Create dummy input
