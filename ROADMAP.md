@@ -70,7 +70,7 @@
 
 ### 4. 高效微调 (P2)
 - [x] QLoRA (NF4 量化 + LoRA)
-- [ ] AdaLoRA
+- [x] AdaLoRA (SVD-形式参数化 + 正交正则化基础切片, T3 #40; 自适应剪枝切片是 follow-up)
 - [ ] Prefix Tuning / P-Tuning
 
 ### 5. 高级分布式训练 (P1–P3)
@@ -466,7 +466,7 @@
 
 - [x] 实现 LoRA (Low-Rank Adaptation)
 - [x] 实现 QLoRA (Quantized LoRA)
-- [ ] 实现 AdaLoRA (Adaptive LoRA)
+- [x] 实现 AdaLoRA (Adaptive LoRA) — 基础切片, SVD 形式 + QR 正交化 + 正交正则化 + mask hook (T3 #40); 重要性打分与剪枝切片为 follow-up (T3 #41)
 - [ ] 探索 Prefix Tuning / P-Tuning
 
 #### 15.4 新型 MoE 架构
