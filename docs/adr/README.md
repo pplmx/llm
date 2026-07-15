@@ -38,6 +38,8 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-002: Use SwiGLU Activation Function](002-use-swiglu.md)
 - [ADR-003: Use Pre-Allocated KV Cache](003-use-kv-cache.md)
 - [ADR-004: Use QLoRA for Memory-Efficient Fine-Tuning](004-use-qlora.md)
+- [ADR-004: Paged Attention Serving Integration](004-paged-attention-serving.md)
+- [ADR-005: Export Registry Parity with BACKEND_REGISTRY](005-export-registry.md)
 
 ## Creating a New ADR
 

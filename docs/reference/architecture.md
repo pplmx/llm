@@ -53,8 +53,11 @@ src/llm/
 │   ├── model_factory.py   # ModelFactory / MODEL_REGISTRY
 │   ├── tokenizer_factory.py
 │   └── checkpoint.py      # CheckpointContributor protocol
-├── export/                # ONNX export utilities
-│   └── onnx.py
+├── export/                # Export backends + ONNX/TorchScript built-ins
+│   ├── registry.py        # EXPORT_REGISTRY + export_model dispatch
+│   ├── onnx.py            # ONNX reference implementation (stable API)
+│   ├── torchscript.py     # TorchScript target (entry-point registered)
+│   └── _wrapper.py        # Shared ExportCacheWrapper for trace backends
 ├── evaluation/            # Offline evaluation
 │   ├── runner.py          # EvaluationRunner (unified entry)
 │   └── eval_tasks/        # Per-task evaluators (lm)
@@ -117,7 +120,7 @@ To support rapid experimentation with different architectural variants (e.g., Fl
 
 Located in `src/llm/core/registry.py`:
 
-* **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention placeholder; supports KV cache — see [Tier 3 #31](audits/2026-07-12-tickets/31-mla-kv-cache.md))
+* **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention placeholder; supports KV cache — see [Tier 3 #31](../audits/2026-07-12-tickets/31-mla-kv-cache.md))
 * **`MLP_REGISTRY`**: `mlp` (Standard), `moe` (Mixture of Experts)
 * **`NORM_REGISTRY`**: `layer_norm`, `rms_norm` (via `norm_impl` in config)
 
@@ -178,6 +181,7 @@ Third-party and built-in extensions register through a shared **`Registry[T]`** 
 | `llm.models` | `MODEL_REGISTRY` | `decoder`, `regression_mlp` builders |
 | `llm.generation_backends` | `BACKEND_REGISTRY` | `eager`, `batched` |
 | `llm.data_sources` | `SOURCE_REGISTRY` | `local`, `hf` streaming |
+| `llm.export_backends` | `EXPORT_REGISTRY` | `onnx` (built-in), `torchscript` |
 | `llm.tasks` | hooks via `load_entry_point_hooks` | third-party `TASK_REGISTRY.register(...)` |
 
 Built-in model builders register via **setuptools entry points** only (`bootstrap.ensure_builtins_registered()` → `load_entry_point_registry("llm.models", ...)`). Attention/MLP/NORM register on module import. `train.py` additionally invokes `llm.tasks` hooks so external packages can add CLI tasks without editing core code.
