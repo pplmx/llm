@@ -78,11 +78,15 @@ async def chat_completions(
         message_template=config_.chat_message_template,
         generation_prefix=config_.chat_generation_prefix,
     )
-    repetition_penalty = 1.0 + request.presence_penalty
+    # ``presence_penalty`` flows through its own kwarg to the service —
+    # the OpenAI chat endpoint does not expose ``repetition_penalty``,
+    # so the legacy ``1.0 + presence_penalty`` alias was removed in
+    # Tier 3 #37 (presence and frequency now use flat-per-token math).
+    repetition_penalty = 1.0
 
     if request.stream:
         return StreamingResponse(
-            _chat_stream_generator(request, prompt, repetition_penalty, request.frequency_penalty),
+            _chat_stream_generator(request, prompt, repetition_penalty, request.frequency_penalty, request.presence_penalty),
             media_type="text/event-stream",
         )
 
@@ -99,6 +103,7 @@ async def chat_completions(
                         top_p=request.top_p,
                         repetition_penalty=repetition_penalty,
                         frequency_penalty=request.frequency_penalty,
+                        presence_penalty=request.presence_penalty,
                     )
         except TimeoutError as exc:
             t.set_status(504)
@@ -146,6 +151,7 @@ async def _chat_stream_generator(
     prompt: str,
     repetition_penalty: float,
     frequency_penalty: float,
+    presence_penalty: float,
 ) -> AsyncGenerator[str]:
     """Generate SSE stream for chat completions."""
     from starlette.concurrency import iterate_in_threadpool
@@ -174,6 +180,7 @@ async def _chat_stream_generator(
                     top_p=request.top_p,
                     repetition_penalty=repetition_penalty,
                     frequency_penalty=frequency_penalty,
+                    presence_penalty=presence_penalty,
                 )
 
                 prompt_sent = False
