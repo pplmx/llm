@@ -24,6 +24,7 @@ src/llm/
 │   ├── embedding.py        # Token + positional embeddings (RoPE, ALiBi)
 │   ├── lora.py            # LoRA adapters
 │   ├── qlora.py           # QLoRA with NF4 quantization
+│   ├── adalora.py         # AdaLoRA (SVD-form, mask-buffer for future pruning; T3 #40)
 │   ├── kv_cache.py        # Pre-allocated KV cache
 │   ├── mlp.py             # Standard MLP with SwiGLU
 │   ├── moe.py             # Mixture of Experts
