@@ -92,8 +92,8 @@ document (e.g. Finding AO = Flash Attention).
 Remaining Tier 3 items (self-hosted GPU runner, MLA + KV cache) are
 tracked in [ROADMAP.md](../../ROADMAP.md) §阶段十/十四.
 
-## Status snapshot (2026-07-13)
+## Status snapshot (2026-07-14)
 
 - **Tier 1**: 14/14 implemented in commits `23b3018`–`817dd86` (main).
 - **Tier 2**: 14/14 already in main (`#3, #4, #5, #11, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23`).
-- **Tier 3**: 7/9 foundation slices shipped — `#24` (Flash Attention 2 registry entry), `#25` (HF Hub publish), `#26` (Speculative decoding), `#27` (lm-eval-harness pipeline), `#28` (data presets for C4 / Pile / RedPajama), `#29` (FSDP end-to-end wiring + docs), `#30` (Paged Attention full forward path through DecoderModel + ContinuousBatchingEngine).
+- **Tier 3**: 8/9 foundation slices shipped — `#24` (Flash Attention 2 registry entry), `#25` (HF Hub publish), `#26` (Speculative decoding), `#27` (lm-eval-harness pipeline), `#28` (data presets for C4 / Pile / RedPajama), `#29` (FSDP end-to-end wiring + docs), `#30` (Paged Attention full forward path through DecoderModel + ContinuousBatchingEngine), `#31` (MLA + KV cache: linear + paged, with `set_attention_kv_cache_capability("mla", supports=True)`; placeholder-architecture caveat documented).

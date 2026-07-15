@@ -43,8 +43,8 @@
 
 | 约束 | 说明 |
 | --- | --- |
-| `attn_impl=mla` | 不支持 KV cache |
-| Paged Attention | partial：[ADR-004](docs/adr/004-paged-attention-serving.md) — prefix cache ✅，model forward 仍用 `list[KVCache]` |
+| `attn_impl=mla` | 支持 KV cache (linear + paged)。当前是 placeholder 实现 (learnable latent queries + uniform-mean 输出)；DeepSeek-V2-style latent-compressed K, V 是单独的 follow-up，见 [Tier 3 #31 ticket](docs/audits/2026-07-12-tickets/31-mla-kv-cache.md) |
+| Paged Attention | 已全链路支持：[ADR-004](docs/adr/004-paged-attention-serving.md) — prefix cache ✅，model forward 走 `PagedKVCache` |
 | 多模态 / 3D 并行 | 无 registry；需先设计 `MultimodalDataModule` 等，勿硬改 `DecoderModel` |
 | compat shim | Wave 3 已删；新代码走 `runtime/` / factory，不恢复旧路径 |
 

@@ -21,7 +21,8 @@
 🚀 **当前重点 (P0)**: 预训练 productization — 大数据集 preset、dedup 工具、主训练路径文档
 
 > **架构边界** (详见 [docs/reference/architecture.md](docs/reference/architecture.md)):
-> - `attn_impl=mla` 暂不支持 KV cache
+> - `attn_impl=mla` 支持 KV cache (linear + paged), 见 [Tier 3 #31 ticket](docs/audits/2026-07-12-tickets/31-mla-kv-cache.md)
+> - 当前 MLA 是 placeholder 实现 (learnable latent queries + uniform-mean 输出); DeepSeek-V2-style latent-compressed K, V 是单独的 follow-up
 > - Paged Attention serving 全链路已实现 ([ADR-004](docs/adr/004-paged-attention-serving.md))
 > - 多模态 / 3D 并行尚无 registry 抽象, 需先补设计再开发
 

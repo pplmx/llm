@@ -47,8 +47,12 @@ Accepted
   throughput, swap in a fused CUDA / Triton paged-attention kernel
   (e.g. `flash_attn_varlen_func` with block tables). Wiring is
   independent of that future optimisation.
-- `attn_impl='mla'` does not support any KV cache (latent attention
-  architecture). Tracked under Tier 3 #5.
+- `attn_impl='mla'` supports the paged KV cache as of Tier 3 #31.
+  The placeholder MLA caches K, V from `input_kv_proj` and runs the
+  latent attention over the gathered cached context — the architectural
+  benefit of per-position caching is limited (output is uniform-mean
+  over latents) but the cache saves the `input_kv_proj` cost on
+  incremental decode.
 - `SlotPrefixCache` operates on dense slot buffers; the paged-side
   prefix-cache replay path (`PagedKVCache.add_prefix` +
   `try_get_prefix_blocks`) is not yet wired into the engine's

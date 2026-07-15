@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Data: `TokenizedMapDataModule.setup_tokenized_file_dataset()`, `SamplerMapDataModule`, `TokenizerFactory` helpers
     - Tasks: `regression_mlp` via `llm.models` entry point; `RegressionTask` uses `ModelFactory`
     - Bootstrap: model registration via setuptools entry points only (`decoder`, `regression_mlp`)
-    - MLA: registered as `@register_attention("mla")`; raises on `use_cache=True` (documented exception)
+    - MLA: registered as `@register_attention("mla")`; supports linear `KVCache` and paged `PagedKVCache` (Tier 3 #31). The current implementation is the placeholder variant (learnable latent queries + uniform-mean output); DeepSeek-V2-style latent-compressed K, V is a separate follow-up.
 
 ### Refactored
 

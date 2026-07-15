@@ -11,11 +11,13 @@ from .sdpa import sdpa
 
 @register_attention("mla")
 class MultiLatentAttention(nn.Module):
-    # MLA does not yet integrate with the KV-cache pool; the attention forward
-    # path writes keys/values into a different structure (latent vectors). The
-    # continuous batching engine would crash mid-stream if this combination was
-    # silently enabled. ``ModelConfig.check_consistency`` enforces this.
-    set_attention_kv_cache_capability("mla", supports=False)
+    # MLA caches the K, V from ``input_kv_proj`` into the standard
+    # ``KVCache`` / ``PagedKVCache`` pool — same cache contract as MHA.
+    # The architectural caveat is that this is the *placeholder* MLA
+    # (learnable latent queries, uniform-mean output broadcast over the
+    # sequence). Real DeepSeek-V2-style MLA with latent-compressed K, V
+    # and decoupled RoPE is a separate, larger slice.
+    set_attention_kv_cache_capability("mla", supports=True)
     """
     Multi-Latent Attention mechanism implementation.
 
@@ -34,6 +36,16 @@ class MultiLatentAttention(nn.Module):
         is_causal: Whether to use causal attention. Defaults to False.
         device: Device for the model.
         dtype: Data type for the model parameters.
+
+    Note:
+        This is the **placeholder** MLA — the latent queries attend to
+        the full ``input_kv_proj(x)`` (no latent-dim compression, no
+        decoupled RoPE). The output is a uniform average over the
+        ``num_latents`` latent outputs broadcast to every sequence
+        position, so the architectural benefit of per-position KV cache
+        is limited; the cache only saves the ``input_kv_proj`` cost on
+        incremental decode. DeepSeek-V2-style MLA (latent-compressed
+        K, V, decoupled RoPE) is a separate slice.
     """
 
     def __init__(
@@ -130,7 +142,16 @@ class MultiLatentAttention(nn.Module):
             k: Key tensor with shape [batch_size, num_heads, seq_len, head_dim]
             v: Value tensor with shape [batch_size, num_heads, seq_len, head_dim]
             batch_size: Batch size
-            attn_mask: Optional attention mask
+            attn_mask: Optional attention mask.
+
+                Incoming shape is the standard MHA convention
+                ``[B, 1, S_q, S_k]`` where ``S_q`` is the new-token count
+                and ``S_k`` is the cached context length. The latent
+                attention's query axis is ``num_latents`` (latents are
+                static parameters, not derived from the input), so we
+                collapse ``S_q`` to the LAST position's mask (the
+                canonical causal mask for the current generation step)
+                and broadcast over ``num_latents``.
 
         Returns:
             Processed latent output with shape [batch_size, num_latents, hidden_size]
@@ -141,8 +162,13 @@ class MultiLatentAttention(nn.Module):
         latent_q = latent_q.view(batch_size, self.num_latents, self.num_heads, self.head_dim)
         latent_q = latent_q.permute(0, 2, 1, 3)  # [batch_size, num_heads, num_latents, head_dim]
 
-        # Process attention mask for latent queries if provided
+        # Reshape the MHA-style mask ``[B, 1, S_q, S_k]`` into the latent
+        # attention's mask ``[B, 1, num_latents, S_k]``. The latent queries
+        # share the same key-visibility mask — take the last position's mask
+        # (the "current token" view) and broadcast.
         if attn_mask is not None:
+            if attn_mask.shape[2] != self.num_latents:
+                attn_mask = attn_mask[:, :, -1:, :]
             attn_mask = attn_mask.expand(-1, -1, self.num_latents, -1)
 
         # Compute attention with conditional dropout during training
@@ -174,8 +200,9 @@ class MultiLatentAttention(nn.Module):
         use_cache: bool = False,
         batch_indices: Tensor | None = None,
         start_pos: int | Tensor | None = None,
-        **_: object,
-    ) -> Tensor:
+        paged_kv_cache: object | None = None,
+        layer_idx: int | None = None,
+    ) -> Tensor | tuple[Tensor, None]:
         """
         Optimized forward pass for the multi-latent attention mechanism.
 
@@ -183,12 +210,22 @@ class MultiLatentAttention(nn.Module):
             hidden_states: Input tensor with shape [batch_size, seq_len, hidden_size].
             attn_mask: Optional mask tensor with shape [batch_size, 1, 1, seq_len].
                        1 indicates positions to attend to, 0 indicates positions to mask.
+            kv_cache: Linear ``KVCache`` pool. Mutually exclusive with
+                ``paged_kv_cache``.
+            paged_kv_cache: Block-allocator ``PagedKVCache``. Mutually
+                exclusive with ``kv_cache``.
+            layer_idx: Required when ``paged_kv_cache`` is set; selects
+                the per-layer K, V slice from the paged cache.
 
         Returns:
-            Output tensor with shape [batch_size, seq_len, hidden_size].
+            Output tensor of shape ``[batch_size, seq_len, hidden_size]``.
+            When ``use_cache=True``, returns ``(output, None)`` — the cache
+            was updated in-place so there is nothing to return alongside
+            the output (unlike MHA, which exposes the cached K, V).
         """
-        if use_cache or kv_cache is not None:
-            raise ValueError("MultiLatentAttention does not support KV cache.")
+        if kv_cache is not None and paged_kv_cache is not None:
+            raise ValueError("Pass either kv_cache or paged_kv_cache, not both.")
+
         use_causal = self.is_causal if is_causal is None else is_causal
         # Store residual connection
         residual = hidden_states
@@ -205,6 +242,27 @@ class MultiLatentAttention(nn.Module):
         kv_proj = kv_proj.view(batch_size, seq_len, 2, self.num_heads, self.head_dim)
         kv_proj = kv_proj.permute(2, 0, 3, 1, 4)
         k, v = kv_proj[0], kv_proj[1]  # [batch_size, num_heads, seq_len, head_dim]
+
+        # KV cache routing — same parallel-parameter pattern as MHA. The
+        # latent attention then runs over the (possibly cached) K, V.
+        if paged_kv_cache is not None:
+            # ``target_seq_len`` aligns the per-row paged gather with the
+            # mask's key-axis (the engine builds its mask against the
+            # model's ``max_seq_len``). Without this hint the gather pads
+            # only to the per-batch max, which can be smaller than the
+            # mask's k-axis when the engine's running sequences are
+            # short.
+            target_seq_len = attn_mask.shape[-1] if attn_mask is not None else None
+            k, v = self._paged_kv_write(
+                k=k, v=v, paged_kv_cache=paged_kv_cache,
+                batch_indices=batch_indices, layer_idx=layer_idx,
+                target_seq_len=target_seq_len,
+            )
+        elif kv_cache is not None:
+            k, v = self._linear_kv_write(
+                k=k, v=v, kv_cache=kv_cache,
+                batch_indices=batch_indices, start_pos=start_pos,
+            )
 
         # Process latent attention
         latent_output = self._latent_attention(k, v, batch_size, attn_mask, is_causal=use_causal)
@@ -229,4 +287,119 @@ class MultiLatentAttention(nn.Module):
         if not self.norm_first:
             output = self.norm(output)
 
+        # Match the MHA contract:
+        # - paged path returns the output tensor directly (the cache is
+        #   mutated in place; the caller does not need a kv tuple);
+        # - dense + use_cache returns ``(output, kv)``. For MLA the
+        #   cached K, V are consumed internally by the latent attention,
+        #   so we return ``None`` as the second element;
+        # - no cache returns the output tensor.
+        if paged_kv_cache is not None:
+            return output
+        if use_cache:
+            return output, None
         return output
+
+    def _linear_kv_write(
+        self,
+        k: Tensor,
+        v: Tensor,
+        kv_cache: object,
+        batch_indices: Tensor | None,
+        start_pos: int | Tensor | None,
+    ) -> tuple[Tensor, Tensor]:
+        """Write the new K, V into the linear ``KVCache`` pool and return the cached view.
+
+        For per-slot writes (``batch_indices`` is set) the cache contract
+        is ``update_at_indices``; for a dense batch it's ``update``.
+        """
+        if batch_indices is not None:
+            if start_pos is None:
+                raise ValueError(
+                    "start_pos must be provided when using batch_indices for KV cache update."
+                )
+            return kv_cache.update_at_indices(batch_indices, k, v, start_pos)
+        return kv_cache.update(k, v)
+
+    def _paged_kv_write(
+        self,
+        k: Tensor,
+        v: Tensor,
+        paged_kv_cache: object,
+        batch_indices: Tensor | None,
+        layer_idx: int | None,
+        target_seq_len: int | None = None,
+    ) -> tuple[Tensor, Tensor]:
+        """Write the new K, V into the paged cache and return the cached K, V slice.
+
+        Per row: call ``paged_kv_cache.update(seq_id, k_b.T, v_b.T)``
+        to append the new tokens. Then gather the per-row K, V via
+        :meth:`PagedKVCache.get` so the latent attention runs over the
+        full cached context (this is the cost the cache saves vs.
+        recomputing ``input_kv_proj`` on every past token).
+
+        Args:
+            target_seq_len: Optional padding target for the returned K, V
+                sequence axis. The latent attention's mask expects
+                ``[B, 1, num_latents, target_seq_len]``; when set we pad
+                the per-row K, V to this length with zeros (masked
+                positions are out of range for the active sequence).
+                When ``None``, we pad to the per-batch max seq length.
+
+        Note:
+            ``paged_attention_forward`` is *not* used here. That kernel
+            returns the attended output — for MLA we need the raw K, V
+            to feed the latent cross-attention block.
+        """
+        if layer_idx is None:
+            raise ValueError(
+                "layer_idx is required when paged_kv_cache is set; "
+                "DecoderModel threads it through TransformerBlock."
+            )
+        if batch_indices is None:
+            raise ValueError(
+                "batch_indices is required when paged_kv_cache is set."
+            )
+
+        # Per-row write into the paged cache. ``PagedKVCache.update``
+        # expects ``[B, T, N_kv, D]`` (it transposes internally), so
+        # transpose our ``[B, N_kv, T, D]`` k/v to match.
+        seq_ids = batch_indices.tolist()
+        for b, seq_id in enumerate(seq_ids):
+            paged_kv_cache.update(
+                seq_id=int(seq_id),
+                k_new=k[b : b + 1].transpose(1, 2),
+                v_new=v[b : b + 1].transpose(1, 2),
+            )
+
+        # Gather the per-row K, V via the public ``PagedKVCache.get`` API.
+        # The latent attention expects ``[B, N_heads, T_total, head_dim]``
+        # per row, padded with zeros for shorter sequences.
+        batch_size, num_heads, _, head_dim = k.shape
+        per_row_seq_lens = [
+            paged_kv_cache.block_manager.get_num_tokens(int(sid))
+            for sid in seq_ids
+        ]
+        if target_seq_len is None:
+            target_seq_len = max(per_row_seq_lens) if per_row_seq_lens else 1
+            target_seq_len = max(target_seq_len, 1)
+
+        k_gathered = torch.zeros(
+            batch_size, num_heads, target_seq_len, head_dim,
+            device=k.device, dtype=k.dtype,
+        )
+        v_gathered = torch.zeros_like(k_gathered)
+        for b, seq_id in enumerate(seq_ids):
+            seq_len = per_row_seq_lens[b]
+            if seq_len == 0:
+                continue
+            # ``PagedKVCache.get`` returns ``[N_kv, num_tokens, D]``;
+            # the MLA contract is ``[B, N_heads, T_total, D]`` — the
+            # per-row head count equals ``self.num_heads`` (no GQA in
+            # the placeholder MLA).
+            k_row, v_row = paged_kv_cache.get(int(seq_id), 0, seq_len)
+            k_gathered[b, :, :seq_len] = k_row
+            v_gathered[b, :, :seq_len] = v_row
+
+        return k_gathered, v_gathered
+

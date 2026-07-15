@@ -117,7 +117,7 @@ To support rapid experimentation with different architectural variants (e.g., Fl
 
 Located in `src/llm/core/registry.py`:
 
-* **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention; **no KV cache**)
+* **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention placeholder; supports KV cache — see [Tier 3 #31](audits/2026-07-12-tickets/31-mla-kv-cache.md))
 * **`MLP_REGISTRY`**: `mlp` (Standard), `moe` (Mixture of Experts)
 * **`NORM_REGISTRY`**: `layer_norm`, `rms_norm` (via `norm_impl` in config)
 
@@ -137,7 +137,7 @@ model:
   norm_impl: "rms_norm"
 ```
 
-> **Note**: `attn_impl: mla` raises when `use_cache=True` — MLA does not support KV cache yet.
+> **Note**: `attn_impl: mla` supports KV cache (both linear `KVCache` and paged `PagedKVCache`). The current MLA is the **placeholder** variant (learnable latent queries + uniform-mean output broadcast over the sequence); the architectural benefit of per-position caching is limited because the output is uniform. Real DeepSeek-V2-style MLA (latent-compressed K, V + decoupled RoPE) is a separate follow-up.
 
 ## Data Abstraction
 
