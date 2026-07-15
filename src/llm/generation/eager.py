@@ -3,7 +3,11 @@ from collections.abc import Generator
 import torch
 
 from llm.core.kv_cache import create_decoder_kv_caches
-from llm.generation.sampling import apply_repetition_penalty, sample_next_token
+from llm.generation.sampling import (
+    apply_frequency_penalty,
+    apply_repetition_penalty,
+    sample_next_token,
+)
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
@@ -30,6 +34,7 @@ def stream_generate(
     top_k: int | None = None,
     top_p: float | None = None,
     repetition_penalty: float = 1.0,
+    frequency_penalty: float = 0.0,
     use_cache: bool = True,
 ) -> Generator[str]:
     """
@@ -66,6 +71,8 @@ def stream_generate(
     for _ in range(max_new_tokens):
         if repetition_penalty != 1.0:
             next_token_logits = apply_repetition_penalty(next_token_logits, generated_ids, repetition_penalty)
+        if frequency_penalty != 0.0:
+            next_token_logits = apply_frequency_penalty(next_token_logits, generated_ids, frequency_penalty)
 
         token_id = sample_next_token(
             next_token_logits,
@@ -101,6 +108,7 @@ def generate(
     top_k: int | None = None,
     top_p: float | None = None,
     repetition_penalty: float = 1.0,
+    frequency_penalty: float = 0.0,
     use_cache: bool = True,
 ) -> str:
     """
@@ -115,6 +123,7 @@ def generate(
         top_k=top_k,
         top_p=top_p,
         repetition_penalty=repetition_penalty,
+        frequency_penalty=frequency_penalty,
         use_cache=use_cache,
     )
     return prompt + "".join(list(generator))
@@ -130,6 +139,7 @@ def batch_generate(
     top_k: int | None = None,
     top_p: float | None = None,
     repetition_penalty: float = 1.0,
+    frequency_penalty: float = 0.0,
 ) -> list[str]:
     """
     Batch generate text from multiple prompts.
@@ -143,6 +153,9 @@ def batch_generate(
         top_k: Top-k sampling parameter.
         top_p: Nucleus sampling parameter.
         repetition_penalty: Repetition penalty.
+        frequency_penalty: OpenAI-compatible per-frequency penalty
+            (subtracts ``frequency_penalty * count(token)`` from each
+            seen token's logit). ``0.0`` is a no-op.
 
     Returns:
         List of generated texts (prompt + generated tokens).
@@ -190,6 +203,8 @@ def batch_generate(
             row_logits = next_token_logits[i]
             if repetition_penalty != 1.0:
                 row_logits = apply_repetition_penalty(row_logits, generated_ids[i], repetition_penalty)
+            if frequency_penalty != 0.0:
+                row_logits = apply_frequency_penalty(row_logits, generated_ids[i], frequency_penalty)
             token_id = sample_next_token(
                 row_logits,
                 temperature=temperature,

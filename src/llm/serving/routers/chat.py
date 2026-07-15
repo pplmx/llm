@@ -82,7 +82,7 @@ async def chat_completions(
 
     if request.stream:
         return StreamingResponse(
-            _chat_stream_generator(request, prompt, repetition_penalty),
+            _chat_stream_generator(request, prompt, repetition_penalty, request.frequency_penalty),
             media_type="text/event-stream",
         )
 
@@ -98,6 +98,7 @@ async def chat_completions(
                         temperature=request.temperature,
                         top_p=request.top_p,
                         repetition_penalty=repetition_penalty,
+                        frequency_penalty=request.frequency_penalty,
                     )
         except TimeoutError as exc:
             t.set_status(504)
@@ -107,9 +108,7 @@ async def chat_completions(
             raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
         except ValueError as exc:
             t.set_status(400)
-            raise APIError(
-                ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}
-            ) from exc
+            raise APIError(ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}) from exc
         except APIError as exc:
             t.set_status(exc.status_code)
             raise
@@ -121,11 +120,7 @@ async def chat_completions(
             t.set_status(200)
 
     # Strip the prompt prefix if the model echoed it back.
-    completion = (
-        generated_text[len(prompt):].strip()
-        if generated_text.startswith(prompt)
-        else generated_text.strip()
-    )
+    completion = generated_text[len(prompt) :].strip() if generated_text.startswith(prompt) else generated_text.strip()
 
     metrics.observe_tokens(endpoint="chat_completions", token_count=len(completion))
 
@@ -147,7 +142,10 @@ async def chat_completions(
 
 
 async def _chat_stream_generator(
-    request: ChatCompletionRequest, prompt: str, repetition_penalty: float
+    request: ChatCompletionRequest,
+    prompt: str,
+    repetition_penalty: float,
+    frequency_penalty: float,
 ) -> AsyncGenerator[str]:
     """Generate SSE stream for chat completions."""
     from starlette.concurrency import iterate_in_threadpool
@@ -164,9 +162,7 @@ async def _chat_stream_generator(
                 id=completion_id,
                 created=created,
                 model=request.model,
-                choices=[
-                    ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(role="assistant"))
-                ],
+                choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(role="assistant"))],
             )
             yield f"data: {first_chunk.model_dump_json()}\n\n"
 
@@ -177,6 +173,7 @@ async def _chat_stream_generator(
                     temperature=request.temperature,
                     top_p=request.top_p,
                     repetition_penalty=repetition_penalty,
+                    frequency_penalty=frequency_penalty,
                 )
 
                 prompt_sent = False
@@ -190,9 +187,7 @@ async def _chat_stream_generator(
                         id=completion_id,
                         created=created,
                         model=request.model,
-                        choices=[
-                            ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=token))
-                        ],
+                        choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=token))],
                     )
                     yield f"data: {chunk.model_dump_json()}\n\n"
 
@@ -201,11 +196,7 @@ async def _chat_stream_generator(
                 id=completion_id,
                 created=created,
                 model=request.model,
-                choices=[
-                    ChatCompletionChunkChoice(
-                        delta=ChatCompletionChunkDelta(), finish_reason="stop"
-                    )
-                ],
+                choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(), finish_reason="stop")],
             )
             yield f"data: {final_chunk.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"
@@ -221,9 +212,7 @@ async def _chat_stream_generator(
                 created=created,
                 model=request.model,
                 choices=[
-                    ChatCompletionChunkChoice(
-                        delta=ChatCompletionChunkDelta(content=f"Error: {type(exc).__name__}")
-                    )
+                    ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=f"Error: {type(exc).__name__}"))
                 ],
             )
             yield f"data: {error_chunk.model_dump_json()}\n\n"

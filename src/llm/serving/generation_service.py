@@ -56,6 +56,7 @@ class ServingGenerationService:
         top_k: int | None = None,
         top_p: float | None = None,
         repetition_penalty: float = 1.0,
+        frequency_penalty: float = 0.0,
     ) -> GenerationConfig:
         return GenerationConfig(
             max_new_tokens=max_new_tokens,
@@ -63,6 +64,7 @@ class ServingGenerationService:
             top_k=top_k,
             top_p=top_p,
             repetition_penalty=repetition_penalty,
+            frequency_penalty=frequency_penalty,
             use_cache=True,
         )
 
@@ -75,6 +77,7 @@ class ServingGenerationService:
         top_k: int | None = None,
         top_p: float | None = None,
         repetition_penalty: float = 1.0,
+        frequency_penalty: float = 0.0,
     ) -> str:
         gen_config = self._generation_config(
             max_new_tokens=max_new_tokens,
@@ -82,6 +85,7 @@ class ServingGenerationService:
             top_k=top_k,
             top_p=top_p,
             repetition_penalty=repetition_penalty,
+            frequency_penalty=frequency_penalty,
         )
         return self.backend.generate(self.model, self.tokenizer, prompt, gen_config)
 
@@ -94,6 +98,7 @@ class ServingGenerationService:
         top_k: int | None = None,
         top_p: float | None = None,
         repetition_penalty: float = 1.0,
+        frequency_penalty: float = 0.0,
     ):
         gen_config = self._generation_config(
             max_new_tokens=max_new_tokens,
@@ -101,6 +106,7 @@ class ServingGenerationService:
             top_k=top_k,
             top_p=top_p,
             repetition_penalty=repetition_penalty,
+            frequency_penalty=frequency_penalty,
         )
         yield from self.backend.stream(self.model, self.tokenizer, prompt, gen_config)
 
@@ -113,6 +119,7 @@ class ServingGenerationService:
         top_k: int | None = None,
         top_p: float | None = None,
         repetition_penalty: float = 1.0,
+        frequency_penalty: float = 0.0,
     ) -> list[str]:
         gen_config = self._generation_config(
             max_new_tokens=max_new_tokens,
@@ -120,5 +127,6 @@ class ServingGenerationService:
             top_k=top_k,
             top_p=top_p,
             repetition_penalty=repetition_penalty,
+            frequency_penalty=frequency_penalty,
         )
         return self.backend.batch_generate(self.model, self.tokenizer, prompts, gen_config)

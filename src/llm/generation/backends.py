@@ -22,6 +22,7 @@ class GenerationConfig:
     top_k: int | None = None
     top_p: float | None = None
     repetition_penalty: float = 1.0
+    frequency_penalty: float = 0.0
     use_cache: bool = True
 
 
@@ -79,6 +80,7 @@ class EagerGenerationBackend(GenerationBackend):
             top_k=config.top_k,
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
+            frequency_penalty=config.frequency_penalty,
             use_cache=config.use_cache,
         )
 
@@ -100,6 +102,7 @@ class EagerGenerationBackend(GenerationBackend):
             top_k=config.top_k,
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
+            frequency_penalty=config.frequency_penalty,
         )
 
 
@@ -125,6 +128,7 @@ class BatchedGenerationBackend(GenerationBackend):
             top_k=config.top_k,
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
+            frequency_penalty=config.frequency_penalty,
         )
         yield from self.engine.stream_request(request)
 
@@ -145,6 +149,7 @@ class BatchedGenerationBackend(GenerationBackend):
                 top_k=config.top_k,
                 top_p=config.top_p,
                 repetition_penalty=config.repetition_penalty,
+                frequency_penalty=config.frequency_penalty,
             )
             for prompt in prompts
         ]
@@ -209,6 +214,7 @@ class SpeculativeDecodingBackend(GenerationBackend):
             top_k=config.top_k,
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
+            frequency_penalty=config.frequency_penalty,
         )
 
     def batch_generate(
@@ -218,6 +224,4 @@ class SpeculativeDecodingBackend(GenerationBackend):
         prompts: list[str],
         config: GenerationConfig,
     ) -> list[str]:
-        return [
-            self.generate(model, tokenizer, prompt, config) for prompt in prompts
-        ]
+        return [self.generate(model, tokenizer, prompt, config) for prompt in prompts]
