@@ -133,6 +133,13 @@ batched = "llm.generation.registry:build_batched_backend"
 local = "llm.data.sources:_build_local_source"
 hf = "llm.data.sources:_build_hf_source"
 
+# ``llm.export_backends`` — third-party export targets (e.g.
+# ``torch.compile``, ``vLLM``, ``TensorRT-LLM``). The built-in ``onnx``
+# target is registered in code (see ``llm/export/registry.py``) so a
+# vanilla install works without plugin packages; this group is
+# intentionally empty by default.
+[project.entry-points."llm.export_backends"]
+
 [project.scripts]
 llm-train = "llm.training.train:app"
 llm-serve = "llm.serving.api:main"
