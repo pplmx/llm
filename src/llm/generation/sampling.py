@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
+from typing import Any
 
 import torch
 
@@ -119,6 +121,69 @@ def apply_presence_penalty(
         ids,
         -presence_penalty * torch.ones(len(seen), device=device, dtype=adjusted.dtype),
     )
+    return adjusted
+
+
+def apply_logit_bias(
+    logits: torch.Tensor,
+    logit_bias: Mapping[Any, float] | None,
+) -> torch.Tensor:
+    """Add a per-token additive bias to 1D logits before sampling.
+
+    Implements the OpenAI-compatible ``logit_bias`` semantics
+    (see https://platform.openai.com/docs/api-reference/chat/create):
+    the bias is added to the affected token's logit prior to
+    sampling. Negative values discourage the token (down to ``-100``
+    for a hard ban in OpenAI's spec); positive values encourage it
+    (up to ``+100`` for near-exclusive selection).
+
+    The bias is applied **after** the penalty helpers
+    (:func:`apply_repetition_penalty`,
+    :func:`apply_frequency_penalty`,
+    :func:`apply_presence_penalty`). Rationale: a penalty subtracts
+    to discourage repetition, and the bias is a user-intent override
+    — applying it last lets the bias dominate any natural penalty
+    the model would otherwise impose. This matches OpenAI's
+    reference ordering (logit-bias is the final logit-stage
+    modification before sampling).
+
+    Args:
+        logits: 1D ``[vocab_size]`` tensor. Not mutated.
+        logit_bias: Mapping ``{token_id: bias}`` to add. Keys may
+            be ``int`` (internal use) or ``str`` (JSON boundary —
+            OpenAI's spec uses string keys because JSON object keys
+            are always strings). String keys are coerced via
+            ``int()`` and invalid entries are silently dropped.
+            ``None`` or empty disables the adjustment.
+
+    Returns:
+        A new 1D tensor with the per-token bias added.
+    """
+    if not logit_bias:
+        return logits
+
+    vocab_size = logits.size(-1)
+    # Drop ids that fall outside the vocab — they're not
+    # representable in these logits, so biasing them is meaningless
+    # and would raise an index error on the scatter below. Coerce
+    # str→int for the JSON-boundary case (OpenAI's spec uses string
+    # keys because JSON object keys are always strings).
+    valid: dict[int, float] = {}
+    for tid, bias in logit_bias.items():
+        try:
+            tid_int = int(tid)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= tid_int < vocab_size:
+            valid[tid_int] = float(bias)
+    if not valid:
+        return logits
+
+    adjusted = logits.clone()
+    device = adjusted.device
+    ids = torch.tensor(list(valid), device=device, dtype=torch.long)
+    biases = torch.tensor(list(valid.values()), device=device, dtype=adjusted.dtype)
+    adjusted.index_add_(0, ids, biases)
     return adjusted
 
 

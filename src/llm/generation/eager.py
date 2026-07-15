@@ -5,6 +5,7 @@ import torch
 from llm.core.kv_cache import create_decoder_kv_caches
 from llm.generation.sampling import (
     apply_frequency_penalty,
+    apply_logit_bias,
     apply_presence_penalty,
     apply_repetition_penalty,
     sample_next_token,
@@ -37,6 +38,7 @@ def stream_generate(
     repetition_penalty: float = 1.0,
     frequency_penalty: float = 0.0,
     presence_penalty: float = 0.0,
+    logit_bias: dict[int, float] | None = None,
     use_cache: bool = True,
 ) -> Generator[str]:
     """
@@ -77,6 +79,8 @@ def stream_generate(
             next_token_logits = apply_frequency_penalty(next_token_logits, generated_ids, frequency_penalty)
         if presence_penalty != 0.0:
             next_token_logits = apply_presence_penalty(next_token_logits, generated_ids, presence_penalty)
+        if logit_bias:
+            next_token_logits = apply_logit_bias(next_token_logits, logit_bias)
 
         token_id = sample_next_token(
             next_token_logits,
@@ -114,6 +118,7 @@ def generate(
     repetition_penalty: float = 1.0,
     frequency_penalty: float = 0.0,
     presence_penalty: float = 0.0,
+    logit_bias: dict[int, float] | None = None,
     use_cache: bool = True,
 ) -> str:
     """
@@ -130,6 +135,7 @@ def generate(
         repetition_penalty=repetition_penalty,
         frequency_penalty=frequency_penalty,
         presence_penalty=presence_penalty,
+        logit_bias=logit_bias,
         use_cache=use_cache,
     )
     return prompt + "".join(list(generator))
@@ -147,6 +153,7 @@ def batch_generate(
     repetition_penalty: float = 1.0,
     frequency_penalty: float = 0.0,
     presence_penalty: float = 0.0,
+    logit_bias: dict[int, float] | None = None,
 ) -> list[str]:
     """
     Batch generate text from multiple prompts.
@@ -166,6 +173,9 @@ def batch_generate(
         presence_penalty: OpenAI-compatible per-presence penalty
             (subtracts a flat ``presence_penalty`` from each seen
             token's logit regardless of count). ``0.0`` is a no-op.
+        logit_bias: OpenAI-compatible additive per-token biases
+            (``{token_id: bias}`` added to the affected logits
+            before sampling). ``None`` is a no-op.
 
     Returns:
         List of generated texts (prompt + generated tokens).
@@ -217,6 +227,8 @@ def batch_generate(
                 row_logits = apply_frequency_penalty(row_logits, generated_ids[i], frequency_penalty)
             if presence_penalty != 0.0:
                 row_logits = apply_presence_penalty(row_logits, generated_ids[i], presence_penalty)
+            if logit_bias:
+                row_logits = apply_logit_bias(row_logits, logit_bias)
             token_id = sample_next_token(
                 row_logits,
                 temperature=temperature,

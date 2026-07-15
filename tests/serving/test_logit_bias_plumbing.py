@@ -1,0 +1,106 @@
+"""Router-layer tests for logit_bias plumbing (Tier 3 #38).
+
+Verifies the chat router forwards ``request.logit_bias`` to the
+underlying ``ServingGenerationService`` as its own kwarg, instead
+of silently dropping it like the pre-#38 implementation did.
+
+The mock is installed AFTER TestClient's lifespan startup so the
+lifespan's real-service ``configure()`` doesn't overwrite it. We
+also explicitly turn off the lifespan startup since we don't need
+a real model — the routers only consult their module-level
+``generation_service`` attribute at request time.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
+from fastapi.testclient import TestClient
+
+import llm.serving.routers.chat as chat_module
+import llm.serving.routers.generate as generate_module
+from llm.serving.api import app
+from llm.serving.auth import api_key_header
+from llm.serving.config import ServingConfig
+
+
+@pytest.fixture
+def client_with_mock(monkeypatch):
+    """TestClient with the generation service replaced by a recording mock."""
+    mock = MagicMock()
+    mock.generate.return_value = "ok"
+    mock.stream.return_value = iter([])
+
+    cfg = ServingConfig(
+        api_key="test-key",
+        request_timeout=30.0,
+        chat_message_template="",
+        chat_generation_prefix="",
+    )
+
+    with TestClient(app) as c:
+        # Rebind AFTER lifespan startup so it sticks for request time.
+        monkeypatch.setattr(generate_module, "generation_service", mock)
+        monkeypatch.setattr(chat_module, "config", cfg)
+        monkeypatch.setattr(generate_module, "config", cfg)
+        c.headers[api_key_header.model.name] = "test-key"
+        yield c, mock
+
+
+def test_chat_router_forwards_logit_bias(client_with_mock):
+    """`logit_bias` from the chat request reaches the service as its own kwarg."""
+    client, mock = client_with_mock
+    payload = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 4,
+        "logit_bias": {"42": 100.0, "7": -50.0},
+    }
+    response = client.post("/v1/chat/completions", json=payload)
+    assert response.status_code == 200
+
+    mock.generate.assert_called_once()
+    kwargs = mock.generate.call_args.kwargs
+    assert kwargs["logit_bias"] == {"42": 100.0, "7": -50.0}
+
+
+def test_generate_router_forwards_logit_bias(client_with_mock):
+    """`logit_bias` from the /generate request reaches the service."""
+    client, mock = client_with_mock
+    payload = {
+        "prompt": "hi",
+        "max_new_tokens": 4,
+        "logit_bias": {"1": 5.0},
+    }
+    response = client.post("/generate", json=payload)
+    assert response.status_code == 200
+
+    mock.generate.assert_called_once()
+    kwargs = mock.generate.call_args.kwargs
+    assert kwargs["logit_bias"] == {"1": 5.0}
+
+
+def test_default_logit_bias_is_none(client_with_mock):
+    """Omitting `logit_bias` in the request defaults to None (no-op)."""
+    client, mock = client_with_mock
+    payload = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 4,
+    }
+    response = client.post("/v1/chat/completions", json=payload)
+    assert response.status_code == 200
+
+    kwargs = mock.generate.call_args.kwargs
+    assert kwargs["logit_bias"] is None
+
+
+def test_chat_schema_accepts_logit_bias():
+    """The OpenAPI schema accepts logit_bias as a {string: float} object."""
+    from llm.serving.schemas import ChatCompletionRequest
+
+    payload = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "logit_bias": {"42": 100.0, "7": -50.0},
+    }
+    req = ChatCompletionRequest.model_validate(payload)
+    assert req.logit_bias == {"42": 100.0, "7": -50.0}

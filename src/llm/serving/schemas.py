@@ -60,6 +60,10 @@ class GenerationRequest(BaseModel):
     top_p: float | None = Field(None, gt=0.0, lt=1.0, description="Nucleus sampling (top-p) parameter.")
     repetition_penalty: float = Field(1.0, ge=1.0, description="Repetition penalty. 1.0 means no penalty.")
     frequency_penalty: float = Field(0.0, ge=-2.0, le=2.0, description="OpenAI-compatible per-frequency penalty.")
+    logit_bias: dict[str, float] | None = Field(
+        None,
+        description="OpenAI-compatible per-token additive bias. JSON keys are token ids (as strings); values are added to the affected logits before sampling.",
+    )
     stream: bool = Field(False, description="Whether to use streaming output (SSE).")
 
 
@@ -80,6 +84,10 @@ class BatchGenerationRequest(BaseModel):
     top_p: float | None = Field(None, gt=0.0, lt=1.0, description="Nucleus sampling parameter.")
     repetition_penalty: float = Field(1.0, ge=1.0, description="Repetition penalty.")
     frequency_penalty: float = Field(0.0, ge=-2.0, le=2.0, description="OpenAI-compatible per-frequency penalty.")
+    logit_bias: dict[str, float] | None = Field(
+        None,
+        description="Per-token additive logit bias. Keys are token ids (as strings); values are added to the affected logits before sampling.",
+    )
 
 
 class BatchGenerationResponse(BaseModel):
@@ -115,6 +123,10 @@ class ChatCompletionRequest(BaseModel):
         description="OpenAI-compatible per-presence penalty.",
     )
     frequency_penalty: float = Field(0.0, ge=-2.0, le=2.0, description="OpenAI-compatible per-frequency penalty.")
+    logit_bias: dict[str, float] | None = Field(
+        None,
+        description="OpenAI-compatible per-token additive bias. JSON keys are token ids (as strings); values are added to the affected logits before sampling.",
+    )
 
 
 class ChatCompletionUsage(BaseModel):
