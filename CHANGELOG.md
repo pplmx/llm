@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Export registry parity** (Tier 3 #32): `EXPORT_REGISTRY` mirrors `BACKEND_REGISTRY`. Built-in `onnx` target plus the `llm.export_backends` setuptools entry-point group for third-party targets (`torch.compile`, `vLLM`, `TensorRT-LLM`, `torch.export`, `OpenVINO`, ...). `export_model("onnx", model, output_path, **kwargs)` is a drop-in for `export_to_onnx(model, output_path, **kwargs)`; the legacy ONNX API is preserved for backward compatibility.
+- **TorchScript export target** (Tier 3 #33): first non-built-in backend to exercise the `EXPORT_REGISTRY` plug-in path. Registered through `pyproject.toml`'s `llm.export_backends` entry point as `torchscript = "llm.export.torchscript:build_torchscript_exporter"`. Trace method (`torch.jit.trace`) supported; script method (`torch.jit.script`) wired but `xfail`-tracked for `DecoderModel` (the model's `PositionalEncoding` uses dynamic attribute access that the TorchScript compiler rejects).
 
 ### Changed
 
