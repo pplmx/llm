@@ -88,6 +88,8 @@ document (e.g. Finding AO = Flash Attention).
 | 28 | `28-data-presets.md` | Data preset files (C4 / Pile / RedPajama) | Tier 3 #8 |
 | 29 | `29-fsdp-e2e-docs.md` | FSDP end-to-end wiring + documentation | Tier 3 #2 |
 | 30 | `30-paged-attention-forward.md` | Paged Attention full forward path (replace `list[KVCache]`) | Tier 3 #3 |
+| 31 | `31-mla-kv-cache.md` | MLA + linear + paged KV cache wiring | Tier 3 #10 |
+| 32 | `32-export-registry.md` | Export registry (`EXPORT_REGISTRY`, parity with `BACKEND_REGISTRY`) | Finding BH |
 
 Remaining Tier 3 items (self-hosted GPU runner, MLA + KV cache) are
 tracked in [ROADMAP.md](../../ROADMAP.md) §阶段十/十四.
@@ -96,4 +98,4 @@ tracked in [ROADMAP.md](../../ROADMAP.md) §阶段十/十四.
 
 - **Tier 1**: 14/14 implemented in commits `23b3018`–`817dd86` (main).
 - **Tier 2**: 14/14 already in main (`#3, #4, #5, #11, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23`).
-- **Tier 3**: 8/9 foundation slices shipped — `#24` (Flash Attention 2 registry entry), `#25` (HF Hub publish), `#26` (Speculative decoding), `#27` (lm-eval-harness pipeline), `#28` (data presets for C4 / Pile / RedPajama), `#29` (FSDP end-to-end wiring + docs), `#30` (Paged Attention full forward path through DecoderModel + ContinuousBatchingEngine), `#31` (MLA + KV cache: linear + paged, with `set_attention_kv_cache_capability("mla", supports=True)`; placeholder-architecture caveat documented).
+- **Tier 3**: 9/9 foundation slices shipped — `#24` (Flash Attention 2 registry entry), `#25` (HF Hub publish), `#26` (Speculative decoding), `#27` (lm-eval-harness pipeline), `#28` (data presets for C4 / Pile / RedPajama), `#29` (FSDP end-to-end wiring + docs), `#30` (Paged Attention full forward path through DecoderModel + ContinuousBatchingEngine), `#31` (MLA + KV cache: linear + paged, with `set_attention_kv_cache_capability("mla", supports=True)`; placeholder-architecture caveat documented), `#32` (Export registry: `EXPORT_REGISTRY` mirrors `BACKEND_REGISTRY`; built-in `onnx` target + `llm.export_backends` entry-point group; `export_to_onnx` preserved as the stable ONNX API).
