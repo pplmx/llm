@@ -196,7 +196,7 @@ class LoggingConfig(BaseModel):
 class DataConfig(BaseModel):
     """Data configuration"""
 
-    data_source: str = Field("local", pattern="^(local|hf)$")
+    data_source: str = Field("local", pattern="^(local|hf|dedup_local|dedup_hf)$")
     tokenizer_type: str = Field("simple", pattern="^(simple|hf)$")
     tokenizer_path: str | None = None  # Path to file (simple) or repo_id/path (hf)
     dataset_path: str | None = None
@@ -210,6 +210,35 @@ class DataConfig(BaseModel):
         None,
         gt=0,
         description="Fixed optimizer steps per epoch for streaming DataModules",
+    )
+
+    # Dedup wrapper knobs (only consulted when data_source starts with
+    # 'dedup_'). The defaults are no-ops so existing configs are
+    # unaffected; users opt in by either switching data_source to
+    # 'dedup_local' / 'dedup_hf' or by passing seen_hashes_path.
+    seen_hashes_path: str | None = Field(
+        None,
+        description=(
+            "Path to a file holding previously seen content hashes "
+            "(one per line, hex-encoded). Consulted by the dedup "
+            "wrapper when data_source is a dedup_* variant."
+        ),
+    )
+    write_seen_hashes: bool = Field(
+        False,
+        description=(
+            "If True, the dedup wrapper appends new hashes to "
+            "seen_hashes_path as records are yielded. Requires "
+            "seen_hashes_path to be set."
+        ),
+    )
+    hash_algo: str = Field(
+        "sha256",
+        pattern="^[a-z0-9_]+$",
+        description=(
+            "Hash algorithm for dedup. Any name accepted by "
+            "hashlib.new works ('sha256', 'sha1', 'md5', 'blake2b', ...)."
+        ),
     )
 
 

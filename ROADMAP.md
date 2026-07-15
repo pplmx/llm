@@ -45,8 +45,8 @@
 ### 1. 预训练完善 (P0)
 - [x] 流式数据加载骨架 (`StreamingTextDataset`, `StreamingTextDataModule`, `HFStreamTextSource`)
 - [x] 流式 checkpoint resume (`CheckpointContributor` + `stream_data_state`)
-- [ ] C4 / The Pile / RedPajama 预设配置 (CLI/YAML 模板, 复用 `SOURCE_REGISTRY`)
-- [ ] 数据质量过滤和去重工具 (新 `TextSource` 装饰器或 pipeline)
+- [x] C4 / The Pile / RedPajama 预设配置 (CLI/YAML 模板, 复用 `SOURCE_REGISTRY`)
+- [x] 数据质量过滤和去重工具 (`DedupTextSource` 包装层, 跨 run 持久化, T3 #39)
 - [ ] 数据版本控制 (DVC, 配合 `source_fingerprint()`)
 - [ ] 主路径预训练教程与 e2e (对齐 `llm-train`, 非仅独立脚本)
 
@@ -101,9 +101,9 @@
 - [x] **数据抽象**: `DataModule` (`data/base.py`) 封装数据集和数据加载器；`datasets/` 与 `modules/` 分层
 - [x] **流式数据处理** (基础)
     - [x] `StreamingTextDataset` + `StreamingTextDataModule` + `StreamDataState` resume
-    - [x] `SOURCE_REGISTRY` (`local` / `hf` entry points)
-    - [ ] C4 / The Pile / RedPajama 预设配置
-    - [ ] 数据质量过滤和去重工具
+    - [x] `SOURCE_REGISTRY` (`local` / `hf` / `dedup_local` / `dedup_hf` entry points)
+    - [x] C4 / The Pile / RedPajama 预设配置
+    - [x] 数据质量过滤和去重工具 (`DedupTextSource`, T3 #39)
 - [ ] **数据版本控制** ⏭️ *下一阶段*
     - [ ] 引入 `DVC` 或类似工具, 对数据集和预处理脚本进行版本管理
 
