@@ -25,6 +25,7 @@ import torch
 
 from llm.generation.sampling import (
     apply_frequency_penalty,
+    apply_logit_bias,
     apply_presence_penalty,
     apply_repetition_penalty,
     sample_next_token,
@@ -218,6 +219,7 @@ def speculative_generate(
     repetition_penalty: float = 1.0,
     frequency_penalty: float = 0.0,
     presence_penalty: float = 0.0,
+    logit_bias: dict[int, float] | None = None,
     seed: int | None = None,
 ):
     """Speculative decoding generator.
@@ -276,6 +278,8 @@ def speculative_generate(
                 next_logits = apply_frequency_penalty(next_logits, draft_ids, frequency_penalty)
             if presence_penalty != 0.0:
                 next_logits = apply_presence_penalty(next_logits, draft_ids, presence_penalty)
+            if logit_bias:
+                next_logits = apply_logit_bias(next_logits, logit_bias)
             tok = sample_next_token(
                 next_logits,
                 temperature=temperature,

@@ -86,7 +86,14 @@ async def chat_completions(
 
     if request.stream:
         return StreamingResponse(
-            _chat_stream_generator(request, prompt, repetition_penalty, request.frequency_penalty, request.presence_penalty),
+            _chat_stream_generator(
+                request,
+                prompt,
+                repetition_penalty,
+                request.frequency_penalty,
+                request.presence_penalty,
+                request.logit_bias,
+            ),
             media_type="text/event-stream",
         )
 
@@ -104,6 +111,7 @@ async def chat_completions(
                         repetition_penalty=repetition_penalty,
                         frequency_penalty=request.frequency_penalty,
                         presence_penalty=request.presence_penalty,
+                        logit_bias=request.logit_bias,
                     )
         except TimeoutError as exc:
             t.set_status(504)
@@ -152,6 +160,7 @@ async def _chat_stream_generator(
     repetition_penalty: float,
     frequency_penalty: float,
     presence_penalty: float,
+    logit_bias: dict[int, float] | None,
 ) -> AsyncGenerator[str]:
     """Generate SSE stream for chat completions."""
     from starlette.concurrency import iterate_in_threadpool
@@ -181,6 +190,7 @@ async def _chat_stream_generator(
                     repetition_penalty=repetition_penalty,
                     frequency_penalty=frequency_penalty,
                     presence_penalty=presence_penalty,
+                    logit_bias=logit_bias,
                 )
 
                 prompt_sent = False
