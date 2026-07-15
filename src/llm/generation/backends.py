@@ -23,6 +23,7 @@ class GenerationConfig:
     top_p: float | None = None
     repetition_penalty: float = 1.0
     frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
     use_cache: bool = True
 
 
@@ -81,6 +82,7 @@ class EagerGenerationBackend(GenerationBackend):
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
             frequency_penalty=config.frequency_penalty,
+            presence_penalty=config.presence_penalty,
             use_cache=config.use_cache,
         )
 
@@ -103,6 +105,7 @@ class EagerGenerationBackend(GenerationBackend):
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
             frequency_penalty=config.frequency_penalty,
+            presence_penalty=config.presence_penalty,
         )
 
 
@@ -215,6 +218,7 @@ class SpeculativeDecodingBackend(GenerationBackend):
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
             frequency_penalty=config.frequency_penalty,
+            presence_penalty=config.presence_penalty,
         )
 
     def batch_generate(

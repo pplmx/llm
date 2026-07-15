@@ -72,6 +72,56 @@ def apply_frequency_penalty(
     return adjusted
 
 
+def apply_presence_penalty(
+    logits: torch.Tensor,
+    token_ids: list[int],
+    presence_penalty: float,
+) -> torch.Tensor:
+    """Subtract a flat ``presence_penalty`` from each **seen** token's logit.
+
+    Implements the OpenAI-compatible ``presence_penalty`` semantics
+    (see https://platform.openai.com/docs/api-reference/chat/create):
+    positive values penalise tokens that have appeared **at least
+    once** in the generated text, encouraging the model to talk
+    about new topics. The penalty is **flat** — a token that
+    appeared 5 times is penalised the same as one that appeared
+    once. That is the key distinction from
+    :func:`apply_frequency_penalty`, which scales by count.
+
+    Negative values *boost* seen tokens (less common, but valid per
+    OpenAI's spec — useful when you want the model to stay on
+    topic).
+
+    Args:
+        logits: 1D ``[vocab_size]`` tensor. Not mutated.
+        token_ids: List of token ids generated so far. Order and
+            duplicates are ignored — only the **set** matters.
+        presence_penalty: Penalty coefficient. ``0.0`` is a no-op;
+            values typically live in ``[-2.0, 2.0]``.
+
+    Returns:
+        A new 1D tensor with the flat per-presence penalty applied.
+    """
+    if presence_penalty == 0.0 or not token_ids:
+        return logits
+
+    vocab_size = logits.size(-1)
+    # Only the set of seen ids matters, not the counts.
+    seen = {tid for tid in token_ids if 0 <= tid < vocab_size}
+    if not seen:
+        return logits
+
+    adjusted = logits.clone()
+    device = adjusted.device
+    ids = torch.tensor(list(seen), device=device, dtype=torch.long)
+    adjusted.scatter_add_(
+        0,
+        ids,
+        -presence_penalty * torch.ones(len(seen), device=device, dtype=adjusted.dtype),
+    )
+    return adjusted
+
+
 def sample_next_token(
     logits: torch.Tensor,
     *,

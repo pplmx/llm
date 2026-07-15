@@ -108,7 +108,12 @@ class ChatCompletionRequest(BaseModel):
     top_p: float | None = Field(None, gt=0.0, lt=1.0, description="Nucleus sampling parameter.")
     stream: bool = Field(False, description="Whether to stream responses.")
     stop: list[str] | str | None = Field(None, description="Stop sequences (not implemented).")
-    presence_penalty: float = Field(0.0, description="Presence penalty (mapped to repetition_penalty).")
+    presence_penalty: float = Field(
+        0.0,
+        ge=-2.0,
+        le=2.0,
+        description="OpenAI-compatible per-presence penalty.",
+    )
     frequency_penalty: float = Field(0.0, ge=-2.0, le=2.0, description="OpenAI-compatible per-frequency penalty.")
 
 
