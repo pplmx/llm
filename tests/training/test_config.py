@@ -151,7 +151,7 @@ class TestConfig:
         assert config.mlp_impl == "mlp"
         assert config.use_kv_cache is False
 
-        # Test custom values (mla is a registered attention impl; flash_attn is not)
+        # Test custom values (mla and flash_attn are both registered attention impls)
         config = ModelConfig(attn_impl="mla", mlp_impl="moe", num_kv_heads=4, num_experts=8, top_k=2)
         assert config.attn_impl == "mla"
         assert config.mlp_impl == "moe"
@@ -160,15 +160,24 @@ class TestConfig:
     def test_model_config_rejects_unknown_attn_impl(self):
         """Unknown attn_impl fails at config-load time, not deep in forward.
 
-        Regression for Finding E (audit 2026-07-12).
+        Regression for Finding E (audit 2026-07-12). Note that ``mha``,
+        ``mla``, and ``flash_attn`` are all valid registered impls; we
+        pick a clearly-fake name to assert the rejection path.
         """
         with pytest.raises(ValueError, match="Unknown attn_impl"):
-            ModelConfig(attn_impl="flash_attn")
+            ModelConfig(attn_impl="nonexistent_attention")
 
-    def test_model_config_mla_with_kv_cache_rejected(self):
-        """MLA + KV cache is not yet supported; fail fast at config-load."""
-        with pytest.raises(ValueError, match="does not support KV cache"):
-            ModelConfig(attn_impl="mla", use_kv_cache=True)
+    def test_model_config_mla_with_kv_cache_accepted(self):
+        """MLA + KV cache is supported (Tier 3 #31, audit 2026-07-12).
+
+        The placeholder MLA caches K, V from ``input_kv_proj`` like MHA
+        does; the latent attention then runs over the cached context.
+        The architectural caveat is that MLA's output is a uniform-mean
+        over latents — see ``MultiLatentAttention`` docstring.
+        """
+        config = ModelConfig(attn_impl="mla", use_kv_cache=True)
+        assert config.attn_impl == "mla"
+        assert config.use_kv_cache is True
 
     def test_model_config_mla_without_kv_cache_ok(self):
         """MLA without KV cache is fine — research/training use case."""
@@ -181,3 +190,17 @@ class TestConfig:
         config = ModelConfig(attn_impl="mha", use_kv_cache=True)
         assert config.attn_impl == "mha"
         assert config.use_kv_cache is True
+
+    def test_model_config_flash_attn_registered(self):
+        """Flash Attention 2 is now a registered impl (Tier 3 #24).
+
+        Regression for the test_data assumption that ``flash_attn`` was
+        a placeholder for "unknown impl"; it is now a real registry entry.
+        """
+        from llm.core.registry import ATTENTION_KV_CACHE_CAPABILITY
+
+        assert "flash_attn" in ATTENTION_KV_CACHE_CAPABILITY
+        config = ModelConfig(attn_impl="flash_attn")
+        assert config.attn_impl == "flash_attn"
+        # ``use_kv_cache`` is accepted because flash_attn declared its
+        # capability at import time.

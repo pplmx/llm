@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 import pytest
+import torch
 
 from llm.serving.batch_engine import ContinuousBatchingEngine, SlotAllocator
 from llm.serving.schemas import GenerationRequest, RequestState
@@ -271,3 +272,110 @@ def test_step_observer_invoked_with_stepstats(tiny_model, mock_tokenizer):
     engine.set_step_observer(None)
     engine.step()
     assert len(observed) == 2
+
+
+# --- MLA + KV cache (T3 #31) --------------------------------------------
+#
+# Smoke test: a 1-layer DecoderModel with ``attn_impl='mla'`` runs
+# end-to-end through ``ContinuousBatchingEngine``. Both the dense
+# ``KVCache`` path and the paged ``PagedKVCache`` path are exercised;
+# the MLA placeholder's K/V are written into the configured cache and
+# the latent attention then runs over the cached context.
+
+
+def _make_mla_decoder(device: str = "cpu"):
+    """Tiny 1-layer DecoderModel with ``attn_impl='mla'``.
+
+    The placeholder MLA needs ``hidden_size % num_heads == 0`` and uses
+    its own ``num_latents`` / ``latent_dim`` defaults.
+    """
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(0)
+    return DecoderModel(
+        vocab_size=32,
+        hidden_size=16,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=16,
+        attn_impl="mla",
+        attn_dropout_p=0.0,
+        embedding_dropout_p=0.0,
+        mlp_dropout_p=0.0,
+        device=device,
+    )
+
+
+def test_engine_runs_mla_step_with_dense_cache(mock_tokenizer):
+    """MLA + dense KV cache: one prefill step writes into the cache."""
+    model = _make_mla_decoder(device="cpu")
+    engine = ContinuousBatchingEngine(
+        model=model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        max_seq_len=model.max_seq_len,
+        device="cpu",
+        dtype=torch.float32,
+    )
+
+    # MLA writes into the dense cache the same way MHA does.
+    assert engine.kv_caches and engine.paged_kv_cache is None
+
+    req = GenerationRequest(prompt="abcd", max_new_tokens=3)
+    req.request_id = "mla-dense-1"
+    engine.add_request(req)
+    stats = engine.step()
+
+    assert stats.scheduled == 1
+    seq = engine.scheduler.get_sequence("mla-dense-1")
+    assert seq.status == RequestState.RUNNING
+    assert len(seq.generated_ids) == 1
+    # The dense cache buffer recorded the prefill tokens (the per-row
+    # buffer is sized to max_seq_len; we only check the per-slot slot
+    # write landed, not the scalar ``seq_len`` which ``update_at_indices``
+    # does not bump — same constraint as the MHA dense-cache tests).
+    slot_id = engine.slot_allocator.get_slot("mla-dense-1")
+    assert torch.any(engine.kv_caches[0].k_cache[slot_id, :, :, :] != 0)
+
+    # A second step appends one more decode token.
+    engine.step()
+    seq = engine.scheduler.get_sequence("mla-dense-1")
+    assert len(seq.generated_ids) == 2
+
+
+def test_engine_runs_mla_step_with_paged_cache(mock_tokenizer):
+    """MLA + paged KV cache: prefill allocates blocks; decode reuses them."""
+    model = _make_mla_decoder(device="cpu")
+    engine = ContinuousBatchingEngine(
+        model=model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        max_seq_len=model.max_seq_len,
+        device="cpu",
+        dtype=torch.float32,
+        use_paged_attention=True,
+        max_blocks=64,
+        block_size=8,
+    )
+
+    # Paged pool wired; dense pool skipped.
+    assert engine.paged_kv_cache is not None
+    assert engine.kv_caches == []
+
+    req = GenerationRequest(prompt="abcd", max_new_tokens=3)
+    req.request_id = "mla-paged-1"
+    engine.add_request(req)
+    stats = engine.step()
+
+    assert stats.scheduled == 1
+    seq = engine.scheduler.get_sequence("mla-paged-1")
+    assert seq.status == RequestState.RUNNING
+    # The paged cache has all prefill tokens for this request.
+    slot_id = engine.slot_allocator.get_slot("mla-paged-1")
+    assert engine.paged_kv_cache.block_manager.get_num_tokens(slot_id) == len(seq.input_ids)
+
+    # A second step adds a decode token without allocating a new block
+    # (block_size=8, prefill length is 4 → room remains).
+    engine.step()
+    assert engine.paged_kv_cache.block_manager.get_num_tokens(slot_id) == len(seq.input_ids) + 1
+    assert len(seq.generated_ids) == 2
