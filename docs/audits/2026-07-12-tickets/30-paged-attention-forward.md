@@ -5,7 +5,7 @@ docs/audits/2026-07-12-technical-due-diligence.md §Tier 3 #3
 ("Paged Attention **full forward path** (replace `list[KVCache]`)"),
 ROADMAP §10.2:
 "Paged Attention — block allocator + prefix sidecar 已实现;
-model forward 仍用 `list[KVCache]` ([ADR-004](docs/adr/004-paged-attention-serving.md))"
+model forward 仍用 `list[KVCache]` ([ADR-004](../../adr/004-paged-attention-serving.md))"
 
 ## Description
 The Paged Attention sidecar (`PagedKVCache`, `BlockManager`,

@@ -128,6 +128,8 @@ nav:
       - "002: SwiGLU": adr/002-use-swiglu.md
       - "003: KVCache": adr/003-use-kv-cache.md
       - "004: QLoRA": adr/004-use-qlora.md
+      - "004: PagedAttention Serving": adr/004-paged-attention-serving.md
+      - "005: Export Registry": adr/005-export-registry.md
   
   - ❓ FAQ: faq.md
   - 🔧 故障排除: troubleshooting.md
