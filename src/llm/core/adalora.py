@@ -249,6 +249,128 @@ class AdaLoRALinear(nn.Module):
             delta_w = self._effective_increment()
             self.base_layer.weight.sub_(delta_w * self.scaling)
 
+    def compute_importance_scores(self, gradient_ema: torch.Tensor | None = None) -> torch.Tensor:
+        """Per-component importance scores, one per singular value.
+
+        Per the AdaLoRA paper (Algorithm 1, line 7), the combined
+        importance score is ``|λ_i| · |∂L/∂λ_i|``. Trainers compute
+        the EMA of ``|∂L/∂λ_i|`` themselves (the optimizer owns
+        gradient statistics), then pass it here.
+
+        Args:
+            gradient_ema: Optional EMA tensor of shape
+                ``(init_rank,)`` holding ``|∂L/∂λ_i|`` averages.
+                ``None`` falls back to magnitude-only scoring
+                ``(|λ_i|)``, which is enough to rank components when
+                the trainer does not track gradients.
+
+        Returns:
+            Tensor of shape ``(init_rank,)`` with one score per
+            component. Components with higher scores carry more of
+            the model's expressive capacity and should be kept under
+            pruning.
+        """
+        magnitude = self.lora_lambda.abs()
+        if gradient_ema is None:
+            return magnitude
+        if gradient_ema.shape != magnitude.shape:
+            raise ValueError(
+                f"gradient_ema shape {tuple(gradient_ema.shape)} does not "
+                f"match lora_lambda shape {tuple(magnitude.shape)}"
+            )
+        return magnitude * gradient_ema.abs()
+
+    def prune_to_rank(
+        self,
+        target_rank: int,
+        scores: torch.Tensor | None = None,
+    ) -> None:
+        """Zero out mask entries for the lowest-importance components.
+
+        Mutates :attr:`mask` in-place so that exactly ``target_rank``
+        entries remain ``1.0`` and the rest are ``0.0``. The kept
+        entries are the ``target_rank`` components with **highest**
+        importance score (see :meth:`compute_importance_scores`).
+
+        Args:
+            target_rank: Number of components to keep. Must satisfy
+                ``0 ≤ target_rank ≤ self.effective_rank`` — un-pruning
+                is not supported (the dropped λ entries have been
+                overwritten by the optimizer and cannot be recovered
+                in-place).
+            scores: Optional pre-computed importance scores of shape
+                ``(init_rank,)``. When ``None``, falls back to
+                :meth:`compute_importance_scores` with default
+                magnitude-only scoring. Pass scores explicitly when
+                wiring gradient-EMA scoring through a trainer.
+
+        Raises:
+            ValueError: if ``target_rank`` is out of range or larger
+                than the current ``effective_rank``.
+        """
+        if target_rank < 0:
+            raise ValueError(f"target_rank must be ≥ 0, got {target_rank}")
+        if target_rank > self.effective_rank:
+            raise ValueError(
+                f"target_rank ({target_rank}) exceeds effective_rank "
+                f"({self.effective_rank}); un-pruning is not supported"
+            )
+        if target_rank == self.effective_rank:
+            # Already at the requested rank (or below); nothing to do.
+            return
+
+        if scores is None:
+            scores = self.compute_importance_scores()
+        # `topk` with largest=True returns the indices of the
+        # highest-scoring components. Build a fresh mask from those
+        # indices — this is robust to repeated calls (idempotent:
+        # pruning to k twice yields the same mask, modulo ties).
+        _, keep_indices = torch.topk(scores, k=target_rank, largest=True)
+        mask = cast(torch.Tensor, self.mask)
+        new_mask = torch.zeros_like(mask)
+        new_mask[keep_indices] = 1.0
+        mask.copy_(new_mask)
+
+    def update_budget(
+        self,
+        current_step: int,
+        tinit: int,
+        tfinal: int,
+    ) -> int:
+        """Return the rank budget for the current training step.
+
+        Linear schedule from ``init_rank`` at ``tinit`` to
+        ``target_rank`` at ``tfinal``. Useful for periodic pruning
+        during fine-tuning: train at full rank through warmup, then
+        gradually reallocate the budget down to ``target_rank``.
+
+        Args:
+            current_step: The current training step (≥ 0).
+            tinit: Step at and before which the budget is held at
+                ``init_rank``. The first pruning-eligible step is
+                ``tinit + 1``.
+            tfinal: Step at and after which the budget is held at
+                ``target_rank``. Must be strictly greater than
+                ``tinit``.
+
+        Returns:
+            Integer rank budget to use for this step. Round to
+            ``int`` to keep the mask-integer contract.
+
+        Raises:
+            ValueError: if ``current_step < 0`` or ``tinit >= tfinal``.
+        """
+        if current_step < 0:
+            raise ValueError(f"current_step must be ≥ 0, got {current_step}")
+        if tinit >= tfinal:
+            raise ValueError(f"tinit ({tinit}) must be strictly less than tfinal ({tfinal})")
+        if current_step <= tinit:
+            return self.init_rank
+        if current_step >= tfinal:
+            return self.target_rank
+        progress = (current_step - tinit) / (tfinal - tinit)
+        return round(self.init_rank - progress * (self.init_rank - self.target_rank))
+
     def extra_repr(self) -> str:
         return (
             f"init_rank={self.init_rank}, target_rank={self.target_rank}, "
@@ -378,3 +500,90 @@ def enable_adalora(model: nn.Module) -> None:
             original = getattr(module, "_original_scaling", None)
             if original is not None:
                 module.scaling = original
+
+
+def prune_adalora(
+    model: nn.Module,
+    target_rank: int | None = None,
+    schedule: tuple[int, int] | None = None,
+    current_step: int | None = None,
+    gradient_emas: dict[int, torch.Tensor] | None = None,
+) -> None:
+    """Walk every ``AdaLoRALinear`` in ``model`` and prune to a target rank.
+
+    Two calling modes:
+
+    1. **Explicit target rank**::
+
+        prune_adalora(model, target_rank=8)
+
+       Every AdaLoRALinear layer is pruned to ``target_rank``
+       (subject to the per-layer ``effective_rank`` upper bound).
+
+    2. **Budget schedule**::
+
+        prune_adalora(model, schedule=(tinit, tfinal), current_step=step)
+
+       Each layer is pruned to the rank that
+       ``layer.update_budget(step, tinit, tfinal)`` returns — i.e.
+       the budget is re-evaluated per call, so a training loop can
+       invoke this helper periodically and the rank shrinks over time.
+
+    Args:
+        model: Model containing one or more ``AdaLoRALinear`` layers.
+        target_rank: Explicit rank to prune every layer to. Mutually
+            exclusive with ``schedule``.
+        schedule: ``(tinit, tfinal)`` tuple for a linear rank-budget
+            schedule. Must be paired with ``current_step``.
+        current_step: Current training step, used only when
+            ``schedule`` is given.
+        gradient_emas: Optional dict mapping ``id(layer)`` to a
+            gradient-EMA tensor of shape ``(init_rank,)`` for that
+            layer's λ. Passed through to
+            :meth:`AdaLoRALinear.compute_importance_scores` so the
+            trainer can supply ``|∂L/∂λ_i|`` averages.
+
+    Raises:
+        ValueError: if neither ``target_rank`` nor ``schedule`` is
+            provided, or if ``schedule`` is given without
+            ``current_step``.
+    """
+    if (target_rank is None) == (schedule is None):
+        raise ValueError(
+            "prune_adalora requires exactly one of target_rank or "
+            "schedule=(tinit, tfinal); got "
+            f"target_rank={target_rank!r}, schedule={schedule!r}"
+        )
+
+    layers = [m for m in model.modules() if isinstance(m, AdaLoRALinear)]
+    if not layers:
+        return
+
+    if target_rank is not None:
+        for layer in layers:
+            rank = min(target_rank, layer.effective_rank)
+            scores = (
+                layer.compute_importance_scores(gradient_emas.get(id(layer)))
+                if gradient_emas is not None
+                else None
+            )
+            layer.prune_to_rank(rank, scores=scores)
+        return
+
+    # Schedule branch. The mutually-exclusive check at the top of
+    # this function guarantees ``schedule`` is not None here.
+    assert schedule is not None  # noqa: S101
+    if current_step is None:
+        raise ValueError(
+            "prune_adalora with schedule=(tinit, tfinal) requires "
+            "current_step to be provided"
+        )
+    tinit, tfinal = schedule
+    for layer in layers:
+        rank = layer.update_budget(current_step, tinit, tfinal)
+        scores = (
+            layer.compute_importance_scores(gradient_emas.get(id(layer)))
+            if gradient_emas is not None
+            else None
+        )
+        layer.prune_to_rank(rank, scores=scores)

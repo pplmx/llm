@@ -16,6 +16,7 @@ from llm.core.adalora import (
     enable_adalora,
     get_adalora_parameters,
     merge_adalora,
+    prune_adalora,
     unmerge_adalora,
 )
 
@@ -357,3 +358,315 @@ class TestBackward:
         # Orth reg loss depends on P and Q through the QR step.
         assert layer.lora_P.grad is not None
         assert layer.lora_Q.grad is not None
+
+
+class TestComputeImportanceScores:
+    """compute_importance_scores must rank components correctly."""
+
+    def test_default_scores_are_lambda_magnitudes(self):
+        layer = AdaLoRALinear(nn.Linear(64, 128), init_rank=8)
+        with torch.no_grad():
+            layer.lora_lambda[0] = 5.0
+            layer.lora_lambda[1] = 3.0
+            layer.lora_lambda[2] = 1.0
+            # rest are zero
+
+        scores = layer.compute_importance_scores()
+
+        assert scores.shape == (8,)
+        # All-zero entries rank last.
+        top3 = torch.topk(scores, k=3).indices.tolist()
+        assert top3 == [0, 1, 2]
+        assert torch.allclose(scores[0], torch.tensor(5.0))
+        assert torch.allclose(scores[1], torch.tensor(3.0))
+        assert torch.allclose(scores[2], torch.tensor(1.0))
+
+    def test_gradient_ema_combined_score(self):
+        """With gradient_ema, scores are |λ_i| · |gradient_ema_i|."""
+        layer = AdaLoRALinear(nn.Linear(64, 128), init_rank=8)
+        with torch.no_grad():
+            layer.lora_lambda[0] = 5.0  # big magnitude
+            layer.lora_lambda[1] = 1.0  # small magnitude
+            layer.lora_lambda[2] = 0.0  # zero magnitude
+
+        grad_ema = torch.zeros(8)
+        grad_ema[0] = 0.0  # 5 * 0 = 0
+        grad_ema[1] = 2.0  # 1 * 2 = 2
+        grad_ema[2] = 1.0  # 0 * 1 = 0
+
+        scores = layer.compute_importance_scores(grad_ema)
+        assert torch.allclose(scores[0], torch.tensor(0.0))
+        assert torch.allclose(scores[1], torch.tensor(2.0))
+        assert torch.allclose(scores[2], torch.tensor(0.0))
+
+    def test_gradient_ema_shape_mismatch_raises(self):
+        layer = AdaLoRALinear(nn.Linear(64, 128), init_rank=8)
+        with pytest.raises(ValueError, match="shape"):
+            layer.compute_importance_scores(torch.zeros(4))
+
+
+class TestPruneToRank:
+    """prune_to_rank must drop the right components and respect the rank."""
+
+    @pytest.fixture
+    def layer(self):
+        layer = AdaLoRALinear(nn.Linear(64, 128), init_rank=12, target_rank=6)
+        with torch.no_grad():
+            # Give each component a distinct magnitude so topk is unambiguous.
+            layer.lora_lambda.copy_(torch.arange(1, 13, dtype=torch.float32))
+        return layer
+
+    def test_prune_drops_lowest_importance(self, layer):
+        layer.prune_to_rank(6)
+        # Top-6 indices by score: 11, 10, 9, 8, 7, 6 (values 12, 11, 10, 9, 8, 7).
+        kept = layer.mask.nonzero(as_tuple=True)[0].tolist()
+        assert sorted(kept) == [6, 7, 8, 9, 10, 11]
+        assert layer.effective_rank == 6
+
+    def test_prune_is_idempotent(self, layer):
+        layer.prune_to_rank(6)
+        first_mask = layer.mask.detach().clone()
+        layer.prune_to_rank(6)
+        assert torch.allclose(layer.mask, first_mask)
+
+    def test_prune_to_init_rank_is_noop(self, layer):
+        layer.prune_to_rank(layer.init_rank)
+        assert layer.mask.sum().item() == layer.init_rank
+
+    def test_prune_to_zero_empties_mask(self, layer):
+        layer.prune_to_rank(0)
+        assert layer.mask.sum().item() == 0
+        assert layer.effective_rank == 0
+
+    def test_prune_to_rank_above_effective_raises(self, layer):
+        with pytest.raises(ValueError, match="exceeds effective_rank"):
+            layer.prune_to_rank(layer.effective_rank + 1)
+
+    def test_prune_to_negative_raises(self, layer):
+        with pytest.raises(ValueError, match="≥ 0"):
+            layer.prune_to_rank(-1)
+
+    def test_prune_at_effective_rank_is_noop(self, layer):
+        """Already-pruned to k; calling prune_to_rank(k) again is a no-op."""
+        layer.prune_to_rank(6)
+        assert layer.effective_rank == 6
+        snapshot = layer.mask.detach().clone()
+        layer.prune_to_rank(6)
+        assert torch.allclose(layer.mask, snapshot)
+
+    def test_prune_with_explicit_scores(self, layer):
+        """Passing scores externally should override the default scoring."""
+        # Construct scores that favor components 0, 2, 4 instead of the
+        # largest-magnitude ones (5..11).
+        custom = torch.zeros(12)
+        custom[0] = 100.0
+        custom[2] = 50.0
+        custom[4] = 25.0
+        layer.prune_to_rank(3, scores=custom)
+        kept = layer.mask.nonzero(as_tuple=True)[0].tolist()
+        assert sorted(kept) == [0, 2, 4]
+
+
+class TestUpdateBudget:
+    """update_budget must schedule the rank linearly between tinit and tfinal."""
+
+    @pytest.fixture
+    def layer(self):
+        return AdaLoRALinear(nn.Linear(64, 128), init_rank=12, target_rank=6)
+
+    def test_before_tinit_returns_init_rank(self, layer):
+        assert layer.update_budget(0, 10, 100) == 12
+        assert layer.update_budget(9, 10, 100) == 12
+        assert layer.update_budget(10, 10, 100) == 12
+
+    def test_after_tfinal_returns_target_rank(self, layer):
+        assert layer.update_budget(100, 10, 100) == 6
+        assert layer.update_budget(200, 10, 100) == 6
+
+    def test_linear_interpolation(self, layer):
+        # midpoint: (10 + 100) / 2 = 55 → halfway between 12 and 6 = 9
+        assert layer.update_budget(55, 10, 100) == 9
+        # progress 22/90 = 0.244: 12 - 0.244 * 6 = 10.533 → round to 11
+        assert layer.update_budget(32, 10, 100) == 11
+        # progress 67/90 = 0.744: 12 - 0.744 * 6 = 7.533 → round to 8
+        assert layer.update_budget(77, 10, 100) == 8
+
+    def test_negative_step_raises(self, layer):
+        with pytest.raises(ValueError, match="current_step"):
+            layer.update_budget(-1, 10, 100)
+
+    def test_tinit_ge_tfinal_raises(self, layer):
+        with pytest.raises(ValueError, match="tinit"):
+            layer.update_budget(50, 100, 100)
+        with pytest.raises(ValueError, match="tinit"):
+            layer.update_budget(50, 100, 50)
+
+
+class TestPruneAdaLora:
+    """The module-level helper walks every AdaLoRALinear in the model."""
+
+    def test_target_rank_mode(self):
+        model = nn.Sequential(nn.Linear(64, 128), nn.ReLU(), nn.Linear(128, 64))
+        apply_adalora(model, init_rank=10, target_rank=4)
+        prune_adalora(model, target_rank=2)
+        for m in model.modules():
+            if isinstance(m, AdaLoRALinear):
+                assert m.effective_rank == 2
+
+    def test_schedule_mode(self):
+        model = nn.Sequential(nn.Linear(64, 128), nn.ReLU(), nn.Linear(128, 64))
+        apply_adalora(model, init_rank=10, target_rank=4)
+        # Mid-way between tinit=10 and tfinal=100: rank = 10 - 0.5*(10-4) = 7
+        prune_adalora(model, schedule=(10, 100), current_step=55)
+        for m in model.modules():
+            if isinstance(m, AdaLoRALinear):
+                assert m.effective_rank == 7
+
+    def test_schedule_mode_respects_step(self):
+        """Calling again at a later step shrinks the rank further."""
+        model = nn.Sequential(nn.Linear(64, 128), nn.ReLU(), nn.Linear(128, 64))
+        apply_adalora(model, init_rank=10, target_rank=2)
+        prune_adalora(model, schedule=(0, 100), current_step=25)
+        rank_at_25 = next(m.effective_rank for m in model.modules() if isinstance(m, AdaLoRALinear))
+        prune_adalora(model, schedule=(0, 100), current_step=75)
+        rank_at_75 = next(m.effective_rank for m in model.modules() if isinstance(m, AdaLoRALinear))
+        assert rank_at_25 > rank_at_75
+
+    def test_neither_target_rank_nor_schedule_raises(self):
+        model = nn.Sequential(nn.Linear(64, 128))
+        apply_adalora(model, init_rank=4)
+        with pytest.raises(ValueError, match="exactly one"):
+            prune_adalora(model)
+
+    def test_both_target_rank_and_schedule_raises(self):
+        model = nn.Sequential(nn.Linear(64, 128))
+        apply_adalora(model, init_rank=4)
+        with pytest.raises(ValueError, match="exactly one"):
+            prune_adalora(model, target_rank=2, schedule=(0, 100), current_step=50)
+
+    def test_schedule_without_current_step_raises(self):
+        model = nn.Sequential(nn.Linear(64, 128))
+        apply_adalora(model, init_rank=4)
+        with pytest.raises(ValueError, match="current_step"):
+            prune_adalora(model, schedule=(0, 100))
+
+    def test_target_rank_capped_by_per_layer_effective_rank(self):
+        """Pruning below the layer's effective_rank works; pruning to a
+        value larger than effective_rank (after a previous prune)
+        should be capped silently rather than raising — we just can't
+        un-prune."""
+        model = nn.Sequential(nn.Linear(64, 128))
+        apply_adalora(model, init_rank=10, target_rank=2)
+        prune_adalora(model, target_rank=2)
+        # Already at 2; asking for 5 should be silently capped to 2.
+        prune_adalora(model, target_rank=5)
+        for m in model.modules():
+            if isinstance(m, AdaLoRALinear):
+                assert m.effective_rank == 2
+
+    def test_empty_model_is_noop(self):
+        model = nn.Sequential(nn.Linear(64, 64))
+        # No AdaLoRALinear layers — should not raise.
+        prune_adalora(model, target_rank=2)
+
+    def test_gradient_emas_threaded_through(self):
+        """gradient_emas keyed by id(layer) overrides default scoring."""
+        model = nn.Sequential(nn.Linear(64, 128))
+        apply_adalora(model, init_rank=6, target_rank=2)
+        layer = next(m for m in model.modules() if isinstance(m, AdaLoRALinear))
+
+        # Set λ to be uniformly small except at index 0, so default
+        # scoring would keep index 0 + something else.
+        with torch.no_grad():
+            layer.lora_lambda.zero_()
+            layer.lora_lambda[0] = 1.0
+
+        # But feed a gradient EMA that *flips* the ranking: index 3
+        # becomes the most important (1.0 * 10 = 10 vs 1.0 * 0 = 0).
+        grad_ema = torch.zeros(6)
+        grad_ema[3] = 10.0
+        grad_ema[0] = 0.0
+
+        prune_adalora(model, target_rank=1, gradient_emas={id(layer): grad_ema})
+        kept = layer.mask.nonzero(as_tuple=True)[0].tolist()
+        assert kept == [3]
+
+
+class TestPruningIntegration:
+    """End-to-end: train λ briefly, prune, verify the kept components.
+
+    The end-to-end story for the pruning slice is:
+
+    1. Build a small model + apply AdaLoRA.
+    2. Pick a "hard" direction in the input that only a few λ
+       components contribute to (we force this by setting
+       ``lora_lambda`` to non-zero values for *only* some components,
+       then training).
+    3. Drive a few forward/backward steps so the surviving λ
+       magnitudes diverge from the pruned-out ones.
+    4. Call ``prune_to_rank`` and check that the kept components
+       correspond to the largest post-training magnitudes.
+    """
+
+    def test_prune_keeps_components_whose_magnitude_grew(self):
+        torch.manual_seed(0)
+        model = nn.Sequential(nn.Linear(32, 64), nn.ReLU(), nn.Linear(64, 16))
+        apply_adalora(model, init_rank=10, target_rank=3)
+
+        # Pull out the single AdaLoRALinear (the second nn.Linear
+        # would also have been replaced; Sequential keeps everything
+        # but we only need the one for this check).
+        layer = next(m for m in model.modules() if isinstance(m, AdaLoRALinear))
+        init_rank = layer.init_rank
+
+        # Seed λ with non-uniform magnitudes so the top-k is
+        # unambiguous before training.
+        with torch.no_grad():
+            layer.lora_lambda.copy_(
+                torch.linspace(0.0, 1.0, init_rank, dtype=torch.float32)
+            )
+
+        # Train λ only (P and Q stay frozen — this is a smoke test
+        # of the prune signal, not a quality check on P/Q learning).
+        optimizer = torch.optim.SGD([layer.lora_lambda], lr=0.1)
+
+        # Use a tiny input so the gradient is dominated by the λ
+        # direction we want to grow.
+        x = torch.randn(4, 32)
+        for _step in range(20):
+            optimizer.zero_grad()
+            pred = model(x)
+            target = pred.detach() + 0.5 * torch.randn_like(pred)
+            loss = ((pred - target) ** 2).mean()
+            loss.backward()
+            optimizer.step()
+
+        # Snapshot the magnitudes *before* pruning; the top-k here
+        # are the components training drove up the most.
+        post_magnitudes = layer.lora_lambda.detach().abs().clone()
+        expected_top3 = torch.topk(post_magnitudes, k=3).indices.tolist()
+
+        # Prune to 3.
+        layer.prune_to_rank(3)
+
+        # The mask should match the top-3 magnitudes — exactly the
+        # components we expect training to have emphasized.
+        kept = layer.mask.nonzero(as_tuple=True)[0].tolist()
+        assert sorted(kept) == sorted(expected_top3)
+        assert layer.effective_rank == 3
+
+        # And the pruned-out components should no longer contribute:
+        # the forward output with the mask applied should differ from
+        # the output if all components were active (sanity check that
+        # pruning actually zeros something).
+        with torch.no_grad():
+            out_pruned = layer(x)
+            # Toggle the mask back to all-ones and recompute.
+            snapshot = layer.mask.detach().clone()
+            layer.mask.fill_(1.0)
+            out_full = layer(x)
+            layer.mask.copy_(snapshot)
+            # The two outputs must differ for at least one position
+            # (we expect substantially different — some components
+            # are zeroed out).
+            assert not torch.allclose(out_pruned, out_full)
