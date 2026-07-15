@@ -92,9 +92,7 @@ async def generate_text(
 ) -> GenerationResponse | StreamingResponse:
     """Generate text from a single prompt. Supports streaming and non-streaming."""
     if request.stream:
-        return StreamingResponse(
-            _stream_generator(request), media_type="text/event-stream"
-        )
+        return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
 
     timer = metrics.request_timer(endpoint="generate")
     with timer as t:
@@ -109,6 +107,7 @@ async def generate_text(
                         top_k=request.top_k,
                         top_p=request.top_p,
                         repetition_penalty=request.repetition_penalty,
+                        frequency_penalty=request.frequency_penalty,
                     )
         except TimeoutError as exc:
             t.set_status(504)
@@ -118,9 +117,7 @@ async def generate_text(
             raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
         except ValueError as exc:
             t.set_status(400)
-            raise APIError(
-                ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}
-            ) from exc
+            raise APIError(ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}) from exc
         except APIError as exc:
             t.set_status(exc.status_code)
             raise
@@ -150,6 +147,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                     top_k=request.top_k,
                     top_p=request.top_p,
                     repetition_penalty=request.repetition_penalty,
+                    frequency_penalty=request.frequency_penalty,
                 )
                 async for chunk in iterate_in_threadpool(iterator):
                     token_count += 1
@@ -191,9 +189,7 @@ async def batch_generate_text(
             raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
         except ValueError as exc:
             t.set_status(400)
-            raise APIError(
-                ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}
-            ) from exc
+            raise APIError(ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}) from exc
         except APIError as exc:
             t.set_status(exc.status_code)
             raise
@@ -208,8 +204,5 @@ async def batch_generate_text(
     for text in results:
         metrics.observe_tokens(endpoint="batch_generate", token_count=len(text))
     return BatchGenerationResponse(
-        results=[
-            GenerationResponse(generated_text=text, token_count=len(text))
-            for text in results
-        ]
+        results=[GenerationResponse(generated_text=text, token_count=len(text)) for text in results]
     )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 import torch
 
 
@@ -20,6 +22,53 @@ def apply_repetition_penalty(
     scores = torch.gather(adjusted, 0, ids)
     scores = torch.where(scores < 0, scores * repetition_penalty, scores / repetition_penalty)
     adjusted.scatter_(0, ids, scores)
+    return adjusted
+
+
+def apply_frequency_penalty(
+    logits: torch.Tensor,
+    token_ids: list[int],
+    frequency_penalty: float,
+) -> torch.Tensor:
+    """Subtract ``frequency_penalty * count(token)`` from each seen token's logit.
+
+    Implements the OpenAI-compatible ``frequency_penalty`` semantics
+    (see https://platform.openai.com/docs/api-reference/chat/create):
+    positive values penalise tokens in proportion to how often they
+    have already appeared in the generated text. Zero (the default)
+    is a no-op so callers don't need to special-case the off state.
+
+    Args:
+        logits: 1D ``[vocab_size]`` tensor. Not mutated.
+        token_ids: List of token ids generated so far (may include
+            duplicates; duplicates count toward the penalty).
+        frequency_penalty: Penalty coefficient. ``0.0`` disables the
+            adjustment; values typically live in ``[-2.0, 2.0]``.
+
+    Returns:
+        A new 1D tensor with the per-frequency penalty subtracted.
+    """
+    if frequency_penalty == 0.0 or not token_ids:
+        return logits
+
+    counts = Counter(token_ids)
+    vocab_size = logits.size(-1)
+    # Drop ids that fall outside the vocab — they're not representable
+    # in these logits, so penalising them is meaningless and would
+    # raise an index error on the scatter below.
+    valid_ids = {tid: c for tid, c in counts.items() if 0 <= tid < vocab_size}
+    if not valid_ids:
+        return logits
+
+    adjusted = logits.clone()
+    device = adjusted.device
+    ids = torch.tensor(list(valid_ids), device=device, dtype=torch.long)
+    penalties = torch.tensor([valid_ids[tid] for tid in valid_ids], device=device, dtype=adjusted.dtype)
+    adjusted.scatter_add_(
+        0,
+        ids,
+        -frequency_penalty * penalties,
+    )
     return adjusted
 
 

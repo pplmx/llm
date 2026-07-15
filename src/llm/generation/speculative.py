@@ -23,7 +23,11 @@ from __future__ import annotations
 
 import torch
 
-from llm.generation.sampling import apply_repetition_penalty, sample_next_token
+from llm.generation.sampling import (
+    apply_frequency_penalty,
+    apply_repetition_penalty,
+    sample_next_token,
+)
 from llm.models.decoder import DecoderModel
 
 # Type alias for the (model, tokenizer) pair the speculative backend
@@ -175,15 +179,8 @@ def _verify_speculative_tokens(
         target_log = target_relevant[reject_pos] / max(temperature, 1e-8)
         with torch.no_grad():
             draft_out_at_pos = draft(full, kv_caches=None, use_cache=False)
-            draft_logits_full = (
-                draft_out_at_pos[0]
-                if isinstance(draft_out_at_pos, tuple)
-                else draft_out_at_pos
-            )
-            draft_log_at_pos = (
-                draft_logits_full[0, input_ids.size(1) - 1 + reject_pos, :]
-                / max(temperature, 1e-8)
-            )
+            draft_logits_full = draft_out_at_pos[0] if isinstance(draft_out_at_pos, tuple) else draft_out_at_pos
+            draft_log_at_pos = draft_logits_full[0, input_ids.size(1) - 1 + reject_pos, :] / max(temperature, 1e-8)
         diff = target_log - draft_log_at_pos
         diff = diff.clamp(min=0.0)
         if diff.sum() <= 0:
@@ -218,6 +215,7 @@ def speculative_generate(
     top_k: int | None = None,
     top_p: float | None = None,
     repetition_penalty: float = 1.0,
+    frequency_penalty: float = 0.0,
     seed: int | None = None,
 ):
     """Speculative decoding generator.
@@ -272,6 +270,8 @@ def speculative_generate(
             next_logits = logits[0, -1, :]
             if repetition_penalty != 1.0:
                 next_logits = apply_repetition_penalty(next_logits, draft_ids, repetition_penalty)
+            if frequency_penalty != 0.0:
+                next_logits = apply_frequency_penalty(next_logits, draft_ids, frequency_penalty)
             tok = sample_next_token(
                 next_logits,
                 temperature=temperature,
