@@ -70,7 +70,7 @@
 
 ### 4. 高效微调 (P2)
 - [x] QLoRA (NF4 量化 + LoRA)
-- [x] AdaLoRA (SVD 形式 + 正交正则化 + 自适应剪枝, T3 #40 基础切片 + T3 #41 剪枝切片; trainer 侧 EMA 与 SFT 集成是 follow-up)
+- [x] AdaLoRA (SVD 形式 + 正交正则化 + 自适应剪枝, T3 #40 基础切片 + T3 #41 剪枝切片 + T3 #42 trainer 集成: EMA tracker + pruning callback + SFT/DPO 接入)
 - [ ] Prefix Tuning / P-Tuning
 
 ### 5. 高级分布式训练 (P1–P3)
@@ -466,7 +466,7 @@
 
 - [x] 实现 LoRA (Low-Rank Adaptation)
 - [x] 实现 QLoRA (Quantized LoRA)
-- [x] 实现 AdaLoRA (Adaptive LoRA) — 基础切片 (SVD 形式 + QR 正交化 + 正交正则化 + mask hook, T3 #40) + 剪枝切片 (importance scoring + prune_to_rank + update_budget + prune_adalora helper, T3 #41); trainer 侧 EMA 平滑 + SFT/DPO 集成为后续切片
+- [x] 实现 AdaLoRA (Adaptive LoRA) — 基础切片 (SVD 形式 + QR 正交化 + 正交正则化 + mask hook, T3 #40) + 剪枝切片 (importance scoring + prune_to_rank + update_budget + prune_adalora helper, T3 #41) + trainer 集成切片 (AdaLoRAGradientEMA tracker + AdaLoRAPruningCallback + TrainingConfig 九个 opt-in 字段 + LanguageModelingTask.build_model 自动 apply_adalora + SFT/DPO 继承, T3 #42)
 - [ ] 探索 Prefix Tuning / P-Tuning
 
 #### 15.4 新型 MoE 架构

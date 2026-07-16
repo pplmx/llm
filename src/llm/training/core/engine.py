@@ -46,6 +46,19 @@ class TrainingEngine:
             callback.set_engine(self)
 
         self._setup_components()
+
+    def _register_task_callbacks(self) -> None:
+        """Append and wire any task-supplied callbacks.
+
+        Called after ``_setup_components`` so :meth:`build_model` has
+        already applied feature gates (e.g. AdaLoRA layers) that the
+        callbacks may need to introspect. We append *after* the
+        constructor-passed callbacks so task callbacks run last in the
+        ordered callback list.
+        """
+        for callback in self.task.build_callbacks():
+            callback.set_engine(self)
+            self.callbacks.append(callback)
         self.training_start_time = time.time()
         self.should_stop_training = False
         self.global_step = 0
@@ -128,6 +141,10 @@ class TrainingEngine:
         )
         self.scaler = torch.amp.GradScaler(enabled=use_scaler)
 
+        # Task-supplied callbacks (e.g. AdaLoRA pruning) are wired last
+        # so they see the wrapped, device-resident model.
+        self._register_task_callbacks()
+
         model_to_load = model_for_checkpoint_io(self.model)
 
         if self.use_standard_loop:
@@ -138,6 +155,7 @@ class TrainingEngine:
                 self.checkpoint_manager.loaded_extra_state,
                 self.data_module,
                 self.task,
+                *self.callbacks,
             )
         else:
             self.start_epoch = 0
@@ -160,6 +178,7 @@ class TrainingEngine:
                     self.checkpoint_manager.loaded_extra_state,
                     self.data_module,
                     self.task,
+                    *self.callbacks,
                 )
 
         self.checkpoint_manager.best_loss = self.best_loss
@@ -227,6 +246,10 @@ class TrainingEngine:
                 )
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
+                # Fire ``on_optimizer_step`` BEFORE zero_grad so
+                # gradient-reading observers (AdaLoRA EMA tracker) get
+                # the real gradients, not the post-zero zeros.
+                self._run_callbacks("on_optimizer_step", epoch=epoch, batch_idx=batch_idx)
                 self.optimizer.zero_grad(set_to_none=True)
                 self.global_step += 1
             else:
@@ -383,7 +406,7 @@ class TrainingEngine:
 
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
-                    extra_state = collect_extra_state(self.data_module, self.task)
+                    extra_state = collect_extra_state(self.data_module, self.task, *self.callbacks)
                     self.checkpoint_manager.save_checkpoint(
                         epoch,
                         self.model,

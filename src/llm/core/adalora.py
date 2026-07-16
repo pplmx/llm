@@ -587,3 +587,114 @@ def prune_adalora(
             else None
         )
         layer.prune_to_rank(rank, scores=scores)
+
+
+# --- Gradient-EMA tracker (trainer-side half of Algorithm 1) --------------
+
+
+class AdaLoRAGradientEMA:
+    """Per-layer EMA of ``|∂L/∂λ|`` for AdaLoRA's importance scoring.
+
+    Implements the EMA half of AdaLoRA Algorithm 1
+    (Zhang et al. 2023, page 4)::
+
+        I_avg_i ← α · I_avg_i + (1 − α) · |∂L/∂λ_i|
+
+    The tracker is constructed against a model that already has
+    ``AdaLoRALinear`` layers in place. After each backward pass, the
+    trainer calls :meth:`update` to fold the current gradient into the
+    EMA. The result is consumed by :func:`prune_adalora` (via
+    :meth:`as_dict`) to weight components by their combined
+    ``|λ| · |∂L/∂λ|`` score during pruning.
+
+    State is checkpointable through :meth:`state_dict` /
+    :meth:`load_state_dict`, both keyed by the layer's **qualified
+    name** (``"0"``, ``"layer1.attn"``, ...). ``id(layer)`` is *not*
+    stable across pickle roundtrips, so the checkpoint key must be a
+    structural path.
+
+    Args:
+        model: The model whose ``AdaLoRALinear`` layers will be
+            tracked. Walked via :meth:`nn.Module.named_modules`, so the
+            DDP/FSDP unwrap path is just ``model.modules()``.
+        alpha: EMA smoothing factor (the weight on the *previous* EMA).
+            ``alpha=0.95`` matches the paper's recommendation. Must
+            satisfy ``0 < alpha < 1``.
+
+    Raises:
+        ValueError: if ``alpha`` is outside ``(0, 1)``.
+    """
+
+    def __init__(self, model: nn.Module, alpha: float = 0.95):
+        if not (0.0 < alpha < 1.0):
+            raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+        self.alpha = alpha
+        self._current_step_weight = 1.0 - alpha
+
+        # Walk named_modules so we capture the qualified name once at
+        # construction. The same walk also picks up the AdaLoRALinear
+        # in case the user is passing a sub-module (e.g. just the
+        # decoder body); every AdaLoRALinear reachable from ``model``
+        # gets its own EMA tensor.
+        self._layers: dict[str, AdaLoRALinear] = {}
+        self._emas: dict[str, torch.Tensor] = {}
+        for name, module in model.named_modules():
+            if isinstance(module, AdaLoRALinear):
+                self._layers[name] = module
+                # Match the layer's dtype and device so a subsequent
+                # ``ema + grad_abs`` does not silently promote / move.
+                params = list(module.parameters())
+                ref = params[0] if params else module.mask
+                self._emas[name] = torch.zeros(
+                    module.init_rank, dtype=ref.dtype, device=ref.device
+                )
+
+    def update(self) -> None:
+        """Fold ``|∂L/∂λ|`` from each layer's last backward into the EMA.
+
+        Layers whose ``lora_lambda.grad`` is ``None`` (frozen, or no
+        path through them this step) are left untouched — only the
+        components training actually drove get smoothed in.
+        """
+        for name, layer in self._layers.items():
+            grad = layer.lora_lambda.grad
+            if grad is None:
+                continue
+            ema = self._emas[name]
+            ema.mul_(self.alpha).add_(grad.abs(), alpha=self._current_step_weight)
+
+    def as_dict(self) -> dict[int, torch.Tensor]:
+        """Return ``{id(layer): ema_tensor}`` for :func:`prune_adalora`.
+
+        The trainer passes this directly as ``gradient_emas=`` to
+        :func:`prune_adalora`. ``id()`` is fine here because the
+        tracker and the prune call share the same Python process; it
+        is **only** the checkpoint roundtrip that needs a stable key.
+        """
+        return {id(layer): self._emas[name] for name, layer in self._layers.items()}
+
+    def state_dict(self) -> dict[str, torch.Tensor]:
+        """Return a serializable snapshot keyed by qualified name.
+
+        Tensors are detached so a subsequent ``load_state_dict`` on a
+        fresh tracker doesn't keep a reference to the autograd graph.
+        """
+        return {name: ema.detach().clone() for name, ema in self._emas.items()}
+
+    def load_state_dict(self, state: dict[str, torch.Tensor] | None) -> None:
+        """Restore EMA tensors from a :meth:`state_dict` snapshot.
+
+        Unknown keys (e.g. from a stale checkpoint where the model has
+        since been pruned of a layer) are silently ignored. ``None``
+        is a no-op so a fresh checkpoint doesn't crash the trainer.
+        """
+        if not state:
+            return
+        for name, tensor in state.items():
+            target = self._emas.get(name)
+            if target is None:
+                # Stale key — layer was renamed or removed. Skip.
+                continue
+            # Move + cast defensively so a checkpoint saved on a
+            # different device/dtype still loads without surprises.
+            target.copy_(tensor.to(device=target.device, dtype=target.dtype))

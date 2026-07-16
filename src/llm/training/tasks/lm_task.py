@@ -3,7 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
+from llm.core.adalora import apply_adalora
 from llm.runtime import ModelFactory
+from llm.training.core.callbacks import AdaLoRAPruningCallback
 from llm.training.tasks.base_task import TrainingTask
 
 
@@ -13,7 +15,43 @@ class LanguageModelingTask(TrainingTask):
     """
 
     def build_model(self) -> nn.Module:
-        return ModelFactory.from_config(self.config.model)
+        model = ModelFactory.from_config(self.config.model)
+        # AdaLoRA is opt-in. When ``use_adalora=True`` we wrap every
+        # ``nn.Linear`` (or the filtered subset) in ``AdaLoRALinear``
+        # and freeze the base weights. The pruning callback registered
+        # by ``build_callbacks`` then drives the rank schedule.
+        if getattr(self.config.training, "use_adalora", False):
+            apply_adalora(
+                model,
+                init_rank=self.config.training.adalora_init_rank,
+                target_rank=self.config.training.adalora_target_rank,
+                alpha=self.config.training.adalora_alpha,
+                target_modules=self.config.training.adalora_target_modules,
+                orth_reg_weight=self.config.training.adalora_orth_reg_weight,
+            )
+        return model
+
+    def build_callbacks(self) -> list:
+        """Register the AdaLoRA pruning callback when ``use_adalora=True``.
+
+        The callback is wired after ``build_model`` runs, so the
+        tracker sees the AdaLoRA layers in their final position (and
+        any DDP/FSDP wrapper that the engine applies on top).
+        """
+        if not getattr(self.config.training, "use_adalora", False):
+            return []
+        t_cfg = self.config.training
+        return [
+            AdaLoRAPruningCallback(
+                use_adalora=True,
+                adalora_init_rank=t_cfg.adalora_init_rank,
+                adalora_target_rank=t_cfg.adalora_target_rank,
+                adalora_ema_alpha=t_cfg.adalora_ema_alpha,
+                adalora_tinit=t_cfg.adalora_tinit,
+                adalora_tfinal=t_cfg.adalora_tfinal,
+                adalora_prune_every=t_cfg.adalora_prune_every,
+            )
+        ]
 
     def build_optimizer(self, model: nn.Module) -> optim.Optimizer:
         # Filter parameters that require gradients
