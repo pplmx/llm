@@ -670,3 +670,188 @@ class TestPruningIntegration:
             # (we expect substantially different — some components
             # are zeroed out).
             assert not torch.allclose(out_pruned, out_full)
+
+
+class TestAdaLoRAGradientEMA:
+    """Gradient-EMA tracker feeding ``prune_adalora`` with importance info.
+
+    Implements the EMA half of AdaLoRA Algorithm 1::
+
+        I_avg_i ← α · I_avg_i + (1 − α) · |∂L/∂λ_i|
+
+    The tracker reads ``layer.lora_lambda.grad.abs()`` after each
+    backward pass; layers that have no gradient (frozen, unused) are
+    left untouched so the EMA only reflects what training actually
+    drove.
+    """
+
+    def _build_model(self):
+        """Tiny Sequential model with two AdaLoRA layers for testing."""
+        from llm.core.adalora import apply_adalora
+
+        model = nn.Sequential(nn.Linear(16, 16), nn.Linear(16, 8))
+        apply_adalora(model, init_rank=6, target_rank=3)
+        return model
+
+    def test_init_zero_per_layer(self):
+        """Construction: one zero-EMA tensor per AdaLoRALinear."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.95)
+
+        ema_dict = tracker.as_dict()
+        # Two AdaLoRA layers → two EMA tensors keyed by id(layer).
+        assert len(ema_dict) == 2
+        for tensor in ema_dict.values():
+            assert tensor.shape == (6,)
+            assert torch.allclose(tensor, torch.zeros(6))
+
+    def test_alpha_stored(self):
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        tracker = AdaLoRAGradientEMA(self._build_model(), alpha=0.9)
+        assert tracker.alpha == 0.9
+
+    def test_alpha_must_be_in_open_unit_interval(self):
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        with pytest.raises(ValueError, match="alpha"):
+            AdaLoRAGradientEMA(model, alpha=0.0)
+        with pytest.raises(ValueError, match="alpha"):
+            AdaLoRAGradientEMA(model, alpha=1.0)
+        with pytest.raises(ValueError, match="alpha"):
+            AdaLoRAGradientEMA(model, alpha=1.5)
+        with pytest.raises(ValueError, match="alpha"):
+            AdaLoRAGradientEMA(model, alpha=-0.1)
+
+    def test_update_reads_lambda_grad_abs(self):
+        """Update pulls |lora_lambda.grad| and EMA-smooths it."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.5)
+
+        # Pick one AdaLoRA layer, set a non-zero gradient.
+        layer = next(m for m in model.modules() if isinstance(m, AdaLoRALinear))
+        layer.lora_lambda.grad = torch.tensor([0.4, 0.0, 0.6, 0.0, 0.8, 0.0])
+
+        tracker.update()
+        ema = tracker.as_dict()[id(layer)]
+        # α=0.5, current weight=1−α=0.5; grad_abs is the input directly.
+        expected = 0.5 * torch.tensor([0.4, 0.0, 0.6, 0.0, 0.8, 0.0])
+        assert torch.allclose(ema, expected, atol=1e-7)
+
+    def test_update_smoothing_recursion(self):
+        """Two updates compose as α·ema + (1−α)·grad_abs."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.8)
+        layer = next(m for m in model.modules() if isinstance(m, AdaLoRALinear))
+
+        # First update with grad = 1.0 → ema = 0.2 * 1.0 = 0.2
+        layer.lora_lambda.grad = torch.ones(6)
+        tracker.update()
+        assert torch.allclose(tracker.as_dict()[id(layer)], 0.2 * torch.ones(6))
+
+        # Second update with grad = 0.0 → ema = 0.8*0.2 + 0.2*0.0 = 0.16
+        layer.lora_lambda.grad = torch.zeros(6)
+        tracker.update()
+        assert torch.allclose(tracker.as_dict()[id(layer)], 0.16 * torch.ones(6))
+
+    def test_update_skips_layers_without_grad(self):
+        """A layer with no gradient (e.g. frozen) keeps its EMA unchanged."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.5)
+
+        # Seed EMAs to non-zero so we can detect a no-op.
+        for tensor in tracker.as_dict().values():
+            tensor.fill_(0.42)
+
+        # No .grad populated → tracker.update() must leave EMA untouched.
+        tracker.update()
+        for tensor in tracker.as_dict().values():
+            assert torch.allclose(tensor, 0.42 * torch.ones(6))
+
+    def test_update_handles_none_grad(self):
+        """`lora_lambda.grad is None` is treated like 'no grad'."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.5)
+        layer = next(m for m in model.modules() if isinstance(m, AdaLoRALinear))
+        # Explicitly None (default after construction, before backward).
+        assert layer.lora_lambda.grad is None
+        # Must not raise.
+        tracker.update()
+
+    def test_as_dict_keyed_by_id_layer(self):
+        """as_dict() keys must match id(layer) so prune_adalora can look them up."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.95)
+        ema_dict = tracker.as_dict()
+
+        layers = [m for m in model.modules() if isinstance(m, AdaLoRALinear)]
+        assert set(ema_dict.keys()) == {id(layer) for layer in layers}
+
+    def test_state_dict_keyed_by_qualified_name(self):
+        """state_dict() must use qualified name (stable across pickle)."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.95)
+
+        state = tracker.state_dict()
+        # Two layers in a Sequential → "0" and "1"
+        assert set(state.keys()) == {"0", "1"}
+        for key, tensor in state.items():
+            assert tensor.shape == (6,)
+            assert torch.allclose(tensor, torch.zeros(6))
+
+    def test_state_dict_roundtrip(self):
+        """state_dict → load_state_dict must restore EMA tensors exactly."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.95)
+
+        # Write distinct, non-zero EMA values per layer so we can detect loss.
+        for i, (_key, tensor) in enumerate(tracker.state_dict().items()):
+            tensor.fill_(float(i + 1) * 0.1)
+
+        snapshot = {k: v.detach().clone() for k, v in tracker.state_dict().items()}
+
+        # Roundtrip through a checkpoint-like dict (state tensors must be detached).
+        state = tracker.state_dict()
+        new_tracker = AdaLoRAGradientEMA(self._build_model(), alpha=0.95)
+        new_tracker.load_state_dict(state)
+
+        for key, expected in snapshot.items():
+            assert torch.allclose(new_tracker.state_dict()[key], expected, atol=1e-7)
+
+    def test_load_state_dict_ignores_unknown_keys(self):
+        """Stale keys from a different model don't crash — they're ignored."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.95)
+
+        # Unknown layer name — extra entry that doesn't match current model.
+        bogus_state = {"0": torch.zeros(6), "nonexistent_layer": torch.ones(6)}
+        # Must not raise.
+        tracker.load_state_dict(bogus_state)
+
+    def test_load_state_dict_handles_none(self):
+        """load_state_dict(None) is a no-op (defensive for fresh checkpoints)."""
+        from llm.core.adalora import AdaLoRAGradientEMA
+
+        model = self._build_model()
+        tracker = AdaLoRAGradientEMA(model, alpha=0.95)
+        # Must not raise.
+        tracker.load_state_dict(None)

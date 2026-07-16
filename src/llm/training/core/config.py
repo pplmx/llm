@@ -85,6 +85,69 @@ class TrainingConfig(BaseModel):
     gradient_clip_val: float = 1.0
     run_validation: bool = True
 
+    # AdaLoRA (T3 #40-#42). Defaults preserve current behavior — the
+    # callback is only registered when ``use_adalora=True``. Mirrors
+    # the layer-side AdaLoRALinear defaults (init_rank=12, alpha=32,
+    # target_rank=6) so an opt-in config requires no other knobs.
+    use_adalora: bool = Field(
+        False,
+        description=(
+            "Master switch for AdaLoRA adaptive-budget pruning. When "
+            "True, LanguageModelingTask applies AdaLoRA to the model "
+            "and registers AdaLoRAPruningCallback on the engine."
+        ),
+    )
+    adalora_init_rank: int = Field(12, gt=0)
+    adalora_target_rank: int = Field(6, gt=0)
+    adalora_alpha: float = Field(32.0, gt=0)
+    adalora_orth_reg_weight: float = Field(0.5, ge=0)
+    adalora_ema_alpha: float = Field(
+        0.95,
+        gt=0,
+        lt=1,
+        description="EMA smoothing factor for the gradient tracker.",
+    )
+    adalora_tinit: int = Field(
+        0,
+        ge=0,
+        description="First optimizer step eligible for pruning.",
+    )
+    adalora_tfinal: int | None = Field(
+        None,
+        ge=0,
+        description=(
+            "Optimizer step at which the rank budget reaches "
+            "adalora_target_rank. None → epochs * steps_per_epoch // 2."
+        ),
+    )
+    adalora_prune_every: int = Field(
+        50,
+        ge=1,
+        description="Optimizer-step cadence for the prune call.",
+    )
+    adalora_target_modules: list[str] | None = Field(
+        None,
+        description=(
+            "Optional list of module-name substring patterns forwarded "
+            "to apply_adalora. None → every nn.Linear is wrapped."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_adalora(self) -> "TrainingConfig":
+        # Cross-field checks that the Field constraints alone can't express.
+        if self.adalora_target_rank > self.adalora_init_rank:
+            raise ValueError(
+                f"adalora_target_rank ({self.adalora_target_rank}) must be "
+                f"≤ adalora_init_rank ({self.adalora_init_rank})"
+            )
+        if self.adalora_tfinal is not None and self.adalora_tfinal <= self.adalora_tinit:
+            raise ValueError(
+                f"adalora_tfinal ({self.adalora_tfinal}) must be strictly "
+                f"greater than adalora_tinit ({self.adalora_tinit})"
+            )
+        return self
+
 
 class DistributedConfig(BaseSettings):
     """Distributed configuration (aware of environment variables)"""

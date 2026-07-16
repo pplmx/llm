@@ -5,22 +5,47 @@ from typing import Any
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+from llm.core.adalora import AdaLoRAGradientEMA, prune_adalora
+from llm.runtime.checkpoint import CheckpointContributor
+
 
 # Forward declaration to avoid circular imports
 class TrainingEngine:
     pass
 
 
-class Callback:
+class Callback(CheckpointContributor):
     """
     Base class for creating callbacks in the training engine.
 
     Callbacks are functions that the training engine will call at various points
     during training (e.g., at the start of training, at the end of an epoch, etc.).
+
+    Subclasses that hold recoverable state (e.g. the AdaLoRA gradient-EMA
+    tracker) override :meth:`get_checkpoint_state` and
+    :meth:`load_checkpoint_state`. The engine folds callback state into
+    the checkpoint ``extra_state`` automatically.
     """
 
     def __init__(self):
         self.engine: TrainingEngine | None = None
+
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        """Return state to merge into the checkpoint ``extra_state``.
+
+        Default: nothing. Override in subclasses that hold recoverable
+        state (AdaLoRA EMA tracker, curriculum schedules, ...).
+        """
+        return None
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        """Restore state from a checkpoint ``extra_state`` fragment.
+
+        Default: no-op. The same fragment is shared across all
+        checkpoint contributors; subclasses should look up their own
+        namespaced key rather than consuming the whole dict.
+        """
+        return None
 
     def set_engine(self, engine: TrainingEngine):
         """Called by the TrainingEngine to provide a reference to itself."""
@@ -59,6 +84,16 @@ class Callback:
         logs: dict[str, Any] | None = None,
     ):
         """Called after the train_step (forward/backward/optimizer.step) is completed for a batch."""
+        pass
+
+    def on_optimizer_step(self, epoch: int, batch_idx: int, logs: dict[str, Any] | None = None):
+        """Called after ``optimizer.step()`` but **before** ``optimizer.zero_grad()``.
+
+        Use this hook to read parameter gradients that the next
+        ``zero_grad`` call would clear — e.g. AdaLoRA's gradient-EMA
+        tracker. The default is a no-op so existing callbacks are
+        unaffected.
+        """
         pass
 
     def on_validation_start(self, epoch: int, logs: dict[str, Any] | None = None):
@@ -283,3 +318,168 @@ class LRSchedulerCallback(Callback):
                 for cb in self.engine.callbacks:
                     if isinstance(cb, TensorBoardLogger) and cb.writer:
                         cb.writer.add_scalar("Epoch/LearningRate_End", current_lr, epoch)
+
+
+class AdaLoRAPruningCallback(Callback):
+    """Adaptive-budget pruning for AdaLoRA during SFT/DPO training.
+
+    Implements the trainer-side half of AdaLoRA Algorithm 1
+    (Zhang et al. 2023, page 4). On every optimizer step the callback:
+
+    1. Folds ``|∂L/∂λ_i|`` from each ``AdaLoRALinear`` into the EMA
+       tracker (so ``update`` runs even between prune calls — pruning
+       without an EMA would degenerate to magnitude-only ranking).
+    2. Every ``adalora_prune_every`` steps, calls
+       :func:`prune_adalora` with the linear budget schedule
+       ``(adalora_tinit, adalora_tfinal)`` and the tracker's
+       ``gradient_emas`` so importance scoring uses the EMA signal.
+    3. Logs ``adalora/effective_rank`` (mean over AdaLoRA layers) at
+       rank 0 each time the prune fires.
+
+    The callback is a strict no-op when ``use_adalora=False``, so it is
+    safe to register on every engine without an explicit feature flag.
+
+    Args:
+        use_adalora: Master switch. When ``False`` the callback does
+            nothing and ``get_checkpoint_state`` returns ``None``.
+        adalora_init_rank: ``init_rank`` passed to ``apply_adalora``
+            by the task (kept here for clarity only).
+        adalora_target_rank: ``target_rank`` — the budget the schedule
+            collapses to at ``adalora_tfinal``.
+        adalora_ema_alpha: EMA smoothing factor for the tracker.
+        adalora_tinit: First optimizer step eligible for pruning.
+        adalora_tfinal: Optimizer step at which the budget reaches
+            ``adalora_target_rank``. ``None`` defers to the engine's
+            step count at prune time (we just keep the budget at
+            ``adalora_init_rank`` until ``tinit`` and at
+            ``adalora_target_rank`` after a reasonable mid-point — see
+            ``on_train_step_end`` for the exact fallback).
+        adalora_prune_every: Optimizer-step cadence for the prune
+            call. The EMA still updates every step.
+    """
+
+    def __init__(
+        self,
+        use_adalora: bool = False,
+        adalora_init_rank: int = 12,
+        adalora_target_rank: int = 6,
+        adalora_ema_alpha: float = 0.95,
+        adalora_tinit: int = 0,
+        adalora_tfinal: int | None = None,
+        adalora_prune_every: int = 50,
+    ):
+        super().__init__()
+        self.use_adalora = use_adalora
+        self.adalora_init_rank = adalora_init_rank
+        self.adalora_target_rank = adalora_target_rank
+        self.adalora_ema_alpha = adalora_ema_alpha
+        self.adalora_tinit = adalora_tinit
+        self.adalora_tfinal = adalora_tfinal
+        self.adalora_prune_every = adalora_prune_every
+        # Built in on_train_start; None while disabled.
+        self._tracker: AdaLoRAGradientEMA | None = None
+
+    def on_train_start(self, logs: dict[str, Any] | None = None):
+        if not self.use_adalora:
+            return
+        if self.engine is None:
+            return
+        # Walk every AdaLoRALinear reachable from engine.model. The
+        # DDP/FSDP unwrap path is ``model.modules()`` so we don't have
+        # to special-case distributed wrappers.
+        self._tracker = AdaLoRAGradientEMA(
+            self.engine.model,
+            alpha=self.adalora_ema_alpha,
+        )
+
+    def on_optimizer_step(
+        self,
+        epoch: int,
+        batch_idx: int,
+        logs: dict[str, Any] | None = None,
+    ):
+        """Fold gradients into the EMA **before** ``zero_grad`` clears them.
+
+        We hook ``on_optimizer_step`` rather than ``on_train_step_end``
+        because the engine calls ``optimizer.zero_grad(set_to_none=True)``
+        between the two — by the time ``on_train_step_end`` fires, every
+        ``.grad`` is None and the EMA would never accumulate anything.
+        """
+        if not self.use_adalora or self._tracker is None:
+            return
+        self._tracker.update()
+
+    def on_train_step_end(
+        self,
+        epoch: int,
+        batch_idx: int,
+        loss: torch.Tensor,
+        metrics: dict[str, Any],
+        logs: dict[str, Any] | None = None,
+    ):
+        if not self.use_adalora or self._tracker is None or self.engine is None:
+            return
+
+        # Prune only on cadence. We use ``engine.global_step`` (the
+        # optimizer-step counter), not the batch index, so gradient
+        # accumulation doesn't bias the cadence. The EMA was already
+        # updated in ``on_optimizer_step`` (which fires earlier in the
+        # engine's per-batch sequence).
+        global_step = getattr(self.engine, "global_step", 0)
+        if global_step <= 0 or global_step % self.adalora_prune_every != 0:
+            return
+
+        # Resolve tfinal. When None, defer to ``epochs * steps_per_epoch // 2``
+        # (matches the ticket spec). When ``steps_per_epoch`` is unavailable
+        # we can't compute a meaningful mid-point — fall back to collapsing
+        # the budget to ``adalora_target_rank`` immediately on the next prune.
+        # We never recompute tfinal per-call (a moving tfinal means the
+        # budget never converges).
+        tfinal = self.adalora_tfinal
+        if tfinal is None:
+            cfg = getattr(self.engine, "config", None)
+            try:
+                steps_per_epoch = int(
+                    getattr(getattr(cfg, "data", None), "steps_per_epoch", 0) or 0  # type: ignore[union-attr]
+                )
+                epochs = int(getattr(cfg.training, "epochs", 1) or 1)  # type: ignore[union-attr]
+            except (AttributeError, TypeError, ValueError):
+                steps_per_epoch = 0
+                epochs = 1
+            if steps_per_epoch > 0:
+                tfinal = max(self.adalora_tinit + 1, (epochs * steps_per_epoch) // 2)
+            else:
+                # No schedule — collapse straight to target_rank so the
+                # user gets *some* pruning on cadence. They can set
+                # ``adalora_tfinal`` explicitly for a proper schedule.
+                tfinal = global_step
+
+        prune_adalora(
+            self.engine.model,
+            schedule=(self.adalora_tinit, tfinal),
+            current_step=global_step,
+            gradient_emas=self._tracker.as_dict(),
+        )
+
+        # Log mean effective rank so the trainer can see pruning happen.
+        if self.engine.rank == 0:
+            from llm.core.adalora import AdaLoRALinear
+
+            ranks = [
+                m.effective_rank
+                for m in self.engine.model.modules()
+                if isinstance(m, AdaLoRALinear)
+            ]
+            if ranks:
+                mean_rank = sum(ranks) / len(ranks)
+                self.engine.logger.info(f"adalora/effective_rank={mean_rank:.1f}")
+
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        if self._tracker is None:
+            return None
+        return self._tracker.state_dict()
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        if self._tracker is None:
+            return
+        self._tracker.load_state_dict(state)

@@ -11,6 +11,7 @@ from llm.runtime.checkpoint import CheckpointContributor
 from llm.training.core.config import Config
 
 if TYPE_CHECKING:
+    from llm.training.core.callbacks import Callback
     from llm.training.core.engine import TrainingEngine
 
 # A custom-loop epoch callback. Receives the current epoch index and runs
@@ -44,6 +45,20 @@ class TrainingTask(abc.ABC, CheckpointContributor):
     def get_resume_optimizer(self) -> optim.Optimizer | None:
         """Return the optimizer used when resuming a custom training loop."""
         return None
+
+    def build_callbacks(self) -> list["Callback"]:
+        """Return callbacks that should be registered on the engine.
+
+        Subclasses override this to attach task-specific observers
+        (e.g. the AdaLoRA pruning callback). The engine merges the
+        returned list with whatever callbacks were passed at
+        construction time and calls :meth:`Callback.set_engine` on
+        each one before training starts.
+
+        Default: no task-specific callbacks. Existing tasks are
+        unaffected by this hook — it is purely additive.
+        """
+        return []
 
     def get_checkpoint_state(self) -> dict[str, Any] | None:
         return None
