@@ -104,6 +104,7 @@ class MultiHeadAttention(nn.Module):
         start_pos: int | Tensor | None = None,
         paged_kv_cache: object | None = None,
         layer_idx: int | None = None,
+        prefix_kv: tuple[Tensor, Tensor] | None = None,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """
         Forward pass.
@@ -119,6 +120,11 @@ class MultiHeadAttention(nn.Module):
                 - If `True` or `False`, overrides the default setting.
             kv_cache (KVCache | None): Pre-allocated KV cache for efficient autoregressive generation.
                 When provided, updates are done in-place without memory allocation.
+            prefix_kv (tuple[Tensor, Tensor] | None): Optional prefix K/V to prepend to the
+                projected K/V before the attention compute. Used by the Prefix Tuning slice
+                (T2 PEFT) — see :class:`llm.core.prefix_tuning.PrefixTuningAttention`. Tensors
+                must be shape ``[B, num_kv_heads, prefix_len, head_dim]``. Injected **after**
+                the KV cache write so the cache only stores dynamic tokens.
             use_cache (bool): Whether to return the updated (key, value) pair.
             batch_indices (Tensor | None): Indices for specific KV cache slots [B]. Use with update_at_indices.
             start_pos (int | Tensor | None): Explicit write position for cache update. required if batch_indices is used.
@@ -200,6 +206,29 @@ class MultiHeadAttention(nn.Module):
             current_kv = (k, v)
 
         # GQA: Repeat K, V if needed
+        # Prefix injection happens BEFORE the GQA repeat so the prefix is
+        # treated exactly like a regular token (repeated num_queries_per_kv
+        # times across the query heads).
+        if prefix_kv is not None:
+            prefix_k, prefix_v = prefix_kv
+            if prefix_k.shape != prefix_v.shape:
+                raise ValueError(
+                    f"prefix_k and prefix_v must share shape; got "
+                    f"{tuple(prefix_k.shape)} vs {tuple(prefix_v.shape)}"
+                )
+            if prefix_k.shape[1] != self.num_kv_heads:
+                raise ValueError(
+                    f"prefix num_kv_heads ({prefix_k.shape[1]}) must match "
+                    f"attention num_kv_heads ({self.num_kv_heads})"
+                )
+            if prefix_k.shape[3] != self.head_dim:
+                raise ValueError(
+                    f"prefix head_dim ({prefix_k.shape[3]}) must match "
+                    f"attention head_dim ({self.head_dim})"
+                )
+            k = torch.cat([prefix_k, k], dim=2)
+            v = torch.cat([prefix_v, v], dim=2)
+
         if self.num_kv_heads != self.num_heads:
             # k, v: [B, N_kv, S, D] -> [B, N_q, S, D]
             num_queries_per_kv = self.num_heads // self.num_kv_heads

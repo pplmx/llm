@@ -11,6 +11,7 @@ backend; see ``core/attn/flash_attn.py`` for the soft-dependency
 contract (the ``flash-attn`` package is optional).
 """
 
+from .base import PrefixCapableAttention
 from .flash_attn import FLASH_ATTN_AVAILABLE, FlashAttention
 from .mha import MultiHeadAttention
 from .mla import MultiLatentAttention
@@ -21,5 +22,6 @@ __all__ = [
     "FlashAttention",
     "MultiHeadAttention",
     "MultiLatentAttention",
+    "PrefixCapableAttention",
     "sdpa",
 ]
