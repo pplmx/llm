@@ -148,6 +148,20 @@ hf = "llm.data.sources:_build_hf_source"
 [project.entry-points."llm.export_backends"]
 torchscript = "llm.export.torchscript:build_torchscript_exporter"
 
+# ``llm.peft_methods`` — third-party PEFT methods (e.g. Pfeiffer /
+# Compacter / MAD-X adapters, custom reparameterization tricks) plus
+# any user-built wrappers around the built-in seven (lora / qlora /
+# adalora / prefix_tuning / ia3 / bitfit / adapter). The built-in
+# methods stay registered in code (see ``llm/core/peft/methods.py``)
+# because they are the reference implementations and we want them to
+# resolve even when no entry-point machinery runs (minimal test envs).
+#
+# Entry points here point at a factory that returns a
+# ``llm.core.peft.PEFTMethod`` instance — the loader resolves each
+# entry point with ``ep.load()`` and registers the returned
+# ``PEFTMethod`` directly into ``PEFT_REGISTRY``.
+[project.entry-points."llm.peft_methods"]
+
 [project.scripts]
 llm-train = "llm.training.train:app"
 llm-serve = "llm.serving.api:main"
