@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import torch
 import yaml
@@ -116,8 +117,7 @@ class TrainingConfig(BaseModel):
         None,
         ge=0,
         description=(
-            "Optimizer step at which the rank budget reaches "
-            "adalora_target_rank. None → epochs * steps_per_epoch // 2."
+            "Optimizer step at which the rank budget reaches adalora_target_rank. None → epochs * steps_per_epoch // 2."
         ),
     )
     adalora_prune_every: int = Field(
@@ -134,7 +134,7 @@ class TrainingConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_adalora(self) -> "TrainingConfig":
+    def _validate_adalora(self) -> TrainingConfig:
         # Cross-field checks that the Field constraints alone can't express.
         if self.adalora_target_rank > self.adalora_init_rank:
             raise ValueError(
@@ -223,8 +223,7 @@ class TrainingConfig(BaseModel):
     ia3_target_modules: list[str] | None = Field(
         None,
         description=(
-            "Optional list of module-name substring patterns forwarded "
-            "to apply_ia3. None → every nn.Linear is wrapped."
+            "Optional list of module-name substring patterns forwarded to apply_ia3. None → every nn.Linear is wrapped."
         ),
     )
 
@@ -288,6 +287,64 @@ class TrainingConfig(BaseModel):
             "to apply_adapter. None → every nn.Linear is wrapped."
         ),
     )
+
+    # Unified PEFT dispatch (T2 PEFT #44). When ``peft_method`` is set,
+    # ``LanguageModelingTask.build_model`` resolves the method through
+    # ``llm.core.peft.apply_peft`` (and forwards ``peft_kwargs``) instead
+    # of the per-method ``use_*`` flags below. The legacy flags remain
+    # the source of truth when ``peft_method`` is ``None`` — existing
+    # configs are unaffected.
+    #
+    # Validated against :data:`llm.core.peft.PEFT_REGISTRY` at config-load
+    # time so unknown methods raise before ``build_model`` is ever called
+    # (matches the ``attn_impl`` validation pattern in
+    # ``ModelConfig.check_consistency``).
+    peft_method: str | None = Field(
+        None,
+        description=(
+            "Optional PEFT method name resolved through PEFT_REGISTRY "
+            "(e.g. 'lora', 'ia3', 'adalora', 'prefix_tuning', 'bitfit', "
+            "'adapter', 'qlora'). When set, LanguageModelingTask "
+            "dispatches via apply_peft(...) instead of the per-method "
+            "use_* flags. None → legacy per-method flag path."
+        ),
+    )
+    peft_kwargs: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "Optional kwargs forwarded verbatim to apply_peft (and "
+            "thence to the per-method apply_* function). Method-"
+            "specific — see each PEFT method's docstring. Only "
+            "consulted when peft_method is set."
+        ),
+    )
+
+    @field_validator("peft_method", mode="after")
+    @classmethod
+    def _validate_peft_method(cls, value: str | None) -> str | None:
+        """Reject unknown PEFT method names at config-load time.
+
+        Lazy import: ``llm.core.peft`` is not imported at module top so
+        this validator does not pull every PEFT module (lora / qlora /
+        adalora / prefix_tuning / ia3 / bitfit / adapter) into every
+        process that just constructs a ``TrainingConfig`` — only
+        configurations that actually set ``peft_method`` pay the import
+        cost.
+        """
+        if value is None:
+            return value
+        from llm.core.peft import PEFT_REGISTRY, ensure_methods_registered
+
+        # Idempotent — first call populates the registry.
+        ensure_methods_registered()
+        if value not in PEFT_REGISTRY:
+            available = ", ".join(PEFT_REGISTRY.names())
+            raise ValueError(
+                f"peft_method '{value}' not found in PEFTMethod registry. "
+                f"Available: {available}. Register a new method via the "
+                f"'llm.peft_methods' setuptools entry-point group."
+            )
+        return value
 
 
 class DistributedConfig(BaseSettings):
