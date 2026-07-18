@@ -73,3 +73,29 @@ def ensure_norms_registered() -> None:
         NORM_REGISTRY.register("layer_norm", _make_layer_norm)
     if "rms_norm" not in NORM_REGISTRY:
         NORM_REGISTRY.register("rms_norm", _make_rms_norm)
+
+
+# Re-export the PEFT registry (T2 PEFT #43) so trainer-side modules can
+# do ``from llm.core.registry import PEFT_REGISTRY`` — same single-point
+# import path used for ATTENTION_REGISTRY / NORM_REGISTRY.
+#
+# Imported lazily at module bottom to avoid any circular-import risk with
+# the PEFT subpackage (which itself imports from runtime.registry).
+from llm.core.peft.registry import PEFT_REGISTRY  # noqa: E402
+from llm.core.peft.registry import (  # noqa: E402
+    ensure_methods_registered as ensure_peft_methods_registered,
+)
+
+__all__ = [
+    "ATTENTION_KV_CACHE_CAPABILITY",
+    "ATTENTION_REGISTRY",
+    "MLP_REGISTRY",
+    "NORM_REGISTRY",
+    "PEFT_REGISTRY",
+    "attention_supports_kv_cache",
+    "ensure_norms_registered",
+    "ensure_peft_methods_registered",
+    "register_attention",
+    "register_mlp",
+    "set_attention_kv_cache_capability",
+]
