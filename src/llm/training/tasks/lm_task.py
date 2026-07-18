@@ -7,6 +7,7 @@ from llm.core.adalora import apply_adalora
 from llm.core.adapter import apply_adapter
 from llm.core.bitfit import apply_bitfit
 from llm.core.ia3 import apply_ia3
+from llm.core.peft import apply_peft
 from llm.core.prefix_tuning import apply_prefix_tuning
 from llm.runtime import ModelFactory
 from llm.training.core.callbacks import AdaLoRAPruningCallback
@@ -20,18 +21,37 @@ class LanguageModelingTask(TrainingTask):
 
     def build_model(self) -> nn.Module:
         model = ModelFactory.from_config(self.config.model)
+        t_cfg = self.config.training
+        # New unified PEFT dispatch (T2 PEFT #44). When ``peft_method``
+        # is set, the method is resolved through ``PEFT_REGISTRY`` and
+        # ``peft_kwargs`` is forwarded verbatim to ``apply_peft`` (and
+        # thence to the per-method ``apply_*`` function). This is the
+        # recommended path going forward — the legacy ``use_*`` flag
+        # branches below are preserved for backward compatibility with
+        # existing configs (which set the flags directly without going
+        # through the registry).
+        if getattr(t_cfg, "peft_method", None) is not None:
+            kwargs = dict(t_cfg.peft_kwargs or {})
+            apply_peft(model, t_cfg.peft_method, **kwargs)
+            return model
+        # Legacy per-method flag path (T3 #40-#42, T2 PEFT #18-#20).
+        # Each ``use_*`` flag stays opt-in; defaults preserve current
+        # behavior so existing configs are unaffected. The five branches
+        # below are intentional — when ``peft_method`` is None we still
+        # need them. New PEFT methods should land on the new path
+        # (``peft_method`` + ``peft_kwargs``), not by appending here.
         # AdaLoRA is opt-in. When ``use_adalora=True`` we wrap every
         # ``nn.Linear`` (or the filtered subset) in ``AdaLoRALinear``
         # and freeze the base weights. The pruning callback registered
         # by ``build_callbacks`` then drives the rank schedule.
-        if getattr(self.config.training, "use_adalora", False):
+        if getattr(t_cfg, "use_adalora", False):
             apply_adalora(
                 model,
-                init_rank=self.config.training.adalora_init_rank,
-                target_rank=self.config.training.adalora_target_rank,
-                alpha=self.config.training.adalora_alpha,
-                target_modules=self.config.training.adalora_target_modules,
-                orth_reg_weight=self.config.training.adalora_orth_reg_weight,
+                init_rank=t_cfg.adalora_init_rank,
+                target_rank=t_cfg.adalora_target_rank,
+                alpha=t_cfg.adalora_alpha,
+                target_modules=t_cfg.adalora_target_modules,
+                orth_reg_weight=t_cfg.adalora_orth_reg_weight,
             )
         # Prefix Tuning is opt-in. When ``use_prefix_tuning=True`` we
         # wrap every ``MultiHeadAttention`` (or the filtered subset) in
@@ -40,12 +60,12 @@ class LanguageModelingTask(TrainingTask):
         # scheduler / tracker — the user calls
         # ``fold_reparameterization`` at inference time (matching the
         # LoRA apply / merge pattern).
-        if getattr(self.config.training, "use_prefix_tuning", False):
+        if getattr(t_cfg, "use_prefix_tuning", False):
             apply_prefix_tuning(
                 model,
-                prefix_len=self.config.training.prefix_tuning_len,
-                reparam_hidden=self.config.training.prefix_reparam_hidden,
-                target_modules=self.config.training.prefix_target_modules,
+                prefix_len=t_cfg.prefix_tuning_len,
+                reparam_hidden=t_cfg.prefix_reparam_hidden,
+                target_modules=t_cfg.prefix_target_modules,
             )
         # IA³ is opt-in. When ``use_ia3=True`` we wrap every
         # ``nn.Linear`` (or the filtered subset) in ``IA3Linear`` and
@@ -53,11 +73,11 @@ class LanguageModelingTask(TrainingTask):
         # Prefix Tuning there is no scheduler / tracker — the user
         # calls ``merge_ia3`` at inference time (matching the LoRA
         # apply / merge pattern).
-        if getattr(self.config.training, "use_ia3", False):
+        if getattr(t_cfg, "use_ia3", False):
             apply_ia3(
                 model,
-                init_scale=self.config.training.ia3_init_scale,
-                target_modules=self.config.training.ia3_target_modules,
+                init_scale=t_cfg.ia3_init_scale,
+                target_modules=t_cfg.ia3_target_modules,
             )
         # BitFit is opt-in. When ``use_bitfit=True`` we freeze every
         # parameter and enable gradients on every bias (or the
@@ -66,10 +86,10 @@ class LanguageModelingTask(TrainingTask):
         # ``requires_grad`` toggle at ``build_model`` time, with no
         # inference-time merge step (the biases are simply left in
         # place at inference — they cost nothing extra).
-        if getattr(self.config.training, "use_bitfit", False):
+        if getattr(t_cfg, "use_bitfit", False):
             apply_bitfit(
                 model,
-                target_modules=self.config.training.bitfit_target_modules,
+                target_modules=t_cfg.bitfit_target_modules,
             )
         # Adapter Layers (Houlsby 2019) is opt-in. When
         # ``use_adapter=True`` we wrap every ``nn.Linear`` (or the
@@ -80,11 +100,11 @@ class LanguageModelingTask(TrainingTask):
         # one-shot wrap at ``build_model`` time, and there is no
         # inference-time merge (the up projection is zero, so the
         # wrapper contributes nothing unless trained).
-        if getattr(self.config.training, "use_adapter", False):
+        if getattr(t_cfg, "use_adapter", False):
             apply_adapter(
                 model,
-                bottleneck_dim=self.config.training.adapter_bottleneck_dim,
-                target_modules=self.config.training.adapter_target_modules,
+                bottleneck_dim=t_cfg.adapter_bottleneck_dim,
+                target_modules=t_cfg.adapter_target_modules,
             )
         return model
 
