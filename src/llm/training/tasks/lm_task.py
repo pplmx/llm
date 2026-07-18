@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.core.adalora import apply_adalora
+from llm.core.ia3 import apply_ia3
 from llm.core.prefix_tuning import apply_prefix_tuning
 from llm.runtime import ModelFactory
 from llm.training.core.callbacks import AdaLoRAPruningCallback
@@ -43,6 +44,18 @@ class LanguageModelingTask(TrainingTask):
                 prefix_len=self.config.training.prefix_tuning_len,
                 reparam_hidden=self.config.training.prefix_reparam_hidden,
                 target_modules=self.config.training.prefix_target_modules,
+            )
+        # IA³ is opt-in. When ``use_ia3=True`` we wrap every
+        # ``nn.Linear`` (or the filtered subset) in ``IA3Linear`` and
+        # freeze the base weight so only ``ia3_l`` is trainable. Like
+        # Prefix Tuning there is no scheduler / tracker — the user
+        # calls ``merge_ia3`` at inference time (matching the LoRA
+        # apply / merge pattern).
+        if getattr(self.config.training, "use_ia3", False):
+            apply_ia3(
+                model,
+                init_scale=self.config.training.ia3_init_scale,
+                target_modules=self.config.training.ia3_target_modules,
             )
         return model
 
