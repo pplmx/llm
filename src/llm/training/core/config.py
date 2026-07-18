@@ -253,6 +253,42 @@ class TrainingConfig(BaseModel):
         ),
     )
 
+    # Adapter Layers (T2 PEFT). Defaults preserve current behavior —
+    # the wrapper is only applied when ``use_adapter=True``.
+    # Mirrors the layer-side ``AdapterLinear`` defaults so an opt-in
+    # config requires no other knobs. Like Prefix Tuning / IA³ /
+    # BitFit, Adapter has no scheduler / tracker — ``apply_adapter``
+    # is a one-shot wrap at ``build_model`` time. There is no
+    # inference-time merge for adapters — the up projection is zero
+    # so the wrapper contributes zero unless trained.
+    use_adapter: bool = Field(
+        False,
+        description=(
+            "Master switch for Adapter Layers (Houlsby 2019). When "
+            "True, LanguageModelingTask wraps every nn.Linear with "
+            "AdapterLinear (down → activation → up bottleneck residual) "
+            "and freezes the base weight so only the adapter is "
+            "trainable."
+        ),
+    )
+    adapter_bottleneck_dim: int = Field(
+        64,
+        gt=0,
+        description=(
+            "Width of the adapter's bottleneck dim. Defaults to 64 "
+            "(the Houlsby 2019 paper convention). Larger values "
+            "increase adapter capacity linearly; smaller values "
+            "reduce trainable parameters."
+        ),
+    )
+    adapter_target_modules: list[str] | None = Field(
+        None,
+        description=(
+            "Optional list of module-name substring patterns forwarded "
+            "to apply_adapter. None → every nn.Linear is wrapped."
+        ),
+    )
+
 
 class DistributedConfig(BaseSettings):
     """Distributed configuration (aware of environment variables)"""
