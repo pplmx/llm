@@ -148,6 +148,50 @@ class TrainingConfig(BaseModel):
             )
         return self
 
+    # Prefix Tuning (T2 PEFT). Defaults preserve current behavior —
+    # the wrapper is only applied when ``use_prefix_tuning=True``.
+    # Mirrors the layer-side ``PrefixTuningAttention`` defaults so an
+    # opt-in config requires no other knobs. Unlike AdaLoRA, Prefix
+    # Tuning has no scheduler / tracker — ``apply_prefix_tuning`` is
+    # a one-shot wrap at ``build_model`` time and the user calls
+    # ``fold_reparameterization`` at inference time (matching the
+    # LoRA apply / merge pattern).
+    use_prefix_tuning: bool = Field(
+        False,
+        description=(
+            "Master switch for Prefix Tuning. When True, "
+            "LanguageModelingTask wraps every MultiHeadAttention with "
+            "PrefixTuningAttention and freezes the base MHA so only "
+            "the prefix path is trainable."
+        ),
+    )
+    prefix_tuning_len: int = Field(
+        10,
+        gt=0,
+        description=(
+            "Number of prefix tokens prepended to each layer's K and V. "
+            "Li & Liang 2021 used 10; larger values increase trainable "
+            "parameters linearly."
+        ),
+    )
+    prefix_reparam_hidden: int | None = Field(
+        None,
+        gt=0,
+        description=(
+            "Hidden dim of the reparameterization MLPs. None → defaults "
+            "to ``kv_dim`` at the wrapper layer (full-rank projection). "
+            "Smaller values reduce trainable parameters."
+        ),
+    )
+    prefix_target_modules: list[str] | None = Field(
+        None,
+        description=(
+            "Optional list of module-name substring patterns forwarded "
+            "to apply_prefix_tuning. None → every MultiHeadAttention "
+            "is wrapped."
+        ),
+    )
+
 
 class DistributedConfig(BaseSettings):
     """Distributed configuration (aware of environment variables)"""

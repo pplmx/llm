@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.core.adalora import apply_adalora
+from llm.core.prefix_tuning import apply_prefix_tuning
 from llm.runtime import ModelFactory
 from llm.training.core.callbacks import AdaLoRAPruningCallback
 from llm.training.tasks.base_task import TrainingTask
@@ -28,6 +29,20 @@ class LanguageModelingTask(TrainingTask):
                 alpha=self.config.training.adalora_alpha,
                 target_modules=self.config.training.adalora_target_modules,
                 orth_reg_weight=self.config.training.adalora_orth_reg_weight,
+            )
+        # Prefix Tuning is opt-in. When ``use_prefix_tuning=True`` we
+        # wrap every ``MultiHeadAttention`` (or the filtered subset) in
+        # ``PrefixTuningAttention`` and freeze the base MHA so only the
+        # prefix path is trainable. Unlike AdaLoRA there is no
+        # scheduler / tracker — the user calls
+        # ``fold_reparameterization`` at inference time (matching the
+        # LoRA apply / merge pattern).
+        if getattr(self.config.training, "use_prefix_tuning", False):
+            apply_prefix_tuning(
+                model,
+                prefix_len=self.config.training.prefix_tuning_len,
+                reparam_hidden=self.config.training.prefix_reparam_hidden,
+                target_modules=self.config.training.prefix_target_modules,
             )
         return model
 
