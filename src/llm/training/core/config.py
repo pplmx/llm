@@ -228,6 +228,31 @@ class TrainingConfig(BaseModel):
         ),
     )
 
+    # BitFit (T2 PEFT). Defaults preserve current behavior — biases
+    # are only enabled when ``use_bitfit=True``. Mirrors the
+    # ``apply_bitfit`` defaults so an opt-in config requires no
+    # other knobs. Like Prefix Tuning and IA³, BitFit has no
+    # scheduler / tracker — ``apply_bitfit`` is a one-shot
+    # ``requires_grad`` toggle at ``build_model`` time.
+    use_bitfit: bool = Field(
+        False,
+        description=(
+            "Master switch for BitFit (bias-only fine-tuning). When "
+            "True, LanguageModelingTask calls apply_bitfit(model) to "
+            "freeze every parameter and enable gradients on every "
+            "bias. Per-model cost is exactly the sum of bias sizes."
+        ),
+    )
+    bitfit_target_modules: list[str] | None = Field(
+        None,
+        description=(
+            "Optional list of module-name substring patterns forwarded "
+            "to apply_bitfit. A bias is trainable only if its qualified "
+            "name contains at least one of the patterns. None → every "
+            "bias is trainable."
+        ),
+    )
+
 
 class DistributedConfig(BaseSettings):
     """Distributed configuration (aware of environment variables)"""

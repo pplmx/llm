@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.core.adalora import apply_adalora
+from llm.core.bitfit import apply_bitfit
 from llm.core.ia3 import apply_ia3
 from llm.core.prefix_tuning import apply_prefix_tuning
 from llm.runtime import ModelFactory
@@ -56,6 +57,18 @@ class LanguageModelingTask(TrainingTask):
                 model,
                 init_scale=self.config.training.ia3_init_scale,
                 target_modules=self.config.training.ia3_target_modules,
+            )
+        # BitFit is opt-in. When ``use_bitfit=True`` we freeze every
+        # parameter and enable gradients on every bias (or the
+        # filtered subset). Like Prefix Tuning and IA³ there is no
+        # scheduler / tracker — BitFit is a one-shot
+        # ``requires_grad`` toggle at ``build_model`` time, with no
+        # inference-time merge step (the biases are simply left in
+        # place at inference — they cost nothing extra).
+        if getattr(self.config.training, "use_bitfit", False):
+            apply_bitfit(
+                model,
+                target_modules=self.config.training.bitfit_target_modules,
             )
         return model
 
