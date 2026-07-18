@@ -71,6 +71,7 @@
 ### 4. 高效微调 (P2)
 - [x] QLoRA (NF4 量化 + LoRA)
 - [x] AdaLoRA (SVD 形式 + 正交正则化 + 自适应剪枝, T3 #40 基础切片 + T3 #41 剪枝切片 + T3 #42 trainer 集成: EMA tracker + pruning callback + SFT/DPO 接入)
+- [x] IA³ (T-Few 乘性 PEFT 基础切片: `IA3Linear` 包装器 + `apply_ia3` / `merge_ia3` / `unmerge_ia3` / `get_ia3_parameters` / `count_ia3_parameters` / `disable_ia3` / `enable_ia3` 模块级助手, 每层 `out_features` 训练参数, init 为 ones 保持恒等变换; trainer 集成切片待跟进)
 - [~] Prefix Tuning / P-Tuning (T2 PEFT MHA 切片完成: 基础切片 `PrefixCapableAttention` protocol + `MultiHeadAttention.forward(prefix_kv=...)` + `PrefixTuningAttention` 包装器 + `apply_prefix_tuning` / `get_prefix_parameters` / `fold_reparameterization` 模块级助手; 训练切片 `TrainingConfig` 四个 opt-in 字段 + `LanguageModelingTask.build_model` 自动 `apply_prefix_tuning` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); 仅 MHA 后端支持, Flash/MLA/SDPA 留待后续切片 (需要各自后端实现 `PrefixCapableAttention` Protocol))
 
 ### 5. 高级分布式训练 (P1–P3)
@@ -467,6 +468,7 @@
 - [x] 实现 LoRA (Low-Rank Adaptation)
 - [x] 实现 QLoRA (Quantized LoRA)
 - [x] 实现 AdaLoRA (Adaptive LoRA) — 基础切片 (SVD 形式 + QR 正交化 + 正交正则化 + mask hook, T3 #40) + 剪枝切片 (importance scoring + prune_to_rank + update_budget + prune_adalora helper, T3 #41) + trainer 集成切片 (AdaLoRAGradientEMA tracker + AdaLoRAPruningCallback + TrainingConfig 九个 opt-in 字段 + LanguageModelingTask.build_model 自动 apply_adalora + SFT/DPO 继承, T3 #42)
+- [x] 实现 IA³ (T-Few) — 基础切片 (`IA3Linear` 乘性缩放包装器 + `ia3_l` 训练参数 + `apply_ia3` / `merge_ia3` / `unmerge_ia3` / `get_ia3_parameters` / `count_ia3_parameters` / `disable_ia3` / `enable_ia3` 模块级助手; 每层 `out_features` 训练参数, init 为 ones 保持恒等变换); trainer 集成切片待跟进 (单 config flag + `LanguageModelingTask.build_model` 自动 `apply_ia3`)
 - [~] 探索 Prefix Tuning / P-Tuning — MHA 切片完成: 基础切片 `MultiHeadAttention.forward(prefix_kv=...)` 接收 prefix K/V 拼接 + `PrefixCapableAttention` Protocol + `PrefixTuningAttention` 包装器 (prefix_small + 两个 reparam MLP) + `apply_prefix_tuning` / `get_prefix_parameters` / `fold_reparameterization` 模块级助手; 训练切片 `TrainingConfig` 四个 opt-in 字段 (`use_prefix_tuning` / `prefix_tuning_len` / `prefix_reparam_hidden` / `prefix_target_modules`) + `LanguageModelingTask.build_model` 自动 `apply_prefix_tuning` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); 仅 MHA 后端支持, Flash / MLA / SDPA 留待后续切片 (需要各自后端实现 `PrefixCapableAttention` Protocol)
 
 #### 15.4 新型 MoE 架构
