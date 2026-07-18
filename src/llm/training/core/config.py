@@ -192,6 +192,42 @@ class TrainingConfig(BaseModel):
         ),
     )
 
+    # IA³ (T2 PEFT). Defaults preserve current behavior — the wrapper
+    # is only applied when ``use_ia3=True``. Mirrors the layer-side
+    # ``IA3Linear`` defaults so an opt-in config requires no other
+    # knobs. Like Prefix Tuning, IA³ has no scheduler / tracker —
+    # ``apply_ia3`` is a one-shot wrap at ``build_model`` time and the
+    # user calls ``merge_ia3`` at inference time (matching the LoRA
+    # apply / merge pattern).
+    use_ia3: bool = Field(
+        False,
+        description=(
+            "Master switch for IA³ (T-Few). When True, "
+            "LanguageModelingTask wraps every nn.Linear with IA3Linear "
+            "and freezes the base weight so only the ia3_l scale is "
+            "trainable. Per-layer cost is out_features trainable params."
+        ),
+    )
+    ia3_init_scale: float = Field(
+        1.0,
+        gt=0.0,
+        description=(
+            "Initial value of the IA³ multiplicative scale. Defaults "
+            "to 1.0 so the wrapper is the identity transform at step 1 — "
+            "no chicken-and-egg stall. Setting to a different value (e.g. "
+            "0.5) starts the model at a uniformly-downweighted version "
+            "of the base — useful only if you have a reason to start "
+            "off-distribution."
+        ),
+    )
+    ia3_target_modules: list[str] | None = Field(
+        None,
+        description=(
+            "Optional list of module-name substring patterns forwarded "
+            "to apply_ia3. None → every nn.Linear is wrapped."
+        ),
+    )
+
 
 class DistributedConfig(BaseSettings):
     """Distributed configuration (aware of environment variables)"""

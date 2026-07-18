@@ -71,7 +71,7 @@
 ### 4. 高效微调 (P2)
 - [x] QLoRA (NF4 量化 + LoRA)
 - [x] AdaLoRA (SVD 形式 + 正交正则化 + 自适应剪枝, T3 #40 基础切片 + T3 #41 剪枝切片 + T3 #42 trainer 集成: EMA tracker + pruning callback + SFT/DPO 接入)
-- [x] IA³ (T-Few 乘性 PEFT 基础切片: `IA3Linear` 包装器 + `apply_ia3` / `merge_ia3` / `unmerge_ia3` / `get_ia3_parameters` / `count_ia3_parameters` / `disable_ia3` / `enable_ia3` 模块级助手, 每层 `out_features` 训练参数, init 为 ones 保持恒等变换; trainer 集成切片待跟进)
+- [x] IA³ (T-Few 乘性 PEFT 基础切片: `IA3Linear` 包装器 + `apply_ia3` / `merge_ia3` / `unmerge_ia3` / `get_ia3_parameters` / `count_ia3_parameters` / `disable_ia3` / `enable_ia3` 模块级助手, 每层 `out_features` 训练参数, init 为 ones 保持恒等变换; trainer 集成切片 `TrainingConfig` 三个 opt-in 字段 `use_ia3` / `ia3_init_scale` / `ia3_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_ia3` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型))
 - [~] Prefix Tuning / P-Tuning (T2 PEFT MHA 切片完成: 基础切片 `PrefixCapableAttention` protocol + `MultiHeadAttention.forward(prefix_kv=...)` + `PrefixTuningAttention` 包装器 + `apply_prefix_tuning` / `get_prefix_parameters` / `fold_reparameterization` 模块级助手; 训练切片 `TrainingConfig` 四个 opt-in 字段 + `LanguageModelingTask.build_model` 自动 `apply_prefix_tuning` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); 仅 MHA 后端支持, Flash/MLA/SDPA 留待后续切片 (需要各自后端实现 `PrefixCapableAttention` Protocol))
 
 ### 5. 高级分布式训练 (P1–P3)
