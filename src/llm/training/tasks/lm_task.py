@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.core.adalora import apply_adalora
+from llm.core.adapter import apply_adapter
 from llm.core.bitfit import apply_bitfit
 from llm.core.ia3 import apply_ia3
 from llm.core.prefix_tuning import apply_prefix_tuning
@@ -69,6 +70,21 @@ class LanguageModelingTask(TrainingTask):
             apply_bitfit(
                 model,
                 target_modules=self.config.training.bitfit_target_modules,
+            )
+        # Adapter Layers (Houlsby 2019) is opt-in. When
+        # ``use_adapter=True`` we wrap every ``nn.Linear`` (or the
+        # filtered subset) in ``AdapterLinear`` (down → activation →
+        # up bottleneck residual) and freeze the base weight so only
+        # the adapter is trainable. Like Prefix Tuning / IA³ / BitFit
+        # there is no scheduler / tracker — ``apply_adapter`` is a
+        # one-shot wrap at ``build_model`` time, and there is no
+        # inference-time merge (the up projection is zero, so the
+        # wrapper contributes nothing unless trained).
+        if getattr(self.config.training, "use_adapter", False):
+            apply_adapter(
+                model,
+                bottleneck_dim=self.config.training.adapter_bottleneck_dim,
+                target_modules=self.config.training.adapter_target_modules,
             )
         return model
 
