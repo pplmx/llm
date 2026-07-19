@@ -58,6 +58,15 @@ from llm.core.lora import (
     unmerge_lora,
 )
 from llm.core.peft.types import PEFTMethod, TargetModuleFilter
+from llm.core.pfeiffer_adapter import (
+    apply_pfeiffer_adapter,
+    count_pfeiffer_parameters,
+    disable_pfeiffer_adapter,
+    enable_pfeiffer_adapter,
+    get_pfeiffer_parameters,
+    merge_pfeiffer_adapter,
+    unmerge_pfeiffer_adapter,
+)
 from llm.core.prefix_tuning import apply_prefix_tuning, get_prefix_parameters
 from llm.core.qlora import apply_qlora, get_qlora_parameters
 
@@ -155,6 +164,23 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         # at init, so ``merge_adapter`` is a documented no-op (the
         # base weight doesn't change). The registry still surfaces it
         # for API parity with LoRA's apply/merge pattern.
+        target_module_filter=TargetModuleFilter.LINEAR,
+    ),
+    PEFTMethod(
+        name="pfeiffer_adapter",
+        apply=apply_pfeiffer_adapter,
+        get_parameters=get_pfeiffer_parameters,
+        count_parameters=count_pfeiffer_parameters,
+        merge=merge_pfeiffer_adapter,
+        unmerge=unmerge_pfeiffer_adapter,
+        disable=disable_pfeiffer_adapter,
+        enable=enable_pfeiffer_adapter,
+        # Pfeiffer 2020 — adapter ONLY after FFN/MLP, not after
+        # attention. Same wrapper class as Houlsby
+        # (``AdapterLinear``) but a different default ``target_modules``
+        # filter (``["fc1", "fc2"]``). Roughly half the parameters of
+        # Houlsby at comparable accuracy; the production default in
+        # AdapterHub / HuggingFace PEFT.
         target_module_filter=TargetModuleFilter.LINEAR,
     ),
 ]
