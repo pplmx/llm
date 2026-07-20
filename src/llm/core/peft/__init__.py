@@ -30,6 +30,11 @@ Public surface:
 
 from __future__ import annotations
 
+from llm.core.peft.checkpoint import (
+    PEFT_CHECKPOINT_FORMAT_VERSION,
+    load_peft,
+    save_peft,
+)
 from llm.core.peft.registry import (
     PEFT_REGISTRY,
     apply_peft,
@@ -44,6 +49,7 @@ from llm.core.peft.registry import (
 from llm.core.peft.types import PEFTMethod, TargetModuleFilter
 
 __all__ = [
+    "PEFT_CHECKPOINT_FORMAT_VERSION",
     "PEFT_REGISTRY",
     "PEFTMethod",
     "TargetModuleFilter",
@@ -53,6 +59,8 @@ __all__ = [
     "enable_peft",
     "ensure_methods_registered",
     "get_peft_parameters",
+    "load_peft",
     "merge_peft",
+    "save_peft",
     "unmerge_peft",
 ]
