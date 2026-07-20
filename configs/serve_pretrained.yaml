@@ -1,0 +1,132 @@
+# Serving production preset (trained checkpoint + full serving stack).
+#
+# Purpose
+# -------
+# Production preset for serving a fine-tuned model end-to-end:
+# checkpoint load + auth + Prometheus metrics + paged attention +
+# optional PEFT adapter. Mirrors `configs/sft_alpaca.yaml` on the
+# training side — train with sft_alpaca, then serve with this config.
+#
+# Usage
+# -----
+#   # 1. Train a fine-tuned model (SFT + LoRA recommended for >7B):
+#   uv run llm-train sft --config configs/sft_alpaca.yaml \
+#     --peft-method lora \
+#     --peft-kwargs '{"rank": 8, "alpha": 16.0}' \
+#     --peft-save-path checkpoints_sft_alpaca/peft_adapter_lora.bin
+#
+#   # 2. Serve the trained checkpoint with the PEFT adapter loaded:
+#   #    Pass the YAML values as env vars (LLM_SERVING_* prefix).
+#   LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_5.pt \
+#   LLM_SERVING_TOKENIZER_PATH=tokenizer \
+#   LLM_SERVING_TOKENIZER_TYPE=hf \
+#   LLM_SERVING_PEFT_METHOD=lora \
+#   LLM_SERVING_PEFT_ADAPTER_PATH=checkpoints_sft_alpaca/peft_adapter_lora.bin \
+#   LLM_SERVING_PEFT_KWARGS='{"rank": 8, "alpha": 16.0}' \
+#   LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
+#   uv run llm-serve
+#
+#   # Or load the YAML directly via a small wrapper (see the `Usage
+#   # with from_yaml()` snippet at the bottom):
+#   python -c "
+#   from llm.serving.config import ServingConfig
+#   cfg = ServingConfig.from_yaml('configs/serve_pretrained.yaml')
+#   cfg.host = '0.0.0.0'
+#   cfg.api_key = '$(openssl rand -hex 32)'
+#   from llm.serving.cli import main
+#   main(cfg)
+#   "
+#
+# What this config exercises
+# --------------------------
+# - `model_path` → loader loads the training checkpoint
+# - `tokenizer_path` + `tokenizer_type=hf` → HuggingFace tokenizer
+#   (matches what `sft_alpaca.yaml` saves during fine-tuning)
+# - `peft_method` + `peft_adapter_path` → T2 PEFT #49 wiring: the
+#   loader applies LoRA and copies the saved sidecar into the model
+#   before the first request
+# - `api_key` set + `host=0.0.0.0` → public-host guard passes (T2 #7)
+# - `use_paged_attention=true` → block-allocator KV cache (saves GPU
+#   memory at high concurrency; see ADR-004)
+# - `enable_prefix_cache=true` → multi-turn chat amortizes the system
+#   prompt across requests
+# - `compile_model=true` → torch.compile speedup (warm-up cost paid
+#   once at startup; safe for production)
+# - `max_concurrent_requests=16` → semaphore caps in-flight
+#   generations (independent of uvicorn worker count)
+#
+# Related configs
+# ---------------
+# - `configs/serve_local_demo.yaml` — smoke test (no checkpoint)
+# - `configs/sft_alpaca.yaml` — train a fine-tuned checkpoint first
+# - `configs/dpo_ultrafeedback.yaml` — DPO-finetuned checkpoint
+#   (same `peft_*` workflow applies)
+
+# --- Model checkpoint --------------------------------------------------
+# Path to a training checkpoint produced by `llm-train sft` (or
+# `stream_lm` / `dpo` — any task that produces a DecoderModel).
+model_path: checkpoints_sft_alpaca/epoch_5.pt
+tokenizer_path: tokenizer
+tokenizer_type: hf
+
+# --- Serving knobs -----------------------------------------------------
+# Bind to all interfaces (container-friendly); the api_key gate
+# blocks anonymous access.
+host: 0.0.0.0
+# IMPORTANT: replace this with a real secret in production
+# (e.g. `LLM_SERVING_API_KEY=$(openssl rand -hex 32) uv run llm-serve`).
+# The placeholder below is here so the YAML is structurally valid;
+# the public-host guard requires a non-empty api_key when host is
+# non-loopback.
+api_key: REPLACE_WITH_RANDOM_32_BYTE_HEX_AT_STARTUP
+log_level: INFO
+device: cuda              # CUDA is the production default; CPU works
+                          # for tiny models but is slow for real ones.
+generation_backend: batched   # batched = ContinuousBatchingEngine
+                              # (recommended for multi-request throughput)
+compile_model: true
+max_concurrent_requests: 16
+request_timeout: 60.0
+
+# --- Model architecture (overridden by checkpoint.model_config) --------
+# These defaults are used only when model_path is unset (rare in
+# production). When a checkpoint is loaded, its model_config dict
+# (saved by CheckpointManager) takes precedence.
+# vocab_size comes from the tokenizer (loaded from `tokenizer_path`)
+# or the checkpoint — there is no `vocab_size` field on ServingConfig.
+hidden_size: 256          # matches `configs/sft_alpaca.yaml`
+num_layers: 6
+num_heads: 8
+max_seq_len: 512
+num_kv_heads: 4           # GQA — 4 KV heads for 8 query heads
+num_experts: 0
+top_k: 0
+attn_impl: mha
+mlp_impl: mlp
+
+# --- Optional serving features ----------------------------------------
+use_paged_attention: true   # block-allocator KV cache
+max_blocks: 1024
+block_size: 16
+enable_prefix_cache: true   # amortize system prompts across requests
+max_prefixes: 32
+
+# --- PEFT adapter (T2 PEFT #49) ---------------------------------------
+# Apply a trained LoRA / IA³ / BitFit / Adapter / Pfeiffer adapter on
+# top of the base checkpoint. Either method-only (e.g. bitfit) or
+# method + adapter_path (the common fine-tune-then-serve workflow).
+peft_method: lora
+peft_kwargs:
+  rank: 8
+  alpha: 16.0
+peft_adapter_path: checkpoints_sft_alpaca/peft_adapter_lora.bin
+peft_merge: false          # keep adapters swappable at runtime
+                          # (set true for max throughput; loses
+                          #  disable_peft / unmerge_peft capability)
+
+# --- Chat template (OpenAI /v1/chat/completions) ----------------------
+# Override these to match your fine-tuned model's expected format
+# (e.g. ChatML, Llama-2-chat, Vicuna). Defaults match the historical
+# `role: content` rendering that worked for plain DecoderModels.
+chat_message_template: null
+chat_generation_prefix: null

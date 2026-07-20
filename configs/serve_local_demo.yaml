@@ -1,0 +1,98 @@
+# Serving local demo (tiny dummy model) — fast e2e config.
+#
+# Purpose
+# -------
+# The smallest possible `llm-serve` smoke test that exercises the full
+# OpenAI-compatible HTTP API path: ServingConfig → FastAPI app →
+# /v1/chat/completions → ContinuousBatchingEngine → tokens back. Use
+# this as the smoke test before deploying a real trained checkpoint.
+#
+# The model is built from the arch fields below (no checkpoint file
+# needed) — perfect for CI smoke tests and local API exploration.
+#
+# Usage
+# -----
+#   # 1. Start the server (no checkpoint required; arch fields build
+#   #    a tiny dummy model). Pick any unused port.
+#   uv run llm-serve
+#   # Server prints "Application startup complete" + structured
+#   # server_config log line.
+#
+#   # 2. From another terminal, exercise the API:
+#   curl http://127.0.0.1:8000/health
+#   # → {"status":"ok"}
+#
+#   curl http://127.0.0.1:8000/v1/chat/completions \
+#     -H "Content-Type: application/json" \
+#     -d '{
+#           "model": "llm",
+#           "messages": [{"role": "user", "content": "hello"}],
+#           "max_tokens": 10
+#         }'
+#   # → {"id": "chatcmpl-...", "choices": [{"message": {"role": "assistant", ...}}], ...}
+#
+# What this config exercises
+# --------------------------
+# - ServingConfig.from_yaml() loads the YAML into a valid config
+# - `model_path` left None → loader builds a dummy model from the
+#   arch fields (no checkpoint required for smoke testing)
+# - `host=127.0.0.1` + `api_key` unset → loopback host, public-host
+#   guard passes (the guard refuses non-loopback binding without an
+#   api_key — T2 #7 hardening)
+# - `generation_backend=eager` (default) → single-request generation
+# - `enable_prefix_cache=false`, `use_paged_attention=false` →
+#   disabled for the smoke test (both have their own integration
+#   tests under tests/serving/test_paged_integration.py and
+#   tests/serving/test_engine_thread_safety.py)
+#
+# Related configs
+# ---------------
+# - `configs/serve_pretrained.yaml` — production preset (checkpoint +
+#   auth + metrics + paged attention + optional PEFT)
+# - `configs/sft_local_demo.yaml` — fine-tune a real model first, then
+#   serve it via this config
+
+# --- Model architecture (used only when model_path is unset) -----------
+# vocab_size is derived from the tokenizer at load time — there is no
+# `vocab_size` field on ServingConfig because the loader builds the
+# dummy model from the tokenizer (not a hard-coded size).
+hidden_size: 64           # tiny for the demo; production: 512-4096
+num_layers: 2
+num_heads: 4
+max_seq_len: 64
+num_kv_heads: 4
+num_experts: 0
+top_k: 0
+attn_impl: mha
+mlp_impl: mlp
+
+# --- Serving knobs -----------------------------------------------------
+# Loopback host — public-host guard refuses to bind non-loopback
+# without an api_key.
+host: 127.0.0.1
+# Auth disabled (loopback-only). Set `api_key: <secret>` and
+# `host: 0.0.0.0` together to expose the API beyond localhost.
+api_key: null
+log_level: INFO
+device: cpu               # CPU demo; production should set "cuda"
+generation_backend: eager
+compile_model: false      # compile adds warmup; disable for smoke
+max_concurrent_requests: 4
+request_timeout: 60.0
+
+# --- Tokenizer ---------------------------------------------------------
+tokenizer_type: simple
+tokenizer_path: null      # default char tokenizer
+
+# --- Optional serving features (disabled for the smoke test) -----------
+use_paged_attention: false
+max_blocks: 256
+block_size: 16
+enable_prefix_cache: false
+max_prefixes: 10
+
+# --- PEFT (disabled for the smoke test) --------------------------------
+peft_method: null
+peft_kwargs: {}
+peft_adapter_path: null
+peft_merge: false

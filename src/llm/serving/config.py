@@ -1,5 +1,7 @@
+from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -127,6 +129,33 @@ class ServingConfig(BaseSettings):
     )
 
     model_config = SettingsConfigDict(env_prefix="LLM_SERVING_")
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> ServingConfig:
+        """Load configuration from a YAML file.
+
+        Mirrors :meth:`llm.training.core.config.Config.from_yaml` — keeps the
+        training-side and serving-side config loading surfaces symmetric so
+        users can pick whichever input style fits their workflow (YAML files
+        vs. environment variables).
+
+        The YAML keys are the unprefixed field names (``api_key``,
+        ``model_path``, ``peft_method``, ...). The same config can be set
+        via env vars (``LLM_SERVING_API_KEY``, ``LLM_SERVING_MODEL_PATH``,
+        ``LLM_SERVING_PEFT_METHOD``, ...).
+
+        Returns:
+            A :class:`ServingConfig` instance built from the YAML content.
+            Validators (``_validate_peft_method``, cross-field consistency)
+            run on construction, so unknown PEFT methods and
+            inconsistent ``peft_*`` combinations fail loud at load time.
+        """
+        path = Path(path)
+        if not path.exists():
+            return cls()
+        with path.open() as f:
+            config_dict = yaml.safe_load(f) or {}
+        return cls.model_validate(config_dict)
 
     # Methods that don't expose a merge helper. ``peft_merge=True`` is
     # rejected for these in the model_validator below — failing loud at
