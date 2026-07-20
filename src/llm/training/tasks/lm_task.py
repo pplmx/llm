@@ -109,26 +109,71 @@ class LanguageModelingTask(TrainingTask):
         return model
 
     def build_callbacks(self) -> list:
-        """Register the AdaLoRA pruning callback when ``use_adalora=True``.
+        """Register the AdaLoRA pruning callback when ``use_adalora=True``
+        and the PEFT adapter-checkpoint callback when ``peft_method``
+        is set.
 
-        The callback is wired after ``build_model`` runs, so the
-        tracker sees the AdaLoRA layers in their final position (and
-        any DDP/FSDP wrapper that the engine applies on top).
+        The callbacks are wired after ``build_model`` runs, so any
+        tracker / state they need to construct sees the model in its
+        final position (and any DDP/FSDP wrapper that the engine
+        applies on top).
         """
-        if not getattr(self.config.training, "use_adalora", False):
-            return []
+        callbacks: list = []
         t_cfg = self.config.training
-        return [
-            AdaLoRAPruningCallback(
-                use_adalora=True,
-                adalora_init_rank=t_cfg.adalora_init_rank,
-                adalora_target_rank=t_cfg.adalora_target_rank,
-                adalora_ema_alpha=t_cfg.adalora_ema_alpha,
-                adalora_tinit=t_cfg.adalora_tinit,
-                adalora_tfinal=t_cfg.adalora_tfinal,
-                adalora_prune_every=t_cfg.adalora_prune_every,
+
+        # T3 #42 AdaLoRA pruning callback (periodic prune-to-rank
+        # cadence driven by the optimizer-step counter).
+        if getattr(t_cfg, "use_adalora", False):
+            callbacks.append(
+                AdaLoRAPruningCallback(
+                    use_adalora=True,
+                    adalora_init_rank=t_cfg.adalora_init_rank,
+                    adalora_target_rank=t_cfg.adalora_target_rank,
+                    adalora_ema_alpha=t_cfg.adalora_ema_alpha,
+                    adalora_tinit=t_cfg.adalora_tinit,
+                    adalora_tfinal=t_cfg.adalora_tfinal,
+                    adalora_prune_every=t_cfg.adalora_prune_every,
+                )
             )
-        ]
+
+        # T2 PEFT #48 PEFT adapter sidecar (one-shot write at
+        # on_train_end via save_peft). The default path is
+        # ``{checkpoint_dir}/peft_adapter_{method}.bin`` when no
+        # explicit ``peft_save_path`` is set — the method-name suffix
+        # avoids clobbering when the user later switches PEFT methods.
+        peft_method = getattr(t_cfg, "peft_method", None)
+        if peft_method is not None:
+            from pathlib import Path
+
+            from llm.training.core.callbacks import (
+                PEFTAdapterCheckpointCallback,
+            )
+
+            explicit_path = getattr(t_cfg, "peft_save_path", None)
+            if explicit_path is not None:
+                resolved_path: Path | None = Path(explicit_path)
+            else:
+                ckpt_dir = getattr(
+                    getattr(self.config, "checkpoint", None),
+                    "checkpoint_dir",
+                    None,
+                )
+                if ckpt_dir is None:
+                    resolved_path = None
+                else:
+                    resolved_path = (
+                        Path(ckpt_dir) / f"peft_adapter_{peft_method}.bin"
+                    )
+
+            callbacks.append(
+                PEFTAdapterCheckpointCallback(
+                    peft_method=peft_method,
+                    peft_kwargs=dict(t_cfg.peft_kwargs or {}),
+                    peft_save_path=resolved_path,
+                )
+            )
+
+        return callbacks
 
     def build_optimizer(self, model: nn.Module) -> optim.Optimizer:
         # Filter parameters that require gradients

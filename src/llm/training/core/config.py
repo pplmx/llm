@@ -318,6 +318,20 @@ class TrainingConfig(BaseModel):
             "consulted when peft_method is set."
         ),
     )
+    peft_save_path: str | None = Field(
+        None,
+        description=(
+            "Optional path for the adapter-only sidecar file written "
+            "by PEFTAdapterCheckpointCallback at on_train_end "
+            "(T2 PEFT #48). When None, the callback derives a default "
+            "of {checkpoint_dir}/peft_adapter_{method}.bin. The sidecar "
+            "is the same format as save_peft(...) and round-trips "
+            "via load_peft(...) into a fresh model. Independent of "
+            "the main CheckpointManager flow — set this when you want "
+            "to share just the adapter (cross-base-model transfer, "
+            "adapter-only inference)."
+        ),
+    )
 
     @field_validator("peft_method", mode="after")
     @classmethod

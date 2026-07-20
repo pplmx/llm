@@ -483,3 +483,116 @@ class AdaLoRAPruningCallback(Callback):
         if self._tracker is None:
             return
         self._tracker.load_state_dict(state)
+
+
+class PEFTAdapterCheckpointCallback(Callback):
+    """Auto-save PEFT adapter weights to a sidecar file at training end.
+
+    Built on top of the T2 PEFT #47 :func:`save_peft` / :func:`load_peft`
+    helpers. At :meth:`on_train_end`, writes the model's trainable
+    adapter parameters to ``peft_save_path`` using the same envelope
+    format (:data:`~llm.core.peft.checkpoint.PEFT_CHECKPOINT_FORMAT_VERSION`),
+    so a fresh model can recover the trained adapter via
+    :func:`load_peft` without going through the full
+    :class:`CheckpointManager` flow.
+
+    The sidecar is separate from the main checkpoint because:
+
+    1. **Adapter weights are tiny compared to base weights** — saving
+       them as a sidecar enables "share just the adapter" workflows
+       (cross-base-model transfer, adapter-only inference).
+    2. **The main checkpoint already preserves adapter weights** inside
+       ``model_state`` for standard resume — no duplication needed.
+
+    The callback is a strict no-op when ``peft_method`` is ``None`` or
+    ``peft_save_path`` is ``None``, so it is safe to register
+    conditionally (the task only wires it when ``peft_method`` is
+    actually set on the config).
+
+    Loading is **NOT** automatic on resume — the standard
+    ``CheckpointManager.load_checkpoint`` already restores the full
+    ``model_state`` (which contains the adapter weights). Users who
+    want cross-base-model adapter transfer (no main checkpoint, just
+    the sidecar) should call :func:`load_peft` explicitly after
+    :meth:`LanguageModelingTask.build_model`.
+
+    Args:
+        peft_method: Registered PEFT method name (e.g. ``"lora"``).
+            When ``None``, the callback is a strict no-op.
+        peft_kwargs: Method-specific kwargs forwarded verbatim to
+            :func:`save_peft` — e.g. ``{"rank": 8, "alpha": 16.0}``
+            for LoRA. Stored in the sidecar envelope so a future
+            :func:`load_peft` knows how to re-apply the method.
+        peft_save_path: Where to write the adapter file. When
+            ``None``, :meth:`on_train_end` does nothing (config
+            opt-out).
+    """
+
+    def __init__(
+        self,
+        peft_method: str | None = None,
+        peft_kwargs: dict[str, Any] | None = None,
+        peft_save_path: str | Path | None = None,
+    ):
+        super().__init__()
+        self.peft_method = peft_method
+        # Defensive copy + dict() cast — caller may pass a Pydantic
+        # model attribute that we shouldn't mutate.
+        self.peft_kwargs: dict[str, Any] = dict(peft_kwargs or {})
+        self.peft_save_path = (
+            Path(peft_save_path) if peft_save_path is not None else None
+        )
+
+    def on_train_end(self, logs: dict[str, Any] | None = None) -> None:
+        """Write the adapter sidecar. No-op when not configured.
+
+        Failure is logged + swallowed rather than re-raised — the main
+        checkpoint has already been written by the time
+        ``on_train_end`` fires, and losing the sidecar is recoverable
+        (re-train, or use the main checkpoint). Crashing here would
+        lose the main checkpoint too.
+        """
+        if self.peft_method is None or self.peft_save_path is None:
+            return
+        if self.engine is None:
+            return
+        try:
+            # Lazy import — the callback module is on the trainer hot
+            # path; we don't want to import the PEFT stack (and torch's
+            # PEFT helper chain) until we actually need to save.
+            from llm.core.peft.checkpoint import save_peft
+
+            save_peft(
+                self.engine.model,
+                self.peft_save_path,
+                self.peft_method,
+                **self.peft_kwargs,
+            )
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            # ``logger.warning`` may not exist on a stub engine in
+            # tests, so guard the call.
+            logger = getattr(self.engine, "logger", None)
+            if logger is not None:
+                logger.warning(
+                    f"PEFT adapter sidecar save failed: {exc}. "
+                    f"Main checkpoint is unaffected. Path={self.peft_save_path}"
+                )
+
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        """Stash the sidecar path in the main checkpoint's ``extra_state``.
+
+        The actual adapter weights live on disk in the sidecar file
+        itself — we only need to remember WHERE the sidecar is so a
+        resumed run knows where to write the next one.
+        """
+        if self.peft_save_path is None:
+            return None
+        return {"peft_save_path": str(self.peft_save_path)}
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        """Restore the sidecar path from a resumed checkpoint."""
+        if state is None:
+            return
+        path_str = state.get("peft_save_path") if isinstance(state, dict) else None
+        if path_str is not None:
+            self.peft_save_path = Path(path_str)

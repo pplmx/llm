@@ -345,14 +345,24 @@ def test_unknown_peft_method_rejected_at_config_load() -> None:
         )
 
 
-def test_adalora_via_registry_does_not_register_callback(synthetic_dm) -> None:
-    """AdaLoRA via the new registry path does NOT register the pruning
-    callback — that's still the legacy ``use_adalora=True`` branch's job.
+def test_adalora_via_registry_does_not_register_pruning_callback(
+    synthetic_dm,
+) -> None:
+    """AdaLoRA via the new registry path does NOT register the
+    AdaLoRA pruning callback — that's still the legacy
+    ``use_adalora=True`` branch's job.
 
     The registry carries the ``requires_callback=True`` metadata, but
     the actual ``build_callbacks`` wiring stays coupled to the
     ``use_adalora`` flag (matches the slice plan).
+
+    Note (T2 PEFT #48): setting ``peft_method`` now also registers
+    :class:`PEFTAdapterCheckpointCallback` (one-shot sidecar save at
+    ``on_train_end``). This test asserts the *AdaLoRA pruning*
+    callback is absent — not that *every* callback is absent.
     """
+    from llm.training.core.callbacks import AdaLoRAPruningCallback
+
     model_cfg = _tiny_model_config()
     train_cfg = _tiny_training_config(
         peft_method="adalora",
@@ -360,8 +370,11 @@ def test_adalora_via_registry_does_not_register_callback(synthetic_dm) -> None:
     )
     task = _build_lm_task(model_cfg, train_cfg, synthetic_dm)
     callbacks = task.build_callbacks()
-    # New path: no callback registered (legacy use_adalora=False).
-    assert callbacks == []
+    # The AdaLoRA pruning callback is NOT registered via the new path
+    # — it requires the legacy ``use_adalora=True`` flag.
+    assert not any(
+        isinstance(c, AdaLoRAPruningCallback) for c in callbacks
+    ), "AdaLoRA pruning callback should NOT be wired via peft_method"
 
 
 # ---------------------------------------------------------------------------
