@@ -80,7 +80,8 @@ src/llm/
 ├── tokenization/          # Tokenizer 实现
 ├── serving/               # Inference API
 │   ├── api.py             # FastAPI with OpenAI-compatible endpoints
-│   ├── loader.py          # Training checkpoint + tokenizer loading
+│   ├── loader.py          # Training checkpoint + tokenizer loading + PEFT integration (T2 PEFT #49)
+│   ├── peft_adapter.py    # load_peft_into_model / merge_peft_into_model helpers (T2 PEFT #49)
 │   ├── generation_service.py  # REST/chat → GenerationBackend
 │   └── batch_engine.py    # ContinuousBatchingEngine (continuous batching path)
 ```
@@ -193,7 +194,7 @@ Third-party and built-in extensions register through a shared **`Registry[T]`** 
 | `llm.generation_backends` | `BACKEND_REGISTRY` | `eager`, `batched` |
 | `llm.data_sources` | `SOURCE_REGISTRY` | `local`, `hf` streaming; `dedup_local` / `dedup_hf` compose any inner source with `DedupTextSource` (T3 #39) |
 | `llm.export_backends` | `EXPORT_REGISTRY` | `onnx` (built-in), `torchscript` |
-| `llm.peft_methods` | `PEFT_REGISTRY` | `lora`, `qlora`, `adalora`, `prefix_tuning`, `ia3`, `bitfit`, `adapter`, `pfeiffer_adapter` (T2 PEFT #43, #44, #45, #46, #47) |
+| `llm.peft_methods` | `PEFT_REGISTRY` | `lora`, `qlora`, `adalora`, `prefix_tuning`, `ia3`, `bitfit`, `adapter`, `pfeiffer_adapter` (T2 PEFT #43, #44, #45, #46, #47, #48, #49) |
 | `llm.tasks` | hooks via `load_entry_point_hooks` | third-party `TASK_REGISTRY.register(...)` |
 
 Built-in model builders register via **setuptools entry points** only (`bootstrap.ensure_builtins_registered()` → `load_entry_point_registry("llm.models", ...)`). Attention/MLP/NORM register on module import. `train.py` additionally invokes `llm.tasks` hooks so external packages can add CLI tasks without editing core code.
