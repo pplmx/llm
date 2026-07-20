@@ -68,14 +68,17 @@ def test_speculative_matches_eager_greedy_when_draft_equals_target():
     tok = StubTokenizer()
 
     prompt = "abc"
-    eager_out = eager_generate(
-        target, tok, prompt, max_new_tokens=6, temperature=0.0, use_cache=False
-    )
+    eager_out = eager_generate(target, tok, prompt, max_new_tokens=6, temperature=0.0, use_cache=False)
 
     spec_tokens = list(
         speculative_generate(
-            target, draft, tok, prompt, max_new_tokens=6,
-            gamma=3, temperature=0.0,
+            target,
+            draft,
+            tok,
+            prompt,
+            max_new_tokens=6,
+            gamma=3,
+            temperature=0.0,
         )
     )
     spec_out = prompt + "".join(spec_tokens)
@@ -94,8 +97,13 @@ def test_speculative_gamma_zero_raises():
     with pytest.raises(ValueError, match="gamma"):
         list(
             speculative_generate(
-                target, draft, tok, "abc", max_new_tokens=4,
-                gamma=0, temperature=0.0,
+                target,
+                draft,
+                tok,
+                "abc",
+                max_new_tokens=4,
+                gamma=0,
+                temperature=0.0,
             )
         )
 
@@ -128,8 +136,13 @@ def test_speculative_stops_on_eos():
 
     out = "".join(
         speculative_generate(
-            target, draft, tok, "abc", max_new_tokens=50,
-            gamma=4, temperature=0.0,
+            target,
+            draft,
+            tok,
+            "abc",
+            max_new_tokens=50,
+            gamma=4,
+            temperature=0.0,
         )
     )
     # We should stop within a couple of rounds because the very first
@@ -145,8 +158,13 @@ def test_speculative_respects_max_new_tokens():
 
     out = list(
         speculative_generate(
-            target, draft, tok, "abc", max_new_tokens=5,
-            gamma=3, temperature=0.0,
+            target,
+            draft,
+            tok,
+            "abc",
+            max_new_tokens=5,
+            gamma=3,
+            temperature=0.0,
         )
     )
     assert len(out) <= 5
@@ -162,9 +180,7 @@ def test_speculative_backend_in_registry():
 
     target = _make_tiny_decoder(seed=3)
     draft = _make_tiny_decoder(seed=3)
-    backend = get_generation_backend(
-        "speculative", target_model=target, draft_model=draft, gamma=3
-    )
+    backend = get_generation_backend("speculative", target_model=target, draft_model=draft, gamma=3)
     assert isinstance(backend, SpeculativeDecodingBackend)
     assert backend.target_model is target
     assert backend.draft_model is draft
@@ -191,9 +207,7 @@ def test_speculative_backend_streams():
     tok = StubTokenizer()
 
     backend = SpeculativeDecodingBackend(target, draft, gamma=3)
-    out = backend.generate(
-        target, tok, "abc", config=GenerationConfig(max_new_tokens=4, temperature=0.0)
-    )
+    out = backend.generate(target, tok, "abc", config=GenerationConfig(max_new_tokens=4, temperature=0.0))
     # The path that goes through ``generate`` calls ``list(stream(...))``,
     # which goes through the speculative algorithm. Verify the call
     # doesn't blow up and yields the prompt + something.

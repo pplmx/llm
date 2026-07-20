@@ -223,8 +223,6 @@ def test_concurrent_add_request_and_step_does_not_crash(fake_engine):
     assert not errors, f"workers raised: {errors[:3]}"
     # All slots are returned to free set; no double-allocation.
     allocator = fake_engine.slot_allocator
-    assert len(allocator.seq_to_slot) == 0, (
-        f"unfreed slots: {allocator.seq_to_slot}"
-    )
+    assert len(allocator.seq_to_slot) == 0, f"unfreed slots: {allocator.seq_to_slot}"
     # free_slots equals the original pool.
     assert len(allocator.free_slots) == fake_engine.max_batch_size

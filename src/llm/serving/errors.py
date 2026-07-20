@@ -157,9 +157,7 @@ def envelope_from_http_exception(exc: HTTPException, request_id: str) -> dict[st
     )
 
 
-def envelope_from_validation_error(
-    exc: RequestValidationError, request_id: str
-) -> dict[str, Any]:
+def envelope_from_validation_error(exc: RequestValidationError, request_id: str) -> dict[str, Any]:
     """Convert a pydantic / FastAPI ``RequestValidationError`` to the envelope."""
     return to_envelope(
         code="invalid_request",
@@ -179,18 +177,14 @@ def envelope_from_api_error(exc: APIError, request_id: str) -> dict[str, Any]:
     )
 
 
-def envelope_from_unexpected(
-    exc: Exception, request_id: str, *, logger=None
-) -> dict[str, Any]:
+def envelope_from_unexpected(exc: Exception, request_id: str, *, logger=None) -> dict[str, Any]:
     """Convert an unexpected ``Exception`` to the envelope shape.
 
     Logs the exception with the request_id so operators can correlate.
     The envelope does NOT leak internal details to clients.
     """
     if logger is not None:
-        logger.exception(
-            "unexpected error during request %s", request_id, exc_info=exc
-        )
+        logger.exception("unexpected error during request %s", request_id, exc_info=exc)
     return to_envelope(
         code="internal",
         message="Internal server error.",
@@ -209,9 +203,7 @@ def get_request_id(request: Request) -> str:
     return getattr(request.state, "request_id", "unknown")
 
 
-def envelope_response(
-    payload: dict[str, Any], status_code: int, request_id: str
-) -> JSONResponse:
+def envelope_response(payload: dict[str, Any], status_code: int, request_id: str) -> JSONResponse:
     """Build the canonical JSON response: envelope body + ``X-Request-ID`` header."""
     return JSONResponse(
         status_code=status_code,

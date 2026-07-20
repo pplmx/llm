@@ -25,7 +25,6 @@ from llm.training.core.config import Config, TrainingConfig
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.sft_task import SFTTask
 
-
 # ---------------------------------------------------------------------------
 # Tiny test fixtures
 # ---------------------------------------------------------------------------
@@ -42,17 +41,13 @@ def _tiny_config(*, use_prefix_tuning: bool = True, **prefix_kwargs) -> Config:
     cfg.model.max_seq_len = 8
     cfg.training.use_prefix_tuning = use_prefix_tuning
     cfg.training.prefix_tuning_len = prefix_kwargs.get("prefix_tuning_len", 4)
-    cfg.training.prefix_reparam_hidden = prefix_kwargs.get(
-        "prefix_reparam_hidden", 8
-    )
-    cfg.training.prefix_target_modules = prefix_kwargs.get(
-        "prefix_target_modules", None
-    )
+    cfg.training.prefix_reparam_hidden = prefix_kwargs.get("prefix_reparam_hidden", 8)
+    cfg.training.prefix_target_modules = prefix_kwargs.get("prefix_target_modules")
     cfg.training.epochs = 1
     return cfg
 
 
-def _tiny_model_with_mha(cfg: Config) -> "torch.nn.Module":  # type: ignore[name-defined]
+def _tiny_model_with_mha(cfg: Config) -> torch.nn.Module:  # type: ignore[name-defined]
     """Build a tiny model containing a ``MultiHeadAttention`` for the wrapper.
 
     We bypass ``ModelFactory.from_config`` so the test does not depend on
@@ -61,7 +56,7 @@ def _tiny_model_with_mha(cfg: Config) -> "torch.nn.Module":  # type: ignore[name
     submodules).
     """
 
-    class TinyModelWithMHA:  # noqa: D401 — tiny inline test model
+    class TinyModelWithMHA:
         pass
 
     import torch.nn as nn
@@ -124,17 +119,15 @@ class TestLanguageModelingTaskAppliesPrefixTuning:
         # apply_prefix_tuning when off.
         tiny_model = _tiny_model_with_mha(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         # The MHA layer stays unwrapped.
         mha_modules = [m for m in model.modules() if isinstance(m, MultiHeadAttention)]
         assert mha_modules, "test fixture should have at least one MHA"
-        assert not any(
-            isinstance(m, PrefixTuningAttention) for m in model.modules()
-        ), "PrefixTuningAttention appeared without opt-in"
+        assert not any(isinstance(m, PrefixTuningAttention) for m in model.modules()), (
+            "PrefixTuningAttention appeared without opt-in"
+        )
 
     def test_opt_in_wraps_every_mha(self):
         from unittest.mock import patch
@@ -143,32 +136,24 @@ class TestLanguageModelingTaskAppliesPrefixTuning:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_mha(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         # The MHA layer was replaced by a PrefixTuningAttention.
         wrappers = [m for m in model.modules() if isinstance(m, PrefixTuningAttention)]
-        assert len(wrappers) == 1, (
-            f"expected exactly 1 PrefixTuningAttention, got {len(wrappers)}"
-        )
+        assert len(wrappers) == 1, f"expected exactly 1 PrefixTuningAttention, got {len(wrappers)}"
 
     def test_opt_in_passes_target_modules_through(self):
         """``prefix_target_modules`` is forwarded to ``apply_prefix_tuning``."""
         from unittest.mock import patch
 
-        cfg = _tiny_config(
-            use_prefix_tuning=True, prefix_target_modules=["attn"]
-        )
+        cfg = _tiny_config(use_prefix_tuning=True, prefix_target_modules=["attn"])
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_mha(cfg)
 
         # ``prefix_target_modules=["attn"]`` matches the module name
         # ``attn`` (substring), so the wrap should fire.
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, PrefixTuningAttention)]
@@ -178,15 +163,11 @@ class TestLanguageModelingTaskAppliesPrefixTuning:
         """A substring that does NOT match the MHA module name leaves it alone."""
         from unittest.mock import patch
 
-        cfg = _tiny_config(
-            use_prefix_tuning=True, prefix_target_modules=["no_such_module"]
-        )
+        cfg = _tiny_config(use_prefix_tuning=True, prefix_target_modules=["no_such_module"])
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_mha(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         # No wrap fired because no module name matched the pattern.
@@ -213,9 +194,7 @@ class TestPrefixTuningGradientContract:
         )
 
         # Base MHA weights are frozen.
-        wrapper = next(
-            m for m in tiny_model.modules() if isinstance(m, PrefixTuningAttention)
-        )
+        wrapper = next(m for m in tiny_model.modules() if isinstance(m, PrefixTuningAttention))
         assert wrapper.base_attn.qkv_proj.weight.requires_grad is False
         assert wrapper.base_attn.out_proj.weight.requires_grad is False
 
@@ -237,9 +216,7 @@ class TestPrefixTuningGradientContract:
             reparam_hidden=cfg.training.prefix_reparam_hidden,
         )
 
-        wrapper = next(
-            m for m in tiny_model.modules() if isinstance(m, PrefixTuningAttention)
-        )
+        wrapper = next(m for m in tiny_model.modules() if isinstance(m, PrefixTuningAttention))
         import torch
 
         # Snapshot base MHA weights before any optimizer step.
@@ -278,9 +255,7 @@ class TestSFTInheritsPrefixTuning:
         task = SFTTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_mha(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, PrefixTuningAttention)]
@@ -293,14 +268,10 @@ class TestSFTInheritsPrefixTuning:
         task = SFTTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_mha(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
-        assert not any(
-            isinstance(m, PrefixTuningAttention) for m in model.modules()
-        )
+        assert not any(isinstance(m, PrefixTuningAttention) for m in model.modules())
 
 
 class TestDPOInheritsPrefixTuning:
@@ -330,18 +301,13 @@ class TestDPOInheritsPrefixTuning:
             built_policy = task.build_model()
 
         # Policy is wrapped.
-        policy_wrappers = [
-            m for m in built_policy.modules() if isinstance(m, PrefixTuningAttention)
-        ]
+        policy_wrappers = [m for m in built_policy.modules() if isinstance(m, PrefixTuningAttention)]
         assert len(policy_wrappers) == 1
 
         # Reference is wrapped (and distinct from policy).
         assert task.ref_model is not None
         assert task.ref_model is not built_policy
-        ref_wrappers = [
-            m for m in task.ref_model.modules()
-            if isinstance(m, PrefixTuningAttention)
-        ]
+        ref_wrappers = [m for m in task.ref_model.modules() if isinstance(m, PrefixTuningAttention)]
         assert len(ref_wrappers) == 1
 
     def test_dpo_off_by_default(self):
@@ -377,17 +343,16 @@ class TestEmptyModelIsNoop:
 
     def test_linear_only_model_no_wrap(self):
         """A model with no MHA at all must not break ``build_model``."""
-        import torch.nn as nn
         from unittest.mock import patch
+
+        import torch.nn as nn
 
         linear_only = nn.Sequential(nn.Linear(8, 8), nn.Linear(8, 4))
 
         cfg = _tiny_config(use_prefix_tuning=True)
         task = LanguageModelingTask(cfg, data_module=None)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=linear_only
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=linear_only):
             model = task.build_model()
 
         # No prefix wrappers were produced (nothing to wrap).

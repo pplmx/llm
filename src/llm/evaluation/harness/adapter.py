@@ -31,8 +31,7 @@ def _require_lm_eval() -> None:
     """Raise a clear ``ImportError`` with the install command."""
     if not LM_EVAL_AVAILABLE:
         raise ImportError(
-            "lm-eval integration requires the optional 'lm_eval' package. "
-            "Install with `pip install 'llm[eval]'`."
+            "lm-eval integration requires the optional 'lm_eval' package. Install with `pip install 'llm[eval]'`."
         )
 
 

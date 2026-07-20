@@ -1,5 +1,6 @@
 import abc
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
@@ -46,7 +47,7 @@ class TrainingTask(abc.ABC, CheckpointContributor):
         """Return the optimizer used when resuming a custom training loop."""
         return None
 
-    def build_callbacks(self) -> list["Callback"]:
+    def build_callbacks(self) -> list[Callback]:
         """Return callbacks that should be registered on the engine.
 
         Subclasses override this to attach task-specific observers
@@ -106,9 +107,7 @@ class TrainingTask(abc.ABC, CheckpointContributor):
             epoch_logs = {}
             if engine.should_stop_training:
                 if engine.rank == 0:
-                    engine.logger.info(
-                        f"Training stopped early at epoch {epoch + 1} by callback."
-                    )
+                    engine.logger.info(f"Training stopped early at epoch {epoch + 1} by callback.")
                 break
 
     def _emit_step_callbacks(

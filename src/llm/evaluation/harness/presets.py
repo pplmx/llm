@@ -101,7 +101,5 @@ def get_preset(name: str) -> EvalPreset:
     """
     if name not in BUILTIN_PRESETS:
         available = ", ".join(sorted(BUILTIN_PRESETS))
-        raise KeyError(
-            f"unknown preset {name!r}; available built-ins: {available}"
-        )
+        raise KeyError(f"unknown preset {name!r}; available built-ins: {available}")
     return BUILTIN_PRESETS[name]

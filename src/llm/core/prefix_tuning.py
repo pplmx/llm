@@ -82,17 +82,13 @@ class PrefixTuningAttention(nn.Module):
         self.num_kv_heads = base_attn.num_kv_heads
         self.head_dim = base_attn.head_dim
         self.kv_dim = self.num_kv_heads * self.head_dim
-        self.reparam_hidden = (
-            reparam_hidden if reparam_hidden is not None else self.kv_dim
-        )
+        self.reparam_hidden = reparam_hidden if reparam_hidden is not None else self.kv_dim
 
         # Trainable parameters.
         # prefix_small is the "small latent" prefix — lives in
         # ``(prefix_len, reparam_hidden)`` and gets projected into K/V
         # space by the reparam MLPs below.
-        self.prefix_small = nn.Parameter(
-            torch.empty(prefix_len, self.reparam_hidden)
-        )
+        self.prefix_small = nn.Parameter(torch.empty(prefix_len, self.reparam_hidden))
         self._reparam_k = nn.Linear(self.reparam_hidden, self.kv_dim, bias=True)
         self._reparam_v = nn.Linear(self.reparam_hidden, self.kv_dim, bias=True)
 
@@ -160,9 +156,7 @@ class PrefixTuningAttention(nn.Module):
         batch_size = hidden_states.shape[0]
         if hasattr(self, "prefix_k") and hasattr(self, "prefix_v"):
             # Folded: static buffers (no reparam MLPs in play).
-            pk, pv = self._expand_to_attn_shape(
-                self.prefix_k, self.prefix_v, batch_size
-            )
+            pk, pv = self._expand_to_attn_shape(self.prefix_k, self.prefix_v, batch_size)
         else:
             pk, pv = self._project_prefix()
             pk, pv = self._expand_to_attn_shape(pk, pv, batch_size)

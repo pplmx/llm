@@ -213,18 +213,15 @@ class MultiHeadAttention(nn.Module):
             prefix_k, prefix_v = prefix_kv
             if prefix_k.shape != prefix_v.shape:
                 raise ValueError(
-                    f"prefix_k and prefix_v must share shape; got "
-                    f"{tuple(prefix_k.shape)} vs {tuple(prefix_v.shape)}"
+                    f"prefix_k and prefix_v must share shape; got {tuple(prefix_k.shape)} vs {tuple(prefix_v.shape)}"
                 )
             if prefix_k.shape[1] != self.num_kv_heads:
                 raise ValueError(
-                    f"prefix num_kv_heads ({prefix_k.shape[1]}) must match "
-                    f"attention num_kv_heads ({self.num_kv_heads})"
+                    f"prefix num_kv_heads ({prefix_k.shape[1]}) must match attention num_kv_heads ({self.num_kv_heads})"
                 )
             if prefix_k.shape[3] != self.head_dim:
                 raise ValueError(
-                    f"prefix head_dim ({prefix_k.shape[3]}) must match "
-                    f"attention head_dim ({self.head_dim})"
+                    f"prefix head_dim ({prefix_k.shape[3]}) must match attention head_dim ({self.head_dim})"
                 )
             k = torch.cat([prefix_k, k], dim=2)
             v = torch.cat([prefix_v, v], dim=2)
@@ -308,13 +305,11 @@ class MultiHeadAttention(nn.Module):
         """
         if layer_idx is None:
             raise ValueError(
-                "layer_idx is required when paged_kv_cache is set; "
-                "DecoderModel threads it through TransformerBlock."
+                "layer_idx is required when paged_kv_cache is set; DecoderModel threads it through TransformerBlock."
             )
         if batch_indices is None:
             raise ValueError(
-                "batch_indices is required when paged_kv_cache is set; "
-                "the engine passes slot ids per row."
+                "batch_indices is required when paged_kv_cache is set; the engine passes slot ids per row."
             )
 
         batch_size, _, seq_len, _ = q.shape
@@ -338,9 +333,7 @@ class MultiHeadAttention(nn.Module):
             default=1,
         )
         # Pad block-table columns to a single tensor shape.
-        block_tables = torch.full(
-            (batch_size, max_blocks), -1, dtype=torch.long, device=q.device
-        )
+        block_tables = torch.full((batch_size, max_blocks), -1, dtype=torch.long, device=q.device)
         seq_lens = torch.zeros(batch_size, dtype=torch.long, device=q.device)
         for b, seq_id in enumerate(seq_ids):
             table = paged_kv_cache.get_block_table(int(seq_id))

@@ -139,8 +139,7 @@ class KVCache:
             pos_end = start_pos + seq_len_new
             if pos_end > self.max_seq_len:
                 raise ValueError(
-                    f"Cache overflow: trying to cache {pos_end} tokens, "
-                    f"but max_seq_len is {self.max_seq_len}"
+                    f"Cache overflow: trying to cache {pos_end} tokens, but max_seq_len is {self.max_seq_len}"
                 )
             self.k_cache[batch_indices, :, start_pos:pos_end] = k_new
             self.v_cache[batch_indices, :, start_pos:pos_end] = v_new

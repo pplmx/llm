@@ -1,0 +1,75 @@
+# SFT production (Alpaca JSONL) — mid-scale config.
+#
+# Purpose
+# -------
+# A production-shape SFT config sized for the standard Alpaca / Dolly
+# / OASST JSONL formats (typically 10K-100K instruction-response
+# pairs). The hidden_size / num_layers here match a "research-scale"
+# 50M-param model — bump them up for production.
+#
+# Data preparation
+# ----------------
+# Alpaca JSONL: each line is a record with `instruction` / `input` /
+# `output` keys (matches `SFTDataset.alpaca_template` exactly).
+#
+# Download Alpaca and convert to JSONL (one-time):
+#   # HuggingFace `tatsu-lab/alpaca` ships a 52K-row CSV — convert:
+#   python -c "
+#   import csv, json
+#   with open('data/alpaca.jsonl', 'w') as out:
+#       for row in csv.DictReader(open('alpaca_data.csv')):
+#           out.write(json.dumps(row) + '\n')
+#   "
+#
+# Or skip Alpaca and use any JSONL with the same three keys (Dolly /
+# OASST / custom).
+#
+# Usage
+# -----
+#   uv run llm-train sft --config configs/sft_alpaca.yaml
+#
+# Recommended CLI overrides for experiments
+# -----------------------------------------
+#   --epochs 3 \
+#   --batch-size 16 \
+#   --lr 2e-5 \
+#   --peft-method lora \                 # add LoRA (T2 PEFT #43-#49)
+#   --peft-kwargs '{"rank":16,"alpha":32.0}' \
+#   --peft-save-path ./lora_adapter.bin  # auto-saved at train end
+
+model:
+  hidden_size: 256         # ~10M params with 6 layers
+  num_heads: 4
+  num_layers: 6
+  vocab_size: 32000        # GPT-2 BPE — production standard
+  max_seq_len: 512
+  dropout: 0.1
+
+training:
+  epochs: 3
+  batch_size: 16
+  learning_rate: 2.0e-5   # typical SFT lr for transformer fine-tunes
+  gradient_accumulation_steps: 4   # effective batch = 64
+  num_samples: 100000
+  warmup_epochs: 1         # ~SFT-warmup-equivalent in steps
+  max_steps: 10000
+
+data:
+  tokenizer_type: hf
+  tokenizer_path: gpt2
+  dataset_path: data/alpaca.jsonl
+  max_seq_len: 512
+
+optimization:
+  use_amp: true            # bf16 on modern GPUs
+  use_compile: true
+  gradient_checkpointing: false
+
+distributed:
+  backend: nccl            # CUDA cluster
+
+checkpoint:
+  checkpoint_dir: checkpoints_sft_alpaca
+  save_interval: 1
+  keep_last_n: 3
+  save_best: true

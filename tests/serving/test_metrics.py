@@ -148,9 +148,7 @@ def test_request_timer_records_duration_and_status():
         time.sleep(0.01)
         timer.set_status(200)
 
-    count, total = _histogram_count_and_sum(
-        m.request_duration_seconds, endpoint="generate", status="200"
-    )
+    count, total = _histogram_count_and_sum(m.request_duration_seconds, endpoint="generate", status="200")
     assert count == 1
     assert total >= 0.01
 

@@ -66,9 +66,7 @@ def _fsdp_mixed_precision(dtype: str) -> Any | None:
             reduce_dtype=torch.float16,
             buffer_dtype=torch.float16,
         )
-    raise ValueError(
-        f"Unsupported fsdp_mixed_precision {dtype!r}; expected 'fp32', 'bf16', or 'fp16'."
-    )
+    raise ValueError(f"Unsupported fsdp_mixed_precision {dtype!r}; expected 'fp32', 'bf16', or 'fp16'.")
 
 
 def _fsdp_auto_wrap_policy(min_params: int) -> Any | None:
@@ -76,6 +74,7 @@ def _fsdp_auto_wrap_policy(min_params: int) -> Any | None:
     if min_params <= 0:
         return None
     from functools import partial
+
     from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
 
     # ``size_based_auto_wrap_policy`` is the policy function itself —
@@ -165,9 +164,7 @@ def wrap_model_for_training(
             cpu_offload=fsdp_cpu_offload,
         )
 
-    raise ValueError(
-        f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp' or 'fsdp'."
-    )
+    raise ValueError(f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp' or 'fsdp'.")
 
 
 def model_for_checkpoint_io(model: nn.Module) -> nn.Module:
@@ -196,9 +193,7 @@ def _fsdp_state_dict_setup(
         # The checkpoint path is the checkpoint manager's responsibility;
         # this config only controls FSDP's per-rank behaviour.
         return StateDictType.SHARDED_STATE_DICT, ShardedStateDictConfig()
-    raise ValueError(
-        f"Unknown state_dict_type {state_dict_type!r}; expected 'full' or 'sharded'."
-    )
+    raise ValueError(f"Unknown state_dict_type {state_dict_type!r}; expected 'full' or 'sharded'.")
 
 
 def load_model_state_dict(

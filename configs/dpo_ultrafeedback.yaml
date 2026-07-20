@@ -1,0 +1,77 @@
+# DPO production (UltraFeedback JSONL) — mid-scale config.
+#
+# Purpose
+# -------
+# A production-shape DPO config sized for the standard
+# UltraFeedback / Anthropic-hh-rlhf JSONL formats (typically 50K-100K
+# preference pairs). Sized for a research-scale 50M-param model.
+#
+# Data preparation
+# ----------------
+# UltraFeedback JSONL: each line is a record with `prompt` /
+# `chosen` / `rejected` keys (matches `DPODataset.__getitem__`
+# exactly).
+#
+# Download UltraFeedback and convert to JSONL (one-time):
+#   python -c "
+#   from datasets import load_dataset
+#   ds = load_dataset('HuggingFaceH4/ultrafeedback_binarized', split='train_prefs')
+#   with open('data/ultrafeedback.jsonl', 'w') as out:
+#       for row in ds:
+#           out.write(json.dumps({
+#               'prompt': row['prompt'],
+#               'chosen': row['chosen'][1]['content'],
+#               'rejected': row['rejected'][1]['content'],
+#           }) + '\n')
+#   "
+#
+# Or use Anthropic/hh-rlhf with the same three keys.
+#
+# Typical workflow
+# ----------------
+# 1. SFT the base model with `configs/sft_alpaca.yaml`
+# 2. Use the SFT checkpoint as the DPO initial weights
+#    (set `checkpoint.resume_from_checkpoint` to the SFT ckpt path)
+# 3. Run DPO with this config
+#
+# Usage
+# -----
+#   uv run llm-train dpo --config configs/dpo_ultrafeedback.yaml
+
+model:
+  hidden_size: 256
+  num_heads: 4
+  num_layers: 6
+  vocab_size: 32000        # GPT-2 BPE
+  max_seq_len: 512
+  dropout: 0.1
+
+training:
+  epochs: 2
+  batch_size: 4            # DPO doubles memory — small batch
+  learning_rate: 5.0e-7   # typical DPO lr (much smaller than SFT)
+  gradient_accumulation_steps: 8   # effective batch = 32
+  num_samples: 100000
+  warmup_epochs: 1
+  max_steps: 5000
+  dpo_beta: 0.1
+
+data:
+  tokenizer_type: hf
+  tokenizer_path: gpt2
+  dataset_path: data/ultrafeedback.jsonl
+  max_seq_len: 512
+
+optimization:
+  use_amp: true
+  use_compile: true
+  gradient_checkpointing: true     # DPO is memory-hungry
+
+distributed:
+  backend: nccl
+
+checkpoint:
+  checkpoint_dir: checkpoints_dpo_ultrafeedback
+  save_interval: 1
+  keep_last_n: 3
+  save_best: true

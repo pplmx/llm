@@ -46,12 +46,7 @@ def test_render_with_assistant_message_keeps_prefix():
         _Msg("user", "how are you?"),
     ]
     out = _messages_to_prompt(messages)
-    assert out == (
-        "user: hi\n"
-        "assistant: hello!\n"
-        "user: how are you?\n"
-        "Assistant: "
-    )
+    assert out == ("user: hi\nassistant: hello!\nuser: how are you?\nAssistant: ")
 
 
 def test_custom_message_template_chatml_style():
@@ -64,11 +59,7 @@ def test_custom_message_template_chatml_style():
         messages,
         message_template="<|im_{role}|>\n{content}<|im_end|>",
     )
-    assert out == (
-        "<|im_system|>\nbe brief<|im_end|>\n"
-        "<|im_user|>\nhi<|im_end|>\n"
-        "Assistant: "
-    )
+    assert out == ("<|im_system|>\nbe brief<|im_end|>\n<|im_user|>\nhi<|im_end|>\nAssistant: ")
 
 
 def test_custom_generation_prefix():

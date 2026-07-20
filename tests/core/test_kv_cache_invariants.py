@@ -24,7 +24,6 @@ import torch
 
 from llm.core.kv_cache import KVCache
 
-
 # ---------- Correctness ----------
 
 
@@ -113,9 +112,7 @@ class TestPrefillCorrectness:
         k_new = torch.randn(1, 2, 8, 4)
         v_new = torch.randn(1, 2, 8, 4)
         start_pos = torch.tensor([[3, 4, 5, 6, 7, 8, 9, 10]])
-        k_out, v_out = cache.update_at_indices(
-            torch.tensor([0]), k_new, v_new, start_pos
-        )
+        k_out, v_out = cache.update_at_indices(torch.tensor([0]), k_new, v_new, start_pos)
         assert torch.allclose(k_out[0, :, 3:11], k_new[0])
         assert torch.allclose(v_out[0, :, 3:11], v_new[0])
 
@@ -158,21 +155,14 @@ class TestPrefillPerformance:
         seq_len_new = 128
         b_curr = 8
 
-        cache_opt = KVCache(
-            max_batch_size, max_seq_len, num_kv_heads, head_dim, "cpu", torch.float32
-        )
-        cache_old = KVCache(
-            max_batch_size, max_seq_len, num_kv_heads, head_dim, "cpu", torch.float32
-        )
+        cache_opt = KVCache(max_batch_size, max_seq_len, num_kv_heads, head_dim, "cpu", torch.float32)
+        cache_old = KVCache(max_batch_size, max_seq_len, num_kv_heads, head_dim, "cpu", torch.float32)
 
         batch_indices = torch.arange(b_curr)
         k_new = torch.randn(b_curr, num_kv_heads, seq_len_new, head_dim)
         v_new = torch.randn(b_curr, num_kv_heads, seq_len_new, head_dim)
         # Variable starts so the old loop has many .item() syncs.
-        start_pos = (
-            torch.arange(b_curr).unsqueeze(1).expand(b_curr, seq_len_new).contiguous()
-            * 10
-        )
+        start_pos = torch.arange(b_curr).unsqueeze(1).expand(b_curr, seq_len_new).contiguous() * 10
 
         # Warm up.
         cache_opt.update_at_indices(batch_indices, k_new, v_new, start_pos)
@@ -200,6 +190,5 @@ class TestPrefillPerformance:
         # the right hard gate to keep this test stable.
         speedup = old_seconds / opt_seconds
         assert speedup >= 2.0, (
-            f"prefill too slow: opt={opt_seconds*1000:.2f}ms, "
-            f"old={old_seconds*1000:.2f}ms, speedup={speedup:.2f}x"
+            f"prefill too slow: opt={opt_seconds * 1000:.2f}ms, old={old_seconds * 1000:.2f}ms, speedup={speedup:.2f}x"
         )

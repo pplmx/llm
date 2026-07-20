@@ -27,6 +27,7 @@ they construct real engines and run a handful of optimizer steps.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import torch
@@ -35,7 +36,6 @@ from llm.data.modules.streaming import StreamingTextDataModule
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
 from llm.training.tasks.lm_task import LanguageModelingTask
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -267,11 +267,15 @@ class TestStreamLMTaskEndToEnd:
                         break
                 original_logger_info(msg, *args, **kwargs)
 
-            self.logger.info = capturing_info  # type: ignore[method-assign]
+            # ``logging.Logger.info`` is defined on the C level and type
+            # checkers view it as read-only; cast to ``Any`` for the
+            # monkey-patch only.
+            logger_any = cast("Any", self.logger)
+            logger_any.info = capturing_info
             try:
                 original_run(self)
             finally:
-                self.logger.info = original_logger_info  # type: ignore[method-assign]
+                logger_any.info = original_logger_info
 
         monkeypatch.setattr(TrainingEngine, "run", patched_run)
 
@@ -319,9 +323,7 @@ class TestStreamLMTaskEndToEnd:
         )
         engine.run()
 
-        ckpt_path = (
-            Path(stream_lm_config.checkpoint.checkpoint_dir) / "epoch_1.pt"
-        )
+        ckpt_path = Path(stream_lm_config.checkpoint.checkpoint_dir) / "epoch_1.pt"
         assert ckpt_path.exists()
 
         # Capture the data cursor after the first run.
@@ -347,21 +349,15 @@ class TestStreamLMTaskEndToEnd:
             world_size=1,
             data_module=data_module2,
         )
-        assert engine2.start_epoch == 1, (
-            f"resume should start at epoch 1, got {engine2.start_epoch}"
-        )
+        assert engine2.start_epoch == 1, f"resume should start at epoch 1, got {engine2.start_epoch}"
 
         engine2.run()
 
         # Second-run checkpoint should also exist.
-        second_ckpt_path = (
-            Path(stream_lm_config.checkpoint.checkpoint_dir) / "epoch_2.pt"
-        )
+        second_ckpt_path = Path(stream_lm_config.checkpoint.checkpoint_dir) / "epoch_2.pt"
         assert second_ckpt_path.exists()
 
         # The resumed run preserved the model state — epoch counter
         # advanced correctly.
-        second_ckpt = torch.load(
-            second_ckpt_path, map_location="cpu", weights_only=False
-        )
+        second_ckpt = torch.load(second_ckpt_path, map_location="cpu", weights_only=False)
         assert second_ckpt["epoch"] == 1  # 0-indexed, after second epoch

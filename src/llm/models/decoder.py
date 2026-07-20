@@ -157,14 +157,10 @@ class DecoderModel(nn.Module):
             raise ValueError("Gradient checkpointing is incompatible with use_cache=True. ")
 
         if use_cache and kv_caches is None and paged_kv_cache is None:
-            raise ValueError(
-                "use_cache=True requires either kv_caches or paged_kv_cache to be set."
-            )
+            raise ValueError("use_cache=True requires either kv_caches or paged_kv_cache to be set.")
 
         if kv_caches is not None and paged_kv_cache is not None:
-            raise ValueError(
-                "Pass either kv_caches or paged_kv_cache, not both."
-            )
+            raise ValueError("Pass either kv_caches or paged_kv_cache, not both.")
 
         start_pos = 0
         if kv_caches is not None and kv_caches[0].seq_len > 0:

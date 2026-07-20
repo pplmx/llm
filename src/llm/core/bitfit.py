@@ -32,7 +32,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-import torch
 import torch.nn as nn
 
 
@@ -65,10 +64,7 @@ def apply_bitfit(
     # Snapshot the original requires_grad state so unapply_bitfit can
     # restore it. Save BEFORE toggling anything — that way repeated
     # calls of apply_bitfit converge to the same final state.
-    model._bitfit_original_requires_grad = {
-        name: p.requires_grad
-        for name, p in model.named_parameters()
-    }
+    model._bitfit_original_requires_grad = {name: p.requires_grad for name, p in model.named_parameters()}
 
     # Freeze every parameter.
     for p in model.parameters():

@@ -51,8 +51,7 @@ _DURATION_BUCKETS = (0.05, 0.25, 1.0, 5.0, 30.0)
 class _StatusTimer(Protocol):
     """Minimal timer protocol returned by :meth:`ServingMetrics.request_timer`."""
 
-    def set_status(self, status: int) -> None:
-        ...
+    def set_status(self, status: int) -> None: ...
 
 
 class _RequestTimer:
@@ -166,9 +165,7 @@ class ServingMetrics:
         ratio is undefined (engine not yet initialized).
         """
         if total_active_slots <= 0:
-            raise ValueError(
-                f"Cannot compute batch fill ratio: total_active_slots={total_active_slots}"
-            )
+            raise ValueError(f"Cannot compute batch fill ratio: total_active_slots={total_active_slots}")
         ratio = scheduled / total_active_slots
         if ratio < 0.0 or ratio > 1.0:
             raise ValueError(

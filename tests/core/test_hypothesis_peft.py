@@ -32,10 +32,9 @@ without slowing CI.
 
 from __future__ import annotations
 
-import pytest
 import torch
 import torch.nn as nn
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from llm.core.bitfit import apply_bitfit, get_bitfit_parameters, unapply_bitfit
@@ -44,11 +43,8 @@ from llm.core.ia3 import (
     apply_ia3,
     disable_ia3,
     enable_ia3,
-    merge_ia3,
-    unmerge_ia3,
 )
-from llm.core.lora import LoRALinear, merge_lora, unmerge_lora
-
+from llm.core.lora import LoRALinear
 
 # ---------------------------------------------------------------------------
 # Strategies
@@ -137,9 +133,7 @@ class TestIA3ForwardInvariant:
         layer, x, scale = data
         out = layer(x)
         expected = layer.base_layer(x) * scale
-        assert torch.allclose(out, expected, atol=1e-6), (
-            f"IA3 forward diverged from base*scale at scale={scale}"
-        )
+        assert torch.allclose(out, expected, atol=1e-6), f"IA3 forward diverged from base*scale at scale={scale}"
 
     @given(data=_ia3_layer_and_input())
     @settings(max_examples=20, deadline=None)
@@ -232,8 +226,7 @@ class TestBitFitStructuralInvariant:
         for name, p in model.named_parameters():
             is_bias = name == "bias" or name.endswith(".bias")
             assert p.requires_grad is is_bias, (
-                f"BitFit post-condition violated at {name}: "
-                f"requires_grad={p.requires_grad}, is_bias={is_bias}"
+                f"BitFit post-condition violated at {name}: requires_grad={p.requires_grad}, is_bias={is_bias}"
             )
 
     @given(spec=_bias_holder_spec())
@@ -247,11 +240,7 @@ class TestBitFitStructuralInvariant:
         model = _build_holder(hidden, bias_tup)
         apply_bitfit(model)
         trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        expected = sum(
-            p.numel()
-            for name, p in model.named_parameters()
-            if name == "bias" or name.endswith(".bias")
-        )
+        expected = sum(p.numel() for name, p in model.named_parameters() if name == "bias" or name.endswith(".bias"))
         assert trainable == expected
 
     @given(spec=_bias_holder_spec())
@@ -263,15 +252,12 @@ class TestBitFitStructuralInvariant:
         """
         hidden, bias_tup = spec
         model = _build_holder(hidden, bias_tup)
-        original = {
-            name: p.requires_grad for name, p in model.named_parameters()
-        }
+        original = {name: p.requires_grad for name, p in model.named_parameters()}
         apply_bitfit(model)
         unapply_bitfit(model)
         for name, p in model.named_parameters():
             assert p.requires_grad == original[name], (
-                f"unapply failed at {name}: expected {original[name]}, "
-                f"got {p.requires_grad}"
+                f"unapply failed at {name}: expected {original[name]}, got {p.requires_grad}"
             )
 
     @given(spec=_bias_holder_spec())
@@ -289,9 +275,7 @@ class TestBitFitStructuralInvariant:
             if is_bias:
                 assert id(p) in params, f"expected bias {name} in helper output"
             else:
-                assert id(p) not in params, (
-                    f"non-bias {name} leaked into helper output"
-                )
+                assert id(p) not in params, f"non-bias {name} leaked into helper output"
 
 
 # ---------------------------------------------------------------------------
@@ -306,16 +290,12 @@ class TestLoRAForwardInvariant:
         in_features=st.integers(min_value=4, max_value=12),
         out_features=st.integers(min_value=4, max_value=12),
         rank=st.integers(min_value=1, max_value=4),
-        alpha=st.floats(
-            min_value=0.5, max_value=4.0, allow_nan=False, allow_infinity=False
-        ),
+        alpha=st.floats(min_value=0.5, max_value=4.0, allow_nan=False, allow_infinity=False),
         batch=st.integers(min_value=1, max_value=3),
         seq=st.integers(min_value=1, max_value=4),
     )
     @settings(max_examples=15, deadline=None)
-    def test_forward_matches_manual_path(
-        self, in_features, out_features, rank, alpha, batch, seq
-    ):
+    def test_forward_matches_manual_path(self, in_features, out_features, rank, alpha, batch, seq):
         torch.manual_seed(0)
         base = nn.Linear(in_features, out_features, bias=False)
         layer = LoRALinear(base, rank=rank, alpha=alpha)
@@ -329,14 +309,10 @@ class TestLoRAForwardInvariant:
         in_features=st.integers(min_value=4, max_value=12),
         out_features=st.integers(min_value=4, max_value=12),
         rank=st.integers(min_value=1, max_value=4),
-        alpha=st.floats(
-            min_value=0.5, max_value=4.0, allow_nan=False, allow_infinity=False
-        ),
+        alpha=st.floats(min_value=0.5, max_value=4.0, allow_nan=False, allow_infinity=False),
     )
     @settings(max_examples=10, deadline=None)
-    def test_merge_then_unmerge_restores_base(
-        self, in_features, out_features, rank, alpha
-    ):
+    def test_merge_then_unmerge_restores_base(self, in_features, out_features, rank, alpha):
         torch.manual_seed(0)
         base = nn.Linear(in_features, out_features, bias=False)
         layer = LoRALinear(base, rank=rank, alpha=alpha)
@@ -373,16 +349,10 @@ class TestPEFTEfficiencyInvariant:
         apply_bitfit(bitfit_model)
         apply_lora(lora_model, rank=4, alpha=8.0)
 
-        bitfit_n = sum(
-            p.numel() for p in bitfit_model.parameters() if p.requires_grad
-        )
-        lora_n = sum(
-            p.numel() for p in lora_model.parameters() if p.requires_grad
-        )
+        bitfit_n = sum(p.numel() for p in bitfit_model.parameters() if p.requires_grad)
+        lora_n = sum(p.numel() for p in lora_model.parameters() if p.requires_grad)
         # Strict — at rank=4 LoRA is always bigger than just biases.
-        assert bitfit_n < lora_n, (
-            f"BitFit ({bitfit_n}) not smaller than LoRA-r4 ({lora_n})"
-        )
+        assert bitfit_n < lora_n, f"BitFit ({bitfit_n}) not smaller than LoRA-r4 ({lora_n})"
 
     @given(spec=_bias_holder_spec())
     @settings(max_examples=10, deadline=None)
@@ -399,14 +369,8 @@ class TestPEFTEfficiencyInvariant:
         apply_ia3(ia3_model)
         apply_lora(lora_model, rank=4, alpha=8.0)
 
-        ia3_n = sum(
-            p.numel() for p in ia3_model.parameters() if p.requires_grad
-        )
-        lora_n = sum(
-            p.numel() for p in lora_model.parameters() if p.requires_grad
-        )
+        ia3_n = sum(p.numel() for p in ia3_model.parameters() if p.requires_grad)
+        lora_n = sum(p.numel() for p in lora_model.parameters() if p.requires_grad)
         # IA3 = sum(out_features for every Linear). LoRA-r4 = 4 * sum(in+out) per Linear.
         # At rank=4, LoRA is always bigger than IA3 for any non-trivial shape.
-        assert ia3_n < lora_n, (
-            f"IA3 ({ia3_n}) not smaller than LoRA-r4 ({lora_n})"
-        )
+        assert ia3_n < lora_n, f"IA3 ({ia3_n}) not smaller than LoRA-r4 ({lora_n})"

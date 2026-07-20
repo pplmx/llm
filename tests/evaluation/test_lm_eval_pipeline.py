@@ -19,12 +19,11 @@ import pytest
 from llm.evaluation.harness.presets import (
     ARCEASY_PRESET,
     BUILTIN_PRESETS,
-    EvalPreset,
     MMLU_PRESET,
     WIKITEXT_PRESET,
+    EvalPreset,
     get_preset,
 )
-
 
 # --- EvalPreset dataclass ---------------------------------------------------
 
@@ -165,9 +164,7 @@ def test_summarize_empty_results():
 
 
 def test_summarize_single_task_single_metric():
-    out = LmEvalAdapter.summarize(
-        {"results": {"mmlu": {"acc,none": 0.42}}}
-    )
+    out = LmEvalAdapter.summarize({"results": {"mmlu": {"acc,none": 0.42}}})
     assert out == {"mmlu": {"acc": 0.42}}
 
 
@@ -184,9 +181,7 @@ def test_summarize_single_task_multi_metric():
             }
         }
     )
-    assert out == {
-        "mmlu": {"acc": 0.42, "acc_norm": 0.45, "f1": 0.40}
-    }
+    assert out == {"mmlu": {"acc": 0.42, "acc_norm": 0.45, "f1": 0.40}}
 
 
 def test_summarize_multi_task():
@@ -239,17 +234,13 @@ def test_summarize_skips_boolean_values():
 
 def test_summarize_metric_without_comma():
     """Keys without ``,subset`` suffix pass through unchanged."""
-    out = LmEvalAdapter.summarize(
-        {"results": {"mmlu": {"score": 0.5}}}
-    )
+    out = LmEvalAdapter.summarize({"results": {"mmlu": {"score": 0.5}}})
     assert out == {"mmlu": {"score": 0.5}}
 
 
 def test_summarize_coerces_to_float():
     """Integer metric values are coerced to float for a stable type."""
-    out = LmEvalAdapter.summarize(
-        {"results": {"mmlu": {"count,none": 42}}}
-    )
+    out = LmEvalAdapter.summarize({"results": {"mmlu": {"count,none": 42}}})
     assert out == {"mmlu": {"count": 42.0}}
     assert isinstance(next(iter(out["mmlu"].values())), float)
 
@@ -304,7 +295,6 @@ def test_modules_import_safely_without_lm_eval(monkeypatch):
     This protects callers from import-time crashes on CPU-only hosts
     that don't need lm_eval at all (just want to read presets).
     """
-    import sys
 
     # Simulate a host where lm_eval is not installed by setting both
     # find_spec to return None and patching the module's flag.
@@ -329,10 +319,6 @@ def test_lm_eval_lm_protocol_methods_exist():
 
 # The named imports are pulled at module scope so the test file's
 # import-time smoke test catches typos in the public API.
-from llm.evaluation.harness.adapter import LmEvalAdapter  # noqa: E402
-from llm.evaluation.harness.lm_eval_lm import LlamaLmEvalLM  # noqa: E402
-
-
 # --- LlamaLmEvalLM with a fake model + tokenizer ---------------------------
 #
 # These tests exercise the *real* forward path through the adapter using
@@ -340,9 +326,10 @@ from llm.evaluation.harness.lm_eval_lm import LlamaLmEvalLM  # noqa: E402
 # vocab. They focus on the contract (shapes, batching, stop tokens)
 # rather than on numerical correctness — the upstream model is the one
 # being evaluated, the adapter just needs to be a faithful shim.
-
-
 import torch  # noqa: E402
+
+from llm.evaluation.harness.adapter import LmEvalAdapter  # noqa: E402
+from llm.evaluation.harness.lm_eval_lm import LlamaLmEvalLM  # noqa: E402
 
 
 class _FakeTokenizer:
@@ -382,9 +369,7 @@ class _FakeModel:
     def __call__(self, input_ids, use_cache=None):
         # Returns logits where argmax == argmax_id at every position.
         b, t = input_ids.shape
-        logits = torch.full(
-            (b, t, self.vocab_size), -10.0, dtype=torch.float32
-        )
+        logits = torch.full((b, t, self.vocab_size), -10.0, dtype=torch.float32)
         logits[..., self.argmax_id] = 10.0
         return logits
 
@@ -420,9 +405,7 @@ def test_lm_eval_lm_loglikelihood_returns_one_tuple_per_request():
 
 def test_lm_eval_lm_loglikelihood_greedy_match_is_true_for_argmax_model():
     """If the model always picks the same id, ``is_greedy`` matches continuation."""
-    lm = LlamaLmEvalLM(
-        _FakeModel(argmax_id=3), _FakeTokenizer(), batch_size=2
-    )
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=3), _FakeTokenizer(), batch_size=2)
     # Force the tokenizer to encode continuation into ids where 3 dominates
     # the model's argmax — we'll just check the *shape* of the output.
     requests = [_FakeRequest(("a", "b"))]
@@ -441,9 +424,7 @@ def test_lm_eval_lm_loglikelihood_handles_empty_continuation():
 
 def test_lm_eval_lm_loglikelihood_batches_requests():
     """Batching must not drop or reorder results."""
-    lm = LlamaLmEvalLM(
-        _FakeModel(), _FakeTokenizer(), batch_size=2, max_length=64
-    )
+    lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2, max_length=64)
     requests = [_FakeRequest((f"context_{i}", "cont")) for i in range(5)]
     out = lm.loglikelihood(requests)
     assert len(out) == 5
@@ -477,9 +458,7 @@ def test_lm_eval_lm_loglikelihood_rolling_returns_list_of_floats():
 
 
 def test_lm_eval_lm_generate_until_respects_max_gen_toks():
-    lm = LlamaLmEvalLM(
-        _FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64
-    )
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     requests = [
         _FakeRequest(("ctx", {"until": [], "max_gen_toks": 3})),
     ]
@@ -491,9 +470,7 @@ def test_lm_eval_lm_generate_until_respects_max_gen_toks():
 
 def test_lm_eval_lm_generate_until_stops_on_until_token():
     """Once ``until`` is a suffix of ``generated``, stop early."""
-    lm = LlamaLmEvalLM(
-        _FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64
-    )
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     # Generate up to 5 tokens but stop as soon as id 1 appears twice
     # (the model always produces 1, so the suffix matches after 2 steps).
     requests = [
@@ -562,9 +539,7 @@ def mocked_lm_eval():
     attribute as a fresh name. ``TaskManager`` exists, so it can be
     patched normally.
     """
-    with patch(
-        "lm_eval.tasks.TaskManager", _FakeTaskManager
-    ), patch("lm_eval.evaluator", _FakeEvaluator, create=True):
+    with patch("lm_eval.tasks.TaskManager", _FakeTaskManager), patch("lm_eval.evaluator", _FakeEvaluator, create=True):
         yield
 
 

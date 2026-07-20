@@ -44,10 +44,7 @@ def test_get_api_key_accepts_correct_x_api_key_header(set_api_key):
 
 
 def test_get_api_key_accepts_correct_bearer_token(set_api_key):
-    assert (
-        _run(api.get_api_key(api_key_header_value=None, auth_header=f"Bearer {set_api_key}"))
-        == set_api_key
-    )
+    assert _run(api.get_api_key(api_key_header_value=None, auth_header=f"Bearer {set_api_key}")) == set_api_key
 
 
 def test_get_api_key_rejects_wrong_x_api_key(set_api_key):  # noqa: ARG001

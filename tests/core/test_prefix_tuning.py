@@ -25,7 +25,6 @@ from llm.core.prefix_tuning import (
     get_prefix_parameters,
 )
 
-
 # ---------------------------------------------------------------------------
 # 1) MHA accepts optional prefix_kv
 # ---------------------------------------------------------------------------
@@ -252,7 +251,7 @@ class TestApplyPrefixTuning:
     """``apply_prefix_tuning`` walks the model and wraps MHA modules."""
 
     def test_wraps_every_mha_in_sequential(self):
-        from llm.core.adalora import apply_adalora  # just to import MHA-using code
+
         # Build a tiny model by hand with MHA modules.
         from llm.core.attn.mha import MultiHeadAttention
 

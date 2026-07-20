@@ -161,9 +161,7 @@ class LanguageModelingTask(TrainingTask):
                 if ckpt_dir is None:
                     resolved_path = None
                 else:
-                    resolved_path = (
-                        Path(ckpt_dir) / f"peft_adapter_{peft_method}.bin"
-                    )
+                    resolved_path = Path(ckpt_dir) / f"peft_adapter_{peft_method}.bin"
 
             callbacks.append(
                 PEFTAdapterCheckpointCallback(

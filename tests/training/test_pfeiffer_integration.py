@@ -60,9 +60,7 @@ def _ensure_registered() -> None:
 def synthetic_dm():
     """No-op SyntheticDataModule — language modeling tests don't touch data."""
     cfg = Config(
-        model=ModelConfig(
-            hidden_size=32, num_heads=4, num_layers=2, vocab_size=64, max_seq_len=16
-        ),
+        model=ModelConfig(hidden_size=32, num_heads=4, num_layers=2, vocab_size=64, max_seq_len=16),
         training=TrainingConfig(batch_size=2, num_samples=4),
         optimization=OptimizationConfig(),
     )
@@ -324,6 +322,6 @@ def test_pfeiffer_does_not_register_pruning_callback(synthetic_dm) -> None:
     )
     task = _build_lm_task(_tiny_model_config(), train_cfg, synthetic_dm)
     callbacks = task.build_callbacks()
-    assert not any(
-        isinstance(c, AdaLoRAPruningCallback) for c in callbacks
-    ), "Pfeiffer should NOT register the AdaLoRA pruning callback"
+    assert not any(isinstance(c, AdaLoRAPruningCallback) for c in callbacks), (
+        "Pfeiffer should NOT register the AdaLoRA pruning callback"
+    )

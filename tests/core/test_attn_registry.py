@@ -1,6 +1,5 @@
 """Tests for attention registry wiring."""
 
-import pytest
 import torch
 
 import llm.core.attn.mla  # noqa: F401

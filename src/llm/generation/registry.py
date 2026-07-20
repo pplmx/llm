@@ -50,9 +50,7 @@ def build_speculative_backend(
     from llm.generation.backends import SpeculativeDecodingBackend
 
     if target_model is None or draft_model is None:
-        raise ValueError(
-            "speculative backend requires both target_model and draft_model kwargs"
-        )
+        raise ValueError("speculative backend requires both target_model and draft_model kwargs")
     return SpeculativeDecodingBackend(
         target_model=target_model,
         draft_model=draft_model,

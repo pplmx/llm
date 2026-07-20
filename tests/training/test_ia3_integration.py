@@ -24,7 +24,6 @@ from llm.training.core.config import Config, TrainingConfig
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.sft_task import SFTTask
 
-
 # ---------------------------------------------------------------------------
 # Tiny test fixtures
 # ---------------------------------------------------------------------------
@@ -41,7 +40,7 @@ def _tiny_config(*, use_ia3: bool = True, **ia3_kwargs) -> Config:
     cfg.model.max_seq_len = 8
     cfg.training.use_ia3 = use_ia3
     cfg.training.ia3_init_scale = ia3_kwargs.get("ia3_init_scale", 1.0)
-    cfg.training.ia3_target_modules = ia3_kwargs.get("ia3_target_modules", None)
+    cfg.training.ia3_target_modules = ia3_kwargs.get("ia3_target_modules")
     cfg.training.epochs = 1
     return cfg
 
@@ -136,16 +135,12 @@ class TestLanguageModelingTaskAppliesIA3:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         linears = [m for m in model.modules() if isinstance(m, nn.Linear)]
         assert linears, "test fixture should have at least one Linear"
-        assert not any(isinstance(m, IA3Linear) for m in model.modules()), (
-            "IA3Linear appeared without opt-in"
-        )
+        assert not any(isinstance(m, IA3Linear) for m in model.modules()), "IA3Linear appeared without opt-in"
 
     def test_opt_in_wraps_every_linear(self):
         from unittest.mock import patch
@@ -154,15 +149,11 @@ class TestLanguageModelingTaskAppliesIA3:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, IA3Linear)]
-        assert len(wrappers) == 1, (
-            f"expected exactly 1 IA3Linear, got {len(wrappers)}"
-        )
+        assert len(wrappers) == 1, f"expected exactly 1 IA3Linear, got {len(wrappers)}"
 
     def test_opt_in_passes_target_modules_through(self):
         """``ia3_target_modules`` is forwarded to ``apply_ia3``."""
@@ -172,9 +163,7 @@ class TestLanguageModelingTaskAppliesIA3:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, IA3Linear)]
@@ -188,9 +177,7 @@ class TestLanguageModelingTaskAppliesIA3:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, IA3Linear)]
@@ -204,9 +191,7 @@ class TestLanguageModelingTaskAppliesIA3:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrapper = next(m for m in model.modules() if isinstance(m, IA3Linear))
@@ -281,9 +266,7 @@ class TestSFTInheritsIA3:
         task = SFTTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, IA3Linear)]
@@ -296,9 +279,7 @@ class TestSFTInheritsIA3:
         task = SFTTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         assert not any(isinstance(m, IA3Linear) for m in model.modules())
@@ -329,16 +310,12 @@ class TestDPOInheritsIA3:
         ):
             built_policy = task.build_model()
 
-        policy_wrappers = [
-            m for m in built_policy.modules() if isinstance(m, IA3Linear)
-        ]
+        policy_wrappers = [m for m in built_policy.modules() if isinstance(m, IA3Linear)]
         assert len(policy_wrappers) == 1
 
         assert task.ref_model is not None
         assert task.ref_model is not built_policy
-        ref_wrappers = [
-            m for m in task.ref_model.modules() if isinstance(m, IA3Linear)
-        ]
+        ref_wrappers = [m for m in task.ref_model.modules() if isinstance(m, IA3Linear)]
         assert len(ref_wrappers) == 1
 
     def test_dpo_off_by_default(self):
@@ -389,12 +366,9 @@ class TestEmptyModelIsNoop:
         cfg = _tiny_config(use_ia3=True)
         task = LanguageModelingTask(cfg, data_module=None)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=no_linear
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=no_linear):
             model = task.build_model()
 
         # No IA³ wrappers were produced (nothing to wrap).
         wrappers = [m for m in model.modules() if isinstance(m, IA3Linear)]
         assert wrappers == []
-

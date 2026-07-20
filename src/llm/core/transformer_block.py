@@ -64,9 +64,7 @@ class TransformerBlock(nn.Module):
                 "or 'layer_norm' to DecoderModel instead of pre-constructed norm modules."
             )
         if not callable(norm_type):
-            raise TypeError(
-                f"norm_type must be a callable factory, got {type(norm_type).__name__}."
-            )
+            raise TypeError(f"norm_type must be a callable factory, got {type(norm_type).__name__}.")
         self.norm1 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
         self.norm2 = norm_type(hidden_size, eps=norm_eps, **factory_kwargs)
 

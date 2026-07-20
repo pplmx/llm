@@ -622,9 +622,7 @@ class TestPruningIntegration:
         # Seed λ with non-uniform magnitudes so the top-k is
         # unambiguous before training.
         with torch.no_grad():
-            layer.lora_lambda.copy_(
-                torch.linspace(0.0, 1.0, init_rank, dtype=torch.float32)
-            )
+            layer.lora_lambda.copy_(torch.linspace(0.0, 1.0, init_rank, dtype=torch.float32))
 
         # Train λ only (P and Q stay frozen — this is a smoke test
         # of the prune signal, not a quality check on P/Q learning).

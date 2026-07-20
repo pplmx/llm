@@ -16,7 +16,6 @@ gradient-flow contract.
 
 from __future__ import annotations
 
-import pytest
 import torch
 import torch.nn as nn
 
@@ -24,7 +23,6 @@ from llm.core.bitfit import apply_bitfit, get_bitfit_parameters
 from llm.training.core.config import Config, TrainingConfig
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.sft_task import SFTTask
-
 
 # ---------------------------------------------------------------------------
 # Tiny test fixtures
@@ -41,9 +39,7 @@ def _tiny_config(*, use_bitfit: bool = True, **bitfit_kwargs) -> Config:
     cfg.model.vocab_size = 32
     cfg.model.max_seq_len = 8
     cfg.training.use_bitfit = use_bitfit
-    cfg.training.bitfit_target_modules = bitfit_kwargs.get(
-        "bitfit_target_modules", None
-    )
+    cfg.training.bitfit_target_modules = bitfit_kwargs.get("bitfit_target_modules")
     cfg.training.epochs = 1
     return cfg
 
@@ -60,9 +56,7 @@ def _tiny_model_with_biases(cfg: Config) -> nn.Module:
         def __init__(self) -> None:
             super().__init__()
             self.fc1 = nn.Linear(cfg.model.hidden_size, cfg.model.hidden_size)
-            self.fc2 = nn.Linear(
-                cfg.model.hidden_size, cfg.model.hidden_size, bias=True
-            )
+            self.fc2 = nn.Linear(cfg.model.hidden_size, cfg.model.hidden_size, bias=True)
             self.norm = nn.LayerNorm(cfg.model.hidden_size)
 
         def forward(self, x):  # pragma: no cover — not used in tests
@@ -134,9 +128,7 @@ class TestLanguageModelingTaskAppliesBitFit:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_biases(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         # BitFit was NOT applied.
@@ -154,9 +146,7 @@ class TestLanguageModelingTaskAppliesBitFit:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_biases(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         # BitFit was applied.
@@ -176,9 +166,7 @@ class TestLanguageModelingTaskAppliesBitFit:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_biases(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         # fc1.bias matches → trainable.
@@ -228,9 +216,7 @@ class TestBitFitGradientContract:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_biases(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         params = list(get_bitfit_parameters(model))
@@ -257,9 +243,7 @@ class TestSFTInheritsBitFit:
         task = SFTTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_biases(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         # Every bias is trainable, every weight is frozen.
@@ -278,9 +262,7 @@ class TestSFTInheritsBitFit:
         task = SFTTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_biases(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         # BitFit was NOT applied.
@@ -374,9 +356,7 @@ class TestEmptyModelIsNoop:
         cfg = _tiny_config(use_bitfit=True)
         task = LanguageModelingTask(cfg, data_module=None)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=no_bias
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=no_bias):
             model = task.build_model()
 
         # Every parameter is frozen (no biases to enable).

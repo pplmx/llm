@@ -35,8 +35,7 @@ LM_EVAL_AVAILABLE: bool = _lm_eval_spec is not None
 def _require_lm_eval() -> None:
     if not LM_EVAL_AVAILABLE:
         raise ImportError(
-            "LlamaLmEvalLM requires the optional 'lm_eval' package. "
-            "Install with `pip install 'llm[eval]'`."
+            "LlamaLmEvalLM requires the optional 'lm_eval' package. Install with `pip install 'llm[eval]'`."
         )
 
 
@@ -170,9 +169,7 @@ class LlamaLmEvalLM:
             relevant = logits[0, max(0, ctx_len - 1) : ctx_len - 1 + cont_len, :]
             log_probs = torch.log_softmax(relevant, dim=-1)
             cont_tensor = torch.tensor(full[ctx_len:], device=self.device, dtype=torch.long)
-            target_log_probs = log_probs[
-                torch.arange(cont_len, device=self.device), cont_tensor
-            ]
+            target_log_probs = log_probs[torch.arange(cont_len, device=self.device), cont_tensor]
             sum_logprob = float(target_log_probs.sum().item())
 
             # Greedy match: argmax at each continuation position

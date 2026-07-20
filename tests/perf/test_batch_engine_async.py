@@ -35,7 +35,6 @@ import torch.nn as nn
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.schemas import GenerationRequest
 
-
 # --- Fake model + tokenizer (CPU-only, deterministic) ----------------------
 
 
@@ -191,9 +190,7 @@ async def _exercise_lock_released_during_forward(engine: ContinuousBatchingEngin
 
     await engine.step_async()
     assert held_during_forward, "spy never ran — test is invalid"
-    assert held_during_forward[0] is True, (
-        "lock is held during forward — the refactor's main goal is broken"
-    )
+    assert held_during_forward[0] is True, "lock is held during forward — the refactor's main goal is broken"
 
 
 def test_concurrent_step_async_keeps_state_consistent(fake_engine):
@@ -224,9 +221,7 @@ async def _exercise_concurrent_step_async(engine: ContinuousBatchingEngine) -> N
 
     # All slots are returned to the free pool (no leaks).
     allocator = engine.slot_allocator
-    assert len(allocator.seq_to_slot) == 0, (
-        f"unfreed slots after drain: {allocator.seq_to_slot}"
-    )
+    assert len(allocator.seq_to_slot) == 0, f"unfreed slots after drain: {allocator.seq_to_slot}"
     assert len(allocator.free_slots) == engine.max_batch_size
 
 
@@ -257,9 +252,7 @@ async def _exercise_event_loop_yield(engine: ContinuousBatchingEngine) -> None:
             counter["n"] += 1
 
     await asyncio.gather(engine.step_async(), ticker())
-    assert counter["n"] == 20, (
-        f"event loop was blocked: ticker only ran {counter['n']}/20 times"
-    )
+    assert counter["n"] == 20, f"event loop was blocked: ticker only ran {counter['n']}/20 times"
 
 
 # --- Mixed sync + async callers ---------------------------------------------
@@ -412,6 +405,5 @@ def test_step_async_saturates_concurrent_inflight_vs_step():
     # slower — we only assert it's not catastrophically worse
     # (≥10× slower would indicate the refactor is broken).
     assert async_elapsed < sync_elapsed * 10.0, (
-        f"step_async is suspiciously slower than step: "
-        f"async={async_elapsed:.3f}s vs sync={sync_elapsed:.3f}s"
+        f"step_async is suspiciously slower than step: async={async_elapsed:.3f}s vs sync={sync_elapsed:.3f}s"
     )
