@@ -120,7 +120,19 @@ def load_tokenizer(config: ServingConfig) -> Any:
 
 
 def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
-    """Build model/tokenizer for serving, loading weights when model_path is set."""
+    """Build model/tokenizer for serving, loading weights when model_path is set.
+
+    PEFT integration (T2 PEFT #49): if ``config.peft_method`` is set, the
+    loader applies the method to the freshly loaded base model and
+    (optionally) loads the sidecar from ``config.peft_adapter_path``.
+    Without any PEFT fields, the loader behavior is unchanged.
+
+    The apply+load step is fail-loud: a missing or corrupt sidecar
+    raises ``FileNotFoundError`` / ``ValueError`` /
+    ``RuntimeError`` so the serving process refuses to start with a
+    partial config — better than silently serving the un-adapted base
+    model.
+    """
     if not config.model_path:
         return _create_dummy_model_and_tokenizer(config)
 
@@ -131,7 +143,70 @@ def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
         state_dict=checkpoint.model_state,
     )
     tokenizer = load_tokenizer(config)
+
+    _apply_peft_if_configured(model, config)
+
     return model, tokenizer
+
+
+def _apply_peft_if_configured(model: DecoderModel, config: ServingConfig) -> None:
+    """Apply PEFT method (and optionally load + merge adapter) at serve time.
+
+    Called by :func:`load_model_and_tokenizer` after the base model is
+    built. Three cases:
+
+    - ``peft_method`` + ``peft_adapter_path``: load the sidecar
+      (auto-applies the method if needed).
+    - ``peft_method`` only: just apply the method (useful for BitFit,
+      where the adapter is the base weights and no separate sidecar
+      is needed).
+    - neither: no-op (loader behavior unchanged).
+
+    When ``peft_merge`` is True and the method exposes a merge
+    helper, the adapter is folded into the base weights to save
+    per-token routing cost. The config validator rejects
+    ``peft_merge=True`` for non-mergeable methods, so this branch
+    always succeeds when reached.
+    """
+    if config.peft_method is None:
+        return
+
+    # Lazy import so the PEFT surface is only pulled in when actually
+    # configured (the common CLI startup with no PEFT skips this).
+    from llm.serving.peft_adapter import (
+        load_peft_into_model,
+        merge_peft_into_model,
+    )
+
+    if config.peft_adapter_path is not None:
+        logger.info(
+            "Loading PEFT adapter: method=%s path=%s",
+            config.peft_method,
+            config.peft_adapter_path,
+        )
+        load_peft_into_model(
+            model,
+            config.peft_method,
+            config.peft_adapter_path,
+            **config.peft_kwargs,
+        )
+    else:
+        # Method-only path: apply the wrapper structure but no separate
+        # sidecar to load. Useful for BitFit-only checkpoints where
+        # the fine-tuned biases are already in ``model_state`` (saved
+        # as part of the main training checkpoint).
+        from llm.core.peft import apply_peft
+
+        logger.info(
+            "Applying PEFT method (no sidecar): method=%s kwargs=%s",
+            config.peft_method,
+            config.peft_kwargs,
+        )
+        apply_peft(model, config.peft_method, **config.peft_kwargs)
+
+    if config.peft_merge:
+        logger.info("Merging PEFT adapter into base weights: method=%s", config.peft_method)
+        merge_peft_into_model(model, config.peft_method)
 
 
 def _create_dummy_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
