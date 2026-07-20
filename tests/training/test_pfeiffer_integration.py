@@ -303,17 +303,27 @@ def test_peft_method_overrides_legacy_flags(synthetic_dm) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_pfeiffer_does_not_register_callback(synthetic_dm) -> None:
-    """Pfeiffer has no periodic action — ``build_callbacks`` returns ``[]``.
+def test_pfeiffer_does_not_register_pruning_callback(synthetic_dm) -> None:
+    """Pfeiffer has no periodic action — ``build_callbacks`` does NOT
+    register :class:`AdaLoRAPruningCallback`.
 
-    Contrast with AdaLoRA which registers ``AdaLoRAPruningCallback``
-    via the legacy ``use_adalora=True`` path. Pfeiffer is a one-shot
-    wrap with no scheduler / tracker.
+    Contrast with AdaLoRA which registers the pruning callback via
+    the legacy ``use_adalora=True`` path. Pfeiffer is a one-shot wrap
+    with no scheduler / tracker.
+
+    Note (T2 PEFT #48): setting ``peft_method`` now also registers
+    :class:`PEFTAdapterCheckpointCallback` (one-shot sidecar save at
+    ``on_train_end``). This test asserts the *pruning* callback is
+    absent — not that *every* callback is absent.
     """
+    from llm.training.core.callbacks import AdaLoRAPruningCallback
+
     train_cfg = _tiny_training_config(
         peft_method="pfeiffer_adapter",
         peft_kwargs={"bottleneck_dim": 8},
     )
     task = _build_lm_task(_tiny_model_config(), train_cfg, synthetic_dm)
     callbacks = task.build_callbacks()
-    assert callbacks == []
+    assert not any(
+        isinstance(c, AdaLoRAPruningCallback) for c in callbacks
+    ), "Pfeiffer should NOT register the AdaLoRA pruning callback"
