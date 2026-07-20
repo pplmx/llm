@@ -192,6 +192,7 @@
     - [x] 实现批处理推理支持 (`/batch_generate` 端点)
     - [x] 添加请求队列和并发控制 (`asyncio.Semaphore` + timeout)
     - [x] 实现优先级调度 (`PriorityScheduler`)
+    - [x] **推理主路径对齐** (Main Path #3 切片完成: `configs/serve_local_demo.yaml` 冒烟 (回环 host + dummy 模型 + 无 auth, CPU 几秒可起) + `configs/serve_pretrained.yaml` 生产预设 (256×6 checkpoint + HF tokenizer + LoRA adapter sidecar + paged attention + prefix cache + torch.compile + batched backend + api_key 公开主机守卫); `ServingConfig.from_yaml()` 类方法 (与 `Config.from_yaml()` 对称 —— env vars 与 YAML 两种风格等价); 教程 `docs/tutorials/03-inference.md` 重写对齐 `llm-serve` 主路径 — 30 秒上手 (无 checkpoint 冒烟) + YAML/env vars 配置风格 + OpenAI 兼容 `/v1/chat/completions` + `/generate` 流式 + `/metrics` 域内指标 (tokens / batch fill / KV cache hit / inflight) + 训练→服务 PEFT 闭环 (T2 PEFT #47-#49 一条龙) + 认证安全 (HMAC-SHA256 timing-safe + 公开主机守卫 T2 #7) + 结构化 JSON 日志 + Prometheus PromQL 查询样例 + 故障排除 (CUDA OOM / PEFT 加载失败 / 公开主机无 key / 请求超时 / batch fill 不变化) + 生产化 (性能开关按场景 / Docker / 客户端集成); 14 个新 e2e tests 在 `tests/e2e/test_serve_main_path.py` 覆盖 YAML 良构 + 端到端启动 + OpenAI chat completions round-trip + generate round-trip + generate 流式 + /metrics 域内指标 + invalid request 结构化错误 + 公开主机守卫拒绝无 key 启动 + 回环 host 无 key 成功启动 + X-API-Key / Bearer / 无 key / 错 key 四种认证路径 + LoRA train→save→serve→forward-不同于-base 端到端 (PEFT 闭环 headline 测试))
 - [x] **性能优化** (基础) ✅ *阶段十*
     - [x] 集成 `torch.compile` 到推理流程 (可选配置)
     - [x] Paged Attention — full forward path ([ADR-004](docs/adr/004-paged-attention-serving.md))
