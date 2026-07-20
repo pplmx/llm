@@ -1,0 +1,73 @@
+# Streaming LM with C4 (Colossal Clean Crawled Corpus) — production preset.
+#
+# Purpose
+# -------
+# Real-world streaming pretraining config targeting the C4 'en' subset.
+# Pairs with the `stream_lm` task registered in
+# `src/llm/training/tasks/builtin.py`. Mirrors the canonical C4 settings
+# used by the original T5 / Raffel et al. 2020 paper at smaller scale.
+#
+# Usage
+# -----
+#   uv run llm-train stream_lm --config configs/streaming_c4.yaml
+#
+# Notes
+# -----
+# - Streaming means no full dataset is downloaded or held in memory —
+#   `HFStreamTextSource` pulls records one at a time.
+# - `seen_hashes_path` enables the dedup wrapper layer (T3 #39) so
+#   duplicate records across runs are dropped (cross-run persistence).
+# - For The Pile, swap `dataset_name` → `monology/pile-uncopyrighted`
+#   and drop `dataset_config`.
+# - For RedPajama-1T subsets, see `src/llm/data/presets.py` — the
+#   registry of built-in presets; pass the chosen one via YAML or via
+#   `apply_to_config(cfg, REDPAJAMA_PRESETS["arxiv"])`.
+
+model:
+  hidden_size: 768
+  num_heads: 12
+  num_layers: 12
+  vocab_size: 50257       # GPT-2 BPE tokenizer size
+  max_seq_len: 1024
+  dropout: 0.1
+
+training:
+  epochs: 1               # C4 is huge; "one epoch" already covers 300+ GB
+  batch_size: 32
+  learning_rate: 3.0e-4
+  num_samples: 100000
+  max_steps: 100000
+
+data:
+  data_source: hf         # HF streaming source
+  tokenizer_type: hf
+  tokenizer_path: gpt2    # HF tokenizer id
+  dataset_name: allenai/c4
+  dataset_config: en
+  dataset_split: train
+  text_column: text
+  max_seq_len: 1024
+  steps_per_epoch: 2000   # tune to your GPU memory + target throughput
+
+  # Dedup wrapper (T3 #39): drop records seen in previous runs.
+  # Set seen_hashes_path to a writable file path on first run; the
+  # wrapper will append to it as new records are yielded.
+  seen_hashes_path: checkpoints/c4_seen_hashes.txt
+  write_seen_hashes: true
+
+optimization:
+  use_amp: true
+  use_compile: true
+  gradient_checkpointing: true   # large model + long seq → save activation memory
+
+distributed:
+  backend: nccl
+
+checkpoint:
+  checkpoint_dir: checkpoints_c4
+  save_interval: 1
+  keep_last_n: 3
+  save_best: true
+  # Streaming checkpoints store the data cursor (per-shard line_index)
+  # in extra_state so resume continues exactly where the previous
+  # run left off. See `tests/e2e/test_streaming_resume.py`.

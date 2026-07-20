@@ -1,0 +1,76 @@
+# Streaming LM demo (local text source) — fast e2e config.
+#
+# Purpose
+# -------
+# The smallest possible streaming-LM run that exercises the full
+# `llm-train stream_lm` main path: data streaming → forward → backward →
+# optimizer step → checkpoint save. Use this as the smoke test before
+# scaling up to real datasets (C4 / The Pile / RedPajama).
+#
+# Usage
+# -----
+#   # 1. Create a tiny corpus (one line per record):
+#   mkdir -p data
+#   python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" \
+#     > data/demo.txt
+#
+#   # 2. Train (the model is intentionally tiny so the run finishes
+#   #    in seconds on CPU):
+#   uv run llm-train stream_lm --config configs/streaming_local_demo.yaml \
+#     --epochs 1 --steps-per-epoch 10 \
+#     --config-path configs/streaming_local_demo.yaml
+#
+#   # (The --config-path flag points llm-train at this YAML; the
+#   #   --epochs / --steps-per-epoch flags override individual fields
+#   #   at the CLI layer for quick experimentation.)
+#
+# What this config exercises
+# --------------------------
+# - `stream_lm` task → `LanguageModelingTask` + `StreamingTextDataModule`
+# - `data_source: local` → `LocalLineTextSource` (file-per-line reader)
+# - Fixed `steps_per_epoch=10` (streaming datasets have no fixed epoch
+#   length — the user picks a step count)
+# - `save_interval=1` → checkpoint written every epoch (so resume is
+#   immediate)
+#
+# Related configs
+# ---------------
+# - `configs/streaming_c4.yaml` — real C4 streaming (production)
+# - `configs/example.yaml` — non-streaming LM baseline (legacy)
+
+model:
+  hidden_size: 64          # tiny for the demo; production: 512-4096
+  num_heads: 4
+  num_layers: 2
+  vocab_size: 256          # character tokenizer
+  max_seq_len: 64
+  dropout: 0.0
+
+training:
+  epochs: 1
+  batch_size: 4
+  learning_rate: 1.0e-3   # AdamW default
+  num_samples: 1000
+  max_steps: 50            # hard cap so demos can't run forever
+
+data:
+  data_source: local       # see `dataset_path` below
+  tokenizer_type: simple
+  dataset_path: data/demo.txt   # one record per line
+  max_seq_len: 64
+  steps_per_epoch: 10      # 10 optimizer steps per epoch (streaming)
+  seen_hashes_path: null   # not used with data_source=local
+
+optimization:
+  use_amp: false           # CPU demo — AMP is CUDA-only
+  use_compile: false       # compile adds warmup cost; disable for demo
+  gradient_checkpointing: false
+
+distributed:
+  backend: gloo            # CPU demo — NCCL requires CUDA
+
+checkpoint:
+  checkpoint_dir: checkpoints_streaming_demo
+  save_interval: 1
+  keep_last_n: 2
+  save_best: true
