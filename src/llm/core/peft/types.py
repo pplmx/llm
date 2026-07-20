@@ -91,6 +91,16 @@ class PEFTMethod:
             QLoRA (wrap ``nn.Linear``), ``"mha"`` for Prefix Tuning
             (wrap ``MultiHeadAttention``), ``"any"`` for BitFit (just
             toggles ``requires_grad``).
+        is_applied: ``(model) -> bool`` — returns ``True`` if the
+            method is currently active on ``model``. Used by
+            :func:`llm.core.peft.checkpoint.load_peft` to decide
+            whether to call :func:`apply_peft` first before copying
+            the saved tensors. ``None`` means "unknown" — loaders
+            treat this as "not applied" and re-apply unconditionally
+            (which may over-wrap modules, but never silently corrupt
+            state). Built-ins set this to a module-class check
+            (``any(isinstance(m, LoRALinear) for m in model.modules())``
+            for LoRA, ``is_bitfit_applied`` for BitFit).
 
     Notes:
         The dataclass is ``frozen=True`` — methods are registered
@@ -110,6 +120,7 @@ class PEFTMethod:
     enable: Callable[[nn.Module], None] | None = None
     requires_callback: bool = False
     target_module_filter: TargetModuleFilter = TargetModuleFilter.LINEAR
+    is_applied: Callable[[nn.Module], bool] | None = None
 
 
 __all__ = ["PEFTMethod", "TargetModuleFilter"]

@@ -16,7 +16,10 @@ user who never touches PEFT pays no import cost.
 
 from __future__ import annotations
 
+import torch.nn as nn
+
 from llm.core.adalora import (
+    AdaLoRALinear,
     apply_adalora,
     count_adalora_parameters,
     disable_adalora,
@@ -26,6 +29,7 @@ from llm.core.adalora import (
     unmerge_adalora,
 )
 from llm.core.adapter import (
+    AdapterLinear,
     apply_adapter,
     count_adapter_parameters,
     disable_adapter,
@@ -38,8 +42,10 @@ from llm.core.bitfit import (
     apply_bitfit,
     count_bitfit_parameters,
     get_bitfit_parameters,
+    is_bitfit_applied,
 )
 from llm.core.ia3 import (
+    IA3Linear,
     apply_ia3,
     count_ia3_parameters,
     disable_ia3,
@@ -49,6 +55,7 @@ from llm.core.ia3 import (
     unmerge_ia3,
 )
 from llm.core.lora import (
+    LoRALinear,
     apply_lora,
     count_lora_parameters,
     disable_lora,
@@ -67,8 +74,61 @@ from llm.core.pfeiffer_adapter import (
     merge_pfeiffer_adapter,
     unmerge_pfeiffer_adapter,
 )
-from llm.core.prefix_tuning import apply_prefix_tuning, get_prefix_parameters
-from llm.core.qlora import apply_qlora, get_qlora_parameters
+from llm.core.prefix_tuning import (
+    PrefixTuningAttention,
+    apply_prefix_tuning,
+    get_prefix_parameters,
+)
+from llm.core.qlora import QLoRALinear, apply_qlora, get_qlora_parameters
+
+# ---------------------------------------------------------------------------
+# Per-method ``is_applied`` helpers
+# ---------------------------------------------------------------------------
+#
+# Used by ``load_peft`` to decide whether to call ``apply_peft`` first.
+# The check is structural: walk ``model.modules()`` and look for at least
+# one instance of the expected wrapper class (or, for BitFit, the
+# snapshot attribute that ``apply_bitfit`` sets).
+#
+# Adapter and Pfeiffer share the ``AdapterLinear`` wrapper class — the
+# difference is the ``target_modules`` filter at apply time. We can't
+# tell from a structural scan which filter was used, but ``is_applied``
+# only needs to answer "is the wrapper present" — the param-count
+# check on load catches genuine mismatches (different number of
+# wrappers between save and load).
+
+
+def _lora_is_applied(model: nn.Module) -> bool:
+    return any(isinstance(m, LoRALinear) for m in model.modules())
+
+
+def _qlora_is_applied(model: nn.Module) -> bool:
+    return any(isinstance(m, QLoRALinear) for m in model.modules())
+
+
+def _adalora_is_applied(model: nn.Module) -> bool:
+    return any(isinstance(m, AdaLoRALinear) for m in model.modules())
+
+
+def _prefix_tuning_is_applied(model: nn.Module) -> bool:
+    return any(isinstance(m, PrefixTuningAttention) for m in model.modules())
+
+
+def _ia3_is_applied(model: nn.Module) -> bool:
+    return any(isinstance(m, IA3Linear) for m in model.modules())
+
+
+def _adapter_is_applied(model: nn.Module) -> bool:
+    """Houlsby 2019 + Pfeiffer 2020 share the same wrapper.
+
+    Used by both ``adapter`` and ``pfeiffer_adapter``. The structural
+    check is identical — the param-count check on load will catch a
+    genuine mismatch (e.g. Houlsby wraps every Linear, Pfeiffer only
+    the FFN — the wrapper count differs when the model has both
+    attention and FFN Linears).
+    """
+    return any(isinstance(m, AdapterLinear) for m in model.modules())
+
 
 # ---------------------------------------------------------------------------
 # Built-in PEFTMethod records
@@ -86,6 +146,11 @@ from llm.core.qlora import apply_qlora, get_qlora_parameters
 # ``target_module_filter`` is metadata for introspection / docs. The
 # actual filtering logic lives in each per-method ``apply_*`` function
 # (which accepts a ``target_modules`` substring list).
+#
+# ``is_applied`` lets ``load_peft`` decide whether to call ``apply_peft``
+# first. BitFit uses the snapshot attribute (``is_bitfit_applied``)
+# because its "application" is a ``requires_grad`` toggle rather than
+# new wrappers.
 
 
 _BUILTIN_METHODS: list[PEFTMethod] = [
@@ -99,6 +164,7 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         disable=disable_lora,
         enable=enable_lora,
         target_module_filter=TargetModuleFilter.LINEAR,
+        is_applied=_lora_is_applied,
     ),
     PEFTMethod(
         name="qlora",
@@ -107,6 +173,7 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         # NF4-quantized base weight cannot be re-folded into a float
         # tensor — QLoRA exposes apply + get_parameters only.
         target_module_filter=TargetModuleFilter.LINEAR,
+        is_applied=_qlora_is_applied,
     ),
     PEFTMethod(
         name="adalora",
@@ -119,6 +186,7 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         enable=enable_adalora,
         requires_callback=True,  # AdaLoRAPruningCallback
         target_module_filter=TargetModuleFilter.LINEAR,
+        is_applied=_adalora_is_applied,
     ),
     PEFTMethod(
         name="prefix_tuning",
@@ -129,6 +197,7 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         # because it's a one-shot fold into static buffers, not a
         # base-weight mutation.
         target_module_filter=TargetModuleFilter.MHA,
+        is_applied=_prefix_tuning_is_applied,
     ),
     PEFTMethod(
         name="ia3",
@@ -140,6 +209,7 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         disable=disable_ia3,
         enable=enable_ia3,
         target_module_filter=TargetModuleFilter.LINEAR,
+        is_applied=_ia3_is_applied,
     ),
     PEFTMethod(
         name="bitfit",
@@ -148,8 +218,10 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         count_parameters=count_bitfit_parameters,
         # BitFit's biases are simply part of the model at serve time —
         # no merge / disable / enable helpers exist on the per-method
-        # API.
+        # API. ``is_applied`` uses the snapshot attribute that
+        # ``apply_bitfit`` sets (see ``llm.core.bitfit.is_bitfit_applied``).
         target_module_filter=TargetModuleFilter.ANY,
+        is_applied=is_bitfit_applied,
     ),
     PEFTMethod(
         name="adapter",
@@ -165,6 +237,7 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         # base weight doesn't change). The registry still surfaces it
         # for API parity with LoRA's apply/merge pattern.
         target_module_filter=TargetModuleFilter.LINEAR,
+        is_applied=_adapter_is_applied,
     ),
     PEFTMethod(
         name="pfeiffer_adapter",
@@ -182,6 +255,7 @@ _BUILTIN_METHODS: list[PEFTMethod] = [
         # Houlsby at comparable accuracy; the production default in
         # AdapterHub / HuggingFace PEFT.
         target_module_filter=TargetModuleFilter.LINEAR,
+        is_applied=_adapter_is_applied,  # shared structural check
     ),
 ]
 
