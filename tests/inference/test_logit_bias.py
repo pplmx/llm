@@ -38,7 +38,7 @@ def test_apply_logit_bias_overrides_penalties_via_addition():
     # Pretend a penalty subtracted 5.0 from token 0; logit_bias=10 restores it above token 1.
     out = apply_logit_bias(logits.clone(), {0: 10.0})
     assert torch.allclose(out[0], torch.tensor(11.0))  # 1.0 + 10.0
-    assert torch.allclose(out[1], torch.tensor(2.0))   # untouched
+    assert torch.allclose(out[1], torch.tensor(2.0))  # untouched
 
 
 def test_apply_logit_bias_does_not_mutate_input():

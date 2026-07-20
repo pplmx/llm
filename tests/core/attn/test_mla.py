@@ -189,15 +189,18 @@ def test_mla_kv_cache_full_equivalence():
 
     # Incremental: prefill + decode one token at a time.
     with torch.no_grad():
-        prefill = x[:, :seq_len - 1, :]
-        decode_token = x[:, seq_len - 1:, :]
+        prefill = x[:, : seq_len - 1, :]
+        decode_token = x[:, seq_len - 1 :, :]
 
         _ = mla(prefill, kv_cache=kv_cache)
         cached_out = mla(decode_token, kv_cache=kv_cache)
 
     # Last cached position must match the last reference position.
     torch.testing.assert_close(
-        cached_out[:, 0, :], ref_out[:, -1, :], atol=1e-5, rtol=1e-5,
+        cached_out[:, 0, :],
+        ref_out[:, -1, :],
+        atol=1e-5,
+        rtol=1e-5,
     )
 
 
@@ -245,12 +248,17 @@ def test_mla_kv_cache_and_paged_kv_cache_mutually_exclusive():
     x = torch.randn(1, 1, hidden_size)
 
     kv_cache = KVCache(
-        max_batch_size=1, max_seq_len=8,
-        num_kv_heads=num_heads, head_dim=head_dim,
+        max_batch_size=1,
+        max_seq_len=8,
+        num_kv_heads=num_heads,
+        head_dim=head_dim,
     )
     paged = PagedKVCache(
-        num_layers=1, num_kv_heads=num_heads, head_dim=head_dim,
-        num_blocks=4, block_size=4,
+        num_layers=1,
+        num_kv_heads=num_heads,
+        head_dim=head_dim,
+        num_blocks=4,
+        block_size=4,
     )
 
     with pytest.raises(ValueError, match="Pass either kv_cache or paged_kv_cache"):
@@ -287,7 +295,7 @@ def _build_paged_cache_for_test(
     head_dim: int,
     num_blocks: int = 8,
     block_size: int = 4,
-) -> "PagedKVCache":
+) -> PagedKVCache:
     """Construct a small ``PagedKVCache`` for unit tests."""
     from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
@@ -316,7 +324,9 @@ def test_mla_paged_kv_cache_roundtrip_writes_and_reads():
 
     mla = _make_mla_for_cache_test(seed=13)
     paged = _build_paged_cache_for_test(
-        num_layers=1, num_kv_heads=num_kv_heads, head_dim=head_dim,
+        num_layers=1,
+        num_kv_heads=num_kv_heads,
+        head_dim=head_dim,
     )
 
     x = torch.randn(batch_size, seq_len, hidden_size)
@@ -346,7 +356,9 @@ def test_mla_paged_kv_cache_incremental_decode_equivalence():
 
     mla = _make_mla_for_cache_test(seed=17)
     paged = _build_paged_cache_for_test(
-        num_layers=1, num_kv_heads=num_kv_heads, head_dim=head_dim,
+        num_layers=1,
+        num_kv_heads=num_kv_heads,
+        head_dim=head_dim,
     )
 
     x = torch.randn(batch_size, seq_len, hidden_size)
@@ -357,17 +369,23 @@ def test_mla_paged_kv_cache_incremental_decode_equivalence():
 
     # Incremental: prefill + one decode step.
     with torch.no_grad():
-        prefill = x[:, :seq_len - 1, :]
-        decode_token = x[:, seq_len - 1:, :]
+        prefill = x[:, : seq_len - 1, :]
+        decode_token = x[:, seq_len - 1 :, :]
         seq_ids = torch.tensor([seq_id], dtype=torch.long)
 
         _ = mla(prefill, paged_kv_cache=paged, layer_idx=0, batch_indices=seq_ids)
         cached_out = mla(
-            decode_token, paged_kv_cache=paged, layer_idx=0, batch_indices=seq_ids,
+            decode_token,
+            paged_kv_cache=paged,
+            layer_idx=0,
+            batch_indices=seq_ids,
         )
 
     torch.testing.assert_close(
-        cached_out[:, 0, :], ref_out[:, -1, :], atol=1e-5, rtol=1e-5,
+        cached_out[:, 0, :],
+        ref_out[:, -1, :],
+        atol=1e-5,
+        rtol=1e-5,
     )
 
 
@@ -384,14 +402,19 @@ def test_mla_paged_kv_cache_requires_layer_idx_and_batch_indices():
 
     mla = _make_mla_for_cache_test(seed=19)
     paged = PagedKVCache(
-        num_layers=1, num_kv_heads=num_kv_heads, head_dim=head_dim,
-        num_blocks=4, block_size=4,
+        num_layers=1,
+        num_kv_heads=num_kv_heads,
+        head_dim=head_dim,
+        num_blocks=4,
+        block_size=4,
     )
     x = torch.randn(1, 1, hidden_size)
 
     with pytest.raises(ValueError, match="layer_idx is required"):
         mla(
-            x, paged_kv_cache=paged, layer_idx=None,
+            x,
+            paged_kv_cache=paged,
+            layer_idx=None,
             batch_indices=torch.tensor([0], dtype=torch.long),
         )
     with pytest.raises(ValueError, match="batch_indices is required"):
@@ -415,7 +438,10 @@ def test_mla_paged_kv_cache_decode_step_appends_block():
 
     mla = _make_mla_for_cache_test(seed=23)
     paged = _build_paged_cache_for_test(
-        num_layers=1, num_kv_heads=num_kv_heads, head_dim=head_dim, block_size=4,
+        num_layers=1,
+        num_kv_heads=num_kv_heads,
+        head_dim=head_dim,
+        block_size=4,
     )
 
     # Prefill 5 tokens → 2 blocks.

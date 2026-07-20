@@ -126,8 +126,7 @@ def save_pretrained(model: DecoderModel, save_directory: str | Path) -> Path:
     """
     if not SAFETENSORS_AVAILABLE:
         raise ImportError(
-            "save_pretrained requires the 'safetensors' package. "
-            "Install with `pip install 'llm[compat]'`."
+            "save_pretrained requires the 'safetensors' package. Install with `pip install 'llm[compat]'`."
         )
 
     from safetensors.torch import save_file
@@ -204,8 +203,7 @@ def push_to_hub(
     """
     if not HF_HUB_AVAILABLE:
         raise ImportError(
-            "push_to_hub requires the 'huggingface_hub' package. "
-            "Install with `pip install 'llm[compat]'`."
+            "push_to_hub requires the 'huggingface_hub' package. Install with `pip install 'llm[compat]'`."
         )
 
     import tempfile

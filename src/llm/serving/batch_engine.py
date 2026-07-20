@@ -490,9 +490,7 @@ class ContinuousBatchingEngine:
                 seq_logits = logits[i, length - 1, :]
                 context_ids = seq.input_ids + seq.generated_ids
                 if seq.repetition_penalty != 1.0:
-                    seq_logits = apply_repetition_penalty(
-                        seq_logits, context_ids, seq.repetition_penalty
-                    )
+                    seq_logits = apply_repetition_penalty(seq_logits, context_ids, seq.repetition_penalty)
                 next_token_ids.append(
                     sample_next_token(
                         seq_logits,
@@ -531,14 +529,8 @@ class ContinuousBatchingEngine:
             token_id = result.next_token_ids[i]
             seq.append_token_id(token_id)
 
-            if (
-                self.prefix_cache
-                and len(seq.generated_ids) == 1
-                and not inputs.prefix_full_hits[i]
-            ):
-                self.prefix_cache.put(
-                    seq.input_ids, inputs.batch_slots_list[i], len(seq.input_ids)
-                )
+            if self.prefix_cache and len(seq.generated_ids) == 1 and not inputs.prefix_full_hits[i]:
+                self.prefix_cache.put(seq.input_ids, inputs.batch_slots_list[i], len(seq.input_ids))
 
             if (
                 (hasattr(self.tokenizer, "eos_token_id") and token_id == self.tokenizer.eos_token_id)

@@ -16,7 +16,6 @@ contracts:
 
 from __future__ import annotations
 
-import pytest
 import torch
 import torch.nn as nn
 
@@ -27,7 +26,6 @@ from llm.core.bitfit import (
     is_bitfit_applied,
     unapply_bitfit,
 )
-
 
 # ---------------------------------------------------------------------------
 # Tiny test fixtures
@@ -351,9 +349,7 @@ class TestBitFitIsSmallestPEFT:
 
         model2 = _ToyModel()
         apply_lora(model2, rank=4, alpha=8.0)
-        lora_trainable = sum(
-            p.numel() for p in model2.parameters() if p.requires_grad
-        )
+        lora_trainable = sum(p.numel() for p in model2.parameters() if p.requires_grad)
 
         # LoRA's per-Linear cost is rank * (in + out) — at rank=4 the
         # cost is roughly 4x BitFit's footprint in this toy.

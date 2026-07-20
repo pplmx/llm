@@ -1,0 +1,82 @@
+# DPO local demo (chosen/rejected JSONL) — fast e2e config.
+#
+# Purpose
+# -------
+# The smallest possible Direct Preference Optimization run that
+# exercises the full `llm-train dpo` main path: JSONL →
+# tokenize → policy forward + reference forward → DPO loss →
+# backward → optimizer step → checkpoint save.
+#
+# DPO trains a policy model against a frozen reference model
+# (initialized from the same weights), so the engine builds TWO
+# model copies — keep batch_size tiny for the smoke.
+#
+# Usage
+# -----
+#   # 1. Create a tiny preference JSONL:
+#   mkdir -p data
+#   python -c "
+#   import json
+#   data = [
+#       {'prompt': 'Q?', 'chosen': 'Good answer.', 'rejected': 'Bad answer.'},
+#   ] * 30
+#   with open('data/dpo_demo.jsonl', 'w') as f:
+#       for item in data:
+#           f.write(json.dumps(item) + '\n')
+#   "
+#
+#   # 2. Train:
+#   uv run llm-train dpo --config configs/dpo_local_demo.yaml \
+#     --epochs 1 --steps-per-epoch 10
+#
+# What this config exercises
+# --------------------------
+# - `dpo` task → `DPOTask` + `DPODataModule` + `DPODataset`
+# - JSONL with `prompt` / `chosen` / `rejected` keys (matches
+#   `DPODataset.__getitem__` exactly)
+# - Two-model build: policy + reference (frozen copy)
+# - DPO beta parameter (default 0.1)
+# - `save_interval=1` → checkpoint written every epoch
+#
+# Related configs
+# ---------------
+# - `configs/dpo_ultrafeedback.yaml` — production UltraFeedback-style
+#   JSONL (256 hidden, AMP on)
+# - `configs/sft_local_demo.yaml` — upstream SFT that produces the
+#   initial policy weights
+
+model:
+  hidden_size: 64          # tiny for the demo (DPO doubles memory)
+  num_heads: 4
+  num_layers: 2
+  vocab_size: 256
+  max_seq_len: 64
+  dropout: 0.0
+
+training:
+  epochs: 1
+  batch_size: 2            # smaller — DPO holds policy + reference
+  learning_rate: 1.0e-3
+  num_samples: 1000
+  max_steps: 30
+  warmup_epochs: 0
+  dpo_beta: 0.1            # standard DPO temperature
+
+data:
+  tokenizer_type: simple
+  dataset_path: data/dpo_demo.jsonl   # chosen/rejected JSONL
+  max_seq_len: 64
+
+optimization:
+  use_amp: false
+  use_compile: false
+  gradient_checkpointing: false
+
+distributed:
+  backend: gloo            # CPU demo
+
+checkpoint:
+  checkpoint_dir: checkpoints_dpo_demo
+  save_interval: 1
+  keep_last_n: 2
+  save_best: true

@@ -56,9 +56,7 @@ def synthetic_dm():
     touch the data, but ``LanguageModelingTask`` requires one.
     """
     cfg = Config(
-        model=ModelConfig(
-            hidden_size=32, num_heads=4, num_layers=2, vocab_size=64, max_seq_len=16
-        ),
+        model=ModelConfig(hidden_size=32, num_heads=4, num_layers=2, vocab_size=64, max_seq_len=16),
         training=TrainingConfig(batch_size=2, num_samples=4),
         optimization=OptimizationConfig(),
     )
@@ -372,9 +370,9 @@ def test_adalora_via_registry_does_not_register_pruning_callback(
     callbacks = task.build_callbacks()
     # The AdaLoRA pruning callback is NOT registered via the new path
     # — it requires the legacy ``use_adalora=True`` flag.
-    assert not any(
-        isinstance(c, AdaLoRAPruningCallback) for c in callbacks
-    ), "AdaLoRA pruning callback should NOT be wired via peft_method"
+    assert not any(isinstance(c, AdaLoRAPruningCallback) for c in callbacks), (
+        "AdaLoRA pruning callback should NOT be wired via peft_method"
+    )
 
 
 # ---------------------------------------------------------------------------

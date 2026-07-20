@@ -35,7 +35,6 @@ from llm.core.adapter import (
     unmerge_adapter,
 )
 
-
 # ---------------------------------------------------------------------------
 # AdapterLinear — single-wrapper behaviour
 # ---------------------------------------------------------------------------
@@ -72,9 +71,7 @@ class TestAdapterLinearInit:
         receive any gradient signal.
         """
         layer = AdapterLinear(nn.Linear(16, 32), bottleneck_dim=8)
-        assert not torch.allclose(
-            layer.down.weight, torch.zeros_like(layer.down.weight)
-        )
+        assert not torch.allclose(layer.down.weight, torch.zeros_like(layer.down.weight))
 
     def test_bottleneck_dim_must_be_positive(self):
         with pytest.raises(ValueError, match="bottleneck_dim"):
@@ -88,9 +85,7 @@ class TestAdapterLinearInit:
         hidden + bottleneck.
         """
         in_features, out_features, bottleneck = 16, 32, 8
-        layer = AdapterLinear(
-            nn.Linear(in_features, out_features), bottleneck_dim=bottleneck
-        )
+        layer = AdapterLinear(nn.Linear(in_features, out_features), bottleneck_dim=bottleneck)
         expected = (
             out_features * bottleneck  # down.weight
             + bottleneck  # down.bias
@@ -256,19 +251,13 @@ class TestApplyAdapter:
     def test_target_modules_substring_filter(self):
         model = _ToyModel()
         apply_adapter(model, bottleneck_dim=4, target_modules=["q_proj"])
-        wrappers = [
-            name for name, m in model.named_modules() if isinstance(m, AdapterLinear)
-        ]
+        wrappers = [name for name, m in model.named_modules() if isinstance(m, AdapterLinear)]
         assert wrappers == ["attn.q_proj"]
 
     def test_multiple_target_modules(self):
         model = _ToyModel()
-        apply_adapter(
-            model, bottleneck_dim=4, target_modules=["q_proj", "v_proj"]
-        )
-        wrappers = sorted(
-            name for name, m in model.named_modules() if isinstance(m, AdapterLinear)
-        )
+        apply_adapter(model, bottleneck_dim=4, target_modules=["q_proj", "v_proj"])
+        wrappers = sorted(name for name, m in model.named_modules() if isinstance(m, AdapterLinear))
         assert wrappers == ["attn.q_proj", "attn.v_proj"]
 
     def test_apply_is_in_place(self):
@@ -285,9 +274,7 @@ class TestModuleLevelMergeUnmerge:
         original_weight = model.attn.q_proj.base_layer.weight.detach().clone()
         merge_adapter(model)
         unmerge_adapter(model)
-        assert torch.allclose(
-            model.attn.q_proj.base_layer.weight, original_weight, atol=1e-7
-        )
+        assert torch.allclose(model.attn.q_proj.base_layer.weight, original_weight, atol=1e-7)
 
 
 class TestGetAdapterParameters:
@@ -354,9 +341,7 @@ class TestCountAdapterParameters:
         model = _ToyModel()
         apply_adapter(model, bottleneck_dim=4)
         trainable, total = count_adapter_parameters(model)
-        expected = 4 * sum(
-            1 for _ in model.modules() if isinstance(_, AdapterLinear)
-        )
+        expected = 4 * sum(1 for _ in model.modules() if isinstance(_, AdapterLinear))
         # Each wrapper contributes out_features × bottleneck + bottleneck +
         # bottleneck × out_features + out_features = 2*out*bottleneck +
         # out + bottleneck. Hard to predict without enumerating shapes,

@@ -28,7 +28,6 @@ from llm.training.core.config import Config, TrainingConfig
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.sft_task import SFTTask
 
-
 # ---------------------------------------------------------------------------
 # Tiny test fixtures
 # ---------------------------------------------------------------------------
@@ -44,12 +43,8 @@ def _tiny_config(*, use_adapter: bool = True, **adapter_kwargs) -> Config:
     cfg.model.vocab_size = 32
     cfg.model.max_seq_len = 8
     cfg.training.use_adapter = use_adapter
-    cfg.training.adapter_bottleneck_dim = adapter_kwargs.get(
-        "adapter_bottleneck_dim", 4
-    )
-    cfg.training.adapter_target_modules = adapter_kwargs.get(
-        "adapter_target_modules", None
-    )
+    cfg.training.adapter_bottleneck_dim = adapter_kwargs.get("adapter_bottleneck_dim", 4)
+    cfg.training.adapter_target_modules = adapter_kwargs.get("adapter_target_modules")
     cfg.training.epochs = 1
     return cfg
 
@@ -148,16 +143,12 @@ class TestLanguageModelingTaskAppliesAdapter:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         linears = [m for m in model.modules() if isinstance(m, nn.Linear)]
         assert linears, "test fixture should have at least one Linear"
-        assert not any(isinstance(m, AdapterLinear) for m in model.modules()), (
-            "AdapterLinear appeared without opt-in"
-        )
+        assert not any(isinstance(m, AdapterLinear) for m in model.modules()), "AdapterLinear appeared without opt-in"
 
     def test_opt_in_wraps_every_linear(self):
         from unittest.mock import patch
@@ -166,15 +157,11 @@ class TestLanguageModelingTaskAppliesAdapter:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, AdapterLinear)]
-        assert len(wrappers) == 1, (
-            f"expected exactly 1 AdapterLinear, got {len(wrappers)}"
-        )
+        assert len(wrappers) == 1, f"expected exactly 1 AdapterLinear, got {len(wrappers)}"
 
     def test_opt_in_passes_target_modules_through(self):
         """``adapter_target_modules`` is forwarded to ``apply_adapter``."""
@@ -184,9 +171,7 @@ class TestLanguageModelingTaskAppliesAdapter:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, AdapterLinear)]
@@ -200,9 +185,7 @@ class TestLanguageModelingTaskAppliesAdapter:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, AdapterLinear)]
@@ -216,9 +199,7 @@ class TestLanguageModelingTaskAppliesAdapter:
         task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrapper = next(m for m in model.modules() if isinstance(m, AdapterLinear))
@@ -294,9 +275,7 @@ class TestSFTInheritsAdapter:
         task = SFTTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, AdapterLinear)]
@@ -309,9 +288,7 @@ class TestSFTInheritsAdapter:
         task = SFTTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=tiny_model
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
             model = task.build_model()
 
         assert not any(isinstance(m, AdapterLinear) for m in model.modules())
@@ -342,16 +319,12 @@ class TestDPOInheritsAdapter:
         ):
             built_policy = task.build_model()
 
-        policy_wrappers = [
-            m for m in built_policy.modules() if isinstance(m, AdapterLinear)
-        ]
+        policy_wrappers = [m for m in built_policy.modules() if isinstance(m, AdapterLinear)]
         assert len(policy_wrappers) == 1
 
         assert task.ref_model is not None
         assert task.ref_model is not built_policy
-        ref_wrappers = [
-            m for m in task.ref_model.modules() if isinstance(m, AdapterLinear)
-        ]
+        ref_wrappers = [m for m in task.ref_model.modules() if isinstance(m, AdapterLinear)]
         assert len(ref_wrappers) == 1
 
     def test_dpo_off_by_default(self):
@@ -402,9 +375,7 @@ class TestEmptyModelIsNoop:
         cfg = _tiny_config(use_adapter=True)
         task = LanguageModelingTask(cfg, data_module=None)
 
-        with patch(
-            "llm.runtime.ModelFactory.from_config", return_value=no_linear
-        ):
+        with patch("llm.runtime.ModelFactory.from_config", return_value=no_linear):
             model = task.build_model()
 
         # No AdapterLinear wrappers were produced (nothing to wrap).

@@ -26,7 +26,6 @@ Covers:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -34,10 +33,9 @@ import torch
 import torch.nn as nn
 
 from llm.core.adapter import AdapterLinear
-from llm.core.bitfit import apply_bitfit, is_bitfit_applied, unapply_bitfit
+from llm.core.bitfit import apply_bitfit, is_bitfit_applied
 from llm.core.ia3 import IA3Linear
 from llm.core.lora import LoRALinear
-
 
 # ---------------------------------------------------------------------------
 # Test fixtures
@@ -283,10 +281,7 @@ class TestLoadPeftRoundTrip:
         # Re-collect LoRA params from dst and compare element-wise
         # against the src snapshot — same shapes, same mutated values.
         loaded_params = [
-            p
-            for module in dst.modules()
-            if isinstance(module, LoRALinear)
-            for p in (module.lora_A, module.lora_B)
+            p for module in dst.modules() if isinstance(module, LoRALinear) for p in (module.lora_A, module.lora_B)
         ]
         saved_params = list(saved_snapshot.values())
         assert len(loaded_params) == len(saved_params)
@@ -294,7 +289,7 @@ class TestLoadPeftRoundTrip:
             assert torch.equal(loaded, saved)
 
     def test_ia3_round_trip(self, tmp_path: Path) -> None:
-        from llm.core.ia3 import IA3Linear, apply_ia3
+        from llm.core.ia3 import apply_ia3
         from llm.core.peft import load_peft, save_peft
 
         torch.manual_seed(0)
@@ -305,9 +300,7 @@ class TestLoadPeftRoundTrip:
                 with torch.no_grad():
                     module.ia3_l.add_(torch.randn_like(module.ia3_l) * 0.01)
         saved = {
-            id(module.ia3_l): module.ia3_l.detach().clone()
-            for module in src.modules()
-            if isinstance(module, IA3Linear)
+            id(module.ia3_l): module.ia3_l.detach().clone() for module in src.modules() if isinstance(module, IA3Linear)
         }
 
         path = tmp_path / "ia3.bin"
@@ -318,18 +311,14 @@ class TestLoadPeftRoundTrip:
         apply_ia3(dst)
         load_peft(dst, path, "ia3")
 
-        loaded = [
-            module.ia3_l
-            for module in dst.modules()
-            if isinstance(module, IA3Linear)
-        ]
+        loaded = [module.ia3_l for module in dst.modules() if isinstance(module, IA3Linear)]
         saved_list = list(saved.values())
         assert len(loaded) == len(saved_list)
         for l, s in zip(loaded, saved_list):
             assert torch.equal(l, s)
 
     def test_adapter_round_trip(self, tmp_path: Path) -> None:
-        from llm.core.adapter import AdapterLinear, apply_adapter
+        from llm.core.adapter import apply_adapter
         from llm.core.peft import load_peft, save_peft
 
         torch.manual_seed(0)
@@ -345,10 +334,12 @@ class TestLoadPeftRoundTrip:
         # Collect per-wrapper params by index (since module ids differ
         # between src and dst).
         saved = list(
-            (module.down.weight.detach().clone(),
-             module.up.weight.detach().clone(),
-             module.down.bias.detach().clone(),
-             module.up.bias.detach().clone())
+            (
+                module.down.weight.detach().clone(),
+                module.up.weight.detach().clone(),
+                module.down.bias.detach().clone(),
+                module.up.bias.detach().clone(),
+            )
             for module in src.modules()
             if isinstance(module, AdapterLinear)
         )
@@ -362,10 +353,12 @@ class TestLoadPeftRoundTrip:
         load_peft(dst, path, "adapter")
 
         loaded = list(
-            (module.down.weight.detach().clone(),
-             module.up.weight.detach().clone(),
-             module.down.bias.detach().clone(),
-             module.up.bias.detach().clone())
+            (
+                module.down.weight.detach().clone(),
+                module.up.weight.detach().clone(),
+                module.down.bias.detach().clone(),
+                module.up.bias.detach().clone(),
+            )
             for module in dst.modules()
             if isinstance(module, AdapterLinear)
         )
@@ -377,7 +370,6 @@ class TestLoadPeftRoundTrip:
             assert torch.equal(s[3], l[3]), "up.bias mismatch"
 
     def test_pfeiffer_adapter_round_trip(self, tmp_path: Path) -> None:
-        from llm.core.adapter import AdapterLinear
         from llm.core.peft import load_peft, save_peft
         from llm.core.pfeiffer_adapter import apply_pfeiffer_adapter
 
@@ -385,18 +377,13 @@ class TestLoadPeftRoundTrip:
         src = _TinyMLP()
         apply_pfeiffer_adapter(src, bottleneck_dim=4)
         # Pfeiffer only wraps fc1 / fc2 by default — collect those.
-        adapters = [
-            m for m in src.modules() if isinstance(m, AdapterLinear)
-        ]
+        adapters = [m for m in src.modules() if isinstance(m, AdapterLinear)]
         assert len(adapters) == 2  # fc1 + fc2
         for module in adapters:
             with torch.no_grad():
                 module.up.weight.add_(torch.randn_like(module.up.weight) * 0.01)
                 module.down.weight.add_(torch.randn_like(module.down.weight) * 0.01)
-        saved = {
-            (id(module), "up.weight"): module.up.weight.detach().clone()
-            for module in adapters
-        }
+        saved = {(id(module), "up.weight"): module.up.weight.detach().clone() for module in adapters}
 
         path = tmp_path / "pfeiffer.bin"
         save_peft(src, path, "pfeiffer_adapter")
@@ -406,14 +393,9 @@ class TestLoadPeftRoundTrip:
         apply_pfeiffer_adapter(dst, bottleneck_dim=4)
         load_peft(dst, path, "pfeiffer_adapter")
 
-        loaded_adapters = [
-            m for m in dst.modules() if isinstance(m, AdapterLinear)
-        ]
+        loaded_adapters = [m for m in dst.modules() if isinstance(m, AdapterLinear)]
         assert len(loaded_adapters) == 2
-        loaded = {
-            (id(module), "up.weight"): module.up.weight.detach().clone()
-            for module in loaded_adapters
-        }
+        loaded = {(id(module), "up.weight"): module.up.weight.detach().clone() for module in loaded_adapters}
         # Different ``id()`` (fresh model) — compare by positional order.
         saved_list = list(saved.values())
         loaded_list = list(loaded.values())
@@ -441,9 +423,7 @@ class TestBitFitSaveLoad:
         # Snapshot the post-mutation biases — these are the values we
         # expect to see after load.
         saved_biases = {
-            name: p.detach().clone()
-            for name, p in model.named_parameters()
-            if name == "bias" or name.endswith(".bias")
+            name: p.detach().clone() for name, p in model.named_parameters() if name == "bias" or name.endswith(".bias")
         }
         # Save the mutated state.
         path = tmp_path / "bitfit.bin"
@@ -459,19 +439,13 @@ class TestBitFitSaveLoad:
         # Every bias in the loaded model must equal the saved snapshot
         # taken AFTER mutation (which is what was actually saved).
         loaded_biases = {
-            name: p.detach().clone()
-            for name, p in fresh.named_parameters()
-            if name == "bias" or name.endswith(".bias")
+            name: p.detach().clone() for name, p in fresh.named_parameters() if name == "bias" or name.endswith(".bias")
         }
         assert saved_biases.keys() == loaded_biases.keys()
         for name in saved_biases:
-            assert torch.equal(saved_biases[name], loaded_biases[name]), (
-                f"bias {name} mismatch"
-            )
+            assert torch.equal(saved_biases[name], loaded_biases[name]), f"bias {name} mismatch"
 
-    def test_bitfit_save_requires_grad_state_preserved_on_load(
-        self, model: _TinyMLP, tmp_path: Path
-    ) -> None:
+    def test_bitfit_save_requires_grad_state_preserved_on_load(self, model: _TinyMLP, tmp_path: Path) -> None:
         """After load, BitFit must still be applied (biases trainable,
         weights frozen)."""
         from llm.core.peft import load_peft, save_peft
@@ -491,9 +465,7 @@ class TestBitFitSaveLoad:
             is_bias = name == "bias" or name.endswith(".bias")
             assert p.requires_grad == is_bias, f"{name} requires_grad={p.requires_grad}"
 
-    def test_bitfit_round_trip_into_applied_model(
-        self, model: _TinyMLP, tmp_path: Path
-    ) -> None:
+    def test_bitfit_round_trip_into_applied_model(self, model: _TinyMLP, tmp_path: Path) -> None:
         """Loading into a model that ALREADY has BitFit applied also
         works — biases remain trainable, values get the saved values."""
         from llm.core.peft import load_peft, save_peft
@@ -568,9 +540,7 @@ class TestSaveLoadRegistryDispatch:
 class TestPEFTCheckpointMetadata:
     """The saved payload must include metadata for round-trip + diagnostics."""
 
-    def test_metadata_contains_format_version(
-        self, model: _TinyMLP, tmp_path: Path
-    ) -> None:
+    def test_metadata_contains_format_version(self, model: _TinyMLP, tmp_path: Path) -> None:
         from llm.core.lora import apply_lora
         from llm.core.peft import save_peft
 
@@ -583,9 +553,7 @@ class TestPEFTCheckpointMetadata:
 
         assert payload["format_version"] == PEFT_CHECKPOINT_FORMAT_VERSION
 
-    def test_metadata_contains_method_name(
-        self, model: _TinyMLP, tmp_path: Path
-    ) -> None:
+    def test_metadata_contains_method_name(self, model: _TinyMLP, tmp_path: Path) -> None:
         from llm.core.lora import apply_lora
         from llm.core.peft import save_peft
 
@@ -596,9 +564,7 @@ class TestPEFTCheckpointMetadata:
         payload = torch.load(path, weights_only=False)
         assert payload["method_name"] == "lora"
 
-    def test_metadata_contains_state_dict_key(
-        self, model: _TinyMLP, tmp_path: Path
-    ) -> None:
+    def test_metadata_contains_state_dict_key(self, model: _TinyMLP, tmp_path: Path) -> None:
         from llm.core.lora import apply_lora
         from llm.core.peft import save_peft
 
@@ -621,9 +587,7 @@ class TestPEFTCheckpointMetadata:
 class TestLoadPeftErrors:
     """Loading must fail loudly on bad input."""
 
-    def test_load_method_name_mismatch_raises(
-        self, model: _TinyMLP, tmp_path: Path
-    ) -> None:
+    def test_load_method_name_mismatch_raises(self, model: _TinyMLP, tmp_path: Path) -> None:
         """A checkpoint saved as LoRA must NOT load as IA3 — even if
         the destination model happens to have IA3 applied."""
         from llm.core.ia3 import apply_ia3
@@ -639,9 +603,7 @@ class TestLoadPeftErrors:
         with pytest.raises(ValueError, match="method name"):
             load_peft(fresh, path, "ia3")  # ask for IA3, checkpoint has LoRA
 
-    def test_load_auto_applies_when_model_is_fresh(
-        self, model: _TinyMLP, tmp_path: Path
-    ) -> None:
+    def test_load_auto_applies_when_model_is_fresh(self, model: _TinyMLP, tmp_path: Path) -> None:
         """Loading into a fresh model that hasn't had PEFT applied must
         auto-apply the method using the saved kwargs — this is the
         common case for adapter sharing across runs / across models."""
@@ -657,7 +619,8 @@ class TestLoadPeftErrors:
                     module.lora_B.add_(torch.randn_like(module.lora_B) * 0.01)
         saved = [
             (module.lora_A.detach().clone(), module.lora_B.detach().clone())
-            for module in model.modules() if isinstance(module, LoRALinear)
+            for module in model.modules()
+            if isinstance(module, LoRALinear)
         ]
 
         path = tmp_path / "lora.bin"
@@ -671,7 +634,8 @@ class TestLoadPeftErrors:
         # After load: fresh has LoRA applied with the saved weights.
         fresh_params = [
             (module.lora_A.detach().clone(), module.lora_B.detach().clone())
-            for module in fresh.modules() if isinstance(module, LoRALinear)
+            for module in fresh.modules()
+            if isinstance(module, LoRALinear)
         ]
         assert len(fresh_params) == len(saved)
         for (a1, b1), (a2, b2) in zip(saved, fresh_params):
@@ -696,9 +660,7 @@ class TestLoadPeftErrors:
 class TestSaveLoadEdgeCases:
     """Things that must not break the slice."""
 
-    def test_save_load_empty_model_for_methods_without_wrappers(
-        self, tmp_path: Path
-    ) -> None:
+    def test_save_load_empty_model_for_methods_without_wrappers(self, tmp_path: Path) -> None:
         """Prefix Tuning on TinyMLP (no MHA) applies nothing → save/load
         still works, producing an empty state_dict."""
         from llm.core.peft import load_peft, save_peft
@@ -723,9 +685,7 @@ class TestSaveLoadEdgeCases:
         assert isinstance(out, Path)
         assert out == tmp_path / "lora.bin"
 
-    def test_round_trip_then_one_train_step_works(
-        self, model: _TinyMLP, tmp_path: Path
-    ) -> None:
+    def test_round_trip_then_one_train_step_works(self, model: _TinyMLP, tmp_path: Path) -> None:
         """End-to-end: apply LoRA, train one step, save, load into a
         fresh model, train one more step on the loaded model — both
         steps must produce non-NaN losses and the optimizer must

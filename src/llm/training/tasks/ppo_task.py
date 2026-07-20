@@ -126,9 +126,7 @@ class PPOTask(TrainingTask):
 
                 if (batch_idx + 1) % engine.config.logging.log_interval == 0 and engine.rank == 0:
                     metrics_str = " | ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
-                    engine.logger.info(
-                        f"Epoch {epoch + 1:2d} | Batch {batch_idx + 1:4d}/{num_batches} | {metrics_str}"
-                    )
+                    engine.logger.info(f"Epoch {epoch + 1:2d} | Batch {batch_idx + 1:4d}/{num_batches} | {metrics_str}")
 
             avg_loss = 0.0
             if epoch_metrics:

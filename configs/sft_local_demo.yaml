@@ -1,0 +1,85 @@
+# SFT local demo (Alpaca-style JSONL) — fast e2e config.
+#
+# Purpose
+# -------
+# The smallest possible Supervised Fine-Tuning run that exercises the
+# full `llm-train sft` main path: JSONL → Alpaca template →
+# tokenize → forward → backward → optimizer step → checkpoint save.
+# Use this as the smoke test before scaling up to real instruction
+# datasets (Alpaca / Dolly / OASST).
+#
+# Usage
+# -----
+#   # 1. Create a tiny Alpaca-style JSONL:
+#   mkdir -p data
+#   python -c "
+#   import json
+#   data = [
+#       {'instruction': 'Greet me.', 'input': '', 'output': 'Hello!'},
+#       {'instruction': 'What is 2+2?', 'input': '', 'output': '4'},
+#       {'instruction': 'Translate to French.', 'input': 'hi', 'output': 'salut'},
+#   ] * 30
+#   with open('data/sft_demo.jsonl', 'w') as f:
+#       for item in data:
+#           f.write(json.dumps(item) + '\n')
+#   "
+#
+#   # 2. Train (the model is intentionally tiny so the run finishes
+#   #    in seconds on CPU):
+#   uv run llm-train sft --config configs/sft_local_demo.yaml \
+#     --epochs 1 --steps-per-epoch 10
+#
+# What this config exercises
+# --------------------------
+# - `sft` task → `SFTTask` + `SFTDataModule` + `SFTDataset`
+# - `dataset_path` pointing at a JSONL file with Alpaca-style
+#   {instruction, input, output} records (the default
+#   `SFTDataset.alpaca_template` renders these into prompt + response
+#   before tokenization)
+# - Fixed `num_samples` / `epochs` (map-style dataset has a known
+#   length — no streaming cursor needed)
+# - `save_interval=1` → checkpoint written every epoch (so resume is
+#   immediate)
+#
+# Related configs
+# ---------------
+# - `configs/sft_alpaca.yaml` — production Alpaca JSONL (256 hidden,
+#   AMP on)
+# - `configs/dpo_local_demo.yaml` — DPO smoke (chosen/rejected JSONL)
+# - `configs/streaming_local_demo.yaml` — pretraining smoke (the
+#   upstream step before fine-tuning)
+
+model:
+  hidden_size: 64          # tiny for the demo; production: 512-4096
+  num_heads: 4
+  num_layers: 2
+  vocab_size: 256          # character tokenizer covers printable ASCII
+  max_seq_len: 64
+  dropout: 0.0
+
+training:
+  epochs: 1
+  batch_size: 4
+  learning_rate: 1.0e-3   # AdamW default
+  num_samples: 1000
+  max_steps: 50            # hard cap so demos can't run forever
+  warmup_epochs: 0         # skip warmup for the smoke test
+
+data:
+  tokenizer_type: simple
+  dataset_path: data/sft_demo.jsonl   # Alpaca-style JSONL
+  max_seq_len: 64
+
+optimization:
+  use_amp: false           # CPU demo — AMP is CUDA-only
+  use_compile: false       # compile adds warmup cost; disable for demo
+  gradient_checkpointing: false
+
+distributed:
+  backend: gloo            # CPU demo — NCCL requires CUDA
+
+checkpoint:
+  checkpoint_dir: checkpoints_sft_demo
+  save_interval: 1
+  keep_last_n: 2
+  save_best: true

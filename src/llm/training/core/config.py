@@ -85,6 +85,30 @@ class TrainingConfig(BaseModel):
     warmup_epochs: int = 1
     gradient_clip_val: float = 1.0
     run_validation: bool = True
+    max_steps: int = Field(
+        0,
+        ge=0,
+        description=(
+            "Hard cap on total optimizer steps. 0 = no cap (driven by "
+            "epochs * steps_per_epoch). Useful for smoke configs that "
+            "shouldn't run forever even if num_samples is large."
+        ),
+    )
+
+    # DPO beta (KL constraint strength) — opt-in via the DPO task.
+    # ``DPOTask.build_model`` reads this via ``getattr`` with a default
+    # of 0.1, so it's safe for non-DPO training runs to leave it unset.
+    # The default matches the DPO paper (Rafailov et al. 2023).
+    dpo_beta: float = Field(
+        0.1,
+        gt=0,
+        description=(
+            "DPO temperature / KL constraint strength. Higher beta → "
+            "stronger KL penalty against the reference model, more "
+            "conservative updates. Lower beta → faster convergence but "
+            "risk of reward hacking. Standard literature value: 0.1."
+        ),
+    )
 
     # AdaLoRA (T3 #40-#42). Defaults preserve current behavior — the
     # callback is only registered when ``use_adalora=True``. Mirrors

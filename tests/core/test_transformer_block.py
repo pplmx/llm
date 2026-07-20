@@ -146,9 +146,7 @@ class TestTransformerBlockInitialization:
         # the deep-copy branch used to guarantee.
         norm1_params = {id(p) for p in block.norm1.parameters()}
         norm2_params = {id(p) for p in block.norm2.parameters()}
-        assert norm1_params.isdisjoint(norm2_params), (
-            "norm1 and norm2 share parameters; factory pattern broken"
-        )
+        assert norm1_params.isdisjoint(norm2_params), "norm1 and norm2 share parameters; factory pattern broken"
 
     def test_norm_type_instance_rejected(self, block_kwargs):
         """Passing an instance (the old path) is now a TypeError.

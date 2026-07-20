@@ -79,9 +79,7 @@ class AdapterLinear(nn.Module):
     ):
         super().__init__()
         if bottleneck_dim <= 0:
-            raise ValueError(
-                f"bottleneck_dim must be positive, got {bottleneck_dim}"
-            )
+            raise ValueError(f"bottleneck_dim must be positive, got {bottleneck_dim}")
         self.base_layer = base_layer
         self.bottleneck_dim = bottleneck_dim
 
@@ -131,12 +129,7 @@ class AdapterLinear(nn.Module):
     @property
     def trainable_parameters(self) -> int:
         """Number of trainable adapter parameters (down + up weights + biases)."""
-        return (
-            self.down.weight.numel()
-            + self.down.bias.numel()
-            + self.up.weight.numel()
-            + self.up.bias.numel()
-        )
+        return self.down.weight.numel() + self.down.bias.numel() + self.up.weight.numel() + self.up.bias.numel()
 
     def extra_repr(self) -> str:
         return (

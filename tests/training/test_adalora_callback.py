@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 import torch
 import torch.nn as nn
 
-from llm.core.adalora import AdaLoRALinear, AdaLoRAGradientEMA, apply_adalora
+from llm.core.adalora import AdaLoRAGradientEMA, AdaLoRALinear, apply_adalora
 from llm.training.core.callbacks import AdaLoRAPruningCallback
 
 
@@ -222,10 +222,7 @@ class TestAdaLoRAPruningCallbackCheckpoint:
         cb.on_train_start()
 
         # Simulate a saved checkpoint.
-        saved = {
-            name: torch.full((4,), float(idx + 1) * 0.1)
-            for idx, name in enumerate(cb._tracker.state_dict())
-        }
+        saved = {name: torch.full((4,), float(idx + 1) * 0.1) for idx, name in enumerate(cb._tracker.state_dict())}
         cb.load_checkpoint_state(saved)
 
         for name, expected in saved.items():

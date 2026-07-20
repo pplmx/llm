@@ -70,9 +70,7 @@ class IA3Linear(nn.Module):
 
         # One learned multiplier per output channel. Broadcasts over
         # batch and sequence dims at forward time.
-        self.ia3_l = nn.Parameter(
-            torch.full((out_features,), init_scale, device=device, dtype=dtype)
-        )
+        self.ia3_l = nn.Parameter(torch.full((out_features,), init_scale, device=device, dtype=dtype))
 
         # Freeze the base layer so only ``ia3_l`` is trainable.
         self.base_layer.weight.requires_grad = False

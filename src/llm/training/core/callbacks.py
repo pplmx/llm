@@ -465,11 +465,7 @@ class AdaLoRAPruningCallback(Callback):
         if self.engine.rank == 0:
             from llm.core.adalora import AdaLoRALinear
 
-            ranks = [
-                m.effective_rank
-                for m in self.engine.model.modules()
-                if isinstance(m, AdaLoRALinear)
-            ]
+            ranks = [m.effective_rank for m in self.engine.model.modules() if isinstance(m, AdaLoRALinear)]
             if ranks:
                 mean_rank = sum(ranks) / len(ranks)
                 self.engine.logger.info(f"adalora/effective_rank={mean_rank:.1f}")
@@ -539,9 +535,7 @@ class PEFTAdapterCheckpointCallback(Callback):
         # Defensive copy + dict() cast — caller may pass a Pydantic
         # model attribute that we shouldn't mutate.
         self.peft_kwargs: dict[str, Any] = dict(peft_kwargs or {})
-        self.peft_save_path = (
-            Path(peft_save_path) if peft_save_path is not None else None
-        )
+        self.peft_save_path = Path(peft_save_path) if peft_save_path is not None else None
 
     def on_train_end(self, logs: dict[str, Any] | None = None) -> None:
         """Write the adapter sidecar. No-op when not configured.

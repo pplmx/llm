@@ -13,7 +13,6 @@ IA³, so several tests pin it explicitly.
 
 from __future__ import annotations
 
-import pytest
 import torch
 import torch.nn as nn
 
@@ -27,7 +26,6 @@ from llm.core.ia3 import (
     merge_ia3,
     unmerge_ia3,
 )
-
 
 # ---------------------------------------------------------------------------
 # IA3Linear — single-wrapper behaviour
@@ -265,17 +263,13 @@ class TestApplyIA3:
         contains ``"q_proj"``."""
         model = _ToyModel()
         apply_ia3(model, target_modules=["q_proj"])
-        wrappers = [
-            name for name, m in model.named_modules() if isinstance(m, IA3Linear)
-        ]
+        wrappers = [name for name, m in model.named_modules() if isinstance(m, IA3Linear)]
         assert wrappers == ["attn.q_proj"]
 
     def test_multiple_target_modules(self):
         model = _ToyModel()
         apply_ia3(model, target_modules=["q_proj", "v_proj"])
-        wrappers = sorted(
-            name for name, m in model.named_modules() if isinstance(m, IA3Linear)
-        )
+        wrappers = sorted(name for name, m in model.named_modules() if isinstance(m, IA3Linear))
         assert wrappers == ["attn.q_proj", "attn.v_proj"]
 
     def test_apply_is_in_place(self):
@@ -322,9 +316,7 @@ class TestModuleLevelMergeUnmerge:
                     m.ia3_l.copy_(torch.linspace(0.5, 1.5, m.ia3_l.numel()))
         merge_ia3(model)
         unmerge_ia3(model)
-        assert torch.allclose(
-            model.attn.q_proj.base_layer.weight, original_q_weight, atol=1e-5
-        )
+        assert torch.allclose(model.attn.q_proj.base_layer.weight, original_q_weight, atol=1e-5)
 
 
 class TestGetIA3Parameters:
@@ -450,9 +442,7 @@ class TestDisableEnableIA3:
             if fresh_q.bias is not None and model.attn.q_proj.base_layer.bias is not None:
                 fresh_q.bias.copy_(model.attn.q_proj.base_layer.bias)
         disable_ia3(model)
-        assert torch.allclose(
-            model.attn.q_proj(x), fresh_q(x), atol=1e-6
-        )
+        assert torch.allclose(model.attn.q_proj(x), fresh_q(x), atol=1e-6)
 
 
 # ---------------------------------------------------------------------------

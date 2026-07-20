@@ -97,8 +97,7 @@ def test_top_k_restricts_to_top_k_indices(logits, top_k):
     for _ in range(20):
         sampled = sample_next_token(logits, temperature=1.0, top_k=top_k)
         assert logits[sampled].item() >= threshold - 1e-6, (
-            f"sampled index {sampled} has logit {logits[sampled].item()} "
-            f"below top_k threshold {threshold}"
+            f"sampled index {sampled} has logit {logits[sampled].item()} below top_k threshold {threshold}"
         )
 
 

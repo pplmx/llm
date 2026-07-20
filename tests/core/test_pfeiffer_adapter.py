@@ -46,10 +46,8 @@ from llm.core.adapter import (
     count_adapter_parameters,
     disable_adapter,
     enable_adapter,
-    get_adapter_parameters,
-    merge_adapter,
-    unmerge_adapter,
 )
+from llm.core.peft import PEFT_REGISTRY, apply_peft, ensure_methods_registered
 from llm.core.pfeiffer_adapter import (
     apply_pfeiffer_adapter,
     count_pfeiffer_parameters,
@@ -59,8 +57,6 @@ from llm.core.pfeiffer_adapter import (
     merge_pfeiffer_adapter,
     unmerge_pfeiffer_adapter,
 )
-from llm.core.peft import PEFT_REGISTRY, apply_peft, ensure_methods_registered
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -279,8 +275,12 @@ def test_get_pfeiffer_parameters_yields_only_adapter_params(model: _TinyTransfor
     assert len(params) == 8
     # Every yielded param belongs to a wrapper's down / up.
     for p in params:
-        assert any(p is q for module in model.modules() if isinstance(module, AdapterLinear)
-                   for q in (module.down.weight, module.down.bias, module.up.weight, module.up.bias))
+        assert any(
+            p is q
+            for module in model.modules()
+            if isinstance(module, AdapterLinear)
+            for q in (module.down.weight, module.down.bias, module.up.weight, module.up.bias)
+        )
 
 
 def test_count_pfeiffer_parameters_reports_correct_counts(model: _TinyTransformerBlock) -> None:

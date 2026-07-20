@@ -29,7 +29,7 @@ Example:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -148,8 +148,7 @@ def apply_to_config(config: Any, preset: DatasetPreset) -> Any:
     """
     if not hasattr(config, "data_source"):
         raise TypeError(
-            "apply_to_config expected a DataConfig with a 'data_source' "
-            f"attribute; got {type(config).__name__}"
+            f"apply_to_config expected a DataConfig with a 'data_source' attribute; got {type(config).__name__}"
         )
     config.data_source = "hf"
     config.dataset_name = preset.dataset_name
@@ -194,9 +193,7 @@ def resolve_preset(name: str) -> DatasetPreset:
             return preset
 
     available = ", ".join(sorted(BUILTIN_PRESETS))
-    raise KeyError(
-        f"unknown data preset {name!r}; available built-ins: {available}"
-    )
+    raise KeyError(f"unknown data preset {name!r}; available built-ins: {available}")
 
 
 def list_presets() -> list[DatasetPreset]:

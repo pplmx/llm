@@ -258,8 +258,7 @@ def convert_our_weights(
     # First pass: split combined qkv_proj into q_proj/k_proj/v_proj if
     # the model uses a combined projection (the current MHA impl does).
     qkv_keys = [
-        k for k in our_state_dict
-        if k.endswith(".self_attn.qkv_proj.weight") or k.endswith(".self_attn.qkv_proj.bias")
+        k for k in our_state_dict if k.endswith(".self_attn.qkv_proj.weight") or k.endswith(".self_attn.qkv_proj.bias")
     ]
     if qkv_keys and num_heads is not None:
         n_q = num_heads
@@ -268,8 +267,7 @@ def convert_our_weights(
         # mis-split the projection.
         if head_dim is None:
             raise ValueError(
-                "head_dim is required when splitting combined qkv_proj. "
-                "Pass it explicitly from the model's MHA block."
+                "head_dim is required when splitting combined qkv_proj. Pass it explicitly from the model's MHA block."
             )
         q_size = n_q * head_dim
         kv_size = n_kv * head_dim

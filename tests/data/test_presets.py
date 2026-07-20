@@ -30,7 +30,6 @@ from llm.data.presets import (
 )
 from llm.training.core.config import DataConfig
 
-
 # --- DatasetPreset dataclass -----------------------------------------------
 
 
@@ -77,9 +76,7 @@ def test_datasetpreset_preset_name_defaults_to_dataset_name():
 
 def test_datasetpreset_preset_name_keeps_explicit_value():
     """Explicit ``preset_name`` survives ``__post_init__``."""
-    preset = DatasetPreset(
-        dataset_name="allenai/c4", preset_name="c4-short"
-    )
+    preset = DatasetPreset(dataset_name="allenai/c4", preset_name="c4-short")
     assert preset.preset_name == "c4-short"
 
 
@@ -214,22 +211,13 @@ def test_resolve_preset_by_preset_name():
 
 def test_resolve_preset_redpajama_via_canonical_key():
     assert resolve_preset("redpajama/c4") is REDPAJAMA_PRESETS["redpajama/c4"]
-    assert (
-        resolve_preset("redpajama/wikipedia")
-        is REDPAJAMA_PRESETS["redpajama/wikipedia"]
-    )
+    assert resolve_preset("redpajama/wikipedia") is REDPAJAMA_PRESETS["redpajama/wikipedia"]
 
 
 def test_resolve_preset_redpajama_via_shorthand():
     """``"redpajama:github"`` and ``"redpajama/github"`` both resolve."""
-    assert (
-        resolve_preset("redpajama:github")
-        is REDPAJAMA_PRESETS["redpajama/github"]
-    )
-    assert (
-        resolve_preset("redpajama/arxiv")
-        is REDPAJAMA_PRESETS["redpajama/arxiv"]
-    )
+    assert resolve_preset("redpajama:github") is REDPAJAMA_PRESETS["redpajama/github"]
+    assert resolve_preset("redpajama/arxiv") is REDPAJAMA_PRESETS["redpajama/arxiv"]
 
 
 def test_resolve_preset_unknown_raises_with_available_list():

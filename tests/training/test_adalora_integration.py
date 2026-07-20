@@ -105,8 +105,7 @@ def test_sft_end_to_end_with_adalora_mask_shrinks_on_cadence():
 
     final_rank = ada_layers[0].effective_rank
     assert final_rank == cfg.training.adalora_target_rank, (
-        f"expected mask to shrink to {cfg.training.adalora_target_rank} "
-        f"after tfinal+1 steps, got {final_rank}"
+        f"expected mask to shrink to {cfg.training.adalora_target_rank} after tfinal+1 steps, got {final_rank}"
     )
 
 

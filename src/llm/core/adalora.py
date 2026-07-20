@@ -563,9 +563,7 @@ def prune_adalora(
         for layer in layers:
             rank = min(target_rank, layer.effective_rank)
             scores = (
-                layer.compute_importance_scores(gradient_emas.get(id(layer)))
-                if gradient_emas is not None
-                else None
+                layer.compute_importance_scores(gradient_emas.get(id(layer))) if gradient_emas is not None else None
             )
             layer.prune_to_rank(rank, scores=scores)
         return
@@ -574,18 +572,11 @@ def prune_adalora(
     # this function guarantees ``schedule`` is not None here.
     assert schedule is not None  # noqa: S101
     if current_step is None:
-        raise ValueError(
-            "prune_adalora with schedule=(tinit, tfinal) requires "
-            "current_step to be provided"
-        )
+        raise ValueError("prune_adalora with schedule=(tinit, tfinal) requires current_step to be provided")
     tinit, tfinal = schedule
     for layer in layers:
         rank = layer.update_budget(current_step, tinit, tfinal)
-        scores = (
-            layer.compute_importance_scores(gradient_emas.get(id(layer)))
-            if gradient_emas is not None
-            else None
-        )
+        scores = layer.compute_importance_scores(gradient_emas.get(id(layer))) if gradient_emas is not None else None
         layer.prune_to_rank(rank, scores=scores)
 
 
@@ -645,9 +636,7 @@ class AdaLoRAGradientEMA:
                 # ``ema + grad_abs`` does not silently promote / move.
                 params = list(module.parameters())
                 ref = params[0] if params else module.mask
-                self._emas[name] = torch.zeros(
-                    module.init_rank, dtype=ref.dtype, device=ref.device
-                )
+                self._emas[name] = torch.zeros(module.init_rank, dtype=ref.dtype, device=ref.device)
 
     def update(self) -> None:
         """Fold ``|∂L/∂λ|`` from each layer's last backward into the EMA.

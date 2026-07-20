@@ -84,8 +84,7 @@ class TrainingEngine:
         # Users who want CUDA-graph capture can still opt in explicitly.
         if self.config.optimization.use_compile and sys.version_info >= (3, 8):
             self.logger.info(
-                f"🚀 Compiling model with torch.compile (mode="
-                f"{self.config.optimization.compile_mode!r})..."
+                f"🚀 Compiling model with torch.compile (mode={self.config.optimization.compile_mode!r})..."
             )
             compile_kwargs: dict[str, Any] = {"mode": self.config.optimization.compile_mode}
             if self.config.optimization.compile_dynamic is not None:

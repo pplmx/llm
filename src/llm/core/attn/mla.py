@@ -254,14 +254,20 @@ class MultiLatentAttention(nn.Module):
             # short.
             target_seq_len = attn_mask.shape[-1] if attn_mask is not None else None
             k, v = self._paged_kv_write(
-                k=k, v=v, paged_kv_cache=paged_kv_cache,
-                batch_indices=batch_indices, layer_idx=layer_idx,
+                k=k,
+                v=v,
+                paged_kv_cache=paged_kv_cache,
+                batch_indices=batch_indices,
+                layer_idx=layer_idx,
                 target_seq_len=target_seq_len,
             )
         elif kv_cache is not None:
             k, v = self._linear_kv_write(
-                k=k, v=v, kv_cache=kv_cache,
-                batch_indices=batch_indices, start_pos=start_pos,
+                k=k,
+                v=v,
+                kv_cache=kv_cache,
+                batch_indices=batch_indices,
+                start_pos=start_pos,
             )
 
         # Process latent attention
@@ -315,9 +321,7 @@ class MultiLatentAttention(nn.Module):
         """
         if batch_indices is not None:
             if start_pos is None:
-                raise ValueError(
-                    "start_pos must be provided when using batch_indices for KV cache update."
-                )
+                raise ValueError("start_pos must be provided when using batch_indices for KV cache update.")
             return kv_cache.update_at_indices(batch_indices, k, v, start_pos)
         return kv_cache.update(k, v)
 
@@ -353,13 +357,10 @@ class MultiLatentAttention(nn.Module):
         """
         if layer_idx is None:
             raise ValueError(
-                "layer_idx is required when paged_kv_cache is set; "
-                "DecoderModel threads it through TransformerBlock."
+                "layer_idx is required when paged_kv_cache is set; DecoderModel threads it through TransformerBlock."
             )
         if batch_indices is None:
-            raise ValueError(
-                "batch_indices is required when paged_kv_cache is set."
-            )
+            raise ValueError("batch_indices is required when paged_kv_cache is set.")
 
         # Per-row write into the paged cache. ``PagedKVCache.update``
         # expects ``[B, T, N_kv, D]`` (it transposes internally), so
@@ -376,17 +377,18 @@ class MultiLatentAttention(nn.Module):
         # The latent attention expects ``[B, N_heads, T_total, head_dim]``
         # per row, padded with zeros for shorter sequences.
         batch_size, num_heads, _, head_dim = k.shape
-        per_row_seq_lens = [
-            paged_kv_cache.block_manager.get_num_tokens(int(sid))
-            for sid in seq_ids
-        ]
+        per_row_seq_lens = [paged_kv_cache.block_manager.get_num_tokens(int(sid)) for sid in seq_ids]
         if target_seq_len is None:
             target_seq_len = max(per_row_seq_lens) if per_row_seq_lens else 1
             target_seq_len = max(target_seq_len, 1)
 
         k_gathered = torch.zeros(
-            batch_size, num_heads, target_seq_len, head_dim,
-            device=k.device, dtype=k.dtype,
+            batch_size,
+            num_heads,
+            target_seq_len,
+            head_dim,
+            device=k.device,
+            dtype=k.dtype,
         )
         v_gathered = torch.zeros_like(k_gathered)
         for b, seq_id in enumerate(seq_ids):
@@ -402,4 +404,3 @@ class MultiLatentAttention(nn.Module):
             v_gathered[b, :, :seq_len] = v_row
 
         return k_gathered, v_gathered
-

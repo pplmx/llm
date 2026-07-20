@@ -195,6 +195,7 @@ class TestHFLoader:
 
         sys.modules["huggingface_hub"] = _FakeHub  # type: ignore[assignment]
         try:
+
             def fake_load_local(*_args, **_kwargs):
                 raise RuntimeError("stop_after_download")
 
@@ -212,6 +213,4 @@ class TestHFLoader:
         assert "*.json" in patterns
         assert "*.safetensors" in patterns
         # Must NOT include .bin
-        assert "*.bin" not in patterns, (
-            f"Hub downloads must skip .bin files (pickle RCE); got patterns={patterns}"
-        )
+        assert "*.bin" not in patterns, f"Hub downloads must skip .bin files (pickle RCE); got patterns={patterns}"

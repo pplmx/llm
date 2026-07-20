@@ -295,6 +295,7 @@
 - [x] 实现完整的 SFT 数据处理流程
 - [x] 支持多种指令格式 (Alpaca, ShareGPT, etc.)
 - [x] 实现高效的 padding 和 masking 策略
+- [x] **SFT 主路径对齐** (Main Path #2 切片完成: `configs/sft_local_demo.yaml` 离线 Alpaca JSONL 冒烟 (CPU 几秒) + `configs/sft_alpaca.yaml` 生产 Alpaca (256×6, GPT-2 BPE, AMP, lr=2e-5); 教程 `docs/tutorials/02-finetuning.md` 重写对齐 `llm-train sft` 主路径 — Alpaca JSONL 三段式 (instruction/input/output) + Alpaca template + prompt-mask-only-on-response 损失 + PEFT (`peft_method` + `peft_save_path`) 通过 T2 PEFT #47-#49 服务化一条龙; 6 个新 e2e tests 在 `tests/e2e/test_sft_main_path.py` 覆盖 YAML 良构 + 端到端运行 + 损失有限 + checkpoint 保存 + PEFT adapter sidecar 保存)
 
 #### 11.2 RLHF (Reinforcement Learning from Human Feedback)
 
@@ -308,6 +309,7 @@
 - [x] 实现 DPO 损失函数
 - [x] 支持偏好数据集处理
 - [ ] 对比 DPO vs RLHF 性能
+- [x] **DPO 主路径对齐** (Main Path #2 切片完成: `configs/dpo_local_demo.yaml` 离线 chosen/rejected JSONL 冒烟 + `configs/dpo_ultrafeedback.yaml` 生产 UltraFeedback (256×6, lr=5e-7 比 SFT 小一个量级, gradient_checkpointing=true); `TrainingConfig.dpo_beta` 字段 (默认 0.1, gt=0 validator); `TrainingConfig.max_steps` 字段 (默认 0, ge=0 validator); 教程 §3 覆盖 DPO 与 SFT 的关键差异 (2× memory / beta / lr 尺度 / SFT→DPO 两阶段) + DPO loss 公式; 4 个新 e2e tests 在 `tests/e2e/test_dpo_main_path.py` 覆盖 YAML 良构 + 端到端运行 + 损失有限 + policy/reference 初始权重一致 (DPO log-ratio loss 的结构性前提))
 
 #### 11.4 其他对齐技术
 

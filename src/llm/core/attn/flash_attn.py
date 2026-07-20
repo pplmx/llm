@@ -104,9 +104,7 @@ class FlashAttention(nn.Module):
             )
 
         if hidden_size % num_heads != 0:
-            raise ValueError(
-                f"hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})"
-            )
+            raise ValueError(f"hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})")
 
         factory_kwargs = make_factory_kwargs(device, dtype)
         self.hidden_size = hidden_size
@@ -120,10 +118,7 @@ class FlashAttention(nn.Module):
         self.include_norm_residual = include_norm_residual
 
         if self.num_heads % self.num_kv_heads != 0:
-            raise ValueError(
-                f"num_heads ({self.num_heads}) must be divisible by "
-                f"num_kv_heads ({self.num_kv_heads})"
-            )
+            raise ValueError(f"num_heads ({self.num_heads}) must be divisible by num_kv_heads ({self.num_kv_heads})")
 
         self.norm = None
         if self.include_norm_residual:
@@ -206,9 +201,7 @@ class FlashAttention(nn.Module):
         if kv_cache is not None:
             if batch_indices is not None:
                 if start_pos is None:
-                    raise ValueError(
-                        "start_pos must be provided when using batch_indices for KV cache update."
-                    )
+                    raise ValueError("start_pos must be provided when using batch_indices for KV cache update.")
                 k, v = kv_cache.update_at_indices(batch_indices, k, v, start_pos)
                 has_past = True
             else:

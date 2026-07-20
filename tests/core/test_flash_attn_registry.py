@@ -23,7 +23,7 @@ import importlib
 
 import pytest
 
-import llm.core.attn  # noqa: F401 — import for side effects
+import llm.core.attn
 import llm.core.attn.flash_attn  # noqa: F401
 from llm.core.attn import FLASH_ATTN_AVAILABLE, FlashAttention
 from llm.core.registry import (
@@ -31,7 +31,6 @@ from llm.core.registry import (
     ATTENTION_REGISTRY,
     attention_supports_kv_cache,
 )
-
 
 # --- Registry wiring --------------------------------------------------------
 

@@ -38,7 +38,6 @@ versions with a loud :class:`ValueError`.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -119,10 +118,7 @@ def save_peft(
         "format_version": PEFT_CHECKPOINT_FORMAT_VERSION,
         "method_name": method_name,
         "peft_kwargs": dict(peft_kwargs),
-        "state_dict": {
-            f"{method_name}.{i}": p.detach().cpu().clone()
-            for i, p in enumerate(params)
-        },
+        "state_dict": {f"{method_name}.{i}": p.detach().cpu().clone() for i, p in enumerate(params)},
     }
     torch.save(payload, out_path)
     return out_path
