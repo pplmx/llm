@@ -47,8 +47,8 @@
 - [x] 流式 checkpoint resume (`CheckpointContributor` + `stream_data_state`)
 - [x] C4 / The Pile / RedPajama 预设配置 (CLI/YAML 模板, 复用 `SOURCE_REGISTRY`)
 - [x] 数据质量过滤和去重工具 (`DedupTextSource` 包装层, 跨 run 持久化, T3 #39)
+- [x] 主路径预训练教程与 e2e (Main Path #1 切片: `configs/streaming_local_demo.yaml` + `configs/streaming_c4.yaml` + 教程重写 + 6 e2e tests, 对齐 `llm-train stream_lm`)
 - [ ] 数据版本控制 (DVC, 配合 `source_fingerprint()`)
-- [ ] 主路径预训练教程与 e2e (对齐 `llm-train`, 非仅独立脚本)
 
 ### 2. 生态系统集成 (P1, 阶段十四)
 - [x] HuggingFace 权重加载 (`from_pretrained`)
