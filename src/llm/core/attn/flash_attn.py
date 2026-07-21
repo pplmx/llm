@@ -149,6 +149,7 @@ class FlashAttention(nn.Module):
         start_pos: int | Tensor | None = None,
         paged_kv_cache: object | None = None,
         layer_idx: int | None = None,
+        prefix_kv: tuple[Tensor, Tensor] | None = None,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """Forward pass.
 
@@ -166,6 +167,17 @@ class FlashAttention(nn.Module):
             ``paged_kv_cache`` is also rejected on this path — flash-attn
             does not expose a paged-attn kernel; use ``attn_impl="mha"``
             when serving with paged KV.
+
+            ``prefix_kv`` is supported (Li & Liang 2021). The prefix
+            K/V are concatenated to the projected K/V after the
+            KV-cache write (so the cache stores only dynamic tokens)
+            and before the GQA repeat (so the prefix is treated like a
+            regular token and replicated to all query heads). Prefix
+            dtype is auto-cast to the projected K/V dtype to satisfy
+            ``flash_attn_func``'s fp16/bf16 requirement. The captured
+            ``current_kv`` (when ``use_cache=True``) excludes the
+            prefix — matching the MHA contract at
+            ``MultiHeadAttention.forward``.
         """
         if paged_kv_cache is not None:
             raise NotImplementedError(
@@ -210,6 +222,44 @@ class FlashAttention(nn.Module):
 
         if use_cache:
             current_kv = (k, v)
+
+        # Prefix injection (Li & Liang 2021): prepend ``prefix_kv`` to
+        # the projected K/V so the new tokens attend to the prefix in
+        # addition to the cached context. Done AFTER the KV-cache write
+        # (so the cache only stores dynamic tokens) and BEFORE the GQA
+        # repeat (so the prefix is treated like a regular token and
+        # replicated to all query heads).
+        if prefix_kv is not None:
+            prefix_k, prefix_v = prefix_kv
+            if prefix_k.shape != prefix_v.shape:
+                raise ValueError(
+                    f"prefix_k and prefix_v must share shape; "
+                    f"got {tuple(prefix_k.shape)} vs {tuple(prefix_v.shape)}"
+                )
+            if prefix_k.shape[1] != self.num_kv_heads:
+                raise ValueError(
+                    f"prefix num_kv_heads ({prefix_k.shape[1]}) must match "
+                    f"attention num_kv_heads ({self.num_kv_heads})"
+                )
+            if prefix_k.shape[3] != self.head_dim:
+                raise ValueError(
+                    f"prefix head_dim ({prefix_k.shape[3]}) must match "
+                    f"attention head_dim ({self.head_dim})"
+                )
+            if prefix_k.shape[0] != batch_size:
+                raise ValueError(
+                    f"prefix batch ({prefix_k.shape[0]}) must match "
+                    f"hidden_states batch ({batch_size})"
+                )
+            # flash_attn_func requires fp16/bf16. Cast the prefix to
+            # the projected K/V dtype to satisfy the kernel contract.
+            target_dtype = k.dtype
+            if prefix_k.dtype != target_dtype:
+                prefix_k = prefix_k.to(target_dtype)
+            if prefix_v.dtype != target_dtype:
+                prefix_v = prefix_v.to(target_dtype)
+            k = torch.cat([prefix_k, k], dim=2)
+            v = torch.cat([prefix_v, v], dim=2)
 
         # GQA: replicate K/V across query heads.
         if self.num_kv_heads != self.num_heads:
