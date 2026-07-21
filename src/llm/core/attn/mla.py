@@ -202,6 +202,7 @@ class MultiLatentAttention(nn.Module):
         start_pos: int | Tensor | None = None,
         paged_kv_cache: object | None = None,
         layer_idx: int | None = None,
+        prefix_kv: tuple[Tensor, Tensor] | None = None,
     ) -> Tensor | tuple[Tensor, None]:
         """
         Optimized forward pass for the multi-latent attention mechanism.
@@ -216,6 +217,15 @@ class MultiLatentAttention(nn.Module):
                 exclusive with ``kv_cache``.
             layer_idx: Required when ``paged_kv_cache`` is set; selects
                 the per-layer K, V slice from the paged cache.
+            prefix_kv: Optional ``(prefix_k, prefix_v)`` tuple for Prefix
+                Tuning (Li & Liang 2021). Each tensor has shape
+                ``[B, num_kv_heads, prefix_len, head_dim]``. The prefix
+                is prepended to K and V before ``_latent_attention``
+                runs — the latent queries attend to the prefix along
+                with the cached context. ``attn_mask`` is extended by
+                ``prefix_len`` ones on the S_k axis so the prefix is
+                unconditionally visible (the prefix represents model
+                parameters, not input tokens).
 
         Returns:
             Output tensor of shape ``[batch_size, seq_len, hidden_size]``.
@@ -269,6 +279,63 @@ class MultiLatentAttention(nn.Module):
                 batch_indices=batch_indices,
                 start_pos=start_pos,
             )
+
+        # Prefix injection (Li & Liang 2021): prepend ``prefix_kv`` to
+        # the (possibly cached) K, V so the latent queries attend to the
+        # prefix in addition to the cached context. Done AFTER the
+        # cache write (so the cache only stores dynamic tokens) and
+        # BEFORE ``_latent_attention`` (so the latent attention sees
+        # the extended sequence). MLA has no GQA (``num_heads ==
+        # num_kv_heads``), so no repeat step is needed. The
+        # ``attn_mask`` S_k axis is widened by ``prefix_len`` ones —
+        # the prefix is unconditionally visible because it represents
+        # model parameters, not input tokens.
+        if prefix_kv is not None:
+            prefix_k, prefix_v = prefix_kv
+            if prefix_k.shape != prefix_v.shape:
+                raise ValueError(
+                    f"prefix_k and prefix_v must share shape; "
+                    f"got {tuple(prefix_k.shape)} vs {tuple(prefix_v.shape)}"
+                )
+            if prefix_k.shape[1] != self.num_kv_heads:
+                raise ValueError(
+                    f"prefix num_kv_heads ({prefix_k.shape[1]}) must match "
+                    f"attention num_kv_heads ({self.num_kv_heads})"
+                )
+            if prefix_k.shape[3] != self.head_dim:
+                raise ValueError(
+                    f"prefix head_dim ({prefix_k.shape[3]}) must match "
+                    f"attention head_dim ({self.head_dim})"
+                )
+            if prefix_k.shape[0] != batch_size:
+                raise ValueError(
+                    f"prefix batch ({prefix_k.shape[0]}) must match "
+                    f"hidden_states batch ({batch_size})"
+                )
+            target_dtype = k.dtype
+            if prefix_k.dtype != target_dtype:
+                prefix_k = prefix_k.to(target_dtype)
+            if prefix_v.dtype != target_dtype:
+                prefix_v = prefix_v.to(target_dtype)
+            k = torch.cat([prefix_k, k], dim=2)
+            v = torch.cat([prefix_v, v], dim=2)
+            # Extend the mask's S_k axis by prefix_len ones. The
+            # existing mask's S_k covers the cached/dynamic tokens; the
+            # prefix segment is added at the front and is always
+            # visible. Without this widening the latent attention's
+            # mask reshape at ``_latent_attention`` would mismatch the
+            # extended K shape.
+            if attn_mask is not None:
+                prefix_len = prefix_k.shape[2]
+                ones_prefix = torch.ones(
+                    attn_mask.shape[0],
+                    attn_mask.shape[1],
+                    attn_mask.shape[2],
+                    prefix_len,
+                    device=attn_mask.device,
+                    dtype=attn_mask.dtype,
+                )
+                attn_mask = torch.cat([ones_prefix, attn_mask], dim=-1)
 
         # Process latent attention
         latent_output = self._latent_attention(k, v, batch_size, attn_mask, is_causal=use_causal)
