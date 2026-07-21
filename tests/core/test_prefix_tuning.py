@@ -163,10 +163,16 @@ class TestPrefixTuningAttentionForward:
         out2 = attn2(x).detach()
         assert not torch.allclose(out1, out2, atol=1e-3)
 
-    def test_refuses_non_mha_base(self):
-        """Wrapper must reject non-MHA attention (Flash/MLA don't support prefix)."""
-        fake_attn = nn.Linear(32, 32)  # not an attention module
-        with pytest.raises(TypeError, match="MHA"):
+    def test_refuses_non_prefix_capable_base(self):
+        """Wrapper must reject modules that lack the PrefixCapableAttention protocol.
+
+        ``nn.Linear`` has a ``.forward()`` method (so it passes a naïve
+        Protocol isinstance check at runtime), but it lacks the
+        ``num_kv_heads`` and ``head_dim`` attributes the wrapper reads.
+        The construction-time gate must catch this loudly.
+        """
+        fake_attn = nn.Linear(32, 32)  # has .forward but no num_kv_heads / head_dim
+        with pytest.raises(TypeError, match="PrefixCapableAttention"):
             PrefixTuningAttention(base_attn=fake_attn, prefix_len=3, reparam_hidden=16)
 
 

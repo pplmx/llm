@@ -31,7 +31,7 @@ from collections.abc import Iterator
 import torch
 from torch import nn
 
-from llm.core.attn.mha import MultiHeadAttention
+from llm.core.attn.base import PrefixCapableAttention
 
 
 class PrefixTuningAttention(nn.Module):
@@ -65,16 +65,31 @@ class PrefixTuningAttention(nn.Module):
 
     def __init__(
         self,
-        base_attn: MultiHeadAttention,
+        base_attn: PrefixCapableAttention,
         prefix_len: int,
         reparam_hidden: int | None = None,
     ) -> None:
         super().__init__()
-        if not isinstance(base_attn, MultiHeadAttention):
+        # Protocol gate: any base that satisfies the PrefixCapableAttention
+        # protocol (i.e. accepts ``prefix_kv`` in its ``forward``) qualifies.
+        # We additionally verify the two attributes the wrapper reads at
+        # construction time - ``num_kv_heads`` and ``head_dim``. The
+        # ``@runtime_checkable`` decorator only inspects method names, so an
+        # unrelated ``nn.Linear`` would otherwise sneak through the isinstance
+        # check (it has a ``forward`` method).
+        if not isinstance(base_attn, PrefixCapableAttention):
             raise TypeError(
-                f"PrefixTuningAttention requires a MHA (MultiHeadAttention) base; "
-                f"got {type(base_attn).__name__}. Flash / MLA / SDPA don't accept "
-                f"prefix_kv yet - see llm.core.attn.base.PrefixCapableAttention."
+                f"PrefixTuningAttention requires a PrefixCapableAttention base "
+                f"(see llm.core.attn.base.PrefixCapableAttention); got "
+                f"{type(base_attn).__name__}. The base must (a) expose "
+                f"num_kv_heads and head_dim attributes and (b) accept "
+                f"prefix_kv= in its forward()."
+            )
+        if not (hasattr(base_attn, "num_kv_heads") and hasattr(base_attn, "head_dim")):
+            raise TypeError(
+                f"PrefixTuningAttention base must expose num_kv_heads and head_dim "
+                f"attributes; {type(base_attn).__name__} is missing one or both. "
+                f"See llm.core.attn.base.PrefixCapableAttention."
             )
 
         self.base_attn = base_attn
@@ -208,7 +223,18 @@ def apply_prefix_tuning(
 
     replacements: list[tuple[str, nn.Module]] = []
     for name, module in model.named_modules():
-        if isinstance(module, MultiHeadAttention) and should_apply(name):
+        # Filter on both Protocol satisfaction AND the two attributes the
+        # wrapper reads at construction time. The ``@runtime_checkable``
+        # decorator on the Protocol only inspects method names, so a
+        # generic container (Sequential, custom nn.Module) with a
+        # ``forward`` method would otherwise sneak through the Protocol
+        # check and only blow up later when we read ``num_kv_heads``.
+        if (
+            isinstance(module, PrefixCapableAttention)
+            and hasattr(module, "num_kv_heads")
+            and hasattr(module, "head_dim")
+            and should_apply(name)
+        ):
             replacements.append((name, module))
 
     for name, module in replacements:
