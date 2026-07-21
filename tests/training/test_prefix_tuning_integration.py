@@ -376,9 +376,9 @@ class TestMLAPrefixTuningTrainStep:
         """``build_model`` wraps MLA modules under the new Protocol gate."""
         from unittest.mock import patch
 
-        from llm.core.attn.mla import MultiLatentAttention
-
         import torch.nn as nn
+
+        from llm.core.attn.mla import MultiLatentAttention
 
         class TinyModelWithMLA(nn.Module):
             def __init__(self) -> None:
@@ -398,17 +398,15 @@ class TestMLAPrefixTuningTrainStep:
             model = task.build_model()
 
         wrappers = [m for m in model.modules() if isinstance(m, PrefixTuningAttention)]
-        assert len(wrappers) == 1, (
-            f"expected exactly 1 PrefixTuningAttention over MLA, got {len(wrappers)}"
-        )
+        assert len(wrappers) == 1, f"expected exactly 1 PrefixTuningAttention over MLA, got {len(wrappers)}"
 
     def test_one_train_step_with_mla_prefix(self):
         """One forward+backward+optimizer step runs cleanly with MLA + prefix."""
         from unittest.mock import patch
 
-        from llm.core.attn.mla import MultiLatentAttention
-
         import torch.nn as nn
+
+        from llm.core.attn.mla import MultiLatentAttention
 
         class TinyModelWithMLA(nn.Module):
             def __init__(self) -> None:
@@ -444,7 +442,8 @@ class TestMLAPrefixTuningTrainStep:
 
         # Prefix params updated; base MLA params unchanged.
         for p in get_prefix_parameters(model):
-            assert p.grad is not None and p.grad.abs().sum() > 0
+            assert p.grad is not None
+            assert p.grad.abs().sum() > 0
 
 
 class TestCrossBackendSaveLoad:
@@ -458,21 +457,17 @@ class TestCrossBackendSaveLoad:
         ``prefix_small``, ``_reparam_k.weight``, ``_reparam_k.bias``,
         ``_reparam_v.weight``, ``_reparam_v.bias`` (5 params per wrapper).
         """
-        from unittest.mock import patch
-
-        from llm.core.attn.mla import MultiLatentAttention
 
         import torch.nn as nn
 
+        from llm.core.attn.mla import MultiLatentAttention
         from llm.core.peft.checkpoint import load_peft, save_peft
 
         # Build MHA-wrapped model with one wrapper.
         class TinyMHAHolder(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.attn = MultiHeadAttention(
-                    hidden_size=16, num_heads=2, include_norm_residual=False
-                )
+                self.attn = MultiHeadAttention(hidden_size=16, num_heads=2, include_norm_residual=False)
 
             def forward(self, x):
                 return self.attn(x)
@@ -511,9 +506,7 @@ class TestCrossBackendSaveLoad:
             load_peft(mla_model, tmp.name, method_name="prefix_tuning", override_kwargs=None)
 
         # Verify the loaded prefix params match the saved ones byte-for-byte.
-        prefix_after = torch.cat(
-            [p.detach().flatten() for p in get_prefix_parameters(mla_model)]
-        )
+        prefix_after = torch.cat([p.detach().flatten() for p in get_prefix_parameters(mla_model)])
         assert torch.allclose(prefix_before, prefix_after, atol=1e-6), (
             "cross-backend prefix round-trip should preserve parameters byte-for-byte"
         )

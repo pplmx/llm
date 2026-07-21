@@ -210,7 +210,8 @@ class TestPrefixTuningAttentionProtocolGate:
 
     def test_rejects_module_without_forward(self):
         """A bare class with no ``forward`` method fails the Protocol check."""
-        class NoForward:  # noqa: D401 — trivial
+
+        class NoForward:
             pass
 
         with pytest.raises(TypeError, match="PrefixCapableAttention"):
