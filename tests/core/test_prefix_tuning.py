@@ -176,6 +176,116 @@ class TestPrefixTuningAttentionForward:
             PrefixTuningAttention(base_attn=fake_attn, prefix_len=3, reparam_hidden=16)
 
 
+class TestPrefixTuningAttentionProtocolGate:
+    """Wrapper accepts any ``PrefixCapableAttention`` base (MHA / Flash / MLA).
+
+    After the multi-backend extension (T2 PEFT follow-up), the wrapper
+    gates on the ``PrefixCapableAttention`` Protocol + a structural
+    ``num_kv_heads`` / ``head_dim`` check rather than a hard MHA
+    ``isinstance``. The tests below pin that contract for the two
+    newly-supported backends.
+    """
+
+    def test_accepts_mla_base(self):
+        """MLA has ``prefix_kv`` in its forward → wrapper accepts it."""
+        from llm.core.attn.mla import MultiLatentAttention
+
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
+        wrapper = PrefixTuningAttention(base_attn=attn, prefix_len=3, reparam_hidden=16)
+        assert wrapper.base_attn is attn
+        assert wrapper.num_kv_heads == attn.num_kv_heads
+        assert wrapper.head_dim == attn.head_dim
+
+    def test_accepts_flash_attention_base(self):
+        """FlashAttention has ``prefix_kv`` in its forward → wrapper accepts it (when available)."""
+        from llm.core.attn.flash_attn import FLASH_ATTN_AVAILABLE, FlashAttention
+
+        if not FLASH_ATTN_AVAILABLE:
+            pytest.skip("flash-attn is optional; install via `llm[perf]`")
+        attn = FlashAttention(hidden_size=32, num_heads=4, bias=False)
+        wrapper = PrefixTuningAttention(base_attn=attn, prefix_len=3, reparam_hidden=16)
+        assert wrapper.base_attn is attn
+        assert wrapper.num_kv_heads == attn.num_kv_heads
+        assert wrapper.head_dim == attn.head_dim
+
+    def test_rejects_module_without_forward(self):
+        """A bare class with no ``forward`` method fails the Protocol check."""
+        class NoForward:  # noqa: D401 — trivial
+            pass
+
+        with pytest.raises(TypeError, match="PrefixCapableAttention"):
+            PrefixTuningAttention(base_attn=NoForward(), prefix_len=3, reparam_hidden=16)
+
+
+class TestPrefixTuningWrapsFlashAndMLA:
+    """End-to-end: ``apply_prefix_tuning`` wraps Flash / MLA bases and runs forward."""
+
+    def test_apply_prefix_tuning_wraps_every_mla(self):
+        """All MultiLatentAttention modules get wrapped; Linear leaves alone."""
+        from llm.core.attn.mla import MultiLatentAttention
+
+        class TwoLayer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.attn1 = MultiLatentAttention(hidden_size=16, num_heads=2, num_latents=4)
+                self.attn2 = MultiLatentAttention(hidden_size=16, num_heads=2, num_latents=4)
+                self.linear = nn.Linear(16, 16)
+
+            def forward(self, x):
+                return self.linear(self.attn2(self.attn1(x)))
+
+        model = TwoLayer()
+        apply_prefix_tuning(model, prefix_len=2, reparam_hidden=8)
+        assert isinstance(model.attn1, PrefixTuningAttention)
+        assert isinstance(model.attn2, PrefixTuningAttention)
+        assert isinstance(model.linear, nn.Linear)
+
+    def test_apply_prefix_tuning_wraps_every_flash(self):
+        """All FlashAttention modules get wrapped (when flash-attn is installed)."""
+        from llm.core.attn.flash_attn import FLASH_ATTN_AVAILABLE, FlashAttention
+
+        if not FLASH_ATTN_AVAILABLE:
+            pytest.skip("flash-attn is optional; install via `llm[perf]`")
+
+        class TwoLayer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.attn1 = FlashAttention(hidden_size=16, num_heads=2, bias=False)
+                self.attn2 = FlashAttention(hidden_size=16, num_heads=2, bias=False)
+                self.linear = nn.Linear(16, 16)
+
+            def forward(self, x):
+                return self.linear(self.attn2(self.attn1(x)))
+
+        model = TwoLayer()
+        apply_prefix_tuning(model, prefix_len=2, reparam_hidden=8)
+        assert isinstance(model.attn1, PrefixTuningAttention)
+        assert isinstance(model.attn2, PrefixTuningAttention)
+        assert isinstance(model.linear, nn.Linear)
+
+    def test_wrapper_over_mla_runs_forward_and_freezes_base(self):
+        """Wrapping MLA: forward runs, base MLA params stay frozen, prefix params trainable."""
+        from llm.core.attn.mla import MultiLatentAttention
+
+        torch.manual_seed(0)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
+        wrapper = PrefixTuningAttention(base_attn=attn, prefix_len=3, reparam_hidden=16)
+
+        x = torch.randn(2, 5, 32)
+        out = wrapper(x)
+        assert out.shape == (2, 5, 32)
+
+        # Base MLA params are frozen.
+        for p in attn.parameters():
+            assert not p.requires_grad
+
+        # Prefix params are trainable.
+        trainable = list(get_prefix_parameters(wrapper))
+        assert len(trainable) == 5
+        for p in trainable:
+            assert p.requires_grad
+
+
 class TestPrefixTuningAttentionGradients:
     """Gradients flow to prefix params but base MHA stays frozen."""
 
