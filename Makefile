@@ -31,9 +31,15 @@ test-fast:
 test-quick:
 	@uv run pytest -m quick
 
-# Test with coverage and allure reports (for CI)
+# Test with coverage and allure reports (for CI).
+# ``--cov-fail-under`` enforces the bar from CI: a PR that drops coverage
+# below the current measured floor fails the lint job. The bar is the
+# coverage the CI can actually verify when CUDA-required tests fail on
+# the GPU-less runner; CPU-only runs report ~82.6%. See
+# docs/audits/2026-07-12-tickets/11-coverage-fail-under.md and the
+# matching ``[tool.coverage.report] fail_under`` in pyproject.toml.
 test-cov:
-	@uv run pytest --cov=llm --cov-report=term-missing --cov-report=html --cov-report=lcov --cov-report=xml --alluredir=allure-results
+	@uv run pytest --cov=llm --cov-fail-under=77 --cov-report=term-missing --cov-report=html --cov-report=lcov --cov-report=xml --alluredir=allure-results
 
 # Test e2e only
 test-e2e:

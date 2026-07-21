@@ -25,11 +25,17 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) to understand the expected
 
 ## Testing Policy
 
-- **Test coverage gate**: `pyproject.toml` sets `tool.coverage.report.fail_under = 62`,
-  which is the current measured coverage for the CPU-friendly test subset
-  (the full suite, including GPU paths, cannot run in this CI). Any PR that
-  drops coverage below this bar will fail. New code should come with tests
-  that keep coverage at or above the current floor.
+- **Test coverage gate**: `pyproject.toml` sets
+  `tool.coverage.report.fail_under = 77` and `make test-cov` passes
+  `--cov-fail-under=77` to enforce it on CI. This is the coverage the
+  CI can actually measure when running the full suite on a GPU-less
+  runner (CUDA-required tests fail and don't exercise their code
+  paths). CPU-only test runs (excluding `tests/core/attn/test_mla.py`
+  and the other GPU-only modules) report ~82.6%; the gap is the
+  CUDA-only paths in `paged_attention`, `training/core/engine`,
+  `training/distributed`, etc. Any PR that drops coverage below this
+  bar will fail the lint job. New code should come with tests that keep
+  coverage at or above the current floor.
 - **Ruff**: `make ruff` runs `ruff format` and `ruff check`. CI runs both.
 - **Type checks**: `make ty` runs `ty check`. CI runs it.
 - **Markers**: when adding tests, mark them with the appropriate marker
