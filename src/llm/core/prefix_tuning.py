@@ -1,23 +1,21 @@
 """Prefix Tuning module (parameter-efficient fine-tuning, T2 PEFT).
 
-Wraps a frozen :class:`MultiHeadAttention` with a trainable prefix that
-gets prepended to K and V at every forward pass. The prefix lives in a
+Wraps a frozen attention layer with a trainable prefix that gets
+prepended to K and V at every forward pass. The prefix lives in a
 small latent space (``prefix_small``) and is projected into the K/V
 dimensions by two reparameterization MLPs - that's the "reparameterized"
 Prefix Tuning from Li & Liang 2021, which stabilises training versus
 directly learning the K/V prefix.
 
-Forward keeps the base MHA entirely frozen - only ``prefix_small`` and
-the reparameterization MLPs receive gradients. After training,
+Multi-backend: ``MHA`` / ``FlashAttention`` / ``MultiLatentAttention``
+all support ``prefix_kv`` injection (any base that satisfies the
+:class:`llm.core.attn.base.PrefixCapableAttention` Protocol). The
+wrapper freezes the base attention and only ``prefix_small`` + the two
+reparameterization MLPs receive gradients. After training,
 :func:`fold_reparameterization` collapses the MLPs into static
-``prefix_k`` / ``prefix_v`` buffers for inference (one fewer matmul per
-step, no trainable params at serve time, no risk of training-mode
-behaviour leaking into deployment).
-
-Foundation slice: only MHA is supported. MLA / Flash / SDPA attention
-variants intentionally raise ``TypeError`` at construction time so the
-failure is loud - see :class:`llm.core.attn.base.PrefixCapableAttention`
-for the protocol other backends would need to implement.
+``prefix_k`` / ``prefix_v`` buffers for inference (one fewer matmul
+per step, no trainable params at serve time, no risk of
+training-mode behaviour leaking into deployment).
 
 Reference: Li & Liang, 2021 - *Prefix-Tuning: Optimizing Continuous
 Prompts for Generation*, arXiv:2101.00190.
@@ -35,7 +33,12 @@ from llm.core.attn.base import PrefixCapableAttention
 
 
 class PrefixTuningAttention(nn.Module):
-    """Wrap a frozen ``MultiHeadAttention`` with trainable prefix K/V.
+    """Wrap a frozen attention base with trainable prefix K/V.
+
+    The base must satisfy the :class:`llm.core.attn.base.PrefixCapableAttention`
+    Protocol — i.e. accept a ``prefix_kv`` kwarg in its ``forward``.
+    ``MultiHeadAttention`` (the original reference impl),
+    ``FlashAttention``, and ``MultiLatentAttention`` all qualify.
 
     The trainable parameters are:
 
@@ -48,14 +51,13 @@ class PrefixTuningAttention(nn.Module):
     Forward computes prefix K/V via the reparam MLPs (or reads the
     static buffers if :func:`fold_reparameterization` has been called),
     expands to ``[B, num_kv_heads, prefix_len, head_dim]``, and dispatches
-    to ``base_attn(x, prefix_kv=...)``. The base MHA is frozen at
+    to ``base_attn(x, prefix_kv=...)``. The base attention is frozen at
     construction so only prefix parameters receive gradients.
 
     Args:
-        base_attn: The frozen :class:`MultiHeadAttention` to wrap. Must
-            be a real MHA - Flash / MLA / SDPA backends intentionally
-            raise so the failure is loud (the foundation slice only
-            supports MHA).
+        base_attn: The frozen attention layer to wrap. Must satisfy
+            :class:`llm.core.attn.base.PrefixCapableAttention` and
+            expose ``num_kv_heads`` and ``head_dim`` attributes.
         prefix_len: Number of prefix tokens to prepend to each layer's
             K and V. Typical values: 10-200.
         reparam_hidden: Width of the reparam MLP's hidden dim. Defaults

@@ -127,9 +127,7 @@ class TestFlashPrefixKV:
     def test_gqa_repeats_prefix_too(self):
         """With GQA, the prefix must be repeated to match num_query_heads."""
         torch.manual_seed(0)
-        attn = FlashAttention(
-            hidden_size=32, num_heads=8, num_kv_heads=2, dtype=torch.float16
-        )
+        attn = FlashAttention(hidden_size=32, num_heads=8, num_kv_heads=2, dtype=torch.float16)
         x = torch.randn(1, 4, 32, dtype=torch.float16)
         head_dim = 4  # 32 / 8
         pk = torch.randn(1, 2, 3, head_dim, dtype=torch.float16)

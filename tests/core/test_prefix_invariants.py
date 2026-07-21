@@ -165,6 +165,9 @@ def test_mha_gradients_flow_only_to_prefix(batch_size, seq_len, num_heads, prefi
     out.sum().backward()
 
     # x, pk, pv receive gradients.
-    assert x.grad is not None and x.grad.abs().sum() > 0
-    assert pk.grad is not None and pk.grad.abs().sum() > 0
-    assert pv.grad is not None and pv.grad.abs().sum() > 0
+    assert x.grad is not None
+    assert x.grad.abs().sum() > 0
+    assert pk.grad is not None
+    assert pk.grad.abs().sum() > 0
+    assert pv.grad is not None
+    assert pv.grad.abs().sum() > 0
