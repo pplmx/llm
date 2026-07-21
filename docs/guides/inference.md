@@ -255,6 +255,57 @@ engine.set_step_observer(METRICS.record_batch_fill_ratio)
 
 Pass `None` to clear a previously installed observer.
 
+### Startup configuration log line
+
+On `lifespan` startup, the server emits one structured JSON line tagged
+`event: server_config`. This is the canonical record of *what is actually
+running* — useful for incident triage when the question is "which model
+is on this box?" or "is prefix cache actually on?".
+
+The line is emitted once via `_log_server_config` in `src/llm/serving/api.py`,
+keyed on `event="server_config"` so it is greppable and Prometheus-style
+log shippers can route on it without parsing free-form text.
+
+Example (CPU dummy model, no API key):
+
+```json
+{"event": "server_config", "model_class": "DecoderModel",
+ "param_count_total": 113125, "param_count_trainable": 113125,
+ "dtype": "torch.float32", "device": "cpu",
+ "max_seq_len": 128, "attn_impl": "mha", "mlp_impl": "mlp",
+ "generation_backend": "eager", "enable_prefix_cache": false,
+ "use_paged_attention": false, "api_key_set": false}
+```
+
+Fields:
+
+| Field                    | Notes                                                              |
+| ------------------------ | ------------------------------------------------------------------ |
+| `model_class`            | `type(model).__name__` — `DecoderModel` for built-in, custom for third-party |
+| `param_count_total`      | every parameter (trainable + frozen)                               |
+| `param_count_trainable`  | `requires_grad=True` only — useful sanity check that PEFT froze the base |
+| `dtype` / `device`       | from the first parameter; `"unknown"` if the model has none        |
+| `max_seq_len`            | from `ServingConfig.max_seq_len`                                   |
+| `attn_impl` / `mlp_impl` | registry keys (`mha` / `mlp` for built-ins; custom values for plugins) |
+| `generation_backend`     | `eager` / `batched` / `speculative` — which backend loop is in use |
+| `enable_prefix_cache`    | bool                                                               |
+| `use_paged_attention`    | bool                                                               |
+| `api_key_set`            | bool ONLY — the key value itself is never logged                   |
+
+Operators normally grep for this line:
+
+```bash
+# Tail server logs and pull only the startup config line
+uv run llm-serve 2>&1 | tee /tmp/llm-serve.log | grep '"event": "server_config"'
+
+# Re-extract from a saved log file
+grep '"event": "server_config"' /var/log/llm-serve.log | tail -1 | jq .
+```
+
+The `api_key_set` field intentionally carries the **presence** of an
+API key, never its value — see `src/llm/serving/auth.py:52` for the
+`hmac.compare_digest` timing-safe comparison.
+
 ## Grouped Query Attention (GQA)
 
 GQA reduces KV cache memory by sharing KV heads across multiple query heads.
