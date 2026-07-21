@@ -26,6 +26,7 @@ Covers:
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 
 import pytest
@@ -204,47 +205,6 @@ class TestSavePeftPerMethod:
 # ---------------------------------------------------------------------------
 
 
-def _assert_lora_round_trip(method_name: str, apply_fn, **apply_kwargs) -> None:
-    """Helper: build two models with the same arch, apply+mutate one,
-    save, apply the other, load, and assert every adapter parameter is
-    byte-identical."""
-    from llm.core.peft import load_peft, save_peft
-
-    torch.manual_seed(0)
-    src = _TinyMLP()
-    apply_fn(src, **apply_kwargs)
-    _mutate_adapter_params(src, seed=method_name.__hash__() & 0xFFFF)
-    snapshot = {id(p): p.detach().clone() for p in src.parameters() if p.requires_grad}
-
-    path = Path("/tmp") / f"peft_roundtrip_{method_name}.bin"
-    if path.exists():
-        path.unlink()
-    save_peft(src, path, method_name)
-
-    torch.manual_seed(0)
-    dst = _TinyMLP()
-    apply_fn(dst, **apply_kwargs)
-    load_peft(dst, path, method_name)
-
-    # Compare by parameter identity: after re-apply, the wrappers in
-    # ``dst`` are fresh objects, but their ``id()`` will match the
-    # trainable params we just loaded into (different from ``src``,
-    # but we compare against the snapshot taken from ``src``).
-    for p_dst in dst.parameters():
-        if p_dst.requires_grad:
-            # Find the matching saved tensor by shape (the order of
-            # get_parameters output is deterministic for the same arch).
-            # Easier: just compare to the snapshot — the sizes must
-            # all match.
-            pass
-
-    # Robust check: count of trainable params matches, and the total
-    # sum of trained values matches the snapshot.
-    saved_sum = sum(t.sum().item() for t in snapshot.values())
-    loaded_sum = sum(p.sum().item() for p in dst.parameters() if p.requires_grad)
-    assert saved_sum == pytest.approx(loaded_sum, abs=1e-5)
-
-
 class TestLoadPeftRoundTrip:
     """Each built-in method must round-trip byte-identically."""
 
@@ -285,7 +245,7 @@ class TestLoadPeftRoundTrip:
         ]
         saved_params = list(saved_snapshot.values())
         assert len(loaded_params) == len(saved_params)
-        for loaded, saved in zip(loaded_params, saved_params):
+        for loaded, saved in zip(loaded_params, saved_params, strict=True):
             assert torch.equal(loaded, saved)
 
     def test_ia3_round_trip(self, tmp_path: Path) -> None:
@@ -314,8 +274,8 @@ class TestLoadPeftRoundTrip:
         loaded = [module.ia3_l for module in dst.modules() if isinstance(module, IA3Linear)]
         saved_list = list(saved.values())
         assert len(loaded) == len(saved_list)
-        for l, s in zip(loaded, saved_list):
-            assert torch.equal(l, s)
+        for l_iter, s in zip(loaded, saved_list, strict=True):
+            assert torch.equal(l_iter, s)
 
     def test_adapter_round_trip(self, tmp_path: Path) -> None:
         from llm.core.adapter import apply_adapter
@@ -333,7 +293,7 @@ class TestLoadPeftRoundTrip:
                     module.down.weight.add_(torch.randn_like(module.down.weight) * 0.01)
         # Collect per-wrapper params by index (since module ids differ
         # between src and dst).
-        saved = list(
+        saved = [
             (
                 module.down.weight.detach().clone(),
                 module.up.weight.detach().clone(),
@@ -342,7 +302,7 @@ class TestLoadPeftRoundTrip:
             )
             for module in src.modules()
             if isinstance(module, AdapterLinear)
-        )
+        ]
 
         path = tmp_path / "adapter.bin"
         save_peft(src, path, "adapter")
@@ -352,7 +312,7 @@ class TestLoadPeftRoundTrip:
         apply_adapter(dst, bottleneck_dim=4)
         load_peft(dst, path, "adapter")
 
-        loaded = list(
+        loaded = [
             (
                 module.down.weight.detach().clone(),
                 module.up.weight.detach().clone(),
@@ -361,13 +321,13 @@ class TestLoadPeftRoundTrip:
             )
             for module in dst.modules()
             if isinstance(module, AdapterLinear)
-        )
+        ]
         assert len(saved) == len(loaded)
-        for s, l in zip(saved, loaded):
-            assert torch.equal(s[0], l[0]), "down.weight mismatch"
-            assert torch.equal(s[1], l[1]), "up.weight mismatch"
-            assert torch.equal(s[2], l[2]), "down.bias mismatch"
-            assert torch.equal(s[3], l[3]), "up.bias mismatch"
+        for s, l_iter in zip(saved, loaded, strict=True):
+            assert torch.equal(s[0], l_iter[0]), "down.weight mismatch"
+            assert torch.equal(s[1], l_iter[1]), "up.weight mismatch"
+            assert torch.equal(s[2], l_iter[2]), "down.bias mismatch"
+            assert torch.equal(s[3], l_iter[3]), "up.bias mismatch"
 
     def test_pfeiffer_adapter_round_trip(self, tmp_path: Path) -> None:
         from llm.core.peft import load_peft, save_peft
@@ -399,8 +359,8 @@ class TestLoadPeftRoundTrip:
         # Different ``id()`` (fresh model) — compare by positional order.
         saved_list = list(saved.values())
         loaded_list = list(loaded.values())
-        for s, l in zip(saved_list, loaded_list):
-            assert torch.equal(s, l)
+        for s, l_iter in zip(saved_list, loaded_list, strict=True):
+            assert torch.equal(s, l_iter)
 
 
 # ---------------------------------------------------------------------------
@@ -638,7 +598,7 @@ class TestLoadPeftErrors:
             if isinstance(module, LoRALinear)
         ]
         assert len(fresh_params) == len(saved)
-        for (a1, b1), (a2, b2) in zip(saved, fresh_params):
+        for (a1, b1), (a2, b2) in zip(saved, fresh_params, strict=True):
             assert torch.equal(a1, a2)
             assert torch.equal(b1, b2)
 
@@ -648,7 +608,7 @@ class TestLoadPeftErrors:
         path = tmp_path / "garbage.bin"
         path.write_bytes(b"not a torch save file")
         fresh = _TinyMLP()
-        with pytest.raises(Exception):
+        with pytest.raises((pickle.UnpicklingError, RuntimeError, ValueError)):
             load_peft(fresh, path, "lora")
 
 

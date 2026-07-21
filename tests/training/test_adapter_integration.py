@@ -92,9 +92,9 @@ class TestTrainingConfigAdapterFields:
         assert cfg.adapter_target_modules is None
 
     def test_bottleneck_dim_must_be_positive(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bottleneck_dim"):
             TrainingConfig(adapter_bottleneck_dim=0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bottleneck_dim"):
             TrainingConfig(adapter_bottleneck_dim=-1)
 
     def test_opt_in_via_kwargs(self):
@@ -216,7 +216,6 @@ class TestAdapterGradientContract:
 
     def test_base_linear_frozen_adapter_trainable(self):
         cfg = _tiny_config(use_adapter=True)
-        task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
         apply_adapter(
             tiny_model,
@@ -240,7 +239,6 @@ class TestAdapterGradientContract:
         touched.
         """
         cfg = _tiny_config(use_adapter=True)
-        task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
         apply_adapter(tiny_model)
 

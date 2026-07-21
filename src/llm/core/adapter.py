@@ -2,7 +2,7 @@
 
 Parameter-efficient fine-tuning via bottleneck modules inserted into
 transformer blocks. The adapter is a small feed-forward block with
-a residual connection — the base Linear is frozen, and only the
+a residual connection - the base Linear is frozen, and only the
 adapter parameters train.
 
 Per the original paper, adapters are inserted:
@@ -12,14 +12,14 @@ Per the original paper, adapters are inserted:
 i.e. a down-projection (to a small bottleneck dim), a non-linearity,
 and an up-projection back to the hidden dim, summed with the base
 output. The up-projection is zero-initialized so the adapter is the
-identity transform at step 1 — no chicken-and-egg training stall.
+identity transform at step 1 - no chicken-and-egg training stall.
 
-Per-layer trainable cost: ``hidden_size × bottleneck_dim +
-bottleneck_dim × hidden_size + bottleneck_dim + hidden_size``
+Per-layer trainable cost: ``hidden_size x bottleneck_dim +
+bottleneck_dim x hidden_size + bottleneck_dim + hidden_size``
 (down weight + up weight + down bias + up bias). At
 ``hidden_size=4096, bottleneck_dim=64`` that's
-``2 × 4096 × 64 + 64 + 4096 ≈ 528k`` params per adapted Linear — vs.
-LoRA's ``rank × (in + out) = 8 × (4096 + 4096) ≈ 65k`` and IA³'s
+``2 x 4096 x 64 + 64 + 4096 ≈ 528k`` params per adapted Linear - vs.
+LoRA's ``rank x (in + out) = 8 x (4096 + 4096) ≈ 65k`` and IA³'s
 ``4096``. Adapters are usually bigger than LoRA / IA³ but smaller
 than full fine-tuning.
 
@@ -28,10 +28,10 @@ Forward:
 
 Initialization:
     - ``down``: Kaiming uniform (standard Linear init).
-    - ``up``: zeros — so the adapter contributes 0 to the output at
+    - ``up``: zeros - so the adapter contributes 0 to the output at
       step 1, and the wrapper is the identity on top of the base.
     - ``activation``: ``nn.ReLU`` (the original paper uses ``ReLU``;
-      later work uses ``GELU`` or ``Tanh`` — picked here to match
+      later work uses ``GELU`` or ``Tanh`` - picked here to match
       Houlsby 2019).
 
 The helper API (``apply_adapter`` / ``merge_adapter`` /
@@ -39,12 +39,12 @@ The helper API (``apply_adapter`` / ``merge_adapter`` /
 ``count_adapter_parameters`` / ``disable_adapter`` /
 ``enable_adapter``) mirrors LoRA / IA³ / BitFit so swapping PEFT
 methods in user code is a one-import change. Note that
-``merge_adapter`` is a near no-op for adapters — the up-projection
+``merge_adapter`` is a near no-op for adapters - the up-projection
 being zero means the adapter contributes nothing, so merging the
 adapter into the base would just add zeros. The function is kept
 for API parity.
 
-Reference: Houlsby et al., 2019 — *Parameter-Efficient Transfer
+Reference: Houlsby et al., 2019 - *Parameter-Efficient Transfer
 Learning for NLP*, arXiv:1902.00751. The bottleneck-only-after-FFN
 variant (Pfeiffer et al. 2020) and the Compacter / MAD-X
 decompositions are deliberate follow-ups.
@@ -66,7 +66,7 @@ class AdapterLinear(nn.Module):
             construction).
         bottleneck_dim: Width of the adapter's hidden dim. Smaller
             values reduce trainable parameters; typical values are
-            8–256 depending on the hidden size.
+            8-256 depending on the hidden size.
         activation: Non-linearity class (defaults to ``nn.ReLU`` to
             match Houlsby 2019).
     """
@@ -92,7 +92,7 @@ class AdapterLinear(nn.Module):
         self.activation = activation()
         # Up-project: bottleneck → hidden. Zero-init so the adapter
         # is the identity transform at step 1 (no chicken-and-egg
-        # training stall — the up output is zero, so the wrapper
+        # training stall - the up output is zero, so the wrapper
         # matches the base output at step 1).
         self.up = nn.Linear(bottleneck_dim, hidden, device=device, dtype=dtype)
         nn.init.zeros_(self.up.weight)
@@ -113,18 +113,18 @@ class AdapterLinear(nn.Module):
         """No-op for adapters.
 
         Unlike LoRA / IA³ the adapter has no math to fold into the
-        base weight — the up-projection being zero means the adapter
+        base weight - the up-projection being zero means the adapter
         contributes zero to the output. ``merge_weights`` is kept
         for API parity with the other PEFT helpers; it does nothing.
         """
-        # Intentionally empty — see docstring.
+        # Intentionally empty - see docstring.
 
     def unmerge_weights(self) -> None:
         """No-op for adapters (mirror of :meth:`merge_weights`).
 
         Kept for API parity; nothing to undo.
         """
-        # Intentionally empty — see docstring.
+        # Intentionally empty - see docstring.
 
     @property
     def trainable_parameters(self) -> int:
@@ -184,7 +184,7 @@ def apply_adapter(
 
 
 def merge_adapter(model: nn.Module) -> nn.Module:
-    """No-op for adapters — kept for API parity with LoRA / IA³.
+    """No-op for adapters - kept for API parity with LoRA / IA³.
 
     Unlike LoRA / IA³, the adapter has no math to fold into the base
     weight. The up-projection is zero-initialized, so the adapter
@@ -201,7 +201,7 @@ def merge_adapter(model: nn.Module) -> nn.Module:
 
 
 def unmerge_adapter(model: nn.Module) -> nn.Module:
-    """No-op for adapters — mirror of :func:`merge_adapter`."""
+    """No-op for adapters - mirror of :func:`merge_adapter`."""
     for module in model.modules():
         if isinstance(module, AdapterLinear):
             module.unmerge_weights()
@@ -209,7 +209,7 @@ def unmerge_adapter(model: nn.Module) -> nn.Module:
 
 
 def get_adapter_parameters(model: nn.Module) -> Iterator[nn.Parameter]:
-    """Yield every trainable adapter parameter — down + up weights + biases
+    """Yield every trainable adapter parameter - down + up weights + biases
     per wrapper, nothing from the base Linear.
     """
     for module in model.modules():
@@ -244,7 +244,7 @@ def disable_adapter(model: nn.Module) -> None:
 
 
 def enable_adapter(model: nn.Module) -> None:
-    """Re-enable adapters after :func:`disable_adapter` — restores the
+    """Re-enable adapters after :func:`disable_adapter` - restores the
     saved up-projection snapshot. No-op if ``disable_adapter`` was
     never called.
     """

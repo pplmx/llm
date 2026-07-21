@@ -319,7 +319,8 @@ def test_engine_runs_mla_step_with_dense_cache(mock_tokenizer):
     )
 
     # MLA writes into the dense cache the same way MHA does.
-    assert engine.kv_caches and engine.paged_kv_cache is None
+    assert engine.kv_caches
+    assert engine.paged_kv_cache is None
 
     req = GenerationRequest(prompt="abcd", max_new_tokens=3)
     req.request_id = "mla-dense-1"

@@ -403,7 +403,7 @@ def test_step_async_saturates_concurrent_inflight_vs_step():
     # Both paths must drain the engine within reasonable wall time.
     # The async path adds a thread-hop per step, so it can be a bit
     # slower — we only assert it's not catastrophically worse
-    # (≥10× slower would indicate the refactor is broken).
+    # (≥10x slower would indicate the refactor is broken).
     assert async_elapsed < sync_elapsed * 10.0, (
         f"step_async is suspiciously slower than step: async={async_elapsed:.3f}s vs sync={sync_elapsed:.3f}s"
     )

@@ -172,7 +172,7 @@ def apply_logit_bias(
     for tid, bias in logit_bias.items():
         try:
             tid_int = int(tid)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if 0 <= tid_int < vocab_size:
             valid[tid_int] = float(bias)

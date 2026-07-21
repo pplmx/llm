@@ -235,8 +235,8 @@ def test_ppo_honors_should_stop_training(tmp_path, tiny_model, monkeypatch):
     engine.run()
 
     # Epoch 0 completes, epoch 1 completes and triggers stop,
-    # epochs 2–4 are skipped.
+    # epochs 2-4 are skipped.
     assert epoch_count["n"] == 2
-    # 2 epochs × 2 batches/epoch = 4 PPO steps total (3 prompts / 2 = 2 batches).
+    # 2 epochs x 2 batches/epoch = 4 PPO steps total (3 prompts / 2 = 2 batches).
     # Stop happens AFTER epoch 1 finishes, so we expect exactly 4 calls.
     assert trainer_call_count["n"] == 4

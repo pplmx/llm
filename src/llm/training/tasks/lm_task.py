@@ -158,10 +158,11 @@ class LanguageModelingTask(TrainingTask):
                     "checkpoint_dir",
                     None,
                 )
-                if ckpt_dir is None:
-                    resolved_path = None
-                else:
-                    resolved_path = Path(ckpt_dir) / f"peft_adapter_{peft_method}.bin"
+                # ``resolved_path`` may legitimately stay ``None`` when
+                # ``ckpt_dir`` is unset; consumers (the
+                # ``PEFTAdapterCheckpointCallback``) treat ``None`` as
+                # "no sidecar, no-op at train end".
+                resolved_path = None if ckpt_dir is None else Path(ckpt_dir) / f"peft_adapter_{peft_method}.bin"
 
             callbacks.append(
                 PEFTAdapterCheckpointCallback(

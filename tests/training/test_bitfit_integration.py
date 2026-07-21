@@ -190,7 +190,6 @@ class TestBitFitGradientContract:
         an Adam step.
         """
         cfg = _tiny_config(use_bitfit=True)
-        task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_biases(cfg)
         apply_bitfit(tiny_model)
 

@@ -589,7 +589,7 @@ class AdaLoRAGradientEMA:
     Implements the EMA half of AdaLoRA Algorithm 1
     (Zhang et al. 2023, page 4)::
 
-        I_avg_i ← α · I_avg_i + (1 − α) · |∂L/∂λ_i|
+        I_avg_i <- alpha * I_avg_i + (1 - alpha) * |dL/dlambda_i|
 
     The tracker is constructed against a model that already has
     ``AdaLoRALinear`` layers in place. After each backward pass, the

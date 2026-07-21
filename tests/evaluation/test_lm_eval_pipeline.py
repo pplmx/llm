@@ -59,7 +59,7 @@ def test_evalpreset_construction_full():
 def test_evalpreset_is_frozen():
     """``frozen=True`` prevents accidental preset mutation."""
     preset = EvalPreset(task="mmlu")
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         preset.batch_size = 16  # type: ignore[misc]
 
 
@@ -515,7 +515,7 @@ import llm.evaluation.harness.adapter as adapter_module  # noqa: E402
 
 
 class _FakeTaskManager:
-    all_tasks = ["mmlu", "arc_easy", "wikitext"]
+    all_tasks = ("mmlu", "arc_easy", "wikitext")
 
 
 class _FakeEvaluator:
@@ -543,7 +543,7 @@ def mocked_lm_eval():
         yield
 
 
-def test_lm_eval_adapter_init_with_mocked_lm_eval(mocked_lm_eval):
+def test_lm_eval_adapter_init_with_mocked_lm_eval(mocked_lm_eval):  # noqa: ARG001
     """``LmEvalAdapter()`` constructs and lists built-in tasks."""
     adapter = LmEvalAdapter()
     assert "mmlu" in adapter.list_tasks()
@@ -551,7 +551,7 @@ def test_lm_eval_adapter_init_with_mocked_lm_eval(mocked_lm_eval):
     assert "wikitext" in adapter.list_tasks()
 
 
-def test_lm_eval_adapter_evaluate_passes_tasks(mocked_lm_eval):
+def test_lm_eval_adapter_evaluate_passes_tasks(mocked_lm_eval):  # noqa: ARG001
     _FakeEvaluator.last_call = None
     adapter = LmEvalAdapter()
     out = adapter.evaluate(model="m", tasks=["arc_easy"], batch_size=4)
@@ -563,14 +563,14 @@ def test_lm_eval_adapter_evaluate_passes_tasks(mocked_lm_eval):
     assert out["results"]["sentinel"]["acc,none"] == 0.5
 
 
-def test_lm_eval_adapter_evaluate_defaults_to_mmlu(mocked_lm_eval):
+def test_lm_eval_adapter_evaluate_defaults_to_mmlu(mocked_lm_eval):  # noqa: ARG001
     _FakeEvaluator.last_call = None
     adapter = LmEvalAdapter()
     adapter.evaluate(model="m")
     assert _FakeEvaluator.last_call["tasks"] == ["mmlu"]
 
 
-def test_lm_eval_adapter_run_preset_with_string_name(mocked_lm_eval):
+def test_lm_eval_adapter_run_preset_with_string_name(mocked_lm_eval):  # noqa: ARG001
     _FakeEvaluator.last_call = None
     adapter = LmEvalAdapter()
     adapter.run_preset("mmlu", model="m")
@@ -580,7 +580,7 @@ def test_lm_eval_adapter_run_preset_with_string_name(mocked_lm_eval):
     assert call["kwargs"]["batch_size"] == 8
 
 
-def test_lm_eval_adapter_run_preset_with_instance(mocked_lm_eval):
+def test_lm_eval_adapter_run_preset_with_instance(mocked_lm_eval):  # noqa: ARG001
     _FakeEvaluator.last_call = None
     adapter = LmEvalAdapter()
     custom = EvalPreset(task="wikitext", num_fewshot=2, batch_size=2, limit=5)
@@ -591,7 +591,7 @@ def test_lm_eval_adapter_run_preset_with_instance(mocked_lm_eval):
     assert call["kwargs"]["limit"] == 5
 
 
-def test_lm_eval_adapter_run_preset_caller_kwargs_override(mocked_lm_eval):
+def test_lm_eval_adapter_run_preset_caller_kwargs_override(mocked_lm_eval):  # noqa: ARG001
     """Caller-supplied kwargs win on conflicts with the preset."""
     _FakeEvaluator.last_call = None
     adapter = LmEvalAdapter()
@@ -600,13 +600,13 @@ def test_lm_eval_adapter_run_preset_caller_kwargs_override(mocked_lm_eval):
     assert _FakeEvaluator.last_call["kwargs"]["batch_size"] == 1
 
 
-def test_lm_eval_adapter_run_preset_unknown_name_raises_keyerror(mocked_lm_eval):
+def test_lm_eval_adapter_run_preset_unknown_name_raises_keyerror(mocked_lm_eval):  # noqa: ARG001
     adapter = LmEvalAdapter()
     with pytest.raises(KeyError):
         adapter.run_preset("does_not_exist", model="m")
 
 
-def test_lm_eval_adapter_run_benchmark(mocked_lm_eval):
+def test_lm_eval_adapter_run_benchmark(mocked_lm_eval):  # noqa: ARG001
     """``run_benchmark`` is a thin wrapper over ``evaluate`` with one task."""
     _FakeEvaluator.last_call = None
     adapter = LmEvalAdapter()
@@ -616,7 +616,7 @@ def test_lm_eval_adapter_run_benchmark(mocked_lm_eval):
     assert call["kwargs"]["limit"] == 10
 
 
-def test_standalone_run_preset_helper(mocked_lm_eval):
+def test_standalone_run_preset_helper(mocked_lm_eval):  # noqa: ARG001
     """Module-level ``run_preset()`` should work the same as the method."""
     _FakeEvaluator.last_call = None
     out = adapter_module.run_preset("mmlu", model="m")

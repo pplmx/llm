@@ -209,7 +209,7 @@ class TestSFTTaskEndToEnd:
                             after = msg_str.split(marker, 1)[1]
                             num = after.split()[0].rstrip(",|")
                             loss_log.append(float(num))
-                        except (ValueError, IndexError):
+                        except ValueError, IndexError:
                             pass
                         break
                 original_logger_info(msg, *args, **kwargs)

@@ -87,9 +87,9 @@ class TestTrainingConfigIA3Fields:
         assert cfg.ia3_target_modules is None
 
     def test_init_scale_must_be_positive(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="ia3_init_scale"):
             TrainingConfig(ia3_init_scale=0.0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="ia3_init_scale"):
             TrainingConfig(ia3_init_scale=-1.0)
 
     def test_opt_in_via_kwargs(self):
@@ -208,7 +208,6 @@ class TestIA3GradientContract:
 
     def test_base_linear_frozen_ia3_l_trainable(self):
         cfg = _tiny_config(use_ia3=True)
-        task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
         apply_ia3(
             tiny_model,
@@ -228,7 +227,6 @@ class TestIA3GradientContract:
         the base Linear weight is never touched.
         """
         cfg = _tiny_config(use_ia3=True)
-        task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_linear(cfg)
         apply_ia3(tiny_model)
 

@@ -131,10 +131,7 @@ class LmEvalAdapter:
         for task_name, metrics in results.get("results", {}).items():
             flat[task_name] = {}
             for key, value in metrics.items():
-                if "," in key:
-                    metric_name = key.split(",", 1)[0]
-                else:
-                    metric_name = key
+                metric_name = key.split(",", 1)[0] if "," in key else key
                 if isinstance(value, bool):
                     # bool is technically int — skip to avoid ``True`` -> 1.0.
                     continue

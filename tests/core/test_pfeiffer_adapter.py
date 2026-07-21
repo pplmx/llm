@@ -271,7 +271,7 @@ def test_get_pfeiffer_parameters_yields_only_adapter_params(model: _TinyTransfor
     """
     apply_pfeiffer_adapter(model, bottleneck_dim=8)
     params = list(get_pfeiffer_parameters(model))
-    # Two wrappers (fc1 + fc2) × 4 params each = 8.
+    # Two wrappers (fc1 + fc2) x 4 params each = 8.
     assert len(params) == 8
     # Every yielded param belongs to a wrapper's down / up.
     for p in params:
@@ -307,8 +307,8 @@ def test_count_pfeiffer_parameters_reports_correct_counts(model: _TinyTransforme
 def test_pfeiffer_specific_trainable_count(model: _TinyTransformerBlock) -> None:
     """Sum ``get_pfeiffer_parameters`` to get the Pfeiffer-only count.
 
-    For fc1 (16→32, bottleneck=8): 2 × 32 × 8 + 32 + 8 = 552.
-    For fc2 (32→16, bottleneck=8): 2 × 16 × 8 + 16 + 8 = 280.
+    For fc1 (16→32, bottleneck=8): 2 x 32 x 8 + 32 + 8 = 552.
+    For fc2 (32→16, bottleneck=8): 2 x 16 x 8 + 16 + 8 = 280.
     Total = 832 Pfeiffer-specific trainable (matches Houlsby's
     adapter count when restricted to MLP-only).
     """

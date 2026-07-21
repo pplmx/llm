@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING
 
 import pytest
 import torch
 
 from llm.core.attn import MultiLatentAttention
+
+if TYPE_CHECKING:
+    from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
 
 @pytest.fixture
@@ -169,7 +175,6 @@ def test_mla_kv_cache_full_equivalence():
     batch_size = 1
     seq_len = 6
     hidden_size = 32
-    num_layers = 1
 
     mla = _make_mla_for_cache_test(seed=0)
 

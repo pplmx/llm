@@ -132,7 +132,7 @@ class TestAdaLoRAPruningCallbackEMA:
         # Hook is on_optimizer_step (fires BEFORE zero_grad clears the grads).
         cb.on_optimizer_step(epoch=0, batch_idx=0)
         ema = cb._tracker.as_dict()[id(layer)]
-        assert torch.allclose(ema, 0.05 * torch.ones(4))  # α=0.95 → 0.05·1.0
+        assert torch.allclose(ema, 0.05 * torch.ones(4))  # a=0.95 -> 0.05*1.0
 
     def test_update_via_on_train_step_end_is_a_noop(self):
         """Regression: zero_grad runs between optimizer.step() and
@@ -205,7 +205,7 @@ class TestAdaLoRAPruningCallbackCheckpoint:
         state = cb.get_checkpoint_state()
         assert state is not None
         # State is keyed by qualified name (e.g. "0") not id().
-        for name, tensor in state.items():
+        for tensor in state.values():
             assert torch.allclose(tensor, 0.7 * torch.ones(4))
 
     def test_get_checkpoint_state_none_when_disabled(self):

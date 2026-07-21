@@ -253,7 +253,7 @@ class TestApplyIA3:
     def test_no_target_wraps_every_linear(self):
         model = _ToyModel()
         apply_ia3(model)
-        for name, m in model.named_modules():
+        for _name, m in model.named_modules():
             if isinstance(m, IA3Linear):
                 # Every wrapper points at a Linear of the right shape.
                 assert isinstance(m.base_layer, nn.Linear)
