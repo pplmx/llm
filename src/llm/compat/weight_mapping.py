@@ -325,7 +325,7 @@ def convert_hf_to_combined_qkv(
     num_layers: int,
     *,
     num_heads: int | None = None,
-    num_kv_heads: int | None = None,
+    num_kv_heads: int | None = None,  # noqa: ARG001 - reserved for GQA-aware paths; not used by simple concat
     head_dim: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -358,9 +358,6 @@ def convert_hf_to_combined_qkv(
             "num_heads and head_dim are required to concatenate q/k/v projections. "
             "Pass them from the loaded model's MHA block."
         )
-    n_kv = num_kv_heads if num_kv_heads is not None else num_heads
-    q_size = num_heads * head_dim
-    kv_size = n_kv * head_dim
 
     out = dict(our_state_dict)
     for layer_idx in range(num_layers):

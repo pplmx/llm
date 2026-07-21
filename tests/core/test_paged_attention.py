@@ -507,18 +507,17 @@ class TestPagedAttentionForward:
         )
 
         # Decode reference: one query token at a time, same context.
-        decode_outs = []
-        for t in range(query_len):
-            decode_outs.append(
-                paged_attention_forward(
-                    q=q[:, :, t : t + 1, :],
-                    k_cache=k_cache,
-                    v_cache=v_cache,
-                    block_tables=block_tables,
-                    seq_lens=seq_lens,
-                    num_kv_heads=num_kv_heads,
-                )
+        decode_outs = [
+            paged_attention_forward(
+                q=q[:, :, t : t + 1, :],
+                k_cache=k_cache,
+                v_cache=v_cache,
+                block_tables=block_tables,
+                seq_lens=seq_lens,
+                num_kv_heads=num_kv_heads,
             )
+            for t in range(query_len)
+        ]
         decode_out = torch.cat(decode_outs, dim=2)
 
         assert prefill_out.shape == decode_out.shape

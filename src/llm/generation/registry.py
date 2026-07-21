@@ -10,6 +10,7 @@ from llm.runtime.registry import Registry
 
 if TYPE_CHECKING:
     from llm.generation.backends import GenerationBackend
+    from llm.models.decoder import DecoderModel
     from llm.serving.batch_engine import ContinuousBatchingEngine
 
 GenerationBackendFactory = Callable[..., "GenerationBackend"]

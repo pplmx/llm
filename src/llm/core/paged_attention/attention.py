@@ -41,7 +41,7 @@ def paged_attention_forward(
     Returns:
         Attention output tensor [batch, num_heads, query_len, head_dim].
     """
-    batch_size, num_heads, query_len, head_dim = q.shape
+    batch_size, num_heads, _query_len, head_dim = q.shape
     if k_cache.ndim == 5:
         # Legacy / direct-test path: full ``PagedKVCache`` buffer.
         # The caller should have sliced already for a multi-layer model;

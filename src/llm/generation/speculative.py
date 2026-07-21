@@ -41,7 +41,7 @@ def _shift_kv_caches(kv_caches, accept_count: int) -> None:
     """Drop the unaccepted trailing positions from each cache.
 
     After :func:`_verify_speculative_tokens` we need to roll back the
-    KV-cache writes for rejected candidate tokens — otherwise the
+    KV-cache writes for rejected candidate tokens - otherwise the
     target forward in the next speculative step would attend to
     tokens we never accepted. ``accept_count`` is the number of
     candidates accepted (0..gamma). 0 means reject everything; we
@@ -232,13 +232,13 @@ def speculative_generate(
             distribution is the canonical output distribution.
         draft: Draft model (the "cheap" one). Must share vocabulary
             with the target and have the same ``max_seq_len`` (or
-            larger — we only enforce the prompt fits).
+            larger - we only enforce the prompt fits).
         tokenizer: Tokenizer with ``encode``, ``decode``,
             ``pad_token_id``, ``eos_token_id``.
         prompt: Prompt text.
         max_new_tokens: Hard cap on generated tokens.
         gamma: Number of speculative tokens per round. Typical
-            values are 4–8.
+            values are 4-8.
         temperature, top_k, top_p: Sampling parameters for the
             **correction** token (the algorithm preserves the
             target distribution under these settings).
@@ -255,7 +255,6 @@ def speculative_generate(
     draft.eval()
     device = next(target.parameters()).device
     prompt_ids = tokenizer.encode(prompt)
-    input_tensor = torch.tensor([prompt_ids], dtype=torch.long, device=device)
 
     generated_ids: list[int] = list(prompt_ids)
     eos_id = getattr(tokenizer, "eos_token_id", None)
@@ -303,12 +302,10 @@ def speculative_generate(
         )
 
         # 3. Emit accepted tokens + bonus (or correction).
-        emitted_this_round = 0
         for i in range(accept_count):
             tok = draft_tokens[i]
             generated_ids.append(tok)
             yield tokenizer.decode([tok])
-            emitted_this_round += 1
             if eos_id is not None and tok == eos_id:
                 return
             if len(generated_ids) - len(prompt_ids) >= max_new_tokens:

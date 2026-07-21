@@ -443,16 +443,16 @@ class AdaLoRAPruningCallback(Callback):
                     getattr(getattr(cfg, "data", None), "steps_per_epoch", 0) or 0  # type: ignore[union-attr]
                 )
                 epochs = int(getattr(cfg.training, "epochs", 1) or 1)  # type: ignore[union-attr]
-            except (AttributeError, TypeError, ValueError):
+            except AttributeError, TypeError, ValueError:
                 steps_per_epoch = 0
                 epochs = 1
-            if steps_per_epoch > 0:
-                tfinal = max(self.adalora_tinit + 1, (epochs * steps_per_epoch) // 2)
-            else:
-                # No schedule — collapse straight to target_rank so the
-                # user gets *some* pruning on cadence. They can set
-                # ``adalora_tfinal`` explicitly for a proper schedule.
-                tfinal = global_step
+            # No schedule when ``steps_per_epoch == 0`` — collapse
+            # straight to ``target_rank`` so the user gets *some*
+            # pruning on cadence. They can set ``adalora_tfinal``
+            # explicitly for a proper schedule.
+            tfinal = (
+                max(self.adalora_tinit + 1, (epochs * steps_per_epoch) // 2) if steps_per_epoch > 0 else global_step
+            )
 
         prune_adalora(
             self.engine.model,

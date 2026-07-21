@@ -80,8 +80,8 @@ class TestAdapterLinearInit:
             AdapterLinear(nn.Linear(16, 32), bottleneck_dim=-4)
 
     def test_trainable_parameters_count(self):
-        """Trainable params = down (hidden × bottleneck + bottleneck) +
-        up (bottleneck × hidden + hidden) = 2 × hidden × bottleneck +
+        """Trainable params = down (hidden x bottleneck + bottleneck) +
+        up (bottleneck x hidden + hidden) = 2 x hidden x bottleneck +
         hidden + bottleneck.
         """
         in_features, out_features, bottleneck = 16, 32, 8
@@ -244,7 +244,7 @@ class TestApplyAdapter:
     def test_no_target_wraps_every_linear(self):
         model = _ToyModel()
         apply_adapter(model, bottleneck_dim=4)
-        for name, m in model.named_modules():
+        for _name, m in model.named_modules():
             if isinstance(m, AdapterLinear):
                 assert isinstance(m.base_layer, nn.Linear)
 
@@ -334,16 +334,15 @@ class TestGetAdapterParameters:
 
 class TestCountAdapterParameters:
     def test_trainable_matches_per_wrapper_count(self):
-        """After ``apply_adapter``, trainable count is exactly 4 × n_wrappers
+        """After ``apply_adapter``, trainable count is exactly 4 x n_wrappers
         worth of params (down weight + down bias + up weight + up bias
         per wrapper).
         """
         model = _ToyModel()
         apply_adapter(model, bottleneck_dim=4)
         trainable, total = count_adapter_parameters(model)
-        expected = 4 * sum(1 for _ in model.modules() if isinstance(_, AdapterLinear))
-        # Each wrapper contributes out_features × bottleneck + bottleneck +
-        # bottleneck × out_features + out_features = 2*out*bottleneck +
+        # Each wrapper contributes out_features x bottleneck + bottleneck +
+        # bottleneck x out_features + out_features = 2*out*bottleneck +
         # out + bottleneck. Hard to predict without enumerating shapes,
         # so we just check that trainable > 0 and < total.
         assert trainable > 0

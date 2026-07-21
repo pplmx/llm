@@ -15,6 +15,8 @@ just the structural / gradient-flow contract.
 
 from __future__ import annotations
 
+import torch
+
 from llm.core.attn.mha import MultiHeadAttention
 from llm.core.prefix_tuning import (
     PrefixTuningAttention,
@@ -185,7 +187,6 @@ class TestPrefixTuningGradientContract:
 
     def test_base_mha_frozen_prefix_params_trainable(self):
         cfg = _tiny_config(use_prefix_tuning=True)
-        task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_mha(cfg)
         apply_prefix_tuning(
             tiny_model,
@@ -208,7 +209,6 @@ class TestPrefixTuningGradientContract:
         """When the user wires the optimizer via ``get_prefix_parameters``, the
         base MHA weights are never touched."""
         cfg = _tiny_config(use_prefix_tuning=True)
-        task = LanguageModelingTask(cfg, data_module=None)
         tiny_model = _tiny_model_with_mha(cfg)
         apply_prefix_tuning(
             tiny_model,

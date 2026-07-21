@@ -1,7 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import pytest
 import torch
 
 from llm.core.attn import MultiHeadAttention
+
+if TYPE_CHECKING:
+    from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
 # Default hidden_size for most tests
 DEFAULT_HIDDEN_SIZE = 64

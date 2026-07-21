@@ -64,7 +64,7 @@ def test_datasetpreset_construction_full():
 def test_datasetpreset_is_frozen():
     """``frozen=True`` prevents accidental preset mutation."""
     preset = DatasetPreset(dataset_name="allenai/c4")
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         preset.dataset_name = "other"  # type: ignore[misc]
 
 
@@ -161,13 +161,13 @@ def test_apply_to_config_preserves_unrelated_fields():
         max_seq_len=4096,
         tokenizer_type="hf",
         tokenizer_path="gpt2",
-        val_dataset_path="/tmp/val.txt",
+        val_dataset_path="/var/data/val.txt",
     )
     apply_to_config(cfg, C4_PRESET)
     assert cfg.max_seq_len == 4096
     assert cfg.tokenizer_type == "hf"
     assert cfg.tokenizer_path == "gpt2"
-    assert cfg.val_dataset_path == "/tmp/val.txt"
+    assert cfg.val_dataset_path == "/var/data/val.txt"
 
 
 def test_apply_to_config_returns_config_for_fluent_use():

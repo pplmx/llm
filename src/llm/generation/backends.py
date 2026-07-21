@@ -165,7 +165,7 @@ class BatchedGenerationBackend(GenerationBackend):
 class SpeculativeDecodingBackend(GenerationBackend):
     """Speculative decoding: small draft model proposes, large target verifies.
 
-    Implements Leviathan et al. 2023 — the draft model speculates
+    Implements Leviathan et al. 2023 - the draft model speculates
     ``gamma`` tokens ahead; the target scores them in a single
     forward pass and accepts each with probability
     ``min(1, q_target / q_draft)``. On rejection, sample a
@@ -174,7 +174,7 @@ class SpeculativeDecodingBackend(GenerationBackend):
     same sampling parameters.
 
     The ``model`` argument to :meth:`stream` / :meth:`batch_generate`
-    is **ignored** — the target and draft models are bound at
+    is **ignored** - the target and draft models are bound at
     construction time. ``tokenizer`` must be the shared tokenizer
     used by both models (same vocab, pad id, eos id).
 
@@ -184,7 +184,7 @@ class SpeculativeDecodingBackend(GenerationBackend):
         draft_model: The "cheap" model used for speculation. Must
             share vocabulary with ``target_model``.
         gamma: Number of speculative tokens per round (default 5).
-            Typical values: 4–8.
+            Typical values: 4-8.
     """
 
     def __init__(

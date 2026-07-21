@@ -269,7 +269,7 @@ class TestBitFitStructuralInvariant:
         hidden, bias_tup = spec
         model = _build_holder(hidden, bias_tup)
         apply_bitfit(model)
-        params = set(id(p) for p in get_bitfit_parameters(model))
+        params = {id(p) for p in get_bitfit_parameters(model)}
         for name, p in model.named_parameters():
             is_bias = name == "bias" or name.endswith(".bias")
             if is_bias:

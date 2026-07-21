@@ -675,7 +675,7 @@ class TestAdaLoRAGradientEMA:
 
     Implements the EMA half of AdaLoRA Algorithm 1::
 
-        I_avg_i ← α · I_avg_i + (1 − α) · |∂L/∂λ_i|
+        I_avg_i <- alpha * I_avg_i + (1 - alpha) * |dL/dlambda_i|
 
     The tracker reads ``layer.lora_lambda.grad.abs()`` after each
     backward pass; layers that have no gradient (frozen, unused) are
@@ -737,12 +737,12 @@ class TestAdaLoRAGradientEMA:
 
         tracker.update()
         ema = tracker.as_dict()[id(layer)]
-        # α=0.5, current weight=1−α=0.5; grad_abs is the input directly.
+        # alpha=0.5, current weight=1-alpha=0.5; grad_abs is the input directly.
         expected = 0.5 * torch.tensor([0.4, 0.0, 0.6, 0.0, 0.8, 0.0])
         assert torch.allclose(ema, expected, atol=1e-7)
 
     def test_update_smoothing_recursion(self):
-        """Two updates compose as α·ema + (1−α)·grad_abs."""
+        """Two updates compose as alpha*ema + (1-alpha)*grad_abs."""
         from llm.core.adalora import AdaLoRAGradientEMA
 
         model = self._build_model()
@@ -808,7 +808,7 @@ class TestAdaLoRAGradientEMA:
         state = tracker.state_dict()
         # Two layers in a Sequential → "0" and "1"
         assert set(state.keys()) == {"0", "1"}
-        for key, tensor in state.items():
+        for tensor in state.values():
             assert tensor.shape == (6,)
             assert torch.allclose(tensor, torch.zeros(6))
 

@@ -199,8 +199,8 @@ class TestPEFTAdapterCheckpointCallbackSave:
                 with torch.no_grad():
                     module.lora_A.add_(torch.randn_like(module.lora_A) * 0.01)
                     module.lora_B.add_(torch.randn_like(module.lora_B) * 0.01)
-        saved_lora_A = [m.lora_A.detach().clone() for m in engine_mock.model.modules() if isinstance(m, LoRALinear)]
-        saved_lora_B = [m.lora_B.detach().clone() for m in engine_mock.model.modules() if isinstance(m, LoRALinear)]
+        saved_lora_a = [m.lora_A.detach().clone() for m in engine_mock.model.modules() if isinstance(m, LoRALinear)]
+        saved_lora_b = [m.lora_B.detach().clone() for m in engine_mock.model.modules() if isinstance(m, LoRALinear)]
 
         cb.on_train_end()
 
@@ -218,13 +218,13 @@ class TestPEFTAdapterCheckpointCallbackSave:
         fresh = _TinyMLP()
         apply_lora(fresh, rank=4, alpha=8.0)
         load_peft(fresh, path, "lora", rank=4, alpha=8.0)
-        loaded_lora_A = [m.lora_A.detach().clone() for m in fresh.modules() if isinstance(m, LoRALinear)]
-        loaded_lora_B = [m.lora_B.detach().clone() for m in fresh.modules() if isinstance(m, LoRALinear)]
-        assert len(saved_lora_A) == len(loaded_lora_A)
-        for s, l in zip(saved_lora_A, loaded_lora_A):
-            assert torch.equal(s, l)
-        for s, l in zip(saved_lora_B, loaded_lora_B):
-            assert torch.equal(s, l)
+        loaded_lora_a = [m.lora_A.detach().clone() for m in fresh.modules() if isinstance(m, LoRALinear)]
+        loaded_lora_b = [m.lora_B.detach().clone() for m in fresh.modules() if isinstance(m, LoRALinear)]
+        assert len(saved_lora_a) == len(loaded_lora_a)
+        for s, l_iter in zip(saved_lora_a, loaded_lora_a, strict=True):
+            assert torch.equal(s, l_iter)
+        for s, l_iter in zip(saved_lora_b, loaded_lora_b, strict=True):
+            assert torch.equal(s, l_iter)
 
     def test_save_failure_is_swallowed_and_logged(self, engine_mock: MagicMock, tmp_dir: Path) -> None:
         """If save_peft raises (e.g. unknown method after config drift),
@@ -249,7 +249,7 @@ class TestPEFTAdapterCheckpointCallbackSave:
 
         original_save = peft_ckpt_module.save_peft
 
-        def boom(*args: Any, **kwargs: Any) -> None:
+        def boom(*_args: Any, **_kwargs: Any) -> None:
             raise RuntimeError("simulated disk failure")
 
         peft_ckpt_module.save_peft = boom
@@ -484,8 +484,8 @@ class TestEndToEndPEFTCheckpointIntegration:
 
         # Snapshot the post-step LoRA params (these are what we expect
         # the sidecar to contain).
-        saved_A = [m.lora_A.detach().clone() for m in model.modules() if isinstance(m, LoRALinear)]
-        saved_B = [m.lora_B.detach().clone() for m in model.modules() if isinstance(m, LoRALinear)]
+        saved_a = [m.lora_A.detach().clone() for m in model.modules() if isinstance(m, LoRALinear)]
+        saved_b = [m.lora_B.detach().clone() for m in model.modules() if isinstance(m, LoRALinear)]
 
         # 2. Run the callback's on_train_end.
         sidecar = tmp_dir / "adapter.bin"
@@ -507,12 +507,12 @@ class TestEndToEndPEFTCheckpointIntegration:
         fresh = _TinyMLP()
         apply_lora(fresh, rank=4, alpha=8.0)
         load_peft(fresh, sidecar, "lora", rank=4, alpha=8.0)
-        loaded_A = [m.lora_A.detach().clone() for m in fresh.modules() if isinstance(m, LoRALinear)]
-        loaded_B = [m.lora_B.detach().clone() for m in fresh.modules() if isinstance(m, LoRALinear)]
-        for s, l in zip(saved_A, loaded_A):
-            assert torch.equal(s, l)
-        for s, l in zip(saved_B, loaded_B):
-            assert torch.equal(s, l)
+        loaded_a = [m.lora_A.detach().clone() for m in fresh.modules() if isinstance(m, LoRALinear)]
+        loaded_b = [m.lora_B.detach().clone() for m in fresh.modules() if isinstance(m, LoRALinear)]
+        for s, l_iter in zip(saved_a, loaded_a, strict=True):
+            assert torch.equal(s, l_iter)
+        for s, l_iter in zip(saved_b, loaded_b, strict=True):
+            assert torch.equal(s, l_iter)
 
     def test_callback_does_not_interfere_with_non_peft_training(self, tmp_dir: Path) -> None:
         """When peft_method is None, the PEFT callback is not in the
@@ -566,8 +566,8 @@ class TestEndToEndPEFTCheckpointIntegration:
         load_peft(fresh, sidecar, "ia3")
         loaded = [m.ia3_l.detach().clone() for m in fresh.modules() if isinstance(m, IA3Linear)]
         assert len(saved) == len(loaded)
-        for s, l in zip(saved, loaded):
-            assert torch.equal(s, l)
+        for s, l_iter in zip(saved, loaded, strict=True):
+            assert torch.equal(s, l_iter)
 
     def test_adapter_method_works_via_callback(self, tmp_dir: Path) -> None:
         """Houlsby Adapter round-trips cleanly via the callback."""
@@ -603,5 +603,5 @@ class TestEndToEndPEFTCheckpointIntegration:
         load_peft(fresh, sidecar, "adapter", bottleneck_dim=4)
         loaded = [m.up.weight.detach().clone() for m in fresh.modules() if isinstance(m, AdapterLinear)]
         assert len(saved_up) == len(loaded)
-        for s, l in zip(saved_up, loaded):
-            assert torch.equal(s, l)
+        for s, l_iter in zip(saved_up, loaded, strict=True):
+            assert torch.equal(s, l_iter)

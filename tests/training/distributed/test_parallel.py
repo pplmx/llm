@@ -3,6 +3,7 @@
 import pytest
 import torch
 import torch.nn as nn
+from pydantic import ValidationError
 
 from llm.training.core.config import DistributedConfig
 from llm.training.distributed.parallel import (
@@ -81,13 +82,13 @@ def test_distributed_config_accepts_known_fsdp_dtypes(dtype):
 
 def test_distributed_config_rejects_unknown_fsdp_dtype():
     """``mixed_precision`` must be one of the documented enum values."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         DistributedConfig(fsdp_mixed_precision="int8")  # type: ignore[arg-type]
 
 
 def test_distributed_config_auto_wrap_min_params_must_be_non_negative():
     """Negative thresholds make no sense — fail at config-parse time."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         DistributedConfig(fsdp_auto_wrap_min_params=-1)
 
 

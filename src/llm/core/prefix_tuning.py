@@ -3,11 +3,11 @@
 Wraps a frozen :class:`MultiHeadAttention` with a trainable prefix that
 gets prepended to K and V at every forward pass. The prefix lives in a
 small latent space (``prefix_small``) and is projected into the K/V
-dimensions by two reparameterization MLPs — that's the "reparameterized"
+dimensions by two reparameterization MLPs - that's the "reparameterized"
 Prefix Tuning from Li & Liang 2021, which stabilises training versus
 directly learning the K/V prefix.
 
-Forward keeps the base MHA entirely frozen — only ``prefix_small`` and
+Forward keeps the base MHA entirely frozen - only ``prefix_small`` and
 the reparameterization MLPs receive gradients. After training,
 :func:`fold_reparameterization` collapses the MLPs into static
 ``prefix_k`` / ``prefix_v`` buffers for inference (one fewer matmul per
@@ -16,10 +16,10 @@ behaviour leaking into deployment).
 
 Foundation slice: only MHA is supported. MLA / Flash / SDPA attention
 variants intentionally raise ``TypeError`` at construction time so the
-failure is loud — see :class:`llm.core.attn.base.PrefixCapableAttention`
+failure is loud - see :class:`llm.core.attn.base.PrefixCapableAttention`
 for the protocol other backends would need to implement.
 
-Reference: Li & Liang, 2021 — *Prefix-Tuning: Optimizing Continuous
+Reference: Li & Liang, 2021 - *Prefix-Tuning: Optimizing Continuous
 Prompts for Generation*, arXiv:2101.00190.
 """
 
@@ -39,7 +39,7 @@ class PrefixTuningAttention(nn.Module):
 
     The trainable parameters are:
 
-    - ``prefix_small``: ``(prefix_len, reparam_hidden)`` — small latent
+    - ``prefix_small``: ``(prefix_len, reparam_hidden)`` - small latent
       prefix. Lower-rank than the full K/V dimension so the search space
       is bounded.
     - ``_reparam_k`` / ``_reparam_v``: ``nn.Linear(reparam_hidden, kv_dim)``
@@ -53,11 +53,11 @@ class PrefixTuningAttention(nn.Module):
 
     Args:
         base_attn: The frozen :class:`MultiHeadAttention` to wrap. Must
-            be a real MHA — Flash / MLA / SDPA backends intentionally
+            be a real MHA - Flash / MLA / SDPA backends intentionally
             raise so the failure is loud (the foundation slice only
             supports MHA).
         prefix_len: Number of prefix tokens to prepend to each layer's
-            K and V. Typical values: 10–200.
+            K and V. Typical values: 10-200.
         reparam_hidden: Width of the reparam MLP's hidden dim. Defaults
             to ``kv_dim``. Smaller values reduce trainable parameters
             at the cost of expressivity.
@@ -74,7 +74,7 @@ class PrefixTuningAttention(nn.Module):
             raise TypeError(
                 f"PrefixTuningAttention requires a MHA (MultiHeadAttention) base; "
                 f"got {type(base_attn).__name__}. Flash / MLA / SDPA don't accept "
-                f"prefix_kv yet — see llm.core.attn.base.PrefixCapableAttention."
+                f"prefix_kv yet - see llm.core.attn.base.PrefixCapableAttention."
             )
 
         self.base_attn = base_attn
@@ -85,7 +85,7 @@ class PrefixTuningAttention(nn.Module):
         self.reparam_hidden = reparam_hidden if reparam_hidden is not None else self.kv_dim
 
         # Trainable parameters.
-        # prefix_small is the "small latent" prefix — lives in
+        # prefix_small is the "small latent" prefix - lives in
         # ``(prefix_len, reparam_hidden)`` and gets projected into K/V
         # space by the reparam MLPs below.
         self.prefix_small = nn.Parameter(torch.empty(prefix_len, self.reparam_hidden))
@@ -95,7 +95,7 @@ class PrefixTuningAttention(nn.Module):
         # Init: prefix_small and both reparam weight matrices use Kaiming
         # uniform so gradients flow at step 1 (a zero-init for the
         # reparam would make ``d_pk / d_prefix_small = 0`` and stall the
-        # prefix path until the reparam learned from somewhere else —
+        # prefix path until the reparam learned from somewhere else -
         # a chicken-and-egg problem that delays convergence). Biases are
         # zero. The initial prefix contribution is small but non-zero;
         # the optimizer (typically Adam) drives it toward whatever the
@@ -106,7 +106,7 @@ class PrefixTuningAttention(nn.Module):
         nn.init.zeros_(self._reparam_k.bias)
         nn.init.zeros_(self._reparam_v.bias)
 
-        # Freeze base MHA — only prefix params train.
+        # Freeze base MHA - only prefix params train.
         for p in self.base_attn.parameters():
             p.requires_grad = False
 
@@ -126,7 +126,7 @@ class PrefixTuningAttention(nn.Module):
         The buffer / reparam output lives in 2D ``[prefix_len, kv_dim]``.
         Attention expects 4D ``[B, num_kv_heads, prefix_len, head_dim]``;
         we broadcast across the batch dim (the prefix is shared across
-        the batch — every sequence in a batch sees the same prefix).
+        the batch - every sequence in a batch sees the same prefix).
         """
         # [prefix_len, kv_dim] -> [1, num_kv_heads, prefix_len, head_dim]
         pk = pk.view(1, self.num_kv_heads, self.prefix_len, self.head_dim)
@@ -148,7 +148,7 @@ class PrefixTuningAttention(nn.Module):
         Forwards every keyword argument (``attn_mask``, ``is_causal``,
         ``kv_cache``, ``use_cache``, ``batch_indices``, ``start_pos``,
         ``paged_kv_cache``, ``layer_idx``) to the base MHA. Any caller-
-        supplied ``prefix_kv`` is silently overridden — the wrapper owns
+        supplied ``prefix_kv`` is silently overridden - the wrapper owns
         prefix construction.
         """
         kwargs.pop("prefix_kv", None)
@@ -230,7 +230,7 @@ def get_prefix_parameters(model: nn.Module) -> Iterator[nn.Parameter]:
     """Yield every trainable prefix parameter (``prefix_small`` + reparam MLPs).
 
     Trainers pass this to the optimizer so only the prefix path is
-    updated — the base MHA weights stay frozen. Yields 5 parameters per
+    updated - the base MHA weights stay frozen. Yields 5 parameters per
     wrapped attention:
 
     - ``prefix_small``
@@ -279,11 +279,11 @@ def fold_reparameterization(model_or_attn: nn.Module) -> nn.Module:
         if hasattr(module, "prefix_k") and hasattr(module, "prefix_v"):
             continue
         # Compute final K/V via reparam MLPs (no_grad so the buffers are
-        # constants — they're meant to be the deployment-time values).
+        # constants - they're meant to be the deployment-time values).
         with torch.no_grad():
             pk = module._reparam_k(module.prefix_small).detach().clone()
             pv = module._reparam_v(module.prefix_small).detach().clone()
-        # Register as buffers (not Parameters — they're static post-fold).
+        # Register as buffers (not Parameters - they're static post-fold).
         module.register_buffer("prefix_k", pk)
         module.register_buffer("prefix_v", pv)
         # Drop the trainable reparam path. Using delattr (rather than
