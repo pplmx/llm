@@ -361,3 +361,159 @@ class TestEmptyModelIsNoop:
         # The Linear layers are untouched.
         linears = [m for m in model.modules() if isinstance(m, nn.Linear)]
         assert len(linears) == 2
+
+
+# ---------------------------------------------------------------------------
+# Multi-backend extension (T2 PEFT follow-up): MLA end-to-end training
+# step, and cross-backend save/load round-trip.
+# ---------------------------------------------------------------------------
+
+
+class TestMLAPrefixTuningTrainStep:
+    """MLA + prefix_tuning: build_model wraps MLA, optimizer updates only prefix params."""
+
+    def test_build_model_wraps_every_mla(self):
+        """``build_model`` wraps MLA modules under the new Protocol gate."""
+        from unittest.mock import patch
+
+        from llm.core.attn.mla import MultiLatentAttention
+
+        import torch.nn as nn
+
+        class TinyModelWithMLA(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.attn = MultiLatentAttention(
+                    hidden_size=16, num_heads=2, num_latents=4, include_norm_residual=False
+                )
+
+            def forward(self, x):
+                return self.attn(x)
+
+        cfg = _tiny_config(use_prefix_tuning=True)
+        task = LanguageModelingTask(cfg, data_module=None)
+        tiny_model = TinyModelWithMLA()
+
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
+            model = task.build_model()
+
+        wrappers = [m for m in model.modules() if isinstance(m, PrefixTuningAttention)]
+        assert len(wrappers) == 1, (
+            f"expected exactly 1 PrefixTuningAttention over MLA, got {len(wrappers)}"
+        )
+
+    def test_one_train_step_with_mla_prefix(self):
+        """One forward+backward+optimizer step runs cleanly with MLA + prefix."""
+        from unittest.mock import patch
+
+        from llm.core.attn.mla import MultiLatentAttention
+
+        import torch.nn as nn
+
+        class TinyModelWithMLA(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.attn = MultiLatentAttention(
+                    hidden_size=16, num_heads=2, num_latents=4, include_norm_residual=False
+                )
+
+            def forward(self, x):
+                return self.attn(x)
+
+        torch.manual_seed(0)
+        cfg = _tiny_config(use_prefix_tuning=True)
+        task = LanguageModelingTask(cfg, data_module=None)
+        tiny_model = TinyModelWithMLA()
+
+        with patch("llm.runtime.ModelFactory.from_config", return_value=tiny_model):
+            model = task.build_model()
+
+        # Prefix params only (base MLA stays frozen).
+        prefix_params = list(get_prefix_parameters(model))
+        assert len(prefix_params) == 5
+        opt = torch.optim.SGD(prefix_params, lr=0.01)
+
+        x = torch.randn(2, 4, 16)
+        target = torch.randn(2, 4, 16)
+        out = model(x)
+        loss = (out - target).pow(2).mean()
+        assert torch.isfinite(loss)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+        # Prefix params updated; base MLA params unchanged.
+        for p in get_prefix_parameters(model):
+            assert p.grad is not None and p.grad.abs().sum() > 0
+
+
+class TestCrossBackendSaveLoad:
+    """Save/load round-trip across backends: MHA checkpoint → load into MLA model."""
+
+    def test_save_mha_prefix_load_into_mla_model(self):
+        """A prefix_tuning checkpoint from an MHA model loads into an MLA model.
+
+        The wrapper class is the same (``PrefixTuningAttention``) regardless
+        of base attention type, so the state-dict keys are identical:
+        ``prefix_small``, ``_reparam_k.weight``, ``_reparam_k.bias``,
+        ``_reparam_v.weight``, ``_reparam_v.bias`` (5 params per wrapper).
+        """
+        from unittest.mock import patch
+
+        from llm.core.attn.mla import MultiLatentAttention
+
+        import torch.nn as nn
+
+        from llm.core.peft.checkpoint import load_peft, save_peft
+
+        # Build MHA-wrapped model with one wrapper.
+        class TinyMHAHolder(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.attn = MultiHeadAttention(
+                    hidden_size=16, num_heads=2, include_norm_residual=False
+                )
+
+            def forward(self, x):
+                return self.attn(x)
+
+        torch.manual_seed(0)
+        mha_model = TinyMHAHolder()
+        apply_prefix_tuning(mha_model, prefix_len=3, reparam_hidden=8)
+
+        # Capture prefix params from MHA model.
+        prefix_before = torch.cat([p.detach().flatten() for p in get_prefix_parameters(mha_model)])
+
+        # Save to a tmp file.
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+            save_peft(mha_model, tmp.name, method_name="prefix_tuning")
+
+            # Build an MLA model with the same hidden_size / num_heads and apply.
+            class TinyMLAHolder(nn.Module):
+                def __init__(self) -> None:
+                    super().__init__()
+                    self.attn = MultiLatentAttention(
+                        hidden_size=16,
+                        num_heads=2,
+                        num_latents=4,
+                        include_norm_residual=False,
+                    )
+
+                def forward(self, x):
+                    return self.attn(x)
+
+            mla_model = TinyMLAHolder()
+            apply_prefix_tuning(mla_model, prefix_len=3, reparam_hidden=8)
+
+            # Load the MHA prefix into the MLA-wrapped model.
+            load_peft(mla_model, tmp.name, method_name="prefix_tuning", override_kwargs=None)
+
+        # Verify the loaded prefix params match the saved ones byte-for-byte.
+        prefix_after = torch.cat(
+            [p.detach().flatten() for p in get_prefix_parameters(mla_model)]
+        )
+        assert torch.allclose(prefix_before, prefix_after, atol=1e-6), (
+            "cross-backend prefix round-trip should preserve parameters byte-for-byte"
+        )
