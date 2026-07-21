@@ -264,6 +264,8 @@ def test_mla_kv_cache_and_paged_kv_cache_mutually_exclusive():
         head_dim=head_dim,
         num_blocks=4,
         block_size=4,
+        device="cpu",
+        dtype=torch.float32,
     )
 
     with pytest.raises(ValueError, match="Pass either kv_cache or paged_kv_cache"):
@@ -412,6 +414,8 @@ def test_mla_paged_kv_cache_requires_layer_idx_and_batch_indices():
         head_dim=head_dim,
         num_blocks=4,
         block_size=4,
+        device="cpu",
+        dtype=torch.float32,
     )
     x = torch.randn(1, 1, hidden_size)
 
