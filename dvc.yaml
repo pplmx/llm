@@ -1,0 +1,42 @@
+# DVC pipeline for data versioning (P0 预训练 productization).
+#
+# The streaming pretraining pipeline produces two kinds of large data
+# artifacts that benefit from being versioned OUTSIDE of git:
+#
+#   1. **Raw corpora** downloaded from HuggingFace (e.g. C4, The Pile,
+#      RedPajama). Residing under ``data/<name>/`` after the
+#      ``prepare_<name>`` stage downloads them.
+#   2. **Dedup state** files written by the ``DedupTextSource`` wrapper
+#      (see :mod:`llm.data.sources`). ``seen_hashes_path`` files grow
+#      monotonically with every seen record and can reach GB-scale.
+#
+# Run ``uv sync --group dvc`` first to install DVC, then ``dvc init``
+# (or :func:`llm.data.dvc.init_dvc`) once at the repo root. The
+# Python API in :mod:`llm.data.dvc` is the supported way to register
+# artifacts; this ``dvc.yaml`` is the entry point users extend with
+# their own stages.
+#
+# This file is intentionally minimal — it documents the integration
+# points without prescribing a specific pipeline. Users adapting it to
+# their corpus should:
+#
+#   - Add a ``vars:`` block at the top with ``data_fingerprint`` /
+#     ``dedup_algo`` so fingerprint changes auto-trigger re-runs.
+#   - Add concrete ``stages:`` entries with ``cmd:`` populated.
+#   - Configure a remote with ``dvc remote add storage <url>`` +
+#     ``dvc remote default storage`` (the :func:`llm.data.dvc.init_dvc`
+#     helper does both in one call).
+#
+# Why no concrete stages? Because the dataset acquisition and dedup
+# commands are environment-specific (HuggingFace token, cache dir,
+# disk layout). Encoding them in this file would lock the project to
+# one specific pipeline.
+
+stages:
+  track_dummy_corpus:
+    desc: >-
+      Track the demo corpus as a versioned DVC artifact. This stage
+      is a no-op template — running it just records the file's hash so
+      a user can verify the DVC install works end-to-end.
+    outs:
+      - data/dummy_corpus.txt

@@ -1,0 +1,39 @@
+# .dvcignore — tell DVC which paths to skip during ``dvc add`` /
+# ``dvc repro``. Anything NOT listed here is fair game for DVC; this
+# list keeps the hot paths out of the cache.
+#
+# Python / build / venv — nothing here is data, ever.
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+*.egg-info/
+
+# Test outputs — CI artifacts, never data.
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.lcov
+coverage.xml
+allure-results/
+
+# Local docs build output.
+site/
+
+# DVC's own cache + bookkeeping. The cache is regenerated on every
+# ``dvc add``; the bookkeeping is per-run. Excluding both keeps the
+# repo's working tree clean.
+.dvc/cache/
+.dvc/tmp/
+.dvc/jobs/
+.dvc/lock
+
+# Large per-run training state. NOT a data artifact — but easy to
+# confuse with one when scanning the tree. Explicitly out.
+checkpoints/
+results/
+*.log
+core.*
+*.lck

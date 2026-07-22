@@ -76,6 +76,9 @@ logging = [
 streaming = [
     "datasets>=3.0.0",
 ]
+dvc = [
+    "dvc>=3.0",
+]
 docs = [
     "mkdocs-material>=9.7.0",
     # mkdocstrings auto-generates API reference pages from docstrings.
@@ -123,6 +126,16 @@ compat = [
     "huggingface_hub>=0.20.0",
     "pillow>=12.3.0",  # bumped: 18 CVEs (PYSEC-2026-2253/4/5/6/7, -3451/2/3, CVE-2026-54058/59197/59198/59200/59204) fix in 12.3.0
     "safetensors>=0.4.0",
+]
+# Optional data-versioning backend (DVC, P0 预训练 productization last item).
+# Without ``dvc`` installed the helpers in :mod:`llm.data.dvc` degrade to
+# no-ops with a clear warning — the streaming pipeline still works, but
+# large data artifacts (downloaded corpora, ``seen_hashes_path`` files,
+# preprocessed token caches) are not versioned. Install with
+# ``uv sync --group dvc`` to enable. ``dvc[s3]`` adds S3/GCS/Azure remote
+# support; the default local-file remote needs nothing extra.
+dvc = [
+    "dvc>=3.0",
 ]
 streaming = [
     "datasets>=3.0.0",
