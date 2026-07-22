@@ -88,3 +88,67 @@ def test_target_modules_filters_correctly():
     assert isinstance(fc1_layer, GPTQQuantizedLinear)
     assert isinstance(fc2_layer, nn.Linear)
     assert not isinstance(fc2_layer, GPTQQuantizedLinear)
+
+
+def test_quantize_model_with_collector_works():
+    """quantize_model_with_collector reuses any iterator-yielding collector."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_with_collector
+
+    # Duck-typed collector (matches CalibrationDataCollector protocol: __iter__)
+    class MockCollector:
+        def __init__(self, batches):
+            self.batches = batches
+
+        def __iter__(self):
+            return iter(self.batches)
+
+    model = TwoLayerMLP(hidden=16)
+    batches = [torch.randn(8, 16) for _ in range(3)]
+    collector = MockCollector(batches)
+
+    quantized = quantize_model_with_collector(model, collector, n_samples=3, config=GPTQConfig())
+
+    gptq_count = sum(1 for _ in quantized.modules() if isinstance(_, GPTQQuantizedLinear))
+    assert gptq_count == 2
+
+
+def test_quantize_model_with_collector_respects_n_samples():
+    """n_samples caps how many batches are consumed from the collector."""
+    from llm.quantization.gptq import GPTQConfig, quantize_model_with_collector
+
+    yielded = {"count": 0}
+
+    def collector():
+        for b in [torch.randn(8, 16) for _ in range(5)]:
+            yielded["count"] += 1
+            yield b
+
+    model = TwoLayerMLP(hidden=16)
+    quantize_model_with_collector(model, collector(), n_samples=2, config=GPTQConfig())
+
+    # Only the first 2 batches should have been pulled from the generator.
+    assert yielded["count"] == 2, f"Expected 2 batches consumed, got {yielded['count']}"
+
+
+def test_quantize_model_with_collector_propagates_target_modules():
+    """target_modules filter is forwarded to quantize_model_gptq."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_with_collector
+
+    class MockCollector:
+        def __init__(self, batches):
+            self.batches = batches
+
+        def __iter__(self):
+            return iter(self.batches)
+
+    model = TwoLayerMLP(hidden=16)
+    collector = MockCollector([torch.randn(8, 16) for _ in range(2)])
+
+    quantized = quantize_model_with_collector(
+        model, collector, n_samples=2, config=GPTQConfig(), target_modules=["fc1"]
+    )
+
+    assert isinstance(quantized.fc1, GPTQQuantizedLinear)
+    assert isinstance(quantized.fc2, nn.Linear)

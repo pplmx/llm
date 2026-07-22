@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from llm.quantization.calibration import CalibrationDataCollector
 from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
 
 logger = logging.getLogger(__name__)
@@ -483,3 +484,55 @@ def quantize_model_gptq(
         logger.info(f"Quantized layer {name}: {layer.weight.shape} → 4-bit packed")
 
     return model
+
+
+def quantize_model_with_collector(
+    model: nn.Module,
+    collector: CalibrationDataCollector | Iterable[torch.Tensor],
+    n_samples: int,
+    config: GPTQConfig | None = None,
+    target_modules: Iterable[str] | None = None,
+    device: torch.device | str | None = None,
+) -> nn.Module:
+    """Quantize a model using an existing CalibrationDataCollector.
+
+    Trainer-loop entry point: reuse the same calibration batches already
+    collected during training (e.g. for activation stats). Materializes
+    up to `n_samples` batches, then funnels into `quantize_model_gptq`.
+
+    Args:
+        model: nn.Module to quantize.
+        collector: CalibrationDataCollector (or any iterable yielding Tensor
+            batches). Up to `n_samples` batches are consumed.
+        n_samples: Maximum number of batches to use for calibration.
+        config: GPTQConfig (default: 4-bit, group_size=128, symmetric).
+        target_modules: Optional layer-name filter forwarded to
+            `quantize_model_gptq`.
+        device: Target device forwarded to `quantize_model_gptq`.
+
+    Returns:
+        The quantized model (same instance as `model`, with nn.Linear replaced).
+
+    Raises:
+        ValueError: Forwarded from `quantize_model_gptq` (no nn.Linear,
+            unmatched target_modules, etc.).
+    """
+    if n_samples <= 0:
+        raise ValueError(f"n_samples must be positive, got {n_samples}.")
+
+    # Materialize up to n_samples batches from the collector. We stop early
+    # so collectors backed by expensive iterators (e.g. dataset streams)
+    # don't pull more data than needed.
+    batches: list[torch.Tensor] = []
+    for i, batch in enumerate(collector):
+        batches.append(batch)
+        if i + 1 >= n_samples:
+            break
+
+    return quantize_model_gptq(
+        model,
+        calib_iter=iter(batches),
+        config=config,
+        target_modules=target_modules,
+        device=device,
+    )
