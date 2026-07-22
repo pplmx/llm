@@ -161,7 +161,7 @@ class GPTQQuantizer:
         # If most columns are dead (no variance in calibration), low damping
         # leaves the live columns effectively unscaled relative to the dead
         # ones (which dead-handling set to 1.0). Reject and tell the user.
-        if n_dead > self.in_features // 2 and damp < 0.1:
+        if n_dead > self.in_features // 2 and damp < 0.25:
             raise RuntimeError(
                 f"Hessian is rank-deficient ({n_dead}/{self.in_features} "
                 f"columns have zero variance). Damping (percdamp="
@@ -185,6 +185,10 @@ class GPTQQuantizer:
             w = w[:, perm]
             h_inv = h_inv[perm][:, perm]
 
+        # Asymmetric not yet implemented — fail fast before entering column loop
+        if not self.config.sym:
+            raise NotImplementedError("Asymmetric GPTQ not yet implemented. Use sym=True.")
+
         # Compute per-row scale ONCE for per-channel (group_size=-1).
         # Canonical GPTQ (Frantar 2022, eq. 5): scale = w.abs().max() / qmax.
         qmax = 2 ** (self.config.bits - 1) - 1
@@ -204,24 +208,27 @@ class GPTQQuantizer:
             err1 = torch.zeros_like(w1)
             hinv1 = h_inv[i:i_end, i:i_end]
 
+            # Per-group scale cache: skip recomputation within the same group
+            cached_group_idx: int | None = None
+            cached_scale: torch.Tensor | None = None
+
             for j in range(count):
                 col = w1[:, j]
                 d = hinv1[j, j]
 
-                # Symmetric only for v1
-                if not self.config.sym:
-                    raise NotImplementedError("Asymmetric GPTQ not yet implemented. Use sym=True.")
-
                 if self.config.group_size == -1:
                     scale = row_scales  # [out_f], same for all columns
                 else:
-                    # Per-group scale: compute from group window of w
+                    # Per-group scale: cache by group_idx to avoid redundant .abs().max()
                     gs = self.config.group_size
-                    group_start = ((i + j) // gs) * gs
-                    group_end = group_start + gs
-                    w_group = w[:, group_start:group_end]
-                    scale = w_group.abs().max() / qmax
-                    scale = scale.clamp(min=1e-8)
+                    group_idx = (i + j) // gs
+                    if group_idx != cached_group_idx:
+                        group_start = group_idx * gs
+                        group_end = group_start + gs
+                        w_group = w[:, group_start:group_end]
+                        cached_scale = (w_group.abs().max() / qmax).clamp(min=1e-8)
+                        cached_group_idx = group_idx
+                    scale = cached_scale
 
                 # Quantize to INTEGER (clamped to symmetric range)
                 q_int = torch.round(col / scale).clamp(-qmax - 1, qmax)
@@ -235,9 +242,7 @@ class GPTQQuantizer:
                 # match the canonical formula exactly.
                 err = (col - q_int * scale) / d
                 if j + 1 < count:
-                    hinv_col = hinv1[j, j + 1 :]
-                    if hinv_col.shape[0] > 0:
-                        w1[:, j + 1 :] -= err.unsqueeze(1) * hinv_col.unsqueeze(0)
+                    w1[:, j + 1 :] -= err.unsqueeze(1) * hinv1[j, j + 1 :].unsqueeze(0)
 
                 err1[:, j] = err
 
