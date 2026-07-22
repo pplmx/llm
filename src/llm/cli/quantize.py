@@ -34,7 +34,6 @@ Exit codes:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -42,10 +41,7 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
     add_completion=False,
-    help=(
-        "Model quantization CLI. Currently supports `gptq` "
-        "(Frantar 2022, Hessian-aware 4-bit / 8-bit)."
-    ),
+    help=("Model quantization CLI. Currently supports `gptq` (Frantar 2022, Hessian-aware 4-bit / 8-bit)."),
 )
 
 
@@ -62,7 +58,7 @@ def _root_callback() -> None:
     """
 
 
-def _die(message: str) -> "typer.Exit":
+def _die(message: str) -> typer.Exit:
     """Print a one-line error to stderr and exit 1.
 
     Used for argument validation errors that should never reach the
@@ -73,9 +69,9 @@ def _die(message: str) -> "typer.Exit":
 
 
 def _validate_calib_inputs(
-    calib_data: Optional[Path],
-    calib_data_tokens: Optional[Path],
-    tokenizer: Optional[Path],
+    calib_data: Path | None,
+    calib_data_tokens: Path | None,
+    tokenizer: Path | None,
 ) -> None:
     """Reject mutually-exclusive / missing calibration inputs.
 
@@ -85,10 +81,7 @@ def _validate_calib_inputs(
     - ``--calib-data`` requires ``--tokenizer`` (raw text needs tokenization).
     """
     if calib_data is not None and calib_data_tokens is not None:
-        _die(
-            "--calib-data and --calib-data-tokens are mutually exclusive. "
-            "Choose one calibration source."
-        )
+        _die("--calib-data and --calib-data-tokens are mutually exclusive. Choose one calibration source.")
     if calib_data is None and calib_data_tokens is None:
         _die(
             "must supply calibration data via either --calib-data "
@@ -127,28 +120,23 @@ def _validate_quant_params(
     config itself re-validates at construction as a defense-in-depth.
     """
     if bits not in (4, 8):
-        _die(
-            f"--bits must be 4 or 8 (GPTQ supports these two widths); got {bits}."
-        )
+        _die(f"--bits must be 4 or 8 (GPTQ supports these two widths); got {bits}.")
     if group_size != -1 and group_size <= 0:
-        _die(
-            f"--group-size must be -1 (per-channel) or positive; got {group_size}."
-        )
+        _die(f"--group-size must be -1 (per-channel) or positive; got {group_size}.")
     if not (0.0 < percdamp < 1.0):
         _die(f"--percdamp must be in (0, 1); got {percdamp}.")
     if blocksize <= 0:
         _die(f"--blocksize must be positive; got {blocksize}.")
     if group_size > 0 and blocksize % group_size != 0:
         _die(
-            f"--blocksize ({blocksize}) must be divisible by "
-            f"--group-size ({group_size}) for correct packing alignment."
+            f"--blocksize ({blocksize}) must be divisible by --group-size ({group_size}) for correct packing alignment."
         )
 
 
 def _load_calibration_batches(
-    calib_data: Optional[Path],
-    calib_data_tokens: Optional[Path],
-    tokenizer: Optional[Path],
+    calib_data: Path | None,
+    calib_data_tokens: Path | None,
+    tokenizer: Path | None,
 ) -> list:
     """Materialize calibration batches from the chosen source.
 
@@ -185,7 +173,7 @@ def _load_calibration_batches(
     return loaded
 
 
-def _resolve_target_modules(target_modules: Optional[str]) -> Optional[list[str]]:
+def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
     """Parse the comma-separated ``--target-modules`` flag into a list.
 
     Empty / whitespace-only entries are dropped. ``None`` (the default)
@@ -209,18 +197,17 @@ def gptq(
         "--output",
         help="Output path for quantized model (torch.save blob).",
     ),
-    calib_data: Optional[Path] = typer.Option(
+    calib_data: Path | None = typer.Option(
         None,
         "--calib-data",
         help="Path to raw text file (one sample per line). Requires --tokenizer.",
     ),
-    calib_data_tokens: Optional[Path] = typer.Option(
+    calib_data_tokens: Path | None = typer.Option(
         None,
         "--calib-data-tokens",
-        help="Path to pre-tokenized .pt file (tensor or list of tensors). "
-        "Mutually exclusive with --calib-data.",
+        help="Path to pre-tokenized .pt file (tensor or list of tensors). Mutually exclusive with --calib-data.",
     ),
-    tokenizer: Optional[Path] = typer.Option(
+    tokenizer: Path | None = typer.Option(
         None,
         "--tokenizer",
         help="Path to HF tokenizer (required when --calib-data is set).",
@@ -255,7 +242,7 @@ def gptq(
         "--act-order/--no-act-order",
         help="Sort weight columns by diag(H) descending (better accuracy, slower).",
     ),
-    target_modules: Optional[str] = typer.Option(
+    target_modules: str | None = typer.Option(
         None,
         "--target-modules",
         help="Comma-separated layer names to quantize (default: all nn.Linear).",
