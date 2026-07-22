@@ -389,7 +389,7 @@
 
 #### 13.3 高级量化技术
 
-- [ ] 集成 GPTQ (GPT Quantization)
+- [x] **集成 GPTQ** (Frantar 2022): `src/llm/quantization/gptq.py` (算法 + 双入口) + `_gptq_layer.py` (真打包 4-bit，2 weights/byte int8) + 公共 API 导出；支持 `bits ∈ {4,8}` / `group_size ∈ {-1,128,...}` / `sym` / `percdamp` / `blocksize` / `act_order` / `target_modules`；54 unit + e2e tests；零回归对现有 simple-PTQ；ADR-007；AWQ / SmoothQuant / GGUF 留待后续切片
 - [ ] 集成 AWQ (Activation-aware Weight Quantization)
 - [ ] 集成 SmoothQuant
 - [ ] 研究 GGML/GGUF 格式支持
