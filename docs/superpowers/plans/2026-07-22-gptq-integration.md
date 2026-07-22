@@ -307,21 +307,25 @@ def test_add_batch_accumulates_hessian_correctly():
 
 
 def test_add_batch_matches_one_shot():
-    """Multi-batch accumulate equals single concatenated add_batch."""
+    """Multi-batch accumulate equals single concatenated add_batch (same data)."""
     from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
 
+    torch.manual_seed(0)
     in_features = 6
     layer = nn.Linear(in_features, 4, bias=False)
     cfg = GPTQConfig()
 
-    # Multi-batch
-    q1 = GPTQQuantizer(layer, cfg)
-    q1.add_batch(torch.randn(5, in_features))
-    q1.add_batch(torch.randn(7, in_features))
+    chunk_a = torch.randn(5, in_features)
+    chunk_b = torch.randn(7, in_features)
 
-    # Single-shot
+    # Multi-batch (using same data)
+    q1 = GPTQQuantizer(layer, cfg)
+    q1.add_batch(chunk_a)
+    q1.add_batch(chunk_b)
+
+    # Single-shot (cat of same data)
     q2 = GPTQQuantizer(layer, cfg)
-    q2.add_batch(torch.randn(12, in_features))
+    q2.add_batch(torch.cat([chunk_a, chunk_b], dim=0))
 
     assert torch.allclose(q1.H, q2.H, atol=1e-5)
     assert q1.n_samples == q2.n_samples == 12
@@ -371,6 +375,11 @@ class GPTQQuantizer:
     def add_batch(self, x: torch.Tensor) -> None:
         """Accumulate Hessian contribution from a calibration batch.
 
+        Maintains the invariant H == (2 / N_total) · Σ X_b^T X_b so that
+        multiple mini-batches produce the same H as a single concatenated
+        add_batch (Frantar 2022, eq. 3). Uses the canonical EMA-style
+        rescale: H_new = (N_old / N_new) · H_old + (2 / N_new) · X^T X.
+
         Args:
             x: Input activations to `self.layer`, shape [..., in_features].
                Will be flattened to [N, in_features] internally.
@@ -384,9 +393,12 @@ class GPTQQuantizer:
         if n == 0:
             return
 
-        # H += (2/N) · X^T X  (Frantar 2022, eq. 3)
-        self.H += (2.0 / n) * (x.t() @ x)
-        self.n_samples += n
+        new_total = self.n_samples + n
+        # Rescale previous contribution to its raw Σ X^T X form, then
+        # re-apply the (2 / N_new) factor on the new total.
+        self.H *= self.n_samples / new_total
+        self.n_samples = new_total
+        self.H += (2.0 / new_total) * (x.t() @ x)
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
