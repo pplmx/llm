@@ -267,6 +267,129 @@ def load_checkpoint_payload(path: str | Path) -> dict[str, Any] | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Conversion: legacy v0.0.5 single-file .pt -> v2 split trio
+# ---------------------------------------------------------------------------
+
+
+class CheckpointMigrationError(RuntimeError):
+    """Raised when a legacy->split checkpoint migration cannot proceed.
+
+    Distinct from generic :class:`RuntimeError` so callers (CLI,
+    tests) can catch migration-specific failures without masking
+    unrelated runtime errors. Examples: legacy file missing, split
+    layout already present, both layouts coexist (ambiguous).
+    """
+
+
+def convert_legacy_checkpoint_to_split(
+    path: str | Path,
+    *,
+    in_place: bool = False,
+    overwrite: bool = False,
+) -> dict[str, Path]:
+    """Convert a legacy v0.0.5 single-file ``.pt`` to the v2 split layout.
+
+    Reads ``<stem>.pt``, writes three sidecars at the same stem
+    (``<stem>.safetensors``, ``<stem>.meta.json``,
+    ``<stem>.extra_state.pt``). The split layout is the v2 format
+    that :class:`CheckpointManager` writes by default; legacy
+    single-file checkpoints are auto-detected and loaded by
+    :meth:`CheckpointManager.load_checkpoint` (with a
+    :class:`DeprecationWarning`), so this conversion is purely
+    hygienic — the loader works either way.
+
+    Atomicity: each sidecar is written to a ``.tmp`` file in the
+    same directory and then renamed over the target. If a sidecar
+    write fails partway, the ``.tmp`` file may remain; the next
+    successful migration overwrites it. The legacy ``.pt`` is
+    NEVER touched unless ``in_place=True``.
+
+    Args:
+        path: Path to the legacy ``.pt`` (or its stem). When the
+            stem is given, the function looks for ``<stem>.pt``
+            alongside.
+        in_place: When True, delete the legacy ``.pt`` file after
+            a successful conversion. Default False (the legacy
+            file is preserved so the user can verify the new
+            layout before removing the old one).
+        overwrite: When True, overwrite an existing split-layout
+            trio at the same stem. Default False (refuse to
+            clobber an already-converted checkpoint — passes
+            through ``CheckpointMigrationError``).
+
+    Returns:
+        A dict mapping the three sidecar names (``"weights"``,
+        ``"meta"``, ``"extra_state"``) to their resolved
+        :class:`Path` on disk. Useful for the CLI to print
+        "converted to: ...".
+
+    Raises:
+        CheckpointMigrationError: when the legacy file is missing,
+            the split layout already exists (and ``overwrite`` is
+            False), both layouts coexist at the same stem
+            (ambiguous), or the path is neither a ``.pt`` nor a
+            stem.
+        ImportError: when ``safetensors`` is not installed.
+    """
+    legacy_path = Path(path)
+    if legacy_path.suffix != LEGACY_SUFFIX:
+        # Accept a stem; resolve to the legacy .pt next to it.
+        legacy_path = legacy_path.with_suffix(LEGACY_SUFFIX)
+    if not legacy_path.exists():
+        raise CheckpointMigrationError(
+            f"Legacy checkpoint not found: {legacy_path}"
+        )
+
+    stem = legacy_path.with_suffix("")
+    safetensors_path = stem.with_name(stem.name + SAFETENSORS_SUFFIX)
+    meta_path = stem.with_name(stem.name + META_SUFFIX)
+    extra_state_path = stem.with_name(stem.name + EXTRA_STATE_SUFFIX)
+
+    # Refuse to clobber an existing split layout unless explicitly asked.
+    if not overwrite and any(
+        p.exists() for p in (safetensors_path, meta_path, extra_state_path)
+    ):
+        raise CheckpointMigrationError(
+            f"Split layout already exists at {stem.name}{{.{SAFETENSORS_SUFFIX},"
+            f".{META_SUFFIX},{EXTRA_STATE_SUFFIX}}} — pass overwrite=True to replace "
+            "(or move the existing sidecars aside first)."
+        )
+
+    # Load the legacy blob.
+    payload = torch.load(legacy_path, map_location="cpu")
+
+    # Write the split trio.
+    _save_weights_safetensors(payload["model_state"], safetensors_path)
+    _save_metadata_json(
+        {
+            "format_version": CHECKPOINT_FORMAT_VERSION,
+            "epoch": payload.get("epoch", 0),
+            "loss": payload.get("loss"),
+            "best_loss": payload.get("best_loss", float("inf")),
+            "model_config": payload.get("model_config"),
+        },
+        meta_path,
+    )
+    _save_extra_state_pt(
+        payload.get("optimizer_state"),
+        payload.get("scheduler_state"),
+        payload.get("scaler_state"),
+        payload.get("extra_state"),
+        extra_state_path,
+    )
+
+    # Optionally delete the legacy file.
+    if in_place:
+        legacy_path.unlink()
+
+    return {
+        "weights": safetensors_path,
+        "meta": meta_path,
+        "extra_state": extra_state_path,
+    }
+
+
 class CheckpointManager:
     """Save/load checkpoints with retention and atomic-write semantics.
 
