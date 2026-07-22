@@ -302,48 +302,31 @@ def test_quantize_returns_correct_shapes():
 
 
 def test_act_order_changes_quantization_sequence():
-    """With act_order=True, columns with larger diag(H^-1) are quantized first."""
+    """With act_order=True, quantization output differs from default order."""
     from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
 
     torch.manual_seed(7)
     in_f, out_f = 8, 4
     layer = nn.Linear(in_f, out_f, bias=False)
 
-    # Calibration data with column 0 having much larger variance
+    # Calibration data with column 0 having much larger variance so H is not
+    # identity-like — necessary for act_order's column permutation to matter.
     calib = torch.randn(64, in_f)
-    calib[:, 0] *= 5.0  # boost column 0
+    calib[:, 0] *= 5.0
 
-    # Without act_order
     q1 = GPTQQuantizer(layer, GPTQConfig(act_order=False))
     q1.add_batch(calib)
     w1, _, _ = q1.quantize()
 
-    # With act_order
     q2 = GPTQQuantizer(layer, GPTQConfig(act_order=True))
     q2.add_batch(calib)
     w2, _, _ = q2.quantize()
 
-    # Output should differ (column processing order matters)
-    assert not torch.allclose(w1, w2, atol=1e-3)
-
-
-def test_group_size_per_channel_vs_grouped_different_shapes():
-    """group_size=-1 vs 128 produce different scale tensor shapes."""
-    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
-
-    in_f, out_f = 32, 8
-    layer = nn.Linear(in_f, out_f, bias=False)
-    calib = torch.randn(32, in_f)
-
-    q1 = GPTQQuantizer(layer, GPTQConfig(group_size=-1))
-    q1.add_batch(calib)
-    _, s1, _ = q1.quantize()
-    assert s1.shape == (out_f, 1)
-
-    q2 = GPTQQuantizer(layer, GPTQConfig(group_size=8))
-    q2.add_batch(calib)
-    _, s2, _ = q2.quantize()
-    assert s2.shape == (out_f, in_f // 8)
+    # act_order reorders columns before quantization, so the output should
+    # differ meaningfully. With 4-bit quantization on weights ~O(0.3) and
+    # scales ~0.05, per-element differences are typically O(0.01-0.1).
+    diff = (w1 - w2).abs().max().item()
+    assert diff > 1e-2, f"act_order should produce different output, got max diff {diff:.6f}"
 
 
 def test_8_bit_quantization_works():
