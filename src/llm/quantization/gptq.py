@@ -7,12 +7,6 @@ the simple-PTQ path in `ptq.py`.
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Iterator
-
-import torch
-import torch.nn as nn
-
-from llm.quantization.calibration import CalibrationDataCollector
 
 logger = logging.getLogger(__name__)
 
