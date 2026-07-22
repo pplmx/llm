@@ -186,6 +186,7 @@ torchscript = "llm.export.torchscript:build_torchscript_exporter"
 llm-train = "llm.training.train:app"
 llm-serve = "llm.serving.api:main"
 llm-migrate-ckpt = "llm.cli.migrate_ckpt:app"
+llm-quantize = "llm.cli.quantize:app"
 
 [project.urls]
 Documentation = "https://github.com/pplmx/llm#readme"
