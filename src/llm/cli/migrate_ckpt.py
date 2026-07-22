@@ -100,7 +100,10 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
         new_tensor = new_model_state[key]
         if hasattr(legacy_tensor, "shape") and hasattr(new_tensor, "shape"):
             if legacy_tensor.shape != new_tensor.shape:
-                return False, f"model_state[{key!r}] shape mismatch: {tuple(legacy_tensor.shape)} vs {tuple(new_tensor.shape)}"
+                return (
+                    False,
+                    f"model_state[{key!r}] shape mismatch: {tuple(legacy_tensor.shape)} vs {tuple(new_tensor.shape)}",
+                )
             # Use float comparison rather than exact equality — the
             # safetensors round-trip can introduce minor numeric drift
             # in fp16/bf16 tensors (the kernel uses a different

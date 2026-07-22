@@ -226,9 +226,7 @@ class TestStreamLMTaskEndToEnd:
         meta = json.loads((ckpt_dir / "epoch_1.meta.json").read_text())
         assert "epoch" in meta
         assert meta["epoch"] == 0  # last completed epoch (0-indexed)
-        extra_state_blob = torch.load(
-            ckpt_dir / "epoch_1.extra_state.pt", map_location="cpu", weights_only=False
-        )
+        extra_state_blob = torch.load(ckpt_dir / "epoch_1.extra_state.pt", map_location="cpu", weights_only=False)
         assert "optimizer_state" in extra_state_blob
         # The streaming data cursor lives in extra_state (per-shard
         # line_index). The first run consumed some records.
@@ -375,7 +373,5 @@ class TestStreamLMTaskEndToEnd:
 
         # The resumed run preserved the model state — epoch counter
         # advanced correctly (lives in the meta.json sidecar under v2).
-        second_meta = json.loads(
-            (second_ckpt_dir / "epoch_2.meta.json").read_text()
-        )
+        second_meta = json.loads((second_ckpt_dir / "epoch_2.meta.json").read_text())
         assert second_meta["epoch"] == 1  # 0-indexed, after second epoch

@@ -43,7 +43,6 @@ from llm.training.core.checkpoint import (
 from llm.training.core.config import CheckpointConfig
 from llm.training.core.utils import CheckpointManager, Logger, LoggingConfig
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -98,9 +97,7 @@ class TestSaveSplitFormat:
 
     def test_latest_split_writes_three_sidecars(self, checkpoint_manager, tmp_path: Path):
         ts = TensorState()
-        checkpoint_manager.save_checkpoint(
-            epoch=0, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=1.0
-        )
+        checkpoint_manager.save_checkpoint(epoch=0, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=1.0)
         ckpt_dir = tmp_path / "checkpoints"
         assert (ckpt_dir / f"latest{SAFETENSORS_SUFFIX}").exists()
         assert (ckpt_dir / f"latest{META_SUFFIX}").exists()
@@ -108,35 +105,25 @@ class TestSaveSplitFormat:
 
     def test_best_written_when_loss_improves(self, checkpoint_manager, tmp_path: Path):
         ts = TensorState()
-        checkpoint_manager.save_checkpoint(
-            epoch=0, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=1.0
-        )
+        checkpoint_manager.save_checkpoint(epoch=0, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=1.0)
         ckpt_dir = tmp_path / "checkpoints"
         assert (ckpt_dir / f"best{SAFETENSORS_SUFFIX}").exists()
         assert (ckpt_dir / f"best{META_SUFFIX}").exists()
         assert (ckpt_dir / f"best{EXTRA_STATE_SUFFIX}").exists()
 
-    def test_epoch_sidecars_only_when_interval_triggers(
-        self, checkpoint_manager, tmp_path: Path
-    ):
+    def test_epoch_sidecars_only_when_interval_triggers(self, checkpoint_manager, tmp_path: Path):
         # save_interval=10 → save_checkpoint for epoch 0 does NOT
         # write an epoch_<N> set; only `latest` and `best` go to disk.
         ts = TensorState()
-        checkpoint_manager.save_checkpoint(
-            epoch=0, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=1.0
-        )
+        checkpoint_manager.save_checkpoint(epoch=0, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=1.0)
         ckpt_dir = tmp_path / "checkpoints"
         assert not (ckpt_dir / "epoch_1.safetensors").exists()
         # Force the interval boundary: epoch 9 (the 10th call) triggers epoch_10.
         checkpoint_manager.config.save_interval = 1
-        checkpoint_manager.save_checkpoint(
-            epoch=9, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=0.5
-        )
+        checkpoint_manager.save_checkpoint(epoch=9, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=0.5)
         assert (ckpt_dir / "epoch_10.safetensors").exists()
 
-    def test_meta_json_carries_format_version_and_metadata(
-        self, checkpoint_manager, tmp_path: Path
-    ):
+    def test_meta_json_carries_format_version_and_metadata(self, checkpoint_manager, tmp_path: Path):
         ts = TensorState()
         checkpoint_manager.save_checkpoint(
             epoch=2,
@@ -154,9 +141,7 @@ class TestSaveSplitFormat:
         assert meta["loss"] == 0.42
         assert meta["model_config"]["vocab_size"] == 100
 
-    def test_extra_state_pt_carries_optimizer_and_extra_state(
-        self, checkpoint_manager, tmp_path: Path
-    ):
+    def test_extra_state_pt_carries_optimizer_and_extra_state(self, checkpoint_manager, tmp_path: Path):
         ts = TensorState()
         checkpoint_manager.save_checkpoint(
             epoch=0,
@@ -188,9 +173,7 @@ class TestLoadSplitFormat:
 
     def test_roundtrip_through_payload_helper(self, checkpoint_manager, tmp_path: Path):
         ts = TensorState()
-        checkpoint_manager.save_checkpoint(
-            epoch=0, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=1.0
-        )
+        checkpoint_manager.save_checkpoint(epoch=0, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=1.0)
         # Use the public helper. Pass the legacy ``.pt`` stem — the
         # helper auto-resolves to the split layout at the same stem.
         payload = load_checkpoint_payload(tmp_path / "checkpoints" / "latest.pt")
@@ -206,17 +189,18 @@ class TestLoadSplitFormat:
     def test_checkpoints_manager_loads_split_layout(self, checkpoint_manager, tmp_path: Path):
         ts = TensorState()
         checkpoint_manager.save_checkpoint(
-            epoch=3, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=0.5,
+            epoch=3,
+            model=ts,
+            optimizer=ts,
+            scheduler=ts,
+            scaler=ts,
+            loss=0.5,
             extra_state={"stream_data": {"0": {"line_index": 99}}},
         )
         # Pass the legacy ``.pt`` stem; the manager auto-resolves to
         # the split layout at the same stem.
-        checkpoint_manager.config.resume_from_checkpoint = str(
-            tmp_path / "checkpoints" / "latest.pt"
-        )
-        start_epoch, best_loss = checkpoint_manager.load_checkpoint(
-            ts, ts, ts, ts, device=torch.device("cpu")
-        )
+        checkpoint_manager.config.resume_from_checkpoint = str(tmp_path / "checkpoints" / "latest.pt")
+        start_epoch, best_loss = checkpoint_manager.load_checkpoint(ts, ts, ts, ts, device=torch.device("cpu"))
         assert start_epoch == 4
         assert best_loss == 0.5
         assert checkpoint_manager.loaded_extra_state["stream_data"]["0"]["line_index"] == 99

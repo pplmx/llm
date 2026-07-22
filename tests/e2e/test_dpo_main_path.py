@@ -192,9 +192,7 @@ class TestDPOTaskEndToEnd:
         assert (ckpt_dir / "epoch_1.extra_state.pt").exists()
 
         # The training-state sidecar must include optimizer state + epoch.
-        extra_state_blob = torch.load(
-            ckpt_dir / "epoch_1.extra_state.pt", map_location="cpu", weights_only=False
-        )
+        extra_state_blob = torch.load(ckpt_dir / "epoch_1.extra_state.pt", map_location="cpu", weights_only=False)
         assert "optimizer_state" in extra_state_blob
         # ``epoch`` lives in the .meta.json sidecar.
         meta = json.loads((ckpt_dir / "epoch_1.meta.json").read_text())
