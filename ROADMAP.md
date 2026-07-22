@@ -379,7 +379,7 @@
 
 - [x] 实现 INT8 PTQ
 - [x] 实现 INT4 PTQ
-- [ ] 支持混合精度量化
+- [x] 支持混合精度量化 (mixed-precision GPTQ via `LayerQuantPolicy`: `src/llm/quantization/_policy.py` 算法无关原子 policy + `GPTQConfig.layer_policies` 字段 + `quantize_model_gptq` per-layer dispatch; per-layer 4/8-bit 共存，user-driven 配置; ADR-008; 37 新 tests; 零回归对 simple-PTQ / 既有 GPTQ)
 
 #### 13.2 Quantization-Aware Training (QAT)
 
