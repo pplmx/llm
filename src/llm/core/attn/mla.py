@@ -294,24 +294,18 @@ class MultiLatentAttention(nn.Module):
             prefix_k, prefix_v = prefix_kv
             if prefix_k.shape != prefix_v.shape:
                 raise ValueError(
-                    f"prefix_k and prefix_v must share shape; "
-                    f"got {tuple(prefix_k.shape)} vs {tuple(prefix_v.shape)}"
+                    f"prefix_k and prefix_v must share shape; got {tuple(prefix_k.shape)} vs {tuple(prefix_v.shape)}"
                 )
             if prefix_k.shape[1] != self.num_kv_heads:
                 raise ValueError(
-                    f"prefix num_kv_heads ({prefix_k.shape[1]}) must match "
-                    f"attention num_kv_heads ({self.num_kv_heads})"
+                    f"prefix num_kv_heads ({prefix_k.shape[1]}) must match attention num_kv_heads ({self.num_kv_heads})"
                 )
             if prefix_k.shape[3] != self.head_dim:
                 raise ValueError(
-                    f"prefix head_dim ({prefix_k.shape[3]}) must match "
-                    f"attention head_dim ({self.head_dim})"
+                    f"prefix head_dim ({prefix_k.shape[3]}) must match attention head_dim ({self.head_dim})"
                 )
             if prefix_k.shape[0] != batch_size:
-                raise ValueError(
-                    f"prefix batch ({prefix_k.shape[0]}) must match "
-                    f"hidden_states batch ({batch_size})"
-                )
+                raise ValueError(f"prefix batch ({prefix_k.shape[0]}) must match hidden_states batch ({batch_size})")
             target_dtype = k.dtype
             if prefix_k.dtype != target_dtype:
                 prefix_k = prefix_k.to(target_dtype)
