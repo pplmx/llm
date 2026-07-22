@@ -39,11 +39,19 @@ def test_streaming_training_resume_preserves_data_cursor(tmp_path, tiny_config, 
     engine.run()
 
     checkpoint_path = tmp_path / "checkpoints" / "epoch_1.pt"
-    assert checkpoint_path.exists()
+    # v2 split layout — the legacy .pt is auto-resolved by the loader,
+    # but the on-disk layout is three sidecars at the same stem.
+    assert (tmp_path / "checkpoints" / "epoch_1.safetensors").exists()
+    assert (tmp_path / "checkpoints" / "epoch_1.extra_state.pt").exists()
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    assert "extra_state" in checkpoint
-    assert checkpoint["extra_state"]["stream_data"]["0"]["line_index"] > 0
+    # The streaming data cursor lives in the .extra_state.pt sidecar.
+    extra_state_blob = torch.load(
+        tmp_path / "checkpoints" / "epoch_1.extra_state.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    assert "extra_state" in extra_state_blob
+    assert extra_state_blob["extra_state"]["stream_data"]["0"]["line_index"] > 0
 
     resumed_module = StreamingTextDataModule(tiny_config)
     monkeypatch.setattr(resumed_module, "_load_tokenizer", lambda: line_tokenizer)

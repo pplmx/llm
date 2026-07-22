@@ -26,6 +26,7 @@ they construct real engines and run a handful of optimizer steps.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -165,8 +166,11 @@ class TestStreamingPresetConfigs:
         # Just one epoch at 5 steps — total ~5 optimizer steps.
         engine.run()
 
-        ckpt = tmp_path / "checkpoints" / "epoch_1.pt"
-        assert ckpt.exists()
+        # v2 split layout — three sidecars at the same stem.
+        ckpt_dir = tmp_path / "checkpoints"
+        assert (ckpt_dir / "epoch_1.safetensors").exists()
+        assert (ckpt_dir / "epoch_1.meta.json").exists()
+        assert (ckpt_dir / "epoch_1.extra_state.pt").exists()
 
     def test_c4_yaml_loads(self) -> None:
         """``configs/streaming_c4.yaml`` must reference C4 correctly."""
@@ -212,21 +216,24 @@ class TestStreamLMTaskEndToEnd:
         )
         engine.run()
 
-        # Checkpoint must exist at the configured path.
+        # Checkpoint must exist at the configured path (v2 split layout).
         ckpt_dir = Path(stream_lm_config.checkpoint.checkpoint_dir)
-        assert (ckpt_dir / "epoch_1.pt").exists()
+        assert (ckpt_dir / "epoch_1.safetensors").exists()
+        assert (ckpt_dir / "epoch_1.meta.json").exists()
+        assert (ckpt_dir / "epoch_1.extra_state.pt").exists()
 
-        # The checkpoint payload must include model + optimizer state
-        # + the streaming data cursor (so resume works).
-        ckpt = torch.load(ckpt_dir / "epoch_1.pt", map_location="cpu", weights_only=False)
-        assert "model_state" in ckpt
-        assert "optimizer_state" in ckpt
-        assert "epoch" in ckpt
-        assert ckpt["epoch"] == 0  # last completed epoch (0-indexed)
+        # The training-state sidecar must include optimizer state + epoch.
+        meta = json.loads((ckpt_dir / "epoch_1.meta.json").read_text())
+        assert "epoch" in meta
+        assert meta["epoch"] == 0  # last completed epoch (0-indexed)
+        extra_state_blob = torch.load(
+            ckpt_dir / "epoch_1.extra_state.pt", map_location="cpu", weights_only=False
+        )
+        assert "optimizer_state" in extra_state_blob
         # The streaming data cursor lives in extra_state (per-shard
         # line_index). The first run consumed some records.
-        assert "extra_state" in ckpt
-        assert "stream_data" in ckpt["extra_state"]
+        assert "extra_state" in extra_state_blob
+        assert "stream_data" in extra_state_blob["extra_state"]
 
     def test_stream_lm_loss_is_finite_and_decreasing(
         self,
@@ -323,11 +330,18 @@ class TestStreamLMTaskEndToEnd:
         )
         engine.run()
 
+        # v2 split layout — three sidecars at the same stem. Pass the
+        # legacy ``.pt`` stem to the resume path; the manager auto-
+        # resolves to the split layout at the same stem.
         ckpt_path = Path(stream_lm_config.checkpoint.checkpoint_dir) / "epoch_1.pt"
-        assert ckpt_path.exists()
+        assert (Path(stream_lm_config.checkpoint.checkpoint_dir) / "epoch_1.safetensors").exists()
 
         # Capture the data cursor after the first run.
-        first_ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        first_ckpt = torch.load(
+            Path(stream_lm_config.checkpoint.checkpoint_dir) / "epoch_1.extra_state.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
         first_cursor = first_ckpt["extra_state"]["stream_data"]
         assert first_cursor  # non-empty
 
@@ -353,11 +367,15 @@ class TestStreamLMTaskEndToEnd:
 
         engine2.run()
 
-        # Second-run checkpoint should also exist.
-        second_ckpt_path = Path(stream_lm_config.checkpoint.checkpoint_dir) / "epoch_2.pt"
-        assert second_ckpt_path.exists()
+        # Second-run checkpoint should also exist (split layout).
+        second_ckpt_dir = Path(stream_lm_config.checkpoint.checkpoint_dir)
+        assert (second_ckpt_dir / "epoch_2.safetensors").exists()
+        assert (second_ckpt_dir / "epoch_2.meta.json").exists()
+        assert (second_ckpt_dir / "epoch_2.extra_state.pt").exists()
 
         # The resumed run preserved the model state — epoch counter
-        # advanced correctly.
-        second_ckpt = torch.load(second_ckpt_path, map_location="cpu", weights_only=False)
-        assert second_ckpt["epoch"] == 1  # 0-indexed, after second epoch
+        # advanced correctly (lives in the meta.json sidecar under v2).
+        second_meta = json.loads(
+            (second_ckpt_dir / "epoch_2.meta.json").read_text()
+        )
+        assert second_meta["epoch"] == 1  # 0-indexed, after second epoch

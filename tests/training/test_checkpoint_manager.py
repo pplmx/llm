@@ -43,10 +43,12 @@ def test_save_checkpoint(checkpoint_manager):
         epoch=0, model=model, optimizer=optimizer, scheduler=scheduler, scaler=scaler, loss=1.0
     )
 
+    # v2 split layout: each checkpoint name writes three sidecars.
     ckpt_dir = Path(checkpoint_manager.config.checkpoint_dir)
-    assert (ckpt_dir / "latest.pt").exists()
-    assert (ckpt_dir / "epoch_1.pt").exists()
-    assert (ckpt_dir / "best.pt").exists()  # loss 1.0 < inf
+    for stem in ("latest", "epoch_1", "best"):
+        assert (ckpt_dir / f"{stem}.safetensors").exists()
+        assert (ckpt_dir / f"{stem}.meta.json").exists()
+        assert (ckpt_dir / f"{stem}.extra_state.pt").exists()
 
 
 def test_checkpoint_rotation(checkpoint_manager):
@@ -61,10 +63,14 @@ def test_checkpoint_rotation(checkpoint_manager):
     for i in range(3):
         checkpoint_manager.save_checkpoint(i, model, optimizer, scheduler, scaler, loss=1.0)
 
-    # Expect: epoch_2.pt, epoch_3.pt. epoch_1.pt should be deleted.
-    assert (ckpt_dir / "epoch_3.pt").exists()
-    assert (ckpt_dir / "epoch_2.pt").exists()
-    assert not (ckpt_dir / "epoch_1.pt").exists()
+    # Expect: epoch_2 and epoch_3 sidecars. epoch_1 sidecars should be deleted.
+    assert (ckpt_dir / "epoch_3.safetensors").exists()
+    assert (ckpt_dir / "epoch_3.meta.json").exists()
+    assert (ckpt_dir / "epoch_3.extra_state.pt").exists()
+    assert (ckpt_dir / "epoch_2.safetensors").exists()
+    assert not (ckpt_dir / "epoch_1.safetensors").exists()
+    assert not (ckpt_dir / "epoch_1.meta.json").exists()
+    assert not (ckpt_dir / "epoch_1.extra_state.pt").exists()
 
 
 def test_load_checkpoint_saves_extra_state(checkpoint_manager):
@@ -83,6 +89,9 @@ def test_load_checkpoint_saves_extra_state(checkpoint_manager):
         extra_state={"stream_data": {"0": {"line_index": 42, "token_buffer": [1, 2]}}},
     )
 
+    # Pass the legacy "latest.pt" path; the loader should resolve to
+    # the split layout (latest.safetensors + latest.meta.json +
+    # latest.extra_state.pt) when no legacy .pt exists at the path.
     checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
     _, best_loss = checkpoint_manager.load_checkpoint(model, optimizer, scheduler, scaler, device=torch.device("cpu"))
 
@@ -106,12 +115,13 @@ def test_save_checkpoint_includes_model_config(checkpoint_manager):
         model_config={"vocab_size": 100, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16},
     )
 
-    payload = torch.load(
-        Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt",
-        map_location="cpu",
-        weights_only=False,
-    )
-    assert payload["model_config"]["vocab_size"] == 100
+    # model_config lives in meta.json under the v2 layout.
+    import json
+
+    with (Path(checkpoint_manager.config.checkpoint_dir) / "latest.meta.json").open() as f:
+        meta = json.load(f)
+    assert meta["model_config"]["vocab_size"] == 100
+    assert meta["format_version"] == "2.0"
 
 
 def test_load_checkpoint(checkpoint_manager):
@@ -123,7 +133,8 @@ def test_load_checkpoint(checkpoint_manager):
 
     checkpoint_manager.save_checkpoint(0, model, optimizer, scheduler, scaler, loss=0.5)
 
-    # Enable resume
+    # Enable resume — pass the legacy .pt stem; the manager finds
+    # the split layout at the same stem.
     checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
 
     start_epoch, best_loss = checkpoint_manager.load_checkpoint(

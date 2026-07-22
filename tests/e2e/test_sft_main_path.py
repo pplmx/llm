@@ -177,15 +177,20 @@ class TestSFTTaskEndToEnd:
         )
         engine.run()
 
-        # Checkpoint must exist at the configured path.
+        # Checkpoint must exist at the configured path (v2 split layout).
         ckpt_dir = Path(sft_config.checkpoint.checkpoint_dir)
-        assert (ckpt_dir / "epoch_1.pt").exists()
+        assert (ckpt_dir / "epoch_1.safetensors").exists()
+        assert (ckpt_dir / "epoch_1.meta.json").exists()
+        assert (ckpt_dir / "epoch_1.extra_state.pt").exists()
 
-        # The checkpoint payload must include model + optimizer state.
-        ckpt = torch.load(ckpt_dir / "epoch_1.pt", map_location="cpu", weights_only=False)
-        assert "model_state" in ckpt
-        assert "optimizer_state" in ckpt
-        assert "epoch" in ckpt
+        # The training-state sidecar must include optimizer state + epoch.
+        extra_state_blob = torch.load(
+            ckpt_dir / "epoch_1.extra_state.pt", map_location="cpu", weights_only=False
+        )
+        assert "optimizer_state" in extra_state_blob
+        # ``epoch`` lives in the .meta.json sidecar.
+        meta = json.loads((ckpt_dir / "epoch_1.meta.json").read_text())
+        assert "epoch" in meta
 
     def test_sft_loss_is_finite(
         self,

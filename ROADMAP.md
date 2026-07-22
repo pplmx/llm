@@ -56,7 +56,7 @@
 - [x] ONNX 导出
 - [x] OpenAI 兼容 Serving API (LangChain/LlamaIndex 可直接对接 HTTP)
 - [x] safetensors **保存** (`compat/hf_publisher.save_pretrained`, shipped in #25)
-- [ ] checkpoint 格式统一 (训练 checkpoint 仍用 `torch.save`; 未来可拆 model weights → safetensors + 元数据 → pickle/json, 单独 slice)
+- [x] checkpoint 格式统一 (P1, v2 split layout: `model.safetensors` + `meta.json` + `extra_state.pt`, 保留 backward-compat loader, ADR-006)
 - [x] TorchScript 导出 (可扩 `export/` 模块, Tier 3 #33)
 - [x] Export registry (与 `BACKEND_REGISTRY` 对称, Tier 3 #32, 见 ADR-005)
 - [x] 发布预训练模型到 HuggingFace Hub (`compat/hf_publisher.push_to_hub`, shipped in #25)

@@ -28,9 +28,15 @@ def test_resume_training(tmp_path, tiny_config, device):
 
     engine.run()
 
-    assert (tmp_path / "checkpoints" / "epoch_1.pt").exists()
+    # v2 split layout: each checkpoint writes three sidecars. The
+    # legacy ``.pt`` extension is auto-resolved by the loader.
+    assert (tmp_path / "checkpoints" / "epoch_1.safetensors").exists()
+    assert (tmp_path / "checkpoints" / "epoch_1.meta.json").exists()
+    assert (tmp_path / "checkpoints" / "epoch_1.extra_state.pt").exists()
 
-    # 2. Resume Run: Train up to epoch 2
+    # 2. Resume Run: Train up to epoch 2. Pass the legacy ``.pt``
+    # path; the manager auto-resolves to the split layout at the
+    # same stem.
     tiny_config.training.epochs = 2
     tiny_config.checkpoint.resume_from_checkpoint = str(tmp_path / "checkpoints" / "epoch_1.pt")
 
@@ -46,4 +52,4 @@ def test_resume_training(tmp_path, tiny_config, device):
     # Since epoch 1 is skipped, it runs epoch 1 (0-indexed logic: range(start_epoch, epochs))
     # range(1, 2) -> runs epoch index 1 (which is "Epoch 2").
 
-    assert (tmp_path / "checkpoints" / "epoch_2.pt").exists()
+    assert (tmp_path / "checkpoints" / "epoch_2.safetensors").exists()
