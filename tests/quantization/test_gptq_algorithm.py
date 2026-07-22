@@ -347,7 +347,7 @@ def test_group_size_per_channel_vs_grouped_different_shapes():
 
 
 def test_8_bit_quantization_works():
-    """bits=8 also works and produces valid quantization."""
+    """bits=8 also works and produces tight reconstruction."""
     from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
 
     torch.manual_seed(11)
@@ -359,8 +359,11 @@ def test_8_bit_quantization_works():
 
     q = GPTQQuantizer(layer, GPTQConfig(bits=8, group_size=-1))
     q.add_batch(calib)
-    w_q, _scales, _zeros = q.quantize()
+    w_q, scales, _zeros = q.quantize()
     assert w_q.shape == (out_f, in_f)
-    # 8-bit integer range is [-128, 127]
-    assert w_q.min() >= -128
-    assert w_q.max() <= 127
+    # 8-bit symmetric quantization: scale ≈ abs_max / 127, so per-element
+    # quantization error ~scale/2. For Gaussian weights with std=0.3,
+    # expected weight-space MSE is ~1e-5, well below the 1e-2 threshold.
+    w_recon = w_q.float() * scales.float()
+    mse = ((layer.weight - w_recon) ** 2).mean().item()
+    assert mse < 1e-2, f"8-bit reconstruction MSE {mse:.6f} too high (expected <1e-2)"
