@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 import warnings
 from pathlib import Path
 from typing import Any
@@ -128,11 +127,7 @@ def _save_weights_safetensors(state_dict: dict[str, torch.Tensor], path: Path) -
     # view chains and to make the file truly standalone. Optimizer
     # state dicts (which contain ints for step counts, etc.) go into
     # the .extra_state.pt sidecar instead.
-    contiguous = {
-        k: v.detach().contiguous().clone()
-        for k, v in state_dict.items()
-        if isinstance(v, torch.Tensor)
-    }
+    contiguous = {k: v.detach().contiguous().clone() for k, v in state_dict.items() if isinstance(v, torch.Tensor)}
     tmp = path.with_suffix(path.suffix + ".tmp")
     save_file(contiguous, str(tmp))
     tmp.replace(path)
@@ -337,9 +332,7 @@ def convert_legacy_checkpoint_to_split(
         # Accept a stem; resolve to the legacy .pt next to it.
         legacy_path = legacy_path.with_suffix(LEGACY_SUFFIX)
     if not legacy_path.exists():
-        raise CheckpointMigrationError(
-            f"Legacy checkpoint not found: {legacy_path}"
-        )
+        raise CheckpointMigrationError(f"Legacy checkpoint not found: {legacy_path}")
 
     stem = legacy_path.with_suffix("")
     safetensors_path = stem.with_name(stem.name + SAFETENSORS_SUFFIX)
@@ -347,9 +340,7 @@ def convert_legacy_checkpoint_to_split(
     extra_state_path = stem.with_name(stem.name + EXTRA_STATE_SUFFIX)
 
     # Refuse to clobber an existing split layout unless explicitly asked.
-    if not overwrite and any(
-        p.exists() for p in (safetensors_path, meta_path, extra_state_path)
-    ):
+    if not overwrite and any(p.exists() for p in (safetensors_path, meta_path, extra_state_path)):
         raise CheckpointMigrationError(
             f"Split layout already exists at {stem.name}{{.{SAFETENSORS_SUFFIX},"
             f".{META_SUFFIX},{EXTRA_STATE_SUFFIX}}} — pass overwrite=True to replace "
@@ -564,15 +555,9 @@ class CheckpointManager:
         # (the v2 default). ``load_checkpoint_payload`` handles the
         # priority — legacy wins when the .pt exists, split otherwise.
         legacy_path, safetensors_path, meta_path, extra_state_path = _resolve_checkpoint_paths(ckp_path)
-        if not (
-            legacy_path.exists()
-            or safetensors_path.exists()
-            or meta_path.exists()
-            or extra_state_path.exists()
-        ):
+        if not (legacy_path.exists() or safetensors_path.exists() or meta_path.exists() or extra_state_path.exists()):
             self.logger.warning(
-                f"Checkpoint file not found: {ckp_path} (checked legacy + split layouts). "
-                "Starting from scratch."
+                f"Checkpoint file not found: {ckp_path} (checked legacy + split layouts). Starting from scratch."
             )
             return 0, float("inf")
 

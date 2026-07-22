@@ -40,6 +40,7 @@ import logging
 import os
 import shutil
 import subprocess
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -173,9 +174,7 @@ def init_dvc(
 
     result = _run_dvc_command(["init", "--quiet"], cwd=repo_root)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"dvc init failed in {repo_root}: {result.stderr.strip() or result.stdout.strip()}"
-        )
+        raise RuntimeError(f"dvc init failed in {repo_root}: {result.stderr.strip() or result.stdout.strip()}")
 
     if remote_url is not None:
         result = _run_dvc_command(
@@ -183,17 +182,13 @@ def init_dvc(
             cwd=repo_root,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                f"dvc remote add failed: {result.stderr.strip() or result.stdout.strip()}"
-            )
+            raise RuntimeError(f"dvc remote add failed: {result.stderr.strip() or result.stdout.strip()}")
         result = _run_dvc_command(
             ["remote", "default", remote_name],
             cwd=repo_root,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                f"dvc remote default failed: {result.stderr.strip() or result.stdout.strip()}"
-            )
+            raise RuntimeError(f"dvc remote default failed: {result.stderr.strip() or result.stdout.strip()}")
 
     logger.info("Initialized DVC repo at %s (remote=%s)", repo_root, remote_url or "<none>")
     return True
@@ -263,8 +258,7 @@ def dvc_add(
     """
     if not DVC_AVAILABLE:
         logger.warning(
-            "dvc_add(%s) skipped: DVC is not installed. "
-            "Install with `uv sync --group dvc` to enable data versioning.",
+            "dvc_add(%s) skipped: DVC is not installed. Install with `uv sync --group dvc` to enable data versioning.",
             path,
         )
         return None
@@ -272,8 +266,7 @@ def dvc_add(
     repo_root_path = Path(repo_root).resolve() if repo_root else Path.cwd()
     if not is_dvc_initialized(repo_root_path):
         raise RuntimeError(
-            f"DVC is not initialized at {repo_root_path}. "
-            "Call `init_dvc(repo_root, remote_url=...)` first."
+            f"DVC is not initialized at {repo_root_path}. Call `init_dvc(repo_root, remote_url=...)` first."
         )
 
     target = Path(path)
@@ -289,9 +282,7 @@ def dvc_add(
 
     result = _run_dvc_command(["add", str(target)], cwd=repo_root_path)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"dvc add {target} failed: {result.stderr.strip() or result.stdout.strip()}"
-        )
+        raise RuntimeError(f"dvc add {target} failed: {result.stderr.strip() or result.stdout.strip()}")
 
     return _build_metadata(target, repo_root_path, fingerprint)
 
@@ -301,12 +292,12 @@ def _build_metadata(
     repo_root: Path,
     fingerprint: dict[str, Any] | None,
 ) -> dict[str, str]:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     meta: dict[str, str] = {
         "path": str(target),
         "repo_root": str(repo_root),
-        "versioned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "versioned_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if fingerprint is not None:
         meta["fingerprint_hash"] = compute_fingerprint_hash(fingerprint)
@@ -321,16 +312,13 @@ def dvc_pull(path: Path | str, *, repo_root: Path | str | None = None) -> bool:
     :class:`RuntimeError` when the underlying ``dvc pull`` fails.
     """
     if not DVC_AVAILABLE:
-        logger.warning(
-            "dvc_pull(%s) skipped: DVC is not installed.", path
-        )
+        logger.warning("dvc_pull(%s) skipped: DVC is not installed.", path)
         return False
 
     repo_root_path = Path(repo_root).resolve() if repo_root else Path.cwd()
     if not is_dvc_initialized(repo_root_path):
         raise RuntimeError(
-            f"DVC is not initialized at {repo_root_path}. "
-            "Call `init_dvc(repo_root, remote_url=...)` first."
+            f"DVC is not initialized at {repo_root_path}. Call `init_dvc(repo_root, remote_url=...)` first."
         )
 
     target = Path(path)
@@ -339,9 +327,7 @@ def dvc_pull(path: Path | str, *, repo_root: Path | str | None = None) -> bool:
 
     result = _run_dvc_command(["pull", str(target)], cwd=repo_root_path)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"dvc pull {target} failed: {result.stderr.strip() or result.stdout.strip()}"
-        )
+        raise RuntimeError(f"dvc pull {target} failed: {result.stderr.strip() or result.stdout.strip()}")
     return True
 
 

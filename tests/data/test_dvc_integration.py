@@ -68,16 +68,10 @@ class TestComputeFingerprintHash:
         assert a == b
 
     def test_handles_nested_structures(self):
-        a = compute_fingerprint_hash(
-            {"type": "dedup", "inner": {"type": "local", "path": "/x"}, "algo": "sha256"}
-        )
-        b = compute_fingerprint_hash(
-            {"type": "dedup", "inner": {"type": "local", "path": "/x"}, "algo": "sha256"}
-        )
+        a = compute_fingerprint_hash({"type": "dedup", "inner": {"type": "local", "path": "/x"}, "algo": "sha256"})
+        b = compute_fingerprint_hash({"type": "dedup", "inner": {"type": "local", "path": "/x"}, "algo": "sha256"})
         assert a == b
-        c = compute_fingerprint_hash(
-            {"type": "dedup", "inner": {"type": "local", "path": "/x"}, "algo": "blake2"}
-        )
+        c = compute_fingerprint_hash({"type": "dedup", "inner": {"type": "local", "path": "/x"}, "algo": "blake2"})
         assert a != c
 
     def test_handles_non_json_native_via_default_str(self):

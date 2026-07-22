@@ -38,7 +38,6 @@ from llm.training.core.checkpoint import (
     load_checkpoint_payload,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -99,9 +98,7 @@ class TestConvertLegacyCheckpointToSplit:
         for p in result.values():
             assert p.exists()
 
-    def test_meta_json_carries_metadata_and_format_version(
-        self, legacy_checkpoint: Path
-    ):
+    def test_meta_json_carries_metadata_and_format_version(self, legacy_checkpoint: Path):
         result = convert_legacy_checkpoint_to_split(legacy_checkpoint)
         meta = json.loads(result["meta"].read_text())
         assert meta["format_version"] == "2.0"
@@ -110,24 +107,16 @@ class TestConvertLegacyCheckpointToSplit:
         assert meta["best_loss"] == 0.18
         assert meta["model_config"]["vocab_size"] == 100
 
-    def test_extra_state_carries_optimizer_and_extra_state(
-        self, legacy_checkpoint: Path
-    ):
+    def test_extra_state_carries_optimizer_and_extra_state(self, legacy_checkpoint: Path):
         result = convert_legacy_checkpoint_to_split(legacy_checkpoint)
-        blob = torch.load(
-            result["extra_state"], map_location="cpu", weights_only=False
-        )
+        blob = torch.load(result["extra_state"], map_location="cpu", weights_only=False)
         assert blob["optimizer_state"]["step"] == 100
         assert blob["extra_state"]["stream_data"]["0"]["line_index"] == 13
 
-    def test_model_state_round_trips_through_safetensors(
-        self, legacy_checkpoint: Path
-    ):
+    def test_model_state_round_trips_through_safetensors(self, legacy_checkpoint: Path):
         result = convert_legacy_checkpoint_to_split(legacy_checkpoint)
         # The new layout is loadable via the public helper.
-        payload = load_checkpoint_payload(
-            result["weights"].with_suffix("")
-        )
+        payload = load_checkpoint_payload(result["weights"].with_suffix(""))
         assert payload is not None
         # Tensor values are byte-equal under the float32 default.
         assert torch.equal(
@@ -154,9 +143,7 @@ class TestConvertLegacyCheckpointToSplit:
         with pytest.raises(CheckpointMigrationError, match="not found"):
             convert_legacy_checkpoint_to_split(tmp_path / "nope.pt")
 
-    def test_refuses_when_split_already_exists(
-        self, legacy_checkpoint: Path, tmp_path: Path
-    ):
+    def test_refuses_when_split_already_exists(self, legacy_checkpoint: Path, tmp_path: Path):
         # Pre-create a sidecar at the same stem.
         stem = legacy_checkpoint.with_suffix("")
         safetensors = stem.with_suffix(SAFETENSORS_SUFFIX)
@@ -166,22 +153,16 @@ class TestConvertLegacyCheckpointToSplit:
         # The pre-existing file must NOT be touched.
         assert safetensors.read_bytes() == b"existing"
 
-    def test_overwrite_replaces_existing_sidecars(
-        self, legacy_checkpoint: Path, tmp_path: Path
-    ):
+    def test_overwrite_replaces_existing_sidecars(self, legacy_checkpoint: Path, tmp_path: Path):
         stem = legacy_checkpoint.with_suffix("")
         safetensors = stem.with_suffix(SAFETENSORS_SUFFIX)
         safetensors.write_bytes(b"stale")
-        result = convert_legacy_checkpoint_to_split(
-            legacy_checkpoint, overwrite=True
-        )
+        result = convert_legacy_checkpoint_to_split(legacy_checkpoint, overwrite=True)
         # The stale contents are replaced with the new ones.
         assert safetensors.read_bytes() != b"stale"
         assert result["weights"] == safetensors
 
-    def test_atomic_writes_via_temp_files(
-        self, legacy_checkpoint: Path, tmp_path: Path
-    ):
+    def test_atomic_writes_via_temp_files(self, legacy_checkpoint: Path, tmp_path: Path):
         # After a successful conversion, no .tmp files should remain.
         convert_legacy_checkpoint_to_split(legacy_checkpoint)
         stem = legacy_checkpoint.with_suffix("")
@@ -217,9 +198,7 @@ class TestMigrateCkptCli:
         assert not Path(str(stem) + META_SUFFIX).exists()
         assert not Path(str(stem) + EXTRA_STATE_SUFFIX).exists()
 
-    def test_happy_path_writes_sidecars(
-        self, cli_runner: CliRunner, legacy_checkpoint: Path
-    ):
+    def test_happy_path_writes_sidecars(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         result = cli_runner.invoke(app, [str(legacy_checkpoint)])
         assert result.exit_code == 0, result.stderr
         assert "✓ Converted" in result.stdout
@@ -230,26 +209,18 @@ class TestMigrateCkptCli:
         # Legacy is kept by default.
         assert legacy_checkpoint.exists()
 
-    def test_in_place_flag_deletes_legacy(
-        self, cli_runner: CliRunner, legacy_checkpoint: Path
-    ):
+    def test_in_place_flag_deletes_legacy(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         result = cli_runner.invoke(app, [str(legacy_checkpoint), "--in-place"])
         assert result.exit_code == 0, result.stderr
         assert "delete legacy" in result.stdout
         assert not legacy_checkpoint.exists()
 
-    def test_verify_passes_for_clean_legacy(
-        self, cli_runner: CliRunner, legacy_checkpoint: Path
-    ):
-        result = cli_runner.invoke(
-            app, [str(legacy_checkpoint), "--verify"]
-        )
+    def test_verify_passes_for_clean_legacy(self, cli_runner: CliRunner, legacy_checkpoint: Path):
+        result = cli_runner.invoke(app, [str(legacy_checkpoint), "--verify"])
         assert result.exit_code == 0, result.stderr
         assert "verification passed" in result.stdout
 
-    def test_verify_exits_2_on_mismatch(
-        self, cli_runner: CliRunner, legacy_checkpoint: Path, tmp_path: Path
-    ):
+    def test_verify_exits_2_on_mismatch(self, cli_runner: CliRunner, legacy_checkpoint: Path, tmp_path: Path):
         # First convert cleanly.
         convert_legacy_checkpoint_to_split(legacy_checkpoint)
         stem = legacy_checkpoint.with_suffix("")
@@ -260,21 +231,15 @@ class TestMigrateCkptCli:
         meta_path.write_text(json.dumps(meta))
 
         result = cli_runner.invoke(app, [str(legacy_checkpoint), "--verify"])
-        assert result.exit_code == 2, (
-            f"expected exit 2, got {result.exit_code}: {result.stdout!r} / {result.stderr!r}"
-        )
+        assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}: {result.stdout!r} / {result.stderr!r}"
         assert "verification failed" in result.stderr or "verification failed" in result.stdout
 
-    def test_missing_legacy_exits_1(
-        self, cli_runner: CliRunner, tmp_path: Path
-    ):
+    def test_missing_legacy_exits_1(self, cli_runner: CliRunner, tmp_path: Path):
         result = cli_runner.invoke(app, [str(tmp_path / "nope.pt")])
         assert result.exit_code == 1
         assert "not found" in result.stderr
 
-    def test_split_layout_already_present_exits_1(
-        self, cli_runner: CliRunner, legacy_checkpoint: Path
-    ):
+    def test_split_layout_already_present_exits_1(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         # Pre-create a sidecar so the convert refuses.
         stem = legacy_checkpoint.with_suffix("")
         stem.with_suffix(SAFETENSORS_SUFFIX).write_bytes(b"existing")
@@ -283,9 +248,7 @@ class TestMigrateCkptCli:
         assert result.exit_code == 1
         assert "already exists" in result.stderr
 
-    def test_accepts_stem_path(
-        self, cli_runner: CliRunner, legacy_checkpoint: Path
-    ):
+    def test_accepts_stem_path(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         stem = legacy_checkpoint.with_suffix("")
         result = cli_runner.invoke(app, [str(stem)])
         assert result.exit_code == 0, result.stderr
