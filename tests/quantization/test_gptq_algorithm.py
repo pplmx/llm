@@ -178,10 +178,25 @@ def test_add_batch_matches_one_shot():
 
 
 def test_gptq_lower_error_than_rtn_baseline():
-    """GPTQ MSE on a small layer must be lower than naive round-to-nearest.
+    """GPTQ output-space error must be lower than naive round-to-nearest.
 
     This is the core promise of GPTQ — Hessian-aware quantization beats
-    per-column rounding. Tested on a small dense layer with calibration data.
+    per-column rounding by minimizing the output-space reconstruction
+    error (W-Q)^T H (W-Q), not the weight-space error ||W-Q||^2. The
+    Frantar 2022 paper measures output-space error, so we do the same.
+
+    The calibration data has correlated features (low-rank structure +
+    small noise), so the Hessian H = (2/N) X^T X has meaningful off-
+    diagonal entries for GPTQ's error propagation to exploit. Random
+    Gaussian calibration produces H ≈ 2I (identity-like), which makes
+    GPTQ's error propagation a no-op and reduces the algorithm to RTN.
+    Real LLM activations are highly correlated across channels, so we
+    model that with a low-rank structure here.
+
+    Note: GPTQ is NOT designed to minimize weight-space MSE. Empirically
+    on this test, GPTQ weight-space MSE is ~2-18% worse than RTN while
+    output-space MSE is 50-70% better — a known property of Hessian-
+    aware quantization.
     """
     from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
 
@@ -192,27 +207,38 @@ def test_gptq_lower_error_than_rtn_baseline():
     with torch.no_grad():
         layer.weight.copy_(torch.randn(out_f, in_f) * 0.5)
 
-    # Generate calibration data with structure
-    calib = torch.randn(64, in_f)
+    # Generate correlated calibration data: combine low-rank components with
+    # small noise so the Hessian H = (2/N) X^T X has significant off-diagonal
+    # entries, allowing GPTQ's error correction to beat per-column RTN.
+    n_samples = 256
+    n_components = 4  # low-rank structure: 4 shared latent factors
+    u_components = torch.randn(in_f, n_components)
+    v_components = torch.randn(n_samples, n_components)
+    noise = torch.randn(n_samples, in_f) * 0.1
+    calib = v_components @ u_components.t() + noise  # [256, 16]
 
     # GPTQ
     q = GPTQQuantizer(layer, GPTQConfig(bits=4, group_size=-1))
     q.add_batch(calib)
     w_q, scales, _zeros = q.quantize()
-
-    # Reconstruct W_q in fp32 for comparison
-    # scales shape: [out_f, 1] for group_size=-1
-    w_recon = w_q.float() * scales.float()
-    mse_gptq = ((layer.weight - w_recon) ** 2).mean().item()
+    w_recon = w_q.float() * scales.float()  # [out_f, in_f]
 
     # RTN baseline: per-channel symmetric 4-bit
     abs_max = layer.weight.abs().max(dim=1, keepdim=True)[0]
     qmax = 2 ** (4 - 1) - 1  # 7
     scale_rtn = abs_max / qmax
     w_rtn = (layer.weight / scale_rtn).round().clamp(-8, 7) * scale_rtn
-    mse_rtn = ((layer.weight - w_rtn) ** 2).mean().item()
 
-    assert mse_gptq < mse_rtn, f"GPTQ MSE {mse_gptq:.6f} should beat RTN MSE {mse_rtn:.6f}"
+    # Compare in OUTPUT space — what GPTQ is actually designed to optimize.
+    # Output of the layer on calibration data: y = X @ W^T.
+    with torch.no_grad():
+        y_orig = layer(calib)  # [n_samples, out_f]
+        y_gptq = calib @ w_recon.t()  # [n_samples, out_f]
+        y_rtn = calib @ w_rtn.t()  # [n_samples, out_f]
+        mse_gptq = ((y_orig - y_gptq) ** 2).mean().item()
+        mse_rtn = ((y_orig - y_rtn) ** 2).mean().item()
+
+    assert mse_gptq < mse_rtn, f"GPTQ output-MSE {mse_gptq:.6f} should beat RTN output-MSE {mse_rtn:.6f}"
 
 
 def test_quantize_handles_zero_calibration_gracefully():

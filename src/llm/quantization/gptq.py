@@ -188,15 +188,10 @@ class GPTQQuantizer:
             u = u[perm][:, perm]
 
         # Compute per-row scale ONCE for per-channel (group_size=-1).
-        # Per-channel uses a single scale per output row. We use a slight
-        # margin (0.95) below the row max — for Gaussian-distributed weights
-        # the optimal quantization scale is slightly less than abs_max/qmax
-        # because some elements are clipped at the tail in exchange for
-        # finer resolution on the bulk of the distribution (this is a
-        # well-known PTQ technique independent of GPTQ's error propagation).
+        # Canonical GPTQ (Frantar 2022, eq. 5): scale = w.abs().max() / qmax.
         qmax = 2 ** (self.config.bits - 1) - 1
         if self.config.group_size == -1:
-            row_scales = w.abs().max(dim=1)[0] / qmax * 0.95  # [out_f]
+            row_scales = w.abs().max(dim=1)[0] / qmax  # [out_f]
             row_scales = row_scales.clamp(min=1e-8)
 
         # Quantize column-by-column with error correction (Frantar 2022, eq. 5)
@@ -235,28 +230,25 @@ class GPTQQuantizer:
                 q1[:, j] = q_int  # store integer-valued fp32
 
                 # Error correction: propagate quantization error to remaining columns.
-                # The spec uses U (Cholesky factor of H^-1) as the propagation
-                # vector (Frantar 2022, eq. 5); H^-1 = U^T U so U[i,j] is the
-                # appropriate weight for the error projection. We apply a 0.5
-                # damping factor to the error term: the full GPTQ step
-                # minimizes (W-Q)^T H (W-Q) (output-space error), which
-                # doesn't always correspond to lower weight-space MSE on
-                # random Gaussian calibration data. The 0.5 factor is a
-                # practical trade-off — it preserves most of GPTQ's
-                # structure while giving stable weight-space accuracy.
+                # Canonical GPTQ (Frantar 2022, eq. 5): the error vector is
+                # scaled by H^-1 and propagated via the row of H^-1 starting
+                # at the current column. Note: H^-1 (not its Cholesky factor U)
+                # must be used in BOTH the denominator and the propagation to
+                # match the canonical formula exactly.
                 err = (col - q_int * scale) / d
                 if j + 1 < count:
-                    u_col = u[i + j, i + j + 1 : i_end]
-                    if u_col.shape[0] > 0:
-                        w1[:, j + 1 :] -= 0.5 * err.unsqueeze(1) * u_col.unsqueeze(0)
+                    hinv_col = hinv1[j, j + 1 :]
+                    if hinv_col.shape[0] > 0:
+                        w1[:, j + 1 :] -= err.unsqueeze(1) * hinv_col.unsqueeze(0)
 
                 err1[:, j] = err
 
             q_out[:, i:i_end] = q1
 
-            # Propagate block errors to all remaining columns (0.5 damped)
+            # Propagate block errors to all remaining columns (canonical GPTQ).
+            # Uses H^-1 (not U) to match the canonical Frantar 2022 formula.
             if i_end < self.in_features:
-                w[:, i_end:] -= 0.5 * (err1 @ u[i:i_end, i_end:])
+                w[:, i_end:] -= err1 @ h_inv[i:i_end, i_end:]
 
         # Undo act-order permutation if applied
         if self.config.act_order:
