@@ -169,10 +169,9 @@ class GPTQQuantizer:
                 f"percdamp (e.g. 0.5) or check calibration data quality."
             )
 
-        # Cholesky inverse: U = chol(H^-1)^T upper triangular
+        # Cholesky inverse: only H^-1 is needed for canonical Frantar error correction.
         try:
             h_inv = torch.linalg.inv(h)
-            u = torch.linalg.cholesky(h_inv, upper=True)
         except RuntimeError as e:
             raise RuntimeError(
                 f"Hessian is not positive-definite even after damping "
@@ -185,7 +184,6 @@ class GPTQQuantizer:
             perm = torch.argsort(torch.diag(h_inv), descending=True)
             w = w[:, perm]
             h_inv = h_inv[perm][:, perm]
-            u = u[perm][:, perm]
 
         # Compute per-row scale ONCE for per-channel (group_size=-1).
         # Canonical GPTQ (Frantar 2022, eq. 5): scale = w.abs().max() / qmax.
