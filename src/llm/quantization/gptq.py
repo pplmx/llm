@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 
 from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
+from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
 from llm.quantization.calibration import CalibrationDataCollector
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,11 @@ class GPTQConfig:
             before quantization. Improves accuracy at slight cost.
         static_groups: If True, compute group partitions once and reuse
             across all layers. Faster, slight accuracy loss.
+        layer_policies: Atomic per-layer override policies (algorithm-agnostic
+            LayerQuantPolicy tuples). Empty tuple (default) → all layers use
+            the base config; otherwise each policy dispatches its overrides
+            to its target_modules subset. See ADR-008 and
+            docs/superpowers/specs/2026-07-22-mixed-precision-quantization-design.md.
     """
 
     bits: int = 4
@@ -48,6 +54,11 @@ class GPTQConfig:
     blocksize: int = 128
     act_order: bool = False
     static_groups: bool = False
+
+    # Per-layer atomic override policies (additive; empty tuple = no override).
+    # Each LayerQuantPolicy is validated at its own __post_init__; this field
+    # only enforces that all elements are LayerQuantPolicy instances.
+    layer_policies: tuple[LayerQuantPolicy, ...] = ()
 
     def __post_init__(self):
         if self.bits not in (4, 8):
@@ -66,6 +77,15 @@ class GPTQConfig:
                 f"blocksize ({self.blocksize}) must be divisible by "
                 f"group_size ({self.group_size}) for correct packing alignment."
             )
+        # Validate layer_policies contains only LayerQuantPolicy instances.
+        # Per-policy field validation (bits, group_size, etc.) is done in
+        # LayerQuantPolicy.__post_init__ at construction time.
+        for i, p in enumerate(self.layer_policies):
+            if not isinstance(p, LayerQuantPolicy):
+                raise TypeError(
+                    f"GPTQConfig.layer_policies[{i}] must be LayerQuantPolicy; "
+                    f"got {type(p).__name__}."
+                )
 
 
 class GPTQQuantizer:
@@ -475,13 +495,28 @@ def quantize_model_gptq(
     for h in hooks:
         h.remove()
 
+    # Resolve per-layer effective configs (orthogonal to target_modules filter).
+    # available_layer_names is the post-filter set so policy targets are
+    # strictly validated against layers that will actually be quantized
+    # (strict mode: fails fast if a policy references a filtered-out layer).
+    available_layer_names = {n for n, _ in targets}
+    effective_configs = resolve_layer_policies(
+        config.layer_policies,
+        available_layer_names,
+        config,
+    )
+
     for name, layer in targets:
-        new_layer = _quantize_linear_with_gptq(layer, captured[name], config)
+        effective_config = effective_configs.get(name, config)
+        new_layer = _quantize_linear_with_gptq(layer, captured[name], effective_config)
         if layer.bias is not None:
             with torch.no_grad():
                 new_layer.bias.copy_(layer.bias.data)
         _replace_module(model, name, new_layer)
-        logger.info(f"Quantized layer {name}: {layer.weight.shape} → 4-bit packed")
+        logger.info(
+            f"Quantized layer {name}: {layer.weight.shape} → "
+            f"{effective_config.bits}-bit, group_size={effective_config.group_size}"
+        )
 
     return model
 
