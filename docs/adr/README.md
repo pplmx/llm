@@ -42,6 +42,7 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-005: Export Registry Parity with BACKEND_REGISTRY](005-export-registry.md)
 - [ADR-006: Checkpoint Format Unification](006-checkpoint-format-unification.md)
 - [ADR-007: GPTQ Integration Architecture](007-gptq-integration.md)
+- [ADR-008: Mixed-Precision GPTQ via Atomic LayerQuantPolicy](008-mixed-precision-quantization.md)
 
 ## Creating a New ADR
 
