@@ -150,7 +150,7 @@ llm-quantize gptq --model PATH --output PATH \
     [--target-modules q_proj,k_proj,v_proj,o_proj]
 ```
 
-`--calib-data` 一行一个 raw text 样本，内部用模型默认 tokenizer 处理（standalone 路径，不依赖训练框架）。
+`--calib-data` 一行一个 raw text 样本。**必须同时指定 `--tokenizer PATH`**（指向 HF tokenizer 目录或 `tokenizer.json`），CLI 内部用其将文本 tokenize 成 calibration batches。如果用户已有预 tokenize 好的 `.pt` 文件（tensor batches），可用 `--calib-data-tokens PATH` 跳过 tokenizer（mutually exclusive with `--calib-data`）。
 
 ## 数据流
 
@@ -249,8 +249,10 @@ llm-quantize gptq --model PATH --output PATH \
 |------|------|
 | `test_cli_help` | `--help` 不炸 |
 | `test_cli_missing_args_exits_nonzero` | 缺参 → 非 0 退出 |
-| `test_cli_happy_path` | 完整 args → 生成输出文件 |
+| `test_cli_happy_path` | 完整 args (含 `--tokenizer`) → 生成输出文件 |
 | `test_cli_invalid_bits_errors` | `--bits 16` → 报错 |
+| `test_cli_missing_tokenizer_errors` | 只传 `--calib-data` 不传 `--tokenizer` → 报错 |
+| `test_cli_calib_data_mutually_exclusive` | 同时传 `--calib-data` + `--calib-data-tokens` → 报错 |
 
 ### 覆盖率目标
 
