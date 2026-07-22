@@ -122,15 +122,14 @@ class GPTQQuantizedLinear(nn.Module):
             NotImplementedError: If `sym=False` was passed at construction.
         """
         if not self.sym:
-            raise NotImplementedError(
-                "Asymmetric GPTQ forward is not yet implemented. Construct with sym=True."
-            )
+            raise NotImplementedError("Asymmetric GPTQ forward is not yet implemented. Construct with sym=True.")
 
         # Always dequantize from int4/int8 storage: trades compute for memory.
         # (Caching fp32 weights would double storage; deferred to future optimization.)
         w_int = self._unpack_weights()  # [out_features, in_features]
-        # Shift unsigned → signed: [0, 15] → [-8, 7]
-        w_int_signed = w_int.to(torch.float32) - 8.0
+        # 4-bit storage is unsigned [0, 15] → shift to signed [-8, 7];
+        # 8-bit storage is already signed int8 [-128, 127] (no shift).
+        w_int_signed = w_int.to(torch.float32) - 8.0 if self.bits == 4 else w_int.to(torch.float32)
 
         if self.group_size == -1:
             # Per-channel: scales shape [out_features, 1] broadcasts across input dim.

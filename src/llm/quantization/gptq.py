@@ -14,8 +14,8 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from llm.quantization.calibration import CalibrationDataCollector
 from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
+from llm.quantization.calibration import CalibrationDataCollector
 
 logger = logging.getLogger(__name__)
 

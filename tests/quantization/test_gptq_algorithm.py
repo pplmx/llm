@@ -350,3 +350,89 @@ def test_8_bit_quantization_works():
     w_recon = w_q.float() * scales.float()
     mse = ((layer.weight - w_recon) ** 2).mean().item()
     assert mse < 1e-2, f"8-bit reconstruction MSE {mse:.6f} too high (expected <1e-2)"
+
+
+# === Coverage gap tests: add_batch edge cases, asymmetric gate, group_size > in_f, rank-deficient guard ===
+
+
+def test_add_batch_handles_1d_input():
+    """add_batch accepts a single [in_features] vector (unsqueezed internally)."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    in_f = 6
+    layer = nn.Linear(in_f, 4, bias=False)
+    q = GPTQQuantizer(layer, GPTQConfig())
+
+    q.add_batch(torch.randn(in_f))  # 1D — single sample, no batch dim
+
+    assert q.n_samples == 1
+    assert q.H.abs().sum() > 0
+
+
+def test_add_batch_empty_batch_is_noop():
+    """add_batch with an empty batch (n=0) doesn't touch the accumulator."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    in_f = 6
+    layer = nn.Linear(in_f, 4, bias=False)
+    q = GPTQQuantizer(layer, GPTQConfig())
+
+    # Empty batch (batch dim present, 0 rows)
+    q.add_batch(torch.zeros(0, in_f))
+
+    assert q.n_samples == 0
+    assert torch.allclose(q.H, torch.zeros_like(q.H))
+
+
+def test_quantize_rejects_asymmetric_with_actionable_message():
+    """sym=False raises NotImplementedError BEFORE entering the column loop (fail-fast)."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    in_f, out_f = 8, 4
+    layer = nn.Linear(in_f, out_f, bias=False)
+    calib = torch.randn(16, in_f)
+
+    q = GPTQQuantizer(layer, GPTQConfig(sym=False))
+    q.add_batch(calib)
+
+    with pytest.raises(NotImplementedError, match=r"Asymmetric.*sym=True"):
+        q.quantize()
+
+
+def test_quantize_rejects_rank_deficient_hessian_with_low_damp():
+    """Mostly-dead Hessian + low damp → actionable RuntimeError pointing at percdamp."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    torch.manual_seed(0)
+    in_f, out_f = 8, 4
+    layer = nn.Linear(in_f, out_f, bias=False)
+
+    # 5 of 8 columns have zero variance — triggers the >50% dead guard
+    calib = torch.zeros(32, in_f)
+    calib[:, 0] = torch.linspace(-1, 1, 32)
+    calib[:, 4] = torch.linspace(-1, 1, 32)
+    calib[:, 7] = torch.linspace(-1, 1, 32)
+
+    q = GPTQQuantizer(layer, GPTQConfig(percdamp=0.01))
+    q.add_batch(calib)
+
+    with pytest.raises(RuntimeError, match="rank-deficient"):
+        q.quantize()
+
+
+def test_quantize_linear_with_gptq_adjusts_oversized_group_size():
+    """group_size > in_features gets clamped to in_f (avoids zero-sized scales on tiny models)."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer, _quantize_linear_with_gptq
+
+    # Tiny layer (in_f=8) with default group_size=128 (much larger) — exercises the clamp
+    in_f, out_f = 8, 4
+    layer = nn.Linear(in_f, out_f, bias=False)
+    q = GPTQQuantizer(layer, GPTQConfig(group_size=128))
+    q.add_batch(torch.randn(16, in_f))
+    new_layer = _quantize_linear_with_gptq(layer, [torch.randn(16, in_f)], GPTQConfig(group_size=128))
+
+    assert isinstance(new_layer, GPTQQuantizedLinear)
+    # Effective group_size is clamped to in_f → 1 group total → scales shape [out_f, 1]
+    assert new_layer.group_size == in_f
+    assert new_layer.scales.shape == (out_f, 1)

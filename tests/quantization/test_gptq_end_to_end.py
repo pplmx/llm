@@ -152,3 +152,171 @@ def test_quantize_model_with_collector_propagates_target_modules():
 
     assert isinstance(quantized.fc1, GPTQQuantizedLinear)
     assert isinstance(quantized.fc2, nn.Linear)
+
+
+# === Coverage gap tests: 8-bit e2e, target_modules no match, empty calib, n_samples <= 0, device kwarg ===
+
+
+def test_quantize_model_gptq_8bit_e2e_works():
+    """bits=8 end-to-end produces GPTQQuantizedLinear with int8 (un-packed) storage."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = TwoLayerMLP(hidden=16)
+    calib = [torch.randn(8, 16) for _ in range(3)]
+
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(bits=8, group_size=-1))
+
+    assert isinstance(quantized.fc1, GPTQQuantizedLinear)
+    assert isinstance(quantized.fc2, GPTQQuantizedLinear)
+    assert quantized.fc1.bits == 8
+    assert quantized.fc2.bits == 8
+    # 8-bit storage: weight_packed has the same number of elements as the weight (no half-size)
+    assert quantized.fc1.weight_packed.numel() == 16 * 32  # out x in for fc1 (16->32)
+    # Forward still works
+    out = quantized(torch.randn(2, 16))
+    assert out.shape == (2, 16)
+
+
+def test_quantize_model_gptq_target_modules_no_match_raises_with_available():
+    """target_modules that match nothing raises ValueError naming available layers."""
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = TwoLayerMLP(hidden=16)
+    calib = [torch.randn(8, 16) for _ in range(2)]
+
+    with pytest.raises(ValueError, match=r"matched no nn\.Linear") as exc:
+        quantize_model_gptq(model, iter(calib), GPTQConfig(), target_modules=["nonexistent.layer"])
+
+    # Error message names at least one available layer for the user to copy
+    assert "fc1" in str(exc.value) or "fc2" in str(exc.value)
+
+
+def test_quantize_model_gptq_empty_calib_raises():
+    """calib_iter with zero batches raises ValueError before any model mutation."""
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = TwoLayerMLP(hidden=16)
+
+    with pytest.raises(ValueError, match="empty"):
+        quantize_model_gptq(model, iter([]), GPTQConfig())
+
+
+def test_quantize_model_with_collector_rejects_non_positive_n_samples():
+    """n_samples <= 0 raises ValueError — guards against divide-by-zero / no-op confusion."""
+    from llm.quantization.gptq import GPTQConfig, quantize_model_with_collector
+
+    def collector():
+        yield torch.randn(8, 16)
+
+    model = TwoLayerMLP(hidden=16)
+
+    with pytest.raises(ValueError, match="n_samples must be positive"):
+        quantize_model_with_collector(model, collector(), n_samples=0, config=GPTQConfig())
+
+    with pytest.raises(ValueError, match="n_samples must be positive"):
+        quantize_model_with_collector(model, collector(), n_samples=-3, config=GPTQConfig())
+
+
+def test_quantize_model_gptq_device_kwarg_relocates_model():
+    """device='cpu' (or any valid device) is forwarded to model.to() before calibration."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = TwoLayerMLP(hidden=16)
+    calib = [torch.randn(8, 16) for _ in range(2)]
+
+    # Explicit device kwarg is accepted (idempotent on CPU model)
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(), device="cpu")
+
+    assert isinstance(quantized.fc1, GPTQQuantizedLinear)
+    # All parameters and buffers live on CPU
+    for p in quantized.parameters():
+        assert p.device.type == "cpu"
+    for b in quantized.buffers():
+        assert b.device.type == "cpu"
+
+
+def test_quantize_model_gptq_4bit_per_channel_storage_branch():
+    """4-bit + group_size=-1 (per-channel) end-to-end: hits the per-channel storage branch."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = TwoLayerMLP(hidden=16)
+    calib = [torch.randn(8, 16) for _ in range(3)]
+
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(bits=4, group_size=-1))
+
+    assert isinstance(quantized.fc1, GPTQQuantizedLinear)
+    assert quantized.fc1.bits == 4
+    assert quantized.fc1.group_size == -1
+    # Per-channel: scales shape [out_features, 1]
+    assert quantized.fc1.scales.shape == (32, 1)  # fc1: in=16, out=32
+    assert quantized.fc2.scales.shape == (16, 1)  # fc2: in=32, out=16
+
+
+def test_quantize_model_gptq_8bit_per_group_storage_branch():
+    """8-bit + group_size=4 (per-group) end-to-end: hits the 8-bit per-group storage branch."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = TwoLayerMLP(hidden=16)
+    calib = [torch.randn(8, 16) for _ in range(3)]
+
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(bits=8, group_size=4))
+
+    assert isinstance(quantized.fc1, GPTQQuantizedLinear)
+    assert quantized.fc1.bits == 8
+    # Per-group: scales shape [out_features, in_features // group_size]
+    assert quantized.fc1.scales.shape == (32, 16 // 4)  # fc1: in=16, group_size=4
+    # 8-bit storage: same number of elements as the weight (no half-size)
+    assert quantized.fc1.weight_packed.numel() == 32 * 16
+
+
+def test_quantize_model_gptq_falls_back_when_model_forward_fails():
+    """If model forward raises on the calibration batch, fall back to direct layer calls."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    class AlwaysFailingForward(nn.Module):
+        """Model whose forward always raises — forces the except branch."""
+
+        def __init__(self):
+            super().__init__()
+            self.fc1 = nn.Linear(8, 4)
+
+        def forward(self, x):
+            raise RuntimeError("intentional failure to force fallback path")
+
+    model = AlwaysFailingForward()
+    calib = [torch.randn(8, 8) for _ in range(2)]
+
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig())
+
+    assert isinstance(quantized.fc1, GPTQQuantizedLinear)
+
+
+def test_quantize_model_gptq_falls_back_when_forward_skips_target_layers():
+    """If model forward succeeds but never calls target layers, fall back to direct calls."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    class ForwardSkipsLinear(nn.Module):
+        """Model whose forward never invokes self.fc1 — hooks capture nothing."""
+
+        def __init__(self):
+            super().__init__()
+            self.fc1 = nn.Linear(8, 4)
+            self.register_buffer("zeros", torch.zeros(4))
+
+        def forward(self, x):
+            # Return a constant — never touch fc1
+            return self.zeros.unsqueeze(0).expand(x.shape[0], -1)
+
+    model = ForwardSkipsLinear()
+    calib = [torch.randn(8, 8) for _ in range(2)]
+
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig())
+
+    # The fallback path ran — fc1 was quantized via direct call
+    assert isinstance(quantized.fc1, GPTQQuantizedLinear)

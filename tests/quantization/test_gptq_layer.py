@@ -272,3 +272,90 @@ def test_forward_input_shape_2d_and_3d():
     # Reference: out = x @ w_fp.T (F.linear does x @ w.T + bias)
     expected_2d = x_2d @ layer._unpack_weights().to(torch.float32).sub_(8.0).mul_(scales.float()).t()
     assert torch.allclose(out_2d, expected_2d, atol=1e-4)
+
+
+# === Coverage gap tests: register_buffer("zeros", ...), 8-bit forward path, _unpack_4bit validation ===
+
+
+def test_gptq_layer_with_non_null_zeros_registers_buffer():
+    """When zeros is provided, it's registered as a buffer (not assigned as attribute)."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+
+    zeros_tensor = torch.zeros(4, 1, dtype=torch.int8)
+    layer = GPTQQuantizedLinear(
+        in_features=8,
+        out_features=4,
+        bias=False,
+        weight_packed=torch.zeros(16, dtype=torch.int8),
+        scales=torch.ones(4, 1, dtype=torch.float16),
+        zeros=zeros_tensor,
+        bits=4,
+        group_size=-1,
+        sym=True,
+    )
+
+    # The buffer path is taken — 'zeros' is in state_dict() (buffers serialize, raw attrs don't)
+    assert "zeros" in dict(layer.named_buffers())
+    assert torch.equal(layer.zeros, zeros_tensor)
+
+
+def test_gptq_layer_8bit_forward_uses_int8_storage():
+    """bits=8 forward path: weight_packed stores int8 directly (no unpacking)."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+
+    in_f, out_f = 8, 4
+    # Each row has a known integer weight pattern: cols 0-3 = +5, cols 4-7 = -3 (signed)
+    w_int8 = torch.zeros(out_f, in_f, dtype=torch.int8)
+    w_int8[:, : in_f // 2] = 5
+    w_int8[:, in_f // 2 :] = -3
+    scales = torch.full((out_f, 1), 0.01, dtype=torch.float16)  # tiny scale → small output
+
+    layer = GPTQQuantizedLinear(
+        in_features=in_f,
+        out_features=out_f,
+        bias=False,
+        weight_packed=w_int8.flatten(),
+        scales=scales,
+        zeros=None,
+        bits=8,
+        group_size=-1,
+        sym=True,
+    )
+
+    x = torch.ones(1, in_f)
+    out = layer(x)
+
+    # Reference: out = (x @ w_int8.T) * scale
+    # x is ones, so row sum of w_int8 = 4*5 + 4*(-3) = 8
+    # out = 8 * 0.01 = 0.08 per row
+    expected = torch.full((1, out_f), 8 * 0.01)
+    assert torch.allclose(out, expected, atol=1e-3)
+
+
+def test_unpack_4bit_raises_on_odd_numel():
+    """_unpack_4bit refuses odd numel — guard against malformed packed storage."""
+    from llm.quantization._gptq_layer import _unpack_4bit
+
+    packed = torch.zeros(4, dtype=torch.int8)  # 4 packed bytes
+    with pytest.raises(ValueError, match="even"):
+        _unpack_4bit(packed, numel=7)  # 7 is odd - not representable as 2x4-bit pairs
+
+
+def test_gptq_layer_asymmetric_forward_raises_not_implemented():
+    """sym=False raises NotImplementedError on forward — fail-fast contract."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+
+    layer = GPTQQuantizedLinear(
+        in_features=8,
+        out_features=4,
+        bias=False,
+        weight_packed=torch.zeros(16, dtype=torch.int8),
+        scales=torch.ones(4, 1, dtype=torch.float16),
+        zeros=None,
+        bits=4,
+        group_size=-1,
+        sym=False,  # ← not implemented
+    )
+
+    with pytest.raises(NotImplementedError, match="Asymmetric"):
+        layer(torch.zeros(1, 8))

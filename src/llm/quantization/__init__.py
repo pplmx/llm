@@ -10,7 +10,15 @@ Provides two orthogonal paths:
 Both share calibration infrastructure via :class:`CalibrationDataCollector`.
 """
 
+# GPTQ path
+from llm.quantization._gptq_layer import GPTQQuantizedLinear
 from llm.quantization.calibration import ActivationStats, CalibrationDataCollector
+from llm.quantization.gptq import (
+    GPTQConfig,
+    GPTQQuantizer,
+    quantize_model_gptq,
+    quantize_model_with_collector,
+)
 
 # Simple PTQ path
 from llm.quantization.ptq import (
@@ -21,29 +29,17 @@ from llm.quantization.ptq import (
     quantize_model,
 )
 
-# GPTQ path
-from llm.quantization._gptq_layer import GPTQQuantizedLinear
-from llm.quantization.gptq import (
-    GPTQConfig,
-    GPTQQuantizer,
-    quantize_model_gptq,
-    quantize_model_with_collector,
-)
-
 __all__ = [
-    # Calibration
     "ActivationStats",
     "CalibrationDataCollector",
-    # Simple PTQ
+    "GPTQConfig",
+    "GPTQQuantizedLinear",
+    "GPTQQuantizer",
     "QuantConfig",
     "QuantizedLinear",
     "compute_model_size",
     "quantize_linear_layer",
     "quantize_model",
-    # GPTQ
-    "GPTQConfig",
-    "GPTQQuantizer",
-    "GPTQQuantizedLinear",
     "quantize_model_gptq",
     "quantize_model_with_collector",
 ]
