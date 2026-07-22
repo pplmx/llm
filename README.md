@@ -48,7 +48,7 @@
     - **HuggingFace Integration**: Direct support for HF Tokenizers (GPT-2, Llama, etc.).
     - Modular `DataModule` design for text datasets.
     - Legacy Character-level tokenizer for simple experiments.
-- **CLI Tools**: `llm-train` and `llm-serve` commands for easy usage.
+- **CLI Tools**: `llm-train`, `llm-serve`, `llm-migrate-ckpt`, `llm-quantize` commands for easy usage.
 
 ## Quick Start
 
@@ -75,6 +75,22 @@ To quickly get started with training a model using the framework, follow these s
     ```
 
     The server will be available at `http://localhost:8000` with OpenAI-compatible API.
+
+4. **Quantize a Model with GPTQ** (optional):
+
+    ```bash
+    llm-quantize gptq \
+        --model ckpt.pt \
+        --output ckpt-int4.pt \
+        --calib-data texts.txt \
+        --tokenizer gpt2 \
+        --bits 4
+    ```
+
+    Runs Hessian-aware 4-bit / 8-bit PTQ (Frantar 2022) with the same
+    validation rules as the Python API. Mixed-precision per-layer
+    dispatch via `LayerQuantPolicy` is supported through the Python
+    API; the CLI exposes `--target-modules` for a coarse filter.
 
 ## Installation
 
