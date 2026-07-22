@@ -109,3 +109,140 @@ def test_gptq_layer_unpack_matches_original():
     )
     unpacked = layer._unpack_weights()
     assert torch.equal(unpacked, original_int4)
+
+
+# === Forward correctness ===
+
+
+def test_forward_close_to_fp32_baseline():
+    """Forward output cosine_sim > 0.99 vs equivalent fp32 Linear."""
+    from torch import nn
+
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
+
+    torch.manual_seed(99)
+    in_f, out_f = 32, 16
+
+    # Original fp32 weight (small magnitude for tight 4-bit fit)
+    w_fp32 = torch.randn(out_f, in_f) * 0.1
+    x = torch.randn(8, in_f)
+
+    # Quantize via simple per-channel 4-bit
+    abs_max = w_fp32.abs().max(dim=1, keepdim=True)[0]
+    qmax = 7  # 2^(4-1) - 1
+    scale = (abs_max / qmax).clamp(min=1e-8)
+    w_int4 = torch.round(w_fp32 / scale).clamp(-8, 7).to(torch.int8) + 8  # shift to [0, 15]
+    packed = _pack_4bit(w_int4.flatten())
+
+    layer_q = GPTQQuantizedLinear(
+        in_features=in_f,
+        out_features=out_f,
+        bias=False,
+        weight_packed=packed,
+        scales=scale.to(torch.float16),
+        zeros=None,
+        bits=4,
+        group_size=-1,
+        sym=True,
+    )
+
+    # fp32 baseline
+    layer_fp32 = nn.Linear(in_f, out_f, bias=False)
+    with torch.no_grad():
+        layer_fp32.weight.copy_(w_fp32)
+
+    out_q = layer_q(x)
+    out_fp = layer_fp32(x)
+
+    cosine = torch.nn.functional.cosine_similarity(out_q, out_fp, dim=-1).mean()
+    mse = ((out_q - out_fp) ** 2).mean().item()
+
+    assert cosine > 0.99, f"cosine_sim {cosine:.4f} too low"
+    assert mse < 1e-2
+
+
+def test_forward_preserves_bias():
+    """Bias is added correctly to forward output."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+
+    in_f, out_f = 8, 4
+    bias_values = torch.tensor([0.1, -0.2, 0.3, -0.4])
+
+    layer = GPTQQuantizedLinear(
+        in_features=in_f,
+        out_features=out_f,
+        bias=True,
+        weight_packed=torch.zeros(out_f * in_f // 2, dtype=torch.int8),
+        scales=torch.ones(out_f, 1, dtype=torch.float16) * 0.01,  # tiny scale → near-zero weight
+        zeros=None,
+        bits=4,
+        group_size=-1,
+        sym=True,
+    )
+    with torch.no_grad():
+        layer.bias.copy_(bias_values)
+
+    x = torch.zeros(2, in_f)
+    out = layer(x)
+
+    # Weights are ~0, so output ≈ bias
+    assert torch.allclose(out, bias_values.unsqueeze(0).expand(2, -1), atol=1e-3)
+
+
+def test_forward_grouped_quantization():
+    """group_size=8 with per-group scales produces correct output."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
+
+    in_f, out_f = 16, 4
+    group_size = 8
+
+    # Per-group distinct scales
+    scales = torch.tensor([[0.1, 0.5], [0.2, 0.6], [0.3, 0.7], [0.4, 0.8]], dtype=torch.float16)
+
+    # Pack unsigned=8 → signed=0, so weights are all 0 after dequantize
+    w_int4 = torch.full((out_f * in_f,), 8, dtype=torch.int8)
+    packed = _pack_4bit(w_int4)
+
+    layer = GPTQQuantizedLinear(
+        in_features=in_f,
+        out_features=out_f,
+        bias=False,
+        weight_packed=packed,
+        scales=scales,
+        zeros=None,
+        bits=4,
+        group_size=group_size,
+        sym=True,
+    )
+
+    x = torch.ones(1, in_f)
+    out = layer(x)
+    # All weights are 0, output is 0
+    assert torch.allclose(out, torch.zeros(1, out_f), atol=1e-3)
+
+
+def test_forward_input_shape_2d_and_3d():
+    """Layer accepts both [batch, in] and [batch, seq, in]."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+
+    in_f, out_f = 8, 4
+    layer = GPTQQuantizedLinear(
+        in_features=in_f,
+        out_features=out_f,
+        bias=False,
+        weight_packed=torch.zeros(out_f * in_f // 2, dtype=torch.int8),
+        scales=torch.ones(out_f, 1, dtype=torch.float16) * 0.01,
+        zeros=None,
+        bits=4,
+        group_size=-1,
+        sym=True,
+    )
+
+    x_2d = torch.randn(3, in_f)
+    x_3d = torch.randn(2, 5, in_f)
+
+    out_2d = layer(x_2d)
+    out_3d = layer(x_3d)
+
+    assert out_2d.shape == (3, out_f)
+    assert out_3d.shape == (2, 5, out_f)

@@ -104,3 +104,29 @@ class GPTQQuantizedLinear(nn.Module):
         else:
             # 8-bit: weight_packed stores int8 values directly
             return self.weight_packed.reshape(self.out_features, self.in_features)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with dequantized weights.
+
+        Args:
+            x: Input tensor of shape [..., in_features].
+
+        Returns:
+            Output tensor of shape [..., out_features].
+        """
+        # Unpack int4 (or int8) values; values are unsigned [0, 15] for 4-bit.
+        w_int = self._unpack_weights()  # [out_features, in_features]
+        # Shift unsigned → signed: [0, 15] → [-8, 7]
+        w_int_signed = w_int.to(torch.float32) - 8.0
+
+        if self.group_size == -1:
+            # Per-channel: scales shape [out_features, 1] broadcasts across input dim.
+            w_fp = w_int_signed * self.scales.to(torch.float32)
+        else:
+            # Per-group: scales shape [out_features, in_features // group_size].
+            # Expand to [out_features, in_features] by repeating within each group.
+            gs = self.group_size
+            scales_expanded = self.scales.to(torch.float32).repeat_interleave(gs, dim=1)
+            w_fp = w_int_signed * scales_expanded
+
+        return torch.nn.functional.linear(x, w_fp, self.bias)
