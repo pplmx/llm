@@ -172,3 +172,101 @@ def test_add_batch_matches_one_shot():
 
     assert torch.allclose(q1.H, q2.H, atol=1e-5)
     assert q1.n_samples == q2.n_samples == 12
+
+
+# === GPTQ algorithm correctness tests ===
+
+
+def test_gptq_lower_error_than_rtn_baseline():
+    """GPTQ MSE on a small layer must be lower than naive round-to-nearest.
+
+    This is the core promise of GPTQ — Hessian-aware quantization beats
+    per-column rounding. Tested on a small dense layer with calibration data.
+    """
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    torch.manual_seed(42)
+    in_f, out_f = 16, 16
+    layer = nn.Linear(in_f, out_f, bias=False)
+    # Inject meaningful structure (not random init)
+    with torch.no_grad():
+        layer.weight.copy_(torch.randn(out_f, in_f) * 0.5)
+
+    # Generate calibration data with structure
+    calib = torch.randn(64, in_f)
+
+    # GPTQ
+    q = GPTQQuantizer(layer, GPTQConfig(bits=4, group_size=-1))
+    q.add_batch(calib)
+    w_q, scales, _zeros = q.quantize()
+
+    # Reconstruct W_q in fp32 for comparison
+    # scales shape: [out_f, 1] for group_size=-1
+    w_recon = w_q.float() * scales.float()
+    mse_gptq = ((layer.weight - w_recon) ** 2).mean().item()
+
+    # RTN baseline: per-channel symmetric 4-bit
+    abs_max = layer.weight.abs().max(dim=1, keepdim=True)[0]
+    qmax = 2 ** (4 - 1) - 1  # 7
+    scale_rtn = abs_max / qmax
+    w_rtn = (layer.weight / scale_rtn).round().clamp(-8, 7) * scale_rtn
+    mse_rtn = ((layer.weight - w_rtn) ** 2).mean().item()
+
+    assert mse_gptq < mse_rtn, f"GPTQ MSE {mse_gptq:.6f} should beat RTN MSE {mse_rtn:.6f}"
+
+
+def test_quantize_handles_zero_calibration_gracefully():
+    """Zero calibration data → actionable error mentioning percdamp."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    layer = nn.Linear(8, 4, bias=False)
+    q = GPTQQuantizer(layer, GPTQConfig(percdamp=0.01))
+
+    with pytest.raises(RuntimeError, match="percdamp"):
+        q.quantize()
+
+
+def test_quantize_handles_singular_hessian_with_higher_damp():
+    """Rank-deficient Hessian succeeds with sufficient damping."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    torch.manual_seed(0)
+    in_f, out_f = 8, 4
+    layer = nn.Linear(in_f, out_f, bias=False)
+    # Calibration data with rank < in_f (constant feature)
+    calib = torch.zeros(16, in_f)
+    calib[:, 0] = torch.linspace(-1, 1, 16)  # only first dim varies
+
+    # 0.01 damp fails, 0.5 damp succeeds
+    q1 = GPTQQuantizer(layer, GPTQConfig(percdamp=0.01))
+    q1.add_batch(calib)
+    with pytest.raises(RuntimeError):
+        q1.quantize()
+
+    q2 = GPTQQuantizer(layer, GPTQConfig(percdamp=0.5))
+    q2.add_batch(calib)
+    w_q, _scales, _zeros = q2.quantize()
+    assert w_q.shape == (out_f, in_f)
+
+
+def test_quantize_returns_correct_shapes():
+    """quantize() returns W_q [out, in], scales [out, in/group_size] (or [out,1] for per-channel)."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    in_f, out_f = 32, 16
+    layer = nn.Linear(in_f, out_f, bias=False)
+    calib = torch.randn(32, in_f)
+
+    # group_size=8 → 4 groups per row
+    q = GPTQQuantizer(layer, GPTQConfig(group_size=8))
+    q.add_batch(calib)
+    w_q, scales, _zeros = q.quantize()
+    assert w_q.shape == (out_f, in_f)
+    assert scales.shape == (out_f, in_f // 8)
+
+    # group_size=-1 → 1 group per row (per-channel)
+    q2 = GPTQQuantizer(layer, GPTQConfig(group_size=-1))
+    q2.add_batch(calib)
+    w_q2, scales2, _zeros2 = q2.quantize()
+    assert w_q2.shape == (out_f, in_f)
+    assert scales2.shape == (out_f, 1)

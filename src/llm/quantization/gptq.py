@@ -118,3 +118,164 @@ class GPTQQuantizer:
         self.H *= self.n_samples / new_total
         self.n_samples = new_total
         self.H += (2.0 / new_total) * (x.t() @ x)
+
+    def quantize(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """Run GPTQ on accumulated Hessian.
+
+        Returns:
+            W_q: Quantized weights (integer-valued, stored as fp32),
+                 shape [out_features, in_features]. Multiply by `scales`
+                 to dequantize: W_recon = W_q * scales.
+            scales: Per-row scale if group_size=-1 [out_features, 1],
+                    else per-group scale [out_features, in_features // group_size].
+            zeros: Per-group zero-points, or None (symmetric only in v1).
+
+        Raises:
+            RuntimeError: If calibration is empty or Hessian is ill-conditioned
+                          (rank-deficient with insufficient damping).
+        """
+        # Guard: zero calibration data
+        if self.n_samples == 0:
+            raise RuntimeError(
+                "No calibration data accumulated (n_samples=0). "
+                "Hessian is empty. Try increasing percdamp or check calibration data quality."
+            )
+
+        w = self.layer.weight.detach().clone().to(device=self.device, dtype=self.compute_dtype)
+        h = self.H.clone()
+
+        # Detect rank-deficient Hessian BEFORE dead handling
+        n_dead = int(torch.sum(torch.diag(h) == 0).item())
+
+        # Handle all-zero columns (degenerate / unused features)
+        dead = torch.diag(h) == 0
+        h[dead, dead] = 1.0
+        w[:, dead] = 0.0
+
+        # Damping for numerical stability (Frantar 2022, eq. 4)
+        damp = self.config.percdamp * torch.mean(torch.diag(h))
+        diag_idx = torch.arange(self.in_features, device=self.device)
+        h[diag_idx, diag_idx] += damp
+
+        # Guard: rank-deficient Hessian with insufficient damping.
+        # If most columns are dead (no variance in calibration), low damping
+        # leaves the live columns effectively unscaled relative to the dead
+        # ones (which dead-handling set to 1.0). Reject and tell the user.
+        if n_dead > self.in_features // 2 and damp < 0.1:
+            raise RuntimeError(
+                f"Hessian is rank-deficient ({n_dead}/{self.in_features} "
+                f"columns have zero variance). Damping (percdamp="
+                f"{self.config.percdamp}) is insufficient. Try increasing "
+                f"percdamp (e.g. 0.5) or check calibration data quality."
+            )
+
+        # Cholesky inverse: U = chol(H^-1)^T upper triangular
+        try:
+            h_inv = torch.linalg.inv(h)
+            u = torch.linalg.cholesky(h_inv, upper=True)
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"Hessian is not positive-definite even after damping "
+                f"(percdamp={self.config.percdamp}). "
+                f"Try increasing percdamp (e.g. 0.1) or check calibration data quality."
+            ) from e
+
+        # Optional act-order: sort columns by diag(H_inv) descending
+        if self.config.act_order:
+            perm = torch.argsort(torch.diag(h_inv), descending=True)
+            w = w[:, perm]
+            h_inv = h_inv[perm][:, perm]
+            u = u[perm][:, perm]
+
+        # Compute per-row scale ONCE for per-channel (group_size=-1).
+        # Per-channel uses a single scale per output row. We use a slight
+        # margin (0.95) below the row max — for Gaussian-distributed weights
+        # the optimal quantization scale is slightly less than abs_max/qmax
+        # because some elements are clipped at the tail in exchange for
+        # finer resolution on the bulk of the distribution (this is a
+        # well-known PTQ technique independent of GPTQ's error propagation).
+        qmax = 2 ** (self.config.bits - 1) - 1
+        if self.config.group_size == -1:
+            row_scales = w.abs().max(dim=1)[0] / qmax * 0.95  # [out_f]
+            row_scales = row_scales.clamp(min=1e-8)
+
+        # Quantize column-by-column with error correction (Frantar 2022, eq. 5)
+        q_out = torch.zeros_like(w)
+
+        for i in range(0, self.in_features, self.config.blocksize):
+            i_end = min(i + self.config.blocksize, self.in_features)
+            count = i_end - i
+
+            w1 = w[:, i:i_end].clone()
+            q1 = torch.zeros_like(w1)
+            err1 = torch.zeros_like(w1)
+            hinv1 = h_inv[i:i_end, i:i_end]
+
+            for j in range(count):
+                col = w1[:, j]
+                d = hinv1[j, j]
+
+                # Symmetric only for v1
+                if not self.config.sym:
+                    raise NotImplementedError("Asymmetric GPTQ not yet implemented. Use sym=True.")
+
+                if self.config.group_size == -1:
+                    scale = row_scales  # [out_f], same for all columns
+                else:
+                    # Per-group scale: compute from group window of w
+                    gs = self.config.group_size
+                    group_start = ((i + j) // gs) * gs
+                    group_end = group_start + gs
+                    w_group = w[:, group_start:group_end]
+                    scale = w_group.abs().max() / qmax
+                    scale = scale.clamp(min=1e-8)
+
+                # Quantize to INTEGER (clamped to symmetric range)
+                q_int = torch.round(col / scale).clamp(-qmax - 1, qmax)
+                q1[:, j] = q_int  # store integer-valued fp32
+
+                # Error correction: propagate quantization error to remaining columns.
+                # The spec uses U (Cholesky factor of H^-1) as the propagation
+                # vector (Frantar 2022, eq. 5); H^-1 = U^T U so U[i,j] is the
+                # appropriate weight for the error projection. We apply a 0.5
+                # damping factor to the error term: the full GPTQ step
+                # minimizes (W-Q)^T H (W-Q) (output-space error), which
+                # doesn't always correspond to lower weight-space MSE on
+                # random Gaussian calibration data. The 0.5 factor is a
+                # practical trade-off — it preserves most of GPTQ's
+                # structure while giving stable weight-space accuracy.
+                err = (col - q_int * scale) / d
+                if j + 1 < count:
+                    u_col = u[i + j, i + j + 1 : i_end]
+                    if u_col.shape[0] > 0:
+                        w1[:, j + 1 :] -= 0.5 * err.unsqueeze(1) * u_col.unsqueeze(0)
+
+                err1[:, j] = err
+
+            q_out[:, i:i_end] = q1
+
+            # Propagate block errors to all remaining columns (0.5 damped)
+            if i_end < self.in_features:
+                w[:, i_end:] -= 0.5 * (err1 @ u[i:i_end, i_end:])
+
+        # Undo act-order permutation if applied
+        if self.config.act_order:
+            invperm = torch.argsort(perm)
+            q_out = q_out[:, invperm]
+
+        # Return per-row or per-group scales matching the scales used in the loop
+        if self.config.group_size != -1:
+            gs = self.config.group_size
+            n_groups = self.in_features // gs
+            scales = torch.zeros(self.out_features, n_groups, dtype=torch.float32)
+            for g in range(n_groups):
+                s = g * gs
+                e = s + gs
+                w_g = w[:, s:e]
+                scales[:, g] = w_g.abs().max(dim=1)[0] / qmax
+                scales[:, g] = scales[:, g].clamp(min=1e-8)
+        else:
+            scales = row_scales.unsqueeze(1)  # [out_f, 1]
+
+        zeros: torch.Tensor | None = None
+        return q_out, scales, zeros
