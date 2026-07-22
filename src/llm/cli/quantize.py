@@ -163,7 +163,11 @@ def _load_calibration_batches(
 
     # calib_data_tokens path
     typer.echo(f"Loading pre-tokenized calibration from {calib_data_tokens}...")
-    loaded = torch.load(calib_data_tokens, map_location="cpu")
+    # ``weights_only=False`` — calibration .pt files are user-supplied
+    # and may contain custom token tensors (e.g. wrappers from a
+    # different framework's tokenizer pipeline). PyTorch 2.6's default
+    # ``weights_only=True`` would reject anything beyond plain tensors.
+    loaded = torch.load(calib_data_tokens, map_location="cpu", weights_only=False)
     if isinstance(loaded, list):
         return loaded
     if isinstance(loaded, torch.Tensor):
@@ -262,7 +266,12 @@ def gptq(
     # --- 3. Load inputs -------------------------------------------------
     try:
         typer.echo(f"Loading model from {model}...")
-        model_obj = torch.load(model, map_location="cpu")
+        # ``weights_only=False`` is required: DecoderModel is a custom
+        # class that PyTorch 2.6's default ``weights_only=True`` would
+        # reject (it only allows a small allow-list of stdlib + torch
+        # types). The model file is user-supplied and the user owns the
+        # trust boundary — same trust model as ``pickle.load``.
+        model_obj = torch.load(model, map_location="cpu", weights_only=False)
     except Exception as exc:
         typer.echo(f"Error: failed to load model {model}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
