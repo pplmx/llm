@@ -12,6 +12,7 @@ Both share calibration infrastructure via :class:`CalibrationDataCollector`.
 
 # GPTQ path
 from llm.quantization._gptq_layer import GPTQQuantizedLinear
+from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
 from llm.quantization.calibration import ActivationStats, CalibrationDataCollector
 from llm.quantization.gptq import (
     GPTQConfig,
@@ -35,6 +36,7 @@ __all__ = [
     "GPTQConfig",
     "GPTQQuantizedLinear",
     "GPTQQuantizer",
+    "LayerQuantPolicy",
     "QuantConfig",
     "QuantizedLinear",
     "compute_model_size",
@@ -42,4 +44,5 @@ __all__ = [
     "quantize_model",
     "quantize_model_gptq",
     "quantize_model_with_collector",
+    "resolve_layer_policies",
 ]
