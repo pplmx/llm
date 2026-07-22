@@ -1,11 +1,12 @@
 """Tests for GPTQ algorithm core (config + Hessian + Cholesky + column loop)."""
 
-import pytest
-import torch
-import torch.nn as nn
+from dataclasses import FrozenInstanceError
 
+import pytest
+import torch.nn as nn  # noqa: F401  (used by Task 2 Hessian tests)
 
 # === Config validation tests ===
+
 
 def test_gptq_config_default_values():
     """Default config is 4-bit, group_size=128, symmetric."""
@@ -57,7 +58,7 @@ def test_gptq_config_rejects_blocksize_not_divisible_by_group_size():
     """When group_size > 0, blocksize must be divisible by group_size."""
     from llm.quantization.gptq import GPTQConfig
 
-    with pytest.raises(ValueError, match="blocksize.*must be divisible"):
+    with pytest.raises(ValueError, match=r"blocksize.*must be divisible"):
         GPTQConfig(group_size=128, blocksize=100)
 
 
@@ -75,5 +76,5 @@ def test_gptq_config_is_frozen():
     from llm.quantization.gptq import GPTQConfig
 
     cfg = GPTQConfig()
-    with pytest.raises(Exception):  # FrozenInstanceError
-        cfg.bits = 8  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        cfg.bits = 4  # type: ignore[misc]
