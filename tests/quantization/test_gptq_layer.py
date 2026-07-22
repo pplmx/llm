@@ -190,17 +190,21 @@ def test_forward_preserves_bias():
 
 
 def test_forward_grouped_quantization():
-    """group_size=8 with per-group scales produces correct output."""
+    """group_size=8 with per-group scales produces correct output (validates broadcast)."""
     from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
 
     in_f, out_f = 16, 4
     group_size = 8
 
-    # Per-group distinct scales
+    # Distinct per-group scales — broadcast bug would yield wrong output
     scales = torch.tensor([[0.1, 0.5], [0.2, 0.6], [0.3, 0.7], [0.4, 0.8]], dtype=torch.float16)
 
-    # Pack unsigned=8 → signed=0, so weights are all 0 after dequantize
-    w_int4 = torch.full((out_f * in_f,), 8, dtype=torch.int8)
+    # Packed weights per row: cols 0-7 (group 0) are unsigned=7 → signed=-1
+    #                         cols 8-15 (group 1) are unsigned=15 → signed=+7
+    w_int4 = torch.empty(out_f * in_f, dtype=torch.int8)
+    for row in range(out_f):
+        w_int4[row * in_f : row * in_f + in_f // 2] = 7  # group 0: signed -1
+        w_int4[row * in_f + in_f // 2 : (row + 1) * in_f] = 15  # group 1: signed +7
     packed = _pack_4bit(w_int4)
 
     layer = GPTQQuantizedLinear(
@@ -215,23 +219,39 @@ def test_forward_grouped_quantization():
         sym=True,
     )
 
+    # x = ones(1, 16): row sum = 8 * (signed -1) * scale_g0 + 8 * (signed +7) * scale_g1
     x = torch.ones(1, in_f)
     out = layer(x)
-    # All weights are 0, output is 0
-    assert torch.allclose(out, torch.zeros(1, out_f), atol=1e-3)
+
+    # Hand-computed expected per row:
+    expected_per_row = 8 * (-1) * scales.float()[:, 0] + 8 * 7 * scales.float()[:, 1]
+    expected = expected_per_row.unsqueeze(0)
+    assert torch.allclose(out, expected, atol=1e-3)
 
 
 def test_forward_input_shape_2d_and_3d():
-    """Layer accepts both [batch, in] and [batch, seq, in]."""
-    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    """Layer accepts both [batch, in] and [batch, seq, in] with correct values."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
 
+    torch.manual_seed(42)
     in_f, out_f = 8, 4
+
+    # Non-zero per-row scales so output depends on broadcast
+    scales = torch.tensor([[0.1], [0.2], [0.3], [0.4]], dtype=torch.float16)
+
+    # Pack unsigned=8 (→ signed 0) — but tests broadcast over multiple rows,
+    # not weight magnitude. Use a per-row distinct pattern instead.
+    w_int4 = torch.empty(out_f * in_f, dtype=torch.int8)
+    for row in range(out_f):
+        w_int4[row * in_f : (row + 1) * in_f] = 8 + row  # rows 0..3 → signed 0, 1, 2, 3
+    packed = _pack_4bit(w_int4)
+
     layer = GPTQQuantizedLinear(
         in_features=in_f,
         out_features=out_f,
         bias=False,
-        weight_packed=torch.zeros(out_f * in_f // 2, dtype=torch.int8),
-        scales=torch.ones(out_f, 1, dtype=torch.float16) * 0.01,
+        weight_packed=packed,
+        scales=scales,
         zeros=None,
         bits=4,
         group_size=-1,
@@ -244,5 +264,11 @@ def test_forward_input_shape_2d_and_3d():
     out_2d = layer(x_2d)
     out_3d = layer(x_3d)
 
+    # Shapes preserved
     assert out_2d.shape == (3, out_f)
     assert out_3d.shape == (2, 5, out_f)
+
+    # Per-row weights are distinct; verify matmul is correct (not transposed)
+    # Reference: out = x @ w_fp.T (F.linear does x @ w.T + bias)
+    expected_2d = x_2d @ layer._unpack_weights().to(torch.float32).sub_(8.0).mul_(scales.float()).t()
+    assert torch.allclose(out_2d, expected_2d, atol=1e-4)

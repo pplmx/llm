@@ -108,13 +108,26 @@ class GPTQQuantizedLinear(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with dequantized weights.
 
+        Always materializes fp32 weights: input `x` is upcast to fp32 if needed,
+        output is fp32 regardless of `x` dtype. Asymmetric quantization
+        (`sym=False`) is not yet implemented — raises NotImplementedError.
+
         Args:
             x: Input tensor of shape [..., in_features].
 
         Returns:
-            Output tensor of shape [..., out_features].
+            Output tensor of shape [..., out_features], dtype fp32.
+
+        Raises:
+            NotImplementedError: If `sym=False` was passed at construction.
         """
-        # Unpack int4 (or int8) values; values are unsigned [0, 15] for 4-bit.
+        if not self.sym:
+            raise NotImplementedError(
+                "Asymmetric GPTQ forward is not yet implemented. Construct with sym=True."
+            )
+
+        # Always dequantize from int4/int8 storage: trades compute for memory.
+        # (Caching fp32 weights would double storage; deferred to future optimization.)
         w_int = self._unpack_weights()  # [out_features, in_features]
         # Shift unsigned → signed: [0, 15] → [-8, 7]
         w_int_signed = w_int.to(torch.float32) - 8.0
