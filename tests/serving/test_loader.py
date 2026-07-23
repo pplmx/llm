@@ -16,6 +16,12 @@ from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.distributed import model_state_dict
 
 
+@pytest.fixture
+def device():
+    """Force CPU for these tests — the session-scoped device fixture from
+    conftest.py creates models on CUDA, which OOMs on constrained boxes."""
+    return torch.device("cpu")
+
 def test_infer_vocab_size_from_lm_head(tiny_model, tiny_config):
     state = model_state_dict(tiny_model)
     assert infer_vocab_size(state) == tiny_config.model.vocab_size

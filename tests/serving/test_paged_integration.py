@@ -6,8 +6,9 @@ from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
 
 def get_device():
-    """Get available device: cuda if available, else cpu."""
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    """Force CPU for paged KV cache tests — CUDA allocation OOMs on
+    constrained boxes."""
+    return "cpu"
 
 
 def test_end_to_end_paged_inference():
@@ -57,7 +58,7 @@ def test_prefix_cache_integration_flow():
     """Test full prefix cache integration flow."""
     from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = "cpu"
     cache = PagedKVCache(
         num_layers=1,
         num_kv_heads=2,
