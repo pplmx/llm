@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 import pytest
+import torch
 
 from llm.data.modules.prompt import PromptDataModule
 from llm.training.core.config import Config
@@ -18,6 +19,12 @@ from llm.training.core.engine import TrainingEngine
 from llm.training.rlhf.ppo_trainer import PPOTrainer
 from llm.training.tasks.ppo_task import PPOTask
 from tests.support.tokenizers import CharBoundTokenizer
+
+
+@pytest.fixture
+def device():
+    """Force CPU — CUDA OOMs on constrained boxes."""
+    return torch.device("cpu")
 
 
 def _write_prompts(path, prompts):

@@ -16,9 +16,22 @@ BATCH_SIZE = 4
 _TORCH_DTYPES = {"torch.float32": torch.float32, "torch.float64": torch.float64}
 TEST_SEQ_LEN = MAX_SEQ_LEN // 2
 
-# Available devices and dtypes for testing
+# Available devices and dtypes for testing. Skip CUDA if the device is
+# "available" but has no free memory (common in CI containers that report
+# CUDA_VISIBLE_DEVICES but have 0 usable VRAM).
+def _cuda_usable() -> bool:
+    """True only if CUDA is available *and* we can actually allocate on it."""
+    if not torch.cuda.is_available():
+        return False
+    try:
+        torch.cuda.mem_get_info()
+        return True
+    except (RuntimeError, torch.AcceleratorError):
+        return False
+
+
 DEVICES = ["cpu"]
-if torch.cuda.is_available():
+if _cuda_usable():
     DEVICES.append("cuda")
 
 DTYPES = [torch.float32]
