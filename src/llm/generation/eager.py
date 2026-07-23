@@ -325,10 +325,7 @@ def batch_generate(
         for i in range(batch_size):
             prompt_text = tokenizer.decode(encoded_prompts[i])
             full_text = tokenizer.decode(generated_ids[i])
-            if full_text.startswith(prompt_text):
-                generated_text = full_text[len(prompt_text) :]
-            else:
-                generated_text = full_text
+            generated_text = full_text[len(prompt_text):] if full_text.startswith(prompt_text) else full_text
             for s in stops:
                 idx = generated_text.find(s)
                 if idx != -1:

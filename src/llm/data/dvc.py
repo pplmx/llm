@@ -123,7 +123,7 @@ def _run_dvc_command(args: list[str], cwd: Path | None = None) -> subprocess.Com
     since DVC 2.x) for predictable CI runs.
     """
     cmd = [shutil.which("dvc") or "dvc", *args]
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603 — args are internal, not user input
         cmd,
         cwd=str(cwd) if cwd else None,
         check=False,

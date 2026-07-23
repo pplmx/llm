@@ -79,9 +79,7 @@ class TestComputeFingerprintHash:
         # encoder means they round-trip through ``str(path)`` and produce
         # a stable hash. Verifies the helper is friendly to source
         # fingerprints that contain ``pathlib.Path`` instances.
-        from pathlib import Path as P
-
-        a = compute_fingerprint_hash({"type": "local", "dataset_path": P("/data/x.txt")})
+        a = compute_fingerprint_hash({"type": "local", "dataset_path": Path("/data/x.txt")})
         b = compute_fingerprint_hash({"type": "local", "dataset_path": "/data/x.txt"})
         # The Path instance is coerced to "/data/x.txt" via str(), so
         # the hash equals the plain-string variant.
@@ -191,14 +189,15 @@ def fresh_dvc_repo(tmp_path: Path) -> Path:
         pytest.skip("dvc CLI is required for dvc init but is not on PATH")
 
     # ``dvc init`` requires a git repo first. Make a minimal one.
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
+    git_exe = shutil.which("git")
+    subprocess.run([git_exe, "init", "-q"], cwd=tmp_path, check=True)  # noqa: S603
+    subprocess.run(  # noqa: S603 — git_exe from shutil.which, args hardcoded
+        [git_exe, "config", "user.email", "test@example.com"],
         cwd=tmp_path,
         check=True,
     )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"],
+    subprocess.run(  # noqa: S603 — git_exe from shutil.which, args hardcoded
+        [git_exe, "config", "user.name", "Test"],
         cwd=tmp_path,
         check=True,
     )

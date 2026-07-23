@@ -87,7 +87,7 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
 
     try:
         new_model_state = load_file(str(sidecars["weights"]))
-    except Exception as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         return False, f"new safetensors sidecar failed to load: {exc}"
     new_meta = json.loads(sidecars["meta"].read_text())
     new_extra = torch.load(sidecars["extra_state"], map_location="cpu")
