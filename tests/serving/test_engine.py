@@ -20,13 +20,12 @@ class MockTokenizer:
         return " ".join(map(str, ids))
 
 
-
-
 @pytest.fixture
 def device():
     """Force CPU for these tests — the session-scoped device fixture from
     conftest.py creates models on CUDA, which OOMs on constrained boxes."""
     return torch.device("cpu")
+
 
 @pytest.fixture
 def mock_tokenizer():

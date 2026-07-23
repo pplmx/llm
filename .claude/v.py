@@ -1,4 +1,5 @@
 """Verify stop-sequence implementation by running key checks manually."""
+
 import os
 import sys
 
@@ -31,8 +32,12 @@ class _MultiCharTokenizer:
 
 def make_tiny_model():
     return DecoderModel(
-        vocab_size=100, hidden_size=16, num_layers=1,
-        num_heads=2, max_seq_len=16, device=torch.device("cpu"),
+        vocab_size=100,
+        hidden_size=16,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=16,
+        device=torch.device("cpu"),
     )
 
 
@@ -45,6 +50,7 @@ def run_eager(model, tokenizer_factory, *, max_new_tokens=20, **gen_kwargs):
 
 passed = 0
 failed = 0
+
 
 def check(name, condition, msg=None):
     global passed, failed
@@ -66,66 +72,86 @@ check("immutable", True)  # frozen dataclass
 print("\n=== EagerGenerationBackend stop logic ===")
 model = make_tiny_model()
 
+
 # Test 1: No stop generates full window
 class GrowingTok(_MultiCharTokenizer):
     def __init__(self):
         super().__init__([1])
         self.c = 0
+
     def decode(self, ids):
         self.c += 1
         return chr(ord("a") + (self.c - 1) % 26)
+
+
 r = run_eager(model, GrowingTok, max_new_tokens=5)
 check("no stop -> 5 chars", len(r) == 5)
+
 
 # Test 2: Single string stop
 class StopTok(_MultiCharTokenizer):
     def __init__(self):
         super().__init__([1])
-        self.seq = ["a","b","c","d","E","N","D","a","b","c","d","E"]
+        self.seq = ["a", "b", "c", "d", "E", "N", "D", "a", "b", "c", "d", "E"]
         self.i = 0
+
     def decode(self, ids):
         ch = self.seq[self.i]
         self.i += 1
         return ch
+
+
 r = run_eager(model, StopTok, max_new_tokens=12, stop="END")
 check("single stop -> 'abcd'", r == "abcd", f"got {r!r}")
+
 
 # Test 3: List of stops
 class TwoStopsTok(_MultiCharTokenizer):
     def __init__(self):
         super().__init__([1])
-        self.seq = ["x","y","S","T","O","P","a","b","E","N","D"]
+        self.seq = ["x", "y", "S", "T", "O", "P", "a", "b", "E", "N", "D"]
         self.i = 0
+
     def decode(self, ids):
         ch = self.seq[self.i]
         self.i += 1
         return ch
+
+
 r = run_eager(model, TwoStopsTok, max_new_tokens=11, stop=["STOP", "END"])
 check("list stops -> 'xy'", r == "xy", f"got {r!r}")
+
 
 # Test 4: Stop at first token
 class ImmediateStopTok(_MultiCharTokenizer):
     def __init__(self):
         super().__init__([1])
-        self.seq = ["X","a","b","c"]
+        self.seq = ["X", "a", "b", "c"]
         self.i = 0
+
     def decode(self, ids):
         ch = self.seq[self.i]
         self.i += 1
         return ch
+
+
 r = run_eager(model, ImmediateStopTok, max_new_tokens=4, stop="X")
 check("stop at first -> ''", r == "", f"got {r!r}")
+
 
 # Test 5: No match falls through
 class NoMatchTok(_MultiCharTokenizer):
     def __init__(self):
         super().__init__([1])
-        self.seq = ["a","b","c","d"]
+        self.seq = ["a", "b", "c", "d"]
         self.i = 0
+
     def decode(self, ids):
         ch = self.seq[self.i]
         self.i += 1
         return ch
+
+
 r = run_eager(model, NoMatchTok, max_new_tokens=4, stop="ZZZ")
 check("no match -> 'abcd'", r == "abcd", f"got {r!r}")
 

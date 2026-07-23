@@ -307,15 +307,18 @@ def client_with_mock(monkeypatch):
     fake_service = MagicMock()
     fake_engine = MagicMock()
     monkeypatch.setattr(
-        ServingGenerationService, "from_config",
+        ServingGenerationService,
+        "from_config",
         classmethod(lambda cls, config, **kw: fake_service),
     )
     monkeypatch.setattr(
-        ContinuousBatchingEngine, "from_serving_config",
+        ContinuousBatchingEngine,
+        "from_serving_config",
         classmethod(lambda cls, config, **kw: fake_engine),
     )
     monkeypatch.setattr(
-        "llm.serving.api._log_server_config", lambda *a, **kw: None,
+        "llm.serving.api._log_server_config",
+        lambda *a, **kw: None,
     )
 
     with TestClient(app) as c:
@@ -342,9 +345,7 @@ def test_chat_router_forwards_stop_string(client_with_mock):
     # the router. Assert the mock saw the stop string.
     assert mock.generate.called, "Expected chat router to call service.generate"
     call_kwargs = mock.generate.call_args.kwargs
-    assert call_kwargs.get("stop") == "END", (
-        f"Expected stop='END' in service.generate kwargs, got {call_kwargs}"
-    )
+    assert call_kwargs.get("stop") == "END", f"Expected stop='END' in service.generate kwargs, got {call_kwargs}"
 
 
 def test_chat_router_forwards_stop_list(client_with_mock):

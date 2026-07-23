@@ -26,8 +26,12 @@ def client(monkeypatch):
 
     torch.manual_seed(42)
     tiny_model = DecoderModel(
-        vocab_size=100, hidden_size=16, num_layers=1,
-        num_heads=2, max_seq_len=16, device=torch.device("cpu"),
+        vocab_size=100,
+        hidden_size=16,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=16,
+        device=torch.device("cpu"),
     )
     tokenizer = StubTokenizer()
 
@@ -40,11 +44,13 @@ def client(monkeypatch):
 
     fake_engine = MagicMock()
     monkeypatch.setattr(
-        ServingGenerationService, "from_config",
+        ServingGenerationService,
+        "from_config",
         classmethod(lambda cls, config, **kw: real_service),
     )
     monkeypatch.setattr(
-        ContinuousBatchingEngine, "from_serving_config",
+        ContinuousBatchingEngine,
+        "from_serving_config",
         classmethod(lambda cls, config, **kw: fake_engine),
     )
     monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
@@ -192,7 +198,9 @@ def test_auth_enforcement(monkeypatch):
         mock = MagicMock()
         mock.generate.return_value = "ok"
         monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
-        monkeypatch.setattr(ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: MagicMock())
+        )
         monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
 
         with TestClient(app) as c:

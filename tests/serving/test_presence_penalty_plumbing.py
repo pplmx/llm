@@ -57,15 +57,18 @@ def client_with_mock(monkeypatch):
     fake_service = MagicMock()
     fake_engine = MagicMock()
     monkeypatch.setattr(
-        ServingGenerationService, "from_config",
+        ServingGenerationService,
+        "from_config",
         classmethod(lambda cls, config, **kw: fake_service),
     )
     monkeypatch.setattr(
-        ContinuousBatchingEngine, "from_serving_config",
+        ContinuousBatchingEngine,
+        "from_serving_config",
         classmethod(lambda cls, config, **kw: fake_engine),
     )
     monkeypatch.setattr(
-        "llm.serving.api._log_server_config", lambda *a, **kw: None,
+        "llm.serving.api._log_server_config",
+        lambda *a, **kw: None,
     )
 
     with TestClient(app) as c:
@@ -75,6 +78,7 @@ def client_with_mock(monkeypatch):
         monkeypatch.setattr(chat_module, "config", cfg)
         c.headers[api_key_header.model.name] = "test-key"
         yield c, mock
+
 
 def test_chat_router_forwards_presence_penalty(client_with_mock):
     """`presence_penalty` from the chat request reaches the service as its own kwarg."""

@@ -82,10 +82,7 @@ class GPTQConfig:
         # LayerQuantPolicy.__post_init__ at construction time.
         for i, p in enumerate(self.layer_policies):
             if not isinstance(p, LayerQuantPolicy):
-                raise TypeError(
-                    f"GPTQConfig.layer_policies[{i}] must be LayerQuantPolicy; "
-                    f"got {type(p).__name__}."
-                )
+                raise TypeError(f"GPTQConfig.layer_policies[{i}] must be LayerQuantPolicy; got {type(p).__name__}.")
 
 
 class GPTQQuantizer:

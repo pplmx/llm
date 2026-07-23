@@ -99,8 +99,7 @@ def test_cli_quantize_happy_path_replaces_linears(runner: CliRunner, tmp_path):
     )
 
     assert result.exit_code == 0, (
-        f"CLI exited with {result.exit_code}\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        f"CLI exited with {result.exit_code}\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
     assert output_path.exists(), f"Expected {output_path} to exist"
 

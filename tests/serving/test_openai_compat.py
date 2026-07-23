@@ -10,13 +10,16 @@ def client(monkeypatch):
 
     from llm.serving.batch_engine import ContinuousBatchingEngine
     from llm.serving.generation_service import ServingGenerationService
+
     mock = MagicMock()
     mock.generate.return_value = "ok"
     mock.stream.return_value = iter([])
     fake_service = MagicMock()
     fake_engine = MagicMock()
     monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: fake_service))
-    monkeypatch.setattr(ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: fake_engine))
+    monkeypatch.setattr(
+        ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: fake_engine)
+    )
     monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
     with TestClient(app) as c:
         monkeypatch.setattr("llm.serving.routers.generate.generation_service", mock)
@@ -147,7 +150,9 @@ def test_bearer_token_auth(monkeypatch):
         mock = MagicMock()
         mock.generate.return_value = "ok"
         monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
-        monkeypatch.setattr(ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: MagicMock())
+        )
         monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
 
         with TestClient(app) as c:
