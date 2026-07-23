@@ -5,15 +5,11 @@ import sys
 
 import torch
 
-os.chdir("/workspace/llm")
-sys.path.insert(0, "src")
-sys.path.insert(0, ".")
-
 # Force CPU
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-from llm.generation.backends import EagerGenerationBackend, GenerationConfig  # noqa: E402
-from llm.models.decoder import DecoderModel  # noqa: E402
+from llm.generation.backends import EagerGenerationBackend, GenerationConfig
+from llm.models.decoder import DecoderModel
 
 
 class _MultiCharTokenizer:
