@@ -2,6 +2,9 @@ import pytest
 
 from llm.evaluation.metrics.accuracy import AccuracyMetric, F1Metric
 
+# F1Metric uses sklearn under the hood; skip if not installed.
+pytest.importorskip("sklearn", reason="scikit-learn is an optional eval dependency")
+
 
 def test_accuracy_basic():
     metric = AccuracyMetric()

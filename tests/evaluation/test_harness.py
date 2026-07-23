@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+
 from llm.evaluation.harness.adapter import LmEvalAdapter
 
 
