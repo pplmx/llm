@@ -254,3 +254,133 @@ def test_cli_model_path_must_exist_when_tokenizer_path_resolved(runner: CliRunne
     assert result.exit_code != 0
     stderr = result.stderr or ""
     assert "model" in stderr.lower() or "not found" in stderr.lower() or "exist" in stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# _resolve_target_modules (pure function — no CLI runner needed)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_target_modules_none_returns_none():
+    """None → None (quantize all nn.Linear layers)."""
+    from llm.cli.quantize import _resolve_target_modules
+
+    assert _resolve_target_modules(None) is None
+
+
+def test_resolve_target_modules_single():
+    """Single module name → single-element list."""
+    from llm.cli.quantize import _resolve_target_modules
+
+    assert _resolve_target_modules("fc1") == ["fc1"]
+
+
+def test_resolve_target_modules_multiple_with_whitespace():
+    """Comma-separated names with whitespace → stripped, empty stripped."""
+    from llm.cli.quantize import _resolve_target_modules
+
+    result = _resolve_target_modules(" fc1 , fc2 ,  , fc3 ")
+    assert result == ["fc1", "fc2", "fc3"]
+
+
+def test_resolve_target_modules_empty_string():
+    """Empty string → empty list (not None)."""
+    from llm.cli.quantize import _resolve_target_modules
+
+    assert _resolve_target_modules("") == []
+
+
+# ---------------------------------------------------------------------------
+# _validate_quant_params: remaining branches
+# ---------------------------------------------------------------------------
+
+
+def test_cli_invalid_percdamp_errors(runner, tmp_path):
+    """--percdamp 0 → error (must be in (0, 1))."""
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+    result = runner.invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--calib-data-tokens",
+            str(tmp_path / "c.pt"),
+            "--percdamp",
+            "0",
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_cli_negative_blocksize_errors(runner, tmp_path):
+    """--blocksize -1 → error (must be positive)."""
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+    result = runner.invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--calib-data-tokens",
+            str(tmp_path / "c.pt"),
+            "--blocksize",
+            "-1",
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_cli_blocksize_not_divisible_by_group_size(runner, tmp_path):
+    """--blocksize 10 --group-size 3 → error (10 % 3 != 0)."""
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+    result = runner.invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--calib-data-tokens",
+            str(tmp_path / "c.pt"),
+            "--blocksize",
+            "10",
+            "--group-size",
+            "3",
+        ],
+    )
+    assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# _validate_model_path: non-file path branch
+# ---------------------------------------------------------------------------
+
+
+def test_cli_model_path_directory_errors(runner, tmp_path):
+    """--model pointing at a directory → error (must be a regular file)."""
+    dir_path = tmp_path / "model_dir"
+    dir_path.mkdir()
+    result = runner.invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(dir_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--calib-data-tokens",
+            str(tmp_path / "c.pt"),
+        ],
+    )
+    assert result.exit_code != 0
+    stderr = result.stderr or ""
+    assert "not a regular file" in stderr.lower() or "not a file" in stderr.lower()
