@@ -227,12 +227,8 @@ def register_exception_handlers(app: FastAPI, *, logger: Any | None = None) -> N
             envelope but not logged here (the :class:`RequestIDMiddleware`
             access log line still records the failure).
     """
-    from llm.serving.errors import (
-        envelope_from_api_error,
-        envelope_from_http_exception,
-        envelope_from_unexpected,
-        envelope_from_validation_error,
-    )
+    # Functions below are defined in module scope earlier in this file —
+    # no import needed.
 
     @app.exception_handler(RequestValidationError)
     async def _validation_handler(request: Request, exc: RequestValidationError) -> Response:
