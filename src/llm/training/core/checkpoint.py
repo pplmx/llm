@@ -184,7 +184,7 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
 
     model_state = load_file(str(safetensors_path))
     # Re-wrap into a torch state_dict (still tensors, just not safetensors-format).
-    model_state = {k: v for k, v in model_state.items()}
+    model_state = dict(model_state.items())
 
     with meta_path.open("r", encoding="utf-8") as f:
         meta = json.load(f)

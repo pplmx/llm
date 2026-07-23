@@ -1,6 +1,7 @@
 """Verify stop-sequence implementation by running key checks manually."""
-import sys
 import os
+import sys
+
 import torch
 
 os.chdir("/workspace/llm")
@@ -10,10 +11,8 @@ sys.path.insert(0, ".")
 # Force CPU
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-from llm.generation.backends import EagerGenerationBackend, GenerationConfig
-from llm.generation.eager import stream_generate, _normalize_stop
-from llm.models.decoder import DecoderModel
-from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.generation.backends import EagerGenerationBackend, GenerationConfig  # noqa: E402
+from llm.models.decoder import DecoderModel  # noqa: E402
 
 
 class _MultiCharTokenizer:

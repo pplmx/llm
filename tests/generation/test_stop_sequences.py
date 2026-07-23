@@ -23,11 +23,11 @@ These tests cover:
 
 from __future__ import annotations
 
-import torch
 from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock
 
 import pytest
+import torch
 from fastapi.testclient import TestClient
 
 from llm.generation.backends import EagerGenerationBackend, GenerationConfig
@@ -281,13 +281,13 @@ def client_with_mock(monkeypatch):
     starts we rebind the routers' module-level ``generation_service`` so
     the recording mock intercepts every request.
     """
-    from llm.serving.api import app
-    from llm.serving.auth import api_key_header
-    from llm.serving.config import ServingConfig
     import llm.serving.routers.chat as chat_module
     import llm.serving.routers.generate as generate_module
-    from llm.serving.generation_service import ServingGenerationService
+    from llm.serving.api import app
+    from llm.serving.auth import api_key_header
     from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.config import ServingConfig
+    from llm.serving.generation_service import ServingGenerationService
 
     mock = MagicMock()
     mock.generate.return_value = "ok"
