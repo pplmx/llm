@@ -1,10 +1,8 @@
+import sys
+
 import pytest
 
 from llm.evaluation.metrics.generation import BleuMetric, ChrFMetric, RougeMetric
-
-# Each metric depends on its own optional package. Gate the import *per test*
-# so that e.g. BleuMetric/ChrFMetric run whenever sacrebleu is available,
-# independent of whether rouge_score (used only by RougeMetric) is installed.
 
 
 def test_rouge_basic():
@@ -69,3 +67,47 @@ def test_chrf_no_overlap():
     result = metric.compute(predictions, references)
     assert "chrf" in result
     assert result["chrf"] < 30.0
+
+
+# --------------------------------------------------------------------------- #
+# Soft-dependency contract for RougeMetric
+#
+# ``RougeMetric`` must be constructible without ``rouge-score`` installed
+# (same contract as ``BleuMetric`` / ``ChrFMetric`` which import sacrebleu
+# lazily inside ``compute``). We monkey-patch ``sys.modules`` so the test
+# runs in *every* environment — with or without rouge_score present.
+# --------------------------------------------------------------------------- #
+
+
+def test_rouge_metric_constructible_without_rouge_score(monkeypatch):
+    """``RougeMetric()`` must not import ``rouge_score`` eagerly."""
+    monkeypatch.setitem(sys.modules, "rouge_score", None)
+
+    metric = RougeMetric()
+    assert metric.rouge_types == ["rouge1", "rouge2", "rougeL"]
+
+
+def test_rouge_metric_custom_types_without_rouge_score(monkeypatch):
+    """Custom ``rouge_types`` are stored at init without triggering import."""
+    monkeypatch.setitem(sys.modules, "rouge_score", None)
+
+    metric = RougeMetric(rouge_types=["rouge1"])
+    assert metric.rouge_types == ["rouge1"]
+
+
+def test_rouge_metric_compute_raises_without_rouge_score(monkeypatch):
+    """``compute`` on a host without rouge_score raises a clear ImportError."""
+    monkeypatch.setitem(sys.modules, "rouge_score", None)
+
+    metric = RougeMetric()
+    with pytest.raises(ImportError, match="rouge-score"):
+        metric.compute(["pred"], ["ref"])
+
+
+def test_rouge_metric_empty_inputs_without_rouge_score(monkeypatch):
+    """Empty predictions/references return ``{}`` without importing rouge_score."""
+    monkeypatch.setitem(sys.modules, "rouge_score", None)
+
+    metric = RougeMetric()
+    result = metric.compute([], [])
+    assert result == {}
