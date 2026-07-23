@@ -384,3 +384,57 @@ def test_cli_model_path_directory_errors(runner, tmp_path):
     assert result.exit_code != 0
     stderr = result.stderr or ""
     assert "not a regular file" in stderr.lower() or "not a file" in stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# _load_calibration_batches: calib_data_tokens shape-handling branches
+# ---------------------------------------------------------------------------
+
+
+def test_load_calibration_batches_single_tensor(tmp_path: Path):
+    """A single .pt tensor is wrapped in a list (uniform iterable contract)."""
+    import torch
+
+    from llm.cli.quantize import _load_calibration_batches
+
+    calib = tmp_path / "calib.pt"
+    torch.save(torch.tensor([[1, 2, 3]]), calib)
+
+    result = _load_calibration_batches(None, calib, None)
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert torch.equal(result[0], torch.tensor([[1, 2, 3]]))
+
+
+def test_load_calibration_batches_list_of_tensors(tmp_path: Path):
+    """A .pt list of tensors is returned as-is (already iterable)."""
+    import torch
+
+    from llm.cli.quantize import _load_calibration_batches
+
+    calib = tmp_path / "calib.pt"
+    torch.save([torch.tensor([[1, 2]]), torch.tensor([[3, 4]])], calib)
+
+    result = _load_calibration_batches(None, calib, None)
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0].shape == (1, 2)
+    assert result[1].shape == (1, 2)
+
+
+def test_load_calibration_batches_unknown_shape_passthrough(tmp_path: Path):
+    """A non-list / non-tensor .pt payload is passed through unwrapped.
+
+    The docstring says "Unknown shape — let downstream fail with a clearer
+    error"; we verify the passthrough contract (returns the loaded object
+    unchanged) so a future refactor can't silently drop or wrap it.
+    """
+    import torch
+
+    from llm.cli.quantize import _load_calibration_batches
+
+    calib = tmp_path / "calib.pt"
+    torch.save({"unexpected": "dict"}, calib)
+
+    result = _load_calibration_batches(None, calib, None)
+    assert result == {"unexpected": "dict"}
