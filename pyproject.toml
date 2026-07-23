@@ -106,6 +106,15 @@ compat = [
     "pillow>=12.3.0",  # bumped: 18 CVEs (PYSEC-2026-2253/4/5/6/7, -3451/2/3, CVE-2026-54058/59197/59198/59200/59204) fix in 12.3.0
     "safetensors>=0.4.0",
 ]
+# Static security analysis tools. Used in the CI ``security`` job and
+# available locally via ``uv sync --group security``. Pinned to
+# major-version floors so Renovate can pick up fixes; the CI ``--strict``
+# flag on ``pip-audit`` ensures any known CVE in the locked set fails the
+# build. See docs/audits/2026-07-12-tickets/09-pip-audit-bandit-ci.md.
+security = [
+    "bandit>=1.7.0",  # >=1.7 for Python 3.14 support
+    "pip-audit>=2.7.0",
+]
 
 [project.optional-dependencies]
 # Non-uv users: ``pip install llm[eval]``. Keep in sync with the groups above.
@@ -126,6 +135,15 @@ compat = [
     "huggingface_hub>=0.20.0",
     "pillow>=12.3.0",  # bumped: 18 CVEs (PYSEC-2026-2253/4/5/6/7, -3451/2/3, CVE-2026-54058/59197/59198/59200/59204) fix in 12.3.0
     "safetensors>=0.4.0",
+]
+# Static security analysis tools. Used in the CI ``security`` job and
+# available locally via ``uv sync --group security``. Pinned to
+# major-version floors so Renovate can pick up fixes; the CI ``--strict``
+# flag on ``pip-audit`` ensures any known CVE in the locked set fails the
+# build. See docs/audits/2026-07-12-tickets/09-pip-audit-bandit-ci.md.
+security = [
+    "bandit>=1.7.0",  # >=1.7 for Python 3.14 support
+    "pip-audit>=2.7.0",
 ]
 # Optional data-versioning backend (DVC, P0 预训练 productization last item).
 # Without ``dvc`` installed the helpers in :mod:`llm.data.dvc` degrade to

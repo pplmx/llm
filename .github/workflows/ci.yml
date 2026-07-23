@@ -97,18 +97,16 @@ jobs:
                 run: uv lock --check
 
             -   name: Synchronize Dependencies
-                run: uv sync --frozen
-
-            -   name: Install pip-audit and bandit
-                run: uv tool install pip-audit bandit
+                run: uv sync --frozen --group security
 
             -   name: Audit locked dependencies (pip-audit)
                 # Strict: any known CVE in the lockfile fails the build.
                 # Renovate also updates dependencies weekly, but pip-audit
                 # adds a second layer for transitive vulnerabilities.
-                run: uv tool run pip-audit --strict
+                # Versions are pinned in pyproject.toml [dependency-groups] security.
+                run: uv run pip-audit --strict
 
             -   name: Static security analysis (bandit)
                 # High+ severity findings fail the build. Lower severities
                 # are reported as warnings.
-                run: uv tool run bandit -r src/llm/ --severity-level high
+                run: uv run bandit -r src/llm/ --severity-level high
