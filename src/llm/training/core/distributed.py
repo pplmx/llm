@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 import torch
 import torch.distributed as dist
 
 from llm.training.core.config import DistributedConfig
+
+logger = logging.getLogger(__name__)
 
 
 class DistributedManager:
@@ -27,7 +30,10 @@ class DistributedManager:
             if backend != "nccl" and torch.cuda.is_available() and backend != "gloo":
                 # In a typical DDP setup with GPUs, nccl is preferred.
                 # If another backend is specified, respect it but log a warning if it's not 'gloo' for CPU.
-                print(f"Warning: Non-standard backend '{backend}' specified for DDP with GPUs. 'nccl' is typical.")
+                logger.warning(
+                    "Non-standard backend '%s' specified for DDP with GPUs. 'nccl' is typical.",
+                    backend,
+                )
 
             dist.init_process_group(backend=backend, rank=rank, world_size=world_size)
 
@@ -45,8 +51,9 @@ class DistributedManager:
             # or handled in the main training script.
             # If world_size is 0 or <0, or >1 but no GPUs, it's an invalid state.
             if not (torch.cuda.is_available() and torch.cuda.device_count() > 0) and world_size > 1:
-                print(
-                    f"Warning: world_size is {world_size} but no GPUs found. DDP setup will be skipped. Check configuration."
+                logger.warning(
+                    "world_size is %d but no GPUs found. DDP setup will be skipped. Check configuration.",
+                    world_size,
                 )
             # If it still proceeds, it will likely fail later if DDP operations are attempted.
             # Forcing world_size to 1 if no GPUs might be an option in get_world_size.

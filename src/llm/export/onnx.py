@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from pathlib import Path
 
@@ -7,6 +8,8 @@ import torch
 import torch.nn as nn
 
 from llm.export._wrapper import ExportCacheWrapper
+
+logger = logging.getLogger(__name__)
 
 
 def export_to_onnx(
@@ -77,7 +80,7 @@ def export_to_onnx(
         )
 
     if verbose:
-        print(f"Exported model to {output_path}")
+        logger.info("Exported model to %s", output_path)
 
     return output_path
 
