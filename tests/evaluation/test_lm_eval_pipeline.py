@@ -383,6 +383,7 @@ class _FakeRequest:
 
 def test_lm_eval_lm_init_with_fake_model():
     """``LlamaLmEvalLM`` initializes and binds to the model's device."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     assert lm.batch_size == 2
     assert lm.max_length == _FakeModel.max_seq_len
@@ -391,6 +392,7 @@ def test_lm_eval_lm_init_with_fake_model():
 
 
 def test_lm_eval_lm_loglikelihood_returns_one_tuple_per_request():
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     requests = [
         _FakeRequest(("hello", "world")),
@@ -405,6 +407,7 @@ def test_lm_eval_lm_loglikelihood_returns_one_tuple_per_request():
 
 def test_lm_eval_lm_loglikelihood_greedy_match_is_true_for_argmax_model():
     """If the model always picks the same id, ``is_greedy`` matches continuation."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=3), _FakeTokenizer(), batch_size=2)
     # Force the tokenizer to encode continuation into ids where 3 dominates
     # the model's argmax — we'll just check the *shape* of the output.
@@ -415,6 +418,7 @@ def test_lm_eval_lm_loglikelihood_greedy_match_is_true_for_argmax_model():
 
 def test_lm_eval_lm_loglikelihood_handles_empty_continuation():
     """Empty continuation must not crash (guard with ``[0]`` fallback)."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     requests = [_FakeRequest(("hello", ""))]
     out = lm.loglikelihood(requests)
@@ -424,6 +428,7 @@ def test_lm_eval_lm_loglikelihood_handles_empty_continuation():
 
 def test_lm_eval_lm_loglikelihood_batches_requests():
     """Batching must not drop or reorder results."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2, max_length=64)
     requests = [_FakeRequest((f"context_{i}", "cont")) for i in range(5)]
     out = lm.loglikelihood(requests)
@@ -432,6 +437,7 @@ def test_lm_eval_lm_loglikelihood_batches_requests():
 
 def test_lm_eval_lm_loglikelihood_rolling_short_input():
     """Inputs shorter than 2 tokens yield ``0.0`` rather than crashing."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     requests = [_FakeRequest(("a",)), _FakeRequest(("bb",))]
     out = lm.loglikelihood_rolling(requests)
@@ -447,6 +453,7 @@ def test_lm_eval_lm_loglikelihood_rolling_returns_list_of_floats():
     — if we returned 1-tuples, that unpacking would yield a tuple
     instead of a float and corrupt the metric tuple.
     """
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     requests = [_FakeRequest(("hello",)), _FakeRequest(("world!",))]
     out = lm.loglikelihood_rolling(requests)
@@ -458,6 +465,7 @@ def test_lm_eval_lm_loglikelihood_rolling_returns_list_of_floats():
 
 
 def test_lm_eval_lm_generate_until_respects_max_gen_toks():
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     requests = [
         _FakeRequest(("ctx", {"until": [], "max_gen_toks": 3})),
@@ -470,6 +478,7 @@ def test_lm_eval_lm_generate_until_respects_max_gen_toks():
 
 def test_lm_eval_lm_generate_until_stops_on_until_token():
     """Once ``until`` is a suffix of ``generated``, stop early."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     # Generate up to 5 tokens but stop as soon as id 1 appears twice
     # (the model always produces 1, so the suffix matches after 2 steps).
@@ -539,6 +548,7 @@ def mocked_lm_eval():
     attribute as a fresh name. ``TaskManager`` exists, so it can be
     patched normally.
     """
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     with patch("lm_eval.tasks.TaskManager", _FakeTaskManager), patch("lm_eval.evaluator", _FakeEvaluator, create=True):
         yield
 

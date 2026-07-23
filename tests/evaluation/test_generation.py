@@ -1,5 +1,9 @@
 import pytest
 
+pytest.importorskip("sacrebleu", reason="sacrebleu is an optional eval dependency")
+pytest.importorskip("nltk", reason="nltk is an optional eval dependency")
+pytest.importorskip("rouge_score", reason="rouge_score is an optional eval dependency")
+
 from llm.evaluation.metrics.generation import BleuMetric, ChrFMetric, RougeMetric
 
 
