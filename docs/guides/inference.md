@@ -298,6 +298,44 @@ Operators normally grep for this line:
 # Tail server logs and pull only the startup config line
 uv run llm-serve 2>&1 | tee /tmp/llm-serve.log | grep '"event": "server_config"'
 
+## Server Binding & Authentication Policy
+
+The server **refuses to start** when it would bind to a non-loopback
+address (`0.0.0.0`, `*`, LAN IPs, public hostnames) **without** an
+`api_key` configured. This is a fail-closed guard: binding to a public
+interface with no authentication exposes the inference endpoint to
+anonymous network access, which is almost never intended.
+
+### Loopback allow-list
+
+| Host value        | Loopback? | Safe without `api_key`? |
+| ----------------- | --------- | ----------------------- |
+| `127.0.0.1`       | Yes       | Yes                     |
+| `127.*.*.*`       | Yes       | Yes                     |
+| `::1`             | Yes       | Yes                     |
+| `localhost`       | Yes       | Yes                     |
+| `0.0.0.0`         | No        | No — requires `api_key` |
+| `192.168.1.100`   | No        | No — requires `api_key` |
+
+### How to run on a public interface
+
+Two options, both required:
+
+```bash
+# Option A: keep loopback (default, safe for local development)
+LLM_SERVING_HOST=127.0.0.1 uv run llm-serve
+
+# Option B: bind to all interfaces + set an API key (containerized deployment)
+LLM_SERVING_HOST=0.0.0.0 \
+LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
+uv run llm-serve
+```
+
+When `api_key` is set, all `/generate`, `/chat/completions`,
+`/v1/chat/completions` requests require a matching `Authorization:
+Bearer <key>` header or `X-API-Key: <key>` header. Requests without a
+valid key receive `403 Unauthorized`.
+
 # Re-extract from a saved log file
 grep '"event": "server_config"' /var/log/llm-serve.log | tail -1 | jq .
 ```
