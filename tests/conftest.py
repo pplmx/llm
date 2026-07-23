@@ -50,7 +50,7 @@ def device():
         try:
             torch.cuda.mem_get_info()
             return torch.device("cuda")
-        except (RuntimeError, torch.AcceleratorError):
+        except RuntimeError, torch.AcceleratorError:
             pass
     return torch.device("cpu")
 

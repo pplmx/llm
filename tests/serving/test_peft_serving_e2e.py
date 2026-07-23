@@ -42,7 +42,6 @@ def device():
     return torch.device("cpu")
 
 
-
 def _build_tokenizer_ckpt(tmp_path: Path, vocab_size: int) -> Path:
     """Save a minimal SimpleCharacterTokenizer (the loader requires one)."""
     import string
