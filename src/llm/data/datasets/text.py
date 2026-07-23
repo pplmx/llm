@@ -66,8 +66,6 @@ class TextDataset(Dataset):
                 # Fallback if tokenizer doesn't specify a pad_token_id
                 # (though SimpleCharacterTokenizer is now expected to have one)
                 self.padding_value = 0
-                # print(f"Warning: padding_value not specified and tokenizer has no pad_token_id. Defaulting to 0.", file=sys.stderr)
-                # Avoiding print to stderr for cleaner test output, assuming this case is handled or tested elsewhere.
         else:
             self.padding_value = padding_value
 
