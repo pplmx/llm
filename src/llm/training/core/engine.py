@@ -14,6 +14,22 @@ from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
 
+def _cuda_usable() -> bool:
+    """True only if CUDA is available *and* actually allocatable.
+
+    ``torch.cuda.is_available()`` can return True in containers that report
+    CUDA devices but have 0 usable VRAM (CUDA OOM on first allocation).
+    This helper also rejects that case by attempting a memory-info query.
+    """
+    if not torch.cuda.is_available():
+        return False
+    try:
+        torch.cuda.mem_get_info()
+        return True
+    except (RuntimeError, torch.AcceleratorError):
+        return False
+
+
 class TrainingEngine:
     def __init__(
         self,
@@ -29,7 +45,12 @@ class TrainingEngine:
         self.rank = rank
         self.world_size = world_size
 
-        if torch.cuda.is_available() and torch.cuda.device_count() > 0 and self.world_size > 0:
+        if (
+            torch.cuda.is_available()
+            and torch.cuda.device_count() > 0
+            and self.world_size > 0
+            and _cuda_usable()
+        ):
             # world_size > 0 is a proxy for intending to use GPUs if available
             # rank % torch.cuda.device_count() ensures valid device index per process
             self.device = torch.device(f"cuda:{rank % torch.cuda.device_count()}")

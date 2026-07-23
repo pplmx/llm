@@ -1,10 +1,17 @@
 """Tests for BatchedGenerationBackend."""
 
 import pytest
+import torch
 
 from llm.generation.backends import BatchedGenerationBackend, GenerationConfig
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.schemas import GenerationRequest
+
+
+@pytest.fixture
+def device():
+    """Force CPU — CUDA OOMs on constrained boxes."""
+    return torch.device("cpu")
 
 
 @pytest.mark.quick

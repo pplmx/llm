@@ -40,8 +40,19 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(scope="session")
 def device():
-    """Returns the best available device (cuda if available, else cpu)."""
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    """Returns cuda if available *and* allocatable, else cpu.
+
+    ``torch.cuda.is_available()`` can return True in containers that report
+    CUDA devices but have 0 usable VRAM (CUDA OOM on first allocation).
+    We probe ``mem_get_info()`` to reject that case.
+    """
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.mem_get_info()
+            return torch.device("cuda")
+        except (RuntimeError, torch.AcceleratorError):
+            pass
+    return torch.device("cpu")
 
 
 @pytest.fixture(scope="session")
