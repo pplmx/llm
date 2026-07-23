@@ -1,12 +1,19 @@
+from __future__ import annotations
+
 import operator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
-from torch.utils.tensorboard import SummaryWriter
 
 from llm.core.adalora import AdaLoRAGradientEMA, prune_adalora
 from llm.runtime.checkpoint import CheckpointContributor
+
+if TYPE_CHECKING:
+    # ``SummaryWriter`` is only used as a type annotation and lazily imported
+    # at runtime below — ``tensorboard`` is an optional dependency
+    # (the ``[logging]`` extra) that core training must not require.
+    from torch.utils.tensorboard import SummaryWriter
 
 
 # Forward declaration to avoid circular imports
@@ -222,8 +229,27 @@ class TensorBoardLogger(Callback):
     def on_train_start(self, logs: dict[str, Any] | None = None):
         if self.engine.rank == 0:
             log_path = Path(self.log_dir) / self.engine.config.logging.log_dir  # Use config's log_dir
-            self.writer = SummaryWriter(log_path)
+            self.writer = self._make_writer(log_path)
             self.engine.logger.info(f"TensorBoard: Logging to {log_path}")
+
+    @staticmethod
+    def _make_writer(log_path: Path) -> SummaryWriter:
+        """Lazily import ``tensorboard`` and build a ``SummaryWriter``.
+
+        ``tensorboard`` is an optional dependency (the ``[logging]`` extra).
+        Importing it eagerly at module load would make the entire training
+        module — including unrelated callbacks like
+        :class:`EvaluationCallback` — fail on hosts without it. The import is
+        deferred to here so the failure only happens when TensorBoard
+        logging is actually requested, with an actionable install hint.
+        """
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+        except ImportError as exc:
+            raise ImportError(
+                "tensorboard is an optional training dependency. Install with `pip install 'llm[logging]'`."
+            ) from exc
+        return SummaryWriter(log_path)
 
     def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None):
         if self.engine.rank == 0 and self.writer and logs:
