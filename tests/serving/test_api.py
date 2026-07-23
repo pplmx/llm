@@ -5,8 +5,62 @@ from llm.serving.api import app
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    """TestClient backed by a real tiny CPU model (not a mock).
+
+    Used by @pytest.mark.slow tests that assert on actual generation
+    output. Avoids CUDA OOM by constructing the model on CPU directly
+    instead of going through ServingGenerationService.from_config -> load_model_and_tokenizer.
+    """
+    from unittest.mock import MagicMock
+
+    import torch
+
+    from llm.generation.backends import EagerGenerationBackend
+    from llm.models.decoder import DecoderModel
+    from llm.serving.auth import api_key_header
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.config import ServingConfig
+    from llm.serving.generation_service import ServingGenerationService
+    from tests.support.tokenizers import StubTokenizer
+
+    torch.manual_seed(42)
+    tiny_model = DecoderModel(
+        vocab_size=100, hidden_size=16, num_layers=1,
+        num_heads=2, max_seq_len=16, device=torch.device("cpu"),
+    )
+    tokenizer = StubTokenizer()
+
+    real_service = ServingGenerationService(
+        model=tiny_model,
+        tokenizer=tokenizer,
+        backend=EagerGenerationBackend(),
+        device=torch.device("cpu"),
+    )
+
+    fake_engine = MagicMock()
+    monkeypatch.setattr(
+        ServingGenerationService, "from_config",
+        classmethod(lambda cls, config, **kw: real_service),
+    )
+    monkeypatch.setattr(
+        ContinuousBatchingEngine, "from_serving_config",
+        classmethod(lambda cls, config, **kw: fake_engine),
+    )
+    monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+    cfg = ServingConfig(
+        api_key="test-key",
+        request_timeout=30.0,
+        device="cpu",
+        generation_backend="eager",
+    )
+
     with TestClient(app) as c:
+        monkeypatch.setattr("llm.serving.routers.generate.generation_service", real_service)
+        monkeypatch.setattr("llm.serving.routers.generate.config", cfg)
+        monkeypatch.setattr("llm.serving.routers.chat.config", cfg)
+        c.headers[api_key_header.model.name] = "test-key"
         yield c
 
 
@@ -121,18 +175,28 @@ def test_batch_generate_empty(client):
 
 
 @pytest.mark.slow
-def test_auth_enforcement():
+def test_auth_enforcement(monkeypatch):
     """测试 API Key 验证."""
-    from fastapi.testclient import TestClient
+    from unittest.mock import MagicMock
 
+    import llm.serving.routers.generate as generate_module
     from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
 
     # 模拟设置 API Key
     original_key = config.api_key
     config.api_key = "secret-key"
 
     try:
+        mock = MagicMock()
+        mock.generate.return_value = "ok"
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
         with TestClient(app) as c:
+            monkeypatch.setattr(generate_module, "generation_service", mock)
             # 1. 无 Key 请求 -> 403
             response = c.post("/generate", json={"prompt": "hi"})
             assert response.status_code == 403

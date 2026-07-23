@@ -37,8 +37,8 @@ def client_with_mock(monkeypatch):
     rebind the routers' module-level `generation_service` so the
     recording mock intercepts every request.
     """
-    from llm.serving.generation_service import ServingGenerationService
     from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
 
     mock = MagicMock()
     mock.generate.return_value = "ok"

@@ -20,6 +20,14 @@ class MockTokenizer:
         return " ".join(map(str, ids))
 
 
+
+
+@pytest.fixture
+def device():
+    """Force CPU for these tests — the session-scoped device fixture from
+    conftest.py creates models on CUDA, which OOMs on constrained boxes."""
+    return torch.device("cpu")
+
 @pytest.fixture
 def mock_tokenizer():
     return MockTokenizer()
@@ -164,6 +172,7 @@ def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
         use_paged_attention=False,
         max_blocks=32,
         block_size=8,
+        device="cpu",
     )
 
     engine = ContinuousBatchingEngine.from_serving_config(
@@ -188,12 +197,14 @@ def test_from_serving_config_wires_paged_attention_through(tiny_model, mock_toke
     """
     from llm.serving.config import ServingConfig
 
+    tiny_model.to("cpu")
     config = ServingConfig(
         use_paged_attention=True,
         max_blocks=32,
         block_size=8,
         max_concurrent_requests=2,
         max_seq_len=tiny_model.max_seq_len,
+        device="cpu",
     )
 
     engine = ContinuousBatchingEngine.from_serving_config(

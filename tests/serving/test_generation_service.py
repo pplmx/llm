@@ -1,9 +1,17 @@
 """Tests for ServingGenerationService."""
 
 import pytest
+import torch
 
 from llm.generation.backends import EagerGenerationBackend
 from llm.serving.generation_service import ServingGenerationService
+
+
+@pytest.fixture
+def device():
+    """Force CPU for these tests — the session-scoped device fixture from
+    conftest.py creates models on CUDA, which OOMs on constrained boxes."""
+    return torch.device("cpu")
 
 
 @pytest.mark.quick

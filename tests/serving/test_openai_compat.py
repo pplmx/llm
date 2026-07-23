@@ -5,8 +5,21 @@ from llm.serving.api import app
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+    mock = MagicMock()
+    mock.generate.return_value = "ok"
+    mock.stream.return_value = iter([])
+    fake_service = MagicMock()
+    fake_engine = MagicMock()
+    monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: fake_service))
+    monkeypatch.setattr(ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: fake_engine))
+    monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
     with TestClient(app) as c:
+        monkeypatch.setattr("llm.serving.routers.generate.generation_service", mock)
         yield c
 
 
@@ -118,17 +131,27 @@ def test_chat_completions_invalid_role(client):
 
 
 @pytest.mark.slow
-def test_bearer_token_auth():
+def test_bearer_token_auth(monkeypatch):
     """Test Bearer token authentication."""
-    from fastapi.testclient import TestClient
+    from unittest.mock import MagicMock
 
+    import llm.serving.routers.generate as generate_module
     from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
 
     original_key = config.api_key
     config.api_key = "test-secret-key"
 
     try:
+        mock = MagicMock()
+        mock.generate.return_value = "ok"
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
         with TestClient(app) as c:
+            monkeypatch.setattr(generate_module, "generation_service", mock)
             payload = {"messages": [{"role": "user", "content": "hi"}]}
 
             # No auth -> 403

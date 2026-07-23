@@ -33,6 +33,12 @@ import pytest
 import torch
 import torch.nn as nn
 
+
+@pytest.fixture
+def device():
+    """Force CPU for these tests."""
+    return torch.device("cpu")
+
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------

@@ -40,6 +40,14 @@ def _write_serving_checkpoint(
     return str(ckpt_path), str(tokenizer_path)
 
 
+
+
+@pytest.fixture
+def device():
+    """Force CPU for these tests — the session-scoped device fixture from
+    conftest.py creates models on CUDA, which OOMs on constrained boxes."""
+    return torch.device("cpu")
+
 @pytest.fixture
 def checkpoint_client(tmp_path, tiny_model, tiny_config) -> Iterator[TestClient]:
     """Start the FastAPI app with a real training checkpoint loaded."""

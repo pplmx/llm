@@ -29,9 +29,18 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
 import torch
 
 from llm.core.lora import LoRALinear
+
+
+@pytest.fixture
+def device():
+    """Force CPU for these tests — the session-scoped device fixture from
+    conftest.py creates models on CUDA, which OOMs on constrained boxes."""
+    return torch.device("cpu")
+
 
 
 def _build_tokenizer_ckpt(tmp_path: Path, vocab_size: int) -> Path:
