@@ -112,6 +112,7 @@ async def chat_completions(
                         frequency_penalty=request.frequency_penalty,
                         presence_penalty=request.presence_penalty,
                         logit_bias=request.logit_bias,
+                        stop=request.stop,
                     )
         except TimeoutError as exc:
             t.set_status(504)
@@ -191,6 +192,7 @@ async def _chat_stream_generator(
                     frequency_penalty=frequency_penalty,
                     presence_penalty=presence_penalty,
                     logit_bias=logit_bias,
+                    stop=request.stop,
                 )
 
                 prompt_sent = False

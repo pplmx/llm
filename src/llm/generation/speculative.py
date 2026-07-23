@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import torch
 
+from llm.generation.eager import _normalize_stop
 from llm.generation.sampling import (
     apply_frequency_penalty,
     apply_logit_bias,
@@ -221,6 +222,7 @@ def speculative_generate(
     presence_penalty: float = 0.0,
     logit_bias: dict[int, float] | None = None,
     seed: int | None = None,
+    stop: str | list[str] | None = None,
 ):
     """Speculative decoding generator.
 
@@ -245,6 +247,11 @@ def speculative_generate(
         repetition_penalty: Applied to both draft and target logits
             before sampling.
         seed: Optional RNG seed for reproducible rejection sampling.
+        stop: OpenAI-compat stop sequence(s). Generation halts the
+            moment the accumulated output contains any of these as a
+            suffix; the stop string itself is NOT included in the
+            yielded output. Accepts a single string or a list of
+            strings. ``None`` is a no-op.
     """
     if gamma < 1:
         raise ValueError(f"gamma must be >= 1, got {gamma}")
@@ -258,6 +265,13 @@ def speculative_generate(
 
     generated_ids: list[int] = list(prompt_ids)
     eos_id = getattr(tokenizer, "eos_token_id", None)
+
+    # Stop-sequence tracking via a small suffix buffer (same strategy
+    # as stream_generate: keep at most ``max_stop_len`` chars un-yielded
+    # so the buffer is O(max_stop_len) and suffix matching is exact).
+    stops = _normalize_stop(stop)
+    max_stop_len = max((len(s) for s in stops), default=0) if stops else 0
+    buffer = ""
 
     while len(generated_ids) - len(prompt_ids) < max_new_tokens:
         # 1. Draft: generate gamma candidates with the small model.
@@ -305,15 +319,55 @@ def speculative_generate(
         for i in range(accept_count):
             tok = draft_tokens[i]
             generated_ids.append(tok)
-            yield tokenizer.decode([tok])
+            text_chunk = tokenizer.decode([tok])
+            if stops and text_chunk:
+                buffer += text_chunk
+                for s in stops:
+                    if buffer.endswith(s):
+                        prefix = buffer[: len(buffer) - len(s)]
+                        if prefix:
+                            yield prefix
+                        return
+                if len(buffer) > max_stop_len:
+                    safe_len = len(buffer) - max_stop_len
+                    yield buffer[:safe_len]
+                    buffer = buffer[safe_len:]
+            else:
+                yield text_chunk
             if eos_id is not None and tok == eos_id:
+                if stops and buffer:
+                    yield buffer
                 return
             if len(generated_ids) - len(prompt_ids) >= max_new_tokens:
+                if stops and buffer:
+                    yield buffer
                 return
 
         # Append the bonus or correction token (one per round).
         if bonus is not None:
             generated_ids.append(bonus)
-            yield tokenizer.decode([bonus])
+            text_chunk = tokenizer.decode([bonus])
+            if stops and text_chunk:
+                buffer += text_chunk
+                for s in stops:
+                    if buffer.endswith(s):
+                        prefix = buffer[: len(buffer) - len(s)]
+                        if prefix:
+                            yield prefix
+                        return
+                if len(buffer) > max_stop_len:
+                    safe_len = len(buffer) - max_stop_len
+                    yield buffer[:safe_len]
+                    buffer = buffer[safe_len:]
+            else:
+                yield text_chunk
             if eos_id is not None and bonus == eos_id:
+                if stops and buffer:
+                    yield buffer
                 return
+
+    # Flush any remaining buffered text when the loop exhausts
+    # max_new_tokens without a stop or EOS triggering an early return.
+    if stops and buffer:
+        yield buffer
+    return

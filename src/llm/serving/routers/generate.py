@@ -109,6 +109,7 @@ async def generate_text(
                         repetition_penalty=request.repetition_penalty,
                         frequency_penalty=request.frequency_penalty,
                         logit_bias=request.logit_bias,
+                        stop=request.stop,
                     )
         except TimeoutError as exc:
             t.set_status(504)
@@ -150,6 +151,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                     repetition_penalty=request.repetition_penalty,
                     frequency_penalty=request.frequency_penalty,
                     logit_bias=request.logit_bias,
+                    stop=request.stop,
                 )
                 async for chunk in iterate_in_threadpool(iterator):
                     token_count += 1
@@ -183,6 +185,7 @@ async def batch_generate_text(
                         top_p=request.top_p,
                         repetition_penalty=request.repetition_penalty,
                         logit_bias=request.logit_bias,
+                        stop=request.stop,
                     )
         except TimeoutError as exc:
             t.set_status(504)

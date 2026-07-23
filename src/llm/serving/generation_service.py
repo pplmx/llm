@@ -59,6 +59,7 @@ class ServingGenerationService:
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,
         logit_bias: dict[int, float] | None = None,
+        stop: str | list[str] | None = None,
     ) -> GenerationConfig:
         return GenerationConfig(
             max_new_tokens=max_new_tokens,
@@ -70,6 +71,7 @@ class ServingGenerationService:
             presence_penalty=presence_penalty,
             logit_bias=logit_bias,
             use_cache=True,
+            stop=stop,
         )
 
     def generate(
@@ -84,6 +86,7 @@ class ServingGenerationService:
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,
         logit_bias: dict[int, float] | None = None,
+        stop: str | list[str] | None = None,
     ) -> str:
         gen_config = self._generation_config(
             max_new_tokens=max_new_tokens,
@@ -94,6 +97,7 @@ class ServingGenerationService:
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
             logit_bias=logit_bias,
+            stop=stop,
         )
         return self.backend.generate(self.model, self.tokenizer, prompt, gen_config)
 
@@ -109,6 +113,7 @@ class ServingGenerationService:
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,
         logit_bias: dict[int, float] | None = None,
+        stop: str | list[str] | None = None,
     ):
         gen_config = self._generation_config(
             max_new_tokens=max_new_tokens,
@@ -119,6 +124,7 @@ class ServingGenerationService:
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
             logit_bias=logit_bias,
+            stop=stop,
         )
         yield from self.backend.stream(self.model, self.tokenizer, prompt, gen_config)
 
@@ -134,6 +140,7 @@ class ServingGenerationService:
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,
         logit_bias: dict[int, float] | None = None,
+        stop: str | list[str] | None = None,
     ) -> list[str]:
         gen_config = self._generation_config(
             max_new_tokens=max_new_tokens,
@@ -144,5 +151,6 @@ class ServingGenerationService:
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
             logit_bias=logit_bias,
+            stop=stop,
         )
         return self.backend.batch_generate(self.model, self.tokenizer, prompts, gen_config)
