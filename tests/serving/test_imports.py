@@ -43,8 +43,14 @@ def test_app_builds_without_warnings() -> None:
     from llm.serving.api import app
 
     assert app.title == "LLM Inference API"
-    # Routers wired (one per logical group).
-    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    # Routers wired (one per logical group). Enumerate registered paths via the
+    # generated OpenAPI schema rather than ``app.routes``: FastAPI >= 0.115
+    # stores included routers as lazy ``_IncludedRouter`` wrappers whose
+    # ``path`` attribute does not expose the underlying ``APIRoute`` paths, so
+    # iterating ``app.routes`` would miss ``/health`` etc. even though they
+    # are correctly wired. ``app.openapi()["paths"]`` is the stable,
+    # version-independent view of registered routes.
+    paths = set(app.openapi()["paths"])
     assert "/health" in paths
     assert "/generate" in paths
     assert "/v1/chat/completions" in paths
