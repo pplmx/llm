@@ -27,7 +27,18 @@ from llm.serving.config import ServingConfig
 
 @pytest.fixture
 def client_with_mock(monkeypatch):
-    """TestClient with the generation service replaced by a recording mock."""
+    """TestClient with the generation service replaced by a recording mock.
+
+    The lifespan normally loads a real model (which OOMs on
+    CUDA-constrained boxes), so we mock `from_config` and
+    `from_serving_config` to return lightweight mocks — keeping
+    lifespan startup fast and memory-free. After the app starts we
+    rebind the routers' module-level `generation_service` so the
+    recording mock intercepts every request.
+    """
+    from llm.serving.generation_service import ServingGenerationService
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+
     mock = MagicMock()
     mock.generate.return_value = "ok"
     mock.stream.return_value = iter([])
@@ -37,16 +48,33 @@ def client_with_mock(monkeypatch):
         request_timeout=30.0,
         chat_message_template="",
         chat_generation_prefix="",
+        device="cpu",
+    )
+
+    # Prevent the real lifespan from loading a model — mock the two
+    # factory calls it makes and the config-logging helper that pokes at
+    # model internals.
+    fake_service = MagicMock()
+    fake_engine = MagicMock()
+    monkeypatch.setattr(
+        ServingGenerationService, "from_config",
+        classmethod(lambda cls, config, **kw: fake_service),
+    )
+    monkeypatch.setattr(
+        ContinuousBatchingEngine, "from_serving_config",
+        classmethod(lambda cls, config, **kw: fake_engine),
+    )
+    monkeypatch.setattr(
+        "llm.serving.api._log_server_config", lambda *a, **kw: None,
     )
 
     with TestClient(app) as c:
-        # Rebind AFTER lifespan startup so it sticks for request time.
+        # Rebind AFTER lifespan startup so the mock sticks for request time.
         monkeypatch.setattr(generate_module, "generation_service", mock)
-        monkeypatch.setattr(chat_module, "config", cfg)
         monkeypatch.setattr(generate_module, "config", cfg)
+        monkeypatch.setattr(chat_module, "config", cfg)
         c.headers[api_key_header.model.name] = "test-key"
         yield c, mock
-
 
 def test_chat_router_forwards_logit_bias(client_with_mock):
     """`logit_bias` from the chat request reaches the service as its own kwarg."""

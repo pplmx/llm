@@ -65,6 +65,10 @@ class GenerationRequest(BaseModel):
         description="OpenAI-compatible per-token additive bias. JSON keys are token ids (as strings); values are added to the affected logits before sampling.",
     )
     stream: bool = Field(False, description="Whether to use streaming output (SSE).")
+    stop: str | list[str] | None = Field(
+        None,
+        description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
+    )
 
 
 class GenerationResponse(BaseModel):
@@ -87,6 +91,10 @@ class BatchGenerationRequest(BaseModel):
     logit_bias: dict[str, float] | None = Field(
         None,
         description="Per-token additive logit bias. Keys are token ids (as strings); values are added to the affected logits before sampling.",
+    )
+    stop: str | list[str] | None = Field(
+        None,
+        description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
     )
 
 
@@ -115,7 +123,10 @@ class ChatCompletionRequest(BaseModel):
     temperature: float = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature.")
     top_p: float | None = Field(None, gt=0.0, lt=1.0, description="Nucleus sampling parameter.")
     stream: bool = Field(False, description="Whether to stream responses.")
-    stop: list[str] | str | None = Field(None, description="Stop sequences (not implemented).")
+    stop: list[str] | str | None = Field(
+        None,
+        description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
+    )
     presence_penalty: float = Field(
         0.0,
         ge=-2.0,

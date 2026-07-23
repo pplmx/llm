@@ -1,10 +1,21 @@
 """Tests for generation backend registry and backend behavior."""
 
 import pytest
+import torch
 
 from llm.generation.backends import BatchedGenerationBackend, EagerGenerationBackend, GenerationConfig
 from llm.generation.registry import BACKEND_REGISTRY, ensure_backends_registered, get_generation_backend
 from llm.serving.batch_engine import ContinuousBatchingEngine
+
+
+# Force CPU for these unit tests — the model is tiny and we only need
+# to exercise backend dispatch, not GPU inference. In environments
+# where CUDA is available but memory-constrained, the session-scoped
+# `device` fixture from conftest.py would cause an OOM during
+# `tiny_model` construction; this override avoids that.
+@pytest.fixture
+def device():
+    return torch.device("cpu")
 
 
 def test_get_generation_backend_eager():

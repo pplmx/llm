@@ -26,6 +26,12 @@ class GenerationConfig:
     presence_penalty: float = 0.0
     logit_bias: dict[int, float] | None = None
     use_cache: bool = True
+    # OpenAI-compat ``stop``: generation halts the moment the streamed
+    # output contains any of these as a suffix; the stop string itself
+    # is NOT included in the final response. Accepts a single string or
+    # a list of up to 4 strings (OpenAI's documented cap). None means
+    # no stop — generation runs to ``max_new_tokens`` (default).
+    stop: str | list[str] | None = None
 
 
 class GenerationBackend(abc.ABC):
@@ -86,6 +92,7 @@ class EagerGenerationBackend(GenerationBackend):
             presence_penalty=config.presence_penalty,
             logit_bias=config.logit_bias,
             use_cache=config.use_cache,
+            stop=config.stop,
         )
 
     def batch_generate(
@@ -135,6 +142,7 @@ class BatchedGenerationBackend(GenerationBackend):
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
             frequency_penalty=config.frequency_penalty,
+            stop=config.stop,
         )
         yield from self.engine.stream_request(request)
 
@@ -156,6 +164,7 @@ class BatchedGenerationBackend(GenerationBackend):
                 top_p=config.top_p,
                 repetition_penalty=config.repetition_penalty,
                 frequency_penalty=config.frequency_penalty,
+                stop=config.stop,
             )
             for prompt in prompts
         ]
@@ -223,6 +232,7 @@ class SpeculativeDecodingBackend(GenerationBackend):
             frequency_penalty=config.frequency_penalty,
             presence_penalty=config.presence_penalty,
             logit_bias=config.logit_bias,
+            stop=config.stop,
         )
 
     def batch_generate(

@@ -26,6 +26,21 @@ def _mask_pad_logits(logits: torch.Tensor, pad_token_id: int | None) -> None:
             logits[:, pad_token_id] = -float("inf")
 
 
+def _normalize_stop(stop: str | list[str] | None) -> list[str] | None:
+    """Normalize the OpenAI-compat ``stop`` field to ``list[str] | None``.
+
+    OpenAI accepts either a single string or a list of up to 4 strings;
+    we standardize internally to a list so the streaming check is one
+    loop instead of two. ``None`` and ``[]`` both mean "no stop" —
+    pass-through ``None`` is the zero-cost default.
+    """
+    if stop is None:
+        return None
+    if isinstance(stop, str):
+        return [stop]
+    return list(stop)
+
+
 @torch.no_grad()
 def stream_generate(
     model: DecoderModel,
@@ -40,9 +55,17 @@ def stream_generate(
     presence_penalty: float = 0.0,
     logit_bias: dict[int, float] | None = None,
     use_cache: bool = True,
+    stop: str | list[str] | None = None,
 ) -> Generator[str]:
     """
     Generator function for incremental text generation.
+
+    Args:
+        stop: OpenAI-compat stop sequence(s). Generation halts the
+            moment the accumulated output contains any of these as a
+            suffix; the stop string itself is NOT included in the
+            yielded output. Accepts a single string or a list of
+            strings (OpenAI caps at 4). ``None`` is a no-op.
 
     yields:
         str: Newly generated text chunk (usually one token decoded).
@@ -72,6 +95,22 @@ def stream_generate(
 
     generated_ids = input_ids.copy()
 
+    # Stop-sequence tracking. We use a small buffer (``buffer``) that
+    # holds decoded text not yet yielded to the caller. After each new
+    # token is decoded we append it to the buffer and check whether the
+    # buffer *ends with* any stop string (OpenAI semantics: generation
+    # halts when a stop sequence appears as a suffix; the stop string
+    # itself is NOT included in the output). If no stop is found, we
+    # yield the portion of the buffer that extends beyond
+    # ``max_stop_len`` characters from the end — that prefix is safe
+    # because no stop sequence of length <= max_stop_len can span the
+    # boundary. Only the last ``max_stop_len`` characters are kept
+    # buffered so memory stays O(max_stop_len) regardless of how long
+    # generation runs.
+    stops = _normalize_stop(stop)
+    max_stop_len = max((len(s) for s in stops), default=0) if stops else 0
+    buffer = ""
+
     for _ in range(max_new_tokens):
         if repetition_penalty != 1.0:
             next_token_logits = apply_repetition_penalty(next_token_logits, generated_ids, repetition_penalty)
@@ -90,7 +129,24 @@ def stream_generate(
         )
         generated_ids.append(token_id)
         text_chunk = tokenizer.decode([token_id])
-        yield text_chunk
+
+        if stops and text_chunk:
+            buffer += text_chunk
+            # Check for a stop suffix — the first match wins.
+            for s in stops:
+                if buffer.endswith(s):
+                    prefix = buffer[: len(buffer) - len(s)]
+                    if prefix:
+                        yield prefix
+                    return
+            # No stop found. Yield the safe prefix (everything beyond
+            # the last max_stop_len characters) and keep the tail.
+            if len(buffer) > max_stop_len:
+                safe_len = len(buffer) - max_stop_len
+                yield buffer[:safe_len]
+                buffer = buffer[safe_len:]
+        else:
+            yield text_chunk
 
         next_input = torch.tensor([token_id], dtype=torch.long, device=device).unsqueeze(0)
 
@@ -106,6 +162,11 @@ def stream_generate(
 
         _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
 
+    # Flush any remaining buffered text after the loop ends (e.g. when
+    # the buffer never exceeded max_stop_len or no stop sequence was found).
+    if stops and buffer:
+        yield buffer
+
 
 def generate(
     model: DecoderModel,
@@ -120,6 +181,7 @@ def generate(
     presence_penalty: float = 0.0,
     logit_bias: dict[int, float] | None = None,
     use_cache: bool = True,
+    stop: str | list[str] | None = None,
 ) -> str:
     """
     Generate text from a prompt using a trained model.
@@ -137,6 +199,7 @@ def generate(
         presence_penalty=presence_penalty,
         logit_bias=logit_bias,
         use_cache=use_cache,
+        stop=stop,
     )
     return prompt + "".join(list(generator))
 
@@ -154,6 +217,7 @@ def batch_generate(
     frequency_penalty: float = 0.0,
     presence_penalty: float = 0.0,
     logit_bias: dict[int, float] | None = None,
+    stop: str | list[str] | None = None,
 ) -> list[str]:
     """
     Batch generate text from multiple prompts.
@@ -176,9 +240,15 @@ def batch_generate(
         logit_bias: OpenAI-compatible additive per-token biases
             (``{token_id: bias}`` added to the affected logits
             before sampling). ``None`` is a no-op.
+        stop: OpenAI-compat stop sequence(s). Generation for each
+            sequence halts the moment the generated text (post-prompt)
+            contains any stop string; the stop string itself is NOT
+            included in the returned text. Accepts a single string or
+            a list of strings. ``None`` is a no-op.
 
     Returns:
-        List of generated texts (prompt + generated tokens).
+        List of generated texts (prompt + generated tokens, with any
+        stop sequence truncated).
     """
     if not prompts:
         return []
@@ -248,5 +318,23 @@ def batch_generate(
 
         _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
 
-    # Decode results
+    # Decode results, applying stop sequences when provided.
+    stops = _normalize_stop(stop)
+    if stops:
+        results = []
+        for i in range(batch_size):
+            prompt_text = tokenizer.decode(encoded_prompts[i])
+            full_text = tokenizer.decode(generated_ids[i])
+            if full_text.startswith(prompt_text):
+                generated_text = full_text[len(prompt_text) :]
+            else:
+                generated_text = full_text
+            for s in stops:
+                idx = generated_text.find(s)
+                if idx != -1:
+                    generated_text = generated_text[:idx]
+                    break
+            results.append(prompt_text + generated_text)
+        return results
+
     return [tokenizer.decode(ids) for ids in generated_ids]
