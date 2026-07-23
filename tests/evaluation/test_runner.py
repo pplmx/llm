@@ -140,3 +140,47 @@ def test_save_report_default_format_is_json(stub_runner: EvaluationRunner):
     """When no format is given, default to JSON."""
     stub_runner.save_report({"x": 1})
     assert (stub_runner.output_dir / "eval_report.json").exists()
+
+
+# --------------------------------------------------------------------------- #
+# save_report — serialisation robustness
+# --------------------------------------------------------------------------- #
+
+
+def test_save_report_json_accepts_tensor_values(stub_runner: EvaluationRunner):
+    """JSON report must coerce torch.Tensor values to native Python floats."""
+    torch = pytest.importorskip("torch")
+    results = {"perplexity": torch.tensor(12.5), "accuracy": 0.95}
+    stub_runner.save_report(results, output_format="json")
+    report = stub_runner.output_dir / "eval_report.json"
+    loaded = json.loads(report.read_text())
+    assert loaded["perplexity"] == pytest.approx(12.5)
+    assert loaded["accuracy"] == pytest.approx(0.95)
+
+
+def test_save_report_json_accepts_numpy_values(stub_runner: EvaluationRunner):
+    """JSON report must coerce numpy scalar values to native Python types."""
+    np = pytest.importorskip("numpy")
+    results = {"f1": np.float64(0.81), "count": np.int64(42)}
+    stub_runner.save_report(results, output_format="json")
+    loaded = json.loads((stub_runner.output_dir / "eval_report.json").read_text())
+    assert loaded["f1"] == pytest.approx(0.81)
+    assert loaded["count"] == 42
+
+
+def test_save_report_markdown_accepts_tensor_values(stub_runner: EvaluationRunner):
+    """Markdown report must render tensors as plain numbers, not ``tensor(...)``."""
+    torch = pytest.importorskip("torch")
+    results = {"perplexity": torch.tensor(12.5)}
+    stub_runner.save_report(results, output_format="markdown")
+    content = (stub_runner.output_dir / "eval_report.md").read_text()
+    assert "12.5" in content
+    assert "tensor(" not in content
+
+
+def test_save_report_creates_parent_dirs(tmp_path: Path):
+    """save_report must create missing parent directories."""
+    nested = tmp_path / "a" / "b" / "c"
+    runner = EvaluationRunner(_StubTask(), output_dir=str(nested))
+    runner.save_report({"x": 1})
+    assert (nested / "eval_report.json").exists()
