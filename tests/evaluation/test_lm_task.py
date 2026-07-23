@@ -15,6 +15,24 @@ def test_perplexity_metric_perfect_prediction():
     assert result["perplexity"] < 1.5
 
 
+def test_perplexity_metric_empty_batch_returns_inf():
+    """An empty batch must not crash — return inf (undefined perplexity)."""
+    metric = PerplexityMetric()
+    logits = torch.empty(0, 4, 10, dtype=torch.float)
+    labels = torch.empty(0, 4, dtype=torch.long)
+    result = metric.compute(logits, labels)
+    assert result == {"perplexity": float("inf")}
+
+
+def test_perplexity_metric_single_token_returns_finite():
+    """A single-token sequence (no shift targets) must not return NaN."""
+    metric = PerplexityMetric()
+    logits = torch.zeros(1, 1, 10)
+    labels = torch.tensor([[1]])
+    result = metric.compute(logits, labels)
+    assert result["perplexity"] == float("inf")
+
+
 def test_lm_task_prepare_data_returns_token_tensors(tmp_path):
     corpus = tmp_path / "eval.txt"
     corpus.write_text("hello world\n" * 4, encoding="utf-8")

@@ -25,7 +25,14 @@ class F1Metric(BaseMetric):
         self.average = average
 
     def compute(self, predictions: list, references: list) -> dict:
-        """Compute F1 score using sklearn."""
+        """Compute F1 score using sklearn.
+
+        Returns ``{"f1": 0.0}`` for empty inputs, matching
+        :meth:`AccuracyMetric.compute`'s convention.
+        """
+        if not predictions:
+            return {"f1": 0.0}
+
         from sklearn.metrics import f1_score
 
         f1 = f1_score(references, predictions, average=self.average, zero_division=0)

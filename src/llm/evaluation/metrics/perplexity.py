@@ -17,12 +17,21 @@ class PerplexityMetric(BaseMetric):
             references: Target token IDs of shape (batch, seq)
 
         Returns:
-            Dictionary with perplexity score
+            Dictionary with perplexity score.  ``inf`` is returned when
+            the batch is empty or no shift-targets are available (e.g.
+            ``seq == 1``), since perplexity is undefined in those cases.
         """
-        _batch_size, _seq_len, vocab_size = predictions.shape
+        batch_size = predictions.shape[0]
+        if batch_size == 0:
+            return {"perplexity": float("inf")}
+
+        _batch, _seq_len, vocab_size = predictions.shape
 
         logits = predictions[:, :-1, :].contiguous().view(-1, vocab_size)
         labels = references[:, 1:].contiguous().view(-1)
+
+        if logits.shape[0] == 0:
+            return {"perplexity": float("inf")}
 
         loss = functional.cross_entropy(logits, labels, reduction="mean")
         perplexity = torch.exp(loss).item()

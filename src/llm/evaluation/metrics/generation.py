@@ -59,13 +59,22 @@ class RougeMetric(BaseMetric):
 class BleuMetric(BaseMetric):
     """BLEU metric for generation tasks.
 
-    Requires the ``sacrebleu`` package, available via the ``[eval]`` extra.
+    Requires the ``sacrebleu`` package, available via the ``[eval]`` extra
+    (``pip install llm[eval]``).  The import is deferred to :meth:`compute`
+    so the class can be instantiated on hosts without ``sacrebleu``
+    installed — the same soft-dependency contract as
+    :class:`RougeMetric`.
     """
 
     name = "bleu"
 
     def compute(self, predictions: list, references: list) -> dict:
-        import sacrebleu
+        try:
+            import sacrebleu
+        except ImportError as exc:
+            raise ImportError(
+                "sacrebleu is an optional evaluation dependency. Install with `pip install 'llm[eval]'`."
+            ) from exc
 
         refs = [[r] for r in references]
         bleu = sacrebleu.corpus_bleu(predictions, refs)
@@ -75,13 +84,22 @@ class BleuMetric(BaseMetric):
 class ChrFMetric(BaseMetric):
     """chrF metric for generation tasks.
 
-    Requires the ``sacrebleu`` package, available via the ``[eval]`` extra.
+    Requires the ``sacrebleu`` package, available via the ``[eval]`` extra
+    (``pip install llm[eval]``).  The import is deferred to :meth:`compute`
+    so the class can be instantiated on hosts without ``sacrebleu``
+    installed — the same soft-dependency contract as
+    :class:`RougeMetric`.
     """
 
     name = "chrf"
 
     def compute(self, predictions: list, references: list) -> dict:
-        import sacrebleu
+        try:
+            import sacrebleu
+        except ImportError as exc:
+            raise ImportError(
+                "sacrebleu is an optional evaluation dependency. Install with `pip install 'llm[eval]'`."
+            ) from exc
 
         refs = [[r] for r in references]
         chrf = sacrebleu.corpus_chrf(predictions, refs)

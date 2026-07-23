@@ -77,3 +77,11 @@ def test_f1_partial():
 def test_f1_name():
     pytest.importorskip("sklearn", reason="scikit-learn is an optional eval dependency")
     assert F1Metric.name == "f1"
+
+
+def test_f1_empty_returns_zero():
+    """F1Metric must not crash on empty inputs — return 0.0, like AccuracyMetric."""
+    pytest.importorskip("sklearn", reason="scikit-learn is an optional eval dependency")
+    metric = F1Metric()
+    result = metric.compute([], [])
+    assert result == {"f1": 0.0}
