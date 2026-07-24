@@ -53,14 +53,9 @@ from fastapi.testclient import TestClient
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.fixture(autouse=True)
-def _force_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force CPU for the e2e tests — the engine picks CUDA whenever
-    it's available, but the test models are tiny and we're sharing a
-    GPU with other processes (which causes spurious CUDA-OOM
-    failures unrelated to the test).
-    """
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+# The old ``_force_cpu`` fixture was removed.
+# Tests now auto-detect GPU availability; each test keeps its tensors
+# on a consistent device, falling back to CPU only when no GPU is present.
 
 
 @pytest.fixture(autouse=True)
@@ -417,20 +412,17 @@ class TestPeftServeRoundTrip:
 
         # 1. Build a tiny "trained" model + tokenizer; apply LoRA.
         #
-        # Normalize to CPU: the shared session ``device`` fixture selects
-        # CUDA when a (shared) GPU is allocatable, but this round-trip
-        # test only validates train->serve logic, not CUDA paths. Running
-        # on CPU also matches the convention used by the stream_lm e2e
-        # tests and keeps ``tiny_model`` (CUDA) and ``served_model`` (CPU,
-        # since the loader does not move weights) comparable on one device.
-        tiny_model = tiny_model.cpu()
+        # The shared session ``device`` fixture may select CUDA or CPU.
+        # The serving loader returns a model on CPU; move it to the same
+        # device as ``tiny_model`` so the forward comparison works.
+        tiny_model_device = next(tiny_model.parameters()).device
         torch.manual_seed(0)
         train_view = deepcopy(tiny_model)
         apply_lora(train_view, rank=4, alpha=8.0)
 
         # 2. Mutate LoRA params via one optimizer step (simulate training).
         opt = torch.optim.SGD([p for p in train_view.parameters() if p.requires_grad], lr=0.01)
-        ids = torch.randint(0, tiny_config.model.vocab_size, (1, 4))
+        ids = torch.randint(0, tiny_config.model.vocab_size, (1, 4), device=tiny_model_device)
         out = train_view(input_ids=ids)
         loss = out.sum()
         opt.zero_grad()
@@ -468,10 +460,11 @@ class TestPeftServeRoundTrip:
             peft_merge=False,
         )
         served_model, _tokenizer = load_model_and_tokenizer(cfg)
+        served_model = served_model.to(tiny_model_device)
 
         # 6. Forward through served model vs. base model — must differ.
         torch.manual_seed(0)
-        probe = torch.randint(0, tiny_config.model.vocab_size, (1, 4))
+        probe = torch.randint(0, tiny_config.model.vocab_size, (1, 4), device=tiny_model_device)
         served_out = served_model(input_ids=probe)
         base_out = tiny_model(input_ids=probe)
         assert not torch.allclose(served_out, base_out), (

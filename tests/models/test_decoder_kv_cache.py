@@ -19,7 +19,7 @@ def test_kv_cache_consistency():
     model = DecoderModel(**kwargs)
     model.eval()
 
-    input_ids = torch.randint(0, kwargs["vocab_size"], (1, seq_len))
+    input_ids = torch.randint(0, kwargs["vocab_size"], (1, seq_len), device=next(model.parameters()).device)
 
     with torch.no_grad():
         full_logits = model(input_ids)
@@ -53,7 +53,7 @@ def test_kv_cache_dimensions():
     model = DecoderModel(**kwargs)
     model.eval()
 
-    input_ids = torch.randint(0, kwargs["vocab_size"], (1, seq_len))
+    input_ids = torch.randint(0, kwargs["vocab_size"], (1, seq_len), device=next(model.parameters()).device)
     kv_caches = create_decoder_kv_caches(model, batch_size=1)
 
     with torch.no_grad():

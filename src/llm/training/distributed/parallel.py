@@ -93,8 +93,7 @@ def _build_fsdp(
     cpu_offload: bool,
 ) -> nn.Module:
     """Construct the FSDP wrapper with the configured policy / dtype / offload."""
-    from torch.distributed.fsdp import FullyShardedDataParallel
-    from torch.distributed.fsdp.backends.cpu_offload import CPUOffload
+    from torch.distributed.fsdp import CPUOffload, FullyShardedDataParallel
 
     mp_policy = _fsdp_mixed_precision(mixed_precision)
     auto_wrap = _fsdp_auto_wrap_policy(auto_wrap_min_params)

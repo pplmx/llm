@@ -85,14 +85,9 @@ def sft_config(tiny_alpaca_jsonl: Path, tmp_path: Path):
     return cfg
 
 
-@pytest.fixture(autouse=True)
-def _force_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force CPU for the e2e tests — the engine picks CUDA whenever
-    it's available, but the test models are tiny and we're sharing a
-    GPU with other processes (which causes spurious CUDA-OOM
-    failures unrelated to the test).
-    """
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+# The old ``_force_cpu`` fixture was removed.
+# Tests now auto-detect GPU availability; each test keeps its tensors
+# on a consistent device, falling back to CPU only when no GPU is present.
 
 
 def _patch_sft_tokenizer(

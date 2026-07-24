@@ -76,7 +76,8 @@ def test_generate_cache_matches_no_cache(model_and_tokenizer):
 
 def test_model_batch_forward_and_kv_cache(model_and_tokenizer):
     model, tokenizer = model_and_tokenizer
-    input_ids = torch.randint(0, tokenizer.vocab_size, (2, 10))
+    device = next(model.parameters()).device
+    input_ids = torch.randint(0, tokenizer.vocab_size, (2, 10), device=device)
 
     logits = model(input_ids)
     assert logits.shape == (2, 10, tokenizer.vocab_size)
@@ -85,6 +86,6 @@ def test_model_batch_forward_and_kv_cache(model_and_tokenizer):
     logits, kv_caches = model(input_ids, kv_caches=kv_caches, use_cache=True)
     assert len(kv_caches) == len(model.transformer_blocks)
 
-    next_token = torch.randint(0, tokenizer.vocab_size, (2, 1))
+    next_token = torch.randint(0, tokenizer.vocab_size, (2, 1), device=device)
     logits_next, kv_caches = model(next_token, kv_caches=kv_caches, use_cache=True)
     assert logits_next.shape == (2, 1, tokenizer.vocab_size)
