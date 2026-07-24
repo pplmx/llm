@@ -55,15 +55,12 @@ def _pick_gpu() -> torch.device:
         return torch.device("cpu")
 
     worker = os.environ.get("PYTEST_XDIST_WORKER", "master")
-    if worker != "master":
-        idx = int(worker.replace("gw", "")) % gpu_count
-    else:
-        idx = 0
+    idx = int(worker.replace("gw", "")) % gpu_count if worker != "master" else 0
 
     try:
         torch.cuda.mem_get_info(idx)
         return torch.device(f"cuda:{idx}")
-    except (RuntimeError, torch.AcceleratorError):
+    except RuntimeError, torch.AcceleratorError:
         pass
     return torch.device("cpu")
 
