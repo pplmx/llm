@@ -123,6 +123,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
         yield
     finally:
         engine.unload_model()
+        generation_service.shutdown()
         logger.info("Shutting down...")
 
 

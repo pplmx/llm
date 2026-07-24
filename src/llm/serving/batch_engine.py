@@ -558,6 +558,24 @@ class ContinuousBatchingEngine:
         self._on_step = callback
 
     def unload_model(self):
-        """Unload model."""
+        """Release model, KV caches and all scheduler state.
+
+        Clears model weights, both legacy and paged KV caches, prefix
+        cache, slot allocator mappings, and scheduler queues so that
+        GPU memory is freed and the engine is reusable after this call.
+        """
         self.model = None
         self.kv_caches = []
+        self.paged_kv_cache = None
+        self._on_step = None
+
+        self.scheduler.waiting.clear()
+        self.scheduler.running.clear()
+        self.slot_allocator.seq_to_slot.clear()
+        self.slot_allocator.free_slots = set(range(self.slot_allocator.total_slots))
+
+        if self.prefix_cache is not None:
+            self.prefix_cache._entries.clear()
+
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
