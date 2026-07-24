@@ -30,6 +30,10 @@ class ServingGenerationService:
     backend: GenerationBackend
     device: torch.device
 
+    def shutdown(self) -> None:
+        """Release references to model so GPU memory can be freed."""
+        self.model = None  # type: ignore[assignment]
+
     @classmethod
     def from_config(
         cls,

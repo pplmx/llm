@@ -4,21 +4,36 @@ from llm.serving.schemas import RequestState, Sequence
 
 
 class Scheduler:
-    """
-    A simple First-Come-First-Serve (FCFS) scheduler for continuous batching.
+    """Simple FCFS scheduler for continuous batching with backpressure.
+
+    Limits the ``waiting`` queue to ``max_waiting`` to prevent unbounded
+    memory growth under load. When the queue is full, :meth:`add_sequence`
+    raises ``RuntimeError`` so callers can apply backpressure (HTTP 503).
     """
 
-    def __init__(self, max_batch_size: int = 16):
+    DEFAULT_MAX_WAITING = 1024
+
+    def __init__(self, max_batch_size: int = 16, *, max_waiting: int | None = None):
         self.waiting: deque[Sequence] = deque()
         self.running: list[Sequence] = []
         self.max_batch_size = max_batch_size
+        self.max_waiting = max_waiting if max_waiting is not None else self.DEFAULT_MAX_WAITING
 
     @property
     def has_pending_work(self) -> bool:
         return len(self.waiting) > 0 or len(self.running) > 0
 
     def add_sequence(self, seq: Sequence):
-        """Add a new sequence to the waiting queue."""
+        """Add a new sequence to the waiting queue.
+
+        Raises:
+            RuntimeError: If the waiting queue is at capacity.
+        """
+        if len(self.waiting) >= self.max_waiting:
+            raise RuntimeError(
+                f"Waiting queue full ({len(self.waiting)}/{self.max_waiting}); "
+                "retry later or increase max_waiting."
+            )
         self.waiting.append(seq)
 
     def schedule(self) -> list[Sequence]:
