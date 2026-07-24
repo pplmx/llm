@@ -31,8 +31,7 @@ class Scheduler:
         """
         if len(self.waiting) >= self.max_waiting:
             raise RuntimeError(
-                f"Waiting queue full ({len(self.waiting)}/{self.max_waiting}); "
-                "retry later or increase max_waiting."
+                f"Waiting queue full ({len(self.waiting)}/{self.max_waiting}); retry later or increase max_waiting."
             )
         self.waiting.append(seq)
 
