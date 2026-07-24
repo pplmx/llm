@@ -67,9 +67,7 @@ class RotaryPositionEmbedding(nn.Module):
 
         if self.scaling_type == "ntk" and self.scaling_factor > 1.0:
             # NTK-aware scaling: adjust base instead of positions
-            base = self.base * (
-                (self.scaling_factor * self.max_seq_len / self.max_seq_len) - (self.scaling_factor - 1)
-            ) ** (self.dim / (self.dim - 2))
+            base = self.base * (self.scaling_factor ** (self.dim / (self.dim - 2)))
         else:
             base = self.base
 

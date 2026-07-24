@@ -124,7 +124,8 @@ class TestRotaryPositionEmbedding:
         assert not torch.allclose(q_no_scale, q_scaled)
 
     def test_ntk_scaling(self, device):
-        """Test NTK-aware scaling."""
+        """Test NTK-aware scaling produces different results."""
+        rope_no_scale = RotaryPositionEmbedding(dim=64, device=device)
         rope_ntk = RotaryPositionEmbedding(
             dim=64,
             scaling_type="ntk",
@@ -135,12 +136,31 @@ class TestRotaryPositionEmbedding:
         q = torch.randn(2, 4, 16, 64, device=device)
         k = torch.randn(2, 4, 16, 64, device=device)
 
-        q_rot, _k_rot = rope_ntk(q, k)
-        assert q_rot.shape == q.shape
+        q_no_scale, _k_no_scale = rope_no_scale(q, k)
+        q_ntk, _k_ntk = rope_ntk(q, k)
+        assert q_ntk.shape == q.shape
+        # NTK must differ from no-scaling (regression: was a no-op)
+        assert not torch.allclose(q_no_scale, q_ntk)
+
+    def test_ntk_scaling_factor_one(self, device):
+        """Test NTK with scaling_factor=1.0 behaves the same as no scaling."""
+        rope_no_scale = RotaryPositionEmbedding(dim=64, device=device)
+        rope_ntk_noop = RotaryPositionEmbedding(
+            dim=64,
+            scaling_type="ntk",
+            scaling_factor=1.0,
+            device=device,
+        )
+        q = torch.randn(2, 4, 16, 64, device=device)
+        k = torch.randn(2, 4, 16, 64, device=device)
+        q1, _ = rope_no_scale(q, k)
+        q2, _ = rope_ntk_noop(q, k)
+        assert torch.allclose(q1, q2)
 
     def test_dynamic_scaling(self, device):
         """Test dynamic scaling with extended context."""
-        rope = RotaryPositionEmbedding(
+        rope_no_scale = RotaryPositionEmbedding(dim=64, max_seq_len=64, device=device)
+        rope_dynamic = RotaryPositionEmbedding(
             dim=64,
             max_seq_len=64,
             scaling_type="dynamic",
@@ -151,8 +171,38 @@ class TestRotaryPositionEmbedding:
         q = torch.randn(2, 4, 128, 64, device=device)
         k = torch.randn(2, 4, 128, 64, device=device)
 
-        q_rot, _k_rot = rope(q, k)
-        assert q_rot.shape == q.shape
+        q_no_scale, _k_no_scale = rope_no_scale(q, k)
+        q_dynamic, _k_dynamic = rope_dynamic(q, k)
+        assert q_dynamic.shape == q.shape
+        # Dynamic scaling must differ from no-scaling
+        assert not torch.allclose(q_no_scale, q_dynamic)
+        # Dynamic scaling within max_seq_len starts from a fresh rope
+        # so the cache is built without scaling
+        q_short = torch.randn(2, 4, 32, 64, device=device)
+        k_short = torch.randn(2, 4, 32, 64, device=device)
+        rope_dyn_short = RotaryPositionEmbedding(
+            dim=64,
+            max_seq_len=64,
+            scaling_type="dynamic",
+            device=device,
+        )
+        rope_no_short = RotaryPositionEmbedding(dim=64, max_seq_len=64, device=device)
+        q_no_short, _k_no_short = rope_no_short(q_short, k_short)
+        q_dyn_short, _k_dyn_short = rope_dyn_short(q_short, k_short)
+        assert torch.allclose(q_no_short, q_dyn_short)
+
+    def test_extra_repr_no_scaling(self):
+        """Test extra_repr representation without scaling."""
+        rope = RotaryPositionEmbedding(dim=64)
+        text = rope.extra_repr()
+        assert "dim=64" in text
+
+    def test_extra_repr_with_scaling(self):
+        """Test extra_repr representation with scaling."""
+        rope = RotaryPositionEmbedding(dim=64, scaling_type="linear", scaling_factor=2.0)
+        text = rope.extra_repr()
+        assert "scaling_type=linear" in text
+        assert "scaling_factor=2.0" in text
 
 
 class TestGetRopeScalingFactor:
@@ -172,3 +222,8 @@ class TestGetRopeScalingFactor:
         """Test dynamic scaling factor."""
         factor = get_rope_scaling_factor(4096, 2048, "dynamic")
         assert factor == pytest.approx(1.414, rel=0.01)  # sqrt(2)
+
+    def test_unknown_scaling_type(self):
+        """Test unknown scaling type returns 1.0."""
+        factor = get_rope_scaling_factor(4096, 2048, "unknown_type")
+        assert factor == 1.0
