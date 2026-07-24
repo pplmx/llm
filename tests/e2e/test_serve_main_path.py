@@ -416,6 +416,14 @@ class TestPeftServeRoundTrip:
         from llm.training.core.callbacks import PEFTAdapterCheckpointCallback
 
         # 1. Build a tiny "trained" model + tokenizer; apply LoRA.
+        #
+        # Normalize to CPU: the shared session ``device`` fixture selects
+        # CUDA when a (shared) GPU is allocatable, but this round-trip
+        # test only validates train->serve logic, not CUDA paths. Running
+        # on CPU also matches the convention used by the stream_lm e2e
+        # tests and keeps ``tiny_model`` (CUDA) and ``served_model`` (CPU,
+        # since the loader does not move weights) comparable on one device.
+        tiny_model = tiny_model.cpu()
         torch.manual_seed(0)
         train_view = deepcopy(tiny_model)
         apply_lora(train_view, rank=4, alpha=8.0)
