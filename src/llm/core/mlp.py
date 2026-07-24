@@ -1,3 +1,4 @@
+import logging
 import math
 
 import torch
@@ -5,6 +6,8 @@ from torch import nn
 
 from llm.core.registry import register_mlp
 from llm.utils.common import get_activation_layer, make_factory_kwargs
+
+logger = logging.getLogger(__name__)
 
 
 @register_mlp("mlp")
@@ -76,10 +79,11 @@ class MLP(nn.Module):
                         # If .to() returned a new module, keep that reference
                         self.norm = moved_norm
                     except RuntimeError, TypeError, AttributeError:
-                        # If moving fails for some custom module, ignore and let the caller
-                        # be responsible for device/dtype placement.
-                        # These are the most common exceptions when .to() fails
-                        pass
+                        logger.warning(
+                            "Failed to move custom norm module to %s/%s — caller must place it",
+                            device,
+                            dtype,
+                        )
 
         factory_kwargs = make_factory_kwargs(device, dtype)
         self.fc1 = nn.Linear(hidden_size, self.intermediate_size, bias=bias, **factory_kwargs)
