@@ -196,7 +196,7 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
             CHECKPOINT_FORMAT_VERSION,
         )
 
-    extra = torch.load(extra_state_path, map_location="cpu")
+    extra = torch.load(extra_state_path, map_location="cpu", weights_only=False)
     return {
         "model_state": model_state,
         "model_config": meta.get("model_config"),
@@ -222,7 +222,7 @@ def _load_legacy_checkpoint(legacy_path: Path) -> dict[str, Any] | None:
         DeprecationWarning,
         stacklevel=3,
     )
-    return torch.load(legacy_path, map_location="cpu")
+    return torch.load(legacy_path, map_location="cpu", weights_only=False)
 
 
 def load_checkpoint_payload(path: str | Path) -> dict[str, Any] | None:
@@ -348,7 +348,7 @@ def convert_legacy_checkpoint_to_split(
         )
 
     # Load the legacy blob.
-    payload = torch.load(legacy_path, map_location="cpu")
+    payload = torch.load(legacy_path, map_location="cpu", weights_only=False)
 
     # Write the split trio.
     _save_weights_safetensors(payload["model_state"], safetensors_path)

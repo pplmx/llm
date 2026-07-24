@@ -17,17 +17,14 @@ class Logger:
         self.rank = rank
         self.config = config
         self.logger = logging.getLogger(f"rank_{rank}")
-        # Only setup handlers if they haven't been added for this logger name yet
-        if not self.logger.hasHandlers():
+        if not self.logger.handlers:
             self._setup_logging()
         else:
-            # Ensure level is set even if handlers are already there
-            # This could happen if a default logger existed before our custom setup
             self.logger.setLevel(getattr(logging, self.config.log_level.upper()))
 
     def _setup_logging(self):
-        # This method is now only called if self.logger.hasHandlers() was false
         self.logger.setLevel(getattr(logging, self.config.log_level.upper()))
+        self.logger.propagate = False
         formatter = logging.Formatter(
             f"[%(asctime)s] [%(levelname)s] [Rank {self.rank}] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
