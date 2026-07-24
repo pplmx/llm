@@ -38,8 +38,8 @@ Concrete API additions on top of T3 #40:
 ```python
 # Per-layer
 scores = layer.compute_importance_scores(gradient_ema=None)  # (init_rank,)
-layer.prune_to_rank(target_rank)                            # mutates mask
-scheduled = layer.update_budget(current_step, tinit, tfinal) # int
+layer.prune_to_rank(target_rank)  # mutates mask
+scheduled = layer.update_budget(current_step, tinit, tfinal)  # int
 
 # Module-level
 from llm.core.adalora import prune_adalora

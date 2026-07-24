@@ -37,14 +37,17 @@ class CheckpointManager:
     def save(self, model, optimizer, epoch, global_step, loss, config):
         """保存 checkpoint"""
         path = self.save_dir / f"checkpoint_step_{global_step}.pt"
-        torch.save({
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "epoch": epoch,
-            "global_step": global_step,
-            "loss": loss,
-            "config": config,
-        }, path)
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "epoch": epoch,
+                "global_step": global_step,
+                "loss": loss,
+                "config": config,
+            },
+            path,
+        )
         return path
 
     def load(self, path, model, optimizer=None):
@@ -76,7 +79,7 @@ def train_loop(model, dataloader, optimizer, config):
     for epoch in range(config.epochs):
         model.train()
 
-        with tqdm(dataloader, desc=f"Epoch {epoch+1}/{config.epochs}") as pbar:
+        with tqdm(dataloader, desc=f"Epoch {epoch + 1}/{config.epochs}") as pbar:
             for batch in pbar:
                 # Forward
                 loss = model(**batch)

@@ -38,18 +38,24 @@ head -50 scripts/train_simple_decoder.py
 找到 `main` 函数定义，在现有参数后添加:
 
 ```python
-    save_dir: Path = typer.Option(
+save_dir: Path = (
+    typer.Option(
         Path("./checkpoints"),
         help="Directory to save checkpoints.",
     ),
-    resume: Path | None = typer.Option(
+)
+resume: Path | None = (
+    typer.Option(
         None,
         help="Path to checkpoint to resume from.",
     ),
-    save_interval: int = typer.Option(
+)
+save_interval: int = (
+    typer.Option(
         100,
         help="Save checkpoint every N steps.",
     ),
+)
 ```
 
 - [ ] **Step 3: 测试参数解析**
@@ -89,6 +95,7 @@ from dataclasses import dataclass, field
 @dataclass
 class TrainConfig:
     """训练配置，用于保存到 checkpoint"""
+
     hidden_size: int = 128
     num_layers: int = 4
     num_heads: int = 4
@@ -113,22 +120,25 @@ class CheckpointManager:
         """保存 checkpoint"""
         path = self.save_dir / f"checkpoint_step_{global_step}.pt"
 
-        torch.save({
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
-            "epoch": epoch,
-            "global_step": global_step,
-            "loss": loss,
-            "config": {
-                "hidden_size": config.hidden_size,
-                "num_layers": config.num_layers,
-                "num_heads": config.num_heads,
-                "max_seq_len": config.max_seq_len,
-                "batch_size": config.batch_size,
-                "epochs": config.epochs,
-                "lr": config.lr,
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
+                "epoch": epoch,
+                "global_step": global_step,
+                "loss": loss,
+                "config": {
+                    "hidden_size": config.hidden_size,
+                    "num_layers": config.num_layers,
+                    "num_heads": config.num_heads,
+                    "max_seq_len": config.max_seq_len,
+                    "batch_size": config.batch_size,
+                    "epochs": config.epochs,
+                    "lr": config.lr,
+                },
             },
-        }, path)
+            path,
+        )
 
         # 同时保存最新 checkpoint 链接
         latest_link = self.save_dir / "latest.pt"
@@ -136,6 +146,7 @@ class CheckpointManager:
             latest_link.unlink()
         # 简单复制 (Windows 不支持 symlink)
         import shutil
+
         shutil.copy(path, latest_link)
 
         return path
@@ -202,9 +213,7 @@ if resume:
 ```python
 # 在 optimizer.step() 后添加
 if (global_step + 1) % config.save_interval == 0:
-    checkpoint_path = checkpoint_mgr.save(
-        model, optimizer, epoch, global_step, loss.item(), config
-    )
+    checkpoint_path = checkpoint_mgr.save(model, optimizer, epoch, global_step, loss.item(), config)
     print(f"\n[Checkpoint saved] {checkpoint_path}")
 ```
 
@@ -252,14 +261,16 @@ import sys
 # 优雅退出处理
 should_save_checkpoint = False
 
+
 def signal_handler(signum, frame):
     global should_save_checkpoint
     print("\n\nReceived interrupt signal. Saving checkpoint before exit...")
     should_save_checkpoint = True
     # 强制保存
-    if 'checkpoint_mgr' in dir() and 'model' in dir():
+    if "checkpoint_mgr" in dir() and "model" in dir():
         checkpoint_mgr.save(model, optimizer, epoch, global_step, loss.item(), config)
     sys.exit(0)
+
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
@@ -293,16 +304,13 @@ for epoch in range(start_epoch, epochs):
     model.train()
 
     # 使用 tqdm 包装 dataloader
-    pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}")
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch + 1}/{epochs}")
 
     for batch in pbar:
         # ... 训练代码 ...
 
         # 更新进度条
-        pbar.set_postfix({
-            "loss": f"{loss.item():.4f}",
-            "step": global_step
-        })
+        pbar.set_postfix({"loss": f"{loss.item():.4f}", "step": global_step})
 ```
 
 - [ ] **Step 2: 提交**

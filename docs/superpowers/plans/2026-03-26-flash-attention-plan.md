@@ -64,6 +64,7 @@ import pytest
 import torch
 from llm.core.attn.backend import get_attention_backend
 
+
 class TestAttentionBackend:
     def test_returns_torch_for_cpu(self):
         """CPU 环境应返回 torch"""
@@ -112,6 +113,7 @@ from typing import TYPE_CHECKING
 
 _flash_attn_available = None
 
+
 def _check_flash_attn():
     """检测 Flash Attention 是否可用 (延迟加载)"""
     global _flash_attn_available
@@ -120,11 +122,13 @@ def _check_flash_attn():
 
     try:
         import flash_attn
+
         _flash_attn_available = True
     except ImportError:
         _flash_attn_available = False
 
     return _flash_attn_available
+
 
 def get_attention_backend(
     query: Tensor,
@@ -189,6 +193,7 @@ import pytest
 import torch
 from llm.core.attn.flash_attn import flash_attention
 
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="需要 CUDA")
 class TestFlashAttention:
     def test_output_shape(self):
@@ -212,9 +217,7 @@ class TestFlashAttention:
         out_flash = flash_attention(q, q, q, is_causal=True)
 
         # PyTorch SDPA
-        out_torch = torch.nn.functional.scaled_dot_product_attention(
-            q, q, q, is_causal=True
-        )
+        out_torch = torch.nn.functional.scaled_dot_product_attention(q, q, q, is_causal=True)
 
         # 允许一定误差
         assert torch.allclose(out_flash, out_torch, atol=1e-2)
@@ -233,6 +236,7 @@ Expected: FAIL - ModuleNotFoundError
 ```python
 import torch
 from torch import Tensor
+
 
 def flash_attention(
     query: Tensor,
@@ -258,10 +262,7 @@ def flash_attention(
     try:
         from flash_attn import flash_attn_func
     except ImportError:
-        raise ImportError(
-            "Flash Attention is not installed. "
-            "Install with: pip install flash-attn"
-        )
+        raise ImportError("Flash Attention is not installed. Install with: pip install flash-attn")
 
     # 2. 准备输入格式 [B, S, N, D]
     # Flash Attention 需要 [B, S, H] 或 [B, S, N, D]
@@ -332,7 +333,9 @@ attn_output = sdpa(
 ```python
 # 选择后端
 backend = get_attention_backend(
-    q, k, v,
+    q,
+    k,
+    v,
     attn_mask=attn_mask,
     dropout_p=self.p if self.training else 0.0,
     is_causal=use_causal if not has_past else False,
@@ -341,7 +344,9 @@ backend = get_attention_backend(
 
 if backend == "flash":
     attn_output = flash_attention(
-        q, k, v,
+        q,
+        k,
+        v,
         dropout_p=self.p if self.training else 0.0,
         is_causal=use_causal if not has_past else False,
     )
@@ -390,7 +395,7 @@ from .backend import get_attention_backend
 
 __all__ = [
     "MultiHeadAttention",
-    "MultiLatentAttention", 
+    "MultiLatentAttention",
     "torch_sdpa",
     "flash_attention",
     "get_attention_backend",

@@ -27,8 +27,9 @@ class TrainingConfig:
 
 ```python
 # in tasks/regression_task.py
-from torch.optim.lr_scheduler import ExponentialLR # 导入新的调度器
-from torch import optim # 导入 optim
+from torch.optim.lr_scheduler import ExponentialLR  # 导入新的调度器
+from torch import optim  # 导入 optim
+
 
 class RegressionTask(TrainingTask):
     # ...
@@ -37,13 +38,15 @@ class RegressionTask(TrainingTask):
         if self.config.training.scheduler_type == "cosine":
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.config.training.epochs)
         elif self.config.training.scheduler_type == "step":
-            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=self.config.training.step_size, gamma=self.config.training.gamma)
+            scheduler = optim.lr_scheduler.StepLR(
+                optimizer, step_size=self.config.training.step_size, gamma=self.config.training.gamma
+            )
         elif self.config.training.scheduler_type == "plateau":
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10)
-        elif self.config.training.scheduler_type == "exponential": # <-- 新增逻辑
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
+        elif self.config.training.scheduler_type == "exponential":  # <-- 新增逻辑
             scheduler = ExponentialLR(optimizer, gamma=self.config.training.gamma)
         else:
-            scheduler = None # 或者抛出错误
+            scheduler = None  # 或者抛出错误
 
         # ... 后续的 warmup 逻辑保持不变 ...
         return scheduler
@@ -87,6 +90,7 @@ class WelcomeMessage(Callback):
 # in core/config.py
 from typing import List
 
+
 @dataclass
 class TrainingConfig:
     # ...
@@ -98,7 +102,8 @@ class TrainingConfig:
 
 ```python
 # in train.py
-from llm.training.core import callbacks as training_callbacks # 导入回调模块
+from llm.training.core import callbacks as training_callbacks  # 导入回调模块
+
 
 def train_worker(rank: int, world_size: int, config: Config, task_class):
     # ...
@@ -120,7 +125,7 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
         rank,
         world_size,
         data_module=data_module,
-        callbacks=instantiated_callbacks, # 使用动态实例化的回调
+        callbacks=instantiated_callbacks,  # 使用动态实例化的回调
     )
     engine.run()
 ```
@@ -196,11 +201,11 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
     ```python
     # in train.py
     from llm.training.tasks.regression_task import RegressionTask
-    from llm.training.tasks.classification_task import ClassificationTask # <-- 导入新任务
+    from llm.training.tasks.classification_task import ClassificationTask  # <-- 导入新任务
 
     AVAILABLE_TASKS = {
         "regression": RegressionTask,
-        "classification": ClassificationTask, # <-- 注册新任务
+        "classification": ClassificationTask,  # <-- 注册新任务
     }
     ```
 

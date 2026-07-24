@@ -128,7 +128,7 @@ $$PE_{(pos,2i+1)} = \cos(pos/10000^{2i/d_{model}})$$
 
 ```python
 # 伪代码
-mask = (input_ids == PAD_TOKEN_ID)  # True表示需要掩码的位置
+mask = input_ids == PAD_TOKEN_ID  # True表示需要掩码的位置
 scores = scores.masked_fill(mask, -1e9)  # 负无穷确保softmax后为0
 ```
 
@@ -324,8 +324,7 @@ def positional_encoding(max_len, d_model):
     position = torch.arange(0, max_len).unsqueeze(1).float()
 
     # 创建分母项: 10000^(2i/d_model)
-    div_term = torch.exp(torch.arange(0, d_model, 2).float() *
-                         -(math.log(10000.0) / d_model))
+    div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
 
     # 偶数位置用sin, 奇数位置用cos
     pe[:, 0::2] = torch.sin(position * div_term)
@@ -342,7 +341,7 @@ def apply_causal_mask(scores):
     # 创建下三角掩码
     mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
     # 使用-inf确保softmax后为0
-    scores.masked_fill_(mask, float('-inf'))
+    scores.masked_fill_(mask, float("-inf"))
     return scores
 ```
 

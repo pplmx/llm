@@ -83,7 +83,7 @@ checkpoint = {
     "epoch": epoch,
     "global_step": global_step,
     "loss": loss,
-    "config": {...}
+    "config": {...},
 }
 
 torch.save(checkpoint, "model.pt")
@@ -117,7 +117,7 @@ global_step = checkpoint["global_step"]
 可以比较 loss 选择最佳 checkpoint：
 
 ```python
-best_loss = float('inf')
+best_loss = float("inf")
 best_ckpt = None
 for ckpt in checkpoints:
     if ckpt["loss"] < best_loss:

@@ -51,8 +51,7 @@ class PagedKVCache:
     ):
         # [num_layers, num_blocks, num_kv_heads, block_size, head_dim]
         self.k_cache = torch.zeros(
-            num_layers, num_blocks, num_kv_heads, block_size, head_dim,
-            device=device, dtype=dtype
+            num_layers, num_blocks, num_kv_heads, block_size, head_dim, device=device, dtype=dtype
         )
         self.v_cache = torch.zeros_like(self.k_cache)
 
@@ -81,8 +80,8 @@ class PagedKVCache:
         for i, block_id in enumerate(block_ids):
             start_token = i * self.block_size
             end_token = min(start_token + self.block_size, num_tokens)
-            self.k_cache[:, block_id, :, :end_token-start_token, :] = k_new[:, :, start_token:end_token, :]
-            self.v_cache[:, block_id, :, :end_token-start_token, :] = v_new[:, :, start_token:end_token, :]
+            self.k_cache[:, block_id, :, : end_token - start_token, :] = k_new[:, :, start_token:end_token, :]
+            self.v_cache[:, block_id, :, : end_token - start_token, :] = v_new[:, :, start_token:end_token, :]
 
         return block_ids
 
@@ -110,11 +109,11 @@ class PagedKVCache:
 
 ```python
 def paged_attention_forward(
-    q: Tensor,              # [batch, num_heads, 1, head_dim]
-    k_cache: Tensor,        # [num_layers, num_blocks, num_kv_heads, block_size, head_dim]
-    v_cache: Tensor,        # Same shape as k_cache
-    block_tables: Tensor,   # [batch, max_blocks] - physical block IDs for each sequence
-    seq_lens: Tensor,       # [batch] - current sequence lengths
+    q: Tensor,  # [batch, num_heads, 1, head_dim]
+    k_cache: Tensor,  # [num_layers, num_blocks, num_kv_heads, block_size, head_dim]
+    v_cache: Tensor,  # Same shape as k_cache
+    block_tables: Tensor,  # [batch, max_blocks] - physical block IDs for each sequence
+    seq_lens: Tensor,  # [batch] - current sequence lengths
     block_size: int = 16,
 ) -> Tensor:
     """Paged attention forward pass.
@@ -149,7 +148,7 @@ def paged_attention_forward(
    # batch_size = len(requests)
    block_tables = torch.zeros(batch_size, max_blocks, dtype=torch.long)
    for i, req in enumerate(requests):
-       block_tables[i, :len(self.block_map[req.id])] = torch.tensor(self.block_map[req.id])
+       block_tables[i, : len(self.block_map[req.id])] = torch.tensor(self.block_map[req.id])
    ```
 
 5. Pass `block_tables` to `paged_attention_forward()`
@@ -207,9 +206,9 @@ Block Table: [0, 1, 2]
 
 ```python
 # Serving config
-LLM_SERVING_USE_PAGED_ATTENTION=true
-LLM_SERVING_MAX_BLOCKS=256      # Total blocks (4096 tokens with block_size=16)
-LLM_SERVING_BLOCK_SIZE=16
+LLM_SERVING_USE_PAGED_ATTENTION = true
+LLM_SERVING_MAX_BLOCKS = 256  # Total blocks (4096 tokens with block_size=16)
+LLM_SERVING_BLOCK_SIZE = 16
 ```
 
 ## Testing Strategy

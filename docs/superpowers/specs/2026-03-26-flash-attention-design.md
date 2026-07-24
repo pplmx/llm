@@ -71,9 +71,9 @@ def get_attention_backend(
 
 ```python
 def flash_attention(
-    query: Tensor,   # [B, N, S, D]
-    key: Tensor,     # [B, N, S, D]
-    value: Tensor,   # [B, N, S, D]
+    query: Tensor,  # [B, N, S, D]
+    key: Tensor,  # [B, N, S, D]
+    value: Tensor,  # [B, N, S, D]
     dropout_p: float = 0.0,
     is_causal: bool = False,
 ) -> Tensor:
@@ -193,11 +193,13 @@ dependencies = [
 ```python
 # tests/core/attn/test_flash_attention.py
 
+
 def test_flash_attention_output_shape():
     """验证输出 shape 正确"""
     q = torch.randn(2, 4, 8, 32)  # [B, N, S, D]
     out = flash_attention(q, q, q)
     assert out.shape == (2, 4, 8, 32)
+
 
 def test_flash_attention_output_value():
     """验证输出数值正确 (与 PyTorch SDPA 对比)"""
@@ -209,6 +211,7 @@ def test_flash_attention_output_value():
 
     # 允许一定误差
     assert torch.allclose(out_flash, out_torch, atol=1e-2)
+
 
 def test_backend_selection():
     """验证后端选择正确"""
