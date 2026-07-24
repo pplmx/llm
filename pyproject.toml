@@ -50,6 +50,7 @@ dev = [
 ]
 test = [
     "allure-pytest>=2.16.0",
+    "httpx2>=2.9.0",
     "hypothesis>=6.0",
     "ipykernel>=7.2.0",
     "onnx>=1.22.0",  # bumped: PYSEC-2026-2689 fix in 1.22.0
