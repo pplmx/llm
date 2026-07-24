@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import torch
 
@@ -38,21 +40,38 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.skip(f"需要 8 GPU, 当前 {gpu_count}"))
 
 
+def _pick_gpu() -> torch.device:
+    """Pick a GPU device, distributing across workers when under pytest-xdist.
+
+    When running with ``pytest -n <N>``, each worker process auto-selects a
+    different GPU via ``PYTEST_XDIST_WORKER`` (set by xdist per process).
+    Without xdist (or on the master process), defaults to ``cuda:0``.
+    Falls back to ``cpu`` when no GPU is allocatable.
+    """
+    if not torch.cuda.is_available():
+        return torch.device("cpu")
+    gpu_count = torch.cuda.device_count()
+    if gpu_count == 0:
+        return torch.device("cpu")
+
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    if worker != "master":
+        idx = int(worker.replace("gw", "")) % gpu_count
+    else:
+        idx = 0
+
+    try:
+        torch.cuda.mem_get_info(idx)
+        return torch.device(f"cuda:{idx}")
+    except (RuntimeError, torch.AcceleratorError):
+        pass
+    return torch.device("cpu")
+
+
 @pytest.fixture(scope="session")
 def device():
-    """Returns cuda if available *and* allocatable, else cpu.
-
-    ``torch.cuda.is_available()`` can return True in containers that report
-    CUDA devices but have 0 usable VRAM (CUDA OOM on first allocation).
-    We probe ``mem_get_info()`` to reject that case.
-    """
-    if torch.cuda.is_available():
-        try:
-            torch.cuda.mem_get_info()
-            return torch.device("cuda")
-        except RuntimeError, torch.AcceleratorError:
-            pass
-    return torch.device("cpu")
+    """Returns a GPU device (distributed across workers under xdist), else cpu."""
+    return _pick_gpu()
 
 
 @pytest.fixture(scope="session")
