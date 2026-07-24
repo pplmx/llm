@@ -32,8 +32,9 @@ def _cuda_usable() -> bool:
 
 
 DEVICES = ["cpu"]
-if _cuda_usable():
-    DEVICES.append("cuda")
+_gpu_count = torch.cuda.device_count()
+if _gpu_count > 0 and _cuda_usable():
+    DEVICES = [f"cuda:{i}" for i in range(_gpu_count)]
 
 DTYPES = [torch.float32]
 if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:  # Check for float64 support on CUDA

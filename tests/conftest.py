@@ -115,7 +115,7 @@ def line_tokenizer():
 
 
 @pytest.fixture
-def model_and_tokenizer():
+def model_and_tokenizer(device):
     """Real character tokenizer + small decoder for inference tests."""
     tokenizer = SimpleCharacterTokenizer(DEFAULT_INFERENCE_CORPUS)
     model = DecoderModel(
@@ -124,5 +124,6 @@ def model_and_tokenizer():
         num_layers=2,
         num_heads=4,
         max_seq_len=64,
+        device=device,
     )
     return model, tokenizer

@@ -50,6 +50,7 @@ def _make_small_decoder() -> torch.nn.Module:
         max_seq_len=32,
         attn_impl="mha",
         mlp_impl="mlp",
+        device="cpu",
         # Match the loader's ``from_pretrained`` config so the roundtrip
         # truly exercises a save -> load with matching architectures.
         use_glu=True,

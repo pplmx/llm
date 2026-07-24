@@ -9,9 +9,8 @@ from tests.support.models import DECODER_BATCH_SIZE, DECODER_SEQ_LEN, decoder_mo
 BATCH_SIZE = DECODER_BATCH_SIZE
 SEQ_LEN = DECODER_SEQ_LEN
 
-DEVICES = ["cpu"]
-if torch.cuda.is_available():
-    DEVICES.append("cuda")
+_gpu_count = torch.cuda.device_count()
+DEVICES = [f"cuda:{i}" for i in range(_gpu_count)] if _gpu_count > 0 else ["cpu"]
 
 
 @pytest.fixture

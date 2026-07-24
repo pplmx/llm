@@ -17,9 +17,8 @@ BATCH_SIZE = 2
 SEQ_LEN = 10
 
 # Available devices for testing
-DEVICES = ["cpu"]
-if torch.cuda.is_available():
-    DEVICES.append("cuda")
+_gpu_count = torch.cuda.device_count()
+DEVICES = [f"cuda:{i}" for i in range(_gpu_count)] if _gpu_count > 0 else ["cpu"]
 
 DTYPES = [torch.float32]  # Keep it simple for most tests, can expand if needed
 
