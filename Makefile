@@ -27,11 +27,11 @@ test:
 test-fast:
 	@uv run pytest -m "not heavy and not e2e"
 
-# Parallel test — one worker per GPU, heavy+e2e excluded.
+# Parallel test — one worker per GPU (min 1), heavy+e2e excluded.
 # Each worker pins to a distinct GPU via PYTEST_XDIST_WORKER env.
 test-parallel:
-	@N=$$(uv run python -c 'import torch; print(min(torch.cuda.device_count(), 32))' 2>/dev/null); \
-	echo ">>> $$N workers across $$N GPUs"; \
+	@N=$$(uv run python -c 'import torch; print(max(min(torch.cuda.device_count(), 32), 1))' 2>/dev/null); \
+	echo ">>> $$N workers across $$N GPU(s)"; \
 	uv run pytest -n "$$N" -m "not heavy and not e2e"
 
 # Test quick only
