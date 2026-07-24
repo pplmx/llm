@@ -49,11 +49,10 @@ class DPODataset(Dataset):
                 for line in f:
                     if line.strip():
                         item = json.loads(line)
-                        # Minimal validation
+                        # Minimal validation: skip entries missing required keys
                         if not all(k in item for k in ("prompt", "chosen", "rejected")):
-                            # Allow flexible keys if template handles them?
-                            # For now enforce standard DPO keys or we need a map
-                            pass
+                            logger.warning("Skipping DPO item missing required keys (prompt, chosen, rejected)")
+                            continue
                         data.append(item)
         except FileNotFoundError:
             raise FileNotFoundError(f"DPO data file not found: {self.file_path}")
