@@ -27,8 +27,8 @@ Accepted
 k_cache = torch.cat([k_cache, new_k], dim=2)
 
 # 新方式 (O(1))
-self.k_cache[:, :, pos:pos+seq_len, :] = new_k
-return self.k_cache[:, :, :pos+seq_len, :]
+self.k_cache[:, :, pos : pos + seq_len, :] = new_k
+return self.k_cache[:, :, : pos + seq_len, :]
 ```
 
 ## Consequences

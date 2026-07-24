@@ -33,8 +33,8 @@ We adopt **Grouped Query Attention (GQA)** as the default attention mechanism in
 ```python
 mha = MultiHeadAttention(
     hidden_size=2048,
-    num_heads=32,        # 32 Query heads
-    num_kv_heads=8,      # 8 Key/Value head groups (GQA)
+    num_heads=32,  # 32 Query heads
+    num_kv_heads=8,  # 8 Key/Value head groups (GQA)
 )
 ```
 

@@ -37,9 +37,9 @@ from llm.core.kv_cache import KVCache
 # Create cache for inference
 cache = KVCache(
     max_batch_size=1,
-    max_seq_len=512,      # Maximum generation length
-    num_kv_heads=8,       # From model config
-    head_dim=64,          # hidden_size / num_heads
+    max_seq_len=512,  # Maximum generation length
+    num_kv_heads=8,  # From model config
+    head_dim=64,  # hidden_size / num_heads
     device="cuda",
     dtype=torch.float16,
 )
@@ -177,6 +177,7 @@ in-flight requests while a forward pass runs.
 ```python
 # Async usage in a FastAPI handler
 from fastapi.concurrency import run_in_threadpool
+
 
 async def stream_one(prompt: str):
     while True:
@@ -359,8 +360,8 @@ MQA:  Q=32, K=1,  V=1   (1 KV pair, 32x memory reduction)
 ```python
 model = DecoderModel(
     hidden_size=1024,
-    num_heads=16,         # Query heads
-    num_kv_heads=4,       # KV heads (GQA: 4:1 ratio)
+    num_heads=16,  # Query heads
+    num_kv_heads=4,  # KV heads (GQA: 4:1 ratio)
 )
 ```
 
@@ -469,8 +470,13 @@ from llm.compat.hf_publisher import save_pretrained
 from llm.models.decoder import DecoderModel
 
 model = DecoderModel(
-    vocab_size=32000, hidden_size=4096, num_layers=32, num_heads=32,
-    attn_impl="mha", mlp_impl="mlp", use_glu=True,
+    vocab_size=32000,
+    hidden_size=4096,
+    num_layers=32,
+    num_heads=32,
+    attn_impl="mha",
+    mlp_impl="mlp",
+    use_glu=True,
 )
 # ... train model ...
 
@@ -532,13 +538,14 @@ target distribution) or samples a correction token.
 from llm.generation.backends import SpeculativeDecodingBackend
 
 backend = SpeculativeDecodingBackend(
-    target_model=target,   # the "expensive" model
-    draft_model=draft,     # smaller model, same vocab
-    gamma=5,               # speculative tokens per round
+    target_model=target,  # the "expensive" model
+    draft_model=draft,  # smaller model, same vocab
+    gamma=5,  # speculative tokens per round
 )
 
 # Or via the registry:
 from llm.generation.registry import get_generation_backend
+
 backend = get_generation_backend(
     "speculative",
     target_model=target,

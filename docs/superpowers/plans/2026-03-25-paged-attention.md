@@ -42,6 +42,7 @@ import pytest
 import torch
 from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
+
 def test_paged_kv_cache_init():
     cache = PagedKVCache(
         num_layers=2,
@@ -53,6 +54,7 @@ def test_paged_kv_cache_init():
         dtype=torch.float16,
     )
     assert cache.k_cache.shape == (2, 32, 4, 16, 16)
+
 
 def test_update_allocates_blocks():
     cache = PagedKVCache(
@@ -71,6 +73,7 @@ def test_update_allocates_blocks():
 
     assert len(block_ids) == 1  # 4 tokens = 1 block
     assert block_ids == [0]
+
 
 def test_free_sequence():
     cache = PagedKVCache(
@@ -129,8 +132,7 @@ class PagedKVCache:
 
         # [num_layers, num_blocks, num_kv_heads, block_size, head_dim]
         self.k_cache = torch.zeros(
-            num_layers, num_blocks, num_kv_heads, block_size, head_dim,
-            device=device, dtype=dtype
+            num_layers, num_blocks, num_kv_heads, block_size, head_dim, device=device, dtype=dtype
         )
         self.v_cache = torch.zeros_like(self.k_cache)
 
@@ -189,8 +191,8 @@ class PagedKVCache:
         end_block = (end_idx - 1) // self.block_size + 1
 
         for block_id in block_table[start_block:end_block]:
-            k_seq.append(self.k_cache[:, block_id, :, :self.block_size, :])
-            v_seq.append(self.v_cache[:, block_id, :, :self.block_size, :])
+            k_seq.append(self.k_cache[:, block_id, :, : self.block_size, :])
+            v_seq.append(self.v_cache[:, block_id, :, : self.block_size, :])
 
         k_full = torch.cat(k_seq, dim=2)
         v_full = torch.cat(v_seq, dim=2)
@@ -198,7 +200,9 @@ class PagedKVCache:
         start_offset = start_idx % self.block_size
         num_tokens = end_idx - start_idx
 
-        return k_full[0, :, start_offset:start_offset+num_tokens, :], v_full[0, :, start_offset:start_offset+num_tokens, :]
+        return k_full[0, :, start_offset : start_offset + num_tokens, :], v_full[
+            0, :, start_offset : start_offset + num_tokens, :
+        ]
 
     def free(self, seq_id: int):
         """Free blocks when sequence completes."""
@@ -282,11 +286,11 @@ from torch import Tensor
 
 
 def paged_attention_forward(
-    q: Tensor,              # [batch, num_heads, 1, head_dim]
-    k_cache: Tensor,        # [num_layers, num_blocks, num_kv_heads, block_size, head_dim]
-    v_cache: Tensor,        # Same shape as k_cache
-    block_tables: Tensor,   # [batch, max_blocks] - physical block IDs
-    seq_lens: Tensor,       # [batch] - current sequence lengths
+    q: Tensor,  # [batch, num_heads, 1, head_dim]
+    k_cache: Tensor,  # [num_layers, num_blocks, num_kv_heads, block_size, head_dim]
+    v_cache: Tensor,  # Same shape as k_cache
+    block_tables: Tensor,  # [batch, max_blocks] - physical block IDs
+    seq_lens: Tensor,  # [batch] - current sequence lengths
     num_kv_heads: int,
     block_size: int = 16,
 ) -> Tensor:
@@ -350,7 +354,7 @@ def paged_attention_forward(
         v_full = v_full.repeat_interleave(repeat_factor, dim=1)
 
     # Attention: Q @ K^T * scale
-    scale = head_dim ** -0.5
+    scale = head_dim**-0.5
     attn_weights = torch.matmul(q, k_full.transpose(-2, -1)) * scale
 
     # Softmax
@@ -450,8 +454,8 @@ def test_end_to_end_paged_inference():
 
     # Build block_tables tensor
     block_tables = torch.zeros(2, 2, dtype=torch.long)
-    block_tables[0, :len(block_ids_1)] = torch.tensor(block_ids_1)
-    block_tables[1, :len(block_ids_2)] = torch.tensor(block_ids_2)
+    block_tables[0, : len(block_ids_1)] = torch.tensor(block_ids_1)
+    block_tables[1, : len(block_ids_2)] = torch.tensor(block_ids_2)
     seq_lens = torch.tensor([10, 8])
 
     # Forward pass

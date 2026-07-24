@@ -26,9 +26,9 @@ model = DecoderModel(vocab_size=32000, hidden_size=768, num_layers=12)
 # 2. Apply LoRA
 apply_lora(
     model,
-    rank=8,           # Low-rank dimension
-    alpha=16.0,       # Scaling factor
-    dropout=0.1,      # Regularization
+    rank=8,  # Low-rank dimension
+    alpha=16.0,  # Scaling factor
+    dropout=0.1,  # Regularization
     target_modules=["qkv_proj", "out_proj"],  # Which layers to adapt
 )
 
@@ -63,7 +63,7 @@ apply_qlora(
     model,
     rank=8,
     alpha=16.0,
-    block_size=64,    # Quantization block size
+    block_size=64,  # Quantization block size
 )
 
 # Train

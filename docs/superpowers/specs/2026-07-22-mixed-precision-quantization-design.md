@@ -83,10 +83,10 @@ class LayerQuantPolicy:
     """
 
     target_modules: tuple[str, ...]
-    bits: int | None = None          # None = inherit; else 4 or 8
-    group_size: int | None = None    # None = inherit; else -1 or positive
-    sym: bool | None = None          # None = inherit; else True/False
-    act_order: bool | None = None    # None = inherit; else True/False
+    bits: int | None = None  # None = inherit; else 4 or 8
+    group_size: int | None = None  # None = inherit; else -1 or positive
+    sym: bool | None = None  # None = inherit; else True/False
+    act_order: bool | None = None  # None = inherit; else True/False
 
     def __post_init__(self):
         # 字段级校验: target_modules 非空无重复, bits ∈ {4,8},
@@ -141,15 +141,13 @@ class GPTQConfig:
 ```python
 def quantize_model_gptq(model, calib_iter, config=None, target_modules=None, device=None):
     # ... 现有 setup: linear_layers / targets / captured ...
-    
+
     # NEW: resolve per-layer effective configs (after target_modules filter)
     available_layer_names = {n for n, _ in targets}
-    effective_configs = resolve_layer_policies(
-        config.layer_policies, available_layer_names, config
-    )
-    
+    effective_configs = resolve_layer_policies(config.layer_policies, available_layer_names, config)
+
     # ... 现有 calibration 收集、hook 捕获不变 ...
-    
+
     # 现有循环，唯一改动: effective_config 替换 config
     for name, layer in targets:
         effective_config = effective_configs.get(name, config)

@@ -160,6 +160,7 @@ $$\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
 import torch
 import torch.nn.functional as F
 
+
 def scaled_dot_product_attention(q, k, v, mask=None):
     """
     q: [batch_size, seq_len_q, d_k]

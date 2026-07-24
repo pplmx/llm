@@ -59,6 +59,7 @@ import torch.nn as nn
 
 # === Config validation tests ===
 
+
 def test_gptq_config_default_values():
     """Default config is 4-bit, group_size=128, symmetric."""
     from llm.quantization.gptq import GPTQConfig
@@ -199,9 +200,7 @@ class GPTQConfig:
                 f"For mixed precision, use target_modules to skip sensitive layers."
             )
         if self.group_size != -1 and self.group_size < 0:
-            raise ValueError(
-                f"group_size must be -1 (per-channel) or positive, got {self.group_size}."
-            )
+            raise ValueError(f"group_size must be -1 (per-channel) or positive, got {self.group_size}.")
         if not (0.0 < self.percdamp < 1.0):
             raise ValueError(f"percdamp must be in (0, 1), got {self.percdamp}.")
         if self.blocksize <= 0:
@@ -242,6 +241,7 @@ Append to `tests/quantization/test_gptq_algorithm.py`:
 
 ```python
 # === GPTQQuantizer Hessian accumulation tests ===
+
 
 def test_quantizer_initializes_with_zero_hessian():
     """Fresh GPTQQuantizer has H == 0 and no samples accumulated."""
@@ -431,6 +431,7 @@ Append to `tests/quantization/test_gptq_algorithm.py`:
 ```python
 # === GPTQ algorithm correctness tests ===
 
+
 def test_gptq_lower_error_than_rtn_baseline():
     """GPTQ MSE on a small layer must be lower than naive round-to-nearest.
 
@@ -539,136 +540,132 @@ Expected: 4 tests FAIL with `TypeError: quantize() missing 1 required positional
 Append to `GPTQQuantizer` class in `src/llm/quantization/gptq.py`:
 
 ```python
-    def quantize(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
-        """Run GPTQ on accumulated Hessian.
+def quantize(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """Run GPTQ on accumulated Hessian.
 
-        Returns:
-            W_q: Quantized weights, fp32 representation. Shape [out_features, in_features].
-                 Caller is responsible for packing to int8 if bits=4.
-            scales: Per-group scales. Shape [out_features, in_features // group_size]
-                    or [out_features, 1] if group_size=-1.
-            zeros: Per-group zero-points, or None if sym=True.
-        """
-        W = self.layer.weight.detach().clone().to(
-            device=self.device, dtype=self.compute_dtype
-        )
-        H = self.H.clone()
+    Returns:
+        W_q: Quantized weights, fp32 representation. Shape [out_features, in_features].
+             Caller is responsible for packing to int8 if bits=4.
+        scales: Per-group scales. Shape [out_features, in_features // group_size]
+                or [out_features, 1] if group_size=-1.
+        zeros: Per-group zero-points, or None if sym=True.
+    """
+    W = self.layer.weight.detach().clone().to(device=self.device, dtype=self.compute_dtype)
+    H = self.H.clone()
 
-        # Handle all-zero columns (degenerate)
-        dead = torch.diag(H) == 0
-        H[dead, dead] = 1.0
-        W[:, dead] = 0.0
+    # Handle all-zero columns (degenerate)
+    dead = torch.diag(H) == 0
+    H[dead, dead] = 1.0
+    W[:, dead] = 0.0
 
-        # Damping for numerical stability
-        damp = self.config.percdamp * torch.mean(torch.diag(H))
-        diag = torch.arange(self.in_features, device=self.device)
-        H[diag, diag] += damp
+    # Damping for numerical stability
+    damp = self.config.percdamp * torch.mean(torch.diag(H))
+    diag = torch.arange(self.in_features, device=self.device)
+    H[diag, diag] += damp
 
-        # Cholesky inverse: U = chol(H^-1)^T upper triangular
-        try:
-            H_inv = torch.linalg.inv(H)
-            U = torch.linalg.cholesky(H_inv, upper=True)
-        except RuntimeError as e:
-            raise RuntimeError(
-                f"Hessian is not positive-definite even after damping "
-                f"(percdamp={self.config.percdamp}). "
-                f"Try increasing percdamp (e.g. 0.1) or check calibration data quality."
-            ) from e
+    # Cholesky inverse: U = chol(H^-1)^T upper triangular
+    try:
+        H_inv = torch.linalg.inv(H)
+        U = torch.linalg.cholesky(H_inv, upper=True)
+    except RuntimeError as e:
+        raise RuntimeError(
+            f"Hessian is not positive-definite even after damping "
+            f"(percdamp={self.config.percdamp}). "
+            f"Try increasing percdamp (e.g. 0.1) or check calibration data quality."
+        ) from e
 
-        # Optional act-order: sort columns by diag(H) descending
-        if self.config.act_order:
-            perm = torch.argsort(torch.diag(H_inv), descending=True)
-            W = W[:, perm]
-            H_inv = H_inv[perm][:, perm]
-            U = U[perm][:, perm]
+    # Optional act-order: sort columns by diag(H) descending
+    if self.config.act_order:
+        perm = torch.argsort(torch.diag(H_inv), descending=True)
+        W = W[:, perm]
+        H_inv = H_inv[perm][:, perm]
+        U = U[perm][:, perm]
 
-        # Quantize column-by-column with error correction
-        Q = torch.zeros_like(W)
-        Losses = torch.zeros_like(W)
+    # Quantize column-by-column with error correction
+    Q = torch.zeros_like(W)
+    Losses = torch.zeros_like(W)
 
-        for i in range(0, self.in_features, self.config.blocksize):
-            i_end = min(i + self.config.blocksize, self.in_features)
-            count = i_end - i
+    for i in range(0, self.in_features, self.config.blocksize):
+        i_end = min(i + self.config.blocksize, self.in_features)
+        count = i_end - i
 
-            W1 = W[:, i:i_end].clone()
-            Q1 = torch.zeros_like(W1)
-            Err1 = torch.zeros_like(W1)
-            Losses1 = torch.zeros_like(W1)
-            Hinv1 = H_inv[i:i_end, i:i_end]
+        W1 = W[:, i:i_end].clone()
+        Q1 = torch.zeros_like(W1)
+        Err1 = torch.zeros_like(W1)
+        Losses1 = torch.zeros_like(W1)
+        Hinv1 = H_inv[i:i_end, i:i_end]
 
-            for j in range(count):
-                w = W1[:, j]
-                d = Hinv1[j, j]
+        for j in range(count):
+            w = W1[:, j]
+            d = Hinv1[j, j]
 
-                # Per-group scale computation
-                if self.config.group_size != -1:
-                    group_idx = (i + j) // self.config.group_size
+            # Per-group scale computation
+            if self.config.group_size != -1:
+                group_idx = (i + j) // self.config.group_size
+            else:
+                group_idx = 0
+
+            # Quantize w[:, j]
+            if self.config.sym:
+                if self.config.group_size == -1:
+                    scale = w.abs().max() / (2 ** (self.config.bits - 1) - 1)
+                    scale = scale.clamp(min=1e-8)
                 else:
-                    group_idx = 0
+                    gs = self.config.group_size
+                    g_start = group_idx * gs
+                    g_end = g_start + gs
+                    w_group = W[:, g_start:g_end]
+                    scale = w_group.abs().max() / (2 ** (self.config.bits - 1) - 1)
+                    scale = scale.clamp(min=1e-8)
+                qmax = 2 ** (self.config.bits - 1) - 1
+                q = torch.round(w / scale).clamp(-qmax - 1, qmax)
+                Q1[:, j] = q * scale
+            else:
+                # Asymmetric: not implemented in v1; raise
+                raise NotImplementedError("Asymmetric GPTQ not yet implemented. Use sym=True.")
 
-                # Quantize w[:, j]
-                if self.config.sym:
-                    if self.config.group_size == -1:
-                        scale = w.abs().max() / (2 ** (self.config.bits - 1) - 1)
-                        scale = scale.clamp(min=1e-8)
-                    else:
-                        gs = self.config.group_size
-                        g_start = group_idx * gs
-                        g_end = g_start + gs
-                        w_group = W[:, g_start:g_end]
-                        scale = w_group.abs().max() / (2 ** (self.config.bits - 1) - 1)
-                        scale = scale.clamp(min=1e-8)
-                    qmax = 2 ** (self.config.bits - 1) - 1
-                    q = torch.round(w / scale).clamp(-qmax - 1, qmax)
-                    Q1[:, j] = q * scale
-                else:
-                    # Asymmetric: not implemented in v1; raise
-                    raise NotImplementedError(
-                        "Asymmetric GPTQ not yet implemented. Use sym=True."
-                    )
+            # Error correction
+            err = (w - Q1[:, j]) / d
+            w_col = W1[:, j + 1 :]
+            u_col = U[i + j, i + j + 1 : i_end]
 
-                # Error correction
-                err = (w - Q1[:, j]) / d
-                w_col = W1[:, j + 1:]
-                u_col = U[i + j, i + j + 1 : i_end]
+            if w_col.shape[1] > 0:
+                W1[:, j + 1 :] -= err.unsqueeze(1) * u_col.unsqueeze(0)
+                Err1[:, j] = err
 
-                if w_col.shape[1] > 0:
-                    W1[:, j + 1:] -= err.unsqueeze(1) * u_col.unsqueeze(0)
-                    Err1[:, j] = err
+        Q[:, i:i_end] = Q1
+        Losses[:, i:i_end] = Losses1
 
-            Q[:, i:i_end] = Q1
-            Losses[:, i:i_end] = Losses1
+        # Propagate error to remaining columns
+        if i_end < self.in_features:
+            W[:, i_end:] -= Err1 @ U[i:i_end, i_end:]
 
-            # Propagate error to remaining columns
-            if i_end < self.in_features:
-                W[:, i_end:] -= Err1 @ U[i:i_end, i_end:]
+    # Undo act-order permutation if applied
+    if self.config.act_order:
+        invperm = torch.argsort(perm)
+        Q = Q[:, invperm]
 
-        # Undo act-order permutation if applied
-        if self.config.act_order:
-            invperm = torch.argsort(perm)
-            Q = Q[:, invperm]
+    # Compute final per-group scales/zeros for the packed representation
+    if self.config.group_size != -1:
+        gs = self.config.group_size
+        n_groups = self.in_features // gs
+        scales = torch.zeros(self.out_features, n_groups, dtype=torch.float32)
+        zeros = torch.zeros(self.out_features, n_groups, dtype=torch.int8)
+        for g in range(n_groups):
+            s = g * gs
+            e = s + gs
+            w_g = W[:, s:e]  # original fp32 weight
+            q_g = Q[:, s:e]  # dequantized from Q
+            if self.config.sym:
+                scales[:, g] = w_g.abs().max(dim=1)[0] / (2 ** (self.config.bits - 1) - 1)
+                scales[:, g] = scales[:, g].clamp(min=1e-8)
+            # Q is dequantized (already in fp32 scale space), caller will re-pack
+    else:
+        scales = W.abs().max(dim=1, keepdim=True)[0] / (2 ** (self.config.bits - 1) - 1)
+        scales = scales.clamp(min=1e-8)
+        zeros = None
 
-        # Compute final per-group scales/zeros for the packed representation
-        if self.config.group_size != -1:
-            gs = self.config.group_size
-            n_groups = self.in_features // gs
-            scales = torch.zeros(self.out_features, n_groups, dtype=torch.float32)
-            zeros = torch.zeros(self.out_features, n_groups, dtype=torch.int8)
-            for g in range(n_groups):
-                s = g * gs
-                e = s + gs
-                w_g = W[:, s:e]  # original fp32 weight
-                q_g = Q[:, s:e]  # dequantized from Q
-                if self.config.sym:
-                    scales[:, g] = w_g.abs().max(dim=1)[0] / (2 ** (self.config.bits - 1) - 1)
-                    scales[:, g] = scales[:, g].clamp(min=1e-8)
-                # Q is dequantized (already in fp32 scale space), caller will re-pack
-        else:
-            scales = W.abs().max(dim=1, keepdim=True)[0] / (2 ** (self.config.bits - 1) - 1)
-            scales = scales.clamp(min=1e-8)
-            zeros = None
-
-        return Q, scales, zeros
+    return Q, scales, zeros
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -699,6 +696,7 @@ Append to `tests/quantization/test_gptq_algorithm.py`:
 
 ```python
 # === act-order and group_size behavior tests ===
+
 
 def test_act_order_changes_quantization_sequence():
     """With act_order=True, columns with larger diag(H^-1) are quantized first."""
@@ -803,6 +801,7 @@ import torch.nn as nn
 
 # === Pack/unpack correctness ===
 
+
 def test_pack_4bit_round_trip():
     """Pack unsigned int4 values into int8 storage and unpack back."""
     from llm.quantization._gptq_layer import _pack_4bit, _unpack_4bit
@@ -843,6 +842,7 @@ def test_packed_storage_is_half_size():
 
 
 # === GPTQQuantizedLinear storage ===
+
 
 def test_gptq_layer_initializes_with_correct_buffers():
     """GPTQQuantizedLinear exposes packed weight, scales, zeros buffers."""
@@ -955,13 +955,9 @@ def _pack_4bit(w: torch.Tensor) -> torch.Tensor:
         ValueError: If N is odd or values are out of [0, 15].
     """
     if w.numel() % 2 != 0:
-        raise ValueError(
-            f"_pack_4bit requires even number of values, got {w.numel()}."
-        )
+        raise ValueError(f"_pack_4bit requires even number of values, got {w.numel()}.")
     if w.min() < 0 or w.max() > 15:
-        raise ValueError(
-            f"_pack_4bit values must be in [0, 15], got range [{w.min().item()}, {w.max().item()}]."
-        )
+        raise ValueError(f"_pack_4bit values must be in [0, 15], got range [{w.min().item()}, {w.max().item()}].")
 
     w_even = w[0::2]
     w_odd = w[1::2]
@@ -1059,6 +1055,7 @@ Append to `tests/quantization/test_gptq_layer.py`:
 
 ```python
 # === Forward correctness ===
+
 
 def test_forward_close_to_fp32_baseline():
     """Forward output cosine_sim > 0.99 vs equivalent fp32 Linear."""
@@ -1345,9 +1342,7 @@ def test_target_modules_filters_correctly():
     calib = [torch.randn(8, 16) for _ in range(4)]
 
     # Only quantize fc1, leave fc2 as nn.Linear
-    quantized = quantize_model_gptq(
-        model, iter(calib), GPTQConfig(), target_modules=["fc1"]
-    )
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(), target_modules=["fc1"])
 
     fc1_layer = quantized.fc1
     fc2_layer = quantized.fc2
@@ -1503,10 +1498,7 @@ def quantize_model_gptq(
     # Check for already-quantized layers
     for n, m in model.named_modules():
         if isinstance(m, GPTQQuantizedLinear):
-            raise ValueError(
-                f"Layer {n} is already GPTQ-quantized. "
-                f"Pass a fresh model or unquantize first."
-            )
+            raise ValueError(f"Layer {n} is already GPTQ-quantized. Pass a fresh model or unquantize first.")
 
     # Resolve target_modules
     if target_modules is not None:
@@ -1535,6 +1527,7 @@ def quantize_model_gptq(
     def make_hook(name: str):
         def hook(module, inputs, output):
             captured[name].append(inputs[0].detach().clone())
+
         return hook
 
     for n, m in targets:
@@ -1845,11 +1838,16 @@ def test_cli_invalid_bits_errors(tmp_path):
     model_path.touch()
     result = subprocess.run(
         [
-            "llm-quantize", "gptq",
-            "--model", str(model_path),
-            "--output", str(tmp_path / "out.pt"),
-            "--calib-data", str(tmp_path / "calib.txt"),
-            "--bits", "16",
+            "llm-quantize",
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--calib-data",
+            str(tmp_path / "calib.txt"),
+            "--bits",
+            "16",
         ],
         capture_output=True,
         text=True,
@@ -1866,11 +1864,16 @@ def test_cli_missing_tokenizer_errors(tmp_path):
     calib_path.write_text("hello world\n")
     result = subprocess.run(
         [
-            "llm-quantize", "gptq",
-            "--model", str(model_path),
-            "--output", str(tmp_path / "out.pt"),
-            "--calib-data", str(calib_path),
-            "--bits", "4",
+            "llm-quantize",
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--calib-data",
+            str(calib_path),
+            "--bits",
+            "4",
         ],
         capture_output=True,
         text=True,
@@ -1884,12 +1887,18 @@ def test_cli_calib_data_mutually_exclusive(tmp_path):
     model_path.touch()
     result = subprocess.run(
         [
-            "llm-quantize", "gptq",
-            "--model", str(model_path),
-            "--output", str(tmp_path / "out.pt"),
-            "--calib-data", str(tmp_path / "calib.txt"),
-            "--calib-data-tokens", str(tmp_path / "calib.pt"),
-            "--tokenizer", str(tmp_path / "tok"),
+            "llm-quantize",
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--calib-data",
+            str(tmp_path / "calib.txt"),
+            "--calib-data-tokens",
+            str(tmp_path / "calib.pt"),
+            "--tokenizer",
+            str(tmp_path / "tok"),
         ],
         capture_output=True,
         text=True,
@@ -1962,8 +1971,7 @@ def gptq(
     # Validate calib-data requires tokenizer
     if calib_data is not None and tokenizer is None:
         typer.echo(
-            "Error: --calib-data requires --tokenizer PATH. "
-            "Use --calib-data-tokens for pre-tokenized data.",
+            "Error: --calib-data requires --tokenizer PATH. Use --calib-data-tokens for pre-tokenized data.",
             err=True,
         )
         raise typer.Exit(code=2)

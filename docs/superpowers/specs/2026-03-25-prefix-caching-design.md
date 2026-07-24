@@ -61,8 +61,6 @@ class PrefixCache:
             List of block IDs if hit, None if miss
         """
         return self.cache.get(prefix_hash)
-
-
 ```
 
 ### 2. Integration with PagedKVCache
@@ -161,8 +159,8 @@ if cached:
 
 ```python
 # ServingConfig
-LLM_SERVING_ENABLE_PREFIX_CACHE=true
-LLM_SERVING_MAX_PREFIXES=10  # Max cached prefixes
+LLM_SERVING_ENABLE_PREFIX_CACHE = true
+LLM_SERVING_MAX_PREFIXES = 10  # Max cached prefixes
 ```
 
 ## Edge Cases

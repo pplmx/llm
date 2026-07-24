@@ -56,13 +56,13 @@ docs/adr/
 ```python
 @dataclass(frozen=True)
 class GPTQConfig:
-    bits: int = 4                          # 4 or 8
-    group_size: int = 128                  # -1 = per-channel
-    sym: bool = True                       # symmetric quantization
-    percdamp: float = 0.01                 # Hessian damping percentage
-    blocksize: int = 128                   # column block size for memory control
-    act_order: bool = False                # True: sort cols by diag(H) desc
-    static_groups: bool = False            # True: share group partition across layers
+    bits: int = 4  # 4 or 8
+    group_size: int = 128  # -1 = per-channel
+    sym: bool = True  # symmetric quantization
+    percdamp: float = 0.01  # Hessian damping percentage
+    blocksize: int = 128  # column block size for memory control
+    act_order: bool = False  # True: sort cols by diag(H) desc
+    static_groups: bool = False  # True: share group partition across layers
 
     def __post_init__(self):
         if self.bits not in (4, 8):
@@ -89,6 +89,7 @@ class GPTQQuantizer:
     def __init__(self, layer: nn.Linear, config: GPTQConfig): ...
     def add_batch(self, x: torch.Tensor) -> None:
         """Accumulate Hessian: H += (2/N) · X^T X for the calibration batch."""
+
     def quantize(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Run GPTQ on accumulated H, return (W_packed_int8, scales_fp16, zeros_int8_or_None)."""
 ```
@@ -129,6 +130,7 @@ def quantize_model_gptq(
     device: torch.device | str | None = None,
 ) -> nn.Module:
     """Standalone entry: user supplies calibration iterator."""
+
 
 def quantize_model_with_collector(
     model: nn.Module,

@@ -67,7 +67,7 @@ MMLU_ALGEBRA = EvalPreset(
     task="mmlu",
     num_fewshot=5,
     batch_size=16,
-    limit=200,                                  # smoke-test slice
+    limit=200,  # smoke-test slice
     task_kwargs={"subject": "abstract_algebra"},
     description="MMLU abstract_algebra, 200-sample smoke test",
 )
@@ -77,6 +77,7 @@ Look up a built-in by name:
 
 ```python
 from llm.evaluation.harness.presets import get_preset
+
 preset = get_preset("mmlu")
 ```
 

@@ -93,9 +93,9 @@ with open('data/dpo_demo.jsonl', 'w') as f:
 # Alpaca 是 52K 行 CSV，需要转成 JSONL：
 import csv, json
 
-with open('data/alpaca.jsonl', 'w') as out:
-    for row in csv.DictReader(open('alpaca_data.csv')):
-        out.write(json.dumps(row) + '\n')
+with open("data/alpaca.jsonl", "w") as out:
+    for row in csv.DictReader(open("alpaca_data.csv")):
+        out.write(json.dumps(row) + "\n")
 ```
 
 转换后的 JSONL 字段名 (`instruction` / `input` / `output`) 和 `SFTDataset.alpaca_template` 完全对齐，无需额外配置。
@@ -106,14 +106,19 @@ with open('data/alpaca.jsonl', 'w') as out:
 from datasets import load_dataset
 import json
 
-ds = load_dataset('HuggingFaceH4/ultrafeedback_binarized', split='train_prefs')
-with open('data/ultrafeedback.jsonl', 'w') as out:
+ds = load_dataset("HuggingFaceH4/ultrafeedback_binarized", split="train_prefs")
+with open("data/ultrafeedback.jsonl", "w") as out:
     for row in ds:
-        out.write(json.dumps({
-            'prompt': row['prompt'],
-            'chosen': row['chosen'][1]['content'],
-            'rejected': row['rejected'][1]['content'],
-        }) + '\n')
+        out.write(
+            json.dumps(
+                {
+                    "prompt": row["prompt"],
+                    "chosen": row["chosen"][1]["content"],
+                    "rejected": row["rejected"][1]["content"],
+                }
+            )
+            + "\n"
+        )
 ```
 
 转换后的字段 (`prompt` / `chosen` / `rejected`) 直接匹配 `DPODataset`。

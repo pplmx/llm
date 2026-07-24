@@ -121,57 +121,31 @@ def setup_logging(name: str, level: int = logging.INFO) -> logging.Logger:
 
     if not logger.handlers:
         handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
         logger.addHandler(handler)
 
     return logger
 
 
-def create_dataloaders(
-    dataset,
-    tokenizer,
-    config,
-    shuffle: bool = True
-) -> DataLoader:
+def create_dataloaders(dataset, tokenizer, config, shuffle: bool = True) -> DataLoader:
     """创建数据加载器"""
 
     def collate_fn(examples):
         return tokenizer(
-            examples["text"],
-            truncation=True,
-            padding="max_length",
-            max_length=config.max_length,
-            return_tensors="pt"
+            examples["text"], truncation=True, padding="max_length", max_length=config.max_length, return_tensors="pt"
         )
 
     return DataLoader(
-        dataset,
-        batch_size=config.batch_size,
-        shuffle=shuffle,
-        collate_fn=collate_fn,
-        num_workers=config.num_workers
+        dataset, batch_size=config.batch_size, shuffle=shuffle, collate_fn=collate_fn, num_workers=config.num_workers
     )
 
 
-def get_optimizer_and_scheduler(
-    model,
-    config,
-    num_training_steps: int
-):
+def get_optimizer_and_scheduler(model, config, num_training_steps: int):
     """配置优化器和学习率调度器"""
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=config.learning_rate
-    )
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
 
     scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=config.warmup_steps,
-        num_training_steps=num_training_steps
+        optimizer, num_warmup_steps=config.warmup_steps, num_training_steps=num_training_steps
     )
 
     return optimizer, scheduler
@@ -191,48 +165,26 @@ from transformers import AutoTokenizer
 def load_and_preprocess_data(config):
     """加载并预处理数据集"""
     # 加载数据集
-    dataset = load_dataset(
-        config.dataset_name,
-        config.dataset_config
-    )
+    dataset = load_dataset(config.dataset_name, config.dataset_config)
 
     # 加载分词器
     tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 
     # 定义预处理函数
     def preprocess_function(examples):
-        return tokenizer(
-            examples["text"],
-            truncation=True,
-            padding="max_length",
-            max_length=config.max_length
-        )
+        return tokenizer(examples["text"], truncation=True, padding="max_length", max_length=config.max_length)
 
     # 应用预处理
-    tokenized_dataset = dataset.map(
-        preprocess_function,
-        batched=True,
-        remove_columns=dataset["train"].column_names
-    )
+    tokenized_dataset = dataset.map(preprocess_function, batched=True, remove_columns=dataset["train"].column_names)
 
     return tokenized_dataset, tokenizer
 
 
 def prepare_dataloaders(dataset, tokenizer, config):
     """准备数据加载器"""
-    train_dataloader = create_dataloaders(
-        dataset["train"],
-        tokenizer,
-        config,
-        shuffle=True
-    )
+    train_dataloader = create_dataloaders(dataset["train"], tokenizer, config, shuffle=True)
 
-    eval_dataloader = create_dataloaders(
-        dataset["test"],
-        tokenizer,
-        config,
-        shuffle=False
-    )
+    eval_dataloader = create_dataloaders(dataset["test"], tokenizer, config, shuffle=False)
 
     return train_dataloader, eval_dataloader
 ```
@@ -273,9 +225,7 @@ class Trainer:
 
         # 设置优化器和调度器
         num_training_steps = len(train_dataloader) * config.num_epochs
-        self.optimizer, self.scheduler = get_optimizer_and_scheduler(
-            model, config, num_training_steps
-        )
+        self.optimizer, self.scheduler = get_optimizer_and_scheduler(model, config, num_training_steps)
 
         # 设置tensorboard
         self.writer = SummaryWriter(config.output_dir)
@@ -288,10 +238,7 @@ class Trainer:
         for epoch in range(self.config.num_epochs):
             self.logger.info(f"Starting epoch {epoch + 1}")
 
-            progress_bar = tqdm(
-                self.train_dataloader,
-                desc=f"Epoch {epoch + 1}"
-            )
+            progress_bar = tqdm(self.train_dataloader, desc=f"Epoch {epoch + 1}")
 
             for step, batch in enumerate(progress_bar):
                 # 将数据移动到设备
@@ -305,10 +252,7 @@ class Trainer:
                 loss.backward()
 
                 # 梯度裁剪
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
-                    max_norm=1.0
-                )
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
                 # 优化器步进
                 self.optimizer.step()
@@ -320,11 +264,7 @@ class Trainer:
 
                 # 记录训练指标
                 if step % self.config.logging_steps == 0:
-                    self.writer.add_scalar(
-                        "train/loss",
-                        loss.item(),
-                        step
-                    )
+                    self.writer.add_scalar("train/loss", loss.item(), step)
 
                 # 保存检查点
                 if step % self.config.save_steps == 0:
@@ -351,22 +291,22 @@ class Trainer:
 
     def save_checkpoint(self, epoch, step):
         """保存模型检查点"""
-        checkpoint_dir = os.path.join(
-            self.config.output_dir,
-            f"checkpoint-{epoch}-{step}"
-        )
+        checkpoint_dir = os.path.join(self.config.output_dir, f"checkpoint-{epoch}-{step}")
         os.makedirs(checkpoint_dir, exist_ok=True)
 
         # 保存模型
         self.model.save_pretrained(checkpoint_dir)
 
         # 保存训练状态
-        torch.save({
-            'epoch': epoch,
-            'step': step,
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-        }, os.path.join(checkpoint_dir, "training_state.pt"))
+        torch.save(
+            {
+                "epoch": epoch,
+                "step": step,
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "scheduler_state_dict": self.scheduler.state_dict(),
+            },
+            os.path.join(checkpoint_dir, "training_state.pt"),
+        )
 ```
 
 ### 3.2 主训练脚本
@@ -383,20 +323,13 @@ from trainer import Trainer
 def main():
     # 加载数据
     dataset, tokenizer = load_and_preprocess_data(config)
-    train_dataloader, eval_dataloader = prepare_dataloaders(
-        dataset, tokenizer, config
-    )
+    train_dataloader, eval_dataloader = prepare_dataloaders(dataset, tokenizer, config)
 
     # 创建模型
     model = create_model(config)
 
     # 初始化训练器
-    trainer = Trainer(
-        model,
-        train_dataloader,
-        eval_dataloader,
-        config
-    )
+    trainer = Trainer(model, train_dataloader, eval_dataloader, config)
 
     # 开始训练
     trainer.train()
@@ -443,10 +376,7 @@ def evaluate_model(model, eval_dataloader, config):
     # 计算困惑度
     perplexity = torch.exp(torch.tensor(outputs.loss)).item()
 
-    return {
-        "accuracy": accuracy,
-        "perplexity": perplexity
-    }
+    return {"accuracy": accuracy, "perplexity": perplexity}
 ```
 
 ### 4.2 性能优化建议
@@ -523,11 +453,7 @@ from typing import Optional
 
 
 def optimize_memory_usage(
-    batch_size: int,
-    sequence_length: int,
-    vocab_size: int,
-    hidden_size: int,
-    available_memory: Optional[float] = None
+    batch_size: int, sequence_length: int, vocab_size: int, hidden_size: int, available_memory: Optional[float] = None
 ) -> dict:
     """
     计算并优化内存使用
@@ -546,10 +472,11 @@ def optimize_memory_usage(
 
     # 返回优化建议
     return {
-        "recommended_batch_size": min(batch_size, max(1,
-                                                      batch_size * available_memory // total_memory)) if available_memory else batch_size,
-        "estimated_memory_usage": total_memory / (1024 ** 3),  # Convert to GB
-        "can_use_gradient_accumulation": total_memory > (available_memory if available_memory else float('inf'))
+        "recommended_batch_size": min(batch_size, max(1, batch_size * available_memory // total_memory))
+        if available_memory
+        else batch_size,
+        "estimated_memory_usage": total_memory / (1024**3),  # Convert to GB
+        "can_use_gradient_accumulation": total_memory > (available_memory if available_memory else float("inf")),
     }
 
 
@@ -592,10 +519,7 @@ class GradientAccumulationTrainer(Trainer):
 
                 # 每 accumulation_steps 步进行一次优化器更新
                 if (step + 1) % self.accumulation_steps == 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(),
-                        max_norm=1.0
-                    )
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     self.optimizer.step()
                     self.scheduler.step()
                     self.optimizer.zero_grad()
@@ -605,11 +529,7 @@ class GradientAccumulationTrainer(Trainer):
 
                 # 记录训练指标
                 if step % self.config.logging_steps == 0:
-                    self.writer.add_scalar(
-                        "train/loss",
-                        loss.item() * self.accumulation_steps,
-                        step
-                    )
+                    self.writer.add_scalar("train/loss", loss.item() * self.accumulation_steps, step)
 ```
 
 ### 3. 提前停止机制
@@ -618,12 +538,7 @@ class GradientAccumulationTrainer(Trainer):
 
 ```python
 class EarlyStopping:
-    def __init__(
-        self,
-        patience: int = 3,
-        min_delta: float = 0.0,
-        mode: str = "min"
-    ):
+    def __init__(self, patience: int = 3, min_delta: float = 0.0, mode: str = "min"):
         self.patience = patience
         self.min_delta = min_delta
         self.mode = mode
@@ -669,13 +584,7 @@ import json
 
 
 class CustomTextDataset(Dataset):
-    def __init__(
-        self,
-        texts: List[str],
-        labels: Optional[List[int]] = None,
-        tokenizer=None,
-        max_length: int = 128
-    ):
+    def __init__(self, texts: List[str], labels: Optional[List[int]] = None, tokenizer=None, max_length: int = 128):
         self.texts = texts
         self.labels = labels
         self.tokenizer = tokenizer
@@ -689,17 +598,11 @@ class CustomTextDataset(Dataset):
 
         # 分词
         encoding = self.tokenizer(
-            text,
-            truncation=True,
-            padding="max_length",
-            max_length=self.max_length,
-            return_tensors="pt"
+            text, truncation=True, padding="max_length", max_length=self.max_length, return_tensors="pt"
         )
 
         # 移除批次维度
-        item = {
-            key: val.squeeze(0) for key, val in encoding.items()
-        }
+        item = {key: val.squeeze(0) for key, val in encoding.items()}
 
         # 添加标签(如果有)
         if self.labels is not None:
@@ -860,7 +763,7 @@ llm-training/
 
     def batch_generator(data: List, batch_size: int) -> Iterator:
         for i in range(0, len(data), batch_size):
-            yield data[i:i + batch_size]
+            yield data[i : i + batch_size]
 
 
     # 使用示例
@@ -878,9 +781,9 @@ llm-training/
             raise FileNotFoundError(f"数据文件不存在: {file_path}")
         try:
             # 尝试不同的编码
-            for encoding in ['utf-8', 'gbk', 'latin1']:
+            for encoding in ["utf-8", "gbk", "latin1"]:
                 try:
-                    with open(file_path, 'r', encoding=encoding) as f:
+                    with open(file_path, "r", encoding=encoding) as f:
                         return f.read()
                 except UnicodeDecodeError:
                     continue
@@ -900,6 +803,7 @@ llm-training/
             return False
         return True
 
+
     # 训练循环中使用
     loss = outputs.loss
     if not check_loss(loss):
@@ -914,15 +818,14 @@ llm-training/
     ```python
     import logging
 
+
     def setup_debug_logging():
         logging.basicConfig(
             level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler('debug.log'),
-                logging.StreamHandler()
-            ]
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            handlers=[logging.FileHandler("debug.log"), logging.StreamHandler()],
         )
+
 
     # 在关键位置添加日志
     logging.debug(f"数据形状: {batch.shape}")
@@ -934,9 +837,9 @@ llm-training/
     ```python
     def validate_inputs(inputs: dict):
         """验证模型输入"""
-        assert 'input_ids' in inputs, "缺少 input_ids"
-        assert 'attention_mask' in inputs, "缺少 attention_mask"
-        assert inputs['input_ids'].dim() == 2, f"input_ids 维度错误: {inputs['input_ids'].dim()}"
+        assert "input_ids" in inputs, "缺少 input_ids"
+        assert "attention_mask" in inputs, "缺少 attention_mask"
+        assert inputs["input_ids"].dim() == 2, f"input_ids 维度错误: {inputs['input_ids'].dim()}"
         return True
     ```
 
@@ -956,7 +859,7 @@ llm-training/
                 return profile.runcall(func, *args, **kwargs)
             finally:
                 ps = pstats.Stats(profile)
-                ps.sort_stats('cumulative')
+                ps.sort_stats("cumulative")
                 ps.print_stats(20)  # 打印前20行统计信息
 
         return wrapper
@@ -979,10 +882,7 @@ from transformers import DistilBertForSequenceClassification
 
 
 def create_classification_model(num_labels: int = 2):
-    model = DistilBertForSequenceClassification.from_pretrained(
-        "distilbert-base-uncased",
-        num_labels=num_labels
-    )
+    model = DistilBertForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=num_labels)
     return model
 
 
@@ -1001,11 +901,7 @@ logits = outputs.logits
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 
-def generate_text(
-    prompt: str,
-    max_length: int = 50,
-    num_return_sequences: int = 1
-):
+def generate_text(prompt: str, max_length: int = 50, num_return_sequences: int = 1):
     tokenizer = GPT2Tokenizer.from_pretrained("distilgpt2")
     model = GPT2LMHeadModel.from_pretrained("distilgpt2")
 
@@ -1015,7 +911,7 @@ def generate_text(
         max_length=max_length,
         num_return_sequences=num_return_sequences,
         no_repeat_ngram_size=2,
-        temperature=0.7
+        temperature=0.7,
     )
 
     return tokenizer.batch_decode(outputs, skip_special_tokens=True)
@@ -1028,13 +924,7 @@ generated_texts = generate_text("Once upon a time")
 ### 任务3: 模型微调
 
 ```python
-def fine_tune_model(
-    model,
-    train_dataset,
-    eval_dataset,
-    output_dir: str,
-    epochs: int = 3
-):
+def fine_tune_model(model, train_dataset, eval_dataset, output_dir: str, epochs: int = 3):
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=epochs,
@@ -1042,15 +932,10 @@ def fine_tune_model(
         per_device_eval_batch_size=8,
         warmup_steps=500,
         weight_decay=0.01,
-        logging_dir='./logs',
+        logging_dir="./logs",
     )
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset
-    )
+    trainer = Trainer(model=model, args=training_args, train_dataset=train_dataset, eval_dataset=eval_dataset)
 
     trainer.train()
     return trainer

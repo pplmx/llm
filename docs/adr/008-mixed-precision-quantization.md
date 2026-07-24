@@ -135,6 +135,7 @@ class QuantPolicy:
     default: GPTQConfig
     overrides: dict[str, GPTQConfig]
 
+
 quantize_model_gptq(model, calib, policy=QuantPolicy(default=base, overrides={...}))
 ```
 
@@ -145,10 +146,13 @@ quantize_model_gptq(model, calib, policy=QuantPolicy(default=base, overrides={..
 ### Alternative D — Glob pattern + 字符串配置
 
 ```python
-GPTQConfig(bits=4, layer_glob_overrides={
-    "*.attn.*": {"bits": 8},
-    "*.mlp.*": {"bits": 4},
-})
+GPTQConfig(
+    bits=4,
+    layer_glob_overrides={
+        "*.attn.*": {"bits": 8},
+        "*.mlp.*": {"bits": 4},
+    },
+)
 ```
 
 - 优点：用户更直观
