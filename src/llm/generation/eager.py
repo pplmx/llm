@@ -319,19 +319,33 @@ def batch_generate(
         _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
 
     # Decode results, applying stop sequences when provided.
+    # OpenAI semantics: generation halts when a stop sequence appears as
+    # a **suffix** of the running output. We simulate incremental decode
+    # to find the first suffix match — .find() would match anywhere and
+    # could prematurely truncate on prompt-embedded sequences or matches
+    # that wouldn't have been a suffix during streaming.
     stops = _normalize_stop(stop)
     if stops:
+        prompt_texts = [tokenizer.decode(p) for p in encoded_prompts]
         results = []
         for i in range(batch_size):
-            prompt_text = tokenizer.decode(encoded_prompts[i])
-            full_text = tokenizer.decode(generated_ids[i])
-            generated_text = full_text[len(prompt_text) :] if full_text.startswith(prompt_text) else full_text
-            for s in stops:
-                idx = generated_text.find(s)
-                if idx != -1:
-                    generated_text = generated_text[:idx]
+            running = prompt_texts[i]
+            p_len = len(prompt_texts[i])
+            # Walk generated tokens one by one, checking for suffix stop
+            # after each decode (mirrors stream_generate incremental logic).
+            gen_start = len(encoded_prompts[i])
+            for tid in generated_ids[i][gen_start:]:
+                running += tokenizer.decode([tid])
+                generated_part = running[p_len:]
+                truncated = False
+                for s in stops:
+                    if generated_part.endswith(s):
+                        generated_part = generated_part[: -len(s)]
+                        truncated = True
+                        break
+                if truncated:
                     break
-            results.append(prompt_text + generated_text)
+            results.append(prompt_texts[i] + generated_part)
         return results
 
     return [tokenizer.decode(ids) for ids in generated_ids]
