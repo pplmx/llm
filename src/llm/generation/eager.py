@@ -33,12 +33,16 @@ def _normalize_stop(stop: str | list[str] | None) -> list[str] | None:
     we standardize internally to a list so the streaming check is one
     loop instead of two. ``None`` and ``[]`` both mean "no stop" —
     pass-through ``None`` is the zero-cost default.
+
+    Empty strings are filtered out: ``"".endswith("")`` is always True
+    and would immediately halt generation.
     """
     if stop is None:
         return None
     if isinstance(stop, str):
-        return [stop]
-    return list(stop)
+        return [stop] if stop else None
+    filtered = [s for s in stop if s]
+    return filtered if filtered else None
 
 
 @torch.no_grad()
