@@ -469,7 +469,7 @@ class AdaLoRAPruningCallback(Callback):
                     getattr(getattr(cfg, "data", None), "steps_per_epoch", 0) or 0  # type: ignore[union-attr]
                 )
                 epochs = int(getattr(cfg.training, "epochs", 1) or 1)  # type: ignore[union-attr]
-            except AttributeError, TypeError, ValueError:
+            except (AttributeError, TypeError, ValueError):
                 steps_per_epoch = 0
                 epochs = 1
             # No schedule when ``steps_per_epoch == 0`` — collapse
