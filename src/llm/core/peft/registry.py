@@ -10,9 +10,13 @@ Built-in methods:
     :func:`ensure_methods_registered`.
 
 Usage:
+    >>> import torch
     >>> from llm.core.peft import apply_peft, count_peft_parameters
-    >>> apply_peft(model, "lora", rank=8, alpha=16.0)
+    >>> model = torch.nn.Linear(10, 10)
+    >>> _ = apply_peft(model, "lora", rank=2, alpha=8.0)  # wraps model in-place
     >>> trainable, total = count_peft_parameters(model, "lora")
+    >>> trainable > 0, total > 0
+    (True, True)
 
 Plugin authors register a method via ``pyproject.toml``::
 

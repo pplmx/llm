@@ -18,7 +18,7 @@ Example:
     >>> from llm.training.core.config import DataConfig
     >>> from llm.data.presets import C4_PRESET, apply_to_config
     >>> cfg = DataConfig(data_source="hf", max_seq_len=2048)
-    >>> apply_to_config(cfg, C4_PRESET)
+    >>> _ = apply_to_config(cfg, C4_PRESET)  # mutates cfg in-place
     >>> cfg.dataset_name
     'allenai/c4'
     >>> cfg.dataset_config

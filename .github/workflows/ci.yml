@@ -35,13 +35,23 @@ jobs:
                 run: uvx ruff check .
 
             -   name: Type Check (ty)
-                # `continue-on-error` because the project has ~170 existing
-                # type diagnostics that pre-date the audit. Treat failures
-                # as advisory until Tier 2 cleanup work brings them down to
-                # zero, then remove `continue-on-error`. Tracked in
-                # docs/audits/2026-07-12-technical-due-diligence.md Finding W.
+                # TODO: remove `continue-on-error` when ~170 existing
+                # diagnostics are cleaned up (Finding W in
+                # docs/audits/2026-07-12-technical-due-diligence.md).
                 run: uvx ty check src/llm/
                 continue-on-error: true
+
+    doctest:
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Checkout repository
+                uses: actions/checkout@v6
+            -   name: Set up UV Environment
+                uses: astral-sh/setup-uv@v8.2.0
+            -   name: Synchronize Dependencies
+                run: uv sync --frozen
+            -   name: Run doctests
+                run: uv run pytest --doctest-modules src/llm/ --no-header -q
 
     build-and-test:
         runs-on: ${{ matrix.os }}
