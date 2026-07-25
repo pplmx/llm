@@ -21,7 +21,9 @@ def _to_serializable(obj: Any) -> Any:
     """
     # torch.Tensor → scalar or list
     if isinstance(obj, torch.Tensor):
-        return _to_serializable(obj.item())
+        if obj.numel() == 1:
+            return _to_serializable(obj.item())
+        return _to_serializable(obj.tolist())
     # numpy scalar → Python native
     if hasattr(obj, "tolist"):
         try:
