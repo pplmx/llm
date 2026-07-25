@@ -153,10 +153,11 @@ class DedupTextSource(TextSource):
         hash_algo: Name of any algorithm accepted by :func:`hashlib.new`
             (e.g. ``"sha256"``, ``"sha1"``, ``"md5"``). Default: SHA-256.
 
-    Example:
-        >>> src = LocalLineTextSource("data.txt")
-        >>> dedup = DedupTextSource(src, seen_hashes_path="seen.txt")
-        >>> unique_texts = list(dedup.iter_texts())
+    Example::
+
+        >>> src = LocalLineTextSource("data.txt")  # doctest: +SKIP
+        >>> dedup = DedupTextSource(src, seen_hashes_path="seen.txt")  # doctest: +SKIP
+        >>> unique_texts = list(dedup.iter_texts())  # doctest: +SKIP
     """
 
     def __init__(

@@ -23,6 +23,10 @@ build:
 test:
 	@uv run pytest
 
+# Test with doctests (/// examples verified as tests)
+test-doc:
+	@uv run pytest --doctest-modules src/llm/
+
 # Test fast (exclude heavy and e2e, for daily development)
 test-fast:
 	@uv run pytest -m "not heavy and not e2e"

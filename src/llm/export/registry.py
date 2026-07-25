@@ -12,9 +12,10 @@ Built-in targets:
     raises if a plugin claims the same name, which is intentional
     (the built-in is the source of truth).
 
-Usage:
+Usage::
+
     >>> from llm.export.registry import export_model
-    >>> export_model("onnx", model, "out.onnx", input_shape=(1, 32))
+    >>> export_model("onnx", model, "out.onnx", input_shape=(1, 32))  # doctest: +SKIP
 
 Plugin authors can register a target via ``pyproject.toml``:
 

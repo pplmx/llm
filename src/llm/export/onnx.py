@@ -34,9 +34,10 @@ def export_to_onnx(
     Returns:
         Path to the exported ONNX file
 
-    Example:
-        >>> model = DecoderModel(vocab_size=1000, hidden_size=64, num_layers=2, num_heads=4)
-        >>> export_to_onnx(model, "model.onnx", input_shape=(1, 32))
+    Example::
+
+        >>> model = DecoderModel(vocab_size=1000, hidden_size=64, num_layers=2, num_heads=4)  # doctest: +SKIP
+        >>> export_to_onnx(model, "model.onnx", input_shape=(1, 32))  # doctest: +SKIP
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

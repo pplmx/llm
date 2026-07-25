@@ -28,10 +28,11 @@ class KVCache:
         dtype: Data type for cache buffers.
 
     Example:
-        >>> cache = KVCache(batch_size=2, max_seq_len=512, num_kv_heads=8, head_dim=64,
-        ...                 device="cuda", dtype=torch.float16)
-        >>> # In attention forward pass:
-        >>> k, v = cache.update(k_new, v_new)  # In-place update, returns view
+        >>> cache = KVCache(max_batch_size=2, max_seq_len=16, num_kv_heads=4, head_dim=64,
+        ...                 device="cpu", dtype=torch.float32)
+        >>> k_new = torch.randn(2, 4, 8, 64)   # (batch, kv_heads, seq, head_dim)
+        >>> v_new = torch.randn(2, 4, 8, 64)
+        >>> _ = cache.update(k_new, v_new)  # returns (k_cache, v_cache) views
     """
 
     def __init__(
