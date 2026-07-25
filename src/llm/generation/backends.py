@@ -142,6 +142,8 @@ class BatchedGenerationBackend(GenerationBackend):
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
             frequency_penalty=config.frequency_penalty,
+            presence_penalty=config.presence_penalty,
+            logit_bias=config.logit_bias,
             stop=config.stop,
         )
         yield from self.engine.stream_request(request)
@@ -164,6 +166,8 @@ class BatchedGenerationBackend(GenerationBackend):
                 top_p=config.top_p,
                 repetition_penalty=config.repetition_penalty,
                 frequency_penalty=config.frequency_penalty,
+                presence_penalty=config.presence_penalty,
+                logit_bias=config.logit_bias,
                 stop=config.stop,
             )
             for prompt in prompts
