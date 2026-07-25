@@ -16,9 +16,23 @@ if TYPE_CHECKING:
     from torch.utils.tensorboard import SummaryWriter
 
 
-# Forward declaration to avoid circular imports
+# Forward declaration to avoid circular imports. The type checker needs
+# to know about the attributes callbacks access; stubbing them here
+# eliminates ~30 unresolved-attribute diagnostics without creating a
+# circular import. The real TrainingEngine (in engine.py) has the same
+# surface.
 class TrainingEngine:
-    pass
+    rank: int
+    logger: Any
+    model: Any
+    optimizer: Any
+    scheduler: Any
+    config: Any
+    callbacks: list[Any]
+    dataloader: Any
+    should_stop_training: bool = False
+
+    def log_metrics(self, metrics: dict[str, Any]) -> None: ...
 
 
 class Callback(CheckpointContributor):
@@ -35,7 +49,19 @@ class Callback(CheckpointContributor):
     """
 
     def __init__(self):
-        self.engine: TrainingEngine | None = None
+        self._engine: TrainingEngine | None = None
+
+    @property
+    def engine(self) -> TrainingEngine:
+        """The :class:`TrainingEngine` instance (set via :meth:`set_engine`).
+
+        Raises ``RuntimeError`` if accessed before ``set_engine`` is called.
+        The type checker sees ``TrainingEngine`` (not ``TrainingEngine | None``)
+        because the property always returns or raises.
+        """
+        if self._engine is None:
+            raise RuntimeError("set_engine() must be called before accessing engine")
+        return self._engine
 
     def get_checkpoint_state(self) -> dict[str, Any] | None:
         """Return state to merge into the checkpoint ``extra_state``.
@@ -56,7 +82,7 @@ class Callback(CheckpointContributor):
 
     def set_engine(self, engine: TrainingEngine):
         """Called by the TrainingEngine to provide a reference to itself."""
-        self.engine = engine
+        self._engine = engine
 
     def on_train_start(self, logs: dict[str, Any] | None = None):
         """Called at the beginning of training."""
@@ -192,6 +218,8 @@ class EarlyStopping(Callback):
             self.engine.logger.info(f"EarlyStopping: Monitoring '{self.monitor}' with patience {self.patience}.")
 
     def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None):
+        if logs is None:
+            return
         current = logs.get(self.monitor)
         if current is None:
             if self.verbose and self.engine.rank == 0:
@@ -574,7 +602,7 @@ class PEFTAdapterCheckpointCallback(Callback):
         """
         if self.peft_method is None or self.peft_save_path is None:
             return
-        if self.engine is None:
+        if self._engine is None:
             return
         try:
             # Lazy import — the callback module is on the trainer hot
