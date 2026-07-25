@@ -60,7 +60,7 @@ def _pick_gpu() -> torch.device:
     try:
         torch.cuda.mem_get_info(idx)
         return torch.device(f"cuda:{idx}")
-    except RuntimeError, torch.AcceleratorError:
+    except (RuntimeError, torch.AcceleratorError):
         pass
     return torch.device("cpu")
 
