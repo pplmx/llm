@@ -36,9 +36,19 @@ class PrefixCapableAttention(Protocol):
             to skip prefix injection (the default).
     """
 
+    num_kv_heads: int
+    head_dim: int
+
+    def __call__(
+        self,
+        hidden_states: Tensor,
+        prefix_kv: tuple[Tensor, Tensor] | None = None,
+        **kwargs,
+    ) -> Tensor: ...
     def forward(
         self,
         hidden_states: Tensor,
         prefix_kv: tuple[Tensor, Tensor] | None = None,
         **kwargs,
     ) -> Tensor: ...
+    def parameters(self, recurse: bool = True): ...

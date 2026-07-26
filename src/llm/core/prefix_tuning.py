@@ -65,6 +65,11 @@ class PrefixTuningAttention(nn.Module):
             at the cost of expressivity.
     """
 
+    # Buffers set by fold_reparameterization() (deployment path).
+    # Absent until folding; ``forward`` checks via hasattr.
+    prefix_k: torch.Tensor | None
+    prefix_v: torch.Tensor | None
+
     def __init__(
         self,
         base_attn: PrefixCapableAttention,
@@ -173,6 +178,8 @@ class PrefixTuningAttention(nn.Module):
         batch_size = hidden_states.shape[0]
         if hasattr(self, "prefix_k") and hasattr(self, "prefix_v"):
             # Folded: static buffers (no reparam MLPs in play).
+            assert self.prefix_k is not None  # noqa: S101
+            assert self.prefix_v is not None  # noqa: S101
             pk, pv = self._expand_to_attn_shape(self.prefix_k, self.prefix_v, batch_size)
         else:
             pk, pv = self._project_prefix()
@@ -223,7 +230,7 @@ def apply_prefix_tuning(
             return True
         return any(pattern in name for pattern in target_modules)
 
-    replacements: list[tuple[str, nn.Module]] = []
+    replacements: list[tuple[str, PrefixCapableAttention]] = []
     for name, module in model.named_modules():
         # Filter on both Protocol satisfaction AND the two attributes the
         # wrapper reads at construction time. The ``@runtime_checkable``
@@ -254,7 +261,7 @@ def apply_prefix_tuning(
     return model
 
 
-def get_prefix_parameters(model: nn.Module) -> Iterator[nn.Parameter]:
+def get_prefix_parameters(model: nn.Module) -> Iterator[torch.Tensor]:
     """Yield every trainable prefix parameter (``prefix_small`` + reparam MLPs).
 
     Trainers pass this to the optimizer so only the prefix path is
@@ -269,8 +276,10 @@ def get_prefix_parameters(model: nn.Module) -> Iterator[nn.Parameter]:
         if isinstance(module, PrefixTuningAttention):
             yield module.prefix_small
             yield module._reparam_k.weight
+            assert module._reparam_k.bias is not None  # noqa: S101
             yield module._reparam_k.bias
             yield module._reparam_v.weight
+            assert module._reparam_v.bias is not None  # noqa: S101
             yield module._reparam_v.bias
 
 
