@@ -1,14 +1,22 @@
 import math
 from collections.abc import Callable
+from typing import TypedDict
 
 import torch
 from torch import nn
 
 
+class FactoryKwargs(TypedDict, total=False):
+    """Factory keyword arguments for ``nn.Module`` constructors."""
+
+    device: torch.device | str
+    dtype: torch.dtype
+
+
 def make_factory_kwargs(
     device: torch.device | str | None = None,
     dtype: torch.dtype | None = None,
-) -> dict[str, torch.device | torch.dtype]:
+) -> FactoryKwargs:
     """
     Create factory_kwargs dict for nn.Module constructors.
 
@@ -19,7 +27,7 @@ def make_factory_kwargs(
     Returns:
         Dict with device and dtype keys (only non-None values).
     """
-    kwargs: dict[str, torch.device | torch.dtype] = {}
+    kwargs: FactoryKwargs = {}
     if device is not None:
         kwargs["device"] = device
     if dtype is not None:

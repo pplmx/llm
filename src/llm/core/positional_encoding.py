@@ -28,7 +28,7 @@ class PositionalEncoding(nn.Module):
         max_seq_len: int = 512,
         dropout_p: float = 0.1,
         learned: bool = False,
-        device: torch.device | None = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
@@ -37,6 +37,8 @@ class PositionalEncoding(nn.Module):
         self.dropout_p = dropout_p
         self.learned = learned
         self.dropout = nn.Dropout(p=dropout_p)
+        self.pos_embedding: nn.Embedding
+        self.pe: torch.Tensor
 
         factory_kwargs = make_factory_kwargs(device, dtype)
 
