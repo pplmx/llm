@@ -1,4 +1,9 @@
-from typing import Protocol
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Protocol, cast
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizerBase
 
 
 class BaseTokenizer(Protocol):
@@ -28,10 +33,13 @@ class HFTokenizer:
     def __init__(self, model_name_or_path: str):
         from transformers import AutoTokenizer
 
-        self._tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self._tokenizer: PreTrainedTokenizerBase = cast(
+            PreTrainedTokenizerBase,
+            AutoTokenizer.from_pretrained(model_name_or_path),
+        )
 
         # Ensure pad token exists
-        if self._tokenizer.pad_token is None:
+        if self._tokenizer.pad_token is None and isinstance(self._tokenizer.eos_token, str):
             self._tokenizer.pad_token = self._tokenizer.eos_token
 
     @property
@@ -55,7 +63,9 @@ class HFTokenizer:
         return self._tokenizer.encode(text, add_special_tokens=False)
 
     def decode(self, tokens: list[int]) -> str:
-        return self._tokenizer.decode(tokens)
+        decoded = self._tokenizer.decode(tokens)
+        assert isinstance(decoded, str)  # noqa: S101
+        return decoded
 
     def save_pretrained(self, save_directory: str):
         self._tokenizer.save_pretrained(save_directory)
