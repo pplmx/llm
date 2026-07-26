@@ -56,6 +56,8 @@ class IA3Linear(nn.Module):
             — the model behaves identically to the base at step 1.
     """
 
+    _original_ia3_l: torch.Tensor | None
+
     def __init__(
         self,
         base_layer: nn.Linear,
@@ -247,7 +249,8 @@ def enable_ia3(model: nn.Module) -> None:
     ``ia3_l`` snapshot. No-op if ``disable_ia3`` was never called.
     """
     for module in model.modules():
-        if isinstance(module, IA3Linear) and hasattr(module, "_original_ia3_l"):
+        orig = getattr(module, "_original_ia3_l", None)
+        if isinstance(module, IA3Linear) and orig is not None:
             with torch.no_grad():
-                module.ia3_l.copy_(module._original_ia3_l)
+                module.ia3_l.copy_(orig)
             del module._original_ia3_l
