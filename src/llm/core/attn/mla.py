@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor, nn
@@ -7,6 +10,10 @@ from llm.core.registry import register_attention, set_attention_kv_cache_capabil
 from llm.utils.common import make_factory_kwargs
 
 from .sdpa import sdpa
+
+if TYPE_CHECKING:
+    from llm.core.kv_cache import KVCache
+    from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
 
 @register_attention("mla")
@@ -196,11 +203,11 @@ class MultiLatentAttention(nn.Module):
         hidden_states: Tensor,
         attn_mask: Tensor | None = None,
         is_causal: bool | None = None,
-        kv_cache: object | None = None,
+        kv_cache: KVCache | None = None,
         use_cache: bool = False,
         batch_indices: Tensor | None = None,
         start_pos: int | Tensor | None = None,
-        paged_kv_cache: object | None = None,
+        paged_kv_cache: PagedKVCache | None = None,
         layer_idx: int | None = None,
         prefix_kv: tuple[Tensor, Tensor] | None = None,
     ) -> Tensor | tuple[Tensor, None]:
@@ -371,7 +378,7 @@ class MultiLatentAttention(nn.Module):
         self,
         k: Tensor,
         v: Tensor,
-        kv_cache: object,
+        kv_cache: KVCache,
         batch_indices: Tensor | None,
         start_pos: int | Tensor | None,
     ) -> tuple[Tensor, Tensor]:
@@ -390,7 +397,7 @@ class MultiLatentAttention(nn.Module):
         self,
         k: Tensor,
         v: Tensor,
-        paged_kv_cache: object,
+        paged_kv_cache: PagedKVCache,
         batch_indices: Tensor | None,
         layer_idx: int | None,
         target_seq_len: int | None = None,
