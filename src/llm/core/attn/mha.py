@@ -5,6 +5,7 @@ from torch import Tensor, nn
 
 from llm.core.kv_cache import KVCache
 from llm.core.paged_attention.attention import paged_attention_forward
+from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 from llm.core.registry import register_attention, set_attention_kv_cache_capability
 from llm.utils.common import make_factory_kwargs
 
@@ -102,7 +103,7 @@ class MultiHeadAttention(nn.Module):
         use_cache: bool = False,
         batch_indices: Tensor | None = None,
         start_pos: int | Tensor | None = None,
-        paged_kv_cache: object | None = None,
+        paged_kv_cache: PagedKVCache | None = None,
         layer_idx: int | None = None,
         prefix_kv: tuple[Tensor, Tensor] | None = None,
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
@@ -272,7 +273,7 @@ class MultiHeadAttention(nn.Module):
         q: Tensor,
         k: Tensor,
         v: Tensor,
-        paged_kv_cache: object,
+        paged_kv_cache: PagedKVCache,
         batch_indices: Tensor | None,
         layer_idx: int | None,
         residual: Tensor | None,
