@@ -24,12 +24,17 @@ class LoRALinear(nn.Module):
     Wraps a frozen nn.Linear and adds trainable low-rank matrices A and B.
     Output: base_output + (input @ A) @ B * scaling
 
+    _original_scaling: Snapshot of ``scaling``, set by
+        :func:`disable_lora`, cleared by :func:`enable_lora`.
+
     Args:
         base_layer: The original nn.Linear layer to adapt (will be frozen)
         rank: Rank of the low-rank matrices (default: 8)
         alpha: Scaling factor (default: 16.0)
         dropout: Dropout probability for LoRA path (default: 0.0)
     """
+
+    _original_scaling: float | None
 
     def __init__(
         self,
@@ -218,5 +223,6 @@ def disable_lora(model: nn.Module) -> None:
 def enable_lora(model: nn.Module) -> None:
     """Re-enable LoRA after disabling."""
     for module in model.modules():
-        if isinstance(module, LoRALinear) and hasattr(module, "_original_scaling"):
-            module.scaling = module._original_scaling
+        orig = getattr(module, "_original_scaling", None)
+        if isinstance(module, LoRALinear) and orig is not None:
+            module.scaling = orig

@@ -69,7 +69,16 @@ class AdapterLinear(nn.Module):
             8-256 depending on the hidden size.
         activation: Non-linearity class (defaults to ``nn.ReLU`` to
             match Houlsby 2019).
+
+    Attributes:
+        _original_up_weight: Snapshot of up-projection weight, set by
+            :func:`disable_adapter`, cleared by :func:`enable_adapter`.
+        _original_up_bias: Snapshot of up-projection bias, set/cleared
+            alongside ``_original_up_weight``.
     """
+
+    _original_up_weight: torch.Tensor | None
+    _original_up_bias: torch.Tensor | None
 
     def __init__(
         self,
@@ -208,15 +217,17 @@ def unmerge_adapter(model: nn.Module) -> nn.Module:
     return model
 
 
-def get_adapter_parameters(model: nn.Module) -> Iterator[nn.Parameter]:
+def get_adapter_parameters(model: nn.Module) -> Iterator[torch.Tensor]:
     """Yield every trainable adapter parameter - down + up weights + biases
     per wrapper, nothing from the base Linear.
     """
     for module in model.modules():
         if isinstance(module, AdapterLinear):
             yield module.down.weight
+            assert module.down.bias is not None  # noqa: S101
             yield module.down.bias
             yield module.up.weight
+            assert module.up.bias is not None  # noqa: S101
             yield module.up.bias
 
 
@@ -249,9 +260,11 @@ def enable_adapter(model: nn.Module) -> None:
     never called.
     """
     for module in model.modules():
-        if isinstance(module, AdapterLinear) and hasattr(module, "_original_up_weight"):
+        orig_weight = getattr(module, "_original_up_weight", None)
+        orig_bias = getattr(module, "_original_up_bias", None)
+        if isinstance(module, AdapterLinear) and orig_weight is not None and orig_bias is not None:
             with torch.no_grad():
-                module.up.weight.copy_(module._original_up_weight)
-                module.up.bias.copy_(module._original_up_bias)
+                module.up.weight.copy_(orig_weight)
+                module.up.bias.copy_(orig_bias)
             del module._original_up_weight
             del module._original_up_bias

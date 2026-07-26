@@ -77,6 +77,8 @@ class AdaLoRALinear(nn.Module):
             :meth:`orth_reg_loss` and add to the total loss).
     """
 
+    _original_scaling: float | None
+
     def __init__(
         self,
         base_layer: nn.Linear,

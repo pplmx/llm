@@ -51,6 +51,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+import torch
 import torch.nn as nn
 
 from llm.core.adapter import (
@@ -128,7 +129,7 @@ def unmerge_pfeiffer_adapter(model: nn.Module) -> nn.Module:
     return unmerge_adapter(model)
 
 
-def get_pfeiffer_parameters(model: nn.Module) -> Iterator[nn.Parameter]:
+def get_pfeiffer_parameters(model: nn.Module) -> Iterator[torch.Tensor]:
     """Yield every trainable Pfeiffer parameter.
 
     Delegates to :func:`llm.core.adapter.get_adapter_parameters`.
