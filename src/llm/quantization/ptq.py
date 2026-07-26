@@ -47,6 +47,11 @@ class QuantizedLinear(nn.Module):
         self.out_features = out_features
         self.config = config or QuantConfig()
 
+        # Type annotations for registered buffers (prevents ty from inferring
+        # the broader `Tensor | Module` union that register_buffer creates).
+        self.weight_quantized: torch.Tensor
+        self.weight_scale: torch.Tensor
+
         # Quantized weights (stored as int8)
         self.register_buffer(
             "weight_quantized",
@@ -60,6 +65,7 @@ class QuantizedLinear(nn.Module):
             self.register_buffer("weight_scale", torch.ones(1))
 
         # Zero point for asymmetric quantization
+        self.weight_zero_point: torch.Tensor | None
         if not self.config.symmetric:
             self.register_buffer("weight_zero_point", torch.zeros_like(self.weight_scale))
         else:
@@ -126,8 +132,11 @@ class QuantizedLinear(nn.Module):
                 scale = abs_max / qmax
                 scale = scale.clamp(min=1e-8)
 
-            weight_quantized = (weight / scale.view(-1, 1)).round().clamp(-128, 127).to(torch.int8)
-            quant_linear.weight_scale.copy_(scale)
+            # Normalize scale to a tensor: it's a Tensor when computed above,
+            # or a float when passed by the caller.
+            scale_tensor = torch.as_tensor(scale, device=weight.device, dtype=weight.dtype)
+            weight_quantized = (weight / scale_tensor.view(-1, 1)).round().clamp(-128, 127).to(torch.int8)
+            quant_linear.weight_scale.copy_(scale_tensor)
         else:
             # Per-tensor quantization
             if scale is None:
