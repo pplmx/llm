@@ -110,13 +110,16 @@ class ALiBiPositionBias(nn.Module):
 
         # Register slopes as buffer (not learned)
         slopes = get_alibi_slopes(num_heads)
+        self.slopes: torch.Tensor
         self.register_buffer("slopes", slopes, persistent=False)
 
         # Cache for bias matrix
         self._cached_bias: torch.Tensor | None = None
         self._cached_seq_len: int = 0
 
-    def _update_cache(self, seq_len: int, device: torch.device, dtype: torch.dtype) -> None:
+    def _update_cache(
+        self, seq_len: int, device: torch.device | str | None = None, dtype: torch.dtype | None = None
+    ) -> None:
         """Update cached bias if sequence length changed."""
         if seq_len > self._cached_seq_len or self._cached_bias is None:
             self._cached_seq_len = max(seq_len, self.max_seq_len)
@@ -139,6 +142,7 @@ class ALiBiPositionBias(nn.Module):
         """
         seq_len = attention_scores.size(-1)
         self._update_cache(seq_len, attention_scores.device, attention_scores.dtype)
+        assert self._cached_bias is not None  # noqa: S101
 
         # Extract relevant portion of cached bias
         bias = self._cached_bias[:, :, :seq_len, :seq_len]
@@ -161,9 +165,10 @@ class ALiBiPositionBias(nn.Module):
         Returns:
             Bias tensor of shape [1, num_heads, seq_len, seq_len]
         """
-        device = device or self.slopes.device
-        dtype = dtype or self.slopes.dtype
+        device = device if device is not None else self.slopes.device
+        dtype = dtype if dtype is not None else self.slopes.dtype
         self._update_cache(seq_len, device, dtype)
+        assert self._cached_bias is not None  # noqa: S101
         return self._cached_bias[:, :, :seq_len, :seq_len]
 
     def extra_repr(self) -> str:

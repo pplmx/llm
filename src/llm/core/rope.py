@@ -50,6 +50,7 @@ class RotaryPositionEmbedding(nn.Module):
 
         # Compute inverse frequencies
         inv_freq = self._compute_inv_freq(device, dtype)
+        self.inv_freq: torch.Tensor
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
         # Precompute cos and sin for efficiency
@@ -117,6 +118,9 @@ class RotaryPositionEmbedding(nn.Module):
         """
         seq_len = q.size(2)
         self._update_cos_sin_cache(seq_len, q.device, q.dtype)
+
+        assert self._cos_cached is not None  # noqa: S101
+        assert self._sin_cached is not None  # noqa: S101
 
         if position_ids is None:
             cos = self._cos_cached[:seq_len]
