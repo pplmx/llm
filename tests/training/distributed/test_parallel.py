@@ -10,6 +10,7 @@ from llm.training.distributed.parallel import (
     model_state_dict,
     wrap_model_for_training,
 )
+from tests.support.devices import cuda_usable
 
 
 class _Tiny(nn.Module):
@@ -50,7 +51,7 @@ def test_load_model_state_dict_roundtrip():
 
 
 def test_unknown_parallel_strategy_raises():
-    if not torch.cuda.is_available():
+    if not cuda_usable():
         pytest.skip("CUDA required for distributed wrap path")
     model = _Tiny().cuda()
     with pytest.raises(ValueError, match="Unknown parallel_strategy"):
@@ -120,7 +121,7 @@ def test_wrap_fsdp_cpu_returns_unwrapped():
 
 def test_wrap_fsdp_world_size_one_returns_unwrapped():
     """Single-rank FSDP is equivalent to bare training."""
-    if not torch.cuda.is_available():
+    if not cuda_usable():
         pytest.skip("CUDA required to build the world-size=1 FSDP input")
     model = _Tiny().cuda()
     wrapped = wrap_model_for_training(

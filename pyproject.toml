@@ -216,6 +216,12 @@ Source = "https://github.com/pplmx/llm"
 [tool.uv]
 default-groups = ["test"]
 
+# flash-attn's setup.py imports torch at build time but does not declare it
+# in build-system.requires; without this, `uv sync --group perf` fails in
+# build isolation with ModuleNotFoundError: No module named 'torch'.
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch>=2.13.0,<3.0.0"]
+
 [tool.uv.build-backend]
 module-name = "llm"
 

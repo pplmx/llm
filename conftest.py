@@ -50,7 +50,7 @@ def _has_usable_gpu_memory() -> bool:
                 with contextlib.suppress(ValueError):
                     free_mems.append(int(parts[0]))
         return any(mem > 512 for mem in free_mems)
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return True
 
 

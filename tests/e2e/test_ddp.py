@@ -5,8 +5,11 @@ These tests verify that the training framework works correctly with multiple GPU
 They will be automatically skipped if the required number of GPUs is not available.
 """
 
+from __future__ import annotations
+
 import os
 import socket
+import time
 
 import pytest
 import torch
@@ -16,24 +19,55 @@ import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
 from llm.training.core.config import Config, ModelConfig, OptimizationConfig, TrainingConfig
+from tests.support.devices import DEFAULT_DEVICE, all_gpu_devices, cuda_usable
+
+DDP_MIN_FREE_BYTES = 4 * 1024**3
+DDP_JOIN_TIMEOUT_S = 120
 
 
-def setup_ddp_env():
-    """Setup environment variables for DDP."""
-    os.environ["MASTER_ADDR"] = socket.gethostbyname(socket.gethostname())
-    os.environ["MASTER_PORT"] = "29500"
+def _free_port() -> int:
+    """Bind an ephemeral port so consecutive DDP tests do not share MASTER_PORT."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        return int(sock.getsockname()[1])
+
+
+def _release_parent_cuda_caches() -> None:
+    """Drop parent-process CUDA caches so spawn workers are less likely to deadlock."""
+    if not torch.cuda.is_available():
+        return
+    for index in range(torch.cuda.device_count()):
+        try:
+            with torch.cuda.device(index):
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+        except RuntimeError, torch.AcceleratorError:
+            continue
+
+
+def setup_ddp_env() -> int:
+    """Configure process-group env vars and return the chosen master port."""
+    port = _free_port()
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
     os.environ["NCCL_DEBUG"] = "WARN"
+    # Fail fast instead of hanging forever when one rank dies during init.
+    os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
+    return port
 
 
-def ddp_test_worker(rank, world_size, config, results):
+def ddp_test_worker(rank, world_size, device_indices, config, results):
     """Worker function for DDP test."""
     try:
+        device_index = device_indices[rank]
+
         # Initialize distributed
         dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
         # Set device
-        torch.cuda.set_device(rank)
-        device = torch.device(f"cuda:{rank}")
+        torch.cuda.set_device(device_index)
+        device = torch.device(f"cuda:{device_index}")
 
         # Create model and move to device
         model = DecoderModel(
@@ -46,7 +80,7 @@ def ddp_test_worker(rank, world_size, config, results):
         )
 
         # Wrap with DDP
-        model_ddp = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
+        model_ddp = nn.parallel.DistributedDataParallel(model, device_ids=[device_index])
 
         # Simple forward pass
         batch_size = config["batch_size"]
@@ -79,15 +113,49 @@ def ddp_test_worker(rank, world_size, config, results):
             dist.destroy_process_group()
 
 
+def _run_ddp(world_size: int, device_indices: list[int], config: dict) -> None:
+    """Spawn DDP workers with a join timeout so a stuck NCCL init fails the test."""
+    assert all(index is not None for index in device_indices)
+    _release_parent_cuda_caches()
+    setup_ddp_env()
+
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(
+        ddp_test_worker,
+        args=(world_size, device_indices, config, results),
+        nprocs=world_size,
+        join=False,
+    )
+    assert context is not None
+
+    # ProcessContext.join(timeout=...) returns False on timeout instead of raising.
+    end_at = time.monotonic() + DDP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"DDP spawn exceeded {DDP_JOIN_TIMEOUT_S}s on devices {device_indices}")
+        if context.join(timeout=remaining):
+            break
+
+    for rank in range(world_size):
+        assert rank in results, f"Rank {rank} produced no result (devices={device_indices})"
+        assert results[rank]["success"], f"Rank {rank} failed: {results[rank].get('error')}"
+
+
 @pytest.mark.need_gpu(2)
 @pytest.mark.slow
 def test_ddp_two_gpu():
     """Test DDP with 2 GPUs."""
-    if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
+    gpu_devices = all_gpu_devices(min_free_bytes=DDP_MIN_FREE_BYTES)
+    if len(gpu_devices) < 2:
         pytest.skip("需要至少 2 个 GPU")
 
-    setup_ddp_env()
     world_size = 2
+    device_indices = [device.index for device in gpu_devices[:world_size]]
     config = {
         "vocab_size": 100,
         "hidden_size": 64,
@@ -96,32 +164,19 @@ def test_ddp_two_gpu():
         "max_seq_len": 32,
         "batch_size": 4,
     }
-
-    # Use spawn to create processes
-    manager = mp.Manager()
-    results = manager.dict()
-
-    mp.spawn(
-        ddp_test_worker,
-        args=(world_size, config, results),
-        nprocs=world_size,
-        join=True,
-    )
-
-    # Check all ranks succeeded
-    for rank in range(world_size):
-        assert results[rank]["success"], f"Rank {rank} failed: {results[rank].get('error')}"
+    _run_ddp(world_size, device_indices, config)
 
 
 @pytest.mark.full_cluster
 @pytest.mark.slow
 def test_ddp_eight_gpu():
     """Test DDP with all 8 GPUs (full cluster)."""
-    if not torch.cuda.is_available() or torch.cuda.device_count() < 8:
+    gpu_devices = all_gpu_devices(min_free_bytes=DDP_MIN_FREE_BYTES)
+    if len(gpu_devices) < 8:
         pytest.skip("需要 8 个 GPU")
 
-    setup_ddp_env()
     world_size = 8
+    device_indices = [device.index for device in gpu_devices[:world_size]]
     config = {
         "vocab_size": 200,
         "hidden_size": 128,
@@ -130,33 +185,20 @@ def test_ddp_eight_gpu():
         "max_seq_len": 64,
         "batch_size": 8,
     }
-
-    manager = mp.Manager()
-    results = manager.dict()
-
-    mp.spawn(
-        ddp_test_worker,
-        args=(world_size, config, results),
-        nprocs=world_size,
-        join=True,
-    )
-
-    for rank in range(world_size):
-        assert results[rank]["success"], f"Rank {rank} failed: {results[rank].get('error')}"
+    _run_ddp(world_size, device_indices, config)
 
 
 @pytest.mark.multi_gpu
 @pytest.mark.slow
 def test_ddp_all_available_gpus():
-    """Test DDP with all available GPUs (2+)."""
-    if not torch.cuda.is_available():
-        pytest.skip("需要 GPU")
-
-    world_size = torch.cuda.device_count()
+    """Test DDP with all usable GPUs that currently have enough free memory (2+)."""
+    _release_parent_cuda_caches()
+    gpu_devices = all_gpu_devices(min_free_bytes=DDP_MIN_FREE_BYTES)
+    world_size = len(gpu_devices)
     if world_size < 2:
         pytest.skip("需要至少 2 个 GPU")
+    device_indices = [device.index for device in gpu_devices]
 
-    setup_ddp_env()
     config = {
         "vocab_size": 150,
         "hidden_size": 96,
@@ -165,28 +207,16 @@ def test_ddp_all_available_gpus():
         "max_seq_len": 32,
         "batch_size": world_size,  # Scale batch with GPUs
     }
-
-    manager = mp.Manager()
-    results = manager.dict()
-
-    mp.spawn(
-        ddp_test_worker,
-        args=(world_size, config, results),
-        nprocs=world_size,
-        join=True,
-    )
-
-    for rank in range(world_size):
-        assert results[rank]["success"], f"Rank {rank} failed: {results[rank].get('error')}"
+    _run_ddp(world_size, device_indices, config)
 
 
 @pytest.mark.gpu
 def test_single_gpu_training():
     """Test training on single GPU."""
-    if not torch.cuda.is_available():
+    if not cuda_usable():
         pytest.skip("需要 GPU")
 
-    device = torch.device("cuda:0")
+    device = DEFAULT_DEVICE
 
     model = DecoderModel(
         vocab_size=100,
@@ -222,14 +252,14 @@ def test_single_gpu_training():
 @pytest.mark.gpu
 def test_gpu_memory_tracking():
     """Test that GPU memory tracking works correctly."""
-    if not torch.cuda.is_available():
+    if not cuda_usable():
         pytest.skip("需要 GPU")
 
-    device = torch.device("cuda:0")
+    device = DEFAULT_DEVICE
 
     # Record initial memory
-    torch.cuda.reset_peak_memory_stats()
-    initial_mem = torch.cuda.memory_allocated()
+    torch.cuda.reset_peak_memory_stats(device)
+    initial_mem = torch.cuda.memory_allocated(device)
 
     # Create model
     model = DecoderModel(
@@ -252,7 +282,7 @@ def test_gpu_memory_tracking():
     loss.backward()
 
     # Check memory was allocated
-    peak_mem = torch.cuda.max_memory_allocated()
+    peak_mem = torch.cuda.max_memory_allocated(device)
     assert peak_mem > initial_mem, "Memory should be allocated"
 
     # Cleanup
@@ -263,7 +293,7 @@ def test_gpu_memory_tracking():
 @pytest.mark.gpu
 def test_multi_gpu_config_detection():
     """Test that GPU configuration is correctly detected."""
-    if not torch.cuda.is_available():
+    if not cuda_usable():
         pytest.skip("需要 GPU")
 
     config = Config(

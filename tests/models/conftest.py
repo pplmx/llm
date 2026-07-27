@@ -4,13 +4,14 @@ import pytest
 import torch
 
 from llm.models.decoder import DecoderModel
+from tests.support.devices import ALL_DEVICES
 from tests.support.models import DECODER_BATCH_SIZE, DECODER_SEQ_LEN, decoder_model_kwargs
 
 BATCH_SIZE = DECODER_BATCH_SIZE
 SEQ_LEN = DECODER_SEQ_LEN
 
-_gpu_count = torch.cuda.device_count()
-DEVICES = [f"cuda:{i}" for i in range(_gpu_count)] if _gpu_count > 0 else ["cpu"]
+# Prioritise GPU: use cuda_usable() so visible-but-OOM GPUs are excluded.
+DEVICES = ALL_DEVICES
 
 
 @pytest.fixture

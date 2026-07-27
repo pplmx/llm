@@ -3,6 +3,7 @@ import torch
 from torch import nn  # Added nn
 
 from llm.core.mlp import MLP
+from tests.support.devices import cuda_usable
 
 
 # Helper function to create MLP and input tensor with more focused parameters
@@ -39,7 +40,7 @@ def create_test_mlp(
     """
     # Set defaults for device and dtype
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if cuda_usable() else "cpu")
     if dtype is None:
         dtype = torch.float32
 

@@ -6,6 +6,7 @@ import torch.nn as nn
 
 from llm.core.embedding import EmbeddingLayer
 from llm.core.positional_encoding import PositionalEncoding
+from tests.support.devices import ALL_DEVICES, cuda_usable
 
 # Test constants
 VOCAB_SIZE = 20  # Increased for padding_idx tests
@@ -17,27 +18,13 @@ _TORCH_DTYPES = {"torch.float32": torch.float32, "torch.float64": torch.float64}
 TEST_SEQ_LEN = MAX_SEQ_LEN // 2
 
 
-# Available devices and dtypes for testing. Skip CUDA if the device is
-# "available" but has no free memory (common in CI containers that report
-# CUDA_VISIBLE_DEVICES but have 0 usable VRAM).
-def _cuda_usable() -> bool:
-    """True only if CUDA is available *and* we can actually allocate on it."""
-    if not torch.cuda.is_available():
-        return False
-    try:
-        torch.cuda.mem_get_info()
-        return True
-    except (RuntimeError, torch.AcceleratorError):
-        return False
-
-
-DEVICES = ["cpu"]
-_gpu_count = torch.cuda.device_count()
-if _gpu_count > 0 and _cuda_usable():
-    DEVICES = [f"cuda:{i}" for i in range(_gpu_count)]
+# Available devices and dtypes for testing. Prioritise GPU: uses the shared
+# ``cuda_usable()`` from tests.support.devices so that GPUs which report as
+# ``is_available()`` but have 0 free VRAM (CI containers) are skipped.
+DEVICES = ALL_DEVICES
 
 DTYPES = [torch.float32]
-if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:  # Check for float64 support on CUDA
+if cuda_usable() and torch.cuda.get_device_capability()[0] >= 7:  # Check for float64 support on CUDA
     # Some GPUs might have limited float64 support, but generally it's available.
     # For simplicity, we'll only add float64 if not causing issues in typical CI/dev envs.
     # DTYPES.append(torch.float64) # float64 can be slow, stick to float32 for typical tests
@@ -168,7 +155,7 @@ class TestEmbeddingLayer:
         if (
             device == "cuda"
             and dtype == torch.float64
-            and not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7)
+            and not (cuda_usable() and torch.cuda.get_device_capability()[0] >= 7)
         ):
             pytest.skip("CUDA float64 support not adequate or device not capable.")
         if device == "cpu" and dtype == torch.float64:  # float64 on CPU is generally fine

@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 from llm.data.base import BaseDataModule
+from tests.support.devices import cuda_usable
 
 
 class DummyLMDataModule(BaseDataModule):
@@ -17,7 +18,7 @@ class DummyLMDataModule(BaseDataModule):
 
     def train_dataloader(self, rank, world_size, device=None):
         if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device("cuda" if cuda_usable() else "cpu")
 
         num_samples = self.config.training.num_samples
         seq_len = self.config.model.max_seq_len

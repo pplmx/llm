@@ -7,28 +7,36 @@ from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.core.config import Config, ModelConfig, OptimizationConfig, TrainingConfig
 from tests.support.corpus import DEFAULT_INFERENCE_CORPUS
+from tests.support.devices import DEFAULT_DEVICE, cuda_device_count, cuda_usable
+from tests.support.devices import all_gpu_devices as get_all_gpu_devices
 from tests.support.tokenizers import LineTokenizer, StubTokenizer
 
 
 def pytest_configure(config):
-    """Configure custom markers based on GPU availability."""
-    gpu_count = torch.cuda.device_count()
+    """Configure custom markers based on GPU availability.
+
+    Markers are always registered (so static ``@pytest.mark.need_gpu`` decorators
+    don't trigger warnings), but auto-skip logic in ``pytest_collection_modifyitems``
+    enforces the actual GPU count at collection time.
+    """
     config.addinivalue_line("markers", "need_gpu(n): tests that require at least n GPUs")
     config.addinivalue_line("markers", "gpu: tests that require at least 1 GPU")
-    if gpu_count >= 8:
-        config.addinivalue_line("markers", "multi_gpu: tests that require multiple GPUs (2+)")
-        config.addinivalue_line("markers", "full_cluster: tests that require 8 GPUs")
-    elif gpu_count >= 2:
-        config.addinivalue_line("markers", "multi_gpu: tests that require multiple GPUs (2+)")
+    config.addinivalue_line("markers", "multi_gpu: tests that require multiple GPUs (2+)")
+    config.addinivalue_line("markers", "full_cluster: tests that require 8 GPUs")
 
 
 def pytest_collection_modifyitems(config, items):
-    """Automatically skip tests based on GPU availability."""
-    gpu_count = torch.cuda.device_count()
+    """Automatically skip tests based on GPU availability.
+
+    Uses :func:`cuda_usable` from ``tests.support.devices`` so that GPUs
+    reported as ``is_available()`` but with 0 free VRAM (common in CI)
+    are correctly treated as unusable.
+    """
+    gpu_count = cuda_device_count()
     _ = config  # config is required by pytest but we only need gpu_count
 
     for item in items:
-        # Check for need_gpu marker
+        # Check for need_gpu marker — auto-skip if insufficient GPUs
         need_gpu_marker = item.get_closest_marker("need_gpu")
         if need_gpu_marker:
             required_gpus = need_gpu_marker.args[0] if need_gpu_marker.args else 1
@@ -45,53 +53,95 @@ def _pick_gpu() -> torch.device:
 
     When running with ``pytest -n <N>``, each worker process auto-selects a
     different GPU via ``PYTEST_XDIST_WORKER`` (set by xdist per process).
-    Without xdist (or on the master process), defaults to ``cuda:0``.
+    Without xdist (or on the master process), prefers the GPU that had the
+    most free memory when the test session started.
     Falls back to ``cpu`` when no GPU is allocatable.
+
+    Uses :func:`cuda_usable` so that GPUs visible-but-OOM are skipped.
     """
-    if not torch.cuda.is_available():
+    gpu_devices = get_all_gpu_devices()
+    if not gpu_devices:
         return torch.device("cpu")
-    gpu_count = torch.cuda.device_count()
-    if gpu_count == 0:
-        return torch.device("cpu")
+    if DEFAULT_DEVICE in gpu_devices:
+        gpu_devices.remove(DEFAULT_DEVICE)
+        gpu_devices.insert(0, DEFAULT_DEVICE)
 
     worker = os.environ.get("PYTEST_XDIST_WORKER", "master")
-    idx = int(worker.replace("gw", "")) % gpu_count if worker != "master" else 0
-
-    try:
-        torch.cuda.mem_get_info(idx)
-        return torch.device(f"cuda:{idx}")
-    except (RuntimeError, torch.AcceleratorError):
-        pass
-    return torch.device("cpu")
+    worker_index = int(worker.replace("gw", "")) if worker != "master" else 0
+    return gpu_devices[worker_index % len(gpu_devices)]
 
 
 @pytest.fixture(scope="session")
 def device():
-    """Returns a GPU device (distributed across workers under xdist), else cpu."""
+    """Returns a single GPU device (distributed across workers under xdist), else cpu.
+
+    This fixture prioritises GPU: when CUDA is usable it returns the first
+    GPU (or a worker-specific GPU under pytest-xdist).  Tests that need
+    **all** available GPUs should use the ``all_gpu_devices`` fixture instead.
+    """
     return _pick_gpu()
 
 
 @pytest.fixture(scope="session")
 def gpu_count():
-    """Returns the number of available GPUs."""
-    return torch.cuda.device_count()
+    """Returns the number of **usable** GPUs (0 if CUDA is visible-but-OOM)."""
+    return cuda_device_count()
 
 
 @pytest.fixture(scope="session")
 def cuda_available():
-    """Returns True if CUDA is available."""
-    return torch.cuda.is_available()
+    """Returns True if CUDA is available and usable."""
+    return cuda_usable()
+
+
+@pytest.fixture(scope="session")
+def all_gpu_devices():
+    """Returns a list of all usable GPU devices (``[cuda:0, cuda:1, …]``).
+
+    Prioritises GPU usage — when CUDA is available this returns every GPU
+    device.  When CUDA is not usable, returns an empty list.  Tests that
+    want to leverage multiple GPUs (distributed training, sharding, etc.)
+    should use this fixture and skip if the list is empty.
+
+    Example::
+
+        def test_distributed(all_gpu_devices):
+            if len(all_gpu_devices) < 2:
+                pytest.skip("Need at least 2 GPUs")
+            # Use all_gpu_devices for distributed work
+    """
+    return get_all_gpu_devices()
+
+
+@pytest.fixture(scope="session")
+def all_devices():
+    """Returns all testable devices, GPU-first.
+
+    If CUDA is usable, returns ``[cuda:0, cuda:1, …]`` — every GPU.
+    If CUDA is not usable, returns ``[cpu]``.
+
+    Tests that should run on **all** available devices (GPU preferred)
+    should parametrise on this fixture::
+
+        @pytest.mark.parametrize("device", <all_devices>)
+    """
+    devices = get_all_gpu_devices()
+    return devices or [torch.device("cpu")]
 
 
 @pytest.fixture(autouse=True)
 def reset_torch_seed():
-    """Reset torch random seed before each test to ensure reproducibility."""
+    """Reset torch random seed before each test to ensure reproducibility.
+
+    Only seeds CUDA when it is *usable* (not just visible), avoiding
+    ``AcceleratorError`` on GPUs that report as available but have 0 VRAM.
+    """
     torch.manual_seed(42)
-    if torch.cuda.is_available():
+    if cuda_usable():
         torch.cuda.manual_seed_all(42)
     yield
     torch.manual_seed(42)
-    if torch.cuda.is_available():
+    if cuda_usable():
         torch.cuda.manual_seed_all(42)
 
 
