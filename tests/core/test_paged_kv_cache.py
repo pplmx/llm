@@ -3,8 +3,11 @@ import pytest
 import torch
 
 from llm.core.paged_attention.paged_kv_cache import PagedKVCache
+from tests.support.devices import DEFAULT_DEVICE, cuda_usable
 
-# Force CPU — large block allocations OOMs on contended GPUs (see serving/test_paged_integration.py).
+# Prefer GPU via DEFAULT_DEVICE; fall back to CPU when CUDA is unusable.
+DEVICE = DEFAULT_DEVICE
+LARGE_INIT_MIN_FREE_BYTES = 2 * 1024**3
 
 
 def test_paged_kv_cache_init():
@@ -15,7 +18,7 @@ def test_paged_kv_cache_init():
         head_dim=16,
         num_blocks=32,
         block_size=16,
-        device="cpu",
+        device=DEVICE,
         dtype=torch.float16,
     )
     assert cache.k_cache.shape == (2, 32, 4, 16, 16)
@@ -28,11 +31,13 @@ def test_paged_kv_cache_init():
 def test_paged_kv_cache_init_different_params():
     """Test initialization with different parameter combinations."""
     # Small config
-    cache = PagedKVCache(num_layers=1, num_kv_heads=1, head_dim=8, num_blocks=4, block_size=4, device="cpu")
+    cache = PagedKVCache(num_layers=1, num_kv_heads=1, head_dim=8, num_blocks=4, block_size=4, device=DEVICE)
     assert cache.k_cache.shape == (1, 4, 1, 4, 8)
 
-    # Large config
-    cache = PagedKVCache(num_layers=12, num_kv_heads=8, head_dim=128, num_blocks=512, block_size=32, device="cpu")
+    # Large config (~1.5 GiB for float32 K+V) — skip when the chosen GPU is tight.
+    if DEVICE.type == "cuda" and not cuda_usable(DEVICE, min_free_bytes=LARGE_INIT_MIN_FREE_BYTES):
+        pytest.skip(f"{DEVICE} needs at least 2 GiB free for large PagedKVCache init")
+    cache = PagedKVCache(num_layers=12, num_kv_heads=8, head_dim=128, num_blocks=512, block_size=32, device=DEVICE)
     assert cache.k_cache.shape == (12, 512, 8, 32, 128)
 
 
@@ -44,11 +49,11 @@ def test_update_allocates_single_block():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
     # 4 tokens = 1 block (block_size=4)
-    k = torch.randn(1, 4, 2, 8)
-    v = torch.randn(1, 4, 2, 8)
+    k = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v = torch.randn(1, 4, 2, 8, device=DEVICE)
 
     block_ids = cache.update(seq_id=1, k_new=k, v_new=v)
 
@@ -64,11 +69,11 @@ def test_update_allocates_multiple_blocks():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
     # 10 tokens = 3 blocks (4 + 4 + 2)
-    k = torch.randn(1, 10, 2, 8)
-    v = torch.randn(1, 10, 2, 8)
+    k = torch.randn(1, 10, 2, 8, device=DEVICE)
+    v = torch.randn(1, 10, 2, 8, device=DEVICE)
 
     block_ids = cache.update(seq_id=1, k_new=k, v_new=v)
 
@@ -83,11 +88,11 @@ def test_update_exact_block_boundary():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
     # Exactly 8 tokens = 2 blocks
-    k = torch.randn(1, 8, 2, 8)
-    v = torch.randn(1, 8, 2, 8)
+    k = torch.randn(1, 8, 2, 8, device=DEVICE)
+    v = torch.randn(1, 8, 2, 8, device=DEVICE)
 
     block_ids = cache.update(seq_id=1, k_new=k, v_new=v)
 
@@ -102,17 +107,17 @@ def test_multiple_sequences():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
 
     # First sequence: 4 tokens = 1 block
-    k1 = torch.randn(1, 4, 2, 8)
-    v1 = torch.randn(1, 4, 2, 8)
+    k1 = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v1 = torch.randn(1, 4, 2, 8, device=DEVICE)
     block_ids_1 = cache.update(seq_id=1, k_new=k1, v_new=v1)
 
     # Second sequence: 8 tokens = 2 blocks
-    k2 = torch.randn(1, 8, 2, 8)
-    v2 = torch.randn(1, 8, 2, 8)
+    k2 = torch.randn(1, 8, 2, 8, device=DEVICE)
+    v2 = torch.randn(1, 8, 2, 8, device=DEVICE)
     block_ids_2 = cache.update(seq_id=2, k_new=k2, v_new=v2)
 
     assert block_ids_1 == [0]
@@ -127,10 +132,10 @@ def test_free_sequence():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
-    k = torch.randn(1, 4, 2, 8)
-    v = torch.randn(1, 4, 2, 8)
+    k = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v = torch.randn(1, 4, 2, 8, device=DEVICE)
 
     cache.update(seq_id=1, k_new=k, v_new=v)
     assert cache.block_manager.num_free_blocks == 7
@@ -147,10 +152,10 @@ def test_free_sequence_updates_block_table():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
-    k = torch.randn(1, 8, 2, 8)  # 2 blocks
-    v = torch.randn(1, 8, 2, 8)
+    k = torch.randn(1, 8, 2, 8, device=DEVICE)  # 2 blocks
+    v = torch.randn(1, 8, 2, 8, device=DEVICE)
 
     cache.update(seq_id=1, k_new=k, v_new=v)
     assert len(cache.get_block_table(1)) == 2
@@ -169,23 +174,23 @@ def test_oom_when_no_blocks():
         head_dim=8,
         num_blocks=2,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
     # Use up all blocks: 4 tokens = 1 block, 2 blocks total
-    k1 = torch.randn(1, 4, 2, 8)
-    v1 = torch.randn(1, 4, 2, 8)
+    k1 = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v1 = torch.randn(1, 4, 2, 8, device=DEVICE)
     cache.update(seq_id=1, k_new=k1, v_new=v1)
 
-    k2 = torch.randn(1, 4, 2, 8)
-    v2 = torch.randn(1, 4, 2, 8)
+    k2 = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v2 = torch.randn(1, 4, 2, 8, device=DEVICE)
     cache.update(seq_id=2, k_new=k2, v_new=v2)
 
     # Now no free blocks left
     assert cache.block_manager.num_free_blocks == 0
 
     # This should fail - no blocks left
-    k3 = torch.randn(1, 4, 2, 8)
-    v3 = torch.randn(1, 4, 2, 8)
+    k3 = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v3 = torch.randn(1, 4, 2, 8, device=DEVICE)
 
     with pytest.raises(RuntimeError, match="No free blocks"):
         cache.update(seq_id=3, k_new=k3, v_new=v3)
@@ -199,10 +204,10 @@ def test_get_block_table():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
-    k = torch.randn(1, 8, 2, 8)
-    v = torch.randn(1, 8, 2, 8)
+    k = torch.randn(1, 8, 2, 8, device=DEVICE)
+    v = torch.randn(1, 8, 2, 8, device=DEVICE)
     block_ids = cache.update(seq_id=5, k_new=k, v_new=v)
 
     assert cache.get_block_table(5) == block_ids
@@ -216,7 +221,7 @@ def test_get_block_table_unknown_seq():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
     # BlockManager raises error for unknown sequence - this is expected behavior
     with pytest.raises(ValueError, match="does not exist"):
@@ -231,12 +236,12 @@ def test_get_kv_slice():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
 
     # Insert 8 tokens = 2 blocks
-    k = torch.randn(1, 8, 2, 8)
-    v = torch.randn(1, 8, 2, 8)
+    k = torch.randn(1, 8, 2, 8, device=DEVICE)
+    v = torch.randn(1, 8, 2, 8, device=DEVICE)
     cache.update(seq_id=1, k_new=k, v_new=v)
 
     # Get first 4 tokens
@@ -253,12 +258,12 @@ def test_get_kv_slice_partial_block():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
 
     # Insert 8 tokens = 2 blocks
-    k = torch.randn(1, 8, 2, 8)
-    v = torch.randn(1, 8, 2, 8)
+    k = torch.randn(1, 8, 2, 8, device=DEVICE)
+    v = torch.randn(1, 8, 2, 8, device=DEVICE)
     cache.update(seq_id=1, k_new=k, v_new=v)
 
     # Get tokens 2-6 (spans block 0 and block 1)
@@ -274,7 +279,7 @@ def test_free_nonexistent_sequence():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
     # Should not raise error
     cache.free(seq_id=999)
@@ -288,12 +293,12 @@ def test_sequential_allocate_free():
         head_dim=8,
         num_blocks=4,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
 
     for i in range(4):
-        k = torch.randn(1, 4, 2, 8)
-        v = torch.randn(1, 4, 2, 8)
+        k = torch.randn(1, 4, 2, 8, device=DEVICE)
+        v = torch.randn(1, 4, 2, 8, device=DEVICE)
         cache.update(seq_id=i, k_new=k, v_new=v)
 
     assert cache.block_manager.num_free_blocks == 0
@@ -313,14 +318,14 @@ def test_block_manager_integration():
         head_dim=8,
         num_blocks=4,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
     )
 
     # Verify we have 2 allocators (one per layer)
     assert len(cache.block_manager.allocators) == 2
 
-    k = torch.randn(1, 4, 2, 8)
-    v = torch.randn(1, 4, 2, 8)
+    k = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v = torch.randn(1, 4, 2, 8, device=DEVICE)
     cache.update(seq_id=1, k_new=k, v_new=v)
 
     # Both layers should have allocated
@@ -336,12 +341,12 @@ def test_large_sequence_single_block():
         head_dim=64,
         num_blocks=64,
         block_size=16,
-        device="cpu",
+        device=DEVICE,
     )
 
     # 64 tokens = 4 blocks
-    k = torch.randn(1, 64, 4, 64)
-    v = torch.randn(1, 64, 4, 64)
+    k = torch.randn(1, 64, 4, 64, device=DEVICE)
+    v = torch.randn(1, 64, 4, 64, device=DEVICE)
     block_ids = cache.update(seq_id=1, k_new=k, v_new=v)
 
     assert len(block_ids) == 4
@@ -355,7 +360,7 @@ def test_cache_dtype_preserved():
         head_dim=8,
         num_blocks=4,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
         dtype=torch.float32,
     )
     assert cache.k_cache.dtype == torch.float32
@@ -367,7 +372,7 @@ def test_cache_dtype_preserved():
         head_dim=8,
         num_blocks=4,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
         dtype=torch.bfloat16,
     )
     assert cache.k_cache.dtype == torch.bfloat16
@@ -423,7 +428,7 @@ def test_paged_kv_cache_with_prefix_cache():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
         enable_prefix_cache=True,
     )
     assert cache.enable_prefix_cache is True
@@ -438,7 +443,7 @@ def test_paged_kv_cache_prefix_cache_disabled():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
         enable_prefix_cache=False,
     )
     assert cache.enable_prefix_cache is False
@@ -453,7 +458,7 @@ def test_add_prefix_and_get_prefix():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
         enable_prefix_cache=True,
     )
 
@@ -474,7 +479,7 @@ def test_prefix_cache_hit():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
         enable_prefix_cache=True,
     )
 
@@ -496,7 +501,7 @@ def test_paged_kv_cache_prefix_cache_miss():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
         enable_prefix_cache=True,
     )
 
@@ -514,7 +519,7 @@ def test_prefix_cache_disabled_returns_none():
         head_dim=8,
         num_blocks=8,
         block_size=4,
-        device="cpu",
+        device=DEVICE,
         enable_prefix_cache=False,
     )
 
