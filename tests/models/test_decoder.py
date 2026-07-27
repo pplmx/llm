@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
+from tests.support.devices import cuda_usable
 from tests.support.models import DECODER_BATCH_SIZE, DECODER_SEQ_LEN, DEVICES
 
 BATCH_SIZE = DECODER_BATCH_SIZE
@@ -97,7 +98,7 @@ class TestDeviceAndDtypePropagation:
         if (
             device == "cuda"
             and dtype == torch.float64
-            and not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7)
+            and not (cuda_usable() and torch.cuda.get_device_capability()[0] >= 7)
         ):
             pytest.skip("CUDA float64 support not adequate or device not capable.")
 

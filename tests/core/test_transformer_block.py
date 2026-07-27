@@ -5,6 +5,7 @@ import torch.nn as nn
 from llm.core.mlp import MLP
 from llm.core.moe.moe import MoE
 from llm.core.transformer_block import TransformerBlock
+from tests.support.devices import ALL_DEVICES, cuda_usable
 
 # Test Constants
 HIDDEN_SIZE = 64
@@ -16,9 +17,9 @@ NORM_EPS = 1e-5
 BATCH_SIZE = 2
 SEQ_LEN = 10
 
-# Available devices for testing
-_gpu_count = torch.cuda.device_count()
-DEVICES = [f"cuda:{i}" for i in range(_gpu_count)] if _gpu_count > 0 else ["cpu"]
+# Available devices for testing — prioritise GPU using shared cuda_usable()
+# so visible-but-OOM GPUs are excluded (CI containers).
+DEVICES = ALL_DEVICES
 
 DTYPES = [torch.float32]  # Keep it simple for most tests, can expand if needed
 
@@ -249,7 +250,7 @@ class TestDeviceAndDtypePropagation:
         if (
             device == "cuda"
             and dtype == torch.float64
-            and not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7)
+            and not (cuda_usable() and torch.cuda.get_device_capability()[0] >= 7)
         ):
             pytest.skip("CUDA float64 support not adequate or device not capable.")
 

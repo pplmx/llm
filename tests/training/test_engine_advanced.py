@@ -5,6 +5,7 @@ from llm.data.modules.synthetic import SyntheticDataModule
 from llm.training.core.config import Config, ModelConfig, OptimizationConfig, TrainingConfig
 from llm.training.core.engine import TrainingEngine
 from llm.training.tasks.lm_task import LanguageModelingTask
+from tests.support.devices import cuda_usable
 
 
 @pytest.fixture
@@ -27,7 +28,7 @@ def test_engine_auto_amp_dtype(mock_config):
     # On CPU, 'auto' should now resolve to 'float32'
     expected_device = "cpu"
     expected_amp_dtype = "float32"
-    if torch.cuda.is_available():
+    if cuda_usable():
         expected_device = "cuda"
         expected_amp_dtype = "float16"
         if torch.cuda.is_bf16_supported():

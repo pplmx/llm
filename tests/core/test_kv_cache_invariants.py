@@ -23,6 +23,9 @@ import pytest
 import torch
 
 from llm.core.kv_cache import KVCache
+from tests.support.devices import DEFAULT_DEVICE, cuda_usable
+
+PREFILL_MIN_FREE_BYTES = 9 * 1024**3
 
 # ---------- Correctness ----------
 
@@ -152,7 +155,10 @@ class TestPrefillPerformance:
     """
 
     @pytest.mark.slow
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="prefill perf gate requires GPU")
+    @pytest.mark.skipif(
+        not cuda_usable(DEFAULT_DEVICE, min_free_bytes=PREFILL_MIN_FREE_BYTES),
+        reason="prefill perf gate requires a GPU with at least 9 GiB free",
+    )
     def test_prefill_faster_than_naive_loop(self):
         max_batch_size = 128
         max_seq_len = 8192
@@ -160,7 +166,7 @@ class TestPrefillPerformance:
         head_dim = 64
         seq_len_new = 128
         b_curr = 64
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = DEFAULT_DEVICE
 
         cache_opt = KVCache(max_batch_size, max_seq_len, num_kv_heads, head_dim, device, torch.float32)
         cache_old = KVCache(max_batch_size, max_seq_len, num_kv_heads, head_dim, device, torch.float32)

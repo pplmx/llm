@@ -26,7 +26,7 @@ def _cuda_usable() -> bool:
     try:
         torch.cuda.mem_get_info()
         return True
-    except (RuntimeError, torch.AcceleratorError):
+    except RuntimeError, torch.AcceleratorError:
         return False
 
 

@@ -10,6 +10,7 @@ import torch.nn as nn
 
 from llm.core.kv_cache import create_decoder_kv_caches
 from llm.models.decoder import DecoderModel
+from tests.support.devices import cuda_usable
 from tests.support.models import decoder_model_kwargs
 
 
@@ -127,7 +128,7 @@ class TestGradientCheckpointing:
         assert total_grad_norm > 0, "Total gradient norm should be positive"
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="GPU required for memory test")
+@pytest.mark.skipif(not cuda_usable(), reason="GPU required for memory test")
 class TestGradientCheckpointingMemory:
     """Memory-related tests for gradient checkpointing (GPU only)."""
 

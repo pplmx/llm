@@ -21,6 +21,8 @@ References:
 
 from __future__ import annotations
 
+from typing import Protocol
+
 import torch
 
 from llm.generation.eager import _normalize_stop
@@ -33,9 +35,17 @@ from llm.generation.sampling import (
 )
 from llm.models.decoder import DecoderModel
 
+
 # Type alias for the (model, tokenizer) pair the speculative backend
 # carries through the streaming protocol.
-TokenizerLike = object  # anything with encode/decode + pad/eos token ids
+class TokenizerLike(Protocol):
+    """Anything with encode/decode + optional pad/eos token ids."""
+
+    eos_token_id: int | None
+    pad_token_id: int | None
+
+    def encode(self, text: str, /) -> list[int]: ...
+    def decode(self, tokens: list[int], /) -> str: ...
 
 
 def _shift_kv_caches(kv_caches, accept_count: int) -> None:

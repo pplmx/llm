@@ -34,7 +34,7 @@ class HFTokenizer:
         from transformers import AutoTokenizer
 
         self._tokenizer: PreTrainedTokenizerBase = cast(
-            PreTrainedTokenizerBase,
+            "PreTrainedTokenizerBase",
             AutoTokenizer.from_pretrained(model_name_or_path),
         )
 

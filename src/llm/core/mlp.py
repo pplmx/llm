@@ -78,7 +78,7 @@ class MLP(nn.Module):
                         moved_norm = self.norm.to(device=device, dtype=dtype)
                         # If .to() returned a new module, keep that reference
                         self.norm = moved_norm
-                    except (RuntimeError, TypeError, AttributeError):
+                    except RuntimeError, TypeError, AttributeError:
                         logger.warning(
                             "Failed to move custom norm module to %s/%s — caller must place it",
                             device,

@@ -2,11 +2,12 @@
 
 import torch
 
+from tests.support.devices import ALL_DEVICES, cuda_usable
+
 DECODER_BATCH_SIZE = 2
 DECODER_SEQ_LEN = 10
 
-_gpu_count = torch.cuda.device_count()
-DEVICES = [f"cuda:{i}" for i in range(_gpu_count)] if _gpu_count > 0 else ["cpu"]
+DEVICES = ALL_DEVICES
 
 DEFAULT_DECODER_KWARGS: dict = {
     "vocab_size": 500,
@@ -30,21 +31,14 @@ DEFAULT_DECODER_KWARGS: dict = {
 }
 
 
-def _cuda_usable() -> bool:
-    """True only if CUDA is available *and* we can actually allocate on it."""
-    if not torch.cuda.is_available():
-        return False
-    try:
-        torch.cuda.mem_get_info()
-        return True
-    except (RuntimeError, torch.AcceleratorError):
-        return False
-
-
 def decoder_model_kwargs(**overrides) -> dict:
-    """Return a copy of default DecoderModel kwargs with optional overrides."""
+    """Return a copy of default DecoderModel kwargs with optional overrides.
+
+    Defaults to GPU when usable (prioritising GPU over CPU); falls back to
+    CPU otherwise.
+    """
     kwargs = DEFAULT_DECODER_KWARGS.copy()
-    kwargs.setdefault("device", "cuda" if _cuda_usable() else "cpu")
+    kwargs.setdefault("device", "cuda" if cuda_usable() else "cpu")
     kwargs.setdefault("dtype", torch.float32)
     kwargs.update(overrides)
     return kwargs
