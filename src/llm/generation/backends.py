@@ -116,6 +116,7 @@ class EagerGenerationBackend(GenerationBackend):
             frequency_penalty=config.frequency_penalty,
             presence_penalty=config.presence_penalty,
             logit_bias=config.logit_bias,
+            stop=config.stop,
         )
 
 
