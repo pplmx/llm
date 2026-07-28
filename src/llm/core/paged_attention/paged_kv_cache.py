@@ -1,5 +1,6 @@
 """Paged KV Cache for memory-efficient inference."""
 
+import array
 import hashlib
 from collections import OrderedDict
 
@@ -65,8 +66,12 @@ class PagedKVCache:
         self._seq_to_hash: dict[int, str] = {}
 
     def _hash_tokens(self, tokens: list[int]) -> str:
-        """Generate hash for token list."""
-        return hashlib.sha256(bytes(tokens)).hexdigest()
+        """Generate hash for token list.
+
+        Uses ``array.array('i', ...)`` so token ids outside ``[0, 256)``
+        (the norm for BPE/SentencePiece vocabularies) are handled correctly.
+        """
+        return hashlib.sha256(array.array("i", tokens).tobytes()).hexdigest()
 
     def add_prefix(self, seq_id: int, prefix_tokens: list[int], block_ids: list[int]) -> None:
         """Add prefix blocks to cache."""
