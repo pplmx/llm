@@ -108,6 +108,7 @@ async def generate_text(
                         top_p=request.top_p,
                         repetition_penalty=request.repetition_penalty,
                         frequency_penalty=request.frequency_penalty,
+                        presence_penalty=request.presence_penalty,
                         logit_bias=request.logit_bias,
                         stop=request.stop,
                     )
@@ -150,6 +151,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                     top_p=request.top_p,
                     repetition_penalty=request.repetition_penalty,
                     frequency_penalty=request.frequency_penalty,
+                    presence_penalty=request.presence_penalty,
                     logit_bias=request.logit_bias,
                     stop=request.stop,
                 )
@@ -184,6 +186,8 @@ async def batch_generate_text(
                         top_k=request.top_k,
                         top_p=request.top_p,
                         repetition_penalty=request.repetition_penalty,
+                        frequency_penalty=request.frequency_penalty,
+                        presence_penalty=request.presence_penalty,
                         logit_bias=request.logit_bias,
                         stop=request.stop,
                     )
