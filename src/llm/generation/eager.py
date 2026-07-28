@@ -263,8 +263,22 @@ def batch_generate(
 
     # Encode all prompts
     encoded_prompts = [tokenizer.encode(p) for p in prompts]
+
+    # Truncate prompts that exceed ``max_seq_len - max_new_tokens`` **before**
+    # padding and ``generated_ids`` initialisation.  Doing the truncate here
+    # (instead of slicing the padded tensor afterwards) keeps
+    # ``generated_ids`` in sync with the tokens the model actually attends
+    # to in the prefill forward pass.  Otherwise the repetition-penalty
+    # context would include token ids the model never saw.
+    max_seq_len = getattr(model, "max_seq_len", 512)
+    truncate_len = max_seq_len - max_new_tokens
+    if truncate_len > 0:
+        max_prompt_len = max(len(ids) for ids in encoded_prompts)
+        if max_prompt_len + max_new_tokens > max_seq_len:
+            encoded_prompts = [ids[-truncate_len:] if len(ids) > truncate_len else ids for ids in encoded_prompts]
+
     prompt_lengths = [len(p) for p in encoded_prompts]
-    max_prompt_len = max(prompt_lengths)
+    max_prompt_len = max(prompt_lengths) if prompt_lengths else 0
 
     # Get pad token id
     pad_id = getattr(tokenizer, "pad_token_id", 0)
@@ -277,14 +291,10 @@ def batch_generate(
 
     input_tensor = torch.tensor(padded_inputs, dtype=torch.long, device=device)
 
-    # Track generated ids per sequence
+    # Track generated ids per sequence — seeded from the (possibly truncated)
+    # encoded prompts so the repetition-penalty context matches the model's
+    # actual prefill input.
     generated_ids: list[list[int]] = [ids.copy() for ids in encoded_prompts]
-
-    # Prefill
-    max_seq_len = getattr(model, "max_seq_len", 512)
-    if input_tensor.size(1) + max_new_tokens > max_seq_len:
-        truncate_len = max_seq_len - max_new_tokens
-        input_tensor = input_tensor[:, -truncate_len:]
 
     kv_caches = create_decoder_kv_caches(model, batch_size=batch_size)
     logits, kv_caches = model(input_tensor, kv_caches=kv_caches, use_cache=True)
