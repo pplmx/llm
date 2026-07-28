@@ -138,8 +138,26 @@ class PagedKVCache:
         return self.block_manager.get_block_table(seq_id)
 
     def get(self, seq_id: int, start_idx: int, end_idx: int) -> tuple[Tensor, Tensor]:
-        """Get KV cache slice for a sequence range."""
+        """Get KV cache slice for a sequence range.
+
+        Args:
+            seq_id: Sequence identifier.
+            start_idx: Starting token index (inclusive).
+            end_idx: Ending token index (exclusive).
+
+        Raises:
+            ValueError: If ``start_idx`` or ``end_idx`` are out of bounds
+                or ``start_idx >= end_idx``.
+        """
         block_table = self.get_block_table(seq_id)
+
+        num_tokens = self.block_manager.get_num_tokens(seq_id)
+        if start_idx < 0 or end_idx > num_tokens:
+            raise ValueError(
+                f"Index range [{start_idx}:{end_idx}] out of bounds for sequence {seq_id} with {num_tokens} tokens"
+            )
+        if start_idx >= end_idx:
+            raise ValueError(f"start_idx ({start_idx}) must be less than end_idx ({end_idx})")
 
         k_seq = []
         v_seq = []

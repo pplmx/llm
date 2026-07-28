@@ -134,7 +134,12 @@ class BlockManager:
         blocks_to_add = new_num_blocks - old_num_blocks
 
         if blocks_to_add > 0:
-            # Allocate additional blocks
+            # Allocate additional blocks from each layer's allocator.
+            # All allocators start from ``deque(range(num_blocks))`` and
+            # allocate in the same order, so the block IDs are identical
+            # across layers. We only extend the tracked block table (layer
+            # 0's) since ``free_sequence`` frees the same IDs on every
+            # allocator and they are guaranteed to match.
             for i, allocator in enumerate(self.allocators):
                 new_blocks = allocator.allocate_n(blocks_to_add)
                 if i == 0:

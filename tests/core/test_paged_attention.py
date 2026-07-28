@@ -189,6 +189,25 @@ class TestBlockManager:
         assert manager.get_num_tokens(2) == 48
         assert manager.get_num_tokens(3) == 16
 
+    def test_extend_and_free_multi_layer(self):
+        """Test that blocks are properly freed after extend + free with multiple layers."""
+        manager = BlockManager(num_blocks=100, block_size=16, num_layers=3)
+
+        initial_free = manager.num_free_blocks
+        manager.allocate_sequence(seq_id=1, num_tokens=10)
+        assert manager.num_free_blocks < initial_free
+
+        # Extend to need new blocks
+        manager.extend_sequence(seq_id=1, num_new_tokens=30)
+
+        # Free and verify all blocks returned
+        manager.free_sequence(seq_id=1)
+        assert manager.num_free_blocks == initial_free
+
+        # Verify allocators are consistent
+        for alloc in manager.allocators:
+            assert alloc.num_allocated_blocks == 0
+
     def test_reset(self):
         """Test manager reset."""
         manager = BlockManager(num_blocks=100, block_size=16, num_layers=1)
@@ -522,3 +541,54 @@ class TestPagedAttentionForward:
 
         assert prefill_out.shape == decode_out.shape
         assert torch.allclose(prefill_out, decode_out, atol=1e-5)
+
+    def test_zero_seq_len(self):
+        """Edge case: seq_len == 0 should not crash (returns zeros)."""
+        batch_size = 1
+        num_heads = 4
+        head_dim = 16
+        num_kv_heads = 2
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+        v_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+
+        block_tables = torch.tensor([[0, 1]], dtype=torch.long)
+        seq_lens = torch.tensor([0])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
+        assert torch.zeros_like(output).equal(output)
+
+    def test_out_of_range_block_ids(self):
+        """Edge case: out-of-range block IDs should not crash."""
+        batch_size = 1
+        num_heads = 4
+        head_dim = 16
+        num_kv_heads = 2
+
+        q = torch.randn(batch_size, num_heads, 1, head_dim)
+        k_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+        v_cache = torch.randn(1, 4, num_kv_heads, 16, head_dim)
+
+        # Block ID 99 is out of range (>= num_blocks=4)
+        block_tables = torch.tensor([[99, 100]], dtype=torch.long)
+        seq_lens = torch.tensor([20])
+
+        output = paged_attention_forward(
+            q=q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            block_tables=block_tables,
+            seq_lens=seq_lens,
+            num_kv_heads=num_kv_heads,
+        )
+        assert output.shape == (batch_size, num_heads, 1, head_dim)
+        assert torch.zeros_like(output).equal(output)
