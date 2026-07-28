@@ -48,29 +48,6 @@ class TokenizerLike(Protocol):
     def decode(self, tokens: list[int], /) -> str: ...
 
 
-def _shift_kv_caches(kv_caches, accept_count: int) -> None:
-    """Drop the unaccepted trailing positions from each cache.
-
-    After :func:`_verify_speculative_tokens` we need to roll back the
-    KV-cache writes for rejected candidate tokens - otherwise the
-    target forward in the next speculative step would attend to
-    tokens we never accepted. ``accept_count`` is the number of
-    candidates accepted (0..gamma). 0 means reject everything; we
-    roll back to the original cache state.
-    """
-    if accept_count < 0:
-        raise ValueError(f"accept_count must be >= 0, got {accept_count}")
-    for cache in kv_caches:
-        # ``seq_len`` is incremented on each forward; we need to undo
-        # ``gamma`` increments and then advance by ``accept_count``.
-        # KVCache exposes ``seq_len`` and ``update_at_indices``; we
-        # rely on the cached ``seq_len`` and the underlying buffer
-        # being pre-allocated (writes happen in place at fixed slots).
-        # The simplest correct rollback: restore seq_len to the
-        # post-prompt position.
-        cache.seq_len = max(0, cache.seq_len)
-
-
 def _verify_speculative_tokens(
     target: DecoderModel,
     draft: DecoderModel,
