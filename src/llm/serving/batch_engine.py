@@ -12,7 +12,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from llm.core.kv_cache import KVCache
-from llm.generation.sampling import apply_repetition_penalty, sample_next_token
+from llm.generation.sampling import (
+    apply_frequency_penalty,
+    apply_logit_bias,
+    apply_presence_penalty,
+    apply_repetition_penalty,
+    sample_next_token,
+)
 from llm.models.decoder import DecoderModel
 from llm.serving.scheduler import Scheduler
 from llm.serving.schemas import GenerationRequest, RequestState, Sequence
@@ -284,6 +290,10 @@ class ContinuousBatchingEngine:
             top_k=request.top_k,
             top_p=request.top_p,
             repetition_penalty=request.repetition_penalty,
+            frequency_penalty=request.frequency_penalty,
+            presence_penalty=request.presence_penalty,
+            logit_bias=request.logit_bias,
+            stop=request.stop,
         )
         self.scheduler.add_sequence(seq)
         return req_id
@@ -292,8 +302,19 @@ class ContinuousBatchingEngine:
         self,
         request: GenerationRequest,
     ):
-        """Run a request to completion, yielding decoded text chunks."""
+        """Run a request to completion, yielding decoded text chunks.
+
+        Honours ``stop`` sequences: when the accumulated generated text
+        (post-prompt) ends with any stop string, generation halts and the
+        stop string itself is excluded from the yielded output (OpenAI
+        semantics).
+        """
         req_id = self.add_request(request)
+        from llm.generation.eager import _normalize_stop
+
+        stops = _normalize_stop(request.stop)
+        max_stop_len = max((len(s) for s in stops), default=0) if stops else 0
+        buffer = ""
         emitted = 0
         while True:
             seq = self.scheduler.get_sequence(req_id)
@@ -301,17 +322,49 @@ class ContinuousBatchingEngine:
                 break
             if seq.is_finished():
                 for token_id in seq.generated_ids[emitted:]:
-                    yield self.tokenizer.decode([token_id])
+                    text_chunk = self.tokenizer.decode([token_id])
+                    if stops and text_chunk:
+                        buffer += text_chunk
+                        for s in stops:
+                            if buffer.endswith(s):
+                                prefix = buffer[: len(buffer) - len(s)]
+                                if prefix:
+                                    yield prefix
+                                return
+                        if len(buffer) > max_stop_len:
+                            safe_len = len(buffer) - max_stop_len
+                            yield buffer[:safe_len]
+                            buffer = buffer[safe_len:]
+                    else:
+                        yield text_chunk
+                if stops and buffer:
+                    yield buffer
                 break
             self.step()
             seq = self.scheduler.get_sequence(req_id)
             if seq is None:
                 break
             for token_id in seq.generated_ids[emitted:]:
-                yield self.tokenizer.decode([token_id])
+                text_chunk = self.tokenizer.decode([token_id])
+                if stops and text_chunk:
+                    buffer += text_chunk
+                    for s in stops:
+                        if buffer.endswith(s):
+                            prefix = buffer[: len(buffer) - len(s)]
+                            if prefix:
+                                yield prefix
+                            return
+                    if len(buffer) > max_stop_len:
+                        safe_len = len(buffer) - max_stop_len
+                        yield buffer[:safe_len]
+                        buffer = buffer[safe_len:]
+                else:
+                    yield text_chunk
             emitted = len(seq.generated_ids)
             if seq.is_finished():
                 break
+        if stops and buffer:
+            yield buffer
 
     def generate_request(self, request: GenerationRequest) -> str:
         """Run a request to completion and return prompt + generated text."""
@@ -491,6 +544,12 @@ class ContinuousBatchingEngine:
                 context_ids = seq.input_ids + seq.generated_ids
                 if seq.repetition_penalty != 1.0:
                     seq_logits = apply_repetition_penalty(seq_logits, context_ids, seq.repetition_penalty)
+                if seq.frequency_penalty != 0.0:
+                    seq_logits = apply_frequency_penalty(seq_logits, context_ids, seq.frequency_penalty)
+                if seq.presence_penalty != 0.0:
+                    seq_logits = apply_presence_penalty(seq_logits, context_ids, seq.presence_penalty)
+                if seq.logit_bias:
+                    seq_logits = apply_logit_bias(seq_logits, seq.logit_bias)
                 next_token_ids.append(
                     sample_next_token(
                         seq_logits,

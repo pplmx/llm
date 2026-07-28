@@ -34,6 +34,10 @@ class Sequence:
     top_k: int | None = None
     top_p: float | None = None
     repetition_penalty: float = 1.0
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
+    logit_bias: dict[int, float] | None = None
+    stop: str | list[str] | None = None
 
     def __post_init__(self):
         self._prompt_len = len(self.input_ids)
