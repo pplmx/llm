@@ -208,6 +208,130 @@ class TestBlockManager:
         for alloc in manager.allocators:
             assert alloc.num_allocated_blocks == 0
 
+    def test_fork_sequence_multi_layer(self):
+        """Test fork with multiple layers keeps allocators consistent."""
+        manager = BlockManager(num_blocks=100, block_size=16, num_layers=3)
+
+        manager.allocate_sequence(seq_id=1, num_tokens=16)
+        forked_blocks = manager.fork_sequence(src_seq_id=1, dst_seq_id=2)
+
+        assert forked_blocks == manager.get_block_table(1)
+        assert manager.get_num_tokens(2) == 16
+
+        # Both sequences should share blocks with ref_count == 2
+        for alloc in manager.allocators:
+            assert alloc.get_ref_count(forked_blocks[0]) == 2
+
+        # Freeing one should not affect the other (ref_count goes to 1)
+        manager.free_sequence(seq_id=1)
+        for alloc in manager.allocators:
+            assert alloc.get_ref_count(forked_blocks[0]) == 1
+        assert 1 not in manager.get_all_sequence_ids()
+        assert 2 in manager.get_all_sequence_ids()
+
+        # Freeing the other should return all blocks
+        manager.free_sequence(seq_id=2)
+        assert manager.num_free_blocks == 100
+
+    def test_extend_insufficient_blocks(self):
+        """Test that extend raises when not enough blocks available."""
+        manager = BlockManager(num_blocks=2, block_size=4, num_layers=1)
+
+        manager.allocate_sequence(seq_id=1, num_tokens=4)  # 1 block
+        assert manager.num_free_blocks == 1
+
+        # Trying to extend by 5 tokens needs another block but only 1 is free
+        with pytest.raises(RuntimeError):
+            manager.extend_sequence(seq_id=1, num_new_tokens=5)
+
+    def test_free_nonexistent_is_noop(self):
+        """Test that freeing a non-existent sequence is a no-op."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+
+        # Should not raise
+        manager.free_sequence(seq_id=999)
+        assert manager.num_free_blocks == 10
+
+    def test_get_block_table_unknown_raises(self):
+        """Test that get_block_table raises for unknown sequence."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+
+        with pytest.raises(ValueError, match="does not exist"):
+            manager.get_block_table(seq_id=999)
+
+    def test_get_num_tokens_unknown_raises(self):
+        """Test that get_num_tokens raises for unknown sequence."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+
+        with pytest.raises(ValueError, match="does not exist"):
+            manager.get_num_tokens(seq_id=999)
+
+    def test_allocate_existing_sequence_raises(self):
+        """Test that allocating an existing sequence raises."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+
+        manager.allocate_sequence(seq_id=1, num_tokens=16)
+        with pytest.raises(ValueError, match="already exists"):
+            manager.allocate_sequence(seq_id=1, num_tokens=16)
+
+    def test_fork_nonexistent_source_raises(self):
+        """Test that forking from non-existent source raises."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+
+        with pytest.raises(ValueError, match="does not exist"):
+            manager.fork_sequence(src_seq_id=999, dst_seq_id=1)
+
+    def test_fork_to_existing_dest_raises(self):
+        """Test that forking to existing destination raises."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+
+        manager.allocate_sequence(seq_id=1, num_tokens=16)
+        manager.allocate_sequence(seq_id=2, num_tokens=16)
+
+        with pytest.raises(ValueError, match="already exists"):
+            manager.fork_sequence(src_seq_id=1, dst_seq_id=2)
+
+    def test_extend_nonexistent_raises(self):
+        """Test that extending a non-existent sequence raises."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+
+        with pytest.raises(ValueError, match="does not exist"):
+            manager.extend_sequence(seq_id=999, num_new_tokens=5)
+
+    def test_repr(self):
+        """Test __repr__ output."""
+        manager = BlockManager(num_blocks=100, block_size=16, num_layers=2)
+        repr_str = repr(manager)
+        assert "BlockManager" in repr_str
+        assert "block_size=16" in repr_str
+        assert "num_layers=2" in repr_str
+
+    def test_can_allocate_zero_tokens(self):
+        """Test that zero tokens can always be allocated."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+        assert manager.can_allocate_sequence(num_tokens=0)
+
+    def test_can_allocate_negative_tokens(self):
+        """Test that negative tokens can always be allocated."""
+        manager = BlockManager(num_blocks=10, block_size=16, num_layers=1)
+        assert manager.can_allocate_sequence(num_tokens=-5)
+
+    def test_reset_with_multiple_sequences(self):
+        """Test reset with multiple sequences and layers."""
+        manager = BlockManager(num_blocks=100, block_size=16, num_layers=3)
+
+        manager.allocate_sequence(seq_id=1, num_tokens=16)
+        manager.allocate_sequence(seq_id=2, num_tokens=32)
+        manager.fork_sequence(src_seq_id=1, dst_seq_id=3)
+
+        assert len(manager.get_all_sequence_ids()) == 3
+        manager.reset()
+        assert len(manager.get_all_sequence_ids()) == 0
+        assert manager.num_free_blocks == 100
+
+        for alloc in manager.allocators:
+            assert alloc.num_allocated_blocks == 0
+
     def test_reset(self):
         """Test manager reset."""
         manager = BlockManager(num_blocks=100, block_size=16, num_layers=1)
