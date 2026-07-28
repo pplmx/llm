@@ -527,3 +527,57 @@ def test_prefix_cache_disabled_returns_none():
     assert cached is None
 
     cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3], block_ids=[0, 1])
+
+
+def test_get_out_of_bounds_start():
+    """Test that get raises ValueError for negative start_idx."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+    )
+    k = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v = torch.randn(1, 4, 2, 8, device=DEVICE)
+    cache.update(seq_id=1, k_new=k, v_new=v)
+
+    with pytest.raises(ValueError, match="out of bounds"):
+        cache.get(seq_id=1, start_idx=-1, end_idx=2)
+
+
+def test_get_out_of_bounds_end():
+    """Test that get raises ValueError when end_idx exceeds num tokens."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+    )
+    k = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v = torch.randn(1, 4, 2, 8, device=DEVICE)
+    cache.update(seq_id=1, k_new=k, v_new=v)
+
+    with pytest.raises(ValueError, match="out of bounds"):
+        cache.get(seq_id=1, start_idx=0, end_idx=10)
+
+
+def test_get_start_equals_end():
+    """Test that get raises ValueError when start_idx == end_idx."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+    )
+    k = torch.randn(1, 4, 2, 8, device=DEVICE)
+    v = torch.randn(1, 4, 2, 8, device=DEVICE)
+    cache.update(seq_id=1, k_new=k, v_new=v)
+
+    with pytest.raises(ValueError, match="must be less than"):
+        cache.get(seq_id=1, start_idx=2, end_idx=2)

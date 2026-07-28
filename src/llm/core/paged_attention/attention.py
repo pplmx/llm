@@ -72,8 +72,15 @@ def paged_attention_forward(
             k_seq.append(k_cache[block_id, :, start:end, :])
             v_seq.append(v_cache[block_id, :, start:end, :])
 
-        k_full = torch.cat(k_seq, dim=1)
-        v_full = torch.cat(v_seq, dim=1)
+        if k_seq:
+            k_full = torch.cat(k_seq, dim=1)
+            v_full = torch.cat(v_seq, dim=1)
+        else:
+            # No valid blocks for this sequence (e.g. seq_len == 0 or all
+            # block IDs out of range): skip to the padding step below by
+            # starting from an empty tensor that pad_len will extend.
+            k_full = k_cache.new_zeros(num_kv_heads, 0, head_dim)
+            v_full = v_cache.new_zeros(num_kv_heads, 0, head_dim)
 
         if k_full.shape[1] < max_seq_len:
             pad_len = max_seq_len - k_full.shape[1]
