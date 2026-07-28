@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import array
 import asyncio
 import hashlib
 import threading
@@ -85,7 +86,14 @@ class SlotPrefixCache:
 
     @staticmethod
     def hash_tokens(tokens: list[int]) -> str:
-        return hashlib.sha256(bytes(tokens)).hexdigest()
+        # Token ids from real tokenizers (BPE, SentencePiece) routinely
+        # exceed 255 (vocabularies of 50 k-128 k are the norm).  ``bytes()``
+        # rejects values outside ``[0, 256)`` and would crash the prefix
+        # cache on the first request with a large vocabulary.  Use
+        # ``array.array('i', ...)`` to pack each id as a 4-byte C int —
+        # deterministic, collision-free for distinct lists, and works
+        # across the full ``int`` range.
+        return hashlib.sha256(array.array("i", tokens).tobytes()).hexdigest()
 
     def get(self, tokens: list[int]) -> tuple[int, int] | None:
         if len(tokens) < self.min_prefix_len:
