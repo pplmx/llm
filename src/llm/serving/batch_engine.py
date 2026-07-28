@@ -330,6 +330,7 @@ class ContinuousBatchingEngine:
                                 prefix = buffer[: len(buffer) - len(s)]
                                 if prefix:
                                     yield prefix
+                                seq.status = RequestState.FINISHED
                                 return
                         if len(buffer) > max_stop_len:
                             safe_len = len(buffer) - max_stop_len
@@ -353,6 +354,7 @@ class ContinuousBatchingEngine:
                             prefix = buffer[: len(buffer) - len(s)]
                             if prefix:
                                 yield prefix
+                            seq.status = RequestState.FINISHED
                             return
                     if len(buffer) > max_stop_len:
                         safe_len = len(buffer) - max_stop_len
