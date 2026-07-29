@@ -317,6 +317,56 @@ class ContinuousBatchingEngine:
         self.scheduler.add_sequence(seq)
         return req_id
 
+    def _emit_tokens(
+        self,
+        sequence: Sequence,
+        new_token_ids: list[int],
+        stops: list[str] | None,
+        max_stop_len: int,
+        buffer: str,
+    ) -> tuple[list[str], bool, str]:
+        """Decode ``new_token_ids`` into text chunks, honouring stop sequences.
+
+        Shared by both the finished-sequence drain and the post-step token
+        emission paths in :meth:`stream_request`. ``buffer`` carries over
+        any un-yielded tail from the previous call (the last
+        ``<max_stop_len>`` characters, held for cross-token-boundary suffix
+        checking). Returns a triple:
+
+        - ``chunks``: list of text chunks to yield to the caller.
+        - ``stop_hit``: True when a stop sequence matched as a suffix — the
+          caller should terminate the streaming generator.
+        - ``buffer``: remaining un-yielded buffer text for the next call.
+
+        When ``stops`` is None / empty, each decoded chunk is returned
+        directly and the buffer is returned unchanged (it stays empty).
+        """
+        chunks: list[str] = []
+        stop_hit = False
+
+        for token_id in new_token_ids:
+            text_chunk = self.tokenizer.decode([token_id])
+            if stops and text_chunk:
+                buffer += text_chunk
+                for s in stops:
+                    if buffer.endswith(s):
+                        prefix = buffer[: len(buffer) - len(s)]
+                        if prefix:
+                            chunks.append(prefix)
+                        sequence.status = RequestState.FINISHED
+                        stop_hit = True
+                        return chunks, stop_hit, ""
+                # No stop match — yield the safe prefix (everything beyond
+                # the last max_stop_len characters) and keep the tail.
+                if len(buffer) > max_stop_len:
+                    safe_len = len(buffer) - max_stop_len
+                    chunks.append(buffer[:safe_len])
+                    buffer = buffer[safe_len:]
+            else:
+                chunks.append(text_chunk)
+
+        return chunks, stop_hit, buffer
+
     def stream_request(
         self,
         request: GenerationRequest,
@@ -340,23 +390,12 @@ class ContinuousBatchingEngine:
             if seq is None:
                 break
             if seq.is_finished():
-                for token_id in seq.generated_ids[emitted:]:
-                    text_chunk = self.tokenizer.decode([token_id])
-                    if stops and text_chunk:
-                        buffer += text_chunk
-                        for s in stops:
-                            if buffer.endswith(s):
-                                prefix = buffer[: len(buffer) - len(s)]
-                                if prefix:
-                                    yield prefix
-                                seq.status = RequestState.FINISHED
-                                return
-                        if len(buffer) > max_stop_len:
-                            safe_len = len(buffer) - max_stop_len
-                            yield buffer[:safe_len]
-                            buffer = buffer[safe_len:]
-                    else:
-                        yield text_chunk
+                chunks, stop_hit, buffer = self._emit_tokens(
+                    seq, seq.generated_ids[emitted:], stops, max_stop_len, buffer
+                )
+                yield from chunks
+                if stop_hit:
+                    return
                 if stops and buffer:
                     yield buffer
                 break
@@ -364,23 +403,10 @@ class ContinuousBatchingEngine:
             seq = self.scheduler.get_sequence(req_id)
             if seq is None:
                 break
-            for token_id in seq.generated_ids[emitted:]:
-                text_chunk = self.tokenizer.decode([token_id])
-                if stops and text_chunk:
-                    buffer += text_chunk
-                    for s in stops:
-                        if buffer.endswith(s):
-                            prefix = buffer[: len(buffer) - len(s)]
-                            if prefix:
-                                yield prefix
-                            seq.status = RequestState.FINISHED
-                            return
-                    if len(buffer) > max_stop_len:
-                        safe_len = len(buffer) - max_stop_len
-                        yield buffer[:safe_len]
-                        buffer = buffer[safe_len:]
-                else:
-                    yield text_chunk
+            chunks, stop_hit, buffer = self._emit_tokens(seq, seq.generated_ids[emitted:], stops, max_stop_len, buffer)
+            yield from chunks
+            if stop_hit:
+                return
             emitted = len(seq.generated_ids)
             if seq.is_finished():
                 break

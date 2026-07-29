@@ -216,7 +216,7 @@ def test_batch_generate_repetition_penalty_context_matches_truncated_input(recor
     for call in spy.call_args_list:
         context_ids = call.args[1]  # (logits, token_ids)
         # The context must NOT include any of the truncated-away prompt tokens.
-        truncated_away = set(prompt_ids[:len(prompt_ids) - truncate_len])
+        truncated_away = set(prompt_ids[: len(prompt_ids) - truncate_len])
         context_set = set(context_ids)
         assert not (truncated_away & context_set), (
             f"apply_repetition_penalty received token_ids from the truncated-away "
