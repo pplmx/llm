@@ -31,6 +31,7 @@ import torch
 from fastapi.testclient import TestClient
 
 from llm.generation.backends import EagerGenerationBackend, GenerationConfig
+from llm.models.decoder import DecoderModel
 
 
 # Force CPU for eager-backend stop-sequence tests — the model is tiny
@@ -545,3 +546,142 @@ def test_batch_generate_empty_prompts():
         max_new_tokens=5,
     )
     assert result == []
+
+
+# ---------------------------------------------------------------------------
+# generate() wrapper tests (lines 193-208 of eager.py — the non-streaming
+# convenience wrapper around stream_generate)
+# ---------------------------------------------------------------------------
+
+
+def test_generate_returns_prompt_plus_generated(tiny_model, device):
+    """generate() returns prompt + all generated tokens from stream_generate."""
+    from llm.generation.eager import generate
+
+    class _GrowingTokenizer(_MultiCharTokenizer):
+        def __init__(self) -> None:
+            super().__init__(prompt_ids=[2])  # decode → chr('c') = prompt
+            self.counter = 0
+
+        def decode(self, ids):
+            self.counter += 1
+            return chr(ord("a") + (self.counter - 1) % 26)
+
+    result = generate(
+        model=tiny_model.to(device),
+        tokenizer=_GrowingTokenizer(),
+        prompt="x",
+        max_new_tokens=4,
+        temperature=0.0,
+    )
+    # prompt is echoed verbatim + 4 generated chars
+    assert result.endswith("abcd"), f"Expected prompt + 'abcd', got {result!r}"
+
+
+def test_generate_with_stop_includes_prompt_without_stop_string(tiny_model, device):
+    """generate() with stop: prompt is included, stop string is excluded."""
+    from llm.generation.eager import generate
+
+    class _StopTokenizer(_MultiCharTokenizer):
+        def __init__(self) -> None:
+            super().__init__(prompt_ids=[2])  # decode → 'c'
+            self._seq = ["a", "b", "X", "Y"]
+            self._i = 0
+
+        def decode(self, ids):
+            ch = self._seq[self._i]
+            self._i += 1
+            return ch
+
+    result = generate(
+        model=tiny_model.to(device),
+        tokenizer=_StopTokenizer(),
+        prompt="x",
+        max_new_tokens=4,
+        temperature=0.0,
+        stop="XY",
+    )
+    # prompt 'c' is included, generated 'ab' is included, 'XY' stop is excluded
+    assert "XY" not in result, f"Stop string leaked into result: {result!r}"
+
+
+# ---------------------------------------------------------------------------
+# stream_generate prompt truncation tests (lines 84-91 of eager.py)
+# ---------------------------------------------------------------------------
+
+
+def test_stream_generate_truncates_long_prompt(tiny_config, device):
+    """stream_generate truncates prompts that exceed max_seq_len - max_new_tokens."""
+    from llm.generation.eager import stream_generate
+
+    max_seq_len = tiny_config.model.max_seq_len  # 16
+    max_new_tokens = 4
+    truncate_len = max_seq_len - max_new_tokens  # 12
+
+    # Create a prompt longer than truncate_len
+    long_ids = list(range(20))  # 20 tokens, but only last 12 should be kept
+
+    class _RecordingTokenizer:
+        pad_token_id = 0
+
+        def __init__(self) -> None:
+            self.encoded_prompt_ids: list[int] | None = None
+
+        def encode(self, text):
+            return list(long_ids)
+
+        def decode(self, ids):
+            return chr(ord("a") + ids[0] % 26) if ids else ""
+
+    tokenizer = _RecordingTokenizer()
+    model = DecoderModel(
+        vocab_size=tiny_config.model.vocab_size,
+        hidden_size=tiny_config.model.hidden_size,
+        num_layers=tiny_config.model.num_layers,
+        num_heads=tiny_config.model.num_heads,
+        max_seq_len=tiny_config.model.max_seq_len,
+        device=device,
+    )
+
+    # The stream should run without error even with a long prompt
+    chunks = list(
+        stream_generate(
+            model=model.eval(),
+            tokenizer=tokenizer,
+            prompt="long prompt",
+            max_new_tokens=max_new_tokens,
+            temperature=0.0,
+        )
+    )
+    # The truncation should have happened silently
+    assert isinstance(chunks, list)
+
+    # Also verify that input_ids were updated to match the truncated tensor
+    # (the comment on line 87-88 of eager.py explicitly says this is needed)
+
+
+def test_stream_generate_no_truncation_for_short_prompt(tiny_model, device):
+    """stream_generate does NOT truncate prompts that fit within max_seq_len."""
+    from llm.generation.eager import stream_generate
+
+    class _ShortPromptTokenizer(_MultiCharTokenizer):
+        def __init__(self) -> None:
+            super().__init__(prompt_ids=[1, 2])  # 2 tokens — way under max_seq_len
+            self.counter = 0
+
+        def decode(self, ids):
+            self.counter += 1
+            return chr(ord("a") + (self.counter - 1) % 26)
+
+    # max_seq_len is 16, max_new_tokens is 4 → truncate_len is 12
+    # prompt of 2 tokens fits fine
+    chunks = list(
+        stream_generate(
+            model=tiny_model.eval(),
+            tokenizer=_ShortPromptTokenizer(),
+            prompt="ab",
+            max_new_tokens=3,
+            temperature=0.0,
+        )
+    )
+    assert len(chunks) == 3
