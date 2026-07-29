@@ -54,3 +54,16 @@ def test_bpe_tokenizer_empty_input():
     # but the method should not crash.
     assert tokenizer.encode("") == []
     assert tokenizer.decode([]) == ""
+
+
+@pytest.mark.quick
+def test_bpe_tokenizer_save_creates_parent_dirs(sample_text_file, tmp_path):
+    """``save`` should create the parent directory if it does not exist."""
+    tokenizer = BPETokenizer.train([sample_text_file], vocab_size=100, min_frequency=1)
+
+    nested_save_path = tmp_path / "nested" / "subdir" / "tokenizer.json"
+    tokenizer.save(str(nested_save_path))
+    assert nested_save_path.exists()
+
+    loaded = BPETokenizer.load(str(nested_save_path))
+    assert loaded.vocab_size == tokenizer.vocab_size
