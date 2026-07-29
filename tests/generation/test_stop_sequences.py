@@ -24,7 +24,7 @@ These tests cover:
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
@@ -264,6 +264,85 @@ def test_eager_backend_stop_never_matches_falls_through(tiny_model, device):
 
 
 # ---------------------------------------------------------------------------
+# batch_generate stop integration (uses real tiny model + recording tokenizer)
+# ---------------------------------------------------------------------------
+
+
+def test_batch_generate_with_stop_excludes_stop_string(tiny_model, device):  # noqa: ARG001
+    """batch_generate truncates output at the stop suffix (OpenAI semantics).
+
+    Uses a deterministic model (temperature=0) with a tokenizer whose decode
+    maps token ids to chars. We patch sample_next_token to control output.
+    """
+    from llm.generation.eager import batch_generate
+
+    # Token 4 decodes to 'D', token 5 to 'E'. With stop="DE", the first
+    # two generated tokens produce "DE" as a suffix → truncated.
+    class _StopTokenizer:
+        pad_token_id: int = 0
+
+        def encode(self, text: str) -> list[int]:
+            return [1]
+
+        def decode(self, ids: list[int]) -> str:
+            char_map = {1: "Q", 4: "D", 5: "E"}
+            return "".join(char_map.get(i, "Z") for i in ids)
+
+    call_count = [0]
+
+    def fake_sample(logits, **kwargs):  # noqa: ARG001
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return 4  # 'D'
+        return 5  # 'E'
+
+    with patch("llm.generation.eager.sample_next_token", side_effect=fake_sample):
+        result = batch_generate(
+            model=tiny_model,
+            tokenizer=_StopTokenizer(),
+            prompts=["q"],
+            max_new_tokens=5,
+            temperature=0.0,
+            stop="DE",
+        )
+
+    # Stop "DE" matches as suffix of generated_part "DE" → truncated to ""
+    # Result: prompt_text "Q" + "" = "Q"
+    assert result == ["Q"], f"Expected ['Q'] (stop 'DE' excluded), got {result}"
+
+
+def test_batch_generate_stop_never_matches_runs_full(tiny_model, device):  # noqa: ARG001
+    """When stop is never emitted, batch_generate runs all max_new_tokens."""
+    from llm.generation.eager import batch_generate
+
+    class _SimpleTokenizer:
+        pad_token_id: int = 0
+
+        def encode(self, text: str) -> list[int]:
+            return [1]
+
+        def decode(self, ids: list[int]) -> str:
+            char_map = {1: "A", 4: "B"}
+            return "".join(char_map.get(i, "Z") for i in ids)
+
+    def fake_sample(logits, **kwargs):  # noqa: ARG001
+        return 4  # Always 'B'
+
+    with patch("llm.generation.eager.sample_next_token", side_effect=fake_sample):
+        result = batch_generate(
+            model=tiny_model,
+            tokenizer=_SimpleTokenizer(),
+            prompts=["a"],
+            max_new_tokens=3,
+            temperature=0.0,
+            stop="ZZZ",  # Never matches
+        )
+
+    # No truncation: prompt_text "A" + 3 generated "B"s = "ABBB"
+    assert result == ["ABBB"], f"Expected ['ABBB'], got {result}"
+
+
+# ---------------------------------------------------------------------------
 # Router plumbing tests (mirrors test_frequency_penalty_plumbing.py pattern)
 # ---------------------------------------------------------------------------
 
@@ -385,3 +464,84 @@ def test_chat_router_no_stop_passes_none(client_with_mock):
     resp = client.post("/v1/chat/completions", json=payload, headers={"X-API-Key": "test-key"})
     assert resp.status_code == 200
     assert mock.generate.call_args.kwargs.get("stop") is None
+
+
+# ---------------------------------------------------------------------------
+# _normalize_stop unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_stop_none():
+    """None → None (zero-cost default)."""
+    from llm.generation.eager import _normalize_stop
+
+    assert _normalize_stop(None) is None
+
+
+def test_normalize_stop_empty_string():
+    """Empty string filtered out → None (avoids \".\".endswith(\"\") being True)."""
+    from llm.generation.eager import _normalize_stop
+
+    assert _normalize_stop("") is None
+
+
+def test_normalize_stop_single_string():
+    """Single string wrapped into a list."""
+    from llm.generation.eager import _normalize_stop
+
+    assert _normalize_stop("END") == ["END"]
+
+
+def test_normalize_stop_list_of_strings():
+    """List of strings returned as-is."""
+    from llm.generation.eager import _normalize_stop
+
+    assert _normalize_stop(["END", "STOP"]) == ["END", "STOP"]
+
+
+def test_normalize_stop_empty_list():
+    """Empty list → None."""
+    from llm.generation.eager import _normalize_stop
+
+    assert _normalize_stop([]) is None
+
+
+def test_normalize_stop_filters_empty_strings():
+    """Empty strings within the list are filtered out."""
+    from llm.generation.eager import _normalize_stop
+
+    assert _normalize_stop(["", "STOP", ""]) == ["STOP"]
+
+
+def test_normalize_stop_all_empty_strings():
+    """All-empty list → None."""
+    from llm.generation.eager import _normalize_stop
+
+    assert _normalize_stop(["", ""]) is None
+
+
+# ---------------------------------------------------------------------------
+# batch_generate stop-sequence tests
+# ---------------------------------------------------------------------------
+
+
+def test_batch_generate_empty_prompts():
+    """batch_generate with empty prompts list returns empty list."""
+    from llm.generation.eager import batch_generate
+
+    class _StubTokenizer:
+        pad_token_id = 0
+
+        def encode(self, text):
+            return [1]
+
+        def decode(self, ids):
+            return "".join(chr(ord("a") + i % 26) for i in ids)
+
+    result = batch_generate(
+        model=MagicMock(),
+        tokenizer=_StubTokenizer(),
+        prompts=[],
+        max_new_tokens=5,
+    )
+    assert result == []
