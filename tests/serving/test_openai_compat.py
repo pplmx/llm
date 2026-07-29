@@ -203,3 +203,28 @@ def test_chat_completions_with_penalties(client):
     response = client.post("/v1/chat/completions", json=payload)
 
     assert response.status_code == 200
+
+
+@pytest.mark.slow
+def test_chat_completions_stream_error_yields_error_chunk(client, monkeypatch):
+    """Streaming chat: if the generation service raises, the stream emits an
+    error chunk and [DONE] rather than crashing the response."""
+    from unittest.mock import MagicMock
+
+    mock = MagicMock()
+    mock.stream.side_effect = RuntimeError("model exploded")
+    mock.generate.return_value = "ok"
+    monkeypatch.setattr("llm.serving.routers.generate.generation_service", mock)
+
+    payload = {
+        "messages": [{"role": "user", "content": "hello"}],
+        "max_tokens": 10,
+        "stream": True,
+    }
+
+    with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+        assert response.status_code == 200
+        chunks = [line for line in response.iter_lines() if line and line.startswith("data: ")]
+        # Should include the error chunk and [DONE].
+        assert chunks[-1] == "data: [DONE]"
+        assert any("Error:" in chunk for chunk in chunks)
