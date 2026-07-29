@@ -206,6 +206,47 @@ def test_chat_completions_with_penalties(client):
 
 
 @pytest.mark.slow
+def test_chat_completions_runtime_error_returns_503(client, monkeypatch):
+    """Non-streaming chat: if the generation service raises RuntimeError,
+    the endpoint maps it to HTTP 503 (model unavailable)."""
+    from unittest.mock import MagicMock
+
+    mock = MagicMock()
+    mock.generate.side_effect = RuntimeError("model exploded")
+    mock.stream.return_value = iter([])
+    monkeypatch.setattr("llm.serving.routers.generate.generation_service", mock)
+
+    payload = {
+        "messages": [{"role": "user", "content": "hello"}],
+        "max_tokens": 10,
+        "stream": False,
+    }
+
+    response = client.post("/v1/chat/completions", json=payload, headers={"X-API-Key": "test-secret-key"})
+    assert response.status_code == 503
+
+
+@pytest.mark.slow
+def test_chat_completions_value_error_returns_400(client, monkeypatch):
+    """Non-streaming chat: ValueError maps to HTTP 400 (invalid request)."""
+    from unittest.mock import MagicMock
+
+    mock = MagicMock()
+    mock.generate.side_effect = ValueError("bad input")
+    mock.stream.return_value = iter([])
+    monkeypatch.setattr("llm.serving.routers.generate.generation_service", mock)
+
+    payload = {
+        "messages": [{"role": "user", "content": "hello"}],
+        "max_tokens": 10,
+        "stream": False,
+    }
+
+    response = client.post("/v1/chat/completions", json=payload, headers={"X-API-Key": "test-secret-key"})
+    assert response.status_code == 400
+
+
+@pytest.mark.slow
 def test_chat_completions_stream_error_yields_error_chunk(client, monkeypatch):
     """Streaming chat: if the generation service raises, the stream emits an
     error chunk and [DONE] rather than crashing the response."""

@@ -219,6 +219,176 @@ def test_generate_stream_error_yields_error_chunk(monkeypatch):
 
 
 @pytest.mark.slow
+def test_generate_timeout_error_returns_504(monkeypatch):
+    """Non-streaming /generate: TimeoutError maps to HTTP 504."""
+    from unittest.mock import MagicMock
+
+    import llm.serving.routers.generate as generate_module
+    from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+
+    original_key = config.api_key
+    config.api_key = "test-key"
+
+    try:
+        mock = MagicMock()
+        mock.generate.side_effect = TimeoutError("request took too long")
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+        with TestClient(app) as c:
+            c.headers["X-API-Key"] = "test-key"
+            monkeypatch.setattr(generate_module, "generation_service", mock)
+            payload = {"prompt": "hello", "max_new_tokens": 5}
+            response = c.post("/generate", json=payload)
+            assert response.status_code == 504
+    finally:
+        config.api_key = original_key
+
+
+@pytest.mark.slow
+def test_generate_runtime_error_returns_503(monkeypatch):
+    """Non-streaming /generate: RuntimeError maps to HTTP 503 (model unavailable)."""
+    from unittest.mock import MagicMock
+
+    import llm.serving.routers.generate as generate_module
+    from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+
+    original_key = config.api_key
+    config.api_key = "test-key"
+
+    try:
+        mock = MagicMock()
+        mock.generate.side_effect = RuntimeError("model crashed")
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+        with TestClient(app) as c:
+            c.headers["X-API-Key"] = "test-key"
+            monkeypatch.setattr(generate_module, "generation_service", mock)
+            payload = {"prompt": "hello", "max_new_tokens": 5}
+            response = c.post("/generate", json=payload)
+            assert response.status_code == 503
+    finally:
+        config.api_key = original_key
+
+
+@pytest.mark.slow
+def test_generate_value_error_returns_400(monkeypatch):
+    """Non-streaming /generate: ValueError maps to HTTP 400 (invalid request)."""
+    from unittest.mock import MagicMock
+
+    import llm.serving.routers.generate as generate_module
+    from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+
+    original_key = config.api_key
+    config.api_key = "test-key"
+
+    try:
+        mock = MagicMock()
+        mock.generate.side_effect = ValueError("bad input")
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+        with TestClient(app) as c:
+            c.headers["X-API-Key"] = "test-key"
+            monkeypatch.setattr(generate_module, "generation_service", mock)
+            payload = {"prompt": "hello", "max_new_tokens": 5}
+            response = c.post("/generate", json=payload)
+            assert response.status_code == 400
+    finally:
+        config.api_key = original_key
+
+
+@pytest.mark.slow
+def test_generate_unexpected_error_returns_500(monkeypatch):
+    """Non-streaming /generate: unexpected Exception maps to HTTP 500."""
+    from unittest.mock import MagicMock
+
+    import llm.serving.routers.generate as generate_module
+    from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+
+    original_key = config.api_key
+    config.api_key = "test-key"
+
+    try:
+        mock = MagicMock()
+        mock.generate.side_effect = Exception("something broke")
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+        with TestClient(app) as c:
+            c.headers["X-API-Key"] = "test-key"
+            monkeypatch.setattr(generate_module, "generation_service", mock)
+            payload = {"prompt": "hello", "max_new_tokens": 5}
+            response = c.post("/generate", json=payload)
+            assert response.status_code == 500
+    finally:
+        config.api_key = original_key
+
+
+@pytest.mark.slow
+def test_batch_generate_runtime_error_returns_503(monkeypatch):
+    """Non-streaming /batch_generate: RuntimeError maps to HTTP 503."""
+    from unittest.mock import MagicMock
+
+    import llm.serving.routers.generate as generate_module
+    from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+
+    original_key = config.api_key
+    config.api_key = "test-key"
+
+    try:
+        mock = MagicMock()
+        mock.batch_generate.side_effect = RuntimeError("model crashed")
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+        with TestClient(app) as c:
+            c.headers["X-API-Key"] = "test-key"
+            monkeypatch.setattr(generate_module, "generation_service", mock)
+            payload = {"prompts": ["hello"], "max_new_tokens": 5}
+            response = c.post("/batch_generate", json=payload)
+            assert response.status_code == 503
+    finally:
+        config.api_key = original_key
+
+
+@pytest.mark.slow
 def test_auth_enforcement(monkeypatch):
     """测试 API Key 验证."""
     from unittest.mock import MagicMock
