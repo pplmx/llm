@@ -181,6 +181,44 @@ def test_batch_generate_empty(client):
 
 
 @pytest.mark.slow
+def test_generate_stream_error_yields_error_chunk(monkeypatch):
+    """Streaming /generate: if generation raises, the stream yields an error
+    chunk rather than crashing the response."""
+    from unittest.mock import MagicMock
+
+    import llm.serving.routers.generate as generate_module
+    from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+
+    original_key = config.api_key
+    config.api_key = "test-key"
+
+    try:
+        mock = MagicMock()
+        mock.stream.side_effect = RuntimeError("stream exploded")
+        mock.generate.return_value = "ok"
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+        with TestClient(app) as c:
+            c.headers["X-API-Key"] = "test-key"
+            monkeypatch.setattr(generate_module, "generation_service", mock)
+            payload = {"prompt": "hello", "max_new_tokens": 5, "stream": True}
+            with c.stream("POST", "/generate", json=payload) as response:
+                assert response.status_code == 200
+                chunks = [line for line in response.iter_lines() if line]
+                assert any("Error:" in chunk for chunk in chunks)
+    finally:
+        config.api_key = original_key
+
+
+@pytest.mark.slow
 def test_auth_enforcement(monkeypatch):
     """测试 API Key 验证."""
     from unittest.mock import MagicMock
