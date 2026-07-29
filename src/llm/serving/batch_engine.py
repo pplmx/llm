@@ -98,7 +98,13 @@ class SlotPrefixCache:
     def get(self, tokens: list[int]) -> tuple[int, int] | None:
         if len(tokens) < self.min_prefix_len:
             return None
-        return self._entries.get(self.hash_tokens(tokens))
+        key = self.hash_tokens(tokens)
+        if key in self._entries:
+            # Promote to most-recently-used so LRU eviction evicts the
+            # correct entry.
+            self._entries.move_to_end(key)
+            return self._entries[key]
+        return None
 
     def put(self, tokens: list[int], slot: int, prefix_len: int) -> None:
         if len(tokens) < self.min_prefix_len:
@@ -117,6 +123,11 @@ class SlotAllocator:
         self.total_slots = total_slots
         self.free_slots: set[int] = set(range(total_slots))
         self.seq_to_slot: dict[str, int] = {}  # request_id -> slot_id
+
+    @property
+    def num_free(self) -> int:
+        """Number of available slots."""
+        return len(self.free_slots)
 
     def allocate(self, request_id: str) -> int:
         if request_id in self.seq_to_slot:
