@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 import uuid
@@ -36,6 +37,13 @@ from llm.serving.schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
+
+
+@contextlib.asynccontextmanager
+async def _null_cm():
+    """Async no-op context manager for when the semaphore is not configured."""
+    yield
+
 
 config: ServingConfig | None = None
 # Bound during lifespan startup so the chat endpoint shares the same
@@ -101,8 +109,9 @@ async def chat_completions(
     with timer as t:
         try:
             async with asyncio.timeout(config_.request_timeout):
-                with metrics.track_inflight():
-                    generated_text = await run_in_threadpool(
+                async with inference_semaphore or _null_cm():
+                    with metrics.track_inflight():
+                        generated_text = await run_in_threadpool(
                         _sync_generate,
                         prompt=prompt,
                         max_new_tokens=request.max_tokens,
@@ -182,33 +191,34 @@ async def _chat_stream_generator(
             )
             yield f"data: {first_chunk.model_dump_json()}\n\n"
 
-            with metrics.track_inflight():
-                iterator = _sync_stream_generate(
-                    prompt=prompt,
-                    max_new_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                    top_p=request.top_p,
-                    repetition_penalty=repetition_penalty,
-                    frequency_penalty=frequency_penalty,
-                    presence_penalty=presence_penalty,
-                    logit_bias=logit_bias,
-                    stop=request.stop,
-                )
-
-                prompt_sent = False
-                async for token in iterate_in_threadpool(iterator):
-                    if not prompt_sent and prompt.startswith(token):
-                        continue
-                    prompt_sent = True
-                    token_count += 1
-
-                    chunk = ChatCompletionChunk(
-                        id=completion_id,
-                        created=created,
-                        model=request.model,
-                        choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=token))],
+            async with inference_semaphore or _null_cm():
+                with metrics.track_inflight():
+                    iterator = _sync_stream_generate(
+                        prompt=prompt,
+                        max_new_tokens=request.max_tokens,
+                        temperature=request.temperature,
+                        top_p=request.top_p,
+                        repetition_penalty=repetition_penalty,
+                        frequency_penalty=frequency_penalty,
+                        presence_penalty=presence_penalty,
+                        logit_bias=logit_bias,
+                        stop=request.stop,
                     )
-                    yield f"data: {chunk.model_dump_json()}\n\n"
+
+                    prompt_sent = False
+                    async for token in iterate_in_threadpool(iterator):
+                        if not prompt_sent and prompt.startswith(token):
+                            continue
+                        prompt_sent = True
+                        token_count += 1
+
+                        chunk = ChatCompletionChunk(
+                            id=completion_id,
+                            created=created,
+                            model=request.model,
+                            choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=token))],
+                        )
+                        yield f"data: {chunk.model_dump_json()}\n\n"
 
             # Final chunk with finish_reason.
             final_chunk = ChatCompletionChunk(

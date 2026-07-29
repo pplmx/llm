@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
@@ -25,6 +26,18 @@ from llm.serving.schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["generate"])
+
+
+@contextlib.asynccontextmanager
+async def _null_cm():
+    """Async no-op context manager for when the semaphore is not configured.
+
+    Used as a fallback in request handlers so the ``async with`` block is
+    always valid even if ``configure()`` was never called (which would be
+    a programming error caught by ``_require_generation_service`` later).
+    """
+    yield
+
 
 # Module-level references are set by ``llm.serving.api`` during lifespan
 # startup. Keeping them here (instead of in the router closure) preserves
@@ -98,20 +111,21 @@ async def generate_text(
     with timer as t:
         try:
             async with asyncio.timeout(config_.request_timeout):
-                with metrics.track_inflight():
-                    generated_text = await run_in_threadpool(
-                        _sync_generate,
-                        prompt=request.prompt,
-                        max_new_tokens=request.max_new_tokens,
-                        temperature=request.temperature,
-                        top_k=request.top_k,
-                        top_p=request.top_p,
-                        repetition_penalty=request.repetition_penalty,
-                        frequency_penalty=request.frequency_penalty,
-                        presence_penalty=request.presence_penalty,
-                        logit_bias=request.logit_bias,
-                        stop=request.stop,
-                    )
+                async with inference_semaphore or _null_cm():
+                    with metrics.track_inflight():
+                        generated_text = await run_in_threadpool(
+                            _sync_generate,
+                            prompt=request.prompt,
+                            max_new_tokens=request.max_new_tokens,
+                            temperature=request.temperature,
+                            top_k=request.top_k,
+                            top_p=request.top_p,
+                            repetition_penalty=request.repetition_penalty,
+                            frequency_penalty=request.frequency_penalty,
+                            presence_penalty=request.presence_penalty,
+                            logit_bias=request.logit_bias,
+                            stop=request.stop,
+                        )
         except TimeoutError as exc:
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc
@@ -177,11 +191,12 @@ async def batch_generate_text(
     with timer as t:
         try:
             async with asyncio.timeout(config_.request_timeout):
-                with metrics.track_inflight():
-                    results = await run_in_threadpool(
-                        _sync_batch_generate,
-                        prompts=request.prompts,
-                        max_new_tokens=request.max_new_tokens,
+                async with inference_semaphore or _null_cm():
+                    with metrics.track_inflight():
+                        results = await run_in_threadpool(
+                            _sync_batch_generate,
+                            prompts=request.prompts,
+                            max_new_tokens=request.max_new_tokens,
                         temperature=request.temperature,
                         top_k=request.top_k,
                         top_p=request.top_p,
