@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from string import printable
 
 import pytest
