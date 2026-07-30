@@ -13,7 +13,7 @@
 - **参数解析**: 使用 `typer` 解析命令行参数, 特别是 `--task` 参数, 用于选择要执行的训练任务.
 - **配置加载**: 从命令行参数和环境变量中加载配置.
 - **分布式训练管理**: 初始化 `DistributedManager`, 用于处理 DDP 的设置和清理.
-- **任务分派**: 根据 `--task` 参数, 从 `AVAILABLE_TASKS` 字典中选择并实例化相应的任务类.
+- **任务分派**: 根据 `--task` 参数, 从 `TASK_REGISTRY` 中选择并实例化相应的任务类.
 - **数据模块实例化**: 创建数据模块(例如, `SyntheticDataModule`)来处理数据的准备和加载.
 - **回调实例化**: 创建一系列回调, 如 `MetricsLogger`、`TensorBoardLogger` 和 `LRSchedulerCallback`.
 - **`train_worker` 函数**: 这是每个分布式数据并行 (DDP) 进程的实际入口点. 它负责在每个进程中实例化数据模块、任务、回调和训练引擎, 并启动训练循环.

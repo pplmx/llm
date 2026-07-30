@@ -1,5 +1,7 @@
 # 预训练教程
 
+> **教程分工**：本教程专注**预训练**（`llm-train stream_lm`）。微调（SFT / DPO）见 [02-finetuning.md](./02-finetuning.md)，推理部署见 [03-inference.md](./03-inference.md)。模型评估不在本教程范围，见 [Guides/评估](../guides/evaluation.md)。
+
 从零开始训练一个小型的语言模型，覆盖**主流路径** (`llm-train stream_lm`)。教程里的所有命令都和 `llm-train` CLI、YAML 配置、预置数据源 (`data_source`) 对齐——而不是单独的 demo 脚本。
 
 ---
@@ -59,6 +61,8 @@ apply_to_config(cfg, C4_PRESET)
 | 快速冒烟 | 1KB - 100KB | `data_source: local` + 文本文件 |
 | 学习演示 | 1MB - 10MB | `data_source: hf` + 切小流的 `c4` 子集 |
 | 实际训练 | 100GB+ | `data_source: hf` + C4 / The Pile / RedPajama |
+
+> **提示**：生产规模数据集建议使用 DVC（`dvc init && dvc add data/`）进行版本追踪，配合 `dvc.yaml` pipeline 确保数据可复现。详见 [数据管道指南](../guides/data.md)。
 
 ---
 
@@ -316,6 +320,10 @@ KeyError: "Character 'X' not found in tokenizer vocabulary"
 - 磁盘满
 - 进程被 kill 在 `.tmp` 阶段（`.tmp` 文件残留，可删）
 
+### 6.5 训练后评估
+
+预训练完成后，使用 [Guides/评估](../guides/evaluation.md) 中的 lm-eval-harness 评估模型在标准 benchmark（如 hellaswag、lambada）上的困惑度和准确率，以验证预训练效果。
+
 ---
 
 ## 7. 进阶：从教程到生产
@@ -343,3 +351,4 @@ KeyError: "Character 'X' not found in tokenizer vocabulary"
 | LoRA / QLoRA 微调 | [Tutorials/微调](./02-finetuning.md) |
 | 推理优化（Paged Attention / Continuous Batching） | [Guides/推理](../guides/inference.md) |
 | 模型评估（lm-eval-harness / Perplexity） | [Guides/评估](../guides/evaluation.md) |
+| 数据管道指南 | [Guides/数据管道](../guides/data.md) |

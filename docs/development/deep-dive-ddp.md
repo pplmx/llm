@@ -37,12 +37,12 @@
 - **为什么需要它？** `DistributedDataSampler` 需要确保在每个 `epoch` 中, 数据的分片方式都是不同的, 否则模型每个 `epoch` 都会看到完全相同的数据子集, 这会损害模型的泛化能力. 通过调用 `sampler.set_epoch(epoch)`, 我们改变了 `sampler` 内部的随机种子, 从而保证了每个 `epoch` 都有一个新的、随机的数据排列和分片方式.
 - **调用时机**: 必须在每个 `epoch` 开始时, 创建 `DataLoader` 之前调用.
 
-#### `find_unused_parameters=False`
+### `find_unused_parameters=False`
 
 - **这是什么？** 在 `DDP(model, find_unused_parameters=False)` 中, 这个参数告诉 DDP 不要去检查模型中哪些参数在前向传播中没有被使用.
 - **为什么设置为 `False`？** 检查未使用的参数会带来一些开销. 如果您的模型所有参数都在 `forward` 中被使用(这是绝大多数情况), 将此项设置为 `False` 可以略微提高性能. 如果您的模型中有一些参数只在特定的代码路径下被使用(例如, 在 `if` 语句中), 您可能需要将其设置为 `True`, 否则 DDP 在反向传播时可能会因为找不到这些参数的梯度而报错.
 
-#### `DistributedManager.reduce_mean(tensor)`
+### `DistributedManager.reduce_mean(tensor)`
 
 - **这是什么？** 这是一个辅助函数, 用于在所有进程中计算一个张量的平均值. 例如, 在验证结束时, 每个进程都计算出了其本地数据分片上的平均损失. 为了得到全局的平均验证损失, 我们需要调用 `reduce_mean`. 它首先使用 `dist.all_reduce` 将所有进程的损失相加, 然后除以 `world_size`.
 

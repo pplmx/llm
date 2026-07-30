@@ -1,6 +1,6 @@
 # LLM 项目完整生命周期路线图
 
-**最后更新**: 2026-06-10
+**最后更新**: 2026-07-30
 
 这是一个动态更新的路线图, 用于追踪整个项目的进展. 项目采用迭代式开发, 每个阶段完成后都会有可用的功能增量.
 
@@ -9,19 +9,22 @@
 ✅ **已完成的核心能力**:
 
 - 现代化 Decoder-only Transformer 架构 (GQA, SwiGLU, MoE)
-- 完善的分布式训练框架 (DDP, AMP)
-- 高质量工程实践 (608 测试用例全部通过)
+- 完善的分布式训练框架 (DDP, AMP, FSDP)
+- 高质量工程实践 (1900+ 测试用例全部通过)
 - 插件内核架构 (`runtime/` registries + setuptools entry points)
-- 基础推理能力 (KV Cache, Top-k/Top-p 采样, GenerationBackend registry)
+- 完整推理能力 (KV Cache, Top-k/Top-p 采样, 三种 GenerationBackend — eager/batched/speculative)
 - 完整的模型评估框架 (Perplexity, Accuracy, F1, ROUGE, BLEU, chrF, lm-eval)
-
-- 流式预训练骨架 (`StreamDataModule`, `SOURCE_REGISTRY`, checkpoint resume)
-- safetensors 权重加载 (`compat/hf_loader`)
-
-🚀 **当前重点 (P0)**: 预训练 productization — 大数据集 preset、dedup 工具、主训练路径文档
+- 流式预训练骨架 + C4/The Pile/RedPajama 预设 + dedup 工具 + DVC 数据版本控制
+- safetensors 权重加载/保存 + HuggingFace Hub 发布 (`compat/hf_loader` / `hf_publisher`)
+- 8 种 PEFT 方法全支持 (LoRA/QLoRA/AdaLoRA/Prefix Tuning/IA³/BitFit/Adapter/Pfeiffer) + `PEFT_REGISTRY` + 服务化集成
+- 完整模型导出 (ONNX + TorchScript + Export Registry)
+- Checkpoint 格式统一 (ADR-006 + `llm-migrate-ckpt` CLI)
+- GPTQ 量化 + 混合精度量化 (CLI `llm-quantize`)
+- Paged Attention 全链路 + Prefix Caching + Continuous Batching
+- 性能优化: `torch.compile`, KV Cache 优化, Gradient Checkpointing
 
 > **架构边界** (详见 [docs/reference/architecture.md](docs/reference/architecture.md)):
-> - `attn_impl=mla` 支持 KV cache (linear + paged), 见 [Tier 3 #31 ticket](docs/audits/2026-07-12-tickets/31-mla-kv-cache.md)
+> - `attn_impl=mla` 支持 KV cache (linear + paged)
 > - 当前 MLA 是 placeholder 实现 (learnable latent queries + uniform-mean 输出); DeepSeek-V2-style latent-compressed K, V 是单独的 follow-up
 > - Paged Attention serving 全链路已实现 ([ADR-004](docs/adr/004-paged-attention-serving.md))
 > - 多模态 / 3D 并行尚无 registry 抽象, 需先补设计再开发
@@ -40,9 +43,9 @@
 
 ## 下一步探索方向 🔭
 
-> 优先级: **P0** 预训练 preset → **P1** FSDP 验证 / export registry / Hub 发布 → **P2** 量化深化 / 多模态 spike → **P3** DeepSpeed / PP / 3D
+> 优先级: **P1** 量化深化 / 多模态 spike → **P2** DeepSpeed / PP / 3D → **P3** 前沿技术探索
 
-### 1. 预训练完善 (P0)
+### 1. 预训练完善 ✅
 - [x] 流式数据加载骨架 (`StreamingTextDataset`, `StreamingTextDataModule`, `HFStreamTextSource`)
 - [x] 流式 checkpoint resume (`CheckpointContributor` + `stream_data_state`)
 - [x] C4 / The Pile / RedPajama 预设配置 (CLI/YAML 模板, 复用 `SOURCE_REGISTRY`)
@@ -50,7 +53,7 @@
 - [x] 主路径预训练教程与 e2e (Main Path #1 切片: `configs/streaming_local_demo.yaml` + `configs/streaming_c4.yaml` + 教程重写 + 6 e2e tests, 对齐 `llm-train stream_lm`)
 - [x] 数据版本控制 (DVC, P0 预训练 productization 最后一项: `src/llm/data/dvc.py` 懒加载 helper + `dvc.yaml` 模板 + `.dvcignore` + 23 unit tests, 配合 `source_fingerprint()` 计算 stable hash, 可选 `[dvc]` 依赖组, 无 dvc 时优雅降级)
 
-### 2. 生态系统集成 (P1, 阶段十四)
+### 2. 生态系统集成 ✅
 - [x] HuggingFace 权重加载 (`from_pretrained`)
 - [x] safetensors **加载** (`compat/hf_loader`)
 - [x] ONNX 导出
@@ -68,7 +71,7 @@
 - [ ] 图像-文本对齐模块
 - [ ] Visual Instruction Tuning
 
-### 4. 高效微调 (P2)
+### 4. 高效微调 ✅
 - [x] QLoRA (NF4 量化 + LoRA)
 - [x] AdaLoRA (SVD 形式 + 正交正则化 + 自适应剪枝, T3 #40 基础切片 + T3 #41 剪枝切片 + T3 #42 trainer 集成: EMA tracker + pruning callback + SFT/DPO 接入)
 - [x] IA³ (T-Few 乘性 PEFT 基础切片: `IA3Linear` 包装器 + `apply_ia3` / `merge_ia3` / `unmerge_ia3` / `get_ia3_parameters` / `count_ia3_parameters` / `disable_ia3` / `enable_ia3` 模块级助手, 每层 `out_features` 训练参数, init 为 ones 保持恒等变换; trainer 集成切片 `TrainingConfig` 三个 opt-in 字段 `use_ia3` / `ia3_init_scale` / `ia3_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_ia3` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型))
@@ -81,8 +84,8 @@
 - [x] **PEFT adapter-checkpoint trainer integration** (T2 PEFT #48 切片完成: `PEFTAdapterCheckpointCallback` 自动随 `build_callbacks()` 注册, `on_train_end` 调 `save_peft` 写 sidecar, 默认路径 `{checkpoint_dir}/peft_adapter_{method}.bin` 避免方法切换时覆盖; `TrainingConfig.peft_save_path` 字段允许显式覆盖; 失败 swallow + log 不影响主 checkpoint; 与 AdaLoRA pruning callback 共存; 回归测试同步更新 — 旧 `build_callbacks() == []` 预期改为 `not any(isinstance(c, AdaLoRAPruningCallback))`, 原意图 (registry path 不自动连 AdaLoRA pruning) 保留)
 - [x] **PEFT serving integration** (T2 PEFT #49 切片完成: `ServingConfig` 新增四个 PEFT 字段 `peft_method` / `peft_kwargs` / `peft_adapter_path` / `peft_merge`, Pydantic validator 拒绝未知方法名 + 跨字段一致性 (无 method 不能设 adapter_path/kwargs; bitfit/qlora/prefix_tuning 不允许 merge); 新 `src/llm/serving/peft_adapter.py` 暴露 `load_peft_into_model` / `merge_peft_into_model` 两个 helper (thin wrappers over registry); `load_model_and_tokenizer` 在 base ckpt 后应用 PEFT — 训练 → 推理闭环打通, 用户训完直接 `llm-serve` + env var 即可用 adapter 服务化, 无需手动 wrap + load_peft; 28 unit tests + e2e tests 覆盖 LoRA / IA³ / BitFit / Adapter / Pfeiffer 全 8 方法 round-trip + merge + 跨字段校验 + base-only 回归保护 + "训练→保存→服务" 端到端)
 
-### 5. 高级分布式训练 (P1–P3)
-- [~] FSDP — `parallel_strategy=fsdp` + `wrap_model_for_training()` 已接线, 待 e2e 与文档
+### 5. 高级分布式训练 🔄
+- [x] FSDP — `parallel_strategy=fsdp` + `wrap_model_for_training()` 已实现
 - [ ] Pipeline Parallelism
 - [ ] DeepSpeed ZeRO 集成
 
@@ -101,9 +104,9 @@
 
 ---
 
-## 阶段二: 数据工程 🔄
+## 阶段二: 数据工程 ✅
 
-> **状态**: 流式骨架已完成, preset/工具待补 | **最后更新**: 2026-06-10
+> **状态**: 已完成 | **最后更新**: 2026-07-30
 
 - [x] **数据加载**: `src/llm/data/datasets/text.py` 用于读取和初步处理数据
 - [x] **数据抽象**: `DataModule` (`data/base.py`) 封装数据集和数据加载器；`datasets/` 与 `modules/` 分层
@@ -112,8 +115,7 @@
     - [x] `SOURCE_REGISTRY` (`local` / `hf` / `dedup_local` / `dedup_hf` entry points)
     - [x] C4 / The Pile / RedPajama 预设配置
     - [x] 数据质量过滤和去重工具 (`DedupTextSource`, T3 #39)
-- [ ] **数据版本控制** ⏭️ *下一阶段*
-    - [ ] 引入 `DVC` 或类似工具, 对数据集和预处理脚本进行版本管理
+    - [x] **数据版本控制**: `DVC` 懒加载 helper + `dvc.yaml` 模板 + `.dvcignore` (`src/llm/data/dvc.py`)
 
 ---
 
@@ -154,8 +156,8 @@
     - [x] **混合精度**: 实现自动 BF16/FP16 检测及 `torch.cuda.amp` 支持
     - [x] **检查点系统**: 实现 CheckpointManager 支持训练中断恢复
     - [x] **监控与日志**: TensorBoard 集成 (`TensorBoardCallback`)
-- [ ] **训练策略** ⏭️ *进行中*
-    - [~] **预训练 (Pre-training)**: 流式骨架已通, 待大数据 preset + 主路径文档
+- [x] **训练策略** ✅
+    - [x] **预训练 (Pre-training)**: 流式骨架 + C4/The Pile/RedPajama 预设 + 主路径文档已完成
     - [x] **指令微调 (Instruction Fine-tuning)**: SFT task 已实现 (`training/tasks/sft_task.py`)
 
 ---
@@ -202,9 +204,9 @@
 
 ## 阶段八: 测试与质量保证 ✅
 
-> **状态**: 持续进行 | **最后更新**: 2026-06-10
+> **状态**: 持续进行 | **最后更新**: 2026-07-30
 
-- [x] **单元测试**: 核心模块覆盖, 目前 608 个测试用例全部通过
+- [x] **单元测试**: 核心模块覆盖, 目前 1900+ 个测试用例全部通过
 - [x] **测试架构**: `tests/support/` 共享层 + 分层 conftest (见 `AGENTS.md`)
 - [x] **代码质量**: 全面应用 `ruff` 规范并修复所有 lint 问题
 - [x] **集成测试**:
@@ -215,7 +217,7 @@
 
 ## 阶段九: 文档与社区 🔄
 
-> **状态**: 持续完善 | **最后更新**: 2026-01-08
+> **状态**: 持续完善 | **最后更新**: 2026-07-30
 
 - [x] **基础文档**: `README`, `CONTRIBUTING` 等已存在
 - [x] **训练框架文档**: 8 个详细的训练框架文档 (components, flow, guides 等)
@@ -229,7 +231,7 @@
 
 ## 阶段十: 性能优化与加速 🚀
 
-> **优先级**: P1 (高) | **状态**: 进行中 | **预计时间**: 2025 Q2-Q3 | **预计工作量**: 2-3 个月
+> **优先级**: P1 (高) | **状态**: 基本完成 | **预计时间**: 2025 Q2-Q3 | **预计工作量**: 2-3 个月
 
 ### 目标
 
@@ -277,7 +279,7 @@
 
 ## 阶段十一: 模型对齐与 RLHF 🚀
 
-> **优先级**: P1 (高) | **状态**: 进行中 | **预计时间**: 2025 Q3-Q4 | **预计工作量**: 3-4 个月
+> **优先级**: P1 (基本完成) | **状态**: 基本完成 | **预计时间**: 2025 Q3-Q4 | **预计工作量**: 3-4 个月
 
 ### 目标
 
@@ -361,7 +363,7 @@
 
 ## 阶段十三: 量化与压缩 🚀
 
-> **优先级**: P2 (中) | **状态**: 进行中 | **预计时间**: 2025 Q4-2026 Q2 | **预计工作量**: 3-5 个月
+> **优先级**: P2 (基本完成) | **状态**: 基本完成 | **预计时间**: 2025 Q4-2026 Q2 | **预计工作量**: 3-5 个月
 
 ### 目标
 
@@ -402,9 +404,9 @@
 
 ---
 
-## 阶段十四: 生态系统集成 🚀
+## 阶段十四: 生态系统集成 ✅
 
-> **优先级**: P2 (高) | **状态**: 进行中 | **预计时间**: 2025 Q3-2026 Q2 | **预计工作量**: 4-6 个月
+> **优先级**: P1 (已完成) | **状态**: 基本完成 | **预计时间**: 2025 Q3-2026 Q2 | **预计工作量**: 4-6 个月
 
 ### 目标
 
@@ -424,14 +426,14 @@
 - [x] 支持 HuggingFace 权重转换
 - [x] 实现模型架构检测和映射
 - [x] safetensors **加载** (`compat/hf_loader`)
-- [ ] safetensors **保存** / 训练 checkpoint 统一格式
-- [ ] 发布模型到 HuggingFace Hub
+- [x] safetensors **保存** (`compat/hf_publisher.save_pretrained`)
+- [x] 发布模型到 HuggingFace Hub (`compat/hf_publisher.push_to_hub`)
 
 #### 14.2 模型导出
 
 - [x] 实现 ONNX 导出 (`export/onnx.py`)
-- [ ] Export registry (统一 ONNX / TorchScript / 未来格式)
-- [ ] 实现 TorchScript 导出
+- [x] Export registry (统一 ONNX / TorchScript / 未来格式, `export/registry.py`)
+- [x] 实现 TorchScript 导出 (`export/torchscript.py`)
 - [ ] 支持 TensorRT 优化
 - [ ] 探索 Core ML 支持 (iOS 部署)
 
@@ -492,7 +494,7 @@
 
 #### 15.5 高级分布式训练
 
-- [~] FSDP — config + `wrap_model_for_training()` 已接线, 待 e2e 验证与 tuning
+- [x] FSDP — config + `wrap_model_for_training()` 已实现
 - [ ] Pipeline Parallelism
 - [ ] 集成 DeepSpeed ZeRO (Stage 2/3)
 - [ ] 探索 3D Parallelism (DP + PP + TP)
@@ -534,6 +536,7 @@
 
 ## 版本历史
 
+- **v0.0.7** (2026-07-30): PEFT 8 方法全完成 + registry + 服务化集成; FSDP 完成; Export registry + ONNX + TorchScript 完成; HF Hub 发布完成; 混合精度量化 + GPTQ CLI; DVC 数据版本控制; Speculative Decoding; 预训练 preset/dedup/DVC 闭环; 测试增长至 1900+
 - **v0.0.6** (2026-06-10): 路线图与实现对齐 (流式/safetensors/FSDP/Paged Attn partial), 测试 608, `tests/support/` 架构
 - **v0.0.5** (2026-03-26): Paged Attention, Prefix Caching, PPO Trainer, PTQ, Checkpoint System, HuggingFace 兼容性, ONNX 导出, Priority Scheduler, TensorBoard
 - **v0.0.4** (2026-01-07): Gradient Checkpointing, E2E Pipeline, OpenAI Chat API, Batch Inference, 测试数 337

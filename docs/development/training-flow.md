@@ -7,7 +7,7 @@
 整个训练过程可以分为以下几个主要阶段:
 
 1. **启动入口 (`train.py`)**
-    - 用户在命令行执行 `python -m llm.training.train --task <task_name> [other_args]`.
+    - 用户在命令行执行 `llm-train --task <task_name> [other_args]` 或 `python -m llm.training.train --task <task_name>`.推荐使用 `llm-train` CLI.
     - Python 解释器执行 `train.py` 中的 `main()` 函数.
 
 2. **主进程初始化 (`main` 函数)**

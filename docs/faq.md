@@ -163,6 +163,128 @@ SwiGLU 是一种结合 Swish 激活和门控线性单元的激活函数, 相比�
 
 详见: [Fine-Tuning Guide](guides/finetuning.md)
 
+---
+
+## 流式训练 (Streaming Pretraining)
+
+### Q: 什么是流式预训练（stream_lm）？
+
+A: 流式预训练使用 StreamingTextDataModule 和 HFStreamTextSource 直接从 HuggingFace 数据集流式读取数据，无需下载到本地。适合大规模预训练场景。
+
+### Q: 如何使用流式预训练？
+
+A: 使用 `uv run llm-train stream_lm --config configs/streaming_c4.yaml`。详情见预训练教程。
+
+### Q: 流式训练的 checkpoint 如何恢复？
+
+A: 流式 checkpoint 除了常规的 model/optimizer/scheduler 状态外，还保存了 `extra_state["stream_data"]` 中的 data cursor，恢复时自动接续上次的 line_index，不会重复读或漏读。
+
+---
+
+## 量化 (Quantization)
+
+### Q: 模型量化支持哪些方法？
+
+A: 目前支持 GPTQ（Frantar 2022）Hessian-aware 4/8-bit PTQ，通过 `llm-quantize gptq` CLI 使用。
+
+### Q: 如何量化一个训练好的模型？
+
+A: 使用 `llm-quantize gptq --model ckpt.pt --output ckpt-int4.pt --calib-data texts.txt --tokenizer gpt2 --bits 4`。
+
+---
+
+## 评估 (Evaluation)
+
+### Q: 如何评估训练好的模型？
+
+A: 项目集成了 lm-evaluation-harness，支持 MMLU、ARC、WikiText 等标准 benchmark。使用 `uv sync --group eval` 安装依赖后，通过 Python API 运行。
+
+### Q: 如何快速在 MMLU 上评估模型？
+
+A:
+```python
+from llm.evaluation.harness.lm_eval_lm import LlamaLmEvalLM
+from llm.evaluation.harness.adapter import LmEvalAdapter
+# ... 加载模型和 tokenizer ...
+lm = LlamaLmEvalLM(model, tokenizer, batch_size=8)
+raw = LmEvalAdapter().run_preset("mmlu", lm)
+print(LmEvalAdapter.summarize(raw))
+```
+
+---
+
+## 导出 (Export)
+
+### Q: 模型支持哪些导出格式？
+
+A: 支持 ONNX 和 TorchScript 两种导出格式，通过 EXPORT_REGISTRY 统一调度。
+
+### Q: 如何将模型发布到 HuggingFace Hub？
+
+A:
+```python
+from llm.compat.hf_publisher import push_to_hub
+push_to_hub(model, repo_id="username/my-model")
+```
+
+---
+
+## 推理优化
+
+### Q: 什么是 Paged Attention？
+
+A: Paged Attention 将 KV cache 分成固定大小的 block（page），通过 block allocator 管理，减少显存碎片。在 serving 配置中启用 `LLM_SERVING_USE_PAGED_ATTENTION=true`。
+
+### Q: 什么是 Prefix Cache？
+
+A: Prefix Cache 缓存 system prompt 的 KV cache 结果。当多个请求共享相同的 system prompt 时，可以跳过重复计算。在 serving 中启用 `LLM_SERVING_ENABLE_PREFIX_CACHE=true`。
+
+### Q: 什么是 Speculative Decoding？
+
+A: Speculative Decoding 使用一个小 draft 模型快速生成候选 token，大 target 模型在一个 forward pass 中验证并修正。可在高延迟场景下获得 2-3x 吞吐提升。
+
+---
+
+## PEFT 方法
+
+### Q: 框架支持哪些 PEFT 方法？
+
+A: 内置 8 种 PEFT 方法，全部通过统一的 PEFT_REGISTRY 管理：
+
+| 方法 | 类型 | 参数占比 | 适用场景 |
+|------|------|---------|---------|
+| LoRA | 低秩适配 | ~10% | 通用 PEFT，效果与效率平衡 |
+| QLoRA | 量化 LoRA | ~5% | 显存严重受限，大模型 |
+| AdaLoRA | 自适应 LoRA | ~10% | 自适应秩 + 剪枝 |
+| IA³ | 乘性适配 | ~0.01% | 极轻量，多任务 |
+| BitFit | 偏置微调 | ~0.1% | 最轻量，快速实验 |
+| Adapter | 瓶颈适配器 | ~5% | 经典 PEFT |
+| Pfeiffer Adapter | FFN Adapter | ~2.5% | Houlsby 变体，参数更少 |
+| Prefix Tuning | 前缀微调 | ~1% | 指令微调 |
+
+通过 `training.peft_method` 配置，同一份 YAML 格式切换。
+
+### Q: PEFT adapter 如何保存和加载？
+
+A:
+```python
+# 保存 adapter（不保存 base 权重）
+from llm.core.peft.checkpoint import save_peft
+save_peft(model, "adapter.bin", method="lora")
+
+# 加载 adapter
+from llm.core.peft.checkpoint import load_peft
+load_peft(model, "adapter.bin")
+```
+
+训练中自动通过 PEFTAdapterCheckpointCallback 保存，`peft_save_path` 配置路径即可。
+
+### Q: PEFT adapter 如何挂载到推理服务？
+
+A: 通过环境变量：`LLM_SERVING_PEFT_METHOD=lora LLM_SERVING_PEFT_ADAPTER_PATH=./adapter.bin` 即可在 llm-serve 启动时自动加载 adapter。
+
+---
+
 ## 开发工具
 
 ### Q: 为什么使用 `ty` 而不是 `mypy`？
