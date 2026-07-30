@@ -32,7 +32,7 @@
 - **[指南: 扩展训练框架 (`guide-extending.md`)](./guide-extending.md)**
     - 通过具体的“食谱”示例, 学习如何添加新的任务、回调、调度器等, 以扩展框架的功能.
 
-- **[指南: 故障排查 (`troubleshooting.md`)](./troubleshooting.md)**
+- **[指南: 故障排查 (`troubleshooting.md`)](../troubleshooting.md)**
     - 快速诊断和解决训练过程中可能遇到的常见问题.
 
 ### 深入主题
@@ -43,9 +43,9 @@
 ## 快速开始
 
 1. **定义你的任务**: 创建一个 `TrainingTask` 的子类, 并实现其所有抽象方法.
-2. **注册你的任务**: 在 `train.py` 的 `AVAILABLE_TASKS` 字典中添加你的新任务.
+2. **注册你的任务**: 在 `train.py` 中通过 `TASK_REGISTRY.register()` 注册你的新任务.
 3. **运行训练**: 在命令行中执行以下命令:
 
     ```bash
-    python -m llm.training.train --task <your_task_name>
+    llm-train --task <your_task_name>
     ```

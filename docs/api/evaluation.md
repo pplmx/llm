@@ -4,16 +4,32 @@ The evaluation subpackage is split into two slices:
 
 - **Metrics + offline tasks** (`llm.evaluation.metrics`, `llm.evaluation.eval_tasks`)
   — pure-Python accuracy/F1/perplexity helpers and the offline task
-  protocol. See [`metrics.base`](../reference/architecture.md) for the
-  task/metric contract.
+  protocol. See below for the full API reference.
 - **lm-evaluation-harness adapter** (`llm.evaluation.harness`) — the
   thin shim that lets our `DecoderModel` plug into the upstream
   [`lm-evaluation-harness`](https://github.com/EleutherAI/lm-evaluation-harness)
   benchmark suite.
 
-This page documents the harness slice. `lm_eval` is an **optional**
-dependency; importing the modules below never crashes on a host that
-doesn't have it installed — only instantiation raises.
+The metrics and task bases have no optional dependencies; the harness
+slice is gated behind the ``lm_eval`` **optional** dependency —
+importing the harness modules below never crashes on a host that doesn't
+have it installed, only instantiation raises.
+
+## Metrics
+
+Abstract base class and concrete scoring implementations for evaluation.
+
+::: llm.evaluation.metrics.base
+::: llm.evaluation.metrics.accuracy
+::: llm.evaluation.metrics.generation
+::: llm.evaluation.metrics.perplexity
+
+## Evaluation Tasks
+
+Abstract base class and concrete task implementations for offline evaluation.
+
+::: llm.evaluation.eval_tasks.base
+::: llm.evaluation.eval_tasks.lm_task
 
 ## Benchmark Presets
 

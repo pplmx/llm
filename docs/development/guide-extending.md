@@ -200,16 +200,19 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
 
     ```python
     # in train.py
+    from llm.training.tasks.builtin import TASK_REGISTRY
     from llm.training.tasks.regression_task import RegressionTask
     from llm.training.tasks.classification_task import ClassificationTask  # <-- 导入新任务
 
-    AVAILABLE_TASKS = {
-        "regression": RegressionTask,
-        "classification": ClassificationTask,  # <-- 注册新任务
-    }
+    TASK_REGISTRY.register(
+        "classification",
+        ClassificationTask,
+        ImageNetDataModule,
+        description="Image classification task",
+    )
     ```
 
-现在, 您可以通过运行 `python -m llm.training.train --task classification` 来启动您的新任务.
+现在, 您可以通过运行 `llm-train --task classification` 来启动您的新任务.
 
 ---
 

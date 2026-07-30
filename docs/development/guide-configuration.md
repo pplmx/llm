@@ -23,17 +23,17 @@ llm-train --task regression --lr 0.001 --batch-size 32
 llm-train --task regression --compile false
 
 # 从指定的检查点恢复训练 (通过 YAML 配置)
-llm-train --task regression --config-path config_with_checkpoint.yaml
+llm-train regression --config config_with_checkpoint.yaml
 
 # 使用 YAML 配置进行复杂设置
-llm-train --task sft --config-path config.yaml
+llm-train sft --config config.yaml
 
 # 启用/禁用 AMP 混合精度
 llm-train --task regression --amp true
 ```
 
 - 要查看所有可用的命令行参数, 请运行 `llm-train --help`.
-- 当前 CLI 暴露的参数包括: `--task`, `--config-path`, `--epochs`, `--batch-size`, `--lr`, `--num-samples`, `--compile`, `--amp`.
+- 当前 CLI 暴露的参数包括: `--config`, `--epochs`, `--batch-size`, `--lr`, `--num-samples`, `--compile`, `--amp`.
 - 完整的模型配置(如 `hidden_size`, `mlp_impl`, `num_experts` 等)建议通过 YAML 配置文件设置.
 
 ## 方法二: 使用 YAML 配置文件 (推荐用于可复现的实验)
@@ -87,7 +87,7 @@ llm-train --task regression --amp true
     # 直接在命令行中使用 --lr, --batch-size 等参数覆盖 YAML 中的值
     ```
 
-    *注意: `train.py` 默认从命令行和环境变量加载配置. 如果您希望使用 YAML 文件, 您需要在自己的脚本中显式调用 `Config.from_yaml()`.*
+    *注意: `llm-train` 默认使用 `--config` 参数加载 YAML 配置. 如果您希望在自己的 Python 脚本中加载配置, 可以显式调用 `Config.from_yaml()`.*
 
 ## 方法三: 使用环境变量 (分布式训练)
 

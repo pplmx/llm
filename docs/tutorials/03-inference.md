@@ -412,6 +412,14 @@ LLM_SERVING_REQUEST_TIMEOUT=300 uv run llm-serve
 - `LLM_SERVING_GENERATION_BACKEND=batched`（不是 `eager`）
 - 有真正的并发请求（一个接一个串行调用不会触发 batch fill）
 
+### 6.7 量化模型加载失败
+
+GPTQ 量化后的 checkpoint 文件体积缩小但加载方式不变。如果 `llm-serve` 加载 qlora 或 gptq 量化模型失败：
+
+- 确保 checkpoint 路径指向 `.pt` 文件
+- GPTQ 量化模型使用 `torch.save` 保存，与普通 checkpoint 加载逻辑相同
+- QLoRA 模型 base 权重是 NF4 格式，需要 `apply_qlora` 后再 `load_state_dict`
+
 ---
 
 ## 7. 从教程到生产
@@ -434,6 +442,8 @@ LLM_SERVING_REQUEST_TIMEOUT=300 uv run llm-serve
 | **长 system prompt 的多轮 chat** | `enable_prefix_cache=true`，`max_prefixes=32`（摊销 system prompt） |
 | **极限吞吐 / 不需要 swap adapter** | `peft_merge=true` |
 | **多卡 / 多模型** | 每个 GPU 起一个 `llm-serve` 实例，前面挂 nginx / Envoy |
+| **量化模型部署** | `LLM_SERVING_MODEL_PATH=<量化后ckpt路径>`，注意量化后模型是 int4/int8 权重 |
+| **推测解码** | `generation_backend=speculative` + draft model 配置（未来工作，ContinuousBatchingEngine 计划支持） |
 
 ### 7.3 Docker
 

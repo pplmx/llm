@@ -308,6 +308,8 @@ training:
 
 `PEFTAdapterCheckpointCallback`（T2 PEFT #48）自动随 `build_callbacks()` 注册，`on_train_end` 调 `save_peft` 把 adapter sidecar 写到 `peft_save_path`（默认 `{checkpoint_dir}/peft_adapter_{method}.bin`）。**8 个内置方法全支持**：lora / qlora / adalora / ia3 / bitfit / adapter / pfeiffer_adapter / prefix_tuning。
 
+> **AdaLoRA 特殊要求**：AdaLoRA 需要在 `peft_kwargs` 中额外配置 `adalora_target_modules`（指定要剪枝的模块列表），且训练时 `AdaLoRAPruningCallback` 会自动注册到回调链中，无需手动添加。
+
 ### 4.1 训练 → 服务化一条龙
 
 ```bash
@@ -462,6 +464,7 @@ RuntimeError: index N is out of bounds for dimension 0 with size V
 4. **并行**：单 GPU 跑 `sft_alpaca.yaml`；多卡 `parallel_strategy: ddp`，多节点 `parallel_strategy: fsdp`
 5. **PEFT**：大模型 + 小数据时 `peft_method: lora`，adapter 几 MB，可分发到不同 base 上
 6. **DPO 流程**：SFT → DPO + LoRA；不要跳步
+7. **评估对齐效果**: DPO 训练后使用 [Guides/评估](../guides/evaluation.md) 中的 lm-eval-harness 评估模型在标准 benchmark 上的表现。
 
 详见：
 
@@ -479,5 +482,5 @@ RuntimeError: index N is out of bounds for dimension 0 with size V
 | 推理服务化 | [Tutorials/推理](./03-inference.md) |
 | PEFT 深度指南 | [Guides/微调](../guides/finetuning.md) |
 | 多卡 / 多节点 | [Guides/分布式训练](../guides/distributed.md) |
-| 评估 / lm-eval | [Guides/评估](../guides/evaluation.md) |
+| 评估模型 | [Guides/评估](../guides/evaluation.md) |
 | RLHF / PPO | [ROADMAP §阶段十一](../ROADMAP.md) |

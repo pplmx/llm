@@ -77,6 +77,55 @@ python scripts/train_simple_decoder.py \
 
 ---
 
+## llm-train
+
+统一的训练 CLI，通过 pyproject.toml 的 [project.scripts] 注册。
+
+### 用法
+
+```bash
+llm-train [OPTIONS] COMMAND [ARGS]...
+```
+
+### 子命令
+
+| 命令 | 说明 |
+|------|------|
+| `stream_lm` | 流式预训练 (Streaming Language Modeling) |
+| `sft` | 监督微调 (Supervised Fine-Tuning) |
+| `dpo` | 直接偏好优化 (Direct Preference Optimization) |
+| `regression` | 回归任务 (测试用) |
+
+### 通用参数
+
+| 参数 | 说明 |
+|------|------|
+| `--config PATH` | YAML 配置文件路径 |
+| `--epochs N` | 训练轮数 |
+| `--batch-size N` | 批次大小 |
+| `--lr F` | 学习率 |
+| `--num-samples N` | 总样本数 |
+| `--compile BOOL` | 是否启用 torch.compile |
+| `--amp BOOL` | 是否启用混合精度 |
+| `--peft-method TEXT` | PEFT 方法 (lora, qlora, adalora, ia3, bitfit, adapter, pfeiffer_adapter, prefix_tuning) |
+
+### 示例
+
+```bash
+# 流式预训练
+uv run llm-train stream_lm --config configs/streaming_local_demo.yaml
+
+# 监督微调 + LoRA
+uv run llm-train sft --config configs/sft_alpaca.yaml \
+  --peft-method lora \
+  --peft-kwargs '{"rank":8,"alpha":16.0}'
+
+# DPO 对齐
+uv run llm-train dpo --config configs/dpo_local_demo.yaml
+```
+
+---
+
 ## 训练配置 (YAML)
 
 使用配置文件进行复杂训练：
@@ -183,6 +232,55 @@ llm-quantize gptq \
 所有量化算法参数 (Hessian 阻尼、列块大小、act-order 等) 直接映射到 `GPTQConfig`
 的字段 — Python 端的 `GPTQConfig.__post_init__` 校验仍会执行,作为 defense-in-depth
 兜底。CLI 端提前校验只为给用户一个清晰的一行错误信息,而不是堆栈帧。
+
+---
+
+## llm-serve
+
+推理服务 CLI，启动 OpenAI 兼容的 HTTP API。
+
+### 用法
+
+```bash
+llm-serve [OPTIONS]
+```
+
+### 环境变量配置
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `LLM_SERVING_HOST` | 监听地址 | `127.0.0.1` |
+| `LLM_SERVING_PORT` | 监听端口 | `8000` |
+| `LLM_SERVING_MODEL_PATH` | 模型 checkpoint 路径 | None (dummy) |
+| `LLM_SERVING_TOKENIZER_PATH` | Tokenizer 路径 | None |
+| `LLM_SERVING_TOKENIZER_TYPE` | Tokenizer 类型 | simple |
+| `LLM_SERVING_API_KEY` | API 密钥 | None |
+| `LLM_SERVING_GENERATION_BACKEND` | 生成后端 (eager/batched) | eager |
+| `LLM_SERVING_USE_PAGED_ATTENTION` | 启用 Paged Attention | false |
+| `LLM_SERVING_ENABLE_PREFIX_CACHE` | 启用 Prefix Cache | false |
+| `LLM_SERVING_PEFT_METHOD` | PEFT 方法 | None |
+| `LLM_SERVING_PEFT_ADAPTER_PATH` | PEFT adapter 路径 | None |
+| `LLM_SERVING_MAX_CONCURRENT_REQUESTS` | 最大并发请求数 | 8 |
+
+### 示例
+
+```bash
+# 基础服务（dummy 模型）
+uv run llm-serve
+
+# 带 checkpoint 和 tokenizer
+LLM_SERVING_MODEL_PATH=checkpoints/epoch_5.pt \
+LLM_SERVING_TOKENIZER_PATH=gpt2 \
+LLM_SERVING_TOKENIZER_TYPE=hf \
+uv run llm-serve
+
+# 生产部署（Paged Attention + API key）
+LLM_SERVING_HOST=0.0.0.0 \
+LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
+LLM_SERVING_USE_PAGED_ATTENTION=true \
+LLM_SERVING_GENERATION_BACKEND=batched \
+uv run llm-serve
+```
 
 ---
 

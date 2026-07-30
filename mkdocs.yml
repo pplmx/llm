@@ -130,6 +130,9 @@ nav:
       - "004: QLoRA": adr/004-use-qlora.md
       - "004: PagedAttention Serving": adr/004-paged-attention-serving.md
       - "005: Export Registry": adr/005-export-registry.md
+      - "006: Checkpoint Unification": adr/006-checkpoint-format-unification.md
+      - "007: GPTQ Integration": adr/007-gptq-integration.md
+      - "008: Mixed-Precision Quantization": adr/008-mixed-precision-quantization.md
   
   - ❓ FAQ: faq.md
   - 🔧 故障排除: troubleshooting.md

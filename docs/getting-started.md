@@ -71,11 +71,30 @@ uv run scripts/train_simple_decoder.py \
     --save-dir ./checkpoints
 ```
 
+```bash
+# 主流路径：使用 llm-train CLI（推荐生产使用）
+uv run llm-train stream_lm --config configs/streaming_local_demo.yaml
+```
+
 ---
 
 ## 4. 使用模型推理
 
-训练完成后，使用 Python 进行推理：
+训练完成后，可通过以下方式使用模型：
+
+### 方式一：启动推理服务（推荐）
+
+```bash
+# 启动推理服务（推荐）
+uv run llm-serve
+
+# 然后通过 OpenAI 兼容 API 调用
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llm","messages":[{"role":"user","content":"hello"}],"max_tokens":10}'
+```
+
+### 方式二：Python 代码调用
 
 ```python
 import torch
@@ -107,12 +126,14 @@ print(tokenizer.decode(output[0]))
 
 ## 下一步
 
-| 目标           | 文档                                            |
-| -------------- | ----------------------------------------------- |
-| 完整预训练流程 | [Tutorials/预训练](tutorials/01-pretraining.md) |
-| 微调现有模型   | [Tutorials/微调](tutorials/02-finetuning.md)    |
-| 部署推理服务   | [Tutorials/推理服务](tutorials/03-inference.md) |
-| 了解系统架构   | [Architecture](reference/architecture.md)       |
+| 目标             | 文档                                                      |
+| ---------------- | --------------------------------------------------------- |
+| 完整预训练流程   | [Tutorials/预训练](tutorials/01-pretraining.md)           |
+| 微调 (SFT/DPO)  | [Tutorials/微调](tutorials/02-finetuning.md)              |
+| 推理服务         | [Tutorials/推理服务](tutorials/03-inference.md)           |
+| 评估模型         | [Guides/评估](guides/evaluation.md)                       |
+| 量化模型         | [Guides/量化](guides/inference.md#GPTQ-Quantization)      |
+| 了解系统架构     | [Architecture](reference/architecture.md)                 |
 
 ---
 

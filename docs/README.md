@@ -32,6 +32,8 @@
 | [分布式训练](guides/distributed.md)  | 多 GPU 训练     |
 | [Fine-Tuning](guides/finetuning.md)  | LoRA/QLoRA 详解 |
 | [Inference](guides/inference.md)     | 推理优化        |
+| [评估](guides/evaluation.md)         | 模型评估        |
+| [数据](guides/data.md)               | 数据准备与处理  |
 
 ### 📚 参考文档
 
@@ -56,7 +58,9 @@ docs/
 │   └── 03-inference.md   # 推理
 ├── guides/                  # 🔧 功能指南
 │   ├── checkpoints.md
+│   ├── data.md
 │   ├── distributed.md
+│   ├── evaluation.md
 │   ├── finetuning.md
 │   └── inference.md
 ├── reference/               # 📚 参考
