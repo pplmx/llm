@@ -616,7 +616,7 @@ def test_stream_generate_truncates_long_prompt(tiny_config, device):
 
     max_seq_len = tiny_config.model.max_seq_len  # 16
     max_new_tokens = 4
-    truncate_len = max_seq_len - max_new_tokens  # 12
+    _truncate_len = max_seq_len - max_new_tokens  # 12, used by the test
 
     # Create a prompt longer than truncate_len
     long_ids = list(range(20))  # 20 tokens, but only last 12 should be kept

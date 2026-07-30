@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-from llm.data.datasets.prompt import PromptDataset
 from llm.data.modules.prompt import PromptDataModule
 from llm.training.core.config import Config, DataConfig, ModelConfig, OptimizationConfig, TrainingConfig
 
