@@ -318,6 +318,12 @@ class TrainingEngine:
             self.val_sampler.set_epoch(epoch)
 
         num_batches = len(self.val_dataloader)
+        if num_batches == 0:
+            # An empty validation split is not an error — skip validation
+            # instead of dividing by zero below.
+            self.logger.warning("Validation dataloader is empty. Skipping validation.")
+            self._run_callbacks("on_validation_end", epoch=epoch, logs={"val_loss": None})
+            return None
 
         with torch.no_grad():  # Disable gradient calculations
             for batch_idx, batch in enumerate(self.val_dataloader):

@@ -47,3 +47,23 @@ def test_engine_explicit_amp_dtype(mock_config):
     task = LanguageModelingTask(mock_config, dm)
     engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
     assert engine.resolved_amp_dtype == "float32"
+
+
+def test_engine_validation_empty_dataloader_skips(mock_config):
+    """An empty validation split must skip validation instead of raising
+    ZeroDivisionError."""
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from llm.training.core.engine import TrainingEngine
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = LanguageModelingTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+
+    engine.val_dataloader = DataLoader(TensorDataset(torch.empty(0, 2, dtype=torch.long)))
+    engine.val_sampler = None
+
+    result = engine._run_validation_epoch(0)
+    assert result is None
