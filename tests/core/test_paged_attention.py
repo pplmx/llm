@@ -649,14 +649,17 @@ class TestPagedAttentionForward:
             num_kv_heads=num_kv_heads,
         )
 
-        # Decode reference: one query token at a time, same context.
+        # Decode reference: one query token at a time. A multi-token
+        # prefill is causal — query row ``t`` attends to keys ``0..t`` —
+        # so each decode step sees only the context written so far
+        # (``seq_lens = t + 1``), not the full future context.
         decode_outs = [
             paged_attention_forward(
                 q=q[:, :, t : t + 1, :],
                 k_cache=k_cache,
                 v_cache=v_cache,
                 block_tables=block_tables,
-                seq_lens=seq_lens,
+                seq_lens=torch.tensor([t + 1]),
                 num_kv_heads=num_kv_heads,
             )
             for t in range(query_len)

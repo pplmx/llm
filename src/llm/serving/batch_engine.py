@@ -597,6 +597,13 @@ class ContinuousBatchingEngine:
             for i, length in enumerate(inputs.seq_input_lengths):
                 seq = inputs.running_sequences[i]
                 seq_logits = logits[i, length - 1, :]
+                # The pad token must never be emitted (the eager backend
+                # masks it the same way); without this the engine can
+                # sample pad and diverge from eager.
+                pad_id = getattr(self.tokenizer, "pad_token_id", None)
+                if pad_id is not None and 0 <= pad_id < seq_logits.size(-1):
+                    seq_logits = seq_logits.clone()
+                    seq_logits[pad_id] = float("-inf")
                 context_ids = seq.input_ids + seq.generated_ids
                 if seq.repetition_penalty != 1.0:
                     seq_logits = apply_repetition_penalty(seq_logits, context_ids, seq.repetition_penalty)
