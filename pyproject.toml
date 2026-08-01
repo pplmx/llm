@@ -93,7 +93,9 @@ docs = [
 # ``attn_impl="flash_attn"`` through :class:`llm.core.attn.FlashAttention`;
 # without it the registry entry exists but instantiation raises a clear
 # ``ImportError``. ``flash-attn`` ships CUDA wheels only — installation
-# on CPU-only hosts is a no-op.
+# on CPU-only hosts is a no-op. On CUDA hosts prefer the Astral GPU wheel
+# index (https://wheels.astral.sh/) to avoid compiling from source; see
+# ``docs/guides/inference.md``.
 perf = [
     "flash-attn>=2.5.0",
 ]
