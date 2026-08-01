@@ -12,8 +12,12 @@ class LMTask(BaseTask):
     def __init__(self, dataset_path: str, batch_size: int = 8):
         self.dataset_path = dataset_path
         self.batch_size = batch_size
-        self.metrics = [PerplexityMetric()]
         self.tokenizer = TokenizerFactory.from_dataset_text(dataset_path)
+        # Mask padded positions so short trailing sequences are scored
+        # only over real tokens. TextDataset pads with the tokenizer's
+        # pad id; None disables masking (no pad id known).
+        self.metrics = [PerplexityMetric(ignore_index=getattr(self.tokenizer, "pad_token_id", None))]
+        self.pad_token_id = getattr(self.tokenizer, "pad_token_id", None)
 
         self.val_dataset = TextDataset(
             file_path=dataset_path,
@@ -36,11 +40,32 @@ class LMTask(BaseTask):
 
         for i in range(0, len(inputs), self.batch_size):
             batch = inputs[i : i + self.batch_size]
-            max_len = max(len(x) for x in batch)
-            padded = torch.stack([torch.cat([x, torch.zeros(max_len - len(x), dtype=torch.long)]) for x in batch])
+            lengths = [len(x) for x in batch]
+            max_len = max(lengths)
+            pad_id = self.pad_token_id if self.pad_token_id is not None else 0
+            padded = torch.stack(
+                [
+                    torch.cat(
+                        [
+                            torch.as_tensor(x, dtype=torch.long),
+                            torch.full((max_len - len(x),), pad_id, dtype=torch.long),
+                        ]
+                    )
+                    for x in batch
+                ]
+            )
+
+            # Padding mask (True = mask out, the ``sdpa`` wrapper's
+            # convention). Only built when the tokenizer has a dedicated
+            # pad id and the batch actually contains padding; a literal
+            # pad token in the text is indistinguishable, so masking is
+            # disabled for tokenizers without a pad id.
+            attn_mask = None
+            if self.pad_token_id is not None and any(length < max_len for length in lengths):
+                attn_mask = (padded == self.pad_token_id).unsqueeze(1).unsqueeze(2)  # [B, 1, 1, S]
 
             with torch.no_grad():
-                logits = model(padded)
+                logits = model(padded, attn_mask=attn_mask)
             results.append(logits)
 
         return torch.cat(results, dim=0)
