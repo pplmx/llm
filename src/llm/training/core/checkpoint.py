@@ -38,7 +38,6 @@ from typing import Any
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.training.core.config import CheckpointConfig
@@ -449,10 +448,10 @@ class CheckpointManager:
     def save_checkpoint(
         self,
         epoch: int,
-        model: DistributedDataParallel,
-        optimizer: optim.Optimizer,
-        scheduler: LRScheduler,
-        scaler: torch.amp.GradScaler,
+        model: nn.Module,
+        optimizer: optim.Optimizer | None,
+        scheduler: LRScheduler | None,
+        scaler: torch.amp.GradScaler | None,
         loss: float,
         extra_state: dict | None = None,
         model_config: dict | None = None,
@@ -470,7 +469,7 @@ class CheckpointManager:
             self._save_split(
                 name="best",
                 model_state=model_state_to_save,
-                optimizer_state=optimizer.state_dict(),
+                optimizer_state=optimizer.state_dict() if optimizer is not None else None,
                 scheduler_state=scheduler.state_dict() if scheduler is not None else None,
                 scaler_state=scaler.state_dict() if scaler is not None else None,
                 epoch=epoch,
@@ -483,7 +482,7 @@ class CheckpointManager:
         self._save_split(
             name="latest",
             model_state=model_state_to_save,
-            optimizer_state=optimizer.state_dict(),
+            optimizer_state=optimizer.state_dict() if optimizer is not None else None,
             scheduler_state=scheduler.state_dict() if scheduler is not None else None,
             scaler_state=scaler.state_dict() if scaler is not None else None,
             epoch=epoch,
@@ -498,7 +497,7 @@ class CheckpointManager:
             _, _, _ = self._save_split(
                 name=epoch_name,
                 model_state=model_state_to_save,
-                optimizer_state=optimizer.state_dict(),
+                optimizer_state=optimizer.state_dict() if optimizer is not None else None,
                 scheduler_state=scheduler.state_dict() if scheduler is not None else None,
                 scaler_state=scaler.state_dict() if scaler is not None else None,
                 epoch=epoch,
@@ -541,9 +540,9 @@ class CheckpointManager:
     def load_checkpoint(
         self,
         model: nn.Module,
-        optimizer: optim.Optimizer,
-        scheduler: LRScheduler,
-        scaler: torch.amp.GradScaler,
+        optimizer: optim.Optimizer | None,
+        scheduler: LRScheduler | None,
+        scaler: torch.amp.GradScaler | None,
         device: torch.device,
     ) -> tuple[int, float]:
         if not self.config.resume_from_checkpoint:

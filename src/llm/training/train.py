@@ -9,7 +9,7 @@ import typer
 from rich.logging import RichHandler
 
 from llm.runtime.plugins import load_entry_point_hooks
-from llm.training.core.callbacks import LRSchedulerCallback, MetricsLogger, TensorBoardLogger
+from llm.training.core.callbacks import Callback, LRSchedulerCallback, MetricsLogger, TensorBoardLogger
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
 from llm.training.core.utils import DistributedManager
@@ -44,7 +44,7 @@ def train_worker(rank: int, world_size: int, config: Config, task_name: str):
 
         task = task_spec.task_cls(config, data_module)
 
-        callbacks = [
+        callbacks: list[Callback] = [
             MetricsLogger(),
             TensorBoardLogger(log_dir=config.logging.log_dir),
             LRSchedulerCallback(),
