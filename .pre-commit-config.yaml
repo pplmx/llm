@@ -28,12 +28,13 @@ repos:
       rev: v0.2.47
       hooks:
           # CHANGELOG entries are intentionally long single-paragraph
-          # bullets (Keep a Changelog style) that cannot satisfy MD013.
+          # bullets (Keep a Changelog style) that cannot satisfy MD013;
+          # docs/audits is archival (long single-line audit tables).
           - id: rumdl
             args: [--fix]
-            exclude: CHANGELOG\.md$
+            exclude: (CHANGELOG\.md$|docs/audits/)
           - id: rumdl-fmt # Pure format, always exits 0
-            exclude: CHANGELOG\.md$
+            exclude: (CHANGELOG\.md$|docs/audits/)
 
     - repo: https://github.com/astral-sh/ruff-pre-commit
       rev: v0.16.1
