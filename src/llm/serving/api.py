@@ -109,7 +109,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     # Publish ``llm_batch_fill_ratio`` after every ``engine.step()``.
     # Called under the engine's step lock so observers see a consistent
     # post-step snapshot of the slot allocator.
-    engine.set_step_observer(METRICS.record_batch_fill_ratio)
+    # ``record_batch_fill_ratio`` takes keyword-only args while the engine
+    # invokes observers with a positional ``StepStats``; adapt at the wiring
+    # point so every step publishes the metric.
+    engine.set_step_observer(_step_observer)
 
     # Inject dependencies into the routers. Done here (not at import time)
     # so unit tests can replace them via ``monkeypatch.setattr`` on the
@@ -167,6 +170,16 @@ def _log_server_config(
             "api_key_set": bool(config.api_key),
         },
     )
+
+
+def _step_observer(stats) -> None:
+    """Adapt a ``StepStats`` to :meth:`ServingMetrics.record_batch_fill_ratio`.
+
+    The engine invokes observers with a single positional ``StepStats``,
+    while ``record_batch_fill_ratio`` takes keyword-only args; this adapter
+    bridges the two at the wiring point.
+    """
+    METRICS.record_batch_fill_ratio(scheduled=stats.scheduled, total_active_slots=stats.total_active_slots)
 
 
 app = FastAPI(

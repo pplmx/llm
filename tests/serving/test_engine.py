@@ -588,3 +588,29 @@ def test_engine_paged_mixed_length_batch_matches_eager_greedy(tiny_model, mock_t
     last = _drive_engine_to_completion(engine)
     for i, prompt in enumerate(prompts):
         assert last[f"req-{i}"] == _eager_greedy_reference(tiny_model, mock_tokenizer, prompt, 6), prompt
+
+
+def test_engine_step_with_metrics_observer(tiny_model, mock_tokenizer):
+    """Regression: the API startup wired the metrics observer directly, but
+    record_batch_fill_ratio takes keyword-only args while the engine invokes
+    observers with a positional StepStats — every step raised TypeError.
+    Stepping with the API's observer adapter must complete."""
+    from llm.serving.api import _step_observer
+
+    tiny_model.to("cpu")
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    engine.set_step_observer(_step_observer)
+    req = GenerationRequest(prompt="abcd", max_new_tokens=4, temperature=0.0)
+    req.request_id = "req-obs"
+    engine.add_request(req)
+
+    engine.step()  # must not raise TypeError
+    assert engine.slot_allocator.get_slot("req-obs") >= 0
