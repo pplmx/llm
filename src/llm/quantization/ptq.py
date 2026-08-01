@@ -114,6 +114,17 @@ class QuantizedLinear(nn.Module):
             Quantized layer.
         """
         config = config or QuantConfig()
+        if not config.symmetric:
+            # The simple-PTQ path only implements symmetric quantization:
+            # the zero-point buffer exists but is never computed, so
+            # ``symmetric=False`` silently behaved like symmetric (a no-op
+            # with a misleading error profile on skewed weights). Fail fast
+            # instead, mirroring ``GPTQQuantizedLinear``'s handling of
+            # ``sym=False``.
+            raise NotImplementedError(
+                "Asymmetric simple-PTQ is not implemented. Use symmetric=True "
+                "or the GPTQ path (llm.quantization.gptq) for asymmetric quantization."
+            )
         quant_linear = cls(
             in_features=linear.in_features,
             out_features=linear.out_features,
