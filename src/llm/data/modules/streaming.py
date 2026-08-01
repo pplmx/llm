@@ -11,7 +11,12 @@ from torch.utils.data import DataLoader, DistributedSampler
 from llm.data.base import StreamDataModule
 from llm.data.datasets.streaming import StreamingTextDataset
 from llm.data.datasets.text import TextDataset
-from llm.data.sources import build_text_source, source_fingerprint_from_config, validate_source_fingerprint
+from llm.data.sources import (
+    DedupTextSource,
+    build_text_source,
+    source_fingerprint_from_config,
+    validate_source_fingerprint,
+)
 from llm.data.stream_state import StreamDataState
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.tokenizer import BaseTokenizer
@@ -37,6 +42,14 @@ class StreamingTextDataModule(StreamDataModule):
         self.tokenizer = self._load_tokenizer()
 
         text_source = build_text_source(self.config.data)
+        if isinstance(text_source, DedupTextSource) and not text_source.write_seen_hashes:
+            logger.warning(
+                "DedupTextSource is running with in-memory only state "
+                "(write_seen_hashes=False). Checkpoint resume re-creates the source, "
+                "so previously-deduplicated records will be re-processed after a resume. "
+                "Set data.seen_hashes_path + data.write_seen_hashes=True for cross-run "
+                "dedup consistency."
+            )
         self.train_dataset = StreamingTextDataset(
             text_source=text_source,
             tokenizer=self.tokenizer,
