@@ -16,18 +16,12 @@ if TYPE_CHECKING:
     from torch.utils.tensorboard import SummaryWriter
 
 
-# Forward declaration to avoid circular imports. The type checker needs
-# to know about the attributes callbacks access; stubbing them here
-# eliminates ~30 unresolved-attribute diagnostics without creating a
-# circular import. The real TrainingEngine (in engine.py) has the same
-# surface.
-class TrainingEngine:
-    rank: int
-    logger: Any
-    model: Any
-    optimizer: Any
-    scheduler: Any
-    config: Any
+if TYPE_CHECKING:
+    # Import the real TrainingEngine for annotations only. ``from __future__
+    # import annotations`` keeps the annotations as strings, so this never
+    # creates a runtime circular import.
+    from llm.training.core.engine import TrainingEngine
+
     callbacks: list[Any]
     dataloader: Any
     should_stop_training: bool = False

@@ -1,8 +1,9 @@
 import sys
 import time
-from typing import Any
+from typing import Any, cast
 
 import torch
+import torch.nn as nn
 
 from llm.data.base import BaseDataModule
 from llm.runtime.checkpoint import collect_extra_state, load_extra_state
@@ -59,7 +60,7 @@ class TrainingEngine:
         self.checkpoint_manager = CheckpointManager(config.checkpoint, rank, self.logger)
         self.callbacks = callbacks or []
         for callback in self.callbacks:
-            callback.set_engine(self)
+            callback.set_engine(cast(TrainingEngine, self))
 
         self._setup_components()
 
@@ -73,7 +74,7 @@ class TrainingEngine:
         ordered callback list.
         """
         for callback in self.task.build_callbacks():
-            callback.set_engine(self)
+            callback.set_engine(cast(TrainingEngine, self))
             self.callbacks.append(callback)
         self.training_start_time = time.time()
         self.should_stop_training = False
@@ -82,6 +83,23 @@ class TrainingEngine:
     def _run_callbacks(self, method_name: str, *args, **kwargs):
         for callback in self.callbacks:
             getattr(callback, method_name)(*args, **kwargs)
+
+    def log_metrics(self, metrics: dict[str, Any]) -> None:
+        """Log an evaluation/metrics dict at rank 0.
+
+        Used by :class:`EvaluationCallback` to surface periodic evaluation
+        results. Numeric values are formatted like the batch-stats log;
+        non-numeric values (e.g. ``num_samples``) are included as-is.
+        """
+        if self.rank != 0 or not metrics:
+            return
+        parts: list[str] = []
+        for key, value in metrics.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                parts.append(f"{key}: {value:.4f}")
+            else:
+                parts.append(f"{key}: {value}")
+        self.logger.info("Evaluation metrics: " + " | ".join(parts))
 
     def _setup_components(self):
         """Builds all necessary components for training from the task."""
@@ -110,6 +128,10 @@ class TrainingEngine:
             except (RuntimeError, TypeError, AttributeError) as e:
                 self.logger.warning(f"torch.compile failed: {e}. Continuing without it.")
 
+        # ``torch.compile`` may reassign ``model`` and confuse the type
+        # checker about its concrete type; narrow it back before wrapping.
+        if not isinstance(model, nn.Module):
+            raise TypeError(f"build_model() must return an nn.Module, got {type(model).__name__}")
         self.model = wrap_model_for_training(
             model,
             parallel_strategy=self.config.distributed.parallel_strategy,
@@ -135,6 +157,11 @@ class TrainingEngine:
             self.optimizer = None
             self.scheduler = None
             self.criterion = None
+
+        # Narrow the possibly-None standard-loop attributes: the standard
+        # loop guarantees all three are set.
+        if self.use_standard_loop and (self.optimizer is None or self.scheduler is None or self.criterion is None):
+            raise RuntimeError("standard-loop components were not built")
 
         # Resolve 'auto' dtype
         self.resolved_amp_dtype = self.config.optimization.amp_dtype
@@ -202,6 +229,8 @@ class TrainingEngine:
         if self.is_streaming:
             data_iter = iter(self.dataloader)
             num_batches = self.config.data.steps_per_epoch
+            if num_batches is None:
+                raise RuntimeError("streaming requires data.steps_per_epoch")
             for batch_idx in range(num_batches):
                 try:
                     batch = next(data_iter)
@@ -216,6 +245,8 @@ class TrainingEngine:
             yield batch_idx, batch, num_batches
 
     def _run_epoch(self, epoch: int) -> float:
+        if self.optimizer is None or self.criterion is None:
+            raise RuntimeError("standard-loop components are required")
         if self.sampler is not None:
             self.sampler.set_epoch(epoch)
         self.model.train()
@@ -303,6 +334,8 @@ class TrainingEngine:
         return global_avg_loss
 
     def _run_validation_epoch(self, epoch: int) -> float | None:
+        if self.criterion is None:
+            raise RuntimeError("standard-loop components are required")
         self._run_callbacks("on_validation_start", epoch=epoch)
         self.model.eval()  # Set model to evaluation mode
         self.performance_monitor.reset_epoch_stats()
@@ -353,6 +386,8 @@ class TrainingEngine:
         return global_avg_loss
 
     def _log_batch_stats(self, epoch, batch_idx, num_batches, metrics):
+        if self.optimizer is None:
+            raise RuntimeError("standard-loop components are required")
         lr = self.optimizer.param_groups[0]["lr"]
         mem_alloc, mem_cached = self.performance_monitor.get_current_gpu_memory()
         grad_norm = self.performance_monitor.gradient_norms[-1] if self.performance_monitor.gradient_norms else 0.0
@@ -387,6 +422,8 @@ class TrainingEngine:
             return
 
         try:
+            if self.optimizer is None:
+                raise RuntimeError("standard-loop components are required")
             for epoch in range(self.start_epoch, self.config.training.epochs):
                 self._run_callbacks("on_epoch_start", epoch=epoch)
                 epoch_start_time = time.time()

@@ -67,3 +67,41 @@ def test_engine_validation_empty_dataloader_skips(mock_config):
 
     result = engine._run_validation_epoch(0)
     assert result is None
+
+
+def test_engine_log_metrics_logs_at_rank_zero(mock_config, caplog):
+    """EvaluationCallback calls engine.log_metrics on its eval interval; the
+    method must exist and log at rank 0 (regression: it only existed in a
+    type-checker stub, so the callback raised AttributeError at runtime)."""
+    from llm.training.core.engine import TrainingEngine
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = LanguageModelingTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+
+    with caplog.at_level("INFO"):
+        engine.log_metrics({"accuracy": 0.875, "num_samples": 32})
+    assert "accuracy: 0.8750" in caplog.text
+    assert "num_samples: 32" in caplog.text
+
+
+def test_evaluation_callback_fires_without_attribute_error(mock_config):
+    """Regression: EvaluationCallback.on_train_step_end called the missing
+    engine.log_metrics and crashed. It must run end-to-end on a real engine."""
+    from llm.training.core.callbacks import EvaluationCallback
+    from llm.training.core.engine import TrainingEngine
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = LanguageModelingTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+
+    class _Runner:
+        def run(self, model):
+            return {"accuracy": 1.0}
+
+    engine.callbacks = [EvaluationCallback(eval_runner=_Runner(), eval_interval=1)]
+    for cb in engine.callbacks:
+        cb.set_engine(engine)
+    engine._run_callbacks("on_train_step_end", epoch=0, batch_idx=0, loss=torch.tensor(1.0), metrics={"loss": 1.0})
