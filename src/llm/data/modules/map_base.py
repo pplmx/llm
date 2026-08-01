@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sized
 from typing import Any
 
 import torch
@@ -85,11 +85,18 @@ class TokenizedMapDataModule(SamplerMapDataModule):
 
     @staticmethod
     def split_train_val(dataset: Dataset, train_ratio: float = 0.9) -> tuple[Dataset, Dataset | None]:
+        # ``dataset`` is a torch ``Dataset``; len() works at runtime but the
+        # torch stubs type it loosely, so narrow it to Sized explicitly.
+        if not isinstance(dataset, Sized):
+            raise TypeError("dataset must be sized for train/val splitting")
         train_size = int(train_ratio * len(dataset))
         val_size = len(dataset) - train_size
         if val_size <= 0:
             return dataset, None
-        return random_split(dataset, [train_size, val_size])
+        # ``random_split`` with a list of lengths returns a ``list[Subset]``;
+        # normalize to a tuple so both branches share one container type.
+        split = random_split(dataset, [train_size, val_size])
+        return split[0], split[1]
 
     def assign_train_val_datasets(
         self,

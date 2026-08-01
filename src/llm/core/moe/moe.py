@@ -111,7 +111,7 @@ class MoE(nn.Module):
 
         for i in range(x.size(0)):  # Iterate over each token
             for k_idx in range(self.top_k):
-                expert_idx = top_k_indices[i, k_idx].item()
+                expert_idx = int(top_k_indices[i, k_idx].item())
                 expert_inputs[expert_idx].append(x[i])
                 expert_weights_per_token[expert_idx].append(expert_weights[i, k_idx])
                 expert_original_indices[expert_idx].append(i)

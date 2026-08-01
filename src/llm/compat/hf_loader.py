@@ -8,7 +8,7 @@ into our DecoderModel format.
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import torch
 
@@ -22,6 +22,15 @@ from llm.models.decoder import DecoderModel
 from llm.runtime import ModelFactory
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class _SizedAttention(Protocol):
+    """Structural type for attention backends exposing the HF config dims."""
+
+    num_heads: int
+    num_kv_heads: int
+    head_dim: int
 
 
 def from_pretrained(
@@ -115,6 +124,11 @@ def _load_from_local(
         dtype=dtype,
     )
 
+    from llm.models.decoder import DecoderModel
+
+    if not isinstance(model, DecoderModel):
+        raise TypeError(f"decoder model factory returned {type(model).__name__}, expected DecoderModel")
+
     # Load weights
     state_dict = _load_weights(model_dir)
 
@@ -131,6 +145,8 @@ def _load_from_local(
     # ``qkv_proj.weight`` and the model would run with random init on
     # the attention path.
     attn0 = model.transformer_blocks[0].self_attn
+    if not isinstance(attn0, _SizedAttention):
+        raise TypeError(f"attention backend {type(attn0).__name__} must expose num_heads/num_kv_heads/head_dim")
     converted_state_dict = convert_hf_to_combined_qkv(
         converted_state_dict,
         num_layers=our_config["num_layers"],
@@ -149,6 +165,10 @@ def _load_from_local(
 
     logger.info(f"Model loaded successfully to {device} with dtype {dtype}")
 
+    from llm.models.decoder import DecoderModel
+
+    if not isinstance(model, DecoderModel):
+        raise TypeError(f"loaded model must be a DecoderModel, got {type(model).__name__}")
     return model
 
 
