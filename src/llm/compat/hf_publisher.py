@@ -27,9 +27,10 @@ import importlib.util
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import torch
+import torch.nn as nn
 
 from llm.compat.weight_mapping import convert_our_weights
 from llm.models.decoder import DecoderModel
@@ -72,10 +73,12 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # use_glu is False) or both ``fc1`` and ``gate_proj`` (when
     # use_glu is True — SwiGLU). Both share the same output dim.
     mlp0 = model.transformer_blocks[0].mlp
-    if hasattr(mlp0, "fc1"):
-        intermediate_size = mlp0.fc1.out_features
-    elif hasattr(mlp0, "up_proj"):
-        intermediate_size = mlp0.up_proj.out_features
+    fc1 = getattr(mlp0, "fc1", None)
+    up_proj = getattr(mlp0, "up_proj", None)
+    if isinstance(fc1, nn.Linear):
+        intermediate_size = fc1.out_features
+    elif isinstance(up_proj, nn.Linear):
+        intermediate_size = up_proj.out_features
     else:
         intermediate_size = 4 * model.hidden_size
 
@@ -102,6 +105,15 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
 
 
 # --- save_pretrained -------------------------------------------------------
+
+
+@runtime_checkable
+class _SizedAttention(Protocol):
+    """Structural type for attention backends exposing the HF config dims."""
+
+    num_heads: int
+    num_kv_heads: int
+    head_dim: int
 
 
 def save_pretrained(model: DecoderModel, save_directory: str | Path) -> Path:
@@ -144,6 +156,8 @@ def save_pretrained(model: DecoderModel, save_directory: str | Path) -> Path:
     # 2. Convert + write state_dict.
     num_layers = len(model.transformer_blocks)
     attn0 = model.transformer_blocks[0].self_attn
+    if not isinstance(attn0, _SizedAttention):
+        raise TypeError(f"attention backend {type(attn0).__name__} must expose num_heads/num_kv_heads/head_dim")
     converted = convert_our_weights(
         model.state_dict(),
         architecture="llama",
