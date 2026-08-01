@@ -150,3 +150,20 @@ def test_chrf_compute_raises_without_sacrebleu(monkeypatch):
     metric = ChrFMetric()
     with pytest.raises(ImportError, match=r"pip install 'llm\[eval\]'"):
         metric.compute(["pred"], ["ref"])
+
+
+def test_bleu_metric_empty_inputs_without_sacrebleu(monkeypatch):
+    """Empty predictions return ``{"bleu": 0.0}`` without importing sacrebleu,
+    matching RougeMetric's empty-input contract (and F1Metric's 0.0)."""
+    monkeypatch.setitem(sys.modules, "sacrebleu", None)
+    metric = BleuMetric()
+    result = metric.compute([], [])
+    assert result == {"bleu": 0.0}
+
+
+def test_chrf_metric_empty_inputs_without_sacrebleu(monkeypatch):
+    """Empty predictions return ``{"chrf": 0.0}`` without importing sacrebleu."""
+    monkeypatch.setitem(sys.modules, "sacrebleu", None)
+    metric = ChrFMetric()
+    result = metric.compute([], [])
+    assert result == {"chrf": 0.0}
