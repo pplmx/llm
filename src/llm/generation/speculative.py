@@ -57,19 +57,31 @@ def _verify_speculative_tokens(
     temperature: float,
     top_k: int | None,
     top_p: float | None,
+    repetition_penalty: float = 1.0,
+    frequency_penalty: float = 0.0,
+    presence_penalty: float = 0.0,
+    logit_bias: dict[int, float] | None = None,
 ) -> tuple[int, int | None]:
     """Score ``draft_tokens`` with the target and return (accept_count, bonus).
 
     Args:
         target: Target model (full size).
-        draft: Draft model (small). Only used to recompute draft
-            logits so the acceptance ratio is correct; both models
-            are passed to keep the call symmetric.
+        draft: Draft model (small). Used to recompute draft logits so
+            the acceptance ratio is correct; both models are passed to
+            keep the call symmetric.
         input_ids: Context tokens (prompt + already-accepted tokens),
             shape ``[1, T]``.
         draft_tokens: Candidate tokens from the draft, length ``gamma``.
         temperature: Sampling temperature for the **correction** token.
         top_k, top_p: Sampling parameters applied uniformly.
+        repetition_penalty: Repetition penalty applied to the target and
+            draft logits exactly like the eager backend (once per token
+            present in the history). ``1.0`` disables it.
+        frequency_penalty: Per-occurrence frequency penalty. ``0.0``
+            disables it.
+        presence_penalty: Per-token presence penalty. ``0.0`` disables it.
+        logit_bias: Per-token additive logit bias, applied after the
+            penalties (same ordering as the eager backend).
 
     Returns:
         ``(accept_count, bonus)``: number of accepted candidates
@@ -89,25 +101,50 @@ def _verify_speculative_tokens(
     draft_tensor = torch.tensor([draft_tokens], dtype=torch.long, device=device)
     full = torch.cat([input_ids, draft_tensor], dim=1)
 
+    # Sampling-time penalties must be applied to the logits before the
+    # acceptance probability, residual, and correction/bonus sampling —
+    # exactly like the eager backend does at every decode step. The
+    # history for draft position ``i`` is the context plus the first
+    # ``i`` draft tokens; the bonus position sees the full sequence.
+    full_ids = full[0].tolist()
+    context_len = input_ids.size(1)
+
+    def _apply_penalties(logits_row: torch.Tensor, history: list[int]) -> torch.Tensor:
+        """Apply the same penalty pipeline as :func:`llm.generation.eager.generate`."""
+        if repetition_penalty != 1.0:
+            logits_row = apply_repetition_penalty(logits_row, history, repetition_penalty)
+        if frequency_penalty != 0.0:
+            logits_row = apply_frequency_penalty(logits_row, history, frequency_penalty)
+        if presence_penalty != 0.0:
+            logits_row = apply_presence_penalty(logits_row, history, presence_penalty)
+        if logit_bias:
+            logits_row = apply_logit_bias(logits_row, logit_bias)
+        return logits_row
+
     with torch.no_grad():
         target_out = target(full, kv_caches=None, use_cache=False)
         target_logits = target_out[0] if isinstance(target_out, tuple) else target_out
         # Target logits at the positions corresponding to each draft
         # token AND the bonus position (one past the last draft
-        # token). ``input_ids.size(1)`` is the length of the context;
-        # the first draft token's score lives at index
-        # ``input_ids.size(1) - 1`` (last context token predicts the
-        # next), and the bonus position lives at
-        # ``input_ids.size(1) - 1 + gamma``. So we slice
+        # token). ``context_len`` is the length of the context; the
+        # first draft token's score lives at index ``context_len - 1``
+        # (last context token predicts the next), and the bonus
+        # position lives at ``context_len - 1 + gamma``. So we slice
         # ``[T-1, T-1+gamma+1)`` = ``[T-1, T+gamma]`` for a length of
         # ``gamma + 1``.
-        relevant = target_logits[0, input_ids.size(1) - 1 : input_ids.size(1) + gamma, :]
+        relevant = target_logits[0, context_len - 1 : context_len + gamma, :]
+
+    # Row ``i`` uses the context plus the first ``i`` draft tokens as
+    # its penalty history; the bonus row (``gamma``) uses everything.
+    target_penalized = torch.stack(
+        [_apply_penalties(relevant[i], full_ids[: context_len + i]) for i in range(gamma + 1)]
+    )
 
     # The "target prob of draft token at position i" is
-    # softmax(target_logits[i])[draft_tokens[i]]. We use the same
+    # softmax(target_penalized[i])[draft_tokens[i]]. We use the same
     # temperature scaling as the sample function so the acceptance
     # ratio is well-defined.
-    target_relevant = relevant[:gamma]  # only the draft-token positions
+    target_relevant = target_penalized[:gamma]  # only the draft-token positions
     if temperature == 0:
         # Greedy: always accept tokens whose argmax matches.
         target_argmax = target_relevant.argmax(dim=-1)
@@ -117,20 +154,19 @@ def _verify_speculative_tokens(
         draft_tensor_dev = torch.tensor(draft_tokens, device=device)
         q_target = target_probs[torch.arange(gamma, device=device), draft_tensor_dev]
 
-        # Draft probs at the same positions. Recompute via a draft
-        # forward pass so the algorithm is correct even when the
-        # draft has been warmed up with KV caches (we don't try to
-        # track those here).
+        # Draft probs at the same positions, with the same per-position
+        # penalties as the target (the draft loop in
+        # ``speculative_generate`` samples from the penalized logits,
+        # so the ratio must use the penalized draft distribution).
         with torch.no_grad():
             draft_out = draft(full, kv_caches=None, use_cache=False)
             draft_logits = draft_out[0] if isinstance(draft_out, tuple) else draft_out
-        draft_relevant = draft_logits[0, input_ids.size(1) - 1 : input_ids.size(1) + gamma, :]
-        draft_relevant = draft_relevant[:gamma]
-        if temperature == 0:
-            q_draft = draft_relevant.argmax(dim=-1).float()
-        else:
-            draft_probs = torch.softmax(draft_relevant / temperature, dim=-1)
-            q_draft = draft_probs[torch.arange(gamma, device=device), draft_tensor_dev]
+        draft_relevant = draft_logits[0, context_len - 1 : context_len + gamma, :]
+        draft_penalized = torch.stack(
+            [_apply_penalties(draft_relevant[i], full_ids[: context_len + i]) for i in range(gamma)]
+        )
+        draft_probs = torch.softmax(draft_penalized / temperature, dim=-1)
+        q_draft = draft_probs[torch.arange(gamma, device=device), draft_tensor_dev]
 
         # Acceptance ratio: clip to avoid div-by-zero / numerical
         # blow-up when the draft assigns ~0 mass to a token.
@@ -151,7 +187,7 @@ def _verify_speculative_tokens(
         # The bonus position is one past the last draft token; in
         # ``relevant`` (which holds gamma+1 elements: the draft-token
         # scores + the bonus score) it sits at index ``gamma``.
-        bonus_logits = relevant[gamma]
+        bonus_logits = target_penalized[gamma]
         if temperature == 0:
             bonus = int(bonus_logits.argmax(dim=-1).item())
         else:
@@ -162,32 +198,48 @@ def _verify_speculative_tokens(
                 top_p=top_p,
             )
     else:
-        # Rejection sampling from (q_target - q_draft)+ normalized.
+        # Rejection: sample the correction token from the normalized
+        # residual ``(q_target - q_draft)+`` so the overall output
+        # distribution still matches the target (Leviathan et al. 2023,
+        # Algorithm 2). The residual must be computed on the
+        # temperature-scaled **probabilities** — a logit difference
+        # ``softmax(a - b)`` is proportional to the ratio ``p/q`` and
+        # biases the output distribution away from the target.
         reject_pos = accept_count
-        # Position reject_pos in ``target_relevant`` (= ``relevant[:gamma]``)
-        # corresponds to the target logits for draft_tokens[reject_pos].
-        target_log = target_relevant[reject_pos] / max(temperature, 1e-8)
-        with torch.no_grad():
-            draft_out_at_pos = draft(full, kv_caches=None, use_cache=False)
-            draft_logits_full = draft_out_at_pos[0] if isinstance(draft_out_at_pos, tuple) else draft_out_at_pos
-            draft_log_at_pos = draft_logits_full[0, input_ids.size(1) - 1 + reject_pos, :] / max(temperature, 1e-8)
-        diff = target_log - draft_log_at_pos
-        diff = diff.clamp(min=0.0)
-        if diff.sum() <= 0:
-            # Degenerate case: fall back to target distribution.
+        if temperature == 0:
+            # Greedy: the correction is whatever the target would have
+            # emitted deterministically at the rejection position
+            # (its argmax).
             bonus = sample_next_token(
-                target_log,
-                temperature=temperature,
+                target_relevant[reject_pos],
+                temperature=0.0,
                 top_k=top_k,
                 top_p=top_p,
             )
         else:
-            bonus = sample_next_token(
-                diff,
-                temperature=1.0,
-                top_k=top_k,
-                top_p=top_p,
-            )
+            # ``target_probs`` / ``draft_probs`` hold the temperature-
+            # scaled probability distributions at every draft position
+            # (computed above); row ``reject_pos`` corresponds to the
+            # rejected candidate.
+            residual = (target_probs[reject_pos] - draft_probs[reject_pos]).clamp(min=0.0)
+            if residual.sum() <= 0:
+                # Degenerate case: fall back to the target distribution.
+                bonus = sample_next_token(
+                    target_relevant[reject_pos],
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                )
+            else:
+                # ``sample_next_token`` applies a softmax, so pass the
+                # log-residual to sample exactly from the normalized
+                # residual.
+                bonus = sample_next_token(
+                    torch.log(residual),
+                    temperature=1.0,
+                    top_k=top_k,
+                    top_p=top_p,
+                )
 
     return accept_count, bonus
 
@@ -300,6 +352,10 @@ def speculative_generate(
             temperature=temperature,
             top_k=top_k,
             top_p=top_p,
+            repetition_penalty=repetition_penalty,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            logit_bias=logit_bias,
         )
 
         # 3. Emit accepted tokens + bonus (or correction).

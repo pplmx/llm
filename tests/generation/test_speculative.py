@@ -170,6 +170,226 @@ def test_speculative_respects_max_new_tokens():
     assert len(out) <= 5
 
 
+# --- Rejection-path distributional correctness -----------------------------
+
+
+class _ConstLogitsModel:
+    """Duck-typed ``DecoderModel`` stub that returns fixed per-token logits.
+
+    ``_verify_speculative_tokens`` only interacts with the models through
+    ``model(full, kv_caches=None, use_cache=False)`` and reads the returned
+    logits, so a fixed-logit stub exercises the whole acceptance/rejection
+    algorithm without paying for real model forwards.
+    """
+
+    def __init__(self, logit_vector):
+        self._logit_vector = logit_vector
+
+    def __call__(self, input_ids, kv_caches=None, use_cache=False):
+        seq = input_ids.size(1)
+        return self._logit_vector.expand(seq, -1).unsqueeze(0)
+
+
+def test_speculative_stochastic_rejection_preserves_target_distribution():
+    """On rejection the correction token is sampled from the normalized
+    residual ``(p_target - p_draft)+`` (Leviathan et al., Algorithm 2), so
+    the overall output distribution matches the target.
+
+    Regression test: the correction used to be sampled from
+    ``softmax(logits_target - logits_draft)`` (proportional to the p/q
+    ratio), which measurably biases the output distribution.
+    """
+    from llm.generation.speculative import _verify_speculative_tokens
+
+    torch.manual_seed(0)
+    vocab = 8
+    p_log = torch.tensor([3.0, 2.0, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5])
+    q_log = torch.tensor([1.5, 2.2, 1.8, 0.8, 0.2, -0.4, -0.9, -1.2])
+    target = _ConstLogitsModel(p_log)
+    draft = _ConstLogitsModel(q_log)
+    p = torch.softmax(p_log, -1)
+    q = torch.softmax(q_log, -1)
+
+    # Draft's argmax token; the target rates it lower (q[x] > p[x]), so
+    # rejection happens with probability 1 - p[x]/q[x] > 0.
+    x = 1
+    assert q[x] > p[x]
+
+    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    n = 2000
+    accepted = 0
+    bonus_samples = torch.zeros(vocab)
+    for _ in range(n):
+        accept_count, bonus = _verify_speculative_tokens(
+            target,
+            draft,
+            prompt,
+            [x],
+            temperature=1.0,
+            top_k=None,
+            top_p=None,
+        )
+        if accept_count == 1:
+            accepted += 1
+        elif bonus is not None:
+            bonus_samples[bonus] += 1
+
+    # Acceptance rate matches theory min(1, p[x]/q[x]).
+    p_accept = min(1.0, (p[x] / q[x]).item())
+    assert abs(accepted / n - p_accept) < 0.04
+
+    # Correction distribution matches the normalized residual (the buggy
+    # p/q-ratio correction deviates by ~0.55 on this setup).
+    residual = (p - q).clamp(min=0)
+    expected = residual / residual.sum()
+    empirical = bonus_samples / bonus_samples.sum()
+    assert float((empirical - expected).abs().max()) < 0.08
+
+
+def test_speculative_greedy_rejection_uses_target_argmax():
+    """A greedy rejection emits the target's argmax at the rejection
+    position — not the argmax of the logit difference.
+
+    Regression test: the old code sampled ``argmax(logits_target -
+    logits_draft)``, which can pick a token the target rates lower.
+    """
+    from llm.generation.speculative import _verify_speculative_tokens
+
+    vocab = 8
+    # Target prefers token 0; token 1 is the target's second choice.
+    p_log = torch.full((vocab,), -5.0)
+    p_log[0] = 10.0
+    p_log[1] = 9.9
+    # Draft's distribution makes token 1 plausible but keeps it unlikely
+    # relative to token 0; the logit difference p - q peaks at token 1.
+    q_log = torch.full((vocab,), -5.0)
+    q_log[0] = 9.99
+    q_log[1] = 3.0
+    target = _ConstLogitsModel(p_log)
+    draft = _ConstLogitsModel(q_log)
+
+    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    correction_tokens = set()
+    for _ in range(200):
+        accept_count, bonus = _verify_speculative_tokens(
+            target,
+            draft,
+            prompt,
+            [1],
+            temperature=0.0,
+            top_k=None,
+            top_p=None,
+        )
+        assert accept_count == 0
+        if bonus is not None:
+            correction_tokens.add(bonus)
+
+    # The target's argmax is token 0, so every greedy correction is 0.
+    assert correction_tokens == {0}
+
+
+# --- Sampling-time penalties are honored during verification ---------------
+
+
+class _DistinctDecodeTokenizer:
+    """Tokenizer whose decode is a bijection on token ids (0 -> A, ...)."""
+
+    pad_token_id = 0
+    eos_token_id = 99
+
+    def encode(self, text: str) -> list[int]:
+        return [1, 2, 3]
+
+    def decode(self, ids: list[int]) -> str:
+        return "".join(chr(65 + i) for i in ids)
+
+
+def _make_bias_head_decoder(seed: int, vocab_size: int = 32):
+    """Tiny decoder whose logits are a fixed bias vector (W=0)."""
+    torch.manual_seed(seed)
+    m = _make_tiny_decoder(seed=seed, vocab_size=vocab_size)
+    with torch.no_grad():
+        m.lm_head.weight.zero_()
+        m.lm_head.bias.zero_()
+        # Token 2 (in the prompt) is the unpenalized argmax; token 4 wins
+        # once token 2 is penalized (5 < 6 after repetition_penalty=2).
+        m.lm_head.bias[2] = 10.0
+        m.lm_head.bias[4] = 6.0
+    return m
+
+
+def test_speculative_greedy_matches_eager_under_penalties():
+    """Under greedy decoding the speculative backend must reproduce the
+    eager backend token-for-token even when sampling-time penalties are
+    active (repetition / frequency / presence).
+
+    Regression test: verification, correction, and bonus sampling used to
+    ignore the penalties, so e.g. ``repetition_penalty=2.0`` produced
+    ``'CCCCCCCC'`` where eager produced ``'ECCCCCCC'``.
+    """
+    target = _make_bias_head_decoder(seed=0)
+    draft = _make_bias_head_decoder(seed=1)
+    tok = _DistinctDecodeTokenizer()
+    prompt = "abc"
+
+    for kwargs in (
+        {"repetition_penalty": 2.0},
+        {"frequency_penalty": 1.0},
+        {"presence_penalty": 1.0},
+    ):
+        eager_out = eager_generate(target, tok, prompt, max_new_tokens=8, use_cache=False, temperature=0.0, **kwargs)
+        spec_out = prompt + "".join(
+            speculative_generate(
+                target,
+                draft,
+                tok,
+                prompt,
+                max_new_tokens=8,
+                gamma=3,
+                temperature=0.0,
+                **kwargs,
+            )
+        )
+        assert spec_out == eager_out, (kwargs, eager_out, spec_out)
+
+
+def test_speculative_greedy_rejection_uses_penalized_target_argmax():
+    """The greedy rejection correction must be the **penalized** target
+    argmax at the rejection position.
+
+    Regression test: penalties were previously dropped in the verification
+    step, so the correction came from the unpenalized distribution.
+    """
+    from llm.generation.speculative import _verify_speculative_tokens
+
+    vocab = 32
+    p_log = torch.full((vocab,), 0.0)
+    p_log[2] = 10.0  # unpenalized argmax (also present in the prompt)
+    p_log[4] = 6.0  # wins once token 2 is penalized by repetition_penalty=2
+    q_log = p_log.clone()
+    target = _ConstLogitsModel(p_log)
+    draft = _ConstLogitsModel(q_log)
+
+    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    corrections = set()
+    for _ in range(200):
+        accept_count, bonus = _verify_speculative_tokens(
+            target,
+            draft,
+            prompt,
+            [2],
+            temperature=0.0,
+            top_k=None,
+            top_p=None,
+            repetition_penalty=2.0,
+        )
+        assert accept_count == 0  # draft proposes 2; penalized argmax is 4
+        if bonus is not None:
+            corrections.add(bonus)
+
+    assert corrections == {4}
+
+
 # --- Backend registry integration ------------------------------------------
 
 
