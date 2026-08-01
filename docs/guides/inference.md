@@ -161,7 +161,7 @@ Since the T2 #23 refactor, the engine exposes two complementary APIs:
 
 Both APIs decompose into three phases:
 
-```
+```text
 [lock]  _lock_step_pre       — slot alloc, prefix-cache lookup,
                               batch tensor construction
 [free]  _forward_and_sample  — model forward + sampling (expensive)
@@ -201,14 +201,14 @@ All metrics live in `src/llm/serving/metrics.py` and are exposed at
 
 ### Metrics reference
 
-| Metric                            | Type      | Labels             | Source                                         |
-| --------------------------------- | --------- | ------------------ | ---------------------------------------------- |
-| `llm_tokens_generated_total`      | Counter   | `endpoint`         | observed per successful generation             |
-| `llm_tokens_per_request`          | Histogram | `endpoint`         | distribution of completion tokens (16/64/256/1024/4096 buckets) |
-| `llm_request_duration_seconds`    | Histogram | `endpoint`, `status` | end-to-end request duration (0.05/0.25/1/5/30 buckets) |
-| `llm_batch_fill_ratio`            | Gauge     | —                  | `ContinuousBatchingEngine.set_step_observer` callback |
-| `llm_kv_cache_hit_ratio`          | Gauge     | —                  | set by callers observing prefix-cache hits     |
-| `llm_inflight_requests`           | Gauge     | —                  | incremented while a request holds the semaphore |
+| Metric                         | Type      | Labels               | Source                                                          |
+| ------------------------------ | --------- | -------------------- | --------------------------------------------------------------- |
+| `llm_tokens_generated_total`   | Counter   | `endpoint`           | observed per successful generation                              |
+| `llm_tokens_per_request`       | Histogram | `endpoint`           | distribution of completion tokens (16/64/256/1024/4096 buckets) |
+| `llm_request_duration_seconds` | Histogram | `endpoint`, `status` | end-to-end request duration (0.05/0.25/1/5/30 buckets)          |
+| `llm_batch_fill_ratio`         | Gauge     | —                    | `ContinuousBatchingEngine.set_step_observer` callback           |
+| `llm_kv_cache_hit_ratio`       | Gauge     | —                    | set by callers observing prefix-cache hits                      |
+| `llm_inflight_requests`        | Gauge     | —                    | incremented while a request holds the semaphore                 |
 
 Endpoints contributing to the `endpoint` label: `generate`,
 `batch_generate`, `chat_completions`.
@@ -280,18 +280,18 @@ Example (CPU dummy model, no API key):
 
 Fields:
 
-| Field                    | Notes                                                              |
-| ------------------------ | ------------------------------------------------------------------ |
+| Field                    | Notes                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------- |
 | `model_class`            | `type(model).__name__` — `DecoderModel` for built-in, custom for third-party |
-| `param_count_total`      | every parameter (trainable + frozen)                               |
-| `param_count_trainable`  | `requires_grad=True` only — useful sanity check that PEFT froze the base |
-| `dtype` / `device`       | from the first parameter; `"unknown"` if the model has none        |
-| `max_seq_len`            | from `ServingConfig.max_seq_len`                                   |
-| `attn_impl` / `mlp_impl` | registry keys (`mha` / `mlp` for built-ins; custom values for plugins) |
-| `generation_backend`     | `eager` / `batched` / `speculative` — which backend loop is in use |
-| `enable_prefix_cache`    | bool                                                               |
-| `use_paged_attention`    | bool                                                               |
-| `api_key_set`            | bool ONLY — the key value itself is never logged                   |
+| `param_count_total`      | every parameter (trainable + frozen)                                         |
+| `param_count_trainable`  | `requires_grad=True` only — useful sanity check that PEFT froze the base     |
+| `dtype` / `device`       | from the first parameter; `"unknown"` if the model has none                  |
+| `max_seq_len`            | from `ServingConfig.max_seq_len`                                             |
+| `attn_impl` / `mlp_impl` | registry keys (`mha` / `mlp` for built-ins; custom values for plugins)       |
+| `generation_backend`     | `eager` / `batched` / `speculative` — which backend loop is in use           |
+| `enable_prefix_cache`    | bool                                                                         |
+| `use_paged_attention`    | bool                                                                         |
+| `api_key_set`            | bool ONLY — the key value itself is never logged                             |
 
 Operators normally grep for this line:
 
@@ -338,8 +338,10 @@ Bearer <key>` header or `X-API-Key: <key>` header. Requests without a
 valid key receive `403 Unauthorized`.
 
 # Re-extract from a saved log file
+
 grep '"event": "server_config"' /var/log/llm-serve.log | tail -1 | jq .
-```
+
+```text
 
 The `api_key_set` field intentionally carries the **presence** of an
 API key, never its value — see `src/llm/serving/auth.py:52` for the
@@ -355,7 +357,7 @@ GQA:  Q=32, K=8,  V=8   (8 KV pairs, 4x memory reduction)
 MQA:  Q=32, K=1,  V=1   (1 KV pair, 32x memory reduction)
 ```
 
-### Configuration
+## Configuration
 
 ```python
 model = DecoderModel(
@@ -409,6 +411,28 @@ pip install 'llm[perf]'
 pip install flash-attn
 ```
 
+`uv.lock` pins `flash-attn` as an sdist, so a plain `uv sync --group perf`
+compiles it from source on first install — this needs a CUDA toolkit
+(`nvcc`) and can take a long time. On a CUDA host you can instead pull
+pre-built GPU wheels from the
+[Astral GPU indexes](https://wheels.astral.sh/), which publish `flash-attn`
+builds for each supported CUDA + PyTorch combination:
+
+```bash
+# Pick the CUDA index that matches your torch build (e.g. cu126 / cu128 /
+# cu130). uv pins flash-attn to this index with `explicit = true`, so no
+# other dependency is affected.
+uv add flash-attn --index astral-cu126=https://wheels.astral.sh/simple/cu126/
+```
+
+Astral wheels encode the CUDA + PyTorch pair in the local version tag
+(e.g. `2.8.3.post1+cu.12.6.torch.2.12`). Make sure the wheel you select
+matches your installed `torch` CUDA build, PyTorch version, Python version,
+and platform — a mismatch is the most common cause of `ImportError:
+flash_attn ... no module named` at runtime. If no pre-built wheel matches
+your exact environment (e.g. a very new `torch`/Python combo), fall back to
+the source build above or `pip install flash-attn` on a CUDA host.
+
 ### Configuration
 
 ```python
@@ -430,13 +454,13 @@ the install command. CPU-only hosts should keep the default
 
 ### Trade-offs vs. `mha`
 
-| Aspect            | `mha` (default)    | `flash_attn`            |
-| ----------------- | ------------------ | ----------------------- |
-| Backend           | `torch.nn.functional.scaled_dot_product_attention` | `flash_attn.flash_attn_func` |
-| Custom attn_mask  | Supported          | **Not supported** — falls back via the engine layer if you need padding masks |
-| Sliding window    | Supported (PyTorch SDPA) | Not supported yet (`flash_attn_varlen_func` is a future-work path) |
-| Hardware          | CPU + CUDA + MPS   | CUDA only               |
-| Long-context perf | O(S²) memory peaks | Streaming softmax, O(S) memory |
+| Aspect            | `mha` (default)                                    | `flash_attn`                                                                  |
+| ----------------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Backend           | `torch.nn.functional.scaled_dot_product_attention` | `flash_attn.flash_attn_func`                                                  |
+| Custom attn_mask  | Supported                                          | **Not supported** — falls back via the engine layer if you need padding masks |
+| Sliding window    | Supported (PyTorch SDPA)                           | Not supported yet (`flash_attn_varlen_func` is a future-work path)            |
+| Hardware          | CPU + CUDA + MPS                                   | CUDA only                                                                     |
+| Long-context perf | O(S²) memory peaks                                 | Streaming softmax, O(S) memory                                                |
 
 For training or long-context decode on supported hardware, prefer
 `flash_attn`. For variable-length sequences with padding masks, stick
@@ -556,12 +580,12 @@ backend = get_generation_backend(
 
 ### When it helps
 
-| Scenario | Speedup? |
-|---|---|
-| Long-context decode (≥ 256 tokens), draft well-aligned with target | ✓ 2–3× typical |
-| Short prompts (< 32 tokens) | ✗ overhead dominates |
-| Draft very different from target (e.g., mixed-model families) | ✗ acceptance rate collapses |
-| Greedy decoding | Marginal — most tokens already accepted in eager mode |
+| Scenario                                                           | Speedup?                                              |
+| ------------------------------------------------------------------ | ----------------------------------------------------- |
+| Long-context decode (≥ 256 tokens), draft well-aligned with target | ✓ 2–3× typical                                        |
+| Short prompts (< 32 tokens)                                        | ✗ overhead dominates                                  |
+| Draft very different from target (e.g., mixed-model families)      | ✗ acceptance rate collapses                           |
+| Greedy decoding                                                    | Marginal — most tokens already accepted in eager mode |
 
 ### Sampling
 
