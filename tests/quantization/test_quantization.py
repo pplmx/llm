@@ -221,3 +221,10 @@ class TestQuantizeModel:
         assert quant_size_info["quantized_layers"] == 2
         # Quantized model should be smaller
         assert quant_size_info["total_bytes"] < size_info["total_bytes"]
+
+    def test_from_linear_rejects_asymmetric(self):
+        """Asymmetric simple-PTQ was a silent no-op (zero point never
+        computed); it must fail fast instead, mirroring GPTQQuantizedLinear."""
+        linear = torch.nn.Linear(4, 4)
+        with pytest.raises(NotImplementedError, match="Asymmetric"):
+            QuantizedLinear.from_linear(linear, QuantConfig(bits=8, symmetric=False))
