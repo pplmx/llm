@@ -8,7 +8,7 @@ import uuid
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import torch
 
@@ -23,6 +23,17 @@ from llm.generation.sampling import (
 from llm.models.decoder import DecoderModel
 from llm.serving.scheduler import Scheduler
 from llm.serving.schemas import GenerationRequest, RequestState, Sequence
+from llm.tokenization.tokenizer import BaseTokenizer
+
+
+@runtime_checkable
+class _CacheSizedAttention(Protocol):
+    """Minimal structural type for attention backends that expose the
+    KV-cache sizing attributes (MHA / MLA / FlashAttention all do)."""
+
+    num_kv_heads: int
+    head_dim: int
+
 
 if TYPE_CHECKING:
     pass
@@ -158,7 +169,7 @@ class ContinuousBatchingEngine:
     def __init__(
         self,
         model: DecoderModel,
-        tokenizer: object,
+        tokenizer: BaseTokenizer,
         device: str | torch.device = "cuda",
         max_batch_size: int = 16,
         max_seq_len: int = 512,
@@ -208,12 +219,15 @@ class ContinuousBatchingEngine:
         # path (and building both would waste memory).
         self.kv_caches: list[KVCache] = []
         if not use_paged_attention:
+            first_attn = self.model.transformer_blocks[0].self_attn
+            if not isinstance(first_attn, _CacheSizedAttention):
+                raise TypeError(f"attention backend {type(first_attn).__name__} must expose num_kv_heads/head_dim")
             self.kv_caches = KVCache.from_model_config(
                 max_batch_size=self.max_batch_size,
                 max_seq_len=self.max_seq_len,
                 num_layers=len(self.model.transformer_blocks),
-                num_kv_heads=self.model.transformer_blocks[0].self_attn.num_kv_heads,
-                head_dim=self.model.transformer_blocks[0].self_attn.head_dim,
+                num_kv_heads=first_attn.num_kv_heads,
+                head_dim=first_attn.head_dim,
                 device=self.device,
                 dtype=self.dtype,
             )
@@ -224,10 +238,13 @@ class ContinuousBatchingEngine:
         if use_paged_attention:
             from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
+            paged_attn = self.model.transformer_blocks[0].self_attn
+            if not isinstance(paged_attn, _CacheSizedAttention):
+                raise TypeError(f"attention backend {type(paged_attn).__name__} must expose num_kv_heads/head_dim")
             self.paged_kv_cache = PagedKVCache(
                 num_layers=len(self.model.transformer_blocks),
-                num_kv_heads=self.model.transformer_blocks[0].self_attn.num_kv_heads,
-                head_dim=self.model.transformer_blocks[0].self_attn.head_dim,
+                num_kv_heads=paged_attn.num_kv_heads,
+                head_dim=paged_attn.head_dim,
                 num_blocks=max_blocks,
                 block_size=block_size,
                 device=str(self.device),
@@ -583,6 +600,8 @@ class ContinuousBatchingEngine:
         (so the engine stays consistent even when a forward raises).
         """
         try:
+            if self.model is None:
+                raise RuntimeError("engine model was unloaded")
             logits, _ = self.model(
                 input_ids=inputs.padded_input_ids,
                 position_ids=inputs.padded_position_ids,
