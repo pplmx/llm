@@ -135,7 +135,7 @@ class TransformerBlock(nn.Module):
         start_pos: int | torch.Tensor | None = None,
         paged_kv_cache: object | None = None,
         layer_idx: int | None = None,
-    ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+    ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         """
         Forward pass of the Transformer block.
 
@@ -216,7 +216,7 @@ class TransformerBlock(nn.Module):
             # KV tuple to surface to the caller.
             return output
         if use_cache:
-            if current_kv is None:
-                raise RuntimeError("use_cache=True requires the attention KV tuple")
+            # ``current_kv`` may be None for backends that manage their own
+            # cache (MLA); the decoder ignores the second tuple element.
             return output, current_kv
         return output
