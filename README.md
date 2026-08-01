@@ -66,7 +66,7 @@ To quickly get started with training a model using the framework, follow these s
     llm-train --task lm --epochs 1 --batch-size 32
     ```
 
-    This command will train a language model for 1 epoch with a batch size of 32.
+   This command will train a language model for 1 epoch with a batch size of 32.
 
 3. **Start Inference Server** (optional):
 
@@ -74,7 +74,7 @@ To quickly get started with training a model using the framework, follow these s
     llm-serve
     ```
 
-    The server will be available at `http://localhost:8000` with OpenAI-compatible API.
+   The server will be available at `http://localhost:8000` with OpenAI-compatible API.
 
 4. **Quantize a Model with GPTQ** (optional):
 
@@ -87,10 +87,10 @@ To quickly get started with training a model using the framework, follow these s
         --bits 4
     ```
 
-    Runs Hessian-aware 4-bit / 8-bit PTQ (Frantar 2022) with the same
-    validation rules as the Python API. Mixed-precision per-layer
-    dispatch via `LayerQuantPolicy` is supported through the Python
-    API; the CLI exposes `--target-modules` for a coarse filter.
+   Runs Hessian-aware 4-bit / 8-bit PTQ (Frantar 2022) with the same
+   validation rules as the Python API. Mixed-precision per-layer
+   dispatch via `LayerQuantPolicy` is supported through the Python
+   API; the CLI exposes `--target-modules` for a coarse filter.
 
 ## Installation
 
@@ -152,7 +152,7 @@ If you encounter any issues while using `llm`, please check our [Troubleshooting
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to submit pull requests, report issues, or suggest improvements.
+We welcome contributions! Please see our [Contributing Guide](https://github.com/pplmx/llm/blob/main/CONTRIBUTING.md) for details on how to submit pull requests, report issues, or suggest improvements.
 
 ## License
 

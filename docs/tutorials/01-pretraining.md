@@ -176,7 +176,7 @@ checkpoints/
 
 `epoch_N.pt` 里包含：
 
-- `model_state`：模型权重（adapter 部分也包含在内，详见 [PEFT save/load](../reference/architecture.md#peft-method-registry)）
+- `model_state`：模型权重（adapter 部分也包含在内，详见 [PEFT save/load](../guides/finetuning.md#peft-checkpoint-management)）
 - `optimizer_state`：AdamW 状态
 - `scheduler_state`：LR scheduler
 - `scaler_state`：AMP GradScaler

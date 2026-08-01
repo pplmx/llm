@@ -99,7 +99,7 @@ make ruff
 
 ## 贡献
 
-欢迎贡献！请阅读 [CONTRIBUTING.md](../CONTRIBUTING.md) 了解如何参与。
+欢迎贡献！请阅读 [CONTRIBUTING.md](https://github.com/pplmx/llm/blob/main/CONTRIBUTING.md) 了解如何参与。
 
 ---
 
