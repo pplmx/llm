@@ -39,15 +39,12 @@ versions with a loud :class:`ValueError`.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any, cast
 
 import torch
+import torch.nn as nn
 
 from llm.core.peft.registry import _resolve
-
-if TYPE_CHECKING:
-    import torch.nn as nn
-
 
 #: On-disk format version. Bump when the payload shape changes
 #: incompatibly; ``load_peft`` rejects unknown versions.
@@ -71,7 +68,7 @@ def _collect_adapter_params(
             f"PEFT method '{method_name}' does not expose get_parameters. "
             f"Check llm.core.{method_name} for the per-method equivalent."
         )
-    return list(method.get_parameters(model))
+    return cast(list[nn.Parameter], list(method.get_parameters(model)))
 
 
 def save_peft(
