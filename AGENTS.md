@@ -85,7 +85,7 @@ uv run llm-serve
 | `make test-e2e` | 仅 e2e |
 | `make ruff` | format + lint |
 | `make ty` | 类型检查 |
-| `uv sync --group streaming` | HF `datasets` 流式依赖 |
+| `uv sync --extra streaming` | HF `datasets` 流式依赖 |
 | `uv lock --check` | 验证 lock 与 pyproject 同步 |
 
 **改动后验证顺序**: `make test` → `make ruff` → `make test`

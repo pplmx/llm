@@ -26,7 +26,7 @@ the *raw* data files can be re-fetched from the configured remote with
 a single ``dvc pull``, instead of having to re-download the corpus
 from HuggingFace every time the cache is wiped.
 
-Install with ``uv sync --group dvc`` (or ``pip install llm[dvc]`` for
+Install with ``uv sync --extra dvc`` (or ``pip install llm[dvc]`` for
 non-uv users) to enable. Without it, every helper in this module is a
 no-op — the streaming pipeline still trains, it just doesn't version
 its inputs.
@@ -75,7 +75,7 @@ def _import_dvc() -> Any:
         _dvc_import_attempted = True
     if _dvc_module is None:
         raise ImportError(
-            "dvc is not installed. Install with `uv sync --group dvc` "
+            "dvc is not installed. Install with `uv sync --extra dvc` "
             "or `pip install llm[dvc]` to enable data versioning."
         )
     return _dvc_module
@@ -258,7 +258,7 @@ def dvc_add(
     """
     if not DVC_AVAILABLE:
         logger.warning(
-            "dvc_add(%s) skipped: DVC is not installed. Install with `uv sync --group dvc` to enable data versioning.",
+            "dvc_add(%s) skipped: DVC is not installed. Install with `uv sync --extra dvc` to enable data versioning.",
             path,
         )
         return None

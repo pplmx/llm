@@ -12,8 +12,8 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 
-# Production runtime deps only (exclude optional groups)
-RUN uv sync --frozen --no-group test --no-group docs --no-group streaming
+# Production runtime deps only (exclude dev groups; extras aren't installed by default)
+RUN uv sync --frozen --no-group test --no-group docs
 
 # Separate stage for validation (build and test)
 FROM builder AS validator

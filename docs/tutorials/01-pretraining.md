@@ -16,7 +16,7 @@
 - 切换到 SFT / DPO 的入口
 - 训练监控
 
-> **前提**：克隆仓库后 `uv sync --group streaming`（C4 / The Pile 等 HuggingFace 流式数据集需要 `datasets` 包）。
+> **前提**：克隆仓库后 `uv sync --extra streaming`（C4 / The Pile 等 HuggingFace 流式数据集需要 `datasets` 包）。
 
 ---
 

@@ -418,7 +418,7 @@ class CheckpointManager:
         if not _safetensors_available():
             raise ImportError(
                 f"Saving checkpoint {name} requires the 'safetensors' package. "
-                "Install with `uv sync --group compat` or `pip install llm[compat]`."
+                "Install with `uv sync --extra compat` or `pip install llm[compat]`."
             )
         base = Path(self.config.checkpoint_dir) / name
         weights_path = base.with_name(base.name + SAFETENSORS_SUFFIX)

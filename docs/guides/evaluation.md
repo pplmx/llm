@@ -16,7 +16,7 @@ required for the core training and serving install. Pull it in with:
 
 ```bash
 # uv
-uv sync --group eval
+uv sync --extra eval
 # or pip
 pip install 'llm[eval]'
 ```
@@ -28,7 +28,7 @@ the message tells you exactly how to fix it.
 
 ## The three building blocks
 
-```
+```text
 ┌────────────────────┐   ┌──────────────────────┐   ┌────────────────────┐
 │  EvalPreset        │   │  LlamaLmEvalLM       │   │  LmEvalAdapter     │
 │  (presets.py)      │   │  (lm_eval_lm.py)     │   │  (adapter.py)      │
@@ -52,11 +52,11 @@ A preset bundles a benchmark name with the kwargs that
 `lm_eval.evaluator.evaluate` understands. Three ship out of the box
 (defined in `src/llm/evaluation/harness/presets.py`):
 
-| Preset          | Task         | Few-shot | Default batch | Purpose                         |
-|-----------------|--------------|---------:|--------------:|---------------------------------|
-| `MMLU_PRESET`   | `mmlu`       |        5 |             8 | Massive Multitask Language Understanding |
-| `ARCEASY_PRESET`| `arc_easy`   |        0 |             8 | AI2 Reasoning Challenge (easy)  |
-| `WIKITEXT_PRESET`| `wikitext`  |        0 |             4 | WikiText-103 perplexity         |
+| Preset            | Task       | Few-shot | Default batch | Purpose                                  |
+| ----------------- | ---------- | -------: | ------------: | ---------------------------------------- |
+| `MMLU_PRESET`     | `mmlu`     |        5 |             8 | Massive Multitask Language Understanding |
+| `ARCEASY_PRESET`  | `arc_easy` |        0 |             8 | AI2 Reasoning Challenge (easy)           |
+| `WIKITEXT_PRESET` | `wikitext` |        0 |             4 | WikiText-103 perplexity                  |
 
 Construct your own when you need a custom configuration:
 
@@ -256,12 +256,12 @@ lm = LlamaLmEvalLM(model, tokenizer, batch_size=2, device="cpu")
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `ImportError: lm-eval integration requires …` | `lm_eval` is not installed | `uv sync --group eval` or `pip install 'llm[eval]'` |
-| `KeyError: unknown preset 'mmlu_xyz'` | Preset name typo | Use one of `mmlu`, `arc_easy`, `wikitext`, or construct an `EvalPreset` directly |
-| Result dict is missing `acc_norm` | Some tasks don't define `acc_norm` (e.g. WikiText perplexity) | This is correct — check the raw `results` block to see which metrics lm_eval reported |
-| `RuntimeError: … out of memory` | Batch size too large for the GPU | Lower `batch_size` in the preset or the `LlamaLmEvalLM` constructor |
+| Symptom                                       | Cause                                                         | Fix                                                                                   |
+| --------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `ImportError: lm-eval integration requires …` | `lm_eval` is not installed                                    | `uv sync --extra eval` or `pip install 'llm[eval]'`                                   |
+| `KeyError: unknown preset 'mmlu_xyz'`         | Preset name typo                                              | Use one of `mmlu`, `arc_easy`, `wikitext`, or construct an `EvalPreset` directly      |
+| Result dict is missing `acc_norm`             | Some tasks don't define `acc_norm` (e.g. WikiText perplexity) | This is correct — check the raw `results` block to see which metrics lm_eval reported |
+| `RuntimeError: … out of memory`               | Batch size too large for the GPU                              | Lower `batch_size` in the preset or the `LlamaLmEvalLM` constructor                   |
 
 ## Related
 

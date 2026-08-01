@@ -61,33 +61,41 @@
 ### Serving 推理服务相关问题
 
 **问题: llm-serve 启动失败，报 "Refusing to start: ... api_key is not set"**
+
 - **解决方案:** 这是公开主机守卫机制。当你绑定 0.0.0.0 时必须设置 API key。本地开发使用 `LLM_SERVING_HOST=127.0.0.1` 或设置 `LLM_SERVING_API_KEY`。
 
 **问题: curl 调用 /v1/chat/completions 返回 403**
+
 - **解决方案:** 服务需要 API key。确保请求头包含 `X-API-Key` 或 `Authorization: Bearer`。本地开发不需要 key（使用 127.0.0.1）。
 
 **问题: 服务返回空输出或乱码**
+
 - **解决方案:** 如果 `model_path=None`（dummy 模型），输出是随机 token 解码。需要训练 checkpoint 后配置 `model_path` 和 `tokenizer_path`。
 
 ### PEFT 相关问题
 
 **问题: peft_kwargs 配置错误导致训练失败**
+
 - **解决方案:** 不同 peft_method 需要不同的 kwargs。检查 peft_kwargs 是否与方法的预期参数匹配。常见错误：Adapter 需要 `bottleneck_dim`，Prefix Tuning 需要 `prefix_length`，LoRA 需要 `rank` 和 `alpha`。
 
 **问题: PEFT adapter 加载到 serving 时提示 method_name mismatch**
+
 - **解决方案:** 训练时的 `peft_method` 必须与 serving 时的 `LLM_SERVING_PEFT_METHOD` 一致。adapter sidecar 文件中的 `format_version` 和 `method_name` 元数据会在 load 时校验。
 
 ### 评估相关问题
 
 **问题: import lm_eval 失败**
-- **解决方案:** 需要安装可选依赖组：`uv sync --group eval` 或 `pip install 'llm[eval]'`。
+
+- **解决方案:** 需要安装可选依赖：`uv sync --extra eval` 或 `pip install 'llm[eval]'`。
 
 **问题: MMLU 评估结果异常低**
+
 - **解决方案:** 检查 few-shot 设置（默认 5-shot）和模型是否已训练。dummy 模型在 MMLU 上 ≈ 随机水平是正常的。
 
 ### 导出相关问题
 
 **问题: ONNX 导出失败**
+
 - **解决方案:** 确保安装了 onnx 和 onnxruntime：`uv sync --group test`。ONNX 导出要求模型处于 eval 模式且输入 shape 固定。
 
 ## 提交问题

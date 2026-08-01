@@ -11,9 +11,9 @@ init: sync
 sync:
 	@uv sync
 
-# Sync all dependency groups (test, streaming, docs, dev)
+# Sync all dependency groups (test, docs, dev) + runtime extras
 dev:
-	@uv sync --all-groups
+	@uv sync --all-groups --all-extras
 
 # Build wheel
 build:

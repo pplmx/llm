@@ -40,8 +40,9 @@ dependencies = [
     "transformers>=5.10.2,<6.0.0",
 ]
 
-# Mirrored under [project.optional-dependencies] so `pip install llm[eval]`
-# works for users who do not use uv. Keep the two lists in sync.
+# Dev/CI tooling only — never published with the package. Runtime-optional
+# features (eval/perf/compat/…) live in [project.optional-dependencies]
+# below; install with ``uv sync --extra <name>`` or ``pip install llm[<name>]``.
 [dependency-groups]
 dev = [
   {include-group = "test"},
@@ -59,28 +60,6 @@ test = [
     "pytest-cov>=7.0",
     "pytest-xdist>=3.6.0",
 ]
-# Evaluation metric libraries. Only needed when running offline evaluation
-# (ROUGE, BLEU, chrF, F1, lm-eval harness). Core training + serving install
-# does not require them.
-eval = [
-    "lm_eval>=0.4.12",
-    "nltk>=3.10.0",  # bumped: PYSEC-2026-2078 fix in 3.10.0 (transitive via sacrebleu)
-    "rouge-score>=0.1.2",
-    "sacrebleu>=2.6.0",
-    "scikit-learn>=1.9.0",
-]
-# Optional training-log backends. ``TensorBoardLogger`` requires tensorboard;
-# core training works without it (callbacks no-op is not acceptable — the
-# logger will raise a clear error if the package is missing).
-logging = [
-    "tensorboard>=2.20.0",
-]
-streaming = [
-    "datasets>=3.0.0",
-]
-dvc = [
-    "dvc>=3.0",
-]
 docs = [
     "mkdocs-material>=9.7.0",
     # mkdocstrings auto-generates API reference pages from docstrings.
@@ -88,27 +67,6 @@ docs = [
     # pulls in both. Pinned to >=0.27 because the handler API stabilized
     # there.
     "mkdocstrings[python]>=0.27.0",
-]
-# Optional performance backends. ``flash-attn`` enables
-# ``attn_impl="flash_attn"`` through :class:`llm.core.attn.FlashAttention`;
-# without it the registry entry exists but instantiation raises a clear
-# ``ImportError``. ``flash-attn`` ships CUDA wheels only — installation
-# on CPU-only hosts is a no-op. On CUDA hosts prefer the Astral GPU wheel
-# index (https://wheels.astral.sh/) to avoid compiling from source; see
-# ``docs/guides/inference.md``.
-perf = [
-    "flash-attn>=2.5.0",
-]
-# Optional HuggingFace compat layer. ``safetensors`` enables
-# :func:`llm.compat.hf_publisher.save_pretrained`; ``huggingface_hub``
-# enables :func:`llm.compat.hf_publisher.push_to_hub` and
-# :func:`llm.compat.hf_loader.from_pretrained`'s Hub-path. Both
-# modules degrade to clear ``ImportError``s when the corresponding
-# package is missing.
-compat = [
-    "huggingface_hub>=0.20.0",
-    "pillow>=12.3.0",  # bumped: 18 CVEs (PYSEC-2026-2253/4/5/6/7, -3451/2/3, CVE-2026-54058/59197/59198/59200/59204) fix in 12.3.0
-    "safetensors>=0.4.0",
 ]
 # Static security analysis tools. Used in the CI ``security`` job and
 # available locally via ``uv sync --group security``. Pinned to
@@ -121,7 +79,8 @@ security = [
 ]
 
 [project.optional-dependencies]
-# Non-uv users: ``pip install llm[eval]``. Keep in sync with the groups above.
+# Runtime-optional features — single source of truth for both uv
+# (``uv sync --extra <name>``) and pip (``pip install llm[<name>]``).
 eval = [
     "lm_eval>=0.4.12",
     "nltk>=3.10.0",  # bumped: PYSEC-2026-2078 fix in 3.10.0 (transitive via sacrebleu)
@@ -140,21 +99,12 @@ compat = [
     "pillow>=12.3.0",  # bumped: 18 CVEs (PYSEC-2026-2253/4/5/6/7, -3451/2/3, CVE-2026-54058/59197/59198/59200/59204) fix in 12.3.0
     "safetensors>=0.4.0",
 ]
-# Static security analysis tools. Used in the CI ``security`` job and
-# available locally via ``uv sync --group security``. Pinned to
-# major-version floors so Renovate can pick up fixes; the CI ``--strict``
-# flag on ``pip-audit`` ensures any known CVE in the locked set fails the
-# build. See docs/audits/2026-07-12-tickets/09-pip-audit-bandit-ci.md.
-security = [
-    "bandit>=1.7.0",  # >=1.7 for Python 3.14 support
-    "pip-audit>=2.7.0",
-]
 # Optional data-versioning backend (DVC, P0 预训练 productization last item).
 # Without ``dvc`` installed the helpers in :mod:`llm.data.dvc` degrade to
 # no-ops with a clear warning — the streaming pipeline still works, but
 # large data artifacts (downloaded corpora, ``seen_hashes_path`` files,
 # preprocessed token caches) are not versioned. Install with
-# ``uv sync --group dvc`` to enable. ``dvc[s3]`` adds S3/GCS/Azure remote
+# ``uv sync --extra dvc`` to enable. ``dvc[s3]`` adds S3/GCS/Azure remote
 # support; the default local-file remote needs nothing extra.
 dvc = [
     "dvc>=3.0",
@@ -219,10 +169,13 @@ Source = "https://github.com/pplmx/llm"
 default-groups = ["test"]
 
 # flash-attn's setup.py imports torch at build time but does not declare it
-# in build-system.requires; without this, `uv sync --group perf` fails in
+# in build-system.requires; without this, `uv sync --extra perf` fails in
 # build isolation with ModuleNotFoundError: No module named 'torch'.
 [tool.uv.extra-build-dependencies]
-flash-attn = ["torch>=2.13.0,<3.0.0"]
+flash-attn = [{ requirement = "torch", match-runtime = true }]
+
+[tool.uv.extra-build-variables]
+flash-attn = { FLASH_ATTENTION_SKIP_CUDA_BUILD = "TRUE" }
 
 [tool.uv.build-backend]
 module-name = "llm"
