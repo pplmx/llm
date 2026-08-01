@@ -50,17 +50,18 @@ apply_to_config(cfg, C4_PRESET)
 ```
 
 预设的好处：
+
 - 用户只记 `c4` / `pile` / `redpajama/arxiv`，不用记 HuggingFace ID
 - 切换数据集改一行配置即可
 - 同一个 `dataset_name` 在不同环境有一致的语义
 
 ### 1.3 数据量建议
 
-| 场景 | 建议数据量 | 数据源 |
-| --- | --- | --- |
-| 快速冒烟 | 1KB - 100KB | `data_source: local` + 文本文件 |
-| 学习演示 | 1MB - 10MB | `data_source: hf` + 切小流的 `c4` 子集 |
-| 实际训练 | 100GB+ | `data_source: hf` + C4 / The Pile / RedPajama |
+| 场景     | 建议数据量  | 数据源                                        |
+| -------- | ----------- | --------------------------------------------- |
+| 快速冒烟 | 1KB - 100KB | `data_source: local` + 文本文件               |
+| 学习演示 | 1MB - 10MB  | `data_source: hf` + 切小流的 `c4` 子集        |
+| 实际训练 | 100GB+      | `data_source: hf` + C4 / The Pile / RedPajama |
 
 > **提示**：生产规模数据集建议使用 DVC（`dvc init && dvc add data/`）进行版本追踪，配合 `dvc.yaml` pipeline 确保数据可复现。详见 [数据管道指南](../guides/data.md)。
 
@@ -74,11 +75,11 @@ apply_to_config(cfg, C4_PRESET)
 
 仓库自带三个 streaming 预设配置：
 
-| 配置文件 | 用途 |
-| --- | --- |
-| `configs/streaming_local_demo.yaml` | 离线小语料冒烟（CPU 也能跑，几秒完成） |
-| `configs/streaming_c4.yaml` | C4 'en' 子集，768 hidden × 12 layers，AMP + gradient checkpointing |
-| `configs/example.yaml` | 非流式 LM baseline（参考） |
+| 配置文件                            | 用途                                                               |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| `configs/streaming_local_demo.yaml` | 离线小语料冒烟（CPU 也能跑，几秒完成）                             |
+| `configs/streaming_c4.yaml`         | C4 'en' 子集，768 hidden × 12 layers，AMP + gradient checkpointing |
+| `configs/example.yaml`              | 非流式 LM baseline（参考）                                         |
 
 ```bash
 # 离线冒烟（推荐先跑这个验证环境）
@@ -194,9 +195,12 @@ uv run llm-train stream_lm --config configs/streaming_local_demo.yaml \
 ```
 
 **Resume 保证**：
+
 - `model_state` / `optimizer_state` / `scheduler_state` 全部还原
 - 数据 cursor 接着上次的 `line_index`，不会重复读 / 漏读
 - 如果你换了 `data_source` / `dataset_name`，resume 会报警（`stream_source` 指纹不一致）
+
+> **已知约束**：`stream_lm` 的数据加载**强制单进程**（`num_workers` 配置高于 0 会自动降级为 0 并打警告）。原因是流式 resume 游标存于主进程的 dataset 对象上，而 DataLoader worker 是 fork 出的副本，worker 里的游标变更无法回传主进程——多 worker 下保存的 checkpoint 会丢失游标，resume 会从头重读整个语料。并行请用 DDP rank 分片（`world_size`），不要用 DataLoader worker。
 
 ### 3.3 检查 checkpoint 内容
 
@@ -311,12 +315,14 @@ KeyError: "Character 'X' not found in tokenizer vocabulary"
 ```
 
 解决：
+
 - 生产用 `tokenizer_type: hf` + `tokenizer_path: gpt2`（BPE，无字符级 vocab 问题）
 - 或者用 `tests/support/tokenizers.py:LineTokenizer`（按行 tokenize）
 
 ### 6.4 检查点损坏
 
 检查点写入是**原子操作**（先写 `.tmp` 再 `rename`），损坏几乎只会因为：
+
 - 磁盘满
 - 进程被 kill 在 `.tmp` 阶段（`.tmp` 文件残留，可删）
 
@@ -337,6 +343,7 @@ KeyError: "Character 'X' not found in tokenizer vocabulary"
 5. **PEFT**：大模型 + 小数据时 `peft_method: lora`，训练产物只是 `lora_adapter.bin`（几 MB），可分发到不同 base 上
 
 详见：
+
 - [架构文档](../reference/architecture.md)
 - [分布式训练](../guides/distributed.md)
 - [PEFT 微调](../guides/finetuning.md)
@@ -345,10 +352,10 @@ KeyError: "Character 'X' not found in tokenizer vocabulary"
 
 ## 下一步
 
-| 目标 | 文档 |
-| --- | --- |
-| 多 GPU / 多节点训练 | [Guides/分布式训练](../guides/distributed.md) |
-| LoRA / QLoRA 微调 | [Tutorials/微调](./02-finetuning.md) |
-| 推理优化（Paged Attention / Continuous Batching） | [Guides/推理](../guides/inference.md) |
-| 模型评估（lm-eval-harness / Perplexity） | [Guides/评估](../guides/evaluation.md) |
-| 数据管道指南 | [Guides/数据管道](../guides/data.md) |
+| 目标                                              | 文档                                          |
+| ------------------------------------------------- | --------------------------------------------- |
+| 多 GPU / 多节点训练                               | [Guides/分布式训练](../guides/distributed.md) |
+| LoRA / QLoRA 微调                                 | [Tutorials/微调](./02-finetuning.md)          |
+| 推理优化（Paged Attention / Continuous Batching） | [Guides/推理](../guides/inference.md)         |
+| 模型评估（lm-eval-harness / Perplexity）          | [Guides/评估](../guides/evaluation.md)        |
+| 数据管道指南                                      | [Guides/数据管道](../guides/data.md)          |
