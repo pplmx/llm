@@ -306,3 +306,30 @@ def test_dedup_handles_inner_source_returning_no_records(tmp_path):
     deduped = list(DedupTextSource(LocalLineTextSource(empty)).iter_texts())
 
     assert deduped == []
+
+
+def test_dedup_persisted_state_makes_skip_resume_exact(tmp_path):
+    """With seen_hashes_path + write_seen_hashes, a skip-based resume
+    (the streaming cursor) does NOT re-process records that were already
+    consumed and hashed in the previous run — unlike in-memory-only dedup,
+    whose fresh seen-set re-yields them as duplicates."""
+    path = _write(tmp_path, "data.txt", ["a", "b", "a", "c", "b", "d", "e", "f"])
+    seen_path = tmp_path / "seen.txt"
+
+    def make_source():
+        return DedupTextSource(
+            LocalLineTextSource(path),
+            seen_hashes_path=seen_path,
+            write_seen_hashes=True,
+        )
+
+    run1 = list(make_source().iter_texts())
+    assert run1 == ["a", "b", "c", "d", "e", "f"]
+
+    # Resume: fresh source (as after a checkpoint restore), skip what the
+    # streaming cursor consumed (6 dedup-passing records), write to the
+    # same seen-hashes file. Every record's hash was persisted in run 1,
+    # so nothing may be re-yielded (an in-memory-only dedup would yield
+    # ['e', 'f'] here, duplicating consumed data).
+    resumed = list(make_source().iter_texts(skip=len(run1)))
+    assert resumed == []

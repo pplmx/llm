@@ -88,3 +88,27 @@ def test_streaming_train_dataloader_forces_single_worker(tmp_path, monkeypatch, 
     assert sampler is None
     assert loader.num_workers == 0
     assert "num_workers=0" in caplog.text
+
+
+def test_streaming_data_module_warns_on_inmemory_dedup(tmp_path, monkeypatch, line_tokenizer, caplog):
+    """Streaming setup must warn when dedup runs without persisted state:
+    checkpoint resume re-creates the source and would re-process records
+    that were already deduplicated."""
+    from llm.data.modules.streaming import StreamingTextDataModule
+    from llm.training.core.config import Config
+
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text("hello world\n" * 20, encoding="utf-8")
+
+    config = Config()
+    config.data.data_source = "dedup_local"
+    config.data.dataset_path = str(text_file)
+    config.data.max_seq_len = 8
+    config.data.steps_per_epoch = 3
+    config.training.batch_size = 2
+
+    data_module = StreamingTextDataModule(config)
+    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: line_tokenizer)
+    data_module.setup()
+
+    assert "write_seen_hashes" in caplog.text

@@ -201,6 +201,8 @@ uv run llm-train stream_lm --config configs/streaming_local_demo.yaml \
 - 如果你换了 `data_source` / `dataset_name`，resume 会报警（`stream_source` 指纹不一致）
 
 > **已知约束**：`stream_lm` 的数据加载**强制单进程**（`num_workers` 配置高于 0 会自动降级为 0 并打警告）。原因是流式 resume 游标存于主进程的 dataset 对象上，而 DataLoader worker 是 fork 出的副本，worker 里的游标变更无法回传主进程——多 worker 下保存的 checkpoint 会丢失游标，resume 会从头重读整个语料。并行请用 DDP rank 分片（`world_size`），不要用 DataLoader worker。
+>
+> **去重与 resume**：`dedup_local` / `dedup_hf` 若未配置 `seen_hashes_path` + `write_seen_hashes=True`，去重状态只存在于单次运行的内存里。checkpoint resume 会重建数据源，之前已消费记录的去重状态丢失，导致**已消费数据被重复读入**。使用去重 + 流式 resume 时请务必启用持久化；setup 时也会对内存态去重打警告。
 
 ### 3.3 检查 checkpoint 内容
 
