@@ -61,3 +61,30 @@ def test_streaming_data_module_dataloader(tmp_path, monkeypatch, line_tokenizer)
     assert sampler is None
     batch = next(iter(loader))
     assert batch["input_ids"].shape == (2, 8)
+
+
+def test_streaming_train_dataloader_forces_single_worker(tmp_path, monkeypatch, line_tokenizer, caplog):
+    """Regression: DataLoader workers fork the dataset and lose the resume
+    cursor, so streaming training must run single-process for checkpoint
+    resume to capture the real position."""
+    from llm.data.modules.streaming import StreamingTextDataModule
+    from llm.training.core.config import Config
+
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text("hello world\n" * 20, encoding="utf-8")
+
+    config = Config()
+    config.data.dataset_path = str(text_file)
+    config.data.max_seq_len = 8
+    config.data.steps_per_epoch = 3
+    config.training.batch_size = 2
+    config.optimization.num_workers = 4  # default; must be forced to 0
+
+    data_module = StreamingTextDataModule(config)
+    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: line_tokenizer)
+    data_module.setup()
+
+    loader, sampler = data_module.train_dataloader(rank=0, world_size=1)
+    assert sampler is None
+    assert loader.num_workers == 0
+    assert "num_workers=0" in caplog.text
