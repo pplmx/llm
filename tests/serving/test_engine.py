@@ -512,3 +512,45 @@ def test_engine_greedy_matches_eager_reference(tiny_model, mock_tokenizer):
     )
     engine_out = engine.generate_request(req)
     assert engine_out == eager_out, (engine_out, eager_out)
+
+
+def test_engine_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokenizer):
+    """Regression: mixed-length batches corrupt each other's KV cache.
+
+    Two defects were silently corrupting the cache in continuous batching:
+    (1) the mixed-batch prefill wrote padded slots (position_id 0) over a
+    short row's real position-0 K/V; (2) the decode write used an
+    unflattened [B, 1] start_pos, broadcasting every slot's K/V onto every
+    batch position. Both produced output that diverged from the eager
+    backend. Greedy output must match eager per request."""
+    from llm.generation.eager import generate as eager_generate
+
+    tiny_model.to("cpu")
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=4,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    prompts = ["abcd", "xy", "python"]  # mixed lengths (all <= model max_seq_len)
+    reqs = []
+    for i, prompt in enumerate(prompts):
+        req = GenerationRequest(prompt=prompt, max_new_tokens=6, temperature=0.0)
+        req.request_id = f"req-{i}"
+        engine.add_request(req)
+        reqs.append(req)
+
+    for req in reqs:
+        engine_out = engine.generate_request(req)
+        eager_out = eager_generate(
+            tiny_model,
+            mock_tokenizer,
+            req.prompt,
+            max_new_tokens=6,
+            temperature=0.0,
+            use_cache=False,
+        )
+        assert engine_out == eager_out, (req.prompt, engine_out, eager_out)
