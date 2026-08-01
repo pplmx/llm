@@ -282,7 +282,10 @@ class TensorBoardLogger(Callback):
             if self.engine.scheduler:
                 lr = self.engine.scheduler.get_last_lr()[0]
             else:
-                lr = self.engine.optimizer.param_groups[0]["lr"]
+                optimizer = self.engine.optimizer
+                if optimizer is None:
+                    raise RuntimeError("optimizer is not available")
+                lr = optimizer.param_groups[0]["lr"]
             self.writer.add_scalar("Epoch/LearningRate", lr, epoch)
 
     def on_train_step_end(
@@ -341,8 +344,11 @@ class LRSchedulerCallback(Callback):
         metrics: dict[str, Any],
         logs: dict[str, Any] | None = None,
     ):
+        optimizer = self.engine.optimizer
+        if optimizer is None:
+            raise RuntimeError("optimizer is not available")
         if self.engine.rank == 0:
-            current_lr = self.engine.optimizer.param_groups[0]["lr"]
+            current_lr = optimizer.param_groups[0]["lr"]
             global_step = epoch * len(self.engine.dataloader) + batch_idx
             if (
                 self.engine.config.logging.log_interval > 0
@@ -357,8 +363,11 @@ class LRSchedulerCallback(Callback):
                         cb.writer.add_scalar("Batch/LearningRate", current_lr, global_step)
 
     def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None):
+        optimizer = self.engine.optimizer
+        if optimizer is None:
+            raise RuntimeError("optimizer is not available")
         if self.engine.rank == 0:
-            current_lr = self.engine.optimizer.param_groups[0]["lr"]
+            current_lr = optimizer.param_groups[0]["lr"]
             self.engine.logger.info(f"Epoch {epoch + 1} End LR: {current_lr:.6f}")
 
             # Log to TensorBoard if available
@@ -490,7 +499,8 @@ class AdaLoRAPruningCallback(Callback):
                 steps_per_epoch = int(
                     getattr(getattr(cfg, "data", None), "steps_per_epoch", 0) or 0  # type: ignore[union-attr]
                 )
-                epochs = int(getattr(cfg.training, "epochs", 1) or 1)  # type: ignore[union-attr]
+                training_cfg = getattr(cfg, "training", None)
+                epochs = int(getattr(training_cfg, "epochs", 1) or 1) if training_cfg is not None else 1
             except AttributeError, TypeError, ValueError:
                 steps_per_epoch = 0
                 epochs = 1

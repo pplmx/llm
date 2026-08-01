@@ -98,12 +98,15 @@ class GPTQQuantizedLinear(nn.Module):
 
     def _unpack_weights(self) -> torch.Tensor:
         """Unpack int8 storage to int4 (or int8) tensor of shape [out_features, in_features]."""
+        weight_packed = self.weight_packed
+        if not isinstance(weight_packed, torch.Tensor):
+            raise RuntimeError("GPTQ packed weights were not initialized")
         if self.bits == 4:
-            unpacked = _unpack_4bit(self.weight_packed, numel=self.out_features * self.in_features)
+            unpacked = _unpack_4bit(weight_packed, numel=self.out_features * self.in_features)
             return unpacked.reshape(self.out_features, self.in_features)
         else:
             # 8-bit: weight_packed stores int8 values directly
-            return self.weight_packed.reshape(self.out_features, self.in_features)
+            return weight_packed.reshape(self.out_features, self.in_features)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with dequantized weights.
@@ -124,6 +127,10 @@ class GPTQQuantizedLinear(nn.Module):
         if not self.sym:
             raise NotImplementedError("Asymmetric GPTQ forward is not yet implemented. Construct with sym=True.")
 
+        scales = self.scales
+        if not isinstance(scales, torch.Tensor):
+            raise RuntimeError("GPTQ scales were not initialized")
+
         # Always dequantize from int4/int8 storage: trades compute for memory.
         # (Caching fp32 weights would double storage; deferred to future optimization.)
         w_int = self._unpack_weights()  # [out_features, in_features]
@@ -133,12 +140,12 @@ class GPTQQuantizedLinear(nn.Module):
 
         if self.group_size == -1:
             # Per-channel: scales shape [out_features, 1] broadcasts across input dim.
-            w_fp = w_int_signed * self.scales.to(torch.float32)
+            w_fp = w_int_signed * scales.to(torch.float32)
         else:
             # Per-group: scales shape [out_features, in_features // group_size].
             # Expand to [out_features, in_features] by repeating within each group.
             gs = self.group_size
-            scales_expanded = self.scales.to(torch.float32).repeat_interleave(gs, dim=1)
+            scales_expanded = scales.to(torch.float32).repeat_interleave(gs, dim=1)
             w_fp = w_int_signed * scales_expanded
 
         return torch.nn.functional.linear(x, w_fp, self.bias)

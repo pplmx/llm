@@ -252,6 +252,8 @@ class GPTQQuantizer:
                         cached_scale = (w_group.abs().max() / qmax).clamp(min=1e-8)
                         cached_group_idx = group_idx
                     scale = cached_scale
+                    if scale is None:
+                        raise RuntimeError("group scale was not computed")
 
                 # Quantize to INTEGER (clamped to symmetric range)
                 q_int = torch.round(col / scale).clamp(-qmax - 1, qmax)
@@ -555,8 +557,15 @@ def quantize_model_with_collector(
     # Materialize up to n_samples batches from the collector. We stop early
     # so collectors backed by expensive iterators (e.g. dataset streams)
     # don't pull more data than needed.
+    if not isinstance(collector, Iterable):
+        raise TypeError(
+            "collector must be an iterable of calibration batches; "
+            "CalibrationDataCollector stores activation statistics, not batches"
+        )
     batches: list[torch.Tensor] = []
     for i, batch in enumerate(collector):
+        if not isinstance(batch, torch.Tensor):
+            raise TypeError(f"calibration batches must be tensors, got {type(batch).__name__}")
         batches.append(batch)
         if i + 1 >= n_samples:
             break

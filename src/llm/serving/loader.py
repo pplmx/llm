@@ -106,6 +106,9 @@ def _build_decoder(
             mlp_dropout_p=0.0,
         )
 
+    if not isinstance(model, DecoderModel):
+        raise TypeError(f"checkpoint model must be a DecoderModel, got {type(model).__name__}")
+
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     if missing:
         logger.warning("Missing keys when loading checkpoint: %s", missing[:5])
@@ -223,4 +226,6 @@ def _create_dummy_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderMod
         attn_impl=config.attn_impl,
         mlp_impl=config.mlp_impl,
     )
+    if not isinstance(model, DecoderModel):
+        raise TypeError(f"dummy model must be a DecoderModel, got {type(model).__name__}")
     return model, tokenizer
