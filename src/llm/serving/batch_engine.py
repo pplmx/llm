@@ -268,7 +268,7 @@ class ContinuousBatchingEngine:
         self._on_step: Callable[[StepStats], None] | None = None
 
     @classmethod
-    def from_serving_config(cls, config, model: DecoderModel, tokenizer: object) -> ContinuousBatchingEngine:
+    def from_serving_config(cls, config, model: DecoderModel, tokenizer: BaseTokenizer) -> ContinuousBatchingEngine:
         """Build an engine from ServingConfig flags.
 
         Paged Attention is fully wired through the continuous batching

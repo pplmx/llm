@@ -99,8 +99,8 @@ class SFTDataset(Dataset):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        item = self.data[idx]
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        item = self.data[index]
         prompt, response = self.template_fn(item)
 
         # Tokenize (assuming simpler tokenization where simple concat works roughly ok for now)

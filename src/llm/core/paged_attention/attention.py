@@ -83,7 +83,7 @@ def paged_attention_forward(
             v_full = v_cache.new_zeros(num_kv_heads, 0, head_dim)
 
         if k_full.shape[1] < max_seq_len:
-            pad_len = max_seq_len - k_full.shape[1]
+            pad_len = int(max_seq_len - k_full.shape[1])
             k_full = torch.cat([k_full, k_full.new_zeros(num_kv_heads, pad_len, head_dim)], dim=1)
             v_full = torch.cat([v_full, v_full.new_zeros(num_kv_heads, pad_len, head_dim)], dim=1)
 

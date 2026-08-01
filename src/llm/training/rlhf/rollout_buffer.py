@@ -122,10 +122,14 @@ class RolloutBuffer:
 
         # Normalize advantages across all samples
         if self.normalize_advantages and len(self.samples) > 0:
-            all_advantages = torch.cat([s.advantages for s in self.samples])
+            all_advantages = torch.cat([s.advantages for s in self.samples if s.advantages is not None])
+            if all_advantages.numel() == 0:
+                raise RuntimeError("no advantages computed for normalization")
             mean = all_advantages.mean()
             std = all_advantages.std() + 1e-8
             for sample in self.samples:
+                if sample.advantages is None:
+                    raise RuntimeError("advantages were not computed")
                 sample.advantages = (sample.advantages - mean) / std
 
     def get_batches(

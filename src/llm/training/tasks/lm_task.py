@@ -30,9 +30,10 @@ class LanguageModelingTask(TrainingTask):
         # branches below are preserved for backward compatibility with
         # existing configs (which set the flags directly without going
         # through the registry).
-        if getattr(t_cfg, "peft_method", None) is not None:
+        peft_method = getattr(t_cfg, "peft_method", None)
+        if peft_method is not None:
             kwargs = dict(t_cfg.peft_kwargs or {})
-            apply_peft(model, t_cfg.peft_method, **kwargs)
+            apply_peft(model, peft_method, **kwargs)
             return model
         # Legacy per-method flag path (T3 #40-#42, T2 PEFT #18-#20).
         # Each ``use_*`` flag stays opt-in; defaults preserve current

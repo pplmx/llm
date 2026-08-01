@@ -5,7 +5,7 @@ from __future__ import annotations
 import abc
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from llm.models.decoder import DecoderModel
 
@@ -115,7 +115,7 @@ class EagerGenerationBackend(GenerationBackend):
             repetition_penalty=config.repetition_penalty,
             frequency_penalty=config.frequency_penalty,
             presence_penalty=config.presence_penalty,
-            logit_bias=config.logit_bias,
+            logit_bias=cast(Any, config.logit_bias),
             stop=config.stop,
         )
 
@@ -144,7 +144,7 @@ class BatchedGenerationBackend(GenerationBackend):
             repetition_penalty=config.repetition_penalty,
             frequency_penalty=config.frequency_penalty,
             presence_penalty=config.presence_penalty,
-            logit_bias=config.logit_bias,
+            logit_bias=cast(Any, config.logit_bias),
             stop=config.stop,
         )
         yield from self.engine.stream_request(request)
@@ -168,7 +168,7 @@ class BatchedGenerationBackend(GenerationBackend):
                 repetition_penalty=config.repetition_penalty,
                 frequency_penalty=config.frequency_penalty,
                 presence_penalty=config.presence_penalty,
-                logit_bias=config.logit_bias,
+                logit_bias=cast(Any, config.logit_bias),
                 stop=config.stop,
             )
             for prompt in prompts
@@ -236,7 +236,7 @@ class SpeculativeDecodingBackend(GenerationBackend):
             repetition_penalty=config.repetition_penalty,
             frequency_penalty=config.frequency_penalty,
             presence_penalty=config.presence_penalty,
-            logit_bias=config.logit_bias,
+            logit_bias=cast(Any, config.logit_bias),
             stop=config.stop,
         )
 

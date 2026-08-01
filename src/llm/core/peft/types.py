@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+import torch
 from torch import nn
 
 if TYPE_CHECKING:
@@ -112,7 +113,7 @@ class PEFTMethod:
 
     name: str
     apply: Callable[..., nn.Module]
-    get_parameters: Callable[[nn.Module], Iterator[nn.Parameter]] | None = None
+    get_parameters: Callable[[nn.Module], Iterator[nn.Parameter | torch.Tensor]] | None = None
     count_parameters: Callable[[nn.Module], tuple[int, int]] | None = None
     merge: Callable[[nn.Module], nn.Module] | None = None
     unmerge: Callable[[nn.Module], nn.Module] | None = None

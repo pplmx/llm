@@ -32,7 +32,7 @@ class ServingGenerationService:
 
     def shutdown(self) -> None:
         """Release references to model so GPU memory can be freed."""
-        self.model = None  # type: ignore[assignment]
+        self.model = None  # type: ignore
 
     @classmethod
     def from_config(
@@ -47,6 +47,8 @@ class ServingGenerationService:
             model.to(device)
             model.eval()
         else:
+            if engine.model is None:
+                raise RuntimeError("engine model was unloaded")
             model = engine.model
             device = engine.device
         backend = get_generation_backend(config.generation_backend, engine=engine)
