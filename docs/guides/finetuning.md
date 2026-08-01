@@ -6,16 +6,16 @@ This guide covers parameter-efficient fine-tuning methods available in the LLM f
 
 The framework supports 8 PEFT methods through the unified `PEFT_REGISTRY`:
 
-| Method             | Trainable Params | Memory     | Merge Support | Best For                          |
-| ------------------ | ---------------- | ---------- | ------------- | --------------------------------- |
-| **LoRA**           | ~10%             | ~1.1x base | Yes           | General PEFT                      |
-| **QLoRA**          | ~0.5%            | ~0.25x base| No (quantized)| Extreme memory saving             |
-| **AdaLoRA**        | ~10%             | ~1.1x base | Yes           | Adaptive rank allocation          |
-| **IA3**            | ~0.01%           | ~1.0x base | Yes           | Multi-task, lightweight           |
-| **BitFit**         | ~0.1%            | ~1.0x base | N/A (bias only)| Fast ablation, baseline           |
-| **Adapter**        | ~5%              | ~1.05x base| Yes           | Classic PEFT benchmark            |
-| **Pfeiffer Adapter**| ~2.5%           | ~1.03x base| Yes           | Parameter-efficient adapter       |
-| **Prefix Tuning**  | ~1%              | ~1.01x base| No (prefix tokens)| Instruction tuning             |
+| Method               | Trainable Params | Memory      | Merge Support      | Best For                    |
+| -------------------- | ---------------- | ----------- | ------------------ | --------------------------- |
+| **LoRA**             | ~10%             | ~1.1x base  | Yes                | General PEFT                |
+| **QLoRA**            | ~0.5%            | ~0.25x base | No (quantized)     | Extreme memory saving       |
+| **AdaLoRA**          | ~10%             | ~1.1x base  | Yes                | Adaptive rank allocation    |
+| **IA3**              | ~0.01%           | ~1.0x base  | Yes                | Multi-task, lightweight     |
+| **BitFit**           | ~0.1%            | ~1.0x base  | N/A (bias only)    | Fast ablation, baseline     |
+| **Adapter**          | ~5%              | ~1.05x base | Yes                | Classic PEFT benchmark      |
+| **Pfeiffer Adapter** | ~2.5%            | ~1.03x base | Yes                | Parameter-efficient adapter |
+| **Prefix Tuning**    | ~1%              | ~1.01x base | No (prefix tokens) | Instruction tuning          |
 
 ---
 
@@ -122,13 +122,13 @@ from llm.core.adalora import apply_adalora
 
 apply_adalora(
     model,
-    rank=16,              # Initial rank (will be pruned adaptively)
-    alpha=32.0,           # Scaling factor
+    rank=16,  # Initial rank (will be pruned adaptively)
+    alpha=32.0,  # Scaling factor
     target_modules=["qkv_proj", "out_proj"],
-    init_warmup=100,      # Steps before pruning begins
-    final_warmup=500,     # Steps to reach final budget
-    delta_t=10,           # Frequency of importance evaluation
-    reg_value=0.1,        # Orthogonal regularization coefficient
+    init_warmup=100,  # Steps before pruning begins
+    final_warmup=500,  # Steps to reach final budget
+    delta_t=10,  # Frequency of importance evaluation
+    reg_value=0.1,  # Orthogonal regularization coefficient
 )
 
 # Use with the AdaLoRA pruning callback during training
@@ -166,7 +166,7 @@ from llm.core.ia3 import apply_ia3
 
 apply_ia3(
     model,
-    init_scale=1.0,                     # Initialization value (default identity)
+    init_scale=1.0,  # Initialization value (default identity)
     target_modules=["qkv_proj", "out_proj", "mlp"],  # Supports any linear layer
 )
 
@@ -179,11 +179,11 @@ optimizer = torch.optim.AdamW(
 
 ### Configuration Tips
 
-| Parameter       | Recommendation                             |
-| --------------- | ------------------------------------------ |
-| `init_scale`    | 1.0 (identity). Values >1 amplify, <1 gate |
-| `target_modules`| Apply to all linear layers for best results |
-| Learning rate   | Typically 1e-3 to 5e-3 (higher than LoRA)  |
+| Parameter        | Recommendation                              |
+| ---------------- | ------------------------------------------- |
+| `init_scale`     | 1.0 (identity). Values >1 amplify, <1 gate  |
+| `target_modules` | Apply to all linear layers for best results |
+| Learning rate    | Typically 1e-3 to 5e-3 (higher than LoRA)   |
 
 ---
 
@@ -210,11 +210,11 @@ apply_bitfit(
 
 ### Configuration Tips
 
-| Parameter        | Recommendation                                    |
-| ---------------- | ------------------------------------------------- |
-| `target_modules` | Apply to all modules for maximum capacity         |
-| Learning rate    | 1e-3 to 5e-3 (often needs higher LR than LoRA)   |
-| Use case         | Sanity-check data, fast ablation studies, baselines|
+| Parameter        | Recommendation                                      |
+| ---------------- | --------------------------------------------------- |
+| `target_modules` | Apply to all modules for maximum capacity           |
+| Learning rate    | 1e-3 to 5e-3 (often needs higher LR than LoRA)      |
+| Use case         | Sanity-check data, fast ablation studies, baselines |
 
 ---
 
@@ -235,7 +235,7 @@ from llm.core.adapter import apply_adapter
 
 apply_adapter(
     model,
-    bottleneck_dim=128,         # Bottleneck size (< hidden_dim)
+    bottleneck_dim=128,  # Bottleneck size (< hidden_dim)
     target_modules=["qkv_proj", "out_proj", "mlp"],
     dropout=0.1,
 )
@@ -268,18 +268,18 @@ from llm.core.pfeiffer import apply_pfeiffer_adapter
 
 apply_pfeiffer_adapter(
     model,
-    bottleneck_dim=64,     # Smaller bottleneck than Houlsby
+    bottleneck_dim=64,  # Smaller bottleneck than Houlsby
     dropout=0.1,
 )
 ```
 
 ### Configuration Tips
 
-| Parameter       | Recommendation                                      |
-| --------------- | --------------------------------------------------- |
-| `bottleneck_dim`| 32-128; smaller than Houlsby due to lighter need    |
-| `dropout`       | 0.05-0.15                                           |
-| Use case        | When ~half the parameters of full Adapter is desired |
+| Parameter        | Recommendation                                       |
+| ---------------- | ---------------------------------------------------- |
+| `bottleneck_dim` | 32-128; smaller than Houlsby due to lighter need     |
+| `dropout`        | 0.05-0.15                                            |
+| Use case         | When ~half the parameters of full Adapter is desired |
 
 ---
 
@@ -301,19 +301,19 @@ from llm.core.prefix import apply_prefix_tuning
 
 apply_prefix_tuning(
     model,
-    prefix_length=20,       # Number of virtual prefix tokens
+    prefix_length=20,  # Number of virtual prefix tokens
     target_modules=["qkv_proj"],  # Typically only attention projections
-    reparam=32,             # Reparameterization hidden size (MLP bottleneck)
+    reparam=32,  # Reparameterization hidden size (MLP bottleneck)
 )
 ```
 
 ### Configuration Tips
 
-| Parameter       | Recommendation                                       |
-| --------------- | ---------------------------------------------------- |
-| `prefix_length` | 10-30 for most tasks; 50+ for complex instruction tuning |
-| `target_modules`| Typically `qkv_proj` or equivalent attention modules  |
-| `reparam`       | 16-64; larger = more capacity, more params           |
+| Parameter        | Recommendation                                           |
+| ---------------- | -------------------------------------------------------- |
+| `prefix_length`  | 10-30 for most tasks; 50+ for complex instruction tuning |
+| `target_modules` | Typically `qkv_proj` or equivalent attention modules     |
+| `reparam`        | 16-64; larger = more capacity, more params               |
 
 ---
 
@@ -416,17 +416,17 @@ The `PEFT_REGISTRY` maps method names to their corresponding `PEFTMethod` datacl
 
 For a 7B parameter model with `hidden_dim=4096`:
 
-| Method             | Trainable Params | % of Total | Memory Overhead |
-| ------------------ | ---------------- | ---------- | --------------- |
-| Full Fine-Tuning   | 7B               | 100%       | ~28GB           |
-| LoRA (r=8)         | ~35M             | ~0.5%      | ~14.1GB         |
-| QLoRA (r=8, 4-bit) | ~35M             | ~0.5%      | ~4GB            |
-| AdaLoRA (r=16)     | ~70M             | ~1%        | ~14.2GB         |
-| IA3                | ~0.7M            | ~0.01%     | ~14GB           |
-| BitFit             | ~7M              | ~0.1%      | ~14GB           |
-| Adapter (d=128)    | ~350M            | ~5%        | ~14.7GB         |
-| Pfeiffer (d=64)    | ~175M            | ~2.5%      | ~14.4GB         |
-| Prefix Tuning (l=20)| ~70M            | ~1%        | ~14.1GB         |
+| Method               | Trainable Params | % of Total | Memory Overhead |
+| -------------------- | ---------------- | ---------- | --------------- |
+| Full Fine-Tuning     | 7B               | 100%       | ~28GB           |
+| LoRA (r=8)           | ~35M             | ~0.5%      | ~14.1GB         |
+| QLoRA (r=8, 4-bit)   | ~35M             | ~0.5%      | ~4GB            |
+| AdaLoRA (r=16)       | ~70M             | ~1%        | ~14.2GB         |
+| IA3                  | ~0.7M            | ~0.01%     | ~14GB           |
+| BitFit               | ~7M              | ~0.1%      | ~14GB           |
+| Adapter (d=128)      | ~350M            | ~5%        | ~14.7GB         |
+| Pfeiffer (d=64)      | ~175M            | ~2.5%      | ~14.4GB         |
+| Prefix Tuning (l=20) | ~70M             | ~1%        | ~14.1GB         |
 
 ### When to Use Each Method
 
@@ -594,11 +594,13 @@ apply_prefix_tuning(model, prefix_length=20, reparam=32)
 ```python
 # Save only adapter weights (small file)
 from llm.core.peft import save_peft
+
 save_peft(model, "peft_adapter.bin")
 
 # Load: if the model doesn't have the PEFT method yet,
 # load_peft auto-applies it using the saved peft_kwargs
 from llm.core.peft import load_peft
+
 load_peft(model, "peft_adapter.bin")
 ```
 
@@ -645,9 +647,9 @@ load_peft(model, "peft_adapter.bin")
 
 ### BitFit Functions
 
-| Function                             | Description                           |
-| ------------------------------------ | ------------------------------------- |
-| `apply_bitfit(model, ...)`          | Freeze all non-bias parameters         |
+| Function                   | Description                    |
+| -------------------------- | ------------------------------ |
+| `apply_bitfit(model, ...)` | Freeze all non-bias parameters |
 
 ### Adapter Functions
 
@@ -667,12 +669,12 @@ load_peft(model, "peft_adapter.bin")
 
 ### Unified PEFT Registry
 
-| Function / Class                          | Description                              |
-| ----------------------------------------- | ---------------------------------------- |
-| `PEFT_REGISTRY`                           | Dict mapping method names to modules     |
-| `apply_peft(model, method, **kwargs)`     | Apply any registered PEFT method         |
-| `merge_peft(model)`                       | Merge active PEFT adapter (if supported) |
-| `save_peft(model, path)`                  | Save adapter weights with format envelope|
-| `load_peft(model, path)`                  | Load adapter weights (auto-applies if needed) |
-| `get_peft_method(model)`                  | Detect which PEFT method is applied      |
-| `PEFTAdapterCheckpointCallback`           | Auto-save callback for training           |
+| Function / Class                      | Description                                   |
+| ------------------------------------- | --------------------------------------------- |
+| `PEFT_REGISTRY`                       | Dict mapping method names to modules          |
+| `apply_peft(model, method, **kwargs)` | Apply any registered PEFT method              |
+| `merge_peft(model)`                   | Merge active PEFT adapter (if supported)      |
+| `save_peft(model, path)`              | Save adapter weights with format envelope     |
+| `load_peft(model, path)`              | Load adapter weights (auto-applies if needed) |
+| `get_peft_method(model)`              | Detect which PEFT method is applied           |
+| `PEFTAdapterCheckpointCallback`       | Auto-save callback for training               |
