@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import torch
 
@@ -30,15 +30,16 @@ class TokenizerFactory:
         if data_config.tokenizer_type == "hf":
             if not data_config.tokenizer_path:
                 raise ValueError("tokenizer_path must be specified for HF tokenizer.")
-            return HFTokenizer.from_pretrained(data_config.tokenizer_path)
+            return cast(BaseTokenizer, HFTokenizer.from_pretrained(data_config.tokenizer_path))
 
         if data_config.tokenizer_path:
             path = Path(data_config.tokenizer_path)
             if path.exists():
-                return torch.load(path, map_location="cpu", weights_only=False)
+                loaded = torch.load(path, map_location="cpu", weights_only=False)
+                return cast(BaseTokenizer, loaded)
 
         corpus = default_corpus or DEFAULT_SIMPLE_CORPUS
-        return SimpleCharacterTokenizer(corpus)
+        return cast(BaseTokenizer, SimpleCharacterTokenizer(corpus))
 
     @staticmethod
     def from_serving_config(config: Any) -> Any:

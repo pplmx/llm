@@ -112,17 +112,17 @@ async def chat_completions(
                 async with inference_semaphore or _null_cm():
                     with metrics.track_inflight():
                         generated_text = await run_in_threadpool(
-                        _sync_generate,
-                        prompt=prompt,
-                        max_new_tokens=request.max_tokens,
-                        temperature=request.temperature,
-                        top_p=request.top_p,
-                        repetition_penalty=repetition_penalty,
-                        frequency_penalty=request.frequency_penalty,
-                        presence_penalty=request.presence_penalty,
-                        logit_bias=request.logit_bias,
-                        stop=request.stop,
-                    )
+                            _sync_generate,
+                            prompt=prompt,
+                            max_new_tokens=request.max_tokens,
+                            temperature=request.temperature,
+                            top_p=request.top_p,
+                            repetition_penalty=repetition_penalty,
+                            frequency_penalty=request.frequency_penalty,
+                            presence_penalty=request.presence_penalty,
+                            logit_bias=request.logit_bias,
+                            stop=request.stop,
+                        )
         except TimeoutError as exc:
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc
@@ -170,7 +170,7 @@ async def _chat_stream_generator(
     repetition_penalty: float,
     frequency_penalty: float,
     presence_penalty: float,
-    logit_bias: dict[int, float] | None,
+    logit_bias: dict[str, float] | None,
 ) -> AsyncGenerator[str]:
     """Generate SSE stream for chat completions."""
     from starlette.concurrency import iterate_in_threadpool
