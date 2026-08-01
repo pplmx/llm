@@ -135,3 +135,47 @@ class TestKVCache:
         # Verify buffers are the same (no reallocation)
         assert cache.k_cache.data_ptr() == k_ptr
         assert cache.v_cache.data_ptr() == v_ptr
+
+    def test_update_at_indices_decode_writes_each_slot_own_position(self):
+        """Decode writes must land only on each slot's own position.
+
+        Regression: ``start_pos`` arrives as ``[B, 1]``; using it
+        unflattened broadcasts with ``batch_indices`` into a [B, B]
+        index grid and every slot's K/V was written at every batch
+        position, corrupting unrelated cache entries.
+        """
+        cache = KVCache(4, 128, 1, 8, device="cpu", dtype=torch.float32)
+        batch_indices = torch.tensor([0, 1, 2, 3])
+        start_pos = torch.tensor([[4], [11], [2], [6]])  # [B, 1] as position_ids
+        k_new = torch.randn(4, 1, 1, 8)
+        v_new = torch.randn(4, 1, 1, 8)
+
+        cache.update_at_indices(batch_indices, k_new, v_new, start_pos)
+
+        for slot, pos in enumerate([4, 11, 2, 6]):
+            assert torch.allclose(cache.k_cache[slot, 0, pos], k_new[slot, 0, 0])
+            assert torch.allclose(cache.v_cache[slot, 0, pos], v_new[slot, 0, 0])
+        # Off-diagonal slots must remain untouched (zero).
+        for slot, pos in enumerate([4, 11, 2, 6]):
+            for other in range(4):
+                other_pos = [4, 11, 2, 6][other]
+                if other_pos != pos:
+                    assert torch.all(cache.k_cache[slot, 0, other_pos] == 0), (slot, other_pos)
+
+    def test_update_at_indices_prefill_keeps_real_position_zero(self):
+        """Padded slots (position_id 0) must not overwrite a short row's
+        real position-0 K/V during a mixed-length prefill."""
+        cache = KVCache(2, 128, 1, 8, device="cpu", dtype=torch.float32)
+        batch_indices = torch.tensor([0, 1])
+        # Row 0: real length 2 (positions 0,1), padded positions reuse 0.
+        # Row 1: full length 4.
+        start_pos = torch.tensor([[0, 1, 0, 0], [0, 1, 2, 3]])
+        k_new = torch.randn(2, 1, 4, 8)
+
+        cache.update_at_indices(batch_indices, k_new, k_new.clone(), start_pos)
+
+        # Row 0's position 0 must keep the REAL K (k_new[0,:,0,:]), not the
+        # padded slot's K (k_new[0,:,2,:] == k_new[0,:,3,:]).
+        assert torch.allclose(cache.k_cache[0, 0, 0], k_new[0, 0, 0])
+        assert torch.allclose(cache.k_cache[0, 0, 1], k_new[0, 0, 1])
+        assert torch.allclose(cache.k_cache[1, 0, :4], k_new[1, 0, :4])

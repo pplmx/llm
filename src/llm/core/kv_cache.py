@@ -146,7 +146,13 @@ class KVCache:
             self.v_cache[batch_indices, :, start_pos:pos_end] = v_new
         elif seq_len_new == 1:
             # Decode path: one position per batch slot, advanced indexing is
-            # already a single fused op with no host sync.
+            # already a single fused op with no host sync. ``start_pos`` is
+            # ``[B, 1]`` (position_ids); flatten to ``[B]`` so each slot is
+            # written at its own position. The unflattened shape would
+            # broadcast with ``batch_indices`` into a [B, B] index grid,
+            # writing every slot's K/V at every batch position and silently
+            # corrupting unrelated cache entries.
+            start_pos = start_pos.reshape(-1)
             self.k_cache[batch_indices, :, start_pos] = k_new.squeeze(2)
             self.v_cache[batch_indices, :, start_pos] = v_new.squeeze(2)
         else:
@@ -177,11 +183,25 @@ class KVCache:
             b_idx = batch_indices.view(b_curr, 1).expand(b_curr, seq_len_new).reshape(-1)
             s_idx = start_pos.reshape(-1)
 
+            # Padded slots reuse position 0: continuous batching fills the
+            # padded ``position_ids`` with 0, so without deduplication the
+            # flattened write would overwrite the real position-0 K/V of a
+            # short sequence with the padded slots' (garbage) K/V. The real
+            # write always comes first in the flattened order, so keep the
+            # first occurrence of each (batch slot, position) pair.
+            key = b_idx * self.max_seq_len + s_idx
+            sorted_key, sort_idx = torch.sort(key)
+            is_first = torch.ones_like(sorted_key, dtype=torch.bool)
+            is_first[1:] = sorted_key[1:] != sorted_key[:-1]
+            first_idx, _ = torch.sort(sort_idx[is_first])
+            b_idx = b_idx[first_idx]
+            s_idx = s_idx[first_idx]
+
             # Permute [B, N_kv, S, D] -> [B, S, N_kv, D] then flatten -> [B*S, N_kv, D]
             # The reshape is a view when memory is contiguous (it is here because
             # permute + reshape is followed by assignment, not by a graph op).
-            k_flat = k_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)
-            v_flat = v_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)
+            k_flat = k_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)[first_idx]
+            v_flat = v_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)[first_idx]
 
             # Advanced indexing with broadcasting on the head dim. The whole
             # write happens in one scatter-style kernel per cache; no host sync.
