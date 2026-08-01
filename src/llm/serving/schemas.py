@@ -77,6 +77,7 @@ class GenerationRequest(BaseModel):
     stream: bool = Field(False, description="Whether to use streaming output (SSE).")
     stop: str | list[str] | None = Field(
         None,
+        max_length=4,
         description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
     )
 
@@ -110,6 +111,7 @@ class BatchGenerationRequest(BaseModel):
     )
     stop: str | list[str] | None = Field(
         None,
+        max_length=4,
         description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
     )
 
@@ -141,6 +143,7 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = Field(False, description="Whether to stream responses.")
     stop: list[str] | str | None = Field(
         None,
+        max_length=4,
         description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
     )
     presence_penalty: float = Field(
