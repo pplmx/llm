@@ -126,14 +126,14 @@ print(tokenizer.decode(output[0]))
 
 ## 下一步
 
-| 目标             | 文档                                                      |
-| ---------------- | --------------------------------------------------------- |
-| 完整预训练流程   | [Tutorials/预训练](tutorials/01-pretraining.md)           |
-| 微调 (SFT/DPO)  | [Tutorials/微调](tutorials/02-finetuning.md)              |
-| 推理服务         | [Tutorials/推理服务](tutorials/03-inference.md)           |
-| 评估模型         | [Guides/评估](guides/evaluation.md)                       |
-| 量化模型         | [Guides/量化](guides/inference.md#GPTQ-Quantization)      |
-| 了解系统架构     | [Architecture](reference/architecture.md)                 |
+| 目标           | 文档                                            |
+| -------------- | ----------------------------------------------- |
+| 完整预训练流程 | [Tutorials/预训练](tutorials/01-pretraining.md) |
+| 微调 (SFT/DPO) | [Tutorials/微调](tutorials/02-finetuning.md)    |
+| 推理服务       | [Tutorials/推理服务](tutorials/03-inference.md) |
+| 评估模型       | [Guides/评估](guides/evaluation.md)             |
+| 量化模型       | [Guides/量化](reference/cli.md#llm-quantize)    |
+| 了解系统架构   | [Architecture](reference/architecture.md)       |
 
 ---
 

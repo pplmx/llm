@@ -66,6 +66,12 @@ plugins:
             inherited_members: false
 
 markdown_extensions:
+  # ``toc`` must use a unicode-preserving slugify: the default strips CJK
+  # characters, so every Chinese heading got a ``_N`` anchor and all
+  # in-page/cross-page anchors to Chinese headings were broken.
+  - toc:
+      permalink: true
+      slugify: !!python/name:markdown.extensions.toc.slugify_unicode
   - admonition
   - pymdownx.details
   - pymdownx.superfences:
@@ -89,7 +95,7 @@ nav:
       - tutorials/01-pretraining.md
       - tutorials/02-finetuning.md
       - tutorials/03-inference.md
-  
+
   - 🔧 指南:
       - guides/checkpoints.md
       - guides/data.md
@@ -97,7 +103,7 @@ nav:
       - guides/finetuning.md
       - guides/inference.md
       - guides/evaluation.md
-  
+
   - 💻 开发:
       - development/README.md
       - development/components.md
@@ -107,7 +113,7 @@ nav:
       - development/guide-extending.md
       - development/deep-dive-ddp.md
       - development/troubleshooting.md
-  
+
   - 📚 参考:
       - reference/architecture.md
       - reference/cli.md
@@ -121,7 +127,7 @@ nav:
           - api/training.md
           - api/evaluation.md
           - api/data.md
-  
+
   - 📝 ADR:
       - adr/README.md
       - "001: GQA": adr/001-use-gqa.md
@@ -133,6 +139,6 @@ nav:
       - "006: Checkpoint Unification": adr/006-checkpoint-format-unification.md
       - "007: GPTQ Integration": adr/007-gptq-integration.md
       - "008: Mixed-Precision Quantization": adr/008-mixed-precision-quantization.md
-  
+
   - ❓ FAQ: faq.md
   - 🔧 故障排除: troubleshooting.md

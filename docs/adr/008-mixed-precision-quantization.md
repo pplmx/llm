@@ -29,7 +29,7 @@ Accepted
 
 ### 架构
 
-```
+```text
 Layer 1: _policy.py (算法无关)
   - LayerQuantPolicy (frozen dataclass, 4 字段 + target_modules)
   - resolve_layer_policies (泛型 helper, 输出 dict[layer_name, effective_config])
@@ -73,7 +73,7 @@ LayerQuantPolicy(target_modules=("lm_head",), bits=8)  # group_size=None → 继
 
 ### 实施切片
 
-- 3 个新文件（`_policy.py` + 2 个 test 文件），4 个文件改动（gptq.py / __init__.py / ADR / README）
+- 3 个新文件（`_policy.py` + 2 个 test 文件），4 个文件改动（gptq.py / **init**.py / ADR / README）
 - ~120 行代码净增量，35 个新 tests
 - ~7-8 小时工作量，1 个工作日
 - TDD 节奏：每个 commit RED → GREEN → IMPROVE
@@ -163,6 +163,6 @@ GPTQConfig(
 
 - [ADR-007](./007-gptq-integration.md) — GPTQ integration (foundation)
 - [Design spec](../superpowers/specs/2026-07-22-mixed-precision-quantization-design.md) — full 5-section design
-- [ROADMAP §13.1](../ROADMAP.md#阶段十三-量化与压缩-) — Post-Training Quantization (mixed precision)
+- ROADMAP §13.1 — Post-Training Quantization (mixed precision)
 - [Frantar et al. 2022, "GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers"](https://arxiv.org/abs/2210.17323) — base algorithm
 - Industry references: [vLLM per-layer quant](https://github.com/vllm-project/vllm), [AutoGPTQ](https://github.com/AutoGPTQ/AutoGPTQ), [llama.cpp quant types](https://github.com/ggerganov/llama.cpp)

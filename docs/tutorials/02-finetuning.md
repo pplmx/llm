@@ -125,12 +125,12 @@ with open("data/ultrafeedback.jsonl", "w") as out:
 
 ### 1.5 数据量建议
 
-| 场景 | 建议数据量 | 数据源 |
-| --- | --- | --- |
-| 快速冒烟 | 10-100 条 | 手写 JSONL |
-| 学习演示 | 1K-10K 条 | 切小流的 Alpaca / Dolly 子集 |
+| 场景     | 建议数据量  | 数据源                             |
+| -------- | ----------- | ---------------------------------- |
+| 快速冒烟 | 10-100 条   | 手写 JSONL                         |
+| 学习演示 | 1K-10K 条   | 切小流的 Alpaca / Dolly 子集       |
 | 实际 SFT | 50K-500K 条 | Alpaca (52K) / Dolly (15K) / OASST |
-| 实际 DPO | 50K-100K 对 | UltraFeedback / Anthropic hh-rlhf |
+| 实际 DPO | 50K-100K 对 | UltraFeedback / Anthropic hh-rlhf  |
 
 ---
 
@@ -140,10 +140,10 @@ with open("data/ultrafeedback.jsonl", "w") as out:
 
 仓库自带两个 SFT 预设：
 
-| 配置文件 | 用途 |
-| --- | --- |
-| `configs/sft_local_demo.yaml` | 离线 JSONL 冒烟（CPU 也能跑，几秒完成） |
-| `configs/sft_alpaca.yaml` | 生产 Alpaca JSONL（256 hidden × 6 layers，AMP） |
+| 配置文件                      | 用途                                            |
+| ----------------------------- | ----------------------------------------------- |
+| `configs/sft_local_demo.yaml` | 离线 JSONL 冒烟（CPU 也能跑，几秒完成）         |
+| `configs/sft_alpaca.yaml`     | 生产 Alpaca JSONL（256 hidden × 6 layers，AMP） |
 
 ```bash
 # 离线冒烟（推荐先跑这个验证环境）
@@ -240,15 +240,15 @@ uv run llm-train dpo --config configs/dpo_local_demo.yaml
 
 ### 3.2 关键差异（vs SFT）
 
-| 维度 | SFT | DPO |
-| --- | --- | --- |
-| 数据 | `{instruction, output}` | `{prompt, chosen, rejected}` |
-| 模型数 | 1（policy） | 2（policy + reference） |
-| Loss | cross-entropy on response | log-ratio + KL penalty |
-| 显存 | baseline | 约 2×（policy + ref） |
-| 学习率 | 1e-5 ~ 5e-5 | 5e-7 ~ 1e-6（小一个量级） |
-| 批次 | 16-64 | 4-16（小一半，gradient_accumulation 补） |
-| beta | — | `training.dpo_beta`（默认 0.1） |
+| 维度   | SFT                       | DPO                                      |
+| ------ | ------------------------- | ---------------------------------------- |
+| 数据   | `{instruction, output}`   | `{prompt, chosen, rejected}`             |
+| 模型数 | 1（policy）               | 2（policy + reference）                  |
+| Loss   | cross-entropy on response | log-ratio + KL penalty                   |
+| 显存   | baseline                  | 约 2×（policy + ref）                    |
+| 学习率 | 1e-5 ~ 5e-5               | 5e-7 ~ 1e-6（小一个量级）                |
+| 批次   | 16-64                     | 4-16（小一半，gradient_accumulation 补） |
+| beta   | —                         | `training.dpo_beta`（默认 0.1）          |
 
 ### 3.3 DPO 的 train_step
 
@@ -285,11 +285,11 @@ DPO **必须从已微调的 policy 开始**（不能直接从 base 模型做偏�
 
 ### 3.5 `dpo_beta` 的影响
 
-| beta | 行为 |
-| --- | --- |
-| 0.01-0.05 | 弱 KL 约束，policy 可以大幅偏离 reference；DPO loss 不稳定 |
-| 0.1（默认） | 文献标准值，平衡稳定性与对齐强度 |
-| 0.3-0.5 | 强 KL 约束，DPO 退化成"接近 SFT"的回归任务 |
+| beta        | 行为                                                       |
+| ----------- | ---------------------------------------------------------- |
+| 0.01-0.05   | 弱 KL 约束，policy 可以大幅偏离 reference；DPO loss 不稳定 |
+| 0.1（默认） | 文献标准值，平衡稳定性与对齐强度                           |
+| 0.3-0.5     | 强 KL 约束，DPO 退化成"接近 SFT"的回归任务                 |
 
 ---
 
@@ -470,17 +470,17 @@ RuntimeError: index N is out of bounds for dimension 0 with size V
 
 - [架构文档](../reference/architecture.md)
 - [PEFT 微调深度指南](../guides/finetuning.md)
-- [PEFT serving 集成](../reference/architecture.md#peft-method-registry)
+- [PEFT serving 集成](../guides/finetuning.md#peft-checkpoint-management)
 - [推理服务化](./03-inference.md)
 
 ---
 
 ## 下一步
 
-| 目标 | 文档 |
-| --- | --- |
-| 推理服务化 | [Tutorials/推理](./03-inference.md) |
-| PEFT 深度指南 | [Guides/微调](../guides/finetuning.md) |
+| 目标          | 文档                                          |
+| ------------- | --------------------------------------------- |
+| 推理服务化    | [Tutorials/推理](./03-inference.md)           |
+| PEFT 深度指南 | [Guides/微调](../guides/finetuning.md)        |
 | 多卡 / 多节点 | [Guides/分布式训练](../guides/distributed.md) |
-| 评估模型 | [Guides/评估](../guides/evaluation.md) |
-| RLHF / PPO | [ROADMAP §阶段十一](../ROADMAP.md) |
+| 评估模型      | [Guides/评估](../guides/evaluation.md)        |
+| RLHF / PPO    | ROADMAP §阶段十一                             |
