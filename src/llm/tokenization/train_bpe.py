@@ -46,15 +46,15 @@ def main():
         if Path(f).exists():
             training_files.append(f)
         else:
-            print(f"Warning: File {f} does not exist. Skipping.")  # noqa: T201 - CLI user-facing
+            print(f"Warning: File {f} does not exist. Skipping.")
 
     if not training_files:
-        print("Error: No valid training files provided.")  # noqa: T201 - CLI
+        print("Error: No valid training files provided.")
         sys.exit(1)
 
-    print(f"Training BPE tokenizer on {len(training_files)} files...")  # noqa: T201
-    print(f"Vocab size: {args.vocab_size}")  # noqa: T201
-    print(f"Output path: {args.output}")  # noqa: T201
+    print(f"Training BPE tokenizer on {len(training_files)} files...")
+    print(f"Vocab size: {args.vocab_size}")
+    print(f"Output path: {args.output}")
 
     tokenizer = BPETokenizer.train(
         files=training_files,
@@ -64,8 +64,8 @@ def main():
     )
 
     tokenizer.save(args.output)
-    print(f"Tokenizer saved to {args.output}")  # noqa: T201
-    print(f"Final vocab size: {tokenizer.vocab_size}")  # noqa: T201
+    print(f"Tokenizer saved to {args.output}")
+    print(f"Final vocab size: {tokenizer.vocab_size}")
 
 
 if __name__ == "__main__":

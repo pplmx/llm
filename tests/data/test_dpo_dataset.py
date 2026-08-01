@@ -97,7 +97,9 @@ def test_dpo_dataset_truncation(tmp_path, tokenizer):
     """Sequences exceeding max_seq_len are truncated."""
     file_path = tmp_path / "truncate.jsonl"
     with file_path.open("w") as f:
-        f.write('{"prompt": "P:", "chosen": "This is a very long chosen response that exceeds the max length", "rejected": "Short"}')
+        f.write(
+            '{"prompt": "P:", "chosen": "This is a very long chosen response that exceeds the max length", "rejected": "Short"}'
+        )
 
     # max_seq_len=5 forces truncation for the long chosen text
     dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=5)

@@ -11,14 +11,14 @@ from llm.training.tasks.regression_task import RegressionTask
 
 def _make_config(**overrides) -> Config:
     """Build a minimal RegressionTask config, overriding TrainingConfig fields."""
-    training_defaults = dict(
-        task="regression",
-        epochs=1,
-        batch_size=2,
-        lr=1e-3,
-        scheduler_type="cosine",
-        warmup_epochs=0,
-    )
+    training_defaults = {
+        "task": "regression",
+        "epochs": 1,
+        "batch_size": 2,
+        "lr": 1e-3,
+        "scheduler_type": "cosine",
+        "warmup_epochs": 0,
+    }
     training_defaults.update(overrides)
     return Config(
         training=TrainingConfig(**training_defaults),
@@ -27,6 +27,7 @@ def _make_config(**overrides) -> Config:
 
 
 # --- build_model ---
+
 
 def test_regression_build_model():
     task = RegressionTask(_make_config(), data_module=None)
@@ -41,6 +42,7 @@ def test_regression_build_model():
 
 # --- build_optimizer ---
 
+
 def test_regression_build_optimizer():
     task = RegressionTask(_make_config(), data_module=None)
     model = task.build_model()
@@ -50,6 +52,7 @@ def test_regression_build_optimizer():
 
 
 # --- build_scheduler ---
+
 
 def test_regression_scheduler_cosine_no_warmup():
     task = RegressionTask(_make_config(scheduler_type="cosine", warmup_epochs=0), data_module=None)
@@ -111,6 +114,7 @@ def test_regression_scheduler_step():
 
 # --- build_criterion ---
 
+
 def test_regression_build_criterion():
     task = RegressionTask(_make_config(), data_module=None)
     criterion = task.build_criterion()
@@ -118,6 +122,7 @@ def test_regression_build_criterion():
 
 
 # --- train_step & validation_step ---
+
 
 def test_regression_train_step():
     task = RegressionTask(_make_config(), data_module=None)

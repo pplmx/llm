@@ -56,7 +56,7 @@ def test_prompt_module_setup_with_val_path(tmp_path):
     assert len(module.val_dataset) == 2
 
 
-def test_prompt_module_setup_without_dataset_path(tmp_path):
+def test_prompt_module_setup_without_dataset_path():
     """setup() raises ValueError when dataset_path is not set."""
     config = _make_config(DataConfig(dataset_path=None))
 
@@ -101,7 +101,7 @@ def test_prompt_module_train_dataloader_returns_loader(tmp_path):
     assert sampler is not None
 
 
-def test_prompt_module_collate_function(tmp_path):
+def test_prompt_module_collate_function():
     """verify prompt_data_collate function works correctly."""
     from llm.data.modules.prompt import collate_prompts
 

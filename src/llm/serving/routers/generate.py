@@ -197,15 +197,15 @@ async def batch_generate_text(
                             _sync_batch_generate,
                             prompts=request.prompts,
                             max_new_tokens=request.max_new_tokens,
-                        temperature=request.temperature,
-                        top_k=request.top_k,
-                        top_p=request.top_p,
-                        repetition_penalty=request.repetition_penalty,
-                        frequency_penalty=request.frequency_penalty,
-                        presence_penalty=request.presence_penalty,
-                        logit_bias=request.logit_bias,
-                        stop=request.stop,
-                    )
+                            temperature=request.temperature,
+                            top_k=request.top_k,
+                            top_p=request.top_p,
+                            repetition_penalty=request.repetition_penalty,
+                            frequency_penalty=request.frequency_penalty,
+                            presence_penalty=request.presence_penalty,
+                            logit_bias=request.logit_bias,
+                            stop=request.stop,
+                        )
         except TimeoutError as exc:
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc

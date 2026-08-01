@@ -1,5 +1,6 @@
 """Tests for the train_bpe CLI entry point (0% baseline coverage)."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -9,7 +10,7 @@ from llm.tokenization.train_bpe import main
 
 def _write_text_file(path: str, lines: list[str]) -> str:
     """Write a simple text file for training."""
-    with open(path, "w") as f:
+    with Path(path).open("w") as f:
         f.writelines(lines)
     return path
 
@@ -17,8 +18,10 @@ def _write_text_file(path: str, lines: list[str]) -> str:
 @pytest.fixture
 def mock_argv():
     """Fixture to patch sys.argv for CLI testing."""
+
     def _patch(args: list[str]):
         return patch("sys.argv", args)
+
     return _patch
 
 
@@ -29,9 +32,12 @@ def test_train_bpe_basic(tmp_path):
 
     test_args = [
         "train_bpe",
-        "--files", text_file,
-        "--output", output_path,
-        "--vocab_size", "50",
+        "--files",
+        text_file,
+        "--output",
+        output_path,
+        "--vocab_size",
+        "50",
     ]
     with patch("sys.argv", test_args):
         main()
@@ -46,10 +52,14 @@ def test_train_bpe_minimal_vocab(tmp_path):
 
     test_args = [
         "train_bpe",
-        "--files", text_file,
-        "--output", output_path,
-        "--vocab_size", "10",
-        "--min_frequency", "1",
+        "--files",
+        text_file,
+        "--output",
+        output_path,
+        "--vocab_size",
+        "10",
+        "--min_frequency",
+        "1",
     ]
     with patch("sys.argv", test_args):
         main()
@@ -64,10 +74,16 @@ def test_train_bpe_custom_special_tokens(tmp_path):
 
     test_args = [
         "train_bpe",
-        "--files", text_file,
-        "--output", output_path,
-        "--vocab_size", "30",
-        "--special_tokens", "[UNK]", "[BOS]", "[EOS]",
+        "--files",
+        text_file,
+        "--output",
+        output_path,
+        "--vocab_size",
+        "30",
+        "--special_tokens",
+        "[UNK]",
+        "[BOS]",
+        "[EOS]",
     ]
     with patch("sys.argv", test_args):
         main()
@@ -82,9 +98,13 @@ def test_train_bpe_skips_missing_files(tmp_path):
 
     test_args = [
         "train_bpe",
-        "--files", str(tmp_path / "nonexistent.txt"), valid_file,
-        "--output", output_path,
-        "--vocab_size", "20",
+        "--files",
+        str(tmp_path / "nonexistent.txt"),
+        valid_file,
+        "--output",
+        output_path,
+        "--vocab_size",
+        "20",
     ]
     with patch("sys.argv", test_args):
         main()
@@ -98,9 +118,13 @@ def test_train_bpe_no_valid_files_exits(tmp_path):
 
     test_args = [
         "train_bpe",
-        "--files", str(tmp_path / "missing1.txt"), str(tmp_path / "missing2.txt"),
-        "--output", output_path,
-        "--vocab_size", "20",
+        "--files",
+        str(tmp_path / "missing1.txt"),
+        str(tmp_path / "missing2.txt"),
+        "--output",
+        output_path,
+        "--vocab_size",
+        "20",
     ]
     with patch("sys.argv", test_args):
         with pytest.raises(SystemExit) as exc:

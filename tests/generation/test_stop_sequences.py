@@ -660,7 +660,7 @@ def test_stream_generate_truncates_long_prompt(tiny_config, device):
     # (the comment on line 87-88 of eager.py explicitly says this is needed)
 
 
-def test_stream_generate_no_truncation_for_short_prompt(tiny_model, device):
+def test_stream_generate_no_truncation_for_short_prompt(tiny_model):
     """stream_generate does NOT truncate prompts that fit within max_seq_len."""
     from llm.generation.eager import stream_generate
 

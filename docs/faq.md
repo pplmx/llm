@@ -202,9 +202,11 @@ A: 项目集成了 lm-evaluation-harness，支持 MMLU、ARC、WikiText 等标�
 ### Q: 如何快速在 MMLU 上评估模型？
 
 A:
+
 ```python
 from llm.evaluation.harness.lm_eval_lm import LlamaLmEvalLM
 from llm.evaluation.harness.adapter import LmEvalAdapter
+
 # ... 加载模型和 tokenizer ...
 lm = LlamaLmEvalLM(model, tokenizer, batch_size=8)
 raw = LmEvalAdapter().run_preset("mmlu", lm)
@@ -222,8 +224,10 @@ A: 支持 ONNX 和 TorchScript 两种导出格式，通过 EXPORT_REGISTRY 统�
 ### Q: 如何将模型发布到 HuggingFace Hub？
 
 A:
+
 ```python
 from llm.compat.hf_publisher import push_to_hub
+
 push_to_hub(model, repo_id="username/my-model")
 ```
 
@@ -251,29 +255,32 @@ A: Speculative Decoding 使用一个小 draft 模型快速生成候选 token，�
 
 A: 内置 8 种 PEFT 方法，全部通过统一的 PEFT_REGISTRY 管理：
 
-| 方法 | 类型 | 参数占比 | 适用场景 |
-|------|------|---------|---------|
-| LoRA | 低秩适配 | ~10% | 通用 PEFT，效果与效率平衡 |
-| QLoRA | 量化 LoRA | ~5% | 显存严重受限，大模型 |
-| AdaLoRA | 自适应 LoRA | ~10% | 自适应秩 + 剪枝 |
-| IA³ | 乘性适配 | ~0.01% | 极轻量，多任务 |
-| BitFit | 偏置微调 | ~0.1% | 最轻量，快速实验 |
-| Adapter | 瓶颈适配器 | ~5% | 经典 PEFT |
-| Pfeiffer Adapter | FFN Adapter | ~2.5% | Houlsby 变体，参数更少 |
-| Prefix Tuning | 前缀微调 | ~1% | 指令微调 |
+| 方法             | 类型        | 参数占比 | 适用场景                  |
+| ---------------- | ----------- | -------- | ------------------------- |
+| LoRA             | 低秩适配    | ~10%     | 通用 PEFT，效果与效率平衡 |
+| QLoRA            | 量化 LoRA   | ~5%      | 显存严重受限，大模型      |
+| AdaLoRA          | 自适应 LoRA | ~10%     | 自适应秩 + 剪枝           |
+| IA³              | 乘性适配    | ~0.01%   | 极轻量，多任务            |
+| BitFit           | 偏置微调    | ~0.1%    | 最轻量，快速实验          |
+| Adapter          | 瓶颈适配器  | ~5%      | 经典 PEFT                 |
+| Pfeiffer Adapter | FFN Adapter | ~2.5%    | Houlsby 变体，参数更少    |
+| Prefix Tuning    | 前缀微调    | ~1%      | 指令微调                  |
 
 通过 `training.peft_method` 配置，同一份 YAML 格式切换。
 
 ### Q: PEFT adapter 如何保存和加载？
 
 A:
+
 ```python
 # 保存 adapter（不保存 base 权重）
 from llm.core.peft.checkpoint import save_peft
+
 save_peft(model, "adapter.bin", method="lora")
 
 # 加载 adapter
 from llm.core.peft.checkpoint import load_peft
+
 load_peft(model, "adapter.bin")
 ```
 
