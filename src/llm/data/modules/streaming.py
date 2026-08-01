@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import torch
@@ -14,6 +15,8 @@ from llm.data.sources import build_text_source, source_fingerprint_from_config, 
 from llm.data.stream_state import StreamDataState
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.tokenizer import BaseTokenizer
+
+logger = logging.getLogger(__name__)
 
 
 class StreamingTextDataModule(StreamDataModule):
@@ -60,11 +63,28 @@ class StreamingTextDataModule(StreamDataModule):
         self.train_dataset.world_size = world_size
 
         optimization = self.config.optimization
-        use_persistent_workers = optimization.persistent_workers and optimization.num_workers > 0
+        # The resume cursor (``stream_data_state``) lives on the dataset
+        # object in the main process. DataLoader workers run on forked
+        # copies, so their cursor mutations never reach the main process:
+        # a checkpoint saved mid-run would lose all progress and resume
+        # would silently re-read the corpus from the start. Streaming
+        # therefore runs single-process so checkpoints capture the real
+        # cursor.
+        num_workers = optimization.num_workers
+        if num_workers > 0:
+            logger.warning(
+                "StreamingTextDataset keeps its resume cursor in the main process; "
+                "DataLoader workers fork it and their progress is lost at checkpoint "
+                "time. Forcing num_workers=0 so checkpoint resume stays correct. "
+                "Set optimization.num_workers=0 explicitly to silence this warning."
+            )
+            num_workers = 0
+
+        use_persistent_workers = optimization.persistent_workers and num_workers > 0
         loader = DataLoader(
             self.train_dataset,
             batch_size=self.config.training.batch_size,
-            num_workers=optimization.num_workers,
+            num_workers=num_workers,
             pin_memory=optimization.pin_memory and torch.cuda.is_available(),
             persistent_workers=use_persistent_workers,
         )
