@@ -114,7 +114,16 @@ jobs:
                 # Renovate also updates dependencies weekly, but pip-audit
                 # adds a second layer for transitive vulnerabilities.
                 # Versions are pinned in pyproject.toml [dependency-groups] security.
-                run: uv run pip-audit --strict
+                #
+                # Audit the exported lock set rather than the installed
+                # environment: the local ``llm`` project is an editable
+                # install that is not on PyPI, so environment scanning makes
+                # pip-audit exit 1 with "Dependency not found on PyPI: llm"
+                # on every run.
+                run: |
+                    uv export --frozen --no-hashes -o /tmp/requirements.txt
+                    grep -v '^-e \.' /tmp/requirements.txt > /tmp/audit-requirements.txt
+                    uv run pip-audit -r /tmp/audit-requirements.txt --strict
 
             -   name: Static security analysis (bandit)
                 # High+ severity findings fail the build. Lower severities
