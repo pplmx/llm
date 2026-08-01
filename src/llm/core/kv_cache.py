@@ -190,7 +190,10 @@ class KVCache:
             # write always comes first in the flattened order, so keep the
             # first occurrence of each (batch slot, position) pair.
             key = b_idx * self.max_seq_len + s_idx
-            sorted_key, sort_idx = torch.sort(key)
+            # Stable sort: equal keys (padded slots reuse position 0) keep
+            # their flat order, so the first occurrence of each key is the
+            # real token's write, not a padded slot's.
+            sorted_key, sort_idx = torch.sort(key, stable=True)
             is_first = torch.ones_like(sorted_key, dtype=torch.bool)
             is_first[1:] = sorted_key[1:] != sorted_key[:-1]
             first_idx, _ = torch.sort(sort_idx[is_first])

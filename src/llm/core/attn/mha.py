@@ -178,6 +178,7 @@ class MultiHeadAttention(nn.Module):
                 q=q,
                 k=k,
                 v=v,
+                attn_mask=attn_mask,
                 paged_kv_cache=paged_kv_cache,
                 batch_indices=batch_indices,
                 layer_idx=layer_idx,
@@ -273,6 +274,7 @@ class MultiHeadAttention(nn.Module):
         q: Tensor,
         k: Tensor,
         v: Tensor,
+        attn_mask: Tensor | None,
         paged_kv_cache: PagedKVCache,
         batch_indices: Tensor | None,
         layer_idx: int | None,
@@ -318,12 +320,23 @@ class MultiHeadAttention(nn.Module):
         # 1. Per-row write into the paged cache. ``PagedKVCache.update``
         #    expects ``[B, T, N_kv, D]`` (it transposes internally), so
         #    transpose our ``[B, N_kv, T, D]`` k/v to match.
+        #
+        #    Only the REAL tokens may be appended: continuous batching pads
+        #    the batch to the longest prompt, and the padded rows' K/V is
+        #    garbage (masked attention over pad tokens). The engine's
+        #    attention mask marks padded query rows fully-masked, so the
+        #    real length per row is the number of query rows whose first
+        #    column is visible.
         seq_ids = batch_indices.tolist()
+        lengths = None
+        if attn_mask is not None:
+            lengths = (~attn_mask[:, 0, :, 0]).sum(dim=-1)  # [B] real query rows
         for b, seq_id in enumerate(seq_ids):
+            n = int(lengths[b]) if lengths is not None else k.shape[2]
             paged_kv_cache.update(
                 seq_id=int(seq_id),
-                k_new=k[b : b + 1].transpose(1, 2),
-                v_new=v[b : b + 1].transpose(1, 2),
+                k_new=k[b : b + 1, :, :n].transpose(1, 2),
+                v_new=v[b : b + 1, :, :n].transpose(1, 2),
             )
 
         # 2. Build ``block_tables`` and ``seq_lens`` per row from the

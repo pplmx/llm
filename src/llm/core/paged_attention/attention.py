@@ -101,6 +101,18 @@ def paged_attention_forward(
     scale = head_dim**-0.5
     attn_weights = torch.matmul(q, k_full.transpose(-2, -1)) * scale
 
+    # ``k_full`` is padded with zeros to the batch-max context length, so
+    # columns beyond each row's real ``seq_lens[b]`` must be masked or they
+    # would participate in the softmax and distort the attention weights.
+    col_idx = torch.arange(max_seq_len, device=q.device).reshape(1, 1, 1, -1)
+    attn_mask = col_idx >= seq_lens.reshape(-1, 1, 1, 1)  # [B, 1, 1, max_seq_len]
+    if _query_len > 1:
+        # Prefill with multiple query tokens per row: enforce causality
+        # between query positions (query row ``s`` attends to keys ``0..s``).
+        row_idx = torch.arange(_query_len, device=q.device).reshape(1, 1, -1, 1)
+        attn_mask = attn_mask | (col_idx > row_idx)
+    attn_weights = attn_weights.masked_fill(attn_mask, float("-inf"))
+
     attn_weights = torch.softmax(attn_weights, dim=-1)
 
     output = torch.matmul(attn_weights, v_full)

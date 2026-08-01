@@ -481,13 +481,38 @@ def test_forward_applies_frequency_penalty(tiny_model, mock_tokenizer):
     assert len(seq.generated_ids) == 1
 
 
+def _eager_greedy_reference(model, tokenizer, prompt, max_new_tokens):
+    """Mirror ``llm.generation.eager.generate``'s greedy path: recompute the
+    full context each step and take the pad-masked argmax."""
+    ids = list(tokenizer.encode(prompt))
+    with torch.no_grad():
+        for _ in range(max_new_tokens):
+            out = model(torch.tensor([ids], dtype=torch.long), use_cache=False)
+            logits = out[0][0, -1, :] if isinstance(out, tuple) else out[0, -1, :]
+            logits = logits.clone()
+            if tokenizer.pad_token_id is not None and 0 <= tokenizer.pad_token_id < logits.size(-1):
+                logits[tokenizer.pad_token_id] = float("-inf")
+            ids.append(int(logits.argmax().item()))
+    return ids[len(tokenizer.encode(prompt)) :]
+
+
+def _drive_engine_to_completion(engine):
+    """Step the engine until idle, returning {request_id: generated_ids}."""
+    last = {}
+    guard = 0
+    while engine.scheduler.has_pending_work and guard < 200:
+        engine.step()
+        for s in engine.scheduler.running:
+            last[s.request_id] = list(s.generated_ids)
+        guard += 1
+    return last
+
+
 def test_engine_greedy_matches_eager_reference(tiny_model, mock_tokenizer):
     """Regression: the continuous-batching engine's greedy output must match
     the eager backend. The causal attention mask used to be built from the
     zero-filled position buffer, so decode attention only saw the first
     prompt token's KV and outputs diverged from eager after a few steps."""
-    from llm.generation.eager import generate as eager_generate
-
     tiny_model.to("cpu")
     tiny_model.eval()
 
@@ -502,16 +527,8 @@ def test_engine_greedy_matches_eager_reference(tiny_model, mock_tokenizer):
     req.request_id = "req-greedy"
     engine.add_request(req)
 
-    eager_out = eager_generate(
-        tiny_model,
-        mock_tokenizer,
-        "abcd",
-        max_new_tokens=8,
-        temperature=0.0,
-        use_cache=False,
-    )
-    engine_out = engine.generate_request(req)
-    assert engine_out == eager_out, (engine_out, eager_out)
+    last = _drive_engine_to_completion(engine)
+    assert last["req-greedy"] == _eager_greedy_reference(tiny_model, mock_tokenizer, "abcd", 8)
 
 
 def test_engine_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokenizer):
@@ -523,8 +540,6 @@ def test_engine_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokeniz
     unflattened [B, 1] start_pos, broadcasting every slot's K/V onto every
     batch position. Both produced output that diverged from the eager
     backend. Greedy output must match eager per request."""
-    from llm.generation.eager import generate as eager_generate
-
     tiny_model.to("cpu")
     tiny_model.eval()
 
@@ -536,21 +551,40 @@ def test_engine_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokeniz
         dtype=torch.float32,
     )
     prompts = ["abcd", "xy", "python"]  # mixed lengths (all <= model max_seq_len)
-    reqs = []
     for i, prompt in enumerate(prompts):
         req = GenerationRequest(prompt=prompt, max_new_tokens=6, temperature=0.0)
         req.request_id = f"req-{i}"
         engine.add_request(req)
-        reqs.append(req)
 
-    for req in reqs:
-        engine_out = engine.generate_request(req)
-        eager_out = eager_generate(
-            tiny_model,
-            mock_tokenizer,
-            req.prompt,
-            max_new_tokens=6,
-            temperature=0.0,
-            use_cache=False,
-        )
-        assert engine_out == eager_out, (req.prompt, engine_out, eager_out)
+    last = _drive_engine_to_completion(engine)
+    for i, prompt in enumerate(prompts):
+        assert last[f"req-{i}"] == _eager_greedy_reference(tiny_model, mock_tokenizer, prompt, 6), prompt
+
+
+def test_engine_paged_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokenizer):
+    """Regression: the paged-attention path appended padded (garbage) K/V for
+    shorter prompts and skipped causal masking in multi-token prefill, so
+    mixed-length batches diverged from the eager backend. Paged greedy
+    output must match eager per request."""
+    tiny_model.to("cpu")
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=4,
+        device="cpu",
+        dtype=torch.float32,
+        use_paged_attention=True,
+        max_blocks=64,
+        block_size=16,
+    )
+    prompts = ["abcd", "xy", "python"]  # mixed lengths
+    for i, prompt in enumerate(prompts):
+        req = GenerationRequest(prompt=prompt, max_new_tokens=6, temperature=0.0)
+        req.request_id = f"req-{i}"
+        engine.add_request(req)
+
+    last = _drive_engine_to_completion(engine)
+    for i, prompt in enumerate(prompts):
+        assert last[f"req-{i}"] == _eager_greedy_reference(tiny_model, mock_tokenizer, prompt, 6), prompt
