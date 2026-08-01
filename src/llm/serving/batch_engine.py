@@ -537,8 +537,15 @@ class ContinuousBatchingEngine:
         k_len = self.max_seq_len
 
         col_indices = torch.arange(k_len, device=self.device).reshape(1, 1, 1, -1)
-        q_pos = padded_position_ids.unsqueeze(1).unsqueeze(-1)
-        run_attn_mask = col_indices > q_pos
+        # The causal attention mask must be built from the *real* position
+        # ids, which are only known after the per-row fill below. Building
+        # it from the freshly-allocated (all-zero) ``padded_position_ids``
+        # collapsed every query row to q_pos=0, so decode attention could
+        # only ever see the first prompt token's KV and outputs diverged
+        # from the eager backend after a few decode steps. All-True
+        # (masked) by default; the visible causal region for each query
+        # row is set after the fill.
+        run_attn_mask = torch.ones((batch_size, 1, q_len, k_len), dtype=torch.bool, device=self.device)
 
         for i, length in enumerate(seq_input_lengths):
             input_row = torch.tensor(batch_input_ids_list[i], dtype=torch.long, device=self.device)
@@ -547,8 +554,10 @@ class ContinuousBatchingEngine:
             padded_input_ids[i, :length] = input_row
             padded_position_ids[i, :length] = pos_row
 
-            if length < q_len:
-                run_attn_mask[i, :, length:, :] = True
+            # True = mask out columns > position[s] (the sdpa wrapper's
+            # convention), so each query position s sees keys 0..position[s].
+            q_pos_row = padded_position_ids[i, :length].reshape(1, 1, length, 1)
+            run_attn_mask[i, :, :length, :] = col_indices > q_pos_row
 
         return _StepInputs(
             running_sequences=running_sequences,
