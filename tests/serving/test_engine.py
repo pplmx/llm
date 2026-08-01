@@ -479,3 +479,36 @@ def test_forward_applies_frequency_penalty(tiny_model, mock_tokenizer):
     seq = engine.scheduler.get_sequence("req-fp")
     assert seq.frequency_penalty == 1.5
     assert len(seq.generated_ids) == 1
+
+
+def test_engine_greedy_matches_eager_reference(tiny_model, mock_tokenizer):
+    """Regression: the continuous-batching engine's greedy output must match
+    the eager backend. The causal attention mask used to be built from the
+    zero-filled position buffer, so decode attention only saw the first
+    prompt token's KV and outputs diverged from eager after a few steps."""
+    from llm.generation.eager import generate as eager_generate
+
+    tiny_model.to("cpu")
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    req = GenerationRequest(prompt="abcd", max_new_tokens=8, temperature=0.0)
+    req.request_id = "req-greedy"
+    engine.add_request(req)
+
+    eager_out = eager_generate(
+        tiny_model,
+        mock_tokenizer,
+        "abcd",
+        max_new_tokens=8,
+        temperature=0.0,
+        use_cache=False,
+    )
+    engine_out = engine.generate_request(req)
+    assert engine_out == eager_out, (engine_out, eager_out)
