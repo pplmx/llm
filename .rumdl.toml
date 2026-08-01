@@ -5,6 +5,7 @@ exclude = [
     ".planning",
     "docs/superpowers",
     "docs/infographic",
+    "docs/audits",
     "CLAUDE.md",
     "AGENTS.md",
 ]
