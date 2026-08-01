@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 import torch.nn as nn
 
@@ -33,7 +35,7 @@ class TransformerBlock(nn.Module):
         top_k: int = 0,
         num_kv_heads: int | None = None,  # For GQA support
         use_glu: bool = False,  # New: For SwiGLU support
-        norm_type: type[nn.Module] | nn.Module = nn.LayerNorm,
+        norm_type: type[nn.Module] | nn.Module | Callable[..., nn.Module] = nn.LayerNorm,
         window_size: int | None = None,  # Sliding window attention
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
@@ -214,5 +216,7 @@ class TransformerBlock(nn.Module):
             # KV tuple to surface to the caller.
             return output
         if use_cache:
+            if current_kv is None:
+                raise RuntimeError("use_cache=True requires the attention KV tuple")
             return output, current_kv
         return output

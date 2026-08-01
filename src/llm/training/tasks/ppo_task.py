@@ -11,6 +11,7 @@ import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import LRScheduler
 
+from llm.models.decoder import DecoderModel
 from llm.runtime.checkpoint import collect_extra_state
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.tokenizer import BaseTokenizer
@@ -76,6 +77,8 @@ class PPOTask(TrainingTask):
 
     def _build_reward_model(self) -> RewardModel:
         policy = self.build_model()
+        if not isinstance(policy, DecoderModel):
+            raise TypeError(f"PPO reward model requires a DecoderModel, got {type(policy).__name__}")
         reward_model = RewardModel(policy)
 
         reward_path = self.config.rlhf.reward_model_path
@@ -105,6 +108,8 @@ class PPOTask(TrainingTask):
         training_start = time.time()
 
         def _epoch(epoch: int) -> None:
+            if self.ppo_trainer is None:
+                raise RuntimeError("prepare_training() must be called before run_training().")
             if engine.sampler is not None:
                 engine.sampler.set_epoch(epoch)
 

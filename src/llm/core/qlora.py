@@ -185,9 +185,13 @@ class QLoRALinear(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with dequantized base + LoRA adaptation."""
         # Dequantize base weights on-the-fly
+        indices = self.weight_indices
+        scales = self.weight_scales
+        if not isinstance(indices, torch.Tensor) or not isinstance(scales, torch.Tensor):
+            raise RuntimeError("NF4 quantized buffers were not initialized")
         weight = dequantize_nf4(
-            self.weight_indices,
-            self.weight_scales,
+            indices,
+            scales,
             self.original_shape,
             self.block_size,
             self.compute_dtype,
