@@ -403,7 +403,7 @@ should not be a hard runtime dependency.
 
 ```bash
 # uv
-uv sync --group perf
+uv sync --extra perf
 
 # pip
 pip install 'llm[perf]'
@@ -411,7 +411,7 @@ pip install 'llm[perf]'
 pip install flash-attn
 ```
 
-`uv.lock` pins `flash-attn` as an sdist, so a plain `uv sync --group perf`
+`uv.lock` pins `flash-attn` as an sdist, so a plain `uv sync --extra perf`
 compiles it from source on first install — this needs a CUDA toolkit
 (`nvcc`) and can take a long time. On a CUDA host you can instead pull
 pre-built GPU wheels from the
@@ -479,7 +479,7 @@ model is loadable by **both** this project and HF's transformers.
 
 ```bash
 # uv
-uv sync --group compat
+uv sync --extra compat
 
 # pip
 pip install 'llm[compat]'

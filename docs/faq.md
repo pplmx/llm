@@ -197,7 +197,7 @@ A: 使用 `llm-quantize gptq --model ckpt.pt --output ckpt-int4.pt --calib-data 
 
 ### Q: 如何评估训练好的模型？
 
-A: 项目集成了 lm-evaluation-harness，支持 MMLU、ARC、WikiText 等标准 benchmark。使用 `uv sync --group eval` 安装依赖后，通过 Python API 运行。
+A: 项目集成了 lm-evaluation-harness，支持 MMLU、ARC、WikiText 等标准 benchmark。使用 `uv sync --extra eval` 安装依赖后，通过 Python API 运行。
 
 ### Q: 如何快速在 MMLU 上评估模型？
 

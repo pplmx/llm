@@ -88,7 +88,7 @@ class HFStreamTextSource(TextSource):
             from datasets import load_dataset
         except ImportError as exc:
             raise ImportError(
-                "HF streaming requires the 'datasets' package. Install with: uv sync --group streaming"
+                "HF streaming requires the 'datasets' package. Install with: uv sync --extra streaming"
             ) from exc
 
         dataset = load_dataset(

@@ -32,7 +32,7 @@ uv sync
 流式预训练等可选能力:
 
 ```bash
-uv sync --group streaming
+uv sync --extra streaming
 ```
 
 ---
