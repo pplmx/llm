@@ -69,6 +69,13 @@ class BleuMetric(BaseMetric):
     name = "bleu"
 
     def compute(self, predictions: list, references: list) -> dict:
+        # Empty inputs — nothing to score, and we shouldn't require the
+        # optional dependency just to short-circuit (sacrebleu raises on an
+        # empty corpus). Matches the ``0.0`` convention of
+        # :class:`AccuracyMetric` / :class:`F1Metric`.
+        if not predictions:
+            return {"bleu": 0.0}
+
         try:
             import sacrebleu
         except ImportError as exc:
@@ -94,6 +101,13 @@ class ChrFMetric(BaseMetric):
     name = "chrf"
 
     def compute(self, predictions: list, references: list) -> dict:
+        # Empty inputs — nothing to score, and we shouldn't require the
+        # optional dependency just to short-circuit (sacrebleu raises on an
+        # empty corpus). Matches the ``0.0`` convention of
+        # :class:`AccuracyMetric` / :class:`F1Metric`.
+        if not predictions:
+            return {"chrf": 0.0}
+
         try:
             import sacrebleu
         except ImportError as exc:
