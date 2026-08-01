@@ -92,8 +92,8 @@ class DPODataset(Dataset):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        item = self.data[idx]
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        item = self.data[index]
 
         prompt = item.get("prompt", "")
         chosen = item.get("chosen", "")

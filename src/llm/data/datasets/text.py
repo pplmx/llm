@@ -117,7 +117,7 @@ class TextDataset(Dataset):
         """Returns the number of sequences in the dataset."""
         return len(self.sequences)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         """
         Retrieves a single data item (input_ids and labels) at the given index.
 
@@ -125,17 +125,17 @@ class TextDataset(Dataset):
         Labels are created as a clone of the input_ids.
 
         Args:
-            idx (int): Index of the sequence to retrieve.
+            index (int): Index of the sequence to retrieve.
 
         Returns:
             dict[str, torch.Tensor]: A dictionary containing:
                 - "input_ids": Padded token IDs (torch.LongTensor).
                 - "labels": Cloned padded token IDs (torch.LongTensor).
         """
-        if not 0 <= idx < len(self.sequences):
-            raise IndexError(f"Index {idx} out of bounds for dataset with length {len(self.sequences)}")
+        if not 0 <= index < len(self.sequences):
+            raise IndexError(f"Index {index} out of bounds for dataset with length {len(self.sequences)}")
 
-        token_ids: list[int] = self.sequences[idx]
+        token_ids: list[int] = self.sequences[index]
 
         # Pad the sequence if it's shorter than max_seq_len
         num_padding_tokens = self.max_seq_len - len(token_ids)

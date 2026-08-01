@@ -139,7 +139,7 @@ def verify_onnx(
         # Compare
         import numpy as np
 
-        return np.allclose(onnx_outputs[0], pt_output, rtol=rtol, atol=atol)
+        return np.allclose(np.asarray(onnx_outputs[0]), pt_output, rtol=rtol, atol=atol)
 
     return True
 

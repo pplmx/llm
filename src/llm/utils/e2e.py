@@ -10,12 +10,14 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
+from typing import cast
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
 from llm.generation import generate
+from llm.models.decoder import DecoderModel
 from llm.runtime.model_factory import ModelFactory
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
@@ -151,7 +153,7 @@ def run_inference(
     """Run inference and return generated text (excluding prompt)."""
     model.eval()
     generated = generate(
-        model=model,
+        model=cast(DecoderModel, model),
         tokenizer=tokenizer,
         prompt=prompt,
         max_new_tokens=max_new_tokens,

@@ -152,6 +152,8 @@ def _load_calibration_batches(
         from transformers import AutoTokenizer
 
         tok = AutoTokenizer.from_pretrained(str(tokenizer))
+        if tok is None:
+            raise RuntimeError(f"failed to load tokenizer from {tokenizer}")
         text_lines = calib_data.read_text().splitlines()
         batches: list = []
         for line in text_lines:
@@ -167,6 +169,8 @@ def _load_calibration_batches(
     # and may contain custom token tensors (e.g. wrappers from a
     # different framework's tokenizer pipeline). PyTorch 2.6's default
     # ``weights_only=True`` would reject anything beyond plain tensors.
+    if calib_data_tokens is None:
+        raise RuntimeError("pre-tokenized calibration path is required")
     loaded = torch.load(calib_data_tokens, map_location="cpu", weights_only=False)
     if isinstance(loaded, list):
         return loaded

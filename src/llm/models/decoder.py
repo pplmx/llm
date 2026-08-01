@@ -135,7 +135,7 @@ class DecoderModel(nn.Module):
         position_ids: torch.Tensor | None = None,
         batch_indices: torch.Tensor | None = None,
         paged_kv_cache: object | None = None,
-    ) -> torch.Tensor | tuple[torch.Tensor, list[KVCache]]:
+    ) -> torch.Tensor | tuple[torch.Tensor, list[KVCache] | None]:
         """
         Forward pass of the DecoderModel.
 
@@ -151,7 +151,8 @@ class DecoderModel(nn.Module):
                 allocator + ``paged_attention_forward``.
 
         Returns:
-            Logits tensor, or ``(logits, kv_caches)`` when ``use_cache=True``.
+            Logits tensor, or ``(logits, kv_caches)`` when ``use_cache=True``;
+            in the paged path the second element is ``None``.
         """
         if self._gradient_checkpointing and use_cache:
             raise ValueError("Gradient checkpointing is incompatible with use_cache=True. ")
@@ -207,6 +208,9 @@ class DecoderModel(nn.Module):
         logits = self.lm_head(hidden_states)
 
         if use_cache:
+            # In the paged path (``paged_kv_cache`` set) ``kv_caches`` is
+            # None and the second element is None; the engine unpacks it
+            # as ``logits, _``.
             return logits, kv_caches
         return logits
 

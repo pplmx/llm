@@ -10,7 +10,7 @@ class BPETokenizer:
     A Byte Pair Encoding (BPE) tokenizer using the `tokenizers` library.
     """
 
-    def __init__(self, tokenizer: Tokenizer = None):
+    def __init__(self, tokenizer: Tokenizer | None = None):
         """
         Initializes the BPETokenizer.
 

@@ -95,6 +95,8 @@ class DPOTask(LanguageModelingTask):
         policy_chosen_logps = self._get_batch_logps(policy_chosen_logits, chosen_labels)
         policy_rejected_logps = self._get_batch_logps(policy_rejected_logits, rejected_labels)
 
+        if self.ref_model is None:
+            raise RuntimeError("reference model was not built")
         # Reference Forward (No Grad)
         with torch.no_grad():
             ref_chosen_logits = self.ref_model(chosen_input_ids)

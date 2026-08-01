@@ -32,5 +32,5 @@ class PromptDataset(Dataset):
     def __len__(self) -> int:
         return len(self.prompts)
 
-    def __getitem__(self, idx: int) -> dict[str, str]:
-        return {"prompt": self.prompts[idx]}
+    def __getitem__(self, index: int) -> dict[str, str]:
+        return {"prompt": self.prompts[index]}

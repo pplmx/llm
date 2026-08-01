@@ -187,7 +187,7 @@ class FlashAttention(nn.Module):
         # Local import so an uninstalled ``flash-attn`` does not crash
         # the package at import time (we already gated on
         # ``FLASH_ATTN_AVAILABLE`` in ``__init__``).
-        from flash_attn import flash_attn_func
+        from flash_attn import flash_attn_func  # type: ignore  # optional CUDA-only dep
 
         batch_size, seq_len, _ = hidden_states.size()
         use_causal = self.is_causal if is_causal is None else is_causal

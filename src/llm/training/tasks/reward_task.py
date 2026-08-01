@@ -97,6 +97,8 @@ class RewardTask(TrainingTask):
             self.config.model,
             max_seq_len=self.config.data.max_seq_len,
         )
+        if not isinstance(base_model, DecoderModel):
+            raise TypeError(f"reward base model must be a DecoderModel, got {type(base_model).__name__}")
         return RewardModel(base_model)
 
     def build_optimizer(self, model: nn.Module) -> optim.Optimizer:

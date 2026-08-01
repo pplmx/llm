@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+import torch
+
 
 class BaseTask(ABC):
     """Base class for all evaluation tasks."""
@@ -21,7 +23,7 @@ class BaseTask(ABC):
         pass
 
     @abstractmethod
-    def predict(self, model: Any, inputs: list[str]) -> list[str]:
+    def predict(self, model: Any, inputs: list[str] | list[torch.Tensor]) -> list[str]:
         """Run model on inputs to get predictions.
 
         Args:

@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as functional
 from torch.optim import AdamW
 
+from llm.models.decoder import DecoderModel
 from llm.training.core.config import PPOConfig
 from llm.training.rlhf.rollout_buffer import RolloutBatch, RolloutBuffer
 from llm.training.rlhf.value_model import ValueModel
@@ -152,6 +153,8 @@ class PPOTrainer:
         import copy
 
         value_base = copy.deepcopy(self.policy)
+        if not isinstance(value_base, DecoderModel):
+            raise TypeError(f"critic base must be a DecoderModel, got {type(value_base).__name__}")
         return ValueModel(value_base)
 
     def _extract_response_values(
@@ -171,7 +174,7 @@ class PPOTrainer:
 
         for i in range(batch_size):
             prompt_len = (1 - response_mask[i]).sum().long()
-            resp_len = response_mask[i].sum().long()
+            resp_len = int(response_mask[i].sum().long())
             if resp_len > 0:
                 positions = prompt_len - 1 + torch.arange(resp_len, device=all_values.device)
                 response_values[i, :resp_len] = all_values[i, positions]
@@ -362,7 +365,7 @@ class PPOTrainer:
 
         for i in range(batch_size):
             prompt_len = (1 - response_mask[i]).sum().long()
-            resp_len = response_mask[i].sum().long()
+            resp_len = int(response_mask[i].sum().long())
             if resp_len > 0:
                 new_response_log_probs[i, :resp_len] = token_log_probs[i, prompt_len - 1 : prompt_len - 1 + resp_len]
 

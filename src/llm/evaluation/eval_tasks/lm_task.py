@@ -1,9 +1,12 @@
+from typing import cast
+
 import torch
 
 from llm.data.datasets.text import TextDataset
 from llm.evaluation.eval_tasks.base import BaseTask
 from llm.evaluation.metrics.perplexity import PerplexityMetric
 from llm.runtime.tokenizer_factory import TokenizerFactory
+from llm.tokenization.tokenizer import BaseTokenizer
 
 
 class LMTask(BaseTask):
@@ -21,7 +24,7 @@ class LMTask(BaseTask):
 
         self.val_dataset = TextDataset(
             file_path=dataset_path,
-            tokenizer=self.tokenizer,
+            tokenizer=cast(BaseTokenizer, self.tokenizer),
             max_seq_len=128,
         )
 

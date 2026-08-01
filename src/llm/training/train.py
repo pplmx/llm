@@ -1,6 +1,7 @@
 import logging
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import click
 import torch
@@ -73,7 +74,7 @@ def main(
     task: str = typer.Option(
         ...,
         help="Name of the task to run.",
-        click_type=click.Choice(TASK_REGISTRY.names(), case_sensitive=True),
+        click_type=cast(Any, click.Choice(TASK_REGISTRY.names(), case_sensitive=True)),
     ),
     config_path: Path | None = typer.Option(None, help="Path to YAML config file."),
     epochs: int | None = typer.Option(None, help="Override training epochs"),
