@@ -425,7 +425,9 @@
 - [x] **集成 GPTQ** (Frantar 2022): `src/llm/quantization/gptq.py` (算法 + 双入口) + `_gptq_layer.py` (真打包 4-bit，2 weights/byte int8) + 公共 API 导出；支持 `bits ∈ {4,8}` / `group_size ∈ {-1,128,...}` / `sym` / `percdamp` / `blocksize` / `act_order` / `target_modules`；54 unit + e2e tests；零回归对现有 simple-PTQ；ADR-007；AWQ / SmoothQuant / GGUF 留待后续切片
 - [x] **集成 AWQ** (Lin et al., MLSys 2024): `src/llm/quantization/awq.py` (算法 + 双入口) + `_awq_layer.py` (打包存储 + per-input-channel `input_scales` 运行时补偿)；组因子化 2 的幂网格搜索，salient 通道 (激活均值大) 权重放大、输入 `x/s`
   补偿，重建误差显著低于 naive RTN (约 2.5x)；可选 `clip_ratio` 抑制 outlier；`LayerQuantPolicy` 复用支持 per-layer 混合精度；42 新 tests 全绿；零回归对 GPTQ / simple-PTQ；ADR-009；跨层 folding 与 SmoothQuant / GGUF 留待后续切片
-- [ ] 集成 SmoothQuant
+- [x] **集成 SmoothQuant** (Xiao et al., ICML 2023): `src/llm/quantization/smooth.py` (算法 + 双入口) + `_smooth_layer.py` (int8 权重 per-row scale + 每张量激活 fake-quant + `input_scales` 平滑补偿)；平滑因子 `s = act_max^α
+      / w_max^(1−α)`，默认 α=0.5，可选 per-layer α 网格搜索；非搜索路径只累积 per-channel max-abs 激活 (O(in_f) 内存，per-tensor 激活 scale 有闭式解)；`LayerQuantPolicy` 复用 + `__post_init__` fail-fast；39 新 tests 全绿 (outlier
+      激活下重建误差比无平滑低约一个数量级)；零回归对 GPTQ / AWQ / simple-PTQ；ADR-010；跨层 folding / INT8 GEMM kernel / 非对称留待后续切片
 - [ ] 研究 GGML/GGUF 格式支持
 
 #### 13.4 模型压缩

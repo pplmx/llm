@@ -5,6 +5,7 @@ Collects activation statistics for quantization scale computation.
 """
 
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +14,26 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _single_thread_reductions():
+    """Run reduction-heavy loops with one torch thread.
+
+    Per-group reductions on small tensors pay pathological parallel-for
+    overhead on high-core-count hosts (e.g. 128 threads on a tiny 16x16
+    max). The AWQ / SmoothQuant calibration and scale-search loops do
+    thousands of these tiny reductions, so we temporarily pin torch to one
+    thread and restore the caller's setting afterwards.
+    """
+    old = torch.get_num_threads()
+    if old > 1:
+        torch.set_num_threads(1)
+    try:
+        yield
+    finally:
+        if old > 1:
+            torch.set_num_threads(old)
 
 
 @dataclass
