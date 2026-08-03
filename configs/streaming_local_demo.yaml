@@ -3,9 +3,9 @@
 # Purpose
 # -------
 # The smallest possible streaming-LM run that exercises the full
-# `llm-train stream_lm` main path: data streaming → forward → backward →
-# optimizer step → checkpoint save. Use this as the smoke test before
-# scaling up to real datasets (C4 / The Pile / RedPajama).
+# `llm-train --task stream_lm` main path: data streaming → forward →
+# backward → optimizer step → checkpoint save. Use this as the smoke
+# test before scaling up to real datasets (C4 / The Pile / RedPajama).
 #
 # Usage
 # -----
@@ -16,12 +16,12 @@
 #
 #   # 2. Train (the model is intentionally tiny so the run finishes
 #   #    in seconds on CPU):
-#   uv run llm-train stream_lm --config configs/streaming_local_demo.yaml \
-#     --epochs 1 --steps-per-epoch 10 \
-#     --config-path configs/streaming_local_demo.yaml
+#   uv run llm-train --task stream_lm \
+#     --config-path configs/streaming_local_demo.yaml \
+#     --epochs 1 --steps-per-epoch 10
 #
-#   # (The --config-path flag points llm-train at this YAML; the
-#   #   --epochs / --steps-per-epoch flags override individual fields
+#   # (--task selects the registered task; --config-path points at this
+#   #   YAML; --epochs / --steps-per-epoch override individual fields
 #   #   at the CLI layer for quick experimentation.)
 #
 # What this config exercises

@@ -9,7 +9,7 @@
 #
 # Usage
 # -----
-#   uv run llm-train stream_lm --config configs/streaming_c4.yaml
+#   uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml
 #
 # Notes
 # -----

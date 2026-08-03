@@ -39,7 +39,7 @@ uv sync --extra streaming
 
 ## 2. 准备数据
 
-创建一个简单的文本文件：
+创建一个简单的文本文件（**每行一条样本**，流式 demo 配置默认读 `data/demo.txt`）：
 
 ```bash
 echo "hello world
@@ -47,33 +47,34 @@ this is a test
 machine learning is fun
 artificial intelligence grows
 neural networks process data
-deep learning models train" > data/train.txt
+deep learning models train" > data/demo.txt
 ```
 
 ---
 
 ## 3. 训练模型
 
+主流路径：`llm-train` CLI（推荐生产使用），跑仓库自带的流式预训练冒烟配置：
+
 ```bash
-# 最简单的训练命令
-uv run scripts/train_simple_decoder.py --file-path data/train.txt
+# 流式预训练（CPU 几秒完成，走 streaming → forward → backward → checkpoint 全链路）
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
 ```
 
-训练参数自定义：
+命令行覆盖 YAML 字段（实验 sweep 常用）：
 
 ```bash
-uv run scripts/train_simple_decoder.py \
-    --file-path data/train.txt \
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml \
     --epochs 3 \
-    --batch-size 32 \
-    --hidden-size 128 \
-    --num-layers 4 \
-    --save-dir ./checkpoints
+    --steps-per-epoch 20 \
+    --batch-size 8 \
+    --lr 5e-4
 ```
 
+替代方案：单文件 demo 脚本（仅作最小演示，不用于生产）：
+
 ```bash
-# 主流路径：使用 llm-train CLI（推荐生产使用）
-uv run llm-train stream_lm --config configs/streaming_local_demo.yaml
+uv run scripts/train_simple_decoder.py --file-path data/demo.txt
 ```
 
 ---
@@ -97,9 +98,9 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 ### 方式二：Python 代码调用
 
 ```python
-import torch
 from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.training.core.checkpoint import load_checkpoint_payload
 
 # 加载训练好的模型
 model = DecoderModel(
@@ -109,7 +110,9 @@ model = DecoderModel(
     num_heads=4,
     max_seq_len=128,
 )
-model.load_state_dict(torch.load("checkpoints/latest.pt")["model_state_dict"])
+# v2 布局：checkpoints/latest.safetensors + .meta.json + .extra_state.pt
+ckpt = load_checkpoint_payload("checkpoints/latest")
+model.load_state_dict(ckpt["model_state"])
 model.eval()
 
 # 生成文本
@@ -142,7 +145,8 @@ print(tokenizer.decode(output[0]))
 **Q: GPU 不可用怎么办？**
 
 ```bash
-uv run scripts/train_simple_decoder.py --file-path data.txt --device cpu
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+# （demo 配置默认 CPU 可跑；AMP / NCCL 需要 GPU）
 ```
 
 **Q: 如何使用多 GPU？**
@@ -150,6 +154,10 @@ uv run scripts/train_simple_decoder.py --file-path data.txt --device cpu
 
 **Q: 训练中断如何恢复？**
 
+在 YAML 的 `checkpoint` 段设置 resume 路径（`llm-train` 没有 resume 的 CLI 参数）：
+
 ```bash
-uv run scripts/train_simple_decoder.py --file-path data.txt --resume ./checkpoints/latest.pt
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+# checkpoint:
+#   resume_from_checkpoint: checkpoints/latest
 ```

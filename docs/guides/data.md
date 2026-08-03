@@ -10,7 +10,7 @@ framework's `DataConfig` knows where to look.
 
 ## The streaming pipeline in one diagram
 
-```
+```text
                    ┌────────────────┐
                    │  DataConfig    │   ← pydantic model, one source of truth
                    │  data_source   │
@@ -49,17 +49,17 @@ The framework ships a handful of well-known datasets out of the box
 so you don't have to look up the HF identifiers every time. Three
 families are pre-wired:
 
-| Preset | HF dataset | Config | Text column |
-|---|---|---|---|
-| `C4_PRESET` | `allenai/c4` | `en` | `text` |
-| `THEPILE_PRESET` | `monology/pile-uncopyrighted` | _(none)_ | `text` |
-| `REDPAJAMA_PRESETS["redpajama/arxiv"]` | `togethercomputer/RedPajama-Data-1T` | `arxiv` | `text` |
-| `REDPAJAMA_PRESETS["redpajama/book"]` | `togethercomputer/RedPajama-Data-1T` | `book` | `text` |
-| `REDPAJAMA_PRESETS["redpajama/common_crawl"]` | `togethercomputer/RedPajama-Data-1T` | `common_crawl` | `text` |
-| `REDPAJAMA_PRESETS["redpajama/c4"]` | `togethercomputer/RedPajama-Data-1T` | `c4` | `text` |
-| `REDPAJAMA_PRESETS["redpajama/github"]` | `togethercomputer/RedPajama-Data-1T` | `github` | `text` |
-| `REDPAJAMA_PRESETS["redpajama/stackexchange"]` | `togethercomputer/RedPajama-Data-1T` | `stackexchange` | `text` |
-| `REDPAJAMA_PRESETS["redpajama/wikipedia"]` | `togethercomputer/RedPajama-Data-1T` | `wikipedia` | `text` |
+| Preset                                         | HF dataset                           | Config          | Text column |
+| ---------------------------------------------- | ------------------------------------ | --------------- | ----------- |
+| `C4_PRESET`                                    | `allenai/c4`                         | `en`            | `text`      |
+| `THEPILE_PRESET`                               | `monology/pile-uncopyrighted`        | *(none)*        | `text`      |
+| `REDPAJAMA_PRESETS["redpajama/arxiv"]`         | `togethercomputer/RedPajama-Data-1T` | `arxiv`         | `text`      |
+| `REDPAJAMA_PRESETS["redpajama/book"]`          | `togethercomputer/RedPajama-Data-1T` | `book`          | `text`      |
+| `REDPAJAMA_PRESETS["redpajama/common_crawl"]`  | `togethercomputer/RedPajama-Data-1T` | `common_crawl`  | `text`      |
+| `REDPAJAMA_PRESETS["redpajama/c4"]`            | `togethercomputer/RedPajama-Data-1T` | `c4`            | `text`      |
+| `REDPAJAMA_PRESETS["redpajama/github"]`        | `togethercomputer/RedPajama-Data-1T` | `github`        | `text`      |
+| `REDPAJAMA_PRESETS["redpajama/stackexchange"]` | `togethercomputer/RedPajama-Data-1T` | `stackexchange` | `text`      |
+| `REDPAJAMA_PRESETS["redpajama/wikipedia"]`     | `togethercomputer/RedPajama-Data-1T` | `wikipedia`     | `text`      |
 
 ### Listing them programmatically
 
@@ -178,5 +178,5 @@ the implementation.
   `lm-eval-harness` benchmarks instead of HF training datasets.
 - [Training flow guide](../development/training-flow.md) — how the
   streaming `DataModule` plugs into the trainer loop.
-- [Tier 3 ticket #8](../audits/2026-07-12-tickets/28-data-presets.md)
-  — the audit follow-up that motivated this module.
+- 数据 preset（C4 / The Pile / RedPajama）与 `DedupTextSource` 的动机记录
+  在 `CHANGELOG.md`（Tier 3 #28 / #39）。

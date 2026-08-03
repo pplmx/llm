@@ -12,24 +12,24 @@ model:
 training:
   epochs: 5
   batch_size: 32
-  learning_rate: 0.001
+  lr: 0.001
   gradient_accumulation_steps: 1
   max_steps: 1000
-  eval_interval: 100
-  save_interval: 500
 
 data:
+  tokenizer_type: simple
   tokenizer_path: null  # Will use default character tokenizer
-  train_path: null
-  val_path: null
-  test_path: null
+  dataset_path: data/dummy_corpus.txt
   max_seq_len: 512
 
 optimization:
-  use_amp: true
+  use_amp: false         # CPU-safe; set true on CUDA
   use_compile: false
   gradient_checkpointing: false
 
+checkpoint:
+  checkpoint_dir: checkpoints
+  save_interval: 1
+
 distributed:
-  backend: "nccl"
-  find_unused_parameters: false
+  backend: "gloo"        # CPU-safe; use nccl on multi-GPU

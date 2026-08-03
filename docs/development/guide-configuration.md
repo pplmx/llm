@@ -13,27 +13,28 @@
 
 ## 方法一: 使用命令行参数 (最常用)
 
-对于快速实验和微调, 直接在命令行中覆盖参数是最方便的. 框架的配置系统设计为高度可配置, 几乎所有参数都可以通过命令行设置.
+对于快速实验和微调, 直接在命令行中覆盖参数是最方便的. `llm-train` 暴露了少量高频参数用于 CLI 覆盖; 其余模型/优化器细节通过 YAML 配置.
 
 ```bash
 # 运行一个训练任务, 并覆盖学习率和批量大小
 llm-train --task regression --lr 0.001 --batch-size 32
 
 # 禁用 torch.compile 以进行调试
-llm-train --task regression --compile false
+llm-train --task regression --no-compile
 
 # 从指定的检查点恢复训练 (通过 YAML 配置)
-llm-train regression --config config_with_checkpoint.yaml
+llm-train --task regression --config-path config_with_checkpoint.yaml
 
 # 使用 YAML 配置进行复杂设置
-llm-train sft --config config.yaml
+llm-train --task sft --config-path config.yaml
 
 # 启用/禁用 AMP 混合精度
-llm-train --task regression --amp true
+llm-train --task regression --amp      # 启用 (默认)
+llm-train --task regression --no-amp   # 禁用
 ```
 
 - 要查看所有可用的命令行参数, 请运行 `llm-train --help`.
-- 当前 CLI 暴露的参数包括: `--config`, `--epochs`, `--batch-size`, `--lr`, `--num-samples`, `--compile`, `--amp`.
+- 当前 CLI 暴露的参数包括: `--task` (必填), `--config-path`, `--epochs`, `--batch-size`, `--lr`, `--num-samples`, `--steps-per-epoch`, `--compile`/`--no-compile`, `--amp`/`--no-amp`.
 - 完整的模型配置(如 `hidden_size`, `mlp_impl`, `num_experts` 等)建议通过 YAML 配置文件设置.
 
 ## 方法二: 使用 YAML 配置文件 (推荐用于可复现的实验)
@@ -75,7 +76,7 @@ llm-train --task regression --amp true
 
 2. **在您的训练脚本中加载它**:
 
-    框架的 `Config` 类提供了 `from_yaml` 方法来从 YAML 文件加载配置. 您可以在自己的训练脚本中调用此方法:
+   框架的 `Config` 类提供了 `from_yaml` 方法来从 YAML 文件加载配置. 您可以在自己的训练脚本中调用此方法:
 
     ```python
     from llm.training.core.config import Config
@@ -87,7 +88,7 @@ llm-train --task regression --amp true
     # 直接在命令行中使用 --lr, --batch-size 等参数覆盖 YAML 中的值
     ```
 
-    *注意: `llm-train` 默认使用 `--config` 参数加载 YAML 配置. 如果您希望在自己的 Python 脚本中加载配置, 可以显式调用 `Config.from_yaml()`.*
+   *注意: `llm-train` 使用 `--config-path` 参数加载 YAML 配置. 如果您希望在自己的 Python 脚本中加载配置, 可以显式调用 `Config.from_yaml()`.*
 
 ## 方法三: 使用环境变量 (分布式训练)
 

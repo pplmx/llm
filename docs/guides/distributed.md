@@ -11,12 +11,12 @@ loop doesn't have to branch on which strategy is in use.
 
 ## When to use which
 
-| | DDP | FSDP |
-|---|---|---|
-| Memory per rank | full model + grads + optim state | shard of model + grads + optim state |
-| Communication overhead | per-step all-reduce of gradients | per-step all-gather + reduce-scatter |
-| Best for | models that already fit on one GPU | models that don't fit on one GPU |
-| Minimum world size | 1 (effectively no-op) | 2+ for actual sharding benefit |
+|                        | DDP                                | FSDP                                 |
+| ---------------------- | ---------------------------------- | ------------------------------------ |
+| Memory per rank        | full model + grads + optim state   | shard of model + grads + optim state |
+| Communication overhead | per-step all-reduce of gradients   | per-step all-gather + reduce-scatter |
+| Best for               | models that already fit on one GPU | models that don't fit on one GPU     |
+| Minimum world size     | 1 (effectively no-op)              | 2+ for actual sharding benefit       |
 
 If your model fits on one GPU, **use DDP** — FSDP adds
 communication overhead even when sharding isn't needed. Pick
@@ -76,11 +76,11 @@ All three knobs live on `DistributedConfig` and are documented in
 the config help string. The defaults are conservative and safe to
 leave alone:
 
-| Knob | Default | What it does |
-|---|---|---|
-| `fsdp_mixed_precision` | `"bf16"` | Parameter / gradient / buffer dtype. `"bf16"` is recommended on modern GPUs. `"fp16"` needs a loss scaler. `"fp32"` skips mixed precision entirely. |
+| Knob                        | Default      | What it does                                                                                                                                                              |
+| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fsdp_mixed_precision`      | `"bf16"`     | Parameter / gradient / buffer dtype. `"bf16"` is recommended on modern GPUs. `"fp16"` needs a loss scaler. `"fp32"` skips mixed precision entirely.                       |
 | `fsdp_auto_wrap_min_params` | `10_000_000` | Size-based auto-wrap threshold. Modules with at least this many parameters get their own FSDP unit. Set to `0` to disable auto-wrap and wrap the whole model as one unit. |
-| `fsdp_cpu_offload` | `false` | Offload params to CPU when idle. Trades throughput for memory — only useful when the model is too big to fit even after BF16 sharding. |
+| `fsdp_cpu_offload`          | `false`      | Offload params to CPU when idle. Trades throughput for memory — only useful when the model is too big to fit even after BF16 sharding.                                    |
 
 ### Auto-wrap policy in detail
 
@@ -173,36 +173,36 @@ all.
 
 ### `DistributedConfig` fields
 
-| Field | Default | Description |
-|---|---|---|
-| `master_addr` | `"127.0.0.1"` | Process-group master address |
-| `master_port` | `"12355"` | Process-group master port |
-| `num_nodes` | `1` | Total number of nodes |
-| `gpus_per_node` | auto (CUDA count) | GPUs per node |
-| `node_rank` | `0` | This node's rank |
-| `backend` | `"nccl"` | `torch.distributed` backend |
-| `parallel_strategy` | `"ddp"` | `"ddp"` or `"fsdp"` |
-| `fsdp_mixed_precision` | `"bf16"` | `"fp32"` / `"bf16"` / `"fp16"` |
-| `fsdp_auto_wrap_min_params` | `10_000_000` | Size-based auto-wrap threshold |
-| `fsdp_cpu_offload` | `false` | Offload params to CPU when idle |
+| Field                       | Default           | Description                     |
+| --------------------------- | ----------------- | ------------------------------- |
+| `master_addr`               | `"127.0.0.1"`     | Process-group master address    |
+| `master_port`               | `"12355"`         | Process-group master port       |
+| `num_nodes`                 | `1`               | Total number of nodes           |
+| `gpus_per_node`             | auto (CUDA count) | GPUs per node                   |
+| `node_rank`                 | `0`               | This node's rank                |
+| `backend`                   | `"nccl"`          | `torch.distributed` backend     |
+| `parallel_strategy`         | `"ddp"`           | `"ddp"` or `"fsdp"`             |
+| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` / `"fp16"`  |
+| `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold  |
+| `fsdp_cpu_offload`          | `false`           | Offload params to CPU when idle |
 
 ### Environment variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `NCCL_DEBUG` | NCCL debug verbosity | `WARN` |
-| `NCCL_IB_DISABLE` | Disable InfiniBand | `0` |
-| `NCCL_NET_GDR_LEVEL` | RDMA level | `2` |
+| Variable             | Description          | Default |
+| -------------------- | -------------------- | ------- |
+| `NCCL_DEBUG`         | NCCL debug verbosity | `WARN`  |
+| `NCCL_IB_DISABLE`    | Disable InfiniBand   | `0`     |
+| `NCCL_NET_GDR_LEVEL` | RDMA level           | `2`     |
 
 ### `torchrun` flags
 
-| Flag | Description |
-|---|---|
-| `--nnodes` | Total number of nodes |
+| Flag               | Description               |
+| ------------------ | ------------------------- |
+| `--nnodes`         | Total number of nodes     |
 | `--nproc_per_node` | Processes (GPUs) per node |
-| `--node_rank` | This node's rank |
-| `--master_addr` | Master node address |
-| `--master_port` | Master node port |
+| `--node_rank`      | This node's rank          |
+| `--master_addr`    | Master node address       |
+| `--master_port`    | Master node port          |
 
 ## Performance notes
 
@@ -255,6 +255,5 @@ torchrun scripts/train.py
 
 - [Deep dive into DDP](../development/deep-dive-ddp.md)
 - [Training flow guide](../development/training-flow.md)
-- [Tier 3 ticket #2](../audits/2026-07-12-tickets/29-fsdp-e2e-docs.md)
-  — the audit follow-up that wired FSDP through the config +
-  state-dict helpers.
+- FSDP 的接线记录（config + state-dict helpers）见 `CHANGELOG.md`
+  （Tier 3 #29）。

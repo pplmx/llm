@@ -3,7 +3,7 @@
 # Purpose
 # -------
 # The smallest possible Direct Preference Optimization run that
-# exercises the full `llm-train dpo` main path: JSONL →
+# exercises the full `llm-train --task dpo` main path: JSONL →
 # tokenize → policy forward + reference forward → DPO loss →
 # backward → optimizer step → checkpoint save.
 #
@@ -26,7 +26,8 @@
 #   "
 #
 #   # 2. Train:
-#   uv run llm-train dpo --config configs/dpo_local_demo.yaml \
+#   uv run llm-train --task dpo \
+#     --config-path configs/dpo_local_demo.yaml \
 #     --epochs 1 --steps-per-epoch 10
 #
 # What this config exercises

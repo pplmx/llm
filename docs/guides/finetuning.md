@@ -528,11 +528,12 @@ Loaded adapters can be mounted on base models during inference via `llm-serve`. 
 Configure serving through environment variables:
 
 ```bash
-# Mount a LoRA adapter on startup
-export LLM_PEFT_ADAPTER=checkpoints/lora_adapter.bin
-
-# Or use the serving config file
-llm-serve --config serve.yaml
+# Mount a LoRA adapter on startup（llm-serve 只读环境变量，没有 --config 参数）
+LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_3 \
+LLM_SERVING_PEFT_METHOD=lora \
+LLM_SERVING_PEFT_ADAPTER_PATH=checkpoints/lora_adapter.bin \
+LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
+uv run llm-serve
 ```
 
 See the [Inference Guide](inference.md) for detailed instructions on serving with PEFT adapters, including multi-adapter routing, adapter hot-swapping at runtime, and batching with heterogeneous adapters.

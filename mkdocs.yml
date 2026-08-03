@@ -33,18 +33,15 @@ theme:
     - content.code.copy
     - content.code.annotate
 
-
 # Exclude internal/archival docs from the build to avoid "not in nav" warnings.
 # These are developer-facing or audit artifacts not meant for public docs.
-# Exclude internal/archival docs from the build to avoid "not in nav" warnings.
-# These are developer-facing or audit artifacts not meant for public docs.
+# Paths are relative to docs/ (no `docs/` prefix).
 exclude_docs: |
   audits/*
   superpowers/*
   agents/*
-  docs/README.md
-  docs/adr/template.md
-  docs/development/README.md
+  /README.md
+  adr/template.md
 
 plugins:
   - search:

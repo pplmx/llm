@@ -1,8 +1,8 @@
 # 预训练教程
 
-> **教程分工**：本教程专注**预训练**（`llm-train stream_lm`）。微调（SFT / DPO）见 [02-finetuning.md](./02-finetuning.md)，推理部署见 [03-inference.md](./03-inference.md)。模型评估不在本教程范围，见 [Guides/评估](../guides/evaluation.md)。
+> **教程分工**：本教程专注**预训练**（`llm-train --task stream_lm`）。微调（SFT / DPO）见 [02-finetuning.md](./02-finetuning.md)，推理部署见 [03-inference.md](./03-inference.md)。模型评估不在本教程范围，见 [Guides/评估](../guides/evaluation.md)。
 
-从零开始训练一个小型的语言模型，覆盖**主流路径** (`llm-train stream_lm`)。教程里的所有命令都和 `llm-train` CLI、YAML 配置、预置数据源 (`data_source`) 对齐——而不是单独的 demo 脚本。
+从零开始训练一个小型的语言模型，覆盖**主流路径** (`llm-train --task stream_lm`)。教程里的所有命令都和 `llm-train` CLI、YAML 配置、预置数据源 (`data_source`) 对齐——而不是单独的 demo 脚本。
 
 ---
 
@@ -11,7 +11,7 @@
 本教程涵盖：
 
 - 数据准备（流式 + 离线两种）
-- 主流路径：使用 `llm-train stream_lm` + YAML 配置
+- 主流路径：使用 `llm-train --task stream_lm` + YAML 配置
 - 检查点管理（包含 **streaming data cursor** 续训）
 - 切换到 SFT / DPO 的入口
 - 训练监控
@@ -67,7 +67,7 @@ apply_to_config(cfg, C4_PRESET)
 
 ---
 
-## 2. 主流路径：`llm-train stream_lm`
+## 2. 主流路径：`llm-train --task stream_lm`
 
 **`stream_lm` task** 把 `LanguageModelingTask` 接到 `StreamingTextDataModule`，是流式预训练的主入口。
 
@@ -83,10 +83,10 @@ apply_to_config(cfg, C4_PRESET)
 
 ```bash
 # 离线冒烟（推荐先跑这个验证环境）
-uv run llm-train stream_lm --config configs/streaming_local_demo.yaml
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
 
 # C4 真实流式（需要 GPU + datasets 包）
-uv run llm-train stream_lm --config configs/streaming_c4.yaml
+uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml
 ```
 
 ### 2.2 CLI 覆盖
@@ -94,7 +94,7 @@ uv run llm-train stream_lm --config configs/streaming_c4.yaml
 `llm-train` 支持在命令行覆盖 YAML 字段，常用于实验 sweep：
 
 ```bash
-uv run llm-train stream_lm --config configs/streaming_local_demo.yaml \
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml \
   --epochs 3 \
   --steps-per-epoch 20 \
   --batch-size 8 \
@@ -168,30 +168,34 @@ model:
 
 ```text
 checkpoints/
-├── latest.pt
-├── epoch_1.pt
-├── epoch_2.pt
-└── best.pt
+├── latest.safetensors      # 模型权重
+├── latest.meta.json        # epoch / loss / model_config
+├── latest.extra_state.pt   # optimizer / scheduler / stream_data cursor
+├── epoch_1.safetensors
+├── epoch_1.meta.json
+├── epoch_1.extra_state.pt
+└── best.*                  # save_best=true 时同上三件套
 ```
 
-`epoch_N.pt` 里包含：
+`epoch_N.*` 里包含：
 
-- `model_state`：模型权重（adapter 部分也包含在内，详见 [PEFT save/load](../guides/finetuning.md#peft-checkpoint-management)）
-- `optimizer_state`：AdamW 状态
-- `scheduler_state`：LR scheduler
-- `scaler_state`：AMP GradScaler
+- `epoch_N.safetensors`：模型权重（adapter 部分也包含在内，详见 [PEFT save/load](../guides/finetuning.md#peft-checkpoint-management)）
+- `epoch_N.meta.json`：`epoch` / `loss` / `best_loss` / `model_config`（人类可读 JSON）
+- `epoch_N.extra_state.pt`：`optimizer_state`（AdamW）/ `scheduler_state` / `scaler_state` / `extra_state`
 - `extra_state["stream_data"]`：`{shard_key: {line_index, token_buffer}}`
 - `extra_state["stream_source"]`：数据源指纹（防止 config drift）
 
 ### 3.2 Resume（含 cursor）
 
 ```bash
-# 第一次跑（生成 checkpoints/epoch_1.pt）
-uv run llm-train stream_lm --config configs/streaming_local_demo.yaml --epochs 2
+# 第一次跑（生成 checkpoints/epoch_2.* 三件套）
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
 
-# 接着再跑 2 个 epoch（cursor 自动续上）
-uv run llm-train stream_lm --config configs/streaming_local_demo.yaml \
-  --resume-from-checkpoint checkpoints/epoch_2.pt
+# 接着再跑 2 个 epoch（cursor 自动续上）——resume 通过 YAML 配置，没有 CLI 参数：
+# 编辑 configs/streaming_local_demo.yaml 的 checkpoint 段：
+#   checkpoint:
+#     resume_from_checkpoint: checkpoints/epoch_2
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
 ```
 
 **Resume 保证**：
@@ -207,13 +211,22 @@ uv run llm-train stream_lm --config configs/streaming_local_demo.yaml \
 ### 3.3 检查 checkpoint 内容
 
 ```python
-import torch
+from llm.training.core.checkpoint import load_checkpoint_payload
 
-ckpt = torch.load("checkpoints/epoch_1.pt", map_location="cpu", weights_only=False)
+# 自动解析 v2 split 三件套（<stem>.safetensors / .meta.json / .extra_state.pt），
+# 兼容旧式单文件 .pt。传 stem（无后缀）或任一 sidecar 路径均可。
+ckpt = load_checkpoint_payload("checkpoints/epoch_1")
 print("epoch:", ckpt["epoch"])
 print("loss:", ckpt["loss"])
 print("stream cursor:", ckpt["extra_state"]["stream_data"])
 # → {"0": {"line_index": 12, "token_buffer": [...]}}
+```
+
+元数据同时以人类可读的 JSON 落盘，直接 `jq` 即可：
+
+```bash
+cat checkpoints/epoch_1.meta.json | jq .
+# → {"format_version": "2.0", "epoch": 0, "loss": 5.2, "best_loss": 5.2, "model_config": {...}}
 ```
 
 ---
@@ -224,10 +237,10 @@ print("stream cursor:", ckpt["extra_state"]["stream_data"])
 
 ```bash
 # 监督微调（instruction tuning）
-uv run llm-train sft --config configs/your_sft_config.yaml
+uv run llm-train --task sft --config-path configs/your_sft_config.yaml
 
 # 直接偏好优化（DPO）
-uv run llm-train dpo --config configs/your_dpo_config.yaml
+uv run llm-train --task dpo --config-path configs/your_dpo_config.yaml
 ```
 
 PEFT（LoRA / IA³ / BitFit / Adapter / Prefix Tuning / AdaLoRA）通过 `training.peft_method` + `training.peft_kwargs` 启用——同一份 YAML 格式，无侵入：

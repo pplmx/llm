@@ -124,9 +124,10 @@ class TestServePresetConfigs:
         path = REPO_ROOT / "configs" / "serve_pretrained.yaml"
         assert path.exists(), f"missing config: {path}"
         cfg = ServingConfig.from_yaml(path)
-        # Production preset points at a real training checkpoint.
+        # Production preset points at a real training checkpoint (v2 stem,
+        # resolved by the loader to the split trio).
         assert cfg.model_path is not None
-        assert cfg.model_path.endswith(".pt")
+        assert cfg.model_path == "checkpoints_sft_alpaca/epoch_5"
         # HF tokenizer to match `configs/sft_alpaca.yaml`.
         assert cfg.tokenizer_type == "hf"
         assert cfg.tokenizer_path == "tokenizer"

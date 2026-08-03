@@ -26,16 +26,20 @@
 #
 # Usage
 # -----
-#   uv run llm-train sft --config configs/sft_alpaca.yaml
+#   uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
 #
 # Recommended CLI overrides for experiments
 # -----------------------------------------
 #   --epochs 3 \
 #   --batch-size 16 \
-#   --lr 2e-5 \
-#   --peft-method lora \                 # add LoRA (T2 PEFT #43-#49)
-#   --peft-kwargs '{"rank":16,"alpha":32.0}' \
-#   --peft-save-path ./lora_adapter.bin  # auto-saved at train end
+#   --lr 2e-5
+#
+# PEFT (LoRA / IA³ / BitFit / Adapter / Pfeiffer / AdaLoRA / ...) is
+# configured in the `training:` section below, not via CLI flags:
+#   training:
+#     peft_method: lora
+#     peft_kwargs: {rank: 16, alpha: 32.0}
+#     peft_save_path: ./lora_adapter.bin   # auto-saved at train end
 
 model:
   hidden_size: 256         # ~10M params with 6 layers
