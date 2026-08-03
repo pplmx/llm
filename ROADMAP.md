@@ -24,6 +24,7 @@
 - 性能优化: `torch.compile`, KV Cache 优化, Gradient Checkpointing
 
 > **架构边界** (详见 [docs/reference/architecture.md](docs/reference/architecture.md)):
+>
 > - `attn_impl=mla` 支持 KV cache (linear + paged)
 > - 当前 MLA 是 placeholder 实现 (learnable latent queries + uniform-mean 输出); DeepSeek-V2-style latent-compressed K, V 是单独的 follow-up
 > - Paged Attention serving 全链路已实现 ([ADR-004](docs/adr/004-paged-attention-serving.md))
@@ -46,6 +47,7 @@
 > 优先级: **P1** 量化深化 / 多模态 spike → **P2** DeepSpeed / PP / 3D → **P3** 前沿技术探索
 
 ### 1. 预训练完善 ✅
+
 - [x] 流式数据加载骨架 (`StreamingTextDataset`, `StreamingTextDataModule`, `HFStreamTextSource`)
 - [x] 流式 checkpoint resume (`CheckpointContributor` + `stream_data_state`)
 - [x] C4 / The Pile / RedPajama 预设配置 (CLI/YAML 模板, 复用 `SOURCE_REGISTRY`)
@@ -54,6 +56,7 @@
 - [x] 数据版本控制 (DVC, P0 预训练 productization 最后一项: `src/llm/data/dvc.py` 懒加载 helper + `dvc.yaml` 模板 + `.dvcignore` + 23 unit tests, 配合 `source_fingerprint()` 计算 stable hash, 可选 `[dvc]` 依赖组, 无 dvc 时优雅降级)
 
 ### 2. 生态系统集成 ✅
+
 - [x] HuggingFace 权重加载 (`from_pretrained`)
 - [x] safetensors **加载** (`compat/hf_loader`)
 - [x] ONNX 导出
@@ -65,6 +68,7 @@
 - [x] 发布预训练模型到 HuggingFace Hub (`compat/hf_publisher.push_to_hub`, shipped in #25)
 
 ### 3. 多模态扩展 (P2, 阶段十二)
+
 > 前置: `MultimodalDataModule` + `ModalityEncoderRegistry` 设计 spike
 
 - [ ] 视觉编码器集成 (CLIP/SigLIP)
@@ -72,19 +76,37 @@
 - [ ] Visual Instruction Tuning
 
 ### 4. 高效微调 ✅
+
 - [x] QLoRA (NF4 量化 + LoRA)
 - [x] AdaLoRA (SVD 形式 + 正交正则化 + 自适应剪枝, T3 #40 基础切片 + T3 #41 剪枝切片 + T3 #42 trainer 集成: EMA tracker + pruning callback + SFT/DPO 接入)
 - [x] IA³ (T-Few 乘性 PEFT 基础切片: `IA3Linear` 包装器 + `apply_ia3` / `merge_ia3` / `unmerge_ia3` / `get_ia3_parameters` / `count_ia3_parameters` / `disable_ia3` / `enable_ia3` 模块级助手, 每层 `out_features` 训练参数, init 为 ones 保持恒等变换; trainer 集成切片 `TrainingConfig` 三个 opt-in 字段 `use_ia3` / `ia3_init_scale` / `ia3_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_ia3` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型))
-- [x] BitFit (bias-only 微调: 基础切片 `apply_bitfit` 冻结所有参数 + 启用所有 `.bias` 后缀参数的梯度 + 保存原始 `requires_grad` 快照; `unapply_bitfit` / `get_bitfit_parameters` / `count_bitfit_parameters` / `is_bitfit_applied` 模块级助手; trainer 集成切片 `TrainingConfig` 两个 opt-in 字段 `use_bitfit` / `bitfit_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_bitfit` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); 无 wrapper、无新参数、无 scheduler、无 merge — 最轻量级 PEFT 方法)
-- [x] Adapter Layers (Houlsby 2019 bottleneck residual: 基础切片 `AdapterLinear` 包装器 (down Kaiming-init + activation + up zero-init) + `apply_adapter` / `merge_adapter` / `unmerge_adapter` / `get_adapter_parameters` / `count_adapter_parameters` / `disable_adapter` / `enable_adapter` 模块级助手; trainer 集成切片 `TrainingConfig` 三个 opt-in 字段 `use_adapter` / `adapter_bottleneck_dim` / `adapter_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_adapter` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); Pfeiffer-only-after-FFN / Compacter / MAD-X 变体留待后续切片)
-- [x] Prefix Tuning / P-Tuning (T2 PEFT 多 backend 切片完成: 基础切片 `PrefixCapableAttention` protocol + `MultiHeadAttention.forward(prefix_kv=...)` + `FlashAttention.forward(prefix_kv=...)` + `MultiLatentAttention.forward(prefix_kv=...)` + `PrefixTuningAttention` 包装器 + `apply_prefix_tuning` / `get_prefix_parameters` / `fold_reparameterization` 模块级助手; 训练切片 `TrainingConfig` 四个 opt-in 字段 + `LanguageModelingTask.build_model` 自动 `apply_prefix_tuning` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); `PrefixTuningAttention` 切换为 `PrefixCapableAttention` Protocol gate + 显式 `num_kv_heads`/`head_dim` 属性检查 (防止 `@runtime_checkable` 让 `nn.Linear` 误判通过); Flash prefix 在 KV-cache 写之后、GQA repeat 之前拼接，prefix dtype 自动 cast 到 fp16/bf16 以满足 `flash_attn_func` 要求；MLA prefix 在 cache routing 之后、`_latent_attention` 之前拼接，同时 `attn_mask` 的 S_k 轴扩展 `prefix_len` 个 1（prefix 永远可见），linear `KVCache` 和 `PagedKVCache` 两条路径都支持; cross-backend save/load round-trip 一致 — wrapper 类是 base-agnostic，`save_peft`/`load_peft` 对所有 8 个内置 PEFT 方法统一调度, prefix checkpoint 跨 backend 字节对齐)
-- [x] **PEFT method registry** (T2 PEFT 切片完成: `PEFT_REGISTRY` + `apply_peft` / `merge_peft` / `unmerge_peft` / `disable_peft` / `enable_peft` / `get_peft_parameters` / `count_peft_parameters` 统一 dispatch; 8 个内置方法 (`lora` / `qlora` / `adalora` / `prefix_tuning` / `ia3` / `bitfit` / `adapter` / `pfeiffer_adapter`) 注册为 `PEFTMethod` dataclass 记录; `llm.peft_methods` setuptools entry-point group 开放第三方扩展; `TrainingConfig.peft_method` + `peft_kwargs` 加性字段 (legacy `use_*` 标志路径保留); SFT/DPO 继承; Pydantic validator 在 config-load 时拒绝未知方法)
+- [x] BitFit (bias-only 微调: 基础切片 `apply_bitfit` 冻结所有参数 + 启用所有 `.bias` 后缀参数的梯度 + 保存原始 `requires_grad` 快照; `unapply_bitfit` / `get_bitfit_parameters` / `count_bitfit_parameters` / `is_bitfit_applied`
+  模块级助手; trainer 集成切片 `TrainingConfig` 两个 opt-in 字段 `use_bitfit` / `bitfit_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_bitfit` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); 无
+  wrapper、无新参数、无 scheduler、无 merge — 最轻量级 PEFT 方法)
+- [x] Adapter Layers (Houlsby 2019 bottleneck residual: 基础切片 `AdapterLinear` 包装器 (down Kaiming-init + activation + up zero-init) + `apply_adapter` / `merge_adapter` / `unmerge_adapter` /
+  `get_adapter_parameters` / `count_adapter_parameters` / `disable_adapter` / `enable_adapter` 模块级助手; trainer 集成切片 `TrainingConfig` 三个 opt-in 字段 `use_adapter` / `adapter_bottleneck_dim` /
+  `adapter_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_adapter` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); Pfeiffer-only-after-FFN / Compacter / MAD-X 变体留待后续切片)
+- [x] Prefix Tuning / P-Tuning (T2 PEFT 多 backend 切片完成: 基础切片 `PrefixCapableAttention` protocol + `MultiHeadAttention.forward(prefix_kv=...)` + `FlashAttention.forward(prefix_kv=...)` +
+  `MultiLatentAttention.forward(prefix_kv=...)` + `PrefixTuningAttention` 包装器 + `apply_prefix_tuning` / `get_prefix_parameters` / `fold_reparameterization` 模块级助手; 训练切片 `TrainingConfig` 四个 opt-in 字段 +
+  `LanguageModelingTask.build_model` 自动 `apply_prefix_tuning` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); `PrefixTuningAttention` 切换为 `PrefixCapableAttention` Protocol gate + 显式
+  `num_kv_heads`/`head_dim` 属性检查 (防止 `@runtime_checkable` 让 `nn.Linear` 误判通过); Flash prefix 在 KV-cache 写之后、GQA repeat 之前拼接，prefix dtype 自动 cast 到 fp16/bf16 以满足 `flash_attn_func` 要求；MLA prefix 在 cache
+  routing 之后、`_latent_attention` 之前拼接，同时 `attn_mask` 的 S_k 轴扩展 `prefix_len` 个 1（prefix 永远可见），linear `KVCache` 和 `PagedKVCache` 两条路径都支持; cross-backend save/load round-trip 一致 — wrapper 类是
+  base-agnostic，`save_peft`/`load_peft` 对所有 8 个内置 PEFT 方法统一调度, prefix checkpoint 跨 backend 字节对齐)
+- [x] **PEFT method registry** (T2 PEFT 切片完成: `PEFT_REGISTRY` + `apply_peft` / `merge_peft` / `unmerge_peft` / `disable_peft` / `enable_peft` / `get_peft_parameters` / `count_peft_parameters` 统一
+  dispatch; 8 个内置方法 (`lora` / `qlora` / `adalora` / `prefix_tuning` / `ia3` / `bitfit` / `adapter` / `pfeiffer_adapter`) 注册为 `PEFTMethod` dataclass 记录; `llm.peft_methods` setuptools entry-point group
+  开放第三方扩展; `TrainingConfig.peft_method` + `peft_kwargs` 加性字段 (legacy `use_*` 标志路径保留); SFT/DPO 继承; Pydantic validator 在 config-load 时拒绝未知方法)
 - [x] **Pfeiffer Adapter (FFN-only variant)** (T2 PEFT #45 + #46 切片完成: 复用 `AdapterLinear` wrapper, 仅改 wrapping 目标为 MLP 层 (默认 `target_modules=["fc1", "fc2"]`); Pfeiffer 2020 论文, ~half Houlsby 参数; 8 个内置 PEFT 方法之一, 通过 `peft_method="pfeiffer_adapter"` + `peft_kwargs={"bottleneck_dim": N}` 启用; SFT/DPO 继承; 与 Houlsby 共存; Compacter / MAD-X 变体留待后续切片)
 - [x] **PEFT adapter-only checkpoint save/load** (T2 PEFT #47 切片完成: `save_peft` / `load_peft` 跨 8 个内置方法统一调度, 只存 adapter 参数不存 base, format_version="1.0" 元数据信封; `PEFTMethod.is_applied` 字段决定 load 时是否自动 apply; override_kwargs 支持 adapter surgery (例如加载时扩 LoRA rank); QLoRA / BitFit / Prefix Tuning 三个特殊方法无差别支持 — registry-driven dispatch, 未来新增 PEFT 方法零成本接入)
-- [x] **PEFT adapter-checkpoint trainer integration** (T2 PEFT #48 切片完成: `PEFTAdapterCheckpointCallback` 自动随 `build_callbacks()` 注册, `on_train_end` 调 `save_peft` 写 sidecar, 默认路径 `{checkpoint_dir}/peft_adapter_{method}.bin` 避免方法切换时覆盖; `TrainingConfig.peft_save_path` 字段允许显式覆盖; 失败 swallow + log 不影响主 checkpoint; 与 AdaLoRA pruning callback 共存; 回归测试同步更新 — 旧 `build_callbacks() == []` 预期改为 `not any(isinstance(c, AdaLoRAPruningCallback))`, 原意图 (registry path 不自动连 AdaLoRA pruning) 保留)
-- [x] **PEFT serving integration** (T2 PEFT #49 切片完成: `ServingConfig` 新增四个 PEFT 字段 `peft_method` / `peft_kwargs` / `peft_adapter_path` / `peft_merge`, Pydantic validator 拒绝未知方法名 + 跨字段一致性 (无 method 不能设 adapter_path/kwargs; bitfit/qlora/prefix_tuning 不允许 merge); 新 `src/llm/serving/peft_adapter.py` 暴露 `load_peft_into_model` / `merge_peft_into_model` 两个 helper (thin wrappers over registry); `load_model_and_tokenizer` 在 base ckpt 后应用 PEFT — 训练 → 推理闭环打通, 用户训完直接 `llm-serve` + env var 即可用 adapter 服务化, 无需手动 wrap + load_peft; 28 unit tests + e2e tests 覆盖 LoRA / IA³ / BitFit / Adapter / Pfeiffer 全 8 方法 round-trip + merge + 跨字段校验 + base-only 回归保护 + "训练→保存→服务" 端到端)
+- [x] **PEFT adapter-checkpoint trainer integration** (T2 PEFT #48 切片完成: `PEFTAdapterCheckpointCallback` 自动随 `build_callbacks()` 注册, `on_train_end` 调 `save_peft` 写 sidecar, 默认路径
+  `{checkpoint_dir}/peft_adapter_{method}.bin` 避免方法切换时覆盖; `TrainingConfig.peft_save_path` 字段允许显式覆盖; 失败 swallow + log 不影响主 checkpoint; 与 AdaLoRA pruning callback 共存; 回归测试同步更新 — 旧 `build_callbacks() ==
+  []` 预期改为 `not any(isinstance(c, AdaLoRAPruningCallback))`, 原意图 (registry path 不自动连 AdaLoRA pruning) 保留)
+- [x] **PEFT serving integration** (T2 PEFT #49 切片完成: `ServingConfig` 新增四个 PEFT 字段 `peft_method` / `peft_kwargs` / `peft_adapter_path` / `peft_merge`, Pydantic validator 拒绝未知方法名 + 跨字段一致性 (无 method 不能设
+  adapter_path/kwargs; bitfit/qlora/prefix_tuning 不允许 merge); 新 `src/llm/serving/peft_adapter.py` 暴露 `load_peft_into_model` / `merge_peft_into_model` 两个 helper (thin wrappers over registry);
+  `load_model_and_tokenizer` 在 base ckpt 后应用 PEFT — 训练 → 推理闭环打通, 用户训完直接 `llm-serve` + env var 即可用 adapter 服务化, 无需手动 wrap + load_peft; 28 unit tests + e2e tests 覆盖 LoRA / IA³ / BitFit / Adapter /
+  Pfeiffer 全 8 方法 round-trip + merge + 跨字段校验 + base-only 回归保护 + "训练→保存→服务" 端到端)
 
 ### 5. 高级分布式训练 🔄
+
 - [x] FSDP — `parallel_strategy=fsdp` + `wrap_model_for_training()` 已实现
 - [ ] Pipeline Parallelism
 - [ ] DeepSpeed ZeRO 集成
@@ -194,7 +216,12 @@
     - [x] 实现批处理推理支持 (`/batch_generate` 端点)
     - [x] 添加请求队列和并发控制 (`asyncio.Semaphore` + timeout)
     - [x] 实现优先级调度 (`PriorityScheduler`)
-    - [x] **推理主路径对齐** (Main Path #3 切片完成: `configs/serve_local_demo.yaml` 冒烟 (回环 host + dummy 模型 + 无 auth, CPU 几秒可起) + `configs/serve_pretrained.yaml` 生产预设 (256×6 checkpoint + HF tokenizer + LoRA adapter sidecar + paged attention + prefix cache + torch.compile + batched backend + api_key 公开主机守卫); `ServingConfig.from_yaml()` 类方法 (与 `Config.from_yaml()` 对称 —— env vars 与 YAML 两种风格等价); 教程 `docs/tutorials/03-inference.md` 重写对齐 `llm-serve` 主路径 — 30 秒上手 (无 checkpoint 冒烟) + YAML/env vars 配置风格 + OpenAI 兼容 `/v1/chat/completions` + `/generate` 流式 + `/metrics` 域内指标 (tokens / batch fill / KV cache hit / inflight) + 训练→服务 PEFT 闭环 (T2 PEFT #47-#49 一条龙) + 认证安全 (HMAC-SHA256 timing-safe + 公开主机守卫 T2 #7) + 结构化 JSON 日志 + Prometheus PromQL 查询样例 + 故障排除 (CUDA OOM / PEFT 加载失败 / 公开主机无 key / 请求超时 / batch fill 不变化) + 生产化 (性能开关按场景 / Docker / 客户端集成); 14 个新 e2e tests 在 `tests/e2e/test_serve_main_path.py` 覆盖 YAML 良构 + 端到端启动 + OpenAI chat completions round-trip + generate round-trip + generate 流式 + /metrics 域内指标 + invalid request 结构化错误 + 公开主机守卫拒绝无 key 启动 + 回环 host 无 key 成功启动 + X-API-Key / Bearer / 无 key / 错 key 四种认证路径 + LoRA train→save→serve→forward-不同于-base 端到端 (PEFT 闭环 headline 测试))
+- [x] **推理主路径对齐** (Main Path #3 切片完成: `configs/serve_local_demo.yaml` 冒烟 (回环 host + dummy 模型 + 无 auth, CPU 几秒可起) + `configs/serve_pretrained.yaml` 生产预设 (256×6 checkpoint + HF tokenizer + LoRA adapter
+  sidecar + paged attention + prefix cache + torch.compile + batched backend + api_key 公开主机守卫); `ServingConfig.from_yaml()` 类方法 (与 `Config.from_yaml()` 对称 —— env vars 与 YAML 两种风格等价); 教程
+  `docs/tutorials/03-inference.md` 重写对齐 `llm-serve` 主路径 — 30 秒上手 (无 checkpoint 冒烟) + YAML/env vars 配置风格 + OpenAI 兼容 `/v1/chat/completions` + `/generate` 流式 + `/metrics` 域内指标 (tokens / batch fill / KV
+  cache hit / inflight) + 训练→服务 PEFT 闭环 (T2 PEFT #47-#49 一条龙) + 认证安全 (HMAC-SHA256 timing-safe + 公开主机守卫 T2 #7) + 结构化 JSON 日志 + Prometheus PromQL 查询样例 + 故障排除 (CUDA OOM / PEFT 加载失败 / 公开主机无 key / 请求超时 /
+  batch fill 不变化) + 生产化 (性能开关按场景 / Docker / 客户端集成); 14 个新 e2e tests 在 `tests/e2e/test_serve_main_path.py` 覆盖 YAML 良构 + 端到端启动 + OpenAI chat completions round-trip + generate round-trip + generate 流式 +
+  /metrics 域内指标 + invalid request 结构化错误 + 公开主机守卫拒绝无 key 启动 + 回环 host 无 key 成功启动 + X-API-Key / Bearer / 无 key / 错 key 四种认证路径 + LoRA train→save→serve→forward-不同于-base 端到端 (PEFT 闭环 headline 测试))
 - [x] **性能优化** (基础) ✅ *阶段十*
     - [x] 集成 `torch.compile` 到推理流程 (可选配置)
     - [x] Paged Attention — full forward path ([ADR-004](docs/adr/004-paged-attention-serving.md))
@@ -298,7 +325,9 @@
 - [x] 实现完整的 SFT 数据处理流程
 - [x] 支持多种指令格式 (Alpaca, ShareGPT, etc.)
 - [x] 实现高效的 padding 和 masking 策略
-- [x] **SFT 主路径对齐** (Main Path #2 切片完成: `configs/sft_local_demo.yaml` 离线 Alpaca JSONL 冒烟 (CPU 几秒) + `configs/sft_alpaca.yaml` 生产 Alpaca (256×6, GPT-2 BPE, AMP, lr=2e-5); 教程 `docs/tutorials/02-finetuning.md` 重写对齐 `llm-train sft` 主路径 — Alpaca JSONL 三段式 (instruction/input/output) + Alpaca template + prompt-mask-only-on-response 损失 + PEFT (`peft_method` + `peft_save_path`) 通过 T2 PEFT #47-#49 服务化一条龙; 6 个新 e2e tests 在 `tests/e2e/test_sft_main_path.py` 覆盖 YAML 良构 + 端到端运行 + 损失有限 + checkpoint 保存 + PEFT adapter sidecar 保存)
+- [x] **SFT 主路径对齐** (Main Path #2 切片完成: `configs/sft_local_demo.yaml` 离线 Alpaca JSONL 冒烟 (CPU 几秒) + `configs/sft_alpaca.yaml` 生产 Alpaca (256×6, GPT-2 BPE, AMP, lr=2e-5); 教程
+  `docs/tutorials/02-finetuning.md` 重写对齐 `llm-train sft` 主路径 — Alpaca JSONL 三段式 (instruction/input/output) + Alpaca template + prompt-mask-only-on-response 损失 + PEFT (`peft_method` + `peft_save_path`)
+  通过 T2 PEFT #47-#49 服务化一条龙; 6 个新 e2e tests 在 `tests/e2e/test_sft_main_path.py` 覆盖 YAML 良构 + 端到端运行 + 损失有限 + checkpoint 保存 + PEFT adapter sidecar 保存)
 
 #### 11.2 RLHF (Reinforcement Learning from Human Feedback)
 
@@ -312,7 +341,9 @@
 - [x] 实现 DPO 损失函数
 - [x] 支持偏好数据集处理
 - [ ] 对比 DPO vs RLHF 性能
-- [x] **DPO 主路径对齐** (Main Path #2 切片完成: `configs/dpo_local_demo.yaml` 离线 chosen/rejected JSONL 冒烟 + `configs/dpo_ultrafeedback.yaml` 生产 UltraFeedback (256×6, lr=5e-7 比 SFT 小一个量级, gradient_checkpointing=true); `TrainingConfig.dpo_beta` 字段 (默认 0.1, gt=0 validator); `TrainingConfig.max_steps` 字段 (默认 0, ge=0 validator); 教程 §3 覆盖 DPO 与 SFT 的关键差异 (2× memory / beta / lr 尺度 / SFT→DPO 两阶段) + DPO loss 公式; 4 个新 e2e tests 在 `tests/e2e/test_dpo_main_path.py` 覆盖 YAML 良构 + 端到端运行 + 损失有限 + policy/reference 初始权重一致 (DPO log-ratio loss 的结构性前提))
+- [x] **DPO 主路径对齐** (Main Path #2 切片完成: `configs/dpo_local_demo.yaml` 离线 chosen/rejected JSONL 冒烟 + `configs/dpo_ultrafeedback.yaml` 生产 UltraFeedback (256×6, lr=5e-7 比 SFT 小一个量级,
+  gradient_checkpointing=true); `TrainingConfig.dpo_beta` 字段 (默认 0.1, gt=0 validator); `TrainingConfig.max_steps` 字段 (默认 0, ge=0 validator); 教程 §3 覆盖 DPO 与 SFT 的关键差异 (2× memory / beta / lr 尺度 / SFT→DPO
+  两阶段) + DPO loss 公式; 4 个新 e2e tests 在 `tests/e2e/test_dpo_main_path.py` 覆盖 YAML 良构 + 端到端运行 + 损失有限 + policy/reference 初始权重一致 (DPO log-ratio loss 的结构性前提))
 
 #### 11.4 其他对齐技术
 
@@ -392,7 +423,8 @@
 #### 13.3 高级量化技术
 
 - [x] **集成 GPTQ** (Frantar 2022): `src/llm/quantization/gptq.py` (算法 + 双入口) + `_gptq_layer.py` (真打包 4-bit，2 weights/byte int8) + 公共 API 导出；支持 `bits ∈ {4,8}` / `group_size ∈ {-1,128,...}` / `sym` / `percdamp` / `blocksize` / `act_order` / `target_modules`；54 unit + e2e tests；零回归对现有 simple-PTQ；ADR-007；AWQ / SmoothQuant / GGUF 留待后续切片
-- [ ] 集成 AWQ (Activation-aware Weight Quantization)
+- [x] **集成 AWQ** (Lin et al., MLSys 2024): `src/llm/quantization/awq.py` (算法 + 双入口) + `_awq_layer.py` (打包存储 + per-input-channel `input_scales` 运行时补偿)；组因子化 2 的幂网格搜索，salient 通道 (激活均值大) 权重放大、输入 `x/s`
+  补偿，重建误差显著低于 naive RTN (约 2.5x)；可选 `clip_ratio` 抑制 outlier；`LayerQuantPolicy` 复用支持 per-layer 混合精度；42 新 tests 全绿；零回归对 GPTQ / simple-PTQ；ADR-009；跨层 folding 与 SmoothQuant / GGUF 留待后续切片
 - [ ] 集成 SmoothQuant
 - [ ] 研究 GGML/GGUF 格式支持
 
@@ -481,9 +513,18 @@
 - [x] 实现 QLoRA (Quantized LoRA)
 - [x] 实现 AdaLoRA (Adaptive LoRA) — 基础切片 (SVD 形式 + QR 正交化 + 正交正则化 + mask hook, T3 #40) + 剪枝切片 (importance scoring + prune_to_rank + update_budget + prune_adalora helper, T3 #41) + trainer 集成切片 (AdaLoRAGradientEMA tracker + AdaLoRAPruningCallback + TrainingConfig 九个 opt-in 字段 + LanguageModelingTask.build_model 自动 apply_adalora + SFT/DPO 继承, T3 #42)
 - [x] 实现 IA³ (T-Few) — 基础切片 (`IA3Linear` 乘性缩放包装器 + `ia3_l` 训练参数 + `apply_ia3` / `merge_ia3` / `unmerge_ia3` / `get_ia3_parameters` / `count_ia3_parameters` / `disable_ia3` / `enable_ia3` 模块级助手; 每层 `out_features` 训练参数, init 为 ones 保持恒等变换); trainer 集成切片待跟进 (单 config flag + `LanguageModelingTask.build_model` 自动 `apply_ia3`)
-- [x] 实现 BitFit (Bias-Term Fine-Tuning) — 基础切片 (`apply_bitfit` 冻结所有参数 + 启用所有 `.bias` 后缀参数梯度 + 原始 `requires_grad` 快照 + `unapply_bitfit` / `get_bitfit_parameters` / `count_bitfit_parameters` / `is_bitfit_applied` 模块级助手; 无 wrapper、无新参数、无 scheduler — 最轻量级 PEFT 方法); trainer 集成切片 (`TrainingConfig` 两个 opt-in 字段 `use_bitfit` / `bitfit_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_bitfit` + SFT/DPO 继承, DPO 包装 policy 与 reference 双模型)
-- [x] 实现 Adapter Layers (Houlsby 2019) — 基础切片 (`AdapterLinear` bottleneck 包装器, down Kaiming-init + activation + up zero-init; `apply_adapter` / `merge_adapter` / `unmerge_adapter` / `get_adapter_parameters` / `count_adapter_parameters` / `disable_adapter` / `enable_adapter` 模块级助手; 每层 `2*out*bottleneck + out + bottleneck` 训练参数); trainer 集成切片 (`TrainingConfig` 三个 opt-in 字段 `use_adapter` / `adapter_bottleneck_dim` / `adapter_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_adapter` + SFT/DPO 继承, DPO 包装 policy 与 reference 双模型)
-- [x] 探索 Prefix Tuning / P-Tuning — 多 backend 切片完成: 基础切片 `MultiHeadAttention.forward(prefix_kv=...)` 接收 prefix K/V 拼接 + `FlashAttention.forward(prefix_kv=...)` (KV-cache 写之后、GQA repeat 之前拼接, dtype 自动 cast 到 fp16/bf16) + `MultiLatentAttention.forward(prefix_kv=...)` (cache routing 之后、`_latent_attention` 之前拼接, `attn_mask` 的 S_k 轴扩展 `prefix_len` 个 1, linear `KVCache` 和 `PagedKVCache` 两条路径都支持) + `PrefixCapableAttention` Protocol + `PrefixTuningAttention` 包装器 (切换为 Protocol gate + 显式 `num_kv_heads`/`head_dim` 属性检查, 接受任何结构上合规的 base) (prefix_small + 两个 reparam MLP) + `apply_prefix_tuning` / `get_prefix_parameters` / `fold_reparameterization` 模块级助手; 训练切片 `TrainingConfig` 四个 opt-in 字段 (`use_prefix_tuning` / `prefix_tuning_len` / `prefix_reparam_hidden` / `prefix_target_modules`) + `LanguageModelingTask.build_model` 自动 `apply_prefix_tuning` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); cross-backend save/load round-trip 一致 — wrapper 类是 base-agnostic, MHA 训出的 prefix checkpoint 可以直接 load 到 Flash 或 MLA 模型
+- [x] 实现 BitFit (Bias-Term Fine-Tuning) — 基础切片 (`apply_bitfit` 冻结所有参数 + 启用所有 `.bias` 后缀参数梯度 + 原始 `requires_grad` 快照 + `unapply_bitfit` / `get_bitfit_parameters` / `count_bitfit_parameters` /
+  `is_bitfit_applied` 模块级助手; 无 wrapper、无新参数、无 scheduler — 最轻量级 PEFT 方法); trainer 集成切片 (`TrainingConfig` 两个 opt-in 字段 `use_bitfit` / `bitfit_target_modules` + `LanguageModelingTask.build_model` 自动
+  `apply_bitfit` + SFT/DPO 继承, DPO 包装 policy 与 reference 双模型)
+- [x] 实现 Adapter Layers (Houlsby 2019) — 基础切片 (`AdapterLinear` bottleneck 包装器, down Kaiming-init + activation + up zero-init; `apply_adapter` / `merge_adapter` / `unmerge_adapter` /
+  `get_adapter_parameters` / `count_adapter_parameters` / `disable_adapter` / `enable_adapter` 模块级助手; 每层 `2*out*bottleneck + out + bottleneck` 训练参数); trainer 集成切片 (`TrainingConfig` 三个 opt-in 字段
+  `use_adapter` / `adapter_bottleneck_dim` / `adapter_target_modules` + `LanguageModelingTask.build_model` 自动 `apply_adapter` + SFT/DPO 继承, DPO 包装 policy 与 reference 双模型)
+- [x] 探索 Prefix Tuning / P-Tuning — 多 backend 切片完成: 基础切片 `MultiHeadAttention.forward(prefix_kv=...)` 接收 prefix K/V 拼接 + `FlashAttention.forward(prefix_kv=...)` (KV-cache 写之后、GQA repeat 之前拼接, dtype 自动
+  cast 到 fp16/bf16) + `MultiLatentAttention.forward(prefix_kv=...)` (cache routing 之后、`_latent_attention` 之前拼接, `attn_mask` 的 S_k 轴扩展 `prefix_len` 个 1, linear `KVCache` 和 `PagedKVCache` 两条路径都支持) +
+  `PrefixCapableAttention` Protocol + `PrefixTuningAttention` 包装器 (切换为 Protocol gate + 显式 `num_kv_heads`/`head_dim` 属性检查, 接受任何结构上合规的 base) (prefix_small + 两个 reparam MLP) + `apply_prefix_tuning` /
+  `get_prefix_parameters` / `fold_reparameterization` 模块级助手; 训练切片 `TrainingConfig` 四个 opt-in 字段 (`use_prefix_tuning` / `prefix_tuning_len` / `prefix_reparam_hidden` / `prefix_target_modules`) +
+  `LanguageModelingTask.build_model` 自动 `apply_prefix_tuning` + SFT/DPO 继承 (DPO 包装 policy 与 reference 双模型); cross-backend save/load round-trip 一致 — wrapper 类是 base-agnostic, MHA 训出的 prefix checkpoint
+  可以直接 load 到 Flash 或 MLA 模型
 
 #### 15.4 新型 MoE 架构
 
