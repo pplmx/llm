@@ -41,6 +41,12 @@ jobs:
                 run: uvx ty check src/llm/
                 continue-on-error: true
 
+            -   name: Verify examples compile
+                run: |
+                    for f in examples/*.py; do
+                        python -m py_compile "$f"
+                    done
+
     doctest:
         runs-on: ubuntu-latest
         steps:
@@ -129,3 +135,52 @@ jobs:
                 # High+ severity findings fail the build. Lower severities
                 # are reported as warnings.
                 run: uv run bandit -r src/llm/ --severity-level high
+
+    docs:
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Checkout repository
+                uses: actions/checkout@v6
+
+            -   name: Set up UV Environment
+                uses: astral-sh/setup-uv@v8.2.0
+
+            -   name: Verify lockfile is up to date
+                run: uv lock --check
+
+            -   name: Synchronize Dependencies
+                run: uv sync --frozen
+
+            -   name: Install Documentation Dependencies
+                run: uv sync --frozen --group docs
+
+            -   name: Lint Markdown
+                run: uvx rumdl check --glob "**/*.md" --exclude "CHANGELOG.md" --exclude "docs/audits/"
+
+            -   name: Validate mkdocs build (strict mode)
+                run: uv run mkdocs build --strict
+
+            -   name: Check for broken internal links
+                run: |
+                    uv run python -c "
+                    import sys, yaml
+                    from pathlib import Path
+                    with open('mkdocs.yml') as f:
+                        nav = yaml.safe_load(f)
+                    missing = []
+                    def check_nav(items):
+                        if isinstance(items, dict):
+                            for v in items.values():
+                                check_nav(v)
+                        elif isinstance(items, list):
+                            for item in items:
+                                check_nav(item)
+                        elif isinstance(items, str) and items.endswith('.md'):
+                            if not Path(items).exists():
+                                missing.append(items)
+                    check_nav(nav.get('nav', []))
+                    if missing:
+                        print(f'Missing files: {missing}')
+                        sys.exit(1)
+                    print('All navigation files exist')
+                    "

@@ -13,7 +13,24 @@ The `llm.data` package is split into three layers:
   `val_dataloader` containers that combine the above with config
   validation and checkpoint resume.
 
-See the [data guide](../guides/data.md) for end-to-end usage.
+See the [data guide](../guides/data.md) for end-to-end usage and the
+[streaming guide](../guides/streaming.md) for detailed streaming
+pipeline documentation.
+
+## Streaming Data Modules
+
+For large-scale pretraining, the streaming data module handles
+memory-bounded data loading with checkpoint resume support:
+
+::: llm.data.modules.streaming
+
+## Streaming Dataset
+
+::: llm.data.datasets.streaming
+
+## Stream State
+
+::: llm.data.stream_state
 
 ## Built-in Dataset Presets
 
@@ -30,3 +47,7 @@ points. Most users won't need to read this — the built-in
 sources (S3, GCS, private archives) plug in here.
 
 ::: llm.data.sources
+
+## DVC Integration
+
+::: llm.data.dvc
