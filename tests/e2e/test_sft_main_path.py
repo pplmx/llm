@@ -1,7 +1,7 @@
 """E2E tests for the SFT main path (Main Path #2 docs/e2e alignment).
 
 Mirrors :mod:`tests.e2e.test_stream_lm_main_path` for the
-``llm-train sft`` main path — the same tutorial-alignment pattern
+``llm-train --task sft`` main path — the same tutorial-alignment pattern
 applied to Supervised Fine-Tuning.
 
 Covers:

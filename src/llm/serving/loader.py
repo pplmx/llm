@@ -13,6 +13,7 @@ from llm.models.decoder import DecoderModel
 from llm.runtime.model_factory import ModelFactory
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.serving.config import ServingConfig
+from llm.training.core.checkpoint import load_checkpoint_payload
 from llm.training.core.config import ModelConfig
 
 logger = logging.getLogger(__name__)
@@ -29,13 +30,19 @@ class TrainingCheckpoint:
     loss: float | None = None
 
 
-def load_training_checkpoint(path: str | Path, *, map_location: str | torch.device = "cpu") -> TrainingCheckpoint:
-    """Load a training checkpoint produced by CheckpointManager."""
-    ckpt_path = Path(path)
-    if not ckpt_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
+    """Load a training checkpoint produced by CheckpointManager.
 
-    payload = torch.load(ckpt_path, map_location=map_location, weights_only=False)
+    Accepts both the v2 split layout (``<stem>.safetensors`` +
+    ``<stem>.meta.json`` + ``<stem>.extra_state.pt``, the modern
+    ``CheckpointManager`` format) and the legacy v0.0.5 single-file
+    ``.pt`` blob. ``path`` may be a stem, any of the three v2 sidecar
+    paths, or a legacy ``.pt`` path.
+    """
+    ckpt_path = Path(path)
+    payload = load_checkpoint_payload(ckpt_path)
+    if payload is None:
+        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path} (checked the legacy .pt and the v2 split layout)")
     if "model_state" not in payload:
         raise ValueError(f"Checkpoint missing 'model_state': {ckpt_path}")
 

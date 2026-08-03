@@ -1,7 +1,7 @@
 """E2E tests for the DPO main path (Main Path #2 docs/e2e alignment).
 
 Mirrors :mod:`tests.e2e.test_stream_lm_main_path` for the
-``llm-train dpo`` main path — the same tutorial-alignment pattern
+``llm-train --task dpo`` main path — the same tutorial-alignment pattern
 applied to Direct Preference Optimization.
 
 Covers:

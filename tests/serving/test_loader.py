@@ -50,6 +50,48 @@ def test_load_training_checkpoint_roundtrip(tmp_path, tiny_model, tiny_config):
     assert checkpoint.epoch == 0
 
 
+def test_load_training_checkpoint_v2_split_layout(tmp_path, tiny_model, tiny_config):
+    """The serving loader accepts the modern v2 split layout written by
+    CheckpointManager — referenced by stem, by sidecar path, or by a
+    ``.pt``-suffixed stem (legacy-style path that resolves to the trio)."""
+    import logging
+
+    from llm.training.core.checkpoint import CheckpointManager
+    from llm.training.core.config import CheckpointConfig
+
+    manager = CheckpointManager(
+        CheckpointConfig(checkpoint_dir=str(tmp_path), save_interval=1, keep_last_n=2),
+        rank=0,
+        logger=logging.getLogger("test-loader"),
+    )
+    manager.save_checkpoint(
+        epoch=0,
+        model=tiny_model,
+        optimizer=None,
+        scheduler=None,
+        scaler=None,
+        loss=1.5,
+        extra_state={"stream_data": {"0": {"line_index": 3}}},
+        model_config=tiny_config.model.model_dump(),
+    )
+
+    for path in (
+        tmp_path / "epoch_1",  # stem (no suffix)
+        tmp_path / "epoch_1.safetensors",  # weights sidecar
+        tmp_path / "epoch_1.pt",  # legacy-style path, resolves to the trio
+    ):
+        checkpoint = load_training_checkpoint(path)
+        assert checkpoint.model_config["hidden_size"] == tiny_config.model.hidden_size
+        assert checkpoint.epoch == 0
+        assert checkpoint.loss == 1.5
+
+
+def test_load_training_checkpoint_missing_raises(tmp_path):
+    """A path with neither the legacy nor the v2 layout fails loudly."""
+    with pytest.raises(FileNotFoundError):
+        load_training_checkpoint(tmp_path / "does-not-exist")
+
+
 def test_load_model_and_tokenizer_from_checkpoint(tmp_path, tiny_model, tiny_config):
     tokenizer = SimpleCharacterTokenizer(list(string.printable[: tiny_config.model.vocab_size]))
     tokenizer_path = tmp_path / "tokenizer.pt"

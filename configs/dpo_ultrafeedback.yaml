@@ -36,7 +36,7 @@
 #
 # Usage
 # -----
-#   uv run llm-train dpo --config configs/dpo_ultrafeedback.yaml
+#   uv run llm-train --task dpo --config-path configs/dpo_ultrafeedback.yaml
 
 model:
   hidden_size: 256

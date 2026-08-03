@@ -78,7 +78,7 @@ docs/
 make init
 
 # 训练
-uv run scripts/train_simple_decoder.py --file-path data.txt
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
 
 # 测试
 make test

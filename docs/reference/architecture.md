@@ -132,7 +132,7 @@ To support rapid experimentation with different architectural variants (e.g., Fl
 
 Located in `src/llm/core/registry.py`:
 
-- **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention placeholder; supports KV cache — see [Tier 3 #31](../audits/2026-07-12-tickets/31-mla-kv-cache.md))
+- **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention placeholder; supports KV cache — see [ADR-003](../adr/003-use-kv-cache.md) and the MLA note below)
 - **`MLP_REGISTRY`**: `mlp` (Standard), `moe` (Mixture of Experts)
 - **`NORM_REGISTRY`**: `layer_norm`, `rms_norm` (via `norm_impl` in config)
 

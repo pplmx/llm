@@ -123,15 +123,19 @@ The training CLI (`llm.training.train`) provides:
 
 ```bash
 llm-train --task <task_name> \
-  --config <config.yaml> \
+  --config-path <config.yaml> \
   --epochs <N> \
   --batch-size <N> \
-  --lr <float> \
-  --resume <checkpoint_path>
+  --lr <float>
 ```
 
-Available tasks are dynamically registered via `TASK_REGISTRY` and
-third-party plugins via the `llm.tasks` entry point group.
+Available tasks are dynamically registered via `TASK_REGISTRY`
+(`src/llm/training/tasks/builtin.py`); the `--task` choices in
+`llm-train --help` are the registered names.
+
+CLI 覆盖只支持 `--epochs` / `--batch-size` / `--lr` / `--num-samples` /
+`--steps-per-epoch` / `--compile` / `--amp`；resume / PEFT / checkpoint
+路径等其余设置走 YAML（`checkpoint.resume_from_checkpoint` 等）。
 
 ## Key Training Flow
 

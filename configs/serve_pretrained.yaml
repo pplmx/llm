@@ -10,14 +10,13 @@
 # Usage
 # -----
 #   # 1. Train a fine-tuned model (SFT + LoRA recommended for >7B):
-#   uv run llm-train sft --config configs/sft_alpaca.yaml \
-#     --peft-method lora \
-#     --peft-kwargs '{"rank": 8, "alpha": 16.0}' \
-#     --peft-save-path checkpoints_sft_alpaca/peft_adapter_lora.bin
+#   #    PEFT 走 YAML（training.peft_method / peft_kwargs / peft_save_path），
+#   #    没有 CLI 参数——编辑 configs/sft_alpaca.yaml 的 training 段后：
+#   uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
 #
 #   # 2. Serve the trained checkpoint with the PEFT adapter loaded:
 #   #    Pass the YAML values as env vars (LLM_SERVING_* prefix).
-#   LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_5.pt \
+#   LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_5 \
 #   LLM_SERVING_TOKENIZER_PATH=tokenizer \
 #   LLM_SERVING_TOKENIZER_TYPE=hf \
 #   LLM_SERVING_PEFT_METHOD=lora \
@@ -63,9 +62,12 @@
 #   (same `peft_*` workflow applies)
 
 # --- Model checkpoint --------------------------------------------------
-# Path to a training checkpoint produced by `llm-train sft` (or
-# `stream_lm` / `dpo` — any task that produces a DecoderModel).
-model_path: checkpoints_sft_alpaca/epoch_5.pt
+# Path to a training checkpoint produced by `llm-train --task sft` (or
+# `stream_lm` / `dpo` — any task that produces a DecoderModel). The v2
+# split layout lives at `<stem>.safetensors` + `.meta.json` +
+# `.extra_state.pt`; point at the stem (no suffix) and the loader
+# resolves the trio (a legacy single-file `.pt` is also accepted).
+model_path: checkpoints_sft_alpaca/epoch_5
 tokenizer_path: tokenizer
 tokenizer_type: hf
 

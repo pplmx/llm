@@ -79,14 +79,14 @@ curl http://127.0.0.1:8000/metrics
 
 暴露的域内指标（T2 #22）：
 
-| 指标 | 类型 | 含义 |
-|------|------|------|
-| `llm_tokens_generated_total{endpoint}` | Counter | 每个 endpoint 累计生成的 token 数 |
-| `llm_tokens_per_request{endpoint}` | Histogram | 单次请求的 token 数（buckets: 16/64/256/1024/4096） |
-| `llm_request_duration_seconds{endpoint,status}` | Histogram | 单次请求延迟（buckets: 0.05/0.25/1/5/30 秒） |
-| `llm_batch_fill_ratio` | Gauge | `ContinuousBatchingEngine.step()` 的批填充率（0-1） |
-| `llm_kv_cache_hit_ratio` | Gauge | KV cache 命中率（0-1） |
-| `llm_inflight_requests` | Gauge | 当前 in-flight 请求数 |
+| 指标                                            | 类型      | 含义                                                |
+| ----------------------------------------------- | --------- | --------------------------------------------------- |
+| `llm_tokens_generated_total{endpoint}`          | Counter   | 每个 endpoint 累计生成的 token 数                   |
+| `llm_tokens_per_request{endpoint}`              | Histogram | 单次请求的 token 数（buckets: 16/64/256/1024/4096） |
+| `llm_request_duration_seconds{endpoint,status}` | Histogram | 单次请求延迟（buckets: 0.05/0.25/1/5/30 秒）        |
+| `llm_batch_fill_ratio`                          | Gauge     | `ContinuousBatchingEngine.step()` 的批填充率（0-1） |
+| `llm_kv_cache_hit_ratio`                        | Gauge     | KV cache 命中率（0-1）                              |
+| `llm_inflight_requests`                         | Gauge     | 当前 in-flight 请求数                               |
 
 加上 `prometheus-fastapi-instrumentator` 自带的 HTTP RED 指标（请求率 / 错误率 / 延迟 per-route）。
 
@@ -102,10 +102,10 @@ curl http://127.0.0.1:8000/metrics
 
 两种风格等价：
 
-| 风格 | 例子 | 适用场景 |
-|------|------|----------|
-| **env vars** | `LLM_SERVING_API_KEY=... uv run llm-serve` | container / docker-compose / Kubernetes ConfigMap |
-| **YAML** | `from llm.serving.config import ServingConfig; cfg = ServingConfig.from_yaml("configs/serve_pretrained.yaml")` | 配置文件版本化、与训练配置对称 |
+| 风格         | 例子                                                                                                           | 适用场景                                          |
+| ------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| **env vars** | `LLM_SERVING_API_KEY=... uv run llm-serve`                                                                     | container / docker-compose / Kubernetes ConfigMap |
+| **YAML**     | `from llm.serving.config import ServingConfig; cfg = ServingConfig.from_yaml("configs/serve_pretrained.yaml")` | 配置文件版本化、与训练配置对称                    |
 
 `configs/serve_local_demo.yaml` 是一个完整的 env-vars-as-YAML 例子。YAML 字段名对应 env vars 去掉 `LLM_SERVING_` 前缀（如 YAML 的 `api_key` ↔ env var 的 `LLM_SERVING_API_KEY`）。
 
@@ -124,10 +124,12 @@ LLM_SERVING_HOST=127.0.0.1 uv run llm-serve
 
 ```bash
 # 1. 先训练（参考 02-finetuning.md，用 LoRA 写 sidecar）
-uv run llm-train sft --config configs/sft_alpaca.yaml \
-  --peft-method lora \
-  --peft-kwargs '{"rank": 8, "alpha": 16.0}' \
-  --peft-save-path checkpoints_sft_alpaca/peft_adapter_lora.bin
+# PEFT 通过 YAML 配置（training 段），没有 CLI 参数：
+#   training:
+#     peft_method: lora
+#     peft_kwargs: {rank: 8, alpha: 16.0}
+#     peft_save_path: checkpoints_sft_alpaca/peft_adapter_lora.bin
+uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
 
 # 2. 用 production preset 部署
 LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
@@ -141,16 +143,16 @@ uv run llm-serve
 
 `ServingConfig` 字段分组：
 
-| 组 | 字段 | 说明 |
-|----|------|------|
-| **模型 checkpoint** | `model_path`, `tokenizer_path`, `tokenizer_type` | `model_path=None` → dummy 模型（smoke test） |
-| **架构（dummy 用）** | `hidden_size`, `num_layers`, `num_heads`, `max_seq_len`, `num_kv_heads`, `num_experts`, `top_k`, `attn_impl`, `mlp_impl` | 加载 checkpoint 时被覆盖 |
-| **安全** | `host`, `api_key`, `log_level` | 公开主机守卫：`api_key=None` + `host` 非回环 → 启动失败 |
-| **生成** | `generation_backend` (`eager` / `batched`), `compile_model` | `batched` = `ContinuousBatchingEngine`（高并发推荐） |
-| **并发** | `max_concurrent_requests`, `request_timeout` | semaphore 上限 + 单请求超时 |
-| **KV cache** | `use_paged_attention`, `max_blocks`, `block_size`, `enable_prefix_cache`, `max_prefixes` | paged attention 节省显存 / prefix cache 摊销 system prompt |
-| **Chat template** | `chat_message_template`, `chat_generation_prefix` | OpenAI `/v1/chat/completions` 的消息渲染模板 |
-| **PEFT（T2 PEFT #49）** | `peft_method`, `peft_kwargs`, `peft_adapter_path`, `peft_merge` | 详见 §3 |
+| 组                      | 字段                                                                                                                     | 说明                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| **模型 checkpoint**     | `model_path`, `tokenizer_path`, `tokenizer_type`                                                                         | `model_path=None` → dummy 模型（smoke test）               |
+| **架构（dummy 用）**    | `hidden_size`, `num_layers`, `num_heads`, `max_seq_len`, `num_kv_heads`, `num_experts`, `top_k`, `attn_impl`, `mlp_impl` | 加载 checkpoint 时被覆盖                                   |
+| **安全**                | `host`, `api_key`, `log_level`                                                                                           | 公开主机守卫：`api_key=None` + `host` 非回环 → 启动失败    |
+| **生成**                | `generation_backend` (`eager` / `batched`), `compile_model`                                                              | `batched` = `ContinuousBatchingEngine`（高并发推荐）       |
+| **并发**                | `max_concurrent_requests`, `request_timeout`                                                                             | semaphore 上限 + 单请求超时                                |
+| **KV cache**            | `use_paged_attention`, `max_blocks`, `block_size`, `enable_prefix_cache`, `max_prefixes`                                 | paged attention 节省显存 / prefix cache 摊销 system prompt |
+| **Chat template**       | `chat_message_template`, `chat_generation_prefix`                                                                        | OpenAI `/v1/chat/completions` 的消息渲染模板               |
+| **PEFT（T2 PEFT #49）** | `peft_method`, `peft_kwargs`, `peft_adapter_path`, `peft_merge`                                                          | 详见 §3                                                    |
 
 ---
 
@@ -162,10 +164,12 @@ uv run llm-serve
 
 ```bash
 # SFT + LoRA：训练完自动写 peft_adapter_lora.bin
-uv run llm-train sft --config configs/sft_alpaca.yaml \
-  --peft-method lora \
-  --peft-kwargs '{"rank": 8, "alpha": 16.0}' \
-  --peft-save-path checkpoints_sft_alpaca/peft_adapter_lora.bin
+# PEFT 通过 YAML 配置（training 段），没有 CLI 参数：
+#   training:
+#     peft_method: lora
+#     peft_kwargs: {rank: 8, alpha: 16.0}
+#     peft_save_path: checkpoints_sft_alpaca/peft_adapter_lora.bin
+uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
 ```
 
 `PEFTAdapterCheckpointCallback`（T2 PEFT #48）在 `on_train_end` 时调 `save_peft` 写 sidecar，envelope 包含 `format_version` + `method_name` + `state_dict` + `peft_kwargs`。文件 ~MB 级（远小于 base checkpoint）。
@@ -173,7 +177,7 @@ uv run llm-train sft --config configs/sft_alpaca.yaml \
 ### 3.2 服务时：env vars 挂载 adapter
 
 ```bash
-LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_5.pt \
+LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_5 \
 LLM_SERVING_TOKENIZER_PATH=tokenizer \
 LLM_SERVING_TOKENIZER_TYPE=hf \
 LLM_SERVING_PEFT_METHOD=lora \
@@ -352,7 +356,7 @@ rate(llm_request_duration_seconds_count{status!="200"}[5m])
 
 ### 6.1 CUDA OOM（最常见）
 
-```
+```text
 torch.cuda.OutOfMemoryError: CUDA out of memory.
 ```
 
@@ -366,19 +370,19 @@ torch.cuda.OutOfMemoryError: CUDA out of memory.
 
 ### 6.2 PEFT 加载失败
 
-```
+```text
 FileNotFoundError: peft_adapter_path='...' does not exist
 ValueError: method_name mismatch: sidecar saved as 'lora', requested 'ia3'
 ValueError: Unknown PEFT method 'loraa'. Registered methods: ['lora', 'qlora', ...]
 ```
 
-- 路径错：检查 `--peft-save-path` 和 `LLM_SERVING_PEFT_ADAPTER_PATH` 是否一致
+- 路径错：检查训练 YAML 的 `training.peft_save_path` 和 `LLM_SERVING_PEFT_ADAPTER_PATH` 是否一致
 - 方法不匹配：训练时用的 `peft_method` 和服务时用的 `peft_method` 必须相同
 - 拼写错：`PEFT_REGISTRY.names()` 列出所有可用方法
 
 ### 6.3 启动失败：公开主机无 key
 
-```
+```text
 RuntimeError: Refusing to start: ServingConfig.host='0.0.0.0' binds to a
 non-loopback address but api_key is not set.
 ```
@@ -416,7 +420,7 @@ LLM_SERVING_REQUEST_TIMEOUT=300 uv run llm-serve
 
 GPTQ 量化后的 checkpoint 文件体积缩小但加载方式不变。如果 `llm-serve` 加载 qlora 或 gptq 量化模型失败：
 
-- 确保 checkpoint 路径指向 `.pt` 文件
+- 确保 checkpoint 路径存在（v2 布局指向 `<stem>.safetensors` 或 stem；旧式布局指向 `.pt`）
 - GPTQ 量化模型使用 `torch.save` 保存，与普通 checkpoint 加载逻辑相同
 - QLoRA 模型 base 权重是 NF4 格式，需要 `apply_qlora` 后再 `load_state_dict`
 
@@ -426,24 +430,24 @@ GPTQ 量化后的 checkpoint 文件体积缩小但加载方式不变。如果 `l
 
 ### 7.1 Checkpoint 路径
 
-| 来源 | 命令 | 怎么 serve |
-|------|------|------------|
-| `stream_lm` 预训练 | `uv run llm-train stream_lm --config configs/streaming_c4.yaml` | 设 `LLM_SERVING_MODEL_PATH=<checkpoint_dir>/epoch_N.pt` |
-| `sft` 微调 | `uv run llm-train sft --config configs/sft_alpaca.yaml` | 同上（base weights serve） |
-| `sft` + LoRA | 加 `--peft-method lora --peft-kwargs '{...}' --peft-save-path <path>` | 同时设 `LLM_SERVING_PEFT_*` 字段 |
-| `dpo` | `uv run llm-train dpo --config configs/dpo_ultrafeedback.yaml` | 同 sft |
+| 来源               | 命令                                                                        | 怎么 serve                                           |
+| ------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `stream_lm` 预训练 | `uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml` | 设 `LLM_SERVING_MODEL_PATH=<checkpoint_dir>/epoch_N` |
+| `sft` 微调         | `uv run llm-train --task sft --config-path configs/sft_alpaca.yaml`         | 同上（base weights serve）                           |
+| `sft` + LoRA       | YAML 设 `training.peft_method` / `peft_kwargs` / `peft_save_path`           | 同时设 `LLM_SERVING_PEFT_*` 字段                     |
+| `dpo`              | `uv run llm-train --task dpo --config-path configs/dpo_ultrafeedback.yaml`  | 同 sft                                               |
 
 ### 7.2 性能开关（按场景）
 
-| 场景 | 推荐配置 |
-|------|----------|
-| **低延迟 / 单请求** | `generation_backend=eager`，`compile_model=true`，`max_concurrent_requests=1` |
-| **高吞吐 / 多并发** | `generation_backend=batched`，`use_paged_attention=true`，`max_concurrent_requests=16` |
-| **长 system prompt 的多轮 chat** | `enable_prefix_cache=true`，`max_prefixes=32`（摊销 system prompt） |
-| **极限吞吐 / 不需要 swap adapter** | `peft_merge=true` |
-| **多卡 / 多模型** | 每个 GPU 起一个 `llm-serve` 实例，前面挂 nginx / Envoy |
-| **量化模型部署** | `LLM_SERVING_MODEL_PATH=<量化后ckpt路径>`，注意量化后模型是 int4/int8 权重 |
-| **推测解码** | `generation_backend=speculative` + draft model 配置（未来工作，ContinuousBatchingEngine 计划支持） |
+| 场景                               | 推荐配置                                                                                                              |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **低延迟 / 单请求**                | `generation_backend=eager`，`compile_model=true`，`max_concurrent_requests=1`                                         |
+| **高吞吐 / 多并发**                | `generation_backend=batched`，`use_paged_attention=true`，`max_concurrent_requests=16`                                |
+| **长 system prompt 的多轮 chat**   | `enable_prefix_cache=true`，`max_prefixes=32`（摊销 system prompt）                                                   |
+| **极限吞吐 / 不需要 swap adapter** | `peft_merge=true`                                                                                                     |
+| **多卡 / 多模型**                  | 每个 GPU 起一个 `llm-serve` 实例，前面挂 nginx / Envoy                                                                |
+| **量化模型部署**                   | `LLM_SERVING_MODEL_PATH=<量化后ckpt路径>`，注意量化后模型是 int4/int8 权重                                            |
+| **推测解码**                       | `generation_backend=speculative` + draft model 配置（已实现，见 [Inference Guide §推测解码](../guides/inference.md)） |
 
 ### 7.3 Docker
 
@@ -464,7 +468,7 @@ build + run：
 docker build -t llm-serve .
 docker run -p 8000:8000 \
   -e LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
-  -e LLM_SERVING_MODEL_PATH=/checkpoints/epoch_5.pt \
+  -e LLM_SERVING_MODEL_PATH=/checkpoints/epoch_5 \
   -v $PWD/checkpoints:/checkpoints:ro \
   llm-serve
 ```
@@ -473,14 +477,14 @@ docker run -p 8000:8000 \
 
 ### 7.4 客户端集成
 
-| 客户端 | 怎么连 |
-|--------|--------|
-| `curl` | 见 §1.3 |
-| OpenAI Python SDK | `OpenAI(base_url="http://server:8000/v1", api_key=...)` |
-| LangChain | `ChatOpenAI(base_url="http://server:8000/v1", api_key=...)` |
-| LlamaIndex | 同 OpenAI |
-| vLLM client | 同 OpenAI |
-| 自定义 HTTP | `/v1/chat/completions` 完全兼容 OpenAI schema |
+| 客户端            | 怎么连                                                      |
+| ----------------- | ----------------------------------------------------------- |
+| `curl`            | 见 §1.3                                                     |
+| OpenAI Python SDK | `OpenAI(base_url="http://server:8000/v1", api_key=...)`     |
+| LangChain         | `ChatOpenAI(base_url="http://server:8000/v1", api_key=...)` |
+| LlamaIndex        | 同 OpenAI                                                   |
+| vLLM client       | 同 OpenAI                                                   |
+| 自定义 HTTP       | `/v1/chat/completions` 完全兼容 OpenAI schema               |
 
 ---
 
@@ -488,5 +492,5 @@ docker run -p 8000:8000 \
 
 - 想深入 KV cache 内部（paged / prefix）？看 [docs/reference/architecture.md §KV Cache](../reference/architecture.md)
 - 想部署到生产集群？看 [docs/guides/inference.md](../guides/inference.md)
-- 想加新的 PEFT 方法并自动挂载到 serving？看 [src/llm/core/peft/](../../src/llm/core/peft/) + `LLM_SERVING_PEFT_METHOD=<your_method>` —— 只要在 `PEFT_REGISTRY` 注册了，`llm-serve` 自动 dispatch
+- 想加新的 PEFT 方法并自动挂载到 serving？看 [API Reference/peft](../api/peft.md) + `LLM_SERVING_PEFT_METHOD=<your_method>` —— 只要在 `PEFT_REGISTRY` 注册了，`llm-serve` 自动 dispatch
 - 想看完整端到端 e2e tests？跑 `pytest -m e2e tests/e2e/test_serve_main_path.py`

@@ -270,5 +270,4 @@ lm = LlamaLmEvalLM(model, tokenizer, batch_size=2, device="cpu")
 - [Training flow guide](../development/training-flow.md) — for
   in-training perplexity tracking and metrics callbacks (different
   from this offline benchmark harness).
-- [Tier 3 ticket #6](../audits/2026-07-12-tickets/27-lm-eval-pipeline.md)
-  — the audit follow-up that motivated this pipeline.
+- `lm-eval-harness` pipeline 的动机记录见 `CHANGELOG.md`（Tier 3 #27）。

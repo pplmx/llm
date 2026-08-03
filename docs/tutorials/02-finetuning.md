@@ -9,7 +9,7 @@
 本教程涵盖：
 
 - 数据准备（Alpaca / Dolly / OASST 风格的 JSONL）
-- 主流路径：`llm-train sft` + `llm-train dpo` + YAML
+- 主流路径：`llm-train --task sft` + `llm-train --task dpo` + YAML
 - 任务差异：SFT 是单模型交叉熵；DPO 是 policy + reference 双模型的偏好损失
 - 检查点管理
 - **PEFT 集成 + 服务化**（LoRA / IA³ / BitFit / Adapter / Pfeiffer / AdaLoRA → `llm-serve` 一条龙）
@@ -134,7 +134,7 @@ with open("data/ultrafeedback.jsonl", "w") as out:
 
 ---
 
-## 2. 主流路径：`llm-train sft`
+## 2. 主流路径：`llm-train --task sft`
 
 ### 2.1 用预设配置直接跑
 
@@ -147,16 +147,16 @@ with open("data/ultrafeedback.jsonl", "w") as out:
 
 ```bash
 # 离线冒烟（推荐先跑这个验证环境）
-uv run llm-train sft --config configs/sft_local_demo.yaml
+uv run llm-train --task sft --config-path configs/sft_local_demo.yaml
 
 # Alpaca 真实 SFT（需要 GPU + GPT-2 tokenizer）
-uv run llm-train sft --config configs/sft_alpaca.yaml
+uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
 ```
 
 ### 2.2 CLI 覆盖
 
 ```bash
-uv run llm-train sft --config configs/sft_local_demo.yaml \
+uv run llm-train --task sft --config-path configs/sft_local_demo.yaml \
   --epochs 3 \
   --steps-per-epoch 20 \
   --batch-size 8 \
@@ -164,7 +164,7 @@ uv run llm-train sft --config configs/sft_local_demo.yaml \
   --num-samples 5000
 ```
 
-可覆盖字段：`--epochs`、`--batch-size`、`--lr`、`--num-samples`、`--steps-per-epoch`、`--compile`（默认 True）、`--amp`（默认 True）。`--peft-method` / `--peft-kwargs` / `--peft-save-path` 在新版 CLI 也可覆盖（详见 §5）。
+可覆盖字段：`--epochs`、`--batch-size`、`--lr`、`--num-samples`、`--steps-per-epoch`、`--compile`（默认 True）、`--amp`（默认 True）。PEFT 相关（`peft_method` / `peft_kwargs` / `peft_save_path`）走 YAML 的 `training:` 段，没有 CLI 参数。
 
 ### 2.3 YAML 结构（推荐生产用）
 
@@ -213,24 +213,25 @@ checkpoint:
 ### 2.5 Resume
 
 ```bash
-# 第一次跑（生成 checkpoints/epoch_1.pt）
-uv run llm-train sft --config configs/sft_local_demo.yaml --epochs 2
+# 第一次跑（生成 checkpoints/epoch_2.* 三件套）
+uv run llm-train --task sft --config-path configs/sft_local_demo.yaml --epochs 2
 
-# 接着再跑 2 个 epoch
-uv run llm-train sft --config configs/sft_local_demo.yaml \
-  --resume-from-checkpoint checkpoints/epoch_2.pt
+# 接着再跑 2 个 epoch——resume 通过 YAML 配置，没有 CLI 参数：
+#   checkpoint:
+#     resume_from_checkpoint: checkpoints/epoch_2
+uv run llm-train --task sft --config-path configs/sft_local_demo.yaml --epochs 2
 ```
 
 SFT 是 map-style dataset（已知 epoch 长度），不像流式预训练需要 cursor resume——`CheckpointManager.load_checkpoint` 恢复 `model_state` / `optimizer_state` / `scheduler_state` / `start_epoch` 就够了。
 
 ---
 
-## 3. 主流路径：`llm-train dpo`
+## 3. 主流路径：`llm-train --task dpo`
 
 ### 3.1 启动方式
 
 ```bash
-uv run llm-train dpo --config configs/dpo_local_demo.yaml
+uv run llm-train --task dpo --config-path configs/dpo_local_demo.yaml
 ```
 
 `DPOTask.build_model` 一次性构造 **policy + reference** 两个模型：
@@ -272,13 +273,13 @@ loss = -logsigmoid(beta * (
 
 ```bash
 # 阶段 1：SFT
-uv run llm-train sft --config configs/sft_alpaca.yaml
-# → checkpoints_sft_alpaca/epoch_3.pt
+uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
+# → checkpoints_sft_alpaca/epoch_3.safetensors（v2 三件套：+ .meta.json + .extra_state.pt）
 
 # 阶段 2：DPO 从 SFT ckpt 续训
 # 编辑 configs/dpo_ultrafeedback.yaml，设置：
-#   checkpoint.resume_from_checkpoint: checkpoints_sft_alpaca/epoch_3.pt
-uv run llm-train dpo --config configs/dpo_ultrafeedback.yaml
+#   checkpoint.resume_from_checkpoint: checkpoints_sft_alpaca/epoch_3
+uv run llm-train --task dpo --config-path configs/dpo_ultrafeedback.yaml
 ```
 
 DPO **必须从已微调的 policy 开始**（不能直接从 base 模型做偏好对齐——reference 和 policy 差异过大时 DPO loss 不稳定）。
@@ -313,14 +314,15 @@ training:
 ### 4.1 训练 → 服务化一条龙
 
 ```bash
-# 1. SFT + LoRA
-uv run llm-train sft --config configs/sft_alpaca.yaml \
-  --peft-method lora \
-  --peft-kwargs '{"rank":16,"alpha":32.0}' \
-  --peft-save-path ./lora_adapter.bin
+# 1. SFT + LoRA——PEFT 通过 YAML 配置（training 段），没有 CLI 参数：
+#    training:
+#      peft_method: lora
+#      peft_kwargs: {rank: 16, alpha: 32.0}
+#      peft_save_path: ./lora_adapter.bin
+uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
 
 # 2. 服务化（T2 PEFT #49）— 直接通过环境变量挂载 adapter
-LLM_SERVING_MODEL_PATH=./checkpoints_sft_alpaca/epoch_3.pt \
+LLM_SERVING_MODEL_PATH=./checkpoints_sft_alpaca/epoch_3 \
 LLM_SERVING_TOKENIZER_PATH=./tokenizer.pt \
 LLM_SERVING_PEFT_METHOD=lora \
 LLM_SERVING_PEFT_ADAPTER_PATH=./lora_adapter.bin \

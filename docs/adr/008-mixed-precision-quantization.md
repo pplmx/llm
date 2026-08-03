@@ -162,7 +162,9 @@ GPTQConfig(
 ## References
 
 - [ADR-007](./007-gptq-integration.md) — GPTQ integration (foundation)
-- [Design spec](../superpowers/specs/2026-07-22-mixed-precision-quantization-design.md) — full 5-section design
+- 本 ADR 即公开的设计记录；完整 5-section 设计过程见仓库内
+  `docs/superpowers/specs/2026-07-22-mixed-precision-quantization-design.md`
+  （开发文档，不发布到站点）
 - ROADMAP §13.1 — Post-Training Quantization (mixed precision)
 - [Frantar et al. 2022, "GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers"](https://arxiv.org/abs/2210.17323) — base algorithm
 - Industry references: [vLLM per-layer quant](https://github.com/vllm-project/vllm), [AutoGPTQ](https://github.com/AutoGPTQ/AutoGPTQ), [llama.cpp quant types](https://github.com/ggerganov/llama.cpp)

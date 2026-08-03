@@ -173,7 +173,7 @@ A: 流式预训练使用 StreamingTextDataModule 和 HFStreamTextSource 直接�
 
 ### Q: 如何使用流式预训练？
 
-A: 使用 `uv run llm-train stream_lm --config configs/streaming_c4.yaml`。详情见预训练教程。
+A: 使用 `uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml`。详情见预训练教程。
 
 ### Q: 流式训练的 checkpoint 如何恢复？
 
