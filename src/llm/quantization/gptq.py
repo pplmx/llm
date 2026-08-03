@@ -123,7 +123,7 @@ class GPTQQuantizer:
 
         Args:
             x: Input activations to `self.layer`, shape [..., in_features].
-               Will be flattened to [N, in_features] internally.
+                Will be flattened to [N, in_features] internally.
         """
         x = x.to(device=self.device, dtype=self.compute_dtype)
         if x.dim() == 1:

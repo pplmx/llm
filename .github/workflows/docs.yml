@@ -8,6 +8,11 @@ on:
       - 'docs/**'
       - 'mkdocs.yml'
       - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:
@@ -35,6 +40,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --group docs
+
+      - name: Validate mkdocs configuration (strict)
+        run: uv run mkdocs build --strict
 
       - name: Build documentation
         run: uv run mkdocs build

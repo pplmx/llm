@@ -6,14 +6,14 @@ This document provides a deep dive into the architecture of the `llm` project, e
 
 The project follows a **Modular & Composable** design philosophy:
 
-* **src-layout**: Code is isolated in `src/` to prevent import layout confusion.
-* **Separation of Concerns**:
-    * `core`: Pure, reusable PyTorch modules (Attention, MLP, Norm).
-    * `models`: Logic to assemble core components into full architectures (Decoder).
-    * `training`: Orchestration of training loops, DDP, logging.
-    * `serving`: High-performance inference API (FastAPI).
-* **Registry Pattern**: Core components are decoupled and selectable via configuration.
-* **Configuration as Code**: Pydantic models define type-safe, validating configurations.
+- **src-layout**: Code is isolated in `src/` to prevent import layout confusion.
+- **Separation of Concerns**:
+    - `core`: Pure, reusable PyTorch modules (Attention, MLP, Norm).
+    - `models`: Logic to assemble core components into full architectures (Decoder).
+    - `training`: Orchestration of training loops, DDP, logging.
+    - `serving`: High-performance inference API (FastAPI).
+- **Registry Pattern**: Core components are decoupled and selectable via configuration.
+- **Configuration as Code**: Pydantic models define type-safe, validating configurations.
 
 ## Directory Structure
 
@@ -132,9 +132,9 @@ To support rapid experimentation with different architectural variants (e.g., Fl
 
 Located in `src/llm/core/registry.py`:
 
-* **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention placeholder; supports KV cache — see [Tier 3 #31](../audits/2026-07-12-tickets/31-mla-kv-cache.md))
-* **`MLP_REGISTRY`**: `mlp` (Standard), `moe` (Mixture of Experts)
-* **`NORM_REGISTRY`**: `layer_norm`, `rms_norm` (via `norm_impl` in config)
+- **`ATTENTION_REGISTRY`**: `mha` (Standard, 支持 GQA/MQA), `mla` (Latent attention placeholder; supports KV cache — see [Tier 3 #31](../audits/2026-07-12-tickets/31-mla-kv-cache.md))
+- **`MLP_REGISTRY`**: `mlp` (Standard), `moe` (Mixture of Experts)
+- **`NORM_REGISTRY`**: `layer_norm`, `rms_norm` (via `norm_impl` in config)
 
 Components register themselves via decorators:
 
@@ -160,9 +160,9 @@ The project decouples data loading from tokenization logic to support both simpl
 
 ### Tokenizer Hierarchy
 
-* **`BaseTokenizer` (Protocol)**: Defines the interface (`encode`, `decode`, `vocab_size`).
-* **`SimpleCharacterTokenizer`**: A lightweight, dependency-free tokenizer for basic testing.
-* **`HFTokenizer`**: A wrapper around `transformers.AutoTokenizer`, enabling access to the entire HuggingFace ecosystem.
+- **`BaseTokenizer` (Protocol)**: Defines the interface (`encode`, `decode`, `vocab_size`).
+- **`SimpleCharacterTokenizer`**: A lightweight, dependency-free tokenizer for basic testing.
+- **`HFTokenizer`**: A wrapper around `transformers.AutoTokenizer`, enabling access to the entire HuggingFace ecosystem.
 
 ### Data Module
 
@@ -172,30 +172,30 @@ The project decouples data loading from tokenization logic to support both simpl
 
 All configuration is managed via Pydantic models in `src/llm/training/core/config.py`, offering:
 
-* **Type Safety**: Automatic type validation.
-* **Environment Variables**: Override via `LLM_MODEL__HIDDEN_SIZE=1024`.
-* **CLI Integration**: `Typer` automatically exposes these configs as command-line arguments.
+- **Type Safety**: Automatic type validation.
+- **Environment Variables**: Override via `LLM_MODEL__HIDDEN_SIZE=1024`.
+- **CLI Integration**: `Typer` automatically exposes these configs as command-line arguments.
 
 ### Config Structure
 
-* **`ModelConfig`**: Architecture params (`hidden_size`, `num_layers`, `attn_impl`).
-* **`DataConfig`**: Data params (`tokenizer_type`, `dataset_path`).
-* **`TrainingConfig`**: loop params (`epochs`, `lr`).
-* **`DistributedConfig`**: DDP params (`master_addr`, `world_size`).
-* **`OptimizationConfig`**: performance (`use_compile`, `use_amp`).
+- **`ModelConfig`**: Architecture params (`hidden_size`, `num_layers`, `attn_impl`).
+- **`DataConfig`**: Data params (`tokenizer_type`, `dataset_path`).
+- **`TrainingConfig`**: loop params (`epochs`, `lr`).
+- **`DistributedConfig`**: DDP params (`master_addr`, `world_size`).
+- **`OptimizationConfig`**: performance (`use_compile`, `use_amp`).
 
 ## Plugin Kernel (`runtime/`)
 
 Third-party and built-in extensions register through a shared **`Registry[T]`** and optional **setuptools entry points** in `pyproject.toml`:
 
-| Entry point group | Registry | Example |
-|-------------------|----------|---------|
-| `llm.models` | `MODEL_REGISTRY` | `decoder`, `regression_mlp` builders |
-| `llm.generation_backends` | `BACKEND_REGISTRY` | `eager`, `batched` |
-| `llm.data_sources` | `SOURCE_REGISTRY` | `local`, `hf` streaming; `dedup_local` / `dedup_hf` compose any inner source with `DedupTextSource` (T3 #39) |
-| `llm.export_backends` | `EXPORT_REGISTRY` | `onnx` (built-in), `torchscript` |
-| `llm.peft_methods` | `PEFT_REGISTRY` | `lora`, `qlora`, `adalora`, `prefix_tuning`, `ia3`, `bitfit`, `adapter`, `pfeiffer_adapter` (T2 PEFT #43, #44, #45, #46, #47, #48, #49) |
-| `llm.tasks` | hooks via `load_entry_point_hooks` | third-party `TASK_REGISTRY.register(...)` |
+| Entry point group         | Registry                           | Example                                                                                                                                 |
+| ------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `llm.models`              | `MODEL_REGISTRY`                   | `decoder`, `regression_mlp` builders                                                                                                    |
+| `llm.generation_backends` | `BACKEND_REGISTRY`                 | `eager`, `batched`                                                                                                                      |
+| `llm.data_sources`        | `SOURCE_REGISTRY`                  | `local`, `hf` streaming; `dedup_local` / `dedup_hf` compose any inner source with `DedupTextSource` (T3 #39)                            |
+| `llm.export_backends`     | `EXPORT_REGISTRY`                  | `onnx` (built-in), `torchscript`                                                                                                        |
+| `llm.peft_methods`        | `PEFT_REGISTRY`                    | `lora`, `qlora`, `adalora`, `prefix_tuning`, `ia3`, `bitfit`, `adapter`, `pfeiffer_adapter` (T2 PEFT #43, #44, #45, #46, #47, #48, #49) |
+| `llm.tasks`               | hooks via `load_entry_point_hooks` | third-party `TASK_REGISTRY.register(...)`                                                                                               |
 
 Built-in model builders register via **setuptools entry points** only (`bootstrap.ensure_builtins_registered()` → `load_entry_point_registry("llm.models", ...)`). Attention/MLP/NORM register on module import. `train.py` additionally invokes `llm.tasks` hooks so external packages can add CLI tasks without editing core code.
 
@@ -369,3 +369,86 @@ sequenceDiagram
 
     Engine-->>User: Training complete
 ```
+
+## Streaming Data Pipeline
+
+For large-scale pretraining with datasets that don't fit in memory,
+the framework uses an iterable dataset pipeline that streams data from
+HuggingFace or local files:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CLI as llm-train
+    participant DM as StreamingTextDataModule
+    participant Source as TextSource
+    participant Dataset as StreamingTextDataset
+    participant Tokenizer as Tokenizer
+
+    User->>CLI: llm-train --task stream_lm
+    CLI->>DM: setup()
+    DM->>Source: build_text_source(config)
+    Source->>Source: HFStreamTextSource or LocalLineTextSource
+    DM->>Dataset: StreamingTextDataset(text_source, tokenizer)
+    Dataset->>Tokenizer: tokenize(text)
+    Tokenizer-->>Dataset: input_ids
+    Dataset-->>DM: IterableDataset
+    DM-->>CLI: DataLoader (num_workers=0)
+```
+
+Key design decisions:
+
+1. **No multiprocessing**: The streaming cursor lives in the main
+   process because `DataLoader` workers fork and lose checkpoint state.
+   Workers are forced to `0` to preserve resume correctness.
+
+2. **Pluggable sources**: `SOURCE_REGISTRY` allows custom sources
+   (S3, GCS, private archives) via entry points.
+
+3. **Deduplication**: `DedupTextSource` wraps any source to drop
+   duplicate records by content hash, with optional on-disk persistence
+   for cross-run dedup state.
+
+4. **Checkpoint resume**: `StreamDataState` tracks the line index
+   cursor. The source fingerprint validates that the dataset
+   configuration hasn't changed on resume.
+
+## PEFT Integration
+
+Parameter-Efficient Fine-Tuning integrates at three layers:
+
+```mermaid
+graph TD
+    subgraph "Config Layer"
+        PC[TrainingConfig]
+        PC -->|peft_method| PEFTConfig
+        PC -->|peft_kwargs| PEFTArgs
+    end
+
+    subgraph "Model Layer"
+        Model[DecoderModel]
+        Model -->|apply_peft| Modified[Modified Model]
+    end
+
+    subgraph "Training Layer"
+        Task[TrainingTask]
+        Task -->|get_peft_parameters| Trainable[Trainable Params]
+        Optimizer[Optimizer] --> Trainable
+    end
+
+    subgraph "Serving Layer"
+        Serving[Serving Engine]
+        Serving -->|merge_peft| Merged[Merged Model]
+        Serving -->|load_peft| PEFTLoaded[PEFT-Loaded Model]
+    end
+
+    PEFTConfig -->|registers| PEFTRegistry[PEFT_REGISTRY]
+    PEFTArgs --> Modified
+    Modified --> Task
+    Modified --> Serving
+```
+
+The `PEFT_REGISTRY` dispatches to the correct method implementation,
+which injects trainable parameters into the frozen backbone. During
+serving, adapters can be merged (for deployment) or kept separate
+(for dynamic switching between tasks).
