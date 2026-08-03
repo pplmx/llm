@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 
 import torch
@@ -24,29 +23,9 @@ import torch.nn as nn
 from llm.quantization._awq_layer import AWQQuantizedLinear
 from llm.quantization._gptq_layer import _pack_4bit
 from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
-from llm.quantization.calibration import CalibrationDataCollector
+from llm.quantization.calibration import CalibrationDataCollector, _single_thread_reductions
 
 logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def _single_thread_reductions():
-    """Run reduction-heavy loops with one torch thread.
-
-    Per-group reductions on small tensors pay pathological parallel-for
-    overhead on high-core-count hosts (e.g. 128 threads on a tiny 16x16
-    max). The AWQ grid search does thousands of these tiny reductions, so
-    we temporarily pin torch to one thread and restore the caller's setting
-    afterwards.
-    """
-    old = torch.get_num_threads()
-    if old > 1:
-        torch.set_num_threads(1)
-    try:
-        yield
-    finally:
-        if old > 1:
-            torch.set_num_threads(old)
 
 
 @dataclass(frozen=True)

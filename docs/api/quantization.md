@@ -9,7 +9,12 @@ model size and inference latency. The CLI entry point is `llm-quantize`.
 | --------------- | ------------------------------------------------------ |
 | GPTQ            | Greedy row-wise pruning with second-order information  |
 | AWQ             | Activation-aware per-channel scales with grid search   |
+| SmoothQuant     | INT8 weights + activations with activation smoothing   |
 | Mixed-Precision | Per-layer quantization dispatch via `LayerQuantPolicy` |
+
+## SmoothQuant
+
+::: llm.quantization.smooth
 
 ## AWQ
 
@@ -38,3 +43,7 @@ model size and inference latency. The CLI entry point is `llm-quantize`.
 ## AWQ Layer
 
 ::: llm.quantization._awq_layer
+
+## SmoothQuant Layer
+
+::: llm.quantization._smooth_layer

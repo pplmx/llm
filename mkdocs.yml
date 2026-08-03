@@ -156,6 +156,7 @@ nav:
       - "007: GPTQ Integration": adr/007-gptq-integration.md
       - "008: Mixed-Precision Quantization": adr/008-mixed-precision-quantization.md
       - "009: AWQ Integration": adr/009-awq-integration.md
+      - "010: SmoothQuant Integration": adr/010-smoothquant-integration.md
 
   - ❓ FAQ: faq.md
   - 🔧 故障排除: troubleshooting.md
