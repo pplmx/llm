@@ -428,7 +428,14 @@
 - [x] **集成 SmoothQuant** (Xiao et al., ICML 2023): `src/llm/quantization/smooth.py` (算法 + 双入口) + `_smooth_layer.py` (int8 权重 per-row scale + 每张量激活 fake-quant + `input_scales` 平滑补偿)；平滑因子 `s = act_max^α
       / w_max^(1−α)`，默认 α=0.5，可选 per-layer α 网格搜索；非搜索路径只累积 per-channel max-abs 激活 (O(in_f) 内存，per-tensor 激活 scale 有闭式解)；`LayerQuantPolicy` 复用 + `__post_init__` fail-fast；39 新 tests 全绿 (outlier
       激活下重建误差比无平滑低约一个数量级)；零回归对 GPTQ / AWQ / simple-PTQ；ADR-010；跨层 folding / INT8 GEMM kernel / 非对称留待后续切片
-- [ ] 研究 GGML/GGUF 格式支持
+- [x] **GGUF 格式支持** (ADR-011): `src/llm/export/gguf/` 分层实现 GGUF v3 容器
+      (`spec.py` 格式常量/枚举/header/tensor-info + `metadata.py` 类型化 KV +
+      `reader.py` / `writer.py`，32 字节对齐、dims 逆序、原子写入) 与 Q4_0/Q8_0
+      块量化 (`quant.py`，镜像 ggml 参考数学，字节级兼容 llama.cpp)；以
+      `llm.export_backends` entry point 接入 `EXPORT_REGISTRY`，`export_model("gguf", ...)`
+      可用；默认 F16，`quantize="q4_0"/"q8_0"` 量化 ndim≥2 且末维为 32 倍数的权重；
+      116 新 tests 全绿 (format/quant/round-trip/corrupt/registry)；零回归对
+      ONNX / TorchScript；K-quants / mmap / llama.cpp 架构 key 留待后续切片
 
 #### 13.4 模型压缩
 
@@ -468,6 +475,8 @@
 - [x] 实现 ONNX 导出 (`export/onnx.py`)
 - [x] Export registry (统一 ONNX / TorchScript / 未来格式, `export/registry.py`)
 - [x] 实现 TorchScript 导出 (`export/torchscript.py`)
+- [x] 实现 GGUF 导出 (`export/gguf/`: GGUF v3 容器 + F16/F32/Q4_0/Q8_0,
+      `llm.export_backends` entry point, ADR-011)
 - [ ] 支持 TensorRT 优化
 - [ ] 探索 Core ML 支持 (iOS 部署)
 

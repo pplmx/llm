@@ -43,6 +43,9 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-006: Checkpoint Format Unification](006-checkpoint-format-unification.md)
 - [ADR-007: GPTQ Integration Architecture](007-gptq-integration.md)
 - [ADR-008: Mixed-Precision GPTQ via Atomic LayerQuantPolicy](008-mixed-precision-quantization.md)
+- [ADR-009: AWQ Integration](009-awq-integration.md)
+- [ADR-010: SmoothQuant Integration](010-smoothquant-integration.md)
+- [ADR-011: GGUF Export Format](011-gguf-export.md)
 
 ## Creating a New ADR
 

@@ -23,7 +23,7 @@ slice of the framework.
 | `llm.evaluation`   | Metrics, offline tasks, lm-eval-harness adapter (optional)    | [evaluation.md](evaluation.md)           |
 | `llm.data`         | Datasets, DataModules, streaming sources, dataset presets     | [data.md](data.md)                       |
 | `llm.quantization` | GPTQ, PTQ, mixed-precision quantization                       | [quantization.md](quantization.md)       |
-| `llm.export`       | ONNX and TorchScript export backends                          | [export.md](export.md)                   |
+| `llm.export`       | ONNX / TorchScript / GGUF export backends                     | [export.md](export.md)                   |
 | `llm.compat`       | HuggingFace checkpoint loading/publishing                     | [compat.md](compat.md)                   |
 | `llm.tokenization` | Tokenizer implementations (BPE, character-level)              | [tokenization.md](tokenization.md)       |
 | `llm.cli`          | CLI tools (migrate-ckpt, quantize)                            | [cli.md](cli.md)                         |

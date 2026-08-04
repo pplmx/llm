@@ -11,6 +11,8 @@ Built-in targets:
     is the canonical reference implementation; the entry-point load
     raises if a plugin claims the same name, which is intentional
     (the built-in is the source of truth).
+    ``torchscript`` / ``gguf`` — registered via the
+    ``llm.export_backends`` entry-point group in ``pyproject.toml``.
 
 Usage::
 

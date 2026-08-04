@@ -1,0 +1,167 @@
+"""GGUF export backend: model state dict to a GGUF file.
+
+This is the ``EXPORT_REGISTRY``-compatible layer: it takes a model and
+writes a GGUF v3 file containing every ``state_dict()`` tensor. v1
+policy:
+
+- default type is F16 (``quantize=None``);
+- ``quantize="q4_0"`` / ``"q8_0"`` block-quantizes tensors with at
+  least two dimensions whose last dimension is a multiple of 32 and
+  keeps the remaining tensors F16;
+- metadata carries the standard ``general.*`` keys; user metadata wins
+  over defaults.
+
+Non-floating tensors are rejected explicitly (v1 scope). The format
+layer (reader/writer/quant) is torch-free; only this module imports
+torch, via the model argument.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import torch.nn as nn
+
+from llm.export.gguf.spec import (
+    SUPPORTED_TENSOR_TYPES,
+    GGMLQuantizationType,
+    GGUFError,
+    can_quantize_shape,
+)
+from llm.export.gguf.writer import GGUFWriter
+
+logger = logging.getLogger(__name__)
+
+_QUANT_NAME_TO_TYPE = {
+    "f32": GGMLQuantizationType.F32,
+    "f16": GGMLQuantizationType.F16,
+    "q4_0": GGMLQuantizationType.Q4_0,
+    "q8_0": GGMLQuantizationType.Q8_0,
+}
+
+# llama.cpp ``llama_ftype`` values used in ``general.file_type``.
+_FILE_TYPE = {
+    GGMLQuantizationType.F32: 0,  # ALL_F32
+    GGMLQuantizationType.F16: 1,  # MOSTLY_F16
+    GGMLQuantizationType.Q4_0: 2,  # MOSTLY_Q4_0
+    GGMLQuantizationType.Q8_0: 7,  # MOSTLY_Q8_0
+}
+
+
+def _resolve_quant_type(quantize: str | GGMLQuantizationType | None) -> GGMLQuantizationType:
+    if quantize is None:
+        return GGMLQuantizationType.F16
+    if isinstance(quantize, GGMLQuantizationType):
+        ttype = quantize
+    else:
+        key = str(quantize).lower()
+        if key not in _QUANT_NAME_TO_TYPE:
+            raise ValueError(
+                f"quantize must be one of {sorted(_QUANT_NAME_TO_TYPE)} or a GGMLQuantizationType, got {quantize!r}"
+            )
+        ttype = _QUANT_NAME_TO_TYPE[key]
+    if ttype not in SUPPORTED_TENSOR_TYPES:
+        raise GGUFError(f"unsupported GGML tensor type {ttype.name}")
+    return ttype
+
+
+def _default_metadata(
+    model: nn.Module,
+    model_name: str | None,
+    quant_type: GGMLQuantizationType,
+    user_metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "general.architecture": "llm",
+        "general.name": model_name or type(model).__name__,
+        "general.file_type": _FILE_TYPE[quant_type],
+        "general.quantization_version": 2,
+    }
+    if user_metadata:
+        defaults.update(user_metadata)
+    return defaults
+
+
+def _pick_tensor_type(
+    arr: np.ndarray,
+    quant_type: GGMLQuantizationType,
+    quantize_min_ndim: int,
+) -> GGMLQuantizationType:
+    """Choose the on-disk type for one tensor under the export policy."""
+    if quant_type in (GGMLQuantizationType.Q4_0, GGMLQuantizationType.Q8_0):
+        if arr.ndim >= quantize_min_ndim and can_quantize_shape(arr.shape):
+            return quant_type
+        return GGMLQuantizationType.F16
+    return quant_type
+
+
+def export_to_gguf(
+    model: nn.Module,
+    output_path: str | Path,
+    *,
+    quantize: str | GGMLQuantizationType | None = None,
+    metadata: dict[str, Any] | None = None,
+    model_name: str | None = None,
+    quantize_min_ndim: int = 2,
+) -> Path:
+    """Export ``model.state_dict()`` to a GGUF v3 file.
+
+    Args:
+        model: The model to export (evaluated state, tensors are
+            detached on CPU).
+        output_path: Destination ``.gguf`` path; parent directories are
+            created automatically.
+        quantize: ``None`` (default) or ``"f16"`` writes F16 tensors;
+            ``"f32"`` writes F32; ``"q4_0"`` / ``"q8_0"``
+            block-quantizes eligible weight tensors (ndim >=
+            ``quantize_min_ndim`` and last dim a multiple of 32) and
+            keeps everything else F16.
+        metadata: Extra ``general.*``-style metadata; overrides the
+            built-in defaults (``general.name``, ``general.file_type``,
+            ...).
+        model_name: Override for ``general.name`` (defaults to the model
+            class name).
+        quantize_min_ndim: Minimum tensor rank eligible for
+            block-quantization.
+
+    Returns:
+        The resolved output path.
+
+    Raises:
+        NotImplementedError: If the model has a non-floating tensor in
+            its state dict (v1 scope).
+        ValueError: For unknown ``quantize`` values.
+    """
+    quant_type = _resolve_quant_type(quantize)
+
+    writer = GGUFWriter(output_path)
+    for key, value in _default_metadata(model, model_name, quant_type, metadata).items():
+        writer.add_metadata(key, value)
+
+    for name, tensor in model.state_dict().items():
+        if not tensor.is_floating_point():
+            raise NotImplementedError(
+                f"GGUF exporter v1 only supports floating-point tensors; {name!r} has dtype {tensor.dtype}"
+            )
+        arr = tensor.detach().float().cpu().numpy()
+        ttype = _pick_tensor_type(arr, quant_type, quantize_min_ndim)
+        if ttype != quant_type and quant_type in (GGMLQuantizationType.Q4_0, GGMLQuantizationType.Q8_0):
+            logger.debug("keeping %s as F16 (shape %s not block-quantizable)", name, tuple(arr.shape))
+        writer.add_tensor(name, arr, ggml_type=ttype)
+
+    return writer.write()
+
+
+def build_gguf_exporter(
+    model: nn.Module,
+    output_path: str | Path,
+    **kwargs: Any,
+) -> Path:
+    """Factory for the GGUF export target (``EXPORT_REGISTRY`` contract)."""
+    return export_to_gguf(model, output_path, **kwargs)
+
+
+__all__ = ["build_gguf_exporter", "export_to_gguf"]

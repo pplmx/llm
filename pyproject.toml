@@ -127,7 +127,7 @@ hf = "llm.data.sources:_build_hf_source"
 
 # ``llm.export_backends`` — third-party export targets (e.g.
 # ``torch.compile``, ``vLLM``, ``TensorRT-LLM``) plus the built-in
-# ``torchscript`` target (Tier 3 #11). The ``onnx`` target stays
+# ``torchscript`` and ``gguf`` targets. The ``onnx`` target stays
 # registered in code (see ``llm/export/registry.py``) because it is
 # the reference implementation and we want it to resolve even when
 # no entry-point machinery runs (e.g. minimal test environments).
@@ -139,6 +139,7 @@ hf = "llm.data.sources:_build_hf_source"
 # returned callable directly into ``EXPORT_REGISTRY``.
 [project.entry-points."llm.export_backends"]
 torchscript = "llm.export.torchscript:build_torchscript_exporter"
+gguf = "llm.export.gguf.exporter:build_gguf_exporter"
 
 # ``llm.peft_methods`` — third-party PEFT methods (e.g. Pfeiffer /
 # Compacter / MAD-X adapters, custom reparameterization tricks) plus

@@ -64,10 +64,11 @@ src/llm/
 │   ├── model_factory.py   # ModelFactory / MODEL_REGISTRY
 │   ├── tokenizer_factory.py
 │   └── checkpoint.py      # CheckpointContributor protocol
-├── export/                # Export backends + ONNX/TorchScript built-ins
+├── export/                # Export backends + ONNX/TorchScript/GGUF
 │   ├── registry.py        # EXPORT_REGISTRY + export_model dispatch
 │   ├── onnx.py            # ONNX reference implementation (stable API)
 │   ├── torchscript.py     # TorchScript target (entry-point registered)
+│   ├── gguf/              # GGUF v3 container + Q4_0/Q8_0 (entry-point registered, ADR-011)
 │   └── _wrapper.py        # Shared ExportCacheWrapper for trace backends
 ├── evaluation/            # Offline evaluation
 │   ├── runner.py          # EvaluationRunner (unified entry)
@@ -193,7 +194,7 @@ Third-party and built-in extensions register through a shared **`Registry[T]`** 
 | `llm.models`              | `MODEL_REGISTRY`                   | `decoder`, `regression_mlp` builders                                                                                                    |
 | `llm.generation_backends` | `BACKEND_REGISTRY`                 | `eager`, `batched`                                                                                                                      |
 | `llm.data_sources`        | `SOURCE_REGISTRY`                  | `local`, `hf` streaming; `dedup_local` / `dedup_hf` compose any inner source with `DedupTextSource` (T3 #39)                            |
-| `llm.export_backends`     | `EXPORT_REGISTRY`                  | `onnx` (built-in), `torchscript`                                                                                                        |
+| `llm.export_backends`     | `EXPORT_REGISTRY`                  | `onnx` (built-in), `torchscript`, `gguf` (ADR-011)                                                                                      |
 | `llm.peft_methods`        | `PEFT_REGISTRY`                    | `lora`, `qlora`, `adalora`, `prefix_tuning`, `ia3`, `bitfit`, `adapter`, `pfeiffer_adapter` (T2 PEFT #43, #44, #45, #46, #47, #48, #49) |
 | `llm.tasks`               | hooks via `load_entry_point_hooks` | third-party `TASK_REGISTRY.register(...)`                                                                                               |
 
