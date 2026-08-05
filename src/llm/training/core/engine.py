@@ -273,7 +273,12 @@ class TrainingEngine:
         # Zero gradients at start of epoch
         self.optimizer.zero_grad(set_to_none=True)
 
+        max_steps = self.config.training.max_steps
         for batch_idx, batch, num_batches in self._iter_training_batches():
+            if max_steps > 0 and self.global_step >= max_steps:
+                if self.rank == 0:
+                    self.logger.info(f"Reached max_steps={max_steps}; stopping training.")
+                break
             batch_count = num_batches
             self._run_callbacks("on_batch_start", epoch=epoch, batch_idx=batch_idx)
             batch_start_time = time.time()
@@ -450,6 +455,11 @@ class TrainingEngine:
                     if self.rank == 0:
                         self.logger.info(f"Training stopped early at epoch {epoch + 1} by EarlyStopping callback.")
                     break  # Break the training loop
+
+                if self.config.training.max_steps > 0 and self.global_step >= self.config.training.max_steps:
+                    if self.rank == 0:
+                        self.logger.info(f"Reached max_steps={self.config.training.max_steps}; training complete.")
+                    break
 
                 if self.scheduler:
                     # ReduceLROnPlateau needs the metric, others don't
