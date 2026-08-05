@@ -57,6 +57,43 @@ def test_lm_task_step(mock_config):
 
 
 @pytest.mark.heavy
+def test_lm_task_step_uses_next_token_shift(mock_config):
+    """Regression: the LM loss compares ``logits[s]`` with ``labels[s+1]``.
+
+    Without the shift, a model can drive the loss to ~0 by copying the
+    current token (its own embedding leaks through the residual stream)
+    while scoring at random on real next-token evaluation — training
+    reports ppl≈1.0 but the checkpoint is useless. This test pins the
+    loss to the manual shifted-CE reference.
+    """
+    mock_config.model.dropout = 0.0  # deterministic forward for the loss identity
+    data_module = SyntheticDataModule(mock_config)
+    task = LanguageModelingTask(mock_config, data_module)
+    model = task.build_model()
+    criterion = task.build_criterion()
+
+    batch_size, seq_len, vocab_size = 4, 16, 50257
+    input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+    labels = torch.randint(0, vocab_size, (batch_size, seq_len))
+    batch = (input_ids, labels)
+
+    loss, metrics = task.train_step(batch, model, criterion)
+
+    logits = model(input_ids)
+    expected = criterion(
+        logits[..., :-1, :].contiguous().view(-1, vocab_size),
+        labels[..., 1:].contiguous().view(-1),
+    )
+    assert torch.allclose(loss, expected, atol=1e-6)
+    assert metrics["ppl"] == pytest.approx(torch.exp(expected).item())
+
+    # Same contract in the validation path.
+    val_loss, val_metrics = task.validation_step(batch, model, criterion)
+    assert torch.allclose(val_loss, expected, atol=1e-6)
+    assert val_metrics["val_ppl"] == pytest.approx(torch.exp(expected).item())
+
+
+@pytest.mark.heavy
 def test_lm_task_validation(mock_config):
     data_module = SyntheticDataModule(mock_config)
     task = LanguageModelingTask(mock_config, data_module)
