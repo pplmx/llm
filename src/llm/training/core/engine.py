@@ -235,8 +235,22 @@ class TrainingEngine:
                 try:
                     batch = next(data_iter)
                 except StopIteration:
+                    # Corpus exhausted before the step budget: streaming
+                    # pretraining cycles the corpus, so restart the source
+                    # from the beginning and keep going.
+                    dataset = self.dataloader.dataset
+                    reset = getattr(dataset, "reset", None)
+                    if reset is None:
+                        raise RuntimeError(
+                            "streaming dataloader exhausted before steps_per_epoch "
+                            f"and its dataset ({type(dataset).__name__}) has no reset()"
+                        ) from None
+                    reset()
                     data_iter = iter(self.dataloader)
-                    batch = next(data_iter)
+                    try:
+                        batch = next(data_iter)
+                    except StopIteration:
+                        raise RuntimeError("streaming corpus is empty; nothing to train on") from None
                 yield batch_idx, batch, num_batches
             return
 

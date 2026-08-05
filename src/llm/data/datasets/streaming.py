@@ -61,6 +61,15 @@ class StreamingTextDataset(IterableDataset):
             return 0, 1
         return worker_info.id, worker_info.num_workers
 
+    def reset(self) -> None:
+        """Clear the resume cursor so the next iteration restarts the corpus.
+
+        Called by the training engine when the streaming source is exhausted
+        before ``steps_per_epoch`` is reached: pretraining cycles the corpus
+        (optionally de-duplicated) until the step budget is met.
+        """
+        self.stream_data_state.reset()
+
     def __iter__(self) -> Iterator[dict[str, torch.Tensor]]:
         shard_id, num_shards = self._shard_id()
         worker_id, num_workers = self._worker_id_and_count()

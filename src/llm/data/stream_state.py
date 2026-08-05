@@ -42,6 +42,16 @@ class StreamDataState:
             self.shards[key] = StreamShardState()
         return self.shards[key]
 
+    def reset(self) -> None:
+        """Zero all per-shard cursors.
+
+        Used when a streaming corpus is exhausted before the step budget is
+        met: the next iteration restarts the corpus from the beginning
+        (streaming pretraining cycles the corpus until ``steps_per_epoch``
+        completes).
+        """
+        self.shards.clear()
+
     def to_dict(self) -> dict:
         return {key: shard.to_dict() for key, shard in self.shards.items()}
 
