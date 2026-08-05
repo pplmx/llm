@@ -83,7 +83,10 @@ def test_mla_prefix_preserves_output_shape(batch_size, seq_len, num_heads, prefi
 
 
 @hypothesis.settings(max_examples=10, deadline=None)
-@pytest.mark.skipif(not FLASH_ATTN_AVAILABLE, reason="flash-attn is optional; install via `llm[perf]`")
+@pytest.mark.skipif(
+    not (FLASH_ATTN_AVAILABLE and torch.cuda.is_available()),
+    reason="flash-attn with CUDA kernels is required; install via `llm[perf]` on a CUDA host",
+)
 @hypothesis.given(
     batch_size=st.integers(min_value=1, max_value=MAX_BATCH),
     seq_len=st.integers(min_value=1, max_value=MAX_SEQ),
@@ -94,14 +97,15 @@ def test_flash_prefix_preserves_output_shape(batch_size, seq_len, num_heads, pre
     """Flash: output shape is invariant in ``prefix_len`` (fp16)."""
     from llm.core.attn.flash_attn import FlashAttention
 
+    device = torch.device("cuda")
     hidden_size = num_heads * 8
     head_dim = hidden_size // num_heads
 
     torch.manual_seed(0)
-    attn = FlashAttention(hidden_size=hidden_size, num_heads=num_heads, dtype=torch.float16)
-    x = torch.randn(batch_size, seq_len, hidden_size, dtype=torch.float16)
-    pk = torch.randn(batch_size, num_heads, prefix_len, head_dim, dtype=torch.float16)
-    pv = torch.randn(batch_size, num_heads, prefix_len, head_dim, dtype=torch.float16)
+    attn = FlashAttention(hidden_size=hidden_size, num_heads=num_heads, dtype=torch.float16).to(device)
+    x = torch.randn(batch_size, seq_len, hidden_size, dtype=torch.float16, device=device)
+    pk = torch.randn(batch_size, num_heads, prefix_len, head_dim, dtype=torch.float16, device=device)
+    pv = torch.randn(batch_size, num_heads, prefix_len, head_dim, dtype=torch.float16, device=device)
 
     out_no_prefix = attn(x)
     out_with_prefix = attn(x, prefix_kv=(pk, pv))
