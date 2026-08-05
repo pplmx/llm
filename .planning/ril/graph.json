@@ -1,0 +1,231 @@
+{
+  "ril_version": 1,
+  "round": 0,
+  "created_at": "2026-08-05T14:11:27+00:00",
+  "updated_at": "2026-08-05T14:30:01+00:00",
+  "nodes": {
+    "COMP-001": {
+      "id": "COMP-001",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:13:49+00:00",
+      "touched_round": 0,
+      "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
+    },
+    "COMP-002": {
+      "id": "COMP-002",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:13:49+00:00",
+      "touched_round": 0,
+      "title": "Quantization (src/llm/quantization: GPTQ/AWQ/SmoothQuant/PTQ)"
+    },
+    "COMP-003": {
+      "id": "COMP-003",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:13:49+00:00",
+      "touched_round": 0,
+      "title": "GGUF export (src/llm/export/gguf)"
+    },
+    "COMP-004": {
+      "id": "COMP-004",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:13:49+00:00",
+      "touched_round": 0,
+      "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
+    },
+    "COMP-005": {
+      "id": "COMP-005",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:13:49+00:00",
+      "touched_round": 0,
+      "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
+    },
+    "COMP-006": {
+      "id": "COMP-006",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:13:49+00:00",
+      "touched_round": 0,
+      "title": "Agent skills (.agents/skills)"
+    },
+    "ISS-001": {
+      "id": "ISS-001",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:13:49+00:00",
+      "touched_round": 0,
+      "title": "Six vllm-lite (Rust) skills in .agents/skills are inapplicable to this Python repo and would misdirect agents; pending user decision (delete vs rewrite)",
+      "severity": 0.6
+    },
+    "ISS-002": {
+      "id": "ISS-002",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:13:49+00:00",
+      "touched_round": 0,
+      "title": ".planning/ril/README.md required by graph-engineering skill contract is missing",
+      "severity": 0.3
+    },
+    "TASK-001": {
+      "id": "TASK-001",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-05T14:14:00+00:00",
+      "updated_at": "2026-08-05T14:23:55+00:00",
+      "touched_round": 0,
+      "title": "Write .planning/ril/README.md data-store doc required by graph-engineering contract",
+      "category": "docs",
+      "severity": 0.4,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-002": {
+      "id": "TASK-002",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:14:00+00:00",
+      "updated_at": "2026-08-05T14:14:00+00:00",
+      "touched_round": 0,
+      "title": "Deep-dive streaming pipeline (cycling, resume state, step accounting) for boundary bugs",
+      "category": "correctness",
+      "severity": 0.6,
+      "confidence": 0.5,
+      "effort": 1.0
+    },
+    "TASK-003": {
+      "id": "TASK-003",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-05T14:14:53+00:00",
+      "updated_at": "2026-08-05T14:14:54+00:00",
+      "touched_round": 0,
+      "title": "Replace six vllm-lite skills with repo-native skills adapted to this Python codebase (extension maps, CI, testing, debugging)",
+      "category": "maintainability",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "effort": 2.0,
+      "lock_owner": "main-agent",
+      "lock_until": "2026-08-05T14:44:54+00:00"
+    },
+    "DEC-001": {
+      "id": "DEC-001",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:23:43+00:00",
+      "updated_at": "2026-08-05T14:23:43+00:00",
+      "touched_round": 0,
+      "title": "Replace six vllm-lite skills with repo-native skills",
+      "rationale": "The copied vllm-lite skills target a Rust codebase (cargo/clippy/just, crates/, RUST_LOG, vllm-testing) that does not exist here; leaving them would misdirect agents into running wrong commands. Rewrote five in place with this repos actual extension surfaces (MODEL_REGISTRY/core registries/TASK_REGISTRY/SOURCE_REGISTRY/BACKEND_REGISTRY, uv+make+pytest gates, tests/support conventions) and replaced add-kernel with add-task, which matches the repos most common extension path.",
+      "alternatives_rejected": "(1) keep vllm-lite skills as-is: rejected — actively misleading; (2) delete without replacement: rejected — loses the workflow coverage the user wanted; (3) keep add-kernel name for a repo without kernels: rejected — renamed to add-task for discoverability",
+      "body": "Scope: .agents/skills/{add-architecture,add-component,add-task,debug-inference,run-ci,write-test}; graph-engineering kept unchanged (repo-agnostic)"
+    },
+    "CHG-001": {
+      "id": "CHG-001",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:23:55+00:00",
+      "updated_at": "2026-08-05T14:23:55+00:00",
+      "touched_round": 0,
+      "title": "Repo-native skills replacing vllm-lite skills + RIL data-store README",
+      "commit": "pending"
+    },
+    "ISS-003": {
+      "id": "ISS-003",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:30:01+00:00",
+      "updated_at": "2026-08-05T14:30:01+00:00",
+      "touched_round": 0,
+      "title": "Streaming pipeline (cycling/resume/step accounting) not yet audited for boundary bugs; two recent fixes (1855136, c0a7a10) indicate churn",
+      "severity": 0.6
+    }
+  },
+  "edges": [
+    {
+      "from": "ISS-001",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-05T14:13:49+00:00"
+    },
+    {
+      "from": "ISS-002",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-05T14:13:50+00:00"
+    },
+    {
+      "from": "TASK-001",
+      "to": "ISS-002",
+      "type": "addresses",
+      "created_at": "2026-08-05T14:14:00+00:00"
+    },
+    {
+      "from": "TASK-003",
+      "to": "ISS-001",
+      "type": "addresses",
+      "created_at": "2026-08-05T14:14:54+00:00"
+    },
+    {
+      "from": "DEC-001",
+      "to": "COMP-006",
+      "type": "governs",
+      "created_at": "2026-08-05T14:23:43+00:00"
+    },
+    {
+      "from": "CHG-001",
+      "to": "TASK-003",
+      "type": "implements",
+      "created_at": "2026-08-05T14:23:55+00:00"
+    },
+    {
+      "from": "CHG-001",
+      "to": "ISS-001",
+      "type": "resolves",
+      "created_at": "2026-08-05T14:23:55+00:00"
+    },
+    {
+      "from": "CHG-001",
+      "to": "ISS-002",
+      "type": "resolves",
+      "created_at": "2026-08-05T14:23:55+00:00"
+    },
+    {
+      "from": "ISS-003",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-05T14:30:01+00:00"
+    },
+    {
+      "from": "TASK-002",
+      "to": "ISS-003",
+      "type": "addresses",
+      "created_at": "2026-08-05T14:30:01+00:00"
+    }
+  ]
+}
