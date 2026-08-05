@@ -50,6 +50,34 @@ def test_quantize_model_gptq_preserves_forward_contract():
     assert out.shape == (2, 16)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+def test_gptq_gpu_quantization_keeps_buffers_on_device():
+    """GPU quantization must not leave mixed-device layers behind.
+
+    Regression: the replacement ``GPTQQuantizedLinear`` was constructed from
+    CPU-allocated scale tensors and inserted into a CUDA model without a
+    ``.to(device)``, so ``weight_packed`` lived on CUDA while ``scales``
+    stayed on CPU — every GPU forward crashed with a device-mismatch error.
+    """
+    from llm.models.decoder import DecoderModel
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = DecoderModel(vocab_size=1024, hidden_size=64, num_layers=2, num_heads=4, max_seq_len=128)
+    calib = [torch.randint(0, 1024, (2, 16)) for _ in range(4)]
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(bits=4, group_size=128), device="cuda")
+    quantized.eval()
+
+    devices = {buffer.device.type for buffer in quantized.buffers()}
+    assert devices == {"cuda"}, f"quantized model has mixed-device buffers: {devices}"
+
+    ids = torch.randint(0, 1024, (2, 16), device="cuda")
+    with torch.no_grad():
+        out = quantized(ids)
+    assert torch.isfinite(out).all().item()
+    assert any(isinstance(m, GPTQQuantizedLinear) for m in quantized.modules())
+
+
 def test_quantize_model_gptq_rejects_already_quantized():
     """Passing a model with GPTQQuantizedLinear raises ValueError."""
     from llm.quantization.gptq import GPTQConfig, quantize_model_gptq

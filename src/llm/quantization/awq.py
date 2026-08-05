@@ -357,7 +357,7 @@ def _quantize_linear_with_awq(
         group_size=effective_group_size,
         sym=config.sym,
         input_scales=scale.to(torch.float16),
-    )
+    ).to(layer.weight.device)
 
 
 def quantize_model_awq(
