@@ -271,7 +271,7 @@ def _quantize_linear_with_smoothquant(
         act_scale=act_scale.to(torch.float16),
         sym=config.sym,
         input_scales=input_scales.to(torch.float16),
-    )
+    ).to(layer.weight.device)
 
 
 def quantize_model_smoothquant(

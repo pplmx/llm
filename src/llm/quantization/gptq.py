@@ -285,9 +285,16 @@ class GPTQQuantizer:
 
         # Return per-row or per-group scales matching the scales used in the loop
         if self.config.group_size != -1:
-            gs = self.config.group_size
+            # Clamp to in_features: a group larger than the row is a single
+            # group (matches the packing step's ``effective_group_size``).
+            gs = min(self.config.group_size, self.in_features)
             n_groups = self.in_features // gs
-            scales = torch.zeros(self.out_features, n_groups, dtype=torch.float32)
+            scales = torch.zeros(
+                self.out_features,
+                n_groups,
+                dtype=torch.float32,
+                device=self.device,
+            )
             for g in range(n_groups):
                 s = g * gs
                 e = s + gs
@@ -320,7 +327,18 @@ def _quantize_linear_with_gptq(
     for batch in calib_batches:
         quantizer.add_batch(batch)
 
-    w_q, _scales, _zeros = quantizer.quantize()
+    w_q, scales_q, _zeros = quantizer.quantize()
+
+    # ``quantize()`` returns raw integer levels with separate per-group
+    # scales (see tests/test_gptq_algorithm.py): dequantize before packing,
+    # otherwise the packed storage reconstructs the integer levels (~qmax)
+    # instead of the original weight magnitude — a ~10-100x scale error.
+    if scales_q is not None and scales_q.numel() > 0:
+        if config.group_size == -1:
+            w_q = w_q * scales_q  # [out_f, 1] broadcasts over in_f
+        else:
+            gs = min(config.group_size, layer.in_features)
+            w_q = w_q * scales_q.repeat_interleave(gs, dim=1)
 
     # Re-quantize the integer-valued w_q into packed int8 storage.
     # Per-group scales (or per-channel) are computed from w_q (dequantized)
@@ -399,7 +417,7 @@ def _quantize_linear_with_gptq(
         bits=bits,
         group_size=effective_group_size,
         sym=sym,
-    )
+    ).to(layer.weight.device)
 
 
 def quantize_model_gptq(
