@@ -1,0 +1,62 @@
+# Streaming LM demo on real data (wikitext-2) — quantization-quality baseline.
+#
+# Purpose
+# -------
+# A real-data run that produces a checkpoint worth evaluating: train a tiny
+# GPT-2 BPE model on wikitext-2 through the `stream_lm` main path, then feed
+# the checkpoint to `scripts/quantize_eval.py` to measure GPTQ perplexity
+# before/after.
+#
+# The corpus is a LOCAL text file (one record per line) exported from
+# `Salesforce/wikitext` (see `scripts/quantize_eval.py` / the dataset export
+# command in the log): streaming over HF in this environment stalled
+# mid-run on unauthenticated rate limits, truncating the corpus to ~1600
+# records. A local file keeps the run deterministic. `configs/streaming_c4.yaml`
+# remains the reference for HF streaming at scale.
+#
+# Usage
+# -----
+#   uv run llm-train --task stream_lm --config-path configs/streaming_wikitext2_demo.yaml
+#   uv run python scripts/quantize_eval.py \
+#       --model checkpoints_wiki/epoch_4 --tokenizer-path gpt2 --device cuda:2
+#
+# Related configs
+# ---------------
+# - `configs/streaming_c4.yaml` — real C4 streaming (production)
+# - `configs/streaming_local_demo.yaml` — synthetic local smoke test
+
+model:
+  hidden_size: 256
+  num_heads: 4
+  num_layers: 4
+  vocab_size: 50257       # GPT-2 BPE
+  max_seq_len: 256
+  dropout: 0.0
+
+training:
+  epochs: 4
+  batch_size: 32
+  learning_rate: 3.0e-4
+  warmup_epochs: 0        # short run: keep a flat LR instead of warmup-only
+  num_samples: 100000
+  max_steps: 4000         # hard cap — enough for a clearly structured model
+
+data:
+  data_source: local
+  tokenizer_type: hf
+  tokenizer_path: gpt2
+  dataset_path: data/wikitext2_train.txt
+  max_seq_len: 256
+  steps_per_epoch: 1000
+
+optimization:
+  use_amp: true
+
+distributed:
+  backend: nccl
+
+checkpoint:
+  checkpoint_dir: checkpoints_wiki
+  save_interval: 1
+  keep_last_n: 3
+  save_best: true

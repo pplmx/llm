@@ -4,6 +4,7 @@
 .DS_Store
 logs
 checkpoints
+checkpoints_wiki
 allure-results
 results
 commit_message.txt
