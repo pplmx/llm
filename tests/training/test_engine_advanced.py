@@ -49,6 +49,35 @@ def test_engine_explicit_amp_dtype(mock_config):
     assert engine.resolved_amp_dtype == "float32"
 
 
+@pytest.mark.heavy
+def test_engine_stops_at_max_steps(mock_config):
+    """Regression: ``training.max_steps`` must cap total optimizer steps.
+
+    Previously the engine never read max_steps, so a config with
+    epochs * steps_per_epoch > max_steps trained past the documented cap
+    (observed: max_steps=600 config ran 1500 steps).
+    """
+    mock_config.training.epochs = 5
+    mock_config.training.max_steps = 3
+    mock_config.training.run_validation = False
+    mock_config.optimization.use_compile = False  # isolate the step-cap behavior
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = LanguageModelingTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+    # SyntheticDataModule yields float activations (regression-style), which
+    # the LM embedding rejects — drive the engine with a long-token loader.
+    from torch.utils.data import DataLoader, TensorDataset
+
+    ids = torch.randint(0, mock_config.model.vocab_size, (8, 16), dtype=torch.long)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=2)
+
+    engine.run()
+
+    assert engine.global_step == 3
+
+
 def test_engine_validation_empty_dataloader_skips(mock_config):
     """An empty validation split must skip validation instead of raising
     ZeroDivisionError."""
