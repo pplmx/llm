@@ -50,6 +50,26 @@ def test_load_training_checkpoint_roundtrip(tmp_path, tiny_model, tiny_config):
     assert checkpoint.epoch == 0
 
 
+def test_load_training_checkpoint_strips_compile_prefix(tmp_path, tiny_model, tiny_config):
+    """Legacy checkpoints with torch.compile's ``_orig_mod.`` prefix load fine.
+
+    ``llm-train`` compiles the model by default, and checkpoints saved
+    before the save-side fix carried ``_orig_mod.*`` keys. The serving
+    loader must strip the prefix before ``load_state_dict`` or every
+    weight is silently dropped and the served model stays at random init.
+    """
+    ckpt_path = tmp_path / "model.pt"
+    prefixed = {f"_orig_mod.{key}": value for key, value in model_state_dict(tiny_model).items()}
+    torch.save(
+        {"model_state": prefixed, "model_config": tiny_config.model.model_dump()},
+        ckpt_path,
+    )
+
+    checkpoint = load_training_checkpoint(ckpt_path)
+    assert not any(key.startswith("_orig_mod.") for key in checkpoint.model_state)
+    assert checkpoint.model_state["lm_head.weight"] is not None
+
+
 def test_load_training_checkpoint_v2_split_layout(tmp_path, tiny_model, tiny_config):
     """The serving loader accepts the modern v2 split layout written by
     CheckpointManager — referenced by stem, by sidecar path, or by a
@@ -90,6 +110,53 @@ def test_load_training_checkpoint_missing_raises(tmp_path):
     """A path with neither the legacy nor the v2 layout fails loudly."""
     with pytest.raises(FileNotFoundError):
         load_training_checkpoint(tmp_path / "does-not-exist")
+
+
+def test_load_quantized_model_blob_roundtrip(tmp_path, tiny_model, tiny_config):
+    """The loader accepts the bare quantized-model blob emitted by
+    ``llm-quantize`` (``torch.save`` of the whole module) and serves it
+    directly, preserving the quantized layers and their outputs."""
+    from llm.quantization import GPTQConfig, GPTQQuantizedLinear, quantize_model_gptq
+
+    vocab = tiny_config.model.vocab_size
+    calib = [torch.randint(0, vocab, (2, 16)) for _ in range(3)]
+    quantized = quantize_model_gptq(
+        tiny_model,
+        iter(calib),
+        GPTQConfig(bits=4, group_size=128),
+        device="cpu",
+    )
+    quantized.eval()
+
+    ckpt_path = tmp_path / "quantized.pt"
+    torch.save(quantized, ckpt_path)
+
+    tokenizer = SimpleCharacterTokenizer(list(string.printable[:vocab]))
+    tokenizer_path = tmp_path / "tokenizer.pt"
+    torch.save(tokenizer, tokenizer_path)
+
+    config = ServingConfig(
+        model_path=str(ckpt_path),
+        tokenizer_path=str(tokenizer_path),
+        tokenizer_type="simple",
+    )
+    model, loaded_tokenizer = load_model_and_tokenizer(config)
+    model.eval()
+
+    # The quantized layers survive the load — this is the whole point of
+    # the blob path (state-dict reconstruction could not recover per-layer
+    # group_size / bits from tensor shapes alone).
+    assert isinstance(model, type(quantized))
+    assert any(isinstance(m, GPTQQuantizedLinear) for m in model.modules())
+    assert loaded_tokenizer.decode(loaded_tokenizer.encode("ab")) == "ab"
+
+    # Forward parity with the direct quantized model (same seed, eval mode).
+    ids = torch.randint(0, vocab, (2, 8))
+    torch.manual_seed(0)
+    expected = quantized(ids)
+    torch.manual_seed(0)
+    actual = model(ids)
+    torch.testing.assert_close(actual, expected)
 
 
 def test_load_model_and_tokenizer_from_checkpoint(tmp_path, tiny_model, tiny_config):
