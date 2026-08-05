@@ -229,8 +229,16 @@ class LanguageModelingTask(TrainingTask):
 
         logits = model(input_ids)
 
-        # Reshape for cross entropy: (batch * seq_len, vocab_size)
-        loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
+        # Causal LM loss: logits[s] predicts targets[s + 1]. Without this
+        # shift the model can drive loss to ~0 by copying the current token
+        # (its own embedding leaks through the residual stream), producing a
+        # checkpoint that scores at random on real next-token evaluation.
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = targets[..., 1:].contiguous()
+        if shift_labels.numel() == 0:
+            raise ValueError("sequence length must be > 1 for next-token language modeling")
+
+        loss = criterion(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
         if torch.isnan(loss):
             return torch.tensor(0.0, device=loss.device, requires_grad=True), {"loss": 0.0, "ppl": 1.0}
@@ -250,7 +258,11 @@ class LanguageModelingTask(TrainingTask):
             input_ids, targets = batch
 
         logits = model(input_ids)
-        loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = targets[..., 1:].contiguous()
+        if shift_labels.numel() == 0:
+            raise ValueError("sequence length must be > 1 for next-token language modeling")
+        loss = criterion(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
         metrics = {"val_loss": loss.item(), "val_ppl": torch.exp(loss).item() if loss.item() < 20 else float("inf")}
 

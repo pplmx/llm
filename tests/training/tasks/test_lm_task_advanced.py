@@ -42,9 +42,11 @@ def test_lm_task_perplexity_extreme_values(task_context):
     model = task.build_model()
     criterion = task.build_criterion()
 
-    # Use real inputs and targets
-    input_ids = torch.zeros(1, 1, dtype=torch.long)
-    targets = torch.zeros(1, 1, dtype=torch.long)
+    # Use real inputs and targets. Sequence length must be > 1: the causal
+    # LM loss is shifted (logits[s] vs labels[s+1]), so a length-1 sequence
+    # leaves no predictable positions.
+    input_ids = torch.zeros(2, 2, dtype=torch.long)
+    targets = torch.zeros(2, 2, dtype=torch.long)
 
     # Put model in eval mode to avoid dropout affecting loss calculation comparison
     model.eval()
