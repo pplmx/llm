@@ -171,7 +171,7 @@ class TestPrefillPerformance:
         cache_opt = KVCache(max_batch_size, max_seq_len, num_kv_heads, head_dim, device, torch.float32)
         cache_old = KVCache(max_batch_size, max_seq_len, num_kv_heads, head_dim, device, torch.float32)
 
-        batch_indices = torch.arange(b_curr)
+        batch_indices = torch.arange(b_curr, device=device)
         k_new = torch.randn(b_curr, num_kv_heads, seq_len_new, head_dim, device=device)
         v_new = torch.randn(b_curr, num_kv_heads, seq_len_new, head_dim, device=device)
         # Variable starts so the old loop has many .item() syncs.
