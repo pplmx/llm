@@ -5,6 +5,7 @@
 logs
 checkpoints
 checkpoints_wiki
+checkpoints_c4_demo
 allure-results
 results
 commit_message.txt

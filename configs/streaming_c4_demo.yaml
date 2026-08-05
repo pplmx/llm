@@ -1,0 +1,62 @@
+# Streaming LM demo on real C4 data — pipeline validation config.
+#
+# Purpose
+# -------
+# Validate the real-C4 pretraining chain end to end without a 100k-step
+# production run: HF streaming source -> dedup wrapper -> train -> resume
+# -> eval. Same components as `configs/streaming_c4.yaml`, smaller model
+# and step budget so it finishes in minutes on one A100.
+#
+# Usage
+# -----
+#   # Part 1 (600 steps):
+#   uv run llm-train --task stream_lm --config-path configs/streaming_c4_demo.yaml
+#
+#   # Resume (optional; verified on this machine):
+#   #   checkpoint.resume_from_checkpoint: checkpoints_c4_demo/epoch_3
+#   # and re-run the same command — training continues from the saved
+#   # epoch with the streaming cursor and dedup state intact.
+
+model:
+  hidden_size: 512
+  num_heads: 8
+  num_layers: 8
+  vocab_size: 50257       # GPT-2 BPE tokenizer size
+  max_seq_len: 256
+  dropout: 0.1
+
+training:
+  epochs: 3
+  batch_size: 32
+  learning_rate: 3.0e-4
+  warmup_epochs: 0        # short run: flat LR
+  num_samples: 100000
+  max_steps: 1500
+  run_validation: false   # signal comes from train loss + post-run ppl eval
+
+data:
+  data_source: hf
+  tokenizer_type: hf
+  tokenizer_path: gpt2
+  dataset_name: allenai/c4
+  dataset_config: en
+  dataset_split: train
+  text_column: text
+  max_seq_len: 256
+  steps_per_epoch: 500
+
+  # Dedup wrapper (T3 #39): cross-run seen-hash persistence.
+  seen_hashes_path: checkpoints_c4_demo/seen_hashes.txt
+  write_seen_hashes: true
+
+optimization:
+  use_amp: true
+
+distributed:
+  backend: nccl
+
+checkpoint:
+  checkpoint_dir: checkpoints_c4_demo
+  save_interval: 1
+  keep_last_n: 3
+  save_best: true
