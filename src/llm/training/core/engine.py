@@ -486,9 +486,17 @@ class TrainingEngine:
                     self.logger.info(log_msg)
                     self.logger.info("-" * 80)
 
+                # Collect extra state on ALL ranks before the rank-0 save gate:
+                # streaming DataModules gather per-rank shard cursors
+                # collectively (all_gather_object) so the checkpoint persisted
+                # by rank 0 holds every rank's resume cursor. Calling this only
+                # on rank 0 would drop all other shards (silent re-training
+                # from line 0 on resume) and would deadlock any collective.
+                extra_state = collect_extra_state(self.data_module, self.task, *self.callbacks)
+
+                if self.rank == 0:
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
-                    extra_state = collect_extra_state(self.data_module, self.task, *self.callbacks)
                     self.checkpoint_manager.save_checkpoint(
                         epoch,
                         self.model,

@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 0,
+  "round": 1,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-05T14:31:06+00:00",
+  "updated_at": "2026-08-05T16:05:29+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -103,16 +103,17 @@
     "TASK-002": {
       "id": "TASK-002",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-05T14:14:00+00:00",
-      "updated_at": "2026-08-05T14:14:00+00:00",
+      "updated_at": "2026-08-05T14:41:29+00:00",
       "touched_round": 0,
       "title": "Deep-dive streaming pipeline (cycling, resume state, step accounting) for boundary bugs",
       "category": "correctness",
       "severity": 0.6,
       "confidence": 0.5,
-      "effort": 1.0
+      "effort": 1.0,
+      "body": "Deep dive completed: HYP-A (multi-worker cursor loss) refuted by design (num_workers forced 0); found and evidenced ISS-004 (multi-rank resume cursor loss); engine cycling/reset logic verified sound"
     },
     "TASK-003": {
       "id": "TASK-003",
@@ -155,13 +156,97 @@
     "ISS-003": {
       "id": "ISS-003",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-05T14:30:01+00:00",
-      "updated_at": "2026-08-05T14:30:01+00:00",
-      "touched_round": 0,
+      "updated_at": "2026-08-05T16:05:09+00:00",
+      "touched_round": 1,
       "title": "Streaming pipeline (cycling/resume/step accounting) not yet audited for boundary bugs; two recent fixes (1855136, c0a7a10) indicate churn",
       "severity": 0.6
+    },
+    "HYP-001": {
+      "id": "HYP-001",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-05T14:41:28+00:00",
+      "updated_at": "2026-08-05T16:05:09+00:00",
+      "touched_round": 1,
+      "title": "Multi-rank streaming resume corrupts shard cursors: rank-0-only checkpoint save keeps only shard \"0\"; other ranks restart from line 0; world_size change shifts shard arithmetic",
+      "confidence": 0.7
+    },
+    "EV-001": {
+      "id": "EV-001",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T14:41:28+00:00",
+      "updated_at": "2026-08-05T14:41:28+00:00",
+      "touched_round": 0,
+      "title": "Repro: save ws=1 resume ws=2 duplicates lines [1,3,5,7]; save ws=2 resume ws=1 loses line 9; engine.py:459 rank!=0 early-return + engine.py:475/491 collect_extra_state inside rank-0 block",
+      "source": "/tmp/repro_resume2.py run output 2026-08-05; src/llm/training/core/engine.py:459,475,491; src/llm/training/core/checkpoint.py save_checkpoint rank guard",
+      "confidence": 1.0
+    },
+    "ISS-004": {
+      "id": "ISS-004",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-05T14:41:29+00:00",
+      "updated_at": "2026-08-05T16:05:09+00:00",
+      "touched_round": 1,
+      "title": "Streaming checkpoint resume with DDP silently retrains corpus on all non-zero ranks (only rank-0 shard persisted); world_size change across resume silently duplicates or drops data",
+      "severity": 0.8
+    },
+    "TASK-004": {
+      "id": "TASK-004",
+      "type": "task",
+      "status": "resolved",
+      "version": 5,
+      "created_at": "2026-08-05T14:41:29+00:00",
+      "updated_at": "2026-08-05T16:05:29+00:00",
+      "touched_round": 1,
+      "title": "Persist all shard cursors in streaming checkpoints (all_gather into extra_state) and validate world_size on resume",
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 0.9,
+      "effort": 2.0
+    },
+    "EV-002": {
+      "id": "EV-002",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T16:04:00+00:00",
+      "updated_at": "2026-08-05T16:04:00+00:00",
+      "touched_round": 1,
+      "title": "Verification: streaming resume tests + lint + type-check pass; 2 engine CUDA-OOM failures are pre-existing/environmental",
+      "source": "pytest tests/data/test_streaming_resume.py 7 passed; pytest tests/data/ all passed 2 skipped; ruff check src/llm/data/modules/streaming.py + engine.py + test pass; uvx ty check pass; torch.cuda.oom on device 0 (420MiB free) in test_engine_advanced is environmental",
+      "confidence": 1.0
+    },
+    "EV-003": {
+      "id": "EV-003",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T16:04:00+00:00",
+      "updated_at": "2026-08-05T16:04:00+00:00",
+      "touched_round": 1,
+      "title": "Implementation: all_gather_object in get_checkpoint_state collects all rank shard cursors before rank-0 save gate in engine.py; world_size stamped and validated on load",
+      "source": "src/llm/data/modules/streaming.py:125-148 get_checkpoint_state + load_checkpoint_state; src/llm/training/core/engine.py:488-494 collect_extra_state moved before rank==0 gate",
+      "confidence": 1.0
+    },
+    "DEC-002": {
+      "id": "DEC-002",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T16:04:24+00:00",
+      "updated_at": "2026-08-05T16:04:24+00:00",
+      "touched_round": 1,
+      "title": "Use dist.all_gather_object in get_checkpoint_state + world_size stamp in checkpoint for streaming resume fix",
+      "rationale": "Rank-0-only save drops non-zero rank shard cursors causing silent retrain from line 0 on resume. Moving collect_extra_state before the rank==0 gate makes the all_gather collective run on all ranks (avoids deadlock). world_size stamp lets resume reject cross-layout checkpoints where shard arithmetic (line_idx % num_shards) diverges.",
+      "alternatives_rejected": "(1) save per-rank checkpoint files: rejected — breaks existing rank-0-only CheckpointManager save path; (2) skip world_size check: rejected — silent data duplication/drop is worse than an explicit error)"
     }
   },
   "edges": [
@@ -224,6 +309,36 @@
       "to": "ISS-003",
       "type": "addresses",
       "created_at": "2026-08-05T14:30:01+00:00"
+    },
+    {
+      "from": "EV-001",
+      "to": "HYP-001",
+      "type": "validates",
+      "created_at": "2026-08-05T14:41:29+00:00"
+    },
+    {
+      "from": "ISS-004",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-05T14:41:29+00:00"
+    },
+    {
+      "from": "TASK-004",
+      "to": "ISS-004",
+      "type": "addresses",
+      "created_at": "2026-08-05T14:41:29+00:00"
+    },
+    {
+      "from": "EV-002",
+      "to": "HYP-001",
+      "type": "validates",
+      "created_at": "2026-08-05T16:04:24+00:00"
+    },
+    {
+      "from": "EV-003",
+      "to": "HYP-001",
+      "type": "validates",
+      "created_at": "2026-08-05T16:04:24+00:00"
     }
   ]
 }
