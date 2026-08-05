@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
 
 from llm.data.base import StreamDataModule
@@ -33,6 +34,9 @@ class StreamingTextDataModule(StreamDataModule):
         self.train_dataset: StreamingTextDataset | None = None
         self.val_dataset: TextDataset | None = None
         self.stream_data_state = StreamDataState()
+        # World size seen by ``train_dataloader``; stamped into checkpoints so
+        # resume can reject layouts whose shard cursors are not interchangeable.
+        self._world_size: int | None = None
 
     def prepare_data(self):
         TokenizerFactory.cache_hf_tokenizer(self.config.data)
@@ -74,6 +78,7 @@ class StreamingTextDataModule(StreamDataModule):
 
         self.train_dataset.rank = rank
         self.train_dataset.world_size = world_size
+        self._world_size = world_size
 
         optimization = self.config.optimization
         # The resume cursor (``stream_data_state``) lives on the dataset
@@ -120,8 +125,22 @@ class StreamingTextDataModule(StreamDataModule):
         return loader, val_sampler
 
     def get_checkpoint_state(self) -> dict | None:
+        shards = self.stream_data_state.to_dict()
+        # Only rank 0 persists the checkpoint (CheckpointManager ignores other
+        # ranks), so the saved state must carry EVERY rank's shard cursor —
+        # otherwise resumed ranks without a saved shard silently restart from
+        # line 0 and re-train the corpus. ``get_checkpoint_state`` is called
+        # on all ranks by the engine, which makes this collective safe.
+        if dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1:
+            gathered: list[dict | None] = [None] * dist.get_world_size()
+            dist.all_gather_object(gathered, shards)
+            merged: dict = {}
+            for fragment in gathered:
+                merged.update(fragment or {})
+            shards = merged
         return {
-            "stream_data": self.stream_data_state.to_dict(),
+            "stream_data": shards,
+            "stream_world_size": self._world_size,
             "stream_source": source_fingerprint_from_config(self.config.data),
         }
 
@@ -132,6 +151,14 @@ class StreamingTextDataModule(StreamDataModule):
             state.get("stream_source"),
             source_fingerprint_from_config(self.config.data),
         )
+        saved_world_size = state.get("stream_world_size")
+        if saved_world_size is not None and self._world_size is not None and int(saved_world_size) != self._world_size:
+            raise ValueError(
+                "Streaming checkpoint was saved with world_size="
+                f"{saved_world_size} but this run uses world_size={self._world_size}. "
+                "Shard cursors depend on the rank layout and are not interchangeable "
+                "across world sizes; resume with the same number of ranks."
+            )
         self.stream_data_state = StreamDataState.from_dict(state.get("stream_data"))
         if self.train_dataset is not None:
             self.train_dataset.stream_data_state = self.stream_data_state
