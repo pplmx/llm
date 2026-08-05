@@ -25,6 +25,36 @@ def test_streaming_dataset_yields_fixed_length_chunks(tmp_path, line_tokenizer):
     assert torch.equal(samples[0]["input_ids"], samples[0]["labels"])
 
 
+def test_streaming_dataset_reset_restarts_corpus(tmp_path, line_tokenizer):
+    """``reset()`` clears the resume cursor so the next pass repeats the corpus.
+
+    The training engine calls this when a streaming source is exhausted
+    before ``steps_per_epoch``: pretraining cycles the corpus until the
+    step budget is met instead of crashing on the exhausted iterator.
+    """
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text("hello world\n" * 5, encoding="utf-8")
+
+    source = LocalLineTextSource(text_file)
+    dataset = StreamingTextDataset(
+        text_source=source,
+        tokenizer=line_tokenizer,
+        max_seq_len=8,
+        rank=0,
+        world_size=1,
+    )
+
+    first_pass = list(dataset)
+    assert len(first_pass) > 0
+    # Exhausted: a second pass without reset yields nothing (cursor at end).
+    assert list(dataset) == []
+
+    dataset.reset()
+    second_pass = list(dataset)
+    assert len(second_pass) == len(first_pass)
+    assert torch.equal(first_pass[0]["input_ids"], second_pass[0]["input_ids"])
+
+
 def test_streaming_dataset_shards_across_ranks(tmp_path, line_tokenizer):
     text_file = tmp_path / "corpus.txt"
     lines = [f"line-{idx}\n" for idx in range(8)]

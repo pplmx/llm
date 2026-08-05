@@ -297,7 +297,10 @@ class TensorBoardLogger(Callback):
         logs: dict[str, Any] | None = None,
     ):
         if self.engine.rank == 0 and self.writer:
-            global_step = epoch * len(self.engine.dataloader) + batch_idx
+            # Use the engine's own step counter: streaming dataloaders wrap
+            # an ``IterableDataset`` with no ``__len__``, so deriving the
+            # global step from ``len(dataloader)`` crashes on stream_lm.
+            global_step = self.engine.global_step
             self.writer.add_scalar("Batch/Loss", loss.item(), global_step)
             for key, value in metrics.items():
                 if isinstance(value, int | float):
@@ -349,7 +352,9 @@ class LRSchedulerCallback(Callback):
             raise RuntimeError("optimizer is not available")
         if self.engine.rank == 0:
             current_lr = optimizer.param_groups[0]["lr"]
-            global_step = epoch * len(self.engine.dataloader) + batch_idx
+            # Engine's own step counter — safe for streaming dataloaders
+            # (IterableDataset has no ``__len__``; see TensorBoardLogger).
+            global_step = self.engine.global_step
             if (
                 self.engine.config.logging.log_interval > 0
                 and (batch_idx + 1) % self.engine.config.logging.log_interval == 0
