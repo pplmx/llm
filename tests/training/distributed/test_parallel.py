@@ -40,7 +40,7 @@ def test_model_state_dict_bare_module():
 
 
 def test_load_model_state_dict_roundtrip():
-    from llm.training.distributed import load_model_state_dict, model_state_dict
+    from llm.training.distributed import load_model_state_dict
 
     model = torch.nn.Linear(4, 2)
     state = model_state_dict(model)
@@ -48,6 +48,39 @@ def test_load_model_state_dict_roundtrip():
     load_model_state_dict(model2, state)
     for key, value in model.state_dict().items():
         assert torch.allclose(value, model2.state_dict()[key])
+
+
+def test_model_state_dict_strips_torch_compile_prefix():
+    """``model_state_dict`` must store plain keys for compiled models.
+
+    ``torch.compile`` renames every key to ``_orig_mod.*``; checkpoints
+    stored that way cannot be loaded by ``llm-serve`` (plain ``DecoderModel``,
+    no compile graph), silently dropping every weight.
+    """
+    from llm.training.distributed import model_state_dict
+
+    model = torch.compile(_Tiny())
+    state = model_state_dict(model)
+    assert not any(key.startswith("_orig_mod.") for key in state)
+    assert "linear.weight" in state
+
+
+def test_load_model_state_dict_accepts_compiled_prefix():
+    """Legacy ``_orig_mod.``-prefixed checkpoints load into compiled models."""
+    from llm.training.distributed import load_model_state_dict
+
+    source = _Tiny()
+    prefixed = {f"_orig_mod.{key}": value for key, value in source.state_dict().items()}
+    compiled = torch.compile(_Tiny())
+    load_model_state_dict(compiled, prefixed)
+    for key, value in source.state_dict().items():
+        assert torch.allclose(value, compiled._orig_mod.state_dict()[key])
+
+    # Plain keys also load (the post-fix checkpoint format).
+    compiled2 = torch.compile(_Tiny())
+    load_model_state_dict(compiled2, source.state_dict())
+    for key, value in source.state_dict().items():
+        assert torch.allclose(value, compiled2._orig_mod.state_dict()[key])
 
 
 def test_unknown_parallel_strategy_raises():

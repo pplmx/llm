@@ -166,10 +166,26 @@ def wrap_model_for_training(
     raise ValueError(f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp' or 'fsdp'.")
 
 
+def _strip_compile_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """Normalize torch.compile state-dict keys to the plain module namespace.
+
+    ``torch.compile(model).state_dict()`` prefixes every key with
+    ``_orig_mod.``.  Checkpoints must store plain keys (portable across
+    compiled / non-compiled loads and consumable by ``llm-serve``); this
+    helper also makes legacy checkpoints that accidentally stored the
+    prefixed form loadable.
+    """
+    if any(key.startswith("_orig_mod.") for key in state_dict):
+        return {key.removeprefix("_orig_mod."): value for key, value in state_dict.items()}
+    return state_dict
+
+
 def model_for_checkpoint_io(model: nn.Module) -> nn.Module:
     """Return the module that should receive load_state_dict during resume."""
     if isinstance(model, DistributedDataParallel):
-        return model.module
+        model = model.module
+    if hasattr(model, "_orig_mod"):  # torch.compile wrapper
+        model = model._orig_mod
     return model
 
 
@@ -216,9 +232,9 @@ def load_model_state_dict(
 
         sdt, cfg = _fsdp_state_dict_setup(state_dict_type)
         with FullyShardedDataParallel.state_dict_type(model, sdt, cfg):
-            model.load_state_dict(state_dict)
+            model.load_state_dict(_strip_compile_prefix(state_dict))
         return
-    model_for_checkpoint_io(model).load_state_dict(state_dict)
+    model_for_checkpoint_io(model).load_state_dict(_strip_compile_prefix(state_dict))
 
 
 def model_state_dict(
@@ -232,11 +248,14 @@ def model_state_dict(
         state_dict_type: FSDP only — see :func:`load_model_state_dict`.
     """
     if isinstance(model, DistributedDataParallel):
-        return model.module.state_dict()
+        model = model.module
     if model.__class__.__name__ == "FullyShardedDataParallel":
         from torch.distributed.fsdp import FullyShardedDataParallel
 
         sdt, cfg = _fsdp_state_dict_setup(state_dict_type)
         with FullyShardedDataParallel.state_dict_type(model, sdt, cfg):
             return model.state_dict()
-    return model.state_dict()
+    # ``torch.compile`` wraps the module as ``_orig_mod`` and prefixes its
+    # state-dict keys; unwrap so checkpoints are portable (llm-serve loads
+    # plain module keys and has no torch.compile graph).
+    return model_for_checkpoint_io(model).state_dict()
