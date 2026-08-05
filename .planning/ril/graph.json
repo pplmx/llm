@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 0,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-05T14:30:01+00:00",
+  "updated_at": "2026-08-05T14:31:06+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -67,10 +67,10 @@
     "ISS-001": {
       "id": "ISS-001",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-05T14:13:49+00:00",
-      "updated_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:31:06+00:00",
       "touched_round": 0,
       "title": "Six vllm-lite (Rust) skills in .agents/skills are inapplicable to this Python repo and would misdirect agents; pending user decision (delete vs rewrite)",
       "severity": 0.6
@@ -78,10 +78,10 @@
     "ISS-002": {
       "id": "ISS-002",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-05T14:13:49+00:00",
-      "updated_at": "2026-08-05T14:13:49+00:00",
+      "updated_at": "2026-08-05T14:31:06+00:00",
       "touched_round": 0,
       "title": ".planning/ril/README.md required by graph-engineering skill contract is missing",
       "severity": 0.3
@@ -117,18 +117,16 @@
     "TASK-003": {
       "id": "TASK-003",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-05T14:14:53+00:00",
-      "updated_at": "2026-08-05T14:14:54+00:00",
+      "updated_at": "2026-08-05T14:31:06+00:00",
       "touched_round": 0,
       "title": "Replace six vllm-lite skills with repo-native skills adapted to this Python codebase (extension maps, CI, testing, debugging)",
       "category": "maintainability",
       "severity": 0.6,
       "confidence": 1.0,
-      "effort": 2.0,
-      "lock_owner": "main-agent",
-      "lock_until": "2026-08-05T14:44:54+00:00"
+      "effort": 2.0
     },
     "DEC-001": {
       "id": "DEC-001",
@@ -147,12 +145,12 @@
       "id": "CHG-001",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-05T14:23:55+00:00",
-      "updated_at": "2026-08-05T14:23:55+00:00",
+      "updated_at": "2026-08-05T14:30:52+00:00",
       "touched_round": 0,
       "title": "Repo-native skills replacing vllm-lite skills + RIL data-store README",
-      "commit": "pending"
+      "commit": "6f94158"
     },
     "ISS-003": {
       "id": "ISS-003",
