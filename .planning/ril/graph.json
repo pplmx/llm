@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 2,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-05T16:21:16+00:00",
+  "updated_at": "2026-08-05T16:22:12+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -318,6 +318,17 @@
       "title": "Fix verified: 13 tests pass (7 streaming resume + 6 engine advanced); ruff + ty + doctests green; CUDA OOM resolved when device 0 has <512MiB free",
       "source": "pytest tests/data/test_streaming_resume.py tests/training/test_engine_advanced.py 13 passed; uvx ty check src/llm/training/core/engine.py pass; ruff check+format pass; CUDA_VISIBLE_DEVICES= empty also passes; nvidia-smi before fix: device 0 420MiB free → after fix: _cuda_usable(0) returns False → engine falls back to CPU",
       "confidence": 1.0
+    },
+    "CHG-003": {
+      "id": "CHG-003",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T16:22:12+00:00",
+      "updated_at": "2026-08-05T16:22:12+00:00",
+      "touched_round": 2,
+      "title": "fix _cuda_usable to reject low-VRAM GPUs; engine falls back to CPU when <512MiB free",
+      "commit": "8af8c74"
     }
   },
   "edges": [
@@ -452,6 +463,18 @@
       "to": "HYP-002",
       "type": "validates",
       "created_at": "2026-08-05T16:21:16+00:00"
+    },
+    {
+      "from": "CHG-003",
+      "to": "TASK-005",
+      "type": "implements",
+      "created_at": "2026-08-05T16:22:12+00:00"
+    },
+    {
+      "from": "CHG-003",
+      "to": "ISS-005",
+      "type": "resolves",
+      "created_at": "2026-08-05T16:22:12+00:00"
     }
   ]
 }
