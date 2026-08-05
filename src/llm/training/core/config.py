@@ -3,7 +3,7 @@ from typing import Any
 
 import torch
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -78,7 +78,16 @@ class TrainingConfig(BaseModel):
 
     batch_size: int = Field(128, gt=0)
     epochs: int = Field(10, gt=0)
-    lr: float = Field(1e-3, gt=0)
+    lr: float = Field(
+        1e-3,
+        gt=0,
+        validation_alias=AliasChoices("lr", "learning_rate"),
+        description=(
+            "Learning rate. The YAML key is ``training.lr``; "
+            "``training.learning_rate`` is accepted as an alias for "
+            "backwards compatibility with older preset configs."
+        ),
+    )
     weight_decay: float = 0.01
     num_samples: int = 20000
     scheduler_type: str = Field("cosine", pattern="^(cosine|step|plateau)$")
