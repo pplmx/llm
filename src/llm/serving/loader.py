@@ -19,6 +19,19 @@ from llm.training.core.config import ModelConfig
 logger = logging.getLogger(__name__)
 
 
+def _strip_compile_prefix(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """Normalize torch.compile state-dict keys to the plain module namespace.
+
+    Checkpoints saved before the save-side fix may carry ``_orig_mod.``
+    prefixes (``torch.compile`` renames every key). ``llm-serve`` builds a
+    plain ``DecoderModel``, so the prefix must be stripped before
+    ``load_state_dict`` or every weight is silently dropped.
+    """
+    if any(key.startswith("_orig_mod.") for key in state_dict):
+        return {key.removeprefix("_orig_mod."): value for key, value in state_dict.items()}
+    return state_dict
+
+
 @dataclass(frozen=True)
 class TrainingCheckpoint:
     """Minimal view of a training checkpoint file."""
@@ -28,6 +41,7 @@ class TrainingCheckpoint:
     model_config: dict[str, Any] | None = None
     epoch: int | None = None
     loss: float | None = None
+    model_obj: torch.nn.Module | None = None
 
 
 def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
@@ -36,10 +50,32 @@ def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
     Accepts both the v2 split layout (``<stem>.safetensors`` +
     ``<stem>.meta.json`` + ``<stem>.extra_state.pt``, the modern
     ``CheckpointManager`` format) and the legacy v0.0.5 single-file
-    ``.pt`` blob. ``path`` may be a stem, any of the three v2 sidecar
-    paths, or a legacy ``.pt`` path.
+    ``.pt`` blob, plus the bare ``nn.Module`` pickle emitted by
+    ``llm-quantize`` (a quantized model with ``GPTQQuantizedLinear`` /
+    ``AWQQuantizedLinear`` / ``SmoothQuantLinear`` submodules whose
+    per-layer quantization parameters live on the module instances).
+    ``path`` may be a stem, any of the three v2 sidecar paths, or a
+    legacy ``.pt`` path.
     """
     ckpt_path = Path(path)
+    # A bare-module blob (e.g. ``llm-quantize --output model.pt``) is not a
+    # checkpoint dict: detect it before the layout resolution below so it is
+    # not routed through the legacy path (which would emit a misleading
+    # "run llm-migrate-ckpt" DeprecationWarning for a quantized artifact).
+    if ckpt_path.exists() and ckpt_path.suffix == ".pt":
+        try:
+            obj = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        except Exception:  # noqa: BLE001 - probe only; any failure falls through
+            # to the checkpoint-layout resolution below, which raises the
+            # proper format-specific error for this path.
+            obj = None
+        if isinstance(obj, torch.nn.Module):
+            logger.info("Loading bare quantized model blob from %s", ckpt_path)
+            return TrainingCheckpoint(
+                path=ckpt_path,
+                model_state=obj.state_dict(),
+                model_obj=obj,
+            )
     payload = load_checkpoint_payload(ckpt_path)
     if payload is None:
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path} (checked the legacy .pt and the v2 split layout)")
@@ -48,7 +84,7 @@ def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
 
     return TrainingCheckpoint(
         path=ckpt_path,
-        model_state=payload["model_state"],
+        model_state=_strip_compile_prefix(payload["model_state"]),
         model_config=payload.get("model_config"),
         epoch=payload.get("epoch"),
         loss=payload.get("loss"),
@@ -147,11 +183,19 @@ def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
         return _create_dummy_model_and_tokenizer(config)
 
     checkpoint = load_training_checkpoint(config.model_path)
-    model = _build_decoder(
-        serving_config=config,
-        model_config=checkpoint.model_config,
-        state_dict=checkpoint.model_state,
-    )
+    if checkpoint.model_obj is not None:
+        # Quantized-model blob produced by ``llm-quantize``: the module is
+        # self-contained (packed weights, scales, per-layer quantization
+        # params), so skip ModelFactory reconstruction entirely.
+        model = checkpoint.model_obj
+        if not isinstance(model, DecoderModel):
+            raise TypeError(f"quantized model blob must be a DecoderModel, got {type(model).__name__}")
+    else:
+        model = _build_decoder(
+            serving_config=config,
+            model_config=checkpoint.model_config,
+            state_dict=checkpoint.model_state,
+        )
     tokenizer = load_tokenizer(config)
 
     _apply_peft_if_configured(model, config)

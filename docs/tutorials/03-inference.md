@@ -418,10 +418,22 @@ LLM_SERVING_REQUEST_TIMEOUT=300 uv run llm-serve
 
 ### 6.7 量化模型加载失败
 
-GPTQ 量化后的 checkpoint 文件体积缩小但加载方式不变。如果 `llm-serve` 加载 qlora 或 gptq 量化模型失败：
+`llm-quantize gptq --output model.pt` 产出的是**裸模块 blob**（`torch.save` 整个量化后的
+`DecoderModel`，自带 packed weights / scales / 每层量化参数）。serving loader 会自动识别这种
+blob 并直接加载，不需要转换或重建——把 `LLM_SERVING_MODEL_PATH` 指向该 `.pt` 即可：
+
+```bash
+uv run llm-quantize gptq --model ckpt.pt --output quantized.pt \
+  --calib-data-tokens calib.pt --bits 4 --group-size 128
+LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm-serve
+```
+
+如果 `llm-serve` 加载 qlora 或 gptq 量化模型失败：
 
 - 确保 checkpoint 路径存在（v2 布局指向 `<stem>.safetensors` 或 stem；旧式布局指向 `.pt`）
-- GPTQ 量化模型使用 `torch.save` 保存，与普通 checkpoint 加载逻辑相同
+- GPTQ / AWQ / SmoothQuant 量化产物都是裸模块 blob（Python API 的
+  `quantize_model_gptq` / `quantize_model_awq` / `quantize_model_smoothquant`
+  返回值同样可直接 `torch.save` 后 serve）
 - QLoRA 模型 base 权重是 NF4 格式，需要 `apply_qlora` 后再 `load_state_dict`
 
 ---
@@ -430,12 +442,13 @@ GPTQ 量化后的 checkpoint 文件体积缩小但加载方式不变。如果 `l
 
 ### 7.1 Checkpoint 路径
 
-| 来源               | 命令                                                                        | 怎么 serve                                           |
-| ------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `stream_lm` 预训练 | `uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml` | 设 `LLM_SERVING_MODEL_PATH=<checkpoint_dir>/epoch_N` |
-| `sft` 微调         | `uv run llm-train --task sft --config-path configs/sft_alpaca.yaml`         | 同上（base weights serve）                           |
-| `sft` + LoRA       | YAML 设 `training.peft_method` / `peft_kwargs` / `peft_save_path`           | 同时设 `LLM_SERVING_PEFT_*` 字段                     |
-| `dpo`              | `uv run llm-train --task dpo --config-path configs/dpo_ultrafeedback.yaml`  | 同 sft                                               |
+| 来源               | 命令                                                                        | 怎么 serve                                                          |
+| ------------------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `stream_lm` 预训练 | `uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml` | 设 `LLM_SERVING_MODEL_PATH=<checkpoint_dir>/epoch_N`                |
+| `sft` 微调         | `uv run llm-train --task sft --config-path configs/sft_alpaca.yaml`         | 同上（base weights serve）                                          |
+| `sft` + LoRA       | YAML 设 `training.peft_method` / `peft_kwargs` / `peft_save_path`           | 同时设 `LLM_SERVING_PEFT_*` 字段                                    |
+| `dpo`              | `uv run llm-train --task dpo --config-path configs/dpo_ultrafeedback.yaml`  | 同 sft                                                              |
+| GPTQ 量化          | `uv run llm-quantize gptq --model ... --output quantized.pt`                | 设 `LLM_SERVING_MODEL_PATH=<quantized>.pt`（裸模块 blob，自动识别） |
 
 ### 7.2 性能开关（按场景）
 
