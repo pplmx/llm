@@ -63,8 +63,14 @@ class SmoothQuantLinear(nn.Module):
 
     def _dequantize_weights(self) -> torch.Tensor:
         """Dequantize the smoothed int8 weights: [out_features, in_features] fp32."""
-        w_int = self.weight_packed.reshape(self.out_features, self.in_features).to(torch.float32)
-        return w_int * self.weight_scales.to(torch.float32)
+        weight_packed = self.weight_packed
+        if not isinstance(weight_packed, torch.Tensor):
+            raise RuntimeError("SmoothQuant packed weights were not initialized")
+        weight_scales = self.weight_scales
+        if not isinstance(weight_scales, torch.Tensor):
+            raise RuntimeError("SmoothQuant weight scales were not initialized")
+        w_int = weight_packed.reshape(self.out_features, self.in_features).to(torch.float32)
+        return w_int * weight_scales.to(torch.float32)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass: ``Q8(W·s)·Q8(x/s)`` with INT8 fake quantization.
@@ -88,7 +94,10 @@ class SmoothQuantLinear(nn.Module):
             x = x / self.input_scales.to(x.dtype)
 
         # Per-tensor INT8 activation fake-quantization.
-        act_scale = self.act_scale.to(x.dtype)
+        act_scale = self.act_scale
+        if not isinstance(act_scale, torch.Tensor):
+            raise RuntimeError("SmoothQuant activation scale was not initialized")
+        act_scale = act_scale.to(x.dtype)
         x_q = torch.clamp(torch.round(x / act_scale), -128, 127) * act_scale
 
         w_fp = self._dequantize_weights()

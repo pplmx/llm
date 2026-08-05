@@ -96,11 +96,15 @@ class AWQQuantizedLinear(nn.Module):
         # 8-bit storage is already signed int8 [-128, 127] (no shift).
         w_int_signed = w_int.to(torch.float32) - 8.0 if self.bits == 4 else w_int.to(torch.float32)
 
+        scales = self.scales
+        if not isinstance(scales, torch.Tensor):
+            raise RuntimeError("AWQ scales were not initialized")
+
         if self.group_size == -1:
-            w_fp = w_int_signed * self.scales.to(torch.float32)
+            w_fp = w_int_signed * scales.to(torch.float32)
         else:
             gs = self.group_size
-            scales_expanded = self.scales.to(torch.float32).repeat_interleave(gs, dim=1)
+            scales_expanded = scales.to(torch.float32).repeat_interleave(gs, dim=1)
             w_fp = w_int_signed * scales_expanded
 
         return torch.nn.functional.linear(x, w_fp, self.bias)

@@ -433,6 +433,16 @@ flash_attn ... no module named` at runtime. If no pre-built wheel matches
 your exact environment (e.g. a very new `torch`/Python combo), fall back to
 the source build above or `pip install flash-attn` on a CUDA host.
 
+> **torch 2.13 / Python 3.14 note**: as of this writing the Astral indexes
+> only publish `flash-attn` wheels up to `torch 2.12`, so on `torch 2.13` +
+> Python 3.14 you must build from source. The build requires an `nvcc`
+> whose major.minor matches `torch.version.cuda` (e.g. CUDA 13.x for
+> `torch 2.13.0+cu130`) — torch's `cpp_extension` refuses a mismatched
+> compiler even though CUDA runtime is forward-compatible. Do **not** use
+> `FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE` (the default in this repo's
+> `[tool.uv.extra-build-variables]`): it produces an importable package
+> with no kernels and every flash test fails deep in `forward`.
+
 ### Configuration
 
 ```python

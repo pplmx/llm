@@ -18,7 +18,7 @@ Note:
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import torch
 import torch.nn as nn
@@ -185,7 +185,7 @@ def model_for_checkpoint_io(model: nn.Module) -> nn.Module:
     if isinstance(model, DistributedDataParallel):
         model = model.module
     if hasattr(model, "_orig_mod"):  # torch.compile wrapper
-        model = model._orig_mod
+        model = cast(nn.Module, model._orig_mod)
     return model
 
 
