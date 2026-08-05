@@ -34,8 +34,22 @@ from llm.utils.common import make_factory_kwargs
 # always populated (consumers can list names, validate configs, etc.)
 # even when ``flash-attn`` is not installed. The actual gate fires at
 # instantiation below.
+#
+# The probe imports the package (not just ``find_spec``): flash-attn is
+# often installed from an sdist with ``FLASH_ATTENTION_SKIP_CUDA_BUILD``,
+# which leaves ``import flash_attn`` broken (missing ``flash_attn_2_cuda``).
+# Treating "importable and usable" as the availability signal makes the
+# optional-dependency contract honest instead of failing deep in forward.
 _flash_attn_spec = importlib.util.find_spec("flash_attn")
-FLASH_ATTN_AVAILABLE: bool = _flash_attn_spec is not None
+if _flash_attn_spec is not None:
+    try:
+        import flash_attn  # noqa: F401  (kernel registration happens on import)
+
+        FLASH_ATTN_AVAILABLE: bool = True
+    except ImportError:
+        FLASH_ATTN_AVAILABLE = False
+else:
+    FLASH_ATTN_AVAILABLE = False
 
 
 @register_attention("flash_attn")
@@ -187,7 +201,7 @@ class FlashAttention(nn.Module):
         # Local import so an uninstalled ``flash-attn`` does not crash
         # the package at import time (we already gated on
         # ``FLASH_ATTN_AVAILABLE`` in ``__init__``).
-        from flash_attn import flash_attn_func  # type: ignore  # optional CUDA-only dep
+        from flash_attn import flash_attn_func  # optional CUDA-only dep
 
         batch_size, seq_len, _ = hidden_states.size()
         use_causal = self.is_causal if is_causal is None else is_causal

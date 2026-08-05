@@ -101,5 +101,5 @@ def test_flash_attn_instantiates_when_dependency_present():
     attn = FlashAttention(hidden_size=64, num_heads=4, bias=False)
     # Combined QKV projection = (num_heads + 2*num_kv_heads) * head_dim.
     # Default num_kv_heads == num_heads, head_dim = hidden_size / num_heads.
-    assert attn.qkv_dim == 4 * (64 // 4)
+    assert attn.qkv_dim == (4 + 2 * 4) * (64 // 4)  # 192
     assert attn.out_proj.in_features == 64

@@ -14,12 +14,35 @@ import torch
 
 from llm.core.attn.flash_attn import FLASH_ATTN_AVAILABLE, FlashAttention
 
-# All tests in this file require flash-attn. CPU-only CI imports the
-# module but cannot construct or forward through FlashAttention.
+# All tests in this file require flash-attn with CUDA kernels (the
+# ``flash_attn_func`` operator is CUDA-only). CPU-only hosts — or hosts
+# with a broken sdist install — skip cleanly instead of failing deep in
+# the forward pass.
 pytestmark = pytest.mark.skipif(
-    not FLASH_ATTN_AVAILABLE,
-    reason="flash-attn is optional; install via `llm[perf]`",
+    not (FLASH_ATTN_AVAILABLE and torch.cuda.is_available()),
+    reason="flash-attn with CUDA kernels is required; install via `llm[perf]` on a CUDA host",
 )
+
+
+@pytest.fixture(autouse=True)
+def _cuda_default_device():
+    """Run flash tests with CUDA as the default device.
+
+    ``FlashAttention`` wraps a CUDA-only custom op, so every tensor in
+    these tests (module params included) must be created on CUDA.  The
+    class body uses bare ``torch.randn`` / module construction without
+    explicit device arguments, so the fixture sets the process default
+    device for the duration of each test and restores it afterwards.
+    """
+    if not torch.cuda.is_available():
+        yield
+        return
+    prev = torch.get_default_device()
+    torch.set_default_device("cuda")
+    try:
+        yield
+    finally:
+        torch.set_default_device(prev)
 
 
 class TestFlashPrefixKV:
