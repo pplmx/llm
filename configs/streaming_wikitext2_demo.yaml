@@ -8,11 +8,14 @@
 # before/after.
 #
 # The corpus is a LOCAL text file (one record per line) exported from
-# `Salesforce/wikitext` (see `scripts/quantize_eval.py` / the dataset export
-# command in the log): streaming over HF in this environment stalled
-# mid-run on unauthenticated rate limits, truncating the corpus to ~1600
-# records. A local file keeps the run deterministic. `configs/streaming_c4.yaml`
-# remains the reference for HF streaming at scale.
+# `Salesforce/wikitext`. The file is git-ignored (derived data, reproducible):
+# streaming over HF in this environment stalled mid-run on unauthenticated
+# rate limits, truncating the corpus to ~1600 records, so a local file keeps
+# the run deterministic. Regenerate it before running:
+#
+#   uv run python -c "from datasets import load_dataset; ds=load_dataset('Salesforce/wikitext','wikitext-2-raw-v1',split='train'); lines=[r['text'] for r in ds if r.get('text') and r['text'].strip()]; open('data/wikitext2_train.txt','w').write('\n'.join(lines))"
+#
+# `configs/streaming_c4.yaml` remains the reference for HF streaming at scale.
 #
 # Usage
 # -----
