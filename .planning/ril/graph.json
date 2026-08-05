@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 1,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-05T16:05:29+00:00",
+  "updated_at": "2026-08-05T16:11:46+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -247,6 +247,17 @@
       "title": "Use dist.all_gather_object in get_checkpoint_state + world_size stamp in checkpoint for streaming resume fix",
       "rationale": "Rank-0-only save drops non-zero rank shard cursors causing silent retrain from line 0 on resume. Moving collect_extra_state before the rank==0 gate makes the all_gather collective run on all ranks (avoids deadlock). world_size stamp lets resume reject cross-layout checkpoints where shard arithmetic (line_idx % num_shards) diverges.",
       "alternatives_rejected": "(1) save per-rank checkpoint files: rejected — breaks existing rank-0-only CheckpointManager save path; (2) skip world_size check: rejected — silent data duplication/drop is worse than an explicit error)"
+    },
+    "CHG-002": {
+      "id": "CHG-002",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T16:11:32+00:00",
+      "updated_at": "2026-08-05T16:11:32+00:00",
+      "touched_round": 1,
+      "title": "persist all shard cursors in streaming checkpoints + validate world_size on resume",
+      "commit": "dee518d"
     }
   },
   "edges": [
@@ -339,6 +350,24 @@
       "to": "HYP-001",
       "type": "validates",
       "created_at": "2026-08-05T16:04:24+00:00"
+    },
+    {
+      "from": "CHG-002",
+      "to": "TASK-004",
+      "type": "implements",
+      "created_at": "2026-08-05T16:11:46+00:00"
+    },
+    {
+      "from": "CHG-002",
+      "to": "ISS-004",
+      "type": "resolves",
+      "created_at": "2026-08-05T16:11:46+00:00"
+    },
+    {
+      "from": "CHG-002",
+      "to": "ISS-003",
+      "type": "resolves",
+      "created_at": "2026-08-05T16:11:46+00:00"
     }
   ]
 }
