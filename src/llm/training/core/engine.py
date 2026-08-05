@@ -14,21 +14,29 @@ from llm.training.distributed import model_for_checkpoint_io, wrap_model_for_tra
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
+_MIN_FREE_VRAM_BYTES = 512 * 1024 * 1024  # 512 MiB headroom for CUDA context + model
 
-def _cuda_usable() -> bool:
-    """True only if CUDA is available *and* actually allocatable.
+
+def _cuda_usable(device_idx: int = 0) -> bool:
+    """True only if a CUDA device is available *and* has allocatable VRAM.
 
     ``torch.cuda.is_available()`` can return True in containers that report
-    CUDA devices but have 0 usable VRAM (CUDA OOM on first allocation).
-    This helper also rejects that case by attempting a memory-info query.
+    CUDA devices but have 0 usable VRAM (CUDA OOM on first allocation).  Even
+    a non-zero free-byte count can be misleading: the CUDA driver reserves
+    context memory, so a device reporting only a few hundred MiB free will OOM
+    on the first real tensor allocation.  This helper rejects such devices by
+    requiring at least ``_MIN_FREE_VRAM_BYTES`` of free VRAM on the specific
+    device index that the caller intends to use.
     """
     if not torch.cuda.is_available():
         return False
+    if device_idx >= torch.cuda.device_count():
+        return False
     try:
-        torch.cuda.mem_get_info()
-        return True
+        free_bytes, _ = torch.cuda.mem_get_info(device_idx)
     except RuntimeError, torch.AcceleratorError:
         return False
+    return free_bytes >= _MIN_FREE_VRAM_BYTES
 
 
 class TrainingEngine:
@@ -46,10 +54,13 @@ class TrainingEngine:
         self.rank = rank
         self.world_size = world_size
 
-        if torch.cuda.is_available() and torch.cuda.device_count() > 0 and self.world_size > 0 and _cuda_usable():
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0 and self.world_size > 0:
+            cuda_idx = rank % torch.cuda.device_count()
             # world_size > 0 is a proxy for intending to use GPUs if available
-            # rank % torch.cuda.device_count() ensures valid device index per process
-            self.device = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
+            if _cuda_usable(cuda_idx):
+                self.device = torch.device(f"cuda:{cuda_idx}")
+            else:
+                self.device = torch.device("cpu")
         else:
             self.device = torch.device("cpu")
 

@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 1,
+  "round": 2,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-05T16:11:46+00:00",
+  "updated_at": "2026-08-05T16:21:16+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 0,
+      "touched_round": 2,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -258,6 +258,66 @@
       "touched_round": 1,
       "title": "persist all shard cursors in streaming checkpoints + validate world_size on resume",
       "commit": "dee518d"
+    },
+    "ISS-005": {
+      "id": "ISS-005",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-05T16:13:47+00:00",
+      "updated_at": "2026-08-05T16:21:16+00:00",
+      "touched_round": 2,
+      "title": "Engine tests fail with CUDA OOM on device 0 (420MiB free) despite cuda_usable() gate; optimizer _accelerator_graph_capture_health_check hits torch.accelerator.current_stream() even when model is on CPU",
+      "severity": 0.5
+    },
+    "HYP-002": {
+      "id": "HYP-002",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-05T16:13:47+00:00",
+      "updated_at": "2026-08-05T16:21:16+00:00",
+      "touched_round": 2,
+      "title": "TrainingEngine.device falls back to torch.cuda.is_available() instead of tests.support.devices.cuda_usable(), so it selects a CUDA device that is visible-but-OOM; the optimizer health check then fails",
+      "confidence": 0.6
+    },
+    "EV-004": {
+      "id": "EV-004",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T16:14:27+00:00",
+      "updated_at": "2026-08-05T16:14:27+00:00",
+      "touched_round": 2,
+      "title": "engine.py:18-31 _cuda_usable() only checks mem_get_info() succeeds (no min_free_bytes), so 420MiB-free GPU 0 passes as usable",
+      "source": "src/llm/training/core/engine.py:18-31; nvidia-smi: device 0 has 420MiB free of 80GiB; test_engine_auto_amp_dtype/test_engine_stops_at_max_steps fail with torch.AcceleratorError CUDA OOM on optimizer _accelerator_graph_capture_health_check",
+      "confidence": 1.0
+    },
+    "TASK-005": {
+      "id": "TASK-005",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-05T16:14:47+00:00",
+      "updated_at": "2026-08-05T16:21:16+00:00",
+      "touched_round": 2,
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 0.9,
+      "effort": 1.0,
+      "title": "Fix _cuda_usable() in engine.py to reject low-VRAM GPUs (add min_free_bytes check) so tests fall back to CPU instead of OOMing on cuda:0"
+    },
+    "EV-005": {
+      "id": "EV-005",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-05T16:20:50+00:00",
+      "updated_at": "2026-08-05T16:20:50+00:00",
+      "touched_round": 2,
+      "title": "Fix verified: 13 tests pass (7 streaming resume + 6 engine advanced); ruff + ty + doctests green; CUDA OOM resolved when device 0 has <512MiB free",
+      "source": "pytest tests/data/test_streaming_resume.py tests/training/test_engine_advanced.py 13 passed; uvx ty check src/llm/training/core/engine.py pass; ruff check+format pass; CUDA_VISIBLE_DEVICES= empty also passes; nvidia-smi before fix: device 0 420MiB free → after fix: _cuda_usable(0) returns False → engine falls back to CPU",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -368,6 +428,30 @@
       "to": "ISS-003",
       "type": "resolves",
       "created_at": "2026-08-05T16:11:46+00:00"
+    },
+    {
+      "from": "ISS-005",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-05T16:13:47+00:00"
+    },
+    {
+      "from": "EV-004",
+      "to": "HYP-002",
+      "type": "validates",
+      "created_at": "2026-08-05T16:14:27+00:00"
+    },
+    {
+      "from": "TASK-005",
+      "to": "ISS-005",
+      "type": "addresses",
+      "created_at": "2026-08-05T16:14:48+00:00"
+    },
+    {
+      "from": "EV-005",
+      "to": "HYP-002",
+      "type": "validates",
+      "created_at": "2026-08-05T16:21:16+00:00"
     }
   ]
 }
