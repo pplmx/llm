@@ -29,17 +29,10 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
 import torch
 
 from llm.core.lora import LoRALinear
-
-
-@pytest.fixture
-def device():
-    """Force CPU for these tests — the session-scoped device fixture from
-    conftest.py creates models on CUDA, which OOMs on constrained boxes."""
-    return torch.device("cpu")
+from tests.support.devices import DEFAULT_DEVICE
 
 
 def _build_tokenizer_ckpt(tmp_path: Path, vocab_size: int) -> Path:
@@ -95,8 +88,9 @@ class TestTrainServeRoundTrip:
             [p for m in train_view.modules() if isinstance(m, LoRALinear) for p in (m.lora_A, m.lora_B)],
             lr=0.1,
         )
-        x = torch.randint(0, tiny_config.model.vocab_size, (2, 8))
-        target = torch.randn(2, 8, tiny_config.model.vocab_size)
+        model_device = str(next(tiny_model.parameters()).device)
+        x = torch.randint(0, tiny_config.model.vocab_size, (2, 8), device=model_device)
+        target = torch.randn(2, 8, tiny_config.model.vocab_size, device=model_device)
         out = train_view(x)
         loss = ((out - target) ** 2).sum()
         loss.backward()
@@ -140,6 +134,7 @@ class TestTrainServeRoundTrip:
             peft_adapter_path=str(adapter_path),
         )
         served_model, _ = load_model_and_tokenizer(cfg)
+        served_model.to(model_device)
 
         # Verify the served model has LoRA wrappers with the trained values.
         served_lora = [m for m in served_model.modules() if isinstance(m, LoRALinear)]
@@ -197,7 +192,8 @@ class TestTrainServeRoundTrip:
             tokenizer_type="simple",
         )
         base_model, _ = load_model_and_tokenizer(base_cfg)
-        x = torch.randint(0, tiny_config.model.vocab_size, (1, 8))
+        base_model.to(DEFAULT_DEVICE)
+        x = torch.randint(0, tiny_config.model.vocab_size, (1, 8), device=DEFAULT_DEVICE)
         with torch.no_grad():
             base_out = base_model(x)
 
@@ -211,6 +207,7 @@ class TestTrainServeRoundTrip:
             peft_adapter_path=str(adapter_path),
         )
         peft_model, _ = load_model_and_tokenizer(peft_cfg)
+        peft_model.to(DEFAULT_DEVICE)
         with torch.no_grad():
             peft_out = peft_model(x)
 
@@ -277,9 +274,10 @@ class TestTrainServeRoundTrip:
             peft_merge=True,
         )
         merged, _ = load_model_and_tokenizer(merge_cfg)
+        merged.to(DEFAULT_DEVICE)
 
         # Forward must produce finite output (no NaN/Inf from merge).
-        x = torch.randint(0, tiny_config.model.vocab_size, (1, 8))
+        x = torch.randint(0, tiny_config.model.vocab_size, (1, 8), device=DEFAULT_DEVICE)
         with torch.no_grad():
             merged_out = merged(x)
         assert torch.isfinite(merged_out).all(), (

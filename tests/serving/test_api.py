@@ -5,12 +5,12 @@ from llm.serving.api import app
 
 
 @pytest.fixture
-def client(monkeypatch):
-    """TestClient backed by a real tiny CPU model (not a mock).
+def client(monkeypatch, device):
+    """TestClient backed by a real tiny model (GPU-first, falls back to CPU).
 
     Used by @pytest.mark.slow tests that assert on actual generation
-    output. Avoids CUDA OOM by constructing the model on CPU directly
-    instead of going through ServingGenerationService.from_config -> load_model_and_tokenizer.
+    output. Constructs the model on the session-scoped ``device`` (GPU
+    when available) instead of forcing CPU.
     """
     from unittest.mock import MagicMock
 
@@ -31,7 +31,7 @@ def client(monkeypatch):
         num_layers=1,
         num_heads=2,
         max_seq_len=16,
-        device=torch.device("cpu"),
+        device=device,
     )
     tokenizer = StubTokenizer()
 
@@ -39,7 +39,7 @@ def client(monkeypatch):
         model=tiny_model,
         tokenizer=tokenizer,
         backend=EagerGenerationBackend(),
-        device=torch.device("cpu"),
+        device=device,
     )
 
     fake_engine = MagicMock()
@@ -58,7 +58,7 @@ def client(monkeypatch):
     cfg = ServingConfig(
         api_key="test-key",
         request_timeout=30.0,
-        device="cpu",
+        device=str(device),
         generation_backend="eager",
     )
 

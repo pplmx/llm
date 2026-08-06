@@ -27,7 +27,7 @@ from llm.serving.config import ServingConfig
 
 
 @pytest.fixture
-def client_with_mock(monkeypatch):
+def client_with_mock(monkeypatch, device):
     """TestClient with the generation service replaced by a recording mock.
 
     The lifespan normally loads a real model (which OOMs on
@@ -36,6 +36,10 @@ def client_with_mock(monkeypatch):
     lifespan startup fast and memory-free. After the app starts we
     rebind the routers' module-level `generation_service` so the
     recording mock intercepts every request.
+
+    The ``device`` fixture (GPU-first) is passed through to
+    ``ServingConfig`` so the config reflects the same device the
+    real service would use.
     """
     from llm.serving.batch_engine import ContinuousBatchingEngine
     from llm.serving.generation_service import ServingGenerationService
@@ -49,7 +53,7 @@ def client_with_mock(monkeypatch):
         request_timeout=30.0,
         chat_message_template="",
         chat_generation_prefix="",
-        device="cpu",
+        device=str(device),
     )
 
     # Prevent the real lifespan from loading a model — mock the two

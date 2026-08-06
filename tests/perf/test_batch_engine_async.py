@@ -15,9 +15,9 @@ without spawning a thread per request. These tests pin the contract:
 5. The async path yields to the event loop during the forward (the
    ``asyncio.to_thread`` boundary actually runs off-loop).
 
-The model + tokenizer used here are CPU-only stubs (same approach as
-``tests/serving/test_engine_thread_safety.py``) so the suite runs on
-any CI runner.
+The model + tokenizer used here are tiny stubs (GPU-first, same approach as
+``tests/serving/test_engine_thread_safety.py``) so the suite runs on any
+CI runner.
 """
 
 from __future__ import annotations
@@ -34,8 +34,9 @@ import torch.nn as nn
 
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.schemas import GenerationRequest
+from tests.support.devices import DEFAULT_DEVICE
 
-# --- Fake model + tokenizer (CPU-only, deterministic) ----------------------
+# --- Fake model + tokenizer (GPU-first, deterministic) ----------------------
 
 
 @dataclass
@@ -64,7 +65,7 @@ class _TinyBlock(nn.Module):
 
 
 class _FakeModel(nn.Module):
-    """Tiny CPU-only model that produces deterministic logits."""
+    """Tiny model (GPU-first) that produces deterministic logits."""
 
     def __init__(self, vocab_size: int = 64, n_layers: int = 1) -> None:
         super().__init__()
@@ -88,7 +89,7 @@ class _FakeModel(nn.Module):
         # below eos=1, pad=0) so the engine can advance without
         # immediately finishing.
         b, q_len = input_ids.shape
-        logits = torch.zeros(b, q_len, self.vocab_size, dtype=torch.float32)
+        logits = torch.zeros(b, q_len, self.vocab_size, dtype=torch.float32, device=input_ids.device)
         logits[..., 3] = 5.0
         return logits, None
 
@@ -97,14 +98,14 @@ class _FakeModel(nn.Module):
 
 
 @pytest.fixture
-def fake_engine():
-    """Construct a real ``ContinuousBatchingEngine`` with a CPU fake model."""
-    model = _FakeModel(vocab_size=64, n_layers=1)
+def fake_engine(device):
+    """Construct a real ``ContinuousBatchingEngine`` with a tiny fake model on the default device."""
+    model = _FakeModel(vocab_size=64, n_layers=1).to(device)
     tokenizer = _StubTokenizer()
     engine = ContinuousBatchingEngine(
         model=model,
         tokenizer=tokenizer,
-        device="cpu",
+        device=str(device),
         max_batch_size=8,
         max_seq_len=16,
         dtype=torch.float32,
@@ -117,14 +118,14 @@ def fake_engine():
 
 
 @pytest.fixture
-def fake_engine_with_prefix_cache():
+def fake_engine_with_prefix_cache(device):
     """Engine with prefix cache enabled (exercises the cache-mutating code path)."""
-    model = _FakeModel(vocab_size=64, n_layers=1)
+    model = _FakeModel(vocab_size=64, n_layers=1).to(device)
     tokenizer = _StubTokenizer()
     engine = ContinuousBatchingEngine(
         model=model,
         tokenizer=tokenizer,
-        device="cpu",
+        device=str(device),
         max_batch_size=8,
         max_seq_len=16,
         dtype=torch.float32,
@@ -285,12 +286,12 @@ def test_mixed_sync_and_async_callers(fake_engine):
     # Use a fresh engine inside the async loop (avoid sharing the same
     # Python object across event loops; the test asserts the *class*
     # supports both, not that they share state).
-    model = _FakeModel(vocab_size=64, n_layers=1)
+    model = _FakeModel(vocab_size=64, n_layers=1).to(DEFAULT_DEVICE)
     tokenizer = _StubTokenizer()
     async_engine = ContinuousBatchingEngine(
         model=model,
         tokenizer=tokenizer,
-        device="cpu",
+        device=str(DEFAULT_DEVICE),
         max_batch_size=4,
         max_seq_len=16,
         dtype=torch.float32,
@@ -351,12 +352,12 @@ def test_step_async_saturates_concurrent_inflight_vs_step():
     iters = 8
 
     def build_engine() -> ContinuousBatchingEngine:
-        model = _FakeModel(vocab_size=64, n_layers=1)
+        model = _FakeModel(vocab_size=64, n_layers=1).to(DEFAULT_DEVICE)
         tokenizer = _StubTokenizer()
         engine = ContinuousBatchingEngine(
             model=model,
             tokenizer=tokenizer,
-            device="cpu",
+            device=str(DEFAULT_DEVICE),
             max_batch_size=n_concurrent,
             max_seq_len=16,
             dtype=torch.float32,

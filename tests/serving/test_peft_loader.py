@@ -33,12 +33,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-
-@pytest.fixture
-def device():
-    """Force CPU for these tests."""
-    return torch.device("cpu")
-
+from tests.support.devices import DEFAULT_DEVICE
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -67,13 +62,13 @@ class _TinyMLP(nn.Module):
 @pytest.fixture
 def model() -> _TinyMLP:
     torch.manual_seed(0)
-    return _TinyMLP()
+    return _TinyMLP().to(DEFAULT_DEVICE)
 
 
 @pytest.fixture
 def fresh_model() -> _TinyMLP:
     torch.manual_seed(0)
-    return _TinyMLP()
+    return _TinyMLP().to(DEFAULT_DEVICE)
 
 
 def _mutate_lora(model: nn.Module) -> None:

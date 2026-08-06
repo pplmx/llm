@@ -7,19 +7,22 @@ import pytest
 import torch
 
 from llm.core.attn import MultiLatentAttention
+from tests.support.devices import DEFAULT_DEVICE
 
 if TYPE_CHECKING:
     from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
+_DEVICE_STR = str(DEFAULT_DEVICE)
+
 
 @pytest.fixture
 def mla():
-    return MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16)
+    return MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16).to(DEFAULT_DEVICE)
 
 
 @pytest.fixture
 def input_tensor():
-    return torch.randn(2, 10, 64)  # [batch_size, seq_len, hidden_size]
+    return torch.randn(2, 10, 64, device=DEFAULT_DEVICE)  # [batch_size, seq_len, hidden_size]
 
 
 @pytest.mark.slow
@@ -47,7 +50,7 @@ def test_mla_forward_shape(mla, input_tensor):
 def test_mla_with_mask(mla, input_tensor):
     """Test MLA with attention mask."""
     # Create a simple attention mask
-    attn_mask = torch.ones(2, 1, 1, 10, dtype=torch.bool)  # [batch_size, 1, 1, seq_len]
+    attn_mask = torch.ones(2, 1, 1, 10, dtype=torch.bool, device=DEFAULT_DEVICE)  # [batch_size, 1, 1, seq_len]
     output = mla(input_tensor, attn_mask)
     assert output.shape == input_tensor.shape
 
@@ -76,8 +79,8 @@ def test_mla_different_num_latents():
     """Test MLA with different number of latents."""
     num_latents_list = [8, 16, 32]
     for num_latents in num_latents_list:
-        mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=num_latents)
-        input_tensor = torch.randn(2, 10, 64)
+        mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=num_latents).to(DEFAULT_DEVICE)
+        input_tensor = torch.randn(2, 10, 64, device=DEFAULT_DEVICE)
         output = mla(input_tensor)
         assert output.shape == input_tensor.shape
 
@@ -87,9 +90,11 @@ def test_mla_different_latent_dims():
     """Test MLA with different latent dimensions."""
     latent_dims = [32, 64, 128]
     for latent_dim in latent_dims:
-        mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16, latent_dim=latent_dim)
+        mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16, latent_dim=latent_dim).to(
+            DEFAULT_DEVICE
+        )
         # Use the same hidden_size for input tensor
-        input_tensor = torch.randn(2, 10, 64)  # hidden_size should match the model's hidden_size
+        input_tensor = torch.randn(2, 10, 64, device=DEFAULT_DEVICE)  # hidden_size should match the model's hidden_size
         output = mla(input_tensor)
         assert output.shape == input_tensor.shape
 
@@ -99,8 +104,8 @@ def test_mla_different_hidden_sizes():
     """Test MLA with different hidden sizes."""
     hidden_sizes = [32, 64, 128]
     for hidden_size in hidden_sizes:
-        mla = MultiLatentAttention(hidden_size=hidden_size, num_heads=8, num_latents=16)
-        input_tensor = torch.randn(2, 10, hidden_size)
+        mla = MultiLatentAttention(hidden_size=hidden_size, num_heads=8, num_latents=16).to(DEFAULT_DEVICE)
+        input_tensor = torch.randn(2, 10, hidden_size, device=DEFAULT_DEVICE)
         output = mla(input_tensor)
         assert output.shape == input_tensor.shape
 
@@ -110,7 +115,7 @@ def test_mla_different_batch_sizes(mla):
     """Test MLA with different batch sizes."""
     batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
-        input_tensor = torch.randn(batch_size, 10, 64)
+        input_tensor = torch.randn(batch_size, 10, 64, device=DEFAULT_DEVICE)
         output = mla(input_tensor)
         assert output.shape == input_tensor.shape
 
@@ -120,7 +125,7 @@ def test_mla_different_sequence_lengths(mla):
     """Test MLA with different sequence lengths."""
     seq_lengths = [5, 10, 20]
     for seq_len in seq_lengths:
-        input_tensor = torch.randn(2, seq_len, 64)
+        input_tensor = torch.randn(2, seq_len, 64, device=DEFAULT_DEVICE)
         output = mla(input_tensor)
         assert output.shape == input_tensor.shape
 
@@ -128,8 +133,8 @@ def test_mla_different_sequence_lengths(mla):
 @pytest.mark.slow
 def test_mla_norm_first():
     """Test MLA with norm_first=True."""
-    mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16, norm_first=True)
-    input_tensor = torch.randn(2, 10, 64)
+    mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16, norm_first=True).to(DEFAULT_DEVICE)
+    input_tensor = torch.randn(2, 10, 64, device=DEFAULT_DEVICE)
     output = mla(input_tensor)
     assert output.shape == input_tensor.shape
 
@@ -148,16 +153,20 @@ def test_mla_norm_first():
 def _make_mla_for_cache_test(seed: int = 0) -> MultiLatentAttention:
     """Tiny eval-mode MLA for KV-cache equivalence tests."""
     torch.manual_seed(seed)
-    return MultiLatentAttention(
-        hidden_size=32,
-        num_heads=4,
-        num_latents=8,
-        latent_dim=32,
-        p=0.0,
-        is_causal=False,
-        include_norm_residual=False,
-        bias=False,
-    ).eval()
+    return (
+        MultiLatentAttention(
+            hidden_size=32,
+            num_heads=4,
+            num_latents=8,
+            latent_dim=32,
+            p=0.0,
+            is_causal=False,
+            include_norm_residual=False,
+            bias=False,
+        )
+        .to(DEFAULT_DEVICE)
+        .eval()
+    )
 
 
 @pytest.mark.slow
@@ -178,7 +187,7 @@ def test_mla_kv_cache_full_equivalence():
 
     mla = _make_mla_for_cache_test(seed=0)
 
-    x = torch.randn(batch_size, seq_len, hidden_size)
+    x = torch.randn(batch_size, seq_len, hidden_size, device=DEFAULT_DEVICE)
     kv_cache = KVCache(
         max_batch_size=batch_size,
         max_seq_len=seq_len,
@@ -220,7 +229,7 @@ def test_mla_kv_cache_returns_full_output():
     hidden_size = 32
 
     mla = _make_mla_with_seed(7)
-    x = torch.randn(batch_size, seq_len, hidden_size)
+    x = torch.randn(batch_size, seq_len, hidden_size, device=DEFAULT_DEVICE)
     kv_cache = KVCache(
         max_batch_size=batch_size,
         max_seq_len=seq_len + 4,
@@ -250,7 +259,7 @@ def test_mla_kv_cache_and_paged_kv_cache_mutually_exclusive():
     head_dim = hidden_size // num_heads
 
     mla = _make_mla_for_cache_test(seed=11)
-    x = torch.randn(1, 1, hidden_size)
+    x = torch.randn(1, 1, hidden_size, device=DEFAULT_DEVICE)
 
     kv_cache = KVCache(
         max_batch_size=1,
@@ -264,7 +273,7 @@ def test_mla_kv_cache_and_paged_kv_cache_mutually_exclusive():
         head_dim=head_dim,
         num_blocks=4,
         block_size=4,
-        device="cpu",
+        device=_DEVICE_STR,
         dtype=torch.float32,
     )
 
@@ -281,16 +290,20 @@ def test_mla_kv_cache_and_paged_kv_cache_mutually_exclusive():
 def _make_mla_with_seed(seed: int) -> MultiLatentAttention:
     """Tiny eval-mode MLA with explicit seed (per-test reproducibility)."""
     torch.manual_seed(seed)
-    return MultiLatentAttention(
-        hidden_size=32,
-        num_heads=4,
-        num_latents=8,
-        latent_dim=32,
-        p=0.0,
-        is_causal=False,
-        include_norm_residual=False,
-        bias=False,
-    ).eval()
+    return (
+        MultiLatentAttention(
+            hidden_size=32,
+            num_heads=4,
+            num_latents=8,
+            latent_dim=32,
+            p=0.0,
+            is_causal=False,
+            include_norm_residual=False,
+            bias=False,
+        )
+        .to(DEFAULT_DEVICE)
+        .eval()
+    )
 
 
 # --- Paged KV cache forward path -----------------------------------------
@@ -312,7 +325,7 @@ def _build_paged_cache_for_test(
         head_dim=head_dim,
         num_blocks=num_blocks,
         block_size=block_size,
-        device="cpu",
+        device=_DEVICE_STR,
         dtype=torch.float32,
     )
 
@@ -336,7 +349,7 @@ def test_mla_paged_kv_cache_roundtrip_writes_and_reads():
         head_dim=head_dim,
     )
 
-    x = torch.randn(batch_size, seq_len, hidden_size)
+    x = torch.randn(batch_size, seq_len, hidden_size, device=DEFAULT_DEVICE)
     out = mla(
         x,
         paged_kv_cache=paged,
@@ -368,7 +381,7 @@ def test_mla_paged_kv_cache_incremental_decode_equivalence():
         head_dim=head_dim,
     )
 
-    x = torch.randn(batch_size, seq_len, hidden_size)
+    x = torch.randn(batch_size, seq_len, hidden_size, device=DEFAULT_DEVICE)
 
     # Reference: full-sequence forward with no cache.
     with torch.no_grad():
@@ -414,10 +427,10 @@ def test_mla_paged_kv_cache_requires_layer_idx_and_batch_indices():
         head_dim=head_dim,
         num_blocks=4,
         block_size=4,
-        device="cpu",
+        device=_DEVICE_STR,
         dtype=torch.float32,
     )
-    x = torch.randn(1, 1, hidden_size)
+    x = torch.randn(1, 1, hidden_size, device=DEFAULT_DEVICE)
 
     with pytest.raises(ValueError, match="layer_idx is required"):
         mla(
@@ -454,14 +467,14 @@ def test_mla_paged_kv_cache_decode_step_appends_block():
     )
 
     # Prefill 5 tokens → 2 blocks.
-    prefill = torch.randn(1, 5, hidden_size)
+    prefill = torch.randn(1, 5, hidden_size, device=DEFAULT_DEVICE)
     seq_ids = torch.tensor([seq_id], dtype=torch.long)
     mla(prefill, paged_kv_cache=paged, layer_idx=0, batch_indices=seq_ids)
     blocks_after_prefill = paged.get_block_table(seq_id)
     assert len(blocks_after_prefill) == 2
 
     # Decode one token → same block table, count = 6.
-    decode = torch.randn(1, 1, hidden_size)
+    decode = torch.randn(1, 1, hidden_size, device=DEFAULT_DEVICE)
     mla(decode, paged_kv_cache=paged, layer_idx=0, batch_indices=seq_ids)
     assert paged.get_block_table(seq_id) == blocks_after_prefill
     assert paged.block_manager.get_num_tokens(seq_id) == 6

@@ -6,6 +6,7 @@ import torch
 from llm.training.core.config import PPOConfig
 from llm.training.rlhf.ppo_trainer import PPOTrainer
 from llm.training.rlhf.value_model import ValueModel
+from tests.support.devices import DEFAULT_DEVICE
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def tiny_setup(tiny_model):
         tokenizer=SimpleTokenizer(),
         config=config,
         value_model=value_model,
-        device="cpu",
+        device=str(DEFAULT_DEVICE),
     )
     return trainer
 
@@ -46,11 +47,13 @@ def test_ppo_trainer_checkpoint_roundtrip(tiny_setup):
     assert "value_model" in state
     assert "value_optimizer" in state
 
-    before = trainer.value_model.value_head.weight.detach().clone()
+    # Snapshot state is moved to CPU by _snapshot_state; keep before on
+    # the same device for a like-for-like comparison.
+    before = trainer.value_model.value_head.weight.detach().cpu().clone()
     trainer.value_model.value_head.weight.data.fill_(0.0)
     # Saved snapshot must not alias live parameters.
     assert not torch.allclose(state["value_model"]["value_head.weight"], torch.zeros_like(before))
 
     trainer.load_checkpoint_state(state)
     assert trainer.global_step == 3
-    assert torch.allclose(trainer.value_model.value_head.weight, before)
+    assert torch.allclose(trainer.value_model.value_head.weight.detach().cpu(), before)

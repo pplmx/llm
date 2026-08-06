@@ -32,13 +32,14 @@ from llm.compat.hf_publisher import (
     save_pretrained,
 )
 from llm.compat.weight_mapping import convert_hf_weights, convert_our_weights
+from tests.support.devices import DEFAULT_DEVICE
 from tests.support.models import decoder_model_kwargs
 
 # --- Helpers ---------------------------------------------------------------
 
 
 def _make_small_decoder() -> torch.nn.Module:
-    """Construct a tiny CPU-only DecoderModel."""
+    """Construct a tiny DecoderModel on the default device (GPU-first)."""
     from llm.models.decoder import DecoderModel
 
     kwargs = decoder_model_kwargs(
@@ -50,7 +51,7 @@ def _make_small_decoder() -> torch.nn.Module:
         max_seq_len=32,
         attn_impl="mha",
         mlp_impl="mlp",
-        device="cpu",
+        device=str(DEFAULT_DEVICE),
         # Match the loader's ``from_pretrained`` config so the roundtrip
         # truly exercises a save -> load with matching architectures.
         use_glu=True,
@@ -147,11 +148,11 @@ def test_save_pretrained_roundtrip_through_from_pretrained(tmp_path: Path):
     save_pretrained(model, tmp_path)
 
     # Reload via the existing HF loader.
-    reloaded = from_pretrained(tmp_path, device="cpu", dtype=torch.float32)
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
     reloaded.eval()
 
     torch.manual_seed(0)
-    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8))
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
 
     with torch.no_grad():
         original_logits = model(input_ids=ids).detach()

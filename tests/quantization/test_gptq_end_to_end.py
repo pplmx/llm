@@ -4,6 +4,8 @@ import pytest
 import torch
 import torch.nn as nn
 
+from tests.support.devices import cuda_usable
+
 
 class TwoLayerMLP(nn.Module):
     """Tiny model for GPTQ end-to-end testing."""
@@ -50,7 +52,7 @@ def test_quantize_model_gptq_preserves_forward_contract():
     assert out.shape == (2, 16)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+@pytest.mark.skipif(not cuda_usable(), reason="requires CUDA with >= 512 MiB free VRAM")
 def test_gptq_gpu_quantization_keeps_buffers_on_device():
     """GPU quantization must not leave mixed-device layers behind.
 
@@ -247,22 +249,27 @@ def test_quantize_model_with_collector_rejects_non_positive_n_samples():
 
 
 def test_quantize_model_gptq_device_kwarg_relocates_model():
-    """device='cpu' (or any valid device) is forwarded to model.to() before calibration."""
+    """device kwarg is forwarded to model.to() before calibration.
+
+    Uses ``DEFAULT_DEVICE`` (GPU-first, falls back to CPU) so the test
+    exercises the same code path on GPU when available.
+    """
     from llm.quantization._gptq_layer import GPTQQuantizedLinear
     from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+    from tests.support.devices import DEFAULT_DEVICE
 
     model = TwoLayerMLP(hidden=16)
-    calib = [torch.randn(8, 16) for _ in range(2)]
+    calib = [torch.randn(8, 16, device=DEFAULT_DEVICE) for _ in range(2)]
 
-    # Explicit device kwarg is accepted (idempotent on CPU model)
-    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(), device="cpu")
+    # Explicit device kwarg is accepted — model is relocated before calibration.
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(), device=str(DEFAULT_DEVICE))
 
     assert isinstance(quantized.fc1, GPTQQuantizedLinear)
-    # All parameters and buffers live on CPU
+    # All parameters and buffers live on the configured device.
     for p in quantized.parameters():
-        assert p.device.type == "cpu"
+        assert p.device.type == DEFAULT_DEVICE.type
     for b in quantized.buffers():
-        assert b.device.type == "cpu"
+        assert b.device.type == DEFAULT_DEVICE.type
 
 
 def test_quantize_model_gptq_4bit_per_channel_storage_branch():

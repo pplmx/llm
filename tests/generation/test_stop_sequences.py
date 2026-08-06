@@ -27,22 +27,10 @@ from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
 from fastapi.testclient import TestClient
 
 from llm.generation.backends import EagerGenerationBackend, GenerationConfig
 from llm.models.decoder import DecoderModel
-
-
-# Force CPU for eager-backend stop-sequence tests — the model is tiny
-# and the custom tokenizers control decode output, so there's no need
-# for GPU.  In environments where CUDA is available but memory-constrained,
-# the session-scoped ``device`` fixture from conftest.py would cause an
-# OOM during ``tiny_model`` construction; this override avoids that.
-@pytest.fixture
-def device():
-    return torch.device("cpu")
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -349,7 +337,7 @@ def test_batch_generate_stop_never_matches_runs_full(tiny_model, device):  # noq
 
 
 @pytest.fixture
-def client_with_mock(monkeypatch):
+def client_with_mock(monkeypatch, device):
     """TestClient with the generation service replaced by a recording mock.
 
     The mock records every kwargs dict it's called with so individual
@@ -360,6 +348,9 @@ def client_with_mock(monkeypatch):
     mocks — keeping lifespan startup fast and memory-free. After the app
     starts we rebind the routers' module-level ``generation_service`` so
     the recording mock intercepts every request.
+
+    The ``device`` fixture (GPU-first) is passed through to ``ServingConfig``
+    so the config reflects the same device the real service would use.
     """
     import llm.serving.routers.chat as chat_module
     import llm.serving.routers.generate as generate_module
@@ -378,7 +369,7 @@ def client_with_mock(monkeypatch):
         request_timeout=30.0,
         chat_message_template="",
         chat_generation_prefix="",
-        device="cpu",
+        device=str(device),
     )
 
     # Prevent the real lifespan from loading a model — mock the two

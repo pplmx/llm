@@ -5,6 +5,7 @@ import torch
 
 from llm.training.core.config import PPOConfig
 from llm.training.rlhf.rollout_buffer import RolloutBuffer
+from tests.support.devices import DEFAULT_DEVICE
 
 
 class TestPPOConfig:
@@ -163,7 +164,7 @@ class TestPPOTrainer:
             reward_model=reward_model,
             tokenizer=tokenizer,
             config=config,
-            device="cpu",
+            device=str(DEFAULT_DEVICE),
         )
 
         assert trainer.policy is policy
@@ -186,11 +187,11 @@ class TestPPOTrainer:
             tokenizer=tokenizer,
             config=config,
             value_model=value_model,
-            device="cpu",
+            device=str(DEFAULT_DEVICE),
         )
 
-        prompt_ids = torch.tensor([1, 2, 3])
-        response_ids = torch.tensor([4, 5, 6])
+        prompt_ids = torch.tensor([1, 2, 3], device=DEFAULT_DEVICE)
+        response_ids = torch.tensor([4, 5, 6], device=DEFAULT_DEVICE)
         values = trainer.compute_response_values(prompt_ids, response_ids)
 
         assert values.shape == (3,)
@@ -207,7 +208,7 @@ class TestPPOTrainer:
             reward_model=reward_model,
             tokenizer=tokenizer,
             config=config,
-            device="cpu",
+            device=str(DEFAULT_DEVICE),
         )
 
         prompts = ["Hello", "Hi"]
@@ -232,11 +233,11 @@ class TestPPOTrainer:
             reward_model=reward_model,
             tokenizer=tokenizer,
             config=config,
-            device="cpu",
+            device=str(DEFAULT_DEVICE),
         )
 
-        prompt_ids = [torch.tensor([1, 2, 3])]
-        response_ids = [torch.tensor([4, 5])]
+        prompt_ids = [torch.tensor([1, 2, 3], device=DEFAULT_DEVICE)]
+        response_ids = [torch.tensor([4, 5], device=DEFAULT_DEVICE)]
 
         rewards = trainer.compute_rewards(prompt_ids, response_ids)
 
@@ -255,7 +256,7 @@ class TestPPOTrainer:
             reward_model=reward_model,
             tokenizer=tokenizer,
             config=config,
-            device="cpu",
+            device=str(DEFAULT_DEVICE),
         )
 
         buffer = RolloutBuffer(normalize_advantages=False)
@@ -266,7 +267,7 @@ class TestPPOTrainer:
             old_log_probs=torch.tensor([-0.5, -0.3]),
         )
         buffer.compute_advantages()
-        batch = next(iter(buffer.get_batches(mini_batch_size=1, shuffle=False, device="cpu")))
+        batch = next(iter(buffer.get_batches(mini_batch_size=1, shuffle=False, device=str(DEFAULT_DEVICE))))
 
         metrics = trainer.ppo_step(batch)
 
@@ -287,7 +288,7 @@ class TestPPOTrainer:
             tokenizer=tokenizer,
             config=config,
             value_model=value_model,
-            device="cpu",
+            device=str(DEFAULT_DEVICE),
         )
 
         buffer = RolloutBuffer(normalize_advantages=False, gae_lambda=1.0, gamma=1.0)
@@ -300,7 +301,7 @@ class TestPPOTrainer:
             values=values,
         )
         buffer.compute_advantages()
-        batch = next(iter(buffer.get_batches(mini_batch_size=1, shuffle=False, device="cpu")))
+        batch = next(iter(buffer.get_batches(mini_batch_size=1, shuffle=False, device=str(DEFAULT_DEVICE))))
 
         metrics = trainer.ppo_step(batch)
 

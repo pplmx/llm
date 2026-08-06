@@ -6,10 +6,10 @@ The engine is reachable from multiple worker threads (FastAPI runs each
 race without a lock. These tests pin the contract that ``step()`` is safe
 under concurrent invocation.
 
-Strategy: build an engine against a tiny CPU-only fake model and a stub
-tokenizer, then drive it from many threads. The model forward is monkey-
-patched to return deterministic logits so we can assert state invariants
-without a real GPU dependency.
+Strategy: build an engine against a tiny fake model (GPU-first, falls back
+to CPU) and a stub tokenizer, then drive it from many threads. The model
+forward is monkey-patched to return deterministic logits so we can assert
+state invariants without a real GPU dependency.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class _Block(nn.Module):
 
 
 class _FakeModel(nn.Module):
-    """Tiny CPU-only model with the surface that ContinuousBatchingEngine reads."""
+    """Tiny model (GPU-first) with the surface that ContinuousBatchingEngine reads."""
 
     def __init__(self, vocab_size: int = 64, n_layers: int = 1) -> None:
         super().__init__()
@@ -76,7 +76,7 @@ class _FakeModel(nn.Module):
     ) -> tuple[torch.Tensor, Any]:
         # Deterministic logits: argmax over input ids mod vocab_size.
         bs, seq_len = input_ids.shape
-        logits = torch.zeros(bs, seq_len, self.vocab_size, dtype=torch.float32)
+        logits = torch.zeros(bs, seq_len, self.vocab_size, dtype=torch.float32, device=input_ids.device)
         for i in range(bs):
             for j in range(seq_len):
                 # Pick a token that is NOT the EOS token to avoid auto-finish.
@@ -85,14 +85,18 @@ class _FakeModel(nn.Module):
 
 
 @pytest.fixture
-def fake_engine():
-    """Construct a real ContinuousBatchingEngine with a CPU fake model."""
-    model = _FakeModel(vocab_size=64, n_layers=1)
+def fake_engine(device):
+    """Construct a real ContinuousBatchingEngine with a tiny fake model.
+
+    Uses the session-scoped ``device`` fixture (GPU-first) so tests
+    exercise the same code path as production serving.
+    """
+    model = _FakeModel(vocab_size=64, n_layers=1).to(device)
     tokenizer = _StubTokenizer()
     engine = ContinuousBatchingEngine(
         model=model,
         tokenizer=tokenizer,
-        device="cpu",
+        device=str(device),
         max_batch_size=8,
         max_seq_len=16,
         dtype=torch.float32,

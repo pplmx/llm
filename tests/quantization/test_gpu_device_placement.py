@@ -11,9 +11,10 @@ import pytest
 import torch
 
 from llm.models.decoder import DecoderModel
+from tests.support.devices import cuda_usable
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+@pytest.mark.skipif(not cuda_usable(), reason="requires CUDA with >= 512 MiB free VRAM")
 @pytest.mark.parametrize(
     ("method", "quantize_fn", "config"),
     [

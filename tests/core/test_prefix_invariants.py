@@ -17,6 +17,7 @@ import torch
 from llm.core.attn.flash_attn import FLASH_ATTN_AVAILABLE
 from llm.core.attn.mha import MultiHeadAttention
 from llm.core.attn.mla import MultiLatentAttention
+from tests.support.devices import cuda_usable
 
 # Search-space caps. Larger values hit slow-down territory; the contract
 # doesn't depend on absolute size, only on shape consistency.
@@ -84,7 +85,7 @@ def test_mla_prefix_preserves_output_shape(batch_size, seq_len, num_heads, prefi
 
 @hypothesis.settings(max_examples=10, deadline=None)
 @pytest.mark.skipif(
-    not (FLASH_ATTN_AVAILABLE and torch.cuda.is_available()),
+    not (FLASH_ATTN_AVAILABLE and cuda_usable()),
     reason="flash-attn with CUDA kernels is required; install via `llm[perf]` on a CUDA host",
 )
 @hypothesis.given(

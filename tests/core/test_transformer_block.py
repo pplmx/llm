@@ -5,7 +5,7 @@ import torch.nn as nn
 from llm.core.mlp import MLP
 from llm.core.moe.moe import MoE
 from llm.core.transformer_block import TransformerBlock
-from tests.support.devices import ALL_DEVICES, cuda_usable
+from tests.support.devices import ALL_DEVICES, DEFAULT_DEVICE, cuda_usable
 
 # Test Constants
 HIDDEN_SIZE = 64
@@ -42,7 +42,7 @@ def block_kwargs(request):
         "mlp_impl": "mlp",
         "num_experts": 4,  # Default for MoE if enabled
         "top_k": 2,  # Default for MoE if enabled
-        "device": "cpu",  # Default device
+        "device": str(DEFAULT_DEVICE),  # Default to GPU-first, falls back to CPU
         "dtype": torch.float32,  # Default dtype
     }
     if hasattr(request, "param"):

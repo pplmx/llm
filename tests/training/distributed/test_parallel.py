@@ -10,7 +10,7 @@ from llm.training.distributed.parallel import (
     model_state_dict,
     wrap_model_for_training,
 )
-from tests.support.devices import cuda_usable
+from tests.support.devices import ALL_DEVICES, cuda_usable
 
 
 class _Tiny(nn.Module):
@@ -22,12 +22,14 @@ class _Tiny(nn.Module):
         return self.linear(x)
 
 
-def test_wrap_model_cpu_single_process():
-    model = _Tiny()
+@pytest.mark.parametrize("device", ALL_DEVICES)
+def test_wrap_model_single_process(device):
+    """Single-rank DDP is a no-op on any device (CPU or GPU)."""
+    model = _Tiny().to(device)
     wrapped = wrap_model_for_training(
         model,
         parallel_strategy="ddp",
-        device=torch.device("cpu"),
+        device=torch.device(device),
         world_size=1,
     )
     assert wrapped is model
@@ -166,16 +168,37 @@ def test_wrap_fsdp_world_size_one_returns_unwrapped():
     assert wrapped is model
 
 
-def test_wrap_ddp_world_size_one_returns_unwrapped():
-    """Single-rank DDP is also a no-op (returns the bare model)."""
-    model = _Tiny()
+@pytest.mark.parametrize("device", ALL_DEVICES)
+def test_wrap_ddp_world_size_one_returns_unwrapped(device):
+    """Single-rank DDP is also a no-op (returns the bare model) on any device."""
+    model = _Tiny().to(device)
     wrapped = wrap_model_for_training(
         model,
         parallel_strategy="ddp",
-        device=torch.device("cpu"),
+        device=torch.device(device),
         world_size=1,
     )
     assert wrapped is model
+
+
+def test_distributed_device_count_matches_vram_sorted_inventory():
+    """The GPU inventory and cuda_usable() agree on the device count.
+
+    Validates the multi-GPU infrastructure: when GPUs are available,
+    ``cuda_device_count()`` matches the length of the VRAM-sorted
+    ``all_gpu_devices()`` list, and every device in the list is usable.
+    """
+    import tests.support.devices as dev
+
+    gpu_devices = dev.all_gpu_devices()
+    if not gpu_devices:
+        assert dev.cuda_device_count() == 0
+        return
+
+    # Every device returned must be individually usable.
+    for device in gpu_devices:
+        assert dev.cuda_usable(device), f"device {device} listed but not usable"
+    assert dev.cuda_device_count() == len(gpu_devices)
 
 
 def test_wrap_unknown_strategy_returns_bare_on_cpu():

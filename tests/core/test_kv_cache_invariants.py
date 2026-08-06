@@ -23,7 +23,7 @@ import pytest
 import torch
 
 from llm.core.kv_cache import KVCache
-from tests.support.devices import DEFAULT_DEVICE, cuda_usable
+from tests.support.devices import ALL_DEVICES, DEFAULT_DEVICE, cuda_usable
 
 PREFILL_MIN_FREE_BYTES = 9 * 1024**3
 
@@ -51,21 +51,22 @@ def _reference_prefill(
 
 
 class TestPrefillCorrectness:
-    def test_prefill_matches_naive_cat(self):
+    @pytest.mark.parametrize("device", ALL_DEVICES)
+    def test_prefill_matches_naive_cat(self, device):
         cache = KVCache(
             max_batch_size=4,
             max_seq_len=128,
             num_kv_heads=2,
             head_dim=8,
-            device="cpu",
+            device=device,
             dtype=torch.float32,
         )
         # Mixed prefill: slot 0 starts at 0, slot 1 at 5, slot 3 at 10,
         # slot 2 left untouched. ``start_pos`` is per-batch.
         batch_indices = torch.tensor([0, 1, 3])
         seq_len_new = 7
-        k_new = torch.randn(3, 2, seq_len_new, 8)
-        v_new = torch.randn(3, 2, seq_len_new, 8)
+        k_new = torch.randn(3, 2, seq_len_new, 8, device=device)
+        v_new = torch.randn(3, 2, seq_len_new, 8, device=device)
         start_pos = torch.tensor(
             [
                 [0, 1, 2, 3, 4, 5, 6],
@@ -82,20 +83,21 @@ class TestPrefillCorrectness:
         # Slot 2 must remain untouched (still zeros).
         assert torch.equal(cache.k_cache[2], torch.zeros_like(cache.k_cache[2]))
 
-    def test_prefill_overflow_raises_per_slot(self):
+    @pytest.mark.parametrize("device", ALL_DEVICES)
+    def test_prefill_overflow_raises_per_slot(self, device):
         cache = KVCache(
             max_batch_size=4,
             max_seq_len=20,
             num_kv_heads=2,
             head_dim=4,
-            device="cpu",
+            device=device,
             dtype=torch.float32,
         )
         # Slot 1 starts at 18 and tries to write 5 tokens → overflow.
         batch_indices = torch.tensor([0, 1])
         seq_len_new = 5
-        k_new = torch.randn(2, 2, seq_len_new, 4)
-        v_new = torch.randn(2, 2, seq_len_new, 4)
+        k_new = torch.randn(2, 2, seq_len_new, 4, device=device)
+        v_new = torch.randn(2, 2, seq_len_new, 4, device=device)
         start_pos = torch.tensor(
             [
                 [0, 1, 2, 3, 4],
@@ -109,29 +111,32 @@ class TestPrefillCorrectness:
         # Fail-fast: slot 0 was NOT partially written (cache must be untouched).
         assert torch.equal(cache.k_cache[0], torch.zeros_like(cache.k_cache[0]))
 
-    def test_prefill_single_batch(self):
+    @pytest.mark.parametrize("device", ALL_DEVICES)
+    def test_prefill_single_batch(self, device):
         """Edge case: B_curr=1 with multi-token prefill."""
-        cache = KVCache(2, 32, 2, 4, "cpu", torch.float32)
-        k_new = torch.randn(1, 2, 8, 4)
-        v_new = torch.randn(1, 2, 8, 4)
+        cache = KVCache(2, 32, 2, 4, device, torch.float32)
+        k_new = torch.randn(1, 2, 8, 4, device=device)
+        v_new = torch.randn(1, 2, 8, 4, device=device)
         start_pos = torch.tensor([[3, 4, 5, 6, 7, 8, 9, 10]])
         k_out, v_out = cache.update_at_indices(torch.tensor([0]), k_new, v_new, start_pos)
         assert torch.allclose(k_out[0, :, 3:11], k_new[0])
         assert torch.allclose(v_out[0, :, 3:11], v_new[0])
 
-    def test_scalar_start_pos_still_works(self):
+    @pytest.mark.parametrize("device", ALL_DEVICES)
+    def test_scalar_start_pos_still_works(self, device):
         """Regression: the pre-existing scalar-start_pos path is untouched."""
-        cache = KVCache(2, 32, 2, 4, "cpu", torch.float32)
-        k_new = torch.randn(2, 2, 8, 4)
-        v_new = torch.randn(2, 2, 8, 4)
+        cache = KVCache(2, 32, 2, 4, device, torch.float32)
+        k_new = torch.randn(2, 2, 8, 4, device=device)
+        v_new = torch.randn(2, 2, 8, 4, device=device)
         cache.update_at_indices(torch.tensor([0, 1]), k_new, v_new, 0)
         assert torch.allclose(cache.k_cache[0:2, :, 0:8], k_new)
 
-    def test_decode_path_still_works(self):
+    @pytest.mark.parametrize("device", ALL_DEVICES)
+    def test_decode_path_still_works(self, device):
         """Regression: the seq_len=1 decode path is untouched."""
-        cache = KVCache(2, 32, 2, 4, "cpu", torch.float32)
-        k_new = torch.randn(2, 2, 1, 4)
-        v_new = torch.randn(2, 2, 1, 4)
+        cache = KVCache(2, 32, 2, 4, device, torch.float32)
+        k_new = torch.randn(2, 2, 1, 4, device=device)
+        v_new = torch.randn(2, 2, 1, 4, device=device)
         start_pos = torch.tensor([5, 7])
         cache.update_at_indices(torch.tensor([0, 1]), k_new, v_new, start_pos)
         assert torch.allclose(cache.k_cache[0, :, 5], k_new[0, :, 0])

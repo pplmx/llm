@@ -20,6 +20,9 @@ import pytest
 import torch
 
 from llm.core.attn.mla import MultiLatentAttention
+from tests.support.devices import DEFAULT_DEVICE
+
+DEVICE_STR = str(DEFAULT_DEVICE)
 
 
 class TestMLAPrefixKV:
@@ -28,8 +31,8 @@ class TestMLAPrefixKV:
     def test_forward_without_prefix_kv_matches_original(self):
         """Baseline: no prefix → forward shape matches input."""
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
         out = attn(x)
         assert out.shape == (2, 5, 32)
 
@@ -43,15 +46,15 @@ class TestMLAPrefixKV:
         attention.
         """
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
 
         out_no_prefix = attn(x).detach().clone()
 
         prefix_len = 3
         head_dim = 8  # 32 / 4
-        zero_pk = torch.zeros(2, 4, prefix_len, head_dim)
-        zero_pv = torch.zeros(2, 4, prefix_len, head_dim)
+        zero_pk = torch.zeros(2, 4, prefix_len, head_dim, device=DEFAULT_DEVICE)
+        zero_pv = torch.zeros(2, 4, prefix_len, head_dim, device=DEFAULT_DEVICE)
         out_with_zero_prefix = attn(x, prefix_kv=(zero_pk, zero_pv))
 
         mag_no = out_no_prefix.abs().mean()
@@ -64,15 +67,15 @@ class TestMLAPrefixKV:
     def test_forward_with_prefix_kv_changes_output(self):
         """Non-zero prefix → output diverges from the no-prefix path."""
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
 
         out_no_prefix = attn(x).detach().clone()
 
         prefix_len = 3
         head_dim = 8
-        pk = torch.randn(2, 4, prefix_len, head_dim)
-        pv = torch.randn(2, 4, prefix_len, head_dim)
+        pk = torch.randn(2, 4, prefix_len, head_dim, device=DEFAULT_DEVICE)
+        pv = torch.randn(2, 4, prefix_len, head_dim, device=DEFAULT_DEVICE)
         out_with_prefix = attn(x, prefix_kv=(pk, pv))
 
         assert not torch.allclose(out_no_prefix, out_with_prefix, atol=1e-4)
@@ -80,44 +83,44 @@ class TestMLAPrefixKV:
     def test_prefix_does_not_affect_output_shape(self):
         """Output shape is independent of prefix_len."""
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
         head_dim = 8
         for p_len in (1, 3, 8):
-            pk = torch.randn(2, 4, p_len, head_dim)
-            pv = torch.randn(2, 4, p_len, head_dim)
+            pk = torch.randn(2, 4, p_len, head_dim, device=DEFAULT_DEVICE)
+            pv = torch.randn(2, 4, p_len, head_dim, device=DEFAULT_DEVICE)
             out = attn(x, prefix_kv=(pk, pv))
             assert out.shape == (2, 5, 32)
 
     def test_prefix_kv_mismatched_shape_raises(self):
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
-        pk = torch.randn(2, 4, 3, 8)
-        pv = torch.randn(2, 4, 5, 8)  # different seq dim
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
+        pk = torch.randn(2, 4, 3, 8, device=DEFAULT_DEVICE)
+        pv = torch.randn(2, 4, 5, 8, device=DEFAULT_DEVICE)  # different seq dim
         with pytest.raises(ValueError, match="share shape"):
             attn(x, prefix_kv=(pk, pv))
 
     def test_prefix_kv_wrong_num_kv_heads_raises(self):
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
-        pk = torch.randn(2, 3, 3, 8)  # 3 != num_kv_heads=4
-        pv = torch.randn(2, 3, 3, 8)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
+        pk = torch.randn(2, 3, 3, 8, device=DEFAULT_DEVICE)  # 3 != num_kv_heads=4
+        pv = torch.randn(2, 3, 3, 8, device=DEFAULT_DEVICE)
         with pytest.raises(ValueError, match="num_kv_heads"):
             attn(x, prefix_kv=(pk, pv))
 
     def test_prefix_kv_wrong_head_dim_raises(self):
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
-        pk = torch.randn(2, 4, 3, 16)  # 16 != head_dim=8
-        pv = torch.randn(2, 4, 3, 16)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
+        pk = torch.randn(2, 4, 3, 16, device=DEFAULT_DEVICE)  # 16 != head_dim=8
+        pv = torch.randn(2, 4, 3, 16, device=DEFAULT_DEVICE)
         with pytest.raises(ValueError, match="head_dim"):
             attn(x, prefix_kv=(pk, pv))
 
     def test_prefix_kv_wrong_batch_raises(self):
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
-        pk = torch.randn(3, 4, 3, 8)  # batch=3 != 2
-        pv = torch.randn(3, 4, 3, 8)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
+        pk = torch.randn(3, 4, 3, 8, device=DEFAULT_DEVICE)  # batch=3 != 2
+        pv = torch.randn(3, 4, 3, 8, device=DEFAULT_DEVICE)
         with pytest.raises(ValueError, match="batch"):
             attn(x, prefix_kv=(pk, pv))
 
@@ -133,17 +136,17 @@ class TestMLAPrefixWithMask:
         blow up with a shape error.
         """
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
 
         # Mask covers the dynamic tokens: shape [B, 1, S_q, S_k] = [2, 1, 1, 5]
         # (S_q=1 because MLA collapses to the last query position).
-        attn_mask = torch.ones(2, 1, 1, 5)
+        attn_mask = torch.ones(2, 1, 1, 5, device=DEFAULT_DEVICE)
 
         prefix_len = 3
         head_dim = 8
-        pk = torch.randn(2, 4, prefix_len, head_dim)
-        pv = torch.randn(2, 4, prefix_len, head_dim)
+        pk = torch.randn(2, 4, prefix_len, head_dim, device=DEFAULT_DEVICE)
+        pv = torch.randn(2, 4, prefix_len, head_dim, device=DEFAULT_DEVICE)
 
         out = attn(x, attn_mask=attn_mask, prefix_kv=(pk, pv))
         assert out.shape == (2, 5, 32)
@@ -156,16 +159,16 @@ class TestMLAPrefixWithMask:
         was widened with ones regardless of the input mask.
         """
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(2, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(2, 5, 32, device=DEFAULT_DEVICE)
 
         # Mask that hides the dynamic tokens entirely.
-        attn_mask = torch.zeros(2, 1, 1, 5)
+        attn_mask = torch.zeros(2, 1, 1, 5, device=DEFAULT_DEVICE)
 
         prefix_len = 3
         head_dim = 8
-        pk = torch.randn(2, 4, prefix_len, head_dim)
-        pv = torch.randn(2, 4, prefix_len, head_dim)
+        pk = torch.randn(2, 4, prefix_len, head_dim, device=DEFAULT_DEVICE)
+        pv = torch.randn(2, 4, prefix_len, head_dim, device=DEFAULT_DEVICE)
 
         out = attn(x, attn_mask=attn_mask, prefix_kv=(pk, pv))
         # Output should be non-zero because the prefix segment
@@ -181,19 +184,20 @@ class TestMLAPrefixWithLinearCache:
         from llm.core.kv_cache import KVCache
 
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(1, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(1, 5, 32, device=DEFAULT_DEVICE)
 
         kv_cache = KVCache(
             max_batch_size=1,
             max_seq_len=8,
             num_kv_heads=4,
             head_dim=8,
+            device=DEVICE_STR,
         )
 
         prefix_len = 2
-        pk = torch.randn(1, 4, prefix_len, 8)
-        pv = torch.randn(1, 4, prefix_len, 8)
+        pk = torch.randn(1, 4, prefix_len, 8, device=DEFAULT_DEVICE)
+        pv = torch.randn(1, 4, prefix_len, 8, device=DEFAULT_DEVICE)
 
         out = attn(x, kv_cache=kv_cache, prefix_kv=(pk, pv))
         assert out.shape == (1, 5, 32)
@@ -208,19 +212,20 @@ class TestMLAPrefixWithLinearCache:
         from llm.core.kv_cache import KVCache
 
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(1, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(1, 5, 32, device=DEFAULT_DEVICE)
 
         kv_cache = KVCache(
             max_batch_size=1,
             max_seq_len=8,
             num_kv_heads=4,
             head_dim=8,
+            device=DEVICE_STR,
         )
 
         prefix_len = 2
-        pk = torch.randn(1, 4, prefix_len, 8)
-        pv = torch.randn(1, 4, prefix_len, 8)
+        pk = torch.randn(1, 4, prefix_len, 8, device=DEFAULT_DEVICE)
+        pv = torch.randn(1, 4, prefix_len, 8, device=DEFAULT_DEVICE)
 
         attn(x, kv_cache=kv_cache, prefix_kv=(pk, pv))
 
@@ -240,8 +245,8 @@ class TestMLAPrefixWithPagedCache:
         from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 
         torch.manual_seed(0)
-        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8)
-        x = torch.randn(1, 5, 32)
+        attn = MultiLatentAttention(hidden_size=32, num_heads=4, num_latents=8).to(DEFAULT_DEVICE)
+        x = torch.randn(1, 5, 32, device=DEFAULT_DEVICE)
 
         paged = PagedKVCache(
             num_layers=1,
@@ -249,13 +254,13 @@ class TestMLAPrefixWithPagedCache:
             head_dim=8,
             num_blocks=4,
             block_size=4,
-            device="cpu",
+            device=DEVICE_STR,
             dtype=torch.float32,
         )
 
         prefix_len = 2
-        pk = torch.randn(1, 4, prefix_len, 8)
-        pv = torch.randn(1, 4, prefix_len, 8)
+        pk = torch.randn(1, 4, prefix_len, 8, device=DEFAULT_DEVICE)
+        pv = torch.randn(1, 4, prefix_len, 8, device=DEFAULT_DEVICE)
 
         out = attn(
             x,

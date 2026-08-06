@@ -6,7 +6,7 @@ without losing the quantized layers, and its outputs must match the
 quantized artifact it was loaded from.
 
 This is deliberately marked ``e2e`` (opt-in via ``pytest -m e2e``): it runs
-the real quantization kernel through the CLI, so it is a few seconds on CPU.
+the real quantization kernel through the CLI, so it is a few seconds.
 """
 
 from __future__ import annotations
@@ -22,22 +22,18 @@ from llm.quantization import GPTQQuantizedLinear
 from llm.serving.config import ServingConfig
 from llm.serving.loader import load_model_and_tokenizer
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
-
-
-@pytest.fixture
-def device():
-    """Force CPU for this file — quantization + serving smoke is tiny."""
-    return torch.device("cpu")
+from tests.support.devices import DEFAULT_DEVICE
 
 
 @pytest.mark.e2e
 def test_quantize_cli_output_is_servable(tmp_path, tiny_model, tiny_config):
     vocab = tiny_config.model.vocab_size
+    model_device = str(next(tiny_model.parameters()).device)
 
     model_path = tmp_path / "model.pt"
     torch.save(tiny_model, model_path)
 
-    calib = [torch.randint(0, vocab, (2, 16)) for _ in range(3)]
+    calib = [torch.randint(0, vocab, (2, 16), device=DEFAULT_DEVICE) for _ in range(3)]
     calib_path = tmp_path / "calib.pt"
     torch.save(calib, calib_path)
 
@@ -70,6 +66,7 @@ def test_quantize_cli_output_is_servable(tmp_path, tiny_model, tiny_config):
         tokenizer_type="simple",
     )
     model, loaded_tokenizer = load_model_and_tokenizer(config)
+    model.to(model_device)
     model.eval()
 
     # The quantized layers survive the CLI → serving round trip.
@@ -77,8 +74,8 @@ def test_quantize_cli_output_is_servable(tmp_path, tiny_model, tiny_config):
     assert loaded_tokenizer.decode(loaded_tokenizer.encode("ab")) == "ab"
 
     # Output parity with the artifact the server loaded.
-    ids = torch.randint(0, vocab, (2, 8))
-    reference = torch.load(output_path, map_location="cpu", weights_only=False).eval()
+    ids = torch.randint(0, vocab, (2, 8), device=model_device)
+    reference = torch.load(output_path, map_location=model_device, weights_only=False).eval().to(model_device)
     torch.manual_seed(0)
     expected = reference(ids)
     torch.manual_seed(0)
