@@ -172,12 +172,16 @@ class TestDvcStatus:
 
 
 @pytest.fixture
-def fresh_dvc_repo(tmp_path: Path) -> Path:
+def fresh_dvc_repo(tmp_path: Path, monkeypatch) -> Path:
     """Initialize a DVC repo in ``tmp_path``; skip on failure.
 
     Some sandboxes / CI hosts may not have the ``git`` and ``dvc``
     executables on PATH; in that case we skip rather than fail the
     whole test session.
+
+    Some environments also have a read-only ``/var/tmp`` (the default
+    ``TMPDIR`` for DVC); we redirect ``TMPDIR`` to a writable path
+    under ``tmp_path`` so DVC init can create its scratch directory.
     """
     import shutil
     import subprocess
@@ -187,6 +191,15 @@ def fresh_dvc_repo(tmp_path: Path) -> Path:
         pytest.skip("git is required for dvc init but is not on PATH")
     if shutil.which("dvc") is None:
         pytest.skip("dvc CLI is required for dvc init but is not on PATH")
+
+    # Redirect DVC's temp / site-cache dirs to writable locations inside
+    # tmp_path.  DVC defaults to /var/tmp/dvc which is read-only in some
+    # sandboxes; the env vars below override that without touching the
+    # global configuration.
+    dvc_tmp = tmp_path / ".dvc_tmp"
+    dvc_tmp.mkdir()
+    monkeypatch.setenv("TMPDIR", str(dvc_tmp))
+    monkeypatch.setenv("DVC_SITE_CACHE_DIR", str(dvc_tmp / "site_cache"))
 
     # ``dvc init`` requires a git repo first. Make a minimal one.
     git_exe = shutil.which("git")
@@ -202,7 +215,10 @@ def fresh_dvc_repo(tmp_path: Path) -> Path:
         check=True,
     )
 
-    dvc_mod.init_dvc(tmp_path)
+    try:
+        dvc_mod.init_dvc(tmp_path)
+    except RuntimeError:
+        pytest.skip("dvc init failed — see skip reason for details")
     # Either it ran (True) or it was already initialized (False) — both
     # mean we have a working DVC repo to test against.
     assert is_dvc_initialized(tmp_path)

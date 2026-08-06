@@ -2,7 +2,7 @@
 
 import torch
 
-from tests.support.devices import ALL_DEVICES, cuda_usable
+from tests.support.devices import ALL_DEVICES, DEFAULT_DEVICE
 
 DECODER_BATCH_SIZE = 2
 DECODER_SEQ_LEN = 10
@@ -38,7 +38,7 @@ def decoder_model_kwargs(**overrides) -> dict:
     CPU otherwise.
     """
     kwargs = DEFAULT_DECODER_KWARGS.copy()
-    kwargs.setdefault("device", "cuda" if cuda_usable() else "cpu")
+    kwargs.setdefault("device", str(DEFAULT_DEVICE))
     kwargs.setdefault("dtype", torch.float32)
     kwargs.update(overrides)
     return kwargs

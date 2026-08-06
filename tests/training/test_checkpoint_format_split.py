@@ -42,6 +42,7 @@ from llm.training.core.checkpoint import (
 )
 from llm.training.core.config import CheckpointConfig
 from llm.training.core.utils import CheckpointManager, Logger, LoggingConfig
+from tests.support.devices import DEFAULT_DEVICE
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -200,7 +201,7 @@ class TestLoadSplitFormat:
         # Pass the legacy ``.pt`` stem; the manager auto-resolves to
         # the split layout at the same stem.
         checkpoint_manager.config.resume_from_checkpoint = str(tmp_path / "checkpoints" / "latest.pt")
-        start_epoch, best_loss = checkpoint_manager.load_checkpoint(ts, ts, ts, ts, device=torch.device("cpu"))
+        start_epoch, best_loss = checkpoint_manager.load_checkpoint(ts, ts, ts, ts, device=DEFAULT_DEVICE)
         assert start_epoch == 4
         assert best_loss == 0.5
         assert checkpoint_manager.loaded_extra_state["stream_data"]["0"]["line_index"] == 99

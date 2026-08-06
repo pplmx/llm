@@ -13,13 +13,14 @@ import pytest
 import torch
 
 from llm.core.attn.flash_attn import FLASH_ATTN_AVAILABLE, FlashAttention
+from tests.support.devices import cuda_usable
 
 # All tests in this file require flash-attn with CUDA kernels (the
 # ``flash_attn_func`` operator is CUDA-only). CPU-only hosts — or hosts
 # with a broken sdist install — skip cleanly instead of failing deep in
 # the forward pass.
 pytestmark = pytest.mark.skipif(
-    not (FLASH_ATTN_AVAILABLE and torch.cuda.is_available()),
+    not (FLASH_ATTN_AVAILABLE and cuda_usable()),
     reason="flash-attn with CUDA kernels is required; install via `llm[perf]` on a CUDA host",
 )
 
@@ -34,7 +35,7 @@ def _cuda_default_device():
     explicit device arguments, so the fixture sets the process default
     device for the duration of each test and restores it afterwards.
     """
-    if not torch.cuda.is_available():
+    if not cuda_usable():
         yield
         return
     prev = torch.get_default_device()

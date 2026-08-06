@@ -467,11 +467,6 @@ class TrainingEngine:
                         self.logger.info(f"Training stopped early at epoch {epoch + 1} by EarlyStopping callback.")
                     break  # Break the training loop
 
-                if self.config.training.max_steps > 0 and self.global_step >= self.config.training.max_steps:
-                    if self.rank == 0:
-                        self.logger.info(f"Reached max_steps={self.config.training.max_steps}; training complete.")
-                    break
-
                 if self.scheduler:
                     # ReduceLROnPlateau needs the metric, others don't
                     if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -524,6 +519,16 @@ class TrainingEngine:
                 if val_loss is not None:
                     logs["val_loss"] = val_loss
                 self._run_callbacks("on_epoch_end", epoch=epoch, logs=logs)
+
+                # Check max_steps AFTER checkpoint save + epoch-end callbacks
+                # so the checkpoint for the current epoch is persisted even
+                # when max_steps is hit mid-epoch.  Moving this before the
+                # save would silently drop the checkpoint (verified by
+                # test_dpo_runs_and_saves_checkpoint).
+                if self.config.training.max_steps > 0 and self.global_step >= self.config.training.max_steps:
+                    if self.rank == 0:
+                        self.logger.info(f"Reached max_steps={self.config.training.max_steps}; training complete.")
+                    break
 
         except Exception as e:
             self._run_callbacks("on_exception", exception=e)

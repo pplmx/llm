@@ -16,13 +16,6 @@ from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.distributed import model_state_dict
 
 
-@pytest.fixture
-def device():
-    """Force CPU for these tests — the session-scoped device fixture from
-    conftest.py creates models on CUDA, which OOMs on constrained boxes."""
-    return torch.device("cpu")
-
-
 def test_infer_vocab_size_from_lm_head(tiny_model, tiny_config):
     state = model_state_dict(tiny_model)
     assert infer_vocab_size(state) == tiny_config.model.vocab_size
@@ -119,12 +112,12 @@ def test_load_quantized_model_blob_roundtrip(tmp_path, tiny_model, tiny_config):
     from llm.quantization import GPTQConfig, GPTQQuantizedLinear, quantize_model_gptq
 
     vocab = tiny_config.model.vocab_size
-    calib = [torch.randint(0, vocab, (2, 16)) for _ in range(3)]
+    model_device = str(next(tiny_model.parameters()).device)
+    calib = [torch.randint(0, vocab, (2, 16), device=model_device) for _ in range(3)]
     quantized = quantize_model_gptq(
         tiny_model,
         iter(calib),
         GPTQConfig(bits=4, group_size=128),
-        device="cpu",
     )
     quantized.eval()
 
@@ -150,8 +143,13 @@ def test_load_quantized_model_blob_roundtrip(tmp_path, tiny_model, tiny_config):
     assert any(isinstance(m, GPTQQuantizedLinear) for m in model.modules())
     assert loaded_tokenizer.decode(loaded_tokenizer.encode("ab")) == "ab"
 
+    # Move loaded model to the same device as the original tiny_model so
+    # the forward parity comparison runs on GPU (the loader reads the blob
+    # with map_location="cpu" by default).
+    model.to(model_device)
+
     # Forward parity with the direct quantized model (same seed, eval mode).
-    ids = torch.randint(0, vocab, (2, 8))
+    ids = torch.randint(0, vocab, (2, 8), device=model_device)
     torch.manual_seed(0)
     expected = quantized(ids)
     torch.manual_seed(0)

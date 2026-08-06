@@ -21,13 +21,6 @@ class MockTokenizer:
 
 
 @pytest.fixture
-def device():
-    """Force CPU for these tests — the session-scoped device fixture from
-    conftest.py creates models on CUDA, which OOMs on constrained boxes."""
-    return torch.device("cpu")
-
-
-@pytest.fixture
 def mock_tokenizer():
     return MockTokenizer()
 
@@ -49,16 +42,15 @@ def test_slot_allocator_allocate_and_free_round_trip():
     assert allocator.get_slot("req1") == -1
 
 
-def test_engine_prefill_populates_sequence_and_allocates_slot(tiny_model, mock_tokenizer):
+def test_engine_prefill_populates_sequence_and_allocates_slot(tiny_model, device, mock_tokenizer):
     """Requirement: first step tokenizes prompt, runs prefill, and assigns a KV slot."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
     )
 
     req = GenerationRequest(prompt="abcd", max_new_tokens=10)
@@ -73,16 +65,15 @@ def test_engine_prefill_populates_sequence_and_allocates_slot(tiny_model, mock_t
     assert engine.slot_allocator.get_slot("req1") >= 0
 
 
-def test_engine_decode_step_appends_generated_token(tiny_model, mock_tokenizer):
+def test_engine_decode_step_appends_generated_token(tiny_model, device, mock_tokenizer):
     """Requirement: second step appends one decode token while keeping the same slot."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
     )
 
     req = GenerationRequest(prompt="abcd", max_new_tokens=10)
@@ -99,16 +90,15 @@ def test_engine_decode_step_appends_generated_token(tiny_model, mock_tokenizer):
     assert engine.slot_allocator.get_slot("req2") == slot
 
 
-def test_engine_prefix_cache_reuses_kv_on_matching_prompt(tiny_model, mock_tokenizer):
+def test_engine_prefix_cache_reuses_kv_on_matching_prompt(tiny_model, device, mock_tokenizer):
     """Requirement: identical prompts reuse cached KV via _copy_kv_between_slots."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
         enable_prefix_cache=True,
     )
 
@@ -137,14 +127,13 @@ def test_engine_prefix_cache_reuses_kv_on_matching_prompt(tiny_model, mock_token
     assert len(seq2.generated_ids) == 1
 
 
-def test_engine_paged_attention_uses_configured_pool(tiny_model, mock_tokenizer):
+def test_engine_paged_attention_uses_configured_pool(tiny_model, device, mock_tokenizer):
     """``use_paged_attention=True`` builds the paged pool and skips the dense one."""
-    tiny_model.to("cpu")
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
         use_paged_attention=True,
         max_blocks=64,
         block_size=8,
@@ -158,11 +147,10 @@ def test_engine_paged_attention_uses_configured_pool(tiny_model, mock_tokenizer)
     assert engine.prefix_cache is None
 
 
-def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
+def test_from_serving_config_wires_flags(tiny_model, device, mock_tokenizer):
     """Requirement: from_serving_config maps ServingConfig fields onto engine state."""
     from llm.serving.config import ServingConfig
 
-    tiny_model.to("cpu")
     config = ServingConfig(
         max_concurrent_requests=3,
         max_seq_len=64,
@@ -171,7 +159,7 @@ def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
         use_paged_attention=False,
         max_blocks=32,
         block_size=8,
-        device="cpu",
+        device=str(device),
     )
 
     engine = ContinuousBatchingEngine.from_serving_config(
@@ -186,7 +174,7 @@ def test_from_serving_config_wires_flags(tiny_model, mock_tokenizer):
     assert engine.prefix_cache.max_prefixes == 5
 
 
-def test_from_serving_config_wires_paged_attention_through(tiny_model, mock_tokenizer):
+def test_from_serving_config_wires_paged_attention_through(tiny_model, device, mock_tokenizer):
     """``use_paged_attention=True`` no longer raises — it wires the paged path.
 
     After T3 #3 Paged Attention is fully wired through the engine forward:
@@ -196,14 +184,13 @@ def test_from_serving_config_wires_paged_attention_through(tiny_model, mock_toke
     """
     from llm.serving.config import ServingConfig
 
-    tiny_model.to("cpu")
     config = ServingConfig(
         use_paged_attention=True,
         max_blocks=32,
         block_size=8,
         max_concurrent_requests=2,
         max_seq_len=tiny_model.max_seq_len,
-        device="cpu",
+        device=str(device),
     )
 
     engine = ContinuousBatchingEngine.from_serving_config(
@@ -229,18 +216,17 @@ def test_from_serving_config_wires_paged_attention_through(tiny_model, mock_toke
 # --- step() return contract + observer hook (T2 #22) ------------------------
 
 
-def test_step_returns_stepstats_with_fill_ratio_fields(tiny_model, mock_tokenizer):
+def test_step_returns_stepstats_with_fill_ratio_fields(tiny_model, device, mock_tokenizer):
     """step() returns a StepStats dataclass with scheduled + total_active_slots."""
     from llm.serving.batch_engine import StepStats
 
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=4,
-        device="cpu",
+        device=str(device),
     )
 
     # Idle engine: scheduled=0, total = max_batch_size.
@@ -258,16 +244,15 @@ def test_step_returns_stepstats_with_fill_ratio_fields(tiny_model, mock_tokenize
     assert stats.total_active_slots == 4
 
 
-def test_step_observer_invoked_with_stepstats(tiny_model, mock_tokenizer):
+def test_step_observer_invoked_with_stepstats(tiny_model, device, mock_tokenizer):
     """set_step_observer receives the StepStats for each call to step()."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
     )
 
     observed: list = []
@@ -293,7 +278,7 @@ def test_step_observer_invoked_with_stepstats(tiny_model, mock_tokenizer):
 # the latent attention then runs over the cached context.
 
 
-def _make_mla_decoder(device: str = "cpu"):
+def _make_mla_decoder(device: str):
     """Tiny 1-layer DecoderModel with ``attn_impl='mla'``.
 
     The placeholder MLA needs ``hidden_size % num_heads == 0`` and uses
@@ -316,15 +301,15 @@ def _make_mla_decoder(device: str = "cpu"):
     )
 
 
-def test_engine_runs_mla_step_with_dense_cache(mock_tokenizer):
+def test_engine_runs_mla_step_with_dense_cache(device, mock_tokenizer):
     """MLA + dense KV cache: one prefill step writes into the cache."""
-    model = _make_mla_decoder(device="cpu")
+    model = _make_mla_decoder(device=str(device))
     engine = ContinuousBatchingEngine(
         model=model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
         max_seq_len=model.max_seq_len,
-        device="cpu",
+        device=str(device),
         dtype=torch.float32,
     )
 
@@ -354,15 +339,15 @@ def test_engine_runs_mla_step_with_dense_cache(mock_tokenizer):
     assert len(seq.generated_ids) == 2
 
 
-def test_engine_runs_mla_step_with_paged_cache(mock_tokenizer):
+def test_engine_runs_mla_step_with_paged_cache(device, mock_tokenizer):
     """MLA + paged KV cache: prefill allocates blocks; decode reuses them."""
-    model = _make_mla_decoder(device="cpu")
+    model = _make_mla_decoder(device=str(device))
     engine = ContinuousBatchingEngine(
         model=model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
         max_seq_len=model.max_seq_len,
-        device="cpu",
+        device=str(device),
         dtype=torch.float32,
         use_paged_attention=True,
         max_blocks=64,
@@ -395,16 +380,15 @@ def test_engine_runs_mla_step_with_paged_cache(mock_tokenizer):
 # --- ContinuousBatchingEngine: penalty + stop parameter forwarding ----------
 
 
-def test_sequence_stores_all_sampling_parameters(tiny_model, mock_tokenizer):
+def test_sequence_stores_all_sampling_parameters(tiny_model, device, mock_tokenizer):
     """``add_request`` must propagate every sampling parameter to the Sequence."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
     )
 
     req = GenerationRequest(
@@ -425,16 +409,15 @@ def test_sequence_stores_all_sampling_parameters(tiny_model, mock_tokenizer):
     assert seq.stop == "END"
 
 
-def test_generate_request_with_stop_truncates_output(tiny_model, mock_tokenizer):
+def test_generate_request_with_stop_truncates_output(tiny_model, device, mock_tokenizer):
     """``generate_request`` honours ``stop``: the stop string is excluded from the result."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
     )
 
     req = GenerationRequest(
@@ -455,16 +438,15 @@ def test_generate_request_with_stop_truncates_output(tiny_model, mock_tokenizer)
     assert isinstance(result, str)
 
 
-def test_forward_applies_frequency_penalty(tiny_model, mock_tokenizer):
+def test_forward_applies_frequency_penalty(tiny_model, device, mock_tokenizer):
     """``_forward_and_sample`` applies ``frequency_penalty`` from the Sequence."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
     )
 
     req = GenerationRequest(
@@ -485,9 +467,10 @@ def _eager_greedy_reference(model, tokenizer, prompt, max_new_tokens):
     """Mirror ``llm.generation.eager.generate``'s greedy path: recompute the
     full context each step and take the pad-masked argmax."""
     ids = list(tokenizer.encode(prompt))
+    model_device = next(model.parameters()).device
     with torch.no_grad():
         for _ in range(max_new_tokens):
-            out = model(torch.tensor([ids], dtype=torch.long), use_cache=False)
+            out = model(torch.tensor([ids], dtype=torch.long, device=model_device), use_cache=False)
             logits = out[0][0, -1, :] if isinstance(out, tuple) else out[0, -1, :]
             logits = logits.clone()
             if tokenizer.pad_token_id is not None and 0 <= tokenizer.pad_token_id < logits.size(-1):
@@ -508,19 +491,18 @@ def _drive_engine_to_completion(engine):
     return last
 
 
-def test_engine_greedy_matches_eager_reference(tiny_model, mock_tokenizer):
+def test_engine_greedy_matches_eager_reference(tiny_model, device, mock_tokenizer):
     """Regression: the continuous-batching engine's greedy output must match
     the eager backend. The causal attention mask used to be built from the
     zero-filled position buffer, so decode attention only saw the first
     prompt token's KV and outputs diverged from eager after a few steps."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
         dtype=torch.float32,
     )
     req = GenerationRequest(prompt="abcd", max_new_tokens=8, temperature=0.0)
@@ -531,7 +513,7 @@ def test_engine_greedy_matches_eager_reference(tiny_model, mock_tokenizer):
     assert last["req-greedy"] == _eager_greedy_reference(tiny_model, mock_tokenizer, "abcd", 8)
 
 
-def test_engine_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokenizer):
+def test_engine_mixed_length_batch_matches_eager_greedy(tiny_model, device, mock_tokenizer):
     """Regression: mixed-length batches corrupt each other's KV cache.
 
     Two defects were silently corrupting the cache in continuous batching:
@@ -540,14 +522,13 @@ def test_engine_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokeniz
     unflattened [B, 1] start_pos, broadcasting every slot's K/V onto every
     batch position. Both produced output that diverged from the eager
     backend. Greedy output must match eager per request."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=4,
-        device="cpu",
+        device=str(device),
         dtype=torch.float32,
     )
     prompts = ["abcd", "xy", "python"]  # mixed lengths (all <= model max_seq_len)
@@ -561,19 +542,18 @@ def test_engine_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokeniz
         assert last[f"req-{i}"] == _eager_greedy_reference(tiny_model, mock_tokenizer, prompt, 6), prompt
 
 
-def test_engine_paged_mixed_length_batch_matches_eager_greedy(tiny_model, mock_tokenizer):
+def test_engine_paged_mixed_length_batch_matches_eager_greedy(tiny_model, device, mock_tokenizer):
     """Regression: the paged-attention path appended padded (garbage) K/V for
     shorter prompts and skipped causal masking in multi-token prefill, so
     mixed-length batches diverged from the eager backend. Paged greedy
     output must match eager per request."""
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=4,
-        device="cpu",
+        device=str(device),
         dtype=torch.float32,
         use_paged_attention=True,
         max_blocks=64,
@@ -590,21 +570,20 @@ def test_engine_paged_mixed_length_batch_matches_eager_greedy(tiny_model, mock_t
         assert last[f"req-{i}"] == _eager_greedy_reference(tiny_model, mock_tokenizer, prompt, 6), prompt
 
 
-def test_engine_step_with_metrics_observer(tiny_model, mock_tokenizer):
+def test_engine_step_with_metrics_observer(tiny_model, device, mock_tokenizer):
     """Regression: the API startup wired the metrics observer directly, but
     record_batch_fill_ratio takes keyword-only args while the engine invokes
     observers with a positional StepStats — every step raised TypeError.
     Stepping with the API's observer adapter must complete."""
     from llm.serving.api import _step_observer
 
-    tiny_model.to("cpu")
     tiny_model.eval()
 
     engine = ContinuousBatchingEngine(
         model=tiny_model,
         tokenizer=mock_tokenizer,
         max_batch_size=2,
-        device="cpu",
+        device=str(device),
         dtype=torch.float32,
     )
     engine.set_step_observer(_step_observer)

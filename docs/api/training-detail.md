@@ -48,6 +48,7 @@ Defined in `src/llm/training/core/callbacks.py`:
 ```python
 from llm.training.core.callbacks import Callback
 
+
 class CustomLogger(Callback):
     def on_step_end(self, logs):
         if self.engine.rank == 0:

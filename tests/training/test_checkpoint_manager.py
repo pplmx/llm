@@ -1,10 +1,10 @@
 from pathlib import Path
 
 import pytest
-import torch
 
 from llm.training.core.config import CheckpointConfig
 from llm.training.core.utils import CheckpointManager, Logger, LoggingConfig
+from tests.support.devices import DEFAULT_DEVICE
 
 # Use real components where easy, mocks where interface is all that matters for file I/O
 # We can use TinyModel from conftest if we import it, or just a dummy state dict holder.
@@ -93,7 +93,7 @@ def test_load_checkpoint_saves_extra_state(checkpoint_manager):
     # the split layout (latest.safetensors + latest.meta.json +
     # latest.extra_state.pt) when no legacy .pt exists at the path.
     checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
-    _, best_loss = checkpoint_manager.load_checkpoint(model, optimizer, scheduler, scaler, device=torch.device("cpu"))
+    _, best_loss = checkpoint_manager.load_checkpoint(model, optimizer, scheduler, scaler, device=DEFAULT_DEVICE)
 
     assert best_loss == 0.25
     assert checkpoint_manager.loaded_extra_state["stream_data"]["0"]["line_index"] == 42
@@ -138,7 +138,7 @@ def test_load_checkpoint(checkpoint_manager):
     checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
 
     start_epoch, best_loss = checkpoint_manager.load_checkpoint(
-        model, optimizer, scheduler, scaler, device=torch.device("cpu")
+        model, optimizer, scheduler, scaler, device=DEFAULT_DEVICE
     )
 
     assert start_epoch == 1

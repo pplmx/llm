@@ -1,5 +1,6 @@
 ### Custom
 .idea
+.dvc/
 .vscode
 .DS_Store
 logs

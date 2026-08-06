@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 4,
+  "round": 5,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-05T16:30:17+00:00",
+  "updated_at": "2026-08-06T02:02:11+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 2,
+      "touched_round": 5,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -329,6 +329,185 @@
       "touched_round": 2,
       "title": "fix _cuda_usable to reject low-VRAM GPUs; engine falls back to CPU when <512MiB free",
       "commit": "8af8c74"
+    },
+    "EV-006": {
+      "id": "EV-006",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-06T00:35:05+00:00",
+      "updated_at": "2026-08-06T00:35:05+00:00",
+      "touched_round": 5,
+      "title": "DVC init fails in sandbox: /var/tmp/dvc/repo/ read-only; DVC_SITE_CACHE_DIR + TMPDIR env override in fixture fixes all 7 tests",
+      "source": "dvc/repo/__init__.py:212; dvc/dirs.py:24; tests/data/test_dvc_integration.py fresh_dvc_repo fixture",
+      "confidence": 1.0
+    },
+    "TASK-006": {
+      "id": "TASK-006",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-06T00:35:09+00:00",
+      "updated_at": "2026-08-06T00:35:10+00:00",
+      "touched_round": 5,
+      "category": "test-quality",
+      "title": "Fix DVC test fixture to handle read-only /var/tmp in sandboxes",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 0.3,
+      "body": "The fresh_dvc_repo fixture in tests/data/test_dvc_integration.py fails because DVC writes to /var/tmp/dvc/repo/ which is read-only in sandboxed environments. Set TMPDIR and DVC_SITE_CACHE_DIR env vars to writable paths."
+    },
+    "ISS-006": {
+      "id": "ISS-006",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-06T00:35:13+00:00",
+      "updated_at": "2026-08-06T00:35:15+00:00",
+      "touched_round": 5,
+      "title": "DVC test fixture fails in sandboxed environments where /var/tmp is read-only",
+      "severity": 0.5
+    },
+    "ISS-007": {
+      "id": "ISS-007",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-06T00:57:37+00:00",
+      "updated_at": "2026-08-06T00:57:43+00:00",
+      "touched_round": 5,
+      "title": "NLTK >=3.10 security finder blocks regex import when venv is inside project root",
+      "severity": 0.6
+    },
+    "TASK-007": {
+      "id": "TASK-007",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-06T00:57:39+00:00",
+      "updated_at": "2026-08-06T00:57:48+00:00",
+      "touched_round": 5,
+      "category": "test-quality",
+      "title": "Set NLTK_DISABLE_IMPORT_SECURITY in conftest.py to fix ROUGE evaluation test failures",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "effort": 0.1
+    },
+    "EV-007": {
+      "id": "EV-007",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-06T00:57:41+00:00",
+      "updated_at": "2026-08-06T00:57:41+00:00",
+      "touched_round": 5,
+      "title": "NLTK's NLTKSafeImportFinder blocks import of regex (nltk dep) because .venv is inside project root; PathFinder resolves regex to .venv/... which passes relative_to(cwd) check; disabling via NLTK_DISABLE_IMPORT_SECURITY=1 in conftest.py fixes all 16 ROUGE evaluation tests",
+      "source": "nltk/inisec.py:128 find_spec raises ImportError; nltk/inisec.py:67 NLTKSafeImportFinder._is_import_from_nltk; nltk/inisec.py:126 if NLTK_DISABLE_IMPORT_SECURITY != 1: _install()",
+      "confidence": 1.0
+    },
+    "HYP-003": {
+      "id": "HYP-003",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-06T00:57:45+00:00",
+      "updated_at": "2026-08-06T00:57:48+00:00",
+      "touched_round": 5,
+      "title": "NLTK >=3.10 security finder blocks regex import because .venv is inside project root, causing ROUGE eval tests to fail",
+      "confidence": 0.9
+    },
+    "ISS-008": {
+      "id": "ISS-008",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-06T01:23:15+00:00",
+      "updated_at": "2026-08-06T01:23:28+00:00",
+      "touched_round": 5,
+      "title": "max_steps check in run() breaks before checkpoint save, causing checkpoint loss and missing epoch summary when max_steps is hit mid-epoch",
+      "severity": 0.7
+    },
+    "HYP-004": {
+      "id": "HYP-004",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-06T01:23:17+00:00",
+      "updated_at": "2026-08-06T01:23:26+00:00",
+      "touched_round": 5,
+      "title": "max_steps break in run() epoch loop is positioned before checkpoint saving + epoch summary logging, causing both checkpoint loss and unlogged loss when max_steps triggers mid-epoch",
+      "confidence": 0.95
+    },
+    "EV-008": {
+      "id": "EV-008",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-06T01:23:19+00:00",
+      "updated_at": "2026-08-06T01:23:19+00:00",
+      "touched_round": 5,
+      "title": "DPO e2e tests fail: epoch_1.safetensors missing (checkpoint not saved when max_steps=10 < 15 batches); loss log empty (epoch summary skipped); 'Best loss: inf' confirms no checkpoint saved. Fix: move max_steps break after save_checkpoint + on_epoch_end callbacks",
+      "source": "test_dpo_main_path.py:185 checkpoint assertion + test_dpo_main_path.py:249 loss log assertion; engine.py:473-478 max_steps break; engine.py:486-516 epoch summary + checkpoint save",
+      "confidence": 1.0
+    },
+    "TASK-008": {
+      "id": "TASK-008",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-06T01:23:22+00:00",
+      "updated_at": "2026-08-06T01:23:25+00:00",
+      "touched_round": 5,
+      "category": "correctness",
+      "title": "Move max_steps epoch-level check after checkpoint save in engine.run()",
+      "severity": 0.7,
+      "confidence": 0.95,
+      "effort": 0.2
+    },
+    "EV-009": {
+      "id": "EV-009",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-06T02:01:49+00:00",
+      "updated_at": "2026-08-06T02:01:49+00:00",
+      "touched_round": 5,
+      "title": "Fix verified: 5 DPO e2e tests pass (was 2 failing); test_engine_stops_at_max_steps still passes; all training/data/eval tests green",
+      "source": "tests/e2e/test_dpo_main_path.py: 5 passed; tests/training/test_engine_advanced.py::test_engine_stops_at_max_steps: 1 passed; ruff + ty + doctests green",
+      "confidence": 1.0
+    },
+    "CHG-004": {
+      "id": "CHG-004",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-06T02:01:51+00:00",
+      "updated_at": "2026-08-06T02:01:51+00:00",
+      "touched_round": 5,
+      "commit": "uncommitted (read-only .git)",
+      "title": "Move max_steps epoch-level break after checkpoint save in engine.run()"
+    },
+    "CHG-005": {
+      "id": "CHG-005",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-06T02:01:59+00:00",
+      "updated_at": "2026-08-06T02:01:59+00:00",
+      "touched_round": 5,
+      "commit": "uncommitted (read-only .git)",
+      "title": "Fix DVC test fixture to set TMPDIR + DVC_SITE_CACHE_DIR in fresh_dvc_repo"
+    },
+    "CHG-006": {
+      "id": "CHG-006",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-06T02:02:00+00:00",
+      "updated_at": "2026-08-06T02:02:00+00:00",
+      "touched_round": 5,
+      "commit": "uncommitted (read-only .git)",
+      "title": "Disable NLTK import security in tests/conftest.py for venv-inside-project-root"
     }
   },
   "edges": [
@@ -475,6 +654,90 @@
       "to": "ISS-005",
       "type": "resolves",
       "created_at": "2026-08-05T16:22:12+00:00"
+    },
+    {
+      "from": "TASK-006",
+      "to": "ISS-006",
+      "type": "addresses",
+      "created_at": "2026-08-06T00:35:15+00:00"
+    },
+    {
+      "from": "TASK-007",
+      "to": "ISS-007",
+      "type": "addresses",
+      "created_at": "2026-08-06T00:57:43+00:00"
+    },
+    {
+      "from": "EV-007",
+      "to": "HYP-003",
+      "type": "validates",
+      "created_at": "2026-08-06T00:57:48+00:00"
+    },
+    {
+      "from": "ISS-007",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-06T00:57:48+00:00"
+    },
+    {
+      "from": "ISS-008",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-06T01:23:22+00:00"
+    },
+    {
+      "from": "TASK-008",
+      "to": "ISS-008",
+      "type": "addresses",
+      "created_at": "2026-08-06T01:23:25+00:00"
+    },
+    {
+      "from": "EV-008",
+      "to": "HYP-004",
+      "type": "validates",
+      "created_at": "2026-08-06T01:23:25+00:00"
+    },
+    {
+      "from": "CHG-004",
+      "to": "TASK-008",
+      "type": "implements",
+      "created_at": "2026-08-06T02:01:53+00:00"
+    },
+    {
+      "from": "CHG-004",
+      "to": "ISS-008",
+      "type": "resolves",
+      "created_at": "2026-08-06T02:01:54+00:00"
+    },
+    {
+      "from": "EV-009",
+      "to": "HYP-004",
+      "type": "validates",
+      "created_at": "2026-08-06T02:01:54+00:00"
+    },
+    {
+      "from": "CHG-005",
+      "to": "ISS-006",
+      "type": "resolves",
+      "created_at": "2026-08-06T02:02:06+00:00"
+    },
+    {
+      "from": "CHG-005",
+      "to": "TASK-006",
+      "type": "implements",
+      "created_at": "2026-08-06T02:02:08+00:00"
+    },
+    {
+      "from": "CHG-006",
+      "to": "ISS-007",
+      "type": "resolves",
+      "created_at": "2026-08-06T02:02:10+00:00"
+    },
+    {
+      "from": "CHG-006",
+      "to": "TASK-007",
+      "type": "implements",
+      "created_at": "2026-08-06T02:02:11+00:00"
     }
   ]
 }

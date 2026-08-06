@@ -1,5 +1,12 @@
 import os
 
+# NLTK >= 3.10 installs a meta-path finder that blocks imports from the
+# current working directory.  Since our venv lives inside the project root,
+# every site-packages module is treated as a "CWD import" and blocked.
+# Disable the check in tests — it's a sandbox artifact, not a real risk.
+# Must be set before nltk is first imported (happens via pytest.importorskip).
+os.environ.setdefault("NLTK_DISABLE_IMPORT_SECURITY", "1")
+
 import pytest
 import torch
 
@@ -7,8 +14,13 @@ from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.core.config import Config, ModelConfig, OptimizationConfig, TrainingConfig
 from tests.support.corpus import DEFAULT_INFERENCE_CORPUS
-from tests.support.devices import DEFAULT_DEVICE, cuda_device_count, cuda_usable
 from tests.support.devices import all_gpu_devices as get_all_gpu_devices
+from tests.support.devices import (
+    cuda_device_count,
+    cuda_device_strings,
+    cuda_usable,
+)
+from tests.support.devices import multi_gpu_devices as get_multi_gpu_devices
 from tests.support.tokenizers import LineTokenizer, StubTokenizer
 
 
@@ -53,18 +65,18 @@ def _pick_gpu() -> torch.device:
 
     When running with ``pytest -n <N>``, each worker process auto-selects a
     different GPU via ``PYTEST_XDIST_WORKER`` (set by xdist per process).
-    Without xdist (or on the master process), prefers the GPU that had the
-    most free memory when the test session started.
+    Without xdist (or on the master process), prefers the GPU with the most
+    free memory (re-queried at fixture time, not cached at import).
     Falls back to ``cpu`` when no GPU is allocatable.
 
     Uses :func:`cuda_usable` so that GPUs visible-but-OOM are skipped.
+    The GPU list is already sorted by free VRAM (descending) by
+    :func:`all_gpu_devices`, so the first element is always the current
+    fattest GPU.
     """
     gpu_devices = get_all_gpu_devices()
     if not gpu_devices:
         return torch.device("cpu")
-    if DEFAULT_DEVICE in gpu_devices:
-        gpu_devices.remove(DEFAULT_DEVICE)
-        gpu_devices.insert(0, DEFAULT_DEVICE)
 
     worker = os.environ.get("PYTEST_XDIST_WORKER", "master")
     worker_index = int(worker.replace("gw", "")) if worker != "master" else 0
@@ -96,29 +108,61 @@ def cuda_available():
 
 @pytest.fixture(scope="session")
 def all_gpu_devices():
-    """Returns a list of all usable GPU devices (``[cuda:0, cuda:1, …]``).
+    """Returns a list of all usable GPU devices sorted by free VRAM (descending).
 
     Prioritises GPU usage — when CUDA is available this returns every GPU
-    device.  When CUDA is not usable, returns an empty list.  Tests that
-    want to leverage multiple GPUs (distributed training, sharding, etc.)
-    should use this fixture and skip if the list is empty.
+    device, with the fattest GPU (most free VRAM) first.  When CUDA is not
+    usable, returns an empty list.  Tests that want to leverage multiple GPUs
+    (distributed training, sharding, etc.) should use this fixture and skip
+    if the list is empty.
 
     Example::
 
         def test_distributed(all_gpu_devices):
             if len(all_gpu_devices) < 2:
                 pytest.skip("Need at least 2 GPUs")
-            # Use all_gpu_devices for distributed work
     """
     return get_all_gpu_devices()
+
+
+@pytest.fixture(scope="session")
+def multi_device():
+    """Returns all usable GPU devices sorted by free VRAM (descending).
+
+    This is an alias for ``all_gpu_devices`` with a name that signals the
+    intent of multi-GPU utilisation.  When multiple GPUs are available,
+    every device is returned (fattest first) so tests can distribute
+    workloads across them.  Tests that need at least *n* GPUs should
+    check the list length and ``pytest.skip`` otherwise.
+
+    Example::
+
+        def test_ddp(multi_device):
+            if len(multi_device) < 2:
+                pytest.skip("Need at least 2 GPUs for DDP")
+    """
+    return get_multi_gpu_devices()
+
+
+@pytest.fixture(scope="session")
+def multi_gpu_device_strings():
+    """Returns ``["cuda:1", "cuda:0", …]`` for every usable GPU, sorted by free VRAM (descending).
+
+    Convenience alias for tests that parametrize on device *strings* and
+    want to exercise every available GPU rather than just the default.
+    Calls ``cuda_device_strings()`` dynamically so the result reflects
+    current VRAM state rather than a stale import-time snapshot.
+    """
+    return cuda_device_strings()
 
 
 @pytest.fixture(scope="session")
 def all_devices():
     """Returns all testable devices, GPU-first.
 
-    If CUDA is usable, returns ``[cuda:0, cuda:1, …]`` — every GPU.
-    If CUDA is not usable, returns ``[cpu]``.
+    If CUDA is usable, returns ``[cuda:0, cuda:1, …]`` — every GPU,
+    sorted by free VRAM (fattest first).  If CUDA is not usable,
+    returns ``[cpu]``.
 
     Tests that should run on **all** available devices (GPU preferred)
     should parametrise on this fixture::

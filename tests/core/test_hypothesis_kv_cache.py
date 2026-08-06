@@ -25,6 +25,7 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from llm.core.kv_cache import KVCache
+from tests.support.devices import DEFAULT_DEVICE
 
 # Strategies that produce tensors of shape
 # ``[batch_size, num_kv_heads, new_tokens, head_dim]`` where
@@ -35,6 +36,10 @@ _HEAD_DIM = 8
 _MAX_SEQ_LEN = 16
 _MAX_BATCH_SIZE = 4
 
+# Use GPU by default; fall back to CPU only when CUDA is unavailable or
+# visible-but-OOM (handled by tests.support.devices.DEFAULT_DEVICE).
+_DEVICE_STR = str(DEFAULT_DEVICE)
+
 
 @st.composite
 def _cache_update_inputs(draw):
@@ -44,12 +49,12 @@ def _cache_update_inputs(draw):
         max_seq_len=_MAX_SEQ_LEN,
         num_kv_heads=_NUM_KV_HEADS,
         head_dim=_HEAD_DIM,
-        device="cpu",
+        device=_DEVICE_STR,
     )
     new_tokens = draw(st.integers(min_value=1, max_value=_MAX_SEQ_LEN))
     batch_size = draw(st.integers(min_value=1, max_value=_MAX_BATCH_SIZE))
-    k_new = torch.randn(batch_size, _NUM_KV_HEADS, new_tokens, _HEAD_DIM)
-    v_new = torch.randn(batch_size, _NUM_KV_HEADS, new_tokens, _HEAD_DIM)
+    k_new = torch.randn(batch_size, _NUM_KV_HEADS, new_tokens, _HEAD_DIM, device=_DEVICE_STR)
+    v_new = torch.randn(batch_size, _NUM_KV_HEADS, new_tokens, _HEAD_DIM, device=_DEVICE_STR)
     return cache, k_new, v_new
 
 
@@ -65,16 +70,16 @@ def _two_update_sequences(draw):
         max_seq_len=_MAX_SEQ_LEN,
         num_kv_heads=_NUM_KV_HEADS,
         head_dim=_HEAD_DIM,
-        device="cpu",
+        device=_DEVICE_STR,
     )
     first_tokens = draw(st.integers(min_value=1, max_value=_MAX_SEQ_LEN))
     second_tokens = draw(st.integers(min_value=1, max_value=_MAX_SEQ_LEN))
     batch_size = draw(st.integers(min_value=1, max_value=_MAX_BATCH_SIZE))
 
-    k1 = torch.randn(batch_size, _NUM_KV_HEADS, first_tokens, _HEAD_DIM)
-    v1 = torch.randn(batch_size, _NUM_KV_HEADS, first_tokens, _HEAD_DIM)
-    k2 = torch.randn(batch_size, _NUM_KV_HEADS, second_tokens, _HEAD_DIM)
-    v2 = torch.randn(batch_size, _NUM_KV_HEADS, second_tokens, _HEAD_DIM)
+    k1 = torch.randn(batch_size, _NUM_KV_HEADS, first_tokens, _HEAD_DIM, device=_DEVICE_STR)
+    v1 = torch.randn(batch_size, _NUM_KV_HEADS, first_tokens, _HEAD_DIM, device=_DEVICE_STR)
+    k2 = torch.randn(batch_size, _NUM_KV_HEADS, second_tokens, _HEAD_DIM, device=_DEVICE_STR)
+    v2 = torch.randn(batch_size, _NUM_KV_HEADS, second_tokens, _HEAD_DIM, device=_DEVICE_STR)
     return cache, k1, v1, k2, v2
 
 
@@ -189,12 +194,12 @@ def test_seq_len_never_exceeds_max_seq_len(num_updates, tokens_per_update):
         max_seq_len=_MAX_SEQ_LEN,
         num_kv_heads=_NUM_KV_HEADS,
         head_dim=_HEAD_DIM,
-        device="cpu",
+        device=_DEVICE_STR,
     )
     for _ in range(num_updates):
         cache.update(
-            torch.randn(1, _NUM_KV_HEADS, tokens_per_update, _HEAD_DIM),
-            torch.randn(1, _NUM_KV_HEADS, tokens_per_update, _HEAD_DIM),
+            torch.randn(1, _NUM_KV_HEADS, tokens_per_update, _HEAD_DIM, device=_DEVICE_STR),
+            torch.randn(1, _NUM_KV_HEADS, tokens_per_update, _HEAD_DIM, device=_DEVICE_STR),
         )
     assert cache.seq_len <= cache.max_seq_len
     assert cache.seq_len == num_updates * tokens_per_update

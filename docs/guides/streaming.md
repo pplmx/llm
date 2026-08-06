@@ -223,15 +223,17 @@ You can register custom text sources via the `SOURCE_REGISTRY`:
 ```python
 from llm.data.sources import TextSource, SOURCE_REGISTRY
 
+
 class S3TextSource(TextSource):
     """Stream text records from an S3 bucket."""
-    
+
     def __init__(self, bucket: str, key: str):
         self.bucket = bucket
         self.key = key
-    
+
     def iter_texts(self, skip: int = 0):
         import boto3
+
         s3 = boto3.client("s3")
         obj = s3.get_object(Bucket=self.bucket, Key=self.key)
         lines = obj["Body"].iter_lines()
@@ -241,9 +243,10 @@ class S3TextSource(TextSource):
             text = line.decode("utf-8").strip()
             if text:
                 yield text
-    
+
     def source_fingerprint(self):
         return {"type": "s3", "bucket": self.bucket, "key": self.key}
+
 
 # Register it
 SOURCE_REGISTRY.register("s3", lambda cfg: S3TextSource(cfg.dataset_bucket, cfg.dataset_key))
@@ -323,5 +326,6 @@ record per line.
 
 ```python
 from llm.data.presets import C4_PRESET, apply_to_config
+
 apply_to_config(cfg.data, C4_PRESET)
 ```

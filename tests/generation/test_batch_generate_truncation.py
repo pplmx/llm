@@ -65,11 +65,6 @@ class _RecordingModel(DecoderModel):
 
 
 @pytest.fixture
-def device():
-    return torch.device("cpu")
-
-
-@pytest.fixture
 def recording_model(device):
     """Tiny model that records the input_ids of every forward call."""
     model = _RecordingModel(
@@ -215,12 +210,16 @@ def test_batch_generate_repetition_penalty_context_matches_truncated_input(recor
     assert spy.call_count > 0, "apply_repetition_penalty should have been called"
     for call in spy.call_args_list:
         context_ids = call.args[1]  # (logits, token_ids)
-        # The context must NOT include any of the truncated-away prompt tokens.
+        # The prompt portion of the context (first truncate_len tokens) must
+        # only contain the truncated prompt tokens, NOT the truncated-away ones.
+        # Generated tokens may coincidentally match a truncated-away id, so
+        # we only check the input prefix.
+        prompt_context = context_ids[:truncate_len]
         truncated_away = set(prompt_ids[: len(prompt_ids) - truncate_len])
-        context_set = set(context_ids)
-        assert not (truncated_away & context_set), (
+        prompt_context_set = set(prompt_context)
+        assert not (truncated_away & prompt_context_set), (
             f"apply_repetition_penalty received token_ids from the truncated-away "
-            f"prompt portion: {truncated_away & context_set}. "
+            f"prompt portion: {truncated_away & prompt_context_set}. "
             f"Context: {context_ids}"
         )
 

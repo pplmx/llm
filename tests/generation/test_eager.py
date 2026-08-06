@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 import torch
 
 from llm.generation.eager import (
@@ -30,14 +29,6 @@ from llm.generation.eager import (
     generate,
     stream_generate,
 )
-
-
-# Force CPU — the tiny models and custom tokenizers used here have no need
-# for GPU, and a CUDA-visible-but-OOM device would crash construction.
-@pytest.fixture
-def device():
-    return torch.device("cpu")
-
 
 # ---------------------------------------------------------------------------
 # Test tokenizers

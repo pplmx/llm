@@ -29,12 +29,13 @@ from llm.generation.registry import (
     get_generation_backend,
 )
 from llm.generation.speculative import speculative_generate
+from tests.support.devices import DEFAULT_DEVICE
 from tests.support.models import decoder_model_kwargs
 from tests.support.tokenizers import StubTokenizer
 
 
 def _make_tiny_decoder(seed: int = 0, **overrides) -> torch.nn.Module:
-    """Tiny CPU-only DecoderModel with deterministic init."""
+    """Tiny DecoderModel with deterministic init (GPU-first, falls back to CPU)."""
     from llm.models.decoder import DecoderModel
 
     torch.manual_seed(seed)
@@ -203,8 +204,8 @@ def test_speculative_stochastic_rejection_preserves_target_distribution():
 
     torch.manual_seed(0)
     vocab = 8
-    p_log = torch.tensor([3.0, 2.0, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5])
-    q_log = torch.tensor([1.5, 2.2, 1.8, 0.8, 0.2, -0.4, -0.9, -1.2])
+    p_log = torch.tensor([3.0, 2.0, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5], device=DEFAULT_DEVICE)
+    q_log = torch.tensor([1.5, 2.2, 1.8, 0.8, 0.2, -0.4, -0.9, -1.2], device=DEFAULT_DEVICE)
     target = _ConstLogitsModel(p_log)
     draft = _ConstLogitsModel(q_log)
     p = torch.softmax(p_log, -1)
@@ -215,10 +216,10 @@ def test_speculative_stochastic_rejection_preserves_target_distribution():
     x = 1
     assert q[x] > p[x]
 
-    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long, device=DEFAULT_DEVICE)
     n = 2000
     accepted = 0
-    bonus_samples = torch.zeros(vocab)
+    bonus_samples = torch.zeros(vocab, device=DEFAULT_DEVICE)
     for _ in range(n):
         accept_count, bonus = _verify_speculative_tokens(
             target,
@@ -257,18 +258,18 @@ def test_speculative_greedy_rejection_uses_target_argmax():
 
     vocab = 8
     # Target prefers token 0; token 1 is the target's second choice.
-    p_log = torch.full((vocab,), -5.0)
+    p_log = torch.full((vocab,), -5.0, device=DEFAULT_DEVICE)
     p_log[0] = 10.0
     p_log[1] = 9.9
     # Draft's distribution makes token 1 plausible but keeps it unlikely
     # relative to token 0; the logit difference p - q peaks at token 1.
-    q_log = torch.full((vocab,), -5.0)
+    q_log = torch.full((vocab,), -5.0, device=DEFAULT_DEVICE)
     q_log[0] = 9.99
     q_log[1] = 3.0
     target = _ConstLogitsModel(p_log)
     draft = _ConstLogitsModel(q_log)
 
-    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long, device=DEFAULT_DEVICE)
     correction_tokens = set()
     for _ in range(200):
         accept_count, bonus = _verify_speculative_tokens(
@@ -363,14 +364,14 @@ def test_speculative_greedy_rejection_uses_penalized_target_argmax():
     from llm.generation.speculative import _verify_speculative_tokens
 
     vocab = 32
-    p_log = torch.full((vocab,), 0.0)
+    p_log = torch.full((vocab,), 0.0, device=DEFAULT_DEVICE)
     p_log[2] = 10.0  # unpenalized argmax (also present in the prompt)
     p_log[4] = 6.0  # wins once token 2 is penalized by repetition_penalty=2
     q_log = p_log.clone()
     target = _ConstLogitsModel(p_log)
     draft = _ConstLogitsModel(q_log)
 
-    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long, device=DEFAULT_DEVICE)
     corrections = set()
     for _ in range(200):
         accept_count, bonus = _verify_speculative_tokens(
