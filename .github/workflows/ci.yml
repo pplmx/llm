@@ -35,11 +35,9 @@ jobs:
                 run: uvx ruff check .
 
             -   name: Type Check (ty)
-                # TODO: remove `continue-on-error` when ~170 existing
-                # diagnostics are cleaned up (Finding W in
-                # docs/audits/2026-07-12-technical-due-diligence.md).
+                # Finding W in docs/audits/2026-07-12-technical-due-diligence.md:
+                # type-check drift is now a hard CI gate.
                 run: uvx ty check src/llm/
-                continue-on-error: true
 
             -   name: Verify examples compile
                 run: |
