@@ -167,7 +167,9 @@ jobs:
                     import sys, yaml
                     from pathlib import Path
                     with open('mkdocs.yml') as f:
-                        nav = yaml.safe_load(f)
+                        # mkdocs.yml uses a !!python/name tag for slugify,
+                        # which safe_load rejects.
+                        nav = yaml.unsafe_load(f)
                     missing = []
                     def check_nav(items):
                         if isinstance(items, dict):
@@ -177,7 +179,8 @@ jobs:
                             for item in items:
                                 check_nav(item)
                         elif isinstance(items, str) and items.endswith('.md'):
-                            if not Path(items).exists():
+                            # mkdocs nav paths are relative to docs_dir (docs/).
+                            if not Path('docs', items).exists():
                                 missing.append(items)
                     check_nav(nav.get('nav', []))
                     if missing:
