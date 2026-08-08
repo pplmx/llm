@@ -175,6 +175,7 @@ uv run llm-serve
 ## llm-quantize
 
 模型量化 CLI，目前支持 `gptq` 子命令（Frantar 2022 Hessian-aware 4/8-bit PTQ）。
+方法选型、Python API 与质量验证见[模型量化指南](../guides/quantization.md)。
 
 ### 用法
 

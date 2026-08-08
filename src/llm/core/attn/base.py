@@ -30,10 +30,9 @@ class PrefixCapableAttention(Protocol):
     explicit ``isinstance`` check so the failure is at adapter build
     time, not at first forward.
 
-    Args:
-        prefix_kv: ``(prefix_k, prefix_v)`` tuple of shape
-            ``[B, num_kv_heads, prefix_len, head_dim]``, or ``None``
-            to skip prefix injection (the default).
+    ``prefix_kv`` is a ``(prefix_k, prefix_v)`` tuple of shape
+    ``[B, num_kv_heads, prefix_len, head_dim]``, or ``None`` to skip
+    prefix injection (the default).
     """
 
     num_kv_heads: int

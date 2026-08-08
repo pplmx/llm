@@ -280,9 +280,12 @@ def speculative_generate(
         max_new_tokens: Hard cap on generated tokens.
         gamma: Number of speculative tokens per round. Typical
             values are 4-8.
-        temperature, top_k, top_p: Sampling parameters for the
-            **correction** token (the algorithm preserves the
-            target distribution under these settings).
+        temperature: Sampling temperature for the **correction**
+            token (the algorithm preserves the target distribution
+            under these settings).
+        top_k: Top-k sampling parameter for the correction token.
+        top_p: Nucleus-sampling (top-p) parameter for the correction
+            token.
         repetition_penalty: Applied to both draft and target logits
             before sampling.
         seed: Optional RNG seed for reproducible rejection sampling.

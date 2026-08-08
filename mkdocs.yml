@@ -40,7 +40,6 @@ exclude_docs: |
   audits/*
   superpowers/*
   agents/*
-  /README.md
   adr/template.md
 
 plugins:
@@ -100,6 +99,8 @@ markdown_extensions:
   - md_in_html
 
 nav:
+  - 🏠 概览: README.md
+
   - 🚀 快速开始:
       - getting-started.md
       - tutorials/01-pretraining.md
@@ -114,6 +115,8 @@ nav:
       - guides/finetuning.md
       - guides/inference.md
       - guides/evaluation.md
+      - guides/quantization.md
+      - guides/export.md
 
   - 💻 开发:
       - development/README.md
@@ -149,7 +152,6 @@ nav:
       - "001: GQA": adr/001-use-gqa.md
       - "002: SwiGLU": adr/002-use-swiglu.md
       - "003: KVCache": adr/003-use-kv-cache.md
-      - "004: QLoRA": adr/004-use-qlora.md
       - "004: PagedAttention Serving": adr/004-paged-attention-serving.md
       - "005: Export Registry": adr/005-export-registry.md
       - "006: Checkpoint Unification": adr/006-checkpoint-format-unification.md
@@ -158,6 +160,12 @@ nav:
       - "009: AWQ Integration": adr/009-awq-integration.md
       - "010: SmoothQuant Integration": adr/010-smoothquant-integration.md
       - "011: GGUF Export": adr/011-gguf-export.md
+      - "012: QLoRA": adr/012-use-qlora.md
 
   - ❓ FAQ: faq.md
   - 🔧 故障排除: troubleshooting.md
+
+extra:
+  generator: false
+  # "Edit this page" links point at the GitHub editor for docs/ files.
+  edit_uri: edit/main/docs/

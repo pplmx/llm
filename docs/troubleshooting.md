@@ -11,7 +11,7 @@
 - [性能优化](#性能优化)
 - [检查点问题](#检查点问题)
 - [MoE (Mixture of Experts)](#moe-mixture-of-experts)
-- LoRA / QLoRA 相关问题
+- [LoRA 与 QLoRA 相关问题](#lora-与-qlora-相关问题)
 - [KVCache 相关问题](#kvcache-相关问题)
 - [命令行参数](#命令行参数)
 - [Serving 推理服务](#serving-推理服务)
@@ -115,7 +115,7 @@
 
 ---
 
-## LoRA / QLoRA 相关问题
+## LoRA 与 QLoRA 相关问题
 
 - **问题: 应用 LoRA 后模型输出与原始模型完全相同.**
     - **解决方案:** LoRA 的 B 矩阵初始化为零，因此初始输出应该相同。确保:

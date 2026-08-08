@@ -185,7 +185,9 @@ A: 流式 checkpoint 除了常规的 model/optimizer/scheduler 状态外，还�
 
 ### Q: 模型量化支持哪些方法？
 
-A: 目前支持 GPTQ（Frantar 2022）Hessian-aware 4/8-bit PTQ，通过 `llm-quantize gptq` CLI 使用。
+A: 支持 GPTQ（Hessian-aware 4/8-bit）、AWQ（激活感知）、SmoothQuant（W8A8）
+和简单 PTQ，并支持按层的混合精度（`LayerQuantPolicy`）。详见
+[模型量化指南](guides/quantization.md)。
 
 ### Q: 如何量化一个训练好的模型？
 
@@ -219,7 +221,9 @@ print(LmEvalAdapter.summarize(raw))
 
 ### Q: 模型支持哪些导出格式？
 
-A: 支持 ONNX 和 TorchScript 两种导出格式，通过 EXPORT_REGISTRY 统一调度。
+A: 支持 ONNX、TorchScript 和 GGUF（F16/F32/Q4_0/Q8_0，兼容 llama.cpp），
+通过 `EXPORT_REGISTRY` 统一调度；自定义后端走 `llm.export_backends`
+entry-point 注册。详见 [模型导出指南](guides/export.md)。
 
 ### Q: 如何将模型发布到 HuggingFace Hub？
 
