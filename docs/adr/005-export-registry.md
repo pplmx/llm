@@ -13,16 +13,16 @@ The 2026-07-12 technical due-diligence (Finding BH) flagged that
 without a registry + setuptools-entry-point pattern. Every other
 extension point followed the same shape:
 
-| Surface | Registry | Entry-point group |
-|---------|----------|-------------------|
-| Models | `MODEL_REGISTRY` | `llm.models` |
-| Attention | `ATTENTION_REGISTRY` | (in-code) |
-| MLP | `MLP_REGISTRY` | (in-code) |
-| Norm | `NORM_REGISTRY` | (in-code) |
-| Generation backends | `BACKEND_REGISTRY` | `llm.generation_backends` |
-| Data sources | `SOURCE_REGISTRY` | `llm.data_sources` |
-| Tasks | `TASK_REGISTRY` | `llm.tasks` |
-| **Export backends** | **(none)** | **(none)** |
+| Surface             | Registry             | Entry-point group         |
+| ------------------- | -------------------- | ------------------------- |
+| Models              | `MODEL_REGISTRY`     | `llm.models`              |
+| Attention           | `ATTENTION_REGISTRY` | (in-code)                 |
+| MLP                 | `MLP_REGISTRY`       | (in-code)                 |
+| Norm                | `NORM_REGISTRY`      | (in-code)                 |
+| Generation backends | `BACKEND_REGISTRY`   | `llm.generation_backends` |
+| Data sources        | `SOURCE_REGISTRY`    | `llm.data_sources`        |
+| Tasks               | `TASK_REGISTRY`      | `llm.tasks`               |
+| **Export backends** | **(none)**           | **(none)**                |
 
 `src/llm/export/` shipped a single `export_to_onnx` function with no
 pluggability story. Adding a new target (e.g. `torch.compile`,

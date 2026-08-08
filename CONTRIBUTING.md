@@ -60,12 +60,12 @@ dependency-vulnerability scanning):
 
 ### Handling findings
 
-| Severity | Action |
-|----------|--------|
+| Severity | Action                                                                                                                            |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | CRITICAL | **Block** — fix before merge. If a false positive, add a `# noqa: Sxxx` comment or `bandit: skip` directive with a justification. |
-| HIGH | **Block** — fix before merge. Same false-positive process. |
-| MEDIUM | **Warn** — fix if easy; otherwise document in the PR description. |
-| LOW | **Info** — optional fix; good first issues. |
+| HIGH     | **Block** — fix before merge. Same false-positive process.                                                                        |
+| MEDIUM   | **Warn** — fix if easy; otherwise document in the PR description.                                                                 |
+| LOW      | **Info** — optional fix; good first issues.                                                                                       |
 
 ### When adding `# noqa` / `bandit: skip`
 

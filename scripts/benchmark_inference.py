@@ -5,6 +5,8 @@ import typer
 
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
+from llm.serving.loader import load_model_and_tokenizer
+from llm.serving.schemas import GenerationRequest
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -16,10 +18,18 @@ def run_benchmark(engine: ContinuousBatchingEngine, prompt: str, max_new_tokens:
     print(f"Max New Tokens: {max_new_tokens}")
     print(f"Num Runs: {num_runs} (Warmup: {warmup})")
 
+    def generate() -> str:
+        request = GenerationRequest(
+            prompt=prompt,
+            max_new_tokens=max_new_tokens,
+            temperature=0.7,
+        )
+        return engine.generate_request(request)
+
     # Warmup
     print("Warming up...")
     for _ in range(warmup):
-        engine.generate(prompt, max_new_tokens=max_new_tokens, temperature=0.7)
+        generate()
 
     latencies = []
     tokens_per_second = []
@@ -27,11 +37,11 @@ def run_benchmark(engine: ContinuousBatchingEngine, prompt: str, max_new_tokens:
     print("Benchmarking...")
     for i in range(num_runs):
         start_time = time.perf_counter()
-        output = engine.generate(prompt, max_new_tokens=max_new_tokens, temperature=0.7)
+        output = generate()
         end_time = time.perf_counter()
 
         latency = end_time - start_time
-        num_tokens = len(output)  # Simple char tokenizer approximation for now
+        num_tokens = max(len(output) - len(prompt), 1)  # Simple char-level approximation
         tps = num_tokens / latency
 
         latencies.append(latency)
@@ -62,8 +72,8 @@ def main(
     config = ServingConfig(device=device)
     config.compile_model = compile
 
-    engine = ContinuousBatchingEngine(config)
-    engine.load_model()
+    model, tokenizer = load_model_and_tokenizer(config)
+    engine = ContinuousBatchingEngine.from_serving_config(config, model, tokenizer)
 
     try:
         run_benchmark(engine, prompt, max_new_tokens, runs)

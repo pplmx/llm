@@ -30,7 +30,7 @@
 - [ ] All existing tests pass (`make test`)
 - [ ] Added new tests to cover the changes
 - [ ] Tested locally with different configurations
-- [ ] Checked code quality (`make ruff && make type`)
+- [ ] Checked code quality (`make ruff && make ty`)
 
 ### Checklist
 

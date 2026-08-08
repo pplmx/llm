@@ -143,6 +143,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dead CI workflow removed + Dockerfile/script repairs** (CI hygiene):
+  - `cd.yml` was an empty stub that fired on every version tag but only
+    checked out the repo — removed (audit Finding Y; `release.yml` owns the
+    tag workflow).
+  - `Dockerfile` `CMD` pointed at `src.llm.serving.api:app`, which is not an
+    importable module (the package is `llm.serving.api`) — the container
+    would crash on startup; corrected.
+  - `scripts/benchmark_inference.py` used the removed `ContinuousBatchingEngine(
+    config).load_model()` / `engine.generate(...)` API — rewritten against
+    `load_model_and_tokenizer` + `from_serving_config` +
+    `generate_request(GenerationRequest(...))`; smoke-verified on CPU.
+  - `Makefile` `clean` no longer tears down the compose stack / deletes the
+    project image as a side effect — that destructive teardown moved to the
+    opt-in `clean-docker` target.
+  - PR template's `make type` corrected to the real `make ty` target;
+    `scripts/README.md` / `examples/README.md` tables updated to list all
+    shipped scripts/examples.
 - **Type-check gate enforced** (CI hygiene): `make ty` and the CI lint job now
   both run `uvx ty check src/llm/` — previously the Makefile target scanned the
   whole repo (including `_learning/`, `notebooks/`, `scripts/` and `tests/`,

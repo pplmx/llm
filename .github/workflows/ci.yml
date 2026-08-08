@@ -153,7 +153,10 @@ jobs:
                 run: uv sync --frozen --group docs
 
             -   name: Lint Markdown
-                run: uvx rumdl check --glob "**/*.md" --exclude "CHANGELOG.md" --exclude "docs/audits/"
+                # Version pinned to match .pre-commit-config.yaml
+                # (rvben/rumdl-pre-commit v0.2.52). Excludes live in
+                # .rumdl.toml (CHANGELOG, docs/audits, ...).
+                run: uvx rumdl@0.2.52 check .
 
             -   name: Validate mkdocs build (strict mode)
                 run: uv run mkdocs build --strict

@@ -1,4 +1,4 @@
-.PHONY: help build test test-fast test-quick test-cov test-e2e ruff image clean lint fmt dev
+.PHONY: help build test test-fast test-quick test-cov test-e2e ruff image clean clean-docker lint fmt dev
 .DEFAULT_GOAL := help
 
 APP_NAME := llm
@@ -87,10 +87,13 @@ compose-up:
 compose-down:
 	@docker compose -f ./compose.yml down
 
-# Clean build artifacts
+# Clean build artifacts (docker teardown is opt-in, see clean-docker)
 clean:
 	@rm -rf build dist *.egg-info htmlcov .coverage coverage.xml coverage.lcov
-	@docker compose -f ./compose.yml down -v
+
+# Tear down the compose stack + project image (destructive; opt-in)
+clean-docker:
+	@docker compose -f ./compose.yml -p $(APP_NAME) down -v
 	@docker image rm -f $(APP_NAME)
 
 # Show help
