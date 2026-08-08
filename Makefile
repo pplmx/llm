@@ -73,7 +73,7 @@ fmt:
 
 # ty type check
 ty:
-	@uvx ty check
+	@uvx ty check src/llm/
 
 # Build image
 image:

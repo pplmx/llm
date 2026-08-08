@@ -22,7 +22,7 @@ Start
   ├─ Daily development gate         → make test-fast   (excludes heavy+e2e)
   ├─ Full gate before claiming done → make test        (ALL tests must pass)
   ├─ Lint/format                    → make ruff        (format + lint --fix)
-  ├─ Type check                     → make ty          (uvx ty check)
+  ├─ Type check                     → make ty          (uvx ty check src/llm/)
   ├─ Dependency change              → uv lock && uv lock --check
   ├─ Docstring examples changed     → make test-doc    (doctests src/llm)
   └─ e2e workflows                  → make test-e2e
@@ -42,16 +42,15 @@ Start
 | `make test-cov`          | coverage with `--cov-fail-under=77` (CI floor, ticket #11)   |
 | `make test-doc`          | `pytest --doctest-modules src/llm/`                          |
 | `make ruff`              | `uvx ruff format .` then `uvx ruff check . --fix`            |
-| `make ty`                | `uvx ty check`                                               |
+| `make ty`                | `uvx ty check src/llm/` — matches the CI lint gate           |
 | `make sync` / `make dev` | `uv sync` default groups / all groups+extras                 |
 | `make init`              | deps + `uvx prek install` hooks                              |
 
 ## What CI enforces (.github/workflows/ci.yml)
 
 - **lint**: `uv lock --check`, `uvx ruff format --check .`,
-  `uvx ruff check .`, `uvx ty check src/llm/` (continue-on-error until ~170
-  legacy diagnostics are cleared — do not add new ones), `py_compile` of
-  every `examples/*.py`.
+  `uvx ruff check .`, `uvx ty check src/llm/` (hard gate since 2026-08-08,
+  ticket 08-ty-in-ci), `py_compile` of every `examples/*.py`.
 - **doctest**: `uv run pytest --doctest-modules src/llm/`.
 - **build-and-test**: ubuntu/macos/windows × `uv sync --frozen` + `uv build`
     - `make test-cov`.
