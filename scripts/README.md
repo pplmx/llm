@@ -17,6 +17,7 @@ uv run scripts/<script_name>.py [options]
 | `e2e_pipeline.py`         | End-to-end smoke test (Train → Evaluate → Inference) |
 | `train_simple_decoder.py` | Train a decoder model on text files                  |
 | `benchmark_inference.py`  | Benchmark inference performance                      |
+| `quantize_eval.py`        | Perplexity gate before/after GPTQ on a real model    |
 
 ## Script Details
 

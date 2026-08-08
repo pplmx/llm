@@ -6,6 +6,8 @@ exclude = [
     "docs/superpowers",
     "docs/infographic",
     "docs/audits",
+    # Keep-a-Changelog entries are intentionally long single-paragraph bullets
+    "CHANGELOG.md",
     "CLAUDE.md",
     "AGENTS.md",
 ]

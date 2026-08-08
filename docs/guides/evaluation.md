@@ -88,7 +88,7 @@ Unknown names raise `KeyError` with the list of available built-ins.
 `lm-evaluation-harness` expects model wrappers that implement the
 `lm_eval.api.model.LM` protocol (`loglikelihood`,
 `loglikelihood_rolling`, `generate_until`). Our
-[`LlamaLmEvalLM`](../api/evaluation.md#llm.evaluation.harness.lm_eval_lm.LlamaLmEvalLM)
+[`LlamaLmEvalLM`](../api/evaluation.md)
 is a minimal adapter that wraps any `DecoderModel` + tokenizer pair:
 
 ```python
@@ -124,7 +124,7 @@ obvious — `HFLM` would pull in HF-only kwargs (`prefix_token`,
 
 ### 3. `LmEvalAdapter` — *how* to drive the harness
 
-[`LmEvalAdapter`](../api/evaluation.md#llm.evaluation.harness.adapter.LmEvalAdapter)
+[`LmEvalAdapter`](../api/evaluation.md)
 adds the missing structure on top of `lm_eval.evaluator`:
 
 - preset lookup,

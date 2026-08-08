@@ -43,5 +43,5 @@ COPY src ./src
 
 EXPOSE 8000
 
-# Use uvicorn for production serving
-CMD ["uvicorn", "src.llm.serving.api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use uvicorn for production serving (package is `llm`, not `src.llm`)
+CMD ["uvicorn", "llm.serving.api:app", "--host", "0.0.0.0", "--port", "8000"]
