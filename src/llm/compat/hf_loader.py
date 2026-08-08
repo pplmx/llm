@@ -80,7 +80,7 @@ def _load_from_local(
     if not config_path.exists():
         raise FileNotFoundError(f"Config not found: {config_path}")
 
-    with config_path.open() as f:
+    with config_path.open(encoding="utf-8") as f:
         hf_config = json.load(f)
 
     logger.info(f"Loading model from {model_dir}")

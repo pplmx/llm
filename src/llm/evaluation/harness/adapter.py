@@ -16,6 +16,7 @@ keeps working.
 from __future__ import annotations
 
 import importlib.util
+from importlib import import_module
 from typing import Any
 
 from llm.evaluation.harness.presets import EvalPreset, get_preset
@@ -51,9 +52,7 @@ class LmEvalAdapter:
 
     def __init__(self) -> None:
         _require_lm_eval()
-        from lm_eval.tasks import TaskManager
-
-        self._task_manager = TaskManager()
+        self._task_manager = import_module("lm_eval.tasks").TaskManager()
 
     def list_tasks(self) -> list[str]:
         """List available benchmark tasks."""
@@ -66,8 +65,11 @@ class LmEvalAdapter:
         ``lm_eval`` docs for the kwargs surface.
         """
         _require_lm_eval()
-        from lm_eval import evaluator
-
+        # Read the attribute off the parent package so callers can patch
+        # ``lm_eval.evaluator`` (the mock contract used by the tests),
+        # falling back to importing the real submodule on first use.
+        lm_eval = import_module("lm_eval")
+        evaluator = lm_eval.__dict__.get("evaluator") or import_module("lm_eval.evaluator")
         return evaluator.evaluate(model=model, tasks=tasks or ["mmlu"], **kwargs)
 
     def run_preset(

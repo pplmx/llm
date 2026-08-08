@@ -11,6 +11,8 @@ allure-results
 results
 commit_message.txt
 core.*
+# docs/api/core.md is a real doc page, not a core dump
+!docs/api/core.md
 .sisyphus
 .worktrees
 data/wikitext2_train.txt

@@ -43,7 +43,10 @@ from llm.utils.common import make_factory_kwargs
 _flash_attn_spec = importlib.util.find_spec("flash_attn")
 if _flash_attn_spec is not None:
     try:
-        import flash_attn  # noqa: F401  (kernel registration happens on import)
+        # Dynamic import keeps ``ty check`` clean in minimal environments
+        # where flash-attn is not installed; kernel registration still
+        # happens on import.
+        importlib.import_module("flash_attn")
 
         FLASH_ATTN_AVAILABLE: bool = True
     except ImportError:
@@ -201,7 +204,7 @@ class FlashAttention(nn.Module):
         # Local import so an uninstalled ``flash-attn`` does not crash
         # the package at import time (we already gated on
         # ``FLASH_ATTN_AVAILABLE`` in ``__init__``).
-        from flash_attn import flash_attn_func  # optional CUDA-only dep
+        flash_attn_func = importlib.import_module("flash_attn").flash_attn_func  # optional CUDA-only dep
 
         batch_size, seq_len, _ = hidden_states.size()
         use_causal = self.is_causal if is_causal is None else is_causal

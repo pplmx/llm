@@ -37,6 +37,7 @@ from llm.training.core.checkpoint import (
     convert_legacy_checkpoint_to_split,
     load_checkpoint_payload,
 )
+from tests.support.ansi import strip_ansi
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -184,13 +185,14 @@ class TestMigrateCkptCli:
     def test_help_exits_zero(self, cli_runner: CliRunner):
         result = cli_runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "Convert" in result.stdout
-        assert "--in-place" in result.stdout
+        out = strip_ansi(result.stdout)
+        assert "Convert" in out
+        assert "--in-place" in out
 
     def test_dry_run_writes_nothing(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         result = cli_runner.invoke(app, [str(legacy_checkpoint), "--dry-run"])
         assert result.exit_code == 0
-        assert "[dry-run]" in result.stdout
+        assert "[dry-run]" in strip_ansi(result.stdout)
         # The legacy file is preserved; nothing was written next to it.
         assert legacy_checkpoint.exists()
         stem = legacy_checkpoint.with_suffix("")
@@ -201,7 +203,7 @@ class TestMigrateCkptCli:
     def test_happy_path_writes_sidecars(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         result = cli_runner.invoke(app, [str(legacy_checkpoint)])
         assert result.exit_code == 0, result.stderr
-        assert "✓ Converted" in result.stdout
+        assert "✓ Converted" in strip_ansi(result.stdout)
         stem = legacy_checkpoint.with_suffix("")
         assert stem.with_suffix(SAFETENSORS_SUFFIX).exists()
         assert Path(str(stem) + META_SUFFIX).exists()
@@ -212,13 +214,13 @@ class TestMigrateCkptCli:
     def test_in_place_flag_deletes_legacy(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         result = cli_runner.invoke(app, [str(legacy_checkpoint), "--in-place"])
         assert result.exit_code == 0, result.stderr
-        assert "delete legacy" in result.stdout
+        assert "delete legacy" in strip_ansi(result.stdout)
         assert not legacy_checkpoint.exists()
 
     def test_verify_passes_for_clean_legacy(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         result = cli_runner.invoke(app, [str(legacy_checkpoint), "--verify"])
         assert result.exit_code == 0, result.stderr
-        assert "verification passed" in result.stdout
+        assert "verification passed" in strip_ansi(result.stdout)
 
     def test_verify_exits_2_on_mismatch(self, cli_runner: CliRunner, legacy_checkpoint: Path, tmp_path: Path):
         # First convert cleanly.
@@ -232,12 +234,13 @@ class TestMigrateCkptCli:
 
         result = cli_runner.invoke(app, [str(legacy_checkpoint), "--verify"])
         assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}: {result.stdout!r} / {result.stderr!r}"
-        assert "verification failed" in result.stderr or "verification failed" in result.stdout
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "verification failed" in combined
 
     def test_missing_legacy_exits_1(self, cli_runner: CliRunner, tmp_path: Path):
         result = cli_runner.invoke(app, [str(tmp_path / "nope.pt")])
         assert result.exit_code == 1
-        assert "not found" in result.stderr
+        assert "not found" in strip_ansi(result.stderr)
 
     def test_split_layout_already_present_exits_1(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         # Pre-create a sidecar so the convert refuses.
@@ -246,7 +249,7 @@ class TestMigrateCkptCli:
 
         result = cli_runner.invoke(app, [str(legacy_checkpoint)])
         assert result.exit_code == 1
-        assert "already exists" in result.stderr
+        assert "already exists" in strip_ansi(result.stderr)
 
     def test_accepts_stem_path(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         stem = legacy_checkpoint.with_suffix("")
