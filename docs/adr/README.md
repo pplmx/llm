@@ -37,7 +37,6 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-001: Use Grouped Query Attention (GQA)](001-use-gqa.md)
 - [ADR-002: Use SwiGLU Activation Function](002-use-swiglu.md)
 - [ADR-003: Use Pre-Allocated KV Cache](003-use-kv-cache.md)
-- [ADR-004: Use QLoRA for Memory-Efficient Fine-Tuning](004-use-qlora.md)
 - [ADR-004: Paged Attention Serving Integration](004-paged-attention-serving.md)
 - [ADR-005: Export Registry Parity with BACKEND_REGISTRY](005-export-registry.md)
 - [ADR-006: Checkpoint Format Unification](006-checkpoint-format-unification.md)
@@ -46,6 +45,7 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-009: AWQ Integration](009-awq-integration.md)
 - [ADR-010: SmoothQuant Integration](010-smoothquant-integration.md)
 - [ADR-011: GGUF Export Format](011-gguf-export.md)
+- [ADR-012: Use QLoRA for Memory-Efficient Fine-Tuning](012-use-qlora.md)
 
 ## Creating a New ADR
 

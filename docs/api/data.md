@@ -17,12 +17,37 @@ See the [data guide](../guides/data.md) for end-to-end usage and the
 [streaming guide](../guides/streaming.md) for detailed streaming
 pipeline documentation.
 
+## Base Classes
+
+::: llm.data.base
+
 ## Streaming Data Modules
 
 For large-scale pretraining, the streaming data module handles
 memory-bounded data loading with checkpoint resume support:
 
 ::: llm.data.modules.streaming
+
+## Map-Style Data Modules
+
+The `lm` / SFT / DPO / reward / PPO tasks pair with map-style data
+modules built on `SamplerMapDataModule`:
+
+::: llm.data.modules.map_base
+::: llm.data.modules.text
+::: llm.data.modules.synthetic
+::: llm.data.modules.sft
+::: llm.data.modules.dpo
+::: llm.data.modules.reward
+::: llm.data.modules.prompt
+
+## Map-Style Datasets
+
+::: llm.data.datasets.text
+::: llm.data.datasets.sft
+::: llm.data.datasets.dpo
+::: llm.data.datasets.reward
+::: llm.data.datasets.prompt
 
 ## Streaming Dataset
 

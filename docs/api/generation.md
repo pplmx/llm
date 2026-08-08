@@ -19,3 +19,7 @@ both call into.
 ## Eager (Streaming) Backend
 
 ::: llm.generation.eager
+
+## Speculative Decoding Backend
+
+::: llm.generation.speculative

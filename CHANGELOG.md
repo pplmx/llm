@@ -14,6 +14,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MkDocs docs overhaul** (docs):
+  - `docs/README.md` is now the site home page (previously excluded from the
+    build and missing from the nav) with role-based entry points, an updated
+    guide index, and current quick-start commands.
+  - New [model quantization guide](docs/guides/quantization.md): PTQ / GPTQ /
+    AWQ / SmoothQuant / mixed-precision method selection, `llm-quantize` CLI,
+    Python API + collector reuse, `LayerQuantPolicy` example, perplexity-gate
+    verification, and serving quantized checkpoints.
+  - New [model export guide](docs/guides/export.md): ONNX / TorchScript /
+    GGUF selection, `export_model` / `export_to_gguf` usage, GGUF Q4_0/Q8_0
+    quantization, TorchScript trace-vs-script caveats, and custom backend
+    registration via `llm.export_backends`.
+  - API reference pages expanded: `llm.core` now covers SDPA / MLA / Flash
+    attention, paged attention, MoE, transformer block, and the standalone
+    PEFT helper modules; `llm.data` covers base classes + map-style datasets
+    and modules; `llm.generation` covers the speculative backend.
+  - ADR numbering deduplicated: the QLoRA ADR moves from the colliding
+    `004` to `012-use-qlora.md` (all references updated).
+  - Docstring/signature mismatches surfaced by the new mkdocstrings pages
+    fixed in `llm.core.attn.base` and `llm.generation.speculative`;
+    `llm.core.moe` gets a proper `__init__.py`.
+  - Stale FAQ content updated (quantization/export method lists now match
+    the implemented surface), troubleshooting TOC anchor fixed, and
+    mkdocs gets `extra.generator: false` + `edit_uri` for edit links.
 - **GGUF export format** (阶段十三 §13.3 + 阶段十四 §14.2, P2): closes the ROADMAP's
   long-deferred "研究 GGML/GGUF 格式支持" item with a full GGUF v3 container module plus
   an `EXPORT_REGISTRY` backend. New `src/llm/export/gguf/` package is layered so the
