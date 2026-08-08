@@ -22,6 +22,7 @@ the contract obvious.
 from __future__ import annotations
 
 import importlib.util
+from importlib import import_module
 from typing import Any
 
 import torch
@@ -71,7 +72,7 @@ class LlamaLmEvalLM:
     ) -> None:
         _require_lm_eval()
         # We import lazily so this module is import-safe without lm_eval.
-        from lm_eval.api.model import LM  # noqa: F401  (validates install)
+        import_module("lm_eval.api.model")  # validates install
 
         self.model = model
         self.tokenizer = tokenizer

@@ -617,7 +617,7 @@ class Config(BaseSettings):
         path = Path(path)
         if not path.exists():
             return cls()
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             config_dict = yaml.safe_load(f) or {}
         return cls.model_validate(config_dict)
 

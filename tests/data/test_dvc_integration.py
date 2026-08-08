@@ -80,9 +80,10 @@ class TestComputeFingerprintHash:
         # a stable hash. Verifies the helper is friendly to source
         # fingerprints that contain ``pathlib.Path`` instances.
         a = compute_fingerprint_hash({"type": "local", "dataset_path": Path("/data/x.txt")})
-        b = compute_fingerprint_hash({"type": "local", "dataset_path": "/data/x.txt"})
-        # The Path instance is coerced to "/data/x.txt" via str(), so
-        # the hash equals the plain-string variant.
+        b = compute_fingerprint_hash({"type": "local", "dataset_path": str(Path("/data/x.txt"))})
+        # The Path instance is coerced via str() (platform-specific on
+        # Windows), so compare against the same coercion rather than a
+        # hardcoded separator.
         assert a == b
 
     def test_empty_dict(self):

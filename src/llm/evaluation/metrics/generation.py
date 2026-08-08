@@ -1,3 +1,5 @@
+from importlib import import_module
+
 from llm.evaluation.metrics.base import BaseMetric
 
 
@@ -28,7 +30,11 @@ class RougeMetric(BaseMetric):
                 ``rouge-score`` is not installed.
         """
         try:
-            from rouge_score import rouge_scorer
+            # Read the submodule off the parent package first so callers
+            # can patch ``rouge_score`` in sys.modules (test contract),
+            # falling back to a real submodule import on first use.
+            rouge_module = import_module("rouge_score")
+            rouge_scorer = rouge_module.__dict__.get("rouge_scorer") or import_module("rouge_score.rouge_scorer")
         except ImportError as exc:
             raise ImportError(
                 "rouge-score is an optional evaluation dependency. Install with `pip install 'llm[eval]'`."
@@ -77,7 +83,7 @@ class BleuMetric(BaseMetric):
             return {"bleu": 0.0}
 
         try:
-            import sacrebleu
+            sacrebleu = import_module("sacrebleu")
         except ImportError as exc:
             raise ImportError(
                 "sacrebleu is an optional evaluation dependency. Install with `pip install 'llm[eval]'`."
@@ -109,7 +115,7 @@ class ChrFMetric(BaseMetric):
             return {"chrf": 0.0}
 
         try:
-            import sacrebleu
+            sacrebleu = import_module("sacrebleu")
         except ImportError as exc:
             raise ImportError(
                 "sacrebleu is an optional evaluation dependency. Install with `pip install 'llm[eval]'`."

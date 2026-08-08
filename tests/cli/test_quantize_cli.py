@@ -20,6 +20,7 @@ from typer.testing import CliRunner
 
 # Import target — confirmed absent at TDD RED phase, present at GREEN.
 from llm.cli.quantize import app
+from tests.support.ansi import strip_ansi
 
 
 @pytest.fixture
@@ -42,17 +43,18 @@ def test_cli_help(runner: CliRunner):
     """`llm-quantize gptq --help` exits 0 and lists expected flags."""
     result = runner.invoke(app, ["gptq", "--help"])
     assert result.exit_code == 0, result.output
-    assert "--model" in result.output
-    assert "--output" in result.output
-    assert "--calib-data" in result.output
-    assert "--bits" in result.output
+    out = strip_ansi(result.output)
+    assert "--model" in out
+    assert "--output" in out
+    assert "--calib-data" in out
+    assert "--bits" in out
 
 
 def test_cli_root_help_lists_gptq_subcommand(runner: CliRunner):
     """`llm-quantize --help` mentions the `gptq` subcommand."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0, result.output
-    assert "gptq" in result.output
+    assert "gptq" in strip_ansi(result.output)
 
 
 # ---------------------------------------------------------------------------
@@ -105,8 +107,8 @@ def test_cli_invalid_bits_errors(runner: CliRunner, tmp_path: Path):
     )
     assert result.exit_code != 0
     # Error must reference bits constraint; either by name or by valid value.
-    stderr = result.stderr or ""
-    stdout = result.output or ""
+    stderr = strip_ansi(result.stderr or "")
+    stdout = strip_ansi(result.output or "")
     assert "bits" in (stderr + stdout).lower()
 
 
@@ -129,8 +131,8 @@ def test_cli_invalid_group_size_errors(runner: CliRunner, tmp_path: Path):
         ],
     )
     assert result.exit_code != 0
-    stderr = result.stderr or ""
-    stdout = result.output or ""
+    stderr = strip_ansi(result.stderr or "")
+    stdout = strip_ansi(result.output or "")
     assert "group" in (stderr + stdout).lower() or "-1" in (stderr + stdout)
 
 
@@ -164,7 +166,7 @@ def test_cli_missing_tokenizer_errors(runner: CliRunner, tmp_path: Path):
         ],
     )
     assert result.exit_code != 0
-    stderr = result.stderr or ""
+    stderr = strip_ansi(result.stderr or "")
     assert "tokenizer" in stderr.lower()
 
 
@@ -193,7 +195,7 @@ def test_cli_calib_data_mutually_exclusive(runner: CliRunner, tmp_path: Path):
         ],
     )
     assert result.exit_code != 0
-    stderr = result.stderr or ""
+    stderr = strip_ansi(result.stderr or "")
     assert "mutually" in stderr.lower() or "exclusive" in stderr.lower()
 
 
@@ -218,7 +220,7 @@ def test_cli_neither_calib_source_errors(runner: CliRunner, tmp_path: Path):
         ],
     )
     assert result.exit_code != 0
-    stderr = result.stderr or ""
+    stderr = strip_ansi(result.stderr or "")
     assert "calib" in stderr.lower()
 
 
@@ -252,7 +254,7 @@ def test_cli_model_path_must_exist_when_tokenizer_path_resolved(runner: CliRunne
         ],
     )
     assert result.exit_code != 0
-    stderr = result.stderr or ""
+    stderr = strip_ansi(result.stderr or "")
     assert "model" in stderr.lower() or "not found" in stderr.lower() or "exist" in stderr.lower()
 
 
@@ -382,7 +384,7 @@ def test_cli_model_path_directory_errors(runner, tmp_path):
         ],
     )
     assert result.exit_code != 0
-    stderr = result.stderr or ""
+    stderr = strip_ansi(result.stderr or "")
     assert "not a regular file" in stderr.lower() or "not a file" in stderr.lower()
 
 

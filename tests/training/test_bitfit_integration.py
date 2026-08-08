@@ -194,7 +194,7 @@ class TestBitFitGradientContract:
         apply_bitfit(tiny_model)
 
         weight_before = tiny_model.fc1.weight.detach().clone()
-        bias_before = tiny_model.fc1.bias.detach().clone()
+        norm_bias_before = tiny_model.norm.bias.detach().clone()
 
         opt = torch.optim.Adam(get_bitfit_parameters(tiny_model), lr=1e-2)
 
@@ -205,8 +205,11 @@ class TestBitFitGradientContract:
 
         # Weight unchanged (no grad → Adam is a no-op).
         assert torch.allclose(tiny_model.fc1.weight, weight_before, atol=1e-6)
-        # Bias updated.
-        assert not torch.allclose(tiny_model.fc1.bias, bias_before, atol=1e-6)
+        # LayerNorm bias updated: its gradient is the sum of unit output
+        # grads (structurally nonzero), so this is deterministic across
+        # BLAS backends — unlike a Linear bias after LayerNorm, whose
+        # gradient can round to zero on some platforms.
+        assert not torch.allclose(tiny_model.norm.bias, norm_bias_before, atol=1e-6)
 
     def test_helper_yields_only_biases_after_build_model(self):
         from unittest.mock import patch

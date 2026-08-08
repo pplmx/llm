@@ -6,6 +6,7 @@ import abc
 import hashlib
 import re
 from collections.abc import Callable, Iterator
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -85,13 +86,13 @@ class HFStreamTextSource(TextSource):
 
     def iter_texts(self, skip: int = 0) -> Iterator[str]:
         try:
-            from datasets import load_dataset
+            datasets = import_module("datasets")
         except ImportError as exc:
             raise ImportError(
                 "HF streaming requires the 'datasets' package. Install with: uv sync --extra streaming"
             ) from exc
 
-        dataset = load_dataset(
+        dataset = datasets.load_dataset(
             self.dataset_name,
             self.dataset_config,
             split=self.split,

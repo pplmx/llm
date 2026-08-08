@@ -143,6 +143,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI cross-platform failures repaired** (CI hygiene, PR/`main` unblock):
+  - `docs/api/core.md` was never tracked — the `.gitignore` `core.*` pattern
+    (intended for core dumps) swallowed it, so the docs job's rumdl step
+    flagged a missing target and `mkdocs build --strict` aborted on the nav
+    entry. The file is now tracked via a negation rule.
+  - The lint job's `ty` step failed on 11 `unresolved-import` diagnostics for
+    optional deps (`flash-attn`, `dvc`, `datasets`, `lm_eval`, `sklearn`,
+    `rouge_score`, `sacrebleu`) in the minimal lint environment. Guarded
+    optional-dependency imports now go through `importlib.import_module`
+    (with a parent-attribute fast path for `rouge_score.rouge_scorer` /
+    `lm_eval.evaluator` so existing monkeypatch contracts keep working) —
+    `ty check src/llm/` is green with and without the optional packages.
+  - CLI help tests asserted on raw typer output, which rich wraps in ANSI
+    codes on CI runners (breaking `"--model"`-style substring checks on all
+    three OSes). Added `tests/support/ansi.py::strip_ansi` and applied it to
+    the `llm-quantize` / `llm-migrate-ckpt` CLI assertions.
+  - `tests/core/test_adalora.py::test_gradient_emas_threaded_through` relied
+    on `torch.topk` tie-breaking with an all-zero score vector (λ[3] was
+    never set) — passed on Linux by accident, failed on macOS/Windows.
+    λ[3] is now set so the winner is unique and deterministic.
+  - `tests/training/test_bitfit_integration.py::test_optimizer_only_updates_biases`
+    asserted on a Linear bias whose LayerNorm-backprop gradient is ~1e-7 with
+    seed 42 — nonzero on Linux, rounds to zero on macOS/Windows. The update
+    assertion now targets the LayerNorm bias, whose gradient is structurally
+    nonzero on every platform.
+  - `tests/data/test_dvc_integration.py` compared `str(Path("/data/x.txt"))`
+    against a hardcoded `/data/x.txt`; Windows produces `\data\x.txt`. The
+    comparison now uses `str(Path(...))` on both sides.
+  - `Config.from_yaml` / `ServingConfig.from_yaml` / HF `config.json` reads
+    opened files with the locale default encoding, which broke on Windows
+    (`charmap` can't decode UTF-8 YAML); all three now open with
+    `encoding="utf-8"`.
 - **Dead CI workflow removed + Dockerfile/script repairs** (CI hygiene):
   - `cd.yml` was an empty stub that fired on every version tag but only
     checked out the repo — removed (audit Finding Y; `release.yml` owns the

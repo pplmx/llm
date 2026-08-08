@@ -580,6 +580,7 @@ class TestPruneAdaLora:
         with torch.no_grad():
             layer.lora_lambda.zero_()
             layer.lora_lambda[0] = 1.0
+            layer.lora_lambda[3] = 1.0
 
         # But feed a gradient EMA that *flips* the ranking: index 3
         # becomes the most important (1.0 * 10 = 10 vs 1.0 * 0 = 0).

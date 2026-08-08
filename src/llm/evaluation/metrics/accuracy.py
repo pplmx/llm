@@ -1,3 +1,5 @@
+from importlib import import_module
+
 from llm.evaluation.metrics.base import BaseMetric
 
 
@@ -33,7 +35,6 @@ class F1Metric(BaseMetric):
         if not predictions:
             return {"f1": 0.0}
 
-        from sklearn.metrics import f1_score
-
-        f1 = f1_score(references, predictions, average=self.average, zero_division=0)
+        sklearn_metrics = import_module("sklearn.metrics")
+        f1 = sklearn_metrics.f1_score(references, predictions, average=self.average, zero_division=0)
         return {"f1": f1}

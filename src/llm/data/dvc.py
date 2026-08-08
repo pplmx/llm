@@ -41,6 +41,7 @@ import os
 import shutil
 import subprocess
 from datetime import UTC
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -67,9 +68,7 @@ def _import_dvc() -> Any:
         return _dvc_module
     if not _dvc_import_attempted:
         try:
-            import dvc
-
-            _dvc_module = dvc
+            _dvc_module = import_module("dvc")
         except ImportError:
             _dvc_module = None
         _dvc_import_attempted = True
