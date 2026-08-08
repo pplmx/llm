@@ -143,6 +143,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI docs job nav check repaired** (CI hygiene): the "Check for broken
+  internal links" step in the `docs` job never ran successfully — plain
+  `yaml.safe_load` rejects `mkdocs.yml`'s `!!python/name` slugify tag, and
+  the nav paths were checked against the repo root instead of `docs_dir`
+  (`docs/`). The step now uses `yaml.unsafe_load` and resolves nav entries
+  relative to `docs/`, matching mkdocs semantics.
 - **CI cross-platform failures repaired** (CI hygiene, PR/`main` unblock):
   - `docs/api/core.md` was never tracked — the `.gitignore` `core.*` pattern
     (intended for core dumps) swallowed it, so the docs job's rumdl step
