@@ -63,14 +63,17 @@
 - `TensorBoardLogger`: 将指标记录到 TensorBoard 以进行可视化.
 - `LRSchedulerCallback`: 记录学习率的变化.
 
-### 5. `core/utils.py`
+### 5. `core/utils.py` 及其伙伴模块
 
-该文件提供了一系列辅助类, 以支持训练框架:
+`core/` 下的工具类按职责拆分：
 
-- `PerformanceMonitor`: 监控性能指标, 如批处理时间、损失和 GPU 内存使用情况.
-- `Logger`: 一个增强的日志管理器, 支持分布式环境下的日志记录, 并可将日志保存到文件.
-- `DistributedManager`: 封装了 `torch.distributed` 的功能, 简化了分布式训练的设置、清理和通信(例如, `reduce_mean`).
-- `CheckpointManager`: 处理检查点的保存和加载, 支持保存最新的、周期性的和最佳的检查点, 并能自动清理旧的检查点.
+- `core/monitor.py` — `PerformanceMonitor`: 监控性能指标，如批处理时间、损失和 GPU 内存使用情况。
+- `core/logger.py` — `Logger`: 一个增强的日志管理器，支持分布式环境下的日志记录，并可将日志保存到文件。
+- `core/distributed.py` — `DistributedManager`: 封装了 `torch.distributed` 的功能，
+  简化了分布式训练的设置、清理和通信（例如 `reduce_mean`）。
+- `core/checkpoint.py` — `CheckpointManager`: 处理检查点的保存和加载，支持保存最新的、
+  周期性的和最佳的检查点，并能自动清理旧的检查点（v2 split 三件套，见
+  [Checkpoint 指南](../guides/checkpoints.md)）。
 
 ### 6. `tasks/base_task.py`
 

@@ -1,0 +1,112 @@
+/* ------------------------------------------------------------------
+ * LLM 框架文档站点自定义样式
+ * ------------------------------------------------------------------ */
+
+/* 首页 Hero */
+.md-typeset .hero {
+  margin: 1em 0 2em;
+  padding: 2.4em 2em;
+  border-radius: 0.6rem;
+  background:
+    radial-gradient(1200px 400px at 15% -10%, var(--md-primary-fg-color--light) 0, transparent 55%),
+    radial-gradient(900px 300px at 100% 0%, var(--md-accent-fg-color--transparent) 0, transparent 50%),
+    var(--md-default-bg-color--lighter);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  box-shadow: var(--md-shadow-z1);
+}
+
+.md-typeset .hero h1 {
+  margin: 0 0 0.4em;
+  font-size: 2.1em;
+  font-weight: 700;
+  color: var(--md-typeset-color);
+}
+
+.md-typeset .hero p {
+  font-size: 1.05em;
+  margin-bottom: 1.2em;
+}
+
+.md-typeset .hero .md-button {
+  margin: 0.25em 0.5em 0.25em 0;
+}
+
+/* 首页特性卡片 */
+.md-typeset .feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.8em;
+  margin: 1.2em 0 2em;
+}
+
+.md-typeset .feature-grid .feature {
+  padding: 1em 1.1em;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  background: var(--md-default-bg-color);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.md-typeset .feature-grid .feature:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--md-shadow-z1);
+}
+
+.md-typeset .feature-grid .feature h3 {
+  margin: 0 0 0.3em;
+  font-size: 1em;
+}
+
+.md-typeset .feature-grid .feature p {
+  margin: 0;
+  font-size: 0.92em;
+  color: var(--md-default-fg-color--light);
+}
+
+/* 命令速查框 */
+.md-typeset .quick-commands {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-left: 4px solid var(--md-primary-fg-color);
+  border-radius: 0.3rem;
+  padding: 0.6em 1em;
+  background: var(--md-default-bg-color--lighter);
+}
+
+.md-typeset .quick-commands p {
+  margin: 0.3em 0;
+}
+
+/* 表格在移动端的可读性 */
+.md-typeset table:not([class]) {
+  font-size: 0.88em;
+}
+
+/* 代码块圆角与阴影 */
+.md-typeset pre > code {
+  border-radius: 0.35rem;
+}
+
+/* 标签页圆角 */
+.md-typeset .tabbed-set > label {
+  border-radius: 0.3rem 0.3rem 0 0;
+}
+
+/* 窄屏下隐藏过长的表头换行问题 */
+@media screen and (max-width: 60em) {
+  .md-typeset table:not([class]) {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* 打印友好：隐藏导航与页脚 */
+@media print {
+  .md-header,
+  .md-sidebar,
+  .md-footer {
+    display: none;
+  }
+  .md-content {
+    margin: 0;
+  }
+}

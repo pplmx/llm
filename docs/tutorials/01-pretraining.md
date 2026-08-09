@@ -1,3 +1,10 @@
+---
+tags:
+  - 教程
+  - 训练
+  - 数据
+---
+
 # 预训练教程
 
 > **教程分工**：本教程专注**预训练**（`llm-train --task stream_lm`）。微调（SFT / DPO）见 [02-finetuning.md](./02-finetuning.md)，推理部署见 [03-inference.md](./03-inference.md)。模型评估不在本教程范围，见 [Guides/评估](../guides/evaluation.md)。

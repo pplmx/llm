@@ -1,3 +1,9 @@
+---
+tags:
+  - 指南
+  - 评估
+---
+
 # Evaluation Guide
 
 This guide covers how to run benchmarks on a trained model using the

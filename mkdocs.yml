@@ -1,12 +1,18 @@
 site_name: LLM Framework Documentation
-site_description: A modular PyTorch framework for training and serving Large Language Models
+site_description: 模块化 PyTorch LLM 训练与推理框架 — 流式预训练、PEFT 微调、量化、导出与 OpenAI 兼容服务
 site_url: https://pplmx.github.io/llm
 repo_url: https://github.com/pplmx/llm
 repo_name: pplmx/llm
+edit_uri: edit/main/docs/
 
 theme:
   name: material
   language: zh
+  custom_dir: overrides
+  icon:
+    logo: material/book-open-page-variant
+    repo: fontawesome/brands/github
+    edit: material/pencil
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -14,28 +20,31 @@ theme:
       accent: indigo
       toggle:
         icon: material/brightness-7
-        name: Switch to dark mode
+        name: 切换到深色模式
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: indigo
       accent: indigo
       toggle:
         icon: material/brightness-4
-        name: Switch to light mode
+        name: 切换到浅色模式
   features:
     - navigation.instant
     - navigation.tabs
     - navigation.sections
     - navigation.expand
+    - navigation.indexes
     - navigation.top
+    - navigation.footer
     - search.suggest
     - search.highlight
+    - content.action.edit
     - content.code.copy
     - content.code.annotate
+    - content.tabs.link
 
-# Exclude internal/archival docs from the build to avoid "not in nav" warnings.
-# These are developer-facing or audit artifacts not meant for public docs.
-# Paths are relative to docs/ (no `docs/` prefix).
+# 排除内部 / 归档文档，避免 "not in nav" 告警。
+# 路径相对 docs/（不带 docs/ 前缀）。
 exclude_docs: |
   audits/*
   superpowers/*
@@ -45,17 +54,14 @@ exclude_docs: |
 plugins:
   - search:
       lang: zh
-  # mkdocstrings auto-generates API reference pages from Python
-  # docstrings. Pages live under docs/api/ and use the
-  # ```:: llm.something ``` fenced-block directive.
+  # mkdocstrings 从 Python docstring 自动生成 API Reference；
+  # 页面在 docs/api/ 下，用 ```:: llm.something ``` 围栏块引用。
   - mkdocstrings:
       default_handler: python
       handlers:
         python:
-          # Some subpackages (e.g. ``llm.training``) are namespace
-          # packages — they don't ship ``__init__.py``. The
-          # ``forgiving_parsing`` + ``new_path_syntax`` flags below
-          # let mkdocstrings resolve them anyway.
+          # 部分子包（如 llm.training）是 namespace 包，没有 __init__.py。
+          # 下面的选项让 mkdocstrings 也能解析它们。
           new_path_syntax: true
           paths: [src]
           options:
@@ -67,17 +73,15 @@ plugins:
             separate_signature: true
             show_symbol_type_heading: true
             show_symbol_type_toc: true
-            # Avoid generating docs for private helpers; use
-            # ::: llm.module filter when you need them on a specific page.
             filters: ["!^_"]
-            # Cap the inherited-members list at 2 levels so the page
-            # doesn't get dominated by ``object`` machinery.
             inherited_members: false
+  # 页面级标签（front matter `tags:`）+ 标签索引页（docs/tags.md）。
+  - tags:
+      tags: true
 
 markdown_extensions:
-  # ``toc`` must use a unicode-preserving slugify: the default strips CJK
-  # characters, so every Chinese heading got a ``_N`` anchor and all
-  # in-page/cross-page anchors to Chinese headings were broken.
+  # ``toc`` 必须使用保留 Unicode 的 slugify：默认实现会剥掉 CJK 字符，
+  # 导致所有中文标题锚点变成 ``_N``，站内中文锚点链接全部失效。
   - toc:
       permalink: true
       slugify: !!python/name:markdown.extensions.toc.slugify_unicode
@@ -98,6 +102,9 @@ markdown_extensions:
   - attr_list
   - md_in_html
 
+extra_css:
+  - stylesheets/extra.css
+
 nav:
   - 🏠 概览: README.md
 
@@ -108,6 +115,7 @@ nav:
       - tutorials/03-inference.md
 
   - 🔧 指南:
+      - guides/index.md
       - guides/checkpoints.md
       - guides/data.md
       - guides/streaming.md
@@ -146,6 +154,7 @@ nav:
           - api/cli.md
           - api/evaluation.md
           - api/data.md
+      - 🏷️ 标签索引: tags.md
 
   - 📝 ADR:
       - adr/README.md
@@ -162,10 +171,18 @@ nav:
       - "011: GGUF Export": adr/011-gguf-export.md
       - "012: QLoRA": adr/012-use-qlora.md
 
-  - ❓ FAQ: faq.md
-  - 🔧 故障排除: troubleshooting.md
+  - ❓ 帮助:
+      - faq.md
+      - troubleshooting.md
+
+  - 🤝 贡献: https://github.com/pplmx/llm/blob/main/CONTRIBUTING.md
 
 extra:
   generator: false
-  # "Edit this page" links point at the GitHub editor for docs/ files.
-  edit_uri: edit/main/docs/
+  # "Edit this page" 链接指向 GitHub 编辑器。
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/pplmx/llm
+  copyright: Copyright &copy; 2026 pplmx · 使用
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">Material for MkDocs</a>
+    构建

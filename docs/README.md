@@ -1,7 +1,57 @@
 # LLM 框架文档
 
-一个模块化、可扩展的 PyTorch 大语言模型训练与推理框架：从流式预训练、PEFT 微调、
-模型评估到 OpenAI 兼容推理服务、量化压缩与多种格式导出，覆盖 LLM 的完整生命周期。
+<div class="hero" markdown>
+
+一个模块化、可扩展的 PyTorch 大语言模型框架：**流式预训练 → PEFT 微调 →
+量化压缩 → 评估 → OpenAI 兼容推理服务 → 多格式导出**，覆盖 LLM 的完整生命周期。
+
+[🚀 快速开始](getting-started.md){ .md-button .md-button--primary }
+[📖 教程](tutorials/01-pretraining.md){ .md-button }
+[🔧 功能指南](guides/index.md){ .md-button }
+[🔌 API Reference](api/index.md){ .md-button }
+
+</div>
+
+<div class="feature-grid" markdown>
+
+<div class="feature" markdown>
+**⚡ 流式预训练**
+
+`stream_lm` 主路径 + C4 / Pile / RedPajama 数据预设，支持 dedup 与精确续训。
+</div>
+
+<div class="feature" markdown>
+**🧩 8 种 PEFT**
+
+LoRA / QLoRA / AdaLoRA / IA³ / BitFit / Adapter / Pfeiffer / Prefix Tuning，
+统一 `PEFT_REGISTRY` 管理。
+</div>
+
+<div class="feature" markdown>
+**🚀 推理服务**
+
+OpenAI 兼容 API、KV cache、Paged Attention、Prefix Cache 与连续批处理。
+</div>
+
+<div class="feature" markdown>
+**🔢 量化与导出**
+
+GPTQ / AWQ / SmoothQuant / 混合精度；ONNX / TorchScript / GGUF 一键导出。
+</div>
+
+<div class="feature" markdown>
+**📊 离线评估**
+
+lm-evaluation-harness 集成，MMLU / ARC / WikiText 预设即用。
+</div>
+
+<div class="feature" markdown>
+**🔌 插件化架构**
+
+Registry + entry points，模型、数据源、后端、PEFT 均可扩展。
+</div>
+
+</div>
 
 ---
 
@@ -14,7 +64,7 @@
 - [微调教程](tutorials/02-finetuning.md) — SFT / DPO + LoRA/QLoRA
 - [推理教程](tutorials/03-inference.md) — `llm-serve` 部署与 OpenAI SDK 集成
 
-### 🚀 训练
+### 🚀 训练与数据
 
 | 指南                                                  | 说明                             |
 | ----------------------------------------------------- | -------------------------------- |
@@ -54,16 +104,20 @@ docs/
 ├── README.md                # 🏠 本页（概览）
 ├── getting-started.md       # 🚀 快速开始
 ├── tutorials/               # 📖 教程（预训练 / 微调 / 推理）
-├── guides/                  # 🔧 功能指南（数据、量化、导出…）
+├── guides/                  # 🔧 功能指南（index + 数据 / 量化 / 导出…）
 ├── reference/               # 📚 架构与 CLI 参考
 ├── api/                     # 🔌 自动生成的 API Reference
 ├── adr/                     # 📝 架构决策记录
-└── development/             # 💻 开发者文档
+├── development/             # 💻 开发者文档
+├── tags.md                  # 🏷️ 标签索引
+└── stylesheets/extra.css    # 🎨 站点自定义样式
 ```
 
 ---
 
 ## ⚡ 快速命令
+
+<div class="quick-commands" markdown>
 
 ```bash
 # 安装依赖与 pre-commit hooks
@@ -82,6 +136,8 @@ uv run llm-quantize gptq --model ckpt.pt --output ckpt-int4.pt \
 # 质量门槛
 make ruff && make ty && make test-fast
 ```
+
+</div>
 
 ---
 

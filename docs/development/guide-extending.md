@@ -10,14 +10,17 @@
 
 **第1步: 在 `config.py` 中添加选项**
 
-在 `TrainingConfig` 数据类中, 我们可以为 `scheduler_type` 添加一个新的有效选项的注释, 以方便其他开发者知道它的存在.
+在 `TrainingConfig`（Pydantic `BaseModel`）中，把 `scheduler_type` 的
+`pattern` 校验扩展到新值：
 
 ```python
 # in core/config.py
-@dataclass
-class TrainingConfig:
+class TrainingConfig(BaseModel):
     # ...
-    scheduler_type: str = "cosine"  # 新增: cosine, step, plateau, exponential
+    scheduler_type: str = Field(
+        "cosine",
+        pattern="^(cosine|step|plateau|exponential)$",  # 新增 exponential
+    )
     # ...
 ```
 
@@ -52,7 +55,8 @@ class RegressionTask(TrainingTask):
         return scheduler
 ```
 
-现在, 您就可以通过配置 `--scheduler-type exponential` 来使用新的调度器了.
+现在, 在 YAML 中配置 `training.scheduler_type: exponential` 即可使用新的调度器
+（`llm-train` 没有 `--scheduler-type` 之类的嵌套 CLI 参数，模型/优化器细节统一走 YAML）。
 
 ---
 
@@ -80,57 +84,46 @@ class WelcomeMessage(Callback):
             self.engine.logger.info("======================================")
 ```
 
-**第2步: 通过配置动态添加回调**
+**第2步: 注册到训练引擎**
 
-为了保持 `train.py` 的简洁性和灵活性, 我们推荐通过配置来动态添加回调. 这需要您在 `Config` 中定义一个回调列表, 并在 `train.py` 中根据配置实例化它们.
-
-**在 `Config` 中定义回调配置 (示例)**:
-
-```python
-# in core/config.py
-from typing import List
-
-
-@dataclass
-class TrainingConfig:
-    # ...
-    callbacks: List[str] = field(default_factory=lambda: ["MetricsLogger", "TensorBoardLogger", "LRSchedulerCallback"])
-    # ...
-```
-
-**在 `train.py` 中实例化回调**:
+回调是 `TrainingEngine` 构造时传入的普通对象列表。当前 `train.py` 的
+`train_worker` 里实例化了三个内置回调，把新回调加进这个列表即可：
 
 ```python
 # in train.py
-from llm.training.core import callbacks as training_callbacks  # 导入回调模块
+from llm.training.core.callbacks import (
+    Callback,
+    LRSchedulerCallback,
+    MetricsLogger,
+    TensorBoardLogger,
+)
 
+class WelcomeMessage(Callback):  # 上一步定义的子类
+    ...
 
-def train_worker(rank: int, world_size: int, config: Config, task_class):
+def train_worker(rank, world_size, config, task_name):
     # ...
-    instantiated_callbacks = []
-    for cb_name in config.training.callbacks:
-        if hasattr(training_callbacks, cb_name):
-            cb_class = getattr(training_callbacks, cb_name)
-            # 根据回调类型传递必要的参数
-            if cb_name == "TensorBoardLogger":
-                instantiated_callbacks.append(cb_class(log_dir=config.logging.log_dir))
-            else:
-                instantiated_callbacks.append(cb_class())
-        else:
-            config.logger.warning(f"Callback {cb_name} not found. Skipping.")
-
+    callbacks: list[Callback] = [
+        MetricsLogger(),
+        TensorBoardLogger(log_dir=config.logging.log_dir),
+        LRSchedulerCallback(),
+        WelcomeMessage(),          # <-- 新回调
+    ]
     engine = TrainingEngine(
         config,
         task,
         rank,
         world_size,
         data_module=data_module,
-        callbacks=instantiated_callbacks,  # 使用动态实例化的回调
+        callbacks=callbacks,
     )
     engine.run()
 ```
 
-现在, 您可以通过修改 `config.yaml` 或命令行参数来轻松添加或移除回调, 例如 `--training-callbacks MetricsLogger TensorBoardLogger WelcomeMessage`.
+> 注意：回调**不是**通过 YAML / CLI 配置的（没有 `--training-callbacks` 之类的参数）。
+> 需要按运行环境动态组合回调时，写一个自定义入口脚本，构造 `TrainingEngine` 并传入
+> 不同的回调列表即可。带可恢复状态的回调还可以覆写
+> `get_checkpoint_state()` / `load_checkpoint_state()`，状态会自动并入 checkpoint。
 
 ---
 
@@ -196,23 +189,28 @@ def train_worker(rank: int, world_size: int, config: Config, task_class):
             ...
     ```
 
-4. **在 `train.py` 中注册新任务**
+4. **注册新任务**
 
-    ```python
-    # in train.py
-    from llm.training.tasks.builtin import TASK_REGISTRY
-    from llm.training.tasks.regression_task import RegressionTask
-    from llm.training.tasks.classification_task import ClassificationTask  # <-- 导入新任务
+在 `training/tasks/builtin.py` 中调用 `TASK_REGISTRY.register(...)`，让内置 CLI 在
+启动时就能看到新任务：
 
-    TASK_REGISTRY.register(
-        "classification",
-        ClassificationTask,
-        ImageNetDataModule,
-        description="Image classification task",
-    )
-    ```
+```python
+# in training/tasks/builtin.py
+from llm.training.task_registry import TASK_REGISTRY
+from llm.training.tasks.classification_task import ClassificationTask  # <-- 导入新任务
 
-现在, 您可以通过运行 `llm-train --task classification` 来启动您的新任务.
+TASK_REGISTRY.register(
+    "classification",
+    ClassificationTask,
+    ImageNetDataModule,
+    description="Image classification task",
+)
+```
+
+第三方包也可以不改仓库代码，通过 `pyproject.toml` 的 `llm.tasks` entry-point
+组注册（`llm-train` 启动时会 `load_entry_point_hooks("llm.tasks")`）。
+
+现在, 您可以通过运行 `uv run llm-train --task classification` 来启动您的新任务.
 
 ---
 
@@ -240,7 +238,8 @@ model:
 当您运行训练时, `TrainingEngine` 会根据 `Config` 中的设置, 在 `TransformerBlock` 中自动实例化 MoE 层而不是标准 MLP.
 
 ```bash
-llm-train --task regression --model-use-moe --model-num-experts 8 --model-top-k 2
+uv run llm-train --task stream_lm --config-path configs/moe-demo.yaml
 ```
 
-通过这种方式, 您可以轻松地在模型中启用和配置 MoE 功能, 而无需修改核心模型代码.
+通过这种方式，您可以轻松地在模型中启用和配置 MoE 功能，而无需修改核心模型代码。
+`llm-train` 没有 `--model-*` 嵌套参数，模型结构一律通过 YAML 的 `model:` 段配置。

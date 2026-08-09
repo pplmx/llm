@@ -1,3 +1,9 @@
+---
+tags:
+  - 快速开始
+  - 入门
+---
+
 # 快速开始
 
 5 分钟内启动并运行你的第一个 LLM 训练。
@@ -135,7 +141,7 @@ print(tokenizer.decode(output[0]))
 | 微调 (SFT/DPO) | [Tutorials/微调](tutorials/02-finetuning.md)    |
 | 推理服务       | [Tutorials/推理服务](tutorials/03-inference.md) |
 | 评估模型       | [Guides/评估](guides/evaluation.md)             |
-| 量化模型       | [Guides/量化](reference/cli.md#llm-quantize)    |
+| 量化模型       | [Guides/量化](guides/quantization.md)           |
 | 了解系统架构   | [Architecture](reference/architecture.md)       |
 
 ---

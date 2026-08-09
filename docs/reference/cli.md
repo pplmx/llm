@@ -1,3 +1,9 @@
+---
+tags:
+  - 参考
+  - CLI
+---
+
 # CLI 命令参考
 
 所有注册命令行工具的完整参数列表（`pyproject.toml` `[project.scripts]` 注册）：

@@ -1,3 +1,10 @@
+---
+tags:
+  - 教程
+  - 推理
+  - 服务
+---
+
 # 推理教程
 
 训练完成后如何使用 `llm-serve` 把模型部署为 OpenAI 兼容的 HTTP 服务。和 `01-pretraining.md` / `02-finetuning.md` 一样，所有命令都对齐 `llm-serve` CLI + YAML 配置 —— 而不是单独的 demo 脚本。

@@ -1,3 +1,9 @@
+---
+tags:
+  - 指南
+  - 数据
+---
+
 # Data Pipelines Guide
 
 This guide covers the streaming data layer for pretraining and the

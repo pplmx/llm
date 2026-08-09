@@ -179,7 +179,10 @@ jobs:
                             for item in items:
                                 check_nav(item)
                         elif isinstance(items, str) and items.endswith('.md'):
-                            # mkdocs nav paths are relative to docs_dir (docs/).
+                            # Skip external links (e.g. CONTRIBUTING.md on GitHub);
+                            # local nav paths are relative to docs_dir (docs/).
+                            if items.startswith(('http://', 'https://')):
+                                return
                             if not Path('docs', items).exists():
                                 missing.append(items)
                     check_nav(nav.get('nav', []))

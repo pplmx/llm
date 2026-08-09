@@ -1,3 +1,8 @@
+---
+tags:
+  - FAQ
+---
+
 # FAQ - 常见问题
 
 本文档收集了在使用 LLM 项目时的常见问题和解答.
@@ -42,31 +47,45 @@ make init
 
 ### Q: 我应该使用哪个任务？
 
-项目提供了两个主要任务：
+`llm-train` 的任务名通过 `--task` 传入（必填），内置任务如下：
 
-- **`lm`**: 语言模型任务(推荐)- 用于训练生成式语言模型
-- **`regression`**: 回归任务 - 用于简单的回归测试
+- **`stream_lm`**: 流式大规模预训练（主入口，配合 `SOURCE_REGISTRY` 预设）
+- **`lm`**: Map-style 语言建模
+- **`sft`** / **`dpo`** / **`reward`** / **`ppo`**: 对齐流程
+- **`regression`**: 合成回归 demo
 
 示例：
 
 ```bash
-# Regression task (uses synthetic data, works out of the box)
-llm-train --task regression --epochs 10 --batch-size 32
+# 流式预训练（本地冒烟，CPU 可跑）
+uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
 
-# Language modeling task (requires dataset configuration)
-llm-train --task lm --config-path configs/example.yaml --epochs 10
+# SFT + LoRA（PEFT 走 YAML 的 training 段，不是 CLI 参数）
+uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
 ```
 
 > [!NOTE]
-> `--task lm` 需要通过配置文件指定数据集。快速实验可使用 `scripts/train_simple_decoder.py`。
+> 全部任务清单见 [CLI 命令参考](reference/cli.md#llm-train)。
 
 ### Q: 如何启用分布式训练？
 
-使用 `torchrun` 启动多 GPU 训练：
+`llm-train` 根据 `distributed` 配置自动用 `torch.multiprocessing.spawn` 拉起
+多进程，不需要手动 `torchrun`。在 YAML 里设置每节点 GPU 数即可：
+
+```yaml
+# config.yaml
+distributed:
+  gpus_per_node: 4
+  backend: nccl
+  parallel_strategy: ddp   # 或 fsdp
+```
 
 ```bash
-torchrun --nproc_per_node=4 src/llm/training/train.py --task lm
+uv run llm-train --task stream_lm --config-path config.yaml
 ```
+
+多节点时通过环境变量 `MASTER_ADDR` / `MASTER_PORT` / `NUM_NODES` /
+`NODE_RANK` / `GPUS_PER_NODE` 配置。
 
 详见：[DDP Deep Dive](development/deep-dive-ddp.md)
 
@@ -75,9 +94,11 @@ torchrun --nproc_per_node=4 src/llm/training/train.py --task lm
 尝试以下方法：
 
 1. **减小 batch size**: `--batch-size 16`
-2. **启用混合精度**: 默认已启用 AMP
-3. **减小模型大小**: `--model.hidden_size 512`
-4. **使用 Gradient Checkpointing**: 将在未来版本中支持
+2. **启用混合精度**: 默认已启用 AMP；显存仍不够可 `--no-amp` 关闭调试
+3. **减小模型大小**: 通过 YAML 调整 `model.hidden_size` / `model.num_layers`
+4. **使用 Gradient Checkpointing**: 已支持，YAML 里开启
+   `optimization.gradient_checkpointing: true`
+5. **梯度累积**: `optimization.gradient_accumulation_steps` 模拟更大的 batch
 
 详见：[Troubleshooting Guide](troubleshooting.md)
 
@@ -97,8 +118,10 @@ GQA 是一种优化的注意力机制, 通过让多个 Query 头共享同一组 
 
 **配置**:
 
-```bash
---model.num_heads 32 --model.num_kv_heads 8  # 32个Q头共享8组KV头
+```yaml
+model:
+  num_heads: 32
+  num_kv_heads: 8   # 32 个 Q 头共享 8 组 KV 头
 ```
 
 详见：[Tutorials/预训练](tutorials/01-pretraining.md)
@@ -109,19 +132,21 @@ SwiGLU 是一种结合 Swish 激活和门控线性单元的激活函数, 相比�
 
 **启用方式**:
 
-```bash
---model.use_glu true
+```yaml
+model:
+  use_glu: true
 ```
 
 详见：[Tutorials/预训练](tutorials/01-pretraining.md)
 
 ### Q: 如何选择使用 LayerNorm 还是 RMSNorm？
 
-- **LayerNorm**: 标准选择, 稳定可靠
-- **RMSNorm**: 更快的计算速度, 内存占用更少, 效果相当
+- **LayerNorm**: 标准选择，稳定可靠（默认）
+- **RMSNorm**: 更快的计算速度，内存占用更少，效果相当
 
-```bash
---model.norm_impl rms_norm  # 使用 RMSNorm
+```yaml
+model:
+  norm_impl: rms_norm
 ```
 
 ---
@@ -131,8 +156,9 @@ SwiGLU 是一种结合 Swish 激活和门控线性单元的激活函数, 相比�
 ### Q: 如何提升训练速度？
 
 1. **启用混合精度**: 默认已启用
-2. **优化数据加载**: 增加 `num_workers`
-3. **使用 torch.compile**: 将在未来版本中集成
+2. **优化数据加载**: 增加 `optimization.num_workers`
+3. **使用 torch.compile**: 已支持，默认开启（`--compile` / YAML
+   `optimization.use_compile: true`）
 4. **使用多 GPU**: 见分布式训练问题
 
 ### Q: 推理速度慢怎么办？

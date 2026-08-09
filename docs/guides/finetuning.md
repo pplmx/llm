@@ -1,3 +1,10 @@
+---
+tags:
+  - 指南
+  - 微调
+  - PEFT
+---
+
 # Fine-Tuning Guide
 
 This guide covers parameter-efficient fine-tuning methods available in the LLM framework. All methods are accessible through a unified PEFT_REGISTRY and share a common configuration interface.

@@ -1,3 +1,9 @@
+---
+tags:
+  - 参考
+  - 架构
+---
+
 # Architecture Documentation
 
 This document provides a deep dive into the architecture of the `llm` project, explaining its core design principles, component structure, and key abstractions.
@@ -21,6 +27,7 @@ The project follows a **Modular & Composable** design philosophy:
 src/llm/
 ├── core/                    # Reusable PyTorch modules
 │   ├── attn/               # Attention mechanisms (MHA, MLA, SDPA)
+│   ├── moe/                # Mixture of Experts (moe.py)
 │   ├── embedding.py        # Token + positional embeddings (RoPE, ALiBi)
 │   ├── lora.py            # LoRA adapters
 │   ├── qlora.py           # QLoRA with NF4 quantization
@@ -32,8 +39,8 @@ src/llm/
 │   ├── pfeiffer_adapter.py # Pfeiffer Adapter — FFN-only Houlsby variant (T2 PEFT #45)
 │   ├── kv_cache.py        # Pre-allocated KV cache
 │   ├── mlp.py             # Standard MLP with SwiGLU
-│   ├── moe.py             # Mixture of Experts
-│   ├── norm.py            # RMSNorm, LayerNorm
+│   ├── layer_norm.py      # LayerNorm
+│   ├── rms_norm.py        # RMSNorm
 │   ├── peft/              # PEFT method registry (T2 PEFT #43, #44, #47)
 │   │   ├── registry.py    # PEFT_REGISTRY + apply_peft/merge_peft/... dispatch
 │   │   ├── methods.py     # 8 built-in registrations (lora, qlora, adalora, prefix_tuning, ia3, bitfit, adapter, pfeiffer_adapter)
@@ -81,10 +88,14 @@ src/llm/
 ├── tokenization/          # Tokenizer 实现
 ├── serving/               # Inference API
 │   ├── api.py             # FastAPI with OpenAI-compatible endpoints
+│   ├── routers/           # health / generate / chat routers
 │   ├── loader.py          # Training checkpoint + tokenizer loading + PEFT integration (T2 PEFT #49)
 │   ├── peft_adapter.py    # load_peft_into_model / merge_peft_into_model helpers (T2 PEFT #49)
 │   ├── generation_service.py  # REST/chat → GenerationBackend
-│   └── batch_engine.py    # ContinuousBatchingEngine (continuous batching path)
+│   ├── batch_engine.py    # ContinuousBatchingEngine (continuous batching path)
+│   ├── metrics.py         # Prometheus serving metrics
+│   ├── auth.py            # API-key auth (HMAC-SHA256, timing-safe)
+│   └── middleware.py      # Request-ID middleware
 ```
 
 ## System Overview
@@ -174,15 +185,20 @@ The project decouples data loading from tokenization logic to support both simpl
 All configuration is managed via Pydantic models in `src/llm/training/core/config.py`, offering:
 
 - **Type Safety**: Automatic type validation.
-- **Environment Variables**: Override via `LLM_MODEL__HIDDEN_SIZE=1024`.
-- **CLI Integration**: `Typer` automatically exposes these configs as command-line arguments.
+- **Environment Variables**: `Config` 使用 `LLM_` 前缀 + `__` 嵌套分隔符
+  （如 `LLM_DISTRIBUTED__GPUS_PER_NODE=4`）；`DistributedConfig` /
+  `ServingConfig` 额外读取各自的短名环境变量（`MASTER_ADDR` / `GPUS_PER_NODE` /
+  `LLM_SERVING_*`）。
+- **CLI Integration**: `llm-train` 暴露少量扁平覆盖参数（`--epochs`、`--lr` 等），
+  模型 / 数据 / 优化器细节统一走 YAML。
 
 ### Config Structure
 
 - **`ModelConfig`**: Architecture params (`hidden_size`, `num_layers`, `attn_impl`).
 - **`DataConfig`**: Data params (`tokenizer_type`, `dataset_path`).
 - **`TrainingConfig`**: loop params (`epochs`, `lr`).
-- **`DistributedConfig`**: DDP params (`master_addr`, `world_size`).
+- **`DistributedConfig`**: DDP/FSDP params (`master_addr`, `gpus_per_node`,
+  `parallel_strategy`).
 - **`OptimizationConfig`**: performance (`use_compile`, `use_amp`).
 
 ## Plugin Kernel (`runtime/`)

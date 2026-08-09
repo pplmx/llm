@@ -1,3 +1,10 @@
+---
+tags:
+  - 指南
+  - 数据
+  - 训练
+---
+
 # Streaming Data Pipeline Guide
 
 This guide covers streaming data ingestion for large-scale pretraining

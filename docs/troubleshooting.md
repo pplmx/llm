@@ -1,3 +1,8 @@
+---
+tags:
+  - 排查
+---
+
 # 故障排查指南
 
 本文档提供了在使用本项目时可能遇到的常见问题及其解决方案。
@@ -30,12 +35,12 @@
     3. 检查 `pyproject.toml` 和 `uv.lock` 文件，手动解决潜在的依赖冲突。
     4. 确保您的网络连接正常，可以访问 PyPI。
 
-- **问题: `make` 命令无法执行，提示"command not found".*
+- **问题: `make` 命令无法执行，提示 "command not found"**
     - **解决方案:** 确保您的系统安装了 `make` 工具。
         - **Linux/macOS:** 通常预装。
         - **Windows:** 可以通过 Chocolatey (`choco install make`) 或 Scoop (`scoop install make`) 安装，或者安装 Git for Windows (它通常包含 `make`)。
 
-- **问题: 训练时遇到 `torch.cuda.is_available()` 返回 `False`，即使有 GPU.*
+- **问题: 训练时遇到 `torch.cuda.is_available()` 返回 `False`，即使有 GPU**
     - **解决方案:**
     1. 确保您安装了正确版本的 PyTorch，并且它与您的 CUDA 驱动版本兼容。
     2. 检查您的 CUDA 驱动是否已正确安装并更新到最新版本。
@@ -46,15 +51,17 @@
 
 ## 训练问题
 
-- **问题: 训练过程中出现内存不足 (OOM) 错误.*
+- **问题: 训练过程中出现内存不足 (OOM) 错误**
     - **解决方案:**
     1. **减小 `batch_size`**: 这是最直接有效的方法。
     2. **减小模型大小**: 尝试减小 `hidden_size` 或 `num_layers`。
-    3. **启用自动混合精度 (AMP)**: 在 `config.py` 中设置 `optimization.use_amp = True`，或在命令行中不使用 `--no-optimization-use-amp`。AMP 可以显著减少显存占用。
-    4. **启用 `torch.compile`**: 在 `config.py` 中设置 `optimization.use_compile = True`，或在命令行中不使用 `--no-optimization-use-compile`。
-    5. **梯度累积**: 如果您的任务支持，可以通过增大 `gradient_accumulation_steps` 来模拟更大的批次大小，同时保持较小的实际 `batch_size`。
+    3. **启用自动混合精度 (AMP)**: 默认已开启；调试时可用 `--no-amp` 关闭。AMP 可以显著减少显存占用。
+    4. **启用 `torch.compile`**: 默认已开启；调试时可用 `--no-compile` 关闭。也可在 YAML 中设置
+       `optimization.use_amp: false` / `optimization.use_compile: false`。
+    5. **梯度累积**: 增大 YAML 中 `optimization.gradient_accumulation_steps`，用更小的实际
+       `batch_size` 模拟更大的批次。
 
-- **问题: 分词器抛出 `KeyError`，提示字符不在词汇表中.*
+- **问题: 分词器抛出 `KeyError`，提示字符不在词汇表中**
     - **解决方案:** 当前的 `SimpleCharacterTokenizer` 是字符级别的，并且词汇表是根据初始化时提供的语料库构建的。确保您尝试编码的文本只包含在初始化分词器时语料库中存在的字符。如果需要处理更广泛的字符集，您可能需要更新分词器或其初始化语料。
 
 ---
@@ -145,11 +152,16 @@
 
 ## 命令行参数
 
-- **问题: 运行 `train.py` 时出现 `unrecognized arguments` 错误**
-    - **解决方案:**
-    1. **检查参数名称**: 确保使用 `--<配置组名称>-<参数名称>` 格式(例如, `--model-hidden-size`, `--training-epochs`)。
-    2. **布尔参数格式**: 布尔参数不应带值。默认为 `False` 时使用 `--<参数名>` 启用；默认为 `True` 时使用 `--no-<参数名>` 禁用。
-    3. **查看帮助**: 运行 `llm-train --help` 查看所有可用参数及其格式。
+- **问题: 运行 `llm-train` 时提示 `unrecognized arguments` / `No such option`**
+    - **解决方案:** `llm-train` 只暴露少量**扁平**覆盖参数：`--task`（必填）、
+      `--config-path`、`--epochs`、`--batch-size`、`--lr`、`--num-samples`、
+      `--steps-per-epoch`、`--compile` / `--no-compile`、`--amp` / `--no-amp`。
+      **模型结构、数据、分布式、checkpoint 等配置一律走 YAML**，没有
+      `--model-*` / `--training-*` 之类的嵌套参数。
+    - **布尔参数格式**: 布尔参数不带值。默认 `True` 的用 `--no-<name>` 关闭
+      （如 `--no-compile`）；默认 `False` 的用 `--<name>` 打开。
+    - **查看帮助**: 运行 `uv run llm-train --help` 查看全部参数；完整说明见
+      [CLI 命令参考](reference/cli.md#llm-train)。
 
 ---
 

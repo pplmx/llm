@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>404 - 页面未找到</h1>
+  <p>
+    你要找的页面可能已被移动或删除。可以回到
+    <a href="{{ base_url }}/">文档首页</a>，或试试下面的常用入口：
+  </p>
+  <p>
+    <a href="{{ base_url | trim('/') }}/getting-started/" class="md-button">🚀 快速开始</a>
+    <a href="{{ base_url | trim('/') }}/guides/" class="md-button">🔧 功能指南</a>
+    <a href="{{ base_url | trim('/') }}/faq/" class="md-button">❓ FAQ</a>
+    <a href="{{ base_url | trim('/') }}/api/" class="md-button">🔌 API Reference</a>
+  </p>
+  <p>
+    如果确认是文档站的链接错误，欢迎到
+    <a href="https://github.com/pplmx/llm/issues">GitHub Issues</a> 反馈。
+  </p>
+{% endblock %}

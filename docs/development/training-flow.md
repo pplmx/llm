@@ -7,12 +7,14 @@
 整个训练过程可以分为以下几个主要阶段:
 
 1. **启动入口 (`train.py`)**
-    - 用户在命令行执行 `llm-train --task <task_name> [other_args]` 或 `python -m llm.training.train --task <task_name>`.推荐使用 `llm-train` CLI.
+    - 用户在命令行执行 `uv run llm-train --task <task_name> [other_args]`。
+      入口是 `src/llm/training/train.py` 中注册的 typer 应用；推荐直接用 `llm-train` CLI。
     - Python 解释器执行 `train.py` 中的 `main()` 函数.
 
 2. **主进程初始化 (`main` 函数)**
     - **参数解析**: 解析 `--task` 等命令行参数.
-    - **配置加载**: `Config.from_args_and_env()` 创建并填充配置对象.
+    - **配置加载**: 从 YAML 加载（`Config.from_yaml(config_path)`），没有配置文件时
+      使用默认 `Config()`；CLI 再以扁平参数（`--epochs` 等）覆盖少量高频字段。
     - **分布式管理器**: 创建 `DistributedManager` 实例, 并调用 `get_world_size()` 来确定需要启动的进程数.
     - **日志设置**: 为主进程(Rank 0)设置 `Logger`.
 

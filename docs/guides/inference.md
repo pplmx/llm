@@ -1,3 +1,10 @@
+---
+tags:
+  - 指南
+  - 推理
+  - 服务
+---
+
 # Inference Optimization Guide
 
 This guide covers techniques for optimizing inference performance in the LLM framework.

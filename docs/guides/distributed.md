@@ -1,3 +1,10 @@
+---
+tags:
+  - 指南
+  - 训练
+  - 分布式
+---
+
 # Distributed Training Guide
 
 This guide covers the two distributed-training strategies the
@@ -25,29 +32,42 @@ parameters are the bottleneck, not the activations.
 
 ## DDP quick start
 
+`llm-train` reads `distributed` from the YAML config and spawns one
+worker per GPU internally (`torch.multiprocessing.spawn`) — there is
+**no `torchrun` step**.
+
 Single-node, multi-GPU:
 
+```yaml
+# configs/ddp.yaml
+distributed:
+  gpus_per_node: 2        # defaults to torch.cuda.device_count()
+  parallel_strategy: ddp  # default; shown for clarity
+  backend: nccl
+```
+
 ```bash
-torchrun --nproc_per_node=2 scripts/train.py
+uv run llm-train --task stream_lm --config-path configs/ddp.yaml
 ```
 
 Multi-node:
 
 ```bash
 # Node 0 (master)
-torchrun --nnodes=2 --nproc_per_node=4 \
-    --master_addr=192.168.1.1 --master_port=29500 \
-    scripts/train.py
+MASTER_ADDR=192.168.1.1 MASTER_PORT=12355 \
+NUM_NODES=2 NODE_RANK=0 GPUS_PER_NODE=4 \
+uv run llm-train --task stream_lm --config-path configs/ddp.yaml
 
 # Node 1
-torchrun --nnodes=2 --nproc_per_node=4 \
-    --master_addr=192.168.1.1 --master_port=29500 \
-    --node_rank=1 \
-    scripts/train.py
+MASTER_ADDR=192.168.1.1 MASTER_PORT=12355 \
+NUM_NODES=2 NODE_RANK=1 GPUS_PER_NODE=4 \
+uv run llm-train --task stream_lm --config-path configs/ddp.yaml
 ```
 
-The trainer picks up `parallel_strategy="ddp"` from the default
-config; nothing to set.
+The multi-node env vars are read by `DistributedConfig` at startup; the
+YAML itself can stay identical on both nodes (leave `master_addr` /
+`num_nodes` / `node_rank` / `gpus_per_node` unset there so the env vars
+apply). For a single-node run none of them are needed.
 
 ## FSDP quick start
 
@@ -63,11 +83,10 @@ distributed:
   fsdp_cpu_offload: false
 ```
 
-Launch the same way as DDP — `torchrun` handles the process group
-init:
+Launch the same way as DDP — `llm-train` spawns the FSDP workers:
 
 ```bash
-torchrun --nproc_per_node=4 scripts/train.py
+uv run llm-train --task stream_lm --config-path configs/fsdp-pretrain.yaml
 ```
 
 ### FSDP configuration knobs
@@ -194,15 +213,23 @@ all.
 | `NCCL_IB_DISABLE`    | Disable InfiniBand   | `0`     |
 | `NCCL_NET_GDR_LEVEL` | RDMA level           | `2`     |
 
-### `torchrun` flags
+### Launching multi-node runs
 
-| Flag               | Description               |
-| ------------------ | ------------------------- |
-| `--nnodes`         | Total number of nodes     |
-| `--nproc_per_node` | Processes (GPUs) per node |
-| `--node_rank`      | This node's rank          |
-| `--master_addr`    | Master node address       |
-| `--master_port`    | Master node port          |
+`llm-train` does not use `torchrun`; distributed parameters come from
+`DistributedConfig` (YAML or env vars). The env vars that matter are:
+
+| Variable       | Description                      | Default     |
+| -------------- | -------------------------------- | ----------- |
+| `MASTER_ADDR`  | Master node address              | `127.0.0.1` |
+| `MASTER_PORT`  | Master node port                 | `12355`     |
+| `NUM_NODES`    | Total number of nodes            | `1`         |
+| `NODE_RANK`    | This node's rank                 | `0`         |
+| `GPUS_PER_NODE`| Processes (GPUs) per node        | CUDA count  |
+| `BACKEND`      | `nccl` / `gloo`                  | `nccl`      |
+
+Alternatively every field can be set in YAML under `distributed:`, or
+overridden with the `LLM_DISTRIBUTED__<FIELD>` env-var convention (e.g.
+`LLM_DISTRIBUTED__GPUS_PER_NODE=4`).
 
 ## Performance notes
 
@@ -226,7 +253,7 @@ For NCCL debugging:
 
 ```bash
 export NCCL_DEBUG=INFO
-torchrun scripts/train.py
+uv run llm-train --task stream_lm --config-path configs/ddp.yaml
 ```
 
 ## Troubleshooting
