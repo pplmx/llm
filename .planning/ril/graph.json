@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 17,
+  "round": 18,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-10T13:16:03+00:00",
+  "updated_at": "2026-08-10T14:24:26+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 5,
+      "touched_round": 17,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -828,6 +828,194 @@
       "touched_round": 16,
       "source": "round-17: demonstrated pre-fix partial normalize embedding 0x heap address via .venv repro; post-fix descriptor is 'partial(_custom_norm)[flag=True]' with no address; new regression tests test_dedup_fingerprint_normalize_descriptor_is_stable and test_dedup_fingerprint_callable_instance_uses_type_name; tests/data/{test_sources,test_dedup_source,test_streaming_resume} all green (39 passed / 1 sk), ruff+ty+pre-commit gates pass",
       "confidence": 1.0
+    },
+    "ISS-016": {
+      "id": "ISS-016",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-10T13:36:50+00:00",
+      "updated_at": "2026-08-10T13:52:48+00:00",
+      "touched_round": 17,
+      "title": "chat streaming route drops first generated token via bogus prompt-prefix strip",
+      "details": "chat.py:_chat_stream_generator uses 'if not prompt_sent and prompt.startswith(token): continue' to strip a prompt echo, but no backend's stream() echoes the prompt (EagerGenerationBackend.stream -> eager.stream_generate yields only generated tokens; BatchedGenerationBackend.stream -> engine.stream_request yields only generated ids). Only generate() prepends prompt. So a legitimate generated first token that happens to be a prefix of the rendered prompt string (e.g. first char 'u' matching prompt 'user: hi\\nAssistant: ') is silently dropped from the SSE stream. Repro: FakeService yielding ['u','sually...',' done'] with prompt 'user: hi...' streams back ['sually...',' done'] — 'u' lost. Real eager backend confirmed stream()==generated-only."
+    },
+    "HYP-006": {
+      "id": "HYP-006",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T13:37:05+00:00",
+      "updated_at": "2026-08-10T13:37:05+00:00",
+      "touched_round": 17,
+      "confidence": 0.95,
+      "title": "chat stream prompt-strip assumes prompt echo that never happens",
+      "details": "PRIMARY hypothesis: chat.py:210 prompt.startswith(token) strip is derived from the non-streaming path's echo handling, but streaming backends never echo the prompt, so the strip misfires and drops genuine tokens. ALTERNATIVE (low p): some backend historically echoed the prompt in stream and the strip was needed then; but all current backends (eager/batched/speculative) verified to not echo."
+    },
+    "EV-021": {
+      "id": "EV-021",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T13:37:05+00:00",
+      "updated_at": "2026-08-10T13:37:05+00:00",
+      "touched_round": 17,
+      "source": "repro /tmp/repro_chat_echo.py + src/llm/generation/eager.py stream_generate (yields only generated tokens); backends.py Eager/Batched stream paths; verified real eager backend: stream()=['i','c',...] with generate()='abc'+'icihajfi'",
+      "confidence": 1.0,
+      "details": "All backend stream() outputs verified to contain only generated tokens; only generate() prepends prompt. Chat streaming strip thus drops a real generated token when it is a prompt prefix."
+    },
+    "COMP-007": {
+      "id": "COMP-007",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T13:37:15+00:00",
+      "updated_at": "2026-08-10T13:37:15+00:00",
+      "touched_round": 17,
+      "title": "serving routers (generate/chat)",
+      "details": "FastAPI routers wiring generation backend to REST/SSE"
+    },
+    "TASK-010": {
+      "id": "TASK-010",
+      "type": "task",
+      "status": "resolved",
+      "version": 5,
+      "created_at": "2026-08-10T13:37:33+00:00",
+      "updated_at": "2026-08-10T13:52:54+00:00",
+      "touched_round": 17,
+      "category": "correctness",
+      "priority_score": 3.4,
+      "title": "Fix chat streaming prompt-strip: stop dropping generated tokens",
+      "details": "Remove the prompt_sent/prompt.startswith(token) stripping in _chat_stream_generator (streaming backends never echo the prompt, so the strip only deletes legitimate output). Add regression test asserting streamed chunks equal generated text exactly, including a first token equal to a prompt prefix."
+    },
+    "EV-022": {
+      "id": "EV-022",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T13:38:32+00:00",
+      "updated_at": "2026-08-10T13:38:32+00:00",
+      "touched_round": 17,
+      "source": "priority=10(correctness)x1.0(impact)x0.5(prob: char tokenizer + prompt-prefix mimicry)x0.95(conf)x0.707(1/sqrt2)]=3.36",
+      "confidence": 1.0,
+      "details": "Score justification: silent loss of a real generated token from a user-facing SSE response; char-level tokenizer + model tendency to echo prompt prefix makes collision non-rare."
+    },
+    "EV-023": {
+      "id": "EV-023",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T13:51:39+00:00",
+      "updated_at": "2026-08-10T13:51:39+00:00",
+      "touched_round": 17,
+      "source": "tests/serving/test_openai_compat.py::test_chat_completions_stream_does_not_drop_prompt_prefix_token; full tests/serving/ suite green; ruff + ruff format + ty all pass",
+      "confidence": 1.0,
+      "details": "Fix removes the prompt_sent/prompt.startswith strip from _chat_stream_generator; regression test asserts streamed == ['u','sually',' done'] (first token equals prompt prefix) and verified it FAILS on pre-fix code (['sually',' done']) and PASSES post-fix."
+    },
+    "CHG-013": {
+      "id": "CHG-013",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T13:52:12+00:00",
+      "updated_at": "2026-08-10T13:52:12+00:00",
+      "touched_round": 17,
+      "commit": "cca5f87",
+      "title": "fix(serving): chat streaming no longer drops prompt-prefix generated tokens"
+    },
+    "ISS-017": {
+      "id": "ISS-017",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-10T14:02:37+00:00",
+      "updated_at": "2026-08-10T14:09:50+00:00",
+      "touched_round": 17,
+      "title": "migrate-ckpt --in-place --verify deletes legacy before verify, then crashes",
+      "details": "llm-migrate-ckpt with both --in-place and --verify: convert_legacy_checkpoint_to_split(in_place=True) unlinks legacy.pt (checkpoint.py:374) before the CLI's _verify_round_trip torch.load(legacy) runs, raising uncaught FileNotFoundError (exit 1, not documented exit 2). Reproduced with CliRunner: exit_code=1, exception FileNotFoundError, legacy gone before verify. Also the verify-and-split-exists branch ignores --in-place entirely (inconsistent)."
+    },
+    "EV-024": {
+      "id": "EV-024",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:02:52+00:00",
+      "updated_at": "2026-08-10T14:02:52+00:00",
+      "touched_round": 17,
+      "source": "/tmp/repro_migrate.py — CliRunner invoke [path, --in-place, --verify]: exit_code=1, exception FileNotFoundError('No such file or directory'), legacy exists after=False; docs promise exit 2 on verify mismatch and a preserved legacy file",
+      "confidence": 1.0,
+      "details": "Confirmed: convert deletes legacy before verification can read it; message is generic FileNotFoundError, not the documented preservation hint."
+    },
+    "HYP-007": {
+      "id": "HYP-007",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:02:52+00:00",
+      "updated_at": "2026-08-10T14:02:52+00:00",
+      "touched_round": 17,
+      "confidence": 0.9,
+      "title": "verify must run before in-place unlink (or forbear deleting until after verify)",
+      "details": "Fix order: when --verify is passed, run round-trip verify against the still-present legacy blob first; only unlink legacy after verify passes (and only when --in-place)."
+    },
+    "EV-025": {
+      "id": "EV-025",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:02:52+00:00",
+      "updated_at": "2026-08-10T14:02:52+00:00",
+      "touched_round": 17,
+      "source": "discovery round",
+      "confidence": 1.0,
+      "details": "placeholder"
+    },
+    "COMP-008": {
+      "id": "COMP-008",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:03:08+00:00",
+      "updated_at": "2026-08-10T14:03:08+00:00",
+      "touched_round": 17,
+      "title": "training checkpoint + migrate CLI",
+      "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
+    },
+    "TASK-011": {
+      "id": "TASK-011",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-10T14:03:17+00:00",
+      "updated_at": "2026-08-10T14:09:55+00:00",
+      "touched_round": 17,
+      "category": "correctness",
+      "priority_score": 6.0,
+      "title": "Fix migrate-ckpt --in-place --verify ordering (delete after verified)",
+      "details": "Re-run round-trip verification before honoring --in-place deletion so the legacy blob exists for compare; unlink only after verify passes; keep documented exit-code 2 semantics and preserve-legacy hint."
+    },
+    "CHG-014": {
+      "id": "CHG-014",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:09:18+00:00",
+      "updated_at": "2026-08-10T14:09:18+00:00",
+      "touched_round": 17,
+      "commit": "f0a3011",
+      "title": "fix(cli): migrate-ckpt --in-place --verify ordering"
+    },
+    "EV-026": {
+      "id": "EV-026",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:09:27+00:00",
+      "updated_at": "2026-08-10T14:09:27+00:00",
+      "touched_round": 17,
+      "source": "tests/training/test_migrate_ckpt.py::test_in_place_with_verify_deletes_only_after_passing + ::test_in_place_with_verify_preserves_legacy_on_mismatch; ruff + ty + pre-commit pass",
+      "confidence": 1.0,
+      "details": "Post-fix: --in-place --verify exit 0 and deletes legacy only after verification passes; on mismatch exit 2 and legacy preserved. Both regression tests fail pre-fix (FileNotFoundError crash)."
     }
   },
   "edges": [
@@ -1124,6 +1312,84 @@
       "to": "COMP-001",
       "type": "located_in",
       "created_at": "2026-08-10T13:16:03+00:00"
+    },
+    {
+      "from": "EV-021",
+      "to": "HYP-006",
+      "type": "validates",
+      "created_at": "2026-08-10T13:37:15+00:00"
+    },
+    {
+      "from": "ISS-016",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-08-10T13:37:33+00:00"
+    },
+    {
+      "from": "TASK-010",
+      "to": "ISS-016",
+      "type": "addresses",
+      "created_at": "2026-08-10T13:38:32+00:00"
+    },
+    {
+      "from": "CHG-013",
+      "to": "ISS-016",
+      "type": "resolves",
+      "created_at": "2026-08-10T13:52:47+00:00"
+    },
+    {
+      "from": "CHG-013",
+      "to": "TASK-010",
+      "type": "implements",
+      "created_at": "2026-08-10T13:52:48+00:00"
+    },
+    {
+      "from": "EV-023",
+      "to": "HYP-006",
+      "type": "validates",
+      "created_at": "2026-08-10T13:52:48+00:00"
+    },
+    {
+      "from": "EV-024",
+      "to": "HYP-007",
+      "type": "validates",
+      "created_at": "2026-08-10T14:03:01+00:00"
+    },
+    {
+      "from": "ISS-017",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-10T14:03:08+00:00"
+    },
+    {
+      "from": "ISS-017",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-10T14:03:17+00:00"
+    },
+    {
+      "from": "TASK-011",
+      "to": "ISS-017",
+      "type": "addresses",
+      "created_at": "2026-08-10T14:03:57+00:00"
+    },
+    {
+      "from": "CHG-014",
+      "to": "ISS-017",
+      "type": "resolves",
+      "created_at": "2026-08-10T14:09:27+00:00"
+    },
+    {
+      "from": "CHG-014",
+      "to": "TASK-011",
+      "type": "implements",
+      "created_at": "2026-08-10T14:09:27+00:00"
+    },
+    {
+      "from": "EV-026",
+      "to": "HYP-007",
+      "type": "validates",
+      "created_at": "2026-08-10T14:09:50+00:00"
     }
   ]
 }
