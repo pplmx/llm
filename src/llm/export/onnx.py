@@ -127,14 +127,23 @@ def verify_onnx(
     onnx_outputs = session.run(None, {"input_ids": test_input.numpy()})
 
     if model is not None:
-        # Compare with PyTorch output
+        # Compare with PyTorch output.
         model.eval()
+        device = next(model.parameters()).device
         with torch.no_grad():
+            # Run the comparison input on the MODEL's device. The ONNX
+            # session always executes on CPU, but ``model(test_input)``
+            # must be fed a tensor on the same device as the model —
+            # otherwise a CUDA-resident model crashes with a device
+            # mismatch. Then detach/move the result to CPU as float so
+            # it can be compared against the (CPU, fp32) ONNX output
+            # regardless of the model's native dtype.
+            pt_input = test_input.to(device)
             # Handle tuple return (logits, kv_cache) or just logits
-            pt_output = model(test_input)
+            pt_output = model(pt_input)
             if isinstance(pt_output, tuple):
                 pt_output = pt_output[0]
-            pt_output = pt_output.numpy()
+            pt_output = pt_output.float().detach().cpu().numpy()
 
         # Compare
         import numpy as np
