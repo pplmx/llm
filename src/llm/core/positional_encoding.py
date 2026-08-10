@@ -64,10 +64,16 @@ class PositionalEncoding(nn.Module):
             div_term_base = torch.arange(0, hidden_size, 2, device=device, dtype=calc_dtype)
             div_term = torch.exp(div_term_base * (-math.log(10000.0) / hidden_size))
 
-            # Apply sin to even indices in the hidden_size dimension
+            # Apply sin to even indices in the hidden_size dimension.
+            # ``0::2`` selects ``ceil(hidden_size/2)`` columns, so the full
+            # ``div_term`` (length ``ceil(hidden_size/2)``) covers them.
             pe[0, :, 0::2] = torch.sin(position * div_term)
-            # Apply cos to odd indices in the hidden_size dimension
-            pe[0, :, 1::2] = torch.cos(position * div_term)
+            # Apply cos to odd indices. ``1::2`` selects ``floor(h/2)``
+            # columns, so we use only the first ``hidden_size // 2``
+            # frequencies. For even ``hidden_size`` this slice is a no-op
+            # (``div_term[:h/2] == div_term``); for odd it prevents a
+            # shape-mismatch crash that otherwise broke construction.
+            pe[0, :, 1::2] = torch.cos(position * div_term[: hidden_size // 2])
 
             self.register_buffer("pe", pe)
 

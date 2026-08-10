@@ -201,3 +201,37 @@ if __name__ == "__main__":
     # This allows running the tests directly with `python tests/core/test_positional_encoding.py`
     # For more comprehensive test runs, use `pytest`
     pytest.main([__file__])
+
+
+@pytest.mark.quick
+@pytest.mark.parametrize("hidden_size", [3, 5, 7])
+def test_sinusoidal_encoding_odd_hidden_size(hidden_size):
+    """Odd ``hidden_size`` must not crash the sinusoidal (default) path.
+
+    Regression test: the odd-index cosine fill previously used the full
+    ``div_term`` (length ``ceil(h/2)``) against the ``[..., 1::2]`` slice
+    (length ``floor(h/2)``), raising a shape-mismatch RuntimeError at
+    construction time for any odd ``hidden_size``. The column count now
+    matches, and the characteristic sinusoidal invariants still hold
+    (PE(0, even)=0, PE(0, odd)=1).
+    """
+    max_seq_len = 8
+    seq_len = 5
+    model = PositionalEncoding(hidden_size=hidden_size, max_seq_len=max_seq_len, dropout_p=0.0, learned=False)
+    model.eval()
+
+    x = torch.zeros(2, seq_len, hidden_size)
+    out = model(x)
+    assert out.shape == (2, seq_len, hidden_size)
+
+    # Characteristic values at position 0.
+    assert torch.allclose(model.pe[0, 0, 0::2], torch.zeros_like(model.pe[0, 0, 0::2]), atol=1e-7)
+    assert torch.allclose(model.pe[0, 0, 1::2], torch.ones_like(model.pe[0, 0, 1::2]), atol=1e-7)
+
+    # The matrix must match the canonical construction column by column.
+    position = torch.arange(max_seq_len, dtype=torch.float).unsqueeze(1)
+    div_term = torch.exp(torch.arange(0, hidden_size, 2).float() * (-math.log(10000.0) / hidden_size))
+    manual = torch.zeros(max_seq_len, hidden_size)
+    manual[:, 0::2] = torch.sin(position * div_term)
+    manual[:, 1::2] = torch.cos(position * div_term[: hidden_size // 2])
+    assert torch.allclose(model.pe[0], manual, atol=1e-6)
