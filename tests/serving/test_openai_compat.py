@@ -269,3 +269,47 @@ def test_chat_completions_stream_error_yields_error_chunk(client, monkeypatch):
         # Should include the error chunk and [DONE].
         assert chunks[-1] == "data: [DONE]"
         assert any("Error:" in chunk for chunk in chunks)
+
+
+@pytest.mark.slow
+def test_chat_completions_stream_does_not_drop_prompt_prefix_token(client, monkeypatch):
+    """Streaming chat must NOT strip generated tokens that happen to be a
+    prefix of the rendered prompt.
+
+    Regression for ISS-016: the stream handler used to drop the leading
+    streamed token whenever ``prompt.startswith(token)`` was true, assuming
+    the backend echoes the prompt. Backends never echo the prompt on the
+    streaming path (only ``generate()`` prepends it for the non-streaming
+    path), so that strip could silently delete a legitimate first token.
+    Here the first generated token ``"u"`` is a prefix of the rendered
+    prompt ``"user: hi\nAssistant: "``; it must appear verbatim in the SSE
+    stream.
+    """
+    from unittest.mock import MagicMock
+
+    mock = MagicMock()
+    mock.stream.return_value = iter(["u", "sually", " done"])
+    mock.generate.return_value = "ok"
+    monkeypatch.setattr("llm.serving.routers.generate.generation_service", mock)
+
+    payload = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 3,
+        "stream": True,
+    }
+
+    with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+        assert response.status_code == 200
+        streamed = []
+        for line in response.iter_lines():
+            if not (line and line.startswith("data: ")):
+                continue
+            if line == "data: [DONE]":
+                continue
+            import json
+
+            data = json.loads(line[6:])
+            content = data["choices"][0].get("delta", {}).get("content")
+            if content is not None:
+                streamed.append(content)
+        assert streamed == ["u", "sually", " done"]

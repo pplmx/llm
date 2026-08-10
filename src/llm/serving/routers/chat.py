@@ -205,11 +205,15 @@ async def _chat_stream_generator(
                         stop=request.stop,
                     )
 
-                    prompt_sent = False
+                    # Every generation backend's ``stream()`` yields only
+                    # the *generated* tokens — the prompt is never echoed.
+                    # (Only ``generate()`` prepends ``prompt + ...`` for the
+                    # non-streaming path, which chat_completions strips
+                    # above.) Stripping here again would silently drop any
+                    # real generated token that happens to be a prefix of
+                    # the rendered prompt string, so every streamed chunk
+                    # is emitted verbatim.
                     async for token in iterate_in_threadpool(iterator):
-                        if not prompt_sent and prompt.startswith(token):
-                            continue
-                        prompt_sent = True
                         token_count += 1
 
                         chunk = ChatCompletionChunk(
