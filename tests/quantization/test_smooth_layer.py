@@ -105,3 +105,14 @@ def test_smooth_layer_no_input_scales_path():
     layer.input_scales = None
     out = layer(torch.randn(2, 16))
     assert out.shape == (2, 8)
+
+
+def test_smooth_layer_forward_accepts_fp16_bf16_input():
+    """fp16/bf16 inputs must not crash (regression for ISS-018)."""
+    layer = _build_smooth_layer()
+    x32 = torch.randn(2, 16)
+    ref = layer(x32)
+    for x in (x32.half(), x32.bfloat16()):
+        out = layer(x)
+        assert out.dtype == torch.float32
+        assert torch.allclose(out, ref, atol=5e-2)

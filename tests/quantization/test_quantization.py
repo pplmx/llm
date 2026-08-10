@@ -163,6 +163,18 @@ class TestQuantizedLinear:
 
         assert quant_linear.weight_scale.shape == (1,)
 
+    def test_forward_accepts_fp16_bf16_input(self):
+        """fp16/bf16 inputs must not crash (regression for ISS-018)."""
+        linear = nn.Linear(10, 20)
+        quant_linear = QuantizedLinear.from_linear(linear)
+
+        x32 = torch.randn(4, 10)
+        ref = quant_linear(x32)
+        for x in (x32.half(), x32.bfloat16()):
+            out = quant_linear(x)
+            assert out.dtype == torch.float32
+            assert torch.allclose(out, ref, atol=1e-1)
+
 
 class TestQuantizeModel:
     """Tests for model quantization."""

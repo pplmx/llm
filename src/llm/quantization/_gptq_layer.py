@@ -148,4 +148,7 @@ class GPTQQuantizedLinear(nn.Module):
             scales_expanded = scales.to(torch.float32).repeat_interleave(gs, dim=1)
             w_fp = w_int_signed * scales_expanded
 
-        return torch.nn.functional.linear(x, w_fp, self.bias)
+        # Weights are materialised in fp32; upcast the input so fp16/bf16
+        # model inference (the HF loader / serving default) works.  Output
+        # is fp32 regardless of ``x`` dtype (matches the docstring).
+        return torch.nn.functional.linear(x.to(torch.float32), w_fp, self.bias)

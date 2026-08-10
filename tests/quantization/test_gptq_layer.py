@@ -341,6 +341,43 @@ def test_unpack_4bit_raises_on_odd_numel():
         _unpack_4bit(packed, numel=7)  # 7 is odd - not representable as 2x4-bit pairs
 
 
+def test_gptq_layer_forward_accepts_fp16_bf16_input():
+    """fp16/bf16 inputs must not crash (regression for ISS-018).
+
+    Weights are materialised in fp32; before the fix the input was passed
+    to ``F.linear`` un-upcast, so half-precision model inference (the HF
+    loader / serving default) raised ``RuntimeError: mat1 and mat2 must
+    have the same dtype``.
+    """
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
+
+    out_f, in_f = 4, 8
+    w = torch.randn(out_f, in_f) * 0.3
+    qmax = 7.0
+    scale = w.abs().max(dim=1, keepdim=True)[0].clamp(min=1e-8) / qmax
+    w_int = (w / scale).round().clamp(-8, 7).to(torch.int8) + 8  # unsigned [0,15]
+    packed = _pack_4bit(w_int.flatten())
+
+    layer = GPTQQuantizedLinear(
+        in_features=in_f,
+        out_features=out_f,
+        bits=4,
+        group_size=-1,
+        sym=True,
+        weight_packed=packed,
+        scales=scale.half(),
+        zeros=None,
+        bias=True,
+    )
+
+    x32 = torch.randn(2, in_f)
+    ref = layer(x32)  # fp32 baseline
+    for x in (x32.half(), x32.bfloat16()):
+        out = layer(x)
+        assert out.dtype == torch.float32
+        assert torch.allclose(out, ref, atol=1e-2)
+
+
 def test_gptq_layer_asymmetric_forward_raises_not_implemented():
     """sym=False raises NotImplementedError on forward — fail-fast contract."""
     from llm.quantization._gptq_layer import GPTQQuantizedLinear

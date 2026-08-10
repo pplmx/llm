@@ -142,3 +142,14 @@ def test_awq_layer_bias_preserved():
     layer = _build_awq_layer(bias=True)
     assert layer.bias is not None
     assert layer.bias.requires_grad
+
+
+def test_awq_layer_forward_accepts_fp16_bf16_input():
+    """fp16/bf16 inputs must not crash (regression for ISS-018)."""
+    layer = _build_awq_layer()
+    x32 = torch.randn(3, 16)
+    ref = layer(x32)
+    for x in (x32.half(), x32.bfloat16()):
+        out = layer(x)
+        assert out.dtype == torch.float32
+        assert torch.allclose(out, ref, atol=1e-2)

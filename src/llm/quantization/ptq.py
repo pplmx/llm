@@ -82,7 +82,9 @@ class QuantizedLinear(nn.Module):
         # Dequantize weights
         weight = self._dequantize_weight()
 
-        return nn.functional.linear(x, weight, self.bias)
+        # ``_dequantize_weight`` materialises fp32 weights; upcast the
+        # input so fp16/bf16 model inference works.  Output is fp32.
+        return nn.functional.linear(x.to(torch.float32), weight, self.bias)
 
     def _dequantize_weight(self) -> torch.Tensor:
         """Dequantize stored weights."""

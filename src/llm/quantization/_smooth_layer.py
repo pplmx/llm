@@ -101,4 +101,6 @@ class SmoothQuantLinear(nn.Module):
         x_q = torch.clamp(torch.round(x / act_scale), -128, 127) * act_scale
 
         w_fp = self._dequantize_weights()
-        return torch.nn.functional.linear(x_q, w_fp, self.bias)
+        # Weights are materialised in fp32; upcast the (fake-quantised) input
+        # so fp16/bf16 model inference works.  Output is fp32.
+        return torch.nn.functional.linear(x_q.to(torch.float32), w_fp, self.bias)
