@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -225,6 +227,79 @@ def test_dedup_fingerprint_mismatch_raises(tmp_path):
             expected.source_fingerprint(),
             actual.source_fingerprint(),
         )
+
+
+def _custom_norm(text, *, flag=False):
+    """Module-level normalize used by the fingerprint-stability tests.
+
+    ``flag`` genuinely changes the normalization so two ``partial``
+    wrappers with different frozen kwargs produce distinct fingerprints.
+    """
+    return text.strip().upper() if flag else text.strip()
+
+
+class _CallableNormalizer:
+    """Module-level callable instance (no ``__name__``)."""
+
+    def __call__(self, text: str) -> str:
+        return text.strip()
+
+
+def test_dedup_fingerprint_normalize_descriptor_is_stable(tmp_path):
+    """The ``normalize`` descriptor must be deterministic across processes.
+
+    Regression test: the old ``repr()`` fallback embedded the callable's
+    heap address for non-named callables (e.g. ``functools.partial``), so
+    ``source_fingerprint`` differed between processes for byte-identical
+    pipelines. That silently broke the DVC version key and triggered
+    spurious ``fingerprint mismatch`` failures on checkpoint resume.
+    """
+    path = _write(tmp_path, "data.txt", ["a"])
+
+    named = DedupTextSource(LocalLineTextSource(path), normalize=_custom_norm)
+    partial = DedupTextSource(
+        LocalLineTextSource(path),
+        normalize=functools.partial(_custom_norm, flag=True),
+    )
+    fp_named = named.source_fingerprint()
+    fp_partial = partial.source_fingerprint()
+
+    # Named callables keep their (stable) name.
+    assert fp_named["normalize"] == "_custom_norm"
+
+    # A partial now renders to a stable descriptor with no heap address,
+    # where the old repr() fell back to something like
+    # ``functools.partial(<function _custom_norm at 0x7f...>)``.
+    assert fp_partial["normalize"] == "partial(_custom_norm)[flag=True]"
+    assert re.search(r"0x[0-9a-f]{4,}", fp_partial["normalize"]) is None
+
+    # Two byte-identical pipelines produce identical fingerprints.
+    again = DedupTextSource(
+        LocalLineTextSource(path),
+        normalize=functools.partial(_custom_norm, flag=True),
+    ).source_fingerprint()
+    assert again == fp_partial
+
+    # Genuine config drift is still detected: different frozen kwargs on
+    # the partial yield a different fingerprint.
+    drift = DedupTextSource(
+        LocalLineTextSource(path),
+        normalize=functools.partial(_custom_norm, flag=False),
+    ).source_fingerprint()
+    assert drift != fp_partial
+    with pytest.raises(ValueError, match="fingerprint mismatch"):
+        validate_source_fingerprint(fp_partial, drift)
+
+
+def test_dedup_fingerprint_callable_instance_uses_type_name(tmp_path):
+    """A ``__call__`` instance without a stable name falls back to its type
+    name rather than ``repr()``, which would leak a heap address."""
+    path = _write(tmp_path, "data.txt", ["a"])
+
+    src = DedupTextSource(LocalLineTextSource(path), normalize=_CallableNormalizer())
+    desc = src.source_fingerprint()["normalize"]
+    assert desc == "_CallableNormalizer"
+    assert re.search(r"0x[0-9a-f]{4,}", desc) is None
 
 
 # --- DataConfig + registry plumbing ----------------------------------------

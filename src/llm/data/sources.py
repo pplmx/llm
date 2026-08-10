@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+import functools
 import hashlib
 import re
 from collections.abc import Callable, Iterator
@@ -120,6 +121,39 @@ def _default_dedup_normalize(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", text.strip())
 
 
+def _stable_callable_descriptor(func: Any) -> str:
+    """Return a deterministic, process-independent descriptor for a callable.
+
+    Used to fingerprint the ``normalize`` strategy so a given pipeline is
+    reproducibly keyed for DVC data-versioning and streaming checkpoint
+    resume validation.
+
+    The previous ``repr()`` fallback embedded the callable's heap address
+    (e.g. for a :class:`functools.partial` or a ``__call__`` instance),
+    which made :meth:`DedupTextSource.source_fingerprint` differ across
+    processes for byte-identical pipelines — silently breaking the DVC
+    version key and triggering spurious ``fingerprint mismatch`` failures
+    on resume.
+    """
+    if isinstance(func, functools.partial):
+        args = ", ".join(_stable_callable_descriptor(a) if callable(a) else repr(a) for a in func.args)
+        kwargs = ", ".join(
+            f"{k}=" + (_stable_callable_descriptor(v) if callable(v) else repr(v))
+            for k, v in sorted((func.keywords or {}).items())
+        )
+        inner = ", ".join(x for x in (args, kwargs) if x)
+        return f"partial({_stable_callable_descriptor(func.func)})" + (f"[{inner}]" if inner else "")
+    qualname = getattr(func, "__qualname__", None)
+    if qualname is not None:
+        return qualname
+    name = getattr(func, "__name__", None)
+    if name is not None:
+        return name
+    # Callable instance implementing ``__call__`` with no stable name: use
+    # its type instead of ``repr()``, which would leak a heap address.
+    return type(func).__qualname__
+
+
 class DedupTextSource(TextSource):
     """TextSource wrapper that drops duplicate records by content hash.
 
@@ -226,7 +260,7 @@ class DedupTextSource(TextSource):
             "type": "dedup",
             "inner": self.inner.source_fingerprint(),
             "hash_algo": self.hash_algo,
-            "normalize": getattr(self.normalize, "__name__", repr(self.normalize)),
+            "normalize": _stable_callable_descriptor(self.normalize),
         }
         if self.seen_hashes_path is not None:
             fp["seen_hashes_path"] = str(self.seen_hashes_path.resolve())
