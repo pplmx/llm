@@ -14,13 +14,26 @@ def apply_repetition_penalty(
     token_ids: list[int],
     repetition_penalty: float,
 ) -> torch.Tensor:
-    """Apply repetition penalty in-place on 1D logits."""
+    """Apply repetition penalty in-place on 1D logits.
+
+    Token ids outside ``[0, vocab_size)`` are silently dropped, matching
+    the other penalty helpers (:func:`apply_frequency_penalty`,
+    :func:`apply_presence_penalty`, :func:`apply_logit_bias`). Without
+    this the ``torch.gather`` below raises an out-of-bounds error for any
+    id that is not representable in these logits (e.g. a truncation or
+    API boundary passing ids the model's vocabulary never produced).
+    """
     if repetition_penalty == 1.0 or not token_ids:
+        return logits
+
+    vocab_size = logits.size(-1)
+    valid_ids = [tid for tid in token_ids if 0 <= tid < vocab_size]
+    if not valid_ids:
         return logits
 
     adjusted = logits.clone()
     device = adjusted.device
-    ids = torch.tensor(token_ids, device=device)
+    ids = torch.tensor(valid_ids, device=device)
     scores = torch.gather(adjusted, 0, ids)
     scores = torch.where(scores < 0, scores * repetition_penalty, scores / repetition_penalty)
     adjusted.scatter_(0, ids, scores)
