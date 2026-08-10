@@ -197,10 +197,15 @@ def main(
         typer.echo("✓ Split layout already exists; running --verify on it.")
         written = sidecars
     else:
+        # When --verify is requested, do NOT delete the legacy blob at
+        # convert time even with --in-place: verification compares the
+        # new trio against the legacy file, so it must still be present
+        # on disk until the round-trip check runs. The legacy file is
+        # unlinked below, but only after verification has passed.
         try:
             written = convert_legacy_checkpoint_to_split(
                 legacy_path,
-                in_place=in_place,
+                in_place=in_place and not verify,
                 overwrite=overwrite,
             )
         except CheckpointMigrationError as exc:
@@ -221,6 +226,10 @@ def main(
                 err=True,
             )
             raise typer.Exit(code=2)
+        # Honor --in-place now that verification passed: the round-trip
+        # compare above used the legacy blob, so it is safe to delete.
+        if in_place and legacy_path.exists():
+            legacy_path.unlink()
         typer.echo("✓ verification passed (model_state tensors + metadata match)")
 
 

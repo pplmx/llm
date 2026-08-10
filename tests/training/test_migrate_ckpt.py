@@ -222,6 +222,37 @@ class TestMigrateCkptCli:
         assert result.exit_code == 0, result.stderr
         assert "verification passed" in strip_ansi(result.stdout)
 
+    def test_in_place_with_verify_deletes_only_after_passing(self, cli_runner: CliRunner, legacy_checkpoint: Path):
+        """``--in-place --verify`` must run the round-trip check against the
+        still-present legacy blob before deleting it (regression for ISS-017):
+        the old code unlinked legacy at convert time, so verification crashed
+        with FileNotFoundError (exit 1) instead of comparing.
+        """
+        result = cli_runner.invoke(app, [str(legacy_checkpoint), "--in-place", "--verify"])
+        assert result.exit_code == 0, f"expected exit 0, got {result.exit_code}: {result.stdout!r}"
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "verification passed" in combined
+        # Legacy deleted, but only because verification passed.
+        assert not legacy_checkpoint.exists()
+
+    def test_in_place_with_verify_preserves_legacy_on_mismatch(self, cli_runner: CliRunner, legacy_checkpoint: Path):
+        """On verify failure, the legacy blob must be preserved even with
+        ``--in-place``, and the exit code must be 2 (not an uncaught crash)."""
+        # First convert cleanly so the trio exists.
+        convert_legacy_checkpoint_to_split(legacy_checkpoint)
+        stem = legacy_checkpoint.with_suffix("")
+        # Corrupt the new metadata so the round-trip check fails.
+        meta_path = Path(str(stem) + META_SUFFIX)
+        meta = json.loads(meta_path.read_text())
+        meta["epoch"] = 999
+        meta_path.write_text(json.dumps(meta))
+
+        result = cli_runner.invoke(app, [str(legacy_checkpoint), "--in-place", "--verify"])
+        assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}: {result.stdout!r}"
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "verification failed" in combined
+        assert legacy_checkpoint.exists(), "legacy must be preserved on verify mismatch"
+
     def test_verify_exits_2_on_mismatch(self, cli_runner: CliRunner, legacy_checkpoint: Path, tmp_path: Path):
         # First convert cleanly.
         convert_legacy_checkpoint_to_split(legacy_checkpoint)
