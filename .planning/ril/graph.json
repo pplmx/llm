@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 16,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-10T12:58:52+00:00",
+  "updated_at": "2026-08-10T13:06:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -783,6 +783,18 @@
       "touched_round": 16,
       "source": "round-16: verified the five uncommitted prior-round fixes green (tests/core/test_rope.py, tests/core/test_positional_encoding.py, tests/inference/test_sampling.py, tests/data/test_dedup_source.py, tests/export/test_export.py all pass; ruff check + ruff format clean; pre-commit hooks ruff/ty/doctests/commitizen pass on each commit), then committed them as 5 logical commits: 7889150 (dedup), 1321691 (ongx), 2771c41 (sampling), cd6069b (positional_encoding), f0167aa (rope). RIL CHG-007..011 updated with commit hashes; round bumped to 16.",
       "confidence": 1.0
+    },
+    "DEC-005": {
+      "id": "DEC-005",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T13:06:42+00:00",
+      "updated_at": "2026-08-10T13:06:42+00:00",
+      "touched_round": 16,
+      "title": "Round-16: commit pending fixes; deep-dive found no new above-threshold task",
+      "rationale": "Five genuine fixes from prior rounds (8-15) were previously left as uncommitted working-tree changes. This round verified them green (targeted tests + ruff + ty + pre-commit doctests/commitizen) and committed them as five logical commits; RIL CHG-007..011 updated with commit hashes and round bumped to 16. Deep-dive scanned generation (eager/speculative/backends), serving (auth/scheduler/batch), evaluation and the recently-fixed core/data/export paths; no new issue scored above the 3.0 task threshold. The full pytest suite remains network-hang bound in this sandbox (see EV-012), so verification used targeted offline tests plus the pre-commit gates.",
+      "alternatives_rejected": "(1) commit all changes as one large commit: rejected to respect the <=300-line single-commit budget and keep each fix independently revertable; (2) leave working tree uncommitted to continue scanning more code: rejected after three rounds of deep-dive returned no above-threshold finding; (3) force full test suite: rejected - environmental network hang, not a code defect."
     }
   },
   "edges": [
