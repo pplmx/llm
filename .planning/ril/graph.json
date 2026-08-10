@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 7,
+  "round": 16,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-07T15:32:30+00:00",
+  "updated_at": "2026-08-10T12:58:52+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -590,6 +590,199 @@
       "rationale": "All 5 stop conditions met: (1) no active task above 3.0 priority — all 9 tasks resolved; (2) all high-severity issues resolved (ISS-009 resolved via DEC-003 deferral); (3) last VERIFY green (ruff + ty + test-fast all pass); (4) 2 consecutive deep-exploration rounds (6,7) produced no task above 3.0 threshold (TASK-009 scored 0.924); (5) graph consistency check passes (48 nodes, 42 edges, no orphans/cycles).",
       "alternatives_rejected": "(1) continue looping: rejected — no high-value work found in 2 rounds, would waste compute; (2) execute TASK-009: rejected — addressed via DEC-003 decision to defer until GPU CI available",
       "title": "Stop conditions met at round 7 — repository is clean and healthy"
+    },
+    "EV-012": {
+      "id": "EV-012",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T10:58:28+00:00",
+      "updated_at": "2026-08-10T10:58:28+00:00",
+      "touched_round": 8,
+      "source": "round-8 OBSERVE: git clean; all RIL tasks resolved; no TODO/FIXME in src/llm. Deep-dive reviewed paged_attention (block_allocator, paged_kv_cache, block_manager), streaming resume (datasets/streaming, stream_state, modules/streaming), dedup (sources.py), ONNX export — no genuine above-threshold defect found. Full fast suite is network-hang bound in this sandbox; generation+inference+data targeted tests green offline.",
+      "confidence": 1.0
+    },
+    "ISS-010": {
+      "id": "ISS-010",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-10T11:09:21+00:00",
+      "updated_at": "2026-08-10T11:09:33+00:00",
+      "touched_round": 10,
+      "summary": "DedupTextSource opened the seen-hashes file once per surviving record (O(records) syscalls), a real I/O bottleneck on web-scale pretraining corpora"
+    },
+    "EV-013": {
+      "id": "EV-013",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T11:09:21+00:00",
+      "updated_at": "2026-08-10T11:09:21+00:00",
+      "touched_round": 10,
+      "source": "src/llm/data/sources.py DedupTextSource.iter_texts; fixed to open once per pass + per-write flush; tests/data/test_dedup_source.py::test_dedup_opens_seen_hashes_file_once_per_pass",
+      "confidence": 1.0
+    },
+    "CHG-007": {
+      "id": "CHG-007",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-10T11:09:21+00:00",
+      "updated_at": "2026-08-10T12:58:32+00:00",
+      "touched_round": 15,
+      "commit": 7889150,
+      "summary": "open seen-hashes file once per iteration pass in DedupTextSource instead of per record"
+    },
+    "ISS-011": {
+      "id": "ISS-011",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-10T11:13:01+00:00",
+      "updated_at": "2026-08-10T11:13:56+00:00",
+      "touched_round": 11,
+      "summary": "verify_onnx crashed for non-CPU models: comparison input stayed on CPU while model(test_input) required the model's device"
+    },
+    "CHG-008": {
+      "id": "CHG-008",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-10T11:13:01+00:00",
+      "updated_at": "2026-08-10T12:58:32+00:00",
+      "touched_round": 15,
+      "commit": 1321691,
+      "summary": "verify_onnx: move comparison input to model device, normalize output to CPU float before allclose"
+    },
+    "EV-014": {
+      "id": "EV-014",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T11:13:56+00:00",
+      "updated_at": "2026-08-10T11:13:56+00:00",
+      "touched_round": 11,
+      "source": "src/llm/export/onnx.py verify_onnx; tests/export/test_export.py pass (exit 0), ruff+ty clean",
+      "confidence": 1.0
+    },
+    "ISS-012": {
+      "id": "ISS-012",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-10T12:17:51+00:00",
+      "updated_at": "2026-08-10T12:17:51+00:00",
+      "touched_round": 12,
+      "summary": "apply_repetition_penalty raised an out-of-bounds torch.gather error for token ids outside [0, vocab_size), unlike the frequency/presence/logit-bias helpers which silently drop them"
+    },
+    "CHG-009": {
+      "id": "CHG-009",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-10T12:17:51+00:00",
+      "updated_at": "2026-08-10T12:58:32+00:00",
+      "touched_round": 15,
+      "commit": "2771c41",
+      "summary": "apply_repetition_penalty: drop out-of-vocab token ids before gather/scatter (aligns with other penalty helpers); add regression test"
+    },
+    "EV-015": {
+      "id": "EV-015",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T12:17:51+00:00",
+      "updated_at": "2026-08-10T12:17:51+00:00",
+      "touched_round": 12,
+      "source": "src/llm/generation/sampling.py apply_repetition_penalty; tests/inference/test_sampling.py::test_repetition_penalty_ignores_tokens_outside_vocab (all sampling+dedup+export tests green, ruff clean)",
+      "confidence": 1.0
+    },
+    "EV-016": {
+      "id": "EV-016",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T12:33:54+00:00",
+      "updated_at": "2026-08-10T12:33:54+00:00",
+      "touched_round": 12,
+      "source": "round-12/13 deep-dive: verified dedup+onnx+sampling fixes green (tests/data/{sources,dedup_source,streaming,presets,dvc}, tests/generation/{eager,batch_generate_truncation,stop_sequences}, tests/inference/{sampling,frequency,presence,logit_bias}, tests/export all pass); investigated comma-form 'except A, B:' across src+tests - confirmed it parses as a tuple on the sole supported python>=3.14 (ast Tuple, runtime works) and is the intentional project-wide convention, NOT a defect",
+      "confidence": 1.0
+    },
+    "ISS-013": {
+      "id": "ISS-013",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-10T12:36:38+00:00",
+      "updated_at": "2026-08-10T12:36:38+00:00",
+      "touched_round": 13,
+      "summary": "PositionalEncoding sinusoidal (default, learned=False) raised a shape-mismatch RuntimeError at construction for any odd hidden_size: the 1::2 cosine fill got the full div_term (ceil(h/2) entries) against a floor(h/2)-column slice"
+    },
+    "CHG-010": {
+      "id": "CHG-010",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-10T12:36:38+00:00",
+      "updated_at": "2026-08-10T12:58:32+00:00",
+      "touched_round": 15,
+      "commit": "cd6069b",
+      "summary": "positional_encoding: fill odd-index cosine columns with div_term[:hidden_size//2] so odd hidden_size constructs; no-op for even sizes; add 3-way parametrized regression test"
+    },
+    "EV-017": {
+      "id": "EV-017",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T12:36:38+00:00",
+      "updated_at": "2026-08-10T12:36:38+00:00",
+      "touched_round": 13,
+      "source": "src/llm/core/positional_encoding.py __init__; tests/core/test_positional_encoding.py::test_sinusoidal_encoding_odd_hidden_size[3|5|7] - reproduces pre-fix crash, passes post-fix; ruff+format clean; DecoderModel forward unchanged for even hidden_size",
+      "confidence": 1.0
+    },
+    "ISS-014": {
+      "id": "ISS-014",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-10T12:40:18+00:00",
+      "updated_at": "2026-08-10T12:40:18+00:00",
+      "touched_round": 14,
+      "summary": "RotaryPositionEmbedding crashed cryptically mid-forward for odd head_dim: arange(0,dim,2) yields ceil(dim/2) freqs, so cat((freqs,freqs)) has dim+1 columns vs q/k's dim; rotate_half pairing is undefined for odd dim"
+    },
+    "CHG-011": {
+      "id": "CHG-011",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-10T12:40:18+00:00",
+      "updated_at": "2026-08-10T12:58:32+00:00",
+      "touched_round": 15,
+      "commit": "f0167aa",
+      "summary": "rope: reject odd head_dim at __init__ with a clear ValueError instead of a cryptic forward-crash; add regression test"
+    },
+    "EV-018": {
+      "id": "EV-018",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T12:40:18+00:00",
+      "updated_at": "2026-08-10T12:40:18+00:00",
+      "touched_round": 14,
+      "source": "src/llm/core/rope.py __init__; tests/core/test_rope.py::test_rope_rejects_odd_head_dim; pre-fix odd dim=9 crashed in forward (RuntimeError size 9 vs 10), post-fix clear ValueError at construction; all 20 rope tests pass, ruff clean",
+      "confidence": 1.0
+    },
+    "EV-019": {
+      "id": "EV-019",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T12:58:52+00:00",
+      "updated_at": "2026-08-10T12:58:52+00:00",
+      "touched_round": 16,
+      "source": "round-16: verified the five uncommitted prior-round fixes green (tests/core/test_rope.py, tests/core/test_positional_encoding.py, tests/inference/test_sampling.py, tests/data/test_dedup_source.py, tests/export/test_export.py all pass; ruff check + ruff format clean; pre-commit hooks ruff/ty/doctests/commitizen pass on each commit), then committed them as 5 logical commits: 7889150 (dedup), 1321691 (ongx), 2771c41 (sampling), cd6069b (positional_encoding), f0167aa (rope). RIL CHG-007..011 updated with commit hashes; round bumped to 16.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -844,6 +1037,36 @@
       "to": "TASK-009",
       "type": "governs",
       "created_at": "2026-08-07T15:31:22+00:00"
+    },
+    {
+      "from": "CHG-007",
+      "to": "ISS-010",
+      "type": "resolves",
+      "created_at": "2026-08-10T11:09:27+00:00"
+    },
+    {
+      "from": "CHG-008",
+      "to": "ISS-011",
+      "type": "resolves",
+      "created_at": "2026-08-10T11:13:56+00:00"
+    },
+    {
+      "from": "CHG-009",
+      "to": "ISS-012",
+      "type": "resolves",
+      "created_at": "2026-08-10T12:17:51+00:00"
+    },
+    {
+      "from": "CHG-010",
+      "to": "ISS-013",
+      "type": "resolves",
+      "created_at": "2026-08-10T12:36:38+00:00"
+    },
+    {
+      "from": "CHG-011",
+      "to": "ISS-014",
+      "type": "resolves",
+      "created_at": "2026-08-10T12:40:18+00:00"
     }
   ]
 }
