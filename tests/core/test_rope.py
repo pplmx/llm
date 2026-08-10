@@ -227,3 +227,18 @@ class TestGetRopeScalingFactor:
         """Test unknown scaling type returns 1.0."""
         factor = get_rope_scaling_factor(4096, 2048, "unknown_type")
         assert factor == 1.0
+
+
+@pytest.mark.quick
+def test_rope_rejects_odd_head_dim():
+    """Odd ``head_dim`` must raise a clear error at construction.
+
+    Regression test: RoPE's ``rotate_half`` pairs each dimension with its
+    counterpart at ``dim/2``, which is undefined for odd ``dim``. The
+    previous behaviour was a cryptic shape-mismatch RuntimeError in the
+    middle of ``forward`` (the precomputed ``emb`` had ``dim+1`` columns
+    for odd ``dim``). It now fails immediately and actionably at
+    :meth:`__init__`.
+    """
+    with pytest.raises(ValueError, match="even head_dim"):
+        RotaryPositionEmbedding(dim=9)

@@ -48,6 +48,13 @@ class RotaryPositionEmbedding(nn.Module):
         self.scaling_type = scaling_type
         self.scaling_factor = scaling_factor
 
+        if dim % 2 != 0:
+            raise ValueError(
+                f"RoPE requires an even head_dim, got dim={dim}. "
+                "rotate_half pairs each dimension with its counterpart at "
+                "dim/2, which is undefined when dim is odd."
+            )
+
         # Compute inverse frequencies
         inv_freq = self._compute_inv_freq(device, dtype)
         self.inv_freq: torch.Tensor
