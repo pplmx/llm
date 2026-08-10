@@ -333,3 +333,48 @@ def test_dedup_persisted_state_makes_skip_resume_exact(tmp_path):
     # ['e', 'f'] here, duplicating consumed data).
     resumed = list(make_source().iter_texts(skip=len(run1)))
     assert resumed == []
+
+
+def test_dedup_opens_seen_hashes_file_once_per_pass(monkeypatch, tmp_path):
+    """With write_seen_hashes=True, the seen-hashes file must be opened
+    once per iteration pass (not once per surviving record). A web-scale
+    corpus with millions of records must not pay one open() syscall per
+    record; opening once per pass with per-write flush preserves both the
+    dedup result and the persisted-hashes durability contract.
+    """
+    import io
+
+    data_path = _write(tmp_path, "data.txt", ["a", "b", "a", "c", "b", "a", "d"])
+    seen_path = tmp_path / "seen.txt"
+    seen_path.write_text("", encoding="utf-8")
+
+    append_opens: list[int] = []
+    real_io_open = io.open
+
+    def counting_open(file, mode="r", *args, **kwargs):
+        if mode.startswith("a"):
+            append_opens.append(mode)
+        return real_io_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(io, "open", counting_open)
+
+    source = DedupTextSource(
+        LocalLineTextSource(data_path),
+        seen_hashes_path=seen_path,
+        write_seen_hashes=True,
+    )
+    deduped = list(source.iter_texts())
+
+    # Dedup behavior is unchanged: only unique records survive.
+    assert deduped == ["a", "b", "c", "d"]
+    # And the persisted hashes are complete and decodable.
+    h_a = hashlib.sha256(b"a").hexdigest()
+    h_b = hashlib.sha256(b"b").hexdigest()
+    h_c = hashlib.sha256(b"c").hexdigest()
+    h_d = hashlib.sha256(b"d").hexdigest()
+    assert seen_path.read_text(encoding="utf-8").splitlines() == [h_a, h_b, h_c, h_d]
+
+    # The append file was opened exactly once for the whole pass — not
+    # once per surviving record. (write_text above is not an append, and
+    # the io.open patch only counts append-mode opens.)
+    assert append_opens == ["a"], f"expected a single append open, got {append_opens}"

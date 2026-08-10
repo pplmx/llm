@@ -194,16 +194,32 @@ class DedupTextSource(TextSource):
         # ``skip`` is delegated to the inner source so the
         # ``line_index`` resume semantics used by StreamingTextDataset
         # stay consistent with non-dedup sources.
-        for text in self.inner.iter_texts(skip=skip):
-            normalized = self.normalize(text)
-            digest = hashlib.new(self.hash_algo, normalized.encode("utf-8")).hexdigest()
-            if digest in self._seen:
-                continue
-            self._seen.add(digest)
-            if self.write_seen_hashes and self.seen_hashes_path is not None:
-                with self.seen_hashes_path.open("a", encoding="utf-8") as handle:
+        #
+        # Performance note: the seen-hashes file is opened **once per
+        # iteration pass** rather than once per surviving record. On a
+        # web-scale pretraining corpus (tens of millions of records) the
+        # old per-record ``open()/write()/close()`` cost billions of
+        # syscalls and became a real I/O bottleneck. Each write is still
+        # immediately flushed so a checkpoint resume observed the same
+        # persisted hashes as before (durability semantics unchanged),
+        # and the handle is closed when the pass ends.
+        handle = None
+        try:
+            for text in self.inner.iter_texts(skip=skip):
+                normalized = self.normalize(text)
+                digest = hashlib.new(self.hash_algo, normalized.encode("utf-8")).hexdigest()
+                if digest in self._seen:
+                    continue
+                self._seen.add(digest)
+                if self.write_seen_hashes and self.seen_hashes_path is not None:
+                    if handle is None:
+                        handle = self.seen_hashes_path.open("a", encoding="utf-8")
                     handle.write(digest + "\n")
-            yield text
+                    handle.flush()
+                yield text
+        finally:
+            if handle is not None:
+                handle.close()
 
     def source_fingerprint(self) -> dict[str, Any]:
         fp: dict[str, Any] = {
