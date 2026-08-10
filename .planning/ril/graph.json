@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 18,
+  "round": 19,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-10T14:24:26+00:00",
+  "updated_at": "2026-08-10T15:08:18+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 0,
+      "touched_round": 18,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -1016,6 +1016,135 @@
       "source": "tests/training/test_migrate_ckpt.py::test_in_place_with_verify_deletes_only_after_passing + ::test_in_place_with_verify_preserves_legacy_on_mismatch; ruff + ty + pre-commit pass",
       "confidence": 1.0,
       "details": "Post-fix: --in-place --verify exit 0 and deletes legacy only after verification passes; on mismatch exit 2 and legacy preserved. Both regression tests fail pre-fix (FileNotFoundError crash)."
+    },
+    "ISS-018": {
+      "id": "ISS-018",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-10T14:34:06+00:00",
+      "updated_at": "2026-08-10T14:44:34+00:00",
+      "touched_round": 18,
+      "title": "quantized layer forwards crash on fp16/bf16 input despite documented upcast",
+      "details": "_gptq_layer.py:161, _awq_layer.py:~110, _smooth_layer.py:~104, ptq.py:~85: forward computes w_fp in fp32 but passes input x through unchanged to F.linear(x, w_fp, bias). hf_loader defaults to float16; serving/training default fp16 too. Any half input raises RuntimeError 'mat1 and mat2 must have the same dtype'. Empirically confirmed for fp16 and bf16 on GPTQQuantizedLinear. Docstring claims x is upcast to fp32 — code never does it."
+    },
+    "ISS-019": {
+      "id": "ISS-019",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-10T14:35:17+00:00",
+      "updated_at": "2026-08-10T15:05:18+00:00",
+      "touched_round": 18,
+      "title": "GPTQ act_order + group quantization misaligns dequantization scales",
+      "details": "_gptq py quantize() permutes w at line ~208 (w = w[:, perm]) and never un-permutes w before computing per-group scales at ~287-303; q_out is un-permuted back to original column order (q_out[:, invperm]). scales then indexed by permuted group order while q_out is original order. Downstream _quantize_linear_with_gptq multiplies q_out by scales.repeat_interleave, applying wrong group scale to columns whose permutation crossed a group boundary. Empirically: 13/20 columns change groups under perm. Reconstruction error worse with act_order=True (0.29 vs 0.20)."
+    },
+    "EV-027": {
+      "id": "EV-027",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:35:17+00:00",
+      "updated_at": "2026-08-10T14:35:17+00:00",
+      "touched_round": 18,
+      "source": "verbose: /tmp/verify_fp16.py fp32 OK / fp16+bf16 RuntimeError; /tmp/verify_actorder3.py 13/20 columns cross group under perm; recon mean_abs_err act_order True 0.2921 vs False 0.2042",
+      "confidence": 1.0,
+      "details": "Both empirically reproduced on current code (torch 2.13, .venv)."
+    },
+    "EV-028": {
+      "id": "EV-028",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:35:17+00:00",
+      "updated_at": "2026-08-10T14:35:17+00:00",
+      "touched_round": 18,
+      "source": "agent deep-dive session reports (quantization agent a4f2...): confirmed dtype mismatch across _gptq_layer/_awq_layer/_smooth_layer/ptq; act_order scale misalignment recon err 0.163 vs 0.096",
+      "confidence": 0.9,
+      "details": "Independent agent verification aligns with direct repro."
+    },
+    "COMP-009": {
+      "id": "COMP-009",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:35:49+00:00",
+      "updated_at": "2026-08-10T14:35:49+00:00",
+      "touched_round": 18,
+      "title": "quantization module",
+      "details": "ptq/gptq/awq/smooth quantize + layers"
+    },
+    "TASK-012": {
+      "id": "TASK-012",
+      "type": "task",
+      "status": "resolved",
+      "version": 5,
+      "created_at": "2026-08-10T14:36:04+00:00",
+      "updated_at": "2026-08-10T14:44:41+00:00",
+      "touched_round": 18,
+      "category": "correctness",
+      "title": "Fix quantized-layer forward dtype: upcast input to fp32 (GPTQ/AWQ/Smooth/PTQ layers)",
+      "details": "Upcast x to fp32 (or dequantize w_fp to x.dtype) in _gptq_layer/_awq_layer/_smooth_layer/ptq forward so fp16/bf16 model inference works; update docstrings to match; add regression test with half inputs.",
+      "priority_score": 4.6
+    },
+    "TASK-013": {
+      "id": "TASK-013",
+      "type": "task",
+      "status": "resolved",
+      "version": 5,
+      "created_at": "2026-08-10T14:36:13+00:00",
+      "updated_at": "2026-08-10T15:06:27+00:00",
+      "touched_round": 18,
+      "category": "correctness",
+      "title": "Fix GPTQ act_order group-scale misalignment",
+      "details": "Fixed the scale/column ordering: after undoing perm on q_out, also un-permute w (or compute scales using invperm mapping) so returned scales align with original column order. Add regression test with group_size dividing in_features and a perm that crosses groups.",
+      "priority_score": 4.2
+    },
+    "CHG-015": {
+      "id": "CHG-015",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T14:44:25+00:00",
+      "updated_at": "2026-08-10T14:44:25+00:00",
+      "touched_round": 18,
+      "commit": "7e8c3fa",
+      "title": "fix(quantization): upcast input in quantized-layer forwards (fp16/bf16)"
+    },
+    "CHG-016": {
+      "id": "CHG-016",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T15:04:59+00:00",
+      "updated_at": "2026-08-10T15:04:59+00:00",
+      "touched_round": 18,
+      "commit": "368c3c2",
+      "title": "fix(quantization): align act_order per-group scales with original columns"
+    },
+    "DEC-006": {
+      "id": "DEC-006",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T15:07:18+00:00",
+      "updated_at": "2026-08-10T15:07:18+00:00",
+      "touched_round": 19,
+      "title": "Round-19: close four verified correctness bugs (ISS-016..019)",
+      "rationale": "Deep-dive surfaced + closed 4 real bugs this round: (1) chat streaming dropped legit first token via bogus prompt-prefix strip (ISS-016); (2) migrate-ckpt --in-place --verify deleted legacy before verify, crashing (ISS-017); (3) quantized-layer forwards crashed on fp16/bf16 input despite documented upcast (ISS-018); (4) GPTQ act_order group scales misaligned with original columns (ISS-019). All four have regression tests verified RED->GREEN, pass ruff/ty/ty/doctests/commitizen, and RIL change nodes CHG-013..016. Session-injected agent BLOCK finding (sampling.py except syntax) refuted: py3.14 comma-except is valid (memory py314-except-comma-syntax). Remaining medium findings (hf_loader silent random init, single-batch calibration, group_size indivisibility crash) recorded in agent reports; not above threshold for this round.",
+      "alternatives_rejected": "leave unfixed (silent wrong output/crash on default paths); fix all medium findings this round (overruns 3-task deep-dive budget)"
+    },
+    "EV-029": {
+      "id": "EV-029",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-10T15:08:18+00:00",
+      "updated_at": "2026-08-10T15:08:18+00:00",
+      "touched_round": 19,
+      "source": "commit cca5f87, f0a3011, 7e8c3fa, 368c3c2; regression tests in test_openai_compat.py, test_migrate_ckpt.py, test_gptq_layer/awq/smooth, test_quantization.py, test_gptq_algorithm.py",
+      "confidence": 1.0,
+      "details": "Round 19: 4 verified fixes, all RED->GREEN on their regression tests, full test suites + ruff/ty/doctests green. Direct repro of batch_engine verify + act_order scale before/after."
     }
   },
   "edges": [
@@ -1390,6 +1519,60 @@
       "to": "HYP-007",
       "type": "validates",
       "created_at": "2026-08-10T14:09:50+00:00"
+    },
+    {
+      "from": "ISS-018",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-10T14:35:49+00:00"
+    },
+    {
+      "from": "ISS-018",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-10T14:36:04+00:00"
+    },
+    {
+      "from": "ISS-019",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-10T14:36:04+00:00"
+    },
+    {
+      "from": "TASK-012",
+      "to": "ISS-018",
+      "type": "addresses",
+      "created_at": "2026-08-10T14:36:21+00:00"
+    },
+    {
+      "from": "TASK-013",
+      "to": "ISS-019",
+      "type": "addresses",
+      "created_at": "2026-08-10T14:36:21+00:00"
+    },
+    {
+      "from": "CHG-015",
+      "to": "ISS-018",
+      "type": "resolves",
+      "created_at": "2026-08-10T14:44:34+00:00"
+    },
+    {
+      "from": "CHG-015",
+      "to": "TASK-012",
+      "type": "implements",
+      "created_at": "2026-08-10T14:44:34+00:00"
+    },
+    {
+      "from": "CHG-016",
+      "to": "ISS-019",
+      "type": "resolves",
+      "created_at": "2026-08-10T15:05:18+00:00"
+    },
+    {
+      "from": "CHG-016",
+      "to": "TASK-013",
+      "type": "implements",
+      "created_at": "2026-08-10T15:05:18+00:00"
     }
   ]
 }
