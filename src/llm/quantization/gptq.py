@@ -301,6 +301,20 @@ class GPTQQuantizer:
                 w_g = w[:, s:e]
                 scales[:, g] = w_g.abs().max(dim=1)[0] / qmax
                 scales[:, g] = scales[:, g].clamp(min=1e-8)
+
+            if self.config.act_order:
+                # ``q_out`` above was restored to the *original* column order
+                # (``q_out = q_out[:, invperm]``), but the per-group scales
+                # were derived from the *permuted* columns ``w`` (which is
+                # never un-permuted).  Each original column ``j`` sat at
+                # permuted position ``invperm[j]``, so it must be scaled by
+                # the group that position belonged to — i.e. the scales have
+                # to be gathered per-column through the inverse permutation.
+                # Leaving them in the contiguous ``[out, in_f // gs]`` layout
+                # and letting the caller ``repeat_interleave`` would apply the
+                # wrong group's scale to every column whose permutation
+                # crossed a group boundary.
+                scales = scales[:, invperm // gs]  # [out_f, in_f] per-column
         else:
             scales = row_scales.unsqueeze(1)  # [out_f, 1]
 
@@ -336,6 +350,13 @@ def _quantize_linear_with_gptq(
     if scales_q is not None and scales_q.numel() > 0:
         if config.group_size == -1:
             w_q = w_q * scales_q  # [out_f, 1] broadcasts over in_f
+        elif config.act_order:
+            # Under act_order the quantizer returns per-column scales
+            # [out_f, in_f] (groups cross permutation boundaries, so a
+            # contiguous repeat_interleave would apply the wrong group's
+            # scale).  ``w_q`` is already in original column order, matching
+            # ``scales_q`` column-for-column.
+            w_q = w_q * scales_q
         else:
             gs = min(config.group_size, layer.in_features)
             w_q = w_q * scales_q.repeat_interleave(gs, dim=1)

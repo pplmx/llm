@@ -436,3 +436,53 @@ def test_quantize_linear_with_gptq_adjusts_oversized_group_size():
     # Effective group_size is clamped to in_f → 1 group total → scales shape [out_f, 1]
     assert new_layer.group_size == in_f
     assert new_layer.scales.shape == (out_f, 1)
+
+
+def test_act_order_group_scales_aligned_with_original_columns():
+    """act_order + grouped quantization must return per-column scales aligned
+    to the original (un-permuted) q_out columns (regression for ISS-019).
+
+    The quantizer permutes weight columns by Hessian saliency, quantizes in
+    that order, then restores ``q_out`` to the original column order. The
+    per-group scales were previously left in *permuted* group order, so a
+    consumer's ``repeat_interleave(gs)`` applied the wrong group's scale to
+    every column whose permutation crossed a group boundary — silently wrong
+    dequantized weights.
+
+    After the fix the returned scales are gathered per-column through the
+    inverse permutation, so dequantizing ``q_out * scales`` reconstructs the
+    original weight to within normal quantization error.
+    """
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    torch.manual_seed(11)
+    in_f, out_f, gs = 24, 4, 6
+    layer = nn.Linear(in_f, out_f)
+    with torch.no_grad():
+        torch.nn.init.normal_(layer.weight, std=0.4)
+
+    # Column-variance skew so the act-order permutation actually crosses
+    # group boundaries (groups of 6, i.e. every 6th original column landing
+    # in a different permuted group).
+    calib = torch.randn(96, in_f)
+    calib[:, 5] *= 6.0
+    calib[:, 19] *= 5.0
+
+    cfg = GPTQConfig(bits=8, group_size=gs, sym=True, act_order=True, percdamp=0.01, blocksize=6)
+    q = GPTQQuantizer(layer, cfg)
+    q.add_batch(calib)
+    w_q, scales, _ = q.quantize()
+
+    # Per-column scales, aligned with the original-order q_out.
+    assert scales.shape == (out_f, in_f), f"expected per-column scales, got {scales.shape}"
+    recon = w_q * scales
+    mean_abs_err = (recon - layer.weight.data).abs().mean().item()
+    # Without the fix the misaligned scales produced reconstructions ~3-4x
+    # the original weight magnitude in affected columns; after alignment the
+    # error is normal quantization noise (well under the 0.4 std of the
+    # weights).
+    assert mean_abs_err < 0.2, f"reconstruction error too high: {mean_abs_err:.4f}"
+    assert mean_abs_err < layer.weight.data.abs().mean().item(), (
+        f"reconstruction error ({mean_abs_err:.4f}) exceeds the weight magnitude"
+        f" ({layer.weight.data.abs().mean().item():.4f}) — scales are misaligned"
+    )
