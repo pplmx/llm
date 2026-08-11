@@ -593,3 +593,54 @@ def test_engine_step_with_metrics_observer(tiny_model, device, mock_tokenizer):
 
     engine.step()  # must not raise TypeError
     assert engine.slot_allocator.get_slot("req-obs") >= 0
+
+
+def test_prefix_cache_entry_invalidated_on_slot_reuse(tiny_model, device, mock_tokenizer):
+    """Regression: a freed slot's prefix-cache entry must not survive reuse.
+
+    Sequence: request A (prompt P) populates the prefix cache and finishes,
+    freeing its KV slot; request B takes that *same* slot with a different
+    prompt, overwriting the K/V; request C (matching prompt P) must NOT hit a
+    stale prefix entry — replaying another request's overwritten KV as its
+    prefix would corrupt generation. Before the fix the cache entry pointed at
+    a freed-then-reused slot (a use-after-free of the cached KV).
+    """
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+        enable_prefix_cache=True,
+    )
+
+    # Request A: prompt "hello" (ids [1,2,3,4,5]), generate to completion so
+    # it both caches its prefix and finishes (freeing its slot).
+    req_a = GenerationRequest(prompt="hello", max_new_tokens=2)
+    req_a.request_id = "req-a"
+    engine.add_request(req_a)
+    guard = _drive_engine_to_completion(engine)
+    assert guard["req-a"], "req-a did not complete"
+    slot_a = engine.slot_allocator.get_slot("req-a")
+    assert slot_a == -1, "req-a slot should have been freed"
+
+    # No prefix entry may point at the freed slot anymore.
+    cached = engine.prefix_cache.get([1, 2, 3, 4, 5])
+    assert cached is None, f"stale prefix entry survived slot free: {cached}"
+
+    # Request B takes a slot with a *different* prompt (longer, so the mock
+    # tokenizer produces distinct ids: "hello there" -> [1..11]).
+    req_b = GenerationRequest(prompt="hello there", max_new_tokens=2)
+    req_b.request_id = "req-b"
+    engine.add_request(req_b)
+    engine.step()
+
+    # Request C = same prompt as A, must NOT replay a stale prefix (no
+    # copy_kv call allowed on the first step — the cache entry was dropped).
+    req_c = GenerationRequest(prompt="hello", max_new_tokens=2)
+    req_c.request_id = "req-c"
+    engine.add_request(req_c)
+    with patch.object(engine, "_copy_kv_between_slots", wraps=engine._copy_kv_between_slots) as copy_kv:
+        engine.step()
+        copy_kv.assert_not_called()

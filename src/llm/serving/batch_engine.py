@@ -126,6 +126,24 @@ class SlotPrefixCache:
         self._entries[key] = (slot, prefix_len)
         self._entries.move_to_end(key)
 
+    def invalidate_for_slot(self, slot: int) -> None:
+        """Drop every prefix entry that points at ``slot``.
+
+        When a sequence finishes, its KV slot returns to the free pool and a
+        later request may be allocated the same slot, overwriting the cached
+        K/V.  If the stale prefix entry were left in place, a later request
+        with the *same* prompt would hit the cache and replay another
+        request's (now-overwritten or in-flight) K/V as its own prefix —
+        a use-after-free of the cached KV.  Entries are removed rather than
+        re-pointed so the most-recent-usage ordering is unaffected for the
+        remaining prefixes.
+        """
+        if not self._entries:
+            return
+        stale = [key for key, (cached_slot, _len) in self._entries.items() if cached_slot == slot]
+        for key in stale:
+            del self._entries[key]
+
 
 class SlotAllocator:
     """Manages allocation of KV cache slots."""
@@ -660,10 +678,16 @@ class ContinuousBatchingEngine:
             # callers are expected to clean them up via the timeout
             # path.
             for i, seq in enumerate(inputs.running_sequences):
+                slot = inputs.batch_slots_list[i]
                 self.slot_allocator.free(seq.request_id)
+                if self.prefix_cache is not None:
+                    # The slot is back in the free pool; a later request may
+                    # reuse it and overwrite the cached K/V. A leftover prefix
+                    # entry would replay stale/in-flight K/V on a prompt match.
+                    self.prefix_cache.invalidate_for_slot(slot)
                 if self.paged_kv_cache is not None:
                     # ``seq_id`` == slot id in the paged path.
-                    self.paged_kv_cache.free(inputs.batch_slots_list[i])
+                    self.paged_kv_cache.free(slot)
             raise result.forward_failed
 
         for i, seq in enumerate(inputs.running_sequences):
@@ -680,6 +704,13 @@ class ContinuousBatchingEngine:
             ):
                 seq.status = RequestState.FINISHED
                 self.slot_allocator.free(seq.request_id)
+                if self.prefix_cache is not None:
+                    # The finished request's KV slot returns to the free pool
+                    # and may be re-allocated to another request with a
+                    # *different* prompt, overwriting the cached K/V.  Drop
+                    # any prefix entry pointing into it so a later matching
+                    # prompt can't replay another request's stale K/V.
+                    self.prefix_cache.invalidate_for_slot(inputs.batch_slots_list[i])
                 if self.paged_kv_cache is not None:
                     # Return the per-sequence blocks to the allocator.
                     self.paged_kv_cache.free(inputs.batch_slots_list[i])
