@@ -190,3 +190,72 @@ class TestKVCache:
         assert torch.allclose(cache.k_cache[0, 0, 0], k_new[0, 0, 0])
         assert torch.allclose(cache.k_cache[0, 0, 1], k_new[0, 0, 1])
         assert torch.allclose(cache.k_cache[1, 0, :4], k_new[1, 0, :4])
+
+    @pytest.mark.parametrize("device", ALL_DEVICES)
+    def test_update_at_indices_decode_row_does_not_clobber_cached_position_zero(self, device):
+        """A decode row's padded position-0 columns must not overwrite the
+        genuine position-0 K/V cached during that slot's earlier prefill.
+
+        Regression: in a mixed batch the decode row's real write is at
+        ``start_pos[b, 0]`` (its ``total_len - 1``), and the padded columns
+        all reuse position 0. The previous dedup-keep-first logic treated the
+        first ``(slot, 0)`` occurrence as real; for a decode row that is the
+        pad column, silently corrupting the cached first token for every
+        later query.
+        """
+        cache = KVCache(2, 16, 1, 8, device=device, dtype=torch.float32)
+        batch = torch.tensor([0, 1], device=device)
+        # Prefill both slots with 5 real tokens at positions 0..4.
+        k5 = torch.randn(2, 1, 5, 8, device=device)
+        v5 = torch.randn(2, 1, 5, 8, device=device)
+        start5 = torch.arange(5, device=device).view(1, 5).expand(2, 5)
+        cache.update_at_indices(batch, k5, v5, start5)
+        real_p0 = cache.k_cache[0, 0, 0].clone()
+
+        # Mixed step: both rows decode one token at position 5, padded
+        # columns reuse position 0.
+        mix_k = torch.randn(2, 1, 3, 8, device=device)
+        mix_v = torch.randn(2, 1, 3, 8, device=device)
+        mix_pos = torch.tensor([[5, 0, 0], [5, 0, 0]], device=device)
+        cache.update_at_indices(batch, mix_k, mix_v, mix_pos)
+
+        # Genuine position-0 K/V survives, and the real decode writes land
+        # at position 5 only.
+        assert torch.allclose(cache.k_cache[0, 0, 0], real_p0)
+        assert torch.allclose(cache.k_cache[1, 0, 0], k5[1, 0, 0])
+        assert torch.allclose(cache.k_cache[0, 0, 5], mix_k[0, 0, 0])
+        assert torch.allclose(cache.k_cache[1, 0, 5], mix_k[1, 0, 0])
+        # No pad column leaked anywhere else (nothing written beyond position 5).
+        assert torch.all(cache.k_cache[0, 0, 6:] == 0)
+        assert torch.all(cache.k_cache[1, 0, 6:] == 0)
+
+    @pytest.mark.parametrize("device", ALL_DEVICES)
+    def test_update_at_indices_decode_near_max_len_does_not_overflow_with_longer_prefill(self, device):
+        """Overflow must be judged per-row (real write end), not by the
+        batch-max ``seq_len_new``.
+
+        Regression: a decode row appending one token at
+        ``start_pos[b,0] == max_seq_len - 1`` is valid, but the old check
+        ``start_pos[:, 0] + seq_len_new > max_seq_len`` added the batch-max
+        prefill length and raised a spurious ``Cache overflow`` (HTTP 500 in
+        the serving engine).
+        """
+        max_seq_len = 8
+        batch = torch.tensor([0, 1], device=device)
+        cache = KVCache(2, max_seq_len, 1, 8, device=device, dtype=torch.float32)
+        # Prefill both slots 4 tokens (0..3).
+        k4 = torch.randn(2, 1, 4, 8, device=device)
+        cache.update_at_indices(batch, k4, k4.clone(), torch.arange(4, device=device).view(1, 4).expand(2, 4))
+        # Next step: row 0 prefill 4 new tokens at 4..7; row 1 decode one
+        # token at position 6 (valid: 6 < 8).
+        mix_k = torch.randn(2, 1, 4, 8, device=device)
+        mix_pos = torch.tensor([[4, 5, 6, 7], [6, 0, 0, 0]], device=device)
+        cache.update_at_indices(batch, mix_k, mix_k.clone(), mix_pos)
+
+        assert torch.allclose(cache.k_cache[0, 0, 4:8], mix_k[0, 0, :4])
+        assert torch.allclose(cache.k_cache[1, 0, 6], mix_k[1, 0, 0])
+
+        # The same decode row would genuinely overflow by appending at >= 8.
+        over_pos = torch.tensor([[4, 5, 6, 7], [8, 0, 0, 0]], device=device)
+        with pytest.raises(ValueError, match="Cache overflow"):
+            cache.update_at_indices(batch, mix_k, mix_k.clone(), over_pos)

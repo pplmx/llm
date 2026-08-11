@@ -163,48 +163,59 @@ class KVCache:
             # on every step. Here we keep the whole thing on-device with one
             # advanced-indexed assignment per cache (k, v).
             #
-            # We assume start_pos[b] is the contiguous range
-            # [s, s+1, ..., s+seq_len_new-1] (i.e. ``position_ids``). The
-            # overflow check uses ``start_pos[:, 0]`` (one tensor op, no sync).
-            batch_starts = start_pos[:, 0]
-            overflow_mask = (batch_starts + seq_len_new) > self.max_seq_len
+            # ``start_pos`` is ``position_ids`` of shape ``[B, S_new]``.
+            # Continuous batching left-pads each row's real positions with 0
+            # (decode rows carry only their single real position), so the
+            # *real* positions of a row form its leading run of strictly
+            # increasing-by-one values starting at ``start_pos[b, 0]`` (e.g.
+            # a prefill row is ``[0, 1, 2, 0, 0]`` -> run length 3; a decode
+            # row is ``[p, 0, 0, 0]`` -> run length 1).  Everything after that
+            # run is a pad and must never be written to the cache.
+            #
+            # Two consequences we must handle that the previous
+            # deduplication-only approach got wrong:
+            #  * a decode row has NO real write at position 0 this step (its
+            #    real write is at ``start_pos[b,0] > 0``), so its padded
+            #    position-0 columns must not clobber the genuine position-0
+            #    K/V cached during the row's original prefill — filtering to
+            #    the real run removes them entirely;
+            #  * the overflow check must use each row's *own* real write end
+            #    (``start_pos[b,0] + real_len``), not the batch-max
+            #    ``seq_len_new``, otherwise a decode row near ``max_seq_len``
+            #    batched with a longer prefill row raises spuriously.
+            batch_starts = start_pos[:, 0]  # [B]
+            col_positions = torch.arange(seq_len_new, device=start_pos.device)
+            # Real iff ``start_pos[b, j] == start_pos[b, 0] + j`` — exactly the
+            # leading contiguous run (pads are 0 and stop the progression).
+            real_mask = start_pos == (batch_starts[:, None] + col_positions[None, :])
+            real_lengths = real_mask.sum(dim=1)  # [B] real write count per row
+
+            overflow_mask = (batch_starts + real_lengths) > self.max_seq_len
             if overflow_mask.any():
                 overflow_slots = batch_indices[overflow_mask].tolist()
                 raise ValueError(
-                    f"Cache overflow for slots {overflow_slots} (start_pos + "
-                    f"seq_len_new > max_seq_len={self.max_seq_len})"
+                    f"Cache overflow for slots {overflow_slots} (start_pos + real_len > max_seq_len={self.max_seq_len})"
                 )
 
             b_curr = batch_indices.size(0)
             n_kv = k_new.size(1)
             d_dim = k_new.size(3)
 
-            # Flatten [B, S] -> [B*S]
+            # Flatten [B, S] -> [B*S], then drop the padded (non-real) entries.
+            # After filtering, every slot's real position set is strictly
+            # increasing (positions are equal to ``start_pos[b,0] + column``),
+            # so keys are unique and no dedup is needed.
             b_idx = batch_indices.view(b_curr, 1).expand(b_curr, seq_len_new).reshape(-1)
             s_idx = start_pos.reshape(-1)
-
-            # Padded slots reuse position 0: continuous batching fills the
-            # padded ``position_ids`` with 0, so without deduplication the
-            # flattened write would overwrite the real position-0 K/V of a
-            # short sequence with the padded slots' (garbage) K/V. The real
-            # write always comes first in the flattened order, so keep the
-            # first occurrence of each (batch slot, position) pair.
-            key = b_idx * self.max_seq_len + s_idx
-            # Stable sort: equal keys (padded slots reuse position 0) keep
-            # their flat order, so the first occurrence of each key is the
-            # real token's write, not a padded slot's.
-            sorted_key, sort_idx = torch.sort(key, stable=True)
-            is_first = torch.ones_like(sorted_key, dtype=torch.bool)
-            is_first[1:] = sorted_key[1:] != sorted_key[:-1]
-            first_idx, _ = torch.sort(sort_idx[is_first])
-            b_idx = b_idx[first_idx]
-            s_idx = s_idx[first_idx]
+            real_flat = real_mask.reshape(-1)
+            b_idx = b_idx[real_flat]
+            s_idx = s_idx[real_flat]
 
             # Permute [B, N_kv, S, D] -> [B, S, N_kv, D] then flatten -> [B*S, N_kv, D]
             # The reshape is a view when memory is contiguous (it is here because
             # permute + reshape is followed by assignment, not by a graph op).
-            k_flat = k_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)[first_idx]
-            v_flat = v_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)[first_idx]
+            k_flat = k_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)[real_flat]
+            v_flat = v_new.permute(0, 2, 1, 3).reshape(b_curr * seq_len_new, n_kv, d_dim)[real_flat]
 
             # Advanced indexing with broadcasting on the head dim. The whole
             # write happens in one scatter-style kernel per cache; no host sync.
