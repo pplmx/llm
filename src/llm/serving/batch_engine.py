@@ -461,12 +461,16 @@ class ContinuousBatchingEngine:
     def step(self) -> StepStats:
         """Run one inference step (sync wrapper).
 
-        Bookend the model forward with lock acquire/release: lock for
-        pre-compute (slot allocation, prefix-cache lookup, batch tensor
-        construction), release for the forward, re-acquire for
-        post-compute (append tokens, free slots, mark finished). The
-        forward is the expensive part; freeing the lock around it lets
-        other worker threads enqueue / dequeue requests in parallel.
+        The whole step — pre-compute, model forward, post-compute — holds
+        ``self._step_lock`` so two concurrent ``step()`` calls can never both
+        run the forward against the same slots and append two tokens to the
+        same sequence from one logical step (a real corruption when the
+        ``batched`` backend serves concurrent HTTP requests from FastAPI's
+        threadpool). Holding the lock across the forward does NOT serialize
+        request enqueueing: :meth:`add_request` never takes the step lock, so
+        new requests still arrive in parallel. The forward is the only code
+        that mutates the KV caches / slot bookkeeping the post step reads, so
+        this is exactly what the lock needs to guard.
 
         Returns:
             :class:`StepStats` describing the step. ``scheduled`` is the
@@ -475,14 +479,12 @@ class ContinuousBatchingEngine:
         """
         with self._step_lock:
             inputs = self._lock_step_pre()
-        if inputs is None:
-            stats = StepStats(scheduled=0, total_active_slots=self.slot_allocator.total_slots)
-        else:
-            result = self._forward_and_sample(inputs)
-            with self._step_lock:
+            if inputs is None:
+                stats = StepStats(scheduled=0, total_active_slots=self.slot_allocator.total_slots)
+            else:
+                result = self._forward_and_sample(inputs)
                 stats = self._lock_step_post(result)
-        if self._on_step is not None:
-            with self._step_lock:
+            if self._on_step is not None:
                 self._on_step(stats)
         return stats
 

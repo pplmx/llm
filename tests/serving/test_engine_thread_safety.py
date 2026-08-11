@@ -119,11 +119,14 @@ def test_step_lock_is_allocated(fake_engine):
 def test_step_serializes_concurrent_invocations(fake_engine):
     """Two concurrent ``step()`` calls cannot interleave their bookkeeping.
 
-    After T2 #23 the lock is held only for ``_lock_step_pre`` and
-    ``_lock_step_post`` (the model forward runs with the lock released).
-    We instrument BOTH pre and post to verify the bookkeeping sections
-    serialise: if both threads enter the critical section simultaneously,
-    the test fails.
+    ``step()`` holds ``_step_lock`` across the whole step (pre, forward and
+    post) so a concurrent ``step()`` can never run the model forward against
+    the same slots — running the forward unlocked let two threads each append
+    a token to the same sequence from one logical step, desyncing
+    ``generated_ids`` from the KV cache (a real corruption in the ``batched``
+    backend serving concurrent HTTP requests). We instrument BOTH pre and
+    post to verify the critical sections serialise: if both threads enter
+    simultaneously, the test fails.
     """
     hold_log: list[tuple[str, float]] = []
     hold_lock = threading.Lock()
@@ -230,3 +233,57 @@ def test_concurrent_add_request_and_step_does_not_crash(fake_engine):
     assert len(allocator.seq_to_slot) == 0, f"unfreed slots: {allocator.seq_to_slot}"
     # free_slots equals the original pool.
     assert len(allocator.free_slots) == fake_engine.max_batch_size
+
+
+def test_concurrent_step_does_not_overshoot_generated_ids(fake_engine):
+    """Concurrent ``step()`` calls must not append more than one token per
+    logical step to a sequence.
+
+    Regression (ISS-027): ``step()`` previously held ``_step_lock`` only for
+    the pre/post bookkeeping and ran the model forward *unlocked*, so two
+    threads hitting ``step()`` concurrently could each run the forward against
+    the same slots and each append a token to the same sequence in one logical
+    step — ``generated_ids`` then exceeded ``max_new_tokens`` and desynced from
+    the KV cache (a real corruption in the ``batched`` backend when the API
+    threadpool serves concurrent requests, default 4).
+
+    Here a single request with ``max_new_tokens=1`` is stepped by many threads
+    at once; the sequence must gain exactly one token (and then finish),
+    never two.
+    """
+    # A request that must stop after one generated token.
+    req = GenerationRequest(prompt="x", max_new_tokens=1)
+    req.request_id = "sync-req"
+    fake_engine.add_request(req)
+
+    errors: list[BaseException] = []
+
+    def worker():
+        try:
+            fake_engine.step()
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    barrier_start = threading.Barrier(4)
+
+    def synced_worker():
+        barrier_start.wait()
+        worker()
+
+    synced = [threading.Thread(target=synced_worker) for _ in range(4)]
+    for t in synced:
+        t.start()
+    for t in synced:
+        t.join(timeout=10.0)
+
+    assert not errors, f"step() raised: {errors}"
+    seq = fake_engine.scheduler.get_sequence("sync-req")
+    # With max_new_tokens=1 and a concurrent step, the sequence may be already
+    # finished (freed) or still hold exactly one token — but never two.
+    if seq is None:
+        return  # finished + freed = exactly one token was generated
+    assert len(seq.generated_ids) == 1, (
+        f"concurrent step() appended {len(seq.generated_ids)} tokens to a "
+        f"max_new_tokens=1 request (expected exactly 1); generated_ids is "
+        f"desynced from the KV cache"
+    )
