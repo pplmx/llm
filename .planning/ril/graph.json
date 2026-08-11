@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 22,
+  "round": 23,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-11T10:53:42+00:00",
+  "updated_at": "2026-08-11T11:17:19+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 21,
+      "touched_round": 22,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -1631,11 +1631,11 @@
     "ISS-030": {
       "id": "ISS-030",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:50:43+00:00",
-      "updated_at": "2026-08-11T10:50:43+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T11:09:49+00:00",
+      "touched_round": 22,
       "title": "DDP ranks seed RNG differently (42+rank) and never broadcast params — multi-GPU training mathematically degenerate",
       "details": "distributed.py seeds each process 42+rank, build_model runs after seeding with no dist.broadcast; DDP averages gradients of different models, not the gradient of one model. Loss diverges/never converges on fresh multi-GPU runs. Found by round-21 deep-dive (training/rlhf agent).",
       "severity": "critical"
@@ -1691,11 +1691,11 @@
     "HYP-015": {
       "id": "HYP-015",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:52:01+00:00",
-      "updated_at": "2026-08-11T10:52:01+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T11:10:25+00:00",
+      "touched_round": 22,
       "confidence": 0.9,
       "title": "DDP params differ across ranks because per-rank seeds precede build_model and zero param broadcast",
       "details": "torch.manual_seed(42+rank) then build_model() RNG-inits per rank; DDP averages grads of different models. Verify: world_size=2 fresh run weights differ pre-sync."
@@ -1759,6 +1759,53 @@
       "title": "Round-21: 3 verified fixes + deep-dive mapped to 8 new issues",
       "rationale": "Full-suite baseline (186s clean) showed one genuine flake (ISS-023, import-time VRAM-filtered device cache vs live view). Dispatched 4 deep-dive agents (rlhf/engine, export/gguf/token, attn/kv/generation, peft/data/eval) which surfaced ~25 candidate findings. Verified+fixed the 3 most severe/testable: ISS-023 device-cache flake, ISS-024 LoRA/AdaLoRA merge double-count (~2x model at serve), ISS-025 mixed-batch KV position-0 corruption + spurious overflow. Recorded 8 further issues (ISS-026..033) + 3 hypotheses (HYP-014..016) with evidence for future rounds. User also asked about suite slowness: definitively NOT a deadlock — 165s clean run, prior slowness was my own overlapping runs; slowest tests (DDP spawn, HF tokenizer download) are legitimately heavy E2E.",
       "alternatives_rejected": "fix all 11 findings this round (exceeds 3-task deep-dive budget + diff-size guard); touch paged-KV/concurrency findings without a unit-level repro (risk of half-correct fixes); mark the flaky device test as skip instead of fixing the invariant"
+    },
+    "TASK-020": {
+      "id": "TASK-020",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T11:09:49+00:00",
+      "updated_at": "2026-08-11T11:09:49+00:00",
+      "touched_round": 22,
+      "category": "correctness",
+      "title": "Broadcast rank-0 model params after build_model in DDP (ISS-030)",
+      "details": "Per-rank seeds 42+rank precede build_model; no dist.broadcast -> every rank trains a different model. Add broadcast_parameters + call in engine."
+    },
+    "CHG-023": {
+      "id": "CHG-023",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T11:09:49+00:00",
+      "updated_at": "2026-08-11T11:09:49+00:00",
+      "touched_round": 22,
+      "commit": "5893a0c",
+      "title": "fix(training): DDP rank-0 weight broadcast (ISS-030)"
+    },
+    "EV-043": {
+      "id": "EV-043",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T11:10:25+00:00",
+      "updated_at": "2026-08-11T11:10:25+00:00",
+      "touched_round": 22,
+      "source": "real 2-rank NCCL repro /tmp/repro_ddp_seed.py + fixed /tmp/repro_ddp_fix.py + e2e test_ddp_ranks_share_identical_initial_weights",
+      "details": "Pre-fix: rank0/rank1 Linear row diverge (0.0956 vs -0.0115) under per-rank seeding, no broadcast -> DDP averages grads of different models. Post-fix: broadcast_parameters syncs -> row identical; 2-GPU e2e asserts all params equal across ranks. 7 DDP e2e + 44 distributed tests green; ty + ruff clean.",
+      "confidence": 1.0
+    },
+    "DEC-010": {
+      "id": "DEC-010",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T11:17:11+00:00",
+      "updated_at": "2026-08-11T11:17:11+00:00",
+      "touched_round": 22,
+      "title": "Round-22: fix CRITICAL DDP divergent-init (ISS-030); defer paged-layer bug (ISS-026)",
+      "rationale": "Verified + fixed the highest-severity remaining deep-dive finding: fresh multi-GPU DDP runs seeded per-rank (42+rank) build divergent models and never converge. Added broadcast_parameters (params+buffers from rank 0) called in TrainingEngine right after build_model; verified on real 2-rank NCCL (weights identical post-fix) + new unit + e2e tests. Deferred ISS-026 (paged KV layer-mixing) to next round — opt-in path, needs careful block-manager semantics; recorded with hypothesis + evidence. Full suite green: 0 failures, ~177s.",
+      "alternatives_rejected": "seed all ranks identically instead of broadcast (changes data-ordering semantics + cannot rescue already-orphaned optimizers); fix ISS-026 this round (exceeds task budget + riskier multi-file change; leave for focused round with its own verify)"
     }
   },
   "edges": [
@@ -2457,6 +2504,36 @@
       "to": "HYP-016",
       "type": "validates",
       "created_at": "2026-08-11T10:52:51+00:00"
+    },
+    {
+      "from": "TASK-020",
+      "to": "ISS-030",
+      "type": "addresses",
+      "created_at": "2026-08-11T11:10:25+00:00"
+    },
+    {
+      "from": "EV-043",
+      "to": "HYP-015",
+      "type": "validates",
+      "created_at": "2026-08-11T11:10:25+00:00"
+    },
+    {
+      "from": "CHG-023",
+      "to": "ISS-030",
+      "type": "resolves",
+      "created_at": "2026-08-11T11:10:25+00:00"
+    },
+    {
+      "from": "CHG-023",
+      "to": "TASK-020",
+      "type": "implements",
+      "created_at": "2026-08-11T11:10:25+00:00"
+    },
+    {
+      "from": "ISS-030",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-11T11:10:25+00:00"
     }
   ]
 }
