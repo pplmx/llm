@@ -439,6 +439,7 @@ class MultiLatentAttention(nn.Module):
                 seq_id=int(seq_id),
                 k_new=k[b : b + 1].transpose(1, 2),
                 v_new=v[b : b + 1].transpose(1, 2),
+                layer_idx=layer_idx,
             )
 
         # Gather the per-row K, V via the public ``PagedKVCache.get`` API.
@@ -467,7 +468,7 @@ class MultiLatentAttention(nn.Module):
             # the MLA contract is ``[B, N_heads, T_total, D]`` — the
             # per-row head count equals ``self.num_heads`` (no GQA in
             # the placeholder MLA).
-            k_row, v_row = paged_kv_cache.get(int(seq_id), 0, seq_len)
+            k_row, v_row = paged_kv_cache.get(int(seq_id), 0, seq_len, layer_idx=layer_idx)
             k_gathered[b, :, :seq_len] = k_row
             v_gathered[b, :, :seq_len] = v_row
 

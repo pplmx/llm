@@ -337,6 +337,9 @@ class MultiHeadAttention(nn.Module):
                 seq_id=int(seq_id),
                 k_new=k[b : b + 1, :, :n].transpose(1, 2),
                 v_new=v[b : b + 1, :, :n].transpose(1, 2),
+                # Scope the write to this layer's cache slice; layer 0 owns
+                # block-table allocation/extension, later layers reuse it.
+                layer_idx=layer_idx if layer_idx is not None else 0,
             )
 
         # 2. Build ``block_tables`` and ``seq_lens`` per row from the

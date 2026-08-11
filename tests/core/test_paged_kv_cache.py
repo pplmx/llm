@@ -581,3 +581,46 @@ def test_get_start_equals_end():
 
     with pytest.raises(ValueError, match="must be less than"):
         cache.get(seq_id=1, start_idx=2, end_idx=2)
+
+
+def test_multi_layer_update_scopes_each_layer_kv():
+    """Each layer's update() must write only its own cache slice.
+
+    Regression: ``update()`` indexed ``self.k_cache[:, block_id, ...]``
+    (the leading ``:`` is the *layer* axis), so layer 0's K/V was broadcast
+    into every layer's slice and the last layer to write clobbered all the
+    others — every layer attended over the same (wrong) K/V for num_layers>1.
+    It also advanced the shared block-manager token count once per layer, so
+    layer 1 wrote at token 1 instead of replaying the same token at its own
+    layer.
+    """
+    cache = PagedKVCache(
+        num_layers=2,
+        num_kv_heads=1,
+        head_dim=2,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        dtype=torch.float32,
+    )
+    k0 = torch.randn(1, 1, 1, 2, device=DEVICE)
+    v0 = torch.randn(1, 1, 1, 2, device=DEVICE)
+    k1 = torch.randn(1, 1, 1, 2, device=DEVICE)
+    v1 = torch.randn(1, 1, 1, 2, device=DEVICE)
+
+    # The decoder calls update() once per layer with that layer's own K/V.
+    cache.update(seq_id=0, k_new=k0, v_new=v0, layer_idx=0)
+    cache.update(seq_id=0, k_new=k1, v_new=v1, layer_idx=1)
+
+    # Each layer keeps its OWN data at the same logical token (offset 0).
+    assert torch.allclose(cache.k_cache[0, 0, 0, 0], k0[0, 0, 0])
+    assert torch.allclose(cache.k_cache[1, 0, 0, 0], k1[0, 0, 0])
+    assert not torch.allclose(cache.k_cache[0, 0, 0, 0], cache.k_cache[1, 0, 0, 0])
+    # The block manager advanced the token count exactly once (not per layer).
+    assert cache.block_manager.get_num_tokens(0) == 1
+
+    # Layer-scoped reads return the right per-layer slice.
+    k_row0, _ = cache.get(seq_id=0, start_idx=0, end_idx=1, layer_idx=0)
+    k_row1, _ = cache.get(seq_id=0, start_idx=0, end_idx=1, layer_idx=1)
+    assert torch.allclose(k_row0[0, 0], k0[0, 0, 0])
+    assert torch.allclose(k_row1[0, 0], k1[0, 0, 0])

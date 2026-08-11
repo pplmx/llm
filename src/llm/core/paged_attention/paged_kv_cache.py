@@ -88,17 +88,27 @@ class PagedKVCache:
         prefix_hash = self._hash_tokens(prefix_tokens)
         return self.prefix_cache.get(prefix_hash)
 
-    def update(self, seq_id: int, k_new: Tensor, v_new: Tensor) -> list[int]:
+    def update(self, seq_id: int, k_new: Tensor, v_new: Tensor, layer_idx: int = 0) -> list[int]:
         """Append new tokens to sequence.
 
         For a brand-new sequence this allocates fresh blocks; for an
         existing sequence it extends the block table only if the new
         tokens cross a block boundary.
 
+        ``layer_idx`` scopes the write to a single transformer layer: the
+        decoder calls :meth:`update` once per layer with that layer's own K/V,
+        and each call must write **only** its own slice of ``k_cache`` /
+        ``v_cache`` (which are ``[num_layers, ...]``).  Only the layer that
+        calls first (``layer_idx == 0``) allocates / extends the block table
+        and advances the sequence's token count; the remaining layers reuse
+        the same block table and write at the same token offsets without
+        re-advancing.  (Default 0 keeps the single-layer contract intact.)
+
         Args:
             seq_id: Sequence identifier.
             k_new: [batch, tokens, num_kv_heads, head_dim]
             v_new: [batch, tokens, num_kv_heads, head_dim]
+            layer_idx: Which layer's cache slice to write.
 
         Returns:
             List of physical block IDs allocated for this sequence
@@ -110,11 +120,22 @@ class PagedKVCache:
         v_transposed = v_new.transpose(1, 2)
 
         if seq_id in self.block_manager.sequences:
-            # Extend an existing sequence.
-            existing_num_tokens = self.block_manager.get_num_tokens(seq_id)
-            block_table = self.block_manager.extend_sequence(seq_id, num_new_tokens)
-            start_token_offset = existing_num_tokens
+            if layer_idx == 0:
+                # First layer of this step extends / accounts the sequence.
+                existing_num_tokens = self.block_manager.get_num_tokens(seq_id)
+                block_table = self.block_manager.extend_sequence(seq_id, num_new_tokens)
+                start_token_offset = existing_num_tokens
+            else:
+                # Later layers already saw layer 0 extend the table this
+                # step; they write the same new tokens without re-advancing
+                # the token count (which lives on the shared block manager).
+                block_table = self.get_block_table(seq_id)
+                start_token_offset = self.block_manager.get_num_tokens(seq_id) - num_new_tokens
         else:
+            if layer_idx != 0:
+                raise RuntimeError(
+                    f"Sequence {seq_id} has no block table yet; layer 0 must update() before layer {layer_idx}."
+                )
             if not self.block_manager.can_allocate_sequence(num_new_tokens):
                 raise RuntimeError("No free blocks available for new sequence")
             block_table = self.block_manager.allocate_sequence(seq_id, num_new_tokens)
@@ -122,14 +143,17 @@ class PagedKVCache:
 
         # Write the new tokens into the (possibly extended) block table.
         # Each new token goes into the block whose relative index matches
-        # ``(start_token_offset + i) // block_size``.
+        # ``(start_token_offset + i) // block_size``.  The leading index is
+        # ``layer_idx`` (NOT ``:``) — ``:`` would broadcast that layer's K/V
+        # into every layer's slice, so a multi-layer decoder attends over the
+        # wrong K/V for every layer but the one that wrote last.
         for i in range(num_new_tokens):
             global_pos = start_token_offset + i
             block_idx = global_pos // self.block_size
             in_block_offset = global_pos % self.block_size
             block_id = block_table[block_idx]
-            self.k_cache[:, block_id, :, in_block_offset, :] = k_transposed[:, :, i, :]
-            self.v_cache[:, block_id, :, in_block_offset, :] = v_transposed[:, :, i, :]
+            self.k_cache[layer_idx, block_id, :, in_block_offset, :] = k_transposed[:, :, i, :]
+            self.v_cache[layer_idx, block_id, :, in_block_offset, :] = v_transposed[:, :, i, :]
 
         return block_table
 
@@ -137,13 +161,16 @@ class PagedKVCache:
         """Get block IDs for a sequence."""
         return self.block_manager.get_block_table(seq_id)
 
-    def get(self, seq_id: int, start_idx: int, end_idx: int) -> tuple[Tensor, Tensor]:
+    def get(self, seq_id: int, start_idx: int, end_idx: int, layer_idx: int = 0) -> tuple[Tensor, Tensor]:
         """Get KV cache slice for a sequence range.
 
         Args:
             seq_id: Sequence identifier.
             start_idx: Starting token index (inclusive).
             end_idx: Ending token index (exclusive).
+            layer_idx: Which layer's cache slice to read (default 0 keeps
+                the single-layer contract; multi-layer readers must pass the
+                layer whose KV they're attending over).
 
         Raises:
             ValueError: If ``start_idx`` or ``end_idx`` are out of bounds
@@ -166,17 +193,24 @@ class PagedKVCache:
         end_block = (end_idx - 1) // self.block_size + 1
 
         for block_id in block_table[start_block:end_block]:
-            k_seq.append(self.k_cache[:, block_id, :, : self.block_size, :])
-            v_seq.append(self.v_cache[:, block_id, :, : self.block_size, :])
+            # Index on the layer axis ``layer_idx``, not ``:`` — the cache is
+            # ``[num_layers, num_blocks, ...]`` and each layer read/writes only
+            # its own slice.  After the layer slice each block is
+            # ``[num_kv_heads, block_size, head_dim]`` so blocks concatenate
+            # along dim 1 (the token axis).
+            k_seq.append(self.k_cache[layer_idx, block_id, :, : self.block_size, :])
+            v_seq.append(self.v_cache[layer_idx, block_id, :, : self.block_size, :])
 
-        k_full = torch.cat(k_seq, dim=2)
-        v_full = torch.cat(v_seq, dim=2)
+        k_full = torch.cat(k_seq, dim=1)
+        v_full = torch.cat(v_seq, dim=1)
 
         start_offset = start_idx % self.block_size
         num_tokens = end_idx - start_idx
 
-        return k_full[0, :, start_offset : start_offset + num_tokens, :], v_full[
-            0, :, start_offset : start_offset + num_tokens, :
+        # ``k_full`` is ``[num_kv_heads, num_tokens, head_dim]`` (the layer
+        # axis was consumed by the ``layer_idx`` slice above).
+        return k_full[:, start_offset : start_offset + num_tokens, :], v_full[
+            :, start_offset : start_offset + num_tokens, :
         ]
 
     def free(self, seq_id: int):
