@@ -41,12 +41,53 @@ class TestQ40:
         assert out[31] == 0 - 8
 
     def test_reference_vector_matches_ggml_math(self):
-        # amax = 7 → d = 1.0; nibble = trunc(x + 8.5): -7 → 1, 7 → 15.
+        # ggml quantize_row_q4_0_ref: max = *first* value reaching the block's
+        # max |x| = -7 (index 0 wins the tie over +7), d = max/-8 = -7/-8 =
+        # +0.875, id = 8/7, q = MIN(15, trunc(x*id + 8.5)).
+        #   x=-7 -> trunc(-8 + 8.5) = trunc(0.5)  = 0
+        #   x=+7 -> trunc( 8 + 8.5) = trunc(16.5) = 16 -> clipped 15
+        # x = [-7,+7,-7,+7,...] => even elements (incl. element 0, the low
+        # nibble) are -7 -> 0, odd elements (incl. element 16, the high
+        # nibble) are +7 -> 15.  byte = low | high<<4, so bytes alternate
+        # 0x00 (element 0/16 both -7) and 0xFF (element 1/17 both +7).
         x = np.array([-7.0, 7.0] * 16, dtype=np.float32)
         packed, scales = quantize_q4_0(x)
-        assert np.array_equal(scales, np.array([1.0], dtype=np.float16))
-        assert np.array_equal(packed, np.array([0x11, 0xFF] * 8, dtype=np.uint8))
-        assert np.allclose(dequantize_q4_0(packed, scales, 32), x, atol=0.0)
+        assert np.array_equal(scales, np.array([0.875], dtype=np.float16))
+        assert np.array_equal(packed, np.array([0x00, 0xFF] * 8, dtype=np.uint8))
+        assert np.allclose(dequantize_q4_0(packed, scales, 32), x, atol=abs(scales[0]) + 1e-6)
+
+    def test_reference_matches_ggml_oracle(self):
+        """Byte-exact match against ggml's quantize_row_q4_0_reference.
+
+        The module's earlier 'amax/7 + trunc(x*7/amax+8.5)' formula was
+        self-consistent (roundtriped through its own dequant) but produced
+        bytes no llama.cpp build reads back: ggml stores the *signed* extreme
+        over -8 and packs low/high nibbles the same way but with that scale.
+        Pin the exact ggml convention so exported Q4_0 tensors are actually
+        consumable by the ecosystem.
+        """
+        for seed in range(8):
+            x = np.random.default_rng(seed).normal(size=128).astype(np.float32)
+            packed, scales = quantize_q4_0(x)
+            # Independent transcription of ggml-quants.c.
+            blocks = x.reshape(-1, 32)
+            gold_packed = np.zeros((blocks.shape[0], 16), dtype=np.uint8)
+            gold_scales = np.zeros(blocks.shape[0], dtype=np.float16)
+            for b in range(blocks.shape[0]):
+                amax, mx = 0.0, 0.0
+                for v in blocks[b]:
+                    if amax < abs(float(v)):
+                        amax = abs(float(v))
+                        mx = float(v)
+                d = mx / -8.0
+                ident = 1.0 / d if d != 0 else 0.0
+                gold_scales[b] = d
+                for j in range(16):
+                    xi0 = min(15, int(np.trunc(float(blocks[b][0 + j]) * ident + 8.5)))
+                    xi1 = min(15, int(np.trunc(float(blocks[b][16 + j]) * ident + 8.5)))
+                    gold_packed[b][j] = (xi0 & 0x0F) | ((xi1 & 0x0F) << 4)
+            assert np.array_equal(packed, gold_packed.reshape(-1)), f"seed {seed} packed"
+            assert np.array_equal(scales, gold_scales), f"seed {seed} scales"
 
     def test_roundtrip_error_is_bounded_by_block_scale(self, rng):
         x = rng.normal(size=256).astype(np.float32)

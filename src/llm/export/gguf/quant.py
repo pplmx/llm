@@ -25,7 +25,6 @@ import numpy as np
 
 from llm.export.gguf.spec import GGML_BLOCK_SIZE
 
-_Q4_0_MAX = 7  # (1 << 3) - 1
 _Q8_0_MAX = 127  # (1 << 7) - 1
 
 
@@ -35,9 +34,14 @@ def _round_half_away_from_zero(x: np.ndarray) -> np.ndarray:
 
 
 def _safe_inverse(scale: np.ndarray) -> np.ndarray:
-    """Elementwise ``1/scale`` with zeros left at zero (no divide-by-zero warning)."""
+    """Elementwise ``1/scale`` with zeros left at zero (no divide-by-zero warning).
+
+    Works for **negative** scales too: Q4_0 uses ggml's negative ``max / -8``
+    block scale, so ``1/scale`` must not be zeroed just because ``scale < 0``
+    (that would collapse every nibble to 8).
+    """
     with np.errstate(divide="ignore", invalid="ignore"):
-        return np.where(scale > 0, 1.0 / scale, 0.0)
+        return np.where(scale != 0, 1.0 / scale, 0.0)
 
 
 def _as_flat_float32(data: np.ndarray, scheme: str) -> np.ndarray:
@@ -49,8 +53,39 @@ def _as_flat_float32(data: np.ndarray, scheme: str) -> np.ndarray:
     return x
 
 
+def _q4_0_block_scales(blocks: np.ndarray) -> np.ndarray:
+    """Per-block Q4_0 scale, exactly as ggml's ``quantize_row_q4_0_reference``.
+
+    ggml-quants.c computes ``d = max / -8`` where ``max`` is the *signed*
+    value with the largest absolute magnitude in the block (not the unsigned
+    |amax|)::
+
+        for v in block: if amax < |v|: amax = |v|; max = v
+        d = max / -8
+
+    So the scale is negative when the block's extreme is positive, positive
+    when it's negative, and is only ``-amax/8`` when the extreme happens to
+    be positive.  (An earlier version of this module used ``amax / 7`` with a
+    positive scale and nibbles ``trunc(x*7/amax + 8.5)``; both the sign and
+    the 7-vs-8 divisor diverge from ggml, so exported Q4_0 tensors were never
+    read back correctly by llama.cpp.  The dequantized *values* happened to
+    be self-consistent anyway — which is why the old roundtrip tests passed —
+    but the packed bytes were not the format the ecosystem expects.)
+    """
+    # For each block, the signed extreme is the value at the first position
+    # whose |v| equals the block's absolute max (mirrors ggml's loop which
+    # only *updates* max when amax strictly grows, so ties keep the earlier
+    # value).
+    idx = np.argmax(np.abs(blocks), axis=1)
+    signed_max = blocks[np.arange(blocks.shape[0]), idx]
+    return signed_max / -8.0
+
+
 def quantize_q4_0(data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Quantize float data to Q4_0 blocks.
+
+    Byte-compatible with ggml's ``quantize_row_q4_0_reference`` so the
+    packed tensor is readable by llama.cpp / the wider GGUF ecosystem.
 
     Args:
         data: Float array with a multiple of 32 elements (any shape is
@@ -58,17 +93,17 @@ def quantize_q4_0(data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     Returns:
         ``(packed, scales)`` where ``packed`` is ``uint8`` with one byte
-        per two elements and ``scales`` is ``float16`` with one scale per
-        32-element block.
+        per two elements and ``scales`` is ``float16`` with one (negative,
+        per ggml) scale per 32-element block.
     """
     x = _as_flat_float32(data, "Q4_0")
     blocks = x.reshape(-1, GGML_BLOCK_SIZE)
-    amax = np.max(np.abs(blocks), axis=1)
-    scale = amax / _Q4_0_MAX
+    scale = _q4_0_block_scales(blocks)  # negative: max / -8
     inv = _safe_inverse(scale)
     scaled = blocks * inv[:, None]
-    # ggml reference: (int8_t)(x + 8.5) then MIN(15, ...); the C cast
-    # truncates toward zero (here always positive, so floor semantics).
+    # ggml: q = (int8_t)(x * (-8/max) + 8.5) == (x / d) + 8.5, clipped to
+    # [0, 15]; the C cast truncates toward zero (values here are clipped
+    # into the positive range so trunc == floor).
     nibbles = np.trunc(scaled + 8.5).astype(np.int16)
     nibbles = np.clip(nibbles, 0, 15).astype(np.uint8)
     low = nibbles[:, : GGML_BLOCK_SIZE // 2]
@@ -79,6 +114,9 @@ def quantize_q4_0(data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def dequantize_q4_0(packed: np.ndarray, scales: np.ndarray, n: int) -> np.ndarray:
     """Dequantize Q4_0 blocks back to float32.
+
+    Matches ggml's ``dequantize_row_q4_0``: ``(q - 8) * d`` with the same
+    (negative) per-block scale used at quantize time.
 
     Args:
         packed: ``uint8`` nibble bytes (one per two elements).
