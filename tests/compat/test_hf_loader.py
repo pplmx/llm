@@ -214,3 +214,106 @@ class TestHFLoader:
         assert "*.safetensors" in patterns
         # Must NOT include .bin
         assert "*.bin" not in patterns, f"Hub downloads must skip .bin files (pickle RCE); got patterns={patterns}"
+
+
+class TestGLURoleMapping:
+    """Regression: HF gate_proj/up_proj roles must map by *function*.
+
+    Our GLU MLP computes ``fc2(act(fc1(x)) * gate_proj(x))`` — ``fc1`` is
+    the activated (gate) role, ``gate_proj`` the raw multiplier (up) role.
+    HF Llama computes ``down(act(gate_proj(x)) * up_proj(x))`` — ``gate_proj``
+    is activated.  Loading real Llama/Mistral weights with the old
+    name-based mapping swapped the two, so the loaded model computed
+    ``silu(up_proj(x)) * gate_proj(x)``, a different function for any real
+    checkpoint (the roundtrip save→load tests miss this because they are
+    symmetric: both sides used the same wrong mapping).
+    """
+
+    def _make_glu_model(self):
+        from llm.models.decoder import DecoderModel
+        from tests.support.models import decoder_model_kwargs
+
+        kwargs = decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=16,
+            num_layers=1,
+            num_heads=2,
+            intermediate_size=32,
+            max_seq_len=16,
+            attn_impl="mha",
+            mlp_impl="mlp",
+            mlp_activation="silu",
+            use_glu=True,
+            device="cpu",
+        )
+        return DecoderModel(**kwargs)
+
+    def test_hf_glu_roles_map_to_function_not_name(self):
+        """HF ``gate_proj`` tensors must land on our *activated* ``fc1``.
+
+        A real Llama state dict stores the gated (activated) projection in
+        ``gate_proj`` and the raw multiplier in ``up_proj``.  After
+        ``convert_hf_weights`` the loaded model must compute the same
+        function as HF's ``down(silu(gate_proj(x)) * up_proj(x))``.  The old
+        name-based mapping placed ``gate_proj`` on our non-activated
+        ``gate_proj``, so for distinct G vs U tensors the MLP silently
+        computed a different function.
+
+        We hand-place distinct tensors at their *HF* names (as a real
+        checkpoint would carry them) and verify where they land once converted
+        to our namespace and run through the model.  Going through
+        ``convert_our_weights`` would re-use the same mapping and stay
+        symmetric — masking the defect the way the save→load roundtrip does.
+        """
+        from llm.compat.weight_mapping import convert_hf_weights, convert_our_weights
+
+        model = self._make_glu_model()
+        model.eval()
+        mlp = model.transformer_blocks[0].mlp
+
+        # Distinct gate vs up tensors at their REAL HF positions.
+        torch.manual_seed(123)
+        gate_w = torch.randn(32, 16)  # HF gate_proj weight (gated/activated)
+        up_w = torch.randn(32, 16)  # HF up_proj weight (raw multiplier)
+        gate_b = torch.randn(32)
+        up_b = torch.randn(32)
+        down_w = mlp.fc2.weight.detach()
+        down_b = mlp.fc2.bias.detach()
+        x = torch.randn(3, 16)
+
+        import torch.nn.functional as functional
+
+        hf_out = functional.linear(
+            functional.silu(functional.linear(x, gate_w, gate_b)) * functional.linear(x, up_w, up_b),
+            down_w,
+            down_b,
+        )
+
+        # Build the HF state dict with G / U at their real HF names (the rest
+        # of the weights come from our model, renamed as the publisher does).
+        our_sd = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        hf_sd = convert_our_weights(our_sd, architecture="llama", num_layers=1)
+        hf_sd["model.layers.0.mlp.gate_proj.weight"] = gate_w
+        hf_sd["model.layers.0.mlp.gate_proj.bias"] = gate_b
+        hf_sd["model.layers.0.mlp.up_proj.weight"] = up_w
+        hf_sd["model.layers.0.mlp.up_proj.bias"] = up_b
+
+        # Convert to our namespace exactly as from_pretrained does.
+        back = convert_hf_weights(hf_sd, architecture="llama", num_layers=1)
+
+        # HF's gate (activated) tensor must land on our fc1 (activated);
+        # HF's up (raw) tensor on our gate_proj (raw).
+        assert torch.allclose(back["transformer_blocks.0.mlp.fc1.weight"], gate_w)
+        assert torch.allclose(back["transformer_blocks.0.mlp.gate_proj.weight"], up_w)
+
+        loaded = self._make_glu_model()
+        missing, unexpected = loaded.load_state_dict(back, strict=False)
+        assert unexpected == []
+        assert "transformer_blocks.0.mlp.fc2.weight" not in missing
+        loaded.eval()
+        with torch.no_grad():
+            loaded_out = loaded.transformer_blocks[0].mlp(x)
+
+        assert torch.allclose(loaded_out, hf_out, atol=1e-5), (
+            "Loaded MLP diverges from HF's silu(gate_proj)*up_proj — gate_proj/up_proj roles are swapped."
+        )

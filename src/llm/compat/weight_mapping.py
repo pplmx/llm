@@ -43,18 +43,21 @@ LLAMA_MAPPING = {
     "model.layers.{layer}.self_attn.o_proj.weight": "transformer_blocks.{layer}.self_attn.out_proj.weight",
     "model.layers.{layer}.self_attn.o_proj.bias": "transformer_blocks.{layer}.self_attn.out_proj.bias",
     # MLP projections. Our MLP exposes:
-    #   * ``fc1`` — the "up" projection (always present)
-    #   * ``gate_proj`` — the gating path (only when ``use_glu=True``)
+    #   * ``fc1`` — activated path (``silu(fc1(x))``, the *gate* role)
+    #   * ``gate_proj`` — the raw multiplying path (the *up* role)
     #   * ``fc2`` — the "down" projection
-    # HF Llama's names are ``gate_proj``, ``up_proj``, ``down_proj``.
-    # The mapping below translates ``up_proj`` <-> ``fc1`` and
-    # ``down_proj`` <-> ``fc2`` so a published model is loadable by
-    # HF's transformers library AND roundtrips through our
-    # ``from_pretrained``.
-    "model.layers.{layer}.mlp.gate_proj.weight": "transformer_blocks.{layer}.mlp.gate_proj.weight",
-    "model.layers.{layer}.mlp.gate_proj.bias": "transformer_blocks.{layer}.mlp.gate_proj.bias",
-    "model.layers.{layer}.mlp.up_proj.weight": "transformer_blocks.{layer}.mlp.fc1.weight",
-    "model.layers.{layer}.mlp.up_proj.bias": "transformer_blocks.{layer}.mlp.fc1.bias",
+    # HF Llama's names are ``gate_proj`` (activated), ``up_proj`` (raw
+    # multiplier), ``down_proj``.  Our forward computes
+    # ``fc2(silu(fc1(x)) * gate_proj(x))`` while HF computes
+    # ``down(silu(gate_proj(x)) * up_proj(x))`` — so the *roles* line up as
+    # ``fc1`` <-> ``gate_proj`` and ``gate_proj`` <-> ``up_proj``.  An earlier
+    # version mapped by name instead of by role and swapped the two, so
+    # ``from_pretrained(real_llama)`` computed ``silu(up_proj(x)) * gate_proj(x)``
+    # — a different function whenever the two tensors differ (always).
+    "model.layers.{layer}.mlp.gate_proj.weight": "transformer_blocks.{layer}.mlp.fc1.weight",
+    "model.layers.{layer}.mlp.gate_proj.bias": "transformer_blocks.{layer}.mlp.fc1.bias",
+    "model.layers.{layer}.mlp.up_proj.weight": "transformer_blocks.{layer}.mlp.gate_proj.weight",
+    "model.layers.{layer}.mlp.up_proj.bias": "transformer_blocks.{layer}.mlp.gate_proj.bias",
     "model.layers.{layer}.mlp.down_proj.weight": "transformer_blocks.{layer}.mlp.fc2.weight",
     "model.layers.{layer}.mlp.down_proj.bias": "transformer_blocks.{layer}.mlp.fc2.bias",
     # Layer norms
@@ -78,8 +81,10 @@ QWEN_MAPPING = {
     # Per-layer mappings (model attribute is ``self_attn``).
     "transformer.h.{layer}.attn.c_attn.weight": "transformer_blocks.{layer}.self_attn.qkv_proj.weight",
     "transformer.h.{layer}.attn.c_proj.weight": "transformer_blocks.{layer}.self_attn.out_proj.weight",
-    "transformer.h.{layer}.mlp.w1.weight": "transformer_blocks.{layer}.mlp.gate_proj.weight",
-    "transformer.h.{layer}.mlp.w2.weight": "transformer_blocks.{layer}.mlp.fc1.weight",
+    # Qwen GPT-style MLP: ``c_proj(act(w1(x)) * w2(x))`` — ``w1`` is the
+    # activated gate, ``w2`` the raw multiplier (same role split as Llama).
+    "transformer.h.{layer}.mlp.w1.weight": "transformer_blocks.{layer}.mlp.fc1.weight",
+    "transformer.h.{layer}.mlp.w2.weight": "transformer_blocks.{layer}.mlp.gate_proj.weight",
     "transformer.h.{layer}.mlp.c_proj.weight": "transformer_blocks.{layer}.mlp.fc2.weight",
     "transformer.h.{layer}.ln_1.weight": "transformer_blocks.{layer}.norm1.weight",
     "transformer.h.{layer}.ln_2.weight": "transformer_blocks.{layer}.norm2.weight",
