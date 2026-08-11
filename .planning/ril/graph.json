@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 20,
+  "round": 22,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-11T01:54:37+00:00",
+  "updated_at": "2026-08-11T10:53:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 6,
+      "touched_round": 21,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 17,
+      "touched_round": 21,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 18,
+      "touched_round": 21,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -548,11 +548,11 @@
     "HYP-005": {
       "id": "HYP-005",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-07T15:28:47+00:00",
-      "updated_at": "2026-08-07T15:28:47+00:00",
-      "touched_round": 6,
+      "updated_at": "2026-08-11T09:46:48+00:00",
+      "touched_round": 20,
       "confidence": 0.8,
       "title": "CUDA-only code paths in paged_attention, training/core/engine, and training/distributed are not guarded by pragma:no cover, causing them to count as uncovered lines in CPU-only CI, which is why the coverage floor was lowered from 80% to 77%"
     },
@@ -843,11 +843,11 @@
     "HYP-006": {
       "id": "HYP-006",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-10T13:37:05+00:00",
-      "updated_at": "2026-08-10T13:37:05+00:00",
-      "touched_round": 17,
+      "updated_at": "2026-08-11T09:46:48+00:00",
+      "touched_round": 20,
       "confidence": 0.95,
       "title": "chat stream prompt-strip assumes prompt echo that never happens",
       "details": "PRIMARY hypothesis: chat.py:210 prompt.startswith(token) strip is derived from the non-streaming path's echo handling, but streaming backends never echo the prompt, so the strip misfires and drops genuine tokens. ALTERNATIVE (low p): some backend historically echoed the prompt in stream and the strip was needed then; but all current backends (eager/batched/speculative) verified to not echo."
@@ -949,11 +949,11 @@
     "HYP-007": {
       "id": "HYP-007",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-10T14:02:52+00:00",
-      "updated_at": "2026-08-10T14:02:52+00:00",
-      "touched_round": 17,
+      "updated_at": "2026-08-11T09:46:48+00:00",
+      "touched_round": 20,
       "confidence": 0.9,
       "title": "verify must run before in-place unlink (or forbear deleting until after verify)",
       "details": "Fix order: when --verify is passed, run round-trip verify against the still-present legacy blob first; only unlink legacy after verify passes (and only when --in-place)."
@@ -1183,11 +1183,11 @@
     "HYP-008": {
       "id": "HYP-008",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T00:37:17+00:00",
-      "updated_at": "2026-08-11T00:37:17+00:00",
-      "touched_round": 19,
+      "updated_at": "2026-08-11T09:46:48+00:00",
+      "touched_round": 20,
       "confidence": 0.95,
       "title": "compute_model_size fails to recognize quantized-layer classes",
       "details": "It dispatch only on isinstance QuantizedLinear/nn.Linear; new PEFT/quant layer classes fall through. Fix: a generic quantized-layer branch (or recognize the four classes)."
@@ -1253,11 +1253,11 @@
     "HYP-009": {
       "id": "HYP-009",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T01:17:42+00:00",
-      "updated_at": "2026-08-11T01:17:42+00:00",
-      "touched_round": 19,
+      "updated_at": "2026-08-11T09:46:48+00:00",
+      "touched_round": 20,
       "confidence": 0.9,
       "title": "'calib_batches[:1]' is an over-eager debug cap, not intentional",
       "details": "The [:1] slice both contradicts the docstring (up to n_samples batches) and differs from the fallback path; intent is to accumulate all calibration batches."
@@ -1323,11 +1323,11 @@
     "HYP-010": {
       "id": "HYP-010",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T01:43:23+00:00",
-      "updated_at": "2026-08-11T01:43:23+00:00",
-      "touched_round": 19,
+      "updated_at": "2026-08-11T09:46:48+00:00",
+      "touched_round": 20,
       "confidence": 0.95,
       "title": "group_size must divide in_features (or be -1); code assumes it implicitly",
       "details": "Multiple // and repeat_interleave(gs) sites require in_features % group_size == 0 for group_size != -1; non-divisible configs are undefined and crash late. Fix: validate at GPTQQuantizer construction."
@@ -1390,6 +1390,375 @@
       "source": "commits 94aac11, 01538e9, a6ee83b; regression tests in test_quantization, test_gptq_end_to_end, test_gptq_algorithm, test_awq_algorithm",
       "confidence": 1.0,
       "details": "Round 20: 3 verified fixes, each RED->GREEN, full quantization suite + ruff/ty green."
+    },
+    "ISS-023": {
+      "id": "ISS-023",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:14:12+00:00",
+      "updated_at": "2026-08-11T10:24:37+00:00",
+      "touched_round": 21,
+      "title": "Flaky device-cache invariant: cached ALL_GPU_DEVICES diverges from live VRAM-filtered view on shared GPU hosts",
+      "details": "tests/test_support_devices.py::test_cached_device_lists_match_dynamic_inventory asserted set equality between import-time-cached devices.ALL_GPU_DEVICES and the test-time dynamic VRAM-filtered cuda_device_strings(). On a shared 8x A100 host, free-VRAM churns (other suite runs/processes push a GPU below the 512MiB MIN_FREE_VRAM_BYTES floor at import, then it frees by test time). Two overlapping pytest runs reproduced cached={cuda:2..7} but dynamic={cuda:0..7} -> AssertionError. Stable invariant is 'cache references only currently-visible devices', not equality with a moment-dependent filtered view.",
+      "severity": "high"
+    },
+    "TASK-017": {
+      "id": "TASK-017",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:14:30+00:00",
+      "updated_at": "2026-08-11T10:24:37+00:00",
+      "touched_round": 21,
+      "category": "test-quality",
+      "title": "Harden test_cached_device_lists_match_dynamic_inventory against VRAM churn",
+      "details": "Assert stable invariant (cache subset of currently-visible CUDA devices; ALL_DEVICES is EXACTLY ALL_GPU_DEVICES or the CPU fallback) instead of moment-dependent equality with the live VRAM-filtered view. Regression: repro where cuda:0/1 are starved at import and free at test time."
+    },
+    "HYP-011": {
+      "id": "HYP-011",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:14:49+00:00",
+      "updated_at": "2026-08-11T10:24:37+00:00",
+      "touched_round": 21,
+      "confidence": 0.95,
+      "title": "Root cause: import-time VRAM-filtered cache vs test-time dynamic view",
+      "details": "ALL_GPU_DEVICES = cuda_device_strings() runs at module import (needed for pytest parametrize — import happens before tests run), filtered by MIN_FREE_VRAM_BYTES. When GPUs 0/1 are momentarily starved at import and free by test time, cached set != dynamic set. Verified: simulated churn at import -> cached={cuda:2..7}, dynamic=8 devices, equality fails; fixed invariants all hold."
+    },
+    "EV-037": {
+      "id": "EV-037",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:15:00+00:00",
+      "updated_at": "2026-08-11T10:15:00+00:00",
+      "touched_round": 21,
+      "source": "tests/test_support_devices.py (fixed, uncommitted) + /tmp/test_device_race.py repro",
+      "details": "Repro method: patch torch.cuda.mem_get_info so cuda:0/1 report <512MiB at import (starved), then 80GiB at test time. Old test: set(cuda_device_strings()) == set(ALL_GPU_DEVICES) -> False (cached {cuda:2..7} vs dynamic {cuda:0..7}). New test asserts visibility-subset invariants -> all True under the same churn. Full 15-test file green after fix.",
+      "confidence": 1.0
+    },
+    "CHG-020": {
+      "id": "CHG-020",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:24:37+00:00",
+      "updated_at": "2026-08-11T10:24:37+00:00",
+      "touched_round": 21,
+      "commit": "8cbf589",
+      "title": "fix(test): harden device-cache invariant against VRAM churn (ISS-023)"
+    },
+    "DEC-008": {
+      "id": "DEC-008",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:24:49+00:00",
+      "updated_at": "2026-08-11T10:24:49+00:00",
+      "touched_round": 21,
+      "title": "Round-21: fix flaky device-cache invariant; deep-dive auth/eval/serving/perf",
+      "rationale": "Full-suite VERIFY reproduced a genuine flake (test_cached_device_lists_match_dynamic_inventory) caused by import-time VRAM-filtered cache diverging from the live view on shared GPU hosts; baseline was green (156s clean run). Fixed by asserting the stable visibility-subset invariant. Concurrently dispatched 4 deep-dive agents (training/rlhf+engine, export/gguf/token, attn/kv/generation, peft/data/eval) to surface NEW issues beyond the 22 already resolved.",
+      "alternatives_rejected": "leave test equality as-is (flakes on any shared-GPU CI/dev box); cache unfiltered device lists (breaks VRAM-awareness that guards against low-VRAM device selection)"
+    },
+    "ISS-024": {
+      "id": "ISS-024",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:34:10+00:00",
+      "updated_at": "2026-08-11T10:34:40+00:00",
+      "touched_round": 21,
+      "title": "LoRA/AdaLoRA merge_weights double-counts the adapter at serve time (peft_merge=True)",
+      "details": "merge_weights folds delta into base_layer.weight but leaves the adapter path (scaling) active in forward. With peft_merge=True every forward computes base + 2*adapter -> ~2x-strength model diverging from unmerged and correct-merged math. IA3 already did it correctly (fold + disable). Reproduced: LoRALinear with nonzero A/B, merge changes output; AdaLoRALinear same. Found by round-21 deep-dive (peft/data/eval agent).",
+      "severity": "high"
+    },
+    "TASK-018": {
+      "id": "TASK-018",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:34:18+00:00",
+      "updated_at": "2026-08-11T10:34:40+00:00",
+      "touched_round": 21,
+      "category": "correctness",
+      "title": "Fix LoRA/AdaLoRA merge to be output-preserving (disable adapter path on merge)",
+      "details": "Fold delta then zero scaling so forward short-circuits through the folded base; unmerge restores both. Output-preserving, IA3-style."
+    },
+    "EV-038": {
+      "id": "EV-038",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:34:18+00:00",
+      "updated_at": "2026-08-11T10:34:18+00:00",
+      "touched_round": 21,
+      "source": "repro /tmp/repro_lora_merge2.py, /tmp/repro_adalora_merge.py + fixed tests tests/core/test_lora.py::test_merge_weights_is_output_preserving",
+      "details": "Pre-fix: merged output differs from unmerged (double-count). Post-fix: allclose before/after merge in both LoRA and AdaLoRA; unmerge restores; 91 tests green; serving peft e2e 3 green; ruff+format clean.",
+      "confidence": 1.0
+    },
+    "HYP-012": {
+      "id": "HYP-012",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:34:33+00:00",
+      "updated_at": "2026-08-11T10:34:40+00:00",
+      "touched_round": 21,
+      "confidence": 0.98,
+      "title": "Root cause: merge folds delta but fails to disable the adapter forward path",
+      "details": "Both LoRALinear.merge_weights and AdaLoRALinear.merge_weights compute delta_w and add to base_layer.weight but never set scaling=0 / disable the lora path. forward() therefore re-applies adapter * scaling on top of the folded base output. IA3's merge_weights (already correct) sets ia3_l=1.0 so the wrapper becomes identity — the reference pattern. Verified by repro + green regression tests."
+    },
+    "CHG-021": {
+      "id": "CHG-021",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:34:41+00:00",
+      "updated_at": "2026-08-11T10:34:41+00:00",
+      "touched_round": 21,
+      "commit": "aae206d",
+      "title": "fix(peft): output-preserving LoRA/AdaLoRA merge (ISS-024)"
+    },
+    "ISS-025": {
+      "id": "ISS-025",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:48:37+00:00",
+      "updated_at": "2026-08-11T10:49:07+00:00",
+      "touched_round": 21,
+      "title": "Mixed decode+prefill KV write corrupts cached position 0 and spuriously overflows",
+      "details": "update_at_indices mixed path wrote all k_new columns at start_pos and deduped by keep-first; a decode row's padded columns reuse position 0 so the first (slot,0) is its pad -> real cached first-token K/V overwritten. Also overflow check used batch-max seq_len_new per row -> decode near max_seq_len + longer prefill raised spurious ValueError (HTTP 500). Found by round-21 deep-dive (attn/kv/generation agent), verified by 2 repros.",
+      "severity": "high"
+    },
+    "TASK-019": {
+      "id": "TASK-019",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:48:51+00:00",
+      "updated_at": "2026-08-11T10:49:07+00:00",
+      "touched_round": 21,
+      "category": "correctness",
+      "title": "Fix mixed decode+prefill KV write: filter padded positions via real-position run, per-row overflow",
+      "details": "Derive each row's real write set from its leading increasing-by-one position run; write only those; overflow = start_pos[b,0]+real_len."
+    },
+    "HYP-013": {
+      "id": "HYP-013",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T10:48:51+00:00",
+      "updated_at": "2026-08-11T10:49:07+00:00",
+      "touched_round": 21,
+      "confidence": 0.97,
+      "title": "Root cause: mixed-path writes padded columns and misuses batch-max for per-row overflow",
+      "details": "exact repro in /tmp/repro_mixed_kv.py + _b.py: decode row's pads clobbered k_cache[slot,0]; start_pos[1,0]=6 + seq_len_new=4 > 8 spurious raise. Fix verified: position-0 preserved, per-row overflow correct, 183 tests green."
+    },
+    "EV-039": {
+      "id": "EV-039",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:49:07+00:00",
+      "updated_at": "2026-08-11T10:49:07+00:00",
+      "touched_round": 21,
+      "source": "repro /tmp/repro_mixed_kv.py, /tmp/repro_mixed_kv_b.py + fixed tests tests/core/test_kv_cache.py (2 new)",
+      "details": "Pre-fix: both bugs reproduced. Post-fix: no spurious overflow, position-0 K/V preserved, real decode write at expected position, genuine overflow still raises. 183 kv/mha/engine tests green; ruff+format clean.",
+      "confidence": 1.0
+    },
+    "CHG-022": {
+      "id": "CHG-022",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:49:07+00:00",
+      "updated_at": "2026-08-11T10:49:07+00:00",
+      "touched_round": 21,
+      "commit": "df04a02",
+      "title": "fix(serving): mixed-batch KV position-0 + overflow (ISS-025)"
+    },
+    "ISS-026": {
+      "id": "ISS-026",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:50:15+00:00",
+      "updated_at": "2026-08-11T10:50:15+00:00",
+      "touched_round": 21,
+      "title": "Paged KVCache.update writes each layer's K/V into EVERY layer's buffer (multi-layer wrong output)",
+      "details": "paged_kv_cache.py:131-132 write's leading ':' selects the layer axis and RHS (batch=1) broadcasts to all layers; layer 0's cached prefix is silently replaced by layer 1's data when num_layers>1. Only works for num_layers==1. Found by round-21 deep-dive (attn/kv agent).",
+      "severity": "high"
+    },
+    "ISS-027": {
+      "id": "ISS-027",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:50:27+00:00",
+      "updated_at": "2026-08-11T10:50:27+00:00",
+      "touched_round": 21,
+      "title": "BatchEngine.step holds lock only for bookkeeping, not forward — concurrent steps double-advance + corrupt KV pool",
+      "details": "batch_engine.py forward runs unlocked; two concurrent step() calls (FastAPI threadpool path confirmed) both run pre/forward/post against same slots -> two tokens appended per step, both written to same cache position (last-wins), generated_ids desyncs from KV. test_engine_thread_safety only asserts pre/post serialization, uses fake deterministic model masking corruption. Found by round-21 deep-dive.",
+      "severity": "high"
+    },
+    "ISS-028": {
+      "id": "ISS-028",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:50:27+00:00",
+      "updated_at": "2026-08-11T10:50:27+00:00",
+      "touched_round": 21,
+      "title": "Prefix cache slot id goes stale after slot reuse (use-after-free of cached KV)",
+      "details": "batch_engine.py SlotPrefixCache maps hash(prompt)->(slot,prefix_len); when a seq finishes its slot is freed but the prefix entry is never invalidated and KVCache buffers aren't cleared on reuse. ReqB overwrites slot with Q's K/V then ReqC (prompt P) hits the stale cache and replays Q's KV as P's prefix. Found by round-21 deep-dive.",
+      "severity": "high"
+    },
+    "ISS-029": {
+      "id": "ISS-029",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:50:43+00:00",
+      "updated_at": "2026-08-11T10:50:43+00:00",
+      "touched_round": 21,
+      "title": "HF gate_proj/up_proj mapping swapped relative to GLU activation — from_pretrained(real llama/mistral) computes wrong MLP",
+      "details": "weight_mapping.py maps HF gate_proj->our gate_proj and HF up_proj->our fc1, but our GLU MLP computes fc2(silu(fc1 x) * gate_proj x) while HF computes down(silu(gate x) * up x). Substituting gives silu(W_up x)*W_gate x vs silu(W_gate x)*W_up x — wrong whenever W_gate != W_up. Also loader never sets mlp_activation (gelu default) nor norm type. Found by round-21 deep-dive (export/token agent).",
+      "severity": "high"
+    },
+    "ISS-030": {
+      "id": "ISS-030",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:50:43+00:00",
+      "updated_at": "2026-08-11T10:50:43+00:00",
+      "touched_round": 21,
+      "title": "DDP ranks seed RNG differently (42+rank) and never broadcast params — multi-GPU training mathematically degenerate",
+      "details": "distributed.py seeds each process 42+rank, build_model runs after seeding with no dist.broadcast; DDP averages gradients of different models, not the gradient of one model. Loss diverges/never converges on fresh multi-GPU runs. Found by round-21 deep-dive (training/rlhf agent).",
+      "severity": "critical"
+    },
+    "ISS-031": {
+      "id": "ISS-031",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:51:06+00:00",
+      "updated_at": "2026-08-11T10:51:06+00:00",
+      "touched_round": 21,
+      "title": "PPO/RLHF custom loop ignores training.max_steps and never advances engine.global_step",
+      "details": "base_task.run_with_callbacks loops range(start_epoch, epochs) with no max_steps cap; engine custom-loop branch (ppo) returns before the max_steps check; TensorBoard logs every step at scalar 0, AdaLoRA cadence never fires. Also on_epoch_end always receives empty logs -> EarlyStopping dead for PPO. Found by round-21 deep-dive.",
+      "severity": "high"
+    },
+    "ISS-032": {
+      "id": "ISS-032",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:51:06+00:00",
+      "updated_at": "2026-08-11T10:51:06+00:00",
+      "touched_round": 21,
+      "title": "PPO value-loss targets built from normalized advantages (default on) -> critic learns wrong scale that corrupts next rollout GAE",
+      "details": "rollout_buffer normalizes sample.advantages in place when normalize_advantages=True (default), then builds returns = norm_adv + raw V; critic regressed to V + (A-mean)/std while next rollout consumes raw V in GAE — inconsistent scales degrade GAE. All PPO tests hardcode normalize_advantages=False. Found by round-21 deep-dive.",
+      "severity": "high"
+    },
+    "ISS-033": {
+      "id": "ISS-033",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:51:06+00:00",
+      "updated_at": "2026-08-11T10:51:06+00:00",
+      "touched_round": 21,
+      "title": "from_pretrained unconditionally use_glu=True and drops training-time config — default GLU-off model round-trips broken",
+      "details": "hf_loader always passes use_glu=True when rebuilding; a default DecoderModel(use_glu=False) saved then reloaded gets a random gate_proj, load_state_dict(strict=False) only warns, silently wrong outputs. config.json never persists use_glu/mlp_activation/norm_impl. Found by round-21 deep-dive.",
+      "severity": "med"
+    },
+    "HYP-014": {
+      "id": "HYP-014",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:52:01+00:00",
+      "updated_at": "2026-08-11T10:52:01+00:00",
+      "touched_round": 21,
+      "confidence": 0.85,
+      "title": "PagedKVCache.update uses layer-axis ':' instead of layer_idx scope",
+      "details": "write self.k_cache[:, block_id, ...] = k_transposed[:, :, i, :] with batch=1 broadcasts across first dim (layers); the RHS should be indexed at layer idx not broadcast. Needs num_layers>1 repro to confirm."
+    },
+    "HYP-015": {
+      "id": "HYP-015",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:52:01+00:00",
+      "updated_at": "2026-08-11T10:52:01+00:00",
+      "touched_round": 21,
+      "confidence": 0.9,
+      "title": "DDP params differ across ranks because per-rank seeds precede build_model and zero param broadcast",
+      "details": "torch.manual_seed(42+rank) then build_model() RNG-inits per rank; DDP averages grads of different models. Verify: world_size=2 fresh run weights differ pre-sync."
+    },
+    "HYP-016": {
+      "id": "HYP-016",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:52:01+00:00",
+      "updated_at": "2026-08-11T10:52:01+00:00",
+      "touched_round": 21,
+      "confidence": 0.75,
+      "title": "HF GLU mapping swap",
+      "details": "gate_proj<->up_proj roles differ between our MLP (silu(fc1)*gate_proj) and HF (silu(gate)*up). Verify by loading real llama weights and comparing logits to HF, or a unit-level activations identity check."
+    },
+    "EV-040": {
+      "id": "EV-040",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:52:29+00:00",
+      "updated_at": "2026-08-11T10:52:29+00:00",
+      "touched_round": 21,
+      "source": "round-21 deep-dive agent (attn/kv/generation) report",
+      "details": "Agent traced PagedKVCache.update write ':' -> broadcasts to all layers; every test uses num_layers=1 masking it. Needs an active repro before treating as fact; recorded as root-cause hypothesis awaiting verification.",
+      "confidence": 0.6
+    },
+    "EV-041": {
+      "id": "EV-041",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:52:29+00:00",
+      "updated_at": "2026-08-11T10:52:29+00:00",
+      "touched_round": 21,
+      "source": "round-21 deep-dive agent (training) report",
+      "details": "Traced distributed.py per-rank seeding (42+rank) + zero dist.broadcast; no multi-rank model-consistency test exists. Awaiting verification via world_size=2 weight comparison.",
+      "confidence": 0.6
+    },
+    "EV-042": {
+      "id": "EV-042",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:52:29+00:00",
+      "updated_at": "2026-08-11T10:52:29+00:00",
+      "touched_round": 21,
+      "source": "round-21 deep-dive agent (export/token) report",
+      "details": "Traced weight_mapping gate/up mapping + mlp.py GLU formula; claimed divergence from HF for every real llama checkpoint. Awaiting logits-level verification.",
+      "confidence": 0.5
+    },
+    "DEC-009": {
+      "id": "DEC-009",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T10:53:36+00:00",
+      "updated_at": "2026-08-11T10:53:36+00:00",
+      "touched_round": 21,
+      "title": "Round-21: 3 verified fixes + deep-dive mapped to 8 new issues",
+      "rationale": "Full-suite baseline (186s clean) showed one genuine flake (ISS-023, import-time VRAM-filtered device cache vs live view). Dispatched 4 deep-dive agents (rlhf/engine, export/gguf/token, attn/kv/generation, peft/data/eval) which surfaced ~25 candidate findings. Verified+fixed the 3 most severe/testable: ISS-023 device-cache flake, ISS-024 LoRA/AdaLoRA merge double-count (~2x model at serve), ISS-025 mixed-batch KV position-0 corruption + spurious overflow. Recorded 8 further issues (ISS-026..033) + 3 hypotheses (HYP-014..016) with evidence for future rounds. User also asked about suite slowness: definitively NOT a deadlock — 165s clean run, prior slowness was my own overlapping runs; slowest tests (DDP spawn, HF tokenizer download) are legitimately heavy E2E.",
+      "alternatives_rejected": "fix all 11 findings this round (exceeds 3-task deep-dive budget + diff-size guard); touch paged-KV/concurrency findings without a unit-level repro (risk of half-correct fixes); mark the flaky device test as skip instead of fixing the invariant"
     }
   },
   "edges": [
@@ -1908,6 +2277,186 @@
       "to": "TASK-016",
       "type": "implements",
       "created_at": "2026-08-11T01:53:29+00:00"
+    },
+    {
+      "from": "ISS-023",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:14:30+00:00"
+    },
+    {
+      "from": "TASK-017",
+      "to": "ISS-023",
+      "type": "addresses",
+      "created_at": "2026-08-11T10:14:49+00:00"
+    },
+    {
+      "from": "EV-037",
+      "to": "HYP-011",
+      "type": "validates",
+      "created_at": "2026-08-11T10:15:09+00:00"
+    },
+    {
+      "from": "ISS-023",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:15:09+00:00"
+    },
+    {
+      "from": "CHG-020",
+      "to": "ISS-023",
+      "type": "resolves",
+      "created_at": "2026-08-11T10:24:49+00:00"
+    },
+    {
+      "from": "CHG-020",
+      "to": "TASK-017",
+      "type": "implements",
+      "created_at": "2026-08-11T10:24:49+00:00"
+    },
+    {
+      "from": "ISS-024",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:34:18+00:00"
+    },
+    {
+      "from": "TASK-018",
+      "to": "ISS-024",
+      "type": "addresses",
+      "created_at": "2026-08-11T10:34:33+00:00"
+    },
+    {
+      "from": "EV-038",
+      "to": "HYP-011",
+      "type": "validates",
+      "created_at": "2026-08-11T10:34:33+00:00"
+    },
+    {
+      "from": "EV-038",
+      "to": "HYP-012",
+      "type": "validates",
+      "created_at": "2026-08-11T10:34:33+00:00"
+    },
+    {
+      "from": "CHG-021",
+      "to": "ISS-024",
+      "type": "resolves",
+      "created_at": "2026-08-11T10:34:49+00:00"
+    },
+    {
+      "from": "CHG-021",
+      "to": "TASK-018",
+      "type": "implements",
+      "created_at": "2026-08-11T10:34:49+00:00"
+    },
+    {
+      "from": "ISS-024",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:34:49+00:00"
+    },
+    {
+      "from": "ISS-025",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:48:51+00:00"
+    },
+    {
+      "from": "TASK-019",
+      "to": "ISS-025",
+      "type": "addresses",
+      "created_at": "2026-08-11T10:48:51+00:00"
+    },
+    {
+      "from": "EV-039",
+      "to": "HYP-013",
+      "type": "validates",
+      "created_at": "2026-08-11T10:49:07+00:00"
+    },
+    {
+      "from": "CHG-022",
+      "to": "ISS-025",
+      "type": "resolves",
+      "created_at": "2026-08-11T10:49:13+00:00"
+    },
+    {
+      "from": "CHG-022",
+      "to": "TASK-019",
+      "type": "implements",
+      "created_at": "2026-08-11T10:49:13+00:00"
+    },
+    {
+      "from": "ISS-025",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:49:13+00:00"
+    },
+    {
+      "from": "ISS-026",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:51:31+00:00"
+    },
+    {
+      "from": "ISS-027",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:51:31+00:00"
+    },
+    {
+      "from": "ISS-028",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:51:31+00:00"
+    },
+    {
+      "from": "ISS-029",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:51:31+00:00"
+    },
+    {
+      "from": "ISS-030",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:51:31+00:00"
+    },
+    {
+      "from": "ISS-031",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:51:32+00:00"
+    },
+    {
+      "from": "ISS-032",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:51:32+00:00"
+    },
+    {
+      "from": "ISS-033",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-11T10:51:32+00:00"
+    },
+    {
+      "from": "EV-040",
+      "to": "HYP-014",
+      "type": "validates",
+      "created_at": "2026-08-11T10:52:51+00:00"
+    },
+    {
+      "from": "EV-041",
+      "to": "HYP-015",
+      "type": "validates",
+      "created_at": "2026-08-11T10:52:51+00:00"
+    },
+    {
+      "from": "EV-042",
+      "to": "HYP-016",
+      "type": "validates",
+      "created_at": "2026-08-11T10:52:51+00:00"
     }
   ]
 }
