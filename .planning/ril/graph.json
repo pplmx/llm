@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 23,
+  "round": 24,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-11T11:17:19+00:00",
+  "updated_at": "2026-08-11T11:44:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -1643,11 +1643,11 @@
     "ISS-031": {
       "id": "ISS-031",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:51:06+00:00",
-      "updated_at": "2026-08-11T10:51:06+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T11:33:35+00:00",
+      "touched_round": 23,
       "title": "PPO/RLHF custom loop ignores training.max_steps and never advances engine.global_step",
       "details": "base_task.run_with_callbacks loops range(start_epoch, epochs) with no max_steps cap; engine custom-loop branch (ppo) returns before the max_steps check; TensorBoard logs every step at scalar 0, AdaLoRA cadence never fires. Also on_epoch_end always receives empty logs -> EarlyStopping dead for PPO. Found by round-21 deep-dive.",
       "severity": "high"
@@ -1655,11 +1655,11 @@
     "ISS-032": {
       "id": "ISS-032",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:51:06+00:00",
-      "updated_at": "2026-08-11T10:51:06+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T11:40:48+00:00",
+      "touched_round": 23,
       "title": "PPO value-loss targets built from normalized advantages (default on) -> critic learns wrong scale that corrupts next rollout GAE",
       "details": "rollout_buffer normalizes sample.advantages in place when normalize_advantages=True (default), then builds returns = norm_adv + raw V; critic regressed to V + (A-mean)/std while next rollout consumes raw V in GAE — inconsistent scales degrade GAE. All PPO tests hardcode normalize_advantages=False. Found by round-21 deep-dive.",
       "severity": "high"
@@ -1806,6 +1806,88 @@
       "title": "Round-22: fix CRITICAL DDP divergent-init (ISS-030); defer paged-layer bug (ISS-026)",
       "rationale": "Verified + fixed the highest-severity remaining deep-dive finding: fresh multi-GPU DDP runs seeded per-rank (42+rank) build divergent models and never converge. Added broadcast_parameters (params+buffers from rank 0) called in TrainingEngine right after build_model; verified on real 2-rank NCCL (weights identical post-fix) + new unit + e2e tests. Deferred ISS-026 (paged KV layer-mixing) to next round — opt-in path, needs careful block-manager semantics; recorded with hypothesis + evidence. Full suite green: 0 failures, ~177s.",
       "alternatives_rejected": "seed all ranks identically instead of broadcast (changes data-ordering semantics + cannot rescue already-orphaned optimizers); fix ISS-026 this round (exceeds task budget + riskier multi-file change; leave for focused round with its own verify)"
+    },
+    "TASK-021": {
+      "id": "TASK-021",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T11:33:35+00:00",
+      "updated_at": "2026-08-11T11:33:35+00:00",
+      "touched_round": 23,
+      "category": "correctness",
+      "title": "Custom PPO/RLHF loop: honor max_steps + publish epoch logs (ISS-031)",
+      "details": "max_steps cap never applied on custom loop; engine.global_step never advanced; on_epoch_end got empty logs."
+    },
+    "CHG-024": {
+      "id": "CHG-024",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T11:33:35+00:00",
+      "updated_at": "2026-08-11T11:33:35+00:00",
+      "touched_round": 23,
+      "commit": "b72cb49",
+      "title": "fix(training): PPO loop max_steps + epoch logs (ISS-031)"
+    },
+    "EV-044": {
+      "id": "EV-044",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T11:33:35+00:00",
+      "updated_at": "2026-08-11T11:33:35+00:00",
+      "touched_round": 23,
+      "source": "tests/training/test_ppo_task.py::test_ppo_task_honors_max_steps + tests/training/rlhf/test_ppo_callbacks.py::test_ppo_fires_on_epoch_end",
+      "details": "RED verified via stash (without fix PPO runs all 6 steps / empty logs), GREEN with fix (exactly max_steps updates; avg_loss in epoch logs). 410 training tests, ty, ruff green.",
+      "confidence": 1.0
+    },
+    "TASK-022": {
+      "id": "TASK-022",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T11:40:49+00:00",
+      "updated_at": "2026-08-11T11:40:49+00:00",
+      "touched_round": 23,
+      "category": "correctness",
+      "title": "PPO critic returns must be raw, not normalized (ISS-032)",
+      "details": "returns = normalized_adv + value trained critic on shifted scale while GAE consumes raw. Store raw returns per sample."
+    },
+    "CHG-025": {
+      "id": "CHG-025",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T11:40:49+00:00",
+      "updated_at": "2026-08-11T11:40:49+00:00",
+      "touched_round": 23,
+      "commit": "ef8484a",
+      "title": "fix(rlhf): raw returns for critic (ISS-032)"
+    },
+    "EV-045": {
+      "id": "EV-045",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T11:40:49+00:00",
+      "updated_at": "2026-08-11T11:40:49+00:00",
+      "touched_round": 23,
+      "source": "tests/training/rlhf/test_ppo.py::TestRolloutBuffer::test_returns_are_raw_when_advantages_normalized",
+      "details": "RED (no returns field on RolloutSample) -> GREEN; batch returns == raw adv + values while advantages mean~0. 411 training tests, ty, ruff green.",
+      "confidence": 1.0
+    },
+    "DEC-011": {
+      "id": "DEC-011",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T11:44:47+00:00",
+      "updated_at": "2026-08-11T11:44:47+00:00",
+      "touched_round": 23,
+      "title": "Round-23: fix PPO/RLHF custom-loop + critic target scale (ISS-031, ISS-032)",
+      "rationale": "Working the round-21 deep-dive backlog: (1) ISS-031 — the custom PPO loop never consulted TrainingConfig.max_steps nor advanced engine.global_step, so smoke configs ran every epoch and observer cadence dead; fixed per-batch cap + engine.global_step advance + epoch logs now flow to on_epoch_end. (2) ISS-032 — with default normalize_advantages=True, returns were built from normalized advantages while the next rollout's GAE consumes raw critic output — inconsistent scale corrupting GAE; fixed by storing raw per-sample returns before normalization. Both fixed TDD RED->GREEN. Backlog remaining (ISS-026/027/028/029/033) recorded with hypotheses; 5 active issues + 2 active hypotheses.",
+      "alternatives_rejected": "fix the big paged-KV layer-mixing (ISS-026) this round instead (opt-in path, multi-file block-manager change — will get its own focused round with a layer-scoped repro); fix ISS-027 thread-safety by taking a blanket lock around forward (serializes all inference, wrong fix for a concurrency design)"
     }
   },
   "edges": [
@@ -2534,6 +2616,42 @@
       "to": "COMP-006",
       "type": "located_in",
       "created_at": "2026-08-11T11:10:25+00:00"
+    },
+    {
+      "from": "TASK-021",
+      "to": "ISS-031",
+      "type": "addresses",
+      "created_at": "2026-08-11T11:33:35+00:00"
+    },
+    {
+      "from": "CHG-024",
+      "to": "ISS-031",
+      "type": "resolves",
+      "created_at": "2026-08-11T11:33:35+00:00"
+    },
+    {
+      "from": "CHG-024",
+      "to": "TASK-021",
+      "type": "implements",
+      "created_at": "2026-08-11T11:33:35+00:00"
+    },
+    {
+      "from": "TASK-022",
+      "to": "ISS-032",
+      "type": "addresses",
+      "created_at": "2026-08-11T11:40:49+00:00"
+    },
+    {
+      "from": "CHG-025",
+      "to": "ISS-032",
+      "type": "resolves",
+      "created_at": "2026-08-11T11:40:49+00:00"
+    },
+    {
+      "from": "CHG-025",
+      "to": "TASK-022",
+      "type": "implements",
+      "created_at": "2026-08-11T11:40:49+00:00"
     }
   ]
 }
