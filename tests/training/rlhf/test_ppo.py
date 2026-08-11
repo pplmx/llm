@@ -88,6 +88,53 @@ class TestRolloutBuffer:
             atol=1e-5,
         )
 
+    def test_returns_are_raw_when_advantages_normalized(self):
+        """Returns must stay on the raw (unnormalized) return scale.
+
+        With the default ``normalize_advantages=True``, ``sample.advantages``
+        is standardized in place for the policy ratio, but the critic's
+        regression target (returns) must be ``raw_advantage + value`` — the
+        true return — NOT ``normalized_advantage + value``. The next rollout's
+        GAE bootstrap consumes the critic's output raw, so training the critic
+        on a shifted/scaled target corrupts the advantage signal every rollout.
+        """
+        buffer = RolloutBuffer(gae_lambda=1.0, gamma=1.0, normalize_advantages=True)
+        # Two samples with clearly different scales so normalization shifts mean.
+        values1 = torch.tensor([0.5, 0.3])
+        values2 = torch.tensor([10.0, 10.0])
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+            values=values1,
+        )
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+            values=values2,
+        )
+        buffer.compute_advantages()
+
+        for sample in buffer.samples:
+            assert sample.returns is not None
+            assert sample.returns.shape == sample.advantages.shape
+
+        # Explicitly: normalized advantages have zero mean across the batch,
+        # yet returns must still carry the true return scale (raw
+        # advantage + value, uncentered) — that is what the critic regresses.
+        batch = next(iter(buffer.get_batches(mini_batch_size=4, shuffle=False)))
+        mean_adv = batch.advantages.mean()
+        assert abs(float(mean_adv)) < 1e-5, f"advantages should be normalized (mean~0), got {mean_adv}"
+        # Batch returns must equal the RAW return per sample, not the
+        # centered one. First sample raw returns are [1.0, 1.0]
+        # (raw_adv [0.5, 0.7] + values [0.5, 0.3]).
+        raw_adv1 = torch.tensor([0.5, 0.7])
+        vals1 = torch.tensor([0.5, 0.3])
+        assert torch.allclose(batch.returns[0, :2], raw_adv1 + vals1, atol=1e-5)
+
     def test_get_batches(self):
         """Test mini-batch generation."""
         buffer = RolloutBuffer()

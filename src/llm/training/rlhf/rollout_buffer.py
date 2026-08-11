@@ -21,6 +21,7 @@ class RolloutSample:
     old_log_probs: torch.Tensor  # [response_len] log probs from policy
     values: torch.Tensor | None = None  # [response_len] value estimates (optional)
     advantages: torch.Tensor | None = None  # [response_len] computed advantages
+    returns: torch.Tensor | None = None  # [response_len] raw returns (advantage + value)
 
 
 @dataclass
@@ -109,6 +110,16 @@ class RolloutBuffer:
                     delta = reward_t + self.gamma * next_value - values[t].item()
                     last_gae = delta + self.gamma * self.gae_lambda * last_gae
                     advantages[t] = last_gae
+                # Raw returns (advantage + value estimate) — the critic's
+                # regression target. These must be computed from the raw
+                # advantage, *before* normalization, so the value function
+                # learns the true return scale.  Using the normalized
+                # advantage here (V + (A-mean)/std) trains the critic on a
+                # shifted/scaled target while the next rollout's GAE
+                # bootstrap consumes the critic's output *raw* — the two
+                # sides then disagree on scale and corrupt the advantage
+                # signal every rollout.
+                sample.returns = advantages.clone() + values
             else:
                 device = sample.rewards.device
                 # Simplified: uniform advantage based on final reward
@@ -200,7 +211,12 @@ class RolloutBuffer:
 
             if sample.advantages is not None:
                 advantages[i, :response_len] = sample.advantages
-                if sample.values is not None:
+                if sample.returns is not None:
+                    # Raw (unnormalized) returns — see compute_advantages.
+                    returns[i, :response_len] = sample.returns
+                elif sample.values is not None:
+                    # Backwards compatibility: components that construct
+                    # RolloutSample without calling compute_advantages.
                     returns[i, :response_len] = sample.advantages + sample.values
                 else:
                     returns[i, :response_len] = sample.rewards
