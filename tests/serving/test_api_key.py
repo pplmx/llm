@@ -157,3 +157,80 @@ def test_main_allows_loopback_without_api_key(monkeypatch):
         api.config.api_key = original_key
 
     assert started.get("host") == "127.0.0.1"
+
+
+def test_lifespan_refuses_non_loopback_without_api_key():
+    """The *lifespan* (the uvicorn/Docker entrypoint) must refuse to start
+    when host is non-loopback and no api_key — not just ``cli.main``.
+
+    Regression: the Docker CMD runs ``uvicorn llm.serving.api:app`` directly,
+    bypassing the CLI guard, so a container started without
+    LLM_SERVING_API_KEY served /generate fully anonymously on 0.0.0.0. The
+    guard moved into the app's lifespan so every entrypoint is covered.
+    """
+    from fastapi.testclient import TestClient
+
+    original_host = api.config.host
+    original_key = api.config.api_key
+    api.config.host = "0.0.0.0"  # noqa: S104
+    api.config.api_key = None
+    try:
+        # TestClient runs the lifespan on startup; the guard raises before
+        # any real model load. We patch the model-load factory so the only
+        # failure that can occur is the guard itself.
+        import llm.serving.api as api_mod
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(
+            api_mod.ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: None)
+        )
+        monkeypatch.setattr(
+            api_mod.ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: None)
+        )
+        try:
+            with pytest.raises(RuntimeError, match="Refusing to start"), TestClient(api.app):
+                pass
+        finally:
+            monkeypatch.undo()
+    finally:
+        api.config.host = original_host
+        api.config.api_key = original_key
+
+
+def test_lifespan_allows_loopback_without_api_key():
+    """Loopback without api_key is the dev default and must still start.
+
+    We only assert the startup guard passes; the rest of the lifespan
+    (model load) is patched out so this stays a unit test of the guard.
+    """
+    from fastapi.testclient import TestClient
+
+    original_host = api.config.host
+    original_key = api.config.api_key
+    api.config.host = "127.0.0.1"
+    api.config.api_key = None
+    try:
+        import llm.serving.api as api_mod
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(
+            api_mod.ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: None)
+        )
+        monkeypatch.setattr(
+            api_mod.ContinuousBatchingEngine, "from_serving_config", classmethod(lambda cls, config, **kw: None)
+        )
+        monkeypatch.setattr(api_mod, "_log_server_config", lambda *a, **kw: None)
+        try:
+            # The loopback check must pass (no "Refusing to start"); the
+            # lifespan then proceeds to model wiring, which is patched out to
+            # None here, so startup fails later with an AttributeError from
+            # ``generation_service.model``. Asserting that specific error
+            # proves the guard did not fire first (the guard raises a
+            # RuntimeError mentioning "Refusing to start", not this).
+            with pytest.raises((AttributeError, TypeError), match="model"), TestClient(api.app):
+                pass
+        finally:
+            monkeypatch.undo()
+    finally:
+        api.config.host = original_host
+        api.config.api_key = original_key

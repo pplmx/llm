@@ -99,6 +99,23 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     """FastAPI lifespan manager — load model, wire routers, log config."""
     logger.info("Starting up...")
 
+    # Refuse to serve anonymous inference on a non-loopback interface, with
+    # no api_key configured.  This guard must live in the *lifespan* (which
+    # every entrypoint runs — uvicorn, the Docker CMD that launches
+    # ``llm.serving.api:app`` directly, and the ``llm-serve`` CLI) rather
+    # than only in ``cli.main``: a Docker/uvicorn launch that skipped the CLI
+    # used to bind 0.0.0.0 with ``api_key=None`` and serve /generate fully
+    # anonymously by default.
+    from llm.serving.auth import is_loopback
+
+    if not is_loopback(config.host) and not config.api_key:
+        raise RuntimeError(
+            f"Refusing to start: ServingConfig.host={config.host!r} binds to a "
+            f"non-loopback address but api_key is not set. Anonymous access on a "
+            f"public interface is unsafe. Either set LLM_SERVING_HOST to a loopback "
+            f"address (127.0.0.1) or set LLM_SERVING_API_KEY."
+        )
+
     generation_service = ServingGenerationService.from_config(config)
     engine = ContinuousBatchingEngine.from_serving_config(
         config,
