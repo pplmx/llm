@@ -6,6 +6,7 @@ import json
 import pytest
 
 from llm.data.modules.prompt import PromptDataModule
+from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
 from llm.training.rlhf.ppo_trainer import PPOTrainer
@@ -64,3 +65,72 @@ def test_ppo_task_uses_custom_loop(tmp_path, tiny_model, monkeypatch):
     assert engine.use_standard_loop is False
     assert type(task.ppo_trainer) is PPOTrainer
     engine.run()
+
+
+class _StepCountingCallback(Callback):
+    """Counts optimizer steps seen through the on_train_step_end hook."""
+
+    def __init__(self):
+        super().__init__()
+        self.steps = 0
+
+    def on_train_step_end(self, epoch, batch_idx, loss, metrics, logs=None):
+        self.steps += 1
+
+
+@pytest.mark.quick
+def test_ppo_task_honors_max_steps(tmp_path, tiny_model, monkeypatch):
+    """Training.max_steps is a hard cap on total PPO optimizer steps.
+
+    Regression: the custom (non-standard) loop iterated every batch of every
+    epoch without consulting ``engine.global_step`` against max_steps, so a
+    smoke config meant to stop at N steps ran through the whole dataloader
+    (and every remaining epoch), and never advanced ``engine.global_step``
+    (leaving TensorBoard at step 0). The standard-loop cap must apply here too.
+    """
+    prompt_file = tmp_path / "prompts.jsonl"
+    _write_prompts(prompt_file, ["Hello", "Hi there", "Test prompt", "More"])
+    tokenizer = CharBoundTokenizer()
+
+    config = Config()
+    config.data.dataset_path = str(prompt_file)
+    config.training.batch_size = 2
+    config.training.epochs = 3  # 4 prompts / bs2 => 2 steps/epoch, 6 total
+    config.training.max_steps = 3  # stop after 3 optimizer steps total
+    config.optimization.num_workers = 0
+    config.optimization.use_compile = False
+    config.ppo.ppo_epochs = 1
+    config.ppo.response_max_len = 2
+    config.ppo.mini_batch_size = 1
+    data_module = PromptDataModule(config)
+    data_module.prepare_data()
+    data_module.setup()
+
+    task = PPOTask(config, data_module)
+
+    reward_base = copy.deepcopy(tiny_model)
+
+    def fake_build_model(self):
+        if not hasattr(self, "_policy_built"):
+            self._policy_built = True
+            return tiny_model
+        return reward_base
+
+    monkeypatch.setattr(PPOTask, "build_model", fake_build_model)
+    monkeypatch.setattr(PPOTask, "_load_tokenizer", lambda self: tokenizer)
+
+    counter = _StepCountingCallback()
+    engine = TrainingEngine(
+        config=config,
+        task=task,
+        rank=0,
+        world_size=1,
+        data_module=data_module,
+        callbacks=[counter],
+    )
+
+    engine.run()
+
+    # Exactly max_steps PPO updates ran — not all 6 (and not all 3 epochs).
+    assert counter.steps == 3, f"expected 3 PPO steps, got {counter.steps}"
+    assert engine.global_step == 3

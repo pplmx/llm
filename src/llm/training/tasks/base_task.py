@@ -19,7 +19,11 @@ if TYPE_CHECKING:
 # the per-epoch work (data loading, optimizer steps, etc.). It is expected
 # to call ``self._emit_step_callbacks(...)`` after each optimizer step so
 # step-level observers (TensorBoardLogger, LRSchedulerCallback, ...) fire.
-EpochFn = Callable[[int], None]
+#
+# It may return a ``logs`` dict (e.g. ``{"avg_loss": ...}``) which is
+# forwarded to ``on_epoch_end`` — otherwise epoch-level observers such as
+# EarlyStopping / MetricsLogger would never see the custom loop's metrics.
+EpochFn = Callable[[int], dict[str, Any] | None]
 
 
 class TrainingTask(abc.ABC, CheckpointContributor):
@@ -101,8 +105,16 @@ class TrainingTask(abc.ABC, CheckpointContributor):
         """
         epoch_logs: dict[str, Any] = {}
         for epoch in range(engine.start_epoch, engine.config.training.epochs):
+            # Honours the hard cap on total optimizer steps across epochs
+            # for custom loops: if the previous epoch already consumed
+            # ``max_steps`` steps (a smoke config), don't start another.
+            max_steps = engine.config.training.max_steps
+            if max_steps > 0 and engine.global_step >= max_steps:
+                if engine.rank == 0:
+                    engine.logger.info(f"Reached max_steps={max_steps}; stopping training at epoch {epoch}.")
+                break
             engine._run_callbacks("on_epoch_start", epoch=epoch)
-            epoch_fn(epoch)
+            epoch_logs = epoch_fn(epoch) or {}
             engine._run_callbacks("on_epoch_end", epoch=epoch, logs=epoch_logs)
             epoch_logs = {}
             if engine.should_stop_training:

@@ -141,6 +141,7 @@ def test_ppo_fires_on_epoch_end(tmp_path, tiny_model, monkeypatch):
     from llm.training.core.callbacks import Callback
 
     epoch_calls: list[int] = []
+    epoch_logs: list[dict] = []
 
     class EpochCapture(Callback):
         def on_epoch_start(self, epoch, logs=None):
@@ -148,6 +149,7 @@ def test_ppo_fires_on_epoch_end(tmp_path, tiny_model, monkeypatch):
 
         def on_epoch_end(self, epoch, logs=None):
             epoch_calls.append(100 + epoch)  # mark end with offset
+            epoch_logs.append(dict(logs or {}))
 
     engine = TrainingEngine(
         config=config,
@@ -164,6 +166,11 @@ def test_ppo_fires_on_epoch_end(tmp_path, tiny_model, monkeypatch):
     # PromptDataModule may drop prompts that exceed max length, but the
     # callback contract must fire for every configured epoch.
     assert epoch_calls == [0, 100, 1, 101]
+    # The custom loop's epoch summary must reach epoch-level observers;
+    # a PPO run with no batches is the only path where avg_loss is absent.
+    assert len(epoch_logs) == 2
+    for logs in epoch_logs:
+        assert "avg_loss" in logs, f"epoch logs should carry avg_loss, got {logs}"
 
 
 @pytest.mark.quick

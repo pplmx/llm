@@ -107,7 +107,7 @@ class PPOTask(TrainingTask):
 
         training_start = time.time()
 
-        def _epoch(epoch: int) -> None:
+        def _epoch(epoch: int) -> dict[str, float]:
             if self.ppo_trainer is None:
                 raise RuntimeError("prepare_training() must be called before run_training().")
             if engine.sampler is not None:
@@ -117,10 +117,20 @@ class PPOTask(TrainingTask):
             epoch_metrics: list[dict[str, float]] = []
             num_batches = len(dataloader)
 
+            max_steps = engine.config.training.max_steps
             for batch_idx, batch in enumerate(dataloader):
+                # Hard cap on total optimizer steps, mirroring the standard
+                # loop (engine._run_epoch). Without this check a smoke config
+                # meant to stop at ``max_steps`` runs through every epoch.
+                if max_steps > 0 and engine.global_step >= max_steps:
+                    if engine.rank == 0:
+                        engine.logger.info(f"Reached max_steps={max_steps}; stopping PPO training.")
+                    break
+
                 prompts = batch["prompts"]
                 metrics = self.ppo_trainer.train_step(prompts)
                 epoch_metrics.append(metrics)
+                engine.global_step += 1
 
                 # Synthetic scalar loss so step-level observers
                 # (TensorBoardLogger, LRSchedulerCallback, ...) receive
@@ -154,6 +164,11 @@ class PPOTask(TrainingTask):
                     model_config=engine.config.model.model_dump(),
                 )
                 engine._run_callbacks("on_save_checkpoint", epoch=epoch)
+
+            # Forward the epoch summary to on_epoch_end so epoch-level
+            # observers (EarlyStopping, MetricsLogger, TensorBoard) see the
+            # custom loop's metrics instead of an empty dict.
+            return {"avg_loss": avg_loss}
 
         self.run_with_callbacks(engine, _epoch)
 
