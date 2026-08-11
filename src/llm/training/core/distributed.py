@@ -7,10 +7,36 @@ import os
 
 import torch
 import torch.distributed as dist
+from torch import nn
 
 from llm.training.core.config import DistributedConfig
 
 logger = logging.getLogger(__name__)
+
+
+def broadcast_parameters(model: nn.Module, src: int = 0) -> None:
+    """Broadcast a module's parameters and buffers from ``src`` to all ranks.
+
+    DDP requires every rank to start from *identical* parameters — it only
+    averages *gradients*, it never reconciles divergent weight initialisations.
+    Our :meth:`DistributedManager.setup` seeds rank R's RNG with ``42 + R`` so
+    that data ordering differs per rank; unless rank 0's freshly-built model is
+    explicitly broadcast, a fresh multi-GPU run optimises a different model per
+    rank and never converges on the real loss.
+
+    No-op when no process group is live (single-process / CPU runs, or engine
+    tests that construct the engine outside a distributed context).
+
+    Args:
+        model: The module whose state to synchronise (in place).
+        src: Rank whose state wins (default rank 0).
+    """
+    if not (dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1):
+        return
+    for param in model.parameters():
+        dist.broadcast(param.detach(), src=src)
+    for buffer in model.buffers():
+        dist.broadcast(buffer, src=src)
 
 
 class DistributedManager:

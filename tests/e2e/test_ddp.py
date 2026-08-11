@@ -308,3 +308,97 @@ def test_multi_gpu_config_detection():
 
     # Check gpus_per_node defaults correctly
     assert config.distributed.gpus_per_node == gpus, f"Expected {gpus}, got {config.distributed.gpus_per_node}"
+
+
+def _ddp_weight_consistency_worker(rank, world_size, device_indices, results):
+    """Build a model under per-rank seeding (as DistributedManager.setup does),
+    broadcast via ``broadcast_parameters`` (as TrainingEngine does), and report
+    whether every rank converged to identical weights."""
+    try:
+        import torch.distributed as _dist
+
+        device_index = device_indices[rank]
+        _dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(device_index)
+        device = torch.device(f"cuda:{device_index}")
+
+        # Exactly the framework's per-rank seed sequence.
+        torch.manual_seed(42 + rank)
+        torch.cuda.manual_seed_all(42 + rank)
+
+        model = DecoderModel(
+            vocab_size=200,
+            hidden_size=64,
+            num_layers=2,
+            num_heads=2,
+            max_seq_len=32,
+            device=device,
+        )
+        # Without this broadcast, each rank's RNG-seeded init diverges and DDP
+        # trains a gradient-mean of *different* models for the whole run.
+        from llm.training.core.distributed import broadcast_parameters
+
+        broadcast_parameters(model, src=0)
+
+        weights = [param.detach().cpu() for param in model.parameters()]
+        results[rank] = weights
+        _dist.destroy_process_group()
+    except (RuntimeError, OSError, ValueError, TypeError) as e:
+        results[rank] = f"ERR {e}"
+    finally:
+        if _dist.is_initialized():
+            _dist.destroy_process_group()
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_ddp_ranks_share_identical_initial_weights():
+    """Regression: fresh multi-GPU runs must start from identical weights.
+
+    ``DistributedManager.setup`` seeds ``42 + rank`` before ``build_model()``
+    so each rank RNG-initialises differently; DDP only averages gradients and
+    never reconciles divergent initialisations. ``broadcast_parameters`` fixes
+    the fresh-run path — here we assert every rank's weights are identical
+    after it runs, regardless of the per-rank seeds.
+    """
+    import torch.distributed as _dist
+
+    gpu_devices = all_gpu_devices(min_free_bytes=DDP_MIN_FREE_BYTES)
+    if len(gpu_devices) < 2:
+        pytest.skip("需要至少 2 个 GPU")
+
+    world_size = 2
+    device_indices = [d.index for d in gpu_devices[:world_size]]
+    _release_parent_cuda_caches()
+    setup_ddp_env()
+
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(
+        _ddp_weight_consistency_worker,
+        args=(world_size, device_indices, results),
+        nprocs=world_size,
+        join=False,
+    )
+    assert context is not None
+    end_at = time.monotonic() + DDP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"DDP spawn exceeded {DDP_JOIN_TIMEOUT_S}s on devices {device_indices}")
+        if context.join(timeout=remaining):
+            break
+
+    for rank in range(world_size):
+        assert rank in results, f"Rank {rank} produced no result (devices={device_indices})"
+        assert not isinstance(results[rank], str), f"Rank {rank} failed: {results[rank]}"
+
+    r0 = results[0]
+    for rank in range(1, world_size):
+        assert len(r0) == len(results[rank]), "Rank parameter count mismatch"
+        for i, (a, b) in enumerate(zip(r0, results[rank], strict=True)):
+            assert torch.equal(a, b), f"Rank {rank}, param {i} diverged from rank 0"
+    del _dist  # import used only inside the worker

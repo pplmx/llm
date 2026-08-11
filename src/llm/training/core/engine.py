@@ -9,6 +9,7 @@ from llm.data.base import BaseDataModule
 from llm.runtime.checkpoint import collect_extra_state, load_extra_state
 from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
+from llm.training.core.distributed import broadcast_parameters
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
 from llm.training.distributed import model_for_checkpoint_io, wrap_model_for_training
 from llm.training.tasks.base_task import TrainingTask
@@ -121,6 +122,18 @@ class TrainingEngine:
         if self.rank == 0:
             total, trainable = count_parameters(model)  # Use the utility function
             self.logger.info(f"🏗️  Model: {total:,} total params, {trainable:,} trainable")
+
+        # DDP requires every rank to start from *identical* parameters.  Our
+        # DistributedManager.setup seeds rank R's RNG with ``42 + R`` (so data
+        # ordering differs per rank), which means a freshly built model also
+        # RNG-initialises differently on each rank — and DDP only averages
+        # *gradients*, it does not reconcile divergent weights.  Without an
+        # explicit broadcast, a fresh multi-GPU run optimises a different
+        # model per rank and never converges on the real loss.  Broadcast
+        # rank 0's parameters now, before the model is wrapped or compiled.
+        # (Resumed runs are already in sync via the shared checkpoint; this
+        # broadcast is a cheap no-op for them.)
+        broadcast_parameters(model)
 
         # Compile model if enabled. Mode and dynamic-shape marking come from
         # OptimizationConfig (Finding AL). Default mode is "default" — the
