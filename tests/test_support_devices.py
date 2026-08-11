@@ -44,15 +44,32 @@ def test_default_device_is_usable_or_cpu():
 
 
 def test_cached_device_lists_match_dynamic_inventory():
-    """Cached device lists must contain the same devices as the dynamic inventory.
+    """Cached device lists must only reference currently-visible devices.
 
-    We compare as *sets* because GPU free-VRAM can change between import
-    time (when ``ALL_GPU_DEVICES`` is cached) and test time (when
-    ``cuda_device_strings()`` is called dynamically), which can reorder
-    the VRAM-sorted lists.  The set of visible devices should not change.
+    ``ALL_GPU_DEVICES`` / ``ALL_DEVICES`` are deliberately cached at import
+    time: pytest parametrize decorators must see a fixed list when modules
+    are collected, long before any test executes.  The reusable GPU set is
+    filtered by *free VRAM*, which fluctuates on shared GPU hosts — other
+    suite runs or processes can push a GPU below the ``MIN_FREE_VRAM_BYTES``
+    floor at import and release it by test time (or vice versa).  So the
+    cached snapshot is not guaranteed equal to the live, VRAM-filtered view.
+
+    What *is* a stable invariant is that the cache never references a device
+    that is not currently visible to torch: the visible device count only
+    changes with ``CUDA_VISIBLE_DEVICES``, which the test process does not
+    mutate.  A phantom entry (e.g. a stale index after a renumber) is a real
+    defect we must catch.
     """
-    assert set(devices.cuda_device_strings()) == set(devices.ALL_GPU_DEVICES)
-    assert {str(device) for device in devices.all_devices()} == set(devices.ALL_DEVICES)
+    visible = {f"cuda:{index}" for index in range(torch.cuda.device_count())}
+    assert set(devices.ALL_GPU_DEVICES) <= visible
+    # ALL_DEVICES is exactly ALL_GPU_DEVICES, or the documented CPU fallback.
+    if devices.ALL_GPU_DEVICES:
+        assert devices.ALL_DEVICES == devices.ALL_GPU_DEVICES
+    else:
+        assert devices.ALL_DEVICES == ["cpu"]
+    # Dynamic views also only reference visible devices.
+    assert set(devices.cuda_device_strings()) <= visible
+    assert {str(device) for device in devices.all_devices()} <= visible
 
 
 def test_min_free_vram_threshold_is_engine_aligned():
