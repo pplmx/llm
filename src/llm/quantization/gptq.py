@@ -517,7 +517,14 @@ def quantize_model_gptq(
     with torch.no_grad():
         param_device = next(model.parameters()).device
         try:
-            for batch in calib_batches[:1]:
+            # Feed EVERY calibration batch through the model so each hook
+            # captures one input per batch and each layer's Hessian/activation
+            # stats accumulate over the full calibration set (matching the
+            # ``quantize_model_with_collector`` contract of "up to n_samples
+            # batches").  Previously only calib_batches[0] was forwarded,
+            # silently dropping all later batches from calibration while the
+            # direct-layer-call fallback below used every batch.
+            for batch in calib_batches:
                 _ = model(batch.to(param_device))
         except (RuntimeError, ValueError, TypeError) as e:
             logger.debug(f"Model forward failed during calibration: {e}; falling back to direct layer calls.")

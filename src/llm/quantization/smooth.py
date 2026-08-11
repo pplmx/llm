@@ -345,7 +345,11 @@ def quantize_model_smoothquant(
     with torch.no_grad():
         param_device = next(model.parameters()).device
         try:
-            for batch in calib_batches[:1]:
+            # Feed EVERY calibration batch so each layer's activation stats
+            # cover the full calibration set.  Previously only
+            # calib_batches[0] was forwarded, silently dropping later batches
+            # while the fallback path below used all of them.
+            for batch in calib_batches:
                 _ = model(batch.to(param_device))
         except (RuntimeError, ValueError, TypeError) as e:
             logger.debug(f"Model forward failed during calibration: {e}; falling back to direct layer calls.")

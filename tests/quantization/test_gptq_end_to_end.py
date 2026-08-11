@@ -355,3 +355,34 @@ def test_quantize_model_gptq_falls_back_when_forward_skips_target_layers():
 
     # The fallback path ran — fc1 was quantized via direct call
     assert isinstance(quantized.fc1, GPTQQuantizedLinear)
+
+
+def test_calibration_consumes_all_batches(monkeypatch):
+    """Regression for ISS-021: every calibration batch must feed each layer's
+    Hessian, not just the first one.
+
+    quantize_model_gptq captured per-layer inputs via a model forward using
+    ``calib_batches[:1]`` — so with N calibration batches each
+    GPTQQuantizer only ever accumulated batch 0 (the ``:1`` slice), silently
+    degrading calibration quality. The direct-layer-call fallback used all
+    batches, making the two capture paths inconsistent.
+    """
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer, quantize_model_gptq
+
+    samples_seen: list[int] = []
+    orig_add_batch = GPTQQuantizer.add_batch
+
+    def spy_add_batch(self, x):
+        samples_seen.append(x.size(0))
+        return orig_add_batch(self, x)
+
+    monkeypatch.setattr(GPTQQuantizer, "add_batch", spy_add_batch)
+
+    model = TwoLayerMLP(hidden=8)
+    # 4 batches of batch_size 3 → each layer should accumulate 12 samples.
+    calib = [torch.randn(3, 8) for _ in range(4)]
+    quantize_model_gptq(model, iter(calib), GPTQConfig())
+    assert samples_seen, "add_batch was never called during calibration"
+    assert all(n == 3 for n in samples_seen), f"unexpected batch shapes: {samples_seen}"
+    # fc1 and fc2 each got 4 add_batch calls (one per batch).
+    assert len(samples_seen) == 2 * len(calib), f"expected 8 add_batch calls, got {len(samples_seen)}"
