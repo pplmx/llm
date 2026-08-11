@@ -131,6 +131,10 @@ def test_save_pretrained_config_is_llama_shaped(tmp_path: Path):
         "intermediate_size",
         "max_position_embeddings",
         "torch_dtype",
+        # MLP activation must be persisted so from_pretrained rebuilds the
+        # model with the same MLP function (real llama = silu; a gelu-trained
+        # model must not silently switch to silu on reload).
+        "hidden_act",
     ):
         assert key in config, f"missing key: {key}"
 
@@ -158,6 +162,50 @@ def test_save_pretrained_roundtrip_through_from_pretrained(tmp_path: Path):
         original_logits = model(input_ids=ids).detach()
         reloaded_logits = reloaded(input_ids=ids).detach()
 
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_persists_mlp_activation(tmp_path: Path):
+    """``from_pretrained`` rebuilds the model with the *saved* MLP activation.
+
+    Real Llama uses ``silu``; before this fix the loader defaulted to gelu
+    and never persisted ``hidden_act``, so a silu-trained (real-llama-style)
+    model would silently switch to gelu across a save -> load roundtrip — a
+    different MLP function with the same weights.
+    """
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(
+        **decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=16,
+            num_layers=1,
+            num_heads=2,
+            intermediate_size=32,
+            max_seq_len=16,
+            attn_impl="mha",
+            mlp_impl="mlp",
+            mlp_activation="silu",  # real-llama-style SwiGLU activation
+            use_glu=True,
+            device=str(DEFAULT_DEVICE),
+        )
+    )
+    model.eval()
+    save_pretrained(model, tmp_path)
+
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config["hidden_act"] == "silu"
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+    assert reloaded.transformer_blocks[0].mlp.activation_name == "silu"
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = model(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
     assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
 
 

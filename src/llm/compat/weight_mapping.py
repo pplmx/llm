@@ -404,4 +404,10 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         "max_seq_len": hf_config.get("max_position_embeddings", 4096),
         "rms_norm_eps": hf_config.get("rms_norm_eps", 1e-5),
         "rope_theta": hf_config.get("rope_theta", 10000.0),
+        # HF Llama/GPT-style configs carry the MLP activation as
+        # ``hidden_act``; real Llama/Mistral use ``silu`` (SwiGLU).  The
+        # loader maps this onto our ``mlp_activation`` so a published model
+        # (or HF checkpoint) round-trips with the *same* MLP function rather
+        # than silently defaulting to gelu.
+        "mlp_activation": hf_config.get("hidden_act", "silu"),
     }

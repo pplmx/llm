@@ -88,6 +88,14 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     elif model.lm_head.weight.dtype == torch.float32:
         dtype_str = "float32"
 
+    # Persist the MLP activation so ``from_pretrained`` rebuilds the model
+    # with the *same* MLP function. HF Llama/GPT-style configs call this
+    # ``hidden_act`` (silu for real Llama). Our MLP exposes ``activation_name``
+    # ("silu"/"gelu"/"relu") — map it to the HF key; without this the loader
+    # would default to silu and a gelu-trained model would silently change
+    # function across a save -> load roundtrip.
+    hidden_act = getattr(mlp0, "activation_name", "silu")
+
     return {
         "model_type": "llama",
         "architectures": ["LlamaForCausalLM"],
@@ -101,6 +109,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "rms_norm_eps": 1e-5,
         "rope_theta": 10000.0,
         "torch_dtype": dtype_str,
+        "hidden_act": hidden_act,
     }
 
 
