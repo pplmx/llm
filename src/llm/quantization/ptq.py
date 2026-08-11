@@ -6,7 +6,7 @@ Provides utilities for quantizing models after training.
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -247,15 +247,58 @@ def compute_model_size(model: nn.Module) -> dict[str, Any]:
     """
     Compute model size statistics.
 
+    Recognizes all quantized layer flavors in the library:
+    :class:`QuantizedLinear` (simple PTQ), and the GPTQ / AWQ / SmoothQuant
+    layers (:class:`~llm.quantization._gptq_layer.GPTQQuantizedLinear`,
+    :class:`~llm.quantization._awq_layer.AWQQuantizedLinear`,
+    :class:`~llm.quantization._smooth_layer.SmoothQuantLinear`). Those three
+    replace ``nn.Linear`` entirely, so without explicit handling a
+    GPTQ/AWQ/Smooth-quantized model reported zero parameters and zero bytes.
+
     Returns:
         Dictionary with size information.
     """
+    # Lazy import to keep this module import-light and avoid a circular
+    # dependency (the layer modules import from llm.quantization too).
+    from llm.quantization._awq_layer import AWQQuantizedLinear
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization._smooth_layer import SmoothQuantLinear
+
     total_params = 0
     total_bytes = 0
     quantized_layers = 0
 
     for module in model.modules():
-        if isinstance(module, QuantizedLinear):
+        if isinstance(module, (GPTQQuantizedLinear, AWQQuantizedLinear)):
+            quantized_layers += 1
+            # Packed int8 storage: ``weight_packed`` (int4 packed) or int8.
+            packed_attr = cast(torch.Tensor, module.weight_packed)
+            scales_attr = cast(torch.Tensor, module.scales)
+            total_params += packed_attr.numel()
+            total_bytes += packed_attr.numel() * packed_attr.element_size()
+            total_bytes += scales_attr.numel() * scales_attr.element_size()
+            input_scales = cast(torch.Tensor | None, getattr(module, "input_scales", None))
+            if input_scales is not None:
+                total_bytes += input_scales.numel() * input_scales.element_size()
+            zeros_attr = cast(torch.Tensor | None, getattr(module, "zeros", None))
+            if zeros_attr is not None:
+                total_bytes += zeros_attr.numel() * zeros_attr.element_size()
+            if module.bias is not None:
+                total_bytes += module.bias.numel() * module.bias.element_size()
+        elif isinstance(module, SmoothQuantLinear):
+            quantized_layers += 1
+            packed_attr = cast(torch.Tensor, module.weight_packed)
+            weight_scales_attr = cast(torch.Tensor, module.weight_scales)
+            act_scale_attr = cast(torch.Tensor, module.act_scale)
+            total_params += packed_attr.numel()
+            total_bytes += packed_attr.numel() * packed_attr.element_size()
+            total_bytes += weight_scales_attr.numel() * weight_scales_attr.element_size()
+            total_bytes += act_scale_attr.numel() * act_scale_attr.element_size()
+            if module.input_scales is not None:
+                total_bytes += module.input_scales.numel() * module.input_scales.element_size()
+            if module.bias is not None:
+                total_bytes += module.bias.numel() * module.bias.element_size()
+        elif isinstance(module, QuantizedLinear):
             quantized_layers += 1
             # INT8 weights
             total_params += module.weight_quantized.numel()

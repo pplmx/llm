@@ -234,6 +234,39 @@ class TestQuantizeModel:
         # Quantized model should be smaller
         assert quant_size_info["total_bytes"] < size_info["total_bytes"]
 
+    def test_compute_model_size_counts_gptq_quantized_layers(self):
+        """compute_model_size must not report all-zero stats for a GPTQ-
+        quantized model (regression for ISS-020).
+
+        GPTQ replaces ``nn.Linear`` with ``GPTQQuantizedLinear``; before the
+        fix the stats loop only recognised simple-PTQ ``QuantizedLinear`` and
+        ``nn.Linear``, so a ``quantize_model_gptq`` result reported 0 params,
+        0 bytes and 0 quantized layers even though the layers were quantized.
+        """
+        from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+        # Capture the fp32 size BEFORE quantize_model_gptq mutates the model
+        # in place (it replaces nn.Linear modules with GPTQQuantizedLinear).
+        plain_model = nn.Sequential(nn.Linear(8, 16), nn.Linear(16, 8))
+        plain_size = compute_model_size(plain_model)
+
+        model = nn.Sequential(nn.Linear(8, 16), nn.Linear(16, 8))
+        calib = torch.randn(4, 8)
+        quant_model = quantize_model_gptq(
+            model,
+            iter([calib]),
+            config=GPTQConfig(bits=4, group_size=-1, sym=True),
+        )
+
+        size_info = compute_model_size(quant_model)
+        assert size_info["quantized_layers"] == 2
+        assert size_info["total_params"] > 0
+        assert size_info["total_bytes"] > 0
+        assert size_info["size_mb"] > 0.0
+        # Packed int4 weights (+ int8 storage) are strictly smaller than the
+        # fp32 original parameters.
+        assert size_info["total_bytes"] < plain_size["total_bytes"]
+
     def test_from_linear_rejects_asymmetric(self):
         """Asymmetric simple-PTQ was a silent no-op (zero point never
         computed); it must fail fast instead, mirroring GPTQQuantizedLinear."""
