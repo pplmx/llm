@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 19,
+  "round": 20,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-10T15:08:18+00:00",
+  "updated_at": "2026-08-11T01:54:37+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -1070,7 +1070,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:35:49+00:00",
       "updated_at": "2026-08-10T14:35:49+00:00",
-      "touched_round": 18,
+      "touched_round": 19,
       "title": "quantization module",
       "details": "ptq/gptq/awq/smooth quantize + layers"
     },
@@ -1145,6 +1145,251 @@
       "source": "commit cca5f87, f0a3011, 7e8c3fa, 368c3c2; regression tests in test_openai_compat.py, test_migrate_ckpt.py, test_gptq_layer/awq/smooth, test_quantization.py, test_gptq_algorithm.py",
       "confidence": 1.0,
       "details": "Round 19: 4 verified fixes, all RED->GREEN on their regression tests, full test suites + ruff/ty/doctests green. Direct repro of batch_engine verify + act_order scale before/after."
+    },
+    "ISS-020": {
+      "id": "ISS-020",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T00:37:06+00:00",
+      "updated_at": "2026-08-11T01:07:00+00:00",
+      "touched_round": 19,
+      "title": "compute_model_size returns 0 params/bytes for GPTQ/AWQ/SmoothQuant models",
+      "details": "ptq.compute_model_size only recognizes QuantizedLinear (simple PTQ) and nn.Linear. GPTQ/AWQ/Smooth replace nn.Linear with their own layer classes (GPTQQuantizedLinear/AWQQuantizedLinear/SmoothQuantLinear), so a model quantized with quantize_model_gptq/awq/smooth reports total_params=0, total_bytes=0, size_mb=0.0, quantized_layers=0. Empirically confirmed: plain decoder 2560 params/10816 bytes; GPTQ-quantized copy 0/0/0 despite containing GPTQQuantizedLinear."
+    },
+    "EV-030": {
+      "id": "EV-030",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T00:37:06+00:00",
+      "updated_at": "2026-08-11T00:37:06+00:00",
+      "touched_round": 19,
+      "source": "/tmp/verify_msize.py — DecoderModel plain vs quantize_model_gptq; plain {2560,10816}, GPTQ {0,0,0.0} with GPTQQuantizedLinear present",
+      "confidence": 1.0,
+      "details": "Confirmed on current code."
+    },
+    "COMP-010": {
+      "id": "COMP-010",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T00:37:17+00:00",
+      "updated_at": "2026-08-11T00:37:17+00:00",
+      "touched_round": 19,
+      "title": "quantization ptq stats API",
+      "details": "compute_model_size + simple-PTQ QuantizedLinear"
+    },
+    "HYP-008": {
+      "id": "HYP-008",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T00:37:17+00:00",
+      "updated_at": "2026-08-11T00:37:17+00:00",
+      "touched_round": 19,
+      "confidence": 0.95,
+      "title": "compute_model_size fails to recognize quantized-layer classes",
+      "details": "It dispatch only on isinstance QuantizedLinear/nn.Linear; new PEFT/quant layer classes fall through. Fix: a generic quantized-layer branch (or recognize the four classes)."
+    },
+    "TASK-014": {
+      "id": "TASK-014",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-11T00:37:29+00:00",
+      "updated_at": "2026-08-11T01:10:05+00:00",
+      "touched_round": 19,
+      "category": "correctness",
+      "title": "Fix compute_model_size for GPTQ/AWQ/SmoothQuant layers",
+      "details": "Recognize GPTQQuantizedLinear/AWQQuantizedLinear/SmoothQuantLinear (weight_packed + scales + bias) so stats reflect packed sizes. Add regression test asserting a quantized model no longer reports 0 params."
+    },
+    "CHG-017": {
+      "id": "CHG-017",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:04:15+00:00",
+      "updated_at": "2026-08-11T01:04:15+00:00",
+      "touched_round": 19,
+      "commit": "94aac11",
+      "title": "fix(quantization): compute_model_size counts GPTQ/AWQ/Smooth layers"
+    },
+    "EV-031": {
+      "id": "EV-031",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:07:00+00:00",
+      "updated_at": "2026-08-11T01:07:00+00:00",
+      "touched_round": 19,
+      "source": "tests/quantization/test_quantization.py::test_compute_model_size_counts_gptq_quantized_layers; empirical plain 2560p/10816B vs GPTQ 1280p/2144B/5 layers",
+      "confidence": 1.0,
+      "details": "Post-fix GPTQ model reports nonzero size; test fails pre-fix (quantized_layers==0)."
+    },
+    "ISS-021": {
+      "id": "ISS-021",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T01:15:36+00:00",
+      "updated_at": "2026-08-11T01:39:48+00:00",
+      "touched_round": 19,
+      "title": "calibration forward path silently discards all but the first batch",
+      "details": "quantize_model_gptq/awq/smooth capture per-layer calibration inputs via model forward using 'for batch in calib_batches[:1]' — only the FIRST batch feeds every layer's Hessian/activation stats in the success path, while the direct-layer-call fallback uses all batches. Empirically: 3 calib batches (batch_size=2) → each layer's GPTQQuantizer sees 2 samples, not 6. This silently degrades GPTQ/AWQ/SmoothQuant calibration quality for any multi-batch calibration, and creates an inconsistent behavior between the two capture paths."
+    },
+    "EV-032": {
+      "id": "EV-032",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:17:42+00:00",
+      "updated_at": "2026-08-11T01:17:42+00:00",
+      "touched_round": 19,
+      "source": "/tmp/verify_nsamples.py — 3 calib batches (batch_size 2) → per-layer GPTQQuantizer sees 2 samples; quantize_model_gptq.py:520 'for batch in calib_batches[:1]' vs fallback :531 uses all",
+      "confidence": 1.0,
+      "details": "Confirmed: success path uses only calib_batches[0]; Hessian accumulates 1 batch worth of samples."
+    },
+    "HYP-009": {
+      "id": "HYP-009",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:17:42+00:00",
+      "updated_at": "2026-08-11T01:17:42+00:00",
+      "touched_round": 19,
+      "confidence": 0.9,
+      "title": "'calib_batches[:1]' is an over-eager debug cap, not intentional",
+      "details": "The [:1] slice both contradicts the docstring (up to n_samples batches) and differs from the fallback path; intent is to accumulate all calibration batches."
+    },
+    "TASK-015": {
+      "id": "TASK-015",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-11T01:17:52+00:00",
+      "updated_at": "2026-08-11T01:41:19+00:00",
+      "touched_round": 19,
+      "category": "correctness",
+      "title": "Fix calibration to consume all batches in forward-capture path",
+      "details": "Change 'for batch in calib_batches[:1]' to iterate all calib_batches in gptq.py/awq.py/smooth.py capture blocks, matching the fallback path and the 'up to n_samples batches' contract. Add regression test asserting multi-batch calibration accumulates N batches' samples per layer."
+    },
+    "CHG-018": {
+      "id": "CHG-018",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:37:44+00:00",
+      "updated_at": "2026-08-11T01:37:44+00:00",
+      "touched_round": 19,
+      "commit": "01538e9",
+      "title": "fix(quantization): calibration consumes all batches"
+    },
+    "EV-033": {
+      "id": "EV-033",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:39:48+00:00",
+      "updated_at": "2026-08-11T01:39:48+00:00",
+      "touched_round": 19,
+      "source": "tests/quantization/test_gptq_end_to_end.py::test_calibration_consumes_all_batches; /tmp/verify_nsamples.py 3x2 -> 6 samples/layer",
+      "confidence": 1.0,
+      "details": "Post-fix each layer accumulates N batches; test fails pre-fix."
+    },
+    "ISS-022": {
+      "id": "ISS-022",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T01:42:22+00:00",
+      "updated_at": "2026-08-11T01:53:30+00:00",
+      "touched_round": 19,
+      "title": "GPTQ group_size not dividing in_features silently truncates tail group then crashes",
+      "details": "GPTQConfig.__post_init__ only validates blocksize % group_size == 0, not that group_size divides in_features. With in_features=100, group_size=30 (30|120 so passes config validation), _quantize_linear_with_gptq computes n_groups = 100 // 30 = 3, then 'w_q * scales.repeat_interleave(30)' produces 90 columns vs 100 -> RuntimeError 'size of tensor a (100) must match b (90)'. A cryptic broadcast crash for a config that else validates cleanly; AWQ has similar tail-drop."
+    },
+    "EV-034": {
+      "id": "EV-034",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:42:22+00:00",
+      "updated_at": "2026-08-11T01:42:22+00:00",
+      "touched_round": 19,
+      "source": "/tmp/verify_groupdiv.py — Linear(100,16), group_size=30, blocksize=120: RuntimeError (100 vs 90 broadcast)",
+      "confidence": 1.0,
+      "details": "Confirmed on current code."
+    },
+    "HYP-010": {
+      "id": "HYP-010",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:43:23+00:00",
+      "updated_at": "2026-08-11T01:43:23+00:00",
+      "touched_round": 19,
+      "confidence": 0.95,
+      "title": "group_size must divide in_features (or be -1); code assumes it implicitly",
+      "details": "Multiple // and repeat_interleave(gs) sites require in_features % group_size == 0 for group_size != -1; non-divisible configs are undefined and crash late. Fix: validate at GPTQQuantizer construction."
+    },
+    "TASK-016": {
+      "id": "TASK-016",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-11T01:43:23+00:00",
+      "updated_at": "2026-08-11T01:53:37+00:00",
+      "touched_round": 19,
+      "category": "correctness",
+      "title": "Validate GPTQ/AWQ group_size divides in_features, fail fast",
+      "details": "In GPTQQuantizer.__init__ (and AWQ equivalent) raise a clear ValueError when group_size != -1 and in_features % group_size != 0, instead of a late cryptic broadcast crash. Add regression tests."
+    },
+    "CHG-019": {
+      "id": "CHG-019",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:53:08+00:00",
+      "updated_at": "2026-08-11T01:53:08+00:00",
+      "touched_round": 19,
+      "commit": "a6ee83b",
+      "title": "fix(quantization): reject non-divisible group_size at construction"
+    },
+    "EV-035": {
+      "id": "EV-035",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:53:30+00:00",
+      "updated_at": "2026-08-11T01:53:30+00:00",
+      "touched_round": 19,
+      "source": "tests/quantization/test_gptq_algorithm.py::test_gptq_quantizer_rejects_non_divisible_group_size + test_awq_algorithm.py::test_awq_quantizer_rejects_non_divisible_group_size; /tmp/verify_groupdiv.py now ValueError not RuntimeError",
+      "confidence": 1.0,
+      "details": "Post-fix non-divisible group_size raises clear ValueError at construction; tests pass."
+    },
+    "DEC-007": {
+      "id": "DEC-007",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:54:02+00:00",
+      "updated_at": "2026-08-11T01:54:02+00:00",
+      "touched_round": 20,
+      "title": "Round-20: close three quantization correctness gaps (ISS-020..022)",
+      "rationale": "Re-evaluated low-to-medium findings from prior deep-dives against current code and fixed three genuine correctness gaps: (1) compute_model_size returned all-zero stats for GPTQ/AWQ/Smooth models (ISS-020) — stats API silently wrong for every quantized model; (2) calibration captured only the first batch, silently degrading GPTQ/AWQ/Smooth quality for multi-batch callers and disagreeing with the fallback path (ISS-021); (3) non-divisible group_size crashed deep in packing with a cryptic broadcast error instead of failing fast (ISS-022). All three verified RED->GREEN with regression tests, pass ruff/ty/doctests/commitizen.",
+      "alternatives_rejected": "leave as-is (silent wrong stats/data/misleading crash); fix hf_loader unknown-arch fallback instead (scored below threshold: only triggers for unsupported architectures and involves strict-loading semantics tradeoff)"
+    },
+    "EV-036": {
+      "id": "EV-036",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T01:54:37+00:00",
+      "updated_at": "2026-08-11T01:54:37+00:00",
+      "touched_round": 20,
+      "source": "commits 94aac11, 01538e9, a6ee83b; regression tests in test_quantization, test_gptq_end_to_end, test_gptq_algorithm, test_awq_algorithm",
+      "confidence": 1.0,
+      "details": "Round 20: 3 verified fixes, each RED->GREEN, full quantization suite + ruff/ty green."
     }
   },
   "edges": [
@@ -1573,6 +1818,96 @@
       "to": "TASK-013",
       "type": "implements",
       "created_at": "2026-08-10T15:05:18+00:00"
+    },
+    {
+      "from": "ISS-020",
+      "to": "COMP-010",
+      "type": "located_in",
+      "created_at": "2026-08-11T00:37:17+00:00"
+    },
+    {
+      "from": "EV-030",
+      "to": "HYP-008",
+      "type": "validates",
+      "created_at": "2026-08-11T00:37:29+00:00"
+    },
+    {
+      "from": "TASK-014",
+      "to": "ISS-020",
+      "type": "addresses",
+      "created_at": "2026-08-11T00:37:29+00:00"
+    },
+    {
+      "from": "CHG-017",
+      "to": "ISS-020",
+      "type": "resolves",
+      "created_at": "2026-08-11T01:07:00+00:00"
+    },
+    {
+      "from": "CHG-017",
+      "to": "TASK-014",
+      "type": "implements",
+      "created_at": "2026-08-11T01:07:00+00:00"
+    },
+    {
+      "from": "EV-032",
+      "to": "HYP-009",
+      "type": "validates",
+      "created_at": "2026-08-11T01:17:42+00:00"
+    },
+    {
+      "from": "ISS-021",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-11T01:17:42+00:00"
+    },
+    {
+      "from": "TASK-015",
+      "to": "ISS-021",
+      "type": "addresses",
+      "created_at": "2026-08-11T01:17:52+00:00"
+    },
+    {
+      "from": "CHG-018",
+      "to": "ISS-021",
+      "type": "resolves",
+      "created_at": "2026-08-11T01:39:48+00:00"
+    },
+    {
+      "from": "CHG-018",
+      "to": "TASK-015",
+      "type": "implements",
+      "created_at": "2026-08-11T01:39:48+00:00"
+    },
+    {
+      "from": "EV-034",
+      "to": "HYP-010",
+      "type": "validates",
+      "created_at": "2026-08-11T01:43:23+00:00"
+    },
+    {
+      "from": "ISS-022",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-11T01:43:23+00:00"
+    },
+    {
+      "from": "TASK-016",
+      "to": "ISS-022",
+      "type": "addresses",
+      "created_at": "2026-08-11T01:43:23+00:00"
+    },
+    {
+      "from": "CHG-019",
+      "to": "ISS-022",
+      "type": "resolves",
+      "created_at": "2026-08-11T01:53:29+00:00"
+    },
+    {
+      "from": "CHG-019",
+      "to": "TASK-016",
+      "type": "implements",
+      "created_at": "2026-08-11T01:53:29+00:00"
     }
   ]
 }
