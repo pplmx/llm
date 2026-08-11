@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 26,
+  "round": 27,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-11T13:12:46+00:00",
+  "updated_at": "2026-08-11T16:07:07+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 16,
+      "touched_round": 26,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 0,
+      "touched_round": 26,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 21,
+      "touched_round": 26,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 22,
+      "touched_round": 26,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -871,7 +871,7 @@
       "version": 1,
       "created_at": "2026-08-10T13:37:15+00:00",
       "updated_at": "2026-08-10T13:37:15+00:00",
-      "touched_round": 17,
+      "touched_round": 26,
       "title": "serving routers (generate/chat)",
       "details": "FastAPI routers wiring generation backend to REST/SSE"
     },
@@ -1070,7 +1070,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:35:49+00:00",
       "updated_at": "2026-08-10T14:35:49+00:00",
-      "touched_round": 19,
+      "touched_round": 26,
       "title": "quantization module",
       "details": "ptq/gptq/awq/smooth quantize + layers"
     },
@@ -1659,7 +1659,7 @@
       "version": 2,
       "created_at": "2026-08-11T10:51:06+00:00",
       "updated_at": "2026-08-11T11:40:48+00:00",
-      "touched_round": 23,
+      "touched_round": 26,
       "title": "PPO value-loss targets built from normalized advantages (default on) -> critic learns wrong scale that corrupts next rollout GAE",
       "details": "rollout_buffer normalizes sample.advantages in place when normalize_advantages=True (default), then builds returns = norm_adv + raw V; critic regressed to V + (A-mean)/std while next rollout consumes raw V in GAE — inconsistent scales degrade GAE. All PPO tests hardcode normalize_advantages=False. Found by round-21 deep-dive.",
       "severity": "high"
@@ -2087,6 +2087,231 @@
       "title": "Round-25: fix last two serving HIGHs — paged layer-scoping (ISS-026) + atomic step() forward (ISS-027)",
       "rationale": "Closed the final two high-severity issues from the round-21 deep-dive backlog, the last remaining after rounds 22-24: (ISS-026) PagedKVCache.update/get indexed the layer axis with ':' and advanced the shared token count once per layer call — every layer wrote into every layer's slice and read/wrote at drifting offsets; made both layer-scoped with layer_idx and a single allocation/extension on layer 0. (ISS-027) step() ran the model forward with _step_lock released; two threads (FastAPI threadpool, cap=4) each ran the forward against the same slots and appended >1 token per logical step (a max_new_tokens=1 request got 60 tokens in the repro); now the lock covers pre+forward+post and add_request stays lock-free. Every issue from the round-21 deep-dive is now resolved (33/33), all 27 tasks resolved. Full suite green (165s). Remaining: run a fresh deep-dive round to look for NEW issues beyond the agent-covered areas.",
       "alternatives_rejected": "fix step_async the same way (its lock-released-during-forward is a deliberate async contract pinned by its own test — the single-threaded event loop serializes forwards; leave as-is); hold the lock across the forward only for pre/post as before (leaves the recorded corruption unfixed)"
+    },
+    "ISS-034": {
+      "id": "ISS-034",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T15:14:53+00:00",
+      "updated_at": "2026-08-11T15:29:23+00:00",
+      "touched_round": 26,
+      "title": "Serving API: no prompt-length cap in schemas; batched backend OOM on oversized prompt",
+      "details": "prompt/content unbounded; batched prefill sizes tensors by raw input (q_len >> max_seq_len) -> OOM/500. Also max_new_tokens (<=4096) can exceed max_seq_len (128 default) -> eager truncation slice becomes empty -> 500. Records from round-26 serving agent.",
+      "severity": "high"
+    },
+    "ISS-035": {
+      "id": "ISS-035",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T15:15:17+00:00",
+      "updated_at": "2026-08-11T15:46:45+00:00",
+      "touched_round": 26,
+      "title": "Docker CMD bypasses API-key guard — anonymous inference by default",
+      "details": "Dockerfile CMD runs uvicorn llm.serving.api:app directly, skipping cli.py's refuse-to-start-without-api_key-on-non-loopback check; container with no LLM_SERVING_API_KEY serves /generate fully anonymously on 0.0.0.0. Records from round-26 serving agent.",
+      "severity": "high"
+    },
+    "ISS-036": {
+      "id": "ISS-036",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T15:15:17+00:00",
+      "updated_at": "2026-08-11T15:29:24+00:00",
+      "touched_round": 26,
+      "title": "Serving streaming bypasses inference semaphore + has no timeout; error frames leak class names with 200",
+      "details": "stream path never acquires inference_semaphore and has no asyncio.timeout; mid-stream failures return HTTP 200 with exception class name and /generate yields a non-SSE 'Error: <TypeName>' line. stop: str max_length=4 rejects >4-char stop strings; top_p lt=1.0 rejects OpenAI default 1.0. Records from round-26 serving agent.",
+      "severity": "med"
+    },
+    "ISS-037": {
+      "id": "ISS-037",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T15:15:18+00:00",
+      "updated_at": "2026-08-11T16:06:56+00:00",
+      "touched_round": 26,
+      "title": "GGUF Q4_0 quantization not ggml byte-compatible (claims it is); lm_eval loglikelihood crashes on empty context",
+      "details": "quant.py uses amax/7 positive scale with reverse nibble assignment; ggml uses max/-8 signed. lm_eval_lm.py ctx_len==0 -> IndexError. BPE CLI default [UNK] vs class unk_token=<unk>. Records from round-26 export agent.",
+      "severity": "med"
+    },
+    "ISS-038": {
+      "id": "ISS-038",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T15:15:18+00:00",
+      "updated_at": "2026-08-11T15:15:18+00:00",
+      "touched_round": 26,
+      "title": "Streaming dedup _seen never resets -> corpus cycling raises 'streaming corpus is empty'; DPO ref_model never broadcast",
+      "details": "data_source=dedup_local + epochs>=2 drops every line on re-iteration -> RuntimeError. DPO ref_model copied pre-broadcast, never synced -> divergent per-rank reference. TextDataset LM labels include pad = EOS positions (no ignore_index). Records from round-26 data agent.",
+      "severity": "high"
+    },
+    "ISS-039": {
+      "id": "ISS-039",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T15:15:31+00:00",
+      "updated_at": "2026-08-11T15:29:24+00:00",
+      "touched_round": 26,
+      "title": "runtime/plugin/config audio: malformed entry point aborts import llm; resolve_preset rejects 'c4'/'the-pile'; log_interval=0 div-by-zero",
+      "details": "plugins.py ep.load() unguarded at import time; resolve_preset(preset_name) docs promise 'c4'/'the-pile' but __post_init__ sets preset_name=dataset_name; LoggingConfig.log_interval missing gt=0 -> engine.py %log_interval ZeroDivisionError; DistributedConfig num_nodes*gpus_per_node vs device_count contradiction; quantize --asym accepted then NotImplementedError at runtime; split-checkpoint partial trio not transactional. Records from round-26 runtime agent.",
+      "severity": "med"
+    },
+    "TASK-028": {
+      "id": "TASK-028",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T15:29:24+00:00",
+      "updated_at": "2026-08-11T15:29:24+00:00",
+      "touched_round": 26,
+      "category": "stability",
+      "title": "Serving robustness: context-window guard, stop/top_p validation, tokenizer fail-loud (ISS-034/036/039)",
+      "details": "max_new_tokens>=max_seq_len -> 500; stop max_length on string; top_p lt=1; silent tokenizer fallback."
+    },
+    "CHG-031": {
+      "id": "CHG-031",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T15:29:24+00:00",
+      "updated_at": "2026-08-11T15:29:24+00:00",
+      "touched_round": 26,
+      "commit": "80dced9",
+      "title": "fix(serving): context guard + validation (ISS-034/036/039)"
+    },
+    "EV-051": {
+      "id": "EV-051",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T15:29:24+00:00",
+      "updated_at": "2026-08-11T15:29:24+00:00",
+      "touched_round": 26,
+      "source": "tests/...test_schemas.py, test_generation_service.py, test_tokenizer_factory.py (4 new)",
+      "details": "RED->GREEN: long stop string accepted, 5-list rejected, top_p=1.0 accepted, max_new_tokens-above-context ValueError, missing tokenizer_path FileNotFoundError. 439 tests + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "HYP-017": {
+      "id": "HYP-017",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T15:31:28+00:00",
+      "updated_at": "2026-08-11T15:31:28+00:00",
+      "touched_round": 26,
+      "confidence": 0.9,
+      "title": "DedupTextSource._seen is process-lifetime; corpus cycling exhausting -> RuntimeError 'streaming corpus is empty'",
+      "details": "source verified: _seen is a set built once; StreamingTextDataset.reset() clears only the cursor, and re-iteration over an exhausted corpus yields nothing (every line is in _seen) -> engine raises 'corpus empty'. Needs per-pass reset or epoch-aware dedup semantics; cross-run persisted hashes (write_seen_hashes) must remain durable. Awaiting a focused fix round."
+    },
+    "EV-052": {
+      "id": "EV-052",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T15:31:43+00:00",
+      "updated_at": "2026-08-11T15:31:43+00:00",
+      "touched_round": 26,
+      "source": "round-26 data agent + code trace",
+      "details": "DedupTextSource._seen is a set built at construction (sources.py:218) and never clears; StreamingTextDataset.reset() (streaming.py:64-71) only resets the cursor. Re-iteration after exhaustion: every line digest in _seen -> dropped -> zero yields -> engine raises streaming-corpus-empty. Dedup+epochs>=2 is a documented config.",
+      "confidence": 1.0
+    },
+    "ISS-040": {
+      "id": "ISS-040",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T15:31:43+00:00",
+      "updated_at": "2026-08-11T15:31:43+00:00",
+      "touched_round": 26,
+      "title": "Streaming TextDataset LM labels include pad positions (no ignore_index) -> trains/evals on pad=EOS",
+      "details": "text.py labels = input_ids.clone() incl padding; lm_task CrossEntropyLoss has no ignore_index -> loss on pad token positions inflates val PPL and teaches EOS at pads. Records from round-26 data agent (part of ISS-038 area).",
+      "severity": "med"
+    },
+    "TASK-029": {
+      "id": "TASK-029",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T15:46:45+00:00",
+      "updated_at": "2026-08-11T15:46:45+00:00",
+      "touched_round": 26,
+      "category": "security",
+      "title": "Enforce api-key guard in lifespan (ISS-035)",
+      "details": "Docker/uvicorn bypassed cli-only guard -> anonymous serving."
+    },
+    "CHG-032": {
+      "id": "CHG-032",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T15:46:45+00:00",
+      "updated_at": "2026-08-11T15:46:45+00:00",
+      "touched_round": 26,
+      "commit": "61d69c0",
+      "title": "fix(security): lifespan api-key guard (ISS-035)"
+    },
+    "EV-053": {
+      "id": "EV-053",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T15:46:45+00:00",
+      "updated_at": "2026-08-11T15:46:45+00:00",
+      "touched_round": 26,
+      "source": "tests/serving/test_api_key.py::test_lifespan_refuses_non_loopback_without_api_key",
+      "details": "TestClient boot with host=0.0.0.0 + no key raises before model load. Verified RED (guard removed -> fails) -> GREEN. 21 api-key tests + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "TASK-030": {
+      "id": "TASK-030",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T16:06:56+00:00",
+      "updated_at": "2026-08-11T16:06:56+00:00",
+      "touched_round": 26,
+      "category": "correctness",
+      "title": "Fix GGUF Q4_0 to be ggml byte-compatible (ISS-037)",
+      "details": "signed extreme/-8 scale + negative-safe inverse."
+    },
+    "CHG-033": {
+      "id": "CHG-033",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T16:06:57+00:00",
+      "updated_at": "2026-08-11T16:06:57+00:00",
+      "touched_round": 26,
+      "commit": "59ae782",
+      "title": "fix(export): Q4_0 ggml byte-exact (ISS-037)"
+    },
+    "EV-054": {
+      "id": "EV-054",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T16:06:57+00:00",
+      "updated_at": "2026-08-11T16:06:57+00:00",
+      "touched_round": 26,
+      "source": "tests/export/test_gguf_quant.py::test_reference_matches_ggml_oracle (8-seed)",
+      "details": "Byte-exact vs independent ggml transcription on 100 random blocks + negative-extreme/zero specials. Old test pinned wrong convention; updated. 143 export tests + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "DEC-014": {
+      "id": "DEC-014",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T16:06:57+00:00",
+      "updated_at": "2026-08-11T16:06:57+00:00",
+      "touched_round": 26,
+      "title": "Round-26: two batch fixes from fresh deep-dive (serving robustness + Q4_0)",
+      "rationale": "New round-26 deep-dive surfaced ~15 fresh findings (ISS-034..040 + HYP-017). Fixed two batches: (1) serving robustness/security — max_new_tokens>context now clean ValueError + eager clamp, stop/top_p schema validation, tokenizer fail-loud on missing path (TASK-028), api-key guard enforced in lifespan so Docker/uvicorn can't serve anonymous (TASK-029); (2) GGUF Q4_0 byte-compat with ggml (TASK-030). Remaining fresh backlog (dedup reset, DPO ref broadcast, text pad-labels, resolve_preset short names, lm_eval empty-context, log_interval=0, distributed world_size, plugins import abort, IA3 merge-save) recorded for future rounds.",
+      "alternatives_rejected": "tackle all 15 new findings this round (exceeds 3-task budget); attempt the deep dedup/_seen reset or DPO ref-broadcast multi-GPU issues without a clean multi-epoch repro (need focused rounds)"
     }
   },
   "edges": [
@@ -2941,6 +3166,120 @@
       "to": "TASK-027",
       "type": "implements",
       "created_at": "2026-08-11T13:06:52+00:00"
+    },
+    {
+      "from": "ISS-034",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:15:31+00:00"
+    },
+    {
+      "from": "ISS-035",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:15:31+00:00"
+    },
+    {
+      "from": "ISS-036",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:15:31+00:00"
+    },
+    {
+      "from": "ISS-037",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:15:31+00:00"
+    },
+    {
+      "from": "ISS-038",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:15:31+00:00"
+    },
+    {
+      "from": "ISS-039",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:15:42+00:00"
+    },
+    {
+      "from": "ISS-032",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:15:42+00:00"
+    },
+    {
+      "from": "TASK-028",
+      "to": "ISS-034",
+      "type": "addresses",
+      "created_at": "2026-08-11T15:29:24+00:00"
+    },
+    {
+      "from": "CHG-031",
+      "to": "ISS-034",
+      "type": "resolves",
+      "created_at": "2026-08-11T15:29:24+00:00"
+    },
+    {
+      "from": "CHG-031",
+      "to": "TASK-028",
+      "type": "implements",
+      "created_at": "2026-08-11T15:29:24+00:00"
+    },
+    {
+      "from": "EV-052",
+      "to": "HYP-017",
+      "type": "validates",
+      "created_at": "2026-08-11T15:31:43+00:00"
+    },
+    {
+      "from": "ISS-038",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:31:43+00:00"
+    },
+    {
+      "from": "ISS-040",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-11T15:31:43+00:00"
+    },
+    {
+      "from": "TASK-029",
+      "to": "ISS-035",
+      "type": "addresses",
+      "created_at": "2026-08-11T15:46:45+00:00"
+    },
+    {
+      "from": "CHG-032",
+      "to": "ISS-035",
+      "type": "resolves",
+      "created_at": "2026-08-11T15:46:45+00:00"
+    },
+    {
+      "from": "CHG-032",
+      "to": "TASK-029",
+      "type": "implements",
+      "created_at": "2026-08-11T15:46:45+00:00"
+    },
+    {
+      "from": "TASK-030",
+      "to": "ISS-037",
+      "type": "addresses",
+      "created_at": "2026-08-11T16:06:57+00:00"
+    },
+    {
+      "from": "CHG-033",
+      "to": "ISS-037",
+      "type": "resolves",
+      "created_at": "2026-08-11T16:06:57+00:00"
+    },
+    {
+      "from": "CHG-033",
+      "to": "TASK-030",
+      "type": "implements",
+      "created_at": "2026-08-11T16:06:57+00:00"
     }
   ]
 }
