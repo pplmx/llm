@@ -78,17 +78,22 @@ class TestLoRALinear:
         expected = 64 * 8 + 8 * 128  # A + B
         assert lora_layer.trainable_parameters == expected
 
-    def test_merge_weights(self, lora_layer):
-        """Test weight merging."""
+    def test_merge_weights_is_output_preserving(self, lora_layer):
+        """Merging fold the adapter into the base *without* double-counting.
+
+        A correct merge must be semantically invisible: ``merge_weights()``
+        folds the delta into ``base_layer.weight`` and disables the adapter
+        path, so ``forward()`` (through the wrapper — not just a hand-picked
+        ``base_layer(x)`` call) continues to produce the pre-merge output.
+        Otherwise the merged model double-applies the adapter at serve time.
+        """
         x = torch.randn(2, 10, 64)
         lora_layer.lora_B.data.fill_(0.1)
 
-        # Output before merge
         output_before = lora_layer(x).clone()
 
-        # Merge and compare base layer output
         lora_layer.merge_weights()
-        output_merged = lora_layer.base_layer(x)
+        output_merged = lora_layer(x)
 
         assert torch.allclose(output_before, output_merged, atol=1e-5)
 
@@ -101,6 +106,22 @@ class TestLoRALinear:
         lora_layer.unmerge_weights()
 
         assert torch.allclose(lora_layer.base_layer.weight, original_weight, atol=1e-5)
+        # unmerge also restores the adapter path (scaling no longer 0)
+        assert lora_layer.scaling == lora_layer.alpha / lora_layer.rank
+
+    def test_merge_then_forward_equals_base_after_disable(self, lora_layer):
+        """Merged layer's forward matches its folded base exactly.
+
+        This catches a regression where merge left the lora path active,
+        producing ``base + 2 * adapter`` (double-count). After merge the
+        wrapper must be a pure pass-through to the folded base.
+        """
+        x = torch.randn(2, 10, 64)
+        lora_layer.lora_B.data.fill_(0.1)
+
+        lora_layer.merge_weights()
+
+        assert torch.allclose(lora_layer(x), lora_layer.base_layer(x), atol=1e-6)
 
 
 class TestApplyLoRA:

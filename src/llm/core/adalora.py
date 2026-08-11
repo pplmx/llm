@@ -237,19 +237,33 @@ class AdaLoRALinear(nn.Module):
     def merge_weights(self) -> None:
         """Merge ``ΔW`` into the base layer for efficient inference.
 
-        After calling this, the layer's forward path is redundant —
-        ``base_layer`` already carries the full delta. The companion
-        :meth:`unmerge_weights` reverses it for continued training.
+        Folds ``ΔW · scaling`` into ``base_layer.weight`` and then
+        disables the adapter path (``scaling`` → 0) so the layer's
+        forward — which early-returns the base when
+        ``self.scaling == 0.0`` — stays equivalent to the folded base
+        instead of double-counting the adapter at serve time. The
+        companion :meth:`unmerge_weights` restores both the original
+        base weight and this scaling snapshot for continued training.
         """
         with torch.no_grad():
+            self._merged_scaling = self.scaling
             delta_w = self._effective_increment()
             self.base_layer.weight.add_(delta_w * self.scaling)
+            self.scaling = 0.0
 
     def unmerge_weights(self) -> None:
-        """Unmerge ``ΔW`` from the base layer."""
+        """Unmerge ``ΔW`` from the base layer.
+
+        Restores the pre-merge base weight and re-enables the adapter
+        path. No-op if :meth:`merge_weights` was never called.
+        """
         with torch.no_grad():
+            if not hasattr(self, "_merged_scaling"):
+                return
             delta_w = self._effective_increment()
-            self.base_layer.weight.sub_(delta_w * self.scaling)
+            self.base_layer.weight.sub_(delta_w * self._merged_scaling)
+            self.scaling = self._merged_scaling
+            del self._merged_scaling
 
     def compute_importance_scores(self, gradient_ema: torch.Tensor | None = None) -> torch.Tensor:
         """Per-component importance scores, one per singular value.

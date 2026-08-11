@@ -224,14 +224,12 @@ class TestTrainServeRoundTrip:
         (b) produce a non-NaN forward output, and (c) differ from the
         un-adapted base — proving the merge step actually ran.
 
-        We do NOT assert that the merged output equals the un-merged
-        output (semantic equivalence of merge vs un-merge is a property
-        of the per-method ``merge_*`` implementation, not of the
-        serving loader — and LoRA's current ``merge_weights`` folds the
-        delta into ``base_layer.weight`` while leaving the wrapper's
-        lora-path active, so the merged model double-counts the
-        adapter contribution by design. That's a documented limitation
-        of the current ``merge_lora`` impl, not a serving-loader bug).
+        Merge equivalence (merged output == unmerged output) is a
+        property of each method's ``merge_*`` implementation and is
+        asserted per-method in ``tests/core/test_lora.py`` /
+        ``test_adalora.py`` (fold + disable adapter path, output
+        preserved). Here we only verify the serving wiring: the loader
+        ran the merge and produced a finite, adapted output.
         """
         from llm.core.lora import LoRALinear, apply_lora
         from llm.serving.config import ServingConfig

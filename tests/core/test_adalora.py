@@ -195,6 +195,32 @@ class TestMergeUnmerge:
         layer.unmerge_weights()
         assert torch.allclose(base.weight, original_weight, atol=1e-5)
 
+    def test_merge_is_output_preserving(self):
+        """Merge must not double-count the adapter in forward.
+
+        After ``merge_weights`` the layer's forward must still equal the
+        pre-merge output (the delta is folded into the base and the
+        adapter path is disabled). Before the fix ``forward`` kept adding
+        ``scaling · ΔWᵀ`` on top of the already-folded base, doubling the
+        adapter contribution at serve time.
+        """
+        base = nn.Linear(64, 128)
+        layer = AdaLoRALinear(base, init_rank=8, alpha=32.0)
+        with torch.no_grad():
+            layer.lora_lambda.fill_(0.3)
+            layer.lora_P.normal_()
+            layer.lora_Q.normal_()
+
+        x = torch.randn(3, 64)
+        out_before = layer(x).detach().clone()
+
+        layer.merge_weights()
+        out_after = layer(x)
+
+        assert torch.allclose(out_before, out_after, atol=1e-5)
+        # forward now short-circuits through the folded base.
+        assert torch.allclose(layer(x), layer.base_layer(x), atol=1e-5)
+
 
 class TestApplyAdaLora:
     """apply_adalora helper: mirroring apply_lora's contract."""

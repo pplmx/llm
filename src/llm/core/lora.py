@@ -80,16 +80,38 @@ class LoRALinear(nn.Module):
         return base_output + lora_output * self.scaling
 
     def merge_weights(self) -> None:
-        """Merge LoRA weights into the base layer for efficient inference."""
+        """Merge LoRA weights into the base layer for efficient inference.
+
+        Folds ``ΔW · scaling`` into ``base_layer.weight`` and then
+        disables the adapter path (``scaling`` → 0) so that
+        :meth:`forward` continues to produce the **same** output as
+        before merging — the wrapper becomes a pure pass-through to the
+        already-merged base.  Without disabling the path the adapter
+        would be double-counted on every forward (a roughly 2x-strength
+        model at serve time).
+
+        :meth:`unmerge_weights` restores both the original base weight
+        and this scaling snapshot.
+        """
         with torch.no_grad():
+            self._merged_scaling = self.scaling
             delta_w = (self.lora_A @ self.lora_B) * self.scaling
             self.base_layer.weight.add_(delta_w.T)
+            self.scaling = 0.0
 
     def unmerge_weights(self) -> None:
-        """Unmerge LoRA weights from the base layer."""
+        """Unmerge LoRA weights from the base layer.
+
+        Restores the pre-merge base weight and re-enables the adapter
+        path.  No-op if :meth:`merge_weights` was never called.
+        """
         with torch.no_grad():
-            delta_w = (self.lora_A @ self.lora_B) * self.scaling
+            if not hasattr(self, "_merged_scaling"):
+                return
+            delta_w = (self.lora_A @ self.lora_B) * self._merged_scaling
             self.base_layer.weight.sub_(delta_w.T)
+            self.scaling = self._merged_scaling
+            del self._merged_scaling
 
     @property
     def trainable_parameters(self) -> int:
