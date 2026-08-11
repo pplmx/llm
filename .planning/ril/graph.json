@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 24,
+  "round": 25,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-11T11:44:54+00:00",
+  "updated_at": "2026-08-11T12:22:39+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -1607,11 +1607,11 @@
     "ISS-028": {
       "id": "ISS-028",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:50:27+00:00",
-      "updated_at": "2026-08-11T10:50:27+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T12:18:19+00:00",
+      "touched_round": 24,
       "title": "Prefix cache slot id goes stale after slot reuse (use-after-free of cached KV)",
       "details": "batch_engine.py SlotPrefixCache maps hash(prompt)->(slot,prefix_len); when a seq finishes its slot is freed but the prefix entry is never invalidated and KVCache buffers aren't cleared on reuse. ReqB overwrites slot with Q's K/V then ReqC (prompt P) hits the stale cache and replays Q's KV as P's prefix. Found by round-21 deep-dive.",
       "severity": "high"
@@ -1619,11 +1619,11 @@
     "ISS-029": {
       "id": "ISS-029",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:50:43+00:00",
-      "updated_at": "2026-08-11T10:50:43+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T12:01:27+00:00",
+      "touched_round": 24,
       "title": "HF gate_proj/up_proj mapping swapped relative to GLU activation — from_pretrained(real llama/mistral) computes wrong MLP",
       "details": "weight_mapping.py maps HF gate_proj->our gate_proj and HF up_proj->our fc1, but our GLU MLP computes fc2(silu(fc1 x) * gate_proj x) while HF computes down(silu(gate x) * up x). Substituting gives silu(W_up x)*W_gate x vs silu(W_gate x)*W_up x — wrong whenever W_gate != W_up. Also loader never sets mlp_activation (gelu default) nor norm type. Found by round-21 deep-dive (export/token agent).",
       "severity": "high"
@@ -1667,11 +1667,11 @@
     "ISS-033": {
       "id": "ISS-033",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:51:06+00:00",
-      "updated_at": "2026-08-11T10:51:06+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T12:10:07+00:00",
+      "touched_round": 24,
       "title": "from_pretrained unconditionally use_glu=True and drops training-time config — default GLU-off model round-trips broken",
       "details": "hf_loader always passes use_glu=True when rebuilding; a default DecoderModel(use_glu=False) saved then reloaded gets a random gate_proj, load_state_dict(strict=False) only warns, silently wrong outputs. config.json never persists use_glu/mlp_activation/norm_impl. Found by round-21 deep-dive.",
       "severity": "med"
@@ -1703,11 +1703,11 @@
     "HYP-016": {
       "id": "HYP-016",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:52:01+00:00",
-      "updated_at": "2026-08-11T10:52:01+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T12:01:27+00:00",
+      "touched_round": 24,
       "confidence": 0.75,
       "title": "HF GLU mapping swap",
       "details": "gate_proj<->up_proj roles differ between our MLP (silu(fc1)*gate_proj) and HF (silu(gate)*up). Verify by loading real llama weights and comparing logits to HF, or a unit-level activations identity check."
@@ -1888,6 +1888,123 @@
       "title": "Round-23: fix PPO/RLHF custom-loop + critic target scale (ISS-031, ISS-032)",
       "rationale": "Working the round-21 deep-dive backlog: (1) ISS-031 — the custom PPO loop never consulted TrainingConfig.max_steps nor advanced engine.global_step, so smoke configs ran every epoch and observer cadence dead; fixed per-batch cap + engine.global_step advance + epoch logs now flow to on_epoch_end. (2) ISS-032 — with default normalize_advantages=True, returns were built from normalized advantages while the next rollout's GAE consumes raw critic output — inconsistent scale corrupting GAE; fixed by storing raw per-sample returns before normalization. Both fixed TDD RED->GREEN. Backlog remaining (ISS-026/027/028/029/033) recorded with hypotheses; 5 active issues + 2 active hypotheses.",
       "alternatives_rejected": "fix the big paged-KV layer-mixing (ISS-026) this round instead (opt-in path, multi-file block-manager change — will get its own focused round with a layer-scoped repro); fix ISS-027 thread-safety by taking a blanket lock around forward (serializes all inference, wrong fix for a concurrency design)"
+    },
+    "TASK-023": {
+      "id": "TASK-023",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T12:01:27+00:00",
+      "updated_at": "2026-08-11T12:01:27+00:00",
+      "touched_round": 24,
+      "category": "correctness",
+      "title": "Fix HF gate_proj/up_proj role mapping (ISS-029)",
+      "details": "Role-based mapping so from_pretrained computes the correct GLU function."
+    },
+    "CHG-026": {
+      "id": "CHG-026",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:01:27+00:00",
+      "updated_at": "2026-08-11T12:01:27+00:00",
+      "touched_round": 24,
+      "commit": "c87c120",
+      "title": "fix(compat): HF GLU role mapping (ISS-029)"
+    },
+    "EV-046": {
+      "id": "EV-046",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:01:28+00:00",
+      "updated_at": "2026-08-11T12:01:28+00:00",
+      "touched_round": 24,
+      "source": "tests/compat/test_hf_loader.py::TestGLURoleMapping + /tmp/verify_glu.py",
+      "details": "Empirical: role-correct HF dict loads to model matching HF formula; old mapping diverges (verified RED by temporary revert). 19 compat + 387 models/export/quant tests green; ty + ruff clean.",
+      "confidence": 1.0
+    },
+    "TASK-024": {
+      "id": "TASK-024",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T12:10:07+00:00",
+      "updated_at": "2026-08-11T12:10:07+00:00",
+      "touched_round": 24,
+      "category": "correctness",
+      "title": "Persist + honor MLP activation in from_pretrained/save_pretrained (ISS-033)",
+      "details": "hidden_act -> mlp_activation; loader honors it; publisher writes it."
+    },
+    "CHG-027": {
+      "id": "CHG-027",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:10:07+00:00",
+      "updated_at": "2026-08-11T12:10:07+00:00",
+      "touched_round": 24,
+      "commit": "6bded4f",
+      "title": "fix(compat): persist MLP activation (ISS-033)"
+    },
+    "EV-047": {
+      "id": "EV-047",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:10:07+00:00",
+      "updated_at": "2026-08-11T12:10:07+00:00",
+      "touched_round": 24,
+      "source": "tests/compat/test_hf_publisher.py::test_save_pretrained_persists_mlp_activation",
+      "details": "silu model: config hidden_act=gelu under old code -> reload diverges (RED); with fix hidden_act=silu persisted+h honored -> logits match (GREEN). 20 compat + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "TASK-025": {
+      "id": "TASK-025",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T12:18:19+00:00",
+      "updated_at": "2026-08-11T12:18:19+00:00",
+      "touched_round": 24,
+      "category": "correctness",
+      "title": "Invalidate prefix cache on slot free (ISS-028)",
+      "details": "use-after-free of cached KV on slot reuse."
+    },
+    "CHG-028": {
+      "id": "CHG-028",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:18:19+00:00",
+      "updated_at": "2026-08-11T12:18:19+00:00",
+      "touched_round": 24,
+      "commit": "acab8f6",
+      "title": "fix(serving): prefix-cache invalidation (ISS-028)"
+    },
+    "EV-048": {
+      "id": "EV-048",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:18:20+00:00",
+      "updated_at": "2026-08-11T12:18:20+00:00",
+      "touched_round": 24,
+      "source": "tests/serving/test_engine.py::test_prefix_cache_entry_invalidated_on_slot_reuse",
+      "details": "RED: stale (0,5) entry survived slot free, copy attempted. GREEN: entry dropped, no copy. 284 serving tests + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "DEC-012": {
+      "id": "DEC-012",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:22:30+00:00",
+      "updated_at": "2026-08-11T12:22:30+00:00",
+      "touched_round": 24,
+      "title": "Round-24: three HIGH compat/serving correctness fixes (ISS-029, ISS-033, ISS-028)",
+      "rationale": "Worked the round-21 deep-dive backlog with GOAL-selected high-severity items: (ISS-029) HF gate_proj/up_proj mapped by NAME not by ROLE -> from_pretrained(real llama/mistral/qwen) computed silu(up)*gate instead of silu(gate)*up; fixed to role-based mapping, verified RED->GREEN with a hand-placed HF state dict. (ISS-033) loader hard-coded use_glu + never set mlp_activation, so silu-trained models silently reloaded as gelu — a different MLP function; publisher now persists hidden_act and loader honors it. (ISS-028) prefix-cache entries survived KV slot free -> use-after-free replaying another request's overwritten KV as a prefix; added invalidate_for_slot in both slot-free paths. Remaining active: ISS-026 (paged KV layer-mixing, opt-in, needs block-manager redesign) and ISS-027 (step() lock scope vs threadpool, deep concurrency design) — both deferred for dedicated rounds. Full suite green (0 failures, ~163s).",
+      "alternatives_rejected": "tackle ISS-026 paged-layer bug now (opt-in path, multi-file block-manager + MHA/MLA change, exceeds the 3-task round budget and needs a layer-scoped integration test); blanket-lock the engine forward for ISS-027 (serialises all inference — wrong tradeoff without a benchmark)"
     }
   },
   "edges": [
@@ -2652,6 +2769,60 @@
       "to": "TASK-022",
       "type": "implements",
       "created_at": "2026-08-11T11:40:49+00:00"
+    },
+    {
+      "from": "TASK-023",
+      "to": "ISS-029",
+      "type": "addresses",
+      "created_at": "2026-08-11T12:01:27+00:00"
+    },
+    {
+      "from": "CHG-026",
+      "to": "ISS-029",
+      "type": "resolves",
+      "created_at": "2026-08-11T12:01:27+00:00"
+    },
+    {
+      "from": "CHG-026",
+      "to": "TASK-023",
+      "type": "implements",
+      "created_at": "2026-08-11T12:01:27+00:00"
+    },
+    {
+      "from": "TASK-024",
+      "to": "ISS-033",
+      "type": "addresses",
+      "created_at": "2026-08-11T12:10:07+00:00"
+    },
+    {
+      "from": "CHG-027",
+      "to": "ISS-033",
+      "type": "resolves",
+      "created_at": "2026-08-11T12:10:07+00:00"
+    },
+    {
+      "from": "CHG-027",
+      "to": "TASK-024",
+      "type": "implements",
+      "created_at": "2026-08-11T12:10:07+00:00"
+    },
+    {
+      "from": "TASK-025",
+      "to": "ISS-028",
+      "type": "addresses",
+      "created_at": "2026-08-11T12:18:19+00:00"
+    },
+    {
+      "from": "CHG-028",
+      "to": "ISS-028",
+      "type": "resolves",
+      "created_at": "2026-08-11T12:18:19+00:00"
+    },
+    {
+      "from": "CHG-028",
+      "to": "TASK-025",
+      "type": "implements",
+      "created_at": "2026-08-11T12:18:19+00:00"
     }
   ]
 }
