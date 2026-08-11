@@ -67,6 +67,19 @@ class ServingGenerationService:
         logit_bias: dict[int, float] | None = None,
         stop: str | list[str] | None = None,
     ) -> GenerationConfig:
+        # Reject requests that cannot fit in the model's context window up
+        # front, instead of letting the eager backend truncate the prompt to an
+        # *empty* input tensor (a 0-length slice when max_new_tokens >=
+        # max_seq_len) and 500 on the forward. max_new_tokens min
+        # max_seq_len is the absolute floor; realistic sampling always needs
+        # at least 1 token of prompt, but this is the backend-agnostic guard.
+        model_max_seq = getattr(self.model, "max_seq_len", None)
+        if model_max_seq is not None and max_new_tokens >= model_max_seq:
+            raise ValueError(
+                f"max_new_tokens ({max_new_tokens}) must be less than the model's "
+                f"max_seq_len ({model_max_seq}); the prompt would have no room "
+                "to fit in the context window."
+            )
         return GenerationConfig(
             max_new_tokens=max_new_tokens,
             temperature=temperature,

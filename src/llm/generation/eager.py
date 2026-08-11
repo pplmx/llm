@@ -81,9 +81,14 @@ def stream_generate(
     max_seq_len = getattr(model, "max_seq_len", 512)
     kv_caches = create_decoder_kv_caches(model, batch_size=1) if use_cache else None
 
-    # Prefill: truncate if needed to fit max_seq_len
+    # Prefill: truncate if needed to fit max_seq_len. Defensive: never slice
+    # to an *empty* prompt — when max_new_tokens >= max_seq_len the slice
+    # bound goes non-positive and the tensor becomes 0-length, crashing the
+    # forward with a 500. Clamp to the last token so the model always sees a
+    # non-empty context (the serving tier rejects this config up front).
     if input_tensor.size(1) + max_new_tokens > max_seq_len:
-        input_tensor = input_tensor[:, -(max_seq_len - max_new_tokens) :]
+        keep = max(1, max_seq_len - max_new_tokens)
+        input_tensor = input_tensor[:, -keep:]
         # Update input_ids to match truncated tensor
         input_ids = input_tensor[0].tolist()
 

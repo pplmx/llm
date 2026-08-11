@@ -4,7 +4,27 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _validate_stop(value: str | list[str] | None) -> str | list[str] | None:
+    """Enforce the documented ``stop`` contract: a single string OR a list of
+    up to 4 strings.
+
+    ``Field(max_length=4)`` on a ``str | list[str]`` union applies the limit
+    to *both* branches, so a legitimate stop sequence like ``"\\n\\n###"`` or
+    ``"Human:"`` (longer than 4 characters) was 422-rejected even though the
+    documented contract only caps the *list cardinality*.
+    """
+    if value is None:
+        return value
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        if len(value) > 4:
+            raise ValueError("stop list may contain at most 4 strings")
+        return value
+    raise TypeError(f"stop must be a string or a list of strings, got {type(value).__name__}")
 
 
 class RequestState(Enum):
@@ -61,7 +81,12 @@ class GenerationRequest(BaseModel):
     max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum number of tokens to generate.")
     temperature: float = Field(1.0, ge=0.0, description="Controls randomness. 0 for Greedy Search.")
     top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter. None to disable.")
-    top_p: float | None = Field(None, gt=0.0, lt=1.0, description="Nucleus sampling (top-p) parameter.")
+    top_p: float | None = Field(
+        None,
+        gt=0.0,
+        le=1.0,
+        description="Nucleus sampling (top-p) parameter. 1.0 means no truncation (OpenAI default).",
+    )
     repetition_penalty: float = Field(1.0, ge=1.0, description="Repetition penalty. 1.0 means no penalty.")
     frequency_penalty: float = Field(0.0, ge=-2.0, le=2.0, description="OpenAI-compatible per-frequency penalty.")
     presence_penalty: float = Field(
@@ -77,9 +102,13 @@ class GenerationRequest(BaseModel):
     stream: bool = Field(False, description="Whether to use streaming output (SSE).")
     stop: str | list[str] | None = Field(
         None,
-        max_length=4,
         description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
     )
+
+    @field_validator("stop")
+    @classmethod
+    def _check_stop(cls, v):
+        return _validate_stop(v)
 
 
 class GenerationResponse(BaseModel):
@@ -96,7 +125,9 @@ class BatchGenerationRequest(BaseModel):
     max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum tokens to generate per prompt.")
     temperature: float = Field(1.0, ge=0.0, description="Sampling temperature. 0 for greedy.")
     top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter.")
-    top_p: float | None = Field(None, gt=0.0, lt=1.0, description="Nucleus sampling parameter.")
+    top_p: float | None = Field(
+        None, gt=0.0, le=1.0, description="Nucleus sampling parameter. 1.0 means no truncation."
+    )
     repetition_penalty: float = Field(1.0, ge=1.0, description="Repetition penalty.")
     frequency_penalty: float = Field(0.0, ge=-2.0, le=2.0, description="OpenAI-compatible per-frequency penalty.")
     presence_penalty: float = Field(
@@ -111,9 +142,13 @@ class BatchGenerationRequest(BaseModel):
     )
     stop: str | list[str] | None = Field(
         None,
-        max_length=4,
         description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
     )
+
+    @field_validator("stop")
+    @classmethod
+    def _check_stop(cls, v):
+        return _validate_stop(v)
 
 
 class BatchGenerationResponse(BaseModel):
@@ -139,13 +174,20 @@ class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1, description="List of messages.")
     max_tokens: int = Field(50, ge=1, le=4096, description="Maximum tokens to generate.")
     temperature: float = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature.")
-    top_p: float | None = Field(None, gt=0.0, lt=1.0, description="Nucleus sampling parameter.")
+    top_p: float | None = Field(
+        None, gt=0.0, le=1.0, description="Nucleus sampling parameter. 1.0 means no truncation."
+    )
     stream: bool = Field(False, description="Whether to stream responses.")
     stop: list[str] | str | None = Field(
         None,
-        max_length=4,
         description="Stop sequence(s). Generation halts the moment the generated text contains any of these as a suffix; the stop string itself is excluded from the response. Accepts a single string or a list of up to 4 strings. None means no stop.",
     )
+
+    @field_validator("stop")
+    @classmethod
+    def _check_stop(cls, v):
+        return _validate_stop(v)
+
     presence_penalty: float = Field(
         0.0,
         ge=-2.0,

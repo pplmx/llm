@@ -28,6 +28,36 @@ def test_from_data_config_pickle(tmp_path):
     assert loaded.encode("abc") == tokenizer.encode("abc")
 
 
+def test_from_data_config_missing_simple_path_raises(tmp_path):
+    """A configured-but-missing ``simple`` tokenizer must fail loud.
+
+    Before this fix ``from_data_config`` silently fell back to the default
+    corpus tokenizer when ``tokenizer_path`` pointed at a nonexistent file,
+    so training quietly proceeded with a different vocabulary than the one
+    used to encode the data — the checkpoint could never round-trip with the
+    intended tokenizer. This mirrors ``from_serving_config`` (which raises
+    FileNotFoundError for the same condition).
+    """
+    config = Config()
+    config.data.tokenizer_type = "simple"
+    config.data.tokenizer_path = str(tmp_path / "does_not_exist.pt")
+
+    with pytest.raises(FileNotFoundError, match="Tokenizer file not found"):
+        TokenizerFactory.from_data_config(config.data)
+
+
+def test_from_data_config_no_path_uses_default_corpus():
+    """No ``tokenizer_path`` at all is the documented default path: build a
+    simple tokenizer from the default corpus (existing behavior preserved)."""
+    config = Config()
+    config.data.tokenizer_type = "simple"
+    config.data.tokenizer_path = None
+
+    tokenizer = TokenizerFactory.from_data_config(config.data)
+    assert isinstance(tokenizer, SimpleCharacterTokenizer)
+    assert tokenizer.vocab_size > 3
+
+
 def test_from_data_config_hf_requires_path():
     config = Config()
     config.data.tokenizer_type = "hf"

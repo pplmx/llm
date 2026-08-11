@@ -34,9 +34,18 @@ class TokenizerFactory:
 
         if data_config.tokenizer_path:
             path = Path(data_config.tokenizer_path)
-            if path.exists():
-                loaded = torch.load(path, map_location="cpu", weights_only=False)
-                return cast(BaseTokenizer, loaded)
+            if not path.exists():
+                # A configured-but-missing ``simple`` tokenizer must fail
+                # loud, exactly like ``from_serving_config`` (raise
+                # FileNotFoundError).  Silently substituting the default
+                # corpus tokenizer here means training proceeds with a
+                # different vocabulary than the one used to build the data /
+                # checkpoint — every epoch trains (and saves) against a
+                # tokenizer that can't round-trip the intended vocab, and the
+                # mismatch is invisible until serve-time decode errors.
+                raise FileNotFoundError(f"Tokenizer file not found: {path}")
+            loaded = torch.load(path, map_location="cpu", weights_only=False)
+            return cast(BaseTokenizer, loaded)
 
         corpus = default_corpus or DEFAULT_SIMPLE_CORPUS
         return cast(BaseTokenizer, SimpleCharacterTokenizer(corpus))
