@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 25,
+  "round": 26,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-11T12:22:39+00:00",
+  "updated_at": "2026-08-11T13:12:46+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -1583,11 +1583,11 @@
     "ISS-026": {
       "id": "ISS-026",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:50:15+00:00",
-      "updated_at": "2026-08-11T10:50:15+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T12:40:20+00:00",
+      "touched_round": 25,
       "title": "Paged KVCache.update writes each layer's K/V into EVERY layer's buffer (multi-layer wrong output)",
       "details": "paged_kv_cache.py:131-132 write's leading ':' selects the layer axis and RHS (batch=1) broadcasts to all layers; layer 0's cached prefix is silently replaced by layer 1's data when num_layers>1. Only works for num_layers==1. Found by round-21 deep-dive (attn/kv agent).",
       "severity": "high"
@@ -1595,11 +1595,11 @@
     "ISS-027": {
       "id": "ISS-027",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:50:27+00:00",
-      "updated_at": "2026-08-11T10:50:27+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T13:06:52+00:00",
+      "touched_round": 25,
       "title": "BatchEngine.step holds lock only for bookkeeping, not forward — concurrent steps double-advance + corrupt KV pool",
       "details": "batch_engine.py forward runs unlocked; two concurrent step() calls (FastAPI threadpool path confirmed) both run pre/forward/post against same slots -> two tokens appended per step, both written to same cache position (last-wins), generated_ids desyncs from KV. test_engine_thread_safety only asserts pre/post serialization, uses fake deterministic model masking corruption. Found by round-21 deep-dive.",
       "severity": "high"
@@ -1679,11 +1679,11 @@
     "HYP-014": {
       "id": "HYP-014",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T10:52:01+00:00",
-      "updated_at": "2026-08-11T10:52:01+00:00",
-      "touched_round": 21,
+      "updated_at": "2026-08-11T12:40:21+00:00",
+      "touched_round": 25,
       "confidence": 0.85,
       "title": "PagedKVCache.update uses layer-axis ':' instead of layer_idx scope",
       "details": "write self.k_cache[:, block_id, ...] = k_transposed[:, :, i, :] with batch=1 broadcasts across first dim (layers); the RHS should be indexed at layer idx not broadcast. Needs num_layers>1 repro to confirm."
@@ -2005,6 +2005,88 @@
       "title": "Round-24: three HIGH compat/serving correctness fixes (ISS-029, ISS-033, ISS-028)",
       "rationale": "Worked the round-21 deep-dive backlog with GOAL-selected high-severity items: (ISS-029) HF gate_proj/up_proj mapped by NAME not by ROLE -> from_pretrained(real llama/mistral/qwen) computed silu(up)*gate instead of silu(gate)*up; fixed to role-based mapping, verified RED->GREEN with a hand-placed HF state dict. (ISS-033) loader hard-coded use_glu + never set mlp_activation, so silu-trained models silently reloaded as gelu — a different MLP function; publisher now persists hidden_act and loader honors it. (ISS-028) prefix-cache entries survived KV slot free -> use-after-free replaying another request's overwritten KV as a prefix; added invalidate_for_slot in both slot-free paths. Remaining active: ISS-026 (paged KV layer-mixing, opt-in, needs block-manager redesign) and ISS-027 (step() lock scope vs threadpool, deep concurrency design) — both deferred for dedicated rounds. Full suite green (0 failures, ~163s).",
       "alternatives_rejected": "tackle ISS-026 paged-layer bug now (opt-in path, multi-file block-manager + MHA/MLA change, exceeds the 3-task round budget and needs a layer-scoped integration test); blanket-lock the engine forward for ISS-027 (serialises all inference — wrong tradeoff without a benchmark)"
+    },
+    "TASK-026": {
+      "id": "TASK-026",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T12:40:21+00:00",
+      "updated_at": "2026-08-11T12:40:21+00:00",
+      "touched_round": 25,
+      "category": "correctness",
+      "title": "Scope PagedKVCache update/get per layer (ISS-026)",
+      "details": "layer broadcast + per-layer token advancement in paged cache."
+    },
+    "CHG-029": {
+      "id": "CHG-029",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:40:21+00:00",
+      "updated_at": "2026-08-11T12:40:21+00:00",
+      "touched_round": 25,
+      "commit": "569b16b",
+      "title": "fix(serving): per-layer paged cache (ISS-026)"
+    },
+    "EV-049": {
+      "id": "EV-049",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T12:40:21+00:00",
+      "updated_at": "2026-08-11T12:40:21+00:00",
+      "touched_round": 25,
+      "source": "tests/core/test_paged_kv_cache.py::test_multi_layer_update_scopes_each_layer_kv + /tmp/repro_paged_layer2.py",
+      "details": "2-layer repro: layer0 holds k0, layer1 holds k1, token count=1, get(layer_idx) correct. RED with ':' broadcast; GREEN with layer_idx. 111 paged/attn/serving tests + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "TASK-027": {
+      "id": "TASK-027",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-11T13:06:52+00:00",
+      "updated_at": "2026-08-11T13:06:52+00:00",
+      "touched_round": 25,
+      "category": "stability",
+      "title": "Hold step lock across forward; fix concurrent step() token overshoot (ISS-027)",
+      "details": "Unlocked forward + threadpool -> 2 tokens per step, max_new_tokens overshoot."
+    },
+    "CHG-030": {
+      "id": "CHG-030",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T13:06:52+00:00",
+      "updated_at": "2026-08-11T13:06:52+00:00",
+      "touched_round": 25,
+      "commit": "fca8845",
+      "title": "fix(serving): atomic step() forward (ISS-027)"
+    },
+    "EV-050": {
+      "id": "EV-050",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T13:06:52+00:00",
+      "updated_at": "2026-08-11T13:06:52+00:00",
+      "touched_round": 25,
+      "source": "tests/serving/test_engine_thread_safety.py::test_concurrent_step_does_not_overshoot_generated_ids + /tmp/repro_kv_sync2.py",
+      "details": "max_new_tokens=1 stepped by 4 concurrent threads: original appended up to 60 tokens (RED, generated_ids desynced from KV); atomic step appends exactly 1 (GREEN, 50/50). 285 serving tests + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "DEC-013": {
+      "id": "DEC-013",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-11T13:11:35+00:00",
+      "updated_at": "2026-08-11T13:11:35+00:00",
+      "touched_round": 25,
+      "title": "Round-25: fix last two serving HIGHs — paged layer-scoping (ISS-026) + atomic step() forward (ISS-027)",
+      "rationale": "Closed the final two high-severity issues from the round-21 deep-dive backlog, the last remaining after rounds 22-24: (ISS-026) PagedKVCache.update/get indexed the layer axis with ':' and advanced the shared token count once per layer call — every layer wrote into every layer's slice and read/wrote at drifting offsets; made both layer-scoped with layer_idx and a single allocation/extension on layer 0. (ISS-027) step() ran the model forward with _step_lock released; two threads (FastAPI threadpool, cap=4) each ran the forward against the same slots and appended >1 token per logical step (a max_new_tokens=1 request got 60 tokens in the repro); now the lock covers pre+forward+post and add_request stays lock-free. Every issue from the round-21 deep-dive is now resolved (33/33), all 27 tasks resolved. Full suite green (165s). Remaining: run a fresh deep-dive round to look for NEW issues beyond the agent-covered areas.",
+      "alternatives_rejected": "fix step_async the same way (its lock-released-during-forward is a deliberate async contract pinned by its own test — the single-threaded event loop serializes forwards; leave as-is); hold the lock across the forward only for pre/post as before (leaves the recorded corruption unfixed)"
     }
   },
   "edges": [
@@ -2823,6 +2905,42 @@
       "to": "TASK-025",
       "type": "implements",
       "created_at": "2026-08-11T12:18:19+00:00"
+    },
+    {
+      "from": "TASK-026",
+      "to": "ISS-026",
+      "type": "addresses",
+      "created_at": "2026-08-11T12:40:21+00:00"
+    },
+    {
+      "from": "CHG-029",
+      "to": "ISS-026",
+      "type": "resolves",
+      "created_at": "2026-08-11T12:40:21+00:00"
+    },
+    {
+      "from": "CHG-029",
+      "to": "TASK-026",
+      "type": "implements",
+      "created_at": "2026-08-11T12:40:21+00:00"
+    },
+    {
+      "from": "TASK-027",
+      "to": "ISS-027",
+      "type": "addresses",
+      "created_at": "2026-08-11T13:06:52+00:00"
+    },
+    {
+      "from": "CHG-030",
+      "to": "ISS-027",
+      "type": "resolves",
+      "created_at": "2026-08-11T13:06:52+00:00"
+    },
+    {
+      "from": "CHG-030",
+      "to": "TASK-027",
+      "type": "implements",
+      "created_at": "2026-08-11T13:06:52+00:00"
     }
   ]
 }
