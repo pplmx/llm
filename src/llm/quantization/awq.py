@@ -64,7 +64,7 @@ class AWQConfig:
                 f"AWQConfig.bits must be 4 or 8, got {self.bits}. "
                 "For mixed precision, use target_modules to skip sensitive layers."
             )
-        if self.group_size != -1 and self.group_size < 0:
+        if self.group_size != -1 and self.group_size <= 0:
             raise ValueError(f"group_size must be -1 (per-channel) or positive, got {self.group_size}.")
         if self.n_grid < 1:
             raise ValueError(f"n_grid must be >= 1, got {self.n_grid}.")
@@ -204,6 +204,21 @@ class AWQQuantizer:
         self.compute_dtype = torch.float32
 
         self.out_features, self.in_features = layer.weight.shape
+
+        # Group quantization requires the *effective* group size (clamped to
+        # in_features, so a group larger than the row is a single group) to
+        # divide in_features (the packing path builds
+        # ``in_features // group_size`` groups and slices columns
+        # [g*gs:(g+1)*gs)); reject non-divisible effective group sizes up
+        # front with a clear error instead of a late packing bug.
+        gs = min(self.config.group_size, self.in_features)
+        if self.config.group_size != -1 and self.in_features % gs != 0:
+            raise ValueError(
+                f"group_size ({self.config.group_size}) must divide in_features "
+                f"({self.in_features}); got remainder {self.in_features % gs}. "
+                "Use group_size=-1 (per-channel) or a divisor of in_features."
+            )
+
         self.act_abs_sum = torch.zeros(
             self.in_features,
             dtype=self.compute_dtype,

@@ -55,6 +55,28 @@ def test_gptq_config_rejects_nonpositive_blocksize():
         GPTQConfig(blocksize=0)
 
 
+def test_gptq_config_rejects_zero_group_size():
+    """group_size=0 is rejected by config validation."""
+    from llm.quantization.gptq import GPTQConfig
+
+    with pytest.raises(ValueError, match="group_size"):
+        GPTQConfig(group_size=0)
+
+
+def test_gptq_quantizer_rejects_non_divisible_group_size():
+    """A group_size that does not divide in_features fails fast with a clear
+    error at quantizer construction (regression for ISS-022), instead of a
+    late ``repeat_interleave`` broadcast crash during packing.
+    """
+    import torch.nn as nn
+
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    layer = nn.Linear(100, 16)
+    with pytest.raises(ValueError, match="must divide in_features"):
+        GPTQQuantizer(layer, GPTQConfig(bits=4, group_size=30, sym=True, blocksize=120))
+
+
 def test_gptq_config_rejects_blocksize_not_divisible_by_group_size():
     """When group_size > 0, blocksize must be divisible by group_size."""
     from llm.quantization.gptq import GPTQConfig

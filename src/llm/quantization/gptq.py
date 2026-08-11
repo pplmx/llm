@@ -66,7 +66,7 @@ class GPTQConfig:
                 f"GPTQConfig.bits must be 4 or 8, got {self.bits}. "
                 f"For mixed precision, use target_modules to skip sensitive layers."
             )
-        if self.group_size != -1 and self.group_size < 0:
+        if self.group_size != -1 and self.group_size <= 0:
             raise ValueError(f"group_size must be -1 (per-channel) or positive, got {self.group_size}.")
         if not (0.0 < self.percdamp < 1.0):
             raise ValueError(f"percdamp must be in (0, 1), got {self.percdamp}.")
@@ -104,6 +104,21 @@ class GPTQQuantizer:
 
         # Weight dimensions
         self.out_features, self.in_features = layer.weight.shape
+
+        # Group quantization requires the *effective* group size (clamped to
+        # in_features, so a group larger than the row is a single group) to
+        # divide in_features: the packing / dequant paths assume an integral
+        # number of full groups (``in_features // group_size`` then
+        # ``repeat_interleave(group_size)``). Reject a non-divisible effective
+        # group up front with a clear error instead of a late
+        # ``repeat_interleave`` broadcast crash deep in packing.
+        gs = min(self.config.group_size, self.in_features)
+        if self.config.group_size != -1 and self.in_features % gs != 0:
+            raise ValueError(
+                f"group_size ({self.config.group_size}) must divide in_features "
+                f"({self.in_features}); got remainder {self.in_features % gs}. "
+                "Use group_size=-1 (per-channel) or a divisor of in_features."
+            )
 
         # Hessian accumulator
         self.H = torch.zeros(

@@ -37,6 +37,27 @@ def test_awq_config_rejects_negative_group_size():
         AWQConfig(group_size=-128)
 
 
+def test_awq_config_rejects_zero_group_size():
+    """group_size=0 is rejected by config validation."""
+    from llm.quantization.awq import AWQConfig
+
+    with pytest.raises(ValueError, match="group_size"):
+        AWQConfig(group_size=0)
+
+
+def test_awq_quantizer_rejects_non_divisible_group_size():
+    """A group_size that does not divide in_features fails fast at quantizer
+    construction (regression for ISS-022) instead of a late packing bug.
+    """
+    import torch.nn as nn
+
+    from llm.quantization.awq import AWQConfig, AWQQuantizer
+
+    layer = nn.Linear(100, 16)
+    with pytest.raises(ValueError, match="must divide in_features"):
+        AWQQuantizer(layer, AWQConfig(bits=4, group_size=30, sym=True))
+
+
 def test_awq_config_rejects_nonpositive_grid():
     """n_grid must be >= 1."""
     from llm.quantization.awq import AWQConfig
