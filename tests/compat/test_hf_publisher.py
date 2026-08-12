@@ -165,6 +165,62 @@ def test_save_pretrained_roundtrip_through_from_pretrained(tmp_path: Path):
     assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
 
 
+def _make_non_glu_decoder() -> torch.nn.Module:
+    """A DecoderModel with the DEFAULT ``use_glu=False`` MLP.
+
+    The default model's MLP has only ``fc1`` (activated) + ``fc2`` — no
+    ``gate_proj``. An earlier save->load roundtrip silently broke for this
+    configuration (RIL ISS-056): the publisher emitted ``mlp.up_proj`` from
+    the (nonexistent) ``mlp.gate_proj``, so the artifact was missing
+    ``up_proj``; then the loader rebuilt a GLU MLP (hardcoded
+    ``use_glu=True``) and left every ``gate_proj`` at random init.
+    """
+    from llm.models.decoder import DecoderModel
+
+    return DecoderModel(
+        **decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            intermediate_size=64,
+            max_seq_len=32,
+            attn_impl="mha",
+            mlp_impl="mlp",
+            device=str(DEFAULT_DEVICE),
+            # DEFAULT use_glu=False
+        )
+    )
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_roundtrip_default_non_glu_model(tmp_path: Path):
+    """Regression (RIL ISS-056): a DEFAULT (non-GLU) model must roundtrip
+    save->load with equivalent logits — not leave the MLP at random init."""
+    from llm.models.decoder import DecoderModel
+
+    model = _make_non_glu_decoder()
+    model.eval()
+    save_pretrained(model, tmp_path)
+
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config.get("use_glu") is False
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+
+    # The reloaded MLP must be non-GLU and carry real weights (not random).
+    assert isinstance(reloaded, DecoderModel)
+    assert reloaded.transformer_blocks[0].mlp.use_glu is False
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = model(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_persists_mlp_activation(tmp_path: Path):
     """``from_pretrained`` rebuilds the model with the *saved* MLP activation.

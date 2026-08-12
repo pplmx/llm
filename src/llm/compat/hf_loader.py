@@ -118,7 +118,11 @@ def _load_from_local(
         intermediate_size=our_config.get("intermediate_size"),
         norm_eps=our_config.get("rms_norm_eps", 1e-5),
         attn_impl="mha",
-        use_glu=True,
+        # Honor the persisted ``use_glu`` (our publisher) or default to True
+        # for external real-Llama/Mistral checkpoints. Hardcoding True here
+        # rebuilt a GLU MLP for a DEFAULT non-GLU model and left every
+        # ``gate_proj`` at random init (RIL ISS-056).
+        use_glu=our_config.get("use_glu", True),
         mlp_impl="mlp",
         mlp_activation=our_config.get("mlp_activation", "silu"),
         device=device,

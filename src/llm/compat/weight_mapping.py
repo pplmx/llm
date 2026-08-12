@@ -410,4 +410,10 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # (or HF checkpoint) round-trips with the *same* MLP function rather
         # than silently defaulting to gelu.
         "mlp_activation": hf_config.get("hidden_act", "silu"),
+        # Whether the MLP is gated (SwiGLU). Real Llama/Mistral default to
+        # True, but our own ``save_pretrained`` persists the actual
+        # ``use_glu`` so a DEFAULT (non-GLU) model round-trips with its
+        # fc1/fc2 MLP instead of being rebuilt as GLU with random gate
+        # weights (RIL ISS-056). Absent (an external HF checkpoint) -> True.
+        "use_glu": hf_config.get("use_glu", True),
     }

@@ -95,6 +95,11 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # would default to silu and a gelu-trained model would silently change
     # function across a save -> load roundtrip.
     hidden_act = getattr(mlp0, "activation_name", "silu")
+    # Persist whether the MLP is gated (SwiGLU) so ``from_pretrained``
+    # rebuilds the same architecture. The DEFAULT ``use_glu=False`` model has
+    # only ``fc1``/``fc2``; hardcoding GLU on load left every ``gate_proj`` at
+    # random init (RIL ISS-056).
+    use_glu = bool(getattr(mlp0, "use_glu", True))
 
     return {
         "model_type": "llama",
@@ -110,6 +115,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "rope_theta": 10000.0,
         "torch_dtype": dtype_str,
         "hidden_act": hidden_act,
+        "use_glu": use_glu,
     }
 
 
