@@ -215,19 +215,37 @@ class DedupTextSource(TextSource):
         # algos; fail fast at construction time so users see the error
         # before iterating.
         hashlib.new(self.hash_algo)
-        self._seen: set[str] = set()
+        # Hashes loaded from ``seen_hashes_path`` at construction — the
+        # cross-run dedup baseline. Deliberately a fixed snapshot for the
+        # life of the source: it makes the dedup scope *per iteration
+        # pass*, never lifetime-wide. Streaming pretraining cycles the
+        # corpus until its step budget is met; a lifetime-scoped seen-set
+        # would classify the whole corpus as duplicates on the second
+        # pass and raise "streaming corpus is empty" (RIL ISS-038).
+        self._persisted: set[str] = set()
+        # Hashes appended to ``seen_hashes_path`` during this session.
+        # Tracks what we have already written so a corpus cycle does not
+        # append the same hash twice to the file.
+        self._written: set[str] = set()
         self._load_seen_hashes()
 
     def _load_seen_hashes(self) -> None:
         if self.seen_hashes_path is None or not self.seen_hashes_path.exists():
             return
         with self.seen_hashes_path.open(encoding="utf-8") as handle:
-            self._seen.update(line.strip() for line in handle if line.strip())
+            self._persisted.update(line.strip() for line in handle if line.strip())
 
     def iter_texts(self, skip: int = 0) -> Iterator[str]:
         # ``skip`` is delegated to the inner source so the
         # ``line_index`` resume semantics used by StreamingTextDataset
         # stay consistent with non-dedup sources.
+        #
+        # Dedup is scoped to this single pass: the seen-set is seeded
+        # from the construction-time ``_persisted`` snapshot (cross-run
+        # dedup), not from hashes accumulated by earlier passes. Records
+        # already persisted stay dropped, while a corpus cycle re-yields
+        # everything else — without re-appending their hashes to the
+        # file. Internal duplicates *within* one pass are still dropped.
         #
         # Performance note: the seen-hashes file is opened **once per
         # iteration pass** rather than once per surviving record. On a
@@ -237,19 +255,21 @@ class DedupTextSource(TextSource):
         # immediately flushed so a checkpoint resume observed the same
         # persisted hashes as before (durability semantics unchanged),
         # and the handle is closed when the pass ends.
+        seen = set(self._persisted)
         handle = None
         try:
             for text in self.inner.iter_texts(skip=skip):
                 normalized = self.normalize(text)
                 digest = hashlib.new(self.hash_algo, normalized.encode("utf-8")).hexdigest()
-                if digest in self._seen:
+                if digest in seen:
                     continue
-                self._seen.add(digest)
-                if self.write_seen_hashes and self.seen_hashes_path is not None:
+                seen.add(digest)
+                if self.write_seen_hashes and self.seen_hashes_path is not None and digest not in self._written:
                     if handle is None:
                         handle = self.seen_hashes_path.open("a", encoding="utf-8")
                     handle.write(digest + "\n")
                     handle.flush()
+                    self._written.add(digest)
                 yield text
         finally:
             if handle is not None:

@@ -410,6 +410,74 @@ def test_dedup_persisted_state_makes_skip_resume_exact(tmp_path):
     assert resumed == []
 
 
+def test_dedup_reiterates_cleanly_on_second_pass(tmp_path):
+    """A corpus cycle re-iterates the same source object. The seen-set
+    must be scoped to a single pass: pass 2 re-yields the full corpus
+    (minus genuine in-pass duplicates) instead of classifying every
+    record as already-seen and yielding nothing (RIL ISS-038).
+    """
+    path = _write(tmp_path, "data.txt", ["a", "b", "a", "c", "b"])
+
+    source = DedupTextSource(LocalLineTextSource(path))
+
+    pass1 = list(source.iter_texts())
+    pass2 = list(source.iter_texts())
+
+    assert pass1 == ["a", "b", "c"]
+    assert pass2 == ["a", "b", "c"]
+
+
+def test_dedup_cycle_with_persistence_rewrites_no_duplicate_hashes(tmp_path):
+    """With seen_hashes_path + write_seen_hashes, a corpus cycle re-yields
+    the records (cross-run dedup baseline only) but the file must not grow
+    duplicate hash lines across passes within the same session."""
+    path = _write(tmp_path, "data.txt", ["a", "b", "a", "c"])
+    seen_path = tmp_path / "seen.txt"
+    seen_path.write_text("", encoding="utf-8")
+
+    source = DedupTextSource(
+        LocalLineTextSource(path),
+        seen_hashes_path=seen_path,
+        write_seen_hashes=True,
+    )
+
+    pass1 = list(source.iter_texts())
+    pass2 = list(source.iter_texts())
+
+    assert pass1 == ["a", "b", "c"]
+    assert pass2 == ["a", "b", "c"]
+
+    h_a = hashlib.sha256(b"a").hexdigest()
+    h_b = hashlib.sha256(b"b").hexdigest()
+    h_c = hashlib.sha256(b"c").hexdigest()
+    written = seen_path.read_text(encoding="utf-8").splitlines()
+    # Every hash appears exactly once, even though two full passes ran.
+    assert written == [h_a, h_b, h_c]
+
+
+def test_dedup_cycle_keeps_persisted_baseline_dropped(tmp_path):
+    """Cross-run dedup still holds across a cycle: a record whose hash was
+    persisted at construction stays dropped on every pass, while a record
+    persisted mid-session is re-yielded on the next pass (it belongs to the
+    next cycle, not to a previous run)."""
+    data_path = _write(tmp_path, "data.txt", ["a", "b"])
+    seen_path = tmp_path / "seen.txt"
+    h_a = hashlib.sha256(b"a").hexdigest()
+    seen_path.write_text(h_a + "\n", encoding="utf-8")
+
+    source = DedupTextSource(
+        LocalLineTextSource(data_path),
+        seen_hashes_path=seen_path,
+        write_seen_hashes=True,
+    )
+
+    assert list(source.iter_texts()) == ["b"]
+    assert list(source.iter_texts()) == ["b"]
+
+    # 'b' was appended once on the first pass, not duplicated on pass 2.
+    assert seen_path.read_text(encoding="utf-8").splitlines() == [h_a, hashlib.sha256(b"b").hexdigest()]
+
+
 def test_dedup_opens_seen_hashes_file_once_per_pass(monkeypatch, tmp_path):
     """With write_seen_hashes=True, the seen-hashes file must be opened
     once per iteration pass (not once per surviving record). A web-scale
