@@ -430,6 +430,11 @@ class ContinuousBatchingEngine:
                 )
                 yield from chunks
                 if stop_hit:
+                    # A stop-sequence match finished the request/sequence
+                    # *outside* a step, so ``_lock_step_post`` never ran its
+                    # free path — release the slot here or it leaks (ISS-044).
+                    with self._step_lock:
+                        self._release_request_slot_by_id(req_id)
                     return
                 if stops and buffer:
                     yield buffer
@@ -441,6 +446,9 @@ class ContinuousBatchingEngine:
             chunks, stop_hit, buffer = self._emit_tokens(seq, seq.generated_ids[emitted:], stops, max_stop_len, buffer)
             yield from chunks
             if stop_hit:
+                # Same leak vector as above.
+                with self._step_lock:
+                    self._release_request_slot_by_id(req_id)
                 return
             emitted = len(seq.generated_ids)
             if seq.is_finished():
@@ -665,6 +673,41 @@ class ContinuousBatchingEngine:
 
         return _StepResult(inputs=inputs, next_token_ids=next_token_ids)
 
+    def _release_request_slots(self, request_id: str, slot: int) -> None:
+        """Return a request's KV slot, prefix-cache entry and paged blocks.
+
+        Shared by the finished-in-step path (:meth:`_lock_step_post`), the
+        stop-sequence termination path (:meth:`stream_request`) and the
+        forward-failure path. Omitting this anywhere leaves the slot
+        permanently leaked (RIL ISS-044): the scheduler filters FINISHED
+        sequences out of ``running`` without ever freeing their slot, so a
+        slot leaked per stop-terminated request eventually exhausts the pool
+        and every ``allocate()`` raises ``No free slots available in KV
+        cache``.
+        """
+        self.slot_allocator.free(request_id)
+        if self.prefix_cache is not None:
+            # The slot is back in the free pool; a later request may reuse it
+            # and overwrite the cached K/V. A leftover prefix entry would
+            # replay stale/in-flight K/V on a prompt match.
+            self.prefix_cache.invalidate_for_slot(slot)
+        if self.paged_kv_cache is not None:
+            # ``seq_id`` == slot id in the paged path.
+            self.paged_kv_cache.free(slot)
+
+    def _release_request_slot_by_id(self, request_id: str) -> None:
+        """Release a request's slot, resolving the slot id from the allocator.
+
+        Caller MUST hold ``self._step_lock`` (the same contract as
+        :meth:`_lock_step_post`) — this mutates the shared allocator /
+        prefix cache / paged pool. No-op when the request no longer holds a
+        slot (e.g. it already finished inside a step and was released there).
+        """
+        slot = self.slot_allocator.get_slot(request_id)
+        if slot < 0:
+            return
+        self._release_request_slots(request_id, slot)
+
     def _lock_step_post(self, result: _StepResult) -> StepStats:
         """Append sampled tokens, free slots, mark finished sequences.
 
@@ -680,16 +723,7 @@ class ContinuousBatchingEngine:
             # callers are expected to clean them up via the timeout
             # path.
             for i, seq in enumerate(inputs.running_sequences):
-                slot = inputs.batch_slots_list[i]
-                self.slot_allocator.free(seq.request_id)
-                if self.prefix_cache is not None:
-                    # The slot is back in the free pool; a later request may
-                    # reuse it and overwrite the cached K/V. A leftover prefix
-                    # entry would replay stale/in-flight K/V on a prompt match.
-                    self.prefix_cache.invalidate_for_slot(slot)
-                if self.paged_kv_cache is not None:
-                    # ``seq_id`` == slot id in the paged path.
-                    self.paged_kv_cache.free(slot)
+                self._release_request_slots(seq.request_id, inputs.batch_slots_list[i])
             raise result.forward_failed
 
         for i, seq in enumerate(inputs.running_sequences):
@@ -705,17 +739,7 @@ class ContinuousBatchingEngine:
                 or seq.total_len >= self.max_seq_len
             ):
                 seq.status = RequestState.FINISHED
-                self.slot_allocator.free(seq.request_id)
-                if self.prefix_cache is not None:
-                    # The finished request's KV slot returns to the free pool
-                    # and may be re-allocated to another request with a
-                    # *different* prompt, overwriting the cached K/V.  Drop
-                    # any prefix entry pointing into it so a later matching
-                    # prompt can't replay another request's stale K/V.
-                    self.prefix_cache.invalidate_for_slot(inputs.batch_slots_list[i])
-                if self.paged_kv_cache is not None:
-                    # Return the per-sequence blocks to the allocator.
-                    self.paged_kv_cache.free(inputs.batch_slots_list[i])
+                self._release_request_slots(seq.request_id, inputs.batch_slots_list[i])
 
         return StepStats(
             scheduled=inputs.batch_size,

@@ -438,6 +438,80 @@ def test_generate_request_with_stop_truncates_output(tiny_model, device, mock_to
     assert isinstance(result, str)
 
 
+def test_stop_terminated_request_frees_kv_slot(tiny_model, device, mock_tokenizer):
+    """Regression (RIL ISS-044): a request that ends via a stop-sequence match
+    must release its KV slot (dense + prefix + paged), otherwise the pool
+    leaks a slot per stop-terminated request and eventually 503s on
+    ``No free slots available in KV cache``.
+
+    MockTokenizer.decode emits the token id as text (``decode([3]) == "3"``),
+    so a stop string equal to a generated token's decode reliably matches.
+    """
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+        enable_prefix_cache=True,
+    )
+    total_slots = engine.slot_allocator.total_slots
+
+    # Force the model to emit token 3 (decode → "3") so ``stop="3"`` matches.
+    from llm.serving.batch_engine import _StepInputs, _StepResult
+
+    def _emit_token_3(inputs: _StepInputs) -> _StepResult:
+        return _StepResult(inputs=inputs, next_token_ids=[3] * len(inputs.running_sequences))
+
+    with patch.object(engine, "_forward_and_sample", side_effect=_emit_token_3):
+        req = GenerationRequest(prompt="abcd", max_new_tokens=5, stop="3")
+        req.request_id = "req-stop-free"
+        engine.add_request(req)
+
+        result = engine.generate_request(req)
+
+    assert isinstance(result, str)
+    # Slot must be released back into the free pool.
+    assert engine.slot_allocator.get_slot("req-stop-free") == -1
+    assert engine.slot_allocator.num_free == total_slots
+
+
+def test_stop_terminated_request_frees_paged_blocks(tiny_model, device, mock_tokenizer):
+    """Regression (RIL ISS-044): on the paged path a stop-terminated request
+    must also return its KV blocks to the paged allocator."""
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+        use_paged_attention=True,
+        max_blocks=64,
+        block_size=8,
+        enable_prefix_cache=False,
+    )
+
+    from llm.serving.batch_engine import _StepInputs, _StepResult
+
+    def _emit_token_3(inputs: _StepInputs) -> _StepResult:
+        return _StepResult(inputs=inputs, next_token_ids=[3] * len(inputs.running_sequences))
+
+    with patch.object(engine, "_forward_and_sample", side_effect=_emit_token_3):
+        req = GenerationRequest(prompt="abcd", max_new_tokens=5, stop="3")
+        req.request_id = "req-stop-paged"
+        engine.add_request(req)
+
+        result = engine.generate_request(req)
+
+    assert isinstance(result, str)
+    assert engine.slot_allocator.get_slot("req-stop-paged") == -1
+    # The paged sequence's blocks must have been returned to the allocator.
+    assert engine.paged_kv_cache.block_manager.sequences == {}
+    assert engine.paged_kv_cache.block_manager.num_free_blocks == engine.paged_kv_cache.num_blocks
+
+
 def test_forward_applies_frequency_penalty(tiny_model, device, mock_tokenizer):
     """``_forward_and_sample`` applies ``frequency_penalty`` from the Sequence."""
     tiny_model.eval()
