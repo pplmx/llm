@@ -355,6 +355,57 @@ class TestPPOTrainer:
         assert metrics["value_loss"] > 0.0
         assert torch.isfinite(torch.tensor(metrics["value_loss"]))
 
+    def test_target_kl_stops_all_ppo_epochs(self, tiny_setup):
+        """Regression (RIL ISS-052): ``target_kl`` early stopping must halt
+        the whole epoch loop, not just the current mini-batch loop.
+
+        The old ``break`` sat inside the inner ``for batch in get_batches``
+        loop, so after epoch 0 diverged the outer ``for _epoch in
+        range(ppo_epochs)`` continued re-applying PPO updates to the SAME
+        rollout — defeating the KL-blowup safeguard entirely. With
+        ``target_kl`` exceeded on the first batch, ``ppo_step`` must be
+        called exactly once (one epoch, one batch), not ``ppo_epochs`` times.
+        """
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        config.ppo_epochs = 4
+        config.mini_batch_size = 2  # 2 prompts -> one batch per epoch
+        config.target_kl = 0.0  # approx_kl will always exceed this
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        # Stub ppo_step to always exceed the KL target so the early-stop
+        # fires on the very first batch, and count how many times it runs.
+        calls = {"n": 0}
+
+        def _divergent_ppo_step(_batch):
+            calls["n"] += 1
+            return {
+                "loss": 0.5,
+                "policy_loss": 0.5,
+                "value_loss": 0.0,
+                "kl": 1.0,
+                "kl_loss": 0.1,
+                "entropy": 0.0,
+                "approx_kl": 1.0,
+                "ratio_mean": 1.5,
+            }
+
+        trainer.ppo_step = _divergent_ppo_step  # type: ignore[method-assign]
+
+        trainer.train_step(["hello", "hi"])
+
+        assert calls["n"] == 1, (
+            f"target_kl early stop must break out of ALL ppo_epochs; ppo_step ran {calls['n']} times (expected 1)"
+        )
+
     def test_ppo_step_padding_not_counted_as_prompt_tokens(self, tiny_setup):
         """Regression (RIL ISS-043): trailing padding in a padded mini-batch
         must not be counted as prompt tokens.

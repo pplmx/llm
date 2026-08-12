@@ -505,7 +505,15 @@ class PPOTrainer:
 
         # 5. PPO epochs
         all_metrics = []
+        # ``target_kl`` early stopping must halt the WHOLE epoch loop, not
+        # just the current mini-batch pass. The old inner-only ``break`` let
+        # the outer ``for _epoch`` re-apply PPO updates to the SAME rollout
+        # after epoch 0 diverged, defeating the KL-blowup safeguard
+        # entirely (RIL ISS-052).
+        kl_breached = False
         for _epoch in range(self.config.ppo_epochs):
+            if kl_breached:
+                break
             for batch in self.buffer.get_batches(
                 mini_batch_size=self.config.mini_batch_size,
                 device=self.device,
@@ -516,6 +524,7 @@ class PPOTrainer:
                 # Early stopping based on KL
                 if self.config.target_kl is not None and metrics["approx_kl"] > self.config.target_kl:
                     logger.info(f"Early stopping: KL {metrics['approx_kl']:.4f} > target {self.config.target_kl}")
+                    kl_breached = True
                     break
 
         self.global_step += 1
