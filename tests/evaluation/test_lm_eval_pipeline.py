@@ -491,6 +491,25 @@ def test_lm_eval_lm_generate_until_stops_on_until_token():
     assert len(out[0]) <= 2
 
 
+def test_lm_eval_lm_generate_until_stops_on_string_until():
+    """Regression (RIL ISS-049): lm_eval passes ``until`` as a list of
+    *strings* for essentially all generation tasks, so ``generate_until``
+    must stop when the *decoded* generated text ends with a string stop —
+    not silently generate the full ``max_gen_toks`` (which then includes
+    the delimiter and pollutes downstream exact_match/acc metrics)."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
+    # _FakeTokenizer.decode([1, 1]) == "\x01\x01" == the stop string.
+    requests = [
+        _FakeRequest(("ctx", {"until": ["\x01\x01"], "max_gen_toks": 5})),
+    ]
+    out = lm.generate_until(requests)
+    assert len(out) == 1
+    # Model emits 1 every step; after two tokens the decoded text ends with
+    # the stop string — must stop at ≤2 tokens, not the full 5.
+    assert len(out[0]) <= 2
+
+
 def test_lm_eval_lm_matches_any_suffix_static_helper():
     """Static helper should recognise list-based stop sequences."""
     assert LlamaLmEvalLM._matches_any_suffix([1, 2, 3], [[2, 3]]) is True

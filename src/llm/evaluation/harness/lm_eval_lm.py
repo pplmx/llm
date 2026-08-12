@@ -226,12 +226,32 @@ class LlamaLmEvalLM:
                 logits = model_out[0] if isinstance(model_out, tuple) else model_out
                 next_token = int(logits[0, -1, :].argmax(dim=-1).item())
                 generated.append(next_token)
-                # Stop if the suffix matches any ``until`` token sequence.
-                if self._matches_any_suffix(generated, until):
+                # Stop if the suffix matches any ``until`` token sequence
+                # (id lists) or the decoded text ends with any string stop.
+                if self._matches_any_stop(generated, until):
                     break
 
             results.append(self.tokenizer.decode(generated))
         return results
+
+    def _matches_any_stop(self, generated: list[int], until: list) -> bool:
+        """Return True when ``generated`` should stop w.r.t. ``until``.
+
+        Handles both stop forms lm_eval emits:
+
+        - token-id sequences (``list[int]``) matched as a suffix of
+          ``generated`` by :meth:`_matches_any_suffix`;
+        - **strings** — the standard lm_eval form for every generation
+          task (``truthfulqa``, ``humaneval``, ...). String stops are
+          matched against the *decoded* generated text (a tokenizer is
+          available here), so early stopping actually fires instead of
+          generating the full ``max_gen_toks`` with the delimiter
+          embedded (RIL ISS-049).
+        """
+        if self._matches_any_suffix(generated, until):
+            return True
+        decoded = self.tokenizer.decode(generated)
+        return any(isinstance(stop, str) and stop and decoded.endswith(stop) for stop in until)
 
     # --- helpers ------------------------------------------------------------
 
@@ -244,21 +264,20 @@ class LlamaLmEvalLM:
 
     @staticmethod
     def _matches_any_suffix(generated: list[int], until: list) -> bool:
-        """Return True if any of the ``until`` token sequences is a suffix of ``generated``.
+        """Return True if any ``until`` *id-sequence* is a suffix of ``generated``.
 
-        ``until`` entries are expected to be token-id sequences
-        (``list[int]``). String entries are skipped silently because
-        we can't match by text without a tokenizer round-trip here
-        — callers that want string-based stopping should tokenize
-        them into id sequences first.
+        Only token-id-sequence entries (``list[int]``) are matched here.
+        String entries are handled by :meth:`_matches_any_stop` (which has
+        the tokenizer for a text round-trip); this static helper can't
+        match by text so it skips strings (they are not failures — a later
+        branch handles them).
         """
         if not until:
             return False
         for stop in until:
             if isinstance(stop, str):
-                # lm_eval sometimes passes strings; we don't decode here,
-                # so we can't match by text. Skip string stops rather
-                # than failing the whole generate call.
+                # String stops are matched against decoded text in
+                # ``_matches_any_stop`` (we have the tokenizer there).
                 continue
             stop_ids = list(stop) if not isinstance(stop, list) else stop
             if not stop_ids:
