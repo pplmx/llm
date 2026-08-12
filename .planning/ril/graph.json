@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 28,
+  "round": 29,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T00:15:39+00:00",
+  "updated_at": "2026-08-12T02:59:58+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 26,
+      "touched_round": 28,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -2139,11 +2139,11 @@
     "ISS-038": {
       "id": "ISS-038",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T15:15:18+00:00",
-      "updated_at": "2026-08-11T15:15:18+00:00",
-      "touched_round": 26,
+      "updated_at": "2026-08-12T02:59:43+00:00",
+      "touched_round": 28,
       "title": "Streaming dedup _seen never resets -> corpus cycling raises 'streaming corpus is empty'; DPO ref_model never broadcast",
       "details": "data_source=dedup_local + epochs>=2 drops every line on re-iteration -> RuntimeError. DPO ref_model copied pre-broadcast, never synced -> divergent per-rank reference. TextDataset LM labels include pad = EOS positions (no ignore_index). Records from round-26 data agent.",
       "severity": "high"
@@ -2359,6 +2359,117 @@
       "title": "Round-27: fix LM pad-label masking (ISS-040)",
       "rationale": "Worked the round-26 deep-dive backlog. ISS-040: TextDataset labels cloned input_ids incl. padding, and lm_task used a bare CrossEntropyLoss — the model was trained/evaled on pad tokens (= EOS for HF tokenizers), rewarding EOS at every pad slot and inflating val PPL. Fixed by masking the padding span to -100 in TextDataset (with ignore_index=-100 in build_criterion as a defensive fallback for non-masked paths), covering both map and streaming-validation loaders. Remaining active: ISS-038 (dedup _seen reset on corpus cycling + DPO ref_model broadcast) — both need multi-GPU / multi-epoch repros and a focused round.",
       "alternatives_rejected": "tackle ISS-038 now (multi-GPU DPO broadcast and dedup-reset semantics need rank-aware repros + careful durability design; exceeds what a context-constrained round should risk)"
+    },
+    "TASK-032": {
+      "id": "TASK-032",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-12T02:26:24+00:00",
+      "updated_at": "2026-08-12T02:59:57+00:00",
+      "touched_round": 28,
+      "title": "Reset DedupTextSource seen-set per iteration pass so streaming corpus cycling re-iterates instead of dropping every record",
+      "category": "correctness",
+      "severity": 0.7,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-033": {
+      "id": "TASK-033",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-12T02:26:36+00:00",
+      "updated_at": "2026-08-12T02:59:57+00:00",
+      "touched_round": 28,
+      "title": "Broadcast DPO ref_model from rank 0 so multi-GPU DPO uses an identical frozen reference",
+      "category": "correctness",
+      "severity": 0.7,
+      "confidence": 1.0,
+      "effort": 0.15
+    },
+    "ISS-041": {
+      "id": "ISS-041",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T02:41:48+00:00",
+      "updated_at": "2026-08-12T02:59:43+00:00",
+      "touched_round": 28,
+      "title": "Evaluation LM perplexity crashes on -100 labels (TextDataset pads labels with -100 but PerplexityMetric ignores pad_token_id, not -100)",
+      "severity": "high",
+      "details": "Round-27 ISS-040 fix sets TextDataset label pad slots to -100; eval LMTask passes those labels to PerplexityMetric(ignore_index=pad_token_id) -> cross_entropy raises IndexError: Target -100 is out of bounds. Regression from commit 6b55d90."
+    },
+    "TASK-034": {
+      "id": "TASK-034",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-12T02:41:48+00:00",
+      "updated_at": "2026-08-12T02:59:57+00:00",
+      "touched_round": 28,
+      "title": "Fix evaluation perplexity metric to ignore -100 mask (ISS-041)",
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "effort": 0.15
+    },
+    "CHG-035": {
+      "id": "CHG-035",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T02:59:23+00:00",
+      "updated_at": "2026-08-12T02:59:23+00:00",
+      "touched_round": 28,
+      "title": "fix(data): scope dedup seen-set per iteration pass (ISS-038)",
+      "commit": "d961945"
+    },
+    "CHG-036": {
+      "id": "CHG-036",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T02:59:23+00:00",
+      "updated_at": "2026-08-12T02:59:23+00:00",
+      "touched_round": 28,
+      "title": "fix(training): broadcast DPO ref_model from rank 0 (ISS-038)",
+      "commit": "be4856c"
+    },
+    "CHG-037": {
+      "id": "CHG-037",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T02:59:23+00:00",
+      "updated_at": "2026-08-12T02:59:23+00:00",
+      "touched_round": 28,
+      "title": "fix(evaluation): ignore -100 mask in perplexity metric (ISS-041)",
+      "commit": "3622b68"
+    },
+    "EV-056": {
+      "id": "EV-056",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T02:59:57+00:00",
+      "updated_at": "2026-08-12T02:59:57+00:00",
+      "touched_round": 28,
+      "title": "Fast gate green after fixes (exit 0): 152 data + 584 training/data/compat + 105 evaluation + 6 dpo e2e passed; ruff/ty/doctest pass; RED→GREEN confirmed on all 3 fixes",
+      "source": "pytest/ruff/ty local run 2026-08-12",
+      "confidence": 1.0
+    },
+    "DEC-016": {
+      "id": "DEC-016",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T02:59:57+00:00",
+      "updated_at": "2026-08-12T02:59:57+00:00",
+      "touched_round": 28,
+      "title": "Round-28: close ISS-038 (per-pass dedup + DPO ref broadcast) and ISS-041 (perplexity -100) — deep-dive regression",
+      "rationale": "Three correctness fixes: (1) DedupTextSource seen-set scoped per iteration pass so streaming corpus cycling re-iterates; (2) engine broadcasts task ref_model from rank 0 so multi-GPU DPO reference is identical; (3) PerplexityMetric ignores -100 matching TextDataset label masks (regression from ISS-040). All RED→GREEN verified, full gates green.",
+      "alternatives_rejected": "Keeping dedup lifetime-scoped (drops whole corpus on cycle); broadcasting ref inside DPO task build (couples task layer to dist, diverges from engine-sync invariant); leaving eval ignore_index=pad_token_id (crashes on short corpora)"
     }
   },
   "edges": [
@@ -3345,6 +3456,66 @@
       "to": "TASK-031",
       "type": "implements",
       "created_at": "2026-08-12T00:13:01+00:00"
+    },
+    {
+      "from": "TASK-032",
+      "to": "ISS-038",
+      "type": "addresses",
+      "created_at": "2026-08-12T02:26:36+00:00"
+    },
+    {
+      "from": "TASK-033",
+      "to": "ISS-038",
+      "type": "addresses",
+      "created_at": "2026-08-12T02:26:36+00:00"
+    },
+    {
+      "from": "TASK-034",
+      "to": "ISS-041",
+      "type": "addresses",
+      "created_at": "2026-08-12T02:41:48+00:00"
+    },
+    {
+      "from": "ISS-041",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-12T02:41:48+00:00"
+    },
+    {
+      "from": "CHG-035",
+      "to": "TASK-032",
+      "type": "implements",
+      "created_at": "2026-08-12T02:59:23+00:00"
+    },
+    {
+      "from": "CHG-035",
+      "to": "ISS-038",
+      "type": "resolves",
+      "created_at": "2026-08-12T02:59:23+00:00"
+    },
+    {
+      "from": "CHG-036",
+      "to": "TASK-033",
+      "type": "implements",
+      "created_at": "2026-08-12T02:59:23+00:00"
+    },
+    {
+      "from": "CHG-036",
+      "to": "ISS-038",
+      "type": "resolves",
+      "created_at": "2026-08-12T02:59:23+00:00"
+    },
+    {
+      "from": "CHG-037",
+      "to": "TASK-034",
+      "type": "implements",
+      "created_at": "2026-08-12T02:59:23+00:00"
+    },
+    {
+      "from": "CHG-037",
+      "to": "ISS-041",
+      "type": "resolves",
+      "created_at": "2026-08-12T02:59:23+00:00"
     }
   ]
 }
