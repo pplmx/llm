@@ -252,15 +252,27 @@ class PPOTrainer:
                     logits = self.policy(input_ids)  # [1, seq_len, vocab_size]
                     next_token_logits = logits[0, -1, :]  # [vocab_size]
 
-                    # Apply temperature
+                    # The stored ``old_log_probs`` must be log-probs of the
+                    # RAW policy — ``ppo_step`` recomputes the current
+                    # ``new_log_probs`` from the raw ``log_softmax`` of the
+                    # (unscaled) shift logits, so the importance ratio
+                    # ``exp(new - old)`` is only a valid IS ratio if both
+                    # sides use the raw distribution. Temperature is applied
+                    # ONLY to the sampling distribution (softmax over
+                    # ``logits / T``), never to the recorded log-prob — with
+                    # ``T != 1`` the old code logged ``log_softmax(logits/T)``
+                    # and silently mixed two differently-scaled policies in
+                    # the ratio (RIL ISS-053).
                     if self.config.temperature != 1.0:
-                        next_token_logits = next_token_logits / self.config.temperature
+                        sampling_logits = next_token_logits / self.config.temperature
+                    else:
+                        sampling_logits = next_token_logits
 
-                    # Sample next token
-                    probs = functional.softmax(next_token_logits, dim=-1)
+                    # Sample next token from the (temperature-scaled) policy.
+                    probs = functional.softmax(sampling_logits, dim=-1)
                     next_token = torch.multinomial(probs, num_samples=1)
 
-                    # Get log probability
+                    # Get log probability under the RAW (unscaled) policy.
                     log_prob = functional.log_softmax(next_token_logits, dim=-1)[next_token]
 
                     response_ids.append(next_token.item())

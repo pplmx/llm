@@ -244,6 +244,73 @@ class TestPPOTrainer:
         assert values.shape == (3,)
         assert torch.isfinite(values).all()
 
+    def test_generate_responses_old_log_probs_are_raw_policy(self, tiny_setup):
+        """Regression (RIL ISS-053): ``old_log_probs`` must be log-probs of
+        the RAW policy (matching what ``ppo_step`` recomputes), not the
+        temperature-scaled distribution used for sampling.
+
+        ``generate_responses`` logged ``log_softmax(logits / temperature)``
+        while ``ppo_step`` recomputes ``log_softmax(raw shift_logits)``. With
+        ``temperature != 1.0`` the importance ratio ``exp(new - old)`` was
+        then an invalid IS ratio between two differently-scaled policies.
+        Temperature affects only sampling; the stored log-prob must be the
+        raw-policy value."""
+        from unittest.mock import patch
+
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        config.temperature = 2.0
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        prompts = ["Hello"]
+
+        # Deterministic greedy sampling: pick argmax each step. Argmax of a
+        # softmax is invariant to positive temperature scaling, so the
+        # sampled tokens are identical under any temperature — whatever the
+        # log-prob of those tokens is, it must be the RAW policy's value.
+        # ``torch.multinomial(probs, 1)`` -> argmax(probs).
+        with patch(
+            "torch.multinomial", side_effect=lambda probs, num_samples=1, **kw: probs.argmax(dim=-1, keepdim=True)
+        ):
+            prompt_ids, response_ids, log_probs = trainer.generate_responses(prompts)
+
+        # Sanity: greedy sampling still ran some steps.
+        assert len(response_ids) == 1
+        assert len(log_probs) == 1
+
+        # Recompute the raw-policy log-probs of the generated response and
+        # compare. ppo_step uses log_softmax(raw logits), so anything else
+        # (e.g. a temperature-scaled value) would corrupt the ratio.
+        # ``generate_responses`` runs the policy in eval() mode; replay in
+        # the same mode so dropout does not perturb the logits.
+        policy.eval()
+        sample_logits = [None] * len(log_probs[0])
+        generated = list(prompt_ids[0].tolist())
+        for i in range(len(log_probs[0])):
+            with torch.no_grad():
+                out = policy(torch.tensor([generated], device=str(DEFAULT_DEVICE)))
+            logits = out[0] if isinstance(out, tuple) else out
+            next_logits = logits[0, -1, :]
+            expected_raw = torch.log_softmax(next_logits, dim=-1)
+            token = response_ids[0][i].item()
+            sample_logits[i] = expected_raw[token].item()
+            generated.append(token)
+
+        stored = log_probs[0].detach().cpu()
+        expected = torch.as_tensor(sample_logits, device=stored.device)
+        assert torch.allclose(stored, expected, atol=1e-5), (
+            f"old_log_probs must be RAW-policy log-probs (temperature only "
+            f"affects sampling), got {stored.tolist()} expected {expected.tolist()}"
+        )
+
     def test_generate_responses(self, tiny_setup):
         """Test response generation."""
         from llm.training.rlhf.ppo_trainer import PPOTrainer
