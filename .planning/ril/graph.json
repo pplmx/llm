@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 33,
+  "round": 34,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T05:11:03+00:00",
+  "updated_at": "2026-08-12T07:13:10+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 30,
+      "touched_round": 34,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 21,
+      "touched_round": 34,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -2555,6 +2555,300 @@
       "title": "Round-33 deep-dive: reviewed generation backends (eager/batch sampling, stop handling), quantize CLI, serving loader + metrics — no new code defect above threshold; HYP-017 (dedup lifecycle) marked resolved now that ISS-038 is closed and EV-052 validates it",
       "source": "code review + pytest/ruff/ty local 2026-08-12",
       "confidence": 1.0
+    },
+    "ISS-043": {
+      "id": "ISS-043",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T06:04:54+00:00",
+      "updated_at": "2026-08-12T06:29:17+00:00",
+      "touched_round": 34,
+      "severity": "high",
+      "title": "PPO critic/policy alignment: trailing padding counted as prompt tokens (response_mask=(1-...))",
+      "details": "rollout_buffer._collate_batch sets response_mask[prompt_len:total_len]=1; trailing padding stays 0. ppo_trainer.compute_prompt_len uses (1 - response_mask[i]).sum() so for any non-longest sample prompt_len is inflated by pad count -> ratio slice token_log_probs[i, prompt_len-1:...] reads padding positions and _extract_response_values reads critic values from padding. Silent wrong gradients in every padded mini-batch."
+    },
+    "ISS-044": {
+      "id": "ISS-044",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T06:05:05+00:00",
+      "updated_at": "2026-08-12T06:54:31+00:00",
+      "touched_round": 34,
+      "severity": "high",
+      "title": "Serving stop-sequence termination leaks KV slot permanently",
+      "details": "batch_engine._emit_tokens sets sequence.status=FINISHED on stop match but returns without slot_allocator.free / prefix_cache.invalidate / paged_kv_cache.free. stream_request returns immediately; scheduler filters FINISHED out of running. Only _lock_step_post and unload_model ever free slots. After max_batch_size stop-terminated requests every allocate() raises RuntimeError -> /generate 503s."
+    },
+    "ISS-045": {
+      "id": "ISS-045",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T06:05:05+00:00",
+      "updated_at": "2026-08-12T06:14:40+00:00",
+      "touched_round": 34,
+      "severity": "high",
+      "title": "Evaluation LM harness crashes on empty eval corpus (torch.cat of empty list)",
+      "details": "LMTask.predict accumulates per-batch logits and returns torch.cat(results, dim=0). Empty eval file -> prepare_data returns ([],[]) -> torch.cat([]) raises ValueError. Training repr crash via EvaluationCallback.on_train_step_end on an empty eval file. Metric layer already guards batch_size==0 (returns inf); predict must return an empty tensor."
+    },
+    "TASK-036": {
+      "id": "TASK-036",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-12T06:05:30+00:00",
+      "updated_at": "2026-08-12T06:29:37+00:00",
+      "touched_round": 34,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Compute true prompt_len from sequence lengths, not (1 - response_mask) inversion (ISS-043)",
+      "details": "In rollout_buffer._collate_batch also record per-sample prompt_len (or in ppo_trainer derive prompt_len = real_total_len - resp_len where real_total_len comes from attention_mask.sum()). Fix _extract_response_values and ppo_step ratio slicing. Add regression test with unequal response lengths.",
+      "lock_owner": "loop-34",
+      "lock_until": "2026-08-12T06:41:52+00:00"
+    },
+    "TASK-037": {
+      "id": "TASK-037",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-12T06:05:30+00:00",
+      "updated_at": "2026-08-12T06:54:41+00:00",
+      "touched_round": 34,
+      "category": "stability",
+      "severity": 0.85,
+      "title": "Free KV slot + invalidate prefix cache when a stop sequence terminates a request (ISS-044)",
+      "details": "In batch_engine.stream_request on stop_hit, free slot_allocator, invalidate prefix_cache, free paged blocks before returning. Add regression test asserting slot returns to free pool after stop-terminated generation.",
+      "lock_owner": "loop-34",
+      "lock_until": "2026-08-12T06:41:52+00:00"
+    },
+    "TASK-038": {
+      "id": "TASK-038",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-12T06:05:30+00:00",
+      "updated_at": "2026-08-12T06:14:40+00:00",
+      "touched_round": 34,
+      "category": "correctness",
+      "severity": 0.8,
+      "title": "Make LMTask.predict return empty tensor instead of crashing on empty eval set (ISS-045)",
+      "details": "Guard torch.cat(results) with empty-results return (shaped [0,...]). Add regression test: empty eval corpus -> run() returns num_samples=0 and perplexity metric inf, no crash.",
+      "lock_owner": "loop-34",
+      "lock_until": "2026-08-12T06:41:52+00:00"
+    },
+    "TASK-039": {
+      "id": "TASK-039",
+      "type": "task",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-12T06:07:16+00:00",
+      "updated_at": "2026-08-12T06:10:22+00:00",
+      "touched_round": 34,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "DUP: superseded by TASK-036",
+      "details": "In rollout_buffer._collate_batch also record per-sample prompt_len (or in ppo_trainer derive prompt_len = real_total_len - resp_len where real_total_len comes from attention_mask.sum()). Fix _extract_response_values and ppo_step ratio slicing. Add regression test with unequal response lengths."
+    },
+    "TASK-040": {
+      "id": "TASK-040",
+      "type": "task",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-12T06:07:16+00:00",
+      "updated_at": "2026-08-12T06:10:22+00:00",
+      "touched_round": 34,
+      "category": "stability",
+      "severity": 0.85,
+      "title": "DUP: superseded by TASK-037",
+      "details": "In batch_engine.stream_request on stop_hit, free slot_allocator, invalidate prefix_cache, free paged blocks before returning. Add regression test asserting slot returns to free pool after stop-terminated generation."
+    },
+    "TASK-041": {
+      "id": "TASK-041",
+      "type": "task",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-12T06:07:16+00:00",
+      "updated_at": "2026-08-12T06:10:22+00:00",
+      "touched_round": 34,
+      "category": "correctness",
+      "severity": 0.8,
+      "title": "DUP: superseded by TASK-038",
+      "details": "Guard torch.cat(results) with empty-results return (shaped [0,...]). Add regression test: empty eval corpus -> run() returns num_samples=0 and perplexity metric inf, no crash."
+    },
+    "CHG-039": {
+      "id": "CHG-039",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T06:14:40+00:00",
+      "updated_at": "2026-08-12T06:14:40+00:00",
+      "touched_round": 34,
+      "commit": "219fa82",
+      "title": "fix(evaluation): empty eval corpus empty predictions (ISS-045/TASK-038)"
+    },
+    "EV-061": {
+      "id": "EV-061",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T06:14:40+00:00",
+      "updated_at": "2026-08-12T06:14:40+00:00",
+      "touched_round": 34,
+      "source": "tests/evaluation/test_lm_task.py::test_evaluation_runner_run_empty_corpus_no_crash",
+      "title": "Confirmed: torch.cat([]) crashes on empty eval corpus; guarded predict + evaluate return empty tensors, metric reports inf",
+      "confidence": 1.0
+    },
+    "HYP-018": {
+      "id": "HYP-018",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T06:15:03+00:00",
+      "updated_at": "2026-08-12T06:15:56+00:00",
+      "touched_round": 34,
+      "confidence": 0.95,
+      "title": "Empty eval corpus crashes evaluation because LMTask.predict unconditionally torch.cat(results)"
+    },
+    "CHG-040": {
+      "id": "CHG-040",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T06:28:46+00:00",
+      "updated_at": "2026-08-12T06:28:46+00:00",
+      "touched_round": 34,
+      "commit": "17849f7",
+      "title": "fix(rlhf): PPO prompt_len from real tokens (ISS-043/TASK-036)"
+    },
+    "EV-062": {
+      "id": "EV-062",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T06:28:46+00:00",
+      "updated_at": "2026-08-12T06:28:46+00:00",
+      "touched_round": 34,
+      "source": "tests/training/rlhf/test_ppo.py::test_ppo_step_padding_not_counted_as_prompt_tokens",
+      "title": "Confirmed RED: padded sample read values [101,102] from padding; fixed reads [100,101] real positions",
+      "confidence": 1.0
+    },
+    "HYP-019": {
+      "id": "HYP-019",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T06:28:46+00:00",
+      "updated_at": "2026-08-12T06:29:17+00:00",
+      "touched_round": 34,
+      "confidence": 0.95,
+      "title": "PPO prompt_len=(1-response_mask).sum() counts trailing padding as prompt tokens in padded mini-batches"
+    },
+    "CHG-041": {
+      "id": "CHG-041",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T06:53:47+00:00",
+      "updated_at": "2026-08-12T06:53:47+00:00",
+      "touched_round": 34,
+      "commit": "6e41db8",
+      "title": "fix(serving): free KV slot on stop termination (ISS-044/TASK-037)"
+    },
+    "EV-063": {
+      "id": "EV-063",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T06:53:47+00:00",
+      "updated_at": "2026-08-12T06:53:47+00:00",
+      "touched_round": 34,
+      "source": "tests/serving/test_engine.py::test_stop_terminated_request_frees_kv_slot",
+      "title": "Confirmed RED: slot stayed allocated after stop; fixed frees dense+prefix+paged",
+      "confidence": 1.0
+    },
+    "HYP-020": {
+      "id": "HYP-020",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T06:53:47+00:00",
+      "updated_at": "2026-08-12T06:54:31+00:00",
+      "touched_round": 34,
+      "confidence": 0.95,
+      "title": "Stop-sequence termination leaks KV slot because _emit_tokens finishes sequence outside _lock_step_post free path"
+    },
+    "ISS-046": {
+      "id": "ISS-046",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T06:56:25+00:00",
+      "updated_at": "2026-08-12T06:56:25+00:00",
+      "touched_round": 34,
+      "severity": "medium",
+      "title": "Tests hardcode cuda:0/cuda:1 instead of DEFAULT_DEVICE, flaky on shared-GPU hosts",
+      "details": "6 test nodes hardcode torch.device('cuda') / 'cuda:0' / 'cuda:1' / device='cuda' instead of the repo tests.support.devices.DEFAULT_DEVICE / device fixture convention (which picks the fattest GPU by free VRAM). On a shared GPU host where cuda:0/1 are occupied by another tenant (100% util, ~1.5GiB free) these flake mid-suite: test_transformer_block[cuda:1], test_gradient_checkpointing::test_memory_reduction, test_gptq_end_to_end, test_gpu_device_placement[gptq|awq|smoothquant]. Not a code regression - passes in isolation - but violates the repo convention and makes the suite machine-dependent."
+    },
+    "TASK-042": {
+      "id": "TASK-042",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T06:56:58+00:00",
+      "updated_at": "2026-08-12T06:56:58+00:00",
+      "touched_round": 34,
+      "category": "test-quality",
+      "severity": 0.6,
+      "title": "Route hardcoded-cuda tests through DEFAULT_DEVICE/device fixture so they pick the fattest GPU (ISS-046)",
+      "details": "Modify the 6 test nodes to use tests.support.devices.DEFAULT_DEVICE / the device fixture instead of torch.device('cuda')/cuda:0/cuda:1/device='cuda'. Tests: test_transformer_block (DEVICES uses ALL_DEVICES which includes occupied low-VRAM GPUs), test_gradient_checkpointing::test_memory_reduction, test_gptq_end_to_end, test_gpu_device_placement. Keeps the memory-reduction semantics (compare on one GPU) but on a GPU with headroom."
+    },
+    "ISS-047": {
+      "id": "ISS-047",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:02:47+00:00",
+      "updated_at": "2026-08-12T07:02:47+00:00",
+      "touched_round": 34,
+      "severity": "high",
+      "title": "Prefix-tuning K/V reshape scrambles head/position axes when num_kv_heads>1 and prefix_len>1",
+      "details": "prefix_tuning._expand_to_attn_shape does pk.view(1, num_kv_heads, prefix_len, head_dim) on a [prefix_len, kv_dim] tensor where kv_dim=num_kv_heads*head_dim. Row-major flat layout is [pos][head][dim], but the view interprets [head][pos][dim], so heads read K/V from the wrong prefix positions whenever prefix_len>1 and num_kv_heads>1 (default GQA config). Correct layout needs reshape(prefix_len,num_kv_heads,head_dim).permute(1,0,2). Verified: head0 pos1 returns pk[0,2] (=head1 pos0) instead of pk[1,0]. Train/fold self-consistent (no crash) but semantically wrong vs every reference prefix-tuning implementation; loading external prefix weights would be silently wrong."
+    },
+    "HYP-021": {
+      "id": "HYP-021",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:03:16+00:00",
+      "updated_at": "2026-08-12T07:03:16+00:00",
+      "touched_round": 34,
+      "confidence": 0.9,
+      "title": "PrefixK/V .view(1,num_kv_heads,prefix_len,head_dim) needs a permute; docstring claims [B,heads,prefix,head_dim] but flat reshape swaps axes"
+    },
+    "EV-064": {
+      "id": "EV-064",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:03:16+00:00",
+      "updated_at": "2026-08-12T07:03:16+00:00",
+      "touched_round": 34,
+      "source": "round-34 prefix_layout verification: head0 pos1 got 2.0 (head1 pos0) instead of 4.0 (pk[1,0])",
+      "title": "Confirmed: bare view swaps head/position axes; reshape+permute gives correct layout",
+      "confidence": 1.0
+    },
+    "ISS-048": {
+      "id": "ISS-048",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:12:16+00:00",
+      "updated_at": "2026-08-12T07:12:16+00:00",
+      "touched_round": 34,
+      "severity": "high",
+      "title": "Paged-attention decode rows attend only to key position 0 when mixed with prefill rows",
+      "details": "paged_attention_forward builds its own causal mask from seq_lens and only adds the prefill causal overlay (col_idx > row_idx) when _query_len > 1. The engine left-pads decode rows so their single real query sits at local index 0, but _query_len is the batch max (set >1 by any prefill row), so the overlay masks col_idx > 0 for decode rows — they can only attend to key position 0. run_attn_mask from the engine never reaches the kernel (kernel rebuilds its own). Affects any continuous-batching mix of prefill+decode with use_paged_attention=True. Verified by tracing _lock_step_pre + _forward_and_sample + paged_attention_forward."
     }
   },
   "edges": [
@@ -3625,6 +3919,144 @@
       "to": "ISS-042",
       "type": "resolves",
       "created_at": "2026-08-12T03:28:34+00:00"
+    },
+    {
+      "from": "TASK-036",
+      "to": "ISS-043",
+      "type": "addresses",
+      "created_at": "2026-08-12T06:10:42+00:00"
+    },
+    {
+      "from": "TASK-037",
+      "to": "ISS-044",
+      "type": "addresses",
+      "created_at": "2026-08-12T06:10:42+00:00"
+    },
+    {
+      "from": "TASK-038",
+      "to": "ISS-045",
+      "type": "addresses",
+      "created_at": "2026-08-12T06:10:42+00:00"
+    },
+    {
+      "from": "ISS-043",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T06:10:42+00:00"
+    },
+    {
+      "from": "ISS-044",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-12T06:10:42+00:00"
+    },
+    {
+      "from": "ISS-045",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T06:10:42+00:00"
+    },
+    {
+      "from": "CHG-039",
+      "to": "ISS-045",
+      "type": "resolves",
+      "created_at": "2026-08-12T06:14:51+00:00"
+    },
+    {
+      "from": "CHG-039",
+      "to": "TASK-038",
+      "type": "implements",
+      "created_at": "2026-08-12T06:14:51+00:00"
+    },
+    {
+      "from": "EV-061",
+      "to": "HYP-018",
+      "type": "validates",
+      "created_at": "2026-08-12T06:15:56+00:00"
+    },
+    {
+      "from": "CHG-040",
+      "to": "ISS-043",
+      "type": "resolves",
+      "created_at": "2026-08-12T06:29:17+00:00"
+    },
+    {
+      "from": "CHG-040",
+      "to": "TASK-036",
+      "type": "implements",
+      "created_at": "2026-08-12T06:29:17+00:00"
+    },
+    {
+      "from": "EV-062",
+      "to": "HYP-019",
+      "type": "validates",
+      "created_at": "2026-08-12T06:29:17+00:00"
+    },
+    {
+      "from": "CHG-041",
+      "to": "ISS-044",
+      "type": "resolves",
+      "created_at": "2026-08-12T06:54:30+00:00"
+    },
+    {
+      "from": "CHG-041",
+      "to": "TASK-037",
+      "type": "implements",
+      "created_at": "2026-08-12T06:54:30+00:00"
+    },
+    {
+      "from": "EV-063",
+      "to": "HYP-020",
+      "type": "validates",
+      "created_at": "2026-08-12T06:54:31+00:00"
+    },
+    {
+      "from": "TASK-042",
+      "to": "ISS-046",
+      "type": "addresses",
+      "created_at": "2026-08-12T06:57:19+00:00"
+    },
+    {
+      "from": "ISS-046",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-12T06:57:19+00:00"
+    },
+    {
+      "from": "ISS-047",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T07:04:10+00:00"
+    },
+    {
+      "from": "EV-064",
+      "to": "HYP-021",
+      "type": "validates",
+      "created_at": "2026-08-12T07:04:10+00:00"
+    },
+    {
+      "from": "ISS-048",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-12T07:12:21+00:00"
+    },
+    {
+      "from": "TASK-039",
+      "to": "ISS-043",
+      "type": "addresses",
+      "created_at": "2026-08-12T07:13:10+00:00"
+    },
+    {
+      "from": "TASK-040",
+      "to": "ISS-044",
+      "type": "addresses",
+      "created_at": "2026-08-12T07:13:10+00:00"
+    },
+    {
+      "from": "TASK-041",
+      "to": "ISS-045",
+      "type": "addresses",
+      "created_at": "2026-08-12T07:13:10+00:00"
     }
   ]
 }
