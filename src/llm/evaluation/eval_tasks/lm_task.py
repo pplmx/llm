@@ -17,9 +17,13 @@ class LMTask(BaseTask):
         self.batch_size = batch_size
         self.tokenizer = TokenizerFactory.from_dataset_text(dataset_path)
         # Mask padded positions so short trailing sequences are scored
-        # only over real tokens. TextDataset pads with the tokenizer's
-        # pad id; None disables masking (no pad id known).
-        self.metrics = [PerplexityMetric(ignore_index=getattr(self.tokenizer, "pad_token_id", None))]
+        # only over real tokens. TextDataset marks padded label slots with
+        # the standard ignore index -100 (never a real token id), so the
+        # metric must ignore -100 — passing the tokenizer's pad_token_id
+        # instead crashes cross_entropy with "Target -100 is out of bounds"
+        # and silently scores pad tokens when the pad id collides (RIL
+        # ISS-041, regression from the ISS-040 label-masking fix).
+        self.metrics = [PerplexityMetric(ignore_index=-100)]
         self.pad_token_id = getattr(self.tokenizer, "pad_token_id", None)
 
         self.val_dataset = TextDataset(

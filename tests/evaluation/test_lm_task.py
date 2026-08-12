@@ -58,6 +58,39 @@ def test_perplexity_metric_accepts_list_references():
     assert result["perplexity"] < 1.5
 
 
+def test_perplexity_metric_ignores_minus_100_textdataset_mask():
+    """Regression (RIL ISS-041): TextDataset marks padded label slots with
+    -100, so the LM eval metric must ignore -100. Using the tokenizer's
+    pad_token_id instead made cross_entropy raise "Target -100 is out of
+    bounds" on any corpus shorter than max_seq_len."""
+    metric = PerplexityMetric(ignore_index=-100)
+    logits = torch.tensor(
+        [
+            [
+                [0.0, 10.0],  # perfect prediction of token 1
+                [0.0, 10.0],  # perfect prediction of token 1
+                [0.0, 0.0],  # padded (label -100) — must be ignored
+            ]
+        ]
+    )
+    labels = torch.tensor([[1, 1, -100]])
+
+    result = metric.compute(logits, labels)
+
+    assert result["perplexity"] < 1.5
+
+
+def test_lm_task_builds_metric_with_minus_100_ignore(tmp_path):
+    """The LM eval task must wire the metric to the label mask (-100), not
+    the tokenizer's pad id, matching how TextDataset builds its labels."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world\n", encoding="utf-8")
+
+    task = LMTask(dataset_path=str(corpus))
+
+    assert task.metrics[0].ignore_index == -100
+
+
 def test_perplexity_metric_ignore_index_skips_pads():
     """``ignore_index`` masks pad positions: garbage logits on pad tokens
     must not affect the score."""
