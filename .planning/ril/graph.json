@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 29,
+  "round": 30,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T02:59:58+00:00",
+  "updated_at": "2026-08-12T03:06:17+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -2470,6 +2470,18 @@
       "title": "Round-28: close ISS-038 (per-pass dedup + DPO ref broadcast) and ISS-041 (perplexity -100) — deep-dive regression",
       "rationale": "Three correctness fixes: (1) DedupTextSource seen-set scoped per iteration pass so streaming corpus cycling re-iterates; (2) engine broadcasts task ref_model from rank 0 so multi-GPU DPO reference is identical; (3) PerplexityMetric ignores -100 matching TextDataset label masks (regression from ISS-040). All RED→GREEN verified, full gates green.",
       "alternatives_rejected": "Keeping dedup lifetime-scoped (drops whole corpus on cycle); broadcasting ref inside DPO task build (couples task layer to dist, diverges from engine-sync invariant); leaving eval ignore_index=pad_token_id (crashes on short corpora)"
+    },
+    "EV-057": {
+      "id": "EV-057",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T03:06:17+00:00",
+      "updated_at": "2026-08-12T03:06:17+00:00",
+      "touched_round": 29,
+      "title": "Round 29-30 verification sweep: entire repo test suite green (fast+heavy+e2e), bandit high clean, ty clean, doctest clean, ruff clean, examples py_compile clean; continuous batching / paged KV / rollout buffer / DPO dataset code review found no new high-score task",
+      "source": "pytest/ruff/ty/bandit/doctest local run 2026-08-12",
+      "confidence": 1.0
     }
   },
   "edges": [
