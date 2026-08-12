@@ -257,14 +257,20 @@ class GPTQQuantizer:
                 if self.config.group_size == -1:
                     scale = row_scales  # [out_f], same for all columns
                 else:
-                    # Per-group scale: cache by group_idx to avoid redundant .abs().max()
+                    # Per-group scale: cache by group_idx to avoid redundant
+                    # .abs().max(). The scale MUST be PER OUTPUT ROW
+                    # (``max(dim=1)``), matching exactly the per-row scales
+                    # stored for dequantization below — a whole-group scalar
+                    # (``.max()`` over all rows) systematically shrank the
+                    # reconstruction of any row whose magnitude was below the
+                    # group max (RIL ISS-057).
                     gs = self.config.group_size
                     group_idx = (i + j) // gs
                     if group_idx != cached_group_idx:
                         group_start = group_idx * gs
                         group_end = group_start + gs
                         w_group = w[:, group_start:group_end]
-                        cached_scale = (w_group.abs().max() / qmax).clamp(min=1e-8)
+                        cached_scale = (w_group.abs().max(dim=1)[0] / qmax).clamp(min=1e-8)  # [out_f]
                         cached_group_idx = group_idx
                     scale = cached_scale
                     if scale is None:

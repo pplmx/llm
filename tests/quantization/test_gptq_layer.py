@@ -378,6 +378,49 @@ def test_gptq_layer_forward_accepts_fp16_bf16_input():
         assert torch.allclose(out, ref, atol=1e-2)
 
 
+def test_quantizer_grouped_scale_matches_per_row_dequant():
+    """Regression (RIL ISS-057): GPTQ per-group quantization must quantize
+    against the SAME per-output-row scale the pack/dequant path stores.
+
+    The dequant scales are per output row (``w_group.abs().max(dim=1)``),
+    but the in-loop scale was a whole-group *scalar* (``w_group.abs().max()``).
+    With heterogeneous rows (some rows' magnitudes far below the group max),
+    ``round(col / scalar)`` produced small integers that were then multiplied
+    by the (smaller) per-row scale at dequant — systematically shrinking the
+    reconstruction far below the channel-quantized fidelity.
+    """
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    torch.manual_seed(0)
+    layer = torch.nn.Linear(32, 16)
+    with torch.no_grad():
+        # Mixed row scales: every 4th row has large magnitude, the rest small.
+        row_scale = torch.tensor([3.0 if i % 4 == 0 else 0.5 for i in range(16)]).unsqueeze(1)
+        layer.weight.copy_(torch.randn(16, 32) * row_scale)
+
+    calib = [torch.randn(1, 32)]
+
+    # Grouped quantization with a real fresh layer:
+    q = GPTQQuantizer(torch.nn.Linear(32, 16), GPTQConfig(bits=8, group_size=16))
+    with torch.no_grad():
+        q.layer.weight.copy_(layer.weight)
+    for b in calib:
+        q.add_batch(b)
+    w_q, scales, _ = q.quantize()
+
+    w = layer.weight
+    # Dequantize using the stored per-row scales (what the packed layer uses).
+    recon = torch.zeros_like(w)
+    gs = 16
+    for g in range(w.shape[1] // gs):
+        recon[:, g * gs : (g + 1) * gs] = w_q[:, g * gs : (g + 1) * gs] * scales[:, g].unsqueeze(1)
+    err = (recon - w).abs().mean().item()
+
+    # Per-row-scaled quantization should reconstruct within ~0.05 mean-abs
+    # (the old whole-group-scalar loop errored ~0.4 on this weight).
+    assert err < 0.05, f"grouped GPTQ reconstruction error {err:.4f} too high (per-row scale mismatch?)"
+
+
 def test_gptq_layer_asymmetric_forward_raises_not_implemented():
     """sym=False raises NotImplementedError on forward — fail-fast contract."""
     from llm.quantization._gptq_layer import GPTQQuantizedLinear
