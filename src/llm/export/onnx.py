@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from llm.export._wrapper import ExportCacheWrapper
+from llm.export._wrapper import ExportCacheWrapper, dummy_token_ids
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +49,9 @@ def export_to_onnx(
     wrapped_model = ExportCacheWrapper(model)
     wrapped_model.eval()
 
-    # Create dummy input
-    batch_size, seq_len = input_shape
-    dummy_input = torch.randint(0, 100, (batch_size, seq_len), device=device)
+    # Create dummy input — bounded by the REAL vocab so small-vocab models
+    # don't crash the embedding with out-of-range ids (RIL ISS-058).
+    dummy_input = dummy_token_ids(model, input_shape, device=device)
 
     # Default dynamic axes for variable batch and sequence length
     if dynamic_axes is None:
@@ -119,9 +119,13 @@ def verify_onnx(
     # Create ONNX Runtime session
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
 
-    # Create test input
-    batch_size, seq_len = input_shape
-    test_input = torch.randint(0, 100, (batch_size, seq_len))
+    # Create test input — bounded by the real vocab when a model is supplied
+    # so small-vocab models don't crash the embedding (RIL ISS-058).
+    if model is not None:
+        test_input = dummy_token_ids(model, input_shape)
+    else:
+        batch_size, seq_len = input_shape
+        test_input = torch.randint(0, 100, (batch_size, seq_len))
 
     # Run ONNX inference
     onnx_outputs = session.run(None, {"input_ids": test_input.numpy()})

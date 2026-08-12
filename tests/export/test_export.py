@@ -44,6 +44,27 @@ class TestExportToOnnx:
         assert output_path.exists()
 
 
+def test_export_to_onnx_small_vocab_no_crash(tmp_path):
+    """Regression (RIL ISS-058): a model with ``vocab_size < 100`` must
+    export without crashing on an out-of-range dummy token id.
+
+    The old dummy input was ``torch.randint(0, 100, ...)`` — for a
+    vocab_size=16 model the embedding is indexed with ids up to 99 and
+    raises ``IndexError: index out of range in self``. The dummy must be
+    bounded by the model's real vocab.
+    """
+    model = DecoderModel(
+        vocab_size=16,
+        hidden_size=8,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=32,
+    )
+    output_path = tmp_path / "model.onnx"
+    result = export_to_onnx(model, output_path, input_shape=(1, 32))
+    assert result.exists()
+
+
 class TestVerifyOnnx:
     """Tests for verify_onnx function."""
 

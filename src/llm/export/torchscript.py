@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 import torch.nn as nn
 
-from llm.export._wrapper import ExportCacheWrapper
+from llm.export._wrapper import ExportCacheWrapper, dummy_token_ids
 
 if TYPE_CHECKING:
     pass
@@ -85,9 +85,10 @@ def export_to_torchscript(
 
     if method == "trace":
         if example_inputs is None:
-            batch_size, seq_len = input_shape
+            # Bounded by the REAL vocab so small-vocab models don't crash
+            # the embedding with out-of-range ids (RIL ISS-058).
             device = next(model.parameters()).device
-            example_inputs = torch.randint(0, 100, (batch_size, seq_len), device=device)
+            example_inputs = dummy_token_ids(model, input_shape, device=device)
         scripted = torch.jit.trace(wrapped, example_inputs, strict=strict, **kwargs)
     else:  # method == "script"
         scripted = torch.jit.script(wrapped, **kwargs)

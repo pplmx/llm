@@ -58,6 +58,15 @@ class TestExportToTorchscript:
         assert result == output_path
         assert output_path.exists()
 
+    def test_export_trace_small_vocab_no_crash(self, tmp_path):
+        """Regression (RIL ISS-058): torchscript trace must generate a dummy
+        input bounded by the real vocab, so a ``vocab_size < 100`` model
+        exports instead of crashing the embedding with ``IndexError``."""
+        small = DecoderModel(vocab_size=16, hidden_size=8, num_layers=1, num_heads=2, max_seq_len=32)
+        output_path = tmp_path / "model.pt"
+        result = export_to_torchscript(small, output_path, input_shape=(1, 32))
+        assert result.exists()
+
     def test_artifact_loads_with_torch_jit_load(self, small_model, tmp_path):
         """The written file is a valid TorchScript archive."""
         output_path = tmp_path / "model.pt"
