@@ -77,6 +77,17 @@ class TestWriterHeader:
         with pytest.raises(ValueError, match="unsupported GGUF version"):
             GGUFWriter("x.gguf", version=99)
 
+    def test_sub32_alignment_rejected(self):
+        """Regression (RIL ISS-059): alignment < 32 (the GGUF tensor-data
+        floor) must be rejected at construction.
+
+        The writer computes ``data_start`` with its custom ``alignment`` but
+        the reader hardcodes 32 for ``_data_start`` and rejects every tensor
+        whose offset precedes it — a writer alignment below 32 emits a file
+        that its own reader (and llama.cpp) cannot read."""
+        with pytest.raises(ValueError, match="alignment"):
+            GGUFWriter("x.gguf", alignment=16)
+
 
 class TestMetadataRoundTrip:
     def test_all_supported_values(self, tmp_path):

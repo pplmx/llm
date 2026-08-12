@@ -106,6 +106,13 @@ class GGUFWriter:
             raise ValueError(f"unsupported GGUF version {version} (supported 1..{GGUF_VERSION})")
         if alignment <= 0:
             raise ValueError(f"alignment must be positive, got {alignment}")
+        if alignment < GGUF_DEFAULT_ALIGNMENT:
+            # The GGUF spec fixes tensor-data alignment at
+            # ``GGUF_DEFAULT_ALIGNMENT`` (32); the reader hardcodes 32 for
+            # ``_data_start``. A smaller writer alignment would emit a file
+            # whose own reader (and llama.cpp) rejects every tensor as
+            # preceding the data section (RIL ISS-059). Reject it up front.
+            raise ValueError(f"alignment must be >= GGUF_DEFAULT_ALIGNMENT ({GGUF_DEFAULT_ALIGNMENT}), got {alignment}")
         self.output_path = Path(output_path)
         self.version = version
         self.alignment = alignment
