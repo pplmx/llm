@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 37,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T11:46:30+00:00",
+  "updated_at": "2026-08-12T11:58:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3769,10 +3769,10 @@
     "ISS-063": {
       "id": "ISS-063",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-12T11:00:17+00:00",
-      "updated_at": "2026-08-12T11:00:17+00:00",
+      "updated_at": "2026-08-12T11:58:31+00:00",
       "touched_round": 37,
       "severity": "low",
       "title": "Learned positional-encoding weights are dropped on save_pretrained and never restored on load",
@@ -3782,14 +3782,16 @@
       "id": "TASK-059",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-12T11:00:17+00:00",
-      "updated_at": "2026-08-12T11:00:17+00:00",
+      "updated_at": "2026-08-12T11:47:10+00:00",
       "touched_round": 37,
       "category": "correctness",
       "severity": 0.5,
       "title": "Persist + honor pos_encoding_learned and map pos_embedding.weight across save/load (ISS-063)",
-      "details": "Add pos_encoding_learned to hf_publisher config + weight mapping for embedding_layer.positional_encoding.pos_embedding.weight + hf_loader build kwarg, mirroring ISS-056's use_glu pattern."
+      "details": "Add pos_encoding_learned to hf_publisher config + weight mapping for embedding_layer.positional_encoding.pos_embedding.weight + hf_loader build kwarg, mirroring ISS-056's use_glu pattern.",
+      "lock_owner": "loop-37",
+      "lock_until": "2026-08-12T12:17:10+00:00"
     },
     "DEC-019": {
       "id": "DEC-019",
@@ -3869,6 +3871,40 @@
       "touched_round": 37,
       "confidence": 0.9,
       "title": "Temperature-scaled old_log_probs vs raw new_log_probs makes IS ratio invalid when T != 1"
+    },
+    "CHG-058": {
+      "id": "CHG-058",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T11:56:19+00:00",
+      "updated_at": "2026-08-12T11:56:19+00:00",
+      "touched_round": 37,
+      "commit": "d300d46",
+      "title": "fix(compat): pos_encoding_learned roundtrip (ISS-063/TASK-059)"
+    },
+    "EV-082": {
+      "id": "EV-082",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T11:56:19+00:00",
+      "updated_at": "2026-08-12T11:56:19+00:00",
+      "touched_round": 37,
+      "source": "tests/compat/test_hf_publisher.py::test_save_pretrained_roundtrip_learned_pos_encoding",
+      "title": "Confirmed RED: config lacked pos_encoding_learned, weight unmapped; fix roundtrips logits equivalently",
+      "confidence": 1.0
+    },
+    "HYP-038": {
+      "id": "HYP-038",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T11:56:19+00:00",
+      "updated_at": "2026-08-12T11:58:31+00:00",
+      "touched_round": 37,
+      "confidence": 0.9,
+      "title": "pos_embedding.weight unmapped + pos_encoding_learned unhonored -> trained PE lost on save/load"
     }
   },
   "edges": [
@@ -5575,6 +5611,24 @@
       "to": "HYP-037",
       "type": "validates",
       "created_at": "2026-08-12T11:46:30+00:00"
+    },
+    {
+      "from": "CHG-058",
+      "to": "ISS-063",
+      "type": "resolves",
+      "created_at": "2026-08-12T11:58:31+00:00"
+    },
+    {
+      "from": "CHG-058",
+      "to": "TASK-059",
+      "type": "implements",
+      "created_at": "2026-08-12T11:58:31+00:00"
+    },
+    {
+      "from": "EV-082",
+      "to": "HYP-038",
+      "type": "validates",
+      "created_at": "2026-08-12T11:58:31+00:00"
     }
   ]
 }
