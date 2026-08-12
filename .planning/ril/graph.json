@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 31,
+  "round": 32,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T03:28:34+00:00",
+  "updated_at": "2026-08-12T03:36:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -2530,6 +2530,18 @@
       "touched_round": 30,
       "title": "RED→GREEN: new test asserts /generate streaming enters+releases semaphore exactly once; serving suite green; ty+ruff green",
       "source": "pytest/ty/ruff local 2026-08-12",
+      "confidence": 1.0
+    },
+    "EV-059": {
+      "id": "EV-059",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T03:36:38+00:00",
+      "updated_at": "2026-08-12T03:36:38+00:00",
+      "touched_round": 31,
+      "title": "Round 31-32 deep-dive after ISS-042: full fast gate green; ruff/ty/bandit/doctest clean; probed tokenization/runtime/export-gguf/serving-routers/scheduler/schemas/evaluation-runner — no further above-threshold defect found this round",
+      "source": "pytest/ruff/ty/bandit/doctest local 2026-08-12",
       "confidence": 1.0
     }
   },
