@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 32,
+  "round": 33,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T03:36:38+00:00",
+  "updated_at": "2026-08-12T05:11:03+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -2198,11 +2198,11 @@
     "HYP-017": {
       "id": "HYP-017",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T15:31:28+00:00",
-      "updated_at": "2026-08-11T15:31:28+00:00",
-      "touched_round": 26,
+      "updated_at": "2026-08-12T05:11:03+00:00",
+      "touched_round": 32,
       "confidence": 0.9,
       "title": "DedupTextSource._seen is process-lifetime; corpus cycling exhausting -> RuntimeError 'streaming corpus is empty'",
       "details": "source verified: _seen is a set built once; StreamingTextDataset.reset() clears only the cursor, and re-iteration over an exhausted corpus yields nothing (every line is in _seen) -> engine raises 'corpus empty'. Needs per-pass reset or epoch-aware dedup semantics; cross-run persisted hashes (write_seen_hashes) must remain durable. Awaiting a focused fix round."
@@ -2542,6 +2542,18 @@
       "touched_round": 31,
       "title": "Round 31-32 deep-dive after ISS-042: full fast gate green; ruff/ty/bandit/doctest clean; probed tokenization/runtime/export-gguf/serving-routers/scheduler/schemas/evaluation-runner — no further above-threshold defect found this round",
       "source": "pytest/ruff/ty/bandit/doctest local 2026-08-12",
+      "confidence": 1.0
+    },
+    "EV-060": {
+      "id": "EV-060",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T05:11:03+00:00",
+      "updated_at": "2026-08-12T05:11:03+00:00",
+      "touched_round": 32,
+      "title": "Round-33 deep-dive: reviewed generation backends (eager/batch sampling, stop handling), quantize CLI, serving loader + metrics — no new code defect above threshold; HYP-017 (dedup lifecycle) marked resolved now that ISS-038 is closed and EV-052 validates it",
+      "source": "code review + pytest/ruff/ty local 2026-08-12",
       "confidence": 1.0
     }
   },
