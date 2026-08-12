@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 37,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T11:22:53+00:00",
+  "updated_at": "2026-08-12T11:46:30+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3197,11 +3197,11 @@
     "ISS-053": {
       "id": "ISS-053",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-12T08:35:00+00:00",
-      "updated_at": "2026-08-12T08:35:00+00:00",
-      "touched_round": 36,
+      "updated_at": "2026-08-12T11:46:30+00:00",
+      "touched_round": 37,
       "severity": "med",
       "title": "PPO importance ratio mixes temperature-scaled rollout logprobs with unscaled policy logprobs",
       "details": "generate_responses computes old_log_probs via log_softmax(next_token_logits / temperature), but ppo_step computes new_log_probs = log_softmax(raw logits). With temperature != 1.0 the ratio exp(new-old) is not a valid IS ratio between old and new policies, biasing the clipped surrogate. Also top_k/top_p from config are never applied during generation (silently ignored knobs). Default temperature is 1.0 so latent unless configured."
@@ -3209,11 +3209,11 @@
     "TASK-049": {
       "id": "TASK-049",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-12T08:35:14+00:00",
-      "updated_at": "2026-08-12T08:35:14+00:00",
-      "touched_round": 36,
+      "updated_at": "2026-08-12T11:46:30+00:00",
+      "touched_round": 37,
       "category": "correctness",
       "severity": 0.5,
       "title": "Align PPO ratio distributions across temperature (and honor top_k/top_p during generation) (ISS-053)",
@@ -3835,6 +3835,40 @@
       "touched_round": 37,
       "confidence": 0.9,
       "title": "Hardcoded cuda:0/ALL_DEVICES-snapshot tests flake on shared hosts; live devices have enough headroom"
+    },
+    "CHG-057": {
+      "id": "CHG-057",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-12T11:36:59+00:00",
+      "updated_at": "2026-08-12T11:44:38+00:00",
+      "touched_round": 37,
+      "commit": "c5c1d42",
+      "title": "fix(rlhf): raw-policy old_log_probs under temperature (ISS-053/TASK-049)"
+    },
+    "EV-081": {
+      "id": "EV-081",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T11:44:38+00:00",
+      "updated_at": "2026-08-12T11:44:38+00:00",
+      "touched_round": 37,
+      "source": "tests/training/rlhf/test_ppo.py::test_generate_responses_old_log_probs_are_raw_policy",
+      "title": "Confirmed RED: T=2 stored [-4.02,...] scaled vs expected raw [-3.70,...]; raw-policy log-prob matches",
+      "confidence": 1.0
+    },
+    "HYP-037": {
+      "id": "HYP-037",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T11:44:38+00:00",
+      "updated_at": "2026-08-12T11:46:30+00:00",
+      "touched_round": 37,
+      "confidence": 0.9,
+      "title": "Temperature-scaled old_log_probs vs raw new_log_probs makes IS ratio invalid when T != 1"
     }
   },
   "edges": [
@@ -5523,6 +5557,24 @@
       "to": "HYP-036",
       "type": "validates",
       "created_at": "2026-08-12T11:22:39+00:00"
+    },
+    {
+      "from": "CHG-057",
+      "to": "ISS-053",
+      "type": "resolves",
+      "created_at": "2026-08-12T11:46:30+00:00"
+    },
+    {
+      "from": "CHG-057",
+      "to": "TASK-049",
+      "type": "implements",
+      "created_at": "2026-08-12T11:46:30+00:00"
+    },
+    {
+      "from": "EV-081",
+      "to": "HYP-037",
+      "type": "validates",
+      "created_at": "2026-08-12T11:46:30+00:00"
     }
   ]
 }
