@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 37,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T11:03:14+00:00",
+  "updated_at": "2026-08-12T11:22:53+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -2781,11 +2781,11 @@
     "ISS-046": {
       "id": "ISS-046",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-12T06:56:25+00:00",
-      "updated_at": "2026-08-12T06:56:25+00:00",
-      "touched_round": 34,
+      "updated_at": "2026-08-12T11:22:40+00:00",
+      "touched_round": 37,
       "severity": "medium",
       "title": "Tests hardcode cuda:0/cuda:1 instead of DEFAULT_DEVICE, flaky on shared-GPU hosts",
       "details": "6 test nodes hardcode torch.device('cuda') / 'cuda:0' / 'cuda:1' / device='cuda' instead of the repo tests.support.devices.DEFAULT_DEVICE / device fixture convention (which picks the fattest GPU by free VRAM). On a shared GPU host where cuda:0/1 are occupied by another tenant (100% util, ~1.5GiB free) these flake mid-suite: test_transformer_block[cuda:1], test_gradient_checkpointing::test_memory_reduction, test_gptq_end_to_end, test_gpu_device_placement[gptq|awq|smoothquant]. Not a code regression - passes in isolation - but violates the repo convention and makes the suite machine-dependent."
@@ -2793,15 +2793,17 @@
     "TASK-042": {
       "id": "TASK-042",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-12T06:56:58+00:00",
-      "updated_at": "2026-08-12T06:56:58+00:00",
-      "touched_round": 34,
+      "updated_at": "2026-08-12T11:22:53+00:00",
+      "touched_round": 37,
       "category": "test-quality",
       "severity": 0.6,
       "title": "Route hardcoded-cuda tests through DEFAULT_DEVICE/device fixture so they pick the fattest GPU (ISS-046)",
-      "details": "Modify the 6 test nodes to use tests.support.devices.DEFAULT_DEVICE / the device fixture instead of torch.device('cuda')/cuda:0/cuda:1/device='cuda'. Tests: test_transformer_block (DEVICES uses ALL_DEVICES which includes occupied low-VRAM GPUs), test_gradient_checkpointing::test_memory_reduction, test_gptq_end_to_end, test_gpu_device_placement. Keeps the memory-reduction semantics (compare on one GPU) but on a GPU with headroom."
+      "details": "Modify the 6 test nodes to use tests.support.devices.DEFAULT_DEVICE / the device fixture instead of torch.device('cuda')/cuda:0/cuda:1/device='cuda'. Tests: test_transformer_block (DEVICES uses ALL_DEVICES which includes occupied low-VRAM GPUs), test_gradient_checkpointing::test_memory_reduction, test_gptq_end_to_end, test_gpu_device_placement. Keeps the memory-reduction semantics (compare on one GPU) but on a GPU with headroom.",
+      "lock_owner": "loop-37",
+      "lock_until": "2026-08-12T11:40:02+00:00"
     },
     "ISS-047": {
       "id": "ISS-047",
@@ -3799,6 +3801,40 @@
       "touched_round": 37,
       "rationale": "Session 2026-08-12 rounds 34-37: 17 verified fixes closed (correctness/stability across training, serving, evaluation, core, compat, export, quantization, runtime), each RED->GREEN with a regression test; full suite green (exit=0, 0 FAILED). Remaining open tasks all score below the 3.0 selection threshold (TASK-042@1.2 test-quality, TASK-049@2.5 PPO temperature, TASK-058@2.5 compat arch fidelity, TASK-059@2.5 learned-PE) and are recorded with rationale (DEC-018) rather than force-worked. This is a resource-appropriate stop: the loop continues but no above-threshold active task remains.",
       "alternatives_rejected": "Force-fixing below-threshold items (hardcoded-cuda test routing, PPO temperature ratio, compat arch fidelity, learned-PE roundtrip) now would violate the skill's own priority discipline (EVALUATE skips < 3.0) and derisk the 17-fix green state for marginal gains."
+    },
+    "CHG-056": {
+      "id": "CHG-056",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T11:22:39+00:00",
+      "updated_at": "2026-08-12T11:22:39+00:00",
+      "touched_round": 37,
+      "commit": "c7fe35f",
+      "title": "test: DEFAULT_DEVICE routing + live device re-check (ISS-046/TASK-042)"
+    },
+    "EV-080": {
+      "id": "EV-080",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T11:22:39+00:00",
+      "updated_at": "2026-08-12T11:22:39+00:00",
+      "touched_round": 37,
+      "source": "5 test files run green (exit=0, 0 FAILED) after routing; test_block_device_dtype[cuda:1] passes or skips if occupied at run time",
+      "title": "Confirmed: DEFAULT_DEVICE routing + cuda_usable(device) guard fix shared-host GPU flakes",
+      "confidence": 1.0
+    },
+    "HYP-036": {
+      "id": "HYP-036",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T11:22:39+00:00",
+      "updated_at": "2026-08-12T11:22:40+00:00",
+      "touched_round": 37,
+      "confidence": 0.9,
+      "title": "Hardcoded cuda:0/ALL_DEVICES-snapshot tests flake on shared hosts; live devices have enough headroom"
     }
   },
   "edges": [
@@ -5469,6 +5505,24 @@
       "to": "ISS-063",
       "type": "addresses",
       "created_at": "2026-08-12T11:00:17+00:00"
+    },
+    {
+      "from": "CHG-056",
+      "to": "ISS-046",
+      "type": "resolves",
+      "created_at": "2026-08-12T11:22:39+00:00"
+    },
+    {
+      "from": "CHG-056",
+      "to": "TASK-042",
+      "type": "implements",
+      "created_at": "2026-08-12T11:22:39+00:00"
+    },
+    {
+      "from": "EV-080",
+      "to": "HYP-036",
+      "type": "validates",
+      "created_at": "2026-08-12T11:22:39+00:00"
     }
   ]
 }
