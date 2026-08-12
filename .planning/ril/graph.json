@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 37,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T12:00:47+00:00",
+  "updated_at": "2026-08-12T15:17:46+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3905,6 +3905,40 @@
       "touched_round": 37,
       "confidence": 0.9,
       "title": "pos_embedding.weight unmapped + pos_encoding_learned unhonored -> trained PE lost on save/load"
+    },
+    "CHG-059": {
+      "id": "CHG-059",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T15:17:32+00:00",
+      "updated_at": "2026-08-12T15:17:32+00:00",
+      "touched_round": 37,
+      "commit": "27b7e8f",
+      "title": "fix(compat): norm_impl roundtrip (ISS-062 subset/TASK-058)"
+    },
+    "EV-083": {
+      "id": "EV-083",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T15:17:32+00:00",
+      "updated_at": "2026-08-12T15:17:32+00:00",
+      "touched_round": 37,
+      "source": "tests/compat/test_hf_publisher.py::test_save_pretrained_roundtrip_rms_norm",
+      "title": "Confirmed RED: rms_norm rebuilt as LayerNorm; persisted+honored norm_impl keeps RMSNorm + equal logits",
+      "confidence": 1.0
+    },
+    "HYP-039": {
+      "id": "HYP-039",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T15:17:32+00:00",
+      "updated_at": "2026-08-12T15:17:46+00:00",
+      "touched_round": 37,
+      "confidence": 0.9,
+      "title": "norm_impl not persisted/honored -> RMSNorm model silently becomes LayerNorm on roundtrip"
     }
   },
   "edges": [
@@ -5629,6 +5663,12 @@
       "to": "HYP-038",
       "type": "validates",
       "created_at": "2026-08-12T11:58:31+00:00"
+    },
+    {
+      "from": "EV-083",
+      "to": "HYP-039",
+      "type": "validates",
+      "created_at": "2026-08-12T15:17:46+00:00"
     }
   ]
 }
