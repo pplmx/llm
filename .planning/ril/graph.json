@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T10:03:52+00:00",
+  "updated_at": "2026-08-12T10:15:49+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3544,6 +3544,67 @@
       "touched_round": 36,
       "confidence": 0.95,
       "title": "Hardcoded randint(0,100) dummy input indexes out-of-range for vocab_size < 100"
+    },
+    "ISS-059": {
+      "id": "ISS-059",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T10:11:18+00:00",
+      "updated_at": "2026-08-12T10:15:27+00:00",
+      "touched_round": 36,
+      "severity": "med",
+      "title": "GGUFWriter accepts alignment < 32 and writes a file its own reader rejects",
+      "details": "writer computes data_start with the custom alignment but reader hardcodes GGUF_DEFAULT_ALIGNMENT (32) for _data_start and rejects any tensor offset preceding it. With alignment=16 the artifact fails to load ('offset precedes the data section start'); llama.cpp likewise enforces 32. Fixed by rejecting alignment < GGUF_DEFAULT_ALIGNMENT at construction."
+    },
+    "TASK-055": {
+      "id": "TASK-055",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T10:11:18+00:00",
+      "updated_at": "2026-08-12T10:15:49+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.6,
+      "title": "Reject sub-32 GGUF alignment at construction (ISS-059)",
+      "details": "Enforce alignment >= GGUF_DEFAULT_ALIGNMENT in GGUFWriter.__init__ so the written file matches the reader's hardcoded 32-byte tensor-data start. Regression test asserts ValueError for alignment=16.",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T10:41:18+00:00"
+    },
+    "CHG-053": {
+      "id": "CHG-053",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:15:27+00:00",
+      "updated_at": "2026-08-12T10:15:27+00:00",
+      "touched_round": 36,
+      "commit": "189b94c",
+      "title": "fix(export): GGUF sub-32 alignment rejected (ISS-059/TASK-055)"
+    },
+    "EV-077": {
+      "id": "EV-077",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:15:27+00:00",
+      "updated_at": "2026-08-12T10:15:27+00:00",
+      "touched_round": 36,
+      "source": "tests/export/test_gguf_reader_writer.py::test_sub32_alignment_rejected",
+      "title": "Confirmed: alignment=16 wrote unreadable files ('offset precedes data section start'); construction now rejects",
+      "confidence": 1.0
+    },
+    "HYP-033": {
+      "id": "HYP-033",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T10:15:27+00:00",
+      "updated_at": "2026-08-12T10:15:27+00:00",
+      "touched_round": 36,
+      "confidence": 0.9,
+      "title": "Writer/reader alignment mismatch lets sub-32 alignment emit files the reader rejects"
     }
   },
   "edges": [
@@ -5094,6 +5155,36 @@
       "to": "HYP-032",
       "type": "validates",
       "created_at": "2026-08-12T10:03:26+00:00"
+    },
+    {
+      "from": "ISS-059",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-12T10:11:18+00:00"
+    },
+    {
+      "from": "TASK-055",
+      "to": "ISS-059",
+      "type": "addresses",
+      "created_at": "2026-08-12T10:11:18+00:00"
+    },
+    {
+      "from": "CHG-053",
+      "to": "ISS-059",
+      "type": "resolves",
+      "created_at": "2026-08-12T10:15:27+00:00"
+    },
+    {
+      "from": "CHG-053",
+      "to": "TASK-055",
+      "type": "implements",
+      "created_at": "2026-08-12T10:15:27+00:00"
+    },
+    {
+      "from": "EV-077",
+      "to": "HYP-033",
+      "type": "validates",
+      "created_at": "2026-08-12T10:15:27+00:00"
     }
   ]
 }
