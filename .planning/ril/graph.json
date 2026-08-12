@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 30,
+  "round": 31,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T03:06:17+00:00",
+  "updated_at": "2026-08-12T03:28:34+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 26,
+      "touched_round": 30,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -2482,6 +2482,55 @@
       "title": "Round 29-30 verification sweep: entire repo test suite green (fast+heavy+e2e), bandit high clean, ty clean, doctest clean, ruff clean, examples py_compile clean; continuous batching / paged KV / rollout buffer / DPO dataset code review found no new high-score task",
       "source": "pytest/ruff/ty/bandit/doctest local run 2026-08-12",
       "confidence": 1.0
+    },
+    "ISS-042": {
+      "id": "ISS-042",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T03:22:48+00:00",
+      "updated_at": "2026-08-12T03:28:34+00:00",
+      "touched_round": 30,
+      "title": "/generate?stream=true still bypasses inference_semaphore — ISS-036 concurrency fix applied to chat streaming but not the generate streaming route",
+      "severity": "high",
+      "details": "3194f29 'enforce inference_semaphore concurrency control in all endpoints' scoped the semaphore to generate_text (non-streaming), batch_generate_text and _chat_stream_generator, but missed _stream_generator in routers/generate.py. /generate?stream=true can therefore spawn unbounded concurrent generations past max_concurrent_requests, while the chat streaming route is bounded — the concurrency control is inconsistent and non-functional on this path."
+    },
+    "TASK-035": {
+      "id": "TASK-035",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-12T03:22:48+00:00",
+      "updated_at": "2026-08-12T03:28:34+00:00",
+      "touched_round": 30,
+      "title": "Acquire inference_semaphore in _stream_generator so /generate?stream=true respects max_concurrent_requests (ISS-042)",
+      "category": "stability",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "effort": 0.1
+    },
+    "CHG-038": {
+      "id": "CHG-038",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T03:28:34+00:00",
+      "updated_at": "2026-08-12T03:28:34+00:00",
+      "touched_round": 30,
+      "title": "fix(serving): acquire inference_semaphore in /generate streaming (ISS-042)",
+      "commit": "362e0a4"
+    },
+    "EV-058": {
+      "id": "EV-058",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T03:28:34+00:00",
+      "updated_at": "2026-08-12T03:28:34+00:00",
+      "touched_round": 30,
+      "title": "RED→GREEN: new test asserts /generate streaming enters+releases semaphore exactly once; serving suite green; ty+ruff green",
+      "source": "pytest/ty/ruff local 2026-08-12",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -3528,6 +3577,30 @@
       "to": "ISS-041",
       "type": "resolves",
       "created_at": "2026-08-12T02:59:23+00:00"
+    },
+    {
+      "from": "TASK-035",
+      "to": "ISS-042",
+      "type": "addresses",
+      "created_at": "2026-08-12T03:22:48+00:00"
+    },
+    {
+      "from": "ISS-042",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-12T03:22:48+00:00"
+    },
+    {
+      "from": "CHG-038",
+      "to": "TASK-035",
+      "type": "implements",
+      "created_at": "2026-08-12T03:28:34+00:00"
+    },
+    {
+      "from": "CHG-038",
+      "to": "ISS-042",
+      "type": "resolves",
+      "created_at": "2026-08-12T03:28:34+00:00"
     }
   ]
 }
