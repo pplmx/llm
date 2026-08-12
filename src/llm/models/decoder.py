@@ -76,6 +76,10 @@ class DecoderModel(nn.Module):
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
         self.norm_first = norm_first  # Store for final norm logic
+        # ``norm_impl`` is a model-defining flag (LayerNorm vs RMSNorm); store
+        # it so hf_publisher can persist it and save->load roundtrips keep the
+        # same normalization function (RIL ISS-062).
+        self.norm_impl = norm_impl
         self._gradient_checkpointing = gradient_checkpointing
 
         self.embedding_layer = EmbeddingLayer(

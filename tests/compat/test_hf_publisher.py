@@ -243,6 +243,49 @@ def test_save_pretrained_roundtrip_learned_pos_encoding(tmp_path: Path):
 
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_roundtrip_rms_norm(tmp_path: Path):
+    """Regression (RIL ISS-062): ``norm_impl='rms_norm'`` must roundtrip
+    save->load with the same normalization, not silently become LayerNorm.
+
+    The loader/build never persisted nor honored ``norm_impl``, so an
+    RMSNorm-trained model was rebuilt with LayerNorm after save->load — a
+    different normalization function with the same weights."""
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(
+        **decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            intermediate_size=64,
+            max_seq_len=32,
+            attn_impl="mha",
+            mlp_impl="mlp",
+            norm_impl="rms_norm",
+            device=str(DEFAULT_DEVICE),
+        )
+    )
+    model.eval()
+    save_pretrained(model, tmp_path)
+
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config.get("norm_impl") == "rms_norm"
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+    assert isinstance(reloaded, DecoderModel)
+    assert reloaded.transformer_blocks[0].norm1.__class__.__name__ == "RMSNorm"
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = model(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_default_non_glu_model(tmp_path: Path):
     """Regression (RIL ISS-056): a DEFAULT (non-GLU) model must roundtrip
     save->load with equivalent logits — not leave the MLP at random init."""

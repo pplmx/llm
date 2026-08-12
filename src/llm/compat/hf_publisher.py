@@ -104,6 +104,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # it (and mapping the trained pos_embedding weight) a learned-PE model
     # silently loses its PE across save->load (RIL ISS-063).
     pos_encoding_learned = bool(getattr(model.embedding_layer.positional_encoding, "learned", False))
+    norm_impl = str(getattr(model, "norm_impl", "layer_norm"))
 
     return {
         "model_type": "llama",
@@ -121,6 +122,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "hidden_act": hidden_act,
         "use_glu": use_glu,
         "pos_encoding_learned": pos_encoding_learned,
+        "norm_impl": norm_impl,
     }
 
 

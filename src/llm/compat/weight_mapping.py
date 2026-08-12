@@ -426,4 +426,9 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # back to sinusoidal (RIL ISS-063). Default False (matching the
         # DecoderModel default).
         "pos_encoding_learned": hf_config.get("pos_encoding_learned", False),
+        # Normalization implementation so an RMSNorm-trained model round-trips
+        # with RMSNorm instead of silently rebuilding as LayerNorm (RIL
+        # ISS-062). Our own publisher persists it; external checkpoints
+        # default to layer_norm (the DecoderModel default).
+        "norm_impl": hf_config.get("norm_impl", "layer_norm"),
     }

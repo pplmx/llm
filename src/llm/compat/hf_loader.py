@@ -126,6 +126,7 @@ def _load_from_local(
         mlp_impl="mlp",
         mlp_activation=our_config.get("mlp_activation", "silu"),
         pos_encoding_learned=our_config.get("pos_encoding_learned", False),
+        norm_impl=our_config.get("norm_impl", "layer_norm"),
         device=device,
         dtype=dtype,
     )
