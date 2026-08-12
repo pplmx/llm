@@ -176,6 +176,28 @@ def _naive_int8_output_error(layer: nn.Linear, calib: torch.Tensor) -> float:
     return total_err / total_n
 
 
+def test_quantizer_search_alpha_with_fp16_bias():
+    """Regression (RIL ISS-060): ``search_alpha=True`` must not crash on a
+    layer whose bias is fp16/bf16 (e.g. ``model.half()``).
+
+    ``_eval_layer_error`` casts the weights and activations to fp32 but fed
+    ``bias`` through untouched, so ``F.linear(x_fp32, w_fp32, bias_fp16)``
+    raised ``RuntimeError: self and mat2 must have the same dtype`` during
+    the alpha grid search."""
+    from llm.quantization.smooth import SmoothQuantConfig, SmoothQuantQuantizer
+
+    torch.manual_seed(0)
+    layer = nn.Linear(16, 16).half()  # fp16 bias + weights
+    calib = torch.randn(8, 16)
+
+    quantizer = SmoothQuantQuantizer(layer, SmoothQuantConfig(search_alpha=True))
+    quantizer.add_batch(calib)
+
+    weight_packed, _weight_scales, act_scale, _input_scales = quantizer.quantize()
+    assert weight_packed.numel() == layer.weight.numel()
+    assert act_scale.item() > 0
+
+
 def test_smoothquant_beats_no_smoothing_on_outlier_activations():
     """The headline SmoothQuant property: smoothing cuts INT8 W+A error.
 

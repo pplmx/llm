@@ -167,14 +167,19 @@ def _eval_layer_error(
     w_int = weight_packed.reshape(w.shape).to(torch.float32)
     w_fp = w_int * weight_scales.to(torch.float32)
 
+    # ``bias`` may be fp16/bf16 (a ``model.half()`` layer) while ``x``/``w``
+    # here are fp32 — cast it to fp32 once so both linear passes share one
+    # dtype (RIL ISS-060). ``linear`` accepts ``None`` bias.
+    bias_fp32 = bias.to(dtype=torch.float32) if bias is not None else None
+
     total_err = 0.0
     total_n = 0
     for x in batches:
         x = x.to(dtype=torch.float32)
         x_s = x / s
         x_q = torch.clamp(torch.round(x_s / act_scale), -128, 127) * act_scale
-        y_q = torch.nn.functional.linear(x_q, w_fp, bias)
-        y_ref = torch.nn.functional.linear(x, w, bias)
+        y_q = torch.nn.functional.linear(x_q, w_fp, bias_fp32)
+        y_ref = torch.nn.functional.linear(x, w, bias_fp32)
         total_err += (y_q - y_ref).pow(2).sum().item()
         total_n += y_ref.numel()
     return total_err / total_n
