@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 37,
+  "round": 38,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T15:17:46+00:00",
+  "updated_at": "2026-08-12T15:27:18+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3737,7 +3737,7 @@
       "version": 1,
       "created_at": "2026-08-12T10:56:14+00:00",
       "updated_at": "2026-08-12T10:56:14+00:00",
-      "touched_round": 37,
+      "touched_round": 38,
       "severity": "med",
       "title": "compat from_pretrained does not reproduce real-Llama architecture (LayerNorm vs RMSNorm, no RoPE, default biases)",
       "details": "hf_loader builds with norm_impl='layer_norm' (real Llama/Mistral use RMSNorm), no RoPE wiring in the mha path (core.rope has no callers), and default qkv_bias/mlp_bias/lm_head_bias=True (real checkpoints are bias-free -> lm_head.bias stays random). from_pretrained of a genuine HF Llama/Mistral checkpoint yields a functionally different net. Our own publish->load roundtrip is self-consistent (both use the same defaults), so only external checkpoint loading is affected. Architectural: fixing requires deciding severity/scope and it touches the loader defaults that the GLU roundtrip tests depend on."
@@ -3760,7 +3760,7 @@
       "version": 1,
       "created_at": "2026-08-12T10:56:48+00:00",
       "updated_at": "2026-08-12T10:56:48+00:00",
-      "touched_round": 37,
+      "touched_round": 38,
       "category": "correctness",
       "severity": 0.5,
       "title": "Compat loader architecture fidelity for real checkpoints (RMSNorm, RoPE, bias-free defaults) (ISS-062)",
@@ -3913,7 +3913,7 @@
       "version": 1,
       "created_at": "2026-08-12T15:17:32+00:00",
       "updated_at": "2026-08-12T15:17:32+00:00",
-      "touched_round": 37,
+      "touched_round": 38,
       "commit": "27b7e8f",
       "title": "fix(compat): norm_impl roundtrip (ISS-062 subset/TASK-058)"
     },
@@ -5669,6 +5669,18 @@
       "to": "HYP-039",
       "type": "validates",
       "created_at": "2026-08-12T15:17:46+00:00"
+    },
+    {
+      "from": "CHG-059",
+      "to": "ISS-062",
+      "type": "resolves",
+      "created_at": "2026-08-12T15:27:18+00:00"
+    },
+    {
+      "from": "CHG-059",
+      "to": "TASK-058",
+      "type": "implements",
+      "created_at": "2026-08-12T15:27:18+00:00"
     }
   ]
 }
