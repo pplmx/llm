@@ -119,6 +119,13 @@ class TestTextDatasetInitialization:
         assert torch.equal(item["input_ids"][:num_actual_tokens], torch.LongTensor(expected_raw_tokens))
         assert torch.all(item["input_ids"][num_actual_tokens:] == sample_text_tokenizer.pad_token_id)
 
+        # Regression: padding positions must not be trained on. Labels equal
+        # input ids on real tokens but are masked with -100 (CrossEntropyLoss
+        # ignore index) on pad slots — otherwise the model is rewarded for
+        # predicting pad (== EOS for an HF tokenizer) at every pad position.
+        assert torch.equal(item["labels"][:num_actual_tokens], item["input_ids"][:num_actual_tokens])
+        assert torch.all(item["labels"][num_actual_tokens:] == -100)
+
     def test_invalid_params(self, dummy_text_file, sample_text_tokenizer):
         with pytest.raises(ValueError, match="overlap must be less than max_seq_len"):
             TextDataset(str(dummy_text_file), sample_text_tokenizer, 5, overlap=5)

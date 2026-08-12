@@ -149,6 +149,15 @@ class TextDataset(Dataset):
         input_ids_tensor = torch.LongTensor(padded_token_ids)
         labels_tensor = input_ids_tensor.clone()  # Labels are same as input for typical LM
 
+        # Mask labels on padding positions with -100 (the standard ignore
+        # index for CrossEntropyLoss). Without this the LM trains/evals on
+        # pad tokens — which for an HF tokenizer equal EOS — rewarding the
+        # model for predicting EOS at every pad slot and inflating val PPL.
+        # Real (non-pad) input ids can never be -1, and positions >= -1 are
+        # unaffected, so a length boundary can't collide with the mask.
+        if num_padding_tokens > 0:
+            labels_tensor[len(token_ids) :] = -100
+
         return {"input_ids": input_ids_tensor, "labels": labels_tensor}
 
 

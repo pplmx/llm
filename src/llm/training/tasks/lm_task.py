@@ -216,8 +216,11 @@ class LanguageModelingTask(TrainingTask):
         return main_scheduler
 
     def build_criterion(self) -> nn.Module:
-        # Cross Entropy Loss for next token prediction
-        return nn.CrossEntropyLoss()
+        # Cross Entropy Loss for next token prediction. ignore_index=-100 is
+        # the standard LM convention: datasets mask padding positions with
+        # -100 so the model is never rewarded for predicting pad (== EOS for
+        # an HF tokenizer) at pad slots, and val PPL is not inflated.
+        return nn.CrossEntropyLoss(ignore_index=-100)
 
     def train_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
         # Batch is expected to be (input_ids, labels) or dict
