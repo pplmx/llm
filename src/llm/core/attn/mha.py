@@ -368,6 +368,10 @@ class MultiHeadAttention(nn.Module):
             seq_lens=seq_lens,
             num_kv_heads=self.num_kv_heads,
             block_size=block_size,
+            # Per-row real query-token counts so the kernel only applies the
+            # causal overlay to prefill rows, not to decode rows whose single
+            # query is left-padded into a larger batch-max row (RIL ISS-048).
+            query_lens=lengths,
         )  # [B, N_q, S, D]
 
         # 4. Reshape and project — same post-processing as the linear path.

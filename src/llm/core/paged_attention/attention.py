@@ -12,6 +12,7 @@ def paged_attention_forward(
     seq_lens: Tensor,
     num_kv_heads: int,
     block_size: int = 16,
+    query_lens: Tensor | None = None,
 ) -> Tensor:
     """Paged attention forward pass.
 
@@ -37,6 +38,14 @@ def paged_attention_forward(
         seq_lens: Current sequence lengths [batch].
         num_kv_heads: Number of KV heads.
         block_size: Tokens per block.
+        query_lens: Optional per-row number of REAL query tokens [batch].
+            In continuous batching, ``q`` is left-padded to the batch-max
+            query length so a decode row's single query lives at local index
+            0, and the causal overlay (which is only meaningful for prefill
+            rows with multiple query tokens) must not mask a decode row's
+            full context (RIL ISS-048). When ``None`` (direct tests /
+            deprecated callers), the overlay applies to every row whenever
+            ``query_len > 1``, mirroring the historical behaviour.
 
     Returns:
         Attention output tensor [batch, num_heads, query_len, head_dim].
@@ -107,10 +116,24 @@ def paged_attention_forward(
     col_idx = torch.arange(max_seq_len, device=q.device).reshape(1, 1, 1, -1)
     attn_mask = col_idx >= seq_lens.reshape(-1, 1, 1, 1)  # [B, 1, 1, max_seq_len]
     if _query_len > 1:
-        # Prefill with multiple query tokens per row: enforce causality
-        # between query positions (query row ``s`` attends to keys ``0..s``).
-        row_idx = torch.arange(_query_len, device=q.device).reshape(1, 1, -1, 1)
-        attn_mask = attn_mask | (col_idx > row_idx)
+        # Causality between query positions (query row ``s`` attends to keys
+        # ``0..s``) is only meaningful for prefill rows that carry multiple
+        # real query tokens. In continuous batching ``q`` is left-padded to
+        # the batch-max query length, so a decode row's single real query sits
+        # at local index 0 with padding after it; applying the overlay to that
+        # row masks every key > 0, collapsing decode attention onto key 0 and
+        # producing garbage output (RIL ISS-048). Gate the overlay per-row on
+        # having more than one real query token.
+        if query_lens is not None:
+            prefill_rows = query_lens.reshape(-1, 1, 1, 1) > 1  # [B, 1, 1, 1]
+            row_idx = torch.arange(_query_len, device=q.device).reshape(1, 1, -1, 1)
+            causal = col_idx > row_idx  # [1, 1, query_len, max_seq_len]
+            attn_mask = attn_mask | (causal & prefill_rows)
+        else:
+            # Legacy / direct-test callers that don't pass query_lens: apply
+            # the overlay to every row (historical behaviour).
+            row_idx = torch.arange(_query_len, device=q.device).reshape(1, 1, -1, 1)
+            attn_mask = attn_mask | (col_idx > row_idx)
     attn_weights = attn_weights.masked_fill(attn_mask, float("-inf"))
 
     attn_weights = torch.softmax(attn_weights, dim=-1)
