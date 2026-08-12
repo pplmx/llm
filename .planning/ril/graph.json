@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T09:36:54+00:00",
+  "updated_at": "2026-08-12T09:48:10+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -21,7 +21,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 0,
+      "touched_round": 36,
       "title": "Quantization (src/llm/quantization: GPTQ/AWQ/SmoothQuant/PTQ)"
     },
     "COMP-003": {
@@ -3422,6 +3422,67 @@
       "touched_round": 36,
       "confidence": 0.95,
       "title": "Loader hardcodes use_glu=True so default non-GLU models get random gate_proj on load"
+    },
+    "ISS-057": {
+      "id": "ISS-057",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T09:47:19+00:00",
+      "updated_at": "2026-08-12T09:47:53+00:00",
+      "touched_round": 36,
+      "severity": "high",
+      "title": "GPTQ per-group quantization uses a whole-group scalar scale that mismatches the per-output-row dequant scales",
+      "details": "gptq.py in-loop cached_scale was (w_group.abs().max() / qmax) — a scalar over the whole [out_rows x group_cols] group — but the dequant/pack scales are per-output-row (w_group.abs().max(dim=1)). For heterogeneous rows, round(col / scalar) produced small integers that were then multiplied by the smaller per-row scale at dequant, systematically shrinking reconstruction (~68x worse than per-channel: 0.41 vs 0.006 mean-abs-err on a heterogeneous test layer). Default CLI group_size=128 was affected. Fix: per-row scale in the loop (max(dim=1)) matching the stored scales."
+    },
+    "TASK-053": {
+      "id": "TASK-053",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T09:47:30+00:00",
+      "updated_at": "2026-08-12T09:48:10+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Use per-output-row scales in the GPTQ group-quantize loop to match dequant scales (ISS-057)",
+      "details": "Change cached_scale from whole-group scalar (w_group.abs().max()) to per-row (w_group.abs().max(dim=1)[0]), matching the scales returned for storage. Regression test reconstructs a heterogeneous 16x32 layer under group_size=16 at bits=8 and asserts mean-abs-err < 0.05 (was ~0.41).",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T10:17:30+00:00"
+    },
+    "CHG-051": {
+      "id": "CHG-051",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T09:47:52+00:00",
+      "updated_at": "2026-08-12T09:47:52+00:00",
+      "touched_round": 36,
+      "commit": "f833405",
+      "title": "fix(quant): GPTQ per-row group scales (ISS-057/TASK-053)"
+    },
+    "EV-075": {
+      "id": "EV-075",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T09:47:53+00:00",
+      "updated_at": "2026-08-12T09:47:53+00:00",
+      "touched_round": 36,
+      "source": "tests/quantization/test_gptq_layer.py::test_quantizer_grouped_scale_matches_per_row_dequant",
+      "title": "Confirmed RED: 0.41 mean-abs-err with scalar scale, <0.05 with per-row scale; matches stored dequant scales",
+      "confidence": 1.0
+    },
+    "HYP-031": {
+      "id": "HYP-031",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T09:47:53+00:00",
+      "updated_at": "2026-08-12T09:47:53+00:00",
+      "touched_round": 36,
+      "confidence": 0.95,
+      "title": "In-loop scale (abs().max()) and stored dequant scale (max(dim=1)) disagree, shrinking per-row reconstruction"
     }
   },
   "edges": [
@@ -4912,6 +4973,36 @@
       "to": "HYP-030",
       "type": "validates",
       "created_at": "2026-08-12T09:35:34+00:00"
+    },
+    {
+      "from": "ISS-057",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-12T09:47:19+00:00"
+    },
+    {
+      "from": "TASK-053",
+      "to": "ISS-057",
+      "type": "addresses",
+      "created_at": "2026-08-12T09:47:30+00:00"
+    },
+    {
+      "from": "CHG-051",
+      "to": "ISS-057",
+      "type": "resolves",
+      "created_at": "2026-08-12T09:47:53+00:00"
+    },
+    {
+      "from": "CHG-051",
+      "to": "TASK-053",
+      "type": "implements",
+      "created_at": "2026-08-12T09:47:53+00:00"
+    },
+    {
+      "from": "EV-075",
+      "to": "HYP-031",
+      "type": "validates",
+      "created_at": "2026-08-12T09:47:53+00:00"
     }
   ]
 }
