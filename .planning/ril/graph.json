@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T10:15:49+00:00",
+  "updated_at": "2026-08-12T10:26:52+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3605,6 +3605,67 @@
       "touched_round": 36,
       "confidence": 0.9,
       "title": "Writer/reader alignment mismatch lets sub-32 alignment emit files the reader rejects"
+    },
+    "ISS-060": {
+      "id": "ISS-060",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T10:24:02+00:00",
+      "updated_at": "2026-08-12T10:26:42+00:00",
+      "touched_round": 36,
+      "severity": "med",
+      "title": "SmoothQuant search_alpha crashes on fp16/bf16 layer bias",
+      "details": "smooth.py _eval_layer_error casts weights + activations to fp32 but fed bias through unchanged, so F.linear(x_fp32, w_fp32, bias_fp16) raises 'self and mat2 must have the same dtype'. Reproduced with a .half() layer through SmoothQuantQuantizer.quantize(search_alpha=True). Fixed by casting bias to fp32 before the linear passes."
+    },
+    "TASK-056": {
+      "id": "TASK-056",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T10:24:02+00:00",
+      "updated_at": "2026-08-12T10:26:52+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.6,
+      "title": "Cast bias to fp32 in SmoothQuant alpha search so fp16/bf16 layers work (ISS-060)",
+      "details": "In _eval_layer_error, cast bias to torch.float32 before both linear passes. Regression test: .half() layer + search_alpha=True quantizes without RuntimeError.",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T10:54:02+00:00"
+    },
+    "CHG-054": {
+      "id": "CHG-054",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:26:41+00:00",
+      "updated_at": "2026-08-12T10:26:41+00:00",
+      "touched_round": 36,
+      "commit": "027b35e",
+      "title": "fix(quant): SmoothQuant bias fp32 cast (ISS-060/TASK-056)"
+    },
+    "EV-078": {
+      "id": "EV-078",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:26:41+00:00",
+      "updated_at": "2026-08-12T10:26:41+00:00",
+      "touched_round": 36,
+      "source": "tests/quantization/test_smooth_algorithm.py::test_quantizer_search_alpha_with_fp16_bias",
+      "title": "Confirmed RED: .half() bias raised dtype RuntimeError; bias cast to fp32 fixes it",
+      "confidence": 1.0
+    },
+    "HYP-034": {
+      "id": "HYP-034",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T10:26:41+00:00",
+      "updated_at": "2026-08-12T10:26:42+00:00",
+      "touched_round": 36,
+      "confidence": 0.9,
+      "title": "Uncast fp16/bf16 bias vs fp32 weights in F.linear raises dtype mismatch during alpha search"
     }
   },
   "edges": [
@@ -5185,6 +5246,36 @@
       "to": "HYP-033",
       "type": "validates",
       "created_at": "2026-08-12T10:15:27+00:00"
+    },
+    {
+      "from": "ISS-060",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-12T10:24:02+00:00"
+    },
+    {
+      "from": "TASK-056",
+      "to": "ISS-060",
+      "type": "addresses",
+      "created_at": "2026-08-12T10:24:02+00:00"
+    },
+    {
+      "from": "CHG-054",
+      "to": "ISS-060",
+      "type": "resolves",
+      "created_at": "2026-08-12T10:26:41+00:00"
+    },
+    {
+      "from": "CHG-054",
+      "to": "TASK-056",
+      "type": "implements",
+      "created_at": "2026-08-12T10:26:41+00:00"
+    },
+    {
+      "from": "EV-078",
+      "to": "HYP-034",
+      "type": "validates",
+      "created_at": "2026-08-12T10:26:42+00:00"
     }
   ]
 }
