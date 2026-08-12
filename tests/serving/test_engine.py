@@ -512,6 +512,53 @@ def test_stop_terminated_request_frees_paged_blocks(tiny_model, device, mock_tok
     assert engine.paged_kv_cache.block_manager.num_free_blocks == engine.paged_kv_cache.num_blocks
 
 
+def test_persistent_forward_failure_does_not_livelock_engine(tiny_model, device, mock_tokenizer):
+    """Regression (RIL ISS-051): a request whose forward persistently fails
+    (OOM / bad token id / shape mismatch) must be dropped, not re-scheduled
+    forever.
+
+    The forward-failure path in ``_lock_step_post`` freed the slots but left
+    the sequence RUNNING. ``Scheduler.schedule`` only drops FINISHED
+    sequences, so every subsequent ``step()`` re-allocated a slot for the
+    dead sequence and re-ran the failing forward — the whole engine
+    livelocked and every request errored. Marking the affected sequences
+    FINISHED lets ``schedule()`` remove them.
+    """
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    # A request whose forward will persistently fail.
+    req = GenerationRequest(prompt="abcd", max_new_tokens=3)
+    req.request_id = "req-dying"
+    engine.add_request(req)
+
+    # First step: the model forward raises inside the real
+    # ``_forward_and_sample``, which records it in ``_StepResult.forward_failed``
+    # so ``_lock_step_post`` frees the slot and (after the fix) marks the
+    # sequence FINISHED — otherwise the exception would propagate without the
+    # status flip and the sequence would be re-scheduled forever. Patch
+    # ``forward`` (not ``__call__``): nn.Module dispatch goes through the
+    # class ``__call__``, so an instance-level ``__call__`` patch is ignored.
+    with patch.object(engine.model, "forward", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError, match="boom"):
+            engine.step()
+
+        # After the fix the failed sequence is FINISHED; the next
+        # ``schedule()`` (start of the following step) drops it, so the
+        # engine does NOT re-run the failing forward on the same sequence.
+        assert engine.scheduler.running  # still present until next schedule()
+        assert engine.scheduler.running[0].is_finished()
+        assert engine.slot_allocator.get_slot("req-dying") == -1
+        scheduled = engine.scheduler.schedule()
+        assert "req-dying" not in [s.request_id for s in scheduled]
+
+
 def test_forward_applies_frequency_penalty(tiny_model, device, mock_tokenizer):
     """``_forward_and_sample`` applies ``frequency_penalty`` from the Sequence."""
     tiny_model.eval()

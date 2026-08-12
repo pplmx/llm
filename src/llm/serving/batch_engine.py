@@ -717,12 +717,14 @@ class ContinuousBatchingEngine:
         """
         inputs = result.inputs
         if result.forward_failed is not None:
-            # Free the slots we allocated in pre so the engine stays
-            # leak-free even when the model raises mid-forward. The
-            # sequences themselves remain in their last-known state;
-            # callers are expected to clean them up via the timeout
-            # path.
+            # Free the slots we allocated in pre, and mark the sequences
+            # FINISHED so the next ``schedule()`` drops them. Without the
+            # status flip a persistently-failing sequence (OOM, bad token
+            # id, shape mismatch) stays RUNNING and is re-scheduled every
+            # step — re-allocated, re-forwarded, re-failed — livelocking
+            # the whole engine past the first error (RIL ISS-051).
             for i, seq in enumerate(inputs.running_sequences):
+                seq.status = RequestState.FINISHED
                 self._release_request_slots(seq.request_id, inputs.batch_slots_list[i])
             raise result.forward_failed
 
