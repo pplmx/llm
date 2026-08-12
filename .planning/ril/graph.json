@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 35,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T08:10:21+00:00",
+  "updated_at": "2026-08-12T08:26:50+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 34,
+      "touched_round": 35,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -3058,6 +3058,78 @@
       "touched_round": 35,
       "confidence": 0.9,
       "title": "cont_len=len(cont_ids) overflows the truncated window when continuation exceeds max_length"
+    },
+    "ISS-051": {
+      "id": "ISS-051",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T08:23:50+00:00",
+      "updated_at": "2026-08-12T08:24:56+00:00",
+      "touched_round": 35,
+      "severity": "med",
+      "title": "Engine forward-failure leaves sequence RUNNING -> persistent failure livelocks the whole engine",
+      "details": "batch_engine._lock_step_post forward_failed branch freed slots but left sequences RUNNING; Scheduler.schedule only drops FINISHED seqs, so every subsequent step re-allocated a slot for the dead sequence and re-ran the failing forward (OOM/bad token id/shape mismatch), re-raising forever and bricking all requests. Fixed by marking affected sequences FINISHED before re-raising so schedule() drops them."
+    },
+    "TASK-047": {
+      "id": "TASK-047",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T08:23:50+00:00",
+      "updated_at": "2026-08-12T08:25:55+00:00",
+      "touched_round": 35,
+      "category": "stability",
+      "severity": 0.7,
+      "title": "Mark sequences FINISHED on forward-failed so a persistent model error cannot livelock the engine (ISS-051)",
+      "details": "In _lock_step_post forward_failed branch, set seq.status = FINISHED for each affected sequence before releasing slots and re-raising. Regression test patches model.forward to raise, asserts the sequence is finished and dropped by the next schedule().",
+      "lock_owner": "loop-35",
+      "lock_until": "2026-08-12T08:53:50+00:00"
+    },
+    "CHG-046": {
+      "id": "CHG-046",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:24:55+00:00",
+      "updated_at": "2026-08-12T08:24:55+00:00",
+      "touched_round": 35,
+      "commit": "04b4797",
+      "title": "fix(serving): finish seqs on forward-failed (ISS-051/TASK-047)"
+    },
+    "EV-069": {
+      "id": "EV-069",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:24:55+00:00",
+      "updated_at": "2026-08-12T08:24:55+00:00",
+      "touched_round": 35,
+      "source": "tests/serving/test_engine.py::test_persistent_forward_failure_does_not_livelock_engine",
+      "title": "Confirmed RED: failed seq stayed RUNNING and re-scheduled; after finish-on-failure it is dropped by next schedule()",
+      "confidence": 1.0
+    },
+    "HYP-025": {
+      "id": "HYP-025",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T08:24:55+00:00",
+      "updated_at": "2026-08-12T08:24:56+00:00",
+      "touched_round": 35,
+      "confidence": 0.9,
+      "title": "forward_failed leaves seq RUNNING which re-schedules forever; FINISHED status lets schedule() drop it"
+    },
+    "DEC-017": {
+      "id": "DEC-017",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:26:40+00:00",
+      "updated_at": "2026-08-12T08:26:40+00:00",
+      "touched_round": 35,
+      "rationale": "Round-35 deep dive closed 5 verified correctness/stability bugs (ISS-047 prefix layout, ISS-048 paged decode mask, ISS-049 string-until stop, ISS-050 loglikelihood over-long window, ISS-051 forward-failure livelock) — exceeding the 3-task/round guideline. Justified: all five were independently verified RED->GREEN with regression tests, none required speculative rework, and they form one coherent serving/eval correctness sweep, so scope stayed converged rather than sprawling.",
+      "alternatives_rejected": "Stopping at 3 tasks would have left two verified HIGH (ISS-048) and correctness (ISS-049/050) defects open with fixes already written; deferring them added risk without reducing review burden."
     }
   },
   "edges": [
@@ -4374,6 +4446,42 @@
       "to": "HYP-024",
       "type": "validates",
       "created_at": "2026-08-12T08:10:12+00:00"
+    },
+    {
+      "from": "ISS-051",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-12T08:23:50+00:00"
+    },
+    {
+      "from": "TASK-047",
+      "to": "ISS-051",
+      "type": "addresses",
+      "created_at": "2026-08-12T08:23:50+00:00"
+    },
+    {
+      "from": "CHG-046",
+      "to": "ISS-051",
+      "type": "resolves",
+      "created_at": "2026-08-12T08:24:55+00:00"
+    },
+    {
+      "from": "CHG-046",
+      "to": "TASK-047",
+      "type": "implements",
+      "created_at": "2026-08-12T08:24:55+00:00"
+    },
+    {
+      "from": "EV-069",
+      "to": "HYP-025",
+      "type": "validates",
+      "created_at": "2026-08-12T08:24:55+00:00"
+    },
+    {
+      "from": "DEC-017",
+      "to": "TASK-044",
+      "type": "governs",
+      "created_at": "2026-08-12T08:26:50+00:00"
     }
   ]
 }
