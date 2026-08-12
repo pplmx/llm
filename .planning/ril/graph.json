@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T08:35:14+00:00",
+  "updated_at": "2026-08-12T08:53:12+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 35,
+      "touched_round": 36,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -3216,6 +3216,67 @@
       "severity": 0.5,
       "title": "Align PPO ratio distributions across temperature (and honor top_k/top_p during generation) (ISS-053)",
       "details": "Compute new_log_probs with the same temperature the rollout used, or store unscaled old_log_probs; apply config top_k/top_p in generate_responses. Latent unless temperature != 1.0."
+    },
+    "ISS-054": {
+      "id": "ISS-054",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T08:51:18+00:00",
+      "updated_at": "2026-08-12T08:53:04+00:00",
+      "touched_round": 36,
+      "severity": "low",
+      "title": "stream_request double-yields the trailing buffer when a sequence is already finished at loop top",
+      "details": "In ContinuousBatchingEngine.stream_request, when a sequence is already FINISHED at the top of the emission loop (concurrent step completion) and a stop is configured, the drained tail buffer is yielded in the loop and then AGAIN by the post-loop 'yield buffer' (it is never cleared). This duplicates the last max_stop_len characters of a response under concurrency. Fixed by returning after draining the finished sequence."
+    },
+    "TASK-050": {
+      "id": "TASK-050",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T08:51:18+00:00",
+      "updated_at": "2026-08-12T08:53:12+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Emit trailing buffer exactly once in stream_request when sequence finished at loop top (ISS-054)",
+      "details": "Return after draining the tail buffer instead of breaking into the post-loop yield. Regression test forces path A (pre-finished sequence + configured stop) and asserts the tail appears exactly once.",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T09:21:18+00:00"
+    },
+    "CHG-048": {
+      "id": "CHG-048",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:53:03+00:00",
+      "updated_at": "2026-08-12T08:53:03+00:00",
+      "touched_round": 36,
+      "commit": "531fe09",
+      "title": "fix(serving): single tail-buffer emit (ISS-054/TASK-050)"
+    },
+    "EV-071": {
+      "id": "EV-071",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:53:03+00:00",
+      "updated_at": "2026-08-12T08:53:03+00:00",
+      "touched_round": 36,
+      "source": "tests/serving/test_engine.py::test_stream_request_does_not_double_yield_tail_buffer",
+      "title": "Confirmed RED: chunks ['5','5'] (double); fixed emits ['5'] once",
+      "confidence": 1.0
+    },
+    "HYP-027": {
+      "id": "HYP-027",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T08:53:03+00:00",
+      "updated_at": "2026-08-12T08:53:04+00:00",
+      "touched_round": 36,
+      "confidence": 0.9,
+      "title": "Top-of-loop-finished path breaks into the post-loop buffer yield, emitting the tail twice"
     }
   },
   "edges": [
@@ -4610,6 +4671,36 @@
       "to": "ISS-053",
       "type": "addresses",
       "created_at": "2026-08-12T08:35:14+00:00"
+    },
+    {
+      "from": "ISS-054",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-12T08:51:18+00:00"
+    },
+    {
+      "from": "TASK-050",
+      "to": "ISS-054",
+      "type": "addresses",
+      "created_at": "2026-08-12T08:51:18+00:00"
+    },
+    {
+      "from": "CHG-048",
+      "to": "ISS-054",
+      "type": "resolves",
+      "created_at": "2026-08-12T08:53:03+00:00"
+    },
+    {
+      "from": "CHG-048",
+      "to": "TASK-050",
+      "type": "implements",
+      "created_at": "2026-08-12T08:53:03+00:00"
+    },
+    {
+      "from": "EV-071",
+      "to": "HYP-027",
+      "type": "validates",
+      "created_at": "2026-08-12T08:53:04+00:00"
     }
   ]
 }
