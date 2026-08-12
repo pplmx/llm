@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T09:20:30+00:00",
+  "updated_at": "2026-08-12T09:36:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3361,6 +3361,67 @@
       "touched_round": 36,
       "confidence": 0.9,
       "title": "e2e/test_ddp.py::test_ddp_all_available_gpus spawn timeout is intermittent environmental GPU-box contention, not a code regression"
+    },
+    "ISS-056": {
+      "id": "ISS-056",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T09:35:02+00:00",
+      "updated_at": "2026-08-12T09:35:34+00:00",
+      "touched_round": 36,
+      "severity": "high",
+      "title": "save_pretrained->from_pretrained roundtrip silently corrupts the default (non-GLU) model",
+      "details": "The DEFAULT DecoderModel uses use_glu=False (MLP = fc1 + fc2 only). save_pretrained emitted mlp.up_proj from the nonexistent mlp.gate_proj, so the artifact lacked up_proj; the loader hardcoded use_glu=True and rebuilt a GLU MLP whose every gate_proj stayed random init. Logits after roundtrip differ (max err ~0.6). The existing roundtrip test masked this by forcing use_glu=True in its fixture. Fix: persist use_glu in config.json, honor it in get_config_mapping + loader, and the mapping naturally handles the non-GLU case (fc1->gate_proj, fc2->down_proj, no up_proj)."
+    },
+    "TASK-052": {
+      "id": "TASK-052",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T09:35:02+00:00",
+      "updated_at": "2026-08-12T09:36:54+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Persist + honor use_glu across save_pretrained/from_pretrained so default non-GLU models roundtrip (ISS-056)",
+      "details": "Add use_glu to _build_hf_config, read it in get_config_mapping (default True for external HF), pass it to ModelFactory.build in hf_loader. Add RED->GREEN regression test: default non-GLU model save->load must produce equivalent logits and a non-GLU reloaded MLP.",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T10:05:02+00:00"
+    },
+    "CHG-050": {
+      "id": "CHG-050",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T09:35:33+00:00",
+      "updated_at": "2026-08-12T09:35:33+00:00",
+      "touched_round": 36,
+      "commit": "0808884",
+      "title": "fix(compat): use_glu roundtrip (ISS-056/TASK-052)"
+    },
+    "EV-074": {
+      "id": "EV-074",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T09:35:33+00:00",
+      "updated_at": "2026-08-12T09:35:33+00:00",
+      "touched_round": 36,
+      "source": "tests/compat/test_hf_publisher.py::test_save_pretrained_roundtrip_default_non_glu_model",
+      "title": "Confirmed RED: non-GLU roundtrip failed (random gate_proj on load); use_glu persisted+honored gives equivalent logits",
+      "confidence": 1.0
+    },
+    "HYP-030": {
+      "id": "HYP-030",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T09:35:34+00:00",
+      "updated_at": "2026-08-12T09:35:34+00:00",
+      "touched_round": 36,
+      "confidence": 0.95,
+      "title": "Loader hardcodes use_glu=True so default non-GLU models get random gate_proj on load"
     }
   },
   "edges": [
@@ -4821,6 +4882,36 @@
       "to": "HYP-029",
       "type": "validates",
       "created_at": "2026-08-12T09:20:30+00:00"
+    },
+    {
+      "from": "ISS-056",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T09:35:02+00:00"
+    },
+    {
+      "from": "TASK-052",
+      "to": "ISS-056",
+      "type": "addresses",
+      "created_at": "2026-08-12T09:35:02+00:00"
+    },
+    {
+      "from": "CHG-050",
+      "to": "ISS-056",
+      "type": "resolves",
+      "created_at": "2026-08-12T09:35:34+00:00"
+    },
+    {
+      "from": "CHG-050",
+      "to": "TASK-052",
+      "type": "implements",
+      "created_at": "2026-08-12T09:35:34+00:00"
+    },
+    {
+      "from": "EV-074",
+      "to": "HYP-030",
+      "type": "validates",
+      "created_at": "2026-08-12T09:35:34+00:00"
     }
   ]
 }
