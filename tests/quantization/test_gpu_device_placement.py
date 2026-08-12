@@ -11,7 +11,7 @@ import pytest
 import torch
 
 from llm.models.decoder import DecoderModel
-from tests.support.devices import cuda_usable
+from tests.support.devices import DEFAULT_DEVICE, all_gpu_devices, cuda_usable
 
 
 @pytest.mark.skipif(not cuda_usable(), reason="requires CUDA with >= 512 MiB free VRAM")
@@ -46,13 +46,17 @@ def test_quantized_buffers_stay_on_cuda(method, quantize_fn, config):
     model = DecoderModel(vocab_size=1024, hidden_size=64, num_layers=2, num_heads=4, max_seq_len=128)
     calib = [torch.randint(0, 1024, (2, 16)) for _ in range(4)]
 
-    quantized = quantize(model, iter(calib), config, device="cuda")
+    # Use the fattest usable GPU (repo ``DEFAULT_DEVICE`` convention) rather
+    # than literal ``"cuda"`` (cuda:0), which can be an occupied / low-VRAM
+    # device on a shared host and makes the test flaky (RIL ISS-046).
+    device = str(DEFAULT_DEVICE) if all_gpu_devices() else "cpu"
+    quantized = quantize(model, iter(calib), config, device=device)
     quantized.eval()
 
     devices = {buffer.device.type for buffer in quantized.buffers()}
     assert devices == {"cuda"}, f"{method}: mixed-device buffers {devices}"
 
-    ids = torch.randint(0, 1024, (2, 16), device="cuda")
+    ids = torch.randint(0, 1024, (2, 16), device=device)
     with torch.no_grad():
         out = quantized(ids)
     assert torch.isfinite(out).all().item(), f"{method}: forward produced non-finite logits"

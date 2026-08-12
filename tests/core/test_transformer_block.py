@@ -247,6 +247,14 @@ class TestTransformerBlockForwardPass:
 class TestDeviceAndDtypePropagation:
     def test_block_device_dtype(self, device, dtype_str, block_kwargs):
         dtype = getattr(torch, dtype_str.replace("torch.", ""))
+        # ``DEVICES`` (``ALL_DEVICES``) is a collection-time snapshot of the
+        # usable GPUs. On a shared host another tenant can claim one of those
+        # GPUs between collection and execution, turning a previously usable
+        # device (e.g. ``cuda:1``) into an occupied one — the block then
+        # OOMs and the test flakes (RIL ISS-046). Re-check the SPECIFIC
+        # device at run time and skip if it no longer has headroom.
+        if device.startswith("cuda") and not cuda_usable(device):
+            pytest.skip(f"device {device} no longer has >= 512 MiB free VRAM at run time")
         if (
             device == "cuda"
             and dtype == torch.float64

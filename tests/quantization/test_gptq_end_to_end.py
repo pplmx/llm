@@ -64,16 +64,22 @@ def test_gptq_gpu_quantization_keeps_buffers_on_device():
     from llm.models.decoder import DecoderModel
     from llm.quantization._gptq_layer import GPTQQuantizedLinear
     from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+    from tests.support.devices import DEFAULT_DEVICE, all_gpu_devices
+
+    # Use the fattest usable GPU (repo ``DEFAULT_DEVICE`` convention) rather
+    # than literal ``"cuda"`` (cuda:0), which can be an occupied / low-VRAM
+    # device on a shared host and makes the test flaky (RIL ISS-046).
+    device = str(DEFAULT_DEVICE) if all_gpu_devices() else "cpu"
 
     model = DecoderModel(vocab_size=1024, hidden_size=64, num_layers=2, num_heads=4, max_seq_len=128)
     calib = [torch.randint(0, 1024, (2, 16)) for _ in range(4)]
-    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(bits=4, group_size=128), device="cuda")
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(bits=4, group_size=128), device=device)
     quantized.eval()
 
     devices = {buffer.device.type for buffer in quantized.buffers()}
     assert devices == {"cuda"}, f"quantized model has mixed-device buffers: {devices}"
 
-    ids = torch.randint(0, 1024, (2, 16), device="cuda")
+    ids = torch.randint(0, 1024, (2, 16), device=device)
     with torch.no_grad():
         out = quantized(ids)
     assert torch.isfinite(out).all().item()

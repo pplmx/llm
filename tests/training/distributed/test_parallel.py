@@ -10,7 +10,7 @@ from llm.training.distributed.parallel import (
     model_state_dict,
     wrap_model_for_training,
 )
-from tests.support.devices import ALL_DEVICES, cuda_usable
+from tests.support.devices import ALL_DEVICES, DEFAULT_DEVICE, cuda_usable
 
 
 class _Tiny(nn.Module):
@@ -88,12 +88,12 @@ def test_load_model_state_dict_accepts_compiled_prefix():
 def test_unknown_parallel_strategy_raises():
     if not cuda_usable():
         pytest.skip("CUDA required for distributed wrap path")
-    model = _Tiny().cuda()
+    model = _Tiny().to(DEFAULT_DEVICE)
     with pytest.raises(ValueError, match="Unknown parallel_strategy"):
         wrap_model_for_training(
             model,
             parallel_strategy="megatron",
-            device=torch.device("cuda:0"),
+            device=DEFAULT_DEVICE,
             world_size=2,
         )
 
@@ -158,11 +158,11 @@ def test_wrap_fsdp_world_size_one_returns_unwrapped():
     """Single-rank FSDP is equivalent to bare training."""
     if not cuda_usable():
         pytest.skip("CUDA required to build the world-size=1 FSDP input")
-    model = _Tiny().cuda()
+    model = _Tiny().to(DEFAULT_DEVICE)
     wrapped = wrap_model_for_training(
         model,
         parallel_strategy="fsdp",
-        device=torch.device("cuda:0"),
+        device=DEFAULT_DEVICE,
         world_size=1,
     )
     assert wrapped is model
