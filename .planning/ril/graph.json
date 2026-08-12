@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T08:53:12+00:00",
+  "updated_at": "2026-08-12T09:05:37+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3277,6 +3277,67 @@
       "touched_round": 36,
       "confidence": 0.9,
       "title": "Top-of-loop-finished path breaks into the post-loop buffer yield, emitting the tail twice"
+    },
+    "ISS-055": {
+      "id": "ISS-055",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T09:00:58+00:00",
+      "updated_at": "2026-08-12T09:05:06+00:00",
+      "touched_round": 36,
+      "severity": "low",
+      "title": "Perplexity metric returns NaN (serialized as JSON null) when all shift-target labels are ignore_index",
+      "details": "PerplexityMetric.compute with ignore_index=-100: when every shifted label equals ignore_index (e.g. a 1-token eval corpus), cross_entropy(..., reduction='mean', ignore_index=-100) averages over zero valid elements and returns NaN; torch.exp(nan)=nan serialized to JSON null by _to_serializable, poisoning the report. Metric's documented convention is inf for undefined perplexity. Fix: if all labels equal ignore_index, return inf before computing loss."
+    },
+    "TASK-051": {
+      "id": "TASK-051",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T09:00:58+00:00",
+      "updated_at": "2026-08-12T09:05:37+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Return inf (not NaN) when every perplexity shift-target is ignored (ISS-055)",
+      "details": "Guard all-labels-==-ignore_index before cross_entropy so NaN cannot leak into reports. Regression test with labels all -100.",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T09:30:58+00:00"
+    },
+    "CHG-049": {
+      "id": "CHG-049",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T09:05:06+00:00",
+      "updated_at": "2026-08-12T09:05:06+00:00",
+      "touched_round": 36,
+      "commit": 3041018,
+      "title": "fix(eval): inf-not-NaN perplexity (ISS-055/TASK-051)"
+    },
+    "EV-072": {
+      "id": "EV-072",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T09:05:06+00:00",
+      "updated_at": "2026-08-12T09:05:06+00:00",
+      "touched_round": 36,
+      "source": "tests/evaluation/test_lm_task.py::test_perplexity_metric_all_labels_ignored_returns_inf",
+      "title": "Confirmed RED: all--100 labels -> nan; guard returns inf",
+      "confidence": 1.0
+    },
+    "HYP-028": {
+      "id": "HYP-028",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T09:05:06+00:00",
+      "updated_at": "2026-08-12T09:05:06+00:00",
+      "touched_round": 36,
+      "confidence": 0.9,
+      "title": "cross_entropy mean over zero valid elements returns NaN which serializes to null"
     }
   },
   "edges": [
@@ -4701,6 +4762,36 @@
       "to": "HYP-027",
       "type": "validates",
       "created_at": "2026-08-12T08:53:04+00:00"
+    },
+    {
+      "from": "ISS-055",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T09:00:58+00:00"
+    },
+    {
+      "from": "TASK-051",
+      "to": "ISS-055",
+      "type": "addresses",
+      "created_at": "2026-08-12T09:00:58+00:00"
+    },
+    {
+      "from": "CHG-049",
+      "to": "ISS-055",
+      "type": "resolves",
+      "created_at": "2026-08-12T09:05:06+00:00"
+    },
+    {
+      "from": "CHG-049",
+      "to": "TASK-051",
+      "type": "implements",
+      "created_at": "2026-08-12T09:05:06+00:00"
+    },
+    {
+      "from": "EV-072",
+      "to": "HYP-028",
+      "type": "validates",
+      "created_at": "2026-08-12T09:05:06+00:00"
     }
   ]
 }
