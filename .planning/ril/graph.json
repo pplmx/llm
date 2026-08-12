@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 34,
+  "round": 35,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T07:13:10+00:00",
+  "updated_at": "2026-08-12T07:36:29+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -2806,11 +2806,11 @@
     "ISS-047": {
       "id": "ISS-047",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-12T07:02:47+00:00",
-      "updated_at": "2026-08-12T07:02:47+00:00",
-      "touched_round": 34,
+      "updated_at": "2026-08-12T07:27:19+00:00",
+      "touched_round": 35,
       "severity": "high",
       "title": "Prefix-tuning K/V reshape scrambles head/position axes when num_kv_heads>1 and prefix_len>1",
       "details": "prefix_tuning._expand_to_attn_shape does pk.view(1, num_kv_heads, prefix_len, head_dim) on a [prefix_len, kv_dim] tensor where kv_dim=num_kv_heads*head_dim. Row-major flat layout is [pos][head][dim], but the view interprets [head][pos][dim], so heads read K/V from the wrong prefix positions whenever prefix_len>1 and num_kv_heads>1 (default GQA config). Correct layout needs reshape(prefix_len,num_kv_heads,head_dim).permute(1,0,2). Verified: head0 pos1 returns pk[0,2] (=head1 pos0) instead of pk[1,0]. Train/fold self-consistent (no crash) but semantically wrong vs every reference prefix-tuning implementation; loading external prefix weights would be silently wrong."
@@ -2818,11 +2818,11 @@
     "HYP-021": {
       "id": "HYP-021",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-12T07:03:16+00:00",
-      "updated_at": "2026-08-12T07:03:16+00:00",
-      "touched_round": 34,
+      "updated_at": "2026-08-12T07:27:19+00:00",
+      "touched_round": 35,
       "confidence": 0.9,
       "title": "PrefixK/V .view(1,num_kv_heads,prefix_len,head_dim) needs a permute; docstring claims [B,heads,prefix,head_dim] but flat reshape swaps axes"
     },
@@ -2841,14 +2841,101 @@
     "ISS-048": {
       "id": "ISS-048",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-12T07:12:16+00:00",
-      "updated_at": "2026-08-12T07:12:16+00:00",
-      "touched_round": 34,
+      "updated_at": "2026-08-12T07:35:56+00:00",
+      "touched_round": 35,
       "severity": "high",
       "title": "Paged-attention decode rows attend only to key position 0 when mixed with prefill rows",
       "details": "paged_attention_forward builds its own causal mask from seq_lens and only adds the prefill causal overlay (col_idx > row_idx) when _query_len > 1. The engine left-pads decode rows so their single real query sits at local index 0, but _query_len is the batch max (set >1 by any prefill row), so the overlay masks col_idx > 0 for decode rows — they can only attend to key position 0. run_attn_mask from the engine never reaches the kernel (kernel rebuilds its own). Affects any continuous-batching mix of prefill+decode with use_paged_attention=True. Verified by tracing _lock_step_pre + _forward_and_sample + paged_attention_forward."
+    },
+    "TASK-043": {
+      "id": "TASK-043",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T07:20:51+00:00",
+      "updated_at": "2026-08-12T07:27:24+00:00",
+      "touched_round": 35,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Prefix-tuning K/V reshape must permute head/position axes (ISS-047)",
+      "details": "In prefix_tuning._expand_to_attn_shape, pk/pv are [prefix_len, kv_dim] with row-major [pos][head][dim]. The bare .view(1, num_kv_heads, prefix_len, head_dim) interprets [head][pos][dim], scrambling heads across prefix positions when num_kv_heads>1 and prefix_len>1. Replace with .reshape(prefix_len, num_kv_heads, head_dim).permute(1,0,2).unsqueeze(0). Fix affects both reparam (training) and folded (buffer) paths since both call _expand_to_attn_shape. Add regression test asserting per-head/per-position layout.",
+      "lock_owner": "loop-35",
+      "lock_until": "2026-08-12T07:50:52+00:00"
+    },
+    "CHG-042": {
+      "id": "CHG-042",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:27:12+00:00",
+      "updated_at": "2026-08-12T07:27:12+00:00",
+      "touched_round": 35,
+      "commit": "06d7895",
+      "title": "fix(core): prefix K/V reshape permute (ISS-047/TASK-043)"
+    },
+    "EV-065": {
+      "id": "EV-065",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:27:12+00:00",
+      "updated_at": "2026-08-12T07:27:12+00:00",
+      "touched_round": 35,
+      "source": "tests/core/test_prefix_tuning.py::test_expand_preserves_per_head_position_semantics",
+      "title": "Confirmed RED: head0 pos1 read pk[0,2]=8 instead of pk[1,0]=32; permute fix reads correct per-head/per-pos values",
+      "confidence": 1.0
+    },
+    "TASK-044": {
+      "id": "TASK-044",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T07:35:15+00:00",
+      "updated_at": "2026-08-12T07:36:29+00:00",
+      "touched_round": 35,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Gate paged-attention causal overlay to prefill rows only; decode rows keep full context (ISS-048)",
+      "details": "paged_attention_forward applies the col_idx > row_idx causal overlay to every row whenever the batch-max query length > 1. Continuous batching left-pads decode rows (single real query at local index 0), so those rows had every key > 0 masked - decode attention collapsed onto key 0, garbage output whenever a prefill row shared the batch. Fix: pass per-row real query lengths (query_lens, computed in MHA from the engine's run_attn_mask) and only apply causality to rows with >1 real query token. Regression test: uniform-q/k decode row must attend to all N keys in a mixed prefill+decode batch.",
+      "lock_owner": "loop-35",
+      "lock_until": "2026-08-12T08:05:15+00:00"
+    },
+    "CHG-043": {
+      "id": "CHG-043",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:35:44+00:00",
+      "updated_at": "2026-08-12T07:35:44+00:00",
+      "touched_round": 35,
+      "commit": "994d632",
+      "title": "fix(core): paged causal overlay prefill-only (ISS-048/TASK-044)"
+    },
+    "EV-066": {
+      "id": "EV-066",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:35:44+00:00",
+      "updated_at": "2026-08-12T07:35:44+00:00",
+      "touched_round": 35,
+      "source": "tests/serving/test_paged_integration.py::test_decode_row_attends_to_full_context_when_mixed_with_prefill",
+      "title": "Confirmed: decode row returned [1.0,0.0] (only key 0) in mixed batch before fix; after query_lens gate returns [1/N,0.0] uniform over N keys",
+      "confidence": 1.0
+    },
+    "HYP-022": {
+      "id": "HYP-022",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T07:35:56+00:00",
+      "updated_at": "2026-08-12T07:35:56+00:00",
+      "touched_round": 35,
+      "confidence": 0.95,
+      "title": "Paged-kernel causal overlay (col_idx > row_idx) on batch-max query rows masks decode rows' context; decode rows need full-key attention (query_lens gate fixes it)"
     }
   },
   "edges": [
@@ -4057,6 +4144,54 @@
       "to": "ISS-045",
       "type": "addresses",
       "created_at": "2026-08-12T07:13:10+00:00"
+    },
+    {
+      "from": "TASK-043",
+      "to": "ISS-047",
+      "type": "addresses",
+      "created_at": "2026-08-12T07:20:52+00:00"
+    },
+    {
+      "from": "CHG-042",
+      "to": "ISS-047",
+      "type": "resolves",
+      "created_at": "2026-08-12T07:27:19+00:00"
+    },
+    {
+      "from": "CHG-042",
+      "to": "TASK-043",
+      "type": "implements",
+      "created_at": "2026-08-12T07:27:19+00:00"
+    },
+    {
+      "from": "EV-065",
+      "to": "HYP-021",
+      "type": "validates",
+      "created_at": "2026-08-12T07:27:19+00:00"
+    },
+    {
+      "from": "TASK-044",
+      "to": "ISS-048",
+      "type": "addresses",
+      "created_at": "2026-08-12T07:35:15+00:00"
+    },
+    {
+      "from": "CHG-043",
+      "to": "ISS-048",
+      "type": "resolves",
+      "created_at": "2026-08-12T07:35:44+00:00"
+    },
+    {
+      "from": "CHG-043",
+      "to": "TASK-044",
+      "type": "implements",
+      "created_at": "2026-08-12T07:35:45+00:00"
+    },
+    {
+      "from": "EV-066",
+      "to": "HYP-022",
+      "type": "validates",
+      "created_at": "2026-08-12T07:35:56+00:00"
     }
   ]
 }
