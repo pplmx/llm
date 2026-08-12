@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T10:26:52+00:00",
+  "updated_at": "2026-08-12T10:46:39+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 26,
+      "touched_round": 36,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -3666,6 +3666,67 @@
       "touched_round": 36,
       "confidence": 0.9,
       "title": "Uncast fp16/bf16 bias vs fp32 weights in F.linear raises dtype mismatch during alpha search"
+    },
+    "ISS-061": {
+      "id": "ISS-061",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T10:44:09+00:00",
+      "updated_at": "2026-08-12T10:44:39+00:00",
+      "touched_round": 36,
+      "severity": "high",
+      "title": "load_entry_point_registry(overwrite=True) crashes instead of overriding an existing entry",
+      "details": "The overwrite flag only skipped the existence guard but still called Registry.register, which raises ValueError when the name is registered — so the documented override mechanism could never replace anything and instead aborts the bootstrap (e.g. ensure_*_registered) if anyone used it. No in-tree caller passes overwrite=True today, so it's latent. Fixed: Registry.replace + loader uses it when overwrite=True and the name pre-exists."
+    },
+    "TASK-057": {
+      "id": "TASK-057",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T10:44:09+00:00",
+      "updated_at": "2026-08-12T10:46:39+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Implement the documented overwrite path for load_entry_point_registry (ISS-061)",
+      "details": "Add Registry.replace (no duplicate raise) and use it in load_entry_point_registry when overwrite=True and the name pre-exists. Regression test asserts overwrite=True replaces the factory.",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T11:14:09+00:00"
+    },
+    "CHG-055": {
+      "id": "CHG-055",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:44:39+00:00",
+      "updated_at": "2026-08-12T10:44:39+00:00",
+      "touched_round": 36,
+      "commit": "a835584",
+      "title": "fix(runtime): registry overwrite=true replaces (ISS-061/TASK-057)"
+    },
+    "EV-079": {
+      "id": "EV-079",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:44:39+00:00",
+      "updated_at": "2026-08-12T10:44:39+00:00",
+      "touched_round": 36,
+      "source": "tests/runtime/test_plugins.py::test_load_entry_point_registry_overwrite_replaces_existing_names",
+      "title": "Confirmed RED: overwrite=True raised ValueError; Registry.replace makes it replace the factory",
+      "confidence": 1.0
+    },
+    "HYP-035": {
+      "id": "HYP-035",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T10:44:39+00:00",
+      "updated_at": "2026-08-12T10:44:39+00:00",
+      "touched_round": 36,
+      "confidence": 0.95,
+      "title": "overwrite=True skips the guard but register still raises on duplicates, so override could never work"
     }
   },
   "edges": [
@@ -5276,6 +5337,36 @@
       "to": "HYP-034",
       "type": "validates",
       "created_at": "2026-08-12T10:26:42+00:00"
+    },
+    {
+      "from": "ISS-061",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-12T10:44:09+00:00"
+    },
+    {
+      "from": "TASK-057",
+      "to": "ISS-061",
+      "type": "addresses",
+      "created_at": "2026-08-12T10:44:09+00:00"
+    },
+    {
+      "from": "CHG-055",
+      "to": "ISS-061",
+      "type": "resolves",
+      "created_at": "2026-08-12T10:44:39+00:00"
+    },
+    {
+      "from": "CHG-055",
+      "to": "TASK-057",
+      "type": "implements",
+      "created_at": "2026-08-12T10:44:39+00:00"
+    },
+    {
+      "from": "EV-079",
+      "to": "HYP-035",
+      "type": "validates",
+      "created_at": "2026-08-12T10:44:39+00:00"
     }
   ]
 }
