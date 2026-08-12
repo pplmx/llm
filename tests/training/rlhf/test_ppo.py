@@ -354,3 +354,77 @@ class TestPPOTrainer:
 
         assert metrics["value_loss"] > 0.0
         assert torch.isfinite(torch.tensor(metrics["value_loss"]))
+
+    def test_ppo_step_padding_not_counted_as_prompt_tokens(self, tiny_setup):
+        """Regression (RIL ISS-043): trailing padding in a padded mini-batch
+        must not be counted as prompt tokens.
+
+        ``rollout_buffer._collate_batch`` pads each sample to the longest
+        sequence and only marks real response tokens in ``response_mask``.
+        The old ``prompt_len = (1 - response_mask[i]).sum()`` therefore
+        counted prompt tokens PLUS trailing padding as "prompt", so ratio
+        slicing and value extraction read padding positions for every
+        non-longest sample. Deriving ``prompt_len`` from the real sequence
+        length (attention_mask sum minus response length) must align the
+        extracted values with the actual response tokens.
+        """
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+        from llm.training.rlhf.value_model import ValueModel
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        value_model = ValueModel(policy)
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            value_model=value_model,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        # Sample 0: prompt [1], response [4, 5] → total len 3.
+        # Sample 1: prompt [2, 3, 7], response [6] → total len 4.
+        # Max total is 4, so sample 0's row is padded with one trailing 0.
+        # That padding must NOT be counted as a prompt token when locating
+        # the response region.
+        buffer = RolloutBuffer(normalize_advantages=False, gae_lambda=1.0, gamma=1.0)
+        buffer.add(
+            prompt_ids=torch.tensor([1], dtype=torch.long),
+            response_ids=torch.tensor([4, 5], dtype=torch.long),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+            values=torch.tensor([0.1, 0.2]),
+        )
+        buffer.add(
+            prompt_ids=torch.tensor([2, 3, 7], dtype=torch.long),
+            response_ids=torch.tensor([6], dtype=torch.long),
+            rewards=torch.tensor(2.0),
+            old_log_probs=torch.tensor([-0.4]),
+            values=torch.tensor([0.3]),
+        )
+        buffer.compute_advantages()
+        batch = next(iter(buffer.get_batches(mini_batch_size=2, shuffle=False, device=str(DEFAULT_DEVICE))))
+
+        # Rows are padded to total len 4. Each position holds a unique value
+        # so we can assert exactly which real positions the extractor read.
+        # Sample 0: real tokens at positions 0,1,2; padding at 3.
+        #   prompt_len = 1, response len = 2 → response-token values are the
+        #   values at positions [prompt_len-1, prompt_len] = [0, 1].
+        # Sample 1: real tokens at positions 0,1,2,3; no padding.
+        #   prompt_len = 3, response len = 1 → value at position [2].
+        all_values = torch.tensor(
+            [
+                [100.0, 101.0, 102.0, 103.0],
+                [200.0, 201.0, 202.0, 203.0],
+            ],
+            device=str(DEFAULT_DEVICE),
+        )
+        response_values = trainer._extract_response_values(all_values, batch.attention_mask, batch.response_mask, 2)
+
+        # Sample 0: positions [0, 1] → 100, 101. The old buggy code computed
+        # prompt_len = (1 - response_mask[0]).sum() = 2 (padding included),
+        # so it read positions [1, 2] → 101, 102 (off by one, and wrong).
+        assert torch.allclose(response_values[0, :2], torch.tensor([100.0, 101.0], device=str(DEFAULT_DEVICE)))
+        # Sample 1: response len 1 → position [2] → 202.
+        assert torch.allclose(response_values[1, :1], torch.tensor([202.0], device=str(DEFAULT_DEVICE)))

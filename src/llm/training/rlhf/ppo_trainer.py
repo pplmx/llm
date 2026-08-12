@@ -160,6 +160,7 @@ class PPOTrainer:
     def _extract_response_values(
         self,
         all_values: torch.Tensor,
+        attention_mask: torch.Tensor,
         response_mask: torch.Tensor,
         max_response_len: int,
     ) -> torch.Tensor:
@@ -173,9 +174,15 @@ class PPOTrainer:
         )
 
         for i in range(batch_size):
-            prompt_len = (1 - response_mask[i]).sum().long()
             resp_len = int(response_mask[i].sum().long())
             if resp_len > 0:
+                # ``attention_mask`` marks every real token (prompt +
+                # response) with 1 and trailing padding with 0, so the real
+                # prompt length is (real tokens) - (response tokens). The
+                # old ``(1 - response_mask[i]).sum()`` counted trailing
+                # padding as prompt tokens, offsetting every non-longest
+                # sample's response region into padding (RIL ISS-043).
+                prompt_len = int(attention_mask[i].sum().long()) - resp_len
                 positions = prompt_len - 1 + torch.arange(resp_len, device=all_values.device)
                 response_values[i, :resp_len] = all_values[i, positions]
 
@@ -364,9 +371,16 @@ class PPOTrainer:
         new_response_log_probs = torch.zeros_like(old_log_probs)
 
         for i in range(batch_size):
-            prompt_len = (1 - response_mask[i]).sum().long()
             resp_len = int(response_mask[i].sum().long())
             if resp_len > 0:
+                # Same real-prompt-length derivation as
+                # ``_extract_response_values``: attention_mask marks all
+                # real tokens, response_mask marks only response tokens, so
+                # their difference is the true prompt length. Counting
+                # ``(1 - response_mask[i]).sum()`` instead inflated prompt_len
+                # by the trailing pad count and sliced padding-position log
+                # probs into the ratio (RIL ISS-043).
+                prompt_len = int(attention_mask[i].sum().long()) - resp_len
                 new_response_log_probs[i, :resp_len] = token_log_probs[i, prompt_len - 1 : prompt_len - 1 + resp_len]
 
         ratio = (new_response_log_probs - old_log_probs).exp()
@@ -395,6 +409,7 @@ class PPOTrainer:
             all_values = self.value_model(input_ids, attention_mask)
             pred_values = self._extract_response_values(
                 all_values,
+                attention_mask,
                 response_mask,
                 response_len,
             )
