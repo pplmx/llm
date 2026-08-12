@@ -159,18 +159,43 @@ class LlamaLmEvalLM:
 
         for ctx_ids, cont_ids in encoded:
             full = (ctx_ids + cont_ids)[-max_len:]
+            # ``full`` keeps the LAST ``max_len`` tokens, so when a request
+            # exceeds the window we may drop context, continuation, or both.
+            # ``ctx_len`` = how many of ``full``'s tokens are context; the
+            # continuation tokens actually present in the window are
+            # ``full[ctx_len:]`` (NOT the full ``cont_ids`` — those can
+            # extend past the window, RIL ISS-050).
             ctx_len = max(0, len(full) - len(cont_ids))
-            cont_len = len(cont_ids)
 
+            # Tokens are scored shift-by-one: the token at window position
+            # ``p`` is predicted by logit row ``p - 1``, which exists only
+            # for ``p >= 1``. The first scorable token is at position
+            # ``max(ctx_len, 1)`` of ``full``:
+            #   - ``ctx_len >= 1``: all continuation tokens are scorable,
+            #     their predictors are rows ``ctx_len - 1 ... len(full) - 2``;
+            #   - ``ctx_len == 0`` (continuation alone fills/exceeds the
+            #     window): ``full[0]`` is the first continuation token whose
+            #     predictor (at ``full[-1]``) was truncated away, so the
+            #     first continuation token is unscorable and we start at
+            #     ``full[1]`` (predictors rows ``0 ... len(full) - 2``).
+            first_scorable = max(ctx_len, 1)
+            scorable = full[first_scorable:]
+            if not scorable:
+                # No scorable continuation token in the window (a single-token
+                # window with no predicting logit).
+                results.append((0.0, False))
+                continue
+
+            start_row = first_scorable - 1
             input_tensor = torch.tensor([full], dtype=torch.long, device=self.device)
             model_out = self.model(input_tensor, use_cache=False)
             logits = model_out[0] if isinstance(model_out, tuple) else model_out
-            # Log-probs at each continuation position: logits at
-            # ``ctx_len - 1 + i`` predicts ``full[ctx_len + i]``.
-            relevant = logits[0, max(0, ctx_len - 1) : ctx_len - 1 + cont_len, :]
+            relevant = logits[0, start_row : start_row + len(scorable), :]
             log_probs = torch.log_softmax(relevant, dim=-1)
-            cont_tensor = torch.tensor(full[ctx_len:], device=self.device, dtype=torch.long)
-            target_log_probs = log_probs[torch.arange(cont_len, device=self.device), cont_tensor]
+            # Row ``start_row + i`` predicts ``full[first_scorable + i]``.
+            cont_tensor = torch.tensor(scorable, device=self.device, dtype=torch.long)
+            row_index = torch.arange(len(scorable), device=self.device)
+            target_log_probs = log_probs[row_index, cont_tensor]
             sum_logprob = float(target_log_probs.sum().item())
 
             # Greedy match: argmax at each continuation position

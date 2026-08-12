@@ -435,6 +435,27 @@ def test_lm_eval_lm_loglikelihood_batches_requests():
     assert len(out) == 5
 
 
+def test_lm_eval_lm_loglikelihood_continuation_longer_than_max_length():
+    """Regression (RIL ISS-050): a continuation longer than ``max_length``
+    must not overflow the truncated slice.
+
+    When the continuation alone exceeds ``max_length``, ``full`` keeps only
+    the last ``max_length`` tokens (all continuation), so ``ctx_len`` is 0.
+    The old code kept ``cont_len = len(cont_ids)`` which is larger than the
+    truncated ``full`` — ``torch.arange(cont_len)`` then indexed a shorter
+    tensor and raised ``IndexError: indexing tensors could not be broadcast
+    together with shapes [20], [16]`` (the exact repro below)."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+    lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=1, max_length=16)
+    # 20 continuation tokens + 3 context tokens: the window truncates to 16
+    # tokens entirely from the continuation, so ctx_len == 0.
+    requests = [_FakeRequest(("aaa", "b" * 20))]
+    out = lm.loglikelihood(requests)
+    assert len(out) == 1
+    assert isinstance(out[0][0], float)
+    assert isinstance(out[0][1], bool)
+
+
 def test_lm_eval_lm_loglikelihood_rolling_short_input():
     """Inputs shorter than 2 tokens yield ``0.0`` rather than crashing."""
     pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
