@@ -156,22 +156,31 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
         try:
             from starlette.concurrency import iterate_in_threadpool
 
-            with metrics.track_inflight():
-                iterator = _sync_stream_generate(
-                    prompt=request.prompt,
-                    max_new_tokens=request.max_new_tokens,
-                    temperature=request.temperature,
-                    top_k=request.top_k,
-                    top_p=request.top_p,
-                    repetition_penalty=request.repetition_penalty,
-                    frequency_penalty=request.frequency_penalty,
-                    presence_penalty=request.presence_penalty,
-                    logit_bias=request.logit_bias,
-                    stop=request.stop,
-                )
-                async for chunk in iterate_in_threadpool(iterator):
-                    token_count += 1
-                    yield chunk
+            # Acquire the inference semaphore for the *lifetime of the
+            # stream*, exactly like the chat streaming route does. The
+            # original concurrency-control fix (RIL ISS-036) scoped the
+            # semaphore to the non-streaming handlers and chat streaming
+            # but missed this route — /generate?stream=true could hold
+            # unlimited concurrent generations past
+            # max_concurrent_requests while peer routes were bounded
+            # (RIL ISS-042).
+            async with inference_semaphore or _null_cm():
+                with metrics.track_inflight():
+                    iterator = _sync_stream_generate(
+                        prompt=request.prompt,
+                        max_new_tokens=request.max_new_tokens,
+                        temperature=request.temperature,
+                        top_k=request.top_k,
+                        top_p=request.top_p,
+                        repetition_penalty=request.repetition_penalty,
+                        frequency_penalty=request.frequency_penalty,
+                        presence_penalty=request.presence_penalty,
+                        logit_bias=request.logit_bias,
+                        stop=request.stop,
+                    )
+                    async for chunk in iterate_in_threadpool(iterator):
+                        token_count += 1
+                        yield chunk
             t.set_status(200)
             metrics.observe_tokens(endpoint="generate", token_count=token_count)
         except Exception as exc:

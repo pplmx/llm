@@ -219,6 +219,74 @@ def test_generate_stream_error_yields_error_chunk(monkeypatch):
 
 
 @pytest.mark.slow
+def test_generate_stream_acquires_inference_semaphore(monkeypatch):
+    """Regression (RIL ISS-042): ``/generate?stream=true`` must acquire the
+    inference semaphore for the *lifetime of the stream*, exactly like the
+    chat streaming route. The original concurrency-control fix scoped the
+    semaphore to the non-streaming handlers and chat streaming but missed
+    this route, leaving /generate streaming unbounded past
+    ``max_concurrent_requests``.
+    """
+    import asyncio
+    from unittest.mock import MagicMock
+
+    import llm.serving.routers.generate as generate_module
+    from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+
+    class _RecordingSemaphore:
+        """Wraps a real ``asyncio.Semaphore(1)`` and counts enter/exit."""
+
+        def __init__(self):
+            self.sem = asyncio.Semaphore(1)
+            self.entered = 0
+            self.exited = 0
+
+        async def __aenter__(self):
+            await self.sem.acquire()
+            self.entered += 1
+
+        async def __aexit__(self, *exc):
+            self.sem.release()
+            self.exited += 1
+
+    original_key = config.api_key
+    config.api_key = "test-key"
+
+    try:
+        mock = MagicMock()
+        mock.stream.return_value = iter(["tok1", "tok2"])
+        monkeypatch.setattr(ServingGenerationService, "from_config", classmethod(lambda cls, config, **kw: MagicMock()))
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+        with TestClient(app) as c:
+            c.headers["X-API-Key"] = "test-key"
+            monkeypatch.setattr(generate_module, "generation_service", mock)
+            recording = _RecordingSemaphore()
+            monkeypatch.setattr(generate_module, "inference_semaphore", recording)
+            payload = {"prompt": "hello", "max_new_tokens": 5, "stream": True}
+            with c.stream("POST", "/generate", json=payload) as response:
+                assert response.status_code == 200
+                chunks = [line for line in response.iter_lines() if line]
+                # No stop/newlines in the stream, so the two mock tokens
+                # arrive concatenated as one SSE body line.
+                assert "".join(chunks) == "tok1tok2"
+
+        # The semaphore was acquired exactly once and released when the
+        # stream ended.
+        assert recording.entered == 1, f"stream should acquire the semaphore once, got {recording.entered}"
+        assert recording.exited == 1, f"stream should release the semaphore, got {recording.exited}"
+    finally:
+        config.api_key = original_key
+
+
+@pytest.mark.slow
 def test_generate_timeout_error_returns_504(monkeypatch):
     """Non-streaming /generate: TimeoutError maps to HTTP 504."""
     from unittest.mock import MagicMock
