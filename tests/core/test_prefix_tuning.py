@@ -138,6 +138,63 @@ class TestPrefixTuningAttentionShape:
         assert attn.prefix_small.shape == (5, 32)
 
 
+class TestPrefixTuningAttentionLayout:
+    """The reparam / folded prefix K/V must keep per-head, per-position semantics.
+
+    The reparam MLP emits ``[prefix_len, kv_dim]`` with ``kv_dim ==
+    num_kv_heads * head_dim``, laid out row-major as ``[pos][head][dim]``
+    (position varies slowest). Attention expects ``[B, num_kv_heads,
+    prefix_len, head_dim]`` (head varies slowest). Converting with a bare
+    ``.view`` reinterprets the *same flat memory* as ``[head][pos][dim]``,
+    so heads read K/V from the wrong prefix positions whenever both
+    ``num_kv_heads > 1`` and ``prefix_len > 1`` (RIL ISS-047). The correct
+    conversion is ``reshape(prefix_len, num_kv_heads, head_dim).permute(1,
+    0, 2)``.
+    """
+
+    def test_expand_preserves_per_head_position_semantics(self):
+        """Regression (RIL ISS-047): ``_expand_to_attn_shape`` must map
+        ``pk[pos, head*head_dim + dim]`` to
+        ``expanded[batch, head, pos, dim]`` — heads must not read each
+        other's prefix positions."""
+        attn = PrefixTuningAttention(_make_mha(32, 4), prefix_len=3, reparam_hidden=16)
+        head_dim = 8  # 32 // 4
+        prefix_len = attn.prefix_len
+        kv_dim = 32
+
+        # Unique values per (pos, head, dim) so any axis swap is visible.
+        pk = torch.arange(prefix_len * kv_dim, dtype=torch.float).view(prefix_len, kv_dim)
+        pv = pk.clone()
+
+        expanded_k, expanded_v = attn._expand_to_attn_shape(pk, pv, batch_size=1)
+        assert expanded_k.shape == (1, 4, 3, head_dim)
+
+        for head in range(4):
+            for pos in range(3):
+                expected_k = pk[pos, head * head_dim]
+                expected_v = pv[pos, head * head_dim]
+                # The bare-view bug makes head 0 read pk[?] whose value
+                # belongs to a different (head, pos) pair.
+                assert expanded_k[0, head, pos, 0] == expected_k, (
+                    f"head {head} pos {pos} K[0] = {expanded_k[0, head, pos, 0].item()}, "
+                    f"expected pk[{pos}, {head * head_dim}] = {expected_k.item()}"
+                )
+                assert expanded_v[0, head, pos, 0] == expected_v
+
+    def test_expand_single_kv_head_is_unchanged(self):
+        """With ``num_kv_heads == 1`` the bare view and the permute agree, so
+        the fix must not alter the MHA (single-KV-head) path."""
+        from llm.core.attn.mha import MultiHeadAttention
+
+        torch.manual_seed(0)
+        attn = MultiHeadAttention(hidden_size=16, num_heads=2, num_kv_heads=1)
+        wrapper = PrefixTuningAttention(base_attn=attn, prefix_len=4, reparam_hidden=8)
+        x = torch.randn(2, 6, 16)
+        out = wrapper(x)
+        assert out.shape == (2, 6, 16)
+        assert torch.isfinite(out).all()
+
+
 class TestPrefixTuningAttentionForward:
     """Forward injects prefix into base MHA."""
 

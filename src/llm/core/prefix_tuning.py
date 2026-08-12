@@ -150,9 +150,17 @@ class PrefixTuningAttention(nn.Module):
         we broadcast across the batch dim (the prefix is shared across
         the batch - every sequence in a batch sees the same prefix).
         """
-        # [prefix_len, kv_dim] -> [1, num_kv_heads, prefix_len, head_dim]
-        pk = pk.view(1, self.num_kv_heads, self.prefix_len, self.head_dim)
-        pv = pv.view(1, self.num_kv_heads, self.prefix_len, self.head_dim)
+        # ``pk`` is ``[prefix_len, kv_dim]`` with ``kv_dim == num_kv_heads *
+        # head_dim``, laid out row-major as ``[pos][head][dim]`` (position
+        # varies slowest across rows, head fastest within a row). Attention
+        # expects ``[1, num_kv_heads, prefix_len, head_dim]`` (head varies
+        # slowest). A bare ``.view`` would reinterpret the SAME flat memory
+        # as ``[head][pos][dim]``, so heads read K/V computed from the wrong
+        # prefix positions whenever both ``num_kv_heads > 1`` and
+        # ``prefix_len > 1`` (RIL ISS-047). Reshape to ``[pos][head][dim]``
+        # then permute the position/head axes to get the correct layout.
+        pk = pk.reshape(self.prefix_len, self.num_kv_heads, self.head_dim).permute(1, 0, 2).unsqueeze(0)
+        pv = pv.reshape(self.prefix_len, self.num_kv_heads, self.head_dim).permute(1, 0, 2).unsqueeze(0)
         # Broadcast across the batch dim.
         pk = pk.expand(batch_size, -1, -1, -1)
         pv = pv.expand(batch_size, -1, -1, -1)
