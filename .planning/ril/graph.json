@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 35,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T07:36:29+00:00",
+  "updated_at": "2026-08-12T07:56:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 34,
+      "touched_round": 35,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -2936,6 +2936,67 @@
       "touched_round": 35,
       "confidence": 0.95,
       "title": "Paged-kernel causal overlay (col_idx > row_idx) on batch-max query rows masks decode rows' context; decode rows need full-key attention (query_lens gate fixes it)"
+    },
+    "ISS-049": {
+      "id": "ISS-049",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T07:54:45+00:00",
+      "updated_at": "2026-08-12T07:56:28+00:00",
+      "touched_round": 35,
+      "severity": "med",
+      "title": "lm_eval generate_until never stops on string until sequences (standard lm_eval usage)",
+      "details": "LlamaLmEvalLM._matches_any_suffix skipped string until entries, and _generate_until_batch only checked id-sequence stops. lm_eval passes until as list-of-strings for essentially all generation tasks, so every request generated the full max_gen_toks with delimiter/EOS embedded - silently wrong downstream exact_match/acc. Fixed: _matches_any_stop decodes generated text and matches string suffixes; regression test stops at <=2 tokens instead of 5."
+    },
+    "TASK-045": {
+      "id": "TASK-045",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T07:54:59+00:00",
+      "updated_at": "2026-08-12T07:56:42+00:00",
+      "touched_round": 35,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "Match string until sequences against decoded text in lm_eval generate_until (ISS-049)",
+      "details": "Add _matches_any_stop that decodes generated ids and checks string suffix stops alongside id-sequence stops; wire into _generate_until_batch. Regression test uses string until '\\x01\\x01' and asserts stop at <=2 tokens.",
+      "lock_owner": "loop-35",
+      "lock_until": "2026-08-12T08:24:59+00:00"
+    },
+    "CHG-044": {
+      "id": "CHG-044",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:56:15+00:00",
+      "updated_at": "2026-08-12T07:56:15+00:00",
+      "touched_round": 35,
+      "commit": "7bba7f4",
+      "title": "fix(eval): string until support (ISS-049/TASK-045)"
+    },
+    "EV-067": {
+      "id": "EV-067",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T07:56:15+00:00",
+      "updated_at": "2026-08-12T07:56:15+00:00",
+      "touched_round": 35,
+      "source": "tests/evaluation/test_lm_eval_pipeline.py::test_lm_eval_lm_generate_until_stops_on_string_until",
+      "title": "Confirmed RED: string until generated full 5 tokens; after fix stops at 2",
+      "confidence": 1.0
+    },
+    "HYP-023": {
+      "id": "HYP-023",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T07:56:15+00:00",
+      "updated_at": "2026-08-12T07:56:28+00:00",
+      "touched_round": 35,
+      "confidence": 0.9,
+      "title": "String until entries are skipped so lm_eval generation tasks never stop early, polluting generation metrics"
     }
   },
   "edges": [
@@ -4192,6 +4253,36 @@
       "to": "HYP-022",
       "type": "validates",
       "created_at": "2026-08-12T07:35:56+00:00"
+    },
+    {
+      "from": "ISS-049",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T07:54:45+00:00"
+    },
+    {
+      "from": "TASK-045",
+      "to": "ISS-049",
+      "type": "addresses",
+      "created_at": "2026-08-12T07:54:59+00:00"
+    },
+    {
+      "from": "CHG-044",
+      "to": "ISS-049",
+      "type": "resolves",
+      "created_at": "2026-08-12T07:56:27+00:00"
+    },
+    {
+      "from": "CHG-044",
+      "to": "TASK-045",
+      "type": "implements",
+      "created_at": "2026-08-12T07:56:28+00:00"
+    },
+    {
+      "from": "EV-067",
+      "to": "HYP-023",
+      "type": "validates",
+      "created_at": "2026-08-12T07:56:28+00:00"
     }
   ]
 }
