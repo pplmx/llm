@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 37,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T10:51:41+00:00",
+  "updated_at": "2026-08-12T10:56:48+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 36,
+      "touched_round": 37,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -3727,6 +3727,42 @@
       "touched_round": 36,
       "confidence": 0.95,
       "title": "overwrite=True skips the guard but register still raises on duplicates, so override could never work"
+    },
+    "ISS-062": {
+      "id": "ISS-062",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:56:14+00:00",
+      "updated_at": "2026-08-12T10:56:14+00:00",
+      "touched_round": 37,
+      "severity": "med",
+      "title": "compat from_pretrained does not reproduce real-Llama architecture (LayerNorm vs RMSNorm, no RoPE, default biases)",
+      "details": "hf_loader builds with norm_impl='layer_norm' (real Llama/Mistral use RMSNorm), no RoPE wiring in the mha path (core.rope has no callers), and default qkv_bias/mlp_bias/lm_head_bias=True (real checkpoints are bias-free -> lm_head.bias stays random). from_pretrained of a genuine HF Llama/Mistral checkpoint yields a functionally different net. Our own publish->load roundtrip is self-consistent (both use the same defaults), so only external checkpoint loading is affected. Architectural: fixing requires deciding severity/scope and it touches the loader defaults that the GLU roundtrip tests depend on."
+    },
+    "DEC-018": {
+      "id": "DEC-018",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:56:27+00:00",
+      "updated_at": "2026-08-12T10:56:27+00:00",
+      "touched_round": 37,
+      "rationale": "Round-36/37: defer full compat-loader architecture fidelity (ISS-062 - RMSNorm vs LayerNorm, RoPE wiring, bias-free defaults for real checkpoints). The repo's own publish->load roundtrip is self-consistent because both sides share the same defaults; the defect only bites when loading genuine external HF Llama/Mistral checkpoints, and a fix touches loader defaults that the GLU roundtrip tests depend on. Highest-value verified bugs (17 fixes rounds 34-36) and export/quantization/registry contract bugs are already closed. Deferred to a dedicated compat-fidelity task rather than risk breaking the roundtrip contract mid-session.",
+      "alternatives_rejected": "1) Hardcoding bias-free/RMSNorm defaults now: would silently change every existing from_pretrained roundtrip and likely break tests/compat/test_hf_publisher.py GLU roundtrip fixture semantics. 2) Full RoPE wiring: core.rope has no callers and MHA would need a per-backend integration - a multi-file architecture change better done in a dedicated round with its own regression suite."
+    },
+    "TASK-058": {
+      "id": "TASK-058",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:56:48+00:00",
+      "updated_at": "2026-08-12T10:56:48+00:00",
+      "touched_round": 37,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Compat loader architecture fidelity for real checkpoints (RMSNorm, RoPE, bias-free defaults) (ISS-062)",
+      "details": "Investigate + implement in a dedicated round: honor norm_impl, wire RoPE into the attention path, default bias-free for real Llama/Mistral. Must keep publish->load roundtrip self-consistent. Effort high, unlock_factor low (only external checkpoints affected); deferred by DEC-018."
     }
   },
   "edges": [
@@ -5367,6 +5403,24 @@
       "to": "HYP-035",
       "type": "validates",
       "created_at": "2026-08-12T10:44:39+00:00"
+    },
+    {
+      "from": "ISS-062",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T10:56:14+00:00"
+    },
+    {
+      "from": "TASK-058",
+      "to": "ISS-062",
+      "type": "addresses",
+      "created_at": "2026-08-12T10:56:48+00:00"
+    },
+    {
+      "from": "DEC-018",
+      "to": "TASK-058",
+      "type": "governs",
+      "created_at": "2026-08-12T10:56:48+00:00"
     }
   ]
 }
