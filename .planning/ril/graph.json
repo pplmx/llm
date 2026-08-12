@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 27,
+  "round": 28,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-11T16:07:07+00:00",
+  "updated_at": "2026-08-12T00:15:39+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -2222,11 +2222,11 @@
     "ISS-040": {
       "id": "ISS-040",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-11T15:31:43+00:00",
-      "updated_at": "2026-08-11T15:31:43+00:00",
-      "touched_round": 26,
+      "updated_at": "2026-08-12T00:13:01+00:00",
+      "touched_round": 27,
       "title": "Streaming TextDataset LM labels include pad positions (no ignore_index) -> trains/evals on pad=EOS",
       "details": "text.py labels = input_ids.clone() incl padding; lm_task CrossEntropyLoss has no ignore_index -> loss on pad token positions inflates val PPL and teaches EOS at pads. Records from round-26 data agent (part of ISS-038 area).",
       "severity": "med"
@@ -2312,6 +2312,53 @@
       "title": "Round-26: two batch fixes from fresh deep-dive (serving robustness + Q4_0)",
       "rationale": "New round-26 deep-dive surfaced ~15 fresh findings (ISS-034..040 + HYP-017). Fixed two batches: (1) serving robustness/security — max_new_tokens>context now clean ValueError + eager clamp, stop/top_p schema validation, tokenizer fail-loud on missing path (TASK-028), api-key guard enforced in lifespan so Docker/uvicorn can't serve anonymous (TASK-029); (2) GGUF Q4_0 byte-compat with ggml (TASK-030). Remaining fresh backlog (dedup reset, DPO ref broadcast, text pad-labels, resolve_preset short names, lm_eval empty-context, log_interval=0, distributed world_size, plugins import abort, IA3 merge-save) recorded for future rounds.",
       "alternatives_rejected": "tackle all 15 new findings this round (exceeds 3-task budget); attempt the deep dedup/_seen reset or DPO ref-broadcast multi-GPU issues without a clean multi-epoch repro (need focused rounds)"
+    },
+    "TASK-031": {
+      "id": "TASK-031",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T00:13:01+00:00",
+      "updated_at": "2026-08-12T00:13:01+00:00",
+      "touched_round": 27,
+      "category": "correctness",
+      "title": "Mask LM labels on padding (ISS-040)",
+      "details": "labels included pad=EOS; no ignore_index."
+    },
+    "CHG-034": {
+      "id": "CHG-034",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T00:13:01+00:00",
+      "updated_at": "2026-08-12T00:13:01+00:00",
+      "touched_round": 27,
+      "commit": "2540cfa",
+      "title": "fix(data): LM pad-label masking (ISS-040)"
+    },
+    "EV-055": {
+      "id": "EV-055",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T00:13:01+00:00",
+      "updated_at": "2026-08-12T00:13:01+00:00",
+      "touched_round": 27,
+      "source": "tests/data/test_text_dataset.py::test_text_shorter_than_max_seq_len",
+      "details": "RED: labels==pad ids; GREEN: pad span=-100, real tokens match input_ids. 179 training/data tests + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "DEC-015": {
+      "id": "DEC-015",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T00:15:39+00:00",
+      "updated_at": "2026-08-12T00:15:39+00:00",
+      "touched_round": 27,
+      "title": "Round-27: fix LM pad-label masking (ISS-040)",
+      "rationale": "Worked the round-26 deep-dive backlog. ISS-040: TextDataset labels cloned input_ids incl. padding, and lm_task used a bare CrossEntropyLoss — the model was trained/evaled on pad tokens (= EOS for HF tokenizers), rewarding EOS at every pad slot and inflating val PPL. Fixed by masking the padding span to -100 in TextDataset (with ignore_index=-100 in build_criterion as a defensive fallback for non-masked paths), covering both map and streaming-validation loaders. Remaining active: ISS-038 (dedup _seen reset on corpus cycling + DPO ref_model broadcast) — both need multi-GPU / multi-epoch repros and a focused round.",
+      "alternatives_rejected": "tackle ISS-038 now (multi-GPU DPO broadcast and dedup-reset semantics need rank-aware repros + careful durability design; exceeds what a context-constrained round should risk)"
     }
   },
   "edges": [
@@ -3280,6 +3327,24 @@
       "to": "TASK-030",
       "type": "implements",
       "created_at": "2026-08-11T16:06:57+00:00"
+    },
+    {
+      "from": "TASK-031",
+      "to": "ISS-040",
+      "type": "addresses",
+      "created_at": "2026-08-12T00:13:01+00:00"
+    },
+    {
+      "from": "CHG-034",
+      "to": "ISS-040",
+      "type": "resolves",
+      "created_at": "2026-08-12T00:13:01+00:00"
+    },
+    {
+      "from": "CHG-034",
+      "to": "TASK-031",
+      "type": "implements",
+      "created_at": "2026-08-12T00:13:01+00:00"
     }
   ]
 }
