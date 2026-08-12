@@ -135,6 +135,19 @@ class TrainingEngine:
         # broadcast is a cheap no-op for them.)
         broadcast_parameters(model)
 
+        # Tasks that clone a frozen reference model inside ``build_model``
+        # (e.g. :class:`~llm.training.tasks.dpo_task.DPOTask`) copy the
+        # policy *before* the broadcast above, so their reference carries
+        # each rank's own RNG-initialised weights. Sync it from rank 0 too,
+        # otherwise multi-GPU DPO computes per-rank-divergent reference
+        # logps and the loss is mathematically wrong (RIL ISS-038).
+        # Tasks that build their reference later (PPO deep-copies the
+        # already-broadcast policy) expose no ``ref_model`` here and are
+        # unaffected.
+        ref_model = getattr(self.task, "ref_model", None)
+        if ref_model is not None:
+            broadcast_parameters(ref_model)
+
         # Compile model if enabled. Mode and dynamic-shape marking come from
         # OptimizationConfig (Finding AL). Default mode is "default" — the
         # previous hardcoded "reduce-overhead" used CUDA graphs, which is
