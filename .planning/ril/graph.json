@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 35,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T07:56:42+00:00",
+  "updated_at": "2026-08-12T08:10:21+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -2997,6 +2997,67 @@
       "touched_round": 35,
       "confidence": 0.9,
       "title": "String until entries are skipped so lm_eval generation tasks never stop early, polluting generation metrics"
+    },
+    "ISS-050": {
+      "id": "ISS-050",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T08:08:01+00:00",
+      "updated_at": "2026-08-12T08:10:12+00:00",
+      "touched_round": 35,
+      "severity": "med",
+      "title": "lm_eval loglikelihood crashes (IndexError) when continuation is longer than max_length window",
+      "details": "LlamaLmEvalLM._loglikelihood_batch: when a continuation alone exceeds max_length, full keeps only the last max_length tokens and ctx_len becomes 0, but cont_len stayed len(cont_ids). relevant/log_probs slice had cont_len-1 (or max_len-1) rows while torch.arange(cont_len) indexed more -> IndexError 'shapes [20], [16]'. Fixed by recomputing scorable tokens from the truncated window and skipping the first window token (no predicting logit) when ctx_len==0."
+    },
+    "TASK-046": {
+      "id": "TASK-046",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T08:08:02+00:00",
+      "updated_at": "2026-08-12T08:10:21+00:00",
+      "touched_round": 35,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "Compute loglikelihood scorable continuation from the truncated window (ISS-050)",
+      "details": "Fix _loglikelihood_batch to derive scorable tokens from the actual window (full[first_scorable:]) instead of len(cont_ids), skipping the unscorable first window token when ctx_len==0. Regression test with 20-token continuation on a 16-token window.",
+      "lock_owner": "loop-35",
+      "lock_until": "2026-08-12T08:38:02+00:00"
+    },
+    "CHG-045": {
+      "id": "CHG-045",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:09:55+00:00",
+      "updated_at": "2026-08-12T08:09:55+00:00",
+      "touched_round": 35,
+      "commit": "ae913ee",
+      "title": "fix(eval): loglikelihood over-long continuation (ISS-050/TASK-046)"
+    },
+    "EV-068": {
+      "id": "EV-068",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:09:55+00:00",
+      "updated_at": "2026-08-12T08:09:55+00:00",
+      "touched_round": 35,
+      "source": "tests/evaluation/test_lm_eval_pipeline.py::test_lm_eval_lm_loglikelihood_continuation_longer_than_max_length",
+      "title": "Confirmed RED: IndexError shapes [20],[16] on 20-token continuation / 16-token window; fixed computes scorable from truncated window",
+      "confidence": 1.0
+    },
+    "HYP-024": {
+      "id": "HYP-024",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T08:09:55+00:00",
+      "updated_at": "2026-08-12T08:10:12+00:00",
+      "touched_round": 35,
+      "confidence": 0.9,
+      "title": "cont_len=len(cont_ids) overflows the truncated window when continuation exceeds max_length"
     }
   },
   "edges": [
@@ -4283,6 +4344,36 @@
       "to": "HYP-023",
       "type": "validates",
       "created_at": "2026-08-12T07:56:28+00:00"
+    },
+    {
+      "from": "ISS-050",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T08:08:02+00:00"
+    },
+    {
+      "from": "TASK-046",
+      "to": "ISS-050",
+      "type": "addresses",
+      "created_at": "2026-08-12T08:08:02+00:00"
+    },
+    {
+      "from": "CHG-045",
+      "to": "ISS-050",
+      "type": "resolves",
+      "created_at": "2026-08-12T08:10:12+00:00"
+    },
+    {
+      "from": "CHG-045",
+      "to": "TASK-046",
+      "type": "implements",
+      "created_at": "2026-08-12T08:10:12+00:00"
+    },
+    {
+      "from": "EV-068",
+      "to": "HYP-024",
+      "type": "validates",
+      "created_at": "2026-08-12T08:10:12+00:00"
     }
   ]
 }
