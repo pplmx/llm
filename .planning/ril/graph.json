@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 37,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T10:56:48+00:00",
+  "updated_at": "2026-08-12T11:00:17+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 36,
+      "touched_round": 37,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -3763,6 +3763,31 @@
       "severity": 0.5,
       "title": "Compat loader architecture fidelity for real checkpoints (RMSNorm, RoPE, bias-free defaults) (ISS-062)",
       "details": "Investigate + implement in a dedicated round: honor norm_impl, wire RoPE into the attention path, default bias-free for real Llama/Mistral. Must keep publish->load roundtrip self-consistent. Effort high, unlock_factor low (only external checkpoints affected); deferred by DEC-018."
+    },
+    "ISS-063": {
+      "id": "ISS-063",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T11:00:17+00:00",
+      "updated_at": "2026-08-12T11:00:17+00:00",
+      "touched_round": 37,
+      "severity": "low",
+      "title": "Learned positional-encoding weights are dropped on save_pretrained and never restored on load",
+      "details": "pos_embedding.weight has no mapping in weight_mapping.py, and hf_publisher never persists pos_encoding_learned nor hf_loader reads it. A pos_encoding_learned=True model loses its trained PE across save->load (reloads with sinusoidal). Same persist+honor pattern as ISS-056 (use_glu); no standard HF Llama key exists so a custom config field is needed. Edge case: learned PE is non-default."
+    },
+    "TASK-059": {
+      "id": "TASK-059",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T11:00:17+00:00",
+      "updated_at": "2026-08-12T11:00:17+00:00",
+      "touched_round": 37,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Persist + honor pos_encoding_learned and map pos_embedding.weight across save/load (ISS-063)",
+      "details": "Add pos_encoding_learned to hf_publisher config + weight mapping for embedding_layer.positional_encoding.pos_embedding.weight + hf_loader build kwarg, mirroring ISS-056's use_glu pattern."
     }
   },
   "edges": [
@@ -5421,6 +5446,18 @@
       "to": "TASK-058",
       "type": "governs",
       "created_at": "2026-08-12T10:56:48+00:00"
+    },
+    {
+      "from": "ISS-063",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-12T11:00:17+00:00"
+    },
+    {
+      "from": "TASK-059",
+      "to": "ISS-063",
+      "type": "addresses",
+      "created_at": "2026-08-12T11:00:17+00:00"
     }
   ]
 }
