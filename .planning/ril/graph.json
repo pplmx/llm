@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T09:48:10+00:00",
+  "updated_at": "2026-08-12T10:03:52+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 26,
+      "touched_round": 36,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -3483,6 +3483,67 @@
       "touched_round": 36,
       "confidence": 0.95,
       "title": "In-loop scale (abs().max()) and stored dequant scale (max(dim=1)) disagree, shrinking per-row reconstruction"
+    },
+    "ISS-058": {
+      "id": "ISS-058",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T10:01:22+00:00",
+      "updated_at": "2026-08-12T10:03:26+00:00",
+      "touched_round": 36,
+      "severity": "med",
+      "title": "export_to_onnx / export_to_torchscript crash on vocab_size < 100 (hardcoded dummy token range)",
+      "details": "onnx.py:54 / onnx.py:124 / torchscript.py:90 use torch.randint(0, 100, ...) for the dummy input regardless of the model's vocab. For vocab_size < 100 (16/64 used throughout the repo's configs), the embedding is indexed with out-of-range ids and raises IndexError at export/verify time. Fix: shared dummy_token_ids helper derives the real num_embeddings (with 100 fallback) so the dummy is always in-vocab."
+    },
+    "TASK-054": {
+      "id": "TASK-054",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T10:01:22+00:00",
+      "updated_at": "2026-08-12T10:03:52+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "Bound export dummy inputs by the real vocab size (ISS-058)",
+      "details": "Add llm.export._wrapper.dummy_token_ids / model_vocab_size; use in onnx export+verify and torchscript trace. Regression tests with vocab_size=16 on both backends.",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T10:31:22+00:00"
+    },
+    "CHG-052": {
+      "id": "CHG-052",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:03:25+00:00",
+      "updated_at": "2026-08-12T10:03:25+00:00",
+      "touched_round": 36,
+      "commit": "1a1fc69",
+      "title": "fix(export): vocab-bounded dummy inputs (ISS-058/TASK-054)"
+    },
+    "EV-076": {
+      "id": "EV-076",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T10:03:25+00:00",
+      "updated_at": "2026-08-12T10:03:25+00:00",
+      "touched_round": 36,
+      "source": "tests/export/test_export.py::test_export_to_onnx_small_vocab_no_crash + test_torchscript_export.py::test_export_trace_small_vocab_no_crash",
+      "title": "Confirmed RED: vocab_size=16 export crashed with IndexError; dummy_token_ids bounds by real vocab",
+      "confidence": 1.0
+    },
+    "HYP-032": {
+      "id": "HYP-032",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T10:03:26+00:00",
+      "updated_at": "2026-08-12T10:03:26+00:00",
+      "touched_round": 36,
+      "confidence": 0.95,
+      "title": "Hardcoded randint(0,100) dummy input indexes out-of-range for vocab_size < 100"
     }
   },
   "edges": [
@@ -5003,6 +5064,36 @@
       "to": "HYP-031",
       "type": "validates",
       "created_at": "2026-08-12T09:47:53+00:00"
+    },
+    {
+      "from": "ISS-058",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-12T10:01:22+00:00"
+    },
+    {
+      "from": "TASK-054",
+      "to": "ISS-058",
+      "type": "addresses",
+      "created_at": "2026-08-12T10:01:22+00:00"
+    },
+    {
+      "from": "CHG-052",
+      "to": "ISS-058",
+      "type": "resolves",
+      "created_at": "2026-08-12T10:03:26+00:00"
+    },
+    {
+      "from": "CHG-052",
+      "to": "TASK-054",
+      "type": "implements",
+      "created_at": "2026-08-12T10:03:26+00:00"
+    },
+    {
+      "from": "EV-076",
+      "to": "HYP-032",
+      "type": "validates",
+      "created_at": "2026-08-12T10:03:26+00:00"
     }
   ]
 }
