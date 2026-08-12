@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 37,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T11:00:17+00:00",
+  "updated_at": "2026-08-12T11:03:14+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3788,6 +3788,17 @@
       "severity": 0.5,
       "title": "Persist + honor pos_encoding_learned and map pos_embedding.weight across save/load (ISS-063)",
       "details": "Add pos_encoding_learned to hf_publisher config + weight mapping for embedding_layer.positional_encoding.pos_embedding.weight + hf_loader build kwarg, mirroring ISS-056's use_glu pattern."
+    },
+    "DEC-019": {
+      "id": "DEC-019",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T11:03:14+00:00",
+      "updated_at": "2026-08-12T11:03:14+00:00",
+      "touched_round": 37,
+      "rationale": "Session 2026-08-12 rounds 34-37: 17 verified fixes closed (correctness/stability across training, serving, evaluation, core, compat, export, quantization, runtime), each RED->GREEN with a regression test; full suite green (exit=0, 0 FAILED). Remaining open tasks all score below the 3.0 selection threshold (TASK-042@1.2 test-quality, TASK-049@2.5 PPO temperature, TASK-058@2.5 compat arch fidelity, TASK-059@2.5 learned-PE) and are recorded with rationale (DEC-018) rather than force-worked. This is a resource-appropriate stop: the loop continues but no above-threshold active task remains.",
+      "alternatives_rejected": "Force-fixing below-threshold items (hardcoded-cuda test routing, PPO temperature ratio, compat arch fidelity, learned-PE roundtrip) now would violate the skill's own priority discipline (EVALUATE skips < 3.0) and derisk the 17-fix green state for marginal gains."
     }
   },
   "edges": [
