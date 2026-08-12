@@ -26,10 +26,17 @@ def load_entry_point_registry[T](
     """
     loaded: list[str] = []
     for ep in _iter_group_entry_points(group):
-        if not overwrite and ep.name in registry:
+        preexisting = ep.name in registry
+        if not overwrite and preexisting:
             continue
         factory = ep.load()
-        registry.register(ep.name, factory)
+        if preexisting:
+            # ``overwrite=True`` and the name is already registered:
+            # ``Registry.register`` would raise, so use the explicit
+            # replace path (RIL ISS-061).
+            registry.replace(ep.name, factory)
+        else:
+            registry.register(ep.name, factory)
         loaded.append(ep.name)
     return loaded
 

@@ -21,6 +21,28 @@ def test_load_entry_point_registry_skips_existing_names():
     assert registry.get("builtin") == "factory-a"
 
 
+def test_load_entry_point_registry_overwrite_replaces_existing_names():
+    """Regression (RIL ISS-061): ``overwrite=True`` must REPLACE a
+    pre-registered name instead of crashing.
+
+    The old loader skipped the existence guard when ``overwrite=True`` but
+    still called ``Registry.register``, which raises
+    ``ValueError: 'X' is already registered`` — so the documented override
+    mechanism could never overwrite anything."""
+    registry: Registry[str] = Registry("test")
+    registry.register("builtin", "factory-a")
+
+    ep = MagicMock()
+    ep.name = "builtin"
+    ep.load.return_value = "factory-b"
+
+    with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
+        loaded = load_entry_point_registry("llm.test_group", registry, overwrite=True)
+
+    assert loaded == ["builtin"]
+    assert registry.get("builtin") == "factory-b"
+
+
 def test_load_entry_point_registry_registers_new_plugins():
     registry: Registry[str] = Registry("test")
 
