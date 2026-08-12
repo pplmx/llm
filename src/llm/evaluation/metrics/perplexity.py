@@ -57,6 +57,15 @@ class PerplexityMetric(BaseMetric):
         if logits.shape[0] == 0:
             return {"perplexity": float("inf")}
 
+        if self.ignore_index is not None and labels.numel() > 0 and bool((labels == self.ignore_index).all().item()):
+            # Every shift-target is ignored (e.g. a 1-token corpus whose
+            # shifted labels are all -100): ``cross_entropy`` with
+            # ``reduction='mean'`` and ``ignore_index`` averages over ZERO
+            # valid elements and returns NaN. Return the documented
+            # ``inf`` (undefined perplexity) instead — NaN would serialize
+            # to JSON ``null`` and poison the report (RIL ISS-055).
+            return {"perplexity": float("inf")}
+
         kwargs = {"ignore_index": self.ignore_index} if self.ignore_index is not None else {}
         loss = functional.cross_entropy(logits, labels, reduction="mean", **kwargs)
         perplexity = torch.exp(loss).item()

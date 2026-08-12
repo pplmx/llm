@@ -145,6 +145,22 @@ def test_evaluation_runner_reports_perplexity(tmp_path):
     assert results["perplexity"] == pytest.approx(task.tokenizer.vocab_size, rel=1e-4)
 
 
+def test_perplexity_metric_all_labels_ignored_returns_inf():
+    """Regression (RIL ISS-055): when every shift-target label is the
+    ``ignore_index`` (e.g. a 1-token corpus whose shifted labels are all
+    ``-100``), ``cross_entropy(..., reduction='mean', ignore_index=-100)``
+    averages over zero valid elements and returns NaN. The metric's
+    documented convention for undefined perplexity is ``inf`` — NaN would
+    then serialize to JSON ``null`` and poison the report."""
+    metric = PerplexityMetric(ignore_index=-100)
+    logits = torch.tensor([[[0.0, 1.0], [0.0, 1.0]]])  # 2 positions, 1 shift target
+    labels = torch.tensor([[-100, -100]])  # the shift target is ignored
+
+    result = metric.compute(logits, labels)
+
+    assert result["perplexity"] == float("inf")
+
+
 def test_evaluation_runner_run_empty_corpus_no_crash(tmp_path):
     """Regression (RIL ISS-045): an empty eval corpus must not crash
     ``EvaluationRunner.run`` (the training-callback path). ``predict``
