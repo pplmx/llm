@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 35,
+  "round": 36,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T08:26:50+00:00",
+  "updated_at": "2026-08-12T08:35:14+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 35,
+      "touched_round": 36,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -3130,6 +3130,92 @@
       "touched_round": 35,
       "rationale": "Round-35 deep dive closed 5 verified correctness/stability bugs (ISS-047 prefix layout, ISS-048 paged decode mask, ISS-049 string-until stop, ISS-050 loglikelihood over-long window, ISS-051 forward-failure livelock) — exceeding the 3-task/round guideline. Justified: all five were independently verified RED->GREEN with regression tests, none required speculative rework, and they form one coherent serving/eval correctness sweep, so scope stayed converged rather than sprawling.",
       "alternatives_rejected": "Stopping at 3 tasks would have left two verified HIGH (ISS-048) and correctness (ISS-049/050) defects open with fixes already written; deferring them added risk without reducing review burden."
+    },
+    "ISS-052": {
+      "id": "ISS-052",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T08:31:24+00:00",
+      "updated_at": "2026-08-12T08:34:24+00:00",
+      "touched_round": 36,
+      "severity": "med",
+      "title": "PPO target_kl early stopping only breaks the inner mini-batch loop, not all ppo_epochs",
+      "details": "ppo_trainer.train_step: the 'if approx_kl > target_kl: break' sat inside the inner 'for batch in get_batches' loop. After epoch 0 diverged, the outer 'for _epoch in range(ppo_epochs)' loop continued re-applying PPO updates to the SAME rollout for epochs 1..N-1 — the KL blowup safeguard was effectively a no-op for ppo_epochs >= 2. Fixed with a kl_breached flag checked by the outer loop."
+    },
+    "TASK-048": {
+      "id": "TASK-048",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-12T08:31:24+00:00",
+      "updated_at": "2026-08-12T08:34:30+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "Make PPO target_kl early-stop break all epochs (ISS-052)",
+      "details": "Add kl_breached flag so the outer ppo_epochs loop halts once KL exceeds target on any batch. Regression test stubs ppo_step to always diverge and asserts it runs exactly once with ppo_epochs=4.",
+      "lock_owner": "loop-36",
+      "lock_until": "2026-08-12T09:01:25+00:00"
+    },
+    "CHG-047": {
+      "id": "CHG-047",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:34:24+00:00",
+      "updated_at": "2026-08-12T08:34:24+00:00",
+      "touched_round": 36,
+      "commit": "f5b102b",
+      "title": "fix(rlhf): target_kl breaks all epochs (ISS-052/TASK-048)"
+    },
+    "EV-070": {
+      "id": "EV-070",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:34:24+00:00",
+      "updated_at": "2026-08-12T08:34:24+00:00",
+      "touched_round": 36,
+      "source": "tests/training/rlhf/test_ppo.py::test_target_kl_stops_all_ppo_epochs",
+      "title": "Confirmed RED: ppo_step ran 4x with ppo_epochs=4; kl_breached flag makes it run once",
+      "confidence": 1.0
+    },
+    "HYP-026": {
+      "id": "HYP-026",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-12T08:34:24+00:00",
+      "updated_at": "2026-08-12T08:34:24+00:00",
+      "touched_round": 36,
+      "confidence": 0.9,
+      "title": "target_kl break is scoped to inner mini-batch loop only, so outer epochs keep updating same rollout"
+    },
+    "ISS-053": {
+      "id": "ISS-053",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:35:00+00:00",
+      "updated_at": "2026-08-12T08:35:00+00:00",
+      "touched_round": 36,
+      "severity": "med",
+      "title": "PPO importance ratio mixes temperature-scaled rollout logprobs with unscaled policy logprobs",
+      "details": "generate_responses computes old_log_probs via log_softmax(next_token_logits / temperature), but ppo_step computes new_log_probs = log_softmax(raw logits). With temperature != 1.0 the ratio exp(new-old) is not a valid IS ratio between old and new policies, biasing the clipped surrogate. Also top_k/top_p from config are never applied during generation (silently ignored knobs). Default temperature is 1.0 so latent unless configured."
+    },
+    "TASK-049": {
+      "id": "TASK-049",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-12T08:35:14+00:00",
+      "updated_at": "2026-08-12T08:35:14+00:00",
+      "touched_round": 36,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Align PPO ratio distributions across temperature (and honor top_k/top_p during generation) (ISS-053)",
+      "details": "Compute new_log_probs with the same temperature the rollout used, or store unscaled old_log_probs; apply config top_k/top_p in generate_responses. Latent unless temperature != 1.0."
     }
   },
   "edges": [
@@ -4482,6 +4568,48 @@
       "to": "TASK-044",
       "type": "governs",
       "created_at": "2026-08-12T08:26:50+00:00"
+    },
+    {
+      "from": "ISS-052",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T08:31:24+00:00"
+    },
+    {
+      "from": "TASK-048",
+      "to": "ISS-052",
+      "type": "addresses",
+      "created_at": "2026-08-12T08:31:24+00:00"
+    },
+    {
+      "from": "CHG-047",
+      "to": "ISS-052",
+      "type": "resolves",
+      "created_at": "2026-08-12T08:34:24+00:00"
+    },
+    {
+      "from": "CHG-047",
+      "to": "TASK-048",
+      "type": "implements",
+      "created_at": "2026-08-12T08:34:24+00:00"
+    },
+    {
+      "from": "EV-070",
+      "to": "HYP-026",
+      "type": "validates",
+      "created_at": "2026-08-12T08:34:24+00:00"
+    },
+    {
+      "from": "ISS-053",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-12T08:35:00+00:00"
+    },
+    {
+      "from": "TASK-049",
+      "to": "ISS-053",
+      "type": "addresses",
+      "created_at": "2026-08-12T08:35:14+00:00"
     }
   ]
 }
