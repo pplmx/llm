@@ -437,8 +437,12 @@ class ContinuousBatchingEngine:
                         self._release_request_slot_by_id(req_id)
                     return
                 if stops and buffer:
+                    # The sequence is already finished, so after draining the
+                    # tail buffer there is nothing left to stream. Return
+                    # (not ``break``): the post-loop ``yield buffer`` would
+                    # emit the SAME tail a second time (RIL ISS-054).
                     yield buffer
-                break
+                return
             self.step()
             seq = self.scheduler.get_sequence(req_id)
             if seq is None:

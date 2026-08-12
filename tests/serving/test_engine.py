@@ -512,6 +512,43 @@ def test_stop_terminated_request_frees_paged_blocks(tiny_model, device, mock_tok
     assert engine.paged_kv_cache.block_manager.num_free_blocks == engine.paged_kv_cache.num_blocks
 
 
+def test_stream_request_does_not_double_yield_tail_buffer(tiny_model, device, mock_tokenizer):
+    """Regression (RIL ISS-054): when a sequence is already finished at the
+    top of ``stream_request``'s loop (e.g. a concurrent step completed it)
+    and a stop is configured, the drained tail buffer must be emitted exactly
+    once — not again by the post-loop ``yield buffer``.
+
+    Path A: ``seq.is_finished()`` at loop top → ``_emit_tokens`` drains a
+    tail into ``buffer`` with no stop hit → the old code ``yield buffer``
+    then ``break``, and the post-loop statement yielded the same buffer a
+    second time (it was never cleared). ``stream_request`` must return after
+    draining since the sequence is finished.
+    """
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    req = GenerationRequest(prompt="abcd", max_new_tokens=5, stop="NEVER-MATCHES")
+    req.request_id = "req-double"
+    engine.add_request(req)
+
+    # Force path A: the sequence is already FINISHED before the loop runs.
+    seq = engine.scheduler.get_sequence("req-double")
+    seq.append_token_id(5)  # decode("5") -> "5"; stop never matches it
+    seq.status = RequestState.FINISHED
+
+    # step() would normally run, but the sequence is finished so the loop
+    # exits at the top-of-loop branch before reaching step().
+    chunks = list(engine.stream_request(req))
+
+    emitted = "".join(chunks)
+    assert emitted.count("5") == 1, f"tail buffer must be emitted exactly once, got chunks={chunks!r}"
+
+
 def test_persistent_forward_failure_does_not_livelock_engine(tiny_model, device, mock_tokenizer):
     """Regression (RIL ISS-051): a request whose forward persistently fails
     (OOM / bad token id / shape mismatch) must be dropped, not re-scheduled
