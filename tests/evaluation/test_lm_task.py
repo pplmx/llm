@@ -143,3 +143,43 @@ def test_evaluation_runner_reports_perplexity(tmp_path):
 
     results = runner.evaluate(MockModel())
     assert results["perplexity"] == pytest.approx(task.tokenizer.vocab_size, rel=1e-4)
+
+
+def test_evaluation_runner_run_empty_corpus_no_crash(tmp_path):
+    """Regression (RIL ISS-045): an empty eval corpus must not crash
+    ``EvaluationRunner.run`` (the training-callback path). ``predict``
+    returned ``torch.cat([])`` which raises ``ValueError``; instead it must
+    yield an empty prediction and the metric layer reports ``inf``."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("", encoding="utf-8")
+
+    task = LMTask(dataset_path=str(corpus), batch_size=2)
+    runner = EvaluationRunner(task)
+
+    class MockModel:
+        def __call__(self, input_ids, attn_mask=None):
+            batch, seq = input_ids.shape
+            return torch.zeros(batch, seq, task.tokenizer.vocab_size)
+
+    results = runner.run(MockModel())
+    assert results["num_samples"] == 0
+    assert results["perplexity"] == float("inf")
+
+
+def test_evaluation_runner_evaluate_empty_corpus_no_crash(tmp_path):
+    """Regression (RIL ISS-045): the tensor-coercing ``evaluate`` path must
+    also handle an empty corpus without ``torch.stack([])`` / ``torch.cat``
+    crashing."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("", encoding="utf-8")
+
+    task = LMTask(dataset_path=str(corpus), batch_size=2)
+    runner = EvaluationRunner(task)
+
+    class MockModel:
+        def __call__(self, input_ids, attn_mask=None):
+            batch, seq = input_ids.shape
+            return torch.zeros(batch, seq, task.tokenizer.vocab_size)
+
+    results = runner.evaluate(MockModel())
+    assert results["perplexity"] == float("inf")

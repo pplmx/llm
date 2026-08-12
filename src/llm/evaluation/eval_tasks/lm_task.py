@@ -75,4 +75,12 @@ class LMTask(BaseTask):
                 logits = model(padded, attn_mask=attn_mask)
             results.append(logits)
 
+        if not results:
+            # Empty eval set (e.g. an empty corpus file): return an
+            # empty 3-D prediction instead of crashing on
+            # ``torch.cat([])``. The metric layer already reports ``inf``
+            # for a zero-size batch (perplexity is undefined), so an
+            # appropriately-shaped empty tensor keeps the whole
+            # evaluation pipeline (run() + evaluate()) alive.
+            return torch.empty(0, 0, 0)
         return torch.cat(results, dim=0)

@@ -75,7 +75,13 @@ class EvaluationRunner:
         tensor_inputs = [torch.as_tensor(x, dtype=torch.long) for x in inputs]
         predictions = self.task.predict(model, tensor_inputs)
 
-        refs = torch.stack([torch.as_tensor(x, dtype=torch.long) for x in references])
+        if references:
+            refs = torch.stack([torch.as_tensor(x, dtype=torch.long) for x in references])
+        else:
+            # Empty eval set: mirror the empty prediction so the metric
+            # layer sees a zero-size batch and reports ``inf`` rather than
+            # crashing on ``torch.stack([])``.
+            refs = torch.empty(0, dtype=torch.long)
         return self._collect_metrics(predictions, refs)
 
     def save_report(self, results: dict, output_format: str = "json"):
