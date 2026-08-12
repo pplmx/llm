@@ -125,6 +125,7 @@ def _load_from_local(
         use_glu=our_config.get("use_glu", True),
         mlp_impl="mlp",
         mlp_activation=our_config.get("mlp_activation", "silu"),
+        pos_encoding_learned=our_config.get("pos_encoding_learned", False),
         device=device,
         dtype=dtype,
     )

@@ -100,6 +100,10 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # only ``fc1``/``fc2``; hardcoding GLU on load left every ``gate_proj`` at
     # random init (RIL ISS-056).
     use_glu = bool(getattr(mlp0, "use_glu", True))
+    # Learned positional encoding is a model-defining flag; without persisting
+    # it (and mapping the trained pos_embedding weight) a learned-PE model
+    # silently loses its PE across save->load (RIL ISS-063).
+    pos_encoding_learned = bool(getattr(model.embedding_layer.positional_encoding, "learned", False))
 
     return {
         "model_type": "llama",
@@ -116,6 +120,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "torch_dtype": dtype_str,
         "hidden_act": hidden_act,
         "use_glu": use_glu,
+        "pos_encoding_learned": pos_encoding_learned,
     }
 
 

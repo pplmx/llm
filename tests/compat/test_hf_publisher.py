@@ -194,6 +194,55 @@ def _make_non_glu_decoder() -> torch.nn.Module:
 
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_roundtrip_learned_pos_encoding(tmp_path: Path):
+    """Regression (RIL ISS-063): a ``pos_encoding_learned=True`` model must
+    roundtrip save->load preserving its trained positional-encoding weights.
+
+    The trained ``pos_embedding.weight`` had no weight-mapping entry so it was
+    dropped on save, and the loader never honored ``pos_encoding_learned`` —
+    reloading silently fell back to sinusoidal and lost the trained PE."""
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(
+        **decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            intermediate_size=64,
+            max_seq_len=32,
+            attn_impl="mha",
+            mlp_impl="mlp",
+            pos_encoding_learned=True,
+            device=str(DEFAULT_DEVICE),
+        )
+    )
+    model.eval()
+
+    # Randomize the PE so a silent drop is visible as a logit mismatch.
+    with torch.no_grad():
+        model.embedding_layer.positional_encoding.pos_embedding.weight.copy_(
+            torch.randn_like(model.embedding_layer.positional_encoding.pos_embedding.weight)
+        )
+
+    save_pretrained(model, tmp_path)
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config.get("pos_encoding_learned") is True
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+    assert isinstance(reloaded, DecoderModel)
+    assert reloaded.embedding_layer.positional_encoding.learned is True
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = model(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_default_non_glu_model(tmp_path: Path):
     """Regression (RIL ISS-056): a DEFAULT (non-GLU) model must roundtrip
     save->load with equivalent logits — not leave the MLP at random init."""

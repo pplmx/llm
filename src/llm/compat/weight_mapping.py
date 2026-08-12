@@ -25,6 +25,11 @@ import torch
 LLAMA_MAPPING = {
     # Embeddings
     "model.embed_tokens.weight": "embedding_layer.token_embeddings.weight",
+    # Learned positional encoding (only present on pos_encoding_learned
+    # models; inverse maps back so the trained PE survives save->load, RIL
+    # ISS-063). Non-standard key — ignored by HF transformers, honored by
+    # our own from_pretrained.
+    "model.positional_encoding.pos_embedding.weight": "embedding_layer.positional_encoding.pos_embedding.weight",
     # Final norm
     "model.norm.weight": "final_norm.weight",
     # LM head
@@ -416,4 +421,9 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # fc1/fc2 MLP instead of being rebuilt as GLU with random gate
         # weights (RIL ISS-056). Absent (an external HF checkpoint) -> True.
         "use_glu": hf_config.get("use_glu", True),
+        # Learned positional encoding flag so a learned-PE model round-trips
+        # with its trained pos_embedding weights instead of silently falling
+        # back to sinusoidal (RIL ISS-063). Default False (matching the
+        # DecoderModel default).
+        "pos_encoding_learned": hf_config.get("pos_encoding_learned", False),
     }
