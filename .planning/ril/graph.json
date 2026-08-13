@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 41,
+  "round": 42,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T10:33:52+00:00",
+  "updated_at": "2026-08-13T10:49:59+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3966,11 +3966,11 @@
     "HYP-040": {
       "id": "HYP-040",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T05:33:50+00:00",
-      "updated_at": "2026-08-13T05:33:50+00:00",
-      "touched_round": 39,
+      "updated_at": "2026-08-13T10:43:05+00:00",
+      "touched_round": 42,
       "title": "RoPE not wired: core.rope has zero callers -> real Llama/Mistral load as non-rotary net (position only via additive PE)",
       "confidence": 0.95
     },
@@ -4110,11 +4110,11 @@
     "HYP-041": {
       "id": "HYP-041",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T06:45:34+00:00",
-      "updated_at": "2026-08-13T06:45:34+00:00",
-      "touched_round": 40,
+      "updated_at": "2026-08-13T10:43:05+00:00",
+      "touched_round": 42,
       "title": "Persisted cross-run dedup baseline makes streaming corpus recycle yield zero texts (engine raises 'streaming corpus is empty')",
       "confidence": 0.95
     },
@@ -4144,11 +4144,11 @@
     "HYP-042": {
       "id": "HYP-042",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T06:58:35+00:00",
-      "updated_at": "2026-08-13T06:58:35+00:00",
-      "touched_round": 40,
+      "updated_at": "2026-08-13T10:43:05+00:00",
+      "touched_round": 42,
       "title": "PPO padded mean (no response-length mask) silently scales policy/value gradients by real/(B*max_len), varies per mini-batch",
       "confidence": 0.95
     },
@@ -4178,11 +4178,11 @@
     "HYP-043": {
       "id": "HYP-043",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T07:17:40+00:00",
-      "updated_at": "2026-08-13T07:17:40+00:00",
-      "touched_round": 40,
+      "updated_at": "2026-08-13T10:43:05+00:00",
+      "touched_round": 42,
       "title": "Grad-accum partial tail window accumulates window_count/accum_steps of a global batch, silently dropping effective LR",
       "confidence": 0.95
     },
@@ -4247,11 +4247,11 @@
     "HYP-044": {
       "id": "HYP-044",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T07:41:38+00:00",
-      "updated_at": "2026-08-13T07:41:38+00:00",
-      "touched_round": 40,
+      "updated_at": "2026-08-13T10:43:05+00:00",
+      "touched_round": 42,
       "title": "TorchScript ONNX fusion mislabels LayerNormalization X input as fp32 while weights stay fp16, so ORT rejects at load",
       "confidence": 0.95
     },
@@ -4262,7 +4262,7 @@
       "version": 2,
       "created_at": "2026-08-13T08:31:26+00:00",
       "updated_at": "2026-08-13T09:29:03+00:00",
-      "touched_round": 41,
+      "touched_round": 42,
       "severity": "high",
       "title": "paged-attention + enable_prefix_cache silently produces wrong output (prefix KV never staged into paged cache; _copy_kv_between_slots is a no-op on paged path)",
       "resolved_by": "CHG-066"
@@ -4600,13 +4600,36 @@
     "HYP-045": {
       "id": "HYP-045",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 2,
       "created_at": "2026-08-13T10:32:58+00:00",
-      "updated_at": "2026-08-13T10:32:58+00:00",
-      "touched_round": 41,
+      "updated_at": "2026-08-13T10:43:05+00:00",
+      "touched_round": 42,
       "confidence": 0.3,
       "title": "Q8_0 GGUF general.file_type should be 5 (deep-dive note) rather than the exported 7"
+    },
+    "CHG-072": {
+      "id": "CHG-072",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T10:49:59+00:00",
+      "updated_at": "2026-08-13T10:49:59+00:00",
+      "touched_round": 42,
+      "title": "fix(serving): don't populate dense SlotPrefixCache on the paged path (ISS-068 follow-up)",
+      "commit": "124273c"
+    },
+    "EV-096": {
+      "id": "EV-096",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T10:49:59+00:00",
+      "updated_at": "2026-08-13T10:49:59+00:00",
+      "touched_round": 42,
+      "source": "tests/serving/test_engine.py::test_engine_paged_attention_prefix_cache_does_not_short_circuit",
+      "title": "Dense SlotPrefixCache stays empty on paged path; broad non-heavy suite green (exit 0)",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -6702,6 +6725,13 @@
       "type": "governs",
       "created_at": "2026-08-13T10:33:52+00:00",
       "note": "refutes the file_type=5 note; no change"
+    },
+    {
+      "from": "CHG-072",
+      "to": "ISS-068",
+      "type": "resolves",
+      "created_at": "2026-08-13T10:49:59+00:00",
+      "note": "follow-up: gate dense SlotPrefixCache.put on the dense path; regression assertion added"
     }
   ]
 }
