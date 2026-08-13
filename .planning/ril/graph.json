@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 40,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T06:59:09+00:00",
+  "updated_at": "2026-08-13T07:17:53+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4036,13 +4036,14 @@
     "ISS-066": {
       "id": "ISS-066",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T06:23:20+00:00",
-      "updated_at": "2026-08-13T06:23:20+00:00",
+      "updated_at": "2026-08-13T07:17:52+00:00",
       "touched_round": 40,
       "severity": "med",
-      "title": "Gradient-accumulation tail window steps on fraction of a full batch's scale (loss/accum_steps unconditional)"
+      "title": "Gradient-accumulation tail window steps on fraction of a full batch's scale (loss/accum_steps unconditional)",
+      "details": "Resolved: partial grad-accum windows no longer drop effective LR; every optimizer step carries full-batch-average gradient. CHG-064 verified."
     },
     "TASK-060": {
       "id": "TASK-060",
@@ -4074,9 +4075,9 @@
       "id": "TASK-062",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 3,
       "created_at": "2026-08-13T06:24:23+00:00",
-      "updated_at": "2026-08-13T06:24:23+00:00",
+      "updated_at": "2026-08-13T07:17:53+00:00",
       "touched_round": 40,
       "category": "correctness",
       "severity": 0.5,
@@ -4148,6 +4149,40 @@
       "updated_at": "2026-08-13T06:58:35+00:00",
       "touched_round": 40,
       "title": "PPO padded mean (no response-length mask) silently scales policy/value gradients by real/(B*max_len), varies per mini-batch",
+      "confidence": 0.95
+    },
+    "CHG-064": {
+      "id": "CHG-064",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T07:15:46+00:00",
+      "updated_at": "2026-08-13T07:15:46+00:00",
+      "touched_round": 40,
+      "title": "fix(training): re-scale partial grad-accum tail window (ISS-066/TASK-062)",
+      "commit": "4e978ce"
+    },
+    "EV-088": {
+      "id": "EV-088",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T07:15:46+00:00",
+      "updated_at": "2026-08-13T07:15:46+00:00",
+      "touched_round": 40,
+      "title": "Grad-norm recorder: 1-batch tail step sits >= full-window mean after re-scale (RED 0.26 vs FIXED 0.77)",
+      "source": "tests/e2e/test_gradient_accumulation_tail.py::test_partial_tail_window_gradient_scale",
+      "confidence": 1.0
+    },
+    "HYP-043": {
+      "id": "HYP-043",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T07:17:40+00:00",
+      "updated_at": "2026-08-13T07:17:40+00:00",
+      "touched_round": 40,
+      "title": "Grad-accum partial tail window accumulates window_count/accum_steps of a global batch, silently dropping effective LR",
       "confidence": 0.95
     }
   },
@@ -5999,6 +6034,24 @@
       "to": "HYP-042",
       "type": "validates",
       "created_at": "2026-08-13T06:58:35+00:00"
+    },
+    {
+      "from": "CHG-064",
+      "to": "TASK-062",
+      "type": "implements",
+      "created_at": "2026-08-13T07:17:40+00:00"
+    },
+    {
+      "from": "CHG-064",
+      "to": "ISS-066",
+      "type": "resolves",
+      "created_at": "2026-08-13T07:17:41+00:00"
+    },
+    {
+      "from": "EV-088",
+      "to": "HYP-043",
+      "type": "validates",
+      "created_at": "2026-08-13T07:17:41+00:00"
     }
   ]
 }
