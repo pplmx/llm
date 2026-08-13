@@ -3,7 +3,7 @@
 import torch
 
 from llm.data.datasets.streaming import StreamingTextDataset
-from llm.data.sources import LocalLineTextSource
+from llm.data.sources import DedupTextSource, LocalLineTextSource
 
 
 def test_streaming_dataset_yields_fixed_length_chunks(tmp_path, line_tokenizer):
@@ -49,6 +49,49 @@ def test_streaming_dataset_reset_restarts_corpus(tmp_path, line_tokenizer):
     # Exhausted: a second pass without reset yields nothing (cursor at end).
     assert list(dataset) == []
 
+    dataset.reset()
+    second_pass = list(dataset)
+    assert len(second_pass) == len(first_pass)
+    assert torch.equal(first_pass[0]["input_ids"], second_pass[0]["input_ids"])
+
+
+def test_streaming_dataset_reset_recycles_persisted_dedup_corpus(tmp_path, line_tokenizer):
+    """Regression (RIL ISS-064): ``reset()`` on a persistent-dedup source
+    must clear the cross-run seen-set so a corpus fully consumed+hashed by a
+    prior run can be recycled.
+
+    Without the fix the engine's corpus-cycle path (exhaust -> reset ->
+    retry) hit a dedup seen-file that already covered every record and
+    raised ``"streaming corpus is empty; nothing to train on"``.
+    """
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text("hello world\n" * 5, encoding="utf-8")
+    seen_path = tmp_path / "seen.txt"
+
+    source = DedupTextSource(
+        LocalLineTextSource(text_file),
+        seen_hashes_path=seen_path,
+        write_seen_hashes=True,
+    )
+    dataset = StreamingTextDataset(
+        text_source=source,
+        tokenizer=line_tokenizer,
+        max_seq_len=8,
+        rank=0,
+        world_size=1,
+    )
+
+    first_pass = list(dataset)
+    assert len(first_pass) > 0
+    # A fresh source reading the same corpus + seen-file yields nothing.
+    fresh = DedupTextSource(
+        LocalLineTextSource(text_file),
+        seen_hashes_path=seen_path,
+        write_seen_hashes=True,
+    )
+    assert list(fresh.iter_texts()) == []
+
+    # Engine recycle path: reset must restore consumability.
     dataset.reset()
     second_pass = list(dataset)
     assert len(second_pass) == len(first_pass)

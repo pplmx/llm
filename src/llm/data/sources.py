@@ -235,6 +235,23 @@ class DedupTextSource(TextSource):
         with self.seen_hashes_path.open(encoding="utf-8") as handle:
             self._persisted.update(line.strip() for line in handle if line.strip())
 
+    def reset_cross_run_seen(self) -> None:
+        """Forget the persisted cross-run seen-set so the next pass re-yields
+        the corpus (scoped to per-pass in-memory dedup again).
+
+        The engine calls this when a streaming corpus is exhausted and reset
+        before ``steps_per_epoch``: without it, a corpus whose entire content
+        was consumed and hashed in an earlier run would classify every record
+        as already-seen on the *first* pass of the next run and raise
+        ``"streaming corpus is empty; nothing to train on"`` (RIL ISS-064).
+
+        ``_written`` is kept (hashes already persisted this session stay
+        persisted); only the *baseline* used to seed per-pass ``seen`` is
+        cleared, so in-memory per-pass dedup still removes in-corpus
+        duplicates while a recycled corpus can be consumed again.
+        """
+        self._persisted = set()
+
     def iter_texts(self, skip: int = 0) -> Iterator[str]:
         # ``skip`` is delegated to the inner source so the
         # ``line_index`` resume semantics used by StreamingTextDataset

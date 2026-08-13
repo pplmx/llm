@@ -67,8 +67,18 @@ class StreamingTextDataset(IterableDataset):
         Called by the training engine when the streaming source is exhausted
         before ``steps_per_epoch`` is reached: pretraining cycles the corpus
         (optionally de-duplicated) until the step budget is met.
+
+        If the underlying source is a persistent-dedup wrapper, its
+        cross-run seen-set is also cleared: otherwise a corpus whose whole
+        content was consumed+hashed in a prior run classifies every record
+        as already-seen on the recycled pass and the engine raises
+        ``"streaming corpus is empty"`` (RIL ISS-064). In-memory per-pass
+        dedup is unaffected.
         """
         self.stream_data_state.reset()
+        reset_cross_run = getattr(self.text_source, "reset_cross_run_seen", None)
+        if reset_cross_run is not None:
+            reset_cross_run()
 
     def __iter__(self) -> Iterator[dict[str, torch.Tensor]]:
         shard_id, num_shards = self._shard_id()

@@ -177,6 +177,61 @@ def test_dedup_persistence_round_trip(tmp_path):
     assert second_pass == []
 
 
+def test_dedup_reset_cross_run_seen_recycles_corpus(tmp_path):
+    """Regression (RIL ISS-064): once a corpus has been fully consumed and
+    hashed in an earlier run, a *fresh* source yields nothing (cross-run
+    dedup). The streaming engine then calls :meth:`reset_cross_run_seen` on
+    corpus-cycle reset; the next pass must re-yield the corpus (scoped to
+    in-memory per-pass dedup) instead of the engine raising "streaming
+    corpus is empty".
+
+    Without the fix the persisted cross-run seen-set made the FIRST pass of
+    a recycled corpus classify every record as already-seen -> 0 texts.
+    """
+    data_path = _write(tmp_path, "data.txt", ["a", "b", "c", "d", "e"])
+    seen_path = tmp_path / "seen.txt"
+
+    # Run 1: consume + persist every record.
+    run1 = list(
+        DedupTextSource(
+            LocalLineTextSource(data_path),
+            seen_hashes_path=seen_path,
+            write_seen_hashes=True,
+        ).iter_texts()
+    )
+    assert run1 == ["a", "b", "c", "d", "e"]
+
+    # Fresh source (as after a new run): cross-run dedup drops everything.
+    fresh = DedupTextSource(
+        LocalLineTextSource(data_path),
+        seen_hashes_path=seen_path,
+        write_seen_hashes=True,
+    )
+    assert list(fresh.iter_texts()) == []
+
+    # Engine recycle: reset_cross_run_seen restores consumability.
+    fresh.reset_cross_run_seen()
+    recycled = list(fresh.iter_texts())
+    assert recycled == ["a", "b", "c", "d", "e"]
+
+
+def test_dedup_reset_cross_run_seen_still_removes_in_pass_duplicates(tmp_path):
+    """reset_cross_run_seen clears only the *cross-run* baseline; in-corpus
+    duplicates are still removed per pass (per-pass dedup semantics from
+    RIL ISS-038 remain intact)."""
+    data_path = _write(tmp_path, "data.txt", ["a", "a", "b", "b", "c"])
+    seen_path = tmp_path / "seen.txt"
+    src = DedupTextSource(
+        LocalLineTextSource(data_path),
+        seen_hashes_path=seen_path,
+        write_seen_hashes=True,
+    )
+    list(src.iter_texts())  # consume once, persist a+b+c
+    src.reset_cross_run_seen()
+
+    assert list(src.iter_texts()) == ["a", "b", "c"]
+
+
 def test_dedup_missing_seen_file_is_silent_noop(tmp_path):
     data_path = _write(tmp_path, "data.txt", ["a"])
     seen_path = tmp_path / "never_created.txt"
