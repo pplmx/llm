@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 40,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T06:58:46+00:00",
+  "updated_at": "2026-08-13T06:59:09+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4060,14 +4060,15 @@
     "TASK-061": {
       "id": "TASK-061",
       "type": "task",
-      "status": "active",
-      "version": 3,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-13T06:24:23+00:00",
-      "updated_at": "2026-08-13T06:58:46+00:00",
+      "updated_at": "2026-08-13T06:59:09+00:00",
       "touched_round": 40,
       "category": "correctness",
       "severity": 0.6,
-      "title": "Mask PPO policy/value losses over response positions (padded positions must not scale gradients)"
+      "title": "Mask PPO policy/value losses over response positions (padded positions must not scale gradients)",
+      "details": "DONE: policy/value losses normalized over real response tokens via response-window mask; KL/entropy masking style consistent; deterministic-stub regression RED->GREEN."
     },
     "TASK-062": {
       "id": "TASK-062",
