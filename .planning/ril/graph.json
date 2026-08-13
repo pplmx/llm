@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 40,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T07:17:53+00:00",
+  "updated_at": "2026-08-13T07:18:35+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4074,14 +4074,15 @@
     "TASK-062": {
       "id": "TASK-062",
       "type": "task",
-      "status": "active",
-      "version": 3,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-13T06:24:23+00:00",
-      "updated_at": "2026-08-13T07:17:53+00:00",
+      "updated_at": "2026-08-13T07:18:35+00:00",
       "touched_round": 40,
       "category": "correctness",
       "severity": 0.5,
-      "title": "Scale gradient-accumulation tail step by real micro-batch count, not full accum_steps"
+      "title": "Scale gradient-accumulation tail step by real micro-batch count, not full accum_steps",
+      "details": "DONE: accum_counter re-scales partial tail-window gradient to full-batch average (CHG-064); divisible epochs unaffected. Regression RED->GREEN."
     },
     "CHG-062": {
       "id": "CHG-062",
