@@ -163,3 +163,126 @@ class TestScheduler:
         # Should maintain order
         for i, seq in enumerate(running):
             assert seq.request_id == f"req{i}"
+
+
+class TestSchedulerConcurrency:
+    """Concurrent access to ``waiting`` / ``running`` (RIL ISS-069).
+
+    ``Scheduler.get_sequence`` runs on the streaming/caller thread while
+    ``Scheduler.schedule`` (from an engine ``step()``) mutates the same
+    deques. Before the scheduler owned a lock, a ``get_sequence``
+    iteration racing a ``schedule`` ``popleft`` raised ``RuntimeError:
+    deque mutated during iteration`` under load.  These tests hammer the
+    two methods from many threads and assert no exception escapes and the
+    invariants hold.
+    """
+
+    def test_get_sequence_holds_scheduler_lock(self):
+        """The read path must be serialised against ``schedule`` / churn.
+
+        Deterministic proof the lock is wired into ``get_sequence`` (not just
+        present on the object): with the scheduler's lock held by the test
+        thread, a concurrent ``get_sequence`` in another thread must block
+        until the lock is released.
+        """
+        import threading
+
+        scheduler = Scheduler()
+        scheduler.add_sequence(make_sequence("req1"))
+        scheduler.schedule()
+
+        entered = threading.Event()
+        proceed = threading.Event()
+        result: list[Sequence | None] = [None]
+
+        def reader():
+            entered.set()
+            # This must block while the test thread holds scheduler._lock.
+            result[0] = scheduler.get_sequence("req1")
+            proceed.set()
+
+        # Test thread owns the scheduler lock.
+        with scheduler._lock:
+            t = threading.Thread(target=reader)
+            t.start()
+            # Give the reader a chance to reach the lock acquire.
+            entered.wait(1)
+            # It must NOT have proceeded while the lock is held.
+            assert not proceed.wait(0.2), "get_sequence ran despite scheduler lock held"
+        # Lock released → reader proceeds.
+        assert proceed.wait(1), "get_sequence deadlocked after lock release"
+        t.join()
+        assert result[0] is not None, "get_sequence returned nothing after lock release"
+        assert result[0].request_id == "req1"
+
+    def test_concurrent_get_sequence_and_schedule_no_crash(self):
+        import threading
+
+        scheduler = Scheduler(max_batch_size=4)
+
+        errors: list[BaseException] = []
+
+        def seeder():
+            try:
+                for i in range(200):
+                    scheduler.add_sequence(make_sequence(f"req{i % 8}"))
+                    scheduler.schedule()
+            except BaseException as exc:  # noqa: BLE001 - report from thread
+                errors.append(exc)
+
+        def reader():
+            try:
+                for _ in range(200):
+                    scheduler.get_sequence("req3")
+                    _ = scheduler.has_pending_work
+            except BaseException as exc:  # noqa: BLE001 - report from thread
+                errors.append(exc)
+
+        threads = [threading.Thread(target=seeder) for _ in range(2)] + [
+            threading.Thread(target=reader) for _ in range(4)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"concurrent scheduler access raised: {errors[0]!r}"
+
+    def test_concurrent_add_and_get_sequence_no_crash(self):
+        import threading
+
+        scheduler = Scheduler(max_batch_size=2, max_waiting=64)
+        errors: list[BaseException] = []
+
+        def churner():
+            try:
+                # Add → schedule (popleft) churn races append and pop
+                # mutations against the readers' iteration.  Periodic
+                # ``clear()`` (teardown path) keeps the queue from hitting
+                # the max_waiting backpressure cap — otherwise the expected
+                # ``Waiting queue full`` RuntimeError would drown out the
+                # data-race signal we're actually probing for.
+                for i in range(1000):
+                    scheduler.add_sequence(make_sequence(f"c{i}"))
+                    scheduler.schedule()
+                    if i % 32 == 0:
+                        scheduler.clear()
+            except BaseException as exc:  # noqa: BLE001 - report from thread
+                errors.append(exc)
+
+        def getter():
+            try:
+                for _ in range(1000):
+                    scheduler.get_sequence("missing")
+            except BaseException as exc:  # noqa: BLE001 - report from thread
+                errors.append(exc)
+
+        threads = [threading.Thread(target=churner) for _ in range(3)] + [
+            threading.Thread(target=getter) for _ in range(3)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"concurrent add/schedule/get raised: {errors[0]!r}"

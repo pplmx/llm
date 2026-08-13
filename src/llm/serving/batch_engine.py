@@ -785,8 +785,7 @@ class ContinuousBatchingEngine:
         self.paged_kv_cache = None
         self._on_step = None
 
-        self.scheduler.waiting.clear()
-        self.scheduler.running.clear()
+        self.scheduler.clear()
         self.slot_allocator.seq_to_slot.clear()
         self.slot_allocator.free_slots = set(range(self.slot_allocator.total_slots))
 
