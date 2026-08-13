@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 39,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T04:56:16+00:00",
+  "updated_at": "2026-08-13T05:34:55+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3737,7 +3737,7 @@
       "version": 1,
       "created_at": "2026-08-12T10:56:14+00:00",
       "updated_at": "2026-08-12T10:56:14+00:00",
-      "touched_round": 38,
+      "touched_round": 39,
       "severity": "med",
       "title": "compat from_pretrained does not reproduce real-Llama architecture (LayerNorm vs RMSNorm, no RoPE, default biases)",
       "details": "hf_loader builds with norm_impl='layer_norm' (real Llama/Mistral use RMSNorm), no RoPE wiring in the mha path (core.rope has no callers), and default qkv_bias/mlp_bias/lm_head_bias=True (real checkpoints are bias-free -> lm_head.bias stays random). from_pretrained of a genuine HF Llama/Mistral checkpoint yields a functionally different net. Our own publish->load roundtrip is self-consistent (both use the same defaults), so only external checkpoint loading is affected. Architectural: fixing requires deciding severity/scope and it touches the loader defaults that the GLU roundtrip tests depend on."
@@ -3757,16 +3757,14 @@
       "id": "TASK-058",
       "type": "task",
       "status": "active",
-      "version": 2,
+      "version": 4,
       "created_at": "2026-08-12T10:56:48+00:00",
-      "updated_at": "2026-08-13T04:56:16+00:00",
-      "touched_round": 38,
+      "updated_at": "2026-08-13T05:34:55+00:00",
+      "touched_round": 39,
       "category": "correctness",
       "severity": 0.5,
       "title": "Compat loader architecture fidelity for real checkpoints (RMSNorm, RoPE, bias-free defaults) (ISS-062)",
-      "details": "Investigate + implement in a dedicated round: honor norm_impl, wire RoPE into the attention path, default bias-free for real Llama/Mistral. Must keep publish->load roundtrip self-consistent. Effort high, unlock_factor low (only external checkpoints affected); deferred by DEC-018.",
-      "lock_owner": "session-2026-08-13",
-      "lock_until": "2026-08-13T05:26:16+00:00"
+      "details": "Investigate + implement in a dedicated round: honor norm_impl (DONE CHG-059), wire RoPE into the attention path (DONE CHG-060), default bias-free for real Llama/Mistral (REMAINING). Must keep publish->load roundtrip self-consistent; roundtrip tests cover norm_impl + use_rope + rope_theta. Effort high, unlock_factor low (only external checkpoints affected); deferred by DEC-018."
     },
     "ISS-063": {
       "id": "ISS-063",
@@ -3941,6 +3939,40 @@
       "touched_round": 37,
       "confidence": 0.9,
       "title": "norm_impl not persisted/honored -> RMSNorm model silently becomes LayerNorm on roundtrip"
+    },
+    "CHG-060": {
+      "id": "CHG-060",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T05:32:32+00:00",
+      "updated_at": "2026-08-13T05:32:32+00:00",
+      "touched_round": 39,
+      "title": "feat(compat): wire RoPE into MHA (ISS-062 subset/TASK-058)",
+      "commit": "2b3350d"
+    },
+    "EV-084": {
+      "id": "EV-084",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T05:32:55+00:00",
+      "updated_at": "2026-08-13T05:32:55+00:00",
+      "touched_round": 39,
+      "title": "RoPE wired: decode==prefill, use_rope/rope_theta roundtrip (ISS-062/TASK-058)",
+      "source": "tests/core/attn/test_mha.py::test_mha_rope_decode_matches_prefill",
+      "confidence": 1.0
+    },
+    "HYP-040": {
+      "id": "HYP-040",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T05:33:50+00:00",
+      "updated_at": "2026-08-13T05:33:50+00:00",
+      "touched_round": 39,
+      "title": "RoPE not wired: core.rope has zero callers -> real Llama/Mistral load as non-rotary net (position only via additive PE)",
+      "confidence": 0.95
     }
   },
   "edges": [
@@ -5683,6 +5715,24 @@
       "to": "TASK-058",
       "type": "implements",
       "created_at": "2026-08-12T15:27:18+00:00"
+    },
+    {
+      "from": "CHG-060",
+      "to": "TASK-058",
+      "type": "implements",
+      "created_at": "2026-08-13T05:33:12+00:00"
+    },
+    {
+      "from": "CHG-060",
+      "to": "ISS-062",
+      "type": "resolves",
+      "created_at": "2026-08-13T05:33:12+00:00"
+    },
+    {
+      "from": "EV-084",
+      "to": "HYP-040",
+      "type": "validates",
+      "created_at": "2026-08-13T05:33:59+00:00"
     }
   ]
 }
