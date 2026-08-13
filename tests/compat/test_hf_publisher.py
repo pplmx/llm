@@ -286,6 +286,50 @@ def test_save_pretrained_roundtrip_rms_norm(tmp_path: Path):
 
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_roundtrip_norm_first(tmp_path: Path):
+    """Regression (RIL ISS-072): ``norm_first=False`` (post-LN) must roundtrip
+    save->load preserving post-LN — not silently rebuild as pre-LN.
+
+    Neither the publisher nor the loader persisted ``norm_first``, so a
+    post-LN trained model was rebuilt with the default pre-LN block
+    ordering after save->load: the same weights arranged differently, a
+    silently different network."""
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(
+        **decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            intermediate_size=64,
+            max_seq_len=32,
+            attn_impl="mha",
+            mlp_impl="mlp",
+            norm_first=False,
+            device=str(DEFAULT_DEVICE),
+        )
+    )
+    model.eval()
+    save_pretrained(model, tmp_path)
+
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config.get("norm_first") is False
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+    assert isinstance(reloaded, DecoderModel)
+    assert reloaded.norm_first is False, "post-LN model silently rebuilt as pre-LN"
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = model(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_rope(tmp_path: Path):
     """Regression (RIL ISS-062): a RoPE model must roundtrip save->load
     with the same rotary position embedding — not silently become a

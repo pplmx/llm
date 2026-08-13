@@ -105,6 +105,11 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # silently loses its PE across save->load (RIL ISS-063).
     pos_encoding_learned = bool(getattr(model.embedding_layer.positional_encoding, "learned", False))
     norm_impl = str(getattr(model, "norm_impl", "layer_norm"))
+    # Pre-LN vs post-LN block ordering is model-defining: a post-LN trained
+    # model silently rebuilds as the pre-LN default without this flag being
+    # persisted (RIL ISS-072). Persist the actual value the same way the
+    # other architecture flags (norm_impl, RoPE, biases) are handled.
+    norm_first = bool(getattr(model, "norm_first", True))
     # RoPE is model-defining too (real Llama/Mistral inject position in
     # attention, not additive embeddings). Persist the actual flag + base so a
     # RoPE model roundtrips as RoPE and a non-RoPE model does NOT silently
@@ -137,6 +142,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "use_glu": use_glu,
         "pos_encoding_learned": pos_encoding_learned,
         "norm_impl": norm_impl,
+        "norm_first": norm_first,
         "use_rope": use_rope,
         "qkv_bias": qkv_bias,
         "mlp_bias": mlp_bias,

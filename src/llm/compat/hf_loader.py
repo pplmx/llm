@@ -127,6 +127,7 @@ def _load_from_local(
         mlp_activation=our_config.get("mlp_activation", "silu"),
         pos_encoding_learned=our_config.get("pos_encoding_learned", False),
         norm_impl=our_config.get("norm_impl", "layer_norm"),
+        norm_first=our_config.get("norm_first", True),
         use_rope=our_config.get("use_rope", True),
         rope_theta=our_config.get("rope_theta", 10000.0),
         qkv_bias=our_config.get("qkv_bias", False),
