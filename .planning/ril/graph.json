@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 41,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T08:32:08+00:00",
+  "updated_at": "2026-08-13T08:35:06+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4331,6 +4331,18 @@
       "touched_round": 41,
       "severity": "low",
       "title": "load_peft unpickles with weights_only=False -> arbitrary code execution on shared adapter files"
+    },
+    "TASK-064": {
+      "id": "TASK-064",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T08:35:06+00:00",
+      "updated_at": "2026-08-13T08:35:06+00:00",
+      "touched_round": 41,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Wire paged-attention prefix replay so enable_prefix_cache works on the paged path (ISS-068)"
     }
   },
   "edges": [
