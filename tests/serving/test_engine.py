@@ -147,6 +147,56 @@ def test_engine_paged_attention_uses_configured_pool(tiny_model, device, mock_to
     assert engine.prefix_cache is None
 
 
+def test_engine_paged_attention_prefix_cache_does_not_short_circuit(tiny_model, device, mock_tokenizer):
+    """Regression (RIL ISS-068): with ``use_paged_attention=True`` AND
+    ``enable_prefix_cache=True`` the prefix-cache fast path must NOT
+    short-circuit to a 1-token prefill.
+
+    ``_copy_kv_between_slots`` (which replays cached K/V into a fresh dense
+    slot) is a no-op on the paged path, so a prefix hit used to feed only
+    the final prompt token into a brand-new 1-token block table — the paged
+    kernel then attended over that single token, silently producing output
+    that diverged from the dense backend. We now fall back to a full
+    prefill, so two identical prompts must generate identical tokens.
+    """
+
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+        use_paged_attention=True,
+        max_blocks=64,
+        block_size=8,
+        enable_prefix_cache=True,
+        max_prefixes=4,
+    )
+
+    def _generate(tag: str) -> list[int]:
+        # temperature=0 → greedy, so determinism isolates the cache behavior.
+        req = GenerationRequest(prompt="hello", max_new_tokens=3, temperature=0)
+        req.request_id = tag
+        engine.add_request(req)
+        # Run steps until this request reaches a terminal state so its KV is
+        # fully committed (and prefix put happens before the next request).
+        for _ in range(10):
+            engine.step()
+            seq = engine.scheduler.get_sequence(tag)
+            if seq.status == RequestState.FINISHED:
+                return list(seq.generated_ids)
+        raise AssertionError(f"request {tag} did not finish in bounds")
+
+    # Both requests prefill "hello" ([1,2,3,4,5]) in full on the paged path.
+    first = _generate("r1")
+    second = _generate("r2")
+
+    assert second == first, (
+        "identical prompts must generate identical output on the paged+prefix "
+        f"path; got {first} vs {second} (prefix fast path wrongly short-circuited)"
+    )
+
+
 def test_from_serving_config_wires_flags(tiny_model, device, mock_tokenizer):
     """Requirement: from_serving_config maps ServingConfig fields onto engine state."""
     from llm.serving.config import ServingConfig

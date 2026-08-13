@@ -549,7 +549,19 @@ class ContinuousBatchingEngine:
             prefix_full_hit = False
 
             if len(seq.generated_ids) == 0:
-                cached = self.prefix_cache.get(seq.input_ids) if self.prefix_cache else None
+                # Prefix replay across slots is only wired for the DENSE KV
+                # path (``_copy_kv_between_slots`` copies K/V between dense
+                # cache slots). On the paged path the cached KV blocks belong
+                # to another sequence's block table that may have been freed
+                # and reallocated; short-circuiting to a 1-token prefill here
+                # would make paged attention attend over only the LAST prefix
+                # token's KV instead of the whole cached prefix — silent wrong
+                # output (RIL ISS-068). Fall back to a full prefill (correct,
+                # just without the prefix-speedup) until paged prefix replay
+                # via PagedKVCache.add_prefix / try_get_prefix_blocks /
+                # fork_sequence is wired.
+                use_prefix_shortcut = self.prefix_cache is not None and self.paged_kv_cache is None
+                cached = self.prefix_cache.get(seq.input_ids) if use_prefix_shortcut else None
                 if cached is not None and cached[1] == len(seq.input_ids):
                     src_slot, prefix_len = cached
                     if src_slot != slot:
