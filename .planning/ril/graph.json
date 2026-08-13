@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 41,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T09:52:23+00:00",
+  "updated_at": "2026-08-13T10:01:12+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4326,27 +4326,26 @@
     "ISS-074": {
       "id": "ISS-074",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T08:31:39+00:00",
-      "updated_at": "2026-08-13T08:31:39+00:00",
+      "updated_at": "2026-08-13T10:00:32+00:00",
       "touched_round": 41,
       "severity": "low",
-      "title": "load_peft unpickles with weights_only=False -> arbitrary code execution on shared adapter files"
+      "title": "load_peft unpickles with weights_only=False -> arbitrary code execution on shared adapter files",
+      "resolved_by": "CHG-068"
     },
     "TASK-064": {
       "id": "TASK-064",
       "type": "task",
       "status": "resolved",
-      "version": 3,
+      "version": 4,
       "created_at": "2026-08-13T08:35:06+00:00",
-      "updated_at": "2026-08-13T09:29:04+00:00",
+      "updated_at": "2026-08-13T09:53:02+00:00",
       "touched_round": 41,
       "category": "correctness",
       "severity": 0.9,
-      "title": "Wire paged-attention prefix replay so enable_prefix_cache works on the paged path (ISS-068) [correctness half done; replay speedup split out]",
-      "lock_owner": "deepseek-v4-flash-product-1-23",
-      "lock_until": "2026-08-13T10:11:37+00:00"
+      "title": "Wire paged-attention prefix replay so enable_prefix_cache works on the paged path (ISS-068) [correctness half done; replay speedup split out]"
     },
     "CHG-066": {
       "id": "CHG-066",
@@ -4446,10 +4445,10 @@
     "TASK-071": {
       "id": "TASK-071",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-13T09:30:14+00:00",
-      "updated_at": "2026-08-13T09:30:14+00:00",
+      "updated_at": "2026-08-13T10:01:12+00:00",
       "touched_round": 41,
       "category": "security",
       "severity": 0.6,
@@ -4476,6 +4475,29 @@
       "touched_round": 41,
       "source": "tests/generation/test_eager.py::test_batch_generate_left_pad_attention_mask",
       "title": "Left-pad columns masked in all batch_generate forwards when prompts differ in length; 189 quick + 283 serving tests green",
+      "confidence": 1.0
+    },
+    "CHG-068": {
+      "id": "CHG-068",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T10:00:32+00:00",
+      "updated_at": "2026-08-13T10:00:32+00:00",
+      "touched_round": 41,
+      "title": "fix(peft): unpickle adapter checkpoints with weights_only=True",
+      "commit": "990537e"
+    },
+    "EV-091": {
+      "id": "EV-091",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T10:00:56+00:00",
+      "updated_at": "2026-08-13T10:00:56+00:00",
+      "touched_round": 41,
+      "source": "tests/core/test_peft_save_load.py::TestLoadPeftErrors::test_load_blocks_pickle_code_execution",
+      "title": "Malicious __reduce__ fires under weights_only=False but load_peft blocks it; 189 quick + PEFT suites green",
       "confidence": 1.0
     }
   },
@@ -6506,6 +6528,19 @@
       "to": "TASK-066",
       "type": "implements",
       "created_at": "2026-08-13T09:51:23+00:00"
+    },
+    {
+      "from": "CHG-068",
+      "to": "ISS-074",
+      "type": "resolves",
+      "created_at": "2026-08-13T10:00:32+00:00",
+      "note": "weights_only=True blocks __reduce__ execution; harness-validated regression test"
+    },
+    {
+      "from": "CHG-068",
+      "to": "TASK-071",
+      "type": "implements",
+      "created_at": "2026-08-13T10:00:32+00:00"
     }
   ]
 }
