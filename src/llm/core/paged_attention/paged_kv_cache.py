@@ -32,6 +32,16 @@ class PrefixCache:
             return self.cache[prefix_hash]
         return None
 
+    def remove(self, prefix_hash: str) -> None:
+        """Drop a prefix entry (no-op if absent).
+
+        Used when the sequence that owned the cached blocks is freed — the
+        stored block IDs become dangling and must not be replayed (RIL
+        ISS-071).  Because LRU eviction may already have dropped the entry,
+        absence is not an error.
+        """
+        self.cache.pop(prefix_hash, None)
+
 
 class PagedKVCache:
     """Block-level KV cache for paged attention."""
@@ -214,5 +224,30 @@ class PagedKVCache:
         ]
 
     def free(self, seq_id: int):
-        """Free blocks when sequence completes."""
+        """Free blocks when sequence completes.
+
+        The sequence's prefix-cache entries and ``_seq_to_hash`` bookkeeping
+        are invalidated BEFORE the blocks are freed: each entry stores the
+        physical block IDs of this seq, and once ``free_sequence`` returns
+        them to the allocator a later request may be handed the same blocks
+        (or they may be recycled by the time ``try_get_prefix_blocks`` runs).
+        Leaving an entry in place would replay another/in-flight sequence's
+        newly-written K/V as a cached prefix — use-after-free of the KV
+        blocks (RIL ISS-071).
+
+        Both the ``_seq_to_hash[seq_id]`` lookup (O(1)) and a scan of every
+        prefix entry whose block IDs intersect the freed table are dropped:
+        ``_seq_to_hash`` only remembers the most recent ``add_prefix`` from
+        the sequence, so prefix entries registered earlier in the sequence's
+        lifetime would otherwise survive with (now recycled) block IDs.
+        """
+        if self.prefix_cache is not None and seq_id in self.block_manager.sequences:
+            # Sequence may already have been freed (double-free) — the scan
+            # is only meaningful when it is still alive; ``free_sequence``
+            # itself tolerates a missing sequence as a no-op.
+            freed_blocks = set(self.block_manager.get_block_table(seq_id))
+            for key in [k for k, blocks in self.prefix_cache.cache.items() if set(blocks) & freed_blocks]:
+                self.prefix_cache.remove(key)
+            if seq_id in self._seq_to_hash:
+                self._seq_to_hash.pop(seq_id)
         self.block_manager.free_sequence(seq_id)

@@ -529,6 +529,87 @@ def test_prefix_cache_disabled_returns_none():
     cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3], block_ids=[0, 1])
 
 
+def test_free_invalidates_prefix_cache_entry():
+    """BUG (RIL ISS-071): ``free(seq_id)`` freed a sequence's blocks but left
+    its prefix-cache entry (and ``_seq_to_hash``) pointing at the physical
+    block IDs.  Once the allocator recycled those blocks for another
+    sequence, a later ``try_get_prefix_blocks`` with the same prefix
+    returned dangling block IDs — a use-after-free of the KV cache.
+
+    After ``free`` the prefix hash must no longer resolve, and the
+    ``_seq_to_hash`` bookkeeping must be dropped.
+    """
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+
+    # Sequence 1 consumes blocks and registers a prefix entry for them.
+    k = torch.randn(1, 8, 2, 8, device=DEVICE)  # 2 blocks
+    v = torch.randn(1, 8, 2, 8, device=DEVICE)
+    block_table = cache.update(seq_id=1, k_new=k, v_new=v)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    cache.add_prefix(seq_id=1, prefix_tokens=tokens, block_ids=block_table)
+
+    # Prefix resolves while the sequence is alive.
+    assert cache.try_get_prefix_blocks(tokens) == block_table
+    assert 1 in cache._seq_to_hash
+
+    # Freeing the sequence must invalidate the prefix entry + bookkeeping.
+    cache.free(seq_id=1)
+    assert cache.try_get_prefix_blocks(tokens) is None, (
+        "prefix entry still resolves after free() — use-after-free: the "
+        "cached block_ids belong to a recycled/can-never-own sequence"
+    )
+    assert 1 not in cache._seq_to_hash
+
+
+def test_free_nonexistent_seq_then_reuse_does_not_resolve_stale_prefix():
+    """Follow-up on ISS-071: after a sequence frees, the allocator hands its
+    blocks to a NEW sequence; the old prefix must not alias the new KV.
+
+    This mirrors the real engine flow (sequence completed → free → a later
+    request gets the recycled blocks).  Without invalidation-on-free the
+    stale hash would return the new sequence's blocks as a "prefix" — the
+    paged attention would then attend over the wrong K/V.
+    """
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+
+    k1 = torch.randn(1, 8, 2, 8, device=DEVICE)
+    v1 = torch.randn(1, 8, 2, 8, device=DEVICE)
+    block_table1 = cache.update(seq_id=1, k_new=k1, v_new=v1)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    cache.add_prefix(seq_id=1, prefix_tokens=tokens, block_ids=block_table1)
+    cache.free(seq_id=1)
+
+    # A new sequence is allocated from the (recycled) pool.
+    k2 = torch.randn(1, 8, 2, 8, device=DEVICE)
+    v2 = torch.randn(1, 8, 2, 8, device=DEVICE)
+    block_table2 = cache.update(seq_id=2, k_new=k2, v_new=v2)
+
+    # Old prefix must not alias sequence 2's (recycled) blocks.
+    assert cache.try_get_prefix_blocks(tokens) is None, (
+        "stale prefix resolved to recycled blocks after free (ISS-071 UAF)"
+    )
+    # Sanity: seq 2 really did land in the pool — its write succeeded and
+    # its table is live (whether or not the allocator reused seq 1's exact
+    # block ids, the stale prefix must never point at them).
+    assert len(block_table2) == len(block_table1)
+
+
 def test_get_out_of_bounds_start():
     """Test that get raises ValueError for negative start_idx."""
     cache = PagedKVCache(
