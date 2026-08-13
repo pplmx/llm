@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 41,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T10:16:12+00:00",
+  "updated_at": "2026-08-13T10:26:40+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4270,13 +4270,14 @@
     "ISS-069": {
       "id": "ISS-069",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T08:31:39+00:00",
-      "updated_at": "2026-08-13T08:31:39+00:00",
+      "updated_at": "2026-08-13T10:26:32+00:00",
       "touched_round": 41,
       "severity": "med",
-      "title": "Scheduler.get_sequence reads waiting deque without the step lock -> RuntimeError under concurrent streaming"
+      "title": "Scheduler.get_sequence reads waiting deque without the step lock -> RuntimeError under concurrent streaming",
+      "resolved_by": "CHG-071"
     },
     "ISS-070": {
       "id": "ISS-070",
@@ -4399,10 +4400,10 @@
     "TASK-067": {
       "id": "TASK-067",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-13T09:29:46+00:00",
-      "updated_at": "2026-08-13T09:29:46+00:00",
+      "updated_at": "2026-08-13T10:26:40+00:00",
       "touched_round": 41,
       "category": "stability",
       "severity": 0.6,
@@ -4546,6 +4547,29 @@
       "touched_round": 41,
       "source": "tests/compat/test_hf_publisher.py::test_save_pretrained_roundtrip_norm_first",
       "title": "norm_first=False roundtrips (config + model + equal logits); 189 quick + serving + SFT green",
+      "confidence": 1.0
+    },
+    "CHG-071": {
+      "id": "CHG-071",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T10:26:32+00:00",
+      "updated_at": "2026-08-13T10:26:32+00:00",
+      "touched_round": 41,
+      "title": "fix(serving): serialize Scheduler access with an internal lock",
+      "commit": "f8231df"
+    },
+    "EV-094": {
+      "id": "EV-094",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T10:26:40+00:00",
+      "updated_at": "2026-08-13T10:26:40+00:00",
+      "touched_round": 41,
+      "source": "tests/serving/test_scheduler.py::TestSchedulerConcurrency",
+      "title": "get_sequence blocks while scheduler lock held; threaded add/schedule/clear vs get/has_pending stress passes; 189 quick + serving green",
       "confidence": 1.0
     }
   },
@@ -6615,6 +6639,19 @@
       "to": "TASK-069",
       "type": "implements",
       "created_at": "2026-08-13T10:15:57+00:00"
+    },
+    {
+      "from": "CHG-071",
+      "to": "ISS-069",
+      "type": "resolves",
+      "created_at": "2026-08-13T10:26:32+00:00",
+      "note": "Scheduler own lock for all waiting/running access; deterministic lock-contention + stress tests"
+    },
+    {
+      "from": "CHG-071",
+      "to": "TASK-067",
+      "type": "implements",
+      "created_at": "2026-08-13T10:26:32+00:00"
     }
   ]
 }
