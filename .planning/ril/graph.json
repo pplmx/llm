@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 39,
+  "round": 40,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T05:34:55+00:00",
+  "updated_at": "2026-08-13T05:42:26+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3733,14 +3733,14 @@
     "ISS-062": {
       "id": "ISS-062",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-12T10:56:14+00:00",
-      "updated_at": "2026-08-12T10:56:14+00:00",
-      "touched_round": 39,
+      "updated_at": "2026-08-13T05:41:37+00:00",
+      "touched_round": 40,
       "severity": "med",
       "title": "compat from_pretrained does not reproduce real-Llama architecture (LayerNorm vs RMSNorm, no RoPE, default biases)",
-      "details": "hf_loader builds with norm_impl='layer_norm' (real Llama/Mistral use RMSNorm), no RoPE wiring in the mha path (core.rope has no callers), and default qkv_bias/mlp_bias/lm_head_bias=True (real checkpoints are bias-free -> lm_head.bias stays random). from_pretrained of a genuine HF Llama/Mistral checkpoint yields a functionally different net. Our own publish->load roundtrip is self-consistent (both use the same defaults), so only external checkpoint loading is affected. Architectural: fixing requires deciding severity/scope and it touches the loader defaults that the GLU roundtrip tests depend on."
+      "details": "Resolved: from_pretrained now reproduces real-Llama architecture — RMSNorm (CHG-059), RoPE wired into MHA (CHG-060), bias-free defaults (CHG-061). All flags persist+honor so own roundtrip stays self-consistent; three regression suites GREEN."
     },
     "DEC-018": {
       "id": "DEC-018",
@@ -3756,15 +3756,15 @@
     "TASK-058": {
       "id": "TASK-058",
       "type": "task",
-      "status": "active",
-      "version": 4,
+      "status": "resolved",
+      "version": 5,
       "created_at": "2026-08-12T10:56:48+00:00",
-      "updated_at": "2026-08-13T05:34:55+00:00",
-      "touched_round": 39,
+      "updated_at": "2026-08-13T05:41:30+00:00",
+      "touched_round": 40,
       "category": "correctness",
       "severity": 0.5,
       "title": "Compat loader architecture fidelity for real checkpoints (RMSNorm, RoPE, bias-free defaults) (ISS-062)",
-      "details": "Investigate + implement in a dedicated round: honor norm_impl (DONE CHG-059), wire RoPE into the attention path (DONE CHG-060), default bias-free for real Llama/Mistral (REMAINING). Must keep publish->load roundtrip self-consistent; roundtrip tests cover norm_impl + use_rope + rope_theta. Effort high, unlock_factor low (only external checkpoints affected); deferred by DEC-018."
+      "details": "DONE: honor norm_impl (CHG-059), wire RoPE into attention path (CHG-060), bias-free defaults for real Llama/Mistral (CHG-061). All three persist+honor flags so publish->load roundtrip stays self-consistent; regression tests cover each."
     },
     "ISS-063": {
       "id": "ISS-063",
@@ -3973,6 +3973,41 @@
       "touched_round": 39,
       "title": "RoPE not wired: core.rope has zero callers -> real Llama/Mistral load as non-rotary net (position only via additive PE)",
       "confidence": 0.95
+    },
+    "CHG-061": {
+      "id": "CHG-061",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T05:40:47+00:00",
+      "updated_at": "2026-08-13T05:40:47+00:00",
+      "touched_round": 40,
+      "title": "fix(compat): bias-free defaults + persist bias flags (ISS-062 subset/TASK-058)",
+      "commit": "19ca2ee"
+    },
+    "EV-085": {
+      "id": "EV-085",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T05:40:55+00:00",
+      "updated_at": "2026-08-13T05:40:55+00:00",
+      "touched_round": 40,
+      "title": "Bias roundtrip: biased default keeps biases, bias-free stays bias-free, external defaults bias-free (ISS-062/TASK-058)",
+      "source": "tests/compat/test_hf_publisher.py::test_save_pretrained_roundtrip_persists_bias_flags",
+      "confidence": 1.0
+    },
+    "DEC-020": {
+      "id": "DEC-020",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T05:41:58+00:00",
+      "updated_at": "2026-08-13T05:41:58+00:00",
+      "touched_round": 40,
+      "title": "ISS-062/TASK-058 closed — compat loader now reproduces real-Llama architecture",
+      "rationale": "Completed the deferred compat-fidelity work in three verified subsets: (1) CHG-059 honor+persist norm_impl (RMSNorm), (2) CHG-060 wire RoPE into MHA both linear+paged paths (core.rope had zero callers), (3) CHG-061 bias-free defaults for external Llama/Mistral + persist bias flags. Each persists+honors its flag so the repo's own publish->load roundtrip stays self-consistent while genuine external checkpoints now load as functionally-equivalent networks. Three regression suites GREEN; full suite GREEN.",
+      "alternatives_rejected": "Bleeding DEC-018's deferral further: ISS-062 is the last open correctness issue and the flags pattern (persist+honor with regressions) already proven on GLU/norm/RoPE; hardcoding any default would silently change existing roundtrips so all three subsets use the opt-in persist+honor pattern instead."
     }
   },
   "edges": [
@@ -5733,6 +5768,24 @@
       "to": "HYP-040",
       "type": "validates",
       "created_at": "2026-08-13T05:33:59+00:00"
+    },
+    {
+      "from": "CHG-061",
+      "to": "TASK-058",
+      "type": "implements",
+      "created_at": "2026-08-13T05:41:02+00:00"
+    },
+    {
+      "from": "CHG-061",
+      "to": "ISS-062",
+      "type": "resolves",
+      "created_at": "2026-08-13T05:41:02+00:00"
+    },
+    {
+      "from": "DEC-020",
+      "to": "TASK-058",
+      "type": "governs",
+      "created_at": "2026-08-13T05:42:26+00:00"
     }
   ]
 }
