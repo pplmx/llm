@@ -12,6 +12,78 @@ from llm.export._wrapper import ExportCacheWrapper, dummy_token_ids
 logger = logging.getLogger(__name__)
 
 
+def _normalize_layer_norm_dtypes(onnx_path: str | Path) -> Path:
+    """Fix TorchScript ONNX LayerNormalization type binding for half-precision
+    models (RIL ISS-067).
+
+    ``torch.onnx.export(..., dynamo=False)`` fuses a hand-written
+    :class:`llm.core.layer_norm.LayerNorm` into an ONNX
+    ``LayerNormalization`` node, but for fp16/bf16 models it binds the Norm's
+    *weight/bias* inputs to the (fp16) initializer dtype while leaving the
+    *X* input at fp32 — the exporter's value_info inference disagrees with
+    the actual traced types. onnxruntime rejects the artifact at load time
+    with ``Type parameter (T) of Optype (LayerNormalization) bound to
+    different types``. The model itself is dtype-consistent in eager mode;
+    only the fused graph is mislabeled.
+
+    Fix: run ONNX shape inference, and for every ``LayerNormalization`` whose
+    X-input inferred type differs from its weight dtype, insert a ``Cast``
+    on X (to the weight dtype) before the node and a ``Cast`` on the output
+    back to X's original dtype, keeping downstream consumers well-typed.
+
+    Returns the (possibly rewritten) path. Pure post-processing: safe to run
+    on any exported graph; no-ops when no type mismatch is found.
+    """
+    import onnx
+    from onnx import shape_inference
+
+    onnx_path = Path(onnx_path)
+    model = onnx.load(str(onnx_path))
+
+    # Populate value_info with inferred element types — the TorchScript
+    # exporter leaves intermediate tensors untyped, and that is exactly why
+    # onnxruntime cannot resolve the LayerNormalization type parameter.
+    model = shape_inference.infer_shapes(model, strict_mode=False)
+
+    # Type composition: value_info + input/outputs + initializers.
+    elem_type_of: dict[str, int] = {}
+    for vi in list(model.graph.value_info) + list(model.graph.input) + list(model.graph.output):
+        if vi.type.HasField("tensor_type") and vi.type.tensor_type.HasField("elem_type"):
+            elem_type_of[vi.name] = vi.type.tensor_type.elem_type
+    init_type_of = {i.name: i.data_type for i in model.graph.initializer}
+
+    def _effective(name: str) -> int | None:
+        return init_type_of.get(name) or elem_type_of.get(name)
+
+    fixed = 0
+    new_nodes: list[onnx.NodeProto] = []
+    for node in list(model.graph.node):
+        if node.op_type != "LayerNormalization" or len(node.input) < 2 or not node.output[0]:
+            continue
+        weight_ty = _effective(node.input[1])
+        x_name = node.input[0]
+        x_ty = elem_type_of.get(x_name)
+        if weight_ty is None or x_ty is None or weight_ty == x_ty:
+            continue
+        # X input mislabeled: cast X to the weight dtype, run LN, cast back.
+        cast_in_name = f"{x_name}__ln_x"
+        new_nodes.append(onnx.helper.make_node("Cast", [x_name], [cast_in_name], to=weight_ty))
+        out_name = node.output[0]
+        cast_out_name = f"{out_name}__ln_out"
+        node.input[0] = cast_in_name
+        node.output[0] = cast_out_name
+        new_nodes.append(onnx.helper.make_node("Cast", [cast_out_name], [out_name], to=x_ty))
+        fixed += 1
+
+    if fixed == 0:
+        return onnx_path
+
+    model.graph.node.extend(new_nodes)
+    onnx.save(model, str(onnx_path))
+    logger.info("Rewrote %d LayerNormalization node(s) to fix fp16 type binding (RIL ISS-067).", fixed)
+    return onnx_path
+
+
 def export_to_onnx(
     model: nn.Module,
     output_path: str | Path,
@@ -79,6 +151,13 @@ def export_to_onnx(
             verbose=verbose,
             dynamo=False,
         )
+
+    # fp16/bf16: TorchScript ONNX fusion mislabels LayerNormalization X-input
+    # types, producing an artifact onnxruntime cannot load (RIL ISS-067).
+    # Pure post-processing fixes the type binding in place.
+    model_dtype = next(model.parameters()).dtype
+    if model_dtype in (torch.float16, torch.bfloat16):
+        _normalize_layer_norm_dtypes(output_path)
 
     if verbose:
         logger.info("Exported model to %s", output_path)

@@ -44,6 +44,68 @@ class TestExportToOnnx:
         assert output_path.exists()
 
 
+def _fp16_export_loads_and_verifies(tmp_path, *, num_layers: int):
+    """fp16 export must produce an onnxruntime-loadable artifact whose
+    outputs match the eager model (RIL ISS-067). Returns the ORT session."""
+    import onnxruntime as ort
+    import torch
+
+    model = DecoderModel(
+        vocab_size=64,
+        hidden_size=32,
+        num_layers=num_layers,
+        num_heads=4,
+        intermediate_size=64,
+        max_seq_len=32,
+        dtype=torch.float16,
+        device="cpu",
+        embedding_dropout_p=0.0,
+        attn_dropout_p=0.0,
+        mlp_dropout_p=0.0,
+    )
+    model.eval()
+    output_path = tmp_path / f"fp16_{num_layers}l.onnx"
+    export_to_onnx(model, output_path, input_shape=(1, 8))
+
+    # Regression: this previously failed at load time with
+    # "Type Error: Type parameter (T) of Optype (LayerNormalization) bound
+    # to different types (tensor(float) and tensor(float16))".
+    session = ort.InferenceSession(str(output_path), providers=["CPUExecutionProvider"])
+    assert session is not None
+    return model, session
+
+
+def test_export_fp16_onnxruntime_loadable(tmp_path):
+    """Regression (RIL ISS-067): a fp16 model exports successfully but the
+    artifact must be loadable by onnxruntime — it previously was not, because
+    TorchScript ONNX fusion mislabeled LayerNormalization input types
+    (LayerNorm weight=float16, X=float) and onnxruntime rejected the graph
+    at session creation."""
+    model, session = _fp16_export_loads_and_verifies(tmp_path, num_layers=2)
+    assert model is not None
+    assert session is not None
+
+
+def test_export_fp16_onnx_matches_eager(tmp_path):
+    """After the LayerNorm type fix the fp16 ONNX artifact must produce
+    outputs close to the eager fp16 model (fp16 tolerance)."""
+    import numpy as np
+    import torch
+
+    model, session = _fp16_export_loads_and_verifies(tmp_path, num_layers=2)
+
+    torch.manual_seed(7)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8))
+    onnx_out = session.run(None, {"input_ids": ids.numpy()})[0]
+    with torch.no_grad():
+        pt_out = model(ids).float().numpy()
+
+    assert onnx_out.shape == pt_out.shape
+    assert np.allclose(onnx_out, pt_out, rtol=1e-2, atol=1e-2), (
+        f"fp16 ONNX diverges from eager (max |d|={np.abs(onnx_out - pt_out).max():.5f})"
+    )
+
+
 def test_export_to_onnx_small_vocab_no_crash(tmp_path):
     """Regression (RIL ISS-058): a model with ``vocab_size < 100`` must
     export without crashing on an out-of-range dummy token id.
