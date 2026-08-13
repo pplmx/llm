@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 40,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T05:42:26+00:00",
+  "updated_at": "2026-08-13T06:47:06+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 28,
+      "touched_round": 40,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 37,
+      "touched_round": 40,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -4008,6 +4008,111 @@
       "title": "ISS-062/TASK-058 closed — compat loader now reproduces real-Llama architecture",
       "rationale": "Completed the deferred compat-fidelity work in three verified subsets: (1) CHG-059 honor+persist norm_impl (RMSNorm), (2) CHG-060 wire RoPE into MHA both linear+paged paths (core.rope had zero callers), (3) CHG-061 bias-free defaults for external Llama/Mistral + persist bias flags. Each persists+honors its flag so the repo's own publish->load roundtrip stays self-consistent while genuine external checkpoints now load as functionally-equivalent networks. Three regression suites GREEN; full suite GREEN.",
       "alternatives_rejected": "Bleeding DEC-018's deferral further: ISS-062 is the last open correctness issue and the flags pattern (persist+honor with regressions) already proven on GLU/norm/RoPE; hardcoding any default would silently change existing roundtrips so all three subsets use the opt-in persist+honor pattern instead."
+    },
+    "ISS-064": {
+      "id": "ISS-064",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-13T06:23:12+00:00",
+      "updated_at": "2026-08-13T06:46:51+00:00",
+      "touched_round": 40,
+      "severity": "high",
+      "title": "DedupTextSource persisted dedup + streaming: second run / resume crashes or silently drops data",
+      "details": "Resolved: corpus recycler now forgets cross-run persisted dedup so streaming second run / corpus cycling no longer raises 'streaming corpus is empty' or silently drops records. CHG-062 verified."
+    },
+    "ISS-065": {
+      "id": "ISS-065",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:23:16+00:00",
+      "updated_at": "2026-08-13T06:23:16+00:00",
+      "touched_round": 40,
+      "severity": "med",
+      "title": "PPO policy/value losses averaged over padded positions (no response-length mask) -> silent gradient-scale corruption"
+    },
+    "ISS-066": {
+      "id": "ISS-066",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:23:20+00:00",
+      "updated_at": "2026-08-13T06:23:20+00:00",
+      "touched_round": 40,
+      "severity": "med",
+      "title": "Gradient-accumulation tail window steps on fraction of a full batch's scale (loss/accum_steps unconditional)"
+    },
+    "TASK-060": {
+      "id": "TASK-060",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-13T06:24:23+00:00",
+      "updated_at": "2026-08-13T06:47:06+00:00",
+      "touched_round": 40,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Fix DedupTextSource persisted dedup so streaming second run/resume does not crash or drop data",
+      "details": "DONE: reset_cross_run_seen() clears cross-run dedup baseline on streaming corpus recycle (CHG-062); in-memory per-pass dedup (ISS-038) intact; direct iter_texts cross-run skip contract unchanged. Regression RED->GREEN verified."
+    },
+    "TASK-061": {
+      "id": "TASK-061",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:24:23+00:00",
+      "updated_at": "2026-08-13T06:24:23+00:00",
+      "touched_round": 40,
+      "category": "correctness",
+      "severity": 0.6,
+      "title": "Mask PPO policy/value losses over response positions (padded positions must not scale gradients)"
+    },
+    "TASK-062": {
+      "id": "TASK-062",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:24:23+00:00",
+      "updated_at": "2026-08-13T06:24:23+00:00",
+      "touched_round": 40,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Scale gradient-accumulation tail step by real micro-batch count, not full accum_steps"
+    },
+    "CHG-062": {
+      "id": "CHG-062",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:43:54+00:00",
+      "updated_at": "2026-08-13T06:43:54+00:00",
+      "touched_round": 40,
+      "title": "fix(data): clear cross-run dedup seen on corpus recycle so streaming doesn't crash (ISS-064/TASK-060)",
+      "commit": "f08bb93"
+    },
+    "EV-086": {
+      "id": "EV-086",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:44:19+00:00",
+      "updated_at": "2026-08-13T06:44:19+00:00",
+      "touched_round": 40,
+      "title": "Recycled persistent-dedup corpus re-yields full data; fresh 2nd run would crash without reset_cross_run_seen (ISS-064/TASK-060)",
+      "source": "tests/data/test_dedup_source.py::test_dedup_reset_cross_run_seen_recycles_corpus",
+      "confidence": 1.0
+    },
+    "HYP-041": {
+      "id": "HYP-041",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:45:34+00:00",
+      "updated_at": "2026-08-13T06:45:34+00:00",
+      "touched_round": 40,
+      "title": "Persisted cross-run dedup baseline makes streaming corpus recycle yield zero texts (engine raises 'streaming corpus is empty')",
+      "confidence": 0.95
     }
   },
   "edges": [
@@ -5786,6 +5891,60 @@
       "to": "TASK-058",
       "type": "governs",
       "created_at": "2026-08-13T05:42:26+00:00"
+    },
+    {
+      "from": "TASK-060",
+      "to": "ISS-064",
+      "type": "addresses",
+      "created_at": "2026-08-13T06:25:09+00:00"
+    },
+    {
+      "from": "TASK-061",
+      "to": "ISS-065",
+      "type": "addresses",
+      "created_at": "2026-08-13T06:25:09+00:00"
+    },
+    {
+      "from": "TASK-062",
+      "to": "ISS-066",
+      "type": "addresses",
+      "created_at": "2026-08-13T06:25:09+00:00"
+    },
+    {
+      "from": "ISS-064",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-13T06:25:09+00:00"
+    },
+    {
+      "from": "ISS-065",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-13T06:25:09+00:00"
+    },
+    {
+      "from": "ISS-066",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-13T06:25:09+00:00"
+    },
+    {
+      "from": "CHG-062",
+      "to": "TASK-060",
+      "type": "implements",
+      "created_at": "2026-08-13T06:45:34+00:00"
+    },
+    {
+      "from": "CHG-062",
+      "to": "ISS-064",
+      "type": "resolves",
+      "created_at": "2026-08-13T06:45:34+00:00"
+    },
+    {
+      "from": "EV-086",
+      "to": "HYP-041",
+      "type": "validates",
+      "created_at": "2026-08-13T06:45:34+00:00"
     }
   ]
 }
