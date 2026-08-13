@@ -748,7 +748,17 @@ class ContinuousBatchingEngine:
             token_id = result.next_token_ids[i]
             seq.append_token_id(token_id)
 
-            if self.prefix_cache and len(seq.generated_ids) == 1 and not inputs.prefix_full_hits[i]:
+            # Only the DENSE path maintains the SlotPrefixCache: on the
+            # paged path the prefix shortcut is disabled (RIL ISS-068) so
+            # ``_lock_step_pre`` never reads it — writing entries here would
+            # just fill the LRU with unreachable hashes and churn
+            # ``invalidate_for_slot`` on every free for no benefit.
+            if (
+                self.prefix_cache
+                and self.paged_kv_cache is None
+                and len(seq.generated_ids) == 1
+                and not inputs.prefix_full_hits[i]
+            ):
                 self.prefix_cache.put(seq.input_ids, inputs.batch_slots_list[i], len(seq.input_ids))
 
             if (

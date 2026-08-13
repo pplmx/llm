@@ -196,6 +196,12 @@ def test_engine_paged_attention_prefix_cache_does_not_short_circuit(tiny_model, 
         f"path; got {first} vs {second} (prefix fast path wrongly short-circuited)"
     )
 
+    # The DENSE SlotPrefixCache must stay empty on the paged path: its
+    # entries can never be read (the shortcut is disabled) so populating it
+    # would only fill the LRU with dead hashes and churn invalidate_for_slot.
+    assert engine.prefix_cache is not None
+    assert not engine.prefix_cache._entries, "paged path must not populate the unreachable dense SlotPrefixCache"
+
 
 def test_from_serving_config_wires_flags(tiny_model, device, mock_tokenizer):
     """Requirement: from_serving_config maps ServingConfig fields onto engine state."""
