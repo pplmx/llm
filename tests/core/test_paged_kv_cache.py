@@ -976,3 +976,55 @@ def test_stage_prefix_full_hit_block_aligned_boundary():
     # Staged seq kept the shared block-0 prefix and its own private block-1.
     k2, _ = cache.get(seq_id=2, start_idx=0, end_idx=8)
     assert torch.equal(k2.transpose(0, 1)[0:7], k[0, 0:7, :])
+
+
+def test_free_of_evicted_stale_registrar_does_not_steal_reregistered_entry():
+    """REGRESSION (TASK-065 follow-up): when a sequence's prefix entry is
+    LRU-evicted and ANOTHER sequence later re-registers the same prompt hash,
+    the first sequence's ``free()`` must not evict the second's live entry —
+    only the current owner of the cached blocks may invalidate them."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=32,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+        max_prefixes=2,
+    )
+    prompt_tokens = [1, 2, 3, 4, 5]
+
+    def _prefill(seq_id, prompt):
+        k = torch.randn(1, 5, 2, 8, device=DEVICE)
+        v = torch.randn(1, 5, 2, 8, device=DEVICE)
+        table = cache.update(seq_id=seq_id, k_new=k, v_new=v)
+        cache.add_prefix(seq_id=seq_id, prefix_tokens=prompt, block_ids=table)
+        return table
+
+    # A registers the prompt; two DISTINCT prompts fill the LRU and evict A's.
+    table_a = _prefill(1, prompt_tokens)
+    assert cache.try_get_prefix_blocks(prompt_tokens) == table_a
+    _prefill(2, [9, 8, 7, 6, 5]), _prefill(3, [4, 3, 2, 1, 0])
+    assert cache.try_get_prefix_blocks(prompt_tokens) is None, "A's entry should be LRU-evicted"
+
+    # B (a fresh prefill of the same prompt) re-registers the hash with its
+    # own blocks — B is now the entry owner.
+    table_b = _prefill(4, prompt_tokens)
+    assert cache.try_get_prefix_blocks(prompt_tokens) == table_b
+
+    # A finishes: its stale _seq_to_hash must not steal B's live entry.
+    cache.free(1)
+    assert cache.try_get_prefix_blocks(prompt_tokens) == table_b, (
+        "stale registrar's free() stole the re-registered owner's entry"
+    )
+
+    # A third request (a hit, sharing B's blocks) finishing still must not
+    # evict B's entry either.
+    cache.stage_prefix(seq_id=5, prefix_block_ids=table_b, num_prefix_tokens=4)
+    cache.free(5)
+    assert cache.try_get_prefix_blocks(prompt_tokens) == table_b
+
+    # Only the current owner's free() drops the entry.
+    cache.free(4)
+    assert cache.try_get_prefix_blocks(prompt_tokens) is None

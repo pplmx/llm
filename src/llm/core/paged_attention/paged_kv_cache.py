@@ -74,6 +74,12 @@ class PagedKVCache:
         self.enable_prefix_cache = enable_prefix_cache
         self.prefix_cache = PrefixCache(max_prefixes) if enable_prefix_cache else None
         self._seq_to_hash: dict[int, str] = {}
+        # Hash -> the sequence that currently OWNS the cached entry. ``free``
+        # may only remove an entry whose current owner is the freed sequence:
+        # a stale ``_seq_to_hash`` leftover from a sequence whose entry was
+        # LRU-evicted (or overwritten by another sequence registering the same
+        # prompt) must not steal a live entry registered by someone else.
+        self._hash_to_owner: dict[str, int] = {}
 
     def _hash_tokens(self, tokens: list[int]) -> str:
         """Generate hash for token list.
@@ -106,6 +112,14 @@ class PagedKVCache:
         # copy-on-write spiral on every decode step (RIL TASK-065 follow-up).
         self.prefix_cache.add(prefix_hash, list(block_ids))
         self._seq_to_hash[seq_id] = prefix_hash
+        # The LAST registrar of a hash is the entry's owner (a fresh prefill
+        # that re-encountered an LRU-evicted prompt re-registers its own
+        # blocks). ``free`` consults this to avoid cross-sequence eviction.
+        self._hash_to_owner[prefix_hash] = seq_id
+        # Prune owner bookkeeping for hashes no longer cached (LRU eviction
+        # drops the entry but not this map); keeps it bounded by max_prefixes.
+        for stale in [k for k in self._hash_to_owner if k not in self.prefix_cache.cache]:
+            del self._hash_to_owner[stale]
 
     def try_get_prefix_blocks(self, prefix_tokens: list[int]) -> list[int] | None:
         """Try to get cached prefix blocks."""
@@ -324,6 +338,12 @@ class PagedKVCache:
         """
         if self.prefix_cache is not None:
             prefix_hash = self._seq_to_hash.pop(seq_id, None)
-            if prefix_hash is not None:
+            # Only the CURRENT owner of the entry may remove it. A stale
+            # ``_seq_to_hash`` mapping from a sequence whose entry was
+            # LRU-evicted, or superseded by another sequence's registration of
+            # the same prompt, must not evict a live entry owned by another
+            # still-running sequence (cross-owner theft).
+            if prefix_hash is not None and self._hash_to_owner.get(prefix_hash) == seq_id:
                 self.prefix_cache.remove(prefix_hash)
+                self._hash_to_owner.pop(prefix_hash, None)
         self.block_manager.free_sequence(seq_id)
