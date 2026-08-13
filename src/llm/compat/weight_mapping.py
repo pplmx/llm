@@ -437,4 +437,12 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # persists the explicit flag, keeping save->load self-consistent
         # (RIL ISS-062 — core.rope had zero callers before this wiring).
         "use_rope": hf_config.get("use_rope", True),
+        # Bias flags: real Llama/Mistral checkpoints are bias-free (no
+        # qkv/mlp/lm_head biases — ``attention_bias=False``). An external
+        # checkpoint therefore defaults to bias-free; our own publisher
+        # persists the actual flags so a biased model roundtrips with its
+        # biases (RIL ISS-062).
+        "qkv_bias": hf_config.get("qkv_bias", False),
+        "mlp_bias": hf_config.get("mlp_bias", False),
+        "lm_head_bias": hf_config.get("lm_head_bias", False),
     }

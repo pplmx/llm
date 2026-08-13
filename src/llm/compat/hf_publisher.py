@@ -112,6 +112,13 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # for external checkpoints — RIL ISS-062).
     use_rope = bool(getattr(model, "use_rope", False))
     rope_theta = float(getattr(model, "rope_theta", 10000.0))
+    # Bias flags are model-defining (real Llama/Mistral are bias-free; our
+    # grown-from-scratch default is biased). Persist the actual values so a
+    # biased model roundtrips with its biases and an unbiased one does NOT
+    # silently gain random biases on load (RIL ISS-062).
+    qkv_bias = bool(getattr(model, "qkv_bias", True))
+    mlp_bias = bool(getattr(model, "mlp_bias", True))
+    lm_head_bias = bool(getattr(model, "lm_head_bias", True))
 
     return {
         "model_type": "llama",
@@ -131,6 +138,9 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "pos_encoding_learned": pos_encoding_learned,
         "norm_impl": norm_impl,
         "use_rope": use_rope,
+        "qkv_bias": qkv_bias,
+        "mlp_bias": mlp_bias,
+        "lm_head_bias": lm_head_bias,
     }
 
 

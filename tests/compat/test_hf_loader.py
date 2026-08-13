@@ -132,6 +132,22 @@ class TestWeightMapping:
         ours_non_rope = get_config_mapping({"model_type": "llama", "use_rope": False})
         assert ours_non_rope["use_rope"] is False
 
+    def test_get_config_mapping_bias_free_default_for_external(self):
+        """Real Llama/Mistral checkpoints are bias-free (``attention_bias``
+        defaults to False); mapping an external config (no bias keys) must
+        default all of qkv/mlp/lm_head bias off so random biases don't leak
+        in (RIL ISS-062). Persisted values from our own publisher are honored."""
+        external = get_config_mapping({"model_type": "llama", "rope_theta": 500000.0})
+        assert external["qkv_bias"] is False
+        assert external["mlp_bias"] is False
+        assert external["lm_head_bias"] is False
+
+        ours_biased = get_config_mapping(
+            {"model_type": "llama", "qkv_bias": True, "mlp_bias": True, "lm_head_bias": True}
+        )
+        assert ours_biased["qkv_bias"] is True
+        assert ours_biased["lm_head_bias"] is True
+
 
 class TestHFLoader:
     """Tests for HuggingFace loader."""

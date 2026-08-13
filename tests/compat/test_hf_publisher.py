@@ -368,6 +368,70 @@ def test_save_pretrained_roundtrip_default_keeps_non_rope(tmp_path: Path):
 
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_roundtrip_persists_bias_flags(tmp_path: Path):
+    """Regression (RIL ISS-062): bias flags are model-defining. A biased
+    (repo-default) model must roundtrip with its biases, and a bias-free
+    model must NOT silently gain random biases on load.
+
+    Before the fix neither publisher nor loader persisted
+    ``qkv_bias/mlp_bias/lm_head_bias``; an external bias-free Llama was built
+    with the repo's biased defaults, so ``lm_head.bias`` (and qkv/mlp biases)
+    stayed at random init — a functionally different network."""
+    from llm.models.decoder import DecoderModel
+
+    # Biased default model: persists + honors bias=True.
+    biased = DecoderModel(**decoder_model_kwargs(device=str(DEFAULT_DEVICE)))
+    biased.eval()
+    save_pretrained(biased, tmp_path)
+    cfg = json.loads((tmp_path / "config.json").read_text())
+    assert cfg["qkv_bias"] is True
+    assert cfg["mlp_bias"] is True
+    assert cfg["lm_head_bias"] is True
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+    assert reloaded.qkv_bias is True
+    assert reloaded.lm_head_bias is True
+    assert reloaded.transformer_blocks[0].self_attn.qkv_proj.bias is not None
+    assert reloaded.lm_head.bias is not None
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, biased.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = biased(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+    # Bias-free model (external-Llama-shaped): stays bias-free on roundtrip.
+    unbiased = DecoderModel(
+        **decoder_model_kwargs(
+            qkv_bias=False,
+            mlp_bias=False,
+            lm_head_bias=False,
+            device=str(DEFAULT_DEVICE),
+        )
+    )
+    unbiased.eval()
+    out_dir = tmp_path / "unbiased"
+    save_pretrained(unbiased, out_dir)
+    cfg2 = json.loads((out_dir / "config.json").read_text())
+    assert cfg2["qkv_bias"] is False
+    assert cfg2["lm_head_bias"] is False
+
+    reloaded2 = from_pretrained(out_dir, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded2.eval()
+    assert reloaded2.lm_head_bias is False
+    assert reloaded2.transformer_blocks[0].self_attn.qkv_proj.bias is None
+    assert reloaded2.lm_head.bias is None
+
+    torch.manual_seed(0)
+    with torch.no_grad():
+        original_logits2 = unbiased(input_ids=ids).detach()
+        reloaded_logits2 = reloaded2(input_ids=ids).detach()
+    assert torch.allclose(original_logits2, reloaded_logits2, atol=1e-5)
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_default_non_glu_model(tmp_path: Path):
     """Regression (RIL ISS-056): a DEFAULT (non-GLU) model must roundtrip
     save->load with equivalent logits — not leave the MLP at random init."""

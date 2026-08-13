@@ -87,6 +87,13 @@ class DecoderModel(nn.Module):
         # and the loader honors it (RIL ISS-062).
         self.use_rope = use_rope
         self.rope_theta = rope_theta
+        # Bias flags are model-defining too: real Llama/Mistral are bias-free
+        # (qkv/mlp/lm_head), while our grown-from-scratch default is biased.
+        # Store them so hf_publisher persists the actual values and the loader
+        # can honor external bias-free checkpoints (RIL ISS-062).
+        self.qkv_bias = bool(qkv_bias)
+        self.mlp_bias = bool(mlp_bias)
+        self.lm_head_bias = bool(lm_head_bias)
         self._gradient_checkpointing = gradient_checkpointing
 
         self.embedding_layer = EmbeddingLayer(
