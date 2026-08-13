@@ -306,6 +306,14 @@ class TrainingEngine:
         epoch_loss = 0.0
         accum_steps = self.config.optimization.gradient_accumulation_steps
         batch_count = 0
+        # Grad-accumulation window micro-batch counter. Each loss is scaled
+        # by 1/accum_steps, so a FULL window accumulates one global-batch's
+        # average gradient at step time. When an epoch's tail is a partial
+        # window (num_batches % accum_steps != 0) the forced final step
+        # would otherwise carry only window_count/accum_steps of the intended
+        # magnitude — a silent, step-to-step-varying effective-LR reduction
+        # (RIL ISS-066). We track the count and re-scale at step time.
+        accum_counter = 0
 
         # Zero gradients at start of epoch
         self.optimizer.zero_grad(set_to_none=True)
@@ -339,10 +347,23 @@ class TrainingEngine:
                 loss = loss / accum_steps
 
             self.scaler.scale(loss).backward()
+            accum_counter += 1
 
             # Perform optimization step every accum_steps or at end of epoch
             if (batch_idx + 1) % accum_steps == 0 or (batch_idx + 1 == num_batches):
                 self.scaler.unscale_(self.optimizer)
+                if accum_counter != accum_steps:
+                    # Partial final window (epoch tail): every loss was scaled
+                    # by 1/accum_steps, so this step only accumulated
+                    # `accum_counter/accum_steps` of a global batch. Re-scale
+                    # the gradient to full-batch-average magnitude so the
+                    # effective learning rate does not silently drop on
+                    # partial windows (RIL ISS-066).
+                    _scale = accum_steps / accum_counter
+                    for _param in self.model.parameters():
+                        if _param.grad is not None:
+                            _param.grad.mul_(_scale)
+                accum_counter = 0
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.config.training.gradient_clip_val
                 )
