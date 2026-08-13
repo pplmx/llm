@@ -422,6 +422,137 @@ class TestPPOTrainer:
         assert metrics["value_loss"] > 0.0
         assert torch.isfinite(torch.tensor(metrics["value_loss"]))
 
+    def test_ppo_step_losses_normalized_over_real_tokens(self):
+        """Regression (RIL ISS-065): the policy loss must be normalized over
+        REAL response tokens, not the padded ``[B, response_len]`` window.
+
+        A plain ``.mean()`` divides by ``B * response_len``; padded positions
+        contribute exactly 0, so gradients scale by
+        ``real_tokens / (B * response_len)`` — wrong magnitude and varying
+        per mini-batch. With a deterministic stub policy we can compute the
+        expected masked policy loss by hand and assert it exactly."""
+        import torch
+        import torch.nn as nn
+
+        from llm.training.core.config import PPOConfig
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        class StubPolicy(nn.Module):
+            """Deterministic policy: logits = emb[token] @ W (no randomness,
+            so the expected loss is computable analytically in the test)."""
+
+            def __init__(self, vocab: int, hidden: int, out: int):
+                super().__init__()
+                self.emb = nn.Embedding(vocab, hidden)
+                self.w = nn.Linear(hidden, out)
+
+            def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+                return self.w(self.emb(input_ids))
+
+        class SimpleTokenizer:
+            def encode(self, text: str) -> list[int]:
+                return [ord(c) % 100 for c in text[:10]]
+
+            def decode(self, ids: list[int]) -> str:
+                return "".join(chr(i + 32) for i in ids)
+
+            eos_id = 0
+
+        class StubReward(nn.Module):
+            """Pass-through reward scoring that never fires a real reward
+            forward (rewards are taken from the rollout buffer, not
+            recomputed here)."""
+
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, input_ids):
+                return torch.zeros(input_ids.shape[0], device=input_ids.device)
+
+        torch.manual_seed(0)
+        policy = StubPolicy(vocab=16, hidden=8, out=16).eval()
+        reward_model = StubReward()
+        tokenizer = SimpleTokenizer()
+        config = PPOConfig(
+            ppo_epochs=1,
+            mini_batch_size=2,
+            response_max_len=5,
+            use_ref_model=False,  # stub policy is not a DecoderModel
+            value_coef=0.0,  # skip the critic entirely (policy-loss only test)
+        )
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,  # type: ignore[arg-type]
+            tokenizer=tokenizer,  # type: ignore[arg-type]
+            config=config,
+            device="cpu",
+        )
+
+        buffer = RolloutBuffer(normalize_advantages=False)
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5, 6]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3, -0.2]),
+        )
+        buffer.add(
+            prompt_ids=torch.tensor([9, 8, 7]),
+            response_ids=torch.tensor([6]),
+            rewards=torch.tensor(0.5),
+            old_log_probs=torch.tensor([-0.4]),
+        )
+        buffer.compute_advantages()
+        batch = next(iter(buffer.get_batches(mini_batch_size=2, shuffle=False, device="cpu")))
+
+        # Manual reference: recompute the masked policy loss over the real
+        # response tokens only, then compare against the trainer's report.
+        input_ids = batch.input_ids
+        attention_mask = batch.attention_mask
+        response_mask = batch.response_mask
+        old_log_probs = batch.old_log_probs
+        advantages = batch.advantages
+        response_len = old_log_probs.shape[1]
+
+        with torch.no_grad():
+            logits = policy(input_ids)
+            shift_logits = logits[:, :-1, :]
+            shift_labels = input_ids[:, 1:]
+            new_log_probs = torch.log_softmax(shift_logits, dim=-1)
+            token_log_probs = torch.gather(new_log_probs, -1, shift_labels.unsqueeze(-1)).squeeze(-1)
+
+            new_response_log_probs = torch.zeros_like(old_log_probs)
+            mask = torch.zeros_like(old_log_probs, dtype=torch.bool)
+            for i in range(input_ids.shape[0]):
+                resp_len = int(response_mask[i].sum().long())
+                if resp_len > 0:
+                    prompt_len = int(attention_mask[i].sum().long()) - resp_len
+                    new_response_log_probs[i, :resp_len] = token_log_probs[
+                        i, prompt_len - 1 : prompt_len - 1 + resp_len
+                    ]
+                    mask[i, :resp_len] = True
+
+            ratio = (new_response_log_probs - old_log_probs).exp()
+            clipped = torch.clamp(ratio, 1.0 - config.clip_epsilon, 1.0 + config.clip_epsilon)
+            resp_adv = advantages[:, :response_len]
+            pl1 = -resp_adv * ratio
+            pl2 = -resp_adv * clipped
+            masked_loss = (torch.max(pl1, pl2) * mask).sum() / mask.sum().clamp(min=1)
+            unmasked_loss = torch.max(pl1, pl2).mean()
+
+        assert int(mask.sum()) == 4, "expected 3 + 1 real response tokens"
+
+        metrics = trainer.ppo_step(batch)
+
+        # The trainer's reported policy_loss must match the masked reference
+        # nearly exactly (same deterministic forward).
+        assert abs(metrics["policy_loss"] - float(masked_loss)) < 1e-6, (
+            f"policy loss must be a masked mean over real tokens: "
+            f"trainer={metrics['policy_loss']} expected={float(masked_loss)}"
+        )
+        # With a 2-row padded batch the masked and unmasked means differ
+        # (masked == real-token mean, unmasked == padded mean).
+        assert abs(float(masked_loss - unmasked_loss)) > 1e-9
+
     def test_target_kl_stops_all_ppo_epochs(self, tiny_setup):
         """Regression (RIL ISS-052): ``target_kl`` early stopping must halt
         the whole epoch loop, not just the current mini-batch loop.

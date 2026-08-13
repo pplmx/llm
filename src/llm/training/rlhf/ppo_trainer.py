@@ -381,6 +381,13 @@ class PPOTrainer:
         # Extract log probs for response portion only
         batch_size = input_ids.size(0)
         new_response_log_probs = torch.zeros_like(old_log_probs)
+        # Mask over the (padded) ``[B, response_len]`` response window: True
+        # at real response-token positions. Used to normalize policy + value
+        # losses over real tokens only — a plain ``.mean()`` divides by
+        # ``B * response_len`` so padded positions (0 contribution) silently
+        # scale gradients by ``real_tokens / (B * response_len)``, which
+        # varies per mini-batch (RIL ISS-065).
+        response_window_mask = torch.zeros_like(old_log_probs, dtype=torch.bool)
 
         for i in range(batch_size):
             resp_len = int(response_mask[i].sum().long())
@@ -394,6 +401,7 @@ class PPOTrainer:
                 # probs into the ratio (RIL ISS-043).
                 prompt_len = int(attention_mask[i].sum().long()) - resp_len
                 new_response_log_probs[i, :resp_len] = token_log_probs[i, prompt_len - 1 : prompt_len - 1 + resp_len]
+                response_window_mask[i, :resp_len] = True
 
         ratio = (new_response_log_probs - old_log_probs).exp()
 
@@ -409,7 +417,11 @@ class PPOTrainer:
 
         policy_loss_1 = -response_advantages * ratio
         policy_loss_2 = -response_advantages * clipped_ratio
-        policy_loss = torch.max(policy_loss_1, policy_loss_2).mean()
+        # Normalize over real response tokens only (masked mean) so padded
+        # zero positions do not dilute the gradient scale (RIL ISS-065).
+        policy_loss = (torch.max(policy_loss_1, policy_loss_2) * response_window_mask).sum() / (
+            response_window_mask.sum().clamp(min=1)
+        )
 
         # KL penalty
         kl = self.compute_kl_penalty(input_ids, attention_mask, response_mask)
@@ -426,7 +438,12 @@ class PPOTrainer:
                 response_len,
             )
             target_returns = returns[:, :response_len]
-            value_loss = functional.mse_loss(pred_values, target_returns)
+            # Masked MSE over real response tokens only — a plain mean over
+            # the [B, response_len] window includes padded positions (both
+            # 0), which dilutes the value gradient identically to the policy
+            # loss above (RIL ISS-065).
+            squared = (pred_values - target_returns) ** 2
+            value_loss = (squared * response_window_mask).sum() / (response_window_mask.sum().clamp(min=1))
             value_loss = self.config.value_coef * value_loss
 
         # Total loss
