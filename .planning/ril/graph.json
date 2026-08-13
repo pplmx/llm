@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 43,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T15:56:25+00:00",
+  "updated_at": "2026-08-13T16:30:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4726,6 +4726,41 @@
       "summary": "Reviewer-found aliasing bug reproduced (entry [0,1] grew to [0,1,2] as owner crossed block boundary); snapshot fix keeps entry frozen; engine test now asserts order-independent invariants (shared leading block, intact entry, byte-identical prompt KV)",
       "result": "pass",
       "confidence": 1.0
+    },
+    "CHG-075": {
+      "id": "CHG-075",
+      "type": "change",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-13T16:30:06+00:00",
+      "updated_at": "2026-08-13T16:30:42+00:00",
+      "touched_round": 43,
+      "commit": "aacacad",
+      "title": "fix(paged-attn): only the current owner may invalidate a prefix entry (TASK-065)"
+    },
+    "ISS-076": {
+      "id": "ISS-076",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-13T16:30:06+00:00",
+      "updated_at": "2026-08-13T16:30:42+00:00",
+      "touched_round": 43,
+      "title": "Prefix entry cross-owner theft: stale registrar's free() evicted another seq's re-registered live entry (LRU-evict -> re-register -> old owner frees)",
+      "severity": 0.4
+    },
+    "EV-100": {
+      "id": "EV-100",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T16:30:06+00:00",
+      "updated_at": "2026-08-13T16:30:06+00:00",
+      "touched_round": 43,
+      "source": "aacacad",
+      "summary": "Cross-owner theft reproduced (A LRU-evicted, B re-registers, A.free steals B entry); _hash_to_owner owner check keeps entry; regression test green",
+      "result": "pass",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -6859,6 +6894,24 @@
       "to": "COMP-004",
       "type": "located_in",
       "created_at": "2026-08-13T15:55:05+00:00"
+    },
+    {
+      "from": "CHG-075",
+      "to": "TASK-065",
+      "type": "implements",
+      "created_at": "2026-08-13T16:30:42+00:00"
+    },
+    {
+      "from": "CHG-075",
+      "to": "ISS-076",
+      "type": "resolves",
+      "created_at": "2026-08-13T16:30:42+00:00"
+    },
+    {
+      "from": "ISS-076",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-13T16:30:42+00:00"
     }
   ]
 }
