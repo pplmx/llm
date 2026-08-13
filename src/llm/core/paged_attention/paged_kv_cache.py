@@ -84,10 +84,19 @@ class PagedKVCache:
         return hashlib.sha256(array.array("i", tokens).tobytes()).hexdigest()
 
     def add_prefix(self, seq_id: int, prefix_tokens: list[int], block_ids: list[int]) -> None:
-        """Add prefix blocks to cache."""
+        """Add prefix blocks to cache, owned by ``seq_id``.
+
+        A sequence registers at most ONE live prefix entry: :meth:`free`
+        drops the entry its owner registered (and only that entry), so a
+        re-registration under a different hash evicts the previous one here
+        to keep that bookkeeping exact (RIL TASK-065).
+        """
         if not self.enable_prefix_cache or self.prefix_cache is None:
             return
         prefix_hash = self._hash_tokens(prefix_tokens)
+        prev_hash = self._seq_to_hash.pop(seq_id, None)
+        if prev_hash is not None and prev_hash != prefix_hash:
+            self.prefix_cache.remove(prev_hash)
         self.prefix_cache.add(prefix_hash, block_ids)
         self._seq_to_hash[seq_id] = prefix_hash
 
@@ -97,6 +106,27 @@ class PagedKVCache:
             return None
         prefix_hash = self._hash_tokens(prefix_tokens)
         return self.prefix_cache.get(prefix_hash)
+
+    def stage_prefix(self, seq_id: int, prefix_block_ids: list[int], num_prefix_tokens: int) -> list[int]:
+        """Start a new sequence sharing a cached prefix (prefix replay).
+
+        Creates the sequence in the block manager with the cached blocks
+        forked into its table (shared, refcounted — no K/V is copied). The
+        sequence is recorded as already owning ``num_prefix_tokens`` tokens,
+        so a subsequent :meth:`update` appends at the right offset and copies
+        on write before a token lands inside a still-shared block.
+
+        Args:
+            seq_id: Sequence identifier (slot id on the engine path).
+            prefix_block_ids: Block ids from :meth:`try_get_prefix_blocks`.
+            num_prefix_tokens: Number of already-owned prefix tokens.
+
+        Returns:
+            The staged block table.
+        """
+        if not self.enable_prefix_cache:
+            raise RuntimeError("stage_prefix requires enable_prefix_cache=True")
+        return self.block_manager.allocate_sequence_shared_prefix(seq_id, prefix_block_ids, num_prefix_tokens)
 
     def update(self, seq_id: int, k_new: Tensor, v_new: Tensor, layer_idx: int = 0) -> list[int]:
         """Append new tokens to sequence.
@@ -148,7 +178,11 @@ class PagedKVCache:
                 )
             if not self.block_manager.can_allocate_sequence(num_new_tokens):
                 raise RuntimeError("No free blocks available for new sequence")
-            block_table = self.block_manager.allocate_sequence(seq_id, num_new_tokens)
+            # Re-fetch the LIVE table (``allocate_sequence`` returns a copy)
+            # so a layer-0 COW remap below propagates to ``get_block_table``
+            # callers instead of vanishing into the throwaway copy.
+            self.block_manager.allocate_sequence(seq_id, num_new_tokens)
+            block_table = self.block_manager.get_block_table(seq_id)
             start_token_offset = 0
 
         # Write the new tokens into the (possibly extended) block table.
@@ -157,15 +191,52 @@ class PagedKVCache:
         # ``layer_idx`` (NOT ``:``) — ``:`` would broadcast that layer's K/V
         # into every layer's slice, so a multi-layer decoder attends over the
         # wrong K/V for every layer but the one that wrote last.
+        #
+        # Layer 0 owns the block-table remapping: when a staged-prefix
+        # sequence (or any shared-block holder) writes into a block that is
+        # still referenced by the prefix-cache owner, it must copy-on-write
+        # first — writing in place would corrupt the cached K/V the owner
+        # (and the model's attention) still reads (RIL TASK-065). Later
+        # layers read the remapped table fresh from the manager, so they
+        # land in the private block without re-running the COW.
         for i in range(num_new_tokens):
             global_pos = start_token_offset + i
             block_idx = global_pos // self.block_size
             in_block_offset = global_pos % self.block_size
             block_id = block_table[block_idx]
+            if layer_idx == 0:
+                block_id = self._copy_on_write_if_shared(block_id, block_table, block_idx)
             self.k_cache[layer_idx, block_id, :, in_block_offset, :] = k_transposed[:, :, i, :]
             self.v_cache[layer_idx, block_id, :, in_block_offset, :] = v_transposed[:, :, i, :]
 
         return block_table
+
+    def _copy_on_write_if_shared(self, block_id: int, block_table: list[int], block_idx: int) -> int:
+        """Private-copy ``block_id`` before an in-place write if it is shared.
+
+        A block is shared when another sequence is still reading it — the
+        prefix-cache owner whose blocks a staged sequence references, or a
+        sibling sequence forked from the same prefix. Overwriting it in place
+        would leak the write into the other sequence's context. The fresh
+        block receives the FULL multi-layer content (all transformer layers
+        share one physical block) before the write, and the sequence's block
+        table is remapped; the original block is left byte-identical for its
+        other readers.
+
+        Returns the id to write into (unchanged when not shared).
+        """
+        if not self.block_manager.is_block_shared(block_id):
+            return block_id
+        old_id = block_id
+        new_id = self.block_manager.cow_block(old_id)
+        # Copy the preserved prefix content from the shared block before this
+        # layer's write overwrites its slice; later layers read the same
+        # logical block and must see the full history (TASK-065).
+        with torch.no_grad():
+            self.k_cache[:, new_id, :, :, :].copy_(self.k_cache[:, old_id, :, :, :])
+            self.v_cache[:, new_id, :, :, :].copy_(self.v_cache[:, old_id, :, :, :])
+        block_table[block_idx] = new_id
+        return new_id
 
     def get_block_table(self, seq_id: int) -> list[int]:
         """Get block IDs for a sequence."""
@@ -226,28 +297,26 @@ class PagedKVCache:
     def free(self, seq_id: int):
         """Free blocks when sequence completes.
 
-        The sequence's prefix-cache entries and ``_seq_to_hash`` bookkeeping
-        are invalidated BEFORE the blocks are freed: each entry stores the
-        physical block IDs of this seq, and once ``free_sequence`` returns
-        them to the allocator a later request may be handed the same blocks
-        (or they may be recycled by the time ``try_get_prefix_blocks`` runs).
-        Leaving an entry in place would replay another/in-flight sequence's
-        newly-written K/V as a cached prefix — use-after-free of the KV
-        blocks (RIL ISS-071).
+        The sequence's OWN prefix-cache entry (the one it registered via
+        :meth:`add_prefix`) is dropped BEFORE its blocks are freed: the entry
+        stores this sequence's physical block IDs, and once
+        ``free_sequence`` returns them to the allocator a later request may
+        be handed the same blocks. Leaving it in place would replay
+        another/in-flight sequence's newly-written K/V as a cached prefix —
+        use-after-free of the KV blocks (RIL ISS-071).
 
-        Both the ``_seq_to_hash[seq_id]`` lookup (O(1)) and a scan of every
-        prefix entry whose block IDs intersect the freed table are dropped:
-        ``_seq_to_hash`` only remembers the most recent ``add_prefix`` from
-        the sequence, so prefix entries registered earlier in the sequence's
-        lifetime would otherwise survive with (now recycled) block IDs.
+        Only the entry the sequence itself registered is removed (via
+        ``_seq_to_hash``, which :meth:`add_prefix` keeps exact by evicting a
+        stale prior entry on re-registration). A sequence that merely
+        REPLAYED a prefix via :meth:`stage_prefix` shared the *owner's*
+        blocks, which remain live (and pristine — every write into a shared
+        block copy-on-writes) for as long as the owner holds them, so its
+        free must not evict an entry it does not own; doing so would make the
+        first replay destroy the very cache entry that served it (RIL
+        TASK-065).
         """
-        if self.prefix_cache is not None and seq_id in self.block_manager.sequences:
-            # Sequence may already have been freed (double-free) — the scan
-            # is only meaningful when it is still alive; ``free_sequence``
-            # itself tolerates a missing sequence as a no-op.
-            freed_blocks = set(self.block_manager.get_block_table(seq_id))
-            for key in [k for k, blocks in self.prefix_cache.cache.items() if set(blocks) & freed_blocks]:
-                self.prefix_cache.remove(key)
-            if seq_id in self._seq_to_hash:
-                self._seq_to_hash.pop(seq_id)
+        if self.prefix_cache is not None:
+            prefix_hash = self._seq_to_hash.pop(seq_id, None)
+            if prefix_hash is not None:
+                self.prefix_cache.remove(prefix_hash)
         self.block_manager.free_sequence(seq_id)

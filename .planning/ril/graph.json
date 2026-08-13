@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 42,
+  "round": 43,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T10:53:03+00:00",
+  "updated_at": "2026-08-13T15:04:36+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4377,11 +4377,11 @@
     "TASK-065": {
       "id": "TASK-065",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-13T09:29:27+00:00",
-      "updated_at": "2026-08-13T09:29:27+00:00",
-      "touched_round": 42,
+      "updated_at": "2026-08-13T15:04:36+00:00",
+      "touched_round": 43,
       "category": "core-feature",
       "severity": 0.5,
       "title": "Wire paged-attention prefix replay via block sharing (add_prefix/try_get_prefix_blocks/fork_sequence + COW-on-write) so enable_prefix_cache delivers the speedup on the paged path"
@@ -4642,6 +4642,55 @@
       "title": "Defer TASK-065 paged prefix-replay speedup; keep as next-round main line (correctness fallback already lands)",
       "rationale": "TASK-065 (paged prefix replay via block sharing) scores 1.50, below the 3.0 action threshold. Its correctness prerequisite (ISS-071 free() invalidation) is now resolved, but full replay needs COW-on-write in PagedKVCache.update (a shared last block must be copied before the suffix token overwrites it), engine-level fork_sequence/add_prefix wiring in _lock_step_pre/post, and a hash->seq reverse index — a multi-file, memory-safety-critical change over the single-commit diff budget. The correctness fallback (CHG-066 + CHG-072) already guarantees the paged+prefix combination is CORRECT (full prefill), just without the prefill speedup. Round-42 stop conditions are satisfied; defer to a dedicated round so it gets focused, verified treatment.",
       "alternatives_rejected": "1) Implement full COW replay now: rejected — >300-line memory-safety-critical change at tail of session, risk of re-introducing the ISS-068 class of silent divergence. 2) Mark resolved without code: rejected — feature genuinely unwired, would hide real backlog."
+    },
+    "CHG-073": {
+      "id": "CHG-073",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T14:37:57+00:00",
+      "updated_at": "2026-08-13T14:37:57+00:00",
+      "touched_round": 43,
+      "commit": "PENDING",
+      "title": "feat(paged-attn): wire paged prefix replay via shared-block staging + COW-on-write (TASK-065)"
+    },
+    "EV-097": {
+      "id": "EV-097",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T14:38:54+00:00",
+      "updated_at": "2026-08-13T14:38:54+00:00",
+      "touched_round": 43,
+      "source": "tests/core/test_paged_kv_cache.py",
+      "summary": "paged replay unit tests green (stage_forks, COW boundary preserve-owner, idempotent rewrite, registrar-only free, multi-layer COW)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "EV-098": {
+      "id": "EV-098",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T14:38:54+00:00",
+      "updated_at": "2026-08-13T14:38:54+00:00",
+      "touched_round": 43,
+      "source": "tests/serving/test_engine.py",
+      "summary": "paged prefix replay e2e: req-b shares cached prefix block, COWs boundary, output identical to full prefill",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "DEC-024": {
+      "id": "DEC-024",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T14:40:30+00:00",
+      "updated_at": "2026-08-13T14:40:30+00:00",
+      "touched_round": 43,
+      "title": "Implement paged prefix replay (TASK-065): shared-block staging + COW, idempotent last-token rewrite, registrar-only entry eviction",
+      "rationale": "Full PagedKVCache.add_prefix/stage_prefix flow: a full-prompt prefix hit stages the cached blocks into the new sequence shared (forked refcount) and runs only the final prompt token; PagedKVCache.update copy-on-writes before writing into a shared block (full multi-layer copy + table remap), mirroring the dense _copy_kv_between_slots shortcut's idempotent rewrite at position N-1. free() drops only the registrar's entry via the exact _seq_to_hash so a replaying sequence cannot evict the entry that served it. Verified: identical-prompt replay produces byte-identical output to full prefill (EV-098); owner KV preserved under COW (EV-097).",
+      "alternatives_rejected": "1) vLLM-style block-granular content-hash prefix cache (arbitrary partial prefixes): rejected — far larger scope, existing architecture is full-prompt-hash only. 2) Full-hit via write-suppressed attention-only forward: rejected — needs invasive no-write path in MHA; idempotent rewrite reuses existing update() machinery. 3) Keep free() block-intersection scan: rejected — any replaying seq's free evicted the source entry, making concurrent hit rate collapse."
     }
   },
   "edges": [
@@ -6751,6 +6800,12 @@
       "type": "governs",
       "created_at": "2026-08-13T10:53:03+00:00",
       "note": "recorded deferral; scores below action threshold"
+    },
+    {
+      "from": "CHG-073",
+      "to": "TASK-065",
+      "type": "implements",
+      "created_at": "2026-08-13T14:40:08+00:00"
     }
   ]
 }

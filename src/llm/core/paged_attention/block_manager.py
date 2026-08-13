@@ -199,6 +199,83 @@ class BlockManager:
 
         return src_info.block_table.copy()
 
+    def allocate_sequence_shared_prefix(self, seq_id: int, prefix_block_ids: list[int], num_tokens: int) -> list[int]:
+        """Create a new sequence whose initial blocks are a SHARED prefix.
+
+        Used for paged prefix replay: the cached prefix blocks belong to
+        another (still-live) sequence, but a new request with the same prompt
+        may reference them for reads without recomputing their K/V. Each
+        block table entry is forked (refcount +1 on every layer allocator)
+        — nothing is copied; the sequence must copy-on-write before any write
+        lands inside a shared block (:meth:`cow_block`), or the prefix cache
+        owner's K/V would be corrupted.
+
+        Args:
+            seq_id: Unique sequence identifier.
+            prefix_block_ids: Physical block ids (layer 0's view; ids are
+                identical across layers) of the cached prefix.
+            num_tokens: Number of prefix tokens this sequence already owns
+                (the staged prefix length).
+
+        Returns:
+            The sequence's block table (the shared prefix blocks).
+
+        Raises:
+            ValueError: If the sequence already exists, the prefix is empty,
+                or ``num_tokens`` spans more blocks than the cached table.
+        """
+        if seq_id in self.sequences:
+            raise ValueError(f"Sequence {seq_id} already exists")
+        if not prefix_block_ids:
+            raise ValueError("prefix_block_ids must be non-empty")
+        if self._tokens_to_blocks(num_tokens) > len(prefix_block_ids):
+            raise ValueError(
+                f"{num_tokens} prefix tokens need {self._tokens_to_blocks(num_tokens)} blocks "
+                f"but the cached table has {len(prefix_block_ids)}"
+            )
+
+        for allocator in self.allocators:
+            for block_id in prefix_block_ids:
+                allocator.fork(block_id)
+
+        self.sequences[seq_id] = SequenceBlockInfo(
+            seq_id=seq_id,
+            block_table=list(prefix_block_ids),
+            num_tokens=num_tokens,
+        )
+        return list(prefix_block_ids)
+
+    def is_block_shared(self, block_id: int) -> bool:
+        """Whether a block is referenced by more than one sequence.
+
+        Blocks are forked/freed uniformly across the per-layer allocators, so
+        the layer-0 refcount is authoritative.
+        """
+        return self.allocators[0].is_shared(block_id)
+
+    def cow_block(self, block_id: int) -> int:
+        """Copy-on-write a logical block across every layer allocator.
+
+        Allocates one fresh physical block per layer and decrements the
+        shared block's refcount on each. Because all allocators allocate in
+        lock-step (identical call order), every layer returns the same new id,
+        preserving the cross-layer block-id invariant. The caller must copy
+        the block's data into the new id before writing into it.
+
+        Returns:
+            The new private block id (or ``block_id`` itself when it was not
+            shared, in which case nothing is allocated or decremented).
+        """
+        new_id = self.allocators[0].copy_on_write(block_id)
+        for allocator in self.allocators[1:]:
+            other_id = allocator.copy_on_write(block_id)
+            if other_id != new_id:
+                raise RuntimeError(
+                    f"allocators diverged on COW of block {block_id}: "
+                    f"layer 0 produced {new_id}, another produced {other_id}"
+                )
+        return new_id
+
     def get_block_table(self, seq_id: int) -> list[int]:
         """Get the block table for a sequence."""
         if seq_id not in self.sequences:

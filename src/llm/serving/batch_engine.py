@@ -311,10 +311,10 @@ class ContinuousBatchingEngine:
 
     def _copy_kv_between_slots(self, src_slot: int, dst_slot: int, length: int) -> None:
         if self.paged_kv_cache is not None:
-            # Prefix cache replay across slots is only supported on the
-            # dense KV-cache path. The paged-cache path reuses blocks via
-            # ``PagedKVCache.add_prefix`` + ``try_get_prefix_blocks``;
-            # wiring those into ``_lock_step_pre`` is a follow-up.
+            # Prefix replay on the paged path does not copy K/V between dense
+            # slots — ``_lock_step_pre`` instead stages the cached blocks into
+            # the new sequence via ``PagedKVCache.stage_prefix`` (shared, no
+            # data copy). Nothing to do here.
             return
         for cache in self.kv_caches:
             cache.k_cache[dst_slot, :, :length, :] = cache.k_cache[src_slot, :, :length, :].clone()
@@ -549,17 +549,9 @@ class ContinuousBatchingEngine:
             prefix_full_hit = False
 
             if len(seq.generated_ids) == 0:
-                # Prefix replay across slots is only wired for the DENSE KV
-                # path (``_copy_kv_between_slots`` copies K/V between dense
-                # cache slots). On the paged path the cached KV blocks belong
-                # to another sequence's block table that may have been freed
-                # and reallocated; short-circuiting to a 1-token prefill here
-                # would make paged attention attend over only the LAST prefix
-                # token's KV instead of the whole cached prefix — silent wrong
-                # output (RIL ISS-068). Fall back to a full prefill (correct,
-                # just without the prefix-speedup) until paged prefix replay
-                # via PagedKVCache.add_prefix / try_get_prefix_blocks /
-                # fork_sequence is wired.
+                # Dense path prefix replay: ``_copy_kv_between_slots`` copies
+                # the cached K/V into a fresh slot and only the final prompt
+                # token runs through the model.
                 use_prefix_shortcut = self.prefix_cache is not None and self.paged_kv_cache is None
                 cached = self.prefix_cache.get(seq.input_ids) if use_prefix_shortcut else None
                 if cached is not None and cached[1] == len(seq.input_ids):
@@ -569,6 +561,29 @@ class ContinuousBatchingEngine:
                     ids = [seq.input_ids[-1]]
                     pos_ids = [prefix_len - 1]
                     prefix_full_hit = True
+                elif (
+                    self.paged_kv_cache is not None
+                    and self.paged_kv_cache.enable_prefix_cache
+                    and len(seq.input_ids) > 0
+                ):
+                    # Paged path prefix replay (RIL TASK-065). An exact
+                    # full-prompt match stages the cached blocks into the new
+                    # sequence SHARED (refcounted — ``stage_prefix`` forks
+                    # them) and runs only the final prompt token, mirroring
+                    # the dense shortcut: the model re-writes that token's K/V
+                    # at position N-1, which is idempotent with the cached
+                    # value, and ``PagedKVCache.update`` copy-on-writes if the
+                    # boundary block is still shared so the cache owner's K/V
+                    # is never corrupted.
+                    prefix_blocks = self.paged_kv_cache.try_get_prefix_blocks(seq.input_ids)
+                    if prefix_blocks is not None:
+                        self.paged_kv_cache.stage_prefix(slot, prefix_blocks, len(seq.input_ids) - 1)
+                        ids = [seq.input_ids[-1]]
+                        pos_ids = [len(seq.input_ids) - 1]
+                        prefix_full_hit = True
+                    else:
+                        ids = seq.input_ids
+                        pos_ids = list(range(len(ids)))
                 else:
                     ids = seq.input_ids
                     pos_ids = list(range(len(ids)))
@@ -748,11 +763,8 @@ class ContinuousBatchingEngine:
             token_id = result.next_token_ids[i]
             seq.append_token_id(token_id)
 
-            # Only the DENSE path maintains the SlotPrefixCache: on the
-            # paged path the prefix shortcut is disabled (RIL ISS-068) so
-            # ``_lock_step_pre`` never reads it — writing entries here would
-            # just fill the LRU with unreachable hashes and churn
-            # ``invalidate_for_slot`` on every free for no benefit.
+            # Dense path maintains the dense SlotPrefixCache; the paged path
+            # maintains its own block cache via PagedKVCache.add_prefix.
             if (
                 self.prefix_cache
                 and self.paged_kv_cache is None
@@ -760,6 +772,22 @@ class ContinuousBatchingEngine:
                 and not inputs.prefix_full_hits[i]
             ):
                 self.prefix_cache.put(seq.input_ids, inputs.batch_slots_list[i], len(seq.input_ids))
+
+            if (
+                self.paged_kv_cache is not None
+                and self.paged_kv_cache.enable_prefix_cache
+                and len(seq.generated_ids) == 1
+                and not inputs.prefix_full_hits[i]
+            ):
+                # Register the just-prefilled prompt's blocks for future
+                # replay. At this instant the block table holds exactly the
+                # prompt's blocks (decode has not extended it yet), so the
+                # cached prefix is the full prompt. Skipped for a prefix-hit
+                # sequence (it shared the owner's blocks — re-registering the
+                # same hash to this seq would make its free() wrongly evict
+                # the owner's entry).
+                slot = inputs.batch_slots_list[i]
+                self.paged_kv_cache.add_prefix(slot, seq.input_ids, self.paged_kv_cache.get_block_table(slot))
 
             if (
                 (hasattr(self.tokenizer, "eos_token_id") and token_id == self.tokenizer.eos_token_id)

@@ -705,3 +705,190 @@ def test_multi_layer_update_scopes_each_layer_kv():
     k_row1, _ = cache.get(seq_id=0, start_idx=0, end_idx=1, layer_idx=1)
     assert torch.allclose(k_row0[0, 0], k0[0, 0, 0])
     assert torch.allclose(k_row1[0, 0], k1[0, 0, 0])
+
+
+# ---------------------------------------------------------------------------
+# Paged prefix replay (RIL TASK-065): shared-block staging + COW-on-write.
+# ---------------------------------------------------------------------------
+
+
+def test_stage_prefix_forks_shared_blocks():
+    """``stage_prefix`` must create a new sequence that SHARES the cached
+    prefix blocks (refcount bump, no data copy) so the model's prefill of the
+    suffix reads the cached K/V without recomputing it."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+    k = torch.randn(1, 5, 2, 8, device=DEVICE, dtype=torch.float16)
+    v = torch.randn(1, 5, 2, 8, device=DEVICE, dtype=torch.float16)
+    table1 = cache.update(seq_id=1, k_new=k, v_new=v)
+    cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3, 4, 5], block_ids=table1)
+
+    staged = cache.stage_prefix(seq_id=2, prefix_block_ids=table1, num_prefix_tokens=4)
+    assert staged == table1
+    # Both sequences reference the same physical blocks — refcounted, shared.
+    for blk in table1:
+        assert cache.block_manager.is_block_shared(blk)
+    # seq 2 can read the staged prefix content exactly (shared, not copied).
+    k1, v1 = cache.get(seq_id=1, start_idx=0, end_idx=4)
+    k2, v2 = cache.get(seq_id=2, start_idx=0, end_idx=4)
+    assert torch.equal(k1, k2)
+    assert torch.equal(v1, v2)
+
+
+def test_update_cow_on_shared_boundary_block_preserves_owner():
+    """Writing a suffix / decode token into a SHARED block (the prefix cache
+    owner holds refcount>1) must copy-on-write: allocate a private block,
+    copy the old content, and leave the owner's block untouched."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+    k = torch.randn(1, 5, 2, 8, device=DEVICE, dtype=torch.float16)
+    v = torch.randn(1, 5, 2, 8, device=DEVICE, dtype=torch.float16)
+    table1 = cache.update(seq_id=1, k_new=k, v_new=v)
+    owner_k_before = cache.get(seq_id=1, start_idx=0, end_idx=5)[0].clone()
+    cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3, 4, 5], block_ids=table1)
+
+    # seq 2 stages the first 4 tokens (shared block 1 holds token 4..7), then
+    # appends its own token at offset 4 → block 1 is shared → must COW.
+    cache.stage_prefix(seq_id=2, prefix_block_ids=table1, num_prefix_tokens=4)
+    k_new = torch.randn(1, 1, 2, 8, device=DEVICE, dtype=torch.float16)
+    v_new = torch.randn(1, 1, 2, 8, device=DEVICE, dtype=torch.float16)
+    table2 = cache.update(seq_id=2, k_new=k_new, v_new=v_new)
+
+    # The boundary block was COW'd (different physical id); the untouched
+    # leading block is still shared with the owner.
+    assert table2 != table1
+    assert table2[0] == table1[0]
+    assert table2[1] != table1[1]
+    # seq 1's cached K/V is byte-identical after seq 2's write.
+    owner_k_after = cache.get(seq_id=1, start_idx=0, end_idx=5)[0]
+    assert torch.equal(owner_k_before, owner_k_after)
+    # seq 2 sees the old prefix content up to the boundary, then its own token.
+    # get() yields [num_kv_heads, num_tokens, head_dim].
+    k2, _ = cache.get(seq_id=2, start_idx=0, end_idx=5)
+    assert torch.equal(k2[:, 0:4, :], owner_k_before[:, 0:4, :])
+    assert torch.equal(k2[:, 4, :], k_new[0, 0, :, :])
+
+
+def test_prefix_hit_idempotent_rewrite_matches_full_prefill():
+    """Full-prefix hit semantics: stage with ``num_prefix_tokens = len - 1``
+    then append the last prompt token — the rewrite is idempotent, so the
+    staged sequence's KV is identical to a fresh full prefill of the prompt."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+    # Full prefill of a 7-token prompt (2 blocks).
+    k_full = torch.randn(1, 7, 2, 8, device=DEVICE, dtype=torch.float16)
+    v_full = torch.randn(1, 7, 2, 8, device=DEVICE, dtype=torch.float16)
+    table_owner = cache.update(seq_id=1, k_new=k_full, v_new=v_full)
+
+    # Replay path: another seq stages the same prefix as 6 tokens, then
+    # appends the last prompt token's K/V at position 6 (the boundary block
+    # is shared → COW into a private copy).
+    cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3, 4, 5, 6, 7], block_ids=table_owner)
+    cache.stage_prefix(seq_id=2, prefix_block_ids=table_owner, num_prefix_tokens=6)
+    last = torch.randn(1, 1, 2, 8, device=DEVICE, dtype=torch.float16)
+    cache.update(seq_id=2, k_new=last, v_new=last, layer_idx=0)
+
+    # If the owner wrote the SAME last-token K/V (idempotent rewrite, as the
+    # model does), the staged seq matches the full prefill for every position.
+    # With a differing write, the staged value is the caller's — the invariant
+    # we assert is that the leading prefix positions still match the owner.
+    # get() yields [num_kv_heads, num_tokens, head_dim]; transpose to
+    # [num_tokens, num_kv_heads, head_dim] to compare against the prefill.
+    k2, _ = cache.get(seq_id=2, start_idx=0, end_idx=7)
+    assert torch.equal(k2.transpose(0, 1)[0:6], k_full[0, 0:6, :])
+    # Token count advanced exactly to the full prompt length.
+    assert cache.block_manager.get_num_tokens(2) == 7
+
+
+def test_free_hitting_seq_preserves_owner_prefix_entry():
+    """A sequence that REPLAYS the prefix must not evict the owner's prefix
+    entry when it finishes: the cached blocks are still owned (pristine) by
+    the registering sequence, so the entry remains valid for the next hit."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+    k = torch.randn(1, 5, 2, 8, device=DEVICE)
+    v = torch.randn(1, 5, 2, 8, device=DEVICE)
+    table1 = cache.update(seq_id=1, k_new=k, v_new=v)
+    tokens = [1, 2, 3, 4, 5]
+    cache.add_prefix(seq_id=1, prefix_tokens=tokens, block_ids=table1)
+
+    # seq 2 hits the prefix, extends, and frees — must NOT clear the entry.
+    cache.stage_prefix(seq_id=2, prefix_block_ids=table1, num_prefix_tokens=4)
+    cache.update(seq_id=2, k_new=torch.randn(1, 1, 2, 8, device=DEVICE), v_new=torch.randn(1, 1, 2, 8, device=DEVICE))
+    cache.free(seq_id=2)
+    assert cache.try_get_prefix_blocks(tokens) == table1, (
+        "hitting sequence's free() must not evict the registering owner's entry"
+    )
+
+    # A third sequence can still replay the shared prefix.
+    cache.stage_prefix(seq_id=3, prefix_block_ids=table1, num_prefix_tokens=4)
+
+    # Freeing the OWNER (the registrar) drops the entry.
+    cache.free(seq_id=1)
+    assert cache.try_get_prefix_blocks(tokens) is None
+
+
+def test_cow_on_shared_block_preserves_all_layers():
+    """A COW'd block is a private copy of the FULL multi-layer block; later
+    layers write into the remapped block and the owner's per-layer content is
+    preserved on every layer."""
+    cache = PagedKVCache(
+        num_layers=2,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+    for layer_idx in range(2):
+        k = torch.randn(1, 5, 2, 8, device=DEVICE)
+        v = torch.randn(1, 5, 2, 8, device=DEVICE)
+        cache.update(seq_id=1, k_new=k, v_new=v, layer_idx=layer_idx)
+    owner_before = [
+        cache.get(seq_id=1, start_idx=0, end_idx=5, layer_idx=layer_idx)[0].clone() for layer_idx in range(2)
+    ]
+    table1 = cache.get_block_table(1)
+    cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3, 4, 5], block_ids=table1)
+
+    cache.stage_prefix(seq_id=2, prefix_block_ids=table1, num_prefix_tokens=4)
+    for layer_idx in range(2):
+        k_new = torch.randn(1, 1, 2, 8, device=DEVICE)
+        v_new = torch.randn(1, 1, 2, 8, device=DEVICE)
+        cache.update(seq_id=2, k_new=k_new, v_new=v_new, layer_idx=layer_idx)
+
+    # Owner's content is preserved on BOTH layers (the COW ran on layer 0 but
+    # copied the full multi-layer block).
+    for layer_idx in range(2):
+        owner_after = cache.get(seq_id=1, start_idx=0, end_idx=5, layer_idx=layer_idx)[0]
+        assert torch.equal(owner_before[layer_idx], owner_after)
+    # seq 2's block table was remapped to a private boundary block on layer 0.
+    assert cache.get_block_table(2)[1] != table1[1]

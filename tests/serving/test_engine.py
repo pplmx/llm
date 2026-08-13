@@ -858,3 +858,79 @@ def test_prefix_cache_entry_invalidated_on_slot_reuse(tiny_model, device, mock_t
     with patch.object(engine, "_copy_kv_between_slots", wraps=engine._copy_kv_between_slots) as copy_kv:
         engine.step()
         copy_kv.assert_not_called()
+
+
+def test_engine_paged_prefix_replay_reuses_blocks_and_matches_prefill(tiny_model, device, mock_tokenizer):
+    """TASK-065: on the paged path with ``enable_prefix_cache=True``, a new
+    request whose prompt exactly matches a cached prefix must STAGE the cached
+    blocks (shared, refcounted) instead of re-prefilling them, and generate
+    output identical to a full prefill.
+
+    The origin sequence is still running (its slot alive) when the second
+    request arrives — the concurrent-request case the prefix cache targets.
+    """
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+        use_paged_attention=True,
+        max_blocks=64,
+        block_size=8,
+        enable_prefix_cache=True,
+        max_prefixes=4,
+    )
+
+    # "hello world" → [1..11] (11 tokens) spans 2 blocks (block_size=8).
+    prompt = "hello world"
+    tokens = list(range(1, len(prompt) + 1))
+    assert len(tokens) == 11
+
+    req_a = GenerationRequest(prompt=prompt, max_new_tokens=4, temperature=0)
+    req_a.request_id = "req-a"
+    engine.add_request(req_a)
+    engine.step()
+
+    slot_a = engine.slot_allocator.get_slot("req-a")
+    prefix_blocks = engine.paged_kv_cache.try_get_prefix_blocks(tokens)
+    assert prefix_blocks is not None, "paged prefix cache must be populated after req-a's prefill"
+    assert len(prefix_blocks) == 2
+    assert prefix_blocks[0] == engine.paged_kv_cache.get_block_table(slot_a)[0]
+
+    req_b = GenerationRequest(prompt=prompt, max_new_tokens=4, temperature=0)
+    req_b.request_id = "req-b"
+    engine.add_request(req_b)
+    before_b = engine.paged_kv_cache.block_manager.get_num_tokens(slot_a)
+    engine.step()  # runs req-a's decode AND req-b's staged prefix-hit prefill
+
+    slot_b = engine.slot_allocator.get_slot("req-b")
+    table_b = engine.paged_kv_cache.get_block_table(slot_b)
+    # The leading (unwritten) prefix block is SHARED with req-a — the prefill
+    # of the prefix was skipped, the block was reused, not recomputed.
+    assert table_b[0] == prefix_blocks[0]
+    assert engine.paged_kv_cache.block_manager.is_block_shared(prefix_blocks[0])
+    # The boundary block was COW'd into a private copy.
+    assert table_b[1] != prefix_blocks[1]
+    # req-a's prefix cache entry is untouched (still live), and req-a advanced
+    # by exactly its own single decode token — req-b's staged hit must not
+    # disturb req-a's sequence state.
+    assert engine.paged_kv_cache.try_get_prefix_blocks(tokens) == prefix_blocks
+    assert engine.paged_kv_cache.block_manager.get_num_tokens(slot_a) == before_b + 1
+
+    # Drain both to completion; identical prompts must give identical output.
+    def _drain(tag: str) -> list[int]:
+        for _ in range(12):
+            engine.step()
+            seq = engine.scheduler.get_sequence(tag)
+            if seq.status == RequestState.FINISHED:
+                return list(seq.generated_ids)
+        raise AssertionError(f"request {tag} did not finish in bounds")
+
+    first = _drain("req-a")
+    second = _drain("req-b")
+
+    assert len(first) == 4
+    assert second == first, (
+        f"paged prefix replay must produce identical output to a full prefill; got {first} vs {second}"
+    )
