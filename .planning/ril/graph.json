@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 40,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T07:18:35+00:00",
+  "updated_at": "2026-08-13T08:19:01+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 36,
+      "touched_round": 40,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -4185,6 +4185,75 @@
       "touched_round": 40,
       "title": "Grad-accum partial tail window accumulates window_count/accum_steps of a global batch, silently dropping effective LR",
       "confidence": 0.95
+    },
+    "ISS-067": {
+      "id": "ISS-067",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-13T07:37:30+00:00",
+      "updated_at": "2026-08-13T08:19:01+00:00",
+      "touched_round": 40,
+      "severity": "high",
+      "title": "ONNX fp16 export produces artifact onnxruntime cannot load (LayerNormalization type binding)",
+      "details": "Resolved: fp16/bf16 ONNX artifacts now loadable by onnxruntime; LayerNormalization type binding fixed via Cast insertion after shape inference. CHG-065."
+    },
+    "TASK-063": {
+      "id": "TASK-063",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-13T07:37:30+00:00",
+      "updated_at": "2026-08-13T08:19:00+00:00",
+      "touched_round": 40,
+      "category": "correctness",
+      "severity": 0.9,
+      "title": "Fix ONNX half-precision export so onnxruntime can load the artifact",
+      "details": "DONE: post-export LayerNorm Cast rewriting fixes fp16/bf16 ONNX type binding; ORT-loadable + matches eager. CHG-065 verified RED->GREEN."
+    },
+    "COMP-011": {
+      "id": "COMP-011",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T07:38:08+00:00",
+      "updated_at": "2026-08-13T07:38:08+00:00",
+      "touched_round": 40,
+      "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
+    },
+    "CHG-065": {
+      "id": "CHG-065",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T07:41:38+00:00",
+      "updated_at": "2026-08-13T07:41:38+00:00",
+      "touched_round": 40,
+      "title": "fix(export): fp16/bf16 ONNX exports loadable by onnxruntime (ISS-067/TASK-063)",
+      "commit": "0c524b3"
+    },
+    "EV-089": {
+      "id": "EV-089",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T07:41:38+00:00",
+      "updated_at": "2026-08-13T07:41:38+00:00",
+      "touched_round": 40,
+      "title": "fp16 2-layer ONNX loads in ORT and matches eager fp16 (max|d|<1e-3) after LayerNorm Cast fix",
+      "source": "tests/export/test_export.py::test_export_fp16_onnx_matches_eager",
+      "confidence": 1.0
+    },
+    "HYP-044": {
+      "id": "HYP-044",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T07:41:38+00:00",
+      "updated_at": "2026-08-13T07:41:38+00:00",
+      "touched_round": 40,
+      "title": "TorchScript ONNX fusion mislabels LayerNormalization X input as fp32 while weights stay fp16, so ORT rejects at load",
+      "confidence": 0.95
     }
   },
   "edges": [
@@ -6053,6 +6122,42 @@
       "to": "HYP-043",
       "type": "validates",
       "created_at": "2026-08-13T07:17:41+00:00"
+    },
+    {
+      "from": "TASK-063",
+      "to": "ISS-067",
+      "type": "addresses",
+      "created_at": "2026-08-13T07:37:42+00:00"
+    },
+    {
+      "from": "ISS-067",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-13T07:38:08+00:00"
+    },
+    {
+      "from": "ISS-067",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-13T07:38:59+00:00"
+    },
+    {
+      "from": "CHG-065",
+      "to": "TASK-063",
+      "type": "implements",
+      "created_at": "2026-08-13T08:18:46+00:00"
+    },
+    {
+      "from": "CHG-065",
+      "to": "ISS-067",
+      "type": "resolves",
+      "created_at": "2026-08-13T08:18:46+00:00"
+    },
+    {
+      "from": "EV-089",
+      "to": "HYP-044",
+      "type": "validates",
+      "created_at": "2026-08-13T08:18:46+00:00"
     }
   ]
 }
