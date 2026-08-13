@@ -296,18 +296,42 @@ def batch_generate(
 
     input_tensor = torch.tensor(padded_inputs, dtype=torch.long, device=device)
 
+    # Left-pad attention mask (True = mask out, matching the codebase SDPA
+    # convention in ``llm.core.attn.sdpa``).  The left-pad columns are real
+    # pad-token embeddings under the (default) causal mask: without an
+    # explicit mask the prefill forward attends over the pad K/V, AND those
+    # pad columns stay in the KV cache for every decode step — silently
+    # diverging from the single-prompt path (RIL ISS-070).  We build one
+    # mask sized to the full generation window and slice it per forward:
+    # the prefill key length is ``max_prompt_len`` and each decode step t
+    # grows the key length to ``max_prompt_len + t + 1``.  Generated columns
+    # (beyond ``max_prompt_len``) are never masked.  Slices stay 4-D
+    # ``[B, 1, 1, k_len]`` so they broadcast to ``[B, N, Sq, Sk]`` like the
+    # batch-engine's ``run_attn_mask``.
+    max_total_len = max_prompt_len + max_new_tokens
+    pad_mask = torch.zeros((batch_size, 1, 1, max_total_len), dtype=torch.bool, device=device)
+    for i, ids in enumerate(encoded_prompts):
+        pad_len = max_prompt_len - len(ids)
+        if pad_len > 0:
+            pad_mask[i, 0, 0, :pad_len] = True
+
     # Track generated ids per sequence — seeded from the (possibly truncated)
     # encoded prompts so the repetition-penalty context matches the model's
     # actual prefill input.
     generated_ids: list[list[int]] = [ids.copy() for ids in encoded_prompts]
 
     kv_caches = create_decoder_kv_caches(model, batch_size=batch_size)
-    logits, kv_caches = model(input_tensor, kv_caches=kv_caches, use_cache=True)
+    logits, kv_caches = model(
+        input_tensor,
+        kv_caches=kv_caches,
+        use_cache=True,
+        attn_mask=pad_mask[..., :max_prompt_len],
+    )
     next_token_logits = logits[:, -1, :]  # [B, vocab_size]
 
     _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
 
-    for _ in range(max_new_tokens):
+    for step in range(max_new_tokens):
         for i in range(batch_size):
             row_logits = next_token_logits[i]
             if repetition_penalty != 1.0:
@@ -332,7 +356,14 @@ def batch_generate(
             device=device,
         )
 
-        logits, kv_caches = model(next_tokens, kv_caches=kv_caches, use_cache=True)
+        # Decode key length grows by one per step (the cache already holds
+        # ``max_prompt_len + step`` keys after the prefill, plus the new one).
+        logits, kv_caches = model(
+            next_tokens,
+            kv_caches=kv_caches,
+            use_cache=True,
+            attn_mask=pad_mask[..., : max_prompt_len + step + 1],
+        )
         next_token_logits = logits[:, -1, :]
 
         _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))

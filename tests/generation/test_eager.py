@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
 
 from llm.generation.eager import (
@@ -29,6 +30,7 @@ from llm.generation.eager import (
     generate,
     stream_generate,
 )
+from llm.models.decoder import DecoderModel
 
 # ---------------------------------------------------------------------------
 # Test tokenizers
@@ -921,3 +923,113 @@ def test_batch_generate_no_stop_returns_full(tiny_model):
     # Each prompt encodes to [1] → 'b' (chr(ord('a')+1)); 3 generated
     # tokens of id 1 → 'bbb'.
     assert result == ["bbbb", "bbbb"]
+
+
+# ---------------------------------------------------------------------------
+# batch_generate — left-pad attention mask (RIL ISS-070)
+# ---------------------------------------------------------------------------
+
+
+class _MaskRecordingModel(DecoderModel):
+    """DecoderModel wrapper that records the ``attn_mask`` of every forward.
+
+    Lets tests assert the left-pad attention mask geometrically without
+    depending on (random) logit values.  The mask follows the codebase
+    SDPA convention: ``True`` marks the column as MASKED OUT.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.seen_masks: list[torch.Tensor | None] = []
+
+    def forward(self, *args, **kwargs):
+        self.seen_masks.append(kwargs.get("attn_mask"))
+        return super().forward(*args, **kwargs)
+
+
+@pytest.fixture
+def mask_recording_model(device):
+    """Tiny model that records the attention mask of every forward call."""
+    model = _MaskRecordingModel(
+        vocab_size=20,
+        hidden_size=16,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=64,
+        device=device,
+    )
+    model.eval()
+    return model
+
+
+class _PadAwareTokenizer:
+    """Tokenizer that returns a per-prompt fixed token list.
+
+    ``encode("short")`` yields 2 tokens, ``encode("a much longer prompt")``
+    yields 5 tokens — forcing unequal lengths so ``batch_generate`` must
+    left-pad the short row.
+    """
+
+    pad_token_id: int = 0
+
+    def encode(self, text: str) -> list[int]:
+        return [1] * (2 if text == "short" else 5)
+
+    def decode(self, ids: list[int]) -> str:
+        return "".join(chr(ord("a") + i % 26) for i in ids)
+
+
+def test_batch_generate_left_pad_attention_mask(mask_recording_model):
+    """BUG (RIL ISS-070): ``batch_generate`` left-pads unequal-length prompts
+    but passed NO attention mask, so the left-pad token embeddings (real
+    embeddings under a causal mask) leaked into attention during the prefill
+    AND stayed in the KV cache for every decode step — silently diverging
+    from the single-prompt path.
+
+    The fix must pass an ``attn_mask`` (True = mask out) that:
+    1. In the prefill forward, masks the leading pad columns of every
+       padded row (columns ``[0, pad_len)``); the longest row (no padding)
+       has no masked columns.
+    2. In every decode forward, keeps masking the same left-pad columns
+       (the pad K/V is still in the cache), while never masking the
+       real prompt/generated columns.
+    """
+    with patch(
+        "llm.generation.eager.sample_next_token",
+        side_effect=lambda logits, **kw: 2,  # deterministic, != pad id
+    ):
+        batch_generate(
+            model=mask_recording_model,
+            tokenizer=_PadAwareTokenizer(),
+            prompts=["short", "a much longer prompt"],  # 2 vs 5 tokens
+            max_new_tokens=3,
+            temperature=0.0,
+        )
+
+    # seen_masks[0] is the prefill; the rest are the 3 decode forwards.
+    assert len(mask_recording_model.seen_masks) == 4, "prefill + max_new_tokens decode forwards"
+    assert mask_recording_model.seen_masks[0] is not None, "prefill must receive an attention mask"
+
+    prefill_mask = mask_recording_model.seen_masks[0]
+    # [B, 1, 1, S] broadcastable to [B, N, Sq, Sk].
+    assert prefill_mask.shape[0] == 2
+    assert prefill_mask.ndim == 4
+
+    # Row 0 = "short" (2 tokens) left-padded with 3 pads in a 5-col row.
+    mask_row0 = prefill_mask[0, 0, 0].tolist()
+    assert mask_row0 == [True, True, True, False, False], (
+        f"row 0 must mask exactly the 3 left-pad columns; got {mask_row0}"
+    )
+    # Row 1 = longest prompt (5 tokens) — no padding, nothing masked.
+    assert prefill_mask[1, 0, 0].tolist() == [False] * 5
+
+    # Every decode forward keeps masking the pad columns (they are live in
+    # the KV cache); the real prompt + generated columns stay unmasked.
+    for step, mask in enumerate(mask_recording_model.seen_masks[1:]):
+        assert mask is not None, "decode forward must keep the left-pad mask"
+        k_len = mask.shape[-1]
+        assert k_len == 5 + step + 1, "key length grows by one per decode step"
+        assert mask[0, 0, 0, :3].tolist() == [True, True, True], "decode must still mask the left-pad columns"
+        assert mask[0, 0, 0, 3:].tolist() == [False] * (k_len - 3)
+        # Longest row has no padding in any forward.
+        assert mask[1, 0, 0].tolist() == [False] * k_len
