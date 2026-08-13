@@ -907,16 +907,23 @@ def test_engine_paged_prefix_replay_reuses_blocks_and_matches_prefill(tiny_model
     slot_b = engine.slot_allocator.get_slot("req-b")
     table_b = engine.paged_kv_cache.get_block_table(slot_b)
     # The leading (unwritten) prefix block is SHARED with req-a — the prefill
-    # of the prefix was skipped, the block was reused, not recomputed.
+    # of the prefix was skipped, the block was reused, not recomputed. (The
+    # write-loop order decides which seq copy-on-writes the shared boundary
+    # block; whichever runs second writes the idempotent last-token value
+    # directly into the now-private block — so we assert the ORDER-INDEPENDENT
+    # invariants: shared leading block, intact entry, and byte-identical
+    # prompt K/V on both sequences.)
     assert table_b[0] == prefix_blocks[0]
     assert engine.paged_kv_cache.block_manager.is_block_shared(prefix_blocks[0])
-    # The boundary block was COW'd into a private copy.
-    assert table_b[1] != prefix_blocks[1]
     # req-a's prefix cache entry is untouched (still live), and req-a advanced
     # by exactly its own single decode token — req-b's staged hit must not
     # disturb req-a's sequence state.
     assert engine.paged_kv_cache.try_get_prefix_blocks(tokens) == prefix_blocks
     assert engine.paged_kv_cache.block_manager.get_num_tokens(slot_a) == before_b + 1
+    # Replay + COW kept both sequences' K/V for the whole prompt identical.
+    kv_a = engine.paged_kv_cache.get(slot_a, 0, len(tokens))[0]
+    kv_b = engine.paged_kv_cache.get(slot_b, 0, len(tokens))[0]
+    assert torch.equal(kv_a, kv_b), "replay + COW must keep both seqs' prompt K/V identical"
 
     # Drain both to completion; identical prompts must give identical output.
     def _drain(tag: str) -> list[int]:

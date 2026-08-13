@@ -509,6 +509,17 @@ class ContinuousBatchingEngine:
         the FastAPI event loop keep processing I/O (other requests,
         health checks, /metrics scrapes) while a forward pass runs.
 
+        .. warning::
+           On the PAGED path (``paged_kv_cache`` set) the forward mutates the
+           block manager (allocation / extension / copy-on-write of shared
+           prefix blocks — RIL TASK-065) which is NOT thread-safe. Two
+           overlapping ``step_async`` calls would interleave those mutations
+           and corrupt the block table. Production serving uses the
+           synchronous :meth:`step` (which holds the lock across the whole
+           forward) via ``run_in_threadpool``; callers that enable paged
+           attention + prefix caching must use :meth:`step`, not
+           ``step_async``, until the cache is externally synchronized.
+
         Returns:
             :class:`StepStats` (same fields as :meth:`step`).
         """

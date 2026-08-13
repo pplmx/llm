@@ -97,7 +97,14 @@ class PagedKVCache:
         prev_hash = self._seq_to_hash.pop(seq_id, None)
         if prev_hash is not None and prev_hash != prefix_hash:
             self.prefix_cache.remove(prev_hash)
-        self.prefix_cache.add(prefix_hash, block_ids)
+        # Snapshot, don't alias: the caller (the engine) passes the sequence's
+        # LIVE block table, and the prefix must describe only the PREFIX's
+        # blocks. Storing the list by reference would let the owner's later
+        # ``extend_sequence`` grow the cached entry past the prompt into its
+        # decode blocks; a subsequent hit would then fork the owner's WHOLE
+        # decode table, pinning those blocks and forcing the owner into a
+        # copy-on-write spiral on every decode step (RIL TASK-065 follow-up).
+        self.prefix_cache.add(prefix_hash, list(block_ids))
         self._seq_to_hash[seq_id] = prefix_hash
 
     def try_get_prefix_blocks(self, prefix_tokens: list[int]) -> list[int] | None:

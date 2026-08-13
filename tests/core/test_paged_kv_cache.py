@@ -892,3 +892,87 @@ def test_cow_on_shared_block_preserves_all_layers():
         assert torch.equal(owner_before[layer_idx], owner_after)
     # seq 2's block table was remapped to a private boundary block on layer 0.
     assert cache.get_block_table(2)[1] != table1[1]
+
+
+def test_add_prefix_snapshots_block_table_so_entry_does_not_grow():
+    """REGRESSION (TASK-065 follow-up): ``add_prefix`` must snapshot the
+    block table, not alias the owner's LIVE list. ``extend_sequence`` mutates
+    the stored table in place as the owner decodes, so an aliased entry would
+    silently grow past the prompt into the owner's decode blocks — a later
+    hit would then fork the owner's whole decode table (pin + COW spiral)."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=16,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+    k = torch.randn(1, 5, 2, 8, device=DEVICE)
+    v = torch.randn(1, 5, 2, 8, device=DEVICE)
+    cache.update(seq_id=1, k_new=k, v_new=v)
+    prompt_blocks = list(cache.get_block_table(1))  # snapshot (avoid aliasing)
+    assert len(prompt_blocks) == 2
+
+    cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3, 4, 5], block_ids=cache.get_block_table(1))
+
+    # The cached entry is a frozen snapshot of the 2 prompt blocks.
+    entry = cache.prefix_cache.cache[cache._seq_to_hash[1]]
+    assert list(entry) == prompt_blocks
+    assert entry is not cache.get_block_table(1), "cached entry must not alias the live table"
+
+    # Owner decodes past a block boundary (5 -> 10 tokens, 3 blocks). The
+    # cached prompt entry must NOT grow into the decode blocks.
+    for _ in range(5):
+        cache.update(
+            seq_id=1, k_new=torch.randn(1, 1, 2, 8, device=DEVICE), v_new=torch.randn(1, 1, 2, 8, device=DEVICE)
+        )
+    assert cache.block_manager.get_num_tokens(1) == 10
+    assert list(cache.prefix_cache.cache[cache._seq_to_hash[1]]) == prompt_blocks, (
+        "cached prefix entry grew alongside the owner's decode blocks (aliasing)"
+    )
+
+    # A hit stages ONLY the prompt blocks — a sibling request must not fork
+    # the owner's decode block.
+    staged = cache.try_get_prefix_blocks([1, 2, 3, 4, 5])
+    assert staged == prompt_blocks
+    table_hit = cache.stage_prefix(seq_id=2, prefix_block_ids=staged, num_prefix_tokens=4)
+    assert table_hit == prompt_blocks
+    owner_table = cache.get_block_table(1)
+    assert not set(table_hit) - set(owner_table[:2]), "hit forked the owner's decode blocks"
+
+
+def test_stage_prefix_full_hit_block_aligned_boundary():
+    """Block-aligned full-prompt hit: the rewrite lands at the last token of a
+    fully-filled block; the shared boundary block is COW'd and the owner's
+    content is preserved (TASK-065 boundary case N % block_size == 0)."""
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        num_blocks=8,
+        block_size=4,
+        device=DEVICE,
+        enable_prefix_cache=True,
+    )
+    k = torch.randn(1, 8, 2, 8, device=DEVICE, dtype=torch.float16)
+    v = torch.randn(1, 8, 2, 8, device=DEVICE, dtype=torch.float16)
+    table1 = cache.update(seq_id=1, k_new=k, v_new=v)
+    owner_full = cache.get(seq_id=1, start_idx=0, end_idx=8)[0].clone()
+    cache.add_prefix(seq_id=1, prefix_tokens=[1, 2, 3, 4, 5, 6, 7, 8], block_ids=table1)
+    assert len(table1) == 2
+
+    # Full hit: stage 7 prefix tokens then append the 8th at offset 7 (the
+    # last slot of the shared block 1) -> COW.
+    cache.stage_prefix(seq_id=2, prefix_block_ids=table1, num_prefix_tokens=7)
+    last = torch.randn(1, 1, 2, 8, device=DEVICE, dtype=torch.float16)
+    table2 = cache.update(seq_id=2, k_new=last, v_new=last, layer_idx=0)
+
+    assert table2[0] == table1[0]
+    assert table2[1] != table1[1]
+    assert torch.equal(cache.get(seq_id=1, start_idx=0, end_idx=8)[0], owner_full)
+    assert cache.block_manager.get_num_tokens(2) == 8
+    # Staged seq kept the shared block-0 prefix and its own private block-1.
+    k2, _ = cache.get(seq_id=2, start_idx=0, end_idx=8)
+    assert torch.equal(k2.transpose(0, 1)[0:7], k[0, 0:7, :])
