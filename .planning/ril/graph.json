@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 40,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T06:47:06+00:00",
+  "updated_at": "2026-08-13T06:58:46+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4024,13 +4024,14 @@
     "ISS-065": {
       "id": "ISS-065",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T06:23:16+00:00",
-      "updated_at": "2026-08-13T06:23:16+00:00",
+      "updated_at": "2026-08-13T06:58:46+00:00",
       "touched_round": 40,
       "severity": "med",
-      "title": "PPO policy/value losses averaged over padded positions (no response-length mask) -> silent gradient-scale corruption"
+      "title": "PPO policy/value losses averaged over padded positions (no response-length mask) -> silent gradient-scale corruption",
+      "details": "Resolved: masked mean over real response tokens for policy + value losses; padded positions no longer dilute gradient scale. CHG-063 verified."
     },
     "ISS-066": {
       "id": "ISS-066",
@@ -4060,9 +4061,9 @@
       "id": "TASK-061",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 3,
       "created_at": "2026-08-13T06:24:23+00:00",
-      "updated_at": "2026-08-13T06:24:23+00:00",
+      "updated_at": "2026-08-13T06:58:46+00:00",
       "touched_round": 40,
       "category": "correctness",
       "severity": 0.6,
@@ -4112,6 +4113,40 @@
       "updated_at": "2026-08-13T06:45:34+00:00",
       "touched_round": 40,
       "title": "Persisted cross-run dedup baseline makes streaming corpus recycle yield zero texts (engine raises 'streaming corpus is empty')",
+      "confidence": 0.95
+    },
+    "CHG-063": {
+      "id": "CHG-063",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:58:23+00:00",
+      "updated_at": "2026-08-13T06:58:23+00:00",
+      "touched_round": 40,
+      "title": "fix(rlhf): normalize PPO policy/value losses over real response tokens (ISS-065/TASK-061)",
+      "commit": "659db64"
+    },
+    "EV-087": {
+      "id": "EV-087",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:58:23+00:00",
+      "updated_at": "2026-08-13T06:58:23+00:00",
+      "touched_round": 40,
+      "title": "Deterministic-stub PPO test: masked policy loss == hand-computed real-token mean; unmasked padded mean differs (ISS-065)",
+      "source": "tests/training/rlhf/test_ppo.py::test_ppo_step_losses_normalized_over_real_tokens",
+      "confidence": 1.0
+    },
+    "HYP-042": {
+      "id": "HYP-042",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T06:58:35+00:00",
+      "updated_at": "2026-08-13T06:58:35+00:00",
+      "touched_round": 40,
+      "title": "PPO padded mean (no response-length mask) silently scales policy/value gradients by real/(B*max_len), varies per mini-batch",
       "confidence": 0.95
     }
   },
@@ -5945,6 +5980,24 @@
       "to": "HYP-041",
       "type": "validates",
       "created_at": "2026-08-13T06:45:34+00:00"
+    },
+    {
+      "from": "CHG-063",
+      "to": "TASK-061",
+      "type": "implements",
+      "created_at": "2026-08-13T06:58:35+00:00"
+    },
+    {
+      "from": "CHG-063",
+      "to": "ISS-065",
+      "type": "resolves",
+      "created_at": "2026-08-13T06:58:35+00:00"
+    },
+    {
+      "from": "EV-087",
+      "to": "HYP-042",
+      "type": "validates",
+      "created_at": "2026-08-13T06:58:35+00:00"
     }
   ]
 }
