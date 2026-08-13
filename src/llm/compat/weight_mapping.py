@@ -431,4 +431,10 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # ISS-062). Our own publisher persists it; external checkpoints
         # default to layer_norm (the DecoderModel default).
         "norm_impl": hf_config.get("norm_impl", "layer_norm"),
+        # RoPE: real Llama/Mistral/Qwen always use rotary position embedding
+        # (their HF configs carry ``rope_theta`` and no ``use_rope`` key), so
+        # an external checkpoint defaults to RoPE-on. Our own publisher
+        # persists the explicit flag, keeping save->load self-consistent
+        # (RIL ISS-062 — core.rope had zero callers before this wiring).
+        "use_rope": hf_config.get("use_rope", True),
     }

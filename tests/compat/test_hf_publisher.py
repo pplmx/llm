@@ -286,6 +286,88 @@ def test_save_pretrained_roundtrip_rms_norm(tmp_path: Path):
 
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_roundtrip_rope(tmp_path: Path):
+    """Regression (RIL ISS-062): a RoPE model must roundtrip save->load
+    with the same rotary position embedding — not silently become a
+    non-RoPE model (or vice versa).
+
+    Before the fix ``core.rope`` had zero callers and neither the publisher
+    nor the loader persisted ``use_rope``/``rope_theta``: a RoPE model was
+    rebuilt without rotation (position came only from additive PE), a
+    functionally different network."""
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(
+        **decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            intermediate_size=64,
+            max_seq_len=32,
+            attn_impl="mha",
+            mlp_impl="mlp",
+            use_rope=True,
+            rope_theta=500000.0,
+            device=str(DEFAULT_DEVICE),
+        )
+    )
+    model.eval()
+    save_pretrained(model, tmp_path)
+
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config.get("use_rope") is True
+    assert config.get("rope_theta") == 500000.0
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+    assert isinstance(reloaded, DecoderModel)
+    assert reloaded.use_rope is True
+    assert getattr(reloaded, "rope_theta", None) == 500000.0
+    # The MHA backend must actually own a rotary module.
+    assert hasattr(reloaded.transformer_blocks[0].self_attn, "rope")
+    assert reloaded.embedding_layer.use_rope is True
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = model(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_roundtrip_default_keeps_non_rope(tmp_path: Path):
+    """Roundtrip self-consistency (RIL ISS-062): a DEFAULT (non-RoPE) model
+    must persist ``use_rope: false`` so the loader (which defaults missing
+    ``use_rope`` to True for external checkpoints) does NOT rebuild it as a
+    rotary model. Otherwise save->load would silently change the network."""
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(**decoder_model_kwargs(device=str(DEFAULT_DEVICE)))
+    model.eval()
+    assert model.use_rope is False
+    save_pretrained(model, tmp_path)
+
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config.get("use_rope") is False
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+    assert isinstance(reloaded, DecoderModel)
+    assert reloaded.use_rope is False
+    assert not hasattr(reloaded.transformer_blocks[0].self_attn, "rope")
+    assert reloaded.embedding_layer.use_rope is False
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = model(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_default_non_glu_model(tmp_path: Path):
     """Regression (RIL ISS-056): a DEFAULT (non-GLU) model must roundtrip
     save->load with equivalent logits — not leave the MLP at random init."""

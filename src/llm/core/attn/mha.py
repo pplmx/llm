@@ -7,6 +7,7 @@ from llm.core.kv_cache import KVCache
 from llm.core.paged_attention.attention import paged_attention_forward
 from llm.core.paged_attention.paged_kv_cache import PagedKVCache
 from llm.core.registry import register_attention, set_attention_kv_cache_capability
+from llm.core.rope import RotaryPositionEmbedding
 from llm.utils.common import make_factory_kwargs
 
 from .sdpa import sdpa
@@ -53,6 +54,9 @@ class MultiHeadAttention(nn.Module):
         include_norm_residual: bool = True,  # New parameter
         num_kv_heads: int | None = None,  # New: For GQA/MQA support
         window_size: int | None = None,  # Sliding window attention
+        max_seq_len: int | None = None,  # RoPE max context (required if use_rope)
+        use_rope: bool = False,  # Rotary position embedding (real Llama/Mistral)
+        rope_theta: float = 10000.0,  # RoPE base frequency
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -72,6 +76,21 @@ class MultiHeadAttention(nn.Module):
         self.p = p
         self.include_norm_residual = include_norm_residual
         self.window_size = window_size
+        self.use_rope = use_rope
+
+        if use_rope:
+            # RoPE rotates Q and K by head position (real Llama/Mistral inject
+            # position here, not via additive embeddings). ``max_seq_len`` is
+            # required so the cos/sin table is sized to the model's context
+            # (RIL ISS-062 — core.rope had zero callers before this wiring).
+            if max_seq_len is None:
+                raise ValueError("use_rope=True requires max_seq_len for the RoPE cos/sin table")
+            self.rope = RotaryPositionEmbedding(
+                dim=self.head_dim,
+                max_seq_len=max_seq_len,
+                base=rope_theta,
+                **factory_kwargs,
+            )
 
         if self.num_heads % self.num_kv_heads != 0:
             raise ValueError(f"num_heads ({self.num_heads}) must be divisible by num_kv_heads ({self.num_kv_heads})")
@@ -93,6 +112,36 @@ class MultiHeadAttention(nn.Module):
             nn.init.xavier_uniform_(proj.weight)
             if proj.bias is not None:
                 nn.init.zeros_(proj.bias)
+
+    def _rope_positions(
+        self,
+        batch_size: int,
+        seq_len: int,
+        start_pos: int | Tensor | None,
+        device: torch.device,
+    ) -> Tensor | None:
+        """Compute per-token positions for RoPE.
+
+        Three cases:
+
+        * ``start_pos`` is a ``Tensor`` (the batch-serving path threads the
+          per-row ``position_ids`` through as ``start_pos``) — return it
+          unchanged so each row gets its own absolute positions.
+        * ``start_pos`` is an ``int`` (KV-cache decode: the current chunk
+          starts at cache length) — absolute positions are
+          ``[start_pos, start_pos + seq_len)``, broadcast across the batch.
+        * ``start_pos`` is ``None`` (pure prefill) — positions are
+          ``[0, seq_len)`` (RoPE's internal default), return ``None``.
+
+        Returns ``None`` when RoPE's internal ``0..seq_len`` default applies,
+        otherwise a ``[B, S]`` long tensor of absolute positions.
+        """
+        if start_pos is None or start_pos == 0:
+            return None
+        if isinstance(start_pos, Tensor):
+            return start_pos
+        base = int(start_pos)
+        return torch.arange(base, base + seq_len, device=device, dtype=torch.long).expand(batch_size, -1)
 
     def forward(
         self,
@@ -171,6 +220,13 @@ class MultiHeadAttention(nn.Module):
         q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+
+        # Rotary position embedding (real Llama/Mistral). Applies to Q/K
+        # BEFORE they are written to the KV cache, so the cache stores the
+        # rotated keys (matching HF Llama cache semantics — RIL ISS-062).
+        if self.use_rope:
+            positions = self._rope_positions(batch_size, seq_len, start_pos, device=q.device)
+            q, k = self.rope(q, k, positions)
 
         # KV Cache handling
         if paged_kv_cache is not None:

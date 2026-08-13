@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 38,
+  "round": 39,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-12T15:27:18+00:00",
+  "updated_at": "2026-08-13T04:56:16+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3757,14 +3757,16 @@
       "id": "TASK-058",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-12T10:56:48+00:00",
-      "updated_at": "2026-08-12T10:56:48+00:00",
+      "updated_at": "2026-08-13T04:56:16+00:00",
       "touched_round": 38,
       "category": "correctness",
       "severity": 0.5,
       "title": "Compat loader architecture fidelity for real checkpoints (RMSNorm, RoPE, bias-free defaults) (ISS-062)",
-      "details": "Investigate + implement in a dedicated round: honor norm_impl, wire RoPE into the attention path, default bias-free for real Llama/Mistral. Must keep publish->load roundtrip self-consistent. Effort high, unlock_factor low (only external checkpoints affected); deferred by DEC-018."
+      "details": "Investigate + implement in a dedicated round: honor norm_impl, wire RoPE into the attention path, default bias-free for real Llama/Mistral. Must keep publish->load roundtrip self-consistent. Effort high, unlock_factor low (only external checkpoints affected); deferred by DEC-018.",
+      "lock_owner": "session-2026-08-13",
+      "lock_until": "2026-08-13T05:26:16+00:00"
     },
     "ISS-063": {
       "id": "ISS-063",

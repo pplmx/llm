@@ -24,6 +24,7 @@ class EmbeddingLayer(nn.Module):
         pos_encoding_learned: bool = False,
         dropout_p: float = 0.1,
         padding_idx: int | None = None,
+        use_rope: bool = False,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -41,6 +42,10 @@ class EmbeddingLayer(nn.Module):
                                                        in `token_embeddings` do not contribute to
                                                        the gradient; furthermore, the embedding vector
                                                        for `padding_idx` is initialized to all zeros.
+            use_rope (bool, default=False): If True, no additive positional encoding is applied —
+                position comes from RoPE inside attention (real Llama/Mistral). The
+                ``positional_encoding`` module is still constructed (learned=False) so
+                attribute reads by hf_publisher keep working, but its output is skipped.
             device (torch.device | str | None, default=None): Target device for the layers.
             dtype (torch.dtype | None, default=None): Target data type for the layers.
         """
@@ -49,6 +54,7 @@ class EmbeddingLayer(nn.Module):
 
         self.hidden_size = hidden_size
         self.padding_idx = padding_idx
+        self.use_rope = use_rope
 
         self.token_embeddings = nn.Embedding(
             num_embeddings=vocab_size, embedding_dim=hidden_size, padding_idx=padding_idx, **factory_kwargs
@@ -85,5 +91,10 @@ class EmbeddingLayer(nn.Module):
         """
         token_embs = self.token_embeddings(input_ids)
         scaled_embs = token_embs * math.sqrt(self.hidden_size)
+        if self.use_rope:
+            # RoPE models inject position inside attention; adding the
+            # sinusoidal/learned positional encoding here would double-count
+            # position information (real Llama/Mistral semantics — RIL ISS-062).
+            return scaled_embs
         output_embs = self.positional_encoding(scaled_embs, start_pos=start_pos, position_ids=position_ids)
         return output_embs

@@ -111,6 +111,27 @@ class TestWeightMapping:
         assert our_config["num_heads"] == 32
         assert our_config["num_kv_heads"] == 8
 
+    def test_get_config_mapping_rope_defaults_on_for_external(self):
+        """External real-Llama/Mistral checkpoints always use RoPE — their HF
+        configs carry ``rope_theta`` and no ``use_rope`` key.  Mapping such a
+        config must default ``use_rope=True`` (RIL ISS-062), and a persisted
+        ``use_rope`` value (from our own save_pretrained) must be honored."""
+        # typical external HF Llama/Mistral config: no use_rope key
+        external = get_config_mapping(
+            {
+                "model_type": "llama",
+                "vocab_size": 32000,
+                "hidden_size": 4096,
+                "rope_theta": 500000.0,
+            }
+        )
+        assert external["use_rope"] is True
+        assert external["rope_theta"] == 500000.0
+
+        # our own publisher always persists the flag so roundtrips stay exact
+        ours_non_rope = get_config_mapping({"model_type": "llama", "use_rope": False})
+        assert ours_non_rope["use_rope"] is False
+
 
 class TestHFLoader:
     """Tests for HuggingFace loader."""

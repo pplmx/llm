@@ -37,6 +37,9 @@ class TransformerBlock(nn.Module):
         use_glu: bool = False,  # New: For SwiGLU support
         norm_type: type[nn.Module] | nn.Module | Callable[..., nn.Module] = nn.LayerNorm,
         window_size: int | None = None,  # Sliding window attention
+        max_seq_len: int | None = None,  # RoPE context (required if use_rope)
+        use_rope: bool = False,  # Rotary position embedding (real Llama/Mistral)
+        rope_theta: float = 10000.0,  # RoPE base frequency
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
         # Registry keys
@@ -72,7 +75,7 @@ class TransformerBlock(nn.Module):
 
         # Initialize Attention via Registry
         attn_cls = ATTENTION_REGISTRY.get(attn_impl)
-        self.self_attn = attn_cls(
+        attention_kwargs: dict = dict(
             hidden_size=hidden_size,
             num_heads=num_heads,
             p=attn_dropout_p,
@@ -85,6 +88,12 @@ class TransformerBlock(nn.Module):
             window_size=window_size,
             **factory_kwargs,
         )
+        if use_rope:
+            # Only the MHA backend accepts RoPE wiring today; other backends
+            # (flash_attn, MLA) do not declare these kwargs. Thread them only
+            # when requested so the default path's call shape is unchanged.
+            attention_kwargs.update(max_seq_len=max_seq_len, use_rope=True, rope_theta=rope_theta)
+        self.self_attn = attn_cls(**attention_kwargs)
 
         # Initialize MLP via Registry
         if intermediate_size is None:

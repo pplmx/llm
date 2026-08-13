@@ -105,6 +105,13 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # silently loses its PE across save->load (RIL ISS-063).
     pos_encoding_learned = bool(getattr(model.embedding_layer.positional_encoding, "learned", False))
     norm_impl = str(getattr(model, "norm_impl", "layer_norm"))
+    # RoPE is model-defining too (real Llama/Mistral inject position in
+    # attention, not additive embeddings). Persist the actual flag + base so a
+    # RoPE model roundtrips as RoPE and a non-RoPE model does NOT silently
+    # become RoPE on load (the loader defaults missing ``use_rope`` to True
+    # for external checkpoints — RIL ISS-062).
+    use_rope = bool(getattr(model, "use_rope", False))
+    rope_theta = float(getattr(model, "rope_theta", 10000.0))
 
     return {
         "model_type": "llama",
@@ -117,12 +124,13 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "intermediate_size": intermediate_size,
         "max_position_embeddings": model.max_seq_len,
         "rms_norm_eps": 1e-5,
-        "rope_theta": 10000.0,
+        "rope_theta": rope_theta,
         "torch_dtype": dtype_str,
         "hidden_act": hidden_act,
         "use_glu": use_glu,
         "pos_encoding_learned": pos_encoding_learned,
         "norm_impl": norm_impl,
+        "use_rope": use_rope,
     }
 
 

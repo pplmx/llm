@@ -65,6 +65,8 @@ class DecoderModel(nn.Module):
         mlp_impl: str = "mlp",
         gradient_checkpointing: bool = False,
         window_size: int | None = None,
+        use_rope: bool = False,
+        rope_theta: float = 10000.0,
     ):
         """
         Initializes the DecoderModel.
@@ -80,6 +82,11 @@ class DecoderModel(nn.Module):
         # it so hf_publisher can persist it and save->load roundtrips keep the
         # same normalization function (RIL ISS-062).
         self.norm_impl = norm_impl
+        # RoPE is model-defining too (real Llama/Mistral inject position in
+        # attention, not additive embeddings); store so hf_publisher persists
+        # and the loader honors it (RIL ISS-062).
+        self.use_rope = use_rope
+        self.rope_theta = rope_theta
         self._gradient_checkpointing = gradient_checkpointing
 
         self.embedding_layer = EmbeddingLayer(
@@ -89,6 +96,7 @@ class DecoderModel(nn.Module):
             pos_encoding_learned=pos_encoding_learned,
             dropout_p=embedding_dropout_p,
             padding_idx=padding_idx,
+            use_rope=use_rope,
             **factory_kwargs,
         )
 
@@ -117,6 +125,9 @@ class DecoderModel(nn.Module):
                     window_size=window_size,  # Pass window_size
                     attn_impl=attn_impl,  # Pass attn_impl
                     mlp_impl=mlp_impl,  # Pass mlp_impl
+                    max_seq_len=max_seq_len,  # RoPE context for the block
+                    use_rope=use_rope,
+                    rope_theta=rope_theta,
                     **factory_kwargs,
                 )
                 for _ in range(num_layers)

@@ -509,3 +509,104 @@ def test_mha_paged_kv_cache_requires_layer_idx_and_batch_indices():
         mha(x, paged_kv_cache=paged, layer_idx=None, batch_indices=torch.tensor([0], dtype=torch.long))
     with pytest.raises(ValueError, match="batch_indices is required"):
         mha(x, paged_kv_cache=paged, layer_idx=0, batch_indices=None)
+
+
+# --- RoPE wiring (RIL ISS-062) -----------------------------------------------
+
+
+def test_mha_rope_requires_max_seq_len():
+    """``use_rope=True`` without a ``max_seq_len`` for the cos/sin table must
+    fail fast with a clear message instead of constructing a broken module."""
+    with pytest.raises(ValueError, match="max_seq_len"):
+        MultiHeadAttention(
+            hidden_size=16,
+            num_heads=2,
+            p=0.0,
+            include_norm_residual=False,
+            is_causal=False,
+            use_rope=True,
+        )
+
+
+def test_mha_rope_wires_rotary_module():
+    """A ``use_rope=True`` MHA must own a :class:`RotaryPositionEmbedding`
+    and a non-RoPE one must not. ``core.rope`` previously had zero callers
+    (RIL ISS-062)."""
+    rope_mha = MultiHeadAttention(
+        hidden_size=16,
+        num_heads=2,
+        p=0.0,
+        include_norm_residual=False,
+        is_causal=False,
+        max_seq_len=32,
+        use_rope=True,
+    ).eval()
+    plain_mha = MultiHeadAttention(
+        hidden_size=16,
+        num_heads=2,
+        p=0.0,
+        include_norm_residual=False,
+        is_causal=False,
+    ).eval()
+
+    assert hasattr(rope_mha, "rope")
+    assert not hasattr(plain_mha, "rope")
+
+
+def test_mha_rope_decode_matches_prefill():
+    """KV-cache decode with RoPE must equal a single-pass prefill of the same
+    tokens: the rotary Q/K written to the cache are what later decode steps
+    attend to, so per-position rotation must be consistent across both paths."""
+    torch.manual_seed(0)
+    mha = MultiHeadAttention(
+        hidden_size=32,
+        num_heads=4,
+        p=0.0,
+        include_norm_residual=False,
+        is_causal=False,
+        max_seq_len=64,
+        use_rope=True,
+    ).eval()
+    x = torch.randn(1, 6, 32)
+
+    with torch.no_grad():
+        # prefill 4 tokens then decode token 4 from the cache
+        from llm.core.kv_cache import KVCache
+
+        cache = KVCache(
+            max_batch_size=1,
+            max_seq_len=64,
+            num_kv_heads=4,
+            head_dim=8,
+            device=torch.device("cpu"),
+            dtype=torch.float32,
+        )
+        mha(x[:, :4], use_cache=True, kv_cache=cache, start_pos=0)
+        out_decode, _ = mha(x[:, 4:5], use_cache=True, kv_cache=cache, start_pos=4)
+
+        # reference: same 5 tokens in one forward pass
+        out_ref = mha(x[:, :5])[:, 4:5]
+
+    assert torch.allclose(out_decode, out_ref, atol=1e-5)
+
+
+def test_mha_rope_rotates_keys_per_position():
+    """RoPE must bake position into the K written to the cache — the same
+    token content at different absolute offsets yields different cached keys
+    (position sensitivity), while a non-RoPE MHA keeps them identical."""
+    torch.manual_seed(0)
+    rope_mha = MultiHeadAttention(
+        hidden_size=32,
+        num_heads=4,
+        p=0.0,
+        include_norm_residual=False,
+        is_causal=False,
+        max_seq_len=64,
+        use_rope=True,
+    ).eval()
+    x = torch.randn(1, 4, 32)
+
+    with torch.no_grad():
+        _, (k_pos0, _) = rope_mha(x, use_cache=True, start_pos=0)
+        _, (k_pos1, _) = rope_mha(x, use_cache=True, start_pos=1)
+    assert not torch.allclose(k_pos0, k_pos1, atol=1e-5)
