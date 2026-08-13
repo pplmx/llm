@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 43,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T15:33:11+00:00",
+  "updated_at": "2026-08-13T15:56:25+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 36,
+      "touched_round": 43,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -1176,7 +1176,7 @@
       "version": 1,
       "created_at": "2026-08-11T00:37:17+00:00",
       "updated_at": "2026-08-11T00:37:17+00:00",
-      "touched_round": 19,
+      "touched_round": 43,
       "title": "quantization ptq stats API",
       "details": "compute_model_size + simple-PTQ QuantizedLinear"
     },
@@ -4691,6 +4691,41 @@
       "title": "Implement paged prefix replay (TASK-065): shared-block staging + COW, idempotent last-token rewrite, registrar-only entry eviction",
       "rationale": "Full PagedKVCache.add_prefix/stage_prefix flow: a full-prompt prefix hit stages the cached blocks into the new sequence shared (forked refcount) and runs only the final prompt token; PagedKVCache.update copy-on-writes before writing into a shared block (full multi-layer copy + table remap), mirroring the dense _copy_kv_between_slots shortcut's idempotent rewrite at position N-1. free() drops only the registrar's entry via the exact _seq_to_hash so a replaying sequence cannot evict the entry that served it. Verified: identical-prompt replay produces byte-identical output to full prefill (EV-098); owner KV preserved under COW (EV-097).",
       "alternatives_rejected": "1) vLLM-style block-granular content-hash prefix cache (arbitrary partial prefixes): rejected — far larger scope, existing architecture is full-prompt-hash only. 2) Full-hit via write-suppressed attention-only forward: rejected — needs invasive no-write path in MHA; idempotent rewrite reuses existing update() machinery. 3) Keep free() block-intersection scan: rejected — any replaying seq's free evicted the source entry, making concurrent hit rate collapse."
+    },
+    "ISS-075": {
+      "id": "ISS-075",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-13T15:52:59+00:00",
+      "updated_at": "2026-08-13T15:53:10+00:00",
+      "touched_round": 43,
+      "title": "Paged prefix cache entry aliased owner's live block table: grew past prompt into decode blocks; hits pinned owner decode table (COW spiral)",
+      "severity": 0.6
+    },
+    "CHG-074": {
+      "id": "CHG-074",
+      "type": "change",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-13T15:52:59+00:00",
+      "updated_at": "2026-08-13T15:53:10+00:00",
+      "touched_round": 43,
+      "commit": "f75ad62",
+      "title": "fix(paged-attn): snapshot cached prefix blocks; document step_async paged hazard (TASK-065 follow-up)"
+    },
+    "EV-099": {
+      "id": "EV-099",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T15:52:59+00:00",
+      "updated_at": "2026-08-13T15:52:59+00:00",
+      "touched_round": 43,
+      "source": "f75ad62",
+      "summary": "Reviewer-found aliasing bug reproduced (entry [0,1] grew to [0,1,2] as owner crossed block boundary); snapshot fix keeps entry frozen; engine test now asserts order-independent invariants (shared leading block, intact entry, byte-identical prompt KV)",
+      "result": "pass",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -6806,6 +6841,24 @@
       "to": "TASK-065",
       "type": "implements",
       "created_at": "2026-08-13T14:40:08+00:00"
+    },
+    {
+      "from": "CHG-074",
+      "to": "TASK-065",
+      "type": "implements",
+      "created_at": "2026-08-13T15:53:10+00:00"
+    },
+    {
+      "from": "CHG-074",
+      "to": "ISS-075",
+      "type": "resolves",
+      "created_at": "2026-08-13T15:53:10+00:00"
+    },
+    {
+      "from": "ISS-075",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-13T15:55:05+00:00"
     }
   ]
 }
