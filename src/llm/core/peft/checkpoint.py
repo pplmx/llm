@@ -167,7 +167,15 @@ def load_peft(
     # semantics) before we even look at the on-disk payload.
     method = _resolve(method_name)
 
-    payload = torch.load(in_path, weights_only=False, map_location="cpu")
+    # ``weights_only=True`` blocks the pickle arbitrary-code-execution
+    # vector: shared/shared-with-others adapter files (the point of
+    # adapter-only checkpoints) are untrusted input, and
+    # ``torch.load(..., weights_only=False)`` runs any ``__reduce__`` in
+    # the pickle.  The payload is a plain dict of strings + tensors
+    # (:func:`save_peft` writes only ``format_version`` / ``method_name``
+    # / ``peft_kwargs`` / ``state_dict``), so the safe loader needs no
+    # allowlist (RIL ISS-074).
+    payload = torch.load(in_path, weights_only=True, map_location="cpu")
 
     # Format-version check. Bumping the version is the supported
     # migration path; unknown versions get a loud rejection so users

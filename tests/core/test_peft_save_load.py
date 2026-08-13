@@ -43,6 +43,31 @@ from llm.core.lora import LoRALinear
 # ---------------------------------------------------------------------------
 
 
+#: Module-level marker + evil class for the pickle-CE regression test.  They
+#: must live at module scope (not in the test function) so ``torch.save`` can
+#: pickle the ``__reduce__`` reconstructor at save time, and so the loader's
+#: ``__reduce__`` would call a real, importable callable under
+#: ``weights_only=False``.
+_EVIL_MARKER: list[str] = []
+
+
+def _evil_touch() -> None:
+    """Side effect a hostile wrapper could smuggle into an adapter file."""
+    _EVIL_MARKER.append("executed")
+
+
+class _ReduceMarker:
+    """Object whose ``__reduce__`` runs ``_evil_touch`` when unpickled.
+
+    ``torch.load(weights_only=True)`` refuses to reconstruct a non-safelisted
+    module-level function, so the marker never fires under the safe loader —
+    and ``load_peft`` raises instead of executing it.
+    """
+
+    def __reduce__(self):
+        return (_evil_touch, ())
+
+
 class _TinyMLP(nn.Module):
     """Minimal MLP for PEFT save/load round-trip tests.
 
@@ -610,6 +635,52 @@ class TestLoadPeftErrors:
         fresh = _TinyMLP()
         with pytest.raises((pickle.UnpicklingError, RuntimeError, ValueError)):
             load_peft(fresh, path, "lora")
+
+    def test_load_blocks_pickle_code_execution(self, tmp_path: Path) -> None:
+        """Security regression (RIL ISS-074): ``load_peft`` must unpickle with
+        ``weights_only=True`` so a hostile adapter file cannot run arbitrary
+        code via ``__reduce__``.
+
+        We write a payload whose ``state_dict`` slot serialises an object
+        whose ``__reduce__`` calls ``_evil_touch`` (module-scope marker).  Under
+        ``weights_only=True`` torch refuses to reconstruct the not-safelisted
+        function, so the marker never fires and ``load_peft`` raises.  If the
+        loader regressed to ``weights_only=False`` the reduce would run and the
+        marker would be non-empty.
+        """
+        from llm.core.peft import load_peft
+
+        _EVIL_MARKER.clear()
+
+        payload = {
+            "format_version": "1.0",
+            "method_name": "lora",
+            "peft_kwargs": {},
+            "state_dict": {"lora.0": _ReduceMarker()},
+        }
+        path = tmp_path / "evil.bin"
+        with path.open("wb") as fh:
+            torch.save(payload, fh)
+
+        # Prove the harness is live: the same file under the INSEcURE loader
+        # must execute the reduce (marker fills) — otherwise this test could
+        # pass vacuously.
+        _EVIL_MARKER.clear()
+        torch.load(path, weights_only=False, map_location="cpu")
+        assert _EVIL_MARKER == ["executed"], "harness: insecure loader did not execute the malicious reduce"
+
+        # Now the safe path: load_peft (weights_only=True) must refuse by
+        # raising UnpicklingError — torch refuses to reconstruct the
+        # not-safelisted function.
+        _EVIL_MARKER.clear()
+        fresh = _TinyMLP()
+        with pytest.raises((pickle.UnpicklingError, RuntimeError)):
+            load_peft(fresh, path, "lora")
+
+        assert _EVIL_MARKER == [], (
+            "load_peft unpickled the malicious __reduce__ (weights_only=False): "
+            "the marker list filled — arbitrary code execution vector (ISS-074)"
+        )
 
 
 # ---------------------------------------------------------------------------
