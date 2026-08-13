@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 42,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T10:49:59+00:00",
+  "updated_at": "2026-08-13T10:53:03+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4381,7 +4381,7 @@
       "version": 1,
       "created_at": "2026-08-13T09:29:27+00:00",
       "updated_at": "2026-08-13T09:29:27+00:00",
-      "touched_round": 41,
+      "touched_round": 42,
       "category": "core-feature",
       "severity": 0.5,
       "title": "Wire paged-attention prefix replay via block sharing (add_prefix/try_get_prefix_blocks/fork_sequence + COW-on-write) so enable_prefix_cache delivers the speedup on the paged path"
@@ -4630,6 +4630,18 @@
       "source": "tests/serving/test_engine.py::test_engine_paged_attention_prefix_cache_does_not_short_circuit",
       "title": "Dense SlotPrefixCache stays empty on paged path; broad non-heavy suite green (exit 0)",
       "confidence": 1.0
+    },
+    "DEC-023": {
+      "id": "DEC-023",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T10:52:42+00:00",
+      "updated_at": "2026-08-13T10:52:42+00:00",
+      "touched_round": 42,
+      "title": "Defer TASK-065 paged prefix-replay speedup; keep as next-round main line (correctness fallback already lands)",
+      "rationale": "TASK-065 (paged prefix replay via block sharing) scores 1.50, below the 3.0 action threshold. Its correctness prerequisite (ISS-071 free() invalidation) is now resolved, but full replay needs COW-on-write in PagedKVCache.update (a shared last block must be copied before the suffix token overwrites it), engine-level fork_sequence/add_prefix wiring in _lock_step_pre/post, and a hash->seq reverse index — a multi-file, memory-safety-critical change over the single-commit diff budget. The correctness fallback (CHG-066 + CHG-072) already guarantees the paged+prefix combination is CORRECT (full prefill), just without the prefill speedup. Round-42 stop conditions are satisfied; defer to a dedicated round so it gets focused, verified treatment.",
+      "alternatives_rejected": "1) Implement full COW replay now: rejected — >300-line memory-safety-critical change at tail of session, risk of re-introducing the ISS-068 class of silent divergence. 2) Mark resolved without code: rejected — feature genuinely unwired, would hide real backlog."
     }
   },
   "edges": [
@@ -6732,6 +6744,13 @@
       "type": "resolves",
       "created_at": "2026-08-13T10:49:59+00:00",
       "note": "follow-up: gate dense SlotPrefixCache.put on the dense path; regression assertion added"
+    },
+    {
+      "from": "DEC-023",
+      "to": "TASK-065",
+      "type": "governs",
+      "created_at": "2026-08-13T10:53:03+00:00",
+      "note": "recorded deferral; scores below action threshold"
     }
   ]
 }
