@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 41,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-13T08:35:06+00:00",
+  "updated_at": "2026-08-13T09:52:23+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -3834,7 +3834,7 @@
       "version": 2,
       "created_at": "2026-08-12T11:22:39+00:00",
       "updated_at": "2026-08-12T11:22:40+00:00",
-      "touched_round": 37,
+      "touched_round": 41,
       "confidence": 0.9,
       "title": "Hardcoded cuda:0/ALL_DEVICES-snapshot tests flake on shared hosts; live devices have enough headroom"
     },
@@ -4258,13 +4258,14 @@
     "ISS-068": {
       "id": "ISS-068",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T08:31:26+00:00",
-      "updated_at": "2026-08-13T08:31:26+00:00",
+      "updated_at": "2026-08-13T09:29:03+00:00",
       "touched_round": 41,
       "severity": "high",
-      "title": "paged-attention + enable_prefix_cache silently produces wrong output (prefix KV never staged into paged cache; _copy_kv_between_slots is a no-op on paged path)"
+      "title": "paged-attention + enable_prefix_cache silently produces wrong output (prefix KV never staged into paged cache; _copy_kv_between_slots is a no-op on paged path)",
+      "resolved_by": "CHG-066"
     },
     "ISS-069": {
       "id": "ISS-069",
@@ -4280,13 +4281,14 @@
     "ISS-070": {
       "id": "ISS-070",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-13T08:31:39+00:00",
-      "updated_at": "2026-08-13T08:31:39+00:00",
+      "updated_at": "2026-08-13T09:51:32+00:00",
       "touched_round": 41,
       "severity": "med",
-      "title": "eager batch_generate left-pads prompts without attention mask -> pad tokens leak into attention, diverges from single-prompt path"
+      "title": "eager batch_generate left-pads prompts without attention mask -> pad tokens leak into attention, diverges from single-prompt path",
+      "resolved_by": "CHG-067"
     },
     "ISS-071": {
       "id": "ISS-071",
@@ -4335,14 +4337,146 @@
     "TASK-064": {
       "id": "TASK-064",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-13T08:35:06+00:00",
-      "updated_at": "2026-08-13T08:35:06+00:00",
+      "updated_at": "2026-08-13T09:29:04+00:00",
       "touched_round": 41,
       "category": "correctness",
       "severity": 0.9,
-      "title": "Wire paged-attention prefix replay so enable_prefix_cache works on the paged path (ISS-068)"
+      "title": "Wire paged-attention prefix replay so enable_prefix_cache works on the paged path (ISS-068) [correctness half done; replay speedup split out]",
+      "lock_owner": "deepseek-v4-flash-product-1-23",
+      "lock_until": "2026-08-13T10:11:37+00:00"
+    },
+    "CHG-066": {
+      "id": "CHG-066",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:28:14+00:00",
+      "updated_at": "2026-08-13T09:28:14+00:00",
+      "touched_round": 41,
+      "title": "fix(serving): disable dense prefix shortcut on paged path to prevent silent wrong output",
+      "commit": "6072cd8"
+    },
+    "DEC-021": {
+      "id": "DEC-021",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:28:25+00:00",
+      "updated_at": "2026-08-13T09:28:25+00:00",
+      "touched_round": 41,
+      "title": "Resolve ISS-068 correctness via safe fallback; defer paged prefix-replay speedup to dedicated feature task gated on ISS-071",
+      "rationale": "The silent wrong-output portion of ISS-068 is fixed by gating the dense prefix shortcut on paged_kv_cache is None, falling back to a full prefill on the paged path. This is a correctness-first fix with a regression test. The actual paged prefix replay (speedup via block sharing with PagedKVCache.add_prefix/try_get_prefix_blocks/fork_sequence + COW-on-write) is a memory-safety-sensitive feature whose correctness depends on ISS-071 (PagedKVCache.free() never invalidates _seq_to_hash / prefix cache -> use-after-free of KV blocks). Wiring replay before the free-invalidation fix would re-introduce UAF. Tracked as a separate feature task.",
+      "alternatives_rejected": "1) Wire full paged prefix replay now via fork_sequence: rejected — unsafe without ISS-071 free() invalidation (cached block_ids belong to a freed/reallocated sequence's block table). 2) Keep broken shortcut: rejected — silent wrong output. 3) Copy prefix KV blocks into a fresh per-request allocation: rejected — copies defeat the memory/speed purpose and add a bespoke block-table path."
+    },
+    "TASK-065": {
+      "id": "TASK-065",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:29:27+00:00",
+      "updated_at": "2026-08-13T09:29:27+00:00",
+      "touched_round": 41,
+      "category": "core-feature",
+      "severity": 0.5,
+      "title": "Wire paged-attention prefix replay via block sharing (add_prefix/try_get_prefix_blocks/fork_sequence + COW-on-write) so enable_prefix_cache delivers the speedup on the paged path"
+    },
+    "TASK-066": {
+      "id": "TASK-066",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-13T09:29:46+00:00",
+      "updated_at": "2026-08-13T09:51:32+00:00",
+      "touched_round": 41,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "eager batch_generate left-pads prompts without attention mask -> pad tokens leak into attention, diverges from single-prompt path (ISS-070)"
+    },
+    "TASK-067": {
+      "id": "TASK-067",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:29:46+00:00",
+      "updated_at": "2026-08-13T09:29:46+00:00",
+      "touched_round": 41,
+      "category": "stability",
+      "severity": 0.6,
+      "title": "Scheduler.get_sequence reads waiting deque without step lock -> RuntimeError under concurrent streaming (ISS-069)"
+    },
+    "TASK-068": {
+      "id": "TASK-068",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:29:46+00:00",
+      "updated_at": "2026-08-13T09:29:46+00:00",
+      "touched_round": 41,
+      "category": "correctness",
+      "severity": 0.6,
+      "title": "PagedKVCache.free() must invalidate prefix cache / _seq_to_hash to prevent use-after-free of KV blocks (ISS-071) [gate for TASK-065]"
+    },
+    "TASK-069": {
+      "id": "TASK-069",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:30:14+00:00",
+      "updated_at": "2026-08-13T09:30:14+00:00",
+      "touched_round": 41,
+      "category": "correctness",
+      "severity": 0.6,
+      "title": "Persist/load norm_first so post-LN models round-trip correctly (ISS-072)"
+    },
+    "TASK-070": {
+      "id": "TASK-070",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:30:14+00:00",
+      "updated_at": "2026-08-13T09:30:14+00:00",
+      "touched_round": 41,
+      "category": "maintainability",
+      "severity": 0.3,
+      "title": "GGUF Q8_0 general.file_type should be 5 (llama_ftype enum) not 7; metadata-only (ISS-073)"
+    },
+    "TASK-071": {
+      "id": "TASK-071",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:30:14+00:00",
+      "updated_at": "2026-08-13T09:30:14+00:00",
+      "touched_round": 41,
+      "category": "security",
+      "severity": 0.6,
+      "title": "load_peft must unpickle adapters with weights_only=True to prevent arbitrary code execution (ISS-074)"
+    },
+    "CHG-067": {
+      "id": "CHG-067",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:51:23+00:00",
+      "updated_at": "2026-08-13T09:51:23+00:00",
+      "touched_round": 41,
+      "title": "fix(generation): pass left-pad attention mask in eager batch_generate",
+      "commit": "bcf36d5"
+    },
+    "EV-090": {
+      "id": "EV-090",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-13T09:51:33+00:00",
+      "updated_at": "2026-08-13T09:51:33+00:00",
+      "touched_round": 41,
+      "source": "tests/generation/test_eager.py::test_batch_generate_left_pad_attention_mask",
+      "title": "Left-pad columns masked in all batch_generate forwards when prompts differ in length; 189 quick + 283 serving tests green",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -6289,6 +6423,89 @@
       "to": "COMP-011",
       "type": "located_in",
       "created_at": "2026-08-13T08:32:08+00:00"
+    },
+    {
+      "from": "CHG-066",
+      "to": "ISS-068",
+      "type": "resolves",
+      "created_at": "2026-08-13T09:28:44+00:00",
+      "note": "remove paged-path shortcut; full prefill fallback; regression test"
+    },
+    {
+      "from": "CHG-066",
+      "to": "TASK-064",
+      "type": "implements",
+      "created_at": "2026-08-13T09:28:44+00:00",
+      "note": "correctness half of task (silent wrong output fixed)"
+    },
+    {
+      "from": "DEC-021",
+      "to": "TASK-064",
+      "type": "governs",
+      "created_at": "2026-08-13T09:28:44+00:00",
+      "note": "resolution strategy"
+    },
+    {
+      "from": "TASK-066",
+      "to": "ISS-070",
+      "type": "addresses",
+      "created_at": "2026-08-13T09:30:00+00:00"
+    },
+    {
+      "from": "TASK-067",
+      "to": "ISS-069",
+      "type": "addresses",
+      "created_at": "2026-08-13T09:30:00+00:00"
+    },
+    {
+      "from": "TASK-068",
+      "to": "ISS-071",
+      "type": "addresses",
+      "created_at": "2026-08-13T09:30:00+00:00"
+    },
+    {
+      "from": "TASK-065",
+      "to": "ISS-068",
+      "type": "addresses",
+      "created_at": "2026-08-13T09:30:00+00:00",
+      "note": "replay feature inherits the resolved issue; gated on TASK-068"
+    },
+    {
+      "from": "TASK-065",
+      "to": "TASK-068",
+      "type": "depends_on",
+      "created_at": "2026-08-13T09:30:00+00:00"
+    },
+    {
+      "from": "TASK-069",
+      "to": "ISS-072",
+      "type": "addresses",
+      "created_at": "2026-08-13T09:30:36+00:00"
+    },
+    {
+      "from": "TASK-070",
+      "to": "ISS-073",
+      "type": "addresses",
+      "created_at": "2026-08-13T09:30:36+00:00"
+    },
+    {
+      "from": "TASK-071",
+      "to": "ISS-074",
+      "type": "addresses",
+      "created_at": "2026-08-13T09:30:36+00:00"
+    },
+    {
+      "from": "CHG-067",
+      "to": "ISS-070",
+      "type": "resolves",
+      "created_at": "2026-08-13T09:51:23+00:00",
+      "note": "pad mask wired into prefill + decode forwards; regression test"
+    },
+    {
+      "from": "CHG-067",
+      "to": "TASK-066",
+      "type": "implements",
+      "created_at": "2026-08-13T09:51:23+00:00"
     }
   ]
 }
