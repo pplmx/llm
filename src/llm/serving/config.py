@@ -25,10 +25,14 @@ class ServingConfig(BaseSettings):
     # Generation
     generation_backend: str = "eager"  # eager | batched
 
-    # Performance
+    # Performance. Kept > 0 deliberately: 0 concurrency builds
+    # ``asyncio.Semaphore(0)`` (every request blocks then 504s), a
+    # non-positive timeout makes every request time out instantly, and
+    # ``max_blocks``/``block_size``/``max_prefixes`` feed directly into
+    # block arithmetic that divides by ``block_size``.
     compile_model: bool = False  # Enable torch.compile for acceleration
-    max_concurrent_requests: int = 4  # Max concurrent inference requests
-    request_timeout: float = 60.0  # Request timeout in seconds
+    max_concurrent_requests: int = Field(4, ge=1, description="Max concurrent inference requests")
+    request_timeout: float = Field(60.0, gt=0.0, description="Request timeout in seconds")
 
     # Chat template (OpenAI /v1/chat/completions).
     # Each message is rendered using ``chat_message_template.format(role=...,
@@ -56,12 +60,12 @@ class ServingConfig(BaseSettings):
 
     # Paged Attention (block allocator sidecar; model forward still uses KVCache)
     use_paged_attention: bool = False
-    max_blocks: int = 256
-    block_size: int = 16
+    max_blocks: int = Field(256, ge=1)
+    block_size: int = Field(16, ge=1)
 
     # Prefix Cache
     enable_prefix_cache: bool = False
-    max_prefixes: int = 10
+    max_prefixes: int = Field(10, ge=1)
 
     # Model Params (for dummy init if no ckpt)
     hidden_size: int = 64

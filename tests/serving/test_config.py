@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from llm.serving.config import ServingConfig
 
@@ -163,3 +164,37 @@ class TestServingConfigPagedAttention:
         assert cfg.use_paged_attention is False
         assert cfg.max_blocks == 256
         assert cfg.block_size == 16
+
+
+class TestServingConfigNumericBounds:
+    """Sweep finding: the concurrency/timeout/block knobs had no bounds.
+
+    ``max_concurrent_requests=0`` builds ``asyncio.Semaphore(0)`` (every
+    request blocks and 504s), ``block_size=0``/``max_blocks=0`` feed a
+    divide-by-zero into block management, and ``request_timeout<=0`` makes
+    every request time out instantly. Each must be rejected at the config
+    boundary (fail fast at startup, not on first request).
+    """
+
+    def test_max_concurrent_requests_must_be_positive(self):
+        with pytest.raises(ValidationError):
+            ServingConfig(max_concurrent_requests=0)
+
+    def test_request_timeout_must_be_positive(self):
+        with pytest.raises(ValidationError):
+            ServingConfig(request_timeout=0.0)
+        with pytest.raises(ValidationError):
+            ServingConfig(request_timeout=-1.0)
+
+    def test_block_knobs_must_be_positive(self):
+        with pytest.raises(ValidationError):
+            ServingConfig(block_size=0)
+        with pytest.raises(ValidationError):
+            ServingConfig(max_blocks=0)
+        with pytest.raises(ValidationError):
+            ServingConfig(max_prefixes=0)
+
+    def test_positive_values_still_accepted(self):
+        cfg = ServingConfig(max_concurrent_requests=1, request_timeout=0.1, block_size=1, max_blocks=1, max_prefixes=1)
+        assert cfg.max_concurrent_requests == 1
+        assert cfg.block_size == 1
