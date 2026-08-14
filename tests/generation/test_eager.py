@@ -589,6 +589,92 @@ def test_generate_with_stop_excludes_stop_string(tiny_model):
     assert result == "pab"
 
 
+# ---------------------------------------------------------------------------
+# stream_generate — EOS halting (tokenizer.eos_token_id)
+# ---------------------------------------------------------------------------
+
+
+def _make_eos_tokenizer(eos_id: int = 5):
+    """``_CharTokenizer`` with an ``eos_token_id`` so EOS halting is reachable."""
+
+    class _EosTok(_CharTokenizer):
+        eos_token_id = eos_id
+
+    return _EosTok
+
+
+def test_stream_generate_halts_on_eos_and_excludes_it(tiny_model):
+    """When the model samples its EOS token, generation halts and the EOS
+    token is NOT included in the output (previously the eager loop kept
+    decoding through ``max_new_tokens`` past EOS, emitting junk)."""
+    tok = _make_eos_tokenizer(eos_id=5)  # id 5 decodes to 'f'
+    call = {"n": 0}
+
+    def fake_sample(logits, **kw):  # noqa: ARG001
+        call["n"] += 1
+        return 1 if call["n"] <= 2 else 5  # 'b','b' then EOS
+
+    with patch("llm.generation.eager.sample_next_token", side_effect=fake_sample):
+        chunks = list(
+            stream_generate(
+                model=tiny_model,
+                tokenizer=tok([1]),
+                prompt="p",
+                max_new_tokens=5,
+                temperature=0.0,
+            )
+        )
+
+    assert "".join(chunks) == "bb"
+
+
+def test_stream_generate_eos_flushes_stop_buffer(tiny_model):
+    """EOS arriving while stop-prefix text is still buffered must flush that
+    text (mirrors the loop-end flush) then halt."""
+    tok = _make_eos_tokenizer(eos_id=5)
+    call = {"n": 0}
+
+    def fake_sample(logits, **kw):  # noqa: ARG001
+        call["n"] += 1
+        return 1 if call["n"] <= 2 else 5  # 'b','b' then EOS
+
+    with patch("llm.generation.eager.sample_next_token", side_effect=fake_sample):
+        chunks = list(
+            stream_generate(
+                model=tiny_model,
+                tokenizer=tok([1]),
+                prompt="p",
+                max_new_tokens=4,
+                temperature=0.0,
+                stop="ZZ",  # never matches; buffer holds "bb" at EOS
+            )
+        )
+
+    assert "".join(chunks) == "bb"
+
+
+def test_batch_generate_halts_on_eos_and_excludes_it(tiny_model):
+    """``batch_generate`` stops each sequence at its EOS and omits the EOS
+    token from the decoded output."""
+    tok = _make_eos_tokenizer(eos_id=5)
+    call = {"n": 0}
+
+    def fake_sample(logits, **kw):  # noqa: ARG001
+        call["n"] += 1
+        return 1 if call["n"] <= 2 else 5  # 'b','b' then EOS
+
+    with patch("llm.generation.eager.sample_next_token", side_effect=fake_sample):
+        result = batch_generate(
+            model=tiny_model,
+            tokenizer=tok([1]),
+            prompts=["p"],
+            max_new_tokens=4,
+            temperature=0.0,
+        )
+
+    assert result == ["bbb"]  # prompt 'b' + 'bb'; EOS 'f' + later junk excluded
+
+
 def test_generate_with_use_cache_false(tiny_model):
     """``generate`` works with ``use_cache=False``."""
     tok = _make_stop_tokenizer(["a", "b"])

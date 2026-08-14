@@ -119,6 +119,7 @@ def stream_generate(
     stops = _normalize_stop(stop)
     max_stop_len = max((len(s) for s in stops), default=0) if stops else 0
     buffer = ""
+    eos_id = getattr(tokenizer, "eos_token_id", None)
 
     for _ in range(max_new_tokens):
         if repetition_penalty != 1.0:
@@ -136,6 +137,15 @@ def stream_generate(
             top_k=top_k,
             top_p=top_p,
         )
+        # Model end-of-sequence: flush any buffered stop-prefix text and
+        # halt. The EOS token itself is NOT part of the output (matches the
+        # speculative backend's halting and standard LLM serving semantics);
+        # without this the eager loop kept decoding through max_new_tokens
+        # past EOS, emitting junk.
+        if eos_id is not None and token_id == eos_id:
+            if stops and buffer:
+                yield buffer
+            return
         generated_ids.append(token_id)
         text_chunk = tokenizer.decode([token_id])
 
@@ -367,6 +377,19 @@ def batch_generate(
         next_token_logits = logits[:, -1, :]
 
         _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+
+    # Truncate each sequence at its first EOS so both decode paths below
+    # omit the EOS token and any junk generated after it (a sequence that
+    # already finished keeps occupying its batch slot, but its tail is cut
+    # here). Matches stream_generate / the speculative backend.
+    eos_id = getattr(tokenizer, "eos_token_id", None)
+    if eos_id is not None:
+        for i in range(batch_size):
+            gen_start = len(encoded_prompts[i])
+            for j in range(gen_start, len(generated_ids[i])):
+                if generated_ids[i][j] == eos_id:
+                    del generated_ids[i][j:]
+                    break
 
     # Decode results, applying stop sequences when provided.
     # OpenAI semantics: generation halts when a stop sequence appears as
