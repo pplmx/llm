@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 50,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T15:25:27+00:00",
+  "updated_at": "2026-08-14T15:36:44+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5760,6 +5760,102 @@
       "updated_at": "2026-08-14T15:25:12+00:00",
       "touched_round": 50,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
+    },
+    "ISS-99": {
+      "id": "ISS-99",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:28:25+00:00",
+      "updated_at": "2026-08-14T15:28:25+00:00",
+      "touched_round": 50,
+      "severity": 0.4,
+      "title": "speculative acceptance ratio scores against the full-softmax distribution while the draft sampled from a top-k/top-p-truncated one",
+      "summary": "speculative.py computes q_draft = softmax(draft_penalized/temperature) over the FULL vocab and ratio = q_target/q_draft, but draft proposals come from sample_next_token(..., top_k, top_p). With top_p/top_k set, accepted tokens are scored against probabilities of tokens the draft could never propose, so the output distribution diverges from EagerGenerationBackend with identical params (medium confidence; some impls accept the approximation). Verify before acting."
+    },
+    "ISS-100": {
+      "id": "ISS-100",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:28:26+00:00",
+      "updated_at": "2026-08-14T15:28:26+00:00",
+      "touched_round": 50,
+      "severity": 0.4,
+      "title": "eager prefill shrink lets decode over-run max_seq_len when max_new_tokens >= max_seq_len",
+      "summary": "stream_generate truncates the prompt to keep=max(1, max_seq_len - max_new_tokens)=1 token when max_new_tokens >= max_seq_len, then decodes max_new_tokens steps past the KV-cache bound → Cache overflow ValueError mid-stream (or attention beyond context with use_cache=False). Serving rejects this config up front; library entry points do not guard. Consider an up-front ValueError (note batch_generate deliberately supports it per its truncation test)."
+    },
+    "ISS-101": {
+      "id": "ISS-101",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:36:00+00:00",
+      "updated_at": "2026-08-14T15:36:00+00:00",
+      "touched_round": 50,
+      "severity": 0.8,
+      "title": "lm_eval generate_until returns generations retaining the trailing stop/EOS delimiter (no postprocess, no auto EOS stop)",
+      "summary": "LlamaLmEvalLM._generate_until_batch appended the stop-completing token before breaking and returned decode(generated) raw; upstream LMs strip stops via postprocess_generated_text and auto-append decode(eos) via handle_stop_sequences. Without either, every generation-task answer ended with its delimiter and EOS-emitting models ran to max_gen_toks — systematically wrong exact_match/acc (truthfulqa/gsm8k/humaneval)."
+    },
+    "TASK-86": {
+      "id": "TASK-86",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:36:00+00:00",
+      "updated_at": "2026-08-14T15:36:00+00:00",
+      "touched_round": 50,
+      "category": "correctness",
+      "severity": 0.8,
+      "effort": 1.0,
+      "title": "Mirror lm_eval postprocess semantics in generate_until (ISS-101)",
+      "summary": "stops = until + decode(eos) when the tokenizer has eos; output cut at first string-stop occurrence (postprocess_generated_text contract). Token-id until unchanged. 2 new tests; evaluation suite green."
+    },
+    "EV-119": {
+      "id": "EV-119",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:36:00+00:00",
+      "updated_at": "2026-08-14T15:36:00+00:00",
+      "touched_round": 50,
+      "source": "tests/evaluation/test_lm_eval_pipeline.py::test_lm_eval_lm_generate_until_strips_trailing_stop_delimiter,test_lm_eval_lm_generate_until_auto_appends_and_strips_eos",
+      "summary": "RED: argmax 1 with until=['\\x01'] returned the delimiter-stopped text; argmax 9 (eos) with until=[] returned 5 tabs. Post-fix both return '' (stop/EOS stripped, EOS auto-appended). Evaluation suite green, ruff/ty clean.",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "HYP-51": {
+      "id": "HYP-51",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:36:00+00:00",
+      "updated_at": "2026-08-14T15:36:00+00:00",
+      "touched_round": 50,
+      "confidence": 1.0,
+      "title": "The lm_eval stop/EOS contract is enforced by each LM wrapper (postprocess_generated_text + handle_stop_sequences), which this adapter skipped",
+      "summary": "Verify confirmed against installed lm_eval 0.4.12: postprocess_generated_text is called inside the hf/vllm/sglang/trtllm wrappers, and evaluator.py only overrides gen_kwargs (no task-side stripping). LlamaLmEvalLM returned raw decode -> trailing delimiters. Fixed to mirror both helpers."
+    },
+    "CHG-90": {
+      "id": "CHG-90",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:36:16+00:00",
+      "updated_at": "2026-08-14T15:36:16+00:00",
+      "touched_round": 50,
+      "commit": "f5c0a49",
+      "title": "fix(eval): generate_until strips stop/EOS delimiters from returned text"
+    },
+    "COMP-013": {
+      "id": "COMP-013",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:36:27+00:00",
+      "updated_at": "2026-08-14T15:36:27+00:00",
+      "touched_round": 50,
+      "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
     }
   },
   "edges": [
@@ -8367,6 +8463,48 @@
       "to": "COMP-012",
       "type": "located_in",
       "created_at": "2026-08-14T15:25:27+00:00"
+    },
+    {
+      "from": "ISS-99",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:28:26+00:00"
+    },
+    {
+      "from": "ISS-100",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:28:26+00:00"
+    },
+    {
+      "from": "CHG-90",
+      "to": "ISS-101",
+      "type": "resolves",
+      "created_at": "2026-08-14T15:36:16+00:00"
+    },
+    {
+      "from": "CHG-90",
+      "to": "TASK-86",
+      "type": "implements",
+      "created_at": "2026-08-14T15:36:16+00:00"
+    },
+    {
+      "from": "TASK-86",
+      "to": "ISS-101",
+      "type": "addresses",
+      "created_at": "2026-08-14T15:36:16+00:00"
+    },
+    {
+      "from": "EV-119",
+      "to": "HYP-51",
+      "type": "validates",
+      "created_at": "2026-08-14T15:36:16+00:00"
+    },
+    {
+      "from": "ISS-101",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:36:27+00:00"
     }
   ]
 }
