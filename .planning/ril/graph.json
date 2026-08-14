@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 44,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T00:32:26+00:00",
+  "updated_at": "2026-08-14T00:51:34+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 43,
+      "touched_round": 44,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -4761,6 +4761,41 @@
       "summary": "Cross-owner theft reproduced (A LRU-evicted, B re-registers, A.free steals B entry); _hash_to_owner owner check keeps entry; regression test green",
       "result": "pass",
       "confidence": 1.0
+    },
+    "CHG-076": {
+      "id": "CHG-076",
+      "type": "change",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T00:51:24+00:00",
+      "updated_at": "2026-08-14T00:51:34+00:00",
+      "touched_round": 44,
+      "commit": "14206a4",
+      "title": "fix(serving): reject over-context requests; PE position_ids bounds check (ISS-077)"
+    },
+    "ISS-077": {
+      "id": "ISS-077",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T00:51:24+00:00",
+      "updated_at": "2026-08-14T00:51:34+00:00",
+      "touched_round": 44,
+      "title": "Serving engine accepts prompts exceeding max_seq_len -> CUDA device-side assert on PE gather crashes the whole process",
+      "severity": 0.7
+    },
+    "EV-101": {
+      "id": "EV-101",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T00:51:24+00:00",
+      "updated_at": "2026-08-14T00:51:24+00:00",
+      "touched_round": 44,
+      "source": "14206a4",
+      "summary": "Reproduced AcceleratorError device-side assert on 40-token prompt (max_seq_len=16) for dense+paged; add_request rejects with ValueError (router 400); PE bounds check fail-fasts for any caller",
+      "result": "pass",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -6912,6 +6947,18 @@
       "to": "COMP-004",
       "type": "located_in",
       "created_at": "2026-08-13T16:30:42+00:00"
+    },
+    {
+      "from": "CHG-076",
+      "to": "ISS-077",
+      "type": "resolves",
+      "created_at": "2026-08-14T00:51:33+00:00"
+    },
+    {
+      "from": "ISS-077",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-14T00:51:34+00:00"
     }
   ]
 }
