@@ -107,6 +107,29 @@ def test_quantize_model_gptq_no_linear_raises():
         quantize_model_gptq(model, iter([torch.randn(4, 8)]), GPTQConfig())
 
 
+def test_gptq_per_channel_4bit_rejects_odd_total_weights():
+    """bits=4 + group_size=-1 packs two weights per int8 byte; an odd total
+    weight count must be rejected up front (before Hessian accumulation),
+    not as a mid-pipeline ``_pack_4bit`` ValueError."""
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = nn.Linear(33, 33)  # 33*33 = 1089 (odd)
+    calib = [torch.randn(4, 33) for _ in range(2)]
+    with pytest.raises(ValueError, match="even total weight count"):
+        quantize_model_gptq(model, iter(calib), GPTQConfig(bits=4, group_size=-1))
+
+
+def test_gptq_per_channel_4bit_even_total_succeeds():
+    """Even total weight count with bits=4 + group_size=-1 stays valid."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = nn.Linear(32, 32)
+    calib = [torch.randn(4, 32) for _ in range(2)]
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig(bits=4, group_size=-1))
+    assert any(isinstance(m, GPTQQuantizedLinear) for m in quantized.modules())
+
+
 def test_target_modules_filters_correctly():
     """target_modules restricts which Linear layers get quantized."""
     from llm.quantization._gptq_layer import GPTQQuantizedLinear

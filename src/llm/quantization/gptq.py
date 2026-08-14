@@ -119,6 +119,17 @@ class GPTQQuantizer:
                 f"({self.in_features}); got remainder {self.in_features % gs}. "
                 "Use group_size=-1 (per-channel) or a divisor of in_features."
             )
+        # 4-bit per-channel packing stores two weights per int8 byte; an odd
+        # total weight count would crash mid-pipeline in ``_pack_4bit`` (after
+        # Hessian accumulation). Fail fast with the same "clear error instead
+        # of a late crash" spirit as the group-size check above.
+        if self.config.bits == 4 and self.config.group_size == -1 and (self.out_features * self.in_features) % 2 != 0:
+            raise ValueError(
+                f"4-bit per-channel quantization requires an even total weight "
+                f"count; {self.layer.weight.shape} has an odd product "
+                f"({self.out_features * self.in_features}). Use group_size != -1 "
+                "or an architecture with even in/out features."
+            )
 
         # Hessian accumulator
         self.H = torch.zeros(

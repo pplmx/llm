@@ -264,3 +264,21 @@ def _getattr_nested(module: nn.Module, dotted: str):
     for part in dotted.split("."):
         module = getattr(module, part)
     return module
+
+
+def test_awq_per_channel_4bit_rejects_odd_total_weights():
+    """bits=4 + group_size=-1 packs two weights per int8 byte; _pack_weights
+    must reject an odd total weight count up front instead of a late
+    _pack_4bit ValueError after scale search."""
+    from llm.quantization.awq import AWQConfig, _pack_weights, quantize_model_awq
+
+    with pytest.raises(ValueError, match="even total weight count"):
+        _pack_weights(torch.randn(3, 3), bits=4, group_size=-1)
+
+    # Even total stays valid end-to-end.
+    model = nn.Linear(32, 32)
+    calib = [torch.randn(4, 32) for _ in range(2)]
+    from llm.quantization._awq_layer import AWQQuantizedLinear
+
+    quantized = quantize_model_awq(model, iter(calib), AWQConfig(bits=4, group_size=-1))
+    assert any(isinstance(m, AWQQuantizedLinear) for m in quantized.modules())

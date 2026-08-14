@@ -320,6 +320,16 @@ def _pack_weights(
     if effective_group_size != -1 and effective_group_size > in_f:
         effective_group_size = in_f
 
+    # 4-bit per-channel packing stores two weights per int8 byte; reject an
+    # odd total weight count up front (same guard as GPTQQuantizer) instead
+    # of a late ``_pack_4bit`` ValueError after scale search.
+    if bits == 4 and effective_group_size == -1 and (out_f * in_f) % 2 != 0:
+        raise ValueError(
+            f"4-bit per-channel quantization requires an even total weight count; "
+            f"got shape {(out_f, in_f)} (product {out_f * in_f} is odd). "
+            "Use group_size != -1 or an architecture with even in/out features."
+        )
+
     qmax = 2 ** (bits - 1) - 1
     if effective_group_size == -1:
         scale = (w.abs().max(dim=1, keepdim=True)[0] / qmax).clamp(min=1e-8)
