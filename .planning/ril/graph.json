@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 50,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T14:50:54+00:00",
+  "updated_at": "2026-08-14T14:59:26+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 37,
+      "touched_round": 50,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -5442,6 +5442,80 @@
       "confidence": 1.0,
       "title": "In-memory DedupTextSource.iter_texts(skip=N) misreads the streaming resume cursor as raw-record skip instead of survivor count",
       "summary": "StreamingTextDataset's line_index counts post-dedup survivors; DedupTextSource delegated skip to the inner (raw) source, so on checkpoint resume the in-memory pass skipped fewer survivors than consumed, re-yielding the consumed-window tail as fresh data and keeping the cursor misaligned. Mitigations: persisted-append mode was already exact (durable file), and per-pass reset() bounds same-run drift."
+    },
+    "ISS-93": {
+      "id": "ISS-93",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T14:58:56+00:00",
+      "updated_at": "2026-08-14T14:58:56+00:00",
+      "touched_round": 50,
+      "severity": 0.9,
+      "title": "GGUF Q4_0/Q8_0 payloads store scales-then-data, not the ggml block-interleaved layout (silent corruption for llama.cpp/ollama)",
+      "summary": "Export writer serialized every per-block fp16 scale contiguously then all packed data; the reader expected the same split, so round-trips passed. llama.cpp casts the payload to block_q4_0/block_q8_0 structs and walks fixed-size blocks ([fp16 d][packed], 18/34 bytes), so block k's scale is read from the data region: parsing the repo's own export that way gave Q4_0 max-err 0.999 / Q8_0 NaN. Any exported q4_0/q8_0 GGUF fed to the ecosystem was silently wrong weights."
+    },
+    "TASK-82": {
+      "id": "TASK-82",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T14:58:56+00:00",
+      "updated_at": "2026-08-14T14:58:56+00:00",
+      "touched_round": 50,
+      "category": "correctness",
+      "severity": 0.9,
+      "effort": 1.5,
+      "title": "Interleave GGUF Q4_0/Q8_0 block payloads to match ggml (ISS-93)",
+      "summary": "_interleave_blocks structured-array encoder writes [fp16 d][packed] per block (18/34 bytes); reader de-interleaves back into per-block scales+body. Payload size & tensor offsets unchanged. 150 export tests + new llama.cpp-style parse test green."
+    },
+    "EV-115": {
+      "id": "EV-115",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T14:58:56+00:00",
+      "updated_at": "2026-08-14T14:58:56+00:00",
+      "touched_round": 50,
+      "source": "tests/export/test_gguf_reader_writer.py::test_quantized_raw_bytes_match_ggml_block_layout,test_gguf_block_payload_parseable_as_llamacpp[q4_0],test_gguf_block_payload_parseable_as_llamacpp[q8_0]",
+      "summary": "RED: llama.cpp-style interleaved parse of the old export gave Q4_0 max-err 0.999 / Q8_0 NaN (repro first). Post-fix exact block-layout byte equality for both types + float reconstruction <= 0.25; 150 export tests, ruff/ty clean.",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "DEC-30": {
+      "id": "DEC-30",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T14:58:56+00:00",
+      "updated_at": "2026-08-14T14:58:56+00:00",
+      "touched_round": 50,
+      "title": "Round 51: GGUF quantized payloads use ggml block-interleaved layout (per-block [fp16 d][packed]), not self-consistent scales-then-data",
+      "rationale": "The on-disk byte contract that matters is llama.cpp's: it casts a quantized tensor to arrays of block_q4_0/block_q8_0 C structs and walks fixed-size blocks. 'Round-trips inside this repo' is not a correctness criterion for an export format whose purpose is interop. Interleaving keeps the same total byte count (18/34 per block), so tensor-info offsets/alignment are untouched.",
+      "alternatives_rejected": "Keep scales-then-data: rejected — round-trips internally but misaligns every block for the GGUF ecosystem (verified 0.999/NaN under llama.cpp-style parse). Store scales inline in the logical dims: rejected — would change tensor sizes and break the ggml struct contract."
+    },
+    "CHG-86": {
+      "id": "CHG-86",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T14:59:10+00:00",
+      "updated_at": "2026-08-14T14:59:10+00:00",
+      "touched_round": 50,
+      "commit": "553177c",
+      "title": "fix(export): GGUF Q4_0/Q8_0 payload must be ggml block-interleaved"
+    },
+    "HYP-47": {
+      "id": "HYP-47",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T14:59:26+00:00",
+      "updated_at": "2026-08-14T14:59:26+00:00",
+      "touched_round": 50,
+      "confidence": 1.0,
+      "title": "The repo's self-consistent scales-then-data GGUF block layout diverges from ggml's block-interleaved struct layout",
+      "summary": "Writer/reader share the same (wrong) layout so repo round-trips pass, but llama.cpp walks block_q4_0/block_q8_0 structs ([fp16 d][packed]) so external reads misalign. Confirmed empirically by parsing the repo's own export the llama.cpp way (Q4_0 err 0.999 / Q8_0 NaN) and by byte-equality after the interleaved fix."
     }
   },
   "edges": [
@@ -7905,6 +7979,36 @@
       "to": "HYP-46",
       "type": "validates",
       "created_at": "2026-08-14T14:50:54+00:00"
+    },
+    {
+      "from": "CHG-86",
+      "to": "ISS-93",
+      "type": "resolves",
+      "created_at": "2026-08-14T14:59:10+00:00"
+    },
+    {
+      "from": "CHG-86",
+      "to": "TASK-82",
+      "type": "implements",
+      "created_at": "2026-08-14T14:59:10+00:00"
+    },
+    {
+      "from": "TASK-82",
+      "to": "ISS-93",
+      "type": "addresses",
+      "created_at": "2026-08-14T14:59:10+00:00"
+    },
+    {
+      "from": "ISS-93",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-14T14:59:10+00:00"
+    },
+    {
+      "from": "EV-115",
+      "to": "HYP-47",
+      "type": "validates",
+      "created_at": "2026-08-14T14:59:26+00:00"
     }
   ]
 }
