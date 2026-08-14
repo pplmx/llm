@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 49,
+  "round": 50,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T13:52:42+00:00",
+  "updated_at": "2026-08-14T14:50:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5052,14 +5052,14 @@
     "ISS-088": {
       "id": "ISS-088",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-14T11:51:07+00:00",
-      "updated_at": "2026-08-14T11:51:07+00:00",
-      "touched_round": 46,
+      "updated_at": "2026-08-14T14:43:29+00:00",
+      "touched_round": 50,
       "title": "Dedup streaming resume cursor counts survivors but replayed as raw-record skip",
       "severity": 0.4,
-      "summary": "StreamingTextDataset.state.line_index counts post-dedup surviving records but resume passes it as skip on the raw LocalLineTextSource (which counts raw non-empty lines), so a dedup stream resume under-skips and re-yields already-trained records when write_seen_hashes=False."
+      "summary": "RESOLVED round 50 (CHG-85): DedupTextSource.iter_texts(skip) now counts survivors of this source in in-memory mode (re-hashing the skip window to rebuild the seen-set), so Scenario 1 (consumed two survivors with in-memory dedup then resume) reproduces the exact pre-resume dedup and never re-yields the consumed tail; persisted mode keeps raw-record fast-forward (seen-hashes file makes it exact). 3 new tests + 159-data-suite green, ruff clean."
     },
     "ISS-089": {
       "id": "ISS-089",
@@ -5380,6 +5380,68 @@
       "title": "Round 49: fix PPO approx_kl/ratio_mean padding dilution (ISS-090); defer simple-PTQ true-4-bit packing (ISS-092) as a design decision",
       "rationale": "The PPO divergence telemetry used a padded-mean so target_kl early-stop fired late on heavily padded mini-batches; masked mean over real response tokens (mirroring the ISS-065 loss normalization). The simple-PTQ 'bits=4' facet is a separate, low-severity contract issue: the storage is intentionally int8 (pinned by tests) because this is the reference quantization path; true 4-bit packing needs pack/unpack kernels and is a design/spec conversation, so it is logged as ISS-092 backlog rather than a quick fix.",
       "alternatives_rejected": "Fold the PTQ packing into this round: rejected — it is a design decision contradicting the pinned reference behavior, not a one-line bug; it belongs in a dedicated round with a proper pack/unpack design. 2) Leave approx_kl unmasked: rejected — the value and policy losses are already masked (ISS-065), leaving telemetry padded-diluted makes target_kl monitoring inconsistent with the loss scale."
+    },
+    "TASK-81": {
+      "id": "TASK-81",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-14T14:43:29+00:00",
+      "updated_at": "2026-08-14T14:45:27+00:00",
+      "touched_round": 50,
+      "category": "correctness",
+      "severity": 0.6,
+      "effort": 1.0,
+      "title": "Fix DedupTextSource in-memory skip semantics to count survivors (ISS-088)",
+      "summary": "iter_texts(skip=N) delegated to the inner source as a raw-record skip, but StreamingTextDataset counts post-dedup survivors; on checkpoint resume the in-memory pass re-yielded the consumed-window tail as fresh data. Mode-split: persisted-append keeps raw fast-forward (file seen-set is exact); in-memory counts survivors of this source and re-hashes the skip window so the seen-set is rebuilt."
+    },
+    "EV-114": {
+      "id": "EV-114",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T14:43:29+00:00",
+      "updated_at": "2026-08-14T14:43:29+00:00",
+      "touched_round": 50,
+      "source": "tests/data/test_dedup_source.py::test_dedup_inmemory_skip_counts_survivors_not_raw_records,test_dedup_inmemory_skip_rebuilds_seen_set_for_resume; tests/data/test_streaming_resume.py::test_streaming_dataset_inmemory_dedup_resume_does_not_repeat_consumed_tail",
+      "summary": "RED before fix: in-memory skip=2 over [a,a,b,c,d] yielded ['b','c','d'] (raw skip) then ['c','d'] (survivor skip); dataset-level resume re-emitted the consumed 'aaaa' tail chunk [[47..],[47..],[49..]] then [[48..],[49..]] after fix. Full tests/data suite 159 passed, 10 skipped; ruff clean.",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "DEC-29": {
+      "id": "DEC-29",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T14:43:29+00:00",
+      "updated_at": "2026-08-14T14:43:29+00:00",
+      "touched_round": 50,
+      "title": "Round 50: DedupTextSource.skip takes mode-appropriate semantics — persisted-append = raw fast-forward, in-memory = survivor-count with rebuilt seen-set (ISS-088)",
+      "rationale": "TextSource.iter_texts contract is 'skip the first skip records of this source'. Delegating to the inner source made DedupTextSource's skip mean raw records while its caller (StreamingTextDataset) counts survivors, so an in-memory checkpoint resume re-trained the consumed-window tail and the cursor kept diverging. Persisted-append mode can keep raw fast-forward because the durable seen-hashes file already covers consumed records (exact, cheap). In-memory mode has no durable seen-set: skip must count survivors and the skip window must be re-hashed so the resumed pass reproduces the pre-resume seen-set exactly (cost O(consumed prefix) re-hashing; deep resumes should use persistence).",
+      "alternatives_rejected": "1) Universal survivor-count skip: makes persisted-mode mid-corpus resume skip genuinely-new survivors (file records don't count toward skip) — output regression. 2) Track a raw-record cursor in StreamingTextDataset: needs an iter_texts protocol change for a value only the dedup wrapper knows — broader blast radius than a local skip-semantics fix. 3) Leave as-is (documented in-memory limitation): the module already warns dedup is lossy on resume, but the warning described re-processing that the cursor-misalignment actually widened; the fix makes in-memory resume exact rather than best-effort."
+    },
+    "CHG-85": {
+      "id": "CHG-85",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T14:50:13+00:00",
+      "updated_at": "2026-08-14T14:50:13+00:00",
+      "touched_round": 50,
+      "commit": "83dfc2e",
+      "title": "fix(data): dedup in-memory skip counts survivors (ISS-088)"
+    },
+    "HYP-46": {
+      "id": "HYP-46",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T14:50:54+00:00",
+      "updated_at": "2026-08-14T14:50:54+00:00",
+      "touched_round": 50,
+      "confidence": 1.0,
+      "title": "In-memory DedupTextSource.iter_texts(skip=N) misreads the streaming resume cursor as raw-record skip instead of survivor count",
+      "summary": "StreamingTextDataset's line_index counts post-dedup survivors; DedupTextSource delegated skip to the inner (raw) source, so on checkpoint resume the in-memory pass skipped fewer survivors than consumed, re-yielding the consumed-window tail as fresh data and keeping the cursor misaligned. Mitigations: persisted-append mode was already exact (durable file), and per-pass reset() bounds same-run drift."
     }
   },
   "edges": [
@@ -7819,6 +7881,30 @@
       "to": "TASK-080",
       "type": "implements",
       "created_at": "2026-08-14T13:52:41+00:00"
+    },
+    {
+      "from": "TASK-81",
+      "to": "ISS-088",
+      "type": "addresses",
+      "created_at": "2026-08-14T14:44:58+00:00"
+    },
+    {
+      "from": "CHG-85",
+      "to": "ISS-088",
+      "type": "resolves",
+      "created_at": "2026-08-14T14:50:13+00:00"
+    },
+    {
+      "from": "CHG-85",
+      "to": "TASK-81",
+      "type": "implements",
+      "created_at": "2026-08-14T14:50:13+00:00"
+    },
+    {
+      "from": "EV-114",
+      "to": "HYP-46",
+      "type": "validates",
+      "created_at": "2026-08-14T14:50:54+00:00"
     }
   ]
 }
