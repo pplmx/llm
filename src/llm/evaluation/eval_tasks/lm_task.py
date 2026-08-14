@@ -44,12 +44,18 @@ class LMTask(BaseTask):
 
     def predict(self, model, inputs: list):
         results = []
+        # Pad every batch to the GLOBAL max sequence length (not the
+        # batch-local max): the final ``torch.cat(results, dim=0)`` requires
+        # a uniform seq dim, and per-batch padding previously crashed on any
+        # input whose lengths differ across batches (the standard flow only
+        # escaped because TextDataset pre-pads to 128).
+        global_max_len = max((len(x) for x in inputs), default=0)
+        pad_id = self.pad_token_id if self.pad_token_id is not None else 0
 
         for i in range(0, len(inputs), self.batch_size):
             batch = inputs[i : i + self.batch_size]
             lengths = [len(x) for x in batch]
-            max_len = max(lengths)
-            pad_id = self.pad_token_id if self.pad_token_id is not None else 0
+            max_len = global_max_len
             padded = torch.stack(
                 [
                     torch.cat(

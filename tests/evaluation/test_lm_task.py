@@ -199,3 +199,26 @@ def test_evaluation_runner_evaluate_empty_corpus_no_crash(tmp_path):
 
     results = runner.evaluate(MockModel())
     assert results["perplexity"] == float("inf")
+
+
+def test_lm_task_predict_variable_length_batches(tmp_path):
+    """``LMTask.predict`` must handle variable-length inputs split across
+    batches. The previous per-batch ``max_len`` padding made batches differ
+    in seq dim, so the final ``torch.cat(results, dim=0)`` raised
+    ``RuntimeError: Sizes of tensors must match except in dimension 0``
+    (it only escaped today because ``TextDataset`` pre-pads to 128)."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello\n", encoding="utf-8")
+
+    task = LMTask(dataset_path=str(corpus), batch_size=2)
+
+    class MockModel:
+        def __call__(self, input_ids, attn_mask=None):
+            batch, seq = input_ids.shape
+            return torch.zeros(batch, seq, task.tokenizer.vocab_size)
+
+    inputs = [torch.tensor([1, 2, 3]), torch.tensor([4, 5, 6, 7, 8]), torch.tensor([9]), torch.tensor([10, 11])]
+    out = task.predict(MockModel(), inputs)
+
+    # Padded to the global max sequence length (5), one row per input.
+    assert out.shape == (4, 5, task.tokenizer.vocab_size)
