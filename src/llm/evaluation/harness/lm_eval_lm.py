@@ -242,6 +242,19 @@ class LlamaLmEvalLM:
             until = gen_kwargs.get("until", [])
             max_gen_toks = int(gen_kwargs.get("max_gen_toks", 64))
 
+            # lm_eval's ``handle_stop_sequences`` (models/utils.py) appends
+            # the tokenizer's EOS text to ``until`` before generation; the
+            # upstream LMs then strip stops with ``postprocess_generated_text``
+            # before returning. Do the same here, otherwise an EOS-emitting
+            # model runs to ``max_gen_toks`` and every generation answer keeps
+            # its trailing delimiter (systematically wrong exact_match/acc).
+            stops = list(until)
+            eos_id = getattr(self.tokenizer, "eos_token_id", None)
+            if eos_id is not None:
+                eos_str = self.tokenizer.decode([eos_id])
+                if eos_str and eos_str not in stops:
+                    stops.append(eos_str)
+
             ctx_ids = self._encode(context)
             generated: list[int] = []
             for _ in range(max_gen_toks):
@@ -253,11 +266,30 @@ class LlamaLmEvalLM:
                 generated.append(next_token)
                 # Stop if the suffix matches any ``until`` token sequence
                 # (id lists) or the decoded text ends with any string stop.
-                if self._matches_any_stop(generated, until):
+                if self._matches_any_stop(generated, stops):
                     break
 
-            results.append(self.tokenizer.decode(generated))
+            results.append(self._strip_stop_strings(self.tokenizer.decode(generated), stops))
         return results
+
+    @staticmethod
+    def _strip_stop_strings(text: str, stops: list) -> str:
+        """Cut ``text`` at the first occurrence of any string stop.
+
+        Mirrors lm_eval's ``postprocess_generated_text``: a generation
+        answer must not contain the stop delimiter (upstream LMs strip it
+        before returning). Token-id ``until`` entries are matched pre-decode
+        (as suffixes) and never appear as text, so only strings are
+        post-processed here.
+        """
+        if not stops:
+            return text
+        for stop in stops:
+            if isinstance(stop, str) and stop:
+                idx = text.find(stop)
+                if idx != -1:
+                    return text[:idx]
+        return text
 
     def _matches_any_stop(self, generated: list[int], until: list) -> bool:
         """Return True when ``generated`` should stop w.r.t. ``until``.

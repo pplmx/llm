@@ -531,6 +531,31 @@ def test_lm_eval_lm_generate_until_stops_on_string_until():
     assert len(out[0]) <= 2
 
 
+def test_lm_eval_lm_generate_until_strips_trailing_stop_delimiter():
+    """The returned generation must NOT retain the stop-completing token.
+    Upstream lm_eval LMs run ``postprocess_generated_text`` (cut at the
+    first stop occurrence) before returning; this adapter previously
+    returned the raw decode, so a ``until=["\\n"]`` answer ended with a
+    trailing newline and every exact_match/acc generation metric compared
+    "answer\\n" against "answer" (systematically wrong)."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
+    # id 1 decodes to char 1 ("\x01") — that IS the stop string.
+    out = lm.generate_until([_FakeRequest(("ctx", {"until": ["\x01"], "max_gen_toks": 5}))])
+    assert out == [""]
+
+
+def test_lm_eval_lm_generate_until_auto_appends_and_strips_eos():
+    """lm_eval's ``handle_stop_sequences`` appends the tokenizer's EOS text
+    to ``until``; the adapter must do the same so a model that emits EOS
+    stops (and the returned text excludes EOS)."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=9), _FakeTokenizer(), batch_size=1, max_length=64)
+    # id 9 is _FakeTokenizer.eos_token_id; decode([9]) == "\t".
+    out = lm.generate_until([_FakeRequest(("ctx", {"until": [], "max_gen_toks": 5}))])
+    assert out == [""]
+
+
 def test_lm_eval_lm_matches_any_suffix_static_helper():
     """Static helper should recognise list-based stop sequences."""
     assert LlamaLmEvalLM._matches_any_suffix([1, 2, 3], [[2, 3]]) is True
