@@ -494,7 +494,14 @@ class PPOTrainer:
 
         # Metrics
         with torch.no_grad():
-            approx_kl = ((ratio - 1) - (ratio.log())).mean()
+            # Masked means over real response tokens only: padded positions
+            # contribute ratio=1 (approx_kl contribution 0), so a plain
+            # ``.mean()`` dilutes the telemetry by real/total tokens — with
+            # heavily padded mini-batches the ``target_kl`` early-stop fires
+            # late or never (RIL ISS-090).
+            real_tokens = response_window_mask.sum().clamp(min=1)
+            approx_kl = ((ratio - 1) - ratio.log()).mul(response_window_mask).sum() / real_tokens
+            ratio_mean = (ratio * response_window_mask).sum() / real_tokens
 
         return {
             "loss": loss.item(),
@@ -504,7 +511,7 @@ class PPOTrainer:
             "kl_loss": kl_loss.item(),
             "entropy": entropy.item() if isinstance(entropy, torch.Tensor) else entropy,
             "approx_kl": approx_kl.item(),
-            "ratio_mean": ratio.mean().item(),
+            "ratio_mean": ratio_mean.item(),
         }
 
     def train_step(self, prompts: list[str]) -> dict[str, float]:

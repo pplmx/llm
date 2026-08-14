@@ -553,6 +553,118 @@ class TestPPOTrainer:
         # (masked == real-token mean, unmasked == padded mean).
         assert abs(float(masked_loss - unmasked_loss)) > 1e-9
 
+    def test_ppo_step_approx_kl_normalized_over_real_tokens(self):
+        """Regression (RIL ISS-090): ``approx_kl`` / ``ratio_mean`` telemetry
+        must be masked means over REAL response tokens, not the padded
+        ``[B, response_len]`` window.
+
+        Padded positions hold ratio==1 (zero KL contribution), so a plain
+        ``.mean()`` dilutes ``approx_kl`` by ``real/total`` — with heavily
+        padded mini-batches the ``target_kl`` early-stop fires late or never.
+        """
+        import torch
+        import torch.nn as nn
+
+        from llm.training.core.config import PPOConfig
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        class StubPolicy(nn.Module):
+            def __init__(self, vocab: int, hidden: int, out: int):
+                super().__init__()
+                self.emb = nn.Embedding(vocab, hidden)
+                self.w = nn.Linear(hidden, out)
+
+            def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+                return self.w(self.emb(input_ids))
+
+        class SimpleTokenizer:
+            def encode(self, text: str) -> list[int]:
+                return [ord(c) % 100 for c in text[:10]]
+
+            def decode(self, ids: list[int]) -> str:
+                return "".join(chr(i + 32) for i in ids)
+
+            eos_id = 0
+
+        class StubReward(nn.Module):
+            def forward(self, input_ids):
+                return torch.zeros(input_ids.shape[0], device=input_ids.device)
+
+        torch.manual_seed(0)
+        policy = StubPolicy(vocab=16, hidden=8, out=16).eval()
+        config = PPOConfig(
+            ppo_epochs=1,
+            mini_batch_size=2,
+            response_max_len=5,
+            use_ref_model=False,  # stub policy is not a DecoderModel
+            value_coef=0.0,  # skip the critic entirely
+        )
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=StubReward(),  # type: ignore[arg-type]
+            tokenizer=SimpleTokenizer(),  # type: ignore[arg-type]
+            config=config,
+            device="cpu",
+        )
+
+        buffer = RolloutBuffer(normalize_advantages=False)
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5, 6]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3, -0.2]),
+        )
+        buffer.add(
+            prompt_ids=torch.tensor([9, 8, 7]),
+            response_ids=torch.tensor([6]),
+            rewards=torch.tensor(0.5),
+            old_log_probs=torch.tensor([-0.4]),
+        )
+        buffer.compute_advantages()
+        batch = next(iter(buffer.get_batches(mini_batch_size=2, shuffle=False, device="cpu")))
+
+        # Manual reference over real response tokens (same derivation as the
+        # trainer's masked metrics).
+        input_ids = batch.input_ids
+        attention_mask = batch.attention_mask
+        response_mask = batch.response_mask
+        old_log_probs = batch.old_log_probs
+
+        with torch.no_grad():
+            shift_logits = policy(input_ids)[:, :-1, :]
+            new_log_probs = torch.log_softmax(shift_logits, dim=-1)
+            token_log_probs = torch.gather(new_log_probs, -1, input_ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+
+            new_response_log_probs = torch.zeros_like(old_log_probs)
+            mask = torch.zeros_like(old_log_probs, dtype=torch.bool)
+            for i in range(input_ids.shape[0]):
+                resp_len = int(response_mask[i].sum().long())
+                if resp_len > 0:
+                    prompt_len = int(attention_mask[i].sum().long()) - resp_len
+                    new_response_log_probs[i, :resp_len] = token_log_probs[
+                        i, prompt_len - 1 : prompt_len - 1 + resp_len
+                    ]
+                    mask[i, :resp_len] = True
+
+            ratio = (new_response_log_probs - old_log_probs).exp()
+            kls = (ratio - 1) - ratio.log()
+            ref_masked = (kls * mask).sum() / mask.sum().clamp(min=1)
+            ref_unmasked = kls.mean()
+
+        assert int(mask.sum()) == 4, "expected 3 + 1 real response tokens (padding present)"
+
+        metrics = trainer.ppo_step(batch)
+
+        assert abs(metrics["approx_kl"] - float(ref_masked)) < 1e-6, (
+            f"approx_kl must be a masked mean over real tokens: "
+            f"trainer={metrics['approx_kl']} expected={float(ref_masked)}"
+        )
+        assert abs(metrics["ratio_mean"] - float((ratio * mask).sum() / mask.sum())) < 1e-6, (
+            "ratio_mean must be a masked mean over real tokens"
+        )
+        # Padding actually dilutes the plain mean away from the masked one.
+        assert abs(float(ref_masked - ref_unmasked)) > 1e-9
+
     def test_target_kl_stops_all_ppo_epochs(self, tiny_setup):
         """Regression (RIL ISS-052): ``target_kl`` early stopping must halt
         the whole epoch loop, not just the current mini-batch loop.
