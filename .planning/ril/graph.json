@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 45,
+  "round": 46,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T04:02:37+00:00",
+  "updated_at": "2026-08-14T11:53:14+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 40,
+      "touched_round": 46,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 45,
+      "touched_round": 46,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 41,
+      "touched_round": 46,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -4898,6 +4898,306 @@
       "touched_round": 45,
       "title": "Streaming /generate holds inference_semaphore with no deadline -> stalled stream exhausts concurrency, API unresponsive",
       "severity": 0.3
+    },
+    "ISS-082": {
+      "id": "ISS-082",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-14T11:18:11+00:00",
+      "updated_at": "2026-08-14T11:21:21+00:00",
+      "touched_round": 46,
+      "title": "Chat streaming route holds inference_semaphore with no idle deadline -> stuck chat stream exhausts concurrency pool",
+      "severity": 0.7,
+      "summary": "Round 45 added a per-chunk idle timeout to /generate?stream=true but not /v1/chat/completions?stream=true, which holds the same semaphore for the stream lifetime. A stalled/misbehaving generator keeps a slot forever; with max_concurrent_requests stuck chat streams the whole API stops admitting new requests (same DoS-ish profile ISS-081 fixed for /generate).",
+      "component": null
+    },
+    "ISS-083": {
+      "id": "ISS-083",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-14T11:18:11+00:00",
+      "updated_at": "2026-08-14T11:21:21+00:00",
+      "touched_round": 46,
+      "title": "Generate stream timer status clobbered 504->200 after idle timeout (metrics mislabel)",
+      "severity": 0.3,
+      "summary": "In _stream_generator the TimeoutError branch sets t.set_status(504) then breaks, but the trailing t.set_status(200) overwrites it, so a timed-out (failed) stream is recorded in llm_request_duration_seconds under status=200.",
+      "component": null
+    },
+    "TASK-072": {
+      "id": "TASK-072",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T11:18:23+00:00",
+      "updated_at": "2026-08-14T11:21:21+00:00",
+      "touched_round": 46,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "Add per-chunk idle timeout to the chat streaming route (SSE error chunk + 504 timer) so a stalled chat stream releases the inference slot",
+      "summary": "Mirror the round-45 /generate fix: wrap each iterate_in_threadpool chunk await in asyncio.timeout(config.request_timeout); on timeout emit an SSE error chunk + [DONE], set timer status 504, and return so the happy-path footer and set_status(200) are skipped."
+    },
+    "TASK-073": {
+      "id": "TASK-073",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T11:18:23+00:00",
+      "updated_at": "2026-08-14T11:21:22+00:00",
+      "touched_round": 46,
+      "category": "test-quality",
+      "severity": 0.3,
+      "title": "Ensure generate stream timeout is recorded as status=504 not 200 in request_duration_seconds",
+      "summary": "Guard against the happy-path footer clobbering the 504 set in the TimeoutError branch; add a metrics assertion test."
+    },
+    "CHG-080": {
+      "id": "CHG-080",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:20:54+00:00",
+      "updated_at": "2026-08-14T11:20:54+00:00",
+      "touched_round": 46,
+      "commit": "f0d3150",
+      "title": "fix(serving): idle-timeout the streaming chat route; don't mislabel timed-out generate streams"
+    },
+    "EV-103": {
+      "id": "EV-103",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:21:06+00:00",
+      "updated_at": "2026-08-14T11:21:06+00:00",
+      "touched_round": 46,
+      "source": "test_chat_stream_stalled_stream_times_out_and_releases_slot",
+      "summary": "Chat stream that stops yielding > request_timeout aborts with SSE error chunk + [DONE], releases inference_semaphore, and the timer records 504 (unit RED before fix, GREEN after)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "EV-104": {
+      "id": "EV-104",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:21:06+00:00",
+      "updated_at": "2026-08-14T11:21:06+00:00",
+      "touched_round": 46,
+      "source": "test_generate_stream_timeout_records_504_status",
+      "summary": "Timed-out /generate stream is recorded as status=504 (count=1) and NOT status=200 (count=0) in llm_request_duration_seconds (RED before fix: 504-count=0)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "EV-105": {
+      "id": "EV-105",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:21:06+00:00",
+      "updated_at": "2026-08-14T11:21:06+00:00",
+      "touched_round": 46,
+      "source": "pytest tests/serving -m 'quick or slow'",
+      "summary": "Full serving suite green after both fixes (51 tests)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "ISS-084": {
+      "id": "ISS-084",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T11:51:07+00:00",
+      "updated_at": "2026-08-14T11:52:56+00:00",
+      "touched_round": 46,
+      "title": "engine.global_step not persisted -> every resume restarts the step counter",
+      "severity": 0.7,
+      "summary": "checkpoint meta.json stores only epoch/loss/best_loss and no global_step is restored; resume re-arms max_steps (a 3-step run resumes and trains 3 more), restarts the AdaLoRA prune cadence from ~init_rank over already-reduced effective rank (ValueError: un-pruning not supported), and duplicates TensorBoard/LRScheduler x-indices. Verified: test_engine_restores_global_step_on_resume RED before fix."
+    },
+    "ISS-085": {
+      "id": "ISS-085",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T11:51:07+00:00",
+      "updated_at": "2026-08-14T11:52:56+00:00",
+      "touched_round": 46,
+      "title": "Epoch avg loss deflated when max_steps truncates the final epoch",
+      "severity": 0.5,
+      "summary": "batch_count was assigned the FULL epoch length while epoch_loss accumulated only processed micro-batches, so a max_steps-truncated epoch's avg_loss divided by the wrong denominator — an artificially good metric feeds save_best / EarlyStopping / ReduceLROnPlateau. Verified: test_engine_epoch_avg_not_deflated_by_max_steps RED before fix."
+    },
+    "ISS-086": {
+      "id": "ISS-086",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T11:51:07+00:00",
+      "updated_at": "2026-08-14T11:52:56+00:00",
+      "touched_round": 46,
+      "title": "Multi-GPU PPO bypasses DDP -> gradients never all-reduce, ranks diverge silently",
+      "severity": 0.7,
+      "summary": "prepare_training unwraps engine.model to the bare module and the trainer forwards/backward run off-DDP, so no gradient all-reduce happens; each rank trains a divergent model and only rank 0's policy is checkpointed (silent correctness failure on GPU). Verified: test_ppo_policy_keeps_ddp_wrapper RED before fix."
+    },
+    "ISS-087": {
+      "id": "ISS-087",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:51:07+00:00",
+      "updated_at": "2026-08-14T11:51:07+00:00",
+      "touched_round": 46,
+      "title": "Per-rank random_split -> different train/val split on each DDP rank",
+      "severity": 0.4,
+      "summary": "split_train_val calls random_split with no generator after DistributedManager seeds RNG per rank (42+rank), so each rank trains on a partly-disjoint 90% and its val_loss is averaged over different examples — distribute-averaged val_loss/best/EarlyStopping are statistically meaningless on multi-GPU."
+    },
+    "ISS-088": {
+      "id": "ISS-088",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:51:07+00:00",
+      "updated_at": "2026-08-14T11:51:07+00:00",
+      "touched_round": 46,
+      "title": "Dedup streaming resume cursor counts survivors but replayed as raw-record skip",
+      "severity": 0.4,
+      "summary": "StreamingTextDataset.state.line_index counts post-dedup surviving records but resume passes it as skip on the raw LocalLineTextSource (which counts raw non-empty lines), so a dedup stream resume under-skips and re-yields already-trained records when write_seen_hashes=False."
+    },
+    "ISS-089": {
+      "id": "ISS-089",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:51:07+00:00",
+      "updated_at": "2026-08-14T11:51:07+00:00",
+      "touched_round": 46,
+      "title": "EarlyStopping patience resets on resume; PPO checkpoint omits callback state",
+      "severity": 0.3,
+      "summary": "EarlyStopping implements no checkpoint contributor so its wait/best reset on resume; the PPO custom-loop save (collect_extra_state(self, engine.data_module)) omits *engine.callbacks, and that collect runs under the rank==0 gate (deadlock if a streaming data module gathers collectively)."
+    },
+    "ISS-090": {
+      "id": "ISS-090",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:51:07+00:00",
+      "updated_at": "2026-08-14T11:51:07+00:00",
+      "touched_round": 46,
+      "title": "PPO approx_kl diluted by padded positions; simple-PTQ bits=4 stored as int8",
+      "severity": 0.2,
+      "summary": "approx_kl averages over the full [B,response_len] including padding where ratio==1, so target_kl early-stop fires late; QuantConfig(bits=4) computes qmax=7 but clamps into an int8 buffer, so '4-bit' yields no memory benefit."
+    },
+    "TASK-074": {
+      "id": "TASK-074",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T11:51:25+00:00",
+      "updated_at": "2026-08-14T11:52:56+00:00",
+      "touched_round": 46,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "Persist and restore engine.global_step across resume (standard + PPO loops)",
+      "summary": "Make TrainingEngine a checkpoint contributor (get/load engine.global_step), include it in the engine's collect_extra_state/load_extra_state and in PPO's custom-loop save, so max_steps budget, AdaLoRA prune cadence, and TB x-indices resume correctly."
+    },
+    "TASK-075": {
+      "id": "TASK-075",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T11:51:25+00:00",
+      "updated_at": "2026-08-14T11:52:56+00:00",
+      "touched_round": 46,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Count processed batches (not epoch length) in the epoch avg-loss denominator",
+      "summary": "In _run_epoch, batch_count += 1 per processed micro-batch instead of batch_count = num_batches, so a max_steps-truncated partial epoch divides by the real processed count."
+    },
+    "TASK-076": {
+      "id": "TASK-076",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T11:51:25+00:00",
+      "updated_at": "2026-08-14T11:52:56+00:00",
+      "touched_round": 46,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "Keep the DDP wrapper on the PPO policy so multi-GPU gradients all-reduce",
+      "summary": "prepare_training passes engine.model (wrapped) to PPOTrainer; ref/value deep-copies unwrap via _policy_base() so copies stay bare. Single-GPU behavior unchanged (world_size==1 never wraps)."
+    },
+    "CHG-081": {
+      "id": "CHG-081",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:52:42+00:00",
+      "updated_at": "2026-08-14T11:52:42+00:00",
+      "touched_round": 46,
+      "commit": "daa0f15",
+      "title": "fix(training): persist global_step on resume; fix partial-epoch avg; keep DDP on PPO policy"
+    },
+    "EV-106": {
+      "id": "EV-106",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:52:42+00:00",
+      "updated_at": "2026-08-14T11:52:42+00:00",
+      "touched_round": 46,
+      "source": "test_engine_restores_global_step_on_resume",
+      "summary": "Resumed engine restores global_step=3 + start_epoch=1 from a max_steps-capped checkpoint (RED on committed code: counter re-armed at 0)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "EV-107": {
+      "id": "EV-107",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:52:42+00:00",
+      "updated_at": "2026-08-14T11:52:42+00:00",
+      "touched_round": 46,
+      "source": "test_engine_epoch_avg_not_deflated_by_max_steps",
+      "summary": "max_steps=2 truncating a 4-batch epoch returns avg 2.0 (true mean of processed batches), not 1.0 (RED before fix)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "EV-108": {
+      "id": "EV-108",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:52:42+00:00",
+      "updated_at": "2026-08-14T11:52:42+00:00",
+      "touched_round": 46,
+      "source": "test_ppo_policy_keeps_ddp_wrapper",
+      "summary": "prepare_training hands the trainer the DDP-wrapped engine.model, not the unwrapped .module (RED before fix on committed code)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "EV-109": {
+      "id": "EV-109",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:52:42+00:00",
+      "updated_at": "2026-08-14T11:52:42+00:00",
+      "touched_round": 46,
+      "source": "pytest tests/training + tests/e2e/test_resume_training.py",
+      "summary": "Full tests/training suite (117) + e2e resume green after fixes; full repo quick suite green",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "DEC-026": {
+      "id": "DEC-026",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T11:53:14+00:00",
+      "updated_at": "2026-08-14T11:53:14+00:00",
+      "touched_round": 46,
+      "title": "Round 47: fix the training/data/export sweep (global_step persist, epoch-avg denominator, PPO DDP), defer the rest as backlog issues",
+      "rationale": "The sweep surfaced 7 concrete defects. The three strongest were fixed this round with RED->GREEN regression tests: (1) engine.global_step was never persisted so every resume re-armed max_steps and could crash AdaLoRA; (2) partial-epoch avg loss used the full-epoch denominator; (3) multi-GPU PPO unwrapped DDP so gradients never all-reduced. Findings 4-7 (per-rank random_split, dedup resume cursor, EarlyStopping persistence, PPO approx_kl/PTQ int8) are logged as active issues ISS-087..090 for later triage — the round's 3-task deep-dive budget was reached.",
+      "alternatives_rejected": "1) Persist global_step in meta.json instead of extra_state: rejected — meta.json has a documented shape used by serving/loader; the CheckpointContributor path is already plumbed through save/load. 2) Defer the PPO DDP fix: rejected — it is a silent correctness failure and the single-GPU path is byte-identical (world_size==1 never wraps), so the change is low-risk. 3) Fold ISS-087/088/089 into this round: rejected — budget is 3 tasks/round; they stay as backlog."
     }
   },
   "edges": [
@@ -7109,6 +7409,150 @@
       "to": "COMP-004",
       "type": "located_in",
       "created_at": "2026-08-14T04:02:37+00:00"
+    },
+    {
+      "from": "ISS-082",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:18:47+00:00"
+    },
+    {
+      "from": "ISS-083",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:18:47+00:00"
+    },
+    {
+      "from": "TASK-072",
+      "to": "ISS-082",
+      "type": "addresses",
+      "created_at": "2026-08-14T11:18:47+00:00"
+    },
+    {
+      "from": "TASK-073",
+      "to": "ISS-083",
+      "type": "addresses",
+      "created_at": "2026-08-14T11:18:47+00:00"
+    },
+    {
+      "from": "CHG-080",
+      "to": "ISS-082",
+      "type": "resolves",
+      "created_at": "2026-08-14T11:21:06+00:00"
+    },
+    {
+      "from": "CHG-080",
+      "to": "ISS-083",
+      "type": "resolves",
+      "created_at": "2026-08-14T11:21:06+00:00"
+    },
+    {
+      "from": "CHG-080",
+      "to": "TASK-072",
+      "type": "implements",
+      "created_at": "2026-08-14T11:21:06+00:00"
+    },
+    {
+      "from": "CHG-080",
+      "to": "TASK-073",
+      "type": "implements",
+      "created_at": "2026-08-14T11:21:06+00:00"
+    },
+    {
+      "from": "TASK-074",
+      "to": "ISS-084",
+      "type": "addresses",
+      "created_at": "2026-08-14T11:51:25+00:00"
+    },
+    {
+      "from": "TASK-075",
+      "to": "ISS-085",
+      "type": "addresses",
+      "created_at": "2026-08-14T11:51:25+00:00"
+    },
+    {
+      "from": "TASK-076",
+      "to": "ISS-086",
+      "type": "addresses",
+      "created_at": "2026-08-14T11:51:25+00:00"
+    },
+    {
+      "from": "ISS-084",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:51:25+00:00"
+    },
+    {
+      "from": "ISS-085",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:51:25+00:00"
+    },
+    {
+      "from": "ISS-086",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:51:25+00:00"
+    },
+    {
+      "from": "ISS-087",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:51:25+00:00"
+    },
+    {
+      "from": "ISS-088",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:51:25+00:00"
+    },
+    {
+      "from": "ISS-089",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:51:26+00:00"
+    },
+    {
+      "from": "ISS-090",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-14T11:51:26+00:00"
+    },
+    {
+      "from": "CHG-081",
+      "to": "ISS-084",
+      "type": "resolves",
+      "created_at": "2026-08-14T11:52:42+00:00"
+    },
+    {
+      "from": "CHG-081",
+      "to": "ISS-085",
+      "type": "resolves",
+      "created_at": "2026-08-14T11:52:42+00:00"
+    },
+    {
+      "from": "CHG-081",
+      "to": "ISS-086",
+      "type": "resolves",
+      "created_at": "2026-08-14T11:52:42+00:00"
+    },
+    {
+      "from": "CHG-081",
+      "to": "TASK-074",
+      "type": "implements",
+      "created_at": "2026-08-14T11:52:42+00:00"
+    },
+    {
+      "from": "CHG-081",
+      "to": "TASK-075",
+      "type": "implements",
+      "created_at": "2026-08-14T11:52:42+00:00"
+    },
+    {
+      "from": "CHG-081",
+      "to": "TASK-076",
+      "type": "implements",
+      "created_at": "2026-08-14T11:52:42+00:00"
     }
   ]
 }
