@@ -7,10 +7,14 @@ import pytest
 import torch.multiprocessing as mp
 
 from llm.data.datasets.streaming import StreamingTextDataset
-from llm.data.sources import LocalLineTextSource
+from llm.data.sources import DedupTextSource, LocalLineTextSource
 from llm.data.stream_state import StreamDataState
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _enc(line_tokenizer, text: str) -> list[int]:
+    return line_tokenizer.encode(text)
 
 
 def test_streaming_dataset_resumes_from_saved_state(tmp_path, line_tokenizer):
@@ -46,6 +50,51 @@ def test_streaming_dataset_resumes_from_saved_state(tmp_path, line_tokenizer):
 
     second_run = list(resumed_dataset)
     assert second_run == []
+
+
+def test_streaming_dataset_inmemory_dedup_resume_does_not_repeat_consumed_tail(tmp_path, line_tokenizer):
+    """Regression (RIL ISS-088): with in-memory dedup (the default — no
+    seen-hashes file), the streaming resume cursor counts *survivors* of the
+    dedup source. The ``iter_texts(skip=...)`` of a fresh dedup source must
+    therefore skip survivors too — otherwise a resumed pass re-processes the
+    tail of the already-consumed window as fresh data."""
+    text_file = tmp_path / "corpus.txt"
+    # survivors: xxxx, aaaa, bbbb, cccc  (2nd 'aaaa' is a duplicate)
+    text_file.write_text("xxxx\naaaa\nbbbb\naaaa\ncccc\n", encoding="utf-8")
+
+    source = DedupTextSource(LocalLineTextSource(text_file))
+    state = StreamDataState()
+    dataset = StreamingTextDataset(
+        text_source=source,
+        tokenizer=line_tokenizer,
+        max_seq_len=4,
+        rank=0,
+        world_size=1,
+        stream_data_state=state,
+    )
+
+    it = iter(dataset)
+    assert next(it)["input_ids"].tolist() == _enc(line_tokenizer, "xxxx")
+    assert next(it)["input_ids"].tolist() == _enc(line_tokenizer, "aaaa")
+    saved = state.to_dict()
+
+    # Resume on a fresh source instance (as after a process restart).
+    resumed = list(
+        StreamingTextDataset(
+            text_source=DedupTextSource(LocalLineTextSource(text_file)),
+            tokenizer=line_tokenizer,
+            max_seq_len=4,
+            rank=0,
+            world_size=1,
+            stream_data_state=StreamDataState.from_dict(saved),
+        )
+    )
+    chunks = [ch["input_ids"].tolist() for ch in resumed]
+
+    # The resumed continuation must be exactly bbbb, cccc — the 'aaaa'
+    # duplicate (a window survivor seen again after the resume point) must
+    # NOT be re-emitted; the old raw-record skip re-yielded it as fresh.
+    assert chunks == [_enc(line_tokenizer, "bbbb"), _enc(line_tokenizer, "cccc")]
 
 
 def test_streaming_module_checkpoint_roundtrip(tmp_path, monkeypatch, line_tokenizer):

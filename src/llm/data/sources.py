@@ -253,9 +253,25 @@ class DedupTextSource(TextSource):
         self._persisted = set()
 
     def iter_texts(self, skip: int = 0) -> Iterator[str]:
-        # ``skip`` is delegated to the inner source so the
-        # ``line_index`` resume semantics used by StreamingTextDataset
-        # stay consistent with non-dedup sources.
+        # The ``skip`` contract is the one StreamingTextDataset relies on
+        # for checkpoint resume: "skip the first ``skip`` records *of this
+        # source*". Two modes give it different, self-consistent meanings:
+        #
+        # * Persisted-append mode (``seen_hashes_path`` + ``write_seen_hashes``):
+        #   ``skip`` is delegated to the inner source as a **raw-record**
+        #   fast-forward. The construction-time seen-set (``_persisted``, the
+        #   durable file) already covers every consumed record, so a resume
+        #   re-examines without re-yielding and stays exact. This branch is
+        #   intentionally unchanged from the historical behavior.
+        #
+        # * In-memory mode (no file / read-only baseline): there is no durable
+        #   seen-set, so ``skip`` counts **survivors of this source** — the
+        #   records the caller already observed. The skipped survivors are
+        #   re-hashed from the start so the rebuilt seen-set matches the
+        #   pre-resume session exactly; otherwise a resumed pass re-processes
+        #   the tail of the consumed window as fresh data and the streaming
+        #   cursor (which counts survivors) diverges from the raw-record skip
+        #   (RIL ISS-088).
         #
         # Dedup is scoped to this single pass: the seen-set is seeded
         # from the construction-time ``_persisted`` snapshot (cross-run
@@ -263,15 +279,22 @@ class DedupTextSource(TextSource):
         # already persisted stay dropped, while a corpus cycle re-yields
         # everything else — without re-appending their hashes to the
         # file. Internal duplicates *within* one pass are still dropped.
-        #
-        # Performance note: the seen-hashes file is opened **once per
-        # iteration pass** rather than once per surviving record. On a
-        # web-scale pretraining corpus (tens of millions of records) the
-        # old per-record ``open()/write()/close()`` cost billions of
-        # syscalls and became a real I/O bottleneck. Each write is still
-        # immediately flushed so a checkpoint resume observed the same
-        # persisted hashes as before (durability semantics unchanged),
-        # and the handle is closed when the pass ends.
+        if self.seen_hashes_path is not None and self.write_seen_hashes:
+            return self._iter_persisted(skip)
+        return self._iter_inmemory(skip)
+
+    def _iter_persisted(self, skip: int) -> Iterator[str]:
+        """Persisted-append mode: raw-record skip + durable seen-set.
+
+        Performance note: the seen-hashes file is opened **once per
+        iteration pass** rather than once per surviving record. On a
+        web-scale pretraining corpus (tens of millions of records) the
+        old per-record ``open()/write()/close()`` cost billions of
+        syscalls and became a real I/O bottleneck. Each write is still
+        immediately flushed so a checkpoint resume observed the same
+        persisted hashes as before (durability semantics unchanged),
+        and the handle is closed when the pass ends.
+        """
         seen = set(self._persisted)
         handle = None
         try:
@@ -281,7 +304,7 @@ class DedupTextSource(TextSource):
                 if digest in seen:
                     continue
                 seen.add(digest)
-                if self.write_seen_hashes and self.seen_hashes_path is not None and digest not in self._written:
+                if self.seen_hashes_path is not None and digest not in self._written:
                     if handle is None:
                         handle = self.seen_hashes_path.open("a", encoding="utf-8")
                     handle.write(digest + "\n")
@@ -291,6 +314,31 @@ class DedupTextSource(TextSource):
         finally:
             if handle is not None:
                 handle.close()
+
+    def _iter_inmemory(self, skip: int) -> Iterator[str]:
+        """In-memory mode: survivor-count skip with a rebuilt seen-set.
+
+        ``skip`` counts the survivors this source yielded to the caller
+        before a checkpoint; the whole raw stream is walked from the start
+        so the seen-set reproduces the pre-resume session and the first
+        ``skip`` survivors are not re-yielded. This is the only way to
+        keep a checkpoint resume exact when there is no durable seen-set;
+        for very deep resumes the cost is re-hashing the already-consumed
+        prefix (steer such runs to ``seen_hashes_path`` +
+        ``write_seen_hashes=True`` for the fast-forward path).
+        """
+        seen = set(self._persisted)
+        skipped = 0
+        for text in self.inner.iter_texts():
+            normalized = self.normalize(text)
+            digest = hashlib.new(self.hash_algo, normalized.encode("utf-8")).hexdigest()
+            if digest in seen:
+                continue
+            seen.add(digest)
+            if skipped < skip:
+                skipped += 1
+                continue
+            yield text
 
     def source_fingerprint(self) -> dict[str, Any]:
         fp: dict[str, Any] = {

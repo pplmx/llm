@@ -62,15 +62,44 @@ def test_dedup_strips_leading_and_trailing_whitespace(tmp_path):
     assert deduped == ["hello"]
 
 
-def test_dedup_skip_delegates_to_inner_source(tmp_path):
+def test_dedup_skip_counts_survivors_of_this_source(tmp_path):
     path = _write(tmp_path, "skip.txt", ["a", "b", "c", "d"])
 
     deduped = list(DedupTextSource(LocalLineTextSource(path)).iter_texts(skip=2))
 
-    # skip semantics match non-dedup sources: input-record skip, so
-    # 'c' and 'd' are the ones the inner source yields, and they are
-    # unique → both come through.
+    # ``skip`` counts the records *of this source* (the deduplicated
+    # survivors the caller observes), matching the ``TextSource.iter_texts``
+    # contract ("skip the first ``skip`` records"). 'c' and 'd' come
+    # through after skipping the 2 survivors 'a' and 'b'.
     assert deduped == ["c", "d"]
+
+
+def test_dedup_inmemory_skip_counts_survivors_not_raw_records(tmp_path):
+    """In-memory dedup (no seen-hashes file): ``skip=2`` skips the first 2
+    *survivors* ('a','b'), NOT 2 raw records (which would land on 'b').
+    The streaming resume cursor counts survivors, so the two must agree
+    or a resumed pass re-processes the tail of the consumed window
+    (RIL ISS-088)."""
+    path = _write(tmp_path, "dup.txt", ["a", "a", "b", "c", "d"])
+
+    deduped = list(DedupTextSource(LocalLineTextSource(path)).iter_texts(skip=2))
+
+    assert deduped == ["c", "d"]
+
+
+def test_dedup_inmemory_skip_rebuilds_seen_set_for_resume(tmp_path):
+    """A mid-corpus resume past 2 consumed survivors ('x','a' — raw records
+    x,a,b) must not re-yield the window tail and must still drop a window
+    duplicate ('a') beyond the resume point. The resumed pass re-hashes the
+    skip window so its seen-set matches the pre-resume session exactly."""
+    path = _write(tmp_path, "res.txt", ["x", "a", "b", "a", "c"])
+
+    resumed = list(DedupTextSource(LocalLineTextSource(path)).iter_texts(skip=2))
+
+    # Survivors of the full stream: x,a,b,c. Skip x,a → [b,c]. The raw 'a'
+    # after 'b' is a duplicate of the skipped survivor 'a' and must be kept
+    # out via the rebuilt seen-set (old raw-skip behavior yielded ['b','a','c']).
+    assert resumed == ["b", "c"]
 
 
 def test_dedup_custom_normalize_function(tmp_path):
