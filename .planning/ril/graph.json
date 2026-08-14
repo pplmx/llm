@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 45,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T02:20:27+00:00",
+  "updated_at": "2026-08-14T04:02:37+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 44,
+      "touched_round": 45,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -4796,6 +4796,108 @@
       "summary": "Reproduced AcceleratorError device-side assert on 40-token prompt (max_seq_len=16) for dense+paged; add_request rejects with ValueError (router 400); PE bounds check fail-fasts for any caller",
       "result": "pass",
       "confidence": 1.0
+    },
+    "CHG-077": {
+      "id": "CHG-077",
+      "type": "change",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T04:01:01+00:00",
+      "updated_at": "2026-08-14T04:01:54+00:00",
+      "touched_round": 45,
+      "commit": "1d6d7bf",
+      "title": "fix(attn/mla): per-row last-real-query mask collapse + per-row pad filter in paged write (sweep HIGH/MEDIUM)"
+    },
+    "ISS-078": {
+      "id": "ISS-078",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T04:01:01+00:00",
+      "updated_at": "2026-08-14T04:01:54+00:00",
+      "touched_round": 45,
+      "title": "MLA _latent_attention mask collapse picks batch-max pad row -> zeros in heterogeneous batches; S_q==num_latents branch maps latents to wrong rows",
+      "severity": 0.7
+    },
+    "ISS-079": {
+      "id": "ISS-079",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T04:01:01+00:00",
+      "updated_at": "2026-08-14T04:01:54+00:00",
+      "touched_round": 45,
+      "title": "MLA _paged_kv_write appends right-padded pad K/V -> block/slot waste and inflated get_num_tokens",
+      "severity": 0.5
+    },
+    "EV-102": {
+      "id": "EV-102",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T04:01:01+00:00",
+      "updated_at": "2026-08-14T04:01:01+00:00",
+      "touched_round": 45,
+      "source": "1d6d7bf",
+      "summary": "heterogeneous decode row == isolated row (not zeros); full-mask == shared-mask ref for num_latents==S_q; paged get_num_tokens == real lengths. attn+engine+generation suites green.",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "CHG-078": {
+      "id": "CHG-078",
+      "type": "change",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T04:01:01+00:00",
+      "updated_at": "2026-08-14T04:01:54+00:00",
+      "touched_round": 45,
+      "commit": "3ee6796",
+      "title": "fix(serving): bounds-check ServingConfig numeric knobs (sweep finding)"
+    },
+    "CHG-079": {
+      "id": "CHG-079",
+      "type": "change",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T04:01:01+00:00",
+      "updated_at": "2026-08-14T04:01:54+00:00",
+      "touched_round": 45,
+      "commit": "10dfc39",
+      "title": "fix(serving): idle-timeout the streaming /generate route (sweep LOW)"
+    },
+    "DEC-025": {
+      "id": "DEC-025",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T04:01:54+00:00",
+      "updated_at": "2026-08-14T04:01:54+00:00",
+      "touched_round": 45,
+      "title": "Round 44: triage + fix the full deep-dive sweep (MLA mask/pad, config bounds, stream timeout)",
+      "rationale": "The mixed-role sweep agent (attn/api/config/peft/kv-cache/tokenization) surfaced 4 findings; all verified by reading + reproduced where possible, all fixed same-round with tests: MLA mask collapse to batch-max pad row (HIGH, silent wrong output in heterogeneous batches), MLA paged pad-token writes (MEDIUM, block waste), ServingConfig knob bounds (MEDIUM/LOW), streaming request_timeout bypass (LOW). MLA + config + API + router suites green, ruff + ty clean, commitizen clean.",
+      "alternatives_rejected": "1) Defer LOW findings: rejected - each is a bounded 1-commit fix. 2) Restructure MLA to per-row latent lengths everywhere: rejected - scope beyond the remediation; the per-row last-real mask covers the observed failure modes."
+    },
+    "ISS-080": {
+      "id": "ISS-080",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T04:02:15+00:00",
+      "updated_at": "2026-08-14T04:02:37+00:00",
+      "touched_round": 45,
+      "title": "ServingConfig numeric knobs unbounded: 0 concurrency -> Semaphore(0) 504s, block_size=0 -> div-by-zero, request_timeout<=0 -> instant timeout",
+      "severity": 0.4
+    },
+    "ISS-081": {
+      "id": "ISS-081",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T04:02:15+00:00",
+      "updated_at": "2026-08-14T04:02:37+00:00",
+      "touched_round": 45,
+      "title": "Streaming /generate holds inference_semaphore with no deadline -> stalled stream exhausts concurrency, API unresponsive",
+      "severity": 0.3
     }
   },
   "edges": [
@@ -6959,6 +7061,54 @@
       "to": "COMP-004",
       "type": "located_in",
       "created_at": "2026-08-14T00:51:34+00:00"
+    },
+    {
+      "from": "CHG-077",
+      "to": "ISS-078",
+      "type": "resolves",
+      "created_at": "2026-08-14T04:01:53+00:00"
+    },
+    {
+      "from": "CHG-077",
+      "to": "ISS-079",
+      "type": "resolves",
+      "created_at": "2026-08-14T04:01:53+00:00"
+    },
+    {
+      "from": "ISS-078",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-14T04:01:53+00:00"
+    },
+    {
+      "from": "ISS-079",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-14T04:01:53+00:00"
+    },
+    {
+      "from": "CHG-078",
+      "to": "ISS-080",
+      "type": "resolves",
+      "created_at": "2026-08-14T04:02:37+00:00"
+    },
+    {
+      "from": "CHG-079",
+      "to": "ISS-081",
+      "type": "resolves",
+      "created_at": "2026-08-14T04:02:37+00:00"
+    },
+    {
+      "from": "ISS-080",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-14T04:02:37+00:00"
+    },
+    {
+      "from": "ISS-081",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-14T04:02:37+00:00"
     }
   ]
 }
