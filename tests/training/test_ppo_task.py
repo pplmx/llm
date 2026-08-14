@@ -134,3 +134,55 @@ def test_ppo_task_honors_max_steps(tmp_path, tiny_model, monkeypatch):
     # Exactly max_steps PPO updates ran — not all 6 (and not all 3 epochs).
     assert counter.steps == 3, f"expected 3 PPO steps, got {counter.steps}"
     assert engine.global_step == 3
+
+
+@pytest.mark.quick
+def test_ppo_policy_keeps_ddp_wrapper(monkeypatch):
+    """Regression (RIL round-47): ``prepare_training`` must hand the trainer
+    the DDP-wrapped ``engine.model`` — not its unwrapped ``.module``.
+
+    With the OLD code the trainer's every forward ran on the bare module, so
+    on multi-GPU the DDP gradient all-reduce was never triggered and each
+    rank silently trained a divergent model (only rank 0's policy was ever
+    checkpointed). The policy must keep the wrapper.
+    """
+    from unittest.mock import MagicMock
+
+    import llm.training.tasks.ppo_task as ppo_module
+    from llm.training.core.config import Config
+
+    captured: dict = {}
+    recorder = MagicMock()
+
+    def fake_trainer_cls(policy_model, reward_model, tokenizer, config, device):
+        captured["policy"] = policy_model
+        captured["reward"] = reward_model
+        captured["tokenizer"] = tokenizer
+        captured["config"] = config
+        captured["device"] = device
+        return recorder
+
+    class _FakeDDP:
+        """Stand-in for DistributedDataParallel: training must receive THIS
+        object (a multi-GPU PPO run has one), never the bare ``.module``."""
+
+        def __init__(self):
+            self.module = object()
+
+    monkeypatch.setattr(ppo_module, "PPOTrainer", fake_trainer_cls)
+    monkeypatch.setattr(ppo_module, "DistributedDataParallel", _FakeDDP)
+    monkeypatch.setattr(ppo_module.PPOTask, "_load_tokenizer", lambda self: object())
+    monkeypatch.setattr(ppo_module.PPOTask, "_build_reward_model", lambda self: MagicMock())
+
+    ddp_model = _FakeDDP()
+    fake_engine = MagicMock()
+    fake_engine.device = "cpu"
+    fake_engine.model = ddp_model
+
+    task = PPOTask(Config(), MagicMock())
+    task.prepare_training(fake_engine)
+
+    assert captured["policy"] is ddp_model, "policy must keep the DDP wrapper (gradient all-reduce)"
+    assert captured["policy"] is not ddp_model.module, "policy must not be the unwrapped .module"
+    assert captured["reward"] is not None
+    assert captured["device"] == "cpu"

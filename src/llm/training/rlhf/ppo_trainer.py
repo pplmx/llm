@@ -10,6 +10,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+from torch.nn.parallel import DistributedDataParallel
 from torch.optim import AdamW
 
 from llm.models.decoder import DecoderModel
@@ -138,11 +139,23 @@ class PPOTrainer:
         if self.value_optimizer is not None and "value_optimizer" in state:
             self.value_optimizer.load_state_dict(state["value_optimizer"])
 
+    def _policy_base(self) -> nn.Module:
+        """The bare module behind a possibly DDP-wrapped policy.
+
+        ``self.policy`` keeps its ``DistributedDataParallel`` wrapper for
+        training (so gradients all-reduce on multi-GPU); read-only copies
+        (reference model, critic base) must deep-copy the *unwrapped*
+        module — deep-copying a DDP wrapper drags along its process-group
+        references and the isinstance(DecoderModel) guards below would
+        otherwise fail (RIL round-47 deep-dive).
+        """
+        return self.policy.module if isinstance(self.policy, DistributedDataParallel) else self.policy
+
     def _create_ref_model(self) -> nn.Module:
         """Create a frozen copy of the policy model."""
         import copy
 
-        ref_model = copy.deepcopy(self.policy)
+        ref_model = copy.deepcopy(self._policy_base())
         ref_model.eval()
         for param in ref_model.parameters():
             param.requires_grad = False
@@ -152,7 +165,7 @@ class PPOTrainer:
         """Create a trainable critic with the same architecture as the policy."""
         import copy
 
-        value_base = copy.deepcopy(self.policy)
+        value_base = copy.deepcopy(self._policy_base())
         if not isinstance(value_base, DecoderModel):
             raise TypeError(f"critic base must be a DecoderModel, got {type(value_base).__name__}")
         return ValueModel(value_base)

@@ -92,6 +92,33 @@ class TrainingEngine:
         self.should_stop_training = False
         self.global_step = 0
 
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        """Persist the global optimizer-step counter across a resume.
+
+        Without this, every resume restarts ``global_step`` at 0: a
+        ``max_steps`` budget re-arms and trains a fresh full run on top of
+        the completed steps, the AdaLoRA prune cadence restarts (and one
+        round later can crash a resumed run when the reduced-effective-rank
+        layers can't un-prune back up to ``init_rank``), and
+        TensorBoard/LRScheduler x-indices duplicate across the resume
+        boundary (RIL round-47 deep-dive).
+        """
+        return {"engine.global_step": self.global_step}
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        """Restore ``global_step`` from a checkpoint's merged extra_state.
+
+        Called by ``load_extra_state`` during ``_setup_components`` — after
+        ``_register_task_callbacks`` resets the counter to 0 — so the
+        restored value wins and ``max_steps`` / AdaLoRA / logging cadences
+        resume where they left off.
+        """
+        if not state:
+            return
+        restored = state.get("engine.global_step")
+        if restored is not None:
+            self.global_step = int(restored)
+
     def _run_callbacks(self, method_name: str, *args, **kwargs):
         for callback in self.callbacks:
             getattr(callback, method_name)(*args, **kwargs)
@@ -232,6 +259,7 @@ class TrainingEngine:
             )
             load_extra_state(
                 self.checkpoint_manager.loaded_extra_state,
+                self,
                 self.data_module,
                 self.task,
                 *self.callbacks,
@@ -255,6 +283,7 @@ class TrainingEngine:
                 )
                 load_extra_state(
                     self.checkpoint_manager.loaded_extra_state,
+                    self,
                     self.data_module,
                     self.task,
                     *self.callbacks,
@@ -324,7 +353,13 @@ class TrainingEngine:
                 if self.rank == 0:
                     self.logger.info(f"Reached max_steps={max_steps}; stopping training.")
                 break
-            batch_count = num_batches
+            # Count only batches actually processed. ``num_batches`` is the
+            # full-epoch length, so when ``max_steps`` truncates the last
+            # epoch mid-way the average must divide by the processed count —
+            # otherwise the partial epoch's avg_loss is deflated (which
+            # corrupts save_best / EarlyStopping / ReduceLROnPlateau, RIL
+            # round-47 deep-dive).
+            batch_count += 1
             self._run_callbacks("on_batch_start", epoch=epoch, batch_idx=batch_idx)
             batch_start_time = time.time()
             # Move batch to device
@@ -545,7 +580,7 @@ class TrainingEngine:
                 # by rank 0 holds every rank's resume cursor. Calling this only
                 # on rank 0 would drop all other shards (silent re-training
                 # from line 0 on resume) and would deadlock any collective.
-                extra_state = collect_extra_state(self.data_module, self.task, *self.callbacks)
+                extra_state = collect_extra_state(self, self.data_module, self.task, *self.callbacks)
 
                 if self.rank == 0:
                     # Save checkpoint based on validation loss if available, otherwise training loss

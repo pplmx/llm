@@ -73,6 +73,14 @@ class PPOTask(TrainingTask):
         self.ppo_trainer.load_checkpoint_state(state.get("ppo"))
 
     def _unwrap_model(self, model: nn.Module) -> nn.Module:
+        """Return the bare module behind any parallelism wrapper.
+
+        Only used for read-only copies (reward base). The *training*
+        policy keeps its ``DistributedDataParallel`` wrapper so multi-GPU
+        gradients actually all-reduce (RIL round-47 deep-dive) — pass
+        ``engine.model`` directly to the trainer, never the stripped
+        ``.module``.
+        """
         return model.module if isinstance(model, DistributedDataParallel) else model
 
     def _build_reward_model(self) -> RewardModel:
@@ -90,7 +98,13 @@ class PPOTask(TrainingTask):
 
     def prepare_training(self, engine: TrainingEngine) -> None:
         self.tokenizer = self._load_tokenizer()
-        policy = self._unwrap_model(engine.model)
+        # Keep the DDP wrapper on the policy: the trainer's forwards
+        # (rollout, PPO surrogate) go through ``self.policy`` and their
+        # backward must hit DDP's gradient all-reduce. Passing the
+        # unwrapped ``.module`` smuggles gradients past DDP, so every rank
+        # silently trains a divergent model and only rank 0's policy is
+        # ever checkpointed (RIL round-47 deep-dive).
+        policy = engine.model
         reward_model = self._build_reward_model().to(engine.device)
 
         self.ppo_trainer = PPOTrainer(
@@ -160,7 +174,7 @@ class PPOTask(TrainingTask):
                     None,
                     None,
                     avg_loss,
-                    extra_state=collect_extra_state(self, engine.data_module),
+                    extra_state=collect_extra_state(engine, self, engine.data_module),
                     model_config=engine.config.model.model_dump(),
                 )
                 engine._run_callbacks("on_save_checkpoint", epoch=epoch)

@@ -77,6 +77,94 @@ def test_engine_stops_at_max_steps(mock_config):
     assert engine.global_step == 3
 
 
+@pytest.mark.heavy
+def test_engine_restores_global_step_on_resume(tmp_path, mock_config):
+    """Regression (RIL round-47): ``global_step`` must survive a resume.
+
+    Previously every resume restarted the step counter at 0, silently
+    re-arming ``max_steps`` (a run stopped at 3 steps resumed and trained 3
+    more — and worse, an AdaLoRA resumed run could crash on the next prune
+    cadence when the budget rose above the already-reduced effective rank).
+    The resumed engine must start from the checkpointed counter.
+    """
+    mock_config.training.epochs = 5
+    mock_config.training.max_steps = 3
+    mock_config.training.run_validation = False
+    mock_config.optimization.use_compile = False
+    mock_config.checkpoint.save_interval = 1
+    mock_config.checkpoint.checkpoint_dir = str(tmp_path / "ckpt")
+    mock_config.checkpoint.resume_from_checkpoint = None
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = LanguageModelingTask(mock_config, dm)
+
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+    # SyntheticDataModule yields float activations, which the LM embedding
+    # rejects — drive the engine with a long-token loader (same as
+    # test_engine_stops_at_max_steps).
+    from torch.utils.data import DataLoader, TensorDataset
+
+    ids = torch.randint(0, mock_config.model.vocab_size, (8, 16), dtype=torch.long)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=2)
+
+    engine.run()
+    assert engine.global_step == 3
+
+    # Simulate a restart: fresh engine, same config + task, resume from the
+    # checkpoint written at the max_steps cap.
+    mock_config.checkpoint.resume_from_checkpoint = str(tmp_path / "ckpt" / "epoch_1.pt")
+    engine_resumed = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+
+    # start_epoch AND global_step must be restored (not re-armed at 0).
+    assert engine_resumed.start_epoch == 1
+    assert engine_resumed.global_step == 3, (
+        f"resumed engine must continue from step 3, got {engine_resumed.global_step} "
+        "(global_step was not persisted across resume)"
+    )
+
+
+@pytest.mark.heavy
+def test_engine_epoch_avg_not_deflated_by_max_steps(mock_config):
+    """Regression (RIL round-47): a ``max_steps`` cap that truncates the
+    final epoch must not deflate the epoch average.
+
+    Previously ``batch_count`` was set to the FULL epoch length even when
+    only some micro-batches were processed, so the partial epoch's avg_loss
+    was divided by the full denominator — corrupting save_best /
+    EarlyStopping / ReduceLROnPlateau with an artificially good metric.
+    """
+    mock_config.training.epochs = 1
+    mock_config.training.max_steps = 2  # truncate an 8-sample/4-batch epoch at 2 batches
+    mock_config.training.run_validation = False
+    mock_config.optimization.use_compile = False
+    mock_config.optimization.gradient_accumulation_steps = 1
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+
+    class _ConstLossTask(LanguageModelingTask):
+        """Deterministic 2.0 loss per batch — the average must be exactly 2.0
+        regardless of how many batches actually ran."""
+
+        def train_step(self, batch, model, criterion):
+            return torch.tensor(2.0, requires_grad=True), {"loss": 2.0}
+
+    task = _ConstLossTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+    from torch.utils.data import DataLoader, TensorDataset
+
+    ids = torch.randint(0, mock_config.model.vocab_size, (8, 16), dtype=torch.long)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=2)  # 4 batches/epoch
+    engine.val_dataloader = None
+
+    avg = engine._run_epoch(0)
+    # 2 processed batches x 2.0 / 2 processed batches == 2.0 (not 4.0/4 == 1.0).
+    assert avg == pytest.approx(2.0), f"partial-epoch average must divide by processed batch count, got {avg}"
+
+
 def test_engine_validation_empty_dataloader_skips(mock_config):
     """An empty validation split must skip validation instead of raising
     ZeroDivisionError."""
