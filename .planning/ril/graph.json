@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 50,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T15:36:44+00:00",
+  "updated_at": "2026-08-14T15:40:39+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5856,6 +5856,68 @@
       "updated_at": "2026-08-14T15:36:27+00:00",
       "touched_round": 50,
       "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
+    },
+    "ISS-102": {
+      "id": "ISS-102",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:40:38+00:00",
+      "updated_at": "2026-08-14T15:40:38+00:00",
+      "touched_round": 50,
+      "severity": 0.6,
+      "title": "LMTask.predict crashes on variable-length inputs split across batches (per-batch max_len then torch.cat)",
+      "summary": "predict padded each batch to its own max_len, so batches had different seq dims and the final torch.cat(results, dim=0) raised RuntimeError. Masked in the standard flow because TextDataset pre-pads every row to 128; reachable through the public predict(model, inputs) API with varying lengths. Fix: pad to the global max over all inputs."
+    },
+    "TASK-87": {
+      "id": "TASK-87",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:40:38+00:00",
+      "updated_at": "2026-08-14T15:40:38+00:00",
+      "touched_round": 50,
+      "category": "stability",
+      "severity": 0.6,
+      "effort": 0.5,
+      "title": "Pad LMTask.predict to global max length (ISS-102)",
+      "summary": "global_max_len computed once; all batches pad to it; torch.cat stays uniform. attn_mask branch unchanged. 1 new test; evaluation suite green."
+    },
+    "EV-120": {
+      "id": "EV-120",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:40:38+00:00",
+      "updated_at": "2026-08-14T15:40:38+00:00",
+      "touched_round": 50,
+      "source": "tests/evaluation/test_lm_task.py::test_lm_task_predict_variable_length_batches",
+      "summary": "RED: 4 inputs of len 3/5/1/2, batch_size=2 raised RuntimeError at torch.cat (seq 5 vs 2). Post-fix out.shape == (4, 5, vocab). Full eval suite green, ruff/ty clean.",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "HYP-52": {
+      "id": "HYP-52",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:40:39+00:00",
+      "updated_at": "2026-08-14T15:40:39+00:00",
+      "touched_round": 50,
+      "confidence": 1.0,
+      "title": "Per-batch padding in LMTask.predict yields non-uniform seq dims at torch.cat",
+      "summary": "Each batch padded to its own max -> cross-batch seq dim mismatch -> cat crash. Standard flow masks it via TextDataset's uniform 128 rows. Confirmed by RED RuntimeError + fix (global max padding)."
+    },
+    "CHG-91": {
+      "id": "CHG-91",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:40:39+00:00",
+      "updated_at": "2026-08-14T15:40:39+00:00",
+      "touched_round": 50,
+      "commit": "7af33d7",
+      "title": "fix(eval): LMTask.predict pads to the global max length"
     }
   },
   "edges": [
@@ -8505,6 +8567,36 @@
       "to": "COMP-013",
       "type": "located_in",
       "created_at": "2026-08-14T15:36:27+00:00"
+    },
+    {
+      "from": "CHG-91",
+      "to": "ISS-102",
+      "type": "resolves",
+      "created_at": "2026-08-14T15:40:39+00:00"
+    },
+    {
+      "from": "CHG-91",
+      "to": "TASK-87",
+      "type": "implements",
+      "created_at": "2026-08-14T15:40:39+00:00"
+    },
+    {
+      "from": "TASK-87",
+      "to": "ISS-102",
+      "type": "addresses",
+      "created_at": "2026-08-14T15:40:39+00:00"
+    },
+    {
+      "from": "ISS-102",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:40:39+00:00"
+    },
+    {
+      "from": "EV-120",
+      "to": "HYP-52",
+      "type": "validates",
+      "created_at": "2026-08-14T15:40:39+00:00"
     }
   ]
 }
