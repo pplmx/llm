@@ -95,7 +95,17 @@ class TokenizedMapDataModule(SamplerMapDataModule):
             return dataset, None
         # ``random_split`` with a list of lengths returns a ``list[Subset]``;
         # normalize to a tuple so both branches share one container type.
-        split = random_split(dataset, [train_size, val_size])
+        # Use a dedicated fixed-seed generator and NOT the global torch RNG:
+        # ``DistributedManager.setup`` seeds that RNG per rank (``42 + rank``),
+        # so consuming it here makes every GPU rank derive a *different*
+        # 90/10 partition — each rank then trains on a partly-disjoint 90% and
+        # the engine's ``reduce_mean`` of val_loss averages across ranks that
+        # computed on *different* examples, so val/best/EarlyStopping are
+        # statistically meaningless on multi-GPU (RIL ISS-087). A fixed
+        # generator also makes the partition identical across runs.
+        generator = torch.Generator()
+        generator.manual_seed(0)
+        split = random_split(dataset, [train_size, val_size], generator=generator)
         return split[0], split[1]
 
     def assign_train_val_datasets(

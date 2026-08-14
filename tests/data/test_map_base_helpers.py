@@ -88,3 +88,33 @@ def test_setup_tokenized_file_dataset_raises_when_val_path_missing(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="missing_val"):
         module.setup()
+
+
+def test_split_train_val_identical_across_ranks():
+    """All DDP ranks must derive the same 90/10 partition (RIL ISS-087).
+
+    ``DistributedManager.setup`` seeds the global torch RNG per rank
+    (``manual_seed(42 + rank)``); if ``split_train_val`` consumed it, each
+    GPU rank would split the full dataset differently — each ranks trains on
+    a partly-disjoint 90% and the engine's ``reduce_mean``d val_loss averages
+    over *different* examples. The partition must be rank-independent.
+    """
+    import torch
+    from torch.utils.data import TensorDataset
+
+    from llm.data.modules.map_base import TokenizedMapDataModule
+
+    ds = TensorDataset(torch.arange(100))
+
+    def _split():
+        train, val = TokenizedMapDataModule.split_train_val(ds, 0.9)
+        return sorted(train.indices), sorted(val.indices)
+
+    torch.manual_seed(42)  # rank 0's seeded RNG (DistributedManager.setup)
+    t0, v0 = _split()
+    torch.manual_seed(43)  # rank 1's seeded RNG (42 + 1)
+    t1, v1 = _split()
+
+    assert t0 == t1, "train partition must be identical on every DDP rank"
+    assert v0 == v1, "val partition must be identical on every DDP rank"
+    assert len(t0) + len(v0) == 100
