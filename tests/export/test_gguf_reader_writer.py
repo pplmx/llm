@@ -10,7 +10,7 @@ import torch
 
 from llm.export.gguf import GGUFReader, GGUFWriter
 from llm.export.gguf.metadata import encode_value
-from llm.export.gguf.quant import quantize_q4_0, quantize_q8_0
+from llm.export.gguf.quant import dequantize_q4_0, dequantize_q8_0, quantize_q4_0, quantize_q8_0
 from llm.export.gguf.spec import (
     GGUF_DEFAULT_ALIGNMENT,
     GGUF_HEADER_SIZE,
@@ -158,16 +158,49 @@ class TestTensorRoundTrip:
         _, scales = quantize(data.reshape(-1))
         assert np.max(np.abs(recovered - data)) <= float(np.max(scales)) + 1e-6
 
-    def test_quantized_raw_bytes_match_quantizer(self, tmp_path):
+    def test_quantized_raw_bytes_match_ggml_block_layout(self, tmp_path):
+        """Q4_0/Q8_0 on-disk payload must interleave [fp16 scale][packed data]
+        per 32-element block (ggml ``block_q4_0``/``block_q8_0`` structs:
+        18/34 bytes), NOT scales-then-data. llama.cpp casts the payload to
+        ``block_q4_0*``/``block_q8_0*`` and walks fixed-size blocks, so a
+        scales-first layout misaligns every block for the GGUF ecosystem
+        (RIL — regressed round 51)."""
+        for type_name, quantize in (("q4_0", quantize_q4_0), ("q8_0", quantize_q8_0)):
+            rng = np.random.default_rng(3)
+            data = rng.normal(size=128).astype(np.float32)
+            writer = GGUFWriter(tmp_path / f"{type_name}.gguf")
+            writer.add_tensor("w", data, ggml_type=type_name)
+            writer.write()
+
+            packed, scales = quantize(data)
+            block_data = np.ascontiguousarray(packed).reshape(-1, 32 // (2 if type_name == "q4_0" else 1))
+            expected = b"".join(
+                scales[i].astype("<f2").tobytes() + block_data[i].tobytes() for i in range(block_data.shape[0])
+            )
+            assert GGUFReader(tmp_path / f"{type_name}.gguf").read_tensor_raw("w") == expected
+
+    @pytest.mark.parametrize("type_name", ["q4_0", "q8_0"])
+    def test_gguf_block_payload_parseable_as_llamacpp(self, tmp_path, type_name):
+        """Parse the payload the way llama.cpp does — fixed-size blocks with a
+        leading fp16 scale — and confirm the floats come back. Regression: the
+        previous scales-then-data layout yielded max-err 0.999 (Q4_0) / NaN
+        (Q8_0) under this exact parse."""
         rng = np.random.default_rng(3)
-        data = rng.normal(size=128).astype(np.float32)
-        writer = GGUFWriter(tmp_path / "q.gguf")
-        writer.add_tensor("w", data, ggml_type="q4_0")
+        data = rng.normal(size=64).astype(np.float32)
+        writer = GGUFWriter(tmp_path / "m.gguf")
+        writer.add_tensor("w", data, ggml_type=type_name)
         writer.write()
 
-        packed, scales = quantize_q4_0(data)
-        expected = scales.astype("<f2").tobytes() + np.ascontiguousarray(packed).tobytes()
-        assert GGUFReader(tmp_path / "q.gguf").read_tensor_raw("w") == expected
+        raw = GGUFReader(tmp_path / "m.gguf").read_tensor_raw("w")
+        block_bytes = 2 + (32 // (2 if type_name == "q4_0" else 1))
+        blocks = [raw[i : i + block_bytes] for i in range(0, len(raw), block_bytes)]
+        scales = np.frombuffer(b"".join(b[:2] for b in blocks), "<f2").astype(np.float32)
+        body = b"".join(b[2:] for b in blocks)
+        if type_name == "q4_0":
+            recovered = dequantize_q4_0(np.frombuffer(body, np.uint8), scales, 64)
+        else:
+            recovered = dequantize_q8_0(np.frombuffer(body, np.int8), scales, 64)
+        np.testing.assert_allclose(recovered, data, atol=0.25)
 
     def test_torch_tensor_accepted(self, tmp_path):
         data = torch.arange(64, dtype=torch.float32).reshape(2, 32)

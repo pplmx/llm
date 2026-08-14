@@ -50,6 +50,27 @@ def _as_float32_array(data: Any) -> np.ndarray:
     return arr
 
 
+def _interleave_blocks(scales: np.ndarray, data: np.ndarray) -> bytes:
+    """Serialize ggml block tensors with the on-disk **interleaved** layout.
+
+    ggml stores each 32-element block as a fixed-size C struct,
+    ``[fp16 d][packed values]`` — ``block_q4_0`` is 18 bytes (2 fp16 scale +
+    16 nibble bytes), ``block_q8_0`` is 34 bytes (2 fp16 scale + 32 int8).
+    llama.cpp reads a quantized GGUF tensor by casting the whole payload to
+    ``block_q4_0*``/``block_q8_0*`` and walking blocks, so scale and data
+    must interleave **per block**. Storing all scales then all data — a
+    layout that round-trips within this repo — misaligns every block for the
+    wider GGUF ecosystem: llama.cpp reads block *k*'s scale from byte
+    ``k*18`` (inside the data region) and produces garbage weights.
+    """
+    data_per_block = data.size // scales.size
+    dtype = np.dtype([("d", "<f2"), ("qs", ("u1", data_per_block))])
+    rec = np.zeros(scales.shape[0], dtype=dtype)
+    rec["d"] = scales.astype(np.float16)
+    rec["qs"] = np.asarray(data, dtype=np.uint8).reshape(scales.shape[0], data_per_block)
+    return rec.tobytes()
+
+
 def _encode_payload(arr: np.ndarray, ttype: GGMLQuantizationType) -> bytes:
     """Serialize a flat float32 array into the GGUF payload for ``ttype``."""
     flat = arr.reshape(-1)
@@ -59,10 +80,10 @@ def _encode_payload(arr: np.ndarray, ttype: GGMLQuantizationType) -> bytes:
         return flat.astype("<f2", copy=False).tobytes()
     if ttype == GGMLQuantizationType.Q4_0:
         packed, scales = quantize_q4_0(flat)
-        return scales.astype("<f2", copy=False).tobytes() + np.ascontiguousarray(packed).tobytes()
+        return _interleave_blocks(scales, packed)
     if ttype == GGMLQuantizationType.Q8_0:
         values, scales = quantize_q8_0(flat)
-        return scales.astype("<f2", copy=False).tobytes() + np.ascontiguousarray(values).tobytes()
+        return _interleave_blocks(scales, values)
     raise GGUFError(f"unsupported GGML tensor type {ttype.name}")  # pragma: no cover
 
 

@@ -168,8 +168,15 @@ class GGUFReader:
 
         numel = math.prod(info.shape)
         block_count = numel // GGML_BLOCK_SIZE
-        scales = np.frombuffer(raw[: 2 * block_count], dtype="<f2").astype(np.float32)
-        body = raw[2 * block_count :]
+        # ggml block layout is interleaved per 32-element block: a 2-byte
+        # fp16 scale followed by the packed values (16 bytes for Q4_0, 32
+        # for Q8_0). llama.cpp / gguf-py emit and read this layout; the
+        # reader must de-interleave it back into per-block scales + body.
+        data_per_block = GGML_BLOCK_SIZE // 2 if info.ggml_type == GGMLQuantizationType.Q4_0 else GGML_BLOCK_SIZE
+        block_bytes = 2 + data_per_block
+        buf = np.frombuffer(raw, dtype=np.uint8).reshape(block_count, block_bytes)
+        scales = np.frombuffer(buf[:, :2].reshape(-1).tobytes(), dtype="<f2").astype(np.float32)
+        body = buf[:, 2:].reshape(-1).tobytes()
         if info.ggml_type == GGMLQuantizationType.Q4_0:
             return dequantize_q4_0(np.frombuffer(body, dtype=np.uint8), scales, numel).reshape(info.shape)
         if info.ggml_type == GGMLQuantizationType.Q8_0:
