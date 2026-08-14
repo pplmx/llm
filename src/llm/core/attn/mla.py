@@ -171,12 +171,25 @@ class MultiLatentAttention(nn.Module):
 
         # Reshape the MHA-style mask ``[B, 1, S_q, S_k]`` into the latent
         # attention's mask ``[B, 1, num_latents, S_k]``. The latent queries
-        # share the same key-visibility mask — take the last position's mask
-        # (the "current token" view) and broadcast.
+        # are static parameters representing the "current token", so they all
+        # share ONE key-visibility mask per row: the mask of that row's LAST
+        # REAL query position.
+        #
+        # Under continuous batching S_q is the batch-max query length and
+        # shorter rows (decode, or a shorter prefill) are right-padded with
+        # all-masked rows. Collapsing to the batch-max last row
+        # (``attn_mask[:, :, -1:, :]``) picked a pad row for those elements
+        # — SDPA returned zeros for their latent attention (silent wrong
+        # output modulo bias). A row is "real" iff it can see at least one
+        # key (at least one False in True=masked convention); row 0 of a
+        # decode row is always real.
         if attn_mask is not None:
-            if attn_mask.shape[2] != self.num_latents:
-                attn_mask = attn_mask[:, :, -1:, :]
-            attn_mask = attn_mask.expand(-1, -1, self.num_latents, -1)
+            flat = attn_mask[:, 0]  # [B, S_q, S_k]
+            row_has_visible = ~flat.all(dim=-1)  # [B, S_q]
+            q_idx = torch.arange(flat.shape[1], device=flat.device)
+            last_real = (q_idx.unsqueeze(0) * row_has_visible).max(dim=-1).values  # [B]
+            view = flat[torch.arange(flat.shape[0], device=flat.device), last_real]  # [B, S_k]
+            attn_mask = view.unsqueeze(1).unsqueeze(1).expand(-1, 1, self.num_latents, -1)
 
         # Compute attention with conditional dropout during training
         latent_output = sdpa(
@@ -270,6 +283,11 @@ class MultiLatentAttention(nn.Module):
             # mask's k-axis when the engine's running sequences are
             # short.
             target_seq_len = attn_mask.shape[-1] if attn_mask is not None else None
+            # Per-row REAL query-token counts, same derivation as MHA's paged
+            # write: the causal mask's column-0 visibility run. Prevents pad
+            # (right-padded) positions from being appended into the paged
+            # cache and inflating the block tables.
+            lengths = (~attn_mask[:, 0, :, 0]).sum(dim=-1) if attn_mask is not None else None
             k, v = self._paged_kv_write(
                 k=k,
                 v=v,
@@ -277,6 +295,7 @@ class MultiLatentAttention(nn.Module):
                 batch_indices=batch_indices,
                 layer_idx=layer_idx,
                 target_seq_len=target_seq_len,
+                lengths=lengths,
             )
         elif kv_cache is not None:
             k, v = self._linear_kv_write(
@@ -401,6 +420,7 @@ class MultiLatentAttention(nn.Module):
         batch_indices: Tensor | None,
         layer_idx: int | None,
         target_seq_len: int | None = None,
+        lengths: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Write the new K, V into the paged cache and return the cached K, V slice.
 
@@ -433,12 +453,23 @@ class MultiLatentAttention(nn.Module):
         # Per-row write into the paged cache. ``PagedKVCache.update``
         # expects ``[B, T, N_kv, D]`` (it transposes internally), so
         # transpose our ``[B, N_kv, T, D]`` k/v to match.
+        #
+        # Only each row's REAL tokens may be appended: continuous batching
+        # right-pads the batch to the batch-max query length, and writing the
+        # pad positions would (a) store garbage pad K/V that later extends the
+        # block table and inflates ``get_num_tokens``, and (b) let short-lived
+        # sequences swallow the whole block pool. ``lengths`` is the per-row
+        # real query-token count derived from the causal mask's column-0
+        # visibility run (same convention as MHA's paged write).
         seq_ids = batch_indices.tolist()
+        if lengths is None:
+            lengths = torch.tensor([k.shape[2]] * len(seq_ids), device=k.device)
         for b, seq_id in enumerate(seq_ids):
+            n = int(lengths[b])
             paged_kv_cache.update(
                 seq_id=int(seq_id),
-                k_new=k[b : b + 1].transpose(1, 2),
-                v_new=v[b : b + 1].transpose(1, 2),
+                k_new=k[b : b + 1, :, :n].transpose(1, 2),
+                v_new=v[b : b + 1, :, :n].transpose(1, 2),
                 layer_idx=layer_idx,
             )
 

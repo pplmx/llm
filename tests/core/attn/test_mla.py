@@ -478,3 +478,116 @@ def test_mla_paged_kv_cache_decode_step_appends_block():
     mla(decode, paged_kv_cache=paged, layer_idx=0, batch_indices=seq_ids)
     assert paged.get_block_table(seq_id) == blocks_after_prefill
     assert paged.block_manager.get_num_tokens(seq_id) == 6
+
+
+def test_mla_latent_attention_heterogeneous_mask_uses_last_real_query_row():
+    """Sweep HIGH: in a heterogeneous continuous-batching batch the engine's
+    mask has q_len = the batch-max query length, with shorter rows (decode /
+    shorter prefill) right-padded by all-masked rows. The old collapse
+    ``attn_mask[:, :, -1:, :]`` took the LAST q_len row — a fully-masked pad
+    row for those elements — so SDPA returned ZEROS for their latent
+    attention (output depends only on bias: silent wrong tokens). The
+    collapse must use each row's LAST REAL query row (the "current token"
+    view the latents represent).
+    """
+    mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16).to(DEFAULT_DEVICE)
+    mla.eval()
+
+    batch, q_len, k_len = 2, 4, 8
+    k = torch.randn(batch, 8, k_len, 8, device=DEFAULT_DEVICE)
+    v = torch.randn(batch, 8, k_len, 8, device=DEFAULT_DEVICE)
+
+    # Row 0: a 4-token prefill (real rows 0..3, causal). Row 1: a decode row
+    # whose ONLY real query is at position 6 (row 0); rows 1..3 are padding
+    # and stay fully masked (all-True).
+    col = torch.arange(k_len, device=DEFAULT_DEVICE).view(1, 1, 1, -1)
+    qpos = torch.arange(q_len, device=DEFAULT_DEVICE).view(1, 1, -1, 1)
+    mask = torch.ones(batch, 1, q_len, k_len, dtype=torch.bool, device=DEFAULT_DEVICE)
+    mask[0, 0] = col > qpos  # causal for the prefill row
+    mask[1, 0, 0, :] = col[0, 0, 0, :] > 6  # decode row's single real query
+
+    out = mla._latent_attention(k, v, batch, mask, is_causal=False)
+    assert out.shape == (batch, mla.num_latents, 64)
+    # The decode row must NOT collapse to zeros.
+    assert not torch.allclose(out[1], torch.zeros_like(out[1]), atol=1e-6), (
+        "padded decode row's latent attention collapsed to zeros (wrong mask row)"
+    )
+    # Heterogeneous batch == isolated batch for the affected row.
+    out_iso = mla._latent_attention(k[1:2], v[1:2], 1, mask[1:2], is_causal=False)
+    assert torch.allclose(out[1], out_iso[0], atol=1e-5), (
+        "heterogeneous-batch result must match the isolated-row result"
+    )
+
+
+def test_mla_latent_attention_mask_length_equals_num_latents_is_still_consistent():
+    """Sweep HIGH (== branch): when q_len happens to equal num_latents the old
+    code used the mask UN-collapsed, mapping each static latent query to a
+    DIFFERENT q_len row (the i-th latent attended over row i instead of the
+    shared 'current token' mask). The latents all share one key-visibility
+    mask regardless of ``num_latents``, so the full-mask result must equal
+    the pre-collapsed single-row-mask reference (note: outputs differ per
+    latent because each latent has its own learned query — only the key
+    visibility is shared).
+    """
+    mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=6).to(DEFAULT_DEVICE)
+    mla.eval()
+    q_len = k_len = 6
+    batch = 1
+    k = torch.randn(batch, 8, k_len, 8, device=DEFAULT_DEVICE)
+    v = torch.randn(batch, 8, k_len, 8, device=DEFAULT_DEVICE)
+    col = torch.arange(k_len, device=DEFAULT_DEVICE).view(1, 1, 1, -1)
+    qpos = torch.arange(q_len, device=DEFAULT_DEVICE).view(1, 1, -1, 1)
+    mask = (col > qpos).to(DEFAULT_DEVICE).bool().expand(batch, 1, q_len, k_len)
+
+    out = mla._latent_attention(k, v, batch, mask, is_causal=False)
+    # Reference: the canonical behavior is the last row's mask applied to all
+    # num_latents latents (the pre-collapsed [B,1,1,k_len] form).
+    ref = mla._latent_attention(k, v, batch, mask[:, :, -1:, :], is_causal=False)
+    assert torch.allclose(out, ref, atol=1e-5), (
+        "full-mask result differs from the shared-single-row-mask reference "
+        "(latents were mapped to distinct q_len rows)"
+    )
+
+
+def test_mla_paged_kv_write_filters_right_padded_tokens():
+    """Sweep MEDIUM: ``_paged_kv_write`` must append only each sequence's
+    REAL tokens into the paged cache. The engine's batch is right-padded to
+    the batch-max query length, so writing the whole padded slice per row
+    appends pad-token K/V — each pad consumes a KV block slot, inflates
+    ``get_num_tokens``, and can swallow the whole block pool for short-lived
+    sequences. Mirror MHA's per-row real-length filtering (the causal mask's
+    column-0 visibility run).
+    """
+    from llm.core.paged_attention.paged_kv_cache import PagedKVCache
+
+    mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16).to(DEFAULT_DEVICE)
+    mla.eval()
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=8,
+        head_dim=8,
+        num_blocks=16,
+        block_size=4,
+        device=_DEVICE_STR,
+        dtype=torch.float32,
+    )
+    batch, q_len, k_len = 2, 4, 8
+    k = torch.randn(batch, 8, q_len, 8, device=DEFAULT_DEVICE)
+    v = torch.randn(batch, 8, q_len, 8, device=DEFAULT_DEVICE)
+    batch_indices = torch.tensor([0, 1], device=DEFAULT_DEVICE)
+
+    col = torch.arange(k_len, device=DEFAULT_DEVICE).view(1, 1, 1, -1)
+    qpos = torch.arange(q_len, device=DEFAULT_DEVICE).view(1, 1, -1, 1)
+    mask = torch.ones(batch, 1, q_len, k_len, dtype=torch.bool, device=DEFAULT_DEVICE)
+    mask[0, 0] = col > qpos  # prefill row: 4 real query rows
+    mask[1, 0, 0, :] = col[0, 0, 0, :] > 6  # decode row: 1 real query row
+    lengths = (~mask[:, 0, :, 0]).sum(dim=-1)  # [4, 1]
+
+    mla._paged_kv_write(k, v, cache, batch_indices, layer_idx=0, target_seq_len=k_len, lengths=lengths)
+    # Only the real tokens may be stored per sequence.
+    assert cache.block_manager.get_num_tokens(0) == int(lengths[0]), (
+        f"prefill row stored {cache.block_manager.get_num_tokens(0)} tokens, expected {lengths[0]}"
+    )
+    assert cache.block_manager.get_num_tokens(1) == int(lengths[1]), (
+        f"decode row stored {cache.block_manager.get_num_tokens(1)} tokens, expected {lengths[1]}"
+    )
