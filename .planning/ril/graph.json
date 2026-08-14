@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 50,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T15:10:07+00:00",
+  "updated_at": "2026-08-14T15:25:27+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4218,7 +4218,7 @@
       "version": 1,
       "created_at": "2026-08-13T07:38:08+00:00",
       "updated_at": "2026-08-13T07:38:08+00:00",
-      "touched_round": 41,
+      "touched_round": 50,
       "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
     },
     "CHG-065": {
@@ -5602,6 +5602,164 @@
       "touched_round": 50,
       "commit": "2da659d",
       "title": "fix(quant): fail-fast guard for 4-bit per-channel odd weight count (ISS-95)"
+    },
+    "ISS-96": {
+      "id": "ISS-96",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:23:28+00:00",
+      "updated_at": "2026-08-14T15:23:28+00:00",
+      "touched_round": 50,
+      "severity": 0.7,
+      "title": "eager stream_generate/batch_generate ignore tokenizer EOS and decode junk past it",
+      "summary": "Neither eager loop consulted eos_token_id; with a real EOS (HF-backed BaseTokenizer) the model emitted <eos> then max_new_tokens of trailing junk, and generate() returned the post-EOS text verbatim. Speculative already halts, so eager violated the same intended contract. Tokenizers without eos_token_id (SimpleCharacterTokenizer, StubTokenizer) unaffected."
+    },
+    "TASK-84": {
+      "id": "TASK-84",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:23:28+00:00",
+      "updated_at": "2026-08-14T15:23:28+00:00",
+      "touched_round": 50,
+      "category": "correctness",
+      "severity": 0.7,
+      "effort": 1.0,
+      "title": "Halt eager decode at EOS and exclude the EOS token from output (ISS-96)",
+      "summary": "stream_generate returns at EOS (flushing buffered stop-prefix text); batch_generate truncates each sequence at its first EOS before both decode paths. 3 new tests (stream halt+exclude, stream buffer flush on EOS, batch halt+exclude); generation+serving suites green."
+    },
+    "EV-117": {
+      "id": "EV-117",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:23:28+00:00",
+      "updated_at": "2026-08-14T15:23:28+00:00",
+      "touched_round": 50,
+      "source": "tests/generation/test_eager.py::test_stream_generate_halts_on_eos_and_excludes_it,test_stream_generate_eos_flushes_stop_buffer,test_batch_generate_halts_on_eos_and_excludes_it",
+      "summary": "RED before fix: batch returned 'bbbff' (continued past EOS id 5 -> 'f'), stream 'bb' tests produced EOS junk; after fix outputs are 'bb'/'bb'/'bbb' with EOS omitted. Full eager suite + generation/serving green; ruff/ty clean.",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "DEC-32": {
+      "id": "DEC-32",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:23:28+00:00",
+      "updated_at": "2026-08-14T15:23:28+00:00",
+      "touched_round": 50,
+      "title": "Round 52: eager decode gains EOS halting (exclude EOS from output); sliding-window mask uses absolute query positions; speculative EOS-text-inclusion noted as cosmetic backlog",
+      "rationale": "EOS is the model's own end signal; the eager and speculative backends should agree that generation halts there. Excluding the EOS token follows standard LLM serving semantics (HF EosTokenCriteria, vLLM). The sdpa window mask must be computed in absolute positions because a KV-cache decode query sits at Sk-1 while its block-local row index is 0 — the relative mask attended the oldest keys.",
+      "alternatives_rejected": "Include EOS in output (matches speculative today): rejected for a cleaner contract, and noted as a low-priority cosmetic inconsistency to reconcile later. For sliding window: pass per-row position_ids through sdpa instead of deriving Sk-Sq: larger API surface; Sk-Sq is exact for the sequential KV-cache path that windowed decode actually runs."
+    },
+    "ISS-98": {
+      "id": "ISS-98",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:23:28+00:00",
+      "updated_at": "2026-08-14T15:23:28+00:00",
+      "touched_round": 50,
+      "severity": 0.2,
+      "title": "speculative backend yields the EOS token's decoded text (then halts) while eager excludes it",
+      "summary": "speculative.py appends a sampled EOS to generated_ids and yields its decoded chunk before returning; eager (ISS-96) excludes EOS. Cosmetic output inconsistency between backends when a tokenizer has eos_token_id; reconcile in a future round (decide+test a single EOS-output contract)."
+    },
+    "ISS-97": {
+      "id": "ISS-97",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:24:07+00:00",
+      "updated_at": "2026-08-14T15:24:07+00:00",
+      "touched_round": 50,
+      "severity": 0.7,
+      "title": "sliding-window attention decode attends the OLDEST window_size keys (relative-query vs absolute-key mask)",
+      "summary": "sdpa built window_mask with row_idx = arange(Sq) (block-relative) against col_idx = arange(Sk) (absolute). Prefill (Sq==Sk) is fine, but a KV-cache decode step (Sq=1, token at absolute Sk-1) kept keys [0, window) — the oldest — and masked the recent ones, so a windowed (Mistral-style) model decoded long prompts against stale context every step."
+    },
+    "TASK-85": {
+      "id": "TASK-85",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:24:07+00:00",
+      "updated_at": "2026-08-14T15:24:07+00:00",
+      "touched_round": 50,
+      "category": "correctness",
+      "severity": 0.7,
+      "effort": 1.0,
+      "title": "Compute sliding-window mask in absolute query positions (ISS-97)",
+      "summary": "row_offset = max(0, seq_len_k - seq_len_q); query rows carry absolute positions [Sk-Sq, Sk). Prefill unchanged; decode now keeps the window before the current position. 2 new sdpa-level tests (decode recent-window mean 17.0 vs buggy 2.0; prefill preserved); core attention/cache suites green."
+    },
+    "EV-118": {
+      "id": "EV-118",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:24:07+00:00",
+      "updated_at": "2026-08-14T15:24:07+00:00",
+      "touched_round": 50,
+      "source": "tests/core/test_sliding_window_attn.py::TestSDPAWindowingDecode::test_decode_attends_recent_window_not_oldest,test_prefill_window_still_keeps_recent",
+      "summary": "RED: decode window over 20 keys, current pos 19, window 4 returned mean 2.0 (oldest keys 0..4) instead of 17.0 (keys 15..19). Post-fix 17.0 and prefill rows unchanged. Core attention/cache suites green; ruff/ty clean.",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "HYP-49": {
+      "id": "HYP-49",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:24:07+00:00",
+      "updated_at": "2026-08-14T15:24:07+00:00",
+      "touched_round": 50,
+      "confidence": 1.0,
+      "title": "Eager generation never halts at the model's EOS token",
+      "summary": "Both eager loops lack any eos_token_id check (speculative has one), so EOS is just another sampled token. Verified via 3 RED tests; fixed by explicit halting. Note: reported 'SyntaxError' claims for sampling.py/mlp.py comma-except were REFUTED — Python 3.14 permits it (import verified); do not re-open."
+    },
+    "HYP-50": {
+      "id": "HYP-50",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:24:19+00:00",
+      "updated_at": "2026-08-14T15:24:19+00:00",
+      "touched_round": 50,
+      "confidence": 1.0,
+      "title": "During KV-cache decode the sliding-window mask uses block-relative query rows against absolute key columns",
+      "summary": "sdpa used arange(Sq) for rows and arange(Sk) for columns; prefill coincides (both from 0) so tests only exercising prefill passed. A decode step's current token sits at absolute Sk-1, so the relative mask kept the oldest window. Confirmed by sdpa-level RED (2.0 vs 17.0), fixed with row_offset = Sk - Sq."
+    },
+    "CHG-88": {
+      "id": "CHG-88",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:24:19+00:00",
+      "updated_at": "2026-08-14T15:24:19+00:00",
+      "touched_round": 50,
+      "commit": 8648134,
+      "title": "fix(generation): eager decode halts on tokenizer EOS (no junk tail)"
+    },
+    "CHG-89": {
+      "id": "CHG-89",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:24:19+00:00",
+      "updated_at": "2026-08-14T15:24:19+00:00",
+      "touched_round": 50,
+      "commit": "8fa213c",
+      "title": "fix(attn): sliding-window mask uses absolute query positions during decode"
+    },
+    "COMP-012": {
+      "id": "COMP-012",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:25:12+00:00",
+      "updated_at": "2026-08-14T15:25:12+00:00",
+      "touched_round": 50,
+      "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     }
   },
   "edges": [
@@ -8131,6 +8289,84 @@
       "to": "TASK-83",
       "type": "implements",
       "created_at": "2026-08-14T15:10:07+00:00"
+    },
+    {
+      "from": "EV-117",
+      "to": "HYP-49",
+      "type": "validates",
+      "created_at": "2026-08-14T15:24:19+00:00"
+    },
+    {
+      "from": "EV-118",
+      "to": "HYP-50",
+      "type": "validates",
+      "created_at": "2026-08-14T15:24:19+00:00"
+    },
+    {
+      "from": "CHG-88",
+      "to": "ISS-96",
+      "type": "resolves",
+      "created_at": "2026-08-14T15:24:55+00:00"
+    },
+    {
+      "from": "CHG-88",
+      "to": "TASK-84",
+      "type": "implements",
+      "created_at": "2026-08-14T15:24:55+00:00"
+    },
+    {
+      "from": "TASK-84",
+      "to": "ISS-96",
+      "type": "addresses",
+      "created_at": "2026-08-14T15:24:55+00:00"
+    },
+    {
+      "from": "ISS-96",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:24:55+00:00"
+    },
+    {
+      "from": "CHG-89",
+      "to": "ISS-97",
+      "type": "resolves",
+      "created_at": "2026-08-14T15:24:55+00:00"
+    },
+    {
+      "from": "CHG-89",
+      "to": "TASK-85",
+      "type": "implements",
+      "created_at": "2026-08-14T15:24:55+00:00"
+    },
+    {
+      "from": "TASK-85",
+      "to": "ISS-97",
+      "type": "addresses",
+      "created_at": "2026-08-14T15:24:55+00:00"
+    },
+    {
+      "from": "ISS-97",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:24:55+00:00"
+    },
+    {
+      "from": "ISS-96",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:25:12+00:00"
+    },
+    {
+      "from": "ISS-97",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:25:13+00:00"
+    },
+    {
+      "from": "ISS-98",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:25:27+00:00"
     }
   ]
 }
