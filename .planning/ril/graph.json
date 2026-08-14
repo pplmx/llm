@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 50,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T14:59:26+00:00",
+  "updated_at": "2026-08-14T15:10:07+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -21,7 +21,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 36,
+      "touched_round": 50,
       "title": "Quantization (src/llm/quantization: GPTQ/AWQ/SmoothQuant/PTQ)"
     },
     "COMP-003": {
@@ -5516,6 +5516,92 @@
       "confidence": 1.0,
       "title": "The repo's self-consistent scales-then-data GGUF block layout diverges from ggml's block-interleaved struct layout",
       "summary": "Writer/reader share the same (wrong) layout so repo round-trips pass, but llama.cpp walks block_q4_0/block_q8_0 structs ([fp16 d][packed]) so external reads misalign. Confirmed empirically by parsing the repo's own export the llama.cpp way (Q4_0 err 0.999 / Q8_0 NaN) and by byte-equality after the interleaved fix."
+    },
+    "ISS-95": {
+      "id": "ISS-95",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T15:06:22+00:00",
+      "updated_at": "2026-08-14T15:06:34+00:00",
+      "touched_round": 50,
+      "severity": 0.5,
+      "title": "GPTQ/AWQ bits=4 + group_size=-1 crashes on odd total weight count via late _pack_4bit ValueError",
+      "summary": "Quantize pipeline reaches _pack_4bit only after Hessian accumulation / scale search; with bits=4 & group_size=-1 (a legal GPTQConfig combination) and an odd total weight count (e.g. nn.Linear(33,33) -> 1089), the pack step raised ValueError mid-way. Loud but confusing; guards added up front in GPTQQuantizer.__init__ and _pack_weights."
+    },
+    "TASK-83": {
+      "id": "TASK-83",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:06:22+00:00",
+      "updated_at": "2026-08-14T15:06:22+00:00",
+      "touched_round": 50,
+      "category": "correctness",
+      "severity": 0.5,
+      "effort": 0.5,
+      "title": "Fail-fast guard for 4-bit per-channel odd total weight count (ISS-95)",
+      "summary": "GPTQQuantizer.__init__ and AWQ _pack_weights reject bits=4 & group_size=-1 when out_features*in_features is odd, before expensive quantization work; even-count per-channel 4-bit stays valid. 5 new tests; quantization suite green; ruff/ty clean."
+    },
+    "EV-116": {
+      "id": "EV-116",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:06:22+00:00",
+      "updated_at": "2026-08-14T15:06:22+00:00",
+      "touched_round": 50,
+      "source": "tests/quantization/test_gptq_end_to_end.py::test_gptq_per_channel_4bit_rejects_odd_total_weights,test_gptq_per_channel_4bit_even_total_succeeds; tests/quantization/test_awq_end_to_end.py::test_awq_per_channel_4bit_rejects_odd_total_weights",
+      "summary": "nn.Linear(33,33) + GPTQConfig(bits=4, group_size=-1) raises 'even total weight count' at quantization start; nn.Linear(32,32) same config quantizes to GPTQQuantizedLinear. AWQ _pack_weights(randn(3,3)) raised; even path end-to-end green.",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "DEC-31": {
+      "id": "DEC-31",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:06:22+00:00",
+      "updated_at": "2026-08-14T15:06:22+00:00",
+      "touched_round": 50,
+      "title": "Round 51: reject 4-bit per-channel odd weight counts up front rather than mid-pipeline (ISS-95); log compute_model_size 4-bit param undercount as ISS-94 backlog",
+      "rationale": "A legal config combination must fail with a clear pre-condition error before expensive work (matching the existing group-size divisibility guard), not a deep _pack_4bit ValueError after Hessian accumulation. compute_model_size reports packed.numel() as total_params: for bits=4 that halves the true weight count (2 weights per int8), though total_bytes is correct; it is reporting-only with no runtime effect so it is tracked as ISS-94 backlog rather than fixed this round.",
+      "alternatives_rejected": "Pad the odd trailing weight: rejected — changes the packed weight layout and requires layer-level bookkeeping, disproportionate for a reference path that can just reject. Compute params as packed.numel()*2 for 4-bit: deferred to ISS-94 (needs per-layer bits knowledge and a decision on what 'params' means for pack formats)."
+    },
+    "ISS-94": {
+      "id": "ISS-94",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:06:22+00:00",
+      "updated_at": "2026-08-14T15:06:22+00:00",
+      "touched_round": 50,
+      "severity": 0.3,
+      "title": "compute_model_size reports total_params at half the true count for 4-bit GPTQ/AWQ (packed.numel counts bytes, not weights)",
+      "summary": "compute_model_size(ptq.py) sums packed_attr.numel() into total_params; for bits=4 each int8 stores two weights so params is ~2x undercounted (total_bytes is correct — actual packed storage). Reporting-only, no runtime effect; needs per-layer bits handling + a documented definition of 'params' for pack formats."
+    },
+    "HYP-48": {
+      "id": "HYP-48",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-14T15:06:59+00:00",
+      "updated_at": "2026-08-14T15:06:59+00:00",
+      "touched_round": 50,
+      "confidence": 1.0,
+      "title": "Out-of-range configs crash deep in quantization packing because legality checks live only at the pack step",
+      "summary": "GPTQConfig(bits=4, group_size=-1) is legal but _pack_4bit's even-count requirement is enforced only inside _pack_4bit, reached after Hessian accumulation; the fix adds an up-front constructor guard mirroring the group-size divisibility precedent. EV-116 verifies rejection at quantization start and that even-count 4-bit per-channel still works."
+    },
+    "CHG-87": {
+      "id": "CHG-87",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T15:10:07+00:00",
+      "updated_at": "2026-08-14T15:10:07+00:00",
+      "touched_round": 50,
+      "commit": "2da659d",
+      "title": "fix(quant): fail-fast guard for 4-bit per-channel odd weight count (ISS-95)"
     }
   },
   "edges": [
@@ -8009,6 +8095,42 @@
       "to": "HYP-47",
       "type": "validates",
       "created_at": "2026-08-14T14:59:26+00:00"
+    },
+    {
+      "from": "ISS-95",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:06:34+00:00"
+    },
+    {
+      "from": "TASK-83",
+      "to": "ISS-95",
+      "type": "addresses",
+      "created_at": "2026-08-14T15:06:35+00:00"
+    },
+    {
+      "from": "ISS-94",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-14T15:06:35+00:00"
+    },
+    {
+      "from": "EV-116",
+      "to": "HYP-48",
+      "type": "validates",
+      "created_at": "2026-08-14T15:06:59+00:00"
+    },
+    {
+      "from": "CHG-87",
+      "to": "ISS-95",
+      "type": "resolves",
+      "created_at": "2026-08-14T15:10:07+00:00"
+    },
+    {
+      "from": "CHG-87",
+      "to": "TASK-83",
+      "type": "implements",
+      "created_at": "2026-08-14T15:10:07+00:00"
     }
   ]
 }
