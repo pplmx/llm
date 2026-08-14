@@ -187,6 +187,7 @@ class EarlyStopping(Callback):
         self.stopped_epoch = 0
         self.best_value = None
         self.mode = mode
+        self._resumed = False
         self._check_mode()
 
     def _check_mode(self):
@@ -204,10 +205,46 @@ class EarlyStopping(Callback):
             else:
                 self.monitor_op = operator.gt
 
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        """Persist the patience counter and best value across a resume.
+
+        Without this the patience counter restarts from scratch on every
+        resume: a run that had almost exhausted its patience keeps training
+        full epochs instead of stopping soon (RIL ISS-089).
+        """
+        return {
+            "early_stopping": {
+                "wait": self.wait,
+                "stopped_epoch": self.stopped_epoch,
+                "best_value": self.best_value,
+            }
+        }
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        """Restore patience/best from a resumed checkpoint.
+
+        Sets ``_resumed`` so the subsequent ``on_train_start`` (which fires
+        after ``load_extra_state`` in the engine's init-then-run sequence)
+        does NOT clobber the restored counter back to a fresh start.
+        """
+        if not state:
+            return
+        stored = state.get("early_stopping")
+        if stored is None:
+            return
+        self._resumed = True
+        self.wait = int(stored.get("wait", self.wait))
+        self.stopped_epoch = int(stored.get("stopped_epoch", self.stopped_epoch))
+        if stored.get("best_value") is not None:
+            self.best_value = stored["best_value"]
+
     def on_train_start(self, logs: dict[str, Any] | None = None):
-        self.wait = 0
-        self.stopped_epoch = 0
-        self.best_value = None
+        # On a fresh run start from zero; on a resume keep the restored
+        # patience/best so a run that has almost stopped keeps the pressure.
+        if not self._resumed:
+            self.wait = 0
+            self.stopped_epoch = 0
+            self.best_value = None
         if self.verbose and self.engine.rank == 0:
             self.engine.logger.info(f"EarlyStopping: Monitoring '{self.monitor}' with patience {self.patience}.")
 
@@ -441,18 +478,20 @@ class AdaLoRAPruningCallback(Callback):
         # Built in on_train_start; None while disabled.
         self._tracker: AdaLoRAGradientEMA | None = None
 
+    def _ensure_tracker(self) -> None:
+        """Build the EMA tracker from the engine's AdaLoRA layers if missing.
+
+        Walk every AdaLoRALinear reachable from engine.model; ``model.modules()``
+        already unwraps DDP/FSDP so no distributed special-casing needed.
+        """
+        if self._tracker is None and self.use_adalora and self.engine is not None:
+            self._tracker = AdaLoRAGradientEMA(
+                self.engine.model,
+                alpha=self.adalora_ema_alpha,
+            )
+
     def on_train_start(self, logs: dict[str, Any] | None = None):
-        if not self.use_adalora:
-            return
-        if self.engine is None:
-            return
-        # Walk every AdaLoRALinear reachable from engine.model. The
-        # DDP/FSDP unwrap path is ``model.modules()`` so we don't have
-        # to special-case distributed wrappers.
-        self._tracker = AdaLoRAGradientEMA(
-            self.engine.model,
-            alpha=self.adalora_ema_alpha,
-        )
+        self._ensure_tracker()
 
     def on_optimizer_step(
         self,
@@ -539,7 +578,14 @@ class AdaLoRAPruningCallback(Callback):
         return self._tracker.state_dict()
 
     def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
-        if self._tracker is None:
+        # Build the tracker here if needed: the engine calls load_extra_state
+        # during __init__, which is BEFORE on_train_start creates the tracker
+        # — without this the restored EMA-fragment would be a no-op there and
+        # every resumed run silently restarts the importance signal from
+        # zeros (RIL ISS-092; the old roundtrip test only passed because it
+        # called on_train_start before load).
+        self._ensure_tracker()
+        if self._tracker is None or not state:
             return
         self._tracker.load_state_dict(state)
 

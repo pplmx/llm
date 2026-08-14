@@ -269,3 +269,60 @@ def test_checkpoint_roundtrip_persists_ema_via_engine():
     cb._tracker._emas[ema_keys[0]].zero_()
     load_extra_state(merged, fake_data_module, task, *engine.callbacks)
     assert torch.allclose(cb._tracker._emas[ema_keys[0]], 0.42 * torch.ones_like(merged[ema_keys[0]]))
+
+
+def test_adalora_ema_restored_without_tracker_preexisting():
+    """Regression (RIL ISS-092): the engine restores checkpoint extra_state
+    during ``__init__`` — BEFORE ``on_train_start`` builds the AdaLoRA EMA
+    tracker. ``load_checkpoint_state`` must be able to build + restore the
+    tracker itself, otherwise every resumed run silently restarts the
+    importance signal from zeros (the older roundtrip test only passed
+    because it called ``on_train_start`` before ``load_extra_state``).
+    """
+    from llm.runtime.checkpoint import load_extra_state
+
+    cfg = _tiny_sft_config(prune_every=100)
+
+    empty_iter = MagicMock()
+    empty_iter.__iter__ = MagicMock(return_value=iter([]))
+    empty_iter.__len__ = MagicMock(return_value=0)
+    loader_pair = (empty_iter, None)
+    fake_data_module = MagicMock(
+        train_dataloader=MagicMock(return_value=loader_pair),
+        val_dataloader=MagicMock(return_value=loader_pair),
+        is_streaming=False,
+    )
+
+    with patch("llm.training.core.engine.wrap_model_for_training", side_effect=lambda m, **_: m):
+        task = SFTTask(cfg, data_module=fake_data_module)
+        task.build_model = lambda: _make_tiny_model_with_adalora(cfg)
+        engine = TrainingEngine(
+            config=cfg,
+            task=task,
+            rank=0,
+            world_size=1,
+            data_module=fake_data_module,
+            callbacks=None,
+        )
+
+    cb = next(c for c in engine.callbacks if isinstance(c, AdaLoRAPruningCallback))
+    # Real init ordering: the tracker does not exist yet at load time.
+    assert cb._tracker is None, "tracker is built later, in on_train_start"
+
+    # Build a checkpoint fragment the way a save would have captured it.
+    cb.on_train_start()
+    ema_keys = list(cb._tracker._emas.keys())
+    assert ema_keys
+    cb._tracker._emas[ema_keys[0]].fill_(0.42)
+    state = cb.get_checkpoint_state()
+
+    # Simulate a resume: load_extra_state fires while tracker is still None,
+    # then on_train_start runs.
+    cb._tracker = None
+    load_extra_state(state, fake_data_module, task, *engine.callbacks)
+    cb.on_train_start()
+
+    assert cb._tracker is not None, "the tracker must be (re)built on restore"
+    assert torch.allclose(cb._tracker._emas[ema_keys[0]], 0.42 * torch.ones_like(cb._tracker._emas[ema_keys[0]])), (
+        "the resumed EMA importance signal must be restored, not zeroed"
+    )
