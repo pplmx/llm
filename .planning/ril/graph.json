@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 46,
+  "round": 48,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T11:53:14+00:00",
+  "updated_at": "2026-08-14T13:40:58+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 46,
+      "touched_round": 48,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -5040,11 +5040,11 @@
     "ISS-087": {
       "id": "ISS-087",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-14T11:51:07+00:00",
-      "updated_at": "2026-08-14T11:51:07+00:00",
-      "touched_round": 46,
+      "updated_at": "2026-08-14T13:40:37+00:00",
+      "touched_round": 48,
       "title": "Per-rank random_split -> different train/val split on each DDP rank",
       "severity": 0.4,
       "summary": "split_train_val calls random_split with no generator after DistributedManager seeds RNG per rank (42+rank), so each rank trains on a partly-disjoint 90% and its val_loss is averaged over different examples — distribute-averaged val_loss/best/EarlyStopping are statistically meaningless on multi-GPU."
@@ -5064,11 +5064,11 @@
     "ISS-089": {
       "id": "ISS-089",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-14T11:51:07+00:00",
-      "updated_at": "2026-08-14T11:51:07+00:00",
-      "touched_round": 46,
+      "updated_at": "2026-08-14T13:40:37+00:00",
+      "touched_round": 48,
       "title": "EarlyStopping patience resets on resume; PPO checkpoint omits callback state",
       "severity": 0.3,
       "summary": "EarlyStopping implements no checkpoint contributor so its wait/best reset on resume; the PPO custom-loop save (collect_extra_state(self, engine.data_module)) omits *engine.callbacks, and that collect runs under the rank==0 gate (deadlock if a streaming data module gathers collectively)."
@@ -5198,6 +5198,128 @@
       "title": "Round 47: fix the training/data/export sweep (global_step persist, epoch-avg denominator, PPO DDP), defer the rest as backlog issues",
       "rationale": "The sweep surfaced 7 concrete defects. The three strongest were fixed this round with RED->GREEN regression tests: (1) engine.global_step was never persisted so every resume re-armed max_steps and could crash AdaLoRA; (2) partial-epoch avg loss used the full-epoch denominator; (3) multi-GPU PPO unwrapped DDP so gradients never all-reduced. Findings 4-7 (per-rank random_split, dedup resume cursor, EarlyStopping persistence, PPO approx_kl/PTQ int8) are logged as active issues ISS-087..090 for later triage — the round's 3-task deep-dive budget was reached.",
       "alternatives_rejected": "1) Persist global_step in meta.json instead of extra_state: rejected — meta.json has a documented shape used by serving/loader; the CheckpointContributor path is already plumbed through save/load. 2) Defer the PPO DDP fix: rejected — it is a silent correctness failure and the single-GPU path is byte-identical (world_size==1 never wraps), so the change is low-risk. 3) Fold ISS-087/088/089 into this round: rejected — budget is 3 tasks/round; they stay as backlog."
+    },
+    "TASK-077": {
+      "id": "TASK-077",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T13:18:06+00:00",
+      "updated_at": "2026-08-14T13:40:38+00:00",
+      "touched_round": 48,
+      "category": "correctness",
+      "severity": 0.4,
+      "title": "Seed the train/val split deterministically so every DDP rank derives the same partition",
+      "summary": "split_train_val must pass a fixed-seed generator to random_split instead of consuming the per-rank-seeded global RNG (42+rank), so each GPU rank trains on the same 90% and the reduce_mean'd val_loss averages over identical examples."
+    },
+    "ISS-091": {
+      "id": "ISS-091",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T13:38:53+00:00",
+      "updated_at": "2026-08-14T13:40:38+00:00",
+      "touched_round": 48,
+      "title": "AdaLoRA EMA tracker created after load_extra_state -> EMA lost on every resume",
+      "severity": 0.4,
+      "summary": "The engine restores checkpoint extra_state during __init__, before the AdaLoRA callback's on_train_start creates its EMA tracker; load_checkpoint_state short-circuits on a None tracker, so the restored EMA fragment is silently dropped and every resumed run restarts the importance signal from zeros. The older roundtrip test only passed because it called on_train_start before load_extra_state."
+    },
+    "TASK-078": {
+      "id": "TASK-078",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T13:38:53+00:00",
+      "updated_at": "2026-08-14T13:40:38+00:00",
+      "touched_round": 48,
+      "category": "correctness",
+      "severity": 0.4,
+      "title": "Persist EarlyStopping patience/best across resume; don't clobber on on_train_start"
+    },
+    "TASK-079": {
+      "id": "TASK-079",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T13:38:53+00:00",
+      "updated_at": "2026-08-14T13:40:38+00:00",
+      "touched_round": 48,
+      "category": "correctness",
+      "severity": 0.4,
+      "title": "Restore AdaLoRA EMA even when load precedes tracker creation"
+    },
+    "CHG-082": {
+      "id": "CHG-082",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:40:00+00:00",
+      "updated_at": "2026-08-14T13:40:00+00:00",
+      "touched_round": 48,
+      "commit": "f95b5dc",
+      "title": "fix(data): derive an identical train/val partition on every DDP rank (ISS-087)"
+    },
+    "CHG-083": {
+      "id": "CHG-083",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:40:00+00:00",
+      "updated_at": "2026-08-14T13:40:00+00:00",
+      "touched_round": 48,
+      "commit": "09aacd0",
+      "title": "fix(training): persist EarlyStopping patience on resume; restore AdaLoRA EMA before tracker creation (ISS-089, ISS-091)"
+    },
+    "EV-110": {
+      "id": "EV-110",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:40:00+00:00",
+      "updated_at": "2026-08-14T13:40:00+00:00",
+      "touched_round": 48,
+      "source": "test_split_train_val_identical_across_ranks",
+      "summary": "Train/val partition identical under rank-0 (seed 42) vs rank-1 (seed 43) RNG states (RED on committed code: partitions diverged)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "EV-111": {
+      "id": "EV-111",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:40:00+00:00",
+      "updated_at": "2026-08-14T13:40:00+00:00",
+      "touched_round": 48,
+      "source": "test_early_stopping_restores_patience_on_resume",
+      "summary": "EarlyStopping wait=1/best=1.0 survive resume and on_train_start does not reset them; a resumed run with already-waiting patience triggers stop at epoch 2 (RED before fix: state was None)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "EV-112": {
+      "id": "EV-112",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:40:00+00:00",
+      "updated_at": "2026-08-14T13:40:00+00:00",
+      "touched_round": 48,
+      "source": "test_adalora_ema_restored_without_tracker_preexisting",
+      "summary": "EMA restored when load_extra_state precedes tracker creation with the real init-then-run ordering (RED before fix: tracker stayed None / EMA zeroed)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "DEC-027": {
+      "id": "DEC-027",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:40:58+00:00",
+      "updated_at": "2026-08-14T13:40:58+00:00",
+      "touched_round": 48,
+      "title": "Round 48: fix resume-state persistence trio (split determinism ISS-087, EarlyStopping ISS-089, AdaLoRA EMA ISS-091); defer dedup-resume cursor rework",
+      "rationale": "Three small correctness fixes that all share one root: cross-resume/rank state coherence. (1) random_split consumed the per-rank-seeded global RNG -> every DDP rank derived a different train/val split, making reduce_mean'd val_loss meaningless; fixed with a fixed-seed generator. (2) EarlyStopping kept no persistent patience -> resumed runs restarted the counter; now a checkpoint contributor. (3) The engine restores extra_state before the AdaLoRA tracker exists, so the EMA fragment was dropped; load_checkpoint_state now builds the tracker first. All three verified RED->GREEN with the repo's engine/init-then-run ordering.",
+      "alternatives_rejected": "Fix ISS-088 (dedup streaming resume cursor) this round: rejected — the cursor counts post-dedup survivors while skip means raw input records (test_dedup_skip_delegates_to_inner_source pins raw semantics), so the correct fix needs the iter_texts protocol to expose raw positions or a careful dedup+shard cursor rework; that touches heavily-tested streaming resume and is deferred as a backlog issue. Keep random_split fully deterministic vs per-run seed: there is no config seed field; a fixed generator is the documented, resume-safe behavior."
     }
   },
   "edges": [
@@ -7553,6 +7675,66 @@
       "to": "TASK-076",
       "type": "implements",
       "created_at": "2026-08-14T11:52:42+00:00"
+    },
+    {
+      "from": "TASK-077",
+      "to": "ISS-087",
+      "type": "addresses",
+      "created_at": "2026-08-14T13:18:06+00:00"
+    },
+    {
+      "from": "TASK-078",
+      "to": "ISS-089",
+      "type": "addresses",
+      "created_at": "2026-08-14T13:38:53+00:00"
+    },
+    {
+      "from": "TASK-079",
+      "to": "ISS-091",
+      "type": "addresses",
+      "created_at": "2026-08-14T13:40:00+00:00"
+    },
+    {
+      "from": "ISS-091",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-14T13:40:00+00:00"
+    },
+    {
+      "from": "CHG-082",
+      "to": "ISS-087",
+      "type": "resolves",
+      "created_at": "2026-08-14T13:40:37+00:00"
+    },
+    {
+      "from": "CHG-082",
+      "to": "TASK-077",
+      "type": "implements",
+      "created_at": "2026-08-14T13:40:37+00:00"
+    },
+    {
+      "from": "CHG-083",
+      "to": "ISS-089",
+      "type": "resolves",
+      "created_at": "2026-08-14T13:40:37+00:00"
+    },
+    {
+      "from": "CHG-083",
+      "to": "ISS-091",
+      "type": "resolves",
+      "created_at": "2026-08-14T13:40:37+00:00"
+    },
+    {
+      "from": "CHG-083",
+      "to": "TASK-078",
+      "type": "implements",
+      "created_at": "2026-08-14T13:40:37+00:00"
+    },
+    {
+      "from": "CHG-083",
+      "to": "TASK-079",
+      "type": "implements",
+      "created_at": "2026-08-14T13:40:37+00:00"
     }
   ]
 }
