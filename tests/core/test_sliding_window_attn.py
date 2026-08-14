@@ -94,3 +94,50 @@ class TestDecoderWithWindowSize:
 
         # Loss should change (training happening)
         assert losses[0] != losses[-1] or len(set(losses)) > 1
+
+
+class TestSDPAWindowingDecode:
+    """Sliding-window mask must use the query block's ABSOLUTE position.
+
+    During KV-cache decode the query is a single token at absolute position
+    ``seq_len_k - 1`` while its row index within the block is 0. The window
+    mask previously compared the *relative* query row against *absolute* key
+    columns, so a decode step attended the OLDEST ``window_size`` keys
+    instead of the ``window_size`` keys before the current position.
+    """
+
+    def test_decode_attends_recent_window_not_oldest(self, device):
+        from llm.core.attn.sdpa import sdpa
+
+        # 20 cached keys, one decode query at absolute position 19, window=4.
+        q = torch.zeros(1, 1, 1, 8, device=device)  # uniform attention
+        k = torch.ones(1, 1, 20, 8, device=device)
+        v = torch.arange(20, dtype=torch.float32, device=device).reshape(1, 1, 20, 1).expand(-1, -1, -1, 8).clone()
+
+        out = sdpa(q, k, v, is_causal=False, window_size=4)
+
+        # Mean of the attended keys: correct = [15..19] -> 17; the old
+        # absolute-vs-relative bug attended [0..4] -> 2.
+        assert abs(out[0, 0, 0, 0].item() - 17.0) < 1e-5
+
+    def test_prefill_window_still_keeps_recent(self, device):
+        """Pure prefill (Sq == Sk, query block at positions 0..Sq-1) keeps the
+        recent window — unchanged by the decode fix."""
+        from llm.core.attn.sdpa import sdpa
+
+        max_len = 8
+        q = torch.zeros(1, 1, max_len, 8, device=device)
+        k = torch.ones(1, 1, max_len, 8, device=device)
+        v = (
+            torch.arange(max_len, dtype=torch.float32, device=device)
+            .reshape(1, 1, max_len, 1)
+            .expand(-1, -1, -1, 8)
+            .clone()
+        )
+
+        out = sdpa(q, k, v, is_causal=False, window_size=2)
+
+        # Last query row (position 7) attends keys [5..7] -> mean 6.
+        assert abs(out[0, 0, 7, 0].item() - 6.0) < 1e-5
+        # First query row (position 0) attends keys [0..2] -> mean 1.
+        assert abs(out[0, 0, 0, 0].item() - 1.0) < 1e-5

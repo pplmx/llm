@@ -57,7 +57,17 @@ def sdpa(
             )
 
         if has_window:
-            row_idx = torch.arange(seq_len_q, device=device).unsqueeze(1)
+            # The query block sits immediately after the cached keys, so its
+            # rows carry absolute positions ``[seq_len_k - seq_len_q,
+            # seq_len_k)``. During prefill (seq_len_k == seq_len_q) that is
+            # ``[0, seq_len_k)``; during a KV-cache decode step
+            # (seq_len_q == 1) it is ``[seq_len_k - 1]`` — the current
+            # position. Using the *relative* row index (0..seq_len_q-1)
+            # against absolute key columns attends the OLDEST window_size
+            # keys at every decode step instead of the keys just before the
+            # current position (RIL — decode window bug).
+            row_offset = max(0, seq_len_k - seq_len_q)
+            row_idx = (torch.arange(seq_len_q, device=device) + row_offset).unsqueeze(1)
             col_idx = torch.arange(seq_len_k, device=device).unsqueeze(0)
             # True = Mask out (distance > window)
             # Standard window attention: |i - j| > w
