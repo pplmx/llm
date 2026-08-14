@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 48,
+  "round": 49,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T13:40:58+00:00",
+  "updated_at": "2026-08-14T13:52:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -1176,7 +1176,7 @@
       "version": 1,
       "created_at": "2026-08-11T00:37:17+00:00",
       "updated_at": "2026-08-11T00:37:17+00:00",
-      "touched_round": 43,
+      "touched_round": 49,
       "title": "quantization ptq stats API",
       "details": "compute_model_size + simple-PTQ QuantizedLinear"
     },
@@ -5076,11 +5076,11 @@
     "ISS-090": {
       "id": "ISS-090",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-14T11:51:07+00:00",
-      "updated_at": "2026-08-14T11:51:07+00:00",
-      "touched_round": 46,
+      "updated_at": "2026-08-14T13:52:41+00:00",
+      "touched_round": 49,
       "title": "PPO approx_kl diluted by padded positions; simple-PTQ bits=4 stored as int8",
       "severity": 0.2,
       "summary": "approx_kl averages over the full [B,response_len] including padding where ratio==1, so target_kl early-stop fires late; QuantConfig(bits=4) computes qmax=7 but clamps into an int8 buffer, so '4-bit' yields no memory benefit."
@@ -5320,6 +5320,66 @@
       "title": "Round 48: fix resume-state persistence trio (split determinism ISS-087, EarlyStopping ISS-089, AdaLoRA EMA ISS-091); defer dedup-resume cursor rework",
       "rationale": "Three small correctness fixes that all share one root: cross-resume/rank state coherence. (1) random_split consumed the per-rank-seeded global RNG -> every DDP rank derived a different train/val split, making reduce_mean'd val_loss meaningless; fixed with a fixed-seed generator. (2) EarlyStopping kept no persistent patience -> resumed runs restarted the counter; now a checkpoint contributor. (3) The engine restores extra_state before the AdaLoRA tracker exists, so the EMA fragment was dropped; load_checkpoint_state now builds the tracker first. All three verified RED->GREEN with the repo's engine/init-then-run ordering.",
       "alternatives_rejected": "Fix ISS-088 (dedup streaming resume cursor) this round: rejected — the cursor counts post-dedup survivors while skip means raw input records (test_dedup_skip_delegates_to_inner_source pins raw semantics), so the correct fix needs the iter_texts protocol to expose raw positions or a careful dedup+shard cursor rework; that touches heavily-tested streaming resume and is deferred as a backlog issue. Keep random_split fully deterministic vs per-run seed: there is no config seed field; a fixed generator is the documented, resume-safe behavior."
+    },
+    "TASK-080": {
+      "id": "TASK-080",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-14T13:52:18+00:00",
+      "updated_at": "2026-08-14T13:52:41+00:00",
+      "touched_round": 49,
+      "category": "test-quality",
+      "severity": 0.2,
+      "title": "Mask approx_kl/ratio_mean over real response tokens so target_kl early-stop is not diluted by padding"
+    },
+    "ISS-092": {
+      "id": "ISS-092",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:52:18+00:00",
+      "updated_at": "2026-08-14T13:52:18+00:00",
+      "touched_round": 49,
+      "title": "simple-PTQ 'bits=4' stores int8 (no memory benefit, misleading model-size report)",
+      "severity": 0.2,
+      "summary": "QuantConfig.bits only affects the scale (qmax=2^(bits-1)-1); the quantized weight is always stored as int8 with clamp(-128,127) (ptq.py per-channel/per-tensor paths), so bits=4 yields no memory saving and compute_model_size reports 8 bytes/param. Existing test pins dtype int8 — a real 4-bit path needs pack/unpack; deferred as a design decision (reference simple-PTQ vs packed production path)."
+    },
+    "CHG-084": {
+      "id": "CHG-084",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:52:41+00:00",
+      "updated_at": "2026-08-14T13:52:41+00:00",
+      "touched_round": 49,
+      "commit": "62ac8cd",
+      "title": "fix(rlhf): mask approx_kl/ratio_mean over real response tokens (ISS-090)"
+    },
+    "EV-113": {
+      "id": "EV-113",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:52:41+00:00",
+      "updated_at": "2026-08-14T13:52:41+00:00",
+      "touched_round": 49,
+      "source": "test_ppo_step_approx_kl_normalized_over_real_tokens",
+      "summary": "Stub-policy padded 2-row batch: trainer approx_kl/ratio_mean equal the hand-computed masked mean and differ from the padded (unmasked) .mean() (RED before fix: matched unmasked 1.775 not masked 1.183)",
+      "result": "pass",
+      "confidence": 1.0
+    },
+    "DEC-028": {
+      "id": "DEC-028",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-14T13:52:42+00:00",
+      "updated_at": "2026-08-14T13:52:42+00:00",
+      "touched_round": 49,
+      "title": "Round 49: fix PPO approx_kl/ratio_mean padding dilution (ISS-090); defer simple-PTQ true-4-bit packing (ISS-092) as a design decision",
+      "rationale": "The PPO divergence telemetry used a padded-mean so target_kl early-stop fired late on heavily padded mini-batches; masked mean over real response tokens (mirroring the ISS-065 loss normalization). The simple-PTQ 'bits=4' facet is a separate, low-severity contract issue: the storage is intentionally int8 (pinned by tests) because this is the reference quantization path; true 4-bit packing needs pack/unpack kernels and is a design/spec conversation, so it is logged as ISS-092 backlog rather than a quick fix.",
+      "alternatives_rejected": "Fold the PTQ packing into this round: rejected — it is a design decision contradicting the pinned reference behavior, not a one-line bug; it belongs in a dedicated round with a proper pack/unpack design. 2) Leave approx_kl unmasked: rejected — the value and policy losses are already masked (ISS-065), leaving telemetry padded-diluted makes target_kl monitoring inconsistent with the loss scale."
     }
   },
   "edges": [
@@ -7735,6 +7795,30 @@
       "to": "TASK-079",
       "type": "implements",
       "created_at": "2026-08-14T13:40:37+00:00"
+    },
+    {
+      "from": "TASK-080",
+      "to": "ISS-090",
+      "type": "addresses",
+      "created_at": "2026-08-14T13:52:18+00:00"
+    },
+    {
+      "from": "ISS-092",
+      "to": "COMP-010",
+      "type": "located_in",
+      "created_at": "2026-08-14T13:52:41+00:00"
+    },
+    {
+      "from": "CHG-084",
+      "to": "ISS-090",
+      "type": "resolves",
+      "created_at": "2026-08-14T13:52:41+00:00"
+    },
+    {
+      "from": "CHG-084",
+      "to": "TASK-080",
+      "type": "implements",
+      "created_at": "2026-08-14T13:52:41+00:00"
     }
   ]
 }
