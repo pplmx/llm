@@ -332,6 +332,20 @@ class ContinuousBatchingEngine:
         else:
             input_ids = list(encoded)
 
+        # Reject requests that would outgrow the context window BEFORE they
+        # are scheduled. The model computes a position id for every prompt and
+        # generated token; past max_seq_len the positional-encoding table is
+        # indexed out of bounds, which surfaces on CUDA as a device-side
+        # assert that corrupts the CUDA context and can crash the whole
+        # serving process, not just this request.
+        if len(input_ids) + request.max_new_tokens > self.max_seq_len:
+            raise ValueError(
+                f"Prompt has {len(input_ids)} tokens and max_new_tokens="
+                f"{request.max_new_tokens}, but the engine's max_seq_len is "
+                f"{self.max_seq_len}; the request would exceed the context "
+                "window and crash the forward pass"
+            )
+
         req_id = request.request_id or uuid.uuid4().hex
 
         seq = Sequence(

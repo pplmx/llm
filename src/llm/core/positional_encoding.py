@@ -91,6 +91,18 @@ class PositionalEncoding(nn.Module):
             raise ValueError(
                 f"Sequence endpoint {start_pos + seq_len} exceeds maximum sequence length {self.max_seq_len}"
             )
+        if position_ids is not None and position_ids.numel():
+            # Explicit position ids must stay inside the table. An out-of-range
+            # id would index the embedding/PE rows past the buffer; on CUDA
+            # that surfaces as a device-side assert that poisons the whole
+            # process (every in-flight request), rather than a Python error.
+            min_id, max_id = int(position_ids.min().item()), int(position_ids.max().item())
+            if min_id < 0 or max_id >= self.max_seq_len:
+                raise ValueError(
+                    f"position_ids out of range [{min_id}, {max_id}]: must lie within "
+                    f"[0, {self.max_seq_len}) (the embedding table has only "
+                    f"{self.max_seq_len} positions)"
+                )
 
         if self.learned:
             if position_ids is None:

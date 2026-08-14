@@ -235,3 +235,28 @@ def test_sinusoidal_encoding_odd_hidden_size(hidden_size):
     manual[:, 0::2] = torch.sin(position * div_term)
     manual[:, 1::2] = torch.cos(position * div_term[: hidden_size // 2])
     assert torch.allclose(model.pe[0], manual, atol=1e-6)
+
+
+def test_position_ids_out_of_range_raise_clean_error_not_cuda_assert():
+    """RU (round-44 defensive): feeding ``position_ids`` >= ``max_seq_len`` to
+    the encoding must fail fast with a ValueError, NOT reach the embedding
+    gather — on CUDA that gather is an out-of-bounds device-side assert that
+    poisons the whole process (every in-flight request, not just the sender).
+
+    The serving engine previously let an over-long prompt (``len(input_ids) +
+    max_new_tokens > max_seq_len``) compute position ids past the encoding
+    table, producing exactly that crash. Applies to both learned and
+    sinusoidal encodings, on any device.
+    """
+    for learned in (False, True):
+        pe = PositionalEncoding(hidden_size=8, max_seq_len=8, dropout_p=0.0, learned=learned)
+        pe.eval()
+        x = torch.zeros(1, 3, 8)
+        # position_id == max_seq_len (the first out-of-range index) and
+        # a negative id must both be rejected cleanly.
+        for bad_ids in ([[8, 0, 1]], [[0, -1, 1]]):
+            with pytest.raises(ValueError, match="position_ids"):
+                pe(x, position_ids=torch.tensor(bad_ids, dtype=torch.long))
+        # In-range ids still work.
+        out = pe(x, position_ids=torch.tensor([[0, 1, 2]], dtype=torch.long))
+        assert out.shape == (1, 3, 8)

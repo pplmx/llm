@@ -941,3 +941,54 @@ def test_engine_paged_prefix_replay_reuses_blocks_and_matches_prefill(tiny_model
     assert second == first, (
         f"paged prefix replay must produce identical output to a full prefill; got {first} vs {second}"
     )
+
+
+def test_engine_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device, mock_tokenizer):
+    """A prompt (plus max_new_tokens) longer than the engine's max_seq_len
+    must be rejected at add_request with a clear ValueError.
+
+    Without this guard the model computes position ids past its positional-
+    encoding table; the embedding gather then hits a CUDA device-side assert
+    that corrupts the CUDA context and can kill the whole serving process —
+    not just the offending request.
+    """
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+        max_seq_len=16,  # matches tiny_model's max_seq_len
+    )
+
+    # 40-token prompt beyond the 16-token context.
+    with pytest.raises(ValueError, match="max_seq_len"):
+        engine.add_request(GenerationRequest(prompt="x" * 40, max_new_tokens=2))
+
+    # Prompt fits, but the requested new tokens overflow the cap.
+    with pytest.raises(ValueError, match="max_seq_len"):
+        engine.add_request(GenerationRequest(prompt="x" * 15, max_new_tokens=4))
+
+    # Exactly at the cap is accepted (each decode position stays < max_seq_len).
+    req = GenerationRequest(prompt="x" * 15, max_new_tokens=1)
+    req.request_id = "ok"
+    engine.add_request(req)
+    assert engine.scheduler.get_sequence("ok") is not None
+
+
+def test_engine_paged_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device, mock_tokenizer):
+    """Same rejection on the paged-attention path (the guard lives in
+    add_request, before any forward touches the block cache)."""
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+        max_seq_len=16,
+        use_paged_attention=True,
+        max_blocks=64,
+        block_size=8,
+    )
+    with pytest.raises(ValueError, match="max_seq_len"):
+        engine.add_request(GenerationRequest(prompt="x" * 40, max_new_tokens=2))
