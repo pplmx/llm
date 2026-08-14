@@ -149,7 +149,14 @@ async def generate_text(
 
 
 async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
-    """Stream tokens from the sync engine as an SSE-friendly async iterable."""
+    """Stream tokens from the sync engine as an SSE-friendly async iterable.
+
+    An IDLE timeout (``config.request_timeout`` with no chunk produced) is
+    applied per chunk: a stream that keeps producing tokens is never cut
+    off, but a stalled/misbehaving generator must not hold the inference
+    semaphore slot forever — with ``max_concurrent_requests`` stuck streams
+    the whole API would stop admitting new requests (RIL sweep finding).
+    """
     timer = metrics.request_timer(endpoint="generate")
     token_count = 0
     with timer as t:
@@ -178,7 +185,22 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                         logit_bias=request.logit_bias,
                         stop=request.stop,
                     )
-                    async for chunk in iterate_in_threadpool(iterator):
+                    timeout_s = config.request_timeout if config is not None else 60.0
+                    async_chunks = iterate_in_threadpool(iterator)
+                    while True:
+                        try:
+                            async with asyncio.timeout(timeout_s):
+                                chunk = await async_chunks.__anext__()
+                        except StopAsyncIteration:
+                            break
+                        except TimeoutError:
+                            # No token for the whole window — abort the stream
+                            # and release the semaphore slot. (Cancelling the
+                            # threadpool await frees the slot; the orphaned
+                            # sync generator finishes on its own thread.)
+                            t.set_status(504)
+                            yield "Error: stream timed out (no tokens for the request_timeout window)"
+                            break
                         token_count += 1
                         yield chunk
             t.set_status(200)
