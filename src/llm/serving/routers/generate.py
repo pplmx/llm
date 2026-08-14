@@ -159,6 +159,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
     """
     timer = metrics.request_timer(endpoint="generate")
     token_count = 0
+    timed_out = False
     with timer as t:
         try:
             from starlette.concurrency import iterate_in_threadpool
@@ -198,13 +199,15 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                             # and release the semaphore slot. (Cancelling the
                             # threadpool await frees the slot; the orphaned
                             # sync generator finishes on its own thread.)
+                            timed_out = True
                             t.set_status(504)
                             yield "Error: stream timed out (no tokens for the request_timeout window)"
                             break
                         token_count += 1
                         yield chunk
-            t.set_status(200)
-            metrics.observe_tokens(endpoint="generate", token_count=token_count)
+            if not timed_out:
+                t.set_status(200)
+                metrics.observe_tokens(endpoint="generate", token_count=token_count)
         except Exception as exc:
             logger.exception("Error in stream generation")
             t.set_status(500)

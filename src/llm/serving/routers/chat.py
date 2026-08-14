@@ -191,6 +191,7 @@ async def _chat_stream_generator(
             )
             yield f"data: {first_chunk.model_dump_json()}\n\n"
 
+            timeout_s = config.request_timeout if config is not None else 60.0
             async with inference_semaphore or _null_cm():
                 with metrics.track_inflight():
                     iterator = _sync_stream_generate(
@@ -213,7 +214,43 @@ async def _chat_stream_generator(
                     # real generated token that happens to be a prefix of
                     # the rendered prompt string, so every streamed chunk
                     # is emitted verbatim.
-                    async for token in iterate_in_threadpool(iterator):
+                    #
+                    # Like the /generate stream (RIL round 45), apply an
+                    # IDLE timeout per chunk (``request_timeout`` with no
+                    # token produced): a steady stream is never cut off, but
+                    # a stalled generator must not hold the inference
+                    # semaphore slot forever — with max_concurrent_requests
+                    # stuck chat streams the whole API would stop admitting
+                    # new requests.
+                    async_chunks = iterate_in_threadpool(iterator)
+                    while True:
+                        try:
+                            async with asyncio.timeout(timeout_s):
+                                token = await async_chunks.__anext__()
+                        except StopAsyncIteration:
+                            break
+                        except TimeoutError:
+                            # No token for the whole window — abort the
+                            # stream with an SSE error chunk and release the
+                            # slot. Since SSE has already started the client
+                            # gets the in-band error; the timer records 504
+                            # so the failure is visible in metrics.
+                            t.set_status(504)
+                            timeout_chunk = ChatCompletionChunk(
+                                id=completion_id,
+                                created=created,
+                                model=request.model,
+                                choices=[
+                                    ChatCompletionChunkChoice(
+                                        delta=ChatCompletionChunkDelta(
+                                            content="Error: stream timed out (no tokens for the request_timeout window)"
+                                        )
+                                    )
+                                ],
+                            )
+                            yield f"data: {timeout_chunk.model_dump_json()}\n\n"
+                            yield "data: [DONE]\n\n"
+                            return
                         token_count += 1
 
                         chunk = ChatCompletionChunk(
