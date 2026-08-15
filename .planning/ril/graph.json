@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T18:56:45+00:00",
+  "updated_at": "2026-08-15T20:27:40+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7503,6 +7503,158 @@
       "source": "tests/quantization/test_gptq_end_to_end.py::test_quantize_model_gptq_partial_forward_failure_uniform_fallback",
       "confidence": 1.0,
       "summary": "RED: branch_b 0-capture crashed n_samples=0 after branch_a replaced; now uniform fallback quantizes both"
+    },
+    "ISS-137": {
+      "id": "ISS-137",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T19:24:33+00:00",
+      "updated_at": "2026-08-15T19:42:55+00:00",
+      "touched_round": 60,
+      "severity": 0.8,
+      "title": "attn_impl='flash_attn' is unbuildable through the model stack (unexpected window_size kwarg)",
+      "summary": "transformer_block.py:88 passes window_size= unconditionally into attention_kwargs (even default None); flash_attn.py __init__ declares no window_size/use_rope/max_seq_len/rope_theta. Any DecoderModel/Config with attn_impl='flash_attn' raises TypeError at build (reached via serving loader + model_factory). check_consistency accepts it. Zero coverage (tests build FlashAttention directly). Fix: add the standard kwargs to flash_attn __init__."
+    },
+    "ISS-138": {
+      "id": "ISS-138",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T19:24:33+00:00",
+      "updated_at": "2026-08-15T20:17:54+00:00",
+      "touched_round": 60,
+      "severity": 0.8,
+      "title": "MoE + DDP: dead experts (zero routed tokens) left outside the autograd graph -> multi-GPU backward 'expected to have finished reduction' crash",
+      "summary": "parallel.py:154 DDP find_unused_parameters=False; moe.py:120-127 only runs experts with >=1 routed token. Any batch where an expert routes zero tokens leaves its params outside the graph -> DDP backward failure. Intermittent, batch/seed-dependent. Needs a 2-GPU repro to confirm; single-GPU mechanism verified (5/8 experts grad=None). Fix: route-dead experts through zero gradient or find_unused_parameters=True for MoE."
+    },
+    "ISS-139": {
+      "id": "ISS-139",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T19:24:33+00:00",
+      "updated_at": "2026-08-15T20:01:21+00:00",
+      "touched_round": 60,
+      "severity": 0.5,
+      "title": "MLA ignores include_norm_residual -> structural double-norm vs MHA",
+      "summary": "mla.py stores include_norm_residual but never reads it; always adds residual + internal post-LayerNorm. Block passes include_norm_residual=False/norm_first=False expecting a plain sublayer; MLA emits norm(out_proj(latent)+norm1(h)) then block adds h again. Repro: MLA sublayer output std~1.0 vs MHA 0.35 under identical config. Fix: honor the flag / restructure."
+    },
+    "ISS-140": {
+      "id": "ISS-140",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T19:24:46+00:00",
+      "updated_at": "2026-08-15T20:01:21+00:00",
+      "touched_round": 60,
+      "severity": 0.5,
+      "title": "MLA silently drops RoPE (use_rope/max_seq_len/rope_theta swallowed by ** catch-all)",
+      "summary": "mla.py:74 ** axis; block threads RoPE kwargs; config never validates use_rope<->attn_impl. ModelConfig(attn_impl='mla', use_rope=True) passes consistency and builds with NO rope — silently wrong positional encoding (contrast flash_attn which crashes). Fix: config-level validation of use_rope vs attn_impl, and/or MLA reject or implement."
+    },
+    "ISS-141": {
+      "id": "ISS-141",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T19:24:46+00:00",
+      "updated_at": "2026-08-15T20:27:40+00:00",
+      "touched_round": 60,
+      "severity": 0.4,
+      "title": "MHA+RoPE decode at absolute pos >= max_seq_len -> raw IndexError (no training-side guard)",
+      "summary": "rope.py sizes cos/sin cache to max(chunk_len, max_seq_len) not absolute end; indexes _cos_cached[position_ids]; dense-KVCache decode reaching pos==max_seq_len -> IndexError (max_seq_len=8, start_pos=8). Serving guards over-context (ISS-044/077) but training/dense-cache RoPE callers get a raw index crash. Fix: guard/clamp or expand cache for absolute positions."
+    },
+    "CHG-128": {
+      "id": "CHG-128",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T19:42:55+00:00",
+      "updated_at": "2026-08-15T19:42:55+00:00",
+      "touched_round": 60,
+      "summary": "FlashAttention now accepts window_size/max_seq_len/use_rope/rope_theta (mirrors MHA): RoPE applied pre-kernel, rotated K cached, window passed to kernel as (l,r). Unblocks attn_impl='flash_attn' through the block.",
+      "commit": "f7ada33"
+    },
+    "EV-157": {
+      "id": "EV-157",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T19:42:55+00:00",
+      "updated_at": "2026-08-15T19:42:55+00:00",
+      "touched_round": 60,
+      "source": "tests/core/test_flash_attn_registry.py::test_flash_attn_constructible_through_transformer_block",
+      "confidence": 1.0,
+      "summary": "RED: block built flash_attn raised TypeError at transformer_block.py:96 (window_size); now constructs + honors use_rope"
+    },
+    "CHG-129": {
+      "id": "CHG-129",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T20:01:21+00:00",
+      "updated_at": "2026-08-15T20:01:21+00:00",
+      "touched_round": 60,
+      "summary": "MLA: norm+residual gated on include_norm_residual (block's plain-sublayer no-double-norm); ModelConfig rejects use_rope for non-(mha,flash_attn)",
+      "commit": "74464ac"
+    },
+    "EV-158": {
+      "id": "EV-158",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T20:01:21+00:00",
+      "updated_at": "2026-08-15T20:01:21+00:00",
+      "touched_round": 60,
+      "source": "tests/core/attn/test_mla.py::test_mla_plain_sublayer_without_norm_residual,tests/training/test_config.py::TestConfig::test_model_config_rejects_rope_for_mla",
+      "confidence": 1.0,
+      "summary": "RED: norm always built before / no ValueError raised for MLA+use_rope before"
+    },
+    "CHG-130": {
+      "id": "CHG-130",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T20:17:54+00:00",
+      "updated_at": "2026-08-15T20:17:54+00:00",
+      "touched_round": 60,
+      "summary": "wrap_model_for_training sets DDP find_unused_parameters=True only for MoE models (modal detection via num_experts); standard models keep the fast reduction path",
+      "commit": "2bbae33"
+    },
+    "EV-159": {
+      "id": "EV-159",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T20:17:54+00:00",
+      "updated_at": "2026-08-15T20:17:54+00:00",
+      "touched_round": 60,
+      "source": "tests/training/distributed/test_parallel.py::test_wrap_ddp_moe_enables_find_unused_parameters,tests/training/distributed/test_parallel.py::test_wrap_ddp_standard_model_keeps_fast_path",
+      "confidence": 1.0,
+      "summary": "RED: MoE got find_unused_parameters=False before; True after; standard stays False"
+    },
+    "CHG-131": {
+      "id": "CHG-131",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T20:27:40+00:00",
+      "updated_at": "2026-08-15T20:27:40+00:00",
+      "touched_round": 60,
+      "summary": "RotaryPositionEmbedding grows the cos/sin table to cover the max indexed absolute position (+1) when explicit position_ids are threaded; KV-cache decode past max_seq_len no longer crashes",
+      "commit": "78a433d"
+    },
+    "EV-160": {
+      "id": "EV-160",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T20:27:40+00:00",
+      "updated_at": "2026-08-15T20:27:40+00:00",
+      "touched_round": 60,
+      "source": "tests/core/test_rope.py::TestRotaryPositionEmbedding::test_forward_position_ids_beyond_max_seq_len",
+      "confidence": 1.0,
+      "summary": "RED: 2-token decode at [8,9] on max_seq_len=8 raised index-out-of-bounds; rotates correctly after"
     }
   },
   "edges": [
@@ -10803,6 +10955,66 @@
       "to": "ISS-136",
       "type": "resolves",
       "created_at": "2026-08-15T18:56:45+00:00"
+    },
+    {
+      "from": "ISS-137",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-15T19:25:15+00:00"
+    },
+    {
+      "from": "ISS-138",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-15T19:25:15+00:00"
+    },
+    {
+      "from": "ISS-139",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-15T19:25:15+00:00"
+    },
+    {
+      "from": "ISS-140",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-15T19:25:15+00:00"
+    },
+    {
+      "from": "ISS-141",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-15T19:25:15+00:00"
+    },
+    {
+      "from": "CHG-128",
+      "to": "ISS-137",
+      "type": "resolves",
+      "created_at": "2026-08-15T19:42:55+00:00"
+    },
+    {
+      "from": "CHG-129",
+      "to": "ISS-139",
+      "type": "resolves",
+      "created_at": "2026-08-15T20:01:21+00:00"
+    },
+    {
+      "from": "CHG-129",
+      "to": "ISS-140",
+      "type": "resolves",
+      "created_at": "2026-08-15T20:01:21+00:00"
+    },
+    {
+      "from": "CHG-130",
+      "to": "ISS-138",
+      "type": "resolves",
+      "created_at": "2026-08-15T20:17:54+00:00"
+    },
+    {
+      "from": "CHG-131",
+      "to": "ISS-141",
+      "type": "resolves",
+      "created_at": "2026-08-15T20:27:40+00:00"
     }
   ]
 }
