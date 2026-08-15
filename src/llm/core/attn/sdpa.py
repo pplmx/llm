@@ -86,17 +86,29 @@ def sdpa(
             if attn_mask.dtype == torch.bool:
                 full_mask = attn_mask if full_mask is None else (full_mask | attn_mask)
             else:
-                # Fallback or mixed type?
-                # If we have a complex float mask AND window... it's hard to merge efficiently with boolean logic.
-                # Ideally convert float mask to bool if it's 0/-inf style?
-                # For now let's hope it's consistent.
-                # If not bool, we might crash on logical OR if it's float.
-                pass  # Trust caller or subsequent steps.
+                # Float/int additive mask (0 = keep, -inf = mask out, Torch
+                # SDPA convention). It cannot be merged with the boolean
+                # ``full_mask`` via ``|`` — additive and boolean masks are
+                # different spaces. Convert the boolean part to an additive
+                # mask (0 / -inf) and sum them, so the caller's additive mask
+                # is NOT silently dropped on the window / causal+mask path
+                # (RIL ISS-115).
+                bool_part = full_mask
+                if bool_part is not None:
+                    additive_base = torch.where(
+                        bool_part,
+                        torch.tensor(float("-inf"), device=query.device, dtype=attn_mask.dtype),
+                        torch.zeros((), device=query.device, dtype=attn_mask.dtype),
+                    )
+                    full_mask = additive_base + attn_mask
+                else:
+                    full_mask = attn_mask
 
-        # Now we have a boolean mask where True = Mask Out.
-        # F.sdpa expects True = Keep (for boolean masks).
-        # So we pass ~full_mask.
-        # And we set is_causal=False because we baked it in.
+        # Now we have a mask where True = Mask Out (bool) or 0/-inf additive
+        # (float), matching the caller's convention.
+        # F.sdpa expects True = Keep (for boolean masks); float masks are
+        # passed through as additive. And we set is_causal=False because we
+        # baked causal in.
 
         torch_mask = None
         if full_mask is not None:

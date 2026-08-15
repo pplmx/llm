@@ -27,6 +27,7 @@ Plugin authors can register a target via ``pyproject.toml``:
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -46,6 +47,9 @@ ExportBackendFactory = Callable[..., Path]
 EXPORT_REGISTRY: Registry[ExportBackendFactory] = Registry("ExportBackend")
 
 _exporters_registered = False
+# Serializes the cold-start bootstrap (RIL ISS-119) — see
+# ``generation/registry.ensure_backends_registered`` for the race.
+_exporter_registration_lock = threading.Lock()
 
 
 def build_onnx_exporter(
@@ -79,9 +83,16 @@ def ensure_exporters_registered() -> None:
     if _exporters_registered:
         return
 
-    EXPORT_REGISTRY.register("onnx", build_onnx_exporter)
-    load_entry_point_registry("llm.export_backends", EXPORT_REGISTRY)
-    _exporters_registered = True
+    # Double-checked locking: fast guard above, re-check inside the lock
+    # so two threads cold-starting concurrently can't double-register
+    # (the second ``register("onnx")`` would raise) (RIL ISS-119).
+    with _exporter_registration_lock:
+        if _exporters_registered:
+            return
+
+        EXPORT_REGISTRY.register("onnx", build_onnx_exporter)
+        load_entry_point_registry("llm.export_backends", EXPORT_REGISTRY)
+        _exporters_registered = True
 
 
 def export_model(

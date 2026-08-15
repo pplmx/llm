@@ -32,6 +32,7 @@ silently skipped (matches the ``EXPORT_REGISTRY`` convention;
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
@@ -49,6 +50,9 @@ PEFT_REGISTRY: Registry[PEFTMethod] = Registry("PEFTMethod")
 # Idempotency guard — :func:`ensure_methods_registered` returns
 # immediately on the second call so the bootstrap is cheap.
 _methods_registered: bool = False
+# Serializes the cold-start bootstrap (RIL ISS-119) — see
+# ``generation/registry.ensure_backends_registered`` for the race.
+_method_registration_lock = threading.Lock()
 
 
 def ensure_methods_registered() -> None:
@@ -64,18 +68,25 @@ def ensure_methods_registered() -> None:
     if _methods_registered:
         return
 
-    for method in iter_builtin_methods():
-        # ``Registry.register`` raises on duplicate names. Built-ins
-        # use stable names so re-import won't trigger duplicates;
-        # third parties load after this point and the entry-point
-        # loader defaults to ``overwrite=False`` so plugins claiming
-        # built-in names are silently skipped (matching the export
-        # convention).
-        if method.name not in PEFT_REGISTRY:
-            PEFT_REGISTRY.register(method.name, method)
+    # Double-checked locking: the fast guard above is the hot path; the
+    # lock serializes the cold-start race so concurrent callers re-check
+    # the flag inside the critical section (RIL ISS-119).
+    with _method_registration_lock:
+        if _methods_registered:
+            return
 
-    load_entry_point_registry("llm.peft_methods", PEFT_REGISTRY)
-    _methods_registered = True
+        for method in iter_builtin_methods():
+            # ``Registry.register`` raises on duplicate names. Built-ins
+            # use stable names so re-import won't trigger duplicates;
+            # third parties load after this point and the entry-point
+            # loader defaults to ``overwrite=False`` so plugins claiming
+            # built-in names are silently skipped (matching the export
+            # convention).
+            if method.name not in PEFT_REGISTRY:
+                PEFT_REGISTRY.register(method.name, method)
+
+        load_entry_point_registry("llm.peft_methods", PEFT_REGISTRY)
+        _methods_registered = True
 
 
 # ---------------------------------------------------------------------------

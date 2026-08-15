@@ -69,3 +69,55 @@ def test_sdpa_causal_and_window(sample_qkv_tensors):
     q, k, v = sample_qkv_tensors
     output = sdpa(q, k, v, is_causal=True, window_size=2)
     assert output.shape == q.shape
+
+
+def test_sdpa_float_additive_mask_not_dropped_on_complex_path(sample_qkv_tensors):
+    """Regression (RIL ISS-115): a float additive attention mask (0 / -inf)
+    must be honored on the complex path (``window_size`` or
+    ``is_causal=True`` + mask), not silently dropped.
+
+    The complex path merges masks manually; previously a non-bool mask hit a
+    bare ``pass`` and vanished — with a ``-inf`` key masked out the output
+    still attended to that key (window+float diverged by ~1.7, causal+float
+    by ~0.37). The boolean part must be converted to the same additive space
+    (0 / -inf) and summed with the caller's mask.
+    """
+    import torch.nn.functional as functional
+
+    q, k, v = sample_qkv_tensors
+    batch_size, _num_heads, seq_len, _ = q.shape
+
+    # Mask the last key column with -inf (additive, Torch SDPA convention).
+    add = torch.zeros(batch_size, 1, 1, seq_len, dtype=torch.float32)
+    add[..., -1] = float("-inf")
+
+    # Reference: torch.native merges the additive mask with causal itself.
+    ref_causal = functional.scaled_dot_product_attention(q, k, v, attn_mask=add, is_causal=True)
+    out_causal = sdpa(q, k, v, attn_mask=add, is_causal=True)
+    assert torch.allclose(out_causal, ref_causal, atol=1e-5)
+
+    # Reference for window+float: build the combined additive mask by hand.
+    window = torch.abs(torch.arange(seq_len)[:, None] - torch.arange(seq_len)[None, :]) > 2
+    window_add = torch.where(window, torch.tensor(float("-inf")), torch.tensor(0.0))
+    ref_mask = window_add + add
+    ref_window = functional.scaled_dot_product_attention(q, k, v, attn_mask=ref_mask, is_causal=False)
+    out_window = sdpa(q, k, v, attn_mask=add, window_size=2)
+    assert torch.allclose(out_window, ref_window, atol=1e-5)
+
+
+def test_sdpa_bool_mask_plus_window_merges(sample_qkv_tensors):
+    """Boolean masks still merge with the window mask on the complex path
+    (the bool | bool branch is untouched by the float-mask fix)."""
+    import torch.nn.functional as functional
+
+    q, k, v = sample_qkv_tensors
+    batch_size, _num_heads, seq_len, _ = q.shape
+
+    mask = torch.zeros(batch_size, 1, 1, seq_len, dtype=torch.bool)
+    mask[..., -1] = True  # true = mask out
+    window = torch.abs(torch.arange(seq_len)[:, None] - torch.arange(seq_len)[None, :]) > 2
+
+    ref_mask = window | mask
+    ref = functional.scaled_dot_product_attention(q, k, v, attn_mask=~ref_mask, is_causal=False)
+    out = sdpa(q, k, v, attn_mask=mask, window_size=2)
+    assert torch.allclose(out, ref, atol=1e-5)

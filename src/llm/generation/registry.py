@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,11 @@ GenerationBackendFactory = Callable[..., "GenerationBackend"]
 BACKEND_REGISTRY: Registry[GenerationBackendFactory] = Registry("GenerationBackend")
 
 _backends_registered = False
+# Serializes the cold-start bootstrap. Without this, two threads racing
+# ``get_generation_backend`` on first use can both pass the ``_backends_registered``
+# guard, and the second ``register`` raises "already registered"
+# (RIL ISS-119).
+_backend_registration_lock = threading.Lock()
 
 
 def build_eager_backend(**_kwargs: Any) -> GenerationBackend:
@@ -64,14 +70,22 @@ def ensure_backends_registered() -> None:
     if _backends_registered:
         return
 
-    # Register the built-in speculative backend before loading entry
-    # points so it always resolves even if no third-party plugin
-    # provides one. The entry-point load raises if a plugin claims
-    # the same name, which is intentional (the built-in is the
-    # reference implementation).
-    BACKEND_REGISTRY.register("speculative", build_speculative_backend)
-    load_entry_point_registry("llm.generation_backends", BACKEND_REGISTRY)
-    _backends_registered = True
+    # Double-checked locking: the guard above is the hot path (it never
+    # blocks once registered); the lock serializes the cold-start race
+    # so a concurrent caller re-checks the flag inside the critical
+    # section instead of double-registering (RIL ISS-119).
+    with _backend_registration_lock:
+        if _backends_registered:
+            return
+
+        # Register the built-in speculative backend before loading entry
+        # points so it always resolves even if no third-party plugin
+        # provides one. The entry-point load raises if a plugin claims
+        # the same name, which is intentional (the built-in is the
+        # reference implementation).
+        BACKEND_REGISTRY.register("speculative", build_speculative_backend)
+        load_entry_point_registry("llm.generation_backends", BACKEND_REGISTRY)
+        _backends_registered = True
 
 
 def get_generation_backend(
