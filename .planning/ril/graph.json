@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 56,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T02:57:59+00:00",
+  "updated_at": "2026-08-15T03:07:57+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6509,10 +6509,10 @@
     "ISS-114": {
       "id": "ISS-114",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T02:46:40+00:00",
+      "updated_at": "2026-08-15T03:07:56+00:00",
       "touched_round": 56,
       "severity": 0.3,
       "title": "chat non-streaming strips whitespace + finish_reason hardcoded 'stop' (should be 'length' on max_tokens) — diverges from streaming and OpenAI spec"
@@ -6559,18 +6559,16 @@
     "TASK-102": {
       "id": "TASK-102",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T02:57:59+00:00",
+      "updated_at": "2026-08-15T03:07:57+00:00",
       "touched_round": 56,
       "category": "correctness",
       "severity": 0.3,
       "confidence": 0.7,
       "effort": 0.3,
-      "title": "chat non-streaming: preserve completion whitespace (match streaming) + emit finish_reason 'length' when max_tokens truncates",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T03:27:59+00:00"
+      "title": "chat non-streaming: preserve completion whitespace (match streaming) + emit finish_reason 'length' when max_tokens truncates"
     },
     "EV-133": {
       "id": "EV-133",
@@ -6617,6 +6615,29 @@
       "touched_round": 56,
       "commit": "76670f7",
       "title": "OOV prompt -> 400 INVALID_REQUEST; streaming pre-validate (TASK-101)"
+    },
+    "EV-135": {
+      "id": "EV-135",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:07:56+00:00",
+      "updated_at": "2026-08-15T03:07:56+00:00",
+      "touched_round": 56,
+      "source": "tests/serving/test_openai_compat.py::test_chat_non_streaming_preserves_whitespace",
+      "title": "Verified: non-streaming chat .strip()ed completion ('hi' vs '  hi  ', RED) and finish_reason hardcoded 'stop'; fix keeps completion verbatim + 'length' when len>=max_tokens. Serving+core 1227 passed",
+      "confidence": 1.0
+    },
+    "CHG-104": {
+      "id": "CHG-104",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:07:56+00:00",
+      "updated_at": "2026-08-15T03:07:56+00:00",
+      "touched_round": 56,
+      "commit": "62928ad",
+      "title": "chat whitespace preservation + finish_reason length/stop (TASK-102)"
     }
   },
   "edges": [
@@ -9548,6 +9569,18 @@
       "to": "TASK-101",
       "type": "implements",
       "created_at": "2026-08-15T02:57:27+00:00"
+    },
+    {
+      "from": "CHG-104",
+      "to": "ISS-114",
+      "type": "resolves",
+      "created_at": "2026-08-15T03:07:56+00:00"
+    },
+    {
+      "from": "CHG-104",
+      "to": "TASK-102",
+      "type": "implements",
+      "created_at": "2026-08-15T03:07:56+00:00"
     }
   ]
 }
