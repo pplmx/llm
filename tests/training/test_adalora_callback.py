@@ -94,6 +94,39 @@ class TestAdaLoRAPruningCallbackSetup:
         cb.on_train_step_end(epoch=0, batch_idx=19, loss=torch.tensor(0.0), metrics={})
         assert layer.effective_rank == 2
 
+    def test_no_schedule_defers_prune_instead_of_collapsing(self):
+        """When ``adalora_tfinal`` is unset AND the data config exposes no
+        ``steps_per_epoch`` (every non-streaming run), the callback must NOT
+        collapse the entire rank budget to ``target_rank`` at the first prune.
+
+        Previously the fallback ``tfinal = global_step`` made
+        ``current_step >= tfinal`` true at the very first prune, so every
+        AdaLoRA layer dropped from ``init_rank`` to ``target_rank`` in one
+        step instead of following the documented gradual schedule — an abrupt
+        budget cut that also risks the un-prune crash on resume. Deferring
+        (stay at ``init_rank``) until the user provides a real
+        ``adalora_tfinal`` (or streaming ``steps_per_epoch``) is the safe
+        contract.
+        """
+        cb = AdaLoRAPruningCallback(use_adalora=True, adalora_prune_every=10)
+        model = nn.Sequential(nn.Linear(8, 8))
+        apply_adalora(model, init_rank=4, target_rank=2)
+        # No ``config`` on the stub → steps_per_epoch resolves to 0.
+        # (Set it explicitly because a MagicMock would auto-create a truthy
+        # ``config.data.steps_per_epoch`` whose int() is 1, masking the
+        # non-streaming case the deferral is for.)
+        engine = _make_engine_stub(model=model)
+        engine.config = None
+        cb.set_engine(engine)
+        cb.on_train_start()
+        layer = next(m for m in model.modules() if isinstance(m, AdaLoRALinear))
+
+        # First prune fires at step 10. With no schedule, rank must stay at
+        # init_rank, NOT collapse to target_rank.
+        engine.global_step = 10
+        cb.on_train_step_end(epoch=0, batch_idx=9, loss=torch.tensor(0.0), metrics={})
+        assert layer.effective_rank == 4  # deferred, not collapsed to 2
+
     def test_prune_only_fires_on_cadence(self):
         cb = AdaLoRAPruningCallback(use_adalora=True, adalora_prune_every=3)
         model = nn.Sequential(nn.Linear(8, 8))

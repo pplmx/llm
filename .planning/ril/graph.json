@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 54,
+  "round": 55,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T01:39:32+00:00",
+  "updated_at": "2026-08-15T02:06:05+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6302,6 +6302,115 @@
       "touched_round": 54,
       "commit": "refuted-no-change",
       "title": "ISS-103 verified as NOT a bug (upstream forbids empty-context loglikelihood); no code change — EV-128 refutes the claim, DEC-036 records why"
+    },
+    "TASK-096": {
+      "id": "TASK-096",
+      "type": "task",
+      "status": "abandoned",
+      "version": 4,
+      "created_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T02:06:05+00:00",
+      "touched_round": 55,
+      "category": "correctness",
+      "severity": 0.4,
+      "confidence": 0.9,
+      "effort": 0.4,
+      "title": "DPO resume must restore ref_model to checkpoint weights (fresh random ref corrupts training on resume)"
+    },
+    "TASK-097": {
+      "id": "TASK-097",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T02:01:37+00:00",
+      "touched_round": 55,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 0.9,
+      "effort": 0.3,
+      "title": "AdaLoRA tfinal fallback collapses rank budget on first prune in non-streaming runs (steps_per_epoch None -> tfinal=global_step)"
+    },
+    "TASK-098": {
+      "id": "TASK-098",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T02:01:37+00:00",
+      "touched_round": 55,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 0.9,
+      "effort": 0.3,
+      "title": "AdaLoRA gradient-EMA must observe pre-clip gradients (clip_grad_norm runs before on_optimizer_step)"
+    },
+    "ISS-107": {
+      "id": "ISS-107",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T02:01:37+00:00",
+      "touched_round": 55,
+      "severity": 0.3,
+      "title": "GradScaler-skipped (inf/NaN) optimizer steps advance global_step + fold NaN into AdaLoRA EMA poisoning future prunes"
+    },
+    "ISS-108": {
+      "id": "ISS-108",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T02:01:37+00:00",
+      "touched_round": 55,
+      "severity": 0.25,
+      "title": "load_checkpoint swallows fatal model-config mismatches and silently restarts from scratch (resume contract violated quietly)"
+    },
+    "ISS-109": {
+      "id": "ISS-109",
+      "type": "issue",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-15T02:02:17+00:00",
+      "updated_at": "2026-08-15T02:06:05+00:00",
+      "touched_round": 55,
+      "severity": 0.4,
+      "title": "DPO resume rebuilds ref_model as a fresh random copy instead of restoring checkpoint weights (ref stays random on resume)"
+    },
+    "ISS-110": {
+      "id": "ISS-110",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:02:17+00:00",
+      "updated_at": "2026-08-15T02:02:17+00:00",
+      "touched_round": 55,
+      "severity": 0.3,
+      "title": "AdaLoRA tfinal fallback (steps_per_epoch None) collapses every layer to target_rank at the first prune"
+    },
+    "ISS-111": {
+      "id": "ISS-111",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:02:17+00:00",
+      "updated_at": "2026-08-15T02:02:17+00:00",
+      "touched_round": 55,
+      "severity": 0.3,
+      "title": "AdaLoRA gradient-EMA accumulates post-clip gradients (clip_grad_norm runs before on_optimizer_step)"
+    },
+    "EV-129": {
+      "id": "EV-129",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:06:05+00:00",
+      "updated_at": "2026-08-15T02:06:05+00:00",
+      "touched_round": 55,
+      "source": "empirical: seed-42 DecoderModel rebuild determinism check",
+      "title": "TASK-096/ISS-109 REFUTED: on resume DPOTask rebuilds policy+ref via build_model() under the same DistributedManager seed (42+rank); same-seed rebuild reproduces byte-identical init, so resume-ref == original pre-DPO base — which is exactly what the DPO objective anchors to. ref != trained policy is EXPECTED (base vs fine-tuned). Verified: same-seed rebuild identical weights (True), resume-ref == original base (True). Residual fragility: an architecture/config change between runs shifts init — that is the resume-contract issue ISS-108, not a DPO-specific bug.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -9125,6 +9234,24 @@
       "to": "TASK-095",
       "type": "implements",
       "created_at": "2026-08-15T01:39:32+00:00"
+    },
+    {
+      "from": "TASK-096",
+      "to": "ISS-109",
+      "type": "addresses",
+      "created_at": "2026-08-15T02:02:18+00:00"
+    },
+    {
+      "from": "TASK-097",
+      "to": "ISS-110",
+      "type": "addresses",
+      "created_at": "2026-08-15T02:02:18+00:00"
+    },
+    {
+      "from": "TASK-098",
+      "to": "ISS-111",
+      "type": "addresses",
+      "created_at": "2026-08-15T02:02:18+00:00"
     }
   ]
 }

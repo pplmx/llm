@@ -548,13 +548,24 @@ class AdaLoRAPruningCallback(Callback):
             except AttributeError, TypeError, ValueError:
                 steps_per_epoch = 0
                 epochs = 1
-            # No schedule when ``steps_per_epoch == 0`` — collapse
-            # straight to ``target_rank`` so the user gets *some*
-            # pruning on cadence. They can set ``adalora_tfinal``
-            # explicitly for a proper schedule.
-            tfinal = (
-                max(self.adalora_tinit + 1, (epochs * steps_per_epoch) // 2) if steps_per_epoch > 0 else global_step
-            )
+            if steps_per_epoch > 0:
+                tfinal = max(self.adalora_tinit + 1, (epochs * steps_per_epoch) // 2)
+            else:
+                # No schedule is knowable from the config (non-streaming data
+                # has no ``steps_per_epoch`` and the user left ``tfinal``
+                # unset). Fall back to *deferring* the prune — staying at
+                # ``init_rank`` — rather than collapsing the whole budget to
+                # ``target_rank`` at the first cadence: ``tfinal=global_step``
+                # made ``current_step >= tfinal`` true immediately, an abrupt
+                # cut that also risks the un-prune crash on a resumed run (RIL
+                # ISS-110). Set ``adalora_tfinal`` (or provide streaming
+                # ``steps_per_epoch``) for a real schedule.
+                if self.engine.rank == 0:
+                    self.engine.logger.info(
+                        "adalora: no steps_per_epoch/tfinal — deferring prune; "
+                        "set adalora_tfinal for a gradual rank schedule"
+                    )
+                return
 
         prune_adalora(
             self.engine.model,
