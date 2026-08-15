@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 53,
+  "round": 54,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T00:54:22+00:00",
+  "updated_at": "2026-08-15T01:13:40+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5854,7 +5854,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:36:27+00:00",
       "updated_at": "2026-08-14T15:36:27+00:00",
-      "touched_round": 50,
+      "touched_round": 54,
       "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
     },
     "ISS-102": {
@@ -6099,6 +6099,94 @@
       "touched_round": 53,
       "rationale": "simple-PTQ intentionally stays an int8-only reference path: QuantConfig.bits only scales the quantized range (qmax=2^(bits-1)-1); weights are always stored as int8. A true bits=4 packed path (two weights per byte) duplicates the existing production packing in GPTQ/AWQ (ISS-020/CHG-090 etc.), so it is a feature with real scope, not a bug fix. compute_model_size correctly reports 8 bytes/param for this storage (documented). Users wanting packed 4-bit should use the GPTQ/AWQ backends.",
       "alternatives_rejected": "(1) implement pack/unpack in simple-PTQ — duplicated effort, no obvious advantage over GPTQ/AWQ, changes the reference path's simplicity; (2) silently reinterpret bits=4 as 8-bit in reports — hides the real storage; the current report is accurate"
+    },
+    "TASK-092": {
+      "id": "TASK-092",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T01:13:09+00:00",
+      "updated_at": "2026-08-15T01:13:40+00:00",
+      "touched_round": 54,
+      "category": "correctness",
+      "severity": 0.4,
+      "confidence": 0.9,
+      "effort": 0.2,
+      "title": "batch_engine _emit_tokens/_lock_step_post must exclude EOS decoded text (ISS-96/98 parity on batched path)",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T01:43:40+00:00"
+    },
+    "TASK-093": {
+      "id": "TASK-093",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:13:09+00:00",
+      "updated_at": "2026-08-15T01:13:09+00:00",
+      "touched_round": 54,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 0.9,
+      "effort": 0.2,
+      "title": "generate_until strips token-id-sequence until stops like string stops (adjacent to ISS-101)"
+    },
+    "TASK-094": {
+      "id": "TASK-094",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:13:09+00:00",
+      "updated_at": "2026-08-15T01:13:09+00:00",
+      "touched_round": 54,
+      "category": "stability",
+      "severity": 0.5,
+      "confidence": 0.6,
+      "effort": 0.4,
+      "title": "stream_request releases KV slot on generator abandonment (no try/finally reaps abandoned RUNNING seq)"
+    },
+    "ISS-103": {
+      "id": "ISS-103",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:13:31+00:00",
+      "updated_at": "2026-08-15T01:13:31+00:00",
+      "touched_round": 54,
+      "severity": 0.3,
+      "title": "lm_eval loglikelihood drops the first continuation token when the context string is empty (first_scorable=max(ctx_len,1) misfires for empty ctx)"
+    },
+    "ISS-104": {
+      "id": "ISS-104",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:13:31+00:00",
+      "updated_at": "2026-08-15T01:13:31+00:00",
+      "touched_round": 54,
+      "severity": 0.4,
+      "title": "batch_engine emits EOS decoded text into streamed/final output (batched path missed ISS-96/98)"
+    },
+    "ISS-105": {
+      "id": "ISS-105",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:13:31+00:00",
+      "updated_at": "2026-08-15T01:13:31+00:00",
+      "touched_round": 54,
+      "severity": 0.5,
+      "title": "stream_request leaks KV slot + leaves RUNNING scheduler entry when consumer abandons generator"
+    },
+    "ISS-106": {
+      "id": "ISS-106",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:13:31+00:00",
+      "updated_at": "2026-08-15T01:13:31+00:00",
+      "touched_round": 54,
+      "severity": 0.3,
+      "title": "generate_until token-id-sequence until stops left embedded in completion (string stops stripped only)"
     }
   },
   "edges": [
@@ -8850,6 +8938,30 @@
       "to": "COMP-010",
       "type": "governs",
       "created_at": "2026-08-15T00:54:22+00:00"
+    },
+    {
+      "from": "TASK-092",
+      "to": "ISS-104",
+      "type": "addresses",
+      "created_at": "2026-08-15T01:13:40+00:00"
+    },
+    {
+      "from": "TASK-093",
+      "to": "ISS-106",
+      "type": "addresses",
+      "created_at": "2026-08-15T01:13:40+00:00"
+    },
+    {
+      "from": "TASK-094",
+      "to": "ISS-105",
+      "type": "addresses",
+      "created_at": "2026-08-15T01:13:40+00:00"
+    },
+    {
+      "from": "ISS-103",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-15T01:13:40+00:00"
     }
   ]
 }

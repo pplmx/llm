@@ -393,7 +393,14 @@ class ContinuousBatchingEngine:
         chunks: list[str] = []
         stop_hit = False
 
+        eos_id = getattr(self.tokenizer, "eos_token_id", None)
         for token_id in new_token_ids:
+            # The EOS token ends generation; never emit its decoded text
+            # (parity with the eager/speculative backends — RIL ISS-96/98).
+            # ``_lock_step_post`` already appended it and marked the sequence
+            # FINISHED, so the drain here simply stops short of the EOS.
+            if eos_id is not None and token_id == eos_id:
+                break
             text_chunk = self.tokenizer.decode([token_id])
             if stops and text_chunk:
                 buffer += text_chunk

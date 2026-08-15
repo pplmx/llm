@@ -494,6 +494,43 @@ def test_generate_request_with_stop_truncates_output(tiny_model, device, mock_to
     assert isinstance(result, str)
 
 
+def test_engine_excludes_eos_text_from_output(tiny_model, device, mock_tokenizer):
+    """The EOS token's decoded text must NOT appear in the output (parity
+    with the eager/speculative backends — RIL ISS-96/ISS-98).
+
+    ``_emit_tokens`` used to decode and yield the EOS id like any ordinary
+    token (``_lock_step_post`` appends it, then marks the seq FINISHED), so a
+    tokenizer whose EOS decodes to a real string polluted every request's
+    streamed/final output.
+    """
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    from llm.serving.batch_engine import _StepInputs, _StepResult
+
+    def _emit_eos(inputs: _StepInputs) -> _StepResult:
+        # Force every sampled token to be the EOS id (mock_tokenizer.eos=99).
+        return _StepResult(inputs=inputs, next_token_ids=[99] * len(inputs.running_sequences))
+
+    with patch.object(engine, "_forward_and_sample", side_effect=_emit_eos):
+        req = GenerationRequest(prompt="abcd", max_new_tokens=5)
+        req.request_id = "req-eos-excl"
+        engine.add_request(req)
+        result = engine.generate_request(req)
+
+    # "99" is MockTokenizer.decode([99]) — the EOS token's text — must be excluded.
+    assert "99" not in result
+    assert isinstance(result, str)
+    # The EOS finish path still releases the KV slot.
+    assert engine.slot_allocator.get_slot("req-eos-excl") == -1
+
+
 def test_stop_terminated_request_frees_kv_slot(tiny_model, device, mock_tokenizer):
     """Regression (RIL ISS-044): a request that ends via a stop-sequence match
     must release its KV slot (dense + prefix + paged), otherwise the pool
