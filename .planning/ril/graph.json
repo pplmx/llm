@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 59,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T05:23:15+00:00",
+  "updated_at": "2026-08-15T05:42:37+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6520,11 +6520,11 @@
     "ISS-115": {
       "id": "ISS-115",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T02:46:40+00:00",
-      "touched_round": 56,
+      "updated_at": "2026-08-15T05:42:22+00:00",
+      "touched_round": 59,
       "severity": 0.2,
       "title": "sdpa complex path silently drops non-bool (float/additive) attn masks (currently unreachable in-tree, latent API gap)"
     },
@@ -6675,11 +6675,11 @@
     "ISS-119": {
       "id": "ISS-119",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:32:01+00:00",
-      "touched_round": 57,
+      "updated_at": "2026-08-15T05:42:37+00:00",
+      "touched_round": 59,
       "severity": 0.2,
       "title": "registry ensure_backends_registered non-atomic check-then-act; concurrent cold-start get_generation_backend could double-register (latent, single caller today)"
     },
@@ -6843,6 +6843,30 @@
       "touched_round": 59,
       "commit": "e1b80bb",
       "title": "GradScaler-skipped steps no longer advance global_step or poison AdaLoRA EMA"
+    },
+    "TASK-108": {
+      "id": "TASK-108",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-15T05:27:49+00:00",
+      "updated_at": "2026-08-15T05:42:22+00:00",
+      "touched_round": 59,
+      "category": "stability",
+      "severity": 0.6,
+      "title": "Serialize registry cold-start bootstrap with a lock (generation/export/peft check-then-act race)",
+      "summary": "ensure_backends_registered etc. read a module bool then act; two threads cold-starting can both pass the guard and the second register() raises ValueError. Add a module-level RLock + double-checked locking so bootstrap is atomic and idempotent under concurrency."
+    },
+    "CHG-109": {
+      "id": "CHG-109",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T05:42:13+00:00",
+      "updated_at": "2026-08-15T05:42:13+00:00",
+      "touched_round": 59,
+      "commit": "9a00c90",
+      "title": "Registry cold-start double-checked locking (generation/export/peft) + sdpA float additive mask merge"
     }
   },
   "edges": [
@@ -9870,6 +9894,30 @@
       "to": "TASK-106",
       "type": "implements",
       "created_at": "2026-08-15T05:23:08+00:00"
+    },
+    {
+      "from": "TASK-108",
+      "to": "ISS-119",
+      "type": "addresses",
+      "created_at": "2026-08-15T05:27:54+00:00"
+    },
+    {
+      "from": "CHG-109",
+      "to": "ISS-119",
+      "type": "resolves",
+      "created_at": "2026-08-15T05:42:22+00:00"
+    },
+    {
+      "from": "CHG-109",
+      "to": "ISS-115",
+      "type": "resolves",
+      "created_at": "2026-08-15T05:42:22+00:00"
+    },
+    {
+      "from": "CHG-109",
+      "to": "TASK-108",
+      "type": "implements",
+      "created_at": "2026-08-15T05:42:22+00:00"
     }
   ]
 }
