@@ -32,6 +32,11 @@ def test_sinusoidal_encoding_initialization():
     assert hasattr(model, "pe")
     assert isinstance(model.pe, torch.Tensor)
     assert model.pe.shape == (1, MAX_SEQ_LEN, HIDDEN_SIZE)
+    # RIL ISS-146: the deterministic sine table must NOT be a persistent
+    # buffer — it bloated every checkpoint and exported artifact (ONNX/
+    # TorchScript/GGUF embed it as a constant, and GGUF even Q4_0-quantized
+    # it under an unrecognized name). It is regenerated on construction.
+    assert "pe" not in model.state_dict(), "deterministic pe table must be non-persistent"
 
     # Check characteristic values for sinusoidal encoding at pos=0
     # PE(0, 2i) = sin(0 / ...) = 0

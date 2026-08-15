@@ -75,7 +75,14 @@ class PositionalEncoding(nn.Module):
             # shape-mismatch crash that otherwise broke construction.
             pe[0, :, 1::2] = torch.cos(position * div_term[: hidden_size // 2])
 
-            self.register_buffer("pe", pe)
+            # Non-persistent: the sine table is a pure deterministic function
+            # of (max_seq_len, hidden_size), regenerated every time the module
+            # is constructed (models rebuild from config on load, so a
+            # persisted copy is dead weight). Storing it persistent bloated
+            # every checkpoint and exported artifact (ONNX/TorchScript/GGUF
+            # embed it as a constant) and got Q4_0-quantized by the GGUF
+            # exporter under a name llama.cpp doesn't recognize (RIL ISS-146).
+            self.register_buffer("pe", pe, persistent=False)
 
     def forward(self, x: torch.Tensor, start_pos: int = 0, position_ids: torch.Tensor | None = None) -> torch.Tensor:
         """
