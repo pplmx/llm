@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 import warnings
 from pathlib import Path
 from typing import Any
@@ -104,11 +105,40 @@ def _resolve_checkpoint_paths(name_or_path: str | Path) -> tuple[Path, Path, Pat
     )
 
 
+def _fsync_file(path: Path) -> None:
+    """Force ``path``'s bytes to durable storage (POSIX ``fsync``).
+
+    Without this, ``os.replace`` only makes the rename atomic in the page
+    cache; a power loss shortly after a save could leave the new file name
+    pointing at an un-persisted file (or, worse, a partially-flushed rename).
+    The directory entry itself must be fsynced too — a rename is a directory
+    metadata operation. Best-effort: some filesystems/CI sandboxes reject
+    ``fsync`` on the directory or lack ``O_DIRECT`` support.
+    """
+    import contextlib
+    import os
+
+    with path.open("rb") as f, contextlib.suppress(OSError):
+        os.fsync(f.fileno())
+    with contextlib.suppress(OSError):
+        dir_fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+
+
 def _atomic_write_bytes(target: Path, payload: bytes) -> None:
-    """Write ``payload`` to ``target`` atomically via temp + rename."""
+    """Write ``payload`` to ``target`` atomically via temp + fsync + rename.
+
+    Fsync is performed BEFORE the rename so that when the rename lands, the
+    file contents are already durable — a crash after the rename can no
+    longer leave an empty/partial file under the final name (RIL ISS-127).
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
     tmp.write_bytes(payload)
+    _fsync_file(tmp)
     tmp.replace(target)
 
 
@@ -129,6 +159,7 @@ def _save_weights_safetensors(state_dict: dict[str, torch.Tensor], path: Path) -
     contiguous = {k: v.detach().contiguous().clone() for k, v in state_dict.items() if isinstance(v, torch.Tensor)}
     tmp = path.with_suffix(path.suffix + ".tmp")
     save_file(contiguous, str(tmp))
+    _fsync_file(tmp)
     tmp.replace(path)
 
 
@@ -149,21 +180,33 @@ def _save_extra_state_pt(
     scaler_state: dict[str, Any] | None,
     extra_state: dict[str, Any] | None,
     path: Path,
+    *,
+    save_id: str,
+    epoch: int,
 ) -> None:
     """Save training-state sidecars to ``path`` as ``torch.save``.
 
     Wraps all four sub-states in a single dict so the loader can
     tell them apart — the top-level keys mirror the legacy single-file
     schema, but only the training-state slots are present.
+
+    ``save_id`` and ``epoch`` are stamped into the sidecar so the loader
+    can cross-check the three sidecars came from the SAME atomic save
+    (RIL ISS-127): a crash mid-save that leaves a fresh weights file with
+    a stale meta/extra trio would otherwise resume silently with
+    mismatched optimizer/scheduler state.
     """
     blob = {
         "optimizer_state": optimizer_state,
         "scheduler_state": scheduler_state,
         "scaler_state": scaler_state,
         "extra_state": extra_state,
+        "save_id": save_id,
+        "epoch": epoch,
     }
     tmp = path.with_suffix(path.suffix + ".tmp")
     torch.save(blob, tmp)
+    _fsync_file(tmp)
     tmp.replace(path)
 
 
@@ -196,6 +239,31 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
         )
 
     extra = torch.load(extra_state_path, map_location="cpu", weights_only=False)
+
+    # Cross-check the trio came from ONE atomic save (RIL ISS-127). Each
+    # save stamps a ``save_id`` and ``epoch`` into both the meta.json and
+    # the extra_state.pt sidecars; if a crash interrupted the save, a fresh
+    # weights file can sit beside a stale meta/extra trio. Resuming that
+    # would silently re-train from the old optimizer/epoch with new weights.
+    # (Backward-compatible: checkpoints written before the stamp have no
+    # ``save_id`` and are loaded as-is.)
+    meta_save_id = meta.get("save_id")
+    extra_save_id = extra.get("save_id")
+    if meta_save_id is not None and extra_save_id is not None and meta_save_id != extra_save_id:
+        raise ValueError(
+            f"Checkpoint {stem_dir} is inconsistent: meta.json save_id={meta_save_id} != "
+            f"extra_state.pt save_id={extra_save_id}. The save was interrupted mid-write; "
+            "restore all three sidecars from the same save (or a previous checkpoint)."
+        )
+    meta_epoch = meta.get("epoch")
+    extra_epoch = extra.get("epoch")
+    if meta_epoch is not None and extra_epoch is not None and meta_epoch != extra_epoch:
+        raise ValueError(
+            f"Checkpoint {stem_dir} is inconsistent: meta.json epoch={meta_epoch} != "
+            f"extra_state.pt epoch={extra_epoch}. The save was interrupted mid-write; "
+            "restore all three sidecars from the same save (or a previous checkpoint)."
+        )
+
     return {
         "model_state": model_state,
         "model_config": meta.get("model_config"),
@@ -349,7 +417,9 @@ def convert_legacy_checkpoint_to_split(
     # Load the legacy blob.
     payload = torch.load(legacy_path, map_location="cpu", weights_only=False)
 
-    # Write the split trio.
+    # Write the split trio. Stamp a shared save_id into meta + extra_state so
+    # the loader can cross-check the trio came from one write (RIL ISS-127).
+    migrated_save_id = uuid.uuid4().hex
     _save_weights_safetensors(payload["model_state"], safetensors_path)
     _save_metadata_json(
         {
@@ -358,6 +428,7 @@ def convert_legacy_checkpoint_to_split(
             "loss": payload.get("loss"),
             "best_loss": payload.get("best_loss", float("inf")),
             "model_config": payload.get("model_config"),
+            "save_id": migrated_save_id,
         },
         meta_path,
     )
@@ -367,6 +438,8 @@ def convert_legacy_checkpoint_to_split(
         payload.get("scaler_state"),
         payload.get("extra_state"),
         extra_state_path,
+        save_id=migrated_save_id,
+        epoch=payload.get("epoch", 0),
     )
 
     # Optionally delete the legacy file.
@@ -425,6 +498,14 @@ class CheckpointManager:
         meta_path = base.with_name(base.name + META_SUFFIX)
         extra_state_path = base.with_name(base.name + EXTRA_STATE_SUFFIX)
 
+        # Per-save generation marker (RIL ISS-127): written into BOTH the
+        # meta and the extra_state sidecars so the loader can prove the trio
+        # came from one atomic save. A crash between writing the weights and
+        # the extra_state would otherwise leave meta/extra from a previous
+        # save paired with fresh weights — silently re-training from a stale
+        # optimizer/epoch. ``epoch`` is cross-checked the same way.
+        save_id = uuid.uuid4().hex
+
         _save_weights_safetensors(model_state, weights_path)
         _save_metadata_json(
             {
@@ -433,6 +514,7 @@ class CheckpointManager:
                 "loss": loss,
                 "best_loss": best_loss,
                 "model_config": model_config,
+                "save_id": save_id,
             },
             meta_path,
         )
@@ -442,6 +524,8 @@ class CheckpointManager:
             scaler_state,
             extra_state,
             extra_state_path,
+            save_id=save_id,
+            epoch=epoch,
         )
         return weights_path, meta_path, extra_state_path
 
@@ -603,6 +687,15 @@ class CheckpointManager:
                     "restart from scratch — fix the model config or point resume_from_checkpoint "
                     "at a compatible checkpoint."
                 ) from e
+
+            # The three sidecars disagree about which save they belong to
+            # (meta vs extra_state save_id/epoch mismatch). This is NOT a
+            # recoverable format issue — resuming would pair fresh weights
+            # with stale optimizer/scheduler state and silently re-train or
+            # skip (RIL ISS-127). Refuse loudly so the user restores a
+            # consistent trio rather than training on a half-written one.
+            if isinstance(e, ValueError) and "inconsistent" in message:
+                raise
 
             self.logger.error(f"Failed to load checkpoint from {ckp_path}: {e}")
             self.logger.warning("Starting from scratch due to checkpoint loading error.")

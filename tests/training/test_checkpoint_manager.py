@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import torch
 
 from llm.training.core.config import CheckpointConfig
 from llm.training.core.utils import CheckpointManager, Logger, LoggingConfig
@@ -164,3 +165,51 @@ def test_load_checkpoint_mismatched_architecture_raises(checkpoint_manager):
     different_arch = nn.Linear(5, 5)
     with pytest.raises(RuntimeError, match=r"checkpoint|architecture|config"):
         checkpoint_manager.load_checkpoint(different_arch, None, None, None, device=DEFAULT_DEVICE)
+
+
+def test_save_stamps_matching_save_id_into_meta_and_extra(checkpoint_manager):
+    """RIL ISS-127: every save stamps a shared ``save_id`` (and the epoch)
+    into BOTH the meta.json and the extra_state.pt sidecar. The loader uses
+    the pair to prove the three sidecars came from one atomic save."""
+    import json
+
+    checkpoint_manager.save_checkpoint(0, DummyState(), DummyState(), DummyState(), DummyState(), loss=1.0)
+    ckpt_dir = Path(checkpoint_manager.config.checkpoint_dir)
+
+    meta = json.loads((ckpt_dir / "latest.meta.json").read_text())
+    extra = torch.load(ckpt_dir / "latest.extra_state.pt", map_location="cpu", weights_only=False)
+
+    assert "save_id" in meta, "meta.json must carry the per-save save_id"
+    assert meta["save_id"] == extra["save_id"], "meta + extra_state must share the save_id"
+    assert meta["epoch"] == extra["epoch"], "meta + extra_state must share the epoch"
+
+
+def test_load_rejects_inconsistent_trio_stale_extra(checkpoint_manager):
+    """RIL ISS-127: a crash interrupted between writing the (new) weights
+    sidecar and the (old) extra_state/optimizer must NOT resume silently with
+    a mismatched trio — new weights paired with stale optimizer/scheduler
+    state would silently re-train/skip. Loading must raise instead."""
+    import torch as _torch  # noqa: F401
+    from torch import nn
+
+    saved = nn.Linear(4, 4)
+    checkpoint_manager.save_checkpoint(0, saved, DummyState(), DummyState(), DummyState(), loss=0.5)
+    ckpt_dir = Path(checkpoint_manager.config.checkpoint_dir)
+
+    # Simulate a crash-mid-save: rewrite the extra_state.pt from a DIFFERENT
+    # save (a stale generation) — the loader must detect the save_id/epoch
+    # mismatch and refuse to silently resume.
+    stale_extra = ckpt_dir / "stale.extra_state.pt"
+    torch.save(
+        {"optimizer_state": None, "scheduler_state": None, "scaler_state": None, "extra_state": None}, stale_extra
+    )
+    stale = torch.load(stale_extra, map_location="cpu", weights_only=False)
+    # Copy the stale blob into the real extra_state path but with a different
+    # save_id + epoch than the meta sidecar.
+    stale["save_id"] = "STALE-SAVE"
+    stale["epoch"] = 999
+    torch.save(stale, str(ckpt_dir / "latest.extra_state.pt"))
+
+    checkpoint_manager.config.resume_from_checkpoint = str(ckpt_dir / "latest.pt")
+    with pytest.raises(ValueError, match="inconsistent"):
+        checkpoint_manager.load_checkpoint(saved, None, None, None, device=DEFAULT_DEVICE)
