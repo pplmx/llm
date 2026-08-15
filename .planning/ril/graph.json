@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 59,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T07:08:25+00:00",
+  "updated_at": "2026-08-15T10:41:43+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 55,
+      "touched_round": 59,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -6902,6 +6902,79 @@
       "severity": 0.6,
       "title": "SFT/DPO/reward long 0/1 attention_masks never applied during training (sdpa complex path 'pass' dropped them) - padding tokens attended",
       "summary": "Data pipelines emit LongTensor [B,S] attention_mask (1=real,0=pad). On the sdpa complex path (causal+mask / window) a non-bool mask hit a bare pass and was silently dropped, so padding was never masked in SFT/DPO/reward training; the fast path rejected the long dtype outright. Fixed in 4e1dbaa (mask-out predicate ==0, 1=keep; broadcast [B,S] to key axis)."
+    },
+    "CHG-111": {
+      "id": "CHG-111",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T10:35:58+00:00",
+      "updated_at": "2026-08-15T10:35:58+00:00",
+      "touched_round": 59,
+      "commit": "a7231ca",
+      "title": "stream tail drain race fix: reuse pre-step seq reference instead of racy post-step re-fetch (serving scan F1)"
+    },
+    "ISS-121": {
+      "id": "ISS-121",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-15T10:37:52+00:00",
+      "updated_at": "2026-08-15T10:38:58+00:00",
+      "touched_round": 59,
+      "severity": 0.5,
+      "title": "stream_request drops final token when concurrent step() evicts finished sequence (drain race)",
+      "summary": "Post-step re-fetch of scheduler.get_sequence races with a concurrent step()->schedule() filter of finished sequences, returning None so the loop breaks and the final token is lost (silent truncation under concurrent load). Fixed in a7231ca/CHG-111 by reusing the pre-step seq reference."
+    },
+    "ISS-122": {
+      "id": "ISS-122",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T10:37:52+00:00",
+      "updated_at": "2026-08-15T10:37:52+00:00",
+      "touched_round": 59,
+      "severity": 0.4,
+      "title": "Route idle-timeout leaves orphaned sync stepper holding KV/scheduler slot + burning forwards (liveness)",
+      "summary": "On asyncio.timeout the client generator releases the semaphore but starlette's iterate_in_threadpool never closes the underlying sync generator; its worker thread steps once more and the orphan holds the slot until asyncgen GC finalization — exceeds max_concurrent_requests bound under load, pins slots. Self-healing but liveness/availability risk. Needs explicit cancellation/close of the sync stepper at timeout."
+    },
+    "ISS-123": {
+      "id": "ISS-123",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T10:37:52+00:00",
+      "updated_at": "2026-08-15T10:37:52+00:00",
+      "touched_round": 59,
+      "severity": 0.35,
+      "title": "Client-supplied duplicate request_id shares one KV slot between two sequences (cross-request contamination)",
+      "summary": "Two concurrent requests with same request_id create two Sequences hashed to one slot: KV writes clobber, first copy's finish frees the slot under the still-running second copy. Fix needs a route-layer uniqueness guarantee (add_request strict-reject breaks the double-add generate_request->stream_request contract); logged for a future round."
+    },
+    "TASK-109": {
+      "id": "TASK-109",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T10:39:42+00:00",
+      "updated_at": "2026-08-15T10:39:42+00:00",
+      "touched_round": 59,
+      "category": "stability",
+      "severity": 0.4,
+      "title": "Fix route idle-timeout orphaned sync stepper pinning slots (ISS-122/F2)",
+      "summary": "At timeout, starlette iterate_in_threadpool doesn't close the sync generator; it keeps the KV/scheduler slot + burns forwards until asyncgen GC. Add explicit cancellation: close the sync iterator at timeout so the finally reap runs promptly."
+    },
+    "TASK-110": {
+      "id": "TASK-110",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T10:39:42+00:00",
+      "updated_at": "2026-08-15T10:39:42+00:00",
+      "touched_round": 59,
+      "category": "correctness",
+      "severity": 0.35,
+      "title": "Reject client duplicate request_id at route layer (ISS-123/F3)",
+      "summary": "Two concurrent requests sharing request_id collide on one KV slot. add_request strict rejection breaks the generate_request->stream_request double-add contract; enforce uniqueness in the route/router instead."
     }
   },
   "edges": [
@@ -9971,6 +10044,42 @@
       "to": "COMP-012",
       "type": "located_in",
       "created_at": "2026-08-15T07:08:25+00:00"
+    },
+    {
+      "from": "CHG-111",
+      "to": "ISS-121",
+      "type": "resolves",
+      "created_at": "2026-08-15T10:38:58+00:00"
+    },
+    {
+      "from": "ISS-121",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-15T10:38:58+00:00"
+    },
+    {
+      "from": "ISS-122",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-15T10:39:42+00:00"
+    },
+    {
+      "from": "ISS-123",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-15T10:39:42+00:00"
+    },
+    {
+      "from": "TASK-109",
+      "to": "ISS-122",
+      "type": "addresses",
+      "created_at": "2026-08-15T10:41:43+00:00"
+    },
+    {
+      "from": "TASK-110",
+      "to": "ISS-123",
+      "type": "addresses",
+      "created_at": "2026-08-15T10:41:43+00:00"
     }
   ]
 }
