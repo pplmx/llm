@@ -561,9 +561,28 @@ def quantize_model_gptq(
         except (RuntimeError, ValueError, TypeError) as e:
             logger.debug(f"Model forward failed during calibration: {e}; falling back to direct layer calls.")
 
-    # If hooks captured nothing, fall back to calling each target layer directly.
-    any_captured = any(len(v) > 0 for v in captured.values())
-    if not any_captured:
+    # If hooks captured nothing, fall back to calling each target layer directly
+    # (circumventing the model graph). A capture FAILURE mid-loop must be
+    # handled uniformly: hooks fire in graph order, so a forward that raises on
+    # batch k leaves layers before the failure with k+1 captures and layers at/
+    # after it with only k — the per-layer batch counts would DIVERGE, and a
+    # layer whose first batch never made it holds ZERO captures (its Hessian
+    # later crashes with "No calibration data accumulated (n_samples=0)">
+    # after earlier layers were already replaced (partial in-place mutation).
+    # Any inconsistency -> rebuild every layer's captures from the direct
+    # calls over the full calibration set (RIL ISS-136).
+    expected_captures = len(calib_batches)
+    capt_sizes = {n: len(v) for n, v in captured.items()}
+    any_captured = any(s > 0 for s in capt_sizes.values())
+    consistent = bool(capt_sizes) and all(s == expected_captures for s in capt_sizes.values())
+    if not any_captured or not consistent:
+        if any_captured and not consistent:
+            logger.warning(
+                "Per-layer calibration captures diverged after a partial forward "
+                "failure (%s); falling back to direct layer calls for ALL targets "
+                "so every layer quantizes over the same calibration set.",
+                capt_sizes,
+            )
         for h in hooks:
             h.remove()
         for n, _m in targets:

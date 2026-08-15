@@ -37,7 +37,60 @@ def test_quantize_model_gptq_replaces_all_linear_layers():
     assert gptq_count == 2, f"Expected 2 GPTQQuantizedLinear (fc1, fc2), found {gptq_count}"
 
 
-def test_quantize_model_gptq_preserves_forward_contract():
+class ParallelBranchMLP(nn.Module):
+    """Two same-shaped branches (both Linear(h,h)) — lets a controlled
+    forward failure leave ONE branch's hook never fired while the other
+    captured a batch, without a direct-call shape mismatch tripping the
+    fallback."""
+
+    def __init__(self, hidden: int = 16):
+        super().__init__()
+        self.branch_a = nn.Linear(hidden, hidden)
+        self.branch_b = nn.Linear(hidden, hidden)
+
+    def forward(self, x):
+        return self.branch_a(x) + self.branch_b(x)
+
+
+def test_quantize_model_gptq_partial_forward_failure_uniform_fallback():
+    """RIL ISS-136: a forward failure mid-calibration must not leave the
+    per-layer capture counts diverged (a layer whose hook never fired holds
+    ZERO captures and later crashes with 'No calibration data accumulated
+    (n_samples=0)' AFTER earlier layers were already replaced).
+
+    The forward raises INSIDE branch_a's body on the first batch: branch_a's
+    input hook captured 1 batch, branch_b's hook never fired (0 captures).
+    Without the fix the quantizer proceeded with branch_b empty and crashed;
+    now the inconsistent captures trigger a uniform direct-call fallback so
+    every layer quantizes over the whole calibration set.
+    """
+    from types import MethodType
+
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = ParallelBranchMLP(hidden=16)
+    calib = [torch.randn(8, 16) for _ in range(2)]
+    calls = {"n": 0}
+
+    def failing_forward(self, x):
+        calls["n"] += 1
+        a = self.branch_a(x)
+        if calls["n"] == 1:
+            raise RuntimeError("simulated mid-calibration forward failure")
+        b = self.branch_b(x)
+        return a + b
+
+    model.forward = MethodType(failing_forward, model)  # type: ignore[method-assign]
+
+    quantized = quantize_model_gptq(model, iter(calib), GPTQConfig())
+
+    # Both branches must be quantized — the uniform fallback saved branch_b
+    # instead of crashing after branch_a was already replaced.
+    for name, m in quantized.named_modules():
+        if name in ("branch_a", "branch_b"):
+            assert isinstance(m, GPTQQuantizedLinear), f"{name} not quantized: {type(m).__name__}"
+
     """Quantized model accepts same input shape and returns same output shape."""
     from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
 

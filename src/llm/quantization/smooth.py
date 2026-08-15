@@ -359,8 +359,23 @@ def quantize_model_smoothquant(
         except (RuntimeError, ValueError, TypeError) as e:
             logger.debug(f"Model forward failed during calibration: {e}; falling back to direct layer calls.")
 
-    any_captured = any(len(v) > 0 for v in captured.values())
-    if not any_captured:
+    # A mid-loop forward failure must not leave the per-layer capture counts
+    # diverged (a layer that never got its first batch holds ZERO captures and
+    # later crashes with "No calibration data accumulated (n_samples=0)" after
+    # earlier layers were already replaced). Any inconsistency -> rebuild every
+    # target's captures from direct calls over the full set (RIL ISS-136).
+    expected_captures = len(calib_batches)
+    capt_sizes = {n: len(v) for n, v in captured.items()}
+    any_captured = any(s > 0 for s in capt_sizes.values())
+    consistent = bool(capt_sizes) and all(s == expected_captures for s in capt_sizes.values())
+    if not any_captured or not consistent:
+        if any_captured and not consistent:
+            logger.warning(
+                "Per-layer calibration captures diverged after a partial forward "
+                "failure (%s); falling back to direct layer calls for ALL targets "
+                "so every layer quantizes over the same calibration set.",
+                capt_sizes,
+            )
         for h in hooks:
             h.remove()
         for n, _m in targets:
