@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 56,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T02:49:00+00:00",
+  "updated_at": "2026-08-15T02:57:59+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6498,10 +6498,10 @@
     "ISS-113": {
       "id": "ISS-113",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T02:46:40+00:00",
+      "updated_at": "2026-08-15T02:57:27+00:00",
       "touched_round": 56,
       "severity": 0.3,
       "title": "OOV prompt chars raise KeyError -> HTTP 500 instead of 400; streaming maps it as success with Error text in 200 SSE"
@@ -6545,32 +6545,32 @@
     "TASK-101": {
       "id": "TASK-101",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T02:49:00+00:00",
+      "updated_at": "2026-08-15T02:57:27+00:00",
       "touched_round": 56,
       "category": "correctness",
       "severity": 0.3,
       "confidence": 0.9,
       "effort": 0.15,
-      "title": "routers: map tokenizer KeyError (OOV prompt) to 400 INVALID_REQUEST alongside ValueError",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T03:19:00+00:00"
+      "title": "routers: map tokenizer KeyError (OOV prompt) to 400 INVALID_REQUEST alongside ValueError"
     },
     "TASK-102": {
       "id": "TASK-102",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T02:46:40+00:00",
+      "updated_at": "2026-08-15T02:57:59+00:00",
       "touched_round": 56,
       "category": "correctness",
       "severity": 0.3,
       "confidence": 0.7,
       "effort": 0.3,
-      "title": "chat non-streaming: preserve completion whitespace (match streaming) + emit finish_reason 'length' when max_tokens truncates"
+      "title": "chat non-streaming: preserve completion whitespace (match streaming) + emit finish_reason 'length' when max_tokens truncates",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T03:27:59+00:00"
     },
     "EV-133": {
       "id": "EV-133",
@@ -6594,6 +6594,29 @@
       "touched_round": 56,
       "commit": "f39a406",
       "title": "mha._rope_positions tensor-before-int guard (TASK-100)"
+    },
+    "EV-134": {
+      "id": "EV-134",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:57:27+00:00",
+      "updated_at": "2026-08-15T02:57:27+00:00",
+      "touched_round": 56,
+      "source": "tests/serving/test_api.py::test_generate_oov_prompt_returns_400_not_500",
+      "title": "Repro: char tokenizer over ['abc'], prompt 'héllo' -> KeyError 'Character h not found' -> 500 Internal server error (RED); fix KeyError->400 for both handlers + streaming pre-validation. Serving 321 passed",
+      "confidence": 1.0
+    },
+    "CHG-103": {
+      "id": "CHG-103",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:57:27+00:00",
+      "updated_at": "2026-08-15T02:57:27+00:00",
+      "touched_round": 56,
+      "commit": "76670f7",
+      "title": "OOV prompt -> 400 INVALID_REQUEST; streaming pre-validate (TASK-101)"
     }
   },
   "edges": [
@@ -9513,6 +9536,18 @@
       "to": "TASK-100",
       "type": "implements",
       "created_at": "2026-08-15T02:48:52+00:00"
+    },
+    {
+      "from": "CHG-103",
+      "to": "ISS-113",
+      "type": "resolves",
+      "created_at": "2026-08-15T02:57:27+00:00"
+    },
+    {
+      "from": "CHG-103",
+      "to": "TASK-101",
+      "type": "implements",
+      "created_at": "2026-08-15T02:57:27+00:00"
     }
   ]
 }

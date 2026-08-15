@@ -142,10 +142,21 @@ async def chat_completions(
         else:
             t.set_status(200)
 
-    # Strip the prompt prefix if the model echoed it back.
-    completion = generated_text[len(prompt) :].strip() if generated_text.startswith(prompt) else generated_text.strip()
+    # Strip only the prompt prefix if the model echoed it back. The
+    # completion itself is returned verbatim — `.strip()` removed a model's
+    # own leading/trailing whitespace (e.g. a leading newline char-tokenizers
+    # commonly emit), diverging from the streaming path which emits chunks
+    # verbatim (RIL ISS-114).
+    completion = generated_text[len(prompt) :] if generated_text.startswith(prompt) else generated_text
 
     metrics.observe_tokens(endpoint="chat_completions", token_count=len(completion))
+
+    # Per the OpenAI spec, a completion truncated by the ``max_tokens`` budget
+    # is ``finish_reason="length"``, not ``"stop"``. We approximate the
+    # generated token count with ``len(completion)`` (the same char-count
+    # proxy this endpoint already uses for ``completion_tokens``); for the
+    # char-level tokenizers this is exact.
+    finish_reason = "length" if len(completion) >= request.max_tokens else "stop"
 
     return ChatCompletionResponse(
         model=request.model,
@@ -153,7 +164,7 @@ async def chat_completions(
             ChatCompletionChoice(
                 index=0,
                 message=ChatCompletionChoiceMessage(content=completion),
-                finish_reason="stop",
+                finish_reason=finish_reason,
             )
         ],
         usage=ChatCompletionUsage(

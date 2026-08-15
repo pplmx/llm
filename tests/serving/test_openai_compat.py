@@ -55,6 +55,43 @@ def test_chat_completions_basic(client):
 
 
 @pytest.mark.slow
+@pytest.mark.slow
+def test_chat_non_streaming_preserves_whitespace(monkeypatch, client):
+    """The non-streaming chat completion must NOT strip the completion's own
+    leading/trailing whitespace (the model may legitimately emit a leading
+    newline) — matches the streaming path, which emits chunks verbatim, and
+    OpenAI semantics (RIL ISS-114)."""
+    # The route does generated_text[len(prompt):]; make the mock compute it.
+    monkeypatch.setattr("llm.serving.routers.chat._sync_generate", lambda prompt, **kw: prompt + "  hi  ")
+
+    payload = {"model": "llm", "messages": [{"role": "user", "content": "hello"}], "max_tokens": 50}
+    data = client.post("/v1/chat/completions", json=payload).json()
+    assert data["choices"][0]["message"]["content"] == "  hi  "
+
+
+@pytest.mark.slow
+def test_chat_finish_reason_length_when_budget_exhausted(monkeypatch, client):
+    """finish_reason must be ``"length"`` (OpenAI spec) when generation consumed
+    the full ``max_tokens`` budget, not hard-coded ``"stop"`` (RIL ISS-114)."""
+    # 4 chars >= max_tokens=2 → length.
+    monkeypatch.setattr("llm.serving.routers.chat._sync_generate", lambda prompt, **kw: prompt + "abcd")
+
+    payload = {"model": "llm", "messages": [{"role": "user", "content": "hello"}], "max_tokens": 2}
+    data = client.post("/v1/chat/completions", json=payload).json()
+    assert data["choices"][0]["finish_reason"] == "length"
+
+
+@pytest.mark.slow
+def test_chat_finish_reason_stop_when_natural_stop(monkeypatch, client):
+    """A short completion well under max_tokens keeps finish_reason ``"stop"``."""
+    # 1 char < max_tokens=10 → stop.
+    monkeypatch.setattr("llm.serving.routers.chat._sync_generate", lambda prompt, **kw: prompt + "a")
+
+    payload = {"model": "llm", "messages": [{"role": "user", "content": "hello"}], "max_tokens": 10}
+    data = client.post("/v1/chat/completions", json=payload).json()
+    assert data["choices"][0]["finish_reason"] == "stop"
+
+
 def test_chat_completions_with_system_message(client):
     """Test chat completion with system message."""
     payload = {
