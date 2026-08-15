@@ -105,6 +105,45 @@ def _resolve_checkpoint_paths(name_or_path: str | Path) -> tuple[Path, Path, Pat
     )
 
 
+#: Model-config fields that MUST be identical between the checkpoint and the
+#: current run for a resume to be correct — they define the tensor shapes and
+#: the KV-cache / context geometry. Anything else (dropout, mroe tuning knobs
+#: that don't change state_dict shapes) does not invalidate a resume.
+_CONFIG_COMPAT_FIELDS: tuple[str, ...] = (
+    "hidden_size",
+    "num_heads",
+    "num_kv_heads",
+    "intermediate_size",
+    "num_layers",
+    "vocab_size",
+    "max_seq_len",
+    "use_glu",
+    "num_experts",
+    "top_k",
+    "attn_impl",
+    "mlp_impl",
+    "norm_impl",
+    "use_kv_cache",
+)
+
+
+def _model_config_mismatches(expected: dict, actual: dict) -> dict[str, tuple[Any, Any]]:
+    """Return ``{field: (ckpt_value, current_value)}`` for every
+    architecture-defining config field where the two sidecars disagree.
+
+    Compares only :data:`_CONFIG_COMPAT_FIELDS` — the fields a resume's
+    correctness depends on. Non-architectural drift (dropout, logging etc.)
+    is intentionally ignored so users can change those between runs.
+    """
+    mismatches: dict[str, tuple[Any, Any]] = {}
+    for field in _CONFIG_COMPAT_FIELDS:
+        if field not in expected or field not in actual:
+            continue
+        if expected[field] != actual[field]:
+            mismatches[field] = (actual[field], expected[field])
+    return mismatches
+
+
 def _fsync_file(path: Path) -> None:
     """Force ``path``'s bytes to durable storage (POSIX ``fsync``).
 
@@ -628,6 +667,7 @@ class CheckpointManager:
         scheduler: LRScheduler | None,
         scaler: torch.amp.GradScaler | None,
         device: torch.device,
+        expected_model_config: dict | None = None,
     ) -> tuple[int, float]:
         if not self.config.resume_from_checkpoint:
             return 0, float("inf")
@@ -652,6 +692,27 @@ class CheckpointManager:
                     "(neither split nor legacy). Starting from scratch."
                 )
                 return 0, float("inf")
+
+            # Resume-config compatibility check (RIL ISS-126): a checkpoint
+            # whose model_config differs from the current run's in any
+            # architecture-defining field means the user changed config (or
+            # pointed at the wrong checkpoint). Weight-shape mismatches are
+            # already caught loudly by load_model_state_dict below; but
+            # non-tensor differences the state dict CANNOT expose — a changed
+            # scheduler_type/epochs/warmup whose state dict loads fine into a
+            # differently-shaped scheduler, a changed tokenizer re-tokenizing
+            # with new ids over old weights, a changed max_seq_len — would
+            # silently corrupt or mis-anneal the resume. Compare the fields
+            # that define the model/schedule and refuse loudly.
+            if expected_model_config and payload.get("model_config"):
+                mismatches = _model_config_mismatches(expected_model_config, payload["model_config"])
+                if mismatches:
+                    raise ValueError(
+                        f"Checkpoint at {ckp_path} was saved with a different model/schedule "
+                        f"configuration: {', '.join(f'{k} (ckpt {v[0]}, now {v[1]})' for k, v in mismatches.items())}. "
+                        "Refusing to silently resume with mismatched weights — fix the config or "
+                        "point resume_from_checkpoint at a compatible checkpoint."
+                    )
 
             load_model_state_dict(model, payload["model_state"])
             if optimizer is not None and payload.get("optimizer_state") is not None:
@@ -688,13 +749,18 @@ class CheckpointManager:
                     "at a compatible checkpoint."
                 ) from e
 
-            # The three sidecars disagree about which save they belong to
-            # (meta vs extra_state save_id/epoch mismatch). This is NOT a
-            # recoverable format issue — resuming would pair fresh weights
-            # with stale optimizer/scheduler state and silently re-train or
-            # skip (RIL ISS-127). Refuse loudly so the user restores a
-            # consistent trio rather than training on a half-written one.
-            if isinstance(e, ValueError) and "inconsistent" in message:
+            # Two data-integrity/refusal errors are NOT recoverable format
+            # issues — they mean the user pointed at the wrong checkpoint or a
+            # save was interrupted:
+            #  - ISS-127: the three sidecars disagree about which save they
+            #    belong to (meta vs extra_state save_id/epoch mismatch), so
+            #    resuming would pair fresh weights with stale optimizer state.
+            #  - ISS-126: the checkpoint's model_config differs from the
+            #    current run's architecture-defining fields, so the weights
+            #    were not trained for this model/schedule.
+            # Both must propagate to the caller instead of silently
+            # restarting from scratch.
+            if isinstance(e, ValueError) and ("inconsistent" in message or "Refusing to silently resume" in message):
                 raise
 
             self.logger.error(f"Failed to load checkpoint from {ckp_path}: {e}")

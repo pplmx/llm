@@ -255,7 +255,12 @@ class TrainingEngine:
 
         if self.use_standard_loop:
             self.start_epoch, self.best_loss = self.checkpoint_manager.load_checkpoint(
-                model_to_load, self.optimizer, self.scheduler, self.scaler, self.device
+                model_to_load,
+                self.optimizer,
+                self.scheduler,
+                self.scaler,
+                self.device,
+                expected_model_config=self.config.model.model_dump(),
             )
             load_extra_state(
                 self.checkpoint_manager.loaded_extra_state,
@@ -280,6 +285,7 @@ class TrainingEngine:
                     None,
                     self.scaler,
                     self.device,
+                    expected_model_config=self.config.model.model_dump(),
                 )
                 load_extra_state(
                     self.checkpoint_manager.loaded_extra_state,

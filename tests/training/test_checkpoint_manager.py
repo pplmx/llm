@@ -213,3 +213,55 @@ def test_load_rejects_inconsistent_trio_stale_extra(checkpoint_manager):
     checkpoint_manager.config.resume_from_checkpoint = str(ckpt_dir / "latest.pt")
     with pytest.raises(ValueError, match="inconsistent"):
         checkpoint_manager.load_checkpoint(saved, None, None, None, device=DEFAULT_DEVICE)
+
+
+def test_load_rejects_resume_with_mismatched_model_config(checkpoint_manager):
+    """RIL ISS-126: resuming must not silently accept a checkpoint whose
+    architecture-defining config differs from the current run.
+
+    A changed ``vocab_size`` / ``hidden_size`` / ``max_seq_len`` / MoE knobs
+    between runs means the (shape-compatible or not) weights were trained for
+    a different model; resuming silently would either corrupt the run (when
+    shapes happen to line up) or retrain from scratch. Fail loudly, like the
+    ISS-108 shape guard and the ISS-127 trio guard.
+    """
+    import torch.nn as nn
+
+    saved = nn.Linear(4, 4)
+    checkpoint_manager.save_checkpoint(
+        0, saved, None, None, None, loss=0.5, model_config={"hidden_size": 32, "num_layers": 2}
+    )
+    checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
+
+    # Current run uses a DIFFERENT arch (hidden_size 64) → refuse.
+    expected = {"hidden_size": 64, "num_layers": 2}
+    with pytest.raises(ValueError, match="different model"):
+        checkpoint_manager.load_checkpoint(
+            saved, None, None, None, device=DEFAULT_DEVICE, expected_model_config=expected
+        )
+
+
+def test_load_resume_matching_model_config_is_accepted(checkpoint_manager):
+    """RIL ISS-126 guard must not reject a compatible resume: identical
+    arch-defining fields load normally, and non-arch drift (dropout etc.) is
+    ignored."""
+    import torch.nn as nn
+
+    saved = nn.Linear(4, 4)
+    checkpoint_manager.save_checkpoint(
+        0,
+        saved,
+        None,
+        None,
+        None,
+        loss=0.5,
+        model_config={"hidden_size": 64, "num_layers": 2, "dropout": 0.3},
+    )
+    checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
+
+    # Identical arch + different (non-arch) dropout → still loads.
+    expected = {"hidden_size": 64, "num_layers": 2, "dropout": 0.0}
+    start_epoch, _ = checkpoint_manager.load_checkpoint(
+        saved, None, None, None, device=DEFAULT_DEVICE, expected_model_config=expected
+    )
+    assert start_epoch == 1
