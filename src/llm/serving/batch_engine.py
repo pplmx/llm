@@ -441,45 +441,62 @@ class ContinuousBatchingEngine:
         max_stop_len = max((len(s) for s in stops), default=0) if stops else 0
         buffer = ""
         emitted = 0
-        while True:
-            seq = self.scheduler.get_sequence(req_id)
-            if seq is None:
-                break
-            if seq.is_finished():
+        try:
+            while True:
+                seq = self.scheduler.get_sequence(req_id)
+                if seq is None:
+                    break
+                if seq.is_finished():
+                    chunks, stop_hit, buffer = self._emit_tokens(
+                        seq, seq.generated_ids[emitted:], stops, max_stop_len, buffer
+                    )
+                    yield from chunks
+                    if stop_hit:
+                        # A stop-sequence match finished the request/sequence
+                        # *outside* a step, so ``_lock_step_post`` never ran its
+                        # free path — release the slot here or it leaks (ISS-044).
+                        with self._step_lock:
+                            self._release_request_slot_by_id(req_id)
+                        return
+                    if stops and buffer:
+                        # The sequence is already finished, so after draining the
+                        # tail buffer there is nothing left to stream. Return
+                        # (not ``break``): the post-loop ``yield buffer`` would
+                        # emit the SAME tail a second time (RIL ISS-054).
+                        yield buffer
+                    return
+                self.step()
+                seq = self.scheduler.get_sequence(req_id)
+                if seq is None:
+                    break
                 chunks, stop_hit, buffer = self._emit_tokens(
                     seq, seq.generated_ids[emitted:], stops, max_stop_len, buffer
                 )
                 yield from chunks
                 if stop_hit:
-                    # A stop-sequence match finished the request/sequence
-                    # *outside* a step, so ``_lock_step_post`` never ran its
-                    # free path — release the slot here or it leaks (ISS-044).
+                    # Same leak vector as above.
                     with self._step_lock:
                         self._release_request_slot_by_id(req_id)
                     return
-                if stops and buffer:
-                    # The sequence is already finished, so after draining the
-                    # tail buffer there is nothing left to stream. Return
-                    # (not ``break``): the post-loop ``yield buffer`` would
-                    # emit the SAME tail a second time (RIL ISS-054).
-                    yield buffer
-                return
-            self.step()
-            seq = self.scheduler.get_sequence(req_id)
-            if seq is None:
-                break
-            chunks, stop_hit, buffer = self._emit_tokens(seq, seq.generated_ids[emitted:], stops, max_stop_len, buffer)
-            yield from chunks
-            if stop_hit:
-                # Same leak vector as above.
+                emitted = len(seq.generated_ids)
+                if seq.is_finished():
+                    break
+            if stops and buffer:
+                yield buffer
+        finally:
+            # Cleanup for ANY exit path — including an *abandoned* generator.
+            # ``stream_request`` is the sequence's only stepper; when the
+            # consumer disconnects (gen.close() / GC) it can never advance the
+            # sequence again, so a RUNNING sequence with its slot allocated
+            # would otherwise leak one ``max_batch_size`` slot per disconnect
+            # (RIL ISS-105). Reap the sequence and release its slot here;
+            # ``_release_request_slot_by_id`` is a no-op if it was already
+            # freed (normal completion, stop-halt, forward failure). Loop
+            # because a caller may have added the request twice (a stray
+            # ``add_request`` before streaming) — every copy must be reaped.
+            while self.scheduler.remove(req_id) is not None:
                 with self._step_lock:
                     self._release_request_slot_by_id(req_id)
-                return
-            emitted = len(seq.generated_ids)
-            if seq.is_finished():
-                break
-        if stops and buffer:
-            yield buffer
 
     def generate_request(self, request: GenerationRequest) -> str:
         """Run a request to completion and return prompt + generated text."""

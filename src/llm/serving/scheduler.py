@@ -82,6 +82,25 @@ class Scheduler:
                     return s
             return None
 
+    def remove(self, request_id: str) -> Sequence | None:
+        """Drop a sequence from the waiting queue / running list.
+
+        Used by the streaming generator's cleanup path when the consumer
+        abandons mid-generation (RIL ISS-105): the abandoned generator is the
+        sequence's only stepper and can never advance it again, so leaving it
+        RUNNING permanently consumes a KV slot (``schedule`` only filters
+        FINISHED). Idempotent: returns the removed sequence or ``None``.
+        """
+        with self._lock:
+            for i, s in enumerate(self.running):
+                if s.request_id == request_id:
+                    return self.running.pop(i)
+            for i, s in enumerate(self.waiting):
+                if s.request_id == request_id:
+                    del self.waiting[i]
+                    return s
+            return None
+
     def clear(self) -> None:
         """Empty both queues (engine teardown)."""
         with self._lock:

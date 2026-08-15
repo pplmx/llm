@@ -642,6 +642,41 @@ def test_stream_request_does_not_double_yield_tail_buffer(tiny_model, device, mo
     assert emitted.count("5") == 1, f"tail buffer must be emitted exactly once, got chunks={chunks!r}"
 
 
+def test_abandoned_stream_request_releases_slot_and_sequence(tiny_model, device, mock_tokenizer):
+    """Regression (RIL ISS-105): abandoning the streaming generator mid-run
+    (consumer disconnect → ``gen.close()`` / GC) must release the KV slot and
+    drop the sequence.
+
+    ``stream_request`` is the sequence's only stepper; once the consumer stops
+    pulling it, the sequence sits RUNNING with its slot allocated forever —
+    each disconnect permanently consumes one of ``max_batch_size`` slots.
+    """
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    req = GenerationRequest(prompt="abcd", max_new_tokens=100)
+    req.request_id = "req-abandon"
+
+    # ``stream_request`` adds the request itself (production path — no
+    # separate ``add_request`` call).
+    gen = engine.stream_request(req)
+    next(gen)
+    assert engine.slot_allocator.get_slot("req-abandon") >= 0, "slot should be allocated"
+    assert engine.scheduler.get_sequence("req-abandon") is not None
+
+    # Abandon the stream (what a client disconnect does to the generator).
+    gen.close()
+
+    assert engine.slot_allocator.get_slot("req-abandon") == -1, "abandoned request must release its slot"
+    assert engine.scheduler.get_sequence("req-abandon") is None, "abandoned sequence must be reaped"
+
+
 def test_persistent_forward_failure_does_not_livelock_engine(tiny_model, device, mock_tokenizer):
     """Regression (RIL ISS-051): a request whose forward persistently fails
     (OOM / bad token id / shape mismatch) must be dropped, not re-scheduled
