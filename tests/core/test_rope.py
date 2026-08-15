@@ -104,6 +104,28 @@ class TestRotaryPositionEmbedding:
         q_rot, _k_rot = rope(q, k, position_ids)
         assert q_rot.shape == q.shape
 
+    def test_forward_position_ids_beyond_max_seq_len(self, device):
+        """RIL ISS-141: indexing the RoPE table by ABSOLUTE positions that
+        reach the model's ``max_seq_len`` must not crash with an out-of-bounds
+        index.
+
+        The table was sized to the (short) relative sequence length only, but
+        a KV-cache decode at absolute position >= max_seq_len indexes it
+        directly — ``max_seq_len=8`` with a 2-token decode at positions
+        [8, 9] raised ``IndexError: index 8 is out of bounds``. The table must
+        grow to cover the positions actually indexed.
+        """
+        rope = RotaryPositionEmbedding(dim=32, max_seq_len=8, device=device)
+        q = torch.randn(1, 4, 2, 32, device=device)
+        k = torch.randn(1, 4, 2, 32, device=device)
+        # Absolute positions 8..9 (a decode stepping past the model's context
+        # window start) over a much shorter 2-token sequence.
+        position_ids = torch.tensor([[8, 9]], device=device)
+
+        q_rot, k_rot = rope(q, k, position_ids)
+        assert q_rot.shape == q.shape
+        assert k_rot.shape == k.shape
+
     def test_linear_scaling(self, device):
         """Test linear scaling produces different results."""
         rope_no_scale = RotaryPositionEmbedding(dim=64, device=device)

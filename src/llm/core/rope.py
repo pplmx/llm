@@ -124,7 +124,17 @@ class RotaryPositionEmbedding(nn.Module):
             Tuple of (rotated_q, rotated_k)
         """
         seq_len = q.size(2)
-        self._update_cos_sin_cache(seq_len, q.device, q.dtype)
+        # Size the cos/sin cache to cover the positions we will index, not
+        # just the (relative) sequence length. ``_update_cos_sin_cache`` only
+        # grows the table to ``max(seq_len, max_seq_len)``, but when explicit
+        # ``position_ids`` are threaded (KV-cache decode at absolute
+        # position >= max_seq_len, batch-serving position_ids) the table is
+        # indexed by ABSOLUTE position — an absolute position beyond
+        # ``max_seq_len`` used to raise a raw ``IndexError: index N out of
+        # bounds`` (RIL ISS-141; the serving tier guards over-context prompts
+        # up front, training/dense-cache RoPE callers did not).
+        cover_len = int(position_ids.max().item()) + 1 if position_ids is not None else seq_len
+        self._update_cos_sin_cache(max(cover_len, seq_len), q.device, q.dtype)
 
         assert self._cos_cached is not None  # noqa: S101
         assert self._sin_cached is not None  # noqa: S101
