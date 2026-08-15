@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 54,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T01:23:06+00:00",
+  "updated_at": "2026-08-15T01:39:32+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6131,26 +6131,24 @@
     "TASK-094": {
       "id": "TASK-094",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T01:13:09+00:00",
-      "updated_at": "2026-08-15T01:23:06+00:00",
+      "updated_at": "2026-08-15T01:32:53+00:00",
       "touched_round": 54,
       "category": "stability",
       "severity": 0.5,
       "confidence": 0.6,
       "effort": 0.4,
-      "title": "stream_request releases KV slot on generator abandonment (no try/finally reaps abandoned RUNNING seq)",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T01:53:06+00:00"
+      "title": "stream_request releases KV slot on generator abandonment (no try/finally reaps abandoned RUNNING seq)"
     },
     "ISS-103": {
       "id": "ISS-103",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 2,
       "created_at": "2026-08-15T01:13:31+00:00",
-      "updated_at": "2026-08-15T01:13:31+00:00",
+      "updated_at": "2026-08-15T01:39:32+00:00",
       "touched_round": 54,
       "severity": 0.3,
       "title": "lm_eval loglikelihood drops the first continuation token when the context string is empty (first_scorable=max(ctx_len,1) misfires for empty ctx)"
@@ -6169,10 +6167,10 @@
     "ISS-105": {
       "id": "ISS-105",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T01:13:31+00:00",
-      "updated_at": "2026-08-15T01:13:31+00:00",
+      "updated_at": "2026-08-15T01:32:53+00:00",
       "touched_round": 54,
       "severity": 0.5,
       "title": "stream_request leaks KV slot + leaves RUNNING scheduler entry when consumer abandons generator"
@@ -6233,6 +6231,77 @@
       "touched_round": 54,
       "commit": "e95f4fd",
       "title": "lm_eval _truncate_id_stop_suffix cuts token-id until suffix pre-decode (TASK-093)"
+    },
+    "EV-127": {
+      "id": "EV-127",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:32:53+00:00",
+      "updated_at": "2026-08-15T01:32:53+00:00",
+      "touched_round": 54,
+      "source": "tests/serving/test_engine.py::test_abandoned_stream_request_releases_slot_and_sequence",
+      "title": "Repro: next(gen) allocates slot (0) + RUNNING seq; gen.close() left slot 0 allocated and seq in running (leak). Fix: try/finally reaps (Scheduler.remove) + releases. Engine 29 passed, serving 317 passed",
+      "confidence": 1.0
+    },
+    "CHG-098": {
+      "id": "CHG-098",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:32:53+00:00",
+      "updated_at": "2026-08-15T01:32:53+00:00",
+      "touched_round": 54,
+      "commit": "36af2ec",
+      "title": "stream_request try/finally reaps abandoned seq + releases slot; Scheduler.remove (TASK-094)"
+    },
+    "TASK-095": {
+      "id": "TASK-095",
+      "type": "task",
+      "status": "abandoned",
+      "version": 4,
+      "created_at": "2026-08-15T01:33:29+00:00",
+      "updated_at": "2026-08-15T01:39:32+00:00",
+      "touched_round": 54,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 0.6,
+      "effort": 0.2,
+      "title": "lm_eval loglikelihood scores first continuation token when context empty (first_scorable=max(ctx_len,1) misfires)"
+    },
+    "DEC-036": {
+      "id": "DEC-036",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:38:54+00:00",
+      "updated_at": "2026-08-15T01:38:54+00:00",
+      "touched_round": 54,
+      "rationale": "Keep the current loglikelihood behavior for empty contexts: upstream lm_eval asserts len(context_enc) > 0 (empty-context loglikelihood is undefined input), and for all valid requests this repo's shift-by-one scoring matches upstream exactly. Assigning the first continuation token a made-up probability (e.g. row 0) would be meaningless, not more correct.",
+      "alternatives_rejected": "(1) score cont[0] with logit row 0 — no valid predictor exists for position 0 without a BOS; would insert a meaningless probability (2) assert/raise on empty contexts — makes a graceful path crash for no metric gain"
+    },
+    "EV-128": {
+      "id": "EV-128",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:39:09+00:00",
+      "updated_at": "2026-08-15T01:39:09+00:00",
+      "touched_round": 54,
+      "source": "lm_eval-0.4.12 huggingface.py:_loglikelihood_tokens",
+      "title": "ISS-103 REFUTED: upstream lm_eval asserts len(context_enc) > 0 for every loglikelihood request (empty context is invalid/out-of-contract) and builds inp = (ctx+cont)[-(max+1):][:-1] (drops last cont token so final logit row predicts it) — cont[j] is scored with row ctx_len-1+j, identical to this repo. max(ctx_len,1) only drops a token whose predictor row was genuinely truncated away. Graceful degradation for undefined empty-context input is not a metric divergence",
+      "confidence": 1.0
+    },
+    "CHG-099": {
+      "id": "CHG-099",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:39:16+00:00",
+      "updated_at": "2026-08-15T01:39:16+00:00",
+      "touched_round": 54,
+      "commit": "refuted-no-change",
+      "title": "ISS-103 verified as NOT a bug (upstream forbids empty-context loglikelihood); no code change — EV-128 refutes the claim, DEC-036 records why"
     }
   },
   "edges": [
@@ -9032,6 +9101,30 @@
       "to": "TASK-093",
       "type": "implements",
       "created_at": "2026-08-15T01:22:58+00:00"
+    },
+    {
+      "from": "CHG-098",
+      "to": "ISS-105",
+      "type": "resolves",
+      "created_at": "2026-08-15T01:32:53+00:00"
+    },
+    {
+      "from": "CHG-098",
+      "to": "TASK-094",
+      "type": "implements",
+      "created_at": "2026-08-15T01:32:53+00:00"
+    },
+    {
+      "from": "TASK-095",
+      "to": "ISS-103",
+      "type": "addresses",
+      "created_at": "2026-08-15T01:33:29+00:00"
+    },
+    {
+      "from": "CHG-099",
+      "to": "TASK-095",
+      "type": "implements",
+      "created_at": "2026-08-15T01:39:32+00:00"
     }
   ]
 }
