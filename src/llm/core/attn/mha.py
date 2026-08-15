@@ -136,10 +136,17 @@ class MultiHeadAttention(nn.Module):
         Returns ``None`` when RoPE's internal ``0..seq_len`` default applies,
         otherwise a ``[B, S]`` long tensor of absolute positions.
         """
-        if start_pos is None or start_pos == 0:
+        if start_pos is None:
             return None
         if isinstance(start_pos, Tensor):
+            # The batch-serving path threads a ``[B, S]`` ``position_ids``
+            # tensor through as ``start_pos`` — return it unchanged. The
+            # ``== 0`` early-return below is int-only; evaluating it on a
+            # multi-element tensor raises a Boolean-ambiguity error, so the
+            # tensor branch MUST come first (RIL ISS-112).
             return start_pos
+        if start_pos == 0:
+            return None
         base = int(start_pos)
         return torch.arange(base, base + seq_len, device=device, dtype=torch.long).expand(batch_size, -1)
 

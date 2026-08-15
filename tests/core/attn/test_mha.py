@@ -590,6 +590,35 @@ def test_mha_rope_decode_matches_prefill():
     assert torch.allclose(out_decode, out_ref, atol=1e-5)
 
 
+def test_mha_rope_accepts_tensor_start_pos():
+    """The batch-serving path threads per-row ``position_ids`` through as a
+    ``[B, S]`` ``start_pos`` tensor (decoder line ``start_pos=position_ids if
+    batch_indices is not None ...``).
+
+    ``_rope_positions`` used to evaluate ``start_pos == 0`` (an int-only
+    guard) BEFORE the tensor type check — on a ``[B, S]`` tensor that raises
+    ``Boolean value of Tensor with more than one element is ambiguous``, so
+    every batched request for a RoPE model returned 500 (RIL ISS-112).
+    """
+    torch.manual_seed(0)
+    mha = MultiHeadAttention(
+        hidden_size=32,
+        num_heads=4,
+        p=0.0,
+        include_norm_residual=False,
+        is_causal=False,
+        max_seq_len=64,
+        use_rope=True,
+    ).eval()
+    x = torch.randn(2, 4, 32)
+    # Per-row absolute positions (as the batch engine provides).
+    pos = torch.tensor([[0, 1, 2, 3], [4, 5, 6, 7]])
+    batch_indices = torch.tensor([0, 1])
+    with torch.no_grad():
+        out = mha(x, batch_indices=batch_indices, start_pos=pos)
+    assert out.shape == (2, 4, 32)
+
+
 def test_mha_rope_rotates_keys_per_position():
     """RoPE must bake position into the K written to the cache — the same
     token content at different absolute offsets yields different cached keys

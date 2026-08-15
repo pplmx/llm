@@ -42,6 +42,51 @@ def test_slot_allocator_allocate_and_free_round_trip():
     assert allocator.get_slot("req1") == -1
 
 
+def test_engine_serves_rope_model(device, mock_tokenizer):
+    """A ``use_rope=True`` model must be servable by the batch engine.
+
+    Regression (RIL ISS-112): ``_rope_positions`` evaluated the int-only
+    ``start_pos == 0`` guard before the tensor type check, so the engine's
+    ``[B, S]`` ``position_ids`` tensor raised ``Boolean value of Tensor with
+    more than one element is ambiguous`` on the very first step — every RoPE
+    request returned 500 via both the dense and paged paths.
+    """
+    from llm.models.decoder import DecoderModel
+
+    rope_model = DecoderModel(
+        vocab_size=100,
+        hidden_size=16,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=16,
+        use_rope=True,
+        device=str(device),
+    )
+    rope_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=rope_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    req = GenerationRequest(prompt="abcd", max_new_tokens=3)
+    req.request_id = "req-rope"
+    engine.add_request(req)
+    engine.step()  # must not crash on the tensor position_ids
+
+    seq = engine.scheduler.get_sequence("req-rope")
+    assert seq is not None
+    assert len(seq.generated_ids) == 1
+    # Walk it to completion to make sure decode steps also pass through RoPE.
+    for _ in range(3):
+        if seq.is_finished():
+            break
+        engine.step()
+    assert engine.slot_allocator.get_slot("req-rope") == -1  # released
+
+
 def test_engine_prefill_populates_sequence_and_allocates_slot(tiny_model, device, mock_tokenizer):
     """Requirement: first step tokenizes prompt, runs prefill, and assigns a KV slot."""
     tiny_model.eval()
