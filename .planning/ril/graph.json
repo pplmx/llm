@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 53,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T00:44:33+00:00",
+  "updated_at": "2026-08-15T00:47:57+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5571,11 +5571,11 @@
     "ISS-94": {
       "id": "ISS-94",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-14T15:06:22+00:00",
-      "updated_at": "2026-08-14T15:06:22+00:00",
-      "touched_round": 50,
+      "updated_at": "2026-08-15T00:47:57+00:00",
+      "touched_round": 53,
       "severity": 0.3,
       "title": "compute_model_size reports total_params at half the true count for 4-bit GPTQ/AWQ (packed.numel counts bytes, not weights)",
       "summary": "compute_model_size(ptq.py) sums packed_attr.numel() into total_params; for bits=4 each int8 stores two weights so params is ~2x undercounted (total_bytes is correct — actual packed storage). Reporting-only, no runtime effect; needs per-layer bits handling + a documented definition of 'params' for pack formats."
@@ -6018,16 +6018,39 @@
     "TASK-090": {
       "id": "TASK-090",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-15T00:44:33+00:00",
-      "updated_at": "2026-08-15T00:44:33+00:00",
+      "updated_at": "2026-08-15T00:47:57+00:00",
       "touched_round": 53,
       "category": "correctness",
       "severity": 0.3,
       "confidence": 0.9,
       "effort": 0.3,
       "title": "compute_model_size: count true weights per layer for 4-bit GPTQ/AWQ (packed bytes != params); document params definition (ISS-94)"
+    },
+    "EV-123": {
+      "id": "EV-123",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:47:57+00:00",
+      "updated_at": "2026-08-15T00:47:57+00:00",
+      "touched_round": 53,
+      "source": "tests/quantization/test_quantization.py::test_compute_model_size_counts_true_weights_for_4bit",
+      "title": "Repro: 8x16+16x8 linear (256 weights), GPTQ bits=4 → weight_packed=128 bytes; compute_model_size reported total_params=128 (2x undercount). Fix: weights_per_byte=2 for bits=4 → 256; bits=8 unaffected. Quantization suite 212 passed",
+      "confidence": 1.0
+    },
+    "CHG-094": {
+      "id": "CHG-094",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:47:57+00:00",
+      "updated_at": "2026-08-15T00:47:57+00:00",
+      "touched_round": 53,
+      "commit": "344c0ea",
+      "title": "compute_model_size true-weight count for 4-bit packed layers + params-vs-bytes doc (TASK-090)"
     }
   },
   "edges": [
@@ -8743,6 +8766,18 @@
       "to": "TASK-089",
       "type": "implements",
       "created_at": "2026-08-15T00:43:55+00:00"
+    },
+    {
+      "from": "CHG-094",
+      "to": "ISS-94",
+      "type": "resolves",
+      "created_at": "2026-08-15T00:47:57+00:00"
+    },
+    {
+      "from": "CHG-094",
+      "to": "TASK-090",
+      "type": "implements",
+      "created_at": "2026-08-15T00:47:57+00:00"
     }
   ]
 }

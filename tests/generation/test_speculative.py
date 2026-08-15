@@ -151,6 +151,43 @@ def test_speculative_stops_on_eos():
     assert len(out) <= 4  # gamma tokens; first one is EOS so 1 emitted
 
 
+def test_speculative_eos_text_excluded_from_output():
+    """The EOS token's decoded text must NOT appear in the output.
+
+    Mismatches the eager backend (ISS-98): the speculative backend used to
+    append the accepted EOS token to ``generated_ids`` and yield its decoded
+    chunk before halting, while eager halts *before* decoding the EOS token.
+    With a tokenizer whose EOS decodes to a real character the two backends
+    visibly diverge.
+    """
+    # Vocab must include 99 (StubTokenizer's eos id); use 128 to be safe.
+    target = _make_tiny_decoder(seed=1, vocab_size=128)
+    draft = _make_tiny_decoder(seed=1, vocab_size=128)
+    tok = StubTokenizer()  # eos_token_id = 99, decode(anything) -> "x"
+
+    # Force the model to always predict EOS by collapsing the LM head
+    # bias to a large positive value for token 99. Then every greedy
+    # sample returns EOS.
+    with torch.no_grad():
+        for layer in [target, draft]:
+            layer.lm_head.bias.zero_()
+            layer.lm_head.bias[99] = 100.0
+
+    out = "".join(
+        speculative_generate(
+            target,
+            draft,
+            tok,
+            "abc",
+            max_new_tokens=50,
+            gamma=4,
+            temperature=0.0,
+        )
+    )
+    # Stops on the first EOS (1 emitted copy attempt); the EOS char must not leak.
+    assert "x" not in out
+
+
 def test_speculative_respects_max_new_tokens():
     """``max_new_tokens`` is the hard cap on emitted tokens."""
     target = _make_tiny_decoder(seed=2)

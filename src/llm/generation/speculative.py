@@ -367,9 +367,16 @@ def speculative_generate(
             logit_bias=logit_bias,
         )
 
-        # 3. Emit accepted tokens + bonus (or correction).
+        # 3. Emit accepted tokens + bonus (or correction). The EOS token is
+        # never part of the yielded output — halt on it *before* decoding and
+        # appending, matching the eager backend (RIL ISS-96/ISS-98) which
+        # stops on EOS without emitting the EOS token's decoded text.
         for i in range(accept_count):
             tok = draft_tokens[i]
+            if eos_id is not None and tok == eos_id:
+                if stops and buffer:
+                    yield buffer
+                return
             generated_ids.append(tok)
             text_chunk = tokenizer.decode([tok])
             if stops and text_chunk:
@@ -386,10 +393,6 @@ def speculative_generate(
                     buffer = buffer[safe_len:]
             else:
                 yield text_chunk
-            if eos_id is not None and tok == eos_id:
-                if stops and buffer:
-                    yield buffer
-                return
             if len(generated_ids) - len(prompt_ids) >= max_new_tokens:
                 if stops and buffer:
                     yield buffer
@@ -397,6 +400,10 @@ def speculative_generate(
 
         # Append the bonus or correction token (one per round).
         if bonus is not None:
+            if eos_id is not None and bonus == eos_id:
+                if stops and buffer:
+                    yield buffer
+                return
             generated_ids.append(bonus)
             text_chunk = tokenizer.decode([bonus])
             if stops and text_chunk:
@@ -413,10 +420,6 @@ def speculative_generate(
                     buffer = buffer[safe_len:]
             else:
                 yield text_chunk
-            if eos_id is not None and bonus == eos_id:
-                if stops and buffer:
-                    yield buffer
-                return
 
     # Flush any remaining buffered text when the loop exhausts
     # max_new_tokens without a stop or EOS triggering an early return.
