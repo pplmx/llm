@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T17:39:56+00:00",
+  "updated_at": "2026-08-15T17:59:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 57,
+      "touched_round": 60,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -7363,6 +7363,41 @@
       "source": "tests/evaluation/test_lm_eval_pipeline.py::test_lm_eval_lm_generate_until_accepts_scalar_string_until",
       "confidence": 1.0,
       "summary": "RED: scalar 15-char stop over 'aaaaa' returned '' before; now 'aaaaa'"
+    },
+    "CHG-124": {
+      "id": "CHG-124",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:57:49+00:00",
+      "updated_at": "2026-08-15T17:57:49+00:00",
+      "touched_round": 60,
+      "summary": "PPO ref model now follows checkpoint-loaded base: persisted in extra_state + PPOTask/PPOTrainer on_checkpoint_loaded re-sync for SFT-base resumes (mirrors DPO fix)",
+      "commit": "5834c12"
+    },
+    "EV-153": {
+      "id": "EV-153",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:57:49+00:00",
+      "updated_at": "2026-08-15T17:57:49+00:00",
+      "touched_round": 60,
+      "source": "tests/training/rlhf/test_ppo_checkpoint.py::test_ppo_trainer_ref_model_persisted_and_restored,tests/training/rlhf/test_ppo_checkpoint.py::test_ppo_trainer_on_checkpoint_loaded_syncs_ref_to_policy,tests/training/rlhf/test_ppo_checkpoint.py::test_ppo_trainer_on_checkpoint_loaded_keeps_persisted_ref",
+      "confidence": 1.0,
+      "summary": "RED: ref not persisted/synced before; now restored verbatim + synced from loaded policy, persisted base kept on mid-PPO resume"
+    },
+    "ISS-133": {
+      "id": "ISS-133",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-15T17:59:26+00:00",
+      "updated_at": "2026-08-15T17:59:38+00:00",
+      "touched_round": 60,
+      "severity": 0.5,
+      "title": "PPO ref model is snapshot before checkpoint load - resumed RLHF computes KL penalty against a stale model",
+      "summary": "PPOTrainer.__init__ deep-copies the policy into ref_model inside prepare_training, which runs BEFORE the engine loads a checkpoint into the policy; the checkpoint never carried the reference. On any PPO resume (use_ref_model=True default, kl_coef=0.1) the KL penalty uses pre-resume/random weights - silently wrong. Same class as DPO ref bug (round-60 Finding 1)."
     }
   },
   "edges": [
@@ -10615,6 +10650,18 @@
       "to": "ISS-132",
       "type": "resolves",
       "created_at": "2026-08-15T17:39:56+00:00"
+    },
+    {
+      "from": "CHG-124",
+      "to": "ISS-133",
+      "type": "resolves",
+      "created_at": "2026-08-15T17:59:38+00:00"
+    },
+    {
+      "from": "ISS-133",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-15T17:59:38+00:00"
     }
   ]
 }
