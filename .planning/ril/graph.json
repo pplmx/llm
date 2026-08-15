@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T16:08:37+00:00",
+  "updated_at": "2026-08-15T16:17:23+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7076,10 +7076,10 @@
     "ISS-126": {
       "id": "ISS-126",
       "type": "issue",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-15T15:11:56+00:00",
-      "updated_at": "2026-08-15T15:12:04+00:00",
+      "updated_at": "2026-08-15T16:17:23+00:00",
       "touched_round": 60,
       "severity": 0.5,
       "title": "Resume silently accepts a checkpoint whose model/training config differs from the current run",
@@ -7165,6 +7165,29 @@
       "source": "tests/training/test_checkpoint_manager.py::test_save_stamps_matching_save_id_into_meta_and_extra,tests/training/test_checkpoint_manager.py::test_load_rejects_inconsistent_trio_stale_extra",
       "confidence": 1.0,
       "summary": "save stamps meta+extra with matching save_id/epoch; a stale extra_state trio now raises instead of silently resuming"
+    },
+    "CHG-118": {
+      "id": "CHG-118",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T16:17:23+00:00",
+      "updated_at": "2026-08-15T16:17:23+00:00",
+      "touched_round": 60,
+      "summary": "load_checkpoint compares arch-defining config fields against the engine's model_config on resume; raises on mismatch (mirrors ISS-108/127 guards); non-arch drift ignored",
+      "commit": "469fcf5"
+    },
+    "EV-147": {
+      "id": "EV-147",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T16:17:23+00:00",
+      "updated_at": "2026-08-15T16:17:23+00:00",
+      "touched_round": 60,
+      "source": "tests/training/test_checkpoint_manager.py::test_load_rejects_resume_with_mismatched_model_config,tests/training/test_checkpoint_manager.py::test_load_resume_matching_model_config_is_accepted",
+      "confidence": 1.0,
+      "summary": "hidden_size mismatch raises; identical-arch + dropout drift loads normally"
     }
   },
   "edges": [
@@ -10351,6 +10374,12 @@
       "to": "ISS-127",
       "type": "resolves",
       "created_at": "2026-08-15T16:08:37+00:00"
+    },
+    {
+      "from": "CHG-118",
+      "to": "ISS-126",
+      "type": "resolves",
+      "created_at": "2026-08-15T16:17:23+00:00"
     }
   ]
 }
