@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 55,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T02:17:50+00:00",
+  "updated_at": "2026-08-15T02:25:02+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6359,10 +6359,10 @@
     "ISS-108": {
       "id": "ISS-108",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T02:01:37+00:00",
-      "updated_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T02:25:02+00:00",
       "touched_round": 55,
       "severity": 0.25,
       "title": "load_checkpoint swallows fatal model-config mismatches and silently restarts from scratch (resume contract violated quietly)"
@@ -6450,18 +6450,39 @@
     "TASK-099": {
       "id": "TASK-099",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T02:17:50+00:00",
-      "updated_at": "2026-08-15T02:17:50+00:00",
+      "updated_at": "2026-08-15T02:25:02+00:00",
       "touched_round": 55,
       "category": "correctness",
       "severity": 0.3,
       "confidence": 0.9,
       "effort": 0.2,
-      "title": "load_checkpoint distinguishes fatal config mismatch (raise) from benign corrupt-state cases instead of silently restarting from scratch (ISS-108)",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T02:47:50+00:00"
+      "title": "load_checkpoint distinguishes fatal config mismatch (raise) from benign corrupt-state cases instead of silently restarting from scratch (ISS-108)"
+    },
+    "EV-132": {
+      "id": "EV-132",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:25:01+00:00",
+      "updated_at": "2026-08-15T02:25:01+00:00",
+      "touched_round": 55,
+      "source": "tests/training/test_checkpoint_manager.py::test_load_checkpoint_mismatched_architecture_raises",
+      "title": "Repro: save Linear(4,4), resume into Linear(5,5) -> load_state_dict RuntimeError 'size mismatch' was swallowed as 'Starting from scratch' (RED). Fix re-raises clear RuntimeError; transient errors keep fallback. Training+resume+runtime-checkpoint suites green",
+      "confidence": 1.0
+    },
+    "CHG-101": {
+      "id": "CHG-101",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:25:01+00:00",
+      "updated_at": "2026-08-15T02:25:01+00:00",
+      "touched_round": 55,
+      "commit": "9d89462",
+      "title": "load_checkpoint re-raises state_dict architecture mismatch (TASK-099)"
     }
   },
   "edges": [
@@ -9333,6 +9354,18 @@
       "to": "ISS-108",
       "type": "addresses",
       "created_at": "2026-08-15T02:17:50+00:00"
+    },
+    {
+      "from": "CHG-101",
+      "to": "ISS-108",
+      "type": "resolves",
+      "created_at": "2026-08-15T02:25:02+00:00"
+    },
+    {
+      "from": "CHG-101",
+      "to": "TASK-099",
+      "type": "implements",
+      "created_at": "2026-08-15T02:25:02+00:00"
     }
   ]
 }
