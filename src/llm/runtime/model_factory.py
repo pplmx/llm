@@ -103,6 +103,14 @@ def decoder_kwargs_from_config(config: ModelConfig, **overrides: Any) -> dict[st
         "attn_impl": config.attn_impl,
         "mlp_impl": config.mlp_impl,
         "norm_impl": config.norm_impl,
+        "pos_encoding_learned": config.pos_encoding_learned,
+        "mlp_activation": config.mlp_activation,
+        "norm_first": config.norm_first,
+        "qkv_bias": config.qkv_bias,
+        "mlp_bias": config.mlp_bias,
+        "lm_head_bias": config.lm_head_bias,
+        "use_rope": config.use_rope,
+        "rope_theta": config.rope_theta,
     }
     kwargs.update(overrides)
     return kwargs

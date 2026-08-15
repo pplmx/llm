@@ -33,6 +33,22 @@ class ModelConfig(BaseModel):
     # where ``attn_impl`` does not support that.
     use_kv_cache: bool = False
 
+    # Model-defining flags (defaults mirror the DecoderModel constructor so
+    # a default config is byte-identical to before these fields existed).
+    # These persist into the checkpoint's ``model_config`` sidecar and are
+    # mapped by ``decoder_kwargs_from_config`` — without them a model built
+    # with non-default flags (real Llama/Mistral: RoPE + bias-free) was
+    # silently rebuilt with the defaults when served from a checkpoint,
+    # leaving architectural params at random init (RIL ISS-129).
+    pos_encoding_learned: bool = False
+    mlp_activation: str = "gelu"
+    norm_first: bool = True
+    qkv_bias: bool = True
+    mlp_bias: bool = True
+    lm_head_bias: bool = True
+    use_rope: bool = False
+    rope_theta: float = 10000.0
+
     @model_validator(mode="after")
     def check_consistency(self) -> ModelConfig:
         if self.intermediate_size is None:

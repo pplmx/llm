@@ -124,6 +124,18 @@ _CONFIG_COMPAT_FIELDS: tuple[str, ...] = (
     "mlp_impl",
     "norm_impl",
     "use_kv_cache",
+    # Model-defining flags (RIL ISS-129). These must also match on resume —
+    # they change tensor shapes (bias/no-bias) and the position-encoding
+    # behavior, so a mismatch would silently load weights into the wrong
+    # architecture.
+    "pos_encoding_learned",
+    "mlp_activation",
+    "norm_first",
+    "qkv_bias",
+    "mlp_bias",
+    "lm_head_bias",
+    "use_rope",
+    "rope_theta",
 )
 
 
