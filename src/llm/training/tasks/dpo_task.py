@@ -6,6 +6,15 @@ import torch.nn.functional as functional
 
 from llm.training.tasks.lm_task import LanguageModelingTask
 
+# Key under which the frozen reference weights live in checkpoint extra_state.
+# The DPO reference is the "base" the policy is penalised against diverging
+# from (normally the SFT model). It is snapshot inside ``build_model`` — from
+# the *initial* policy — which runs BEFORE the engine loads any checkpoint
+# into the policy, so without persisting the reference a resumed DPO run would
+# compute every log-ratio against a freshly-random model (RIL round-60
+# deep-dive Finding 1).
+REF_MODEL_STATE_KEY = "dpo_ref_model"
+
 
 class DPOTask(LanguageModelingTask):
     """
@@ -17,6 +26,7 @@ class DPOTask(LanguageModelingTask):
         self.ref_model: nn.Module | None = None
         # Beta parameter for DPO, default 0.1
         self.beta = getattr(config.training, "dpo_beta", 0.1)
+        self._ref_from_checkpoint = False
 
     def build_model(self) -> nn.Module:
         policy_model = super().build_model()
@@ -32,9 +42,56 @@ class DPOTask(LanguageModelingTask):
 
         return policy_model
 
-    def on_train_start(self, engine):
-        """Called by engine when training starts."""
-        pass
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        """Persist the frozen reference so a resumed DPO run keeps the ORIGINAL
+        base model (RIL round-60 deep-dive Finding 1).
+
+        ``build_model`` snapshots the reference *before* the engine loads a
+        checkpoint into the policy and the checkpoint never carried the
+        reference, so a resumed run otherwise computes log-ratios against a
+        random model. Snapshot to CPU so the pickled sidecar is device-neutral.
+        """
+        if self.ref_model is None:
+            return None
+        return {
+            REF_MODEL_STATE_KEY: {
+                key: value.detach().to("cpu").clone() for key, value in self.ref_model.state_dict().items()
+            }
+        }
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        """Restore the frozen reference from a DPO checkpoint's extra_state.
+
+        Marks the reference as checkpoint-restored; :meth:`on_checkpoint_loaded`
+        then keeps this ORIGINAL base instead of re-syncing to the (now-moved)
+        policy when resuming a mid-DPO checkpoint.
+        """
+        if not state or self.ref_model is None:
+            return
+        ref_state = state.get(REF_MODEL_STATE_KEY)
+        if ref_state:
+            self.ref_model.load_state_dict(ref_state)
+            self._ref_from_checkpoint = True
+
+    def on_checkpoint_loaded(self, model: nn.Module) -> None:
+        """Align the frozen reference with the checkpoint-loaded base policy.
+
+        Called by the engine right after ``load_checkpoint`` applies the
+        resumed weights to the policy. Two cases:
+
+        - Resuming from an SFT/base checkpoint (no persisted DPO reference in
+          extra_state): the reference must equal the loaded policy — that IS
+          the base the policy diverges from. ``_ref_from_checkpoint`` stays
+          False so we sync here.
+        - Resuming from a mid-DPO checkpoint: ``load_checkpoint_state`` already
+          restored the ORIGINAL base reference; keep it (do NOT overwrite with
+          the moved policy, which would silently corrupt every later log-ratio).
+        """
+        if self.ref_model is None:
+            return
+        if self._ref_from_checkpoint:
+            return
+        self.ref_model.load_state_dict(model.state_dict())
 
     def _get_batch_logps(
         self,

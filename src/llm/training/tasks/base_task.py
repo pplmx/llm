@@ -71,6 +71,17 @@ class TrainingTask(abc.ABC, CheckpointContributor):
     def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
         pass
 
+    def on_checkpoint_loaded(self, model: nn.Module) -> None:
+        """React to the checkpointed model weights after a resume is applied.
+
+        ``load_checkpoint`` only writes the *policy*; tasks that clone a
+        frozen companion model at build time (e.g. DPO's reference) must be
+        told the loaded weights here so they can re-align it — otherwise the
+        companion keeps whatever random init ``build_model`` produced and the
+        training signal is silently computed against noise (RIL round-60
+        deep-dive Finding 1). Default: no-op.
+        """
+
     def run_training(self, engine: TrainingEngine) -> None:
         """Execute a non-standard training loop.
 

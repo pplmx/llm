@@ -289,6 +289,16 @@ class TrainingEngine:
                     *self.callbacks,
                 )
 
+        # ``load_checkpoint`` only ever writes the POLICY (model_to_load).
+        # Tasks that clone a frozen companion at build time — DPO's reference
+        # model snapshots the *initial* policy in ``build_model``, BEFORE the
+        # checkpoint is applied — must re-align that companion with the loaded
+        # weights here, or a resumed run silently computes its training signal
+        # against a random model (RIL round-60 deep-dive Finding 1). Runs with
+        # no resume apply a fresh random policy, so the task's own build-time
+        # snapshot is already correct and the hook is a no-op for them.
+        self.task.on_checkpoint_loaded(model_to_load)
+
         self.checkpoint_manager.best_loss = self.best_loss
 
     def _iter_training_batches(self):
