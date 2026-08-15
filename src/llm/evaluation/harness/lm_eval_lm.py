@@ -219,19 +219,62 @@ class LlamaLmEvalLM:
         results = []
         for req in batch:
             (text,) = req.args
-            ids = self._encode(text)[: self.max_length]
+            ids = self._encode(text)
             if len(ids) < 2:
                 results.append(0.0)
                 continue
-            input_tensor = torch.tensor([ids], dtype=torch.long, device=self.device)
-            model_out = self.model(input_tensor, use_cache=False)
-            logits = model_out[0] if isinstance(model_out, tuple) else model_out
-            # Log-probs at positions 0..len-1 predict ids 1..len.
-            relevant = logits[0, :-1, :]
-            log_probs = torch.log_softmax(relevant, dim=-1)
-            targets = torch.tensor(ids[1:], device=self.device, dtype=torch.long)
-            token_log_probs = log_probs[torch.arange(len(targets), device=self.device), targets]
-            results.append(float(token_log_probs.sum().item()))
+
+            if len(ids) <= self.max_length:
+                # Single pass over the whole (short) doc.
+                input_tensor = torch.tensor([ids], dtype=torch.long, device=self.device)
+                model_out = self.model(input_tensor, use_cache=False)
+                logits = model_out[0] if isinstance(model_out, tuple) else model_out
+                # Log-probs at positions 0..len-1 predict ids 1..len.
+                relevant = logits[0, :-1, :]
+                log_probs = torch.log_softmax(relevant, dim=-1)
+                targets = torch.tensor(ids[1:], device=self.device, dtype=torch.long)
+                token_log_probs = log_probs[torch.arange(len(targets), device=self.device), targets]
+                results.append(float(token_log_probs.sum().item()))
+                continue
+
+            # Long doc: score it with STRIDED windows so every token — not just
+            # the first ``max_length`` — contributes. lm_eval's downstream
+            # word-perplexity divides the returned sum by the FULL doc word
+            # count; truncating the numerator here silently deflates the metric
+            # on any document longer than ``max_seq_len`` (RIL ISS-128).
+            #
+            # Each window carries ``max_length`` tokens through the model and
+            # sums the log-probs of the *new* tokens (those after the previous
+            # window's overlap), so no token is double-counted and the whole
+            # doc is covered. This mirrors lm_eval's canonical HFLM rolling
+            # perplexity (strided context windows).
+            total = 0.0
+            start = 0
+            while start < len(ids) - 1:
+                end = min(start + self.max_length, len(ids))
+                window = ids[start:end]
+                input_tensor = torch.tensor([window], dtype=torch.long, device=self.device)
+                model_out = self.model(input_tensor, use_cache=False)
+                logits = model_out[0] if isinstance(model_out, tuple) else model_out
+                # Score only the *new* tokens of this window. The first window
+                # scores ids[1:end]; each later window's window[0] is the
+                # overlap context token already scored as the previous
+                # window's last target.
+                target_ids = ids[start + 1 : end]
+                if len(target_ids) == 0:
+                    break
+                log_probs = torch.log_softmax(logits[0, :, :], dim=-1)
+                # Row ``j`` predicts ``window[j+1] = ids[start+j+1]``, which is
+                # exactly ``target_ids[j]`` — so the mask is j (0-based), NOT
+                # j+1 (that would predict one token too far and short-change
+                # the first target).
+                position_mask = torch.arange(len(target_ids), device=self.device)
+                token_log_probs = log_probs[position_mask, torch.tensor(target_ids, device=self.device)]
+                total += float(token_log_probs.sum().item())
+                if end >= len(ids) - 1:
+                    break
+                start = end - 1  # overlap one context token for the next window
+            results.append(total)
         return results
 
     def _generate_until_batch(self, batch):

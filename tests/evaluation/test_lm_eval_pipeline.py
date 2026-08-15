@@ -485,6 +485,59 @@ def test_lm_eval_lm_loglikelihood_rolling_returns_list_of_floats():
         assert not isinstance(v, tuple)
 
 
+def test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc():
+    """RIL ISS-128: rolling perplexity must score the WHOLE document, not just
+    the first ``max_length`` tokens.
+
+    lm_eval's downstream word-perplexity divides the returned log-likelihood
+    by the full word count; truncating the numerator silently deflates the
+    metric on any doc longer than ``max_seq_len``. With a uniform-logits
+    model every token contributes exactly ``-ln(vocab)``, so the returned sum
+    must equal ``-(len(ids) - 1) * ln(vocab)`` — proving all tokens beyond
+    the first window were scored too.
+    """
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+    import math
+
+    tokenizer = _FakeTokenizer()
+
+    class _UniformModel:
+        """Model that emits uniform logits — every token contributes exactly
+        ``-ln(vocab)``, so the returned sum is exactly countable and any
+        truncation is immediately visible."""
+
+        vocab_size = 16
+        max_seq_len = 64
+
+        def __init__(self):
+            self._dummy = torch.nn.Parameter(torch.zeros(1))
+
+        def parameters(self):
+            return iter([self._dummy])
+
+        def eval(self):
+            return self
+
+        def __call__(self, input_ids, use_cache=None):
+            b, t = input_ids.shape
+            return torch.zeros(b, t, self.vocab_size)
+
+    # A doc long enough to overflow one max_length window (model's
+    # max_seq_len=64).
+    text = "a" * 120  # 120 chars -> 120 tokens
+    lm = LlamaLmEvalLM(_UniformModel(), tokenizer, batch_size=1)
+    assert lm.max_length == 64
+
+    out = lm.loglikelihood_rolling([_FakeRequest((text,))])
+    (total,) = out
+    n_tokens = len(tokenizer.encode(text))
+    expected = -(n_tokens - 1) * math.log(_UniformModel.vocab_size)
+    assert total == pytest.approx(expected, rel=1e-4), (
+        f"rolling sum {total:.4f} != {expected:.4f}: a long doc must score "
+        "every token (the old code only scored the first max_length=64)"
+    )
+
+
 def test_lm_eval_lm_generate_until_respects_max_gen_toks():
     pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
