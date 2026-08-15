@@ -208,7 +208,10 @@ class TestLLMServeEndToEnd:
         assert len(data["choices"]) == 1
         assert data["choices"][0]["message"]["role"] == "assistant"
         assert "content" in data["choices"][0]["message"]
-        assert data["choices"][0]["finish_reason"] == "stop"
+        # The tiny model (no EOS) exhausts the 5-token budget, so per the
+        # OpenAI spec finish_reason is "length" (the old hard-coded "stop"
+        # was wrong; RIL ISS-114).
+        assert data["choices"][0]["finish_reason"] == "length"
         # Token usage bookkeeping.
         usage = data["usage"]
         assert usage["prompt_tokens"] >= 1
