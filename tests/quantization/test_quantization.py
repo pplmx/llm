@@ -155,6 +155,34 @@ class TestQuantizedLinear:
 
         assert quant_linear.weight_scale.shape == (20,)
 
+    def test_per_channel_rejects_scalar_scale(self):
+        """RIL ISS-135: per_channel=True with a scalar scale silently became
+        PER-TENSOR dequantization (a 0-dim as_tensor broadcasts to every row,
+        all rows share one scale). The caller must provide a per-row tensor;
+        a scalar is rejected instead of silently mis-scaling."""
+        config = QuantConfig(per_channel=True)
+        linear = nn.Linear(10, 20)
+        with pytest.raises(ValueError, match="per_channel"):
+            QuantizedLinear.from_linear(linear, config, scale=3.14)
+
+    def test_per_channel_accepts_per_row_scale_tensor(self):
+        """RIL ISS-135: a per-row scale tensor (one per output channel) is
+        honored — each row keeps its own scale in dequantization."""
+        config = QuantConfig(per_channel=True)
+        linear = nn.Linear(10, 20)
+        per_row = torch.linspace(0.1, 2.0, 20)
+        quant_linear = QuantizedLinear.from_linear(linear, config, scale=per_row)
+        assert quant_linear.weight_scale.shape == (20,)
+        assert torch.equal(quant_linear.weight_scale, per_row.to(quant_linear.weight_scale.dtype))
+
+    def test_per_channel_rejects_wrong_length_scale(self):
+        """A per-channel scale with the wrong number of rows must be rejected,
+        not broadcast into a shape mismatch."""
+        config = QuantConfig(per_channel=True)
+        linear = nn.Linear(10, 20)
+        with pytest.raises(ValueError, match="per output channel"):
+            QuantizedLinear.from_linear(linear, config, scale=torch.ones(5))
+
     def test_per_tensor_quantization(self):
         """Test per-tensor quantization."""
         config = QuantConfig(per_channel=False)

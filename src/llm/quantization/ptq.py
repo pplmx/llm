@@ -138,16 +138,32 @@ class QuantizedLinear(nn.Module):
         weight = linear.weight.data
 
         if config.per_channel:
-            # Per-channel quantization
+            # Per-channel quantization: a per-row scale vector.
             if scale is None:
                 abs_max = weight.abs().max(dim=1)[0]
                 qmax = 2 ** (config.bits - 1) - 1
                 scale = abs_max / qmax
                 scale = scale.clamp(min=1e-8)
+            elif isinstance(scale, (int, float)):
+                # A caller-supplied scalar scale has no per-channel meaning —
+                # as a 0-dim tensor it broadcasts to every row, silently making
+                # the dequantization PER-TENSOR while the layer still declares
+                # per-channel (every row shares one scale, inflating the
+                # quantization-error profile for no structural benefit). Fail
+                # fast instead of silently mis-scaling (RIL ISS-135).
+                raise ValueError(
+                    "per_channel=True requires a per-row scale tensor (or None to compute "
+                    f"it), got a scalar {scale!r}. Pass a scale with one value per output "
+                    "channel, or set config.per_channel=False."
+                )
 
-            # Normalize scale to a tensor: it's a Tensor when computed above,
-            # or a float when passed by the caller.
+            # scale is a per-row Tensor (computed or caller-supplied).
             scale_tensor = torch.as_tensor(scale, device=weight.device, dtype=weight.dtype)
+            if scale_tensor.numel() != weight.shape[0]:
+                raise ValueError(
+                    f"per_channel scale must have one value per output channel "
+                    f"({weight.shape[0]}), got {scale_tensor.numel()}"
+                )
             weight_quantized = (weight / scale_tensor.view(-1, 1)).round().clamp(-128, 127).to(torch.int8)
             quant_linear.weight_scale.copy_(scale_tensor)
         else:
