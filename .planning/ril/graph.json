@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T17:59:38+00:00",
+  "updated_at": "2026-08-15T18:56:45+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 46,
+      "touched_round": 60,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -1070,7 +1070,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:35:49+00:00",
       "updated_at": "2026-08-10T14:35:49+00:00",
-      "touched_round": 26,
+      "touched_round": 60,
       "title": "quantization module",
       "details": "ptq/gptq/awq/smooth quantize + layers"
     },
@@ -7398,6 +7398,111 @@
       "severity": 0.5,
       "title": "PPO ref model is snapshot before checkpoint load - resumed RLHF computes KL penalty against a stale model",
       "summary": "PPOTrainer.__init__ deep-copies the policy into ref_model inside prepare_training, which runs BEFORE the engine loads a checkpoint into the policy; the checkpoint never carried the reference. On any PPO resume (use_ref_model=True default, kl_coef=0.1) the KL penalty uses pre-resume/random weights - silently wrong. Same class as DPO ref bug (round-60 Finding 1)."
+    },
+    "ISS-134": {
+      "id": "ISS-134",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T18:35:14+00:00",
+      "updated_at": "2026-08-15T18:41:15+00:00",
+      "touched_round": 60,
+      "severity": 0.6,
+      "title": "SyntheticDataModule generates per-rank divergent train+val data in DDP (global RNG consumed by per-rank seed)",
+      "summary": "synthetic.py train_x=torch.randn/val_x=torch.randn use the GLOBAL torch RNG which DistributedManager seeds per-rank (42+rank). DDP regression/synthetic runs train each rank on DIFFERENT data at the same sampler index -> incoherent global batch, per-rank divergent models, meaningless reduce_mean val (save_best/EarlyStopping/ReduceLROnPlateau). Same class as ISS-087 (split_train_val fixed); SyntheticDataModule missed. Fix: dedicated fixed generator like map_base."
+    },
+    "ISS-135": {
+      "id": "ISS-135",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T18:35:14+00:00",
+      "updated_at": "2026-08-15T18:47:33+00:00",
+      "touched_round": 60,
+      "severity": 0.35,
+      "title": "PTQ QuantizedLinear per_channel=True + scalar scale silently quantizes per-tensor",
+      "summary": "ptq.py:150-151 a caller-supplied float scale with per_channel=True broadcasts [1,1] into the per-row [out_f] buffer (as_tensor 0-dim -> view(-1,1) -> all rows share one scale). Repro: weight_scale=[3.14]*4. Silent wrong semantics (per-tensor scaling of a per-channel-dequant layer). Fix: reject scalar scale when per_channel, or broadcast to [out_f] per-row."
+    },
+    "ISS-136": {
+      "id": "ISS-136",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T18:35:14+00:00",
+      "updated_at": "2026-08-15T18:56:45+00:00",
+      "touched_round": 60,
+      "severity": 0.25,
+      "title": "quantize_model_{gptq,awq,smoothquant} calibration fallback partial-capture edge",
+      "summary": "on a mid-batch forward failure, per-layer capture counts diverge (layers before failure captured k+1, at/after captured k); any_captured=True skips the uniform fallback so each layer quantizes with different batch counts. If the failing module precedes a quantized layer, deeper layers have empty captures -> 'No calibration data accumulated (n_samples=0)' crash after earlier layers were already replaced (partial in-place mutation). Fix: uniformly drop+fall back or fail fast listing under-calibrated layers."
+    },
+    "CHG-125": {
+      "id": "CHG-125",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T18:41:14+00:00",
+      "updated_at": "2026-08-15T18:41:14+00:00",
+      "touched_round": 60,
+      "summary": "SyntheticDataModule.setup draws from a dedicated torch.Generator(seed 0) — train+val now deterministic and rank-identical (mirrors map_base ISS-087 fix)",
+      "commit": "242cc9a"
+    },
+    "EV-154": {
+      "id": "EV-154",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T18:41:14+00:00",
+      "updated_at": "2026-08-15T18:41:14+00:00",
+      "touched_round": 60,
+      "source": "tests/data/test_synthetic.py::test_synthetic_data_identical_across_ranks,tests/data/test_synthetic.py::test_synthetic_data_deterministic_across_runs",
+      "confidence": 1.0,
+      "summary": "RED: rank-0/rank-1 sample 0 diverged before; identical across ranks+runs after"
+    },
+    "CHG-126": {
+      "id": "CHG-126",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T18:47:32+00:00",
+      "updated_at": "2026-08-15T18:47:32+00:00",
+      "touched_round": 60,
+      "summary": "QuantizedLinear.from_linear rejects a scalar/wrong-length scale under per_channel=True (was silently per-tensor); per-row tensor honored",
+      "commit": "02b0061"
+    },
+    "EV-155": {
+      "id": "EV-155",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T18:47:33+00:00",
+      "updated_at": "2026-08-15T18:47:33+00:00",
+      "touched_round": 60,
+      "source": "tests/quantization/test_quantization.py::TestQuantizedLinear::test_per_channel_rejects_scalar_scale,tests/quantization/test_quantization.py::TestQuantizedLinear::test_per_channel_accepts_per_row_scale_tensor,tests/quantization/test_quantization.py::TestQuantizedLinear::test_per_channel_rejects_wrong_length_scale",
+      "confidence": 1.0,
+      "summary": "RED: scalar scale=3.14 silently produced [3.14]*rows; now raises; per-row honored"
+    },
+    "CHG-127": {
+      "id": "CHG-127",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T18:56:45+00:00",
+      "updated_at": "2026-08-15T18:56:45+00:00",
+      "touched_round": 60,
+      "summary": "quantize_model_{gptq,awq,smoothquant}: captures must be consistent (same batch count) across all targets; any mid-loop forward-failure divergence triggers a uniform direct-call fallback (no empty-capture n_samples=0 crash after partial replacement)",
+      "commit": "a07159c"
+    },
+    "EV-156": {
+      "id": "EV-156",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T18:56:45+00:00",
+      "updated_at": "2026-08-15T18:56:45+00:00",
+      "touched_round": 60,
+      "source": "tests/quantization/test_gptq_end_to_end.py::test_quantize_model_gptq_partial_forward_failure_uniform_fallback",
+      "confidence": 1.0,
+      "summary": "RED: branch_b 0-capture crashed n_samples=0 after branch_a replaced; now uniform fallback quantizes both"
     }
   },
   "edges": [
@@ -10662,6 +10767,42 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-15T17:59:38+00:00"
+    },
+    {
+      "from": "ISS-134",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-15T18:35:23+00:00"
+    },
+    {
+      "from": "ISS-135",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-15T18:35:23+00:00"
+    },
+    {
+      "from": "ISS-136",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-15T18:35:23+00:00"
+    },
+    {
+      "from": "CHG-125",
+      "to": "ISS-134",
+      "type": "resolves",
+      "created_at": "2026-08-15T18:41:14+00:00"
+    },
+    {
+      "from": "CHG-126",
+      "to": "ISS-135",
+      "type": "resolves",
+      "created_at": "2026-08-15T18:47:33+00:00"
+    },
+    {
+      "from": "CHG-127",
+      "to": "ISS-136",
+      "type": "resolves",
+      "created_at": "2026-08-15T18:56:45+00:00"
     }
   ]
 }
