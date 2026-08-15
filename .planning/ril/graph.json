@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 52,
+  "round": 53,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T00:37:16+00:00",
+  "updated_at": "2026-08-15T00:44:33+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5764,10 +5764,10 @@
     "ISS-99": {
       "id": "ISS-99",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-14T15:28:25+00:00",
-      "updated_at": "2026-08-14T15:28:25+00:00",
+      "updated_at": "2026-08-15T00:44:08+00:00",
       "touched_round": 52,
       "severity": 0.4,
       "title": "speculative acceptance ratio scores against the full-softmax distribution while the draft sampled from a top-k/top-p-truncated one",
@@ -5970,18 +5970,64 @@
     "TASK-089": {
       "id": "TASK-089",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T00:37:08+00:00",
-      "updated_at": "2026-08-15T00:37:16+00:00",
+      "updated_at": "2026-08-15T00:44:08+00:00",
       "touched_round": 52,
       "category": "correctness",
       "severity": 0.4,
       "confidence": 0.5,
       "effort": 0.5,
-      "title": "speculative acceptance ratio must use the same top-k/top-p-filtered distributions the draft/target actually sample from (ISS-99); verify divergence first",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T01:07:16+00:00"
+      "title": "speculative acceptance ratio must use the same top-k/top-p-filtered distributions the draft/target actually sample from (ISS-99); verify divergence first"
+    },
+    "EV-122": {
+      "id": "EV-122",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:43:55+00:00",
+      "updated_at": "2026-08-15T00:43:55+00:00",
+      "touched_round": 52,
+      "source": "tests/generation/test_speculative.py::test_speculative_top_k_acceptance_uses_filtered_distributions",
+      "title": "Verified ISS-99 real: with top_k=1, draft proposes its argmax (p_filtered=0 under target top-1), theory accept=0; unfiltered ratio gives empirical 0.1335/2000 (RED). After fix empirical ~0 (GREEN); full speculative+eager+serving 419 passed",
+      "confidence": 1.0
+    },
+    "CHG-093": {
+      "id": "CHG-093",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:43:55+00:00",
+      "updated_at": "2026-08-15T00:43:55+00:00",
+      "touched_round": 52,
+      "commit": "22183f7",
+      "title": "Factor sampling_probs out of sample_next_token; speculative acceptance uses filtered target/draft distributions (TASK-089)"
+    },
+    "DEC-034": {
+      "id": "DEC-034",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:44:08+00:00",
+      "updated_at": "2026-08-15T00:44:08+00:00",
+      "touched_round": 52,
+      "rationale": "Speculative acceptance ratios must be scored against the exact filtered distributions (temperature + top-k/top-p + softmax) that sample_next_token draws from, via a shared sampling_probs helper. This keeps speculative output distributionally identical to EagerGenerationBackend under identical params, per the speculative backend's documented 'preserves the target distribution' contract.",
+      "alternatives_rejected": "(1) keep raw full-vocab softmax ratio — accepts tokens samplers would mask with top_k/top_p set; divergent from eager (some impls accept the approximation, e.g. HuggingFace assisted generation, but this repo's contract is eager-equivalence); (2) re-derive the filter inline in speculative.py — risks drift between the two filter implementations"
+    },
+    "TASK-090": {
+      "id": "TASK-090",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:44:33+00:00",
+      "updated_at": "2026-08-15T00:44:33+00:00",
+      "touched_round": 53,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 0.9,
+      "effort": 0.3,
+      "title": "compute_model_size: count true weights per layer for 4-bit GPTQ/AWQ (packed bytes != params); document params definition (ISS-94)"
     }
   },
   "edges": [
@@ -8685,6 +8731,18 @@
       "to": "ISS-99",
       "type": "addresses",
       "created_at": "2026-08-15T00:37:16+00:00"
+    },
+    {
+      "from": "CHG-093",
+      "to": "ISS-99",
+      "type": "resolves",
+      "created_at": "2026-08-15T00:43:55+00:00"
+    },
+    {
+      "from": "CHG-093",
+      "to": "TASK-089",
+      "type": "implements",
+      "created_at": "2026-08-15T00:43:55+00:00"
     }
   ]
 }

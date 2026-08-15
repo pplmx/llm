@@ -255,6 +255,12 @@ def compute_model_size(model: nn.Module) -> dict[str, Any]:
     replace ``nn.Linear`` entirely, so without explicit handling a
     GPTQ/AWQ/Smooth-quantized model reported zero parameters and zero bytes.
 
+    ``total_params`` counts **true weights**: for 4-bit GPTQ/AWQ layers each
+    packed int8 byte stores two int4 weights, so ``total_params`` is the
+    unpacked weight count while ``total_bytes`` is the actual (packed) on-disk
+    size. Use ``total_params`` for parameter counts and ``total_bytes`` /
+    ``size_mb`` for footprint.
+
     Returns:
         Dictionary with size information.
     """
@@ -271,10 +277,16 @@ def compute_model_size(model: nn.Module) -> dict[str, Any]:
     for module in model.modules():
         if isinstance(module, (GPTQQuantizedLinear, AWQQuantizedLinear)):
             quantized_layers += 1
-            # Packed int8 storage: ``weight_packed`` (int4 packed) or int8.
+            # Packed int8 storage: ``weight_packed`` holds two int4 values
+            # per byte for bits=4, or one int8 value per byte for bits=8.
+            # ``numel()`` counts *bytes*; the true parameter count is
+            # bytes * weights-per-byte (otherwise bits=4 reports half the
+            # real weight count — ISS-94). ``total_bytes`` stays the actual
+            # packed storage either way.
             packed_attr = cast(torch.Tensor, module.weight_packed)
+            weights_per_byte = 2 if getattr(module, "bits", 4) == 4 else 1
             scales_attr = cast(torch.Tensor, module.scales)
-            total_params += packed_attr.numel()
+            total_params += packed_attr.numel() * weights_per_byte
             total_bytes += packed_attr.numel() * packed_attr.element_size()
             total_bytes += scales_attr.numel() * scales_attr.element_size()
             input_scales = cast(torch.Tensor | None, getattr(module, "input_scales", None))

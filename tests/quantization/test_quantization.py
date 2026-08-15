@@ -267,6 +267,45 @@ class TestQuantizeModel:
         # fp32 original parameters.
         assert size_info["total_bytes"] < plain_size["total_bytes"]
 
+    def test_compute_model_size_counts_true_weights_for_4bit(self):
+        """``total_params`` must count true weights, not packed bytes, for
+        4-bit GPTQ/AWQ (regression for ISS-94).
+
+        ``weight_packed`` is an int8 tensor holding TWO int4 weights per byte,
+        so ``packed.numel()`` undercounts the parameter count by 2x for
+        bits=4. ``total_bytes`` (actual packed storage) is unaffected.
+        """
+        from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+        # Capturing the fp32 size BEFORE quantize_model_gptq mutates the
+        # model in place (it replaces nn.Linear modules with GPTQQuantizedLinear).
+        plain_model = nn.Sequential(nn.Linear(8, 16), nn.Linear(16, 8))
+        true_params = sum(p.numel() for p in plain_model.parameters() if p.ndim == 2)
+        calib = torch.randn(4, 8)
+
+        # bits=4: two int4 weights packed per int8 byte → params = 2x bytes.
+        model_4 = nn.Sequential(nn.Linear(8, 16), nn.Linear(16, 8))
+        quant_4 = quantize_model_gptq(
+            model_4,
+            iter([calib]),
+            config=GPTQConfig(bits=4, group_size=-1, sym=True),
+        )
+        info_4 = compute_model_size(quant_4)
+        assert info_4["total_params"] == true_params, (
+            f"bits=4 total_params {info_4['total_params']} != true {true_params} "
+            "(packed bytes undercount int4 weights by 2x)"
+        )
+
+        # bits=8 stores one weight per byte → already counted correctly.
+        model_8 = nn.Sequential(nn.Linear(8, 16), nn.Linear(16, 8))
+        quant_8 = quantize_model_gptq(
+            model_8,
+            iter([calib]),
+            config=GPTQConfig(bits=8, group_size=-1, sym=True),
+        )
+        info_8 = compute_model_size(quant_8)
+        assert info_8["total_params"] == true_params
+
     def test_from_linear_rejects_asymmetric(self):
         """Asymmetric simple-PTQ was a silent no-op (zero point never
         computed); it must fail fast instead, mirroring GPTQQuantizedLinear."""
