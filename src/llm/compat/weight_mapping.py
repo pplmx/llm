@@ -446,7 +446,13 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # checkpoint therefore defaults to bias-free; our own publisher
         # persists the actual flags so a biased model roundtrips with its
         # biases (RIL ISS-062).
-        "qkv_bias": hf_config.get("qkv_bias", False),
-        "mlp_bias": hf_config.get("mlp_bias", False),
-        "lm_head_bias": hf_config.get("lm_head_bias", False),
+        #
+        # External checkpoints declare attention bias under HF's CANONICAL
+        # ``attention_bias`` key (Qwen-style), not our repo-custom names —
+        # falling back to those keys silently dropped every attention/MLP
+        # bias for ``attention_bias: true`` checkpoints (RIL ISS-145). Prefer
+        # our own persisted flags, then HF's canonical key for externals.
+        "qkv_bias": hf_config.get("qkv_bias", hf_config.get("attention_bias", False)),
+        "mlp_bias": hf_config.get("mlp_bias", hf_config.get("attention_bias", False)),
+        "lm_head_bias": hf_config.get("lm_head_bias", hf_config.get("attention_bias", False)),
     }

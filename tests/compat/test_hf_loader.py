@@ -13,6 +13,7 @@ from llm.compat.weight_mapping import (
     get_config_mapping,
     get_weight_mapping,
 )
+from tests.support.devices import DEFAULT_DEVICE
 
 
 class TestWeightMapping:
@@ -148,6 +149,28 @@ class TestWeightMapping:
         assert ours_biased["qkv_bias"] is True
         assert ours_biased["lm_head_bias"] is True
 
+    def test_get_config_mapping_honors_hf_attention_bias_for_external(self):
+        """RIL ISS-145: external checkpoints declare attention bias under HF's
+        canonical ``attention_bias`` key (Qwen-style). Mapping that key must
+        turn qkv/mlp/lm_head bias ON — before this, only our repo-custom keys
+        were read and every bias was silently dropped (bias-free default)."""
+        external = get_config_mapping(
+            {
+                "model_type": "qwen2",
+                "hidden_size": 2048,
+                "attention_bias": True,
+            }
+        )
+        assert external["qkv_bias"] is True
+        assert external["mlp_bias"] is True
+        assert external["lm_head_bias"] is True
+
+        # Our own persisted flags still take precedence over the HF key.
+        ours = get_config_mapping(
+            {"model_type": "llama", "qkv_bias": False, "mlp_bias": False, "lm_head_bias": False, "attention_bias": True}
+        )
+        assert ours["qkv_bias"] is False
+
 
 class TestHFLoader:
     """Tests for HuggingFace loader."""
@@ -191,6 +214,57 @@ class TestHFLoader:
         torch.save(state_dict, weight_path)
 
         return tmp_path
+
+    def test_from_pretrained_ties_lm_head_to_embeddings_when_key_absent(self, tmp_path):
+        """RIL ISS-143: an external tied-embedding checkpoint (standard HF
+        layout, ``tie_word_embeddings`` with NO ``lm_head.weight``) must copy
+        the input embeddings into the LM head — DecoderModel always allocates
+        a separate linear head, so before this fix a tied checkpoint loaded
+        cleanly (Missing-keys warning only) with the head at RANDOM init,
+        producing garbage generations."""
+        import json
+
+        from llm.compat.hf_publisher import save_pretrained
+        from tests.support.models import decoder_model_kwargs
+
+        # Build + publish a small model, then MUTATE the artifact into a tied
+        # external checkpoint: drop lm_head.weight and set tie_word_embeddings.
+        torch.manual_seed(1)
+        from llm.models.decoder import DecoderModel
+
+        src = DecoderModel(
+            **decoder_model_kwargs(
+                vocab_size=64,
+                hidden_size=32,
+                num_layers=1,
+                num_heads=2,
+                intermediate_size=64,
+                max_seq_len=64,
+                attn_impl="mha",
+                mlp_impl="mlp",
+            )
+        )
+        save_pretrained(src, tmp_path)
+
+        config_path = tmp_path / "config.json"
+        config = json.loads(config_path.read_text())
+        config["tie_word_embeddings"] = True
+        config_path.write_text(json.dumps(config))
+
+        weights_path = tmp_path / "model.safetensors"
+        if weights_path.exists():
+            from safetensors.torch import save_file
+
+            from llm.compat.hf_loader import from_pretrained
+
+            state_dict = dict(torch.load(str(tmp_path / "model.safetensors")))
+            state_dict.pop("lm_head.weight", None)  # tied layout has no head
+            save_file(state_dict, str(weights_path))
+
+            reloaded = from_pretrained(str(tmp_path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+            head = reloaded.lm_head.weight.detach().to("cpu")
+            emb = reloaded.embedding_layer.token_embeddings.weight.detach().to("cpu")
+            assert torch.equal(head, emb), "tied checkpoint must copy embeddings into lm_head"
 
     def test_list_supported_architectures(self):
         """Test listing supported architectures."""

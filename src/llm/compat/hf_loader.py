@@ -171,6 +171,30 @@ def _load_from_local(
     # Load into model
     missing, unexpected = model.load_state_dict(converted_state_dict, strict=False)
 
+    # Tied embeddings (``tie_word_embeddings``): HF checkpoints that tie the
+    # LM head to the input embeddings ship NO ``lm_head.weight``. The
+    # DecoderModel always allocates a separate linear head, so a tied
+    # checkpoint left it at RANDOM init with only a Missing-keys warning —
+    # silently garbage generation (RIL ISS-143). When the head key is absent
+    # but the embedding tensor is present, copy the embeddings into the head
+    # (standard HF tying semantics).
+    if "lm_head.weight" in missing and "embedding_layer.token_embeddings.weight" in converted_state_dict:
+        embedding_weight = converted_state_dict["embedding_layer.token_embeddings.weight"]
+        head_shape = tuple(model.lm_head.weight.shape)
+        if tuple(embedding_weight.shape) == head_shape:
+            with torch.no_grad():
+                model.lm_head.weight.copy_(embedding_weight)
+            missing = [k for k in missing if k != "lm_head.weight"]
+            logger.info("Tied embeddings: copied input embeddings into lm_head (tie_word_embeddings).")
+        else:
+            logger.warning(
+                "Checkpoint is tied (no lm_head.weight) but embedding shape %s "
+                "does not match the LM head shape %s; leaving lm_head at its "
+                "initialization.",
+                tuple(embedding_weight.shape),
+                head_shape,
+            )
+
     if missing:
         logger.warning(f"Missing keys: {missing[:10]}{'...' if len(missing) > 10 else ''}")
     if unexpected:
