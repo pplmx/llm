@@ -148,10 +148,20 @@ def wrap_model_for_training(
         return model
 
     if parallel_strategy == "ddp":
+        # MoE models MUST opt into unused-parameter tracking (RIL ISS-138):
+        # a batch that routes zero tokens to an expert leaves that expert
+        # outside the autograd graph, and DDP (find_unused_parameters=False)
+        # then fails the backward with "expected to have finished reduction
+        # (but one or more parameters still have no gradient)". Dead experts
+        # are the structural norm for MoE (top-k routing over many experts),
+        # not an anomaly, so blanket-unused tracking is the correct trade —
+        # and it stays OFF for standard models where every param is used
+        # every step (a real reduction-path speedup).
+        uses_moe = any(getattr(module, "num_experts", 0) > 0 for module in model.modules())
         return DistributedDataParallel(
             model,
             device_ids=[device.index],
-            find_unused_parameters=False,
+            find_unused_parameters=uses_moe,
         )
 
     if parallel_strategy == "fsdp":

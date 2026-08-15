@@ -1,5 +1,7 @@
 """Tests for distributed parallel strategy helpers."""
 
+from unittest.mock import patch
+
 import pytest
 import torch
 import torch.nn as nn
@@ -137,6 +139,69 @@ def test_distributed_config_auto_wrap_min_params_zero_disables():
 def test_distributed_config_cpu_offload_roundtrip():
     cfg = DistributedConfig(fsdp_cpu_offload=True)
     assert cfg.fsdp_cpu_offload is True
+
+
+# --- wrap_model_for_training MoE unused-parameter handling (RIL ISS-138) ---
+
+
+def _moe_model() -> torch.nn.Module:
+    """A tiny model whose block carries a MoE (num_experts > 0) MLP."""
+    from llm.core.transformer_block import TransformerBlock
+
+    return TransformerBlock(
+        hidden_size=32,
+        num_heads=4,
+        attn_impl="mha",
+        mlp_impl="moe",
+        num_experts=8,
+        top_k=2,
+        intermediate_size=64,
+    )
+
+
+def test_wrap_ddp_moe_enables_find_unused_parameters():
+    """RIL ISS-138: a MoE model wrapped for DDP must set
+    ``find_unused_parameters=True`` — a batch can deterministically leave some
+    experts unrouted (top-k over many experts), so those params get NO
+    gradient and DDP (find_unused_parameters=False) fails the backward with
+    "expected to have finished reduction". Dead experts are structural for
+    MoE, not anomalies. (The DDP constructor needs a live process group, so we
+    intercept it to capture the kwarg decision.)"""
+    killed: dict[str, bool] = {}
+
+    def _capture(model, *_args, **kwargs):
+        killed["moe"] = kwargs.get("find_unused_parameters")
+        return model  # return the bare model; we only assert the kwarg
+
+    model = _moe_model()
+    with patch("llm.training.distributed.parallel.DistributedDataParallel", side_effect=_capture):
+        wrap_model_for_training(
+            model,
+            parallel_strategy="ddp",
+            device=torch.device("cuda:0"),
+            world_size=2,
+        )
+    assert killed.get("moe") is True, f"MoE DDP must enable find_unused_parameters, got {killed}"
+
+
+def test_wrap_ddp_standard_model_keeps_fast_path():
+    """A standard (non-MoE) model keeps find_unused_parameters=False — every
+    param is used every step, so unused tracking is a pure overhead."""
+    killed: dict[str, bool] = {}
+
+    def _capture(model, *_args, **kwargs):
+        killed["std"] = kwargs.get("find_unused_parameters")
+        return model
+
+    model = _Tiny()
+    with patch("llm.training.distributed.parallel.DistributedDataParallel", side_effect=_capture):
+        wrap_model_for_training(
+            model,
+            parallel_strategy="ddp",
+            device=torch.device("cuda:0"),
+            world_size=2,
+        )
+    assert killed.get("std") is False, f"standard model must keep find_unused_parameters=False, got {killed}"
 
 
 # --- wrap_model_for_training FSDP dispatch --------------------------------
