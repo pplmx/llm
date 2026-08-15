@@ -89,6 +89,22 @@ def export_to_torchscript(
             # the embedding with out-of-range ids (RIL ISS-058).
             device = next(model.parameters()).device
             example_inputs = dummy_token_ids(model, input_shape, device=device)
+        # Pre-seed every RoPE cos/sin cache to the example sequence length.
+        # ``torch.jit.trace`` runs the model TWICE (tracing + a sanity
+        # re-check), and ``RotaryPositionEmbedding`` builds its table behind
+        # data-dependent ``if seq_len > cached`` control flow — the 1st run
+        # builds, the 2nd skips, so the recorded graphs differ and tracing
+        # every RoPE model raised ``TracingCheckError`` (RIL ISS-142; the
+        # default non-RoPE model never exercised this). Warming the cache up
+        # front makes both runs take the identical "populated" path.
+        from llm.core.rope import RotaryPositionEmbedding
+
+        example_seq_len = example_inputs.shape[1] if example_inputs.dim() >= 2 else 1
+        for module in model.modules():
+            if isinstance(module, RotaryPositionEmbedding):
+                module._update_cos_sin_cache(
+                    example_seq_len, next(model.parameters()).device, next(model.parameters()).dtype
+                )
         scripted = torch.jit.trace(wrapped, example_inputs, strict=strict, **kwargs)
     else:  # method == "script"
         scripted = torch.jit.script(wrapped, **kwargs)

@@ -67,6 +67,35 @@ class TestExportToTorchscript:
         result = export_to_torchscript(small, output_path, input_shape=(1, 32))
         assert result.exists()
 
+    def test_export_trace_rope_model_exports(self, tmp_path):
+        """RIL ISS-142: a RoPE model (the default for external Llama/Mistral
+        checkpoints) must trace to TorchScript.
+
+        ``torch.jit.trace`` runs the model twice (trace + sanity re-check).
+        ``RotaryPositionEmbedding`` built its cos/sin table behind
+        data-dependent ``if seq_len > cached`` control flow, so the 1st run
+        built the table and the 2nd skipped it — the recorded graphs
+        differed and every RoPE model raised ``TracingCheckError`` (the
+        existing tests used only the default non-RoPE config and never caught
+        it). The exporter now pre-seeds the cache, making both runs take the
+        identical path."""
+        rope_model = DecoderModel(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=1,
+            num_heads=4,
+            max_seq_len=32,
+            use_rope=True,
+        )
+        output_path = tmp_path / "rope.pt"
+        result = export_to_torchscript(rope_model, output_path, input_shape=(1, 8))
+        assert result.exists()
+        scripted = torch.jit.load(str(output_path))
+        scripted.eval()
+        with torch.no_grad():
+            out = scripted(torch.randint(0, 64, (1, 8)))
+        assert out.shape == (1, 8, 64)
+
     def test_artifact_loads_with_torch_jit_load(self, small_model, tmp_path):
         """The written file is a valid TorchScript archive."""
         output_path = tmp_path / "model.pt"
