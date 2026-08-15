@@ -287,3 +287,41 @@ def test_concurrent_step_does_not_overshoot_generated_ids(fake_engine):
         f"max_new_tokens=1 request (expected exactly 1); generated_ids is "
         f"desynced from the KV cache"
     )
+
+
+def test_stream_request_drains_tail_when_concurrent_step_evicts(fake_engine, monkeypatch):
+    """End-to-end: ``stream_request`` must not drop the final token when a
+    concurrent ``step()`` evicts the finished sequence before the owner drains
+    it.
+
+    Regression (RIL serving scan F1): the loop re-fetched the sequence via
+    ``get_sequence`` after ``step()``; a concurrent stepper's ``schedule()``
+    filters finished sequences out of ``running``, so the re-fetch returned
+    None and the owner broke without draining the final token (truncated
+    stream). The engine now reuses the reference captured before the step.
+
+    We reproduce the race deterministically: after this request's step marks
+    it FINISHED + frees its slot, ``_lock_step_post`` runs ``schedule()``
+    (what the other generator's step would do) so the finished sequence is
+    evicted from ``running`` before ``stream_request`` re-reads it.
+    """
+    req = GenerationRequest(prompt="a", max_new_tokens=1)
+    req.request_id = "drain-e2e"
+
+    real_post = fake_engine._lock_step_post
+
+    def racing_post(step_inputs):
+        result = real_post(step_inputs)
+        # The OTHER generator's step() re-entering the scheduler and evicting
+        # this just-finished sequence before the owner drains it.
+        fake_engine.scheduler.schedule()
+        return result
+
+    monkeypatch.setattr(fake_engine, "_lock_step_post", racing_post)
+
+    # ``stream_request`` calls ``add_request`` itself — we must NOT also call
+    # ``add_request`` up here or the request would be double-added.
+    chunks = list(fake_engine.stream_request(req))
+    # The single generated token must be emitted. Under the old re-fetch the
+    # loop broke before draining, returning [] here.
+    assert chunks, f"stream_request must emit the final token, got {chunks!r}"

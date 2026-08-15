@@ -466,9 +466,19 @@ class ContinuousBatchingEngine:
                         yield buffer
                     return
                 self.step()
-                seq = self.scheduler.get_sequence(req_id)
-                if seq is None:
-                    break
+                # Reuse the ``seq`` reference captured BEFORE the step (from
+                # the ``get_sequence`` at the top of this iteration). The
+                # post-step re-fetch was a race: a concurrent generator's
+                # ``step()`` -> ``Scheduler.schedule()`` can evict a just-
+                # finished sequence from ``running`` between our ``step()``
+                # releasing ``_step_lock`` and this ``get_sequence``
+                # re-acquiring the scheduler lock, so the re-fetch returned
+                # ``None`` and the final step's token(s) were silently
+                # dropped (RIL F1 — concurrent stream truncation). The
+                # ``Sequence`` object itself is never destroyed until the
+                # ``finally`` reap below, and ``step()`` appended this
+                # iteration's tokens to ``seq.generated_ids`` in place, so
+                # the already-held reference drains them correctly.
                 chunks, stop_hit, buffer = self._emit_tokens(
                     seq, seq.generated_ids[emitted:], stops, max_stop_len, buffer
                 )
