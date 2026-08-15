@@ -82,6 +82,27 @@ def _require_generation_service():
     return generation_service
 
 
+def _validate_prompt_encodable(prompt: str) -> None:
+    """Raise a 400 ``APIError`` when the tokenizer cannot encode ``prompt``.
+
+    A character-level tokenizer raises ``KeyError`` for any character outside
+    its corpus (a client-caused condition). On the streaming path this must be
+    validated BEFORE the SSE starts — an error raised inside the generator
+    would otherwise surface as a 200 stream containing ``Error: KeyError``
+    (RIL ISS-113). Non-streaming handlers catch the same ``KeyError`` in their
+    ``except`` clauses.
+    """
+    service = _require_generation_service()
+    try:
+        service.tokenizer.encode(prompt)
+    except KeyError as exc:
+        raise APIError(
+            ErrorCode.INVALID_REQUEST,
+            f"Invalid request: {exc}",
+            details={"field": str(exc)},
+        ) from exc
+
+
 def _sync_generate(prompt: str, **kwargs) -> str:
     service = _require_generation_service()
     return service.generate(prompt=prompt, **kwargs)
@@ -105,6 +126,9 @@ async def generate_text(
 ) -> GenerationResponse | StreamingResponse:
     """Generate text from a single prompt. Supports streaming and non-streaming."""
     if request.stream:
+        # Validate before the SSE starts so an un-encodable prompt is a real
+        # 4xx, not an "Error: ..." chunk inside a 200 stream (RIL ISS-113).
+        _validate_prompt_encodable(request.prompt)
         return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
 
     timer = metrics.request_timer(endpoint="generate")
@@ -132,7 +156,7 @@ async def generate_text(
         except RuntimeError as exc:
             t.set_status(503)
             raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
-        except ValueError as exc:
+        except (ValueError, KeyError) as exc:
             t.set_status(400)
             raise APIError(ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}) from exc
         except APIError as exc:
@@ -246,7 +270,7 @@ async def batch_generate_text(
         except RuntimeError as exc:
             t.set_status(503)
             raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
-        except ValueError as exc:
+        except (ValueError, KeyError) as exc:
             t.set_status(400)
             raise APIError(ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}) from exc
         except APIError as exc:

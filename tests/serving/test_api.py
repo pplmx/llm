@@ -70,6 +70,99 @@ def client(monkeypatch, device):
         yield c
 
 
+@pytest.fixture
+def oov_client(monkeypatch, device):
+    """TestClient backed by a real tiny model + SimpleCharacterTokenizer.
+
+    The char tokenizer raises ``KeyError`` for characters outside its corpus,
+    exercising the router's error mapping for out-of-vocabulary prompts (RIL
+    ISS-113) — the default ``StubTokenizer`` never raises.
+    """
+    from unittest.mock import MagicMock
+
+    import torch
+
+    from llm.generation.backends import EagerGenerationBackend
+    from llm.models.decoder import DecoderModel
+    from llm.serving.auth import api_key_header
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.config import ServingConfig
+    from llm.serving.generation_service import ServingGenerationService
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    torch.manual_seed(0)
+    tiny_model = DecoderModel(
+        vocab_size=100,
+        hidden_size=16,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=16,
+        device=device,
+    )
+    tokenizer = SimpleCharacterTokenizer(["abc"])  # only a/b/c (+PAD)
+
+    real_service = ServingGenerationService(
+        model=tiny_model,
+        tokenizer=tokenizer,
+        backend=EagerGenerationBackend(),
+        device=device,
+    )
+    monkeypatch.setattr(
+        ServingGenerationService,
+        "from_config",
+        classmethod(lambda cls, config, **kw: real_service),
+    )
+    monkeypatch.setattr(
+        ContinuousBatchingEngine,
+        "from_serving_config",
+        classmethod(lambda cls, config, **kw: MagicMock()),
+    )
+    monkeypatch.setattr("llm.serving.api._log_server_config", lambda *a, **kw: None)
+
+    cfg = ServingConfig(
+        api_key="test-key",
+        request_timeout=30.0,
+        device=str(device),
+        generation_backend="eager",
+    )
+    with TestClient(app) as c:
+        monkeypatch.setattr("llm.serving.routers.generate.generation_service", real_service)
+        monkeypatch.setattr("llm.serving.routers.generate.config", cfg)
+        monkeypatch.setattr("llm.serving.routers.chat.config", cfg)
+        c.headers[api_key_header.model.name] = "test-key"
+        yield c
+
+
+@pytest.mark.slow
+def test_generate_oov_prompt_returns_400_not_500(oov_client):
+    """Regression (RIL ISS-113): an out-of-vocabulary character in the prompt
+    raises ``KeyError`` from the char tokenizer; the router must surface it as
+    a 4xx (client-caused), not a 500 'Internal server error'."""
+    payload = {"prompt": "héllo", "max_new_tokens": 2, "temperature": 0.0}
+    response = oov_client.post("/generate", json=payload)
+    assert response.status_code == 400, response.text
+    assert "not found in tokenizer" in response.text
+
+
+@pytest.mark.slow
+def test_batch_generate_oov_prompt_returns_400(oov_client):
+    """Same OOV→400 mapping on the batch endpoint."""
+    payload = {"prompts": ["hello", "wörld"], "max_new_tokens": 2, "temperature": 0.0}
+    response = oov_client.post("/batch_generate", json=payload)
+    assert response.status_code == 400, response.text
+    assert "not found in tokenizer" in response.text
+
+
+@pytest.mark.slow
+def test_generate_stream_oov_prompt_returns_400(oov_client):
+    """A streaming OOV prompt must also fail as a client 400 (validated before
+    the SSE starts), not leak 'Error: KeyError' inside a 200 stream."""
+    payload = {"prompt": "héllo", "max_new_tokens": 2, "temperature": 0.0, "stream": True}
+    response = oov_client.post("/generate", json=payload)
+    assert response.status_code == 400, response.text
+    assert "not found in tokenizer" in response.text
+
+
 @pytest.mark.slow
 def test_health_check(client):
     """测试健康检查端点."""

@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 56,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T02:47:30+00:00",
+  "updated_at": "2026-08-15T02:49:00+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6487,10 +6487,10 @@
     "ISS-112": {
       "id": "ISS-112",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T02:46:39+00:00",
-      "updated_at": "2026-08-15T02:46:39+00:00",
+      "updated_at": "2026-08-15T02:48:52+00:00",
       "touched_round": 56,
       "severity": 0.5,
       "title": "mha._rope_positions evaluates int-only start_pos==0 before tensor check -> RoPE models 500 on every batched request (dense+paged)"
@@ -6531,32 +6531,32 @@
     "TASK-100": {
       "id": "TASK-100",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T02:47:29+00:00",
+      "updated_at": "2026-08-15T02:48:52+00:00",
       "touched_round": 56,
       "category": "correctness",
       "severity": 0.5,
       "confidence": 0.95,
       "effort": 0.2,
-      "title": "mha._rope_positions: check tensor start_pos before int==0 guard (RoPE batch serving crash)",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T03:17:29+00:00"
+      "title": "mha._rope_positions: check tensor start_pos before int==0 guard (RoPE batch serving crash)"
     },
     "TASK-101": {
       "id": "TASK-101",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T02:46:40+00:00",
+      "updated_at": "2026-08-15T02:49:00+00:00",
       "touched_round": 56,
       "category": "correctness",
       "severity": 0.3,
       "confidence": 0.9,
       "effort": 0.15,
-      "title": "routers: map tokenizer KeyError (OOV prompt) to 400 INVALID_REQUEST alongside ValueError"
+      "title": "routers: map tokenizer KeyError (OOV prompt) to 400 INVALID_REQUEST alongside ValueError",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T03:19:00+00:00"
     },
     "TASK-102": {
       "id": "TASK-102",
@@ -6588,11 +6588,11 @@
       "id": "CHG-102",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-15T02:47:30+00:00",
-      "updated_at": "2026-08-15T02:47:30+00:00",
+      "updated_at": "2026-08-15T02:48:28+00:00",
       "touched_round": 56,
-      "commit": "f413a11",
+      "commit": "f39a406",
       "title": "mha._rope_positions tensor-before-int guard (TASK-100)"
     }
   },
@@ -9501,6 +9501,18 @@
       "to": "COMP-012",
       "type": "located_in",
       "created_at": "2026-08-15T02:46:40+00:00"
+    },
+    {
+      "from": "CHG-102",
+      "to": "ISS-112",
+      "type": "resolves",
+      "created_at": "2026-08-15T02:48:52+00:00"
+    },
+    {
+      "from": "CHG-102",
+      "to": "TASK-100",
+      "type": "implements",
+      "created_at": "2026-08-15T02:48:52+00:00"
     }
   ]
 }
