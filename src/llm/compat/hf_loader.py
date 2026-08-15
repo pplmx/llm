@@ -90,6 +90,18 @@ def _load_from_local(
     architecture = detect_architecture(hf_config)
     our_config = get_config_mapping(hf_config)
 
+    # Mixtral is MoE; our weight mapping is dense-only, so loading one would
+    # build a DENSE model and silently drop every expert/router tensor, then
+    # run with all of them at RANDOM init — garbage output with warnings only
+    # (RIL ISS-144). Refuse loudly rather than advertise broken support.
+    if architecture == "mixtral":
+        raise NotImplementedError(
+            "Mixtral (block-sparse MoE) is not supported by from_pretrained: the "
+            "weight mapping is dense-only and would silently discard every "
+            "expert/router tensor. Use a dense architecture (llama, mistral, "
+            "qwen) or load the model via llm-train with an explicit MoE config."
+        )
+
     logger.info(f"Detected architecture: {architecture}")
 
     # Determine dtype
@@ -285,5 +297,11 @@ def _load_pytorch_bins(files: list[Path]) -> dict[str, Any]:
 
 
 def list_supported_architectures() -> list[str]:
-    """List supported model architectures."""
-    return ["llama", "llama2", "llama3", "mistral", "mixtral", "qwen", "qwen2"]
+    """List supported model architectures.
+
+    ``mistral`` is included (dense Mistral). ``mixtral`` is deliberately NOT:
+    it is block-sparse MoE, which :func:`from_pretrained` rejects with a clear
+    error rather than silently dropping every expert/router tensor (RIL
+    ISS-144).
+    """
+    return ["llama", "llama2", "llama3", "mistral", "qwen", "qwen2"]

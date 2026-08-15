@@ -123,7 +123,14 @@ def detect_architecture(config: dict[str, Any]) -> str:
 
     if "llama" in model_type:
         return "llama"
-    elif "mistral" in model_type or "mixtral" in model_type:
+    elif "mixtral" in model_type:
+        # Mixtral is MoE (sparse experts + router). Our mapping is dense-only
+        # and from_pretrained would build a DENSE model, silently dropping
+        # every experts.*/gate tensor (RIL ISS-144). Keep it distinguishable
+        # so the loader can REJECT it with a clear error instead of shipping
+        # a model whose routers/experts are all at random init.
+        return "mixtral"
+    elif "mistral" in model_type:
         return "mistral"
     elif "qwen2" in model_type:
         return "qwen2"

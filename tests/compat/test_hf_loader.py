@@ -61,8 +61,12 @@ class TestWeightMapping:
         config = {"model_type": "mistral"}
         assert detect_architecture(config) == "mistral"
 
+    def test_detect_architecture_mixtral_is_distinct(self):
+        """RIL ISS-144: Mixtral must be detected as its OWN architecture (not
+        collapsed into dense 'mistral'), so the loader can reject it instead
+        of silently building a dense model and dropping every MoE tensor."""
         config = {"model_type": "MixtralForCausalLM"}
-        assert detect_architecture(config) == "mistral"
+        assert detect_architecture(config) == "mixtral"
 
     def test_detect_architecture_qwen(self):
         """Test architecture detection for Qwen."""
@@ -275,6 +279,23 @@ class TestHFLoader:
         assert "llama" in archs
         assert "mistral" in archs
         assert "qwen" in archs
+
+    def test_mixtral_is_not_advertised_or_loadable(self, tmp_path):
+        """RIL ISS-144: Mixtral (block-sparse MoE) is NOT silently loadable.
+        Before the fix ``list_supported_architectures`` advertised it but the
+        loader built a DENSE model and dropped every expert/router tensor at
+        random init (garbage output, warnings only). It must be absent from
+        the advertised list AND rejected by from_pretrained with a clear
+        error."""
+        import json
+
+        from llm.compat.hf_loader import from_pretrained, list_supported_architectures
+
+        assert "mixtral" not in list_supported_architectures()
+
+        (tmp_path / "config.json").write_text(json.dumps({"model_type": "mixtral", "num_experts": 8, "top_k": 2}))
+        with pytest.raises(NotImplementedError, match=r"[Mm]ixtral"):
+            from_pretrained(str(tmp_path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
 
     def test_load_weights_missing_raises(self, tmp_path):
         """Test that missing weights raises error."""
