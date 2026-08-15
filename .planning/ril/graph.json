@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 59,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T05:42:37+00:00",
+  "updated_at": "2026-08-15T07:08:25+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 56,
+      "touched_round": 59,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -6521,9 +6521,9 @@
       "id": "ISS-115",
       "type": "issue",
       "status": "resolved",
-      "version": 2,
+      "version": 3,
       "created_at": "2026-08-15T02:46:40+00:00",
-      "updated_at": "2026-08-15T05:42:22+00:00",
+      "updated_at": "2026-08-15T07:08:25+00:00",
       "touched_round": 59,
       "severity": 0.2,
       "title": "sdpa complex path silently drops non-bool (float/additive) attn masks (currently unreachable in-tree, latent API gap)"
@@ -6867,6 +6867,41 @@
       "touched_round": 59,
       "commit": "9a00c90",
       "title": "Registry cold-start double-checked locking (generation/export/peft) + sdpA float additive mask merge"
+    },
+    "CHG-110": {
+      "id": "CHG-110",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T07:06:25+00:00",
+      "updated_at": "2026-08-15T07:06:25+00:00",
+      "touched_round": 59,
+      "commit": "4e1dbaa",
+      "title": "sdpa mask handling full fix: float additive on complex path, long/float 2D data-pipeline masks broadcast on all paths (supersedes 9a00c90's partial sdpa change)"
+    },
+    "EV-140": {
+      "id": "EV-140",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T07:06:25+00:00",
+      "updated_at": "2026-08-15T07:06:25+00:00",
+      "touched_round": 59,
+      "source": "4e1dbaa tests/core/attn/test_sdpa.py",
+      "title": "Reference-equality passes for causal+float, window+float, long 0/1 causal/fast, float 2D fast; SFT e2e + reward + mha suites green",
+      "confidence": 1.0
+    },
+    "ISS-120": {
+      "id": "ISS-120",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-08-15T07:07:52+00:00",
+      "updated_at": "2026-08-15T07:07:52+00:00",
+      "touched_round": 59,
+      "severity": 0.6,
+      "title": "SFT/DPO/reward long 0/1 attention_masks never applied during training (sdpa complex path 'pass' dropped them) - padding tokens attended",
+      "summary": "Data pipelines emit LongTensor [B,S] attention_mask (1=real,0=pad). On the sdpa complex path (causal+mask / window) a non-bool mask hit a bare pass and was silently dropped, so padding was never masked in SFT/DPO/reward training; the fast path rejected the long dtype outright. Fixed in 4e1dbaa (mask-out predicate ==0, 1=keep; broadcast [B,S] to key axis)."
     }
   },
   "edges": [
@@ -9918,6 +9953,24 @@
       "to": "TASK-108",
       "type": "implements",
       "created_at": "2026-08-15T05:42:22+00:00"
+    },
+    {
+      "from": "CHG-110",
+      "to": "ISS-115",
+      "type": "resolves",
+      "created_at": "2026-08-15T07:06:25+00:00"
+    },
+    {
+      "from": "CHG-110",
+      "to": "ISS-120",
+      "type": "resolves",
+      "created_at": "2026-08-15T07:08:25+00:00"
+    },
+    {
+      "from": "ISS-120",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-15T07:08:25+00:00"
     }
   ]
 }
