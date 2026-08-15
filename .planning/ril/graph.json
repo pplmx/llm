@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T16:17:23+00:00",
+  "updated_at": "2026-08-15T17:39:56+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 40,
+      "touched_round": 60,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -5854,7 +5854,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:36:27+00:00",
       "updated_at": "2026-08-14T15:36:27+00:00",
-      "touched_round": 54,
+      "touched_round": 60,
       "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
     },
     "ISS-102": {
@@ -7188,6 +7188,181 @@
       "source": "tests/training/test_checkpoint_manager.py::test_load_rejects_resume_with_mismatched_model_config,tests/training/test_checkpoint_manager.py::test_load_resume_matching_model_config_is_accepted",
       "confidence": 1.0,
       "summary": "hidden_size mismatch raises; identical-arch + dropout drift loads normally"
+    },
+    "ISS-128": {
+      "id": "ISS-128",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T16:50:27+00:00",
+      "updated_at": "2026-08-15T17:07:58+00:00",
+      "touched_round": 60,
+      "severity": 0.5,
+      "title": "loglikelihood_rolling truncates long docs at max_length - word_perplexity silently deflated",
+      "summary": "lm_eval_lm.py _loglikelihood_rolling_batch scores only the first max_length tokens (no strided windowing over the rest); lm_eval divides the truncated sum by the FULL doc word count -> optimistic word_perplexity on any doc longer than max_seq_len. Repro collapses 3.87e8 -> 2.87. Fix: strided windows over the whole doc."
+    },
+    "ISS-129": {
+      "id": "ISS-129",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T16:50:27+00:00",
+      "updated_at": "2026-08-15T17:17:25+00:00",
+      "touched_round": 60,
+      "severity": 0.5,
+      "title": "Model-defining flags (use_rope/qkv_bias/mlp_bias/lm_head_bias) can't round-trip ModelConfig - serving silently rebuilds wrong architecture",
+      "summary": "decoder_kwargs_from_config omits use_rope/rope_theta/qkv_bias/mlp_bias/lm_head_bias (ModelConfig has no fields); loader._build_decoder load_state_dict(strict=False) only logs 'missing keys'. An HF-imported Llama model (use_rope=True, qkv_bias=False) served from its checkpoint leaves *_proj.bias/lm_head.bias random + RoPE swapped for learned PE - serves garbage silently."
+    },
+    "ISS-130": {
+      "id": "ISS-130",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T16:50:27+00:00",
+      "updated_at": "2026-08-15T17:24:41+00:00",
+      "touched_round": 60,
+      "severity": 0.4,
+      "title": "LMTask eval hardcodes seq length 128, never clamps to model capacity - crashes small models; ignores split",
+      "summary": "eval_tasks/lm_task.py TextDataset max_seq_len=128 + global_max_len from dataset only; evaluating a max_seq_len<128 model raises 'Sequence endpoint 128 exceeds maximum sequence length'. Also prepare_data(split) ignores split so run(train)==run(test) silently. Clamp to model capacity and plumb/drop split."
+    },
+    "ISS-131": {
+      "id": "ISS-131",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T16:50:27+00:00",
+      "updated_at": "2026-08-15T17:29:40+00:00",
+      "touched_round": 60,
+      "severity": 0.35,
+      "title": "Plugin entry-point loader has no partial-failure isolation - one broken ep aborts ALL registration",
+      "summary": "runtime/plugins.py load_entry_point_registry all-or-nothing: one third-party 'llm.models' plugin failing to import raises ImportError and the built-ins never register (registry empty). Since ensure_builtins_registered runs at import llm.runtime, package import fails outright. Catch per-entry, continue, warn."
+    },
+    "ISS-132": {
+      "id": "ISS-132",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T16:50:27+00:00",
+      "updated_at": "2026-08-15T17:39:56+00:00",
+      "touched_round": 60,
+      "severity": 0.3,
+      "title": "generate_until assumes until is a list - a string until gets split into single-char stops",
+      "summary": "lm_eval_lm.py generate_until: stops = list(until); a scalar until from task YAML (string) becomes per-char stops -> _strip_stop_strings over-trims completions at the first single char. Normalize str->[str] first. Latent (installed YAMLs use lists)."
+    },
+    "CHG-119": {
+      "id": "CHG-119",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:07:58+00:00",
+      "updated_at": "2026-08-15T17:07:58+00:00",
+      "touched_round": 60,
+      "summary": "loglikelihood_rolling now scores the whole doc via strided context windows; no more silent word_perplexity deflation on long docs",
+      "commit": "851fbf0"
+    },
+    "EV-148": {
+      "id": "EV-148",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:07:58+00:00",
+      "updated_at": "2026-08-15T17:07:58+00:00",
+      "touched_round": 60,
+      "source": "tests/evaluation/test_lm_eval_pipeline.py::test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc",
+      "confidence": 1.0,
+      "summary": "RED: old truncating code returned -(63)*ln(vocab) on a 120-token doc; new returns -(119)*ln(vocab)"
+    },
+    "CHG-120": {
+      "id": "CHG-120",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:17:25+00:00",
+      "updated_at": "2026-08-15T17:17:25+00:00",
+      "touched_round": 60,
+      "summary": "ModelConfig gains 8 model-defining flags (pos_encoding_learned, mlp_activation, norm_first, qkv_bias, mlp_bias, lm_head_bias, use_rope, rope_theta) mapped in decoder_kwargs_from_config + added to _CONFIG_COMPAT_FIELDS; model_dump sidecar + serving rebuild now preserve architecture",
+      "commit": "af9409c"
+    },
+    "EV-149": {
+      "id": "EV-149",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:17:25+00:00",
+      "updated_at": "2026-08-15T17:17:25+00:00",
+      "touched_round": 60,
+      "source": "tests/runtime/test_model_factory.py::test_from_config_roundtrips_model_defining_flags",
+      "confidence": 1.0,
+      "summary": "RED: without kwargs mapping use_rope silently reverted to False; model now carries use_rope/bias/norm_first through model_dump + from_config"
+    },
+    "CHG-121": {
+      "id": "CHG-121",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:24:41+00:00",
+      "updated_at": "2026-08-15T17:24:41+00:00",
+      "touched_round": 60,
+      "summary": "LMTask takes caller-tunable max_seq_len (was hardcoded 128); predict clamps batch seq dim to model.max_seq_len + truncates over-long rows; split-ignore documented",
+      "commit": "c855e0e"
+    },
+    "EV-150": {
+      "id": "EV-150",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:24:41+00:00",
+      "updated_at": "2026-08-15T17:24:41+00:00",
+      "touched_round": 60,
+      "source": "tests/evaluation/test_lm_task.py::test_lm_task_predict_clamps_to_model_capacity,tests/evaluation/test_lm_task.py::test_lm_task_respects_explicit_max_seq_len",
+      "confidence": 1.0,
+      "summary": "RED: 128-token doc on max_seq_len=32 model crashed 'Sequence endpoint 128 exceeds...'; clamped evaluates first 32 tokens"
+    },
+    "CHG-122": {
+      "id": "CHG-122",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:29:40+00:00",
+      "updated_at": "2026-08-15T17:29:40+00:00",
+      "touched_round": 60,
+      "summary": "plugins.py isolates per-entry-point load failures (log + continue); hooks too; built-ins and healthy plugins always register",
+      "commit": "d1edc63"
+    },
+    "EV-151": {
+      "id": "EV-151",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:29:40+00:00",
+      "updated_at": "2026-08-15T17:29:40+00:00",
+      "touched_round": 60,
+      "source": "tests/runtime/test_plugins.py::test_load_entry_point_registry_isolates_broken_plugin,tests/runtime/test_plugins.py::test_load_entry_point_hooks_isolates_broken_hook",
+      "confidence": 1.0,
+      "summary": "RED: broken ep raised ImportError aborting loop; healthy plugin now registers alongside"
+    },
+    "CHG-123": {
+      "id": "CHG-123",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:39:56+00:00",
+      "updated_at": "2026-08-15T17:39:56+00:00",
+      "touched_round": 60,
+      "summary": "generate_until normalizes scalar-string until to [str] (not per-char); _strip_stop_strings no longer over-trims completions at the first single char",
+      "commit": "0c8f93d"
+    },
+    "EV-152": {
+      "id": "EV-152",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T17:39:56+00:00",
+      "updated_at": "2026-08-15T17:39:56+00:00",
+      "touched_round": 60,
+      "source": "tests/evaluation/test_lm_eval_pipeline.py::test_lm_eval_lm_generate_until_accepts_scalar_string_until",
+      "confidence": 1.0,
+      "summary": "RED: scalar 15-char stop over 'aaaaa' returned '' before; now 'aaaaa'"
     }
   },
   "edges": [
@@ -10380,6 +10555,66 @@
       "to": "ISS-126",
       "type": "resolves",
       "created_at": "2026-08-15T16:17:23+00:00"
+    },
+    {
+      "from": "ISS-128",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-15T16:51:40+00:00"
+    },
+    {
+      "from": "ISS-129",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-15T16:51:40+00:00"
+    },
+    {
+      "from": "ISS-130",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-15T16:51:40+00:00"
+    },
+    {
+      "from": "ISS-131",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-15T16:51:40+00:00"
+    },
+    {
+      "from": "ISS-132",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-15T16:51:40+00:00"
+    },
+    {
+      "from": "CHG-119",
+      "to": "ISS-128",
+      "type": "resolves",
+      "created_at": "2026-08-15T17:07:58+00:00"
+    },
+    {
+      "from": "CHG-120",
+      "to": "ISS-129",
+      "type": "resolves",
+      "created_at": "2026-08-15T17:17:25+00:00"
+    },
+    {
+      "from": "CHG-121",
+      "to": "ISS-130",
+      "type": "resolves",
+      "created_at": "2026-08-15T17:24:41+00:00"
+    },
+    {
+      "from": "CHG-122",
+      "to": "ISS-131",
+      "type": "resolves",
+      "created_at": "2026-08-15T17:29:40+00:00"
+    },
+    {
+      "from": "CHG-123",
+      "to": "ISS-132",
+      "type": "resolves",
+      "created_at": "2026-08-15T17:39:56+00:00"
     }
   ]
 }
