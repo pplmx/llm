@@ -69,3 +69,45 @@ def test_load_entry_point_hooks_invokes_callables():
 
     hook.assert_called_once_with()
     assert invoked == ["register_tasks"]
+
+
+def test_load_entry_point_registry_isolates_broken_plugin():
+    """RIL ISS-131: one plugin failing to import must not abort the loop — the
+    healthy plugins still register, and the registry is usable."""
+    registry: Registry[str] = Registry("test")
+    registry.register("builtin", "factory-builtin")
+
+    broken = MagicMock()
+    broken.name = "zzz_broken"
+    broken.load.side_effect = ImportError("broken module")
+
+    healthy = MagicMock()
+    healthy.name = "healthy"
+    healthy.load.return_value = "factory-healthy"
+
+    eps = [broken, healthy]
+    with patch("llm.runtime.plugins._iter_group_entry_points", return_value=eps):
+        loaded = load_entry_point_registry("llm.test_group", registry)
+
+    # The healthy plugin registered; the builtin is untouched; the broken one
+    # was skipped (not fatal).
+    assert loaded == ["healthy"]
+    assert registry.get("healthy") == "factory-healthy"
+    assert registry.get("builtin") == "factory-builtin"
+    assert "zzz_broken" not in registry
+
+
+def test_load_entry_point_hooks_isolates_broken_hook():
+    """RIL ISS-131: a hook raising must not prevent later hooks from running."""
+    good = MagicMock()
+    good.name = "good"
+    good.load.return_value = good  # any callable
+
+    bad = MagicMock()
+    bad.name = "bad"
+    bad.load.return_value = type("_R", (), {"__call__": lambda self: (_ for _ in ()).throw(RuntimeError("boom"))})()
+
+    with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[bad, good]):
+        invoked = load_entry_point_hooks("llm.tasks")
+
+    assert invoked == ["good"]
