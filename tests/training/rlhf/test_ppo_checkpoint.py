@@ -20,7 +20,7 @@ def tiny_setup(tiny_model):
         def decode(self, ids: list[int]) -> str:
             return "x"
 
-        eos_id = 0
+        eos_token_id = None
 
     policy = tiny_model
     reward_model = RewardModel(tiny_model)

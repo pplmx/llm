@@ -242,6 +242,13 @@ class PPOTrainer:
             log_probs: List of log probability tensors for responses
         """
         self.policy.eval()
+        # The tokenizer API is ``eos_token_id`` (SimpleCharacterTokenizer,
+        # HF wrapper, and every generation backend use it). The old guard
+        # ``hasattr(self.tokenizer, "eos_id")`` was always False — no
+        # tokenizer exposes ``eos_id`` — so rollouts never stopped at EOS and
+        # ran to ``response_max_len`` with post-EOS junk folded into the
+        # training signal (RIL ISS-116).
+        eos_id = getattr(self.tokenizer, "eos_token_id", None)
 
         all_prompt_ids = []
         all_response_ids = []
@@ -297,8 +304,10 @@ class PPOTrainer:
                         dim=1,
                     )
 
-                    # Check for EOS (simplified: check for common EOS tokens)
-                    if hasattr(self.tokenizer, "eos_id") and next_token.item() == self.tokenizer.eos_id:
+                    # Stop at EOS so post-EOS continuation is not folded into
+                    # the response training signal (and rollout compute is not
+                    # wasted on the tail).
+                    if eos_id is not None and next_token.item() == eos_id:
                         break
 
                 all_prompt_ids.append(prompt_ids)

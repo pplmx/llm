@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 57,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T03:32:01+00:00",
+  "updated_at": "2026-08-15T03:35:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6653,10 +6653,10 @@
     "ISS-117": {
       "id": "ISS-117",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:35:36+00:00",
       "touched_round": 57,
       "severity": 0.3,
       "title": "stream_request finally calls scheduler.remove() OUTSIDE _step_lock — races with _lock_step_pre iterating the live running list (regression from ISS-105 fix); silently skips/duplicates a step under client disconnect"
@@ -6687,31 +6687,31 @@
       "id": "TASK-103",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:35:42+00:00",
       "touched_round": 57,
       "category": "correctness",
       "severity": 0.35,
       "confidence": 0.9,
       "effort": 0.2,
-      "title": "ppo_trainer EOS early-stop uses eos_token_id (fix dead hasattr('eos_id') guard)"
+      "title": "ppo_trainer EOS early-stop uses eos_token_id (fix dead hasattr('eos_id') guard)",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T04:05:42+00:00"
     },
     "TASK-104": {
       "id": "TASK-104",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:35:36+00:00",
       "touched_round": 57,
       "category": "stability",
       "severity": 0.3,
       "confidence": 0.8,
       "effort": 0.2,
-      "title": "stream_request finally must hold _step_lock around scheduler.remove() to serialize with step iterations",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T04:02:01+00:00"
+      "title": "stream_request finally must hold _step_lock around scheduler.remove() to serialize with step iterations"
     },
     "TASK-105": {
       "id": "TASK-105",
@@ -6726,6 +6726,29 @@
       "confidence": 0.9,
       "effort": 0.25,
       "title": "PPO KL-penalty mask aligned with policy loss shift (one-position fix)"
+    },
+    "EV-136": {
+      "id": "EV-136",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:35:36+00:00",
+      "updated_at": "2026-08-15T03:35:36+00:00",
+      "touched_round": 57,
+      "source": "tests/serving/test_engine.py::test_abandoned_stream_removes_under_step_lock",
+      "title": "My r55 ISS-105 fix left scheduler.remove() outside _step_lock; a later scan found it races with _lock_step_pre iterating the live running list (mid-pop skips). Fix runs remove under _step_lock; serving 325 passed",
+      "confidence": 1.0
+    },
+    "CHG-105": {
+      "id": "CHG-105",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:35:36+00:00",
+      "updated_at": "2026-08-15T03:35:36+00:00",
+      "touched_round": 57,
+      "commit": "b1c9161",
+      "title": "stream_request finally holds _step_lock around scheduler.remove (TASK-104)"
     }
   },
   "edges": [
@@ -9693,6 +9716,18 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-15T03:32:01+00:00"
+    },
+    {
+      "from": "CHG-105",
+      "to": "ISS-117",
+      "type": "resolves",
+      "created_at": "2026-08-15T03:35:36+00:00"
+    },
+    {
+      "from": "CHG-105",
+      "to": "TASK-104",
+      "type": "implements",
+      "created_at": "2026-08-15T03:35:36+00:00"
     }
   ]
 }

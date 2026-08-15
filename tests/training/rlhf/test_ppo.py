@@ -187,7 +187,7 @@ class TestPPOTrainer:
             def decode(self, ids: list[int]) -> str:
                 return "".join(chr(i + 32) for i in ids)
 
-            eos_id = 0
+            eos_token_id = None
 
         policy = tiny_model
         reward_model = RewardModel(tiny_model)
@@ -336,6 +336,34 @@ class TestPPOTrainer:
         assert len(response_ids[0]) > 0
         assert len(log_probs[0]) == len(response_ids[0])
 
+    def test_generate_responses_stops_at_eos(self, tiny_setup):
+        """PPO rollout must stop at the tokenizer's EOS token (regression for
+        RIL ISS-116). The old guard read ``hasattr(tokenizer, "eos_id")`` —
+        no tokenizer exposes ``eos_id`` (the convention is ``eos_token_id``)
+        — so rollouts always ran to ``response_max_len`` and folded post-EOS
+        junk into the training signal. With the attribute fixed, forcing the
+        first sampled token to be EOS must yield a 1-token response."""
+        from unittest.mock import patch
+
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        tokenizer.eos_token_id = 0  # EOS is id 0, in the sampled vocab range
+        tokenizer.encode = lambda text: [1, 2, 3]  # fixed 3-token prompt
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        with patch("torch.multinomial", return_value=torch.tensor([0], device=DEFAULT_DEVICE)):
+            _, response_ids, _ = trainer.generate_responses(["Hello"])
+
+        assert len(response_ids[0]) == 1, f"rollout should stop at EOS (1 token), got {len(response_ids[0])}"
+
     def test_compute_rewards(self, tiny_setup):
         """Test reward computation."""
         from llm.training.rlhf.ppo_trainer import PPOTrainer
@@ -456,7 +484,7 @@ class TestPPOTrainer:
             def decode(self, ids: list[int]) -> str:
                 return "".join(chr(i + 32) for i in ids)
 
-            eos_id = 0
+            eos_token_id = None
 
         class StubReward(nn.Module):
             """Pass-through reward scoring that never fires a real reward
@@ -584,7 +612,7 @@ class TestPPOTrainer:
             def decode(self, ids: list[int]) -> str:
                 return "".join(chr(i + 32) for i in ids)
 
-            eos_id = 0
+            eos_token_id = None
 
         class StubReward(nn.Module):
             def forward(self, input_ids):

@@ -36,10 +36,13 @@ class LineTokenizer:
 class CharBoundTokenizer(LineTokenizer):
     """Ord-based tokenizer with bounded encode length (e.g. PPO prompt tasks)."""
 
-    def __init__(self, max_len: int = 16, modulus: int = 50, eos_id: int = 0, pad_token_id: int = 0):
+    def __init__(self, max_len: int = 16, modulus: int = 50, eos_token_id: int | None = None, pad_token_id: int = 0):
         super().__init__(modulus=modulus, pad_token_id=pad_token_id)
         self.max_len = max_len
-        self.eos_id = eos_id
+        # ``eos_token_id`` is the tokenizer API convention (the old ``eos_id``
+        # attr matched nothing — rollouts never stopped; RIL ISS-116). Default
+        # None so existing tests are unchanged (no early-stop).
+        self.eos_token_id = eos_token_id
 
     def encode(self, text: str) -> list[int]:
         return [ord(c) % self.modulus for c in text[: self.max_len]]
