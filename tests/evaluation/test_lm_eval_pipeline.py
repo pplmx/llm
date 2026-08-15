@@ -628,6 +628,56 @@ def test_lm_eval_lm_generate_until_auto_appends_and_strips_eos():
     assert out == [""]
 
 
+def test_lm_eval_lm_generate_until_accepts_scalar_string_until():
+    """RIL ISS-132: ``until`` may be a scalar string (a task YAML writes
+    ``until: "bc"``), not only a list. A bare ``list("bc")`` split the
+    multi-char scalar into per-character stops, so ``_strip_stop_strings``
+    trimmed at the FIRST occurrence of any single char anywhere in the
+    completion — massively over-trimming.
+    """
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+
+    class _GenTokenizer:
+        # EOS decodes to 'c' — a char the argmax model never generates, so
+        # the auto-appended EOS stop does not interfere with this test.
+        eos_token_id = 98  # 98 % 3 == 2 -> 'c'
+        pad_token_id = 0
+
+        def encode(self, text):
+            return [1, 2, 3]
+
+        def decode(self, ids):
+            return "".join("abc"[i % 3] for i in ids)
+
+    class _GenModel:
+        max_seq_len = 64
+        vocab_size = 16
+
+        def __init__(self):
+            self._dummy = torch.nn.Parameter(torch.zeros(1))
+
+        def parameters(self):
+            return iter([self._dummy])
+
+        def eval(self):
+            return self
+
+        def __call__(self, input_ids, use_cache=None):
+            b, t = input_ids.shape
+            # argmax at every row is id 0 -> decodes to 'a'.
+            logits = torch.full((b, t, self.vocab_size), -10.0)
+            logits[..., 0] = 10.0
+            return logits
+
+    lm = LlamaLmEvalLM(_GenModel(), _GenTokenizer(), batch_size=1, max_length=16)
+    out = lm.generate_until([_FakeRequest(("ctx", {"until": "aaaaaaaaaaaaaaa", "max_gen_toks": 5}))])
+    # Old code: stops=['a']*15, so generation hits 'a' (id 0) as a stop IMMEDIATELY
+    # after the first token (and _strip_stop_strings cuts "a" at the first 'a'),
+    # giving "". With the fix "aaaaaaaaaaaaaaa" is one stop; 5 'a's never end with
+    # 15 'a's, so the full 5 tokens (aaaaa) are returned.
+    assert out == ["aaaaa"], f"scalar string until must not be split per-char, got {out!r}"
+
+
 def test_lm_eval_lm_matches_any_suffix_static_helper():
     """Static helper should recognise list-based stop sequences."""
     assert LlamaLmEvalLM._matches_any_suffix([1, 2, 3], [[2, 3]]) is True

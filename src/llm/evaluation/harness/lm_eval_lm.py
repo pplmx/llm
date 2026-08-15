@@ -291,6 +291,17 @@ class LlamaLmEvalLM:
             # before returning. Do the same here, otherwise an EOS-emitting
             # model runs to ``max_gen_toks`` and every generation answer keeps
             # its trailing delimiter (systematically wrong exact_match/acc).
+            #
+            # ``until`` may be a scalar string or None (a task YAML like
+            # ``until: "END"``). A bare ``list(until)`` would split a
+            # multi-char scalar into per-char stops, so ``_strip_stop_strings``
+            # trims at the FIRST occurrence of any single char — massively
+            # over-trimming completions (RIL ISS-132). Normalize exactly like
+            # lm_eval's handle_stop_sequences (str -> [str], None -> []).
+            if isinstance(until, str):
+                until = [until]
+            elif until is None:
+                until = []
             stops = list(until)
             eos_id = getattr(self.tokenizer, "eos_token_id", None)
             if eos_id is not None:
