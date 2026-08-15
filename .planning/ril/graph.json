@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 59,
+  "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T10:41:43+00:00",
+  "updated_at": "2026-08-15T14:42:17+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6929,11 +6929,11 @@
     "ISS-122": {
       "id": "ISS-122",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T10:37:52+00:00",
-      "updated_at": "2026-08-15T10:37:52+00:00",
-      "touched_round": 59,
+      "updated_at": "2026-08-15T14:41:51+00:00",
+      "touched_round": 60,
       "severity": 0.4,
       "title": "Route idle-timeout leaves orphaned sync stepper holding KV/scheduler slot + burning forwards (liveness)",
       "summary": "On asyncio.timeout the client generator releases the semaphore but starlette's iterate_in_threadpool never closes the underlying sync generator; its worker thread steps once more and the orphan holds the slot until asyncgen GC finalization — exceeds max_concurrent_requests bound under load, pins slots. Self-healing but liveness/availability risk. Needs explicit cancellation/close of the sync stepper at timeout."
@@ -6941,11 +6941,11 @@
     "ISS-123": {
       "id": "ISS-123",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T10:37:52+00:00",
-      "updated_at": "2026-08-15T10:37:52+00:00",
-      "touched_round": 59,
+      "updated_at": "2026-08-15T14:41:51+00:00",
+      "touched_round": 60,
       "severity": 0.35,
       "title": "Client-supplied duplicate request_id shares one KV slot between two sequences (cross-request contamination)",
       "summary": "Two concurrent requests with same request_id create two Sequences hashed to one slot: KV writes clobber, first copy's finish frees the slot under the still-running second copy. Fix needs a route-layer uniqueness guarantee (add_request strict-reject breaks the double-add generate_request->stream_request contract); logged for a future round."
@@ -6953,28 +6953,78 @@
     "TASK-109": {
       "id": "TASK-109",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-15T10:39:42+00:00",
-      "updated_at": "2026-08-15T10:39:42+00:00",
-      "touched_round": 59,
+      "updated_at": "2026-08-15T14:41:41+00:00",
+      "touched_round": 60,
       "category": "stability",
       "severity": 0.4,
       "title": "Fix route idle-timeout orphaned sync stepper pinning slots (ISS-122/F2)",
-      "summary": "At timeout, starlette iterate_in_threadpool doesn't close the sync generator; it keeps the KV/scheduler slot + burns forwards until asyncgen GC. Add explicit cancellation: close the sync iterator at timeout so the finally reap runs promptly."
+      "summary": "At timeout, starlette iterate_in_threadpool doesn't close the sync generator; it keeps the KV/scheduler slot + burns forwards until asyncgen GC. Add explicit cancellation: close the sync iterator at timeout so the finally reap runs promptly.",
+      "lock_owner": "session-60",
+      "lock_until": "2026-08-15T14:14:00+00:00"
     },
     "TASK-110": {
       "id": "TASK-110",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-15T10:39:42+00:00",
-      "updated_at": "2026-08-15T10:39:42+00:00",
-      "touched_round": 59,
+      "updated_at": "2026-08-15T14:41:41+00:00",
+      "touched_round": 60,
       "category": "correctness",
       "severity": 0.35,
       "title": "Reject client duplicate request_id at route layer (ISS-123/F3)",
-      "summary": "Two concurrent requests sharing request_id collide on one KV slot. add_request strict rejection breaks the generate_request->stream_request double-add contract; enforce uniqueness in the route/router instead."
+      "summary": "Two concurrent requests sharing request_id collide on one KV slot. add_request strict rejection breaks the generate_request->stream_request double-add contract; enforce uniqueness in the route/router instead.",
+      "lock_owner": "session-60",
+      "lock_until": "2026-08-15T14:14:00+00:00"
+    },
+    "CHG-112": {
+      "id": "CHG-112",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T14:40:42+00:00",
+      "updated_at": "2026-08-15T14:42:17+00:00",
+      "touched_round": 60,
+      "summary": "add _drive_sync_iterator bridge: on route idle timeout, close the abandoned sync generator via a worker-thread done-callback so stream_request's finally reap releases the KV/scheduler slot promptly (previously pinned until asyncgen GC)",
+      "commit": "729cd48"
+    },
+    "CHG-113": {
+      "id": "CHG-113",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T14:41:13+00:00",
+      "updated_at": "2026-08-15T14:42:17+00:00",
+      "touched_round": 60,
+      "summary": "add_request now rejects a distinct-content request reusing an active request_id (Scheduler.add_sequence_if_not_conflicting) so two requests never share one KV slot; identical-content re-adds (double-add contract) still allowed",
+      "commit": "729cd48"
+    },
+    "EV-141": {
+      "id": "EV-141",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T14:41:13+00:00",
+      "updated_at": "2026-08-15T14:41:13+00:00",
+      "touched_round": 60,
+      "source": "tests/serving/test_stream_timeout.py::test_drive_sync_iterator_closes_generator_when_consumer_abandons,tests/serving/test_stream_timeout.py::test_generate_stream_timeout_releases_engine_slot",
+      "confidence": 1.0,
+      "summary": "F2 fixed: generator closed via worker done-callback; engine slot freed after idle timeout without gc.collect"
+    },
+    "EV-142": {
+      "id": "EV-142",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T14:41:13+00:00",
+      "updated_at": "2026-08-15T14:41:13+00:00",
+      "touched_round": 60,
+      "source": "tests/serving/test_engine.py::test_engine_rejects_duplicate_request_id_with_different_content,tests/serving/test_engine.py::test_engine_allows_double_add_of_same_logical_request",
+      "confidence": 1.0,
+      "summary": "F3 fixed: distinct-content dup rejected; same-content double-add preserved"
     }
   },
   "edges": [
@@ -10080,6 +10130,32 @@
       "to": "ISS-123",
       "type": "addresses",
       "created_at": "2026-08-15T10:41:43+00:00"
+    },
+    {
+      "from": "CHG-112",
+      "to": "ISS-122",
+      "type": "resolves",
+      "created_at": "2026-08-15T14:41:28+00:00",
+      "message": "stream bridge closes abandoned generator on timeout"
+    },
+    {
+      "from": "CHG-112",
+      "to": "TASK-109",
+      "type": "implements",
+      "created_at": "2026-08-15T14:41:28+00:00"
+    },
+    {
+      "from": "CHG-113",
+      "to": "ISS-123",
+      "type": "resolves",
+      "created_at": "2026-08-15T14:41:28+00:00",
+      "message": "distinct-dup request_id rejected at add_request"
+    },
+    {
+      "from": "CHG-113",
+      "to": "TASK-110",
+      "type": "implements",
+      "created_at": "2026-08-15T14:41:28+00:00"
     }
   ]
 }
