@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T20:27:40+00:00",
+  "updated_at": "2026-08-15T22:04:21+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4218,7 +4218,7 @@
       "version": 1,
       "created_at": "2026-08-13T07:38:08+00:00",
       "updated_at": "2026-08-13T07:38:08+00:00",
-      "touched_round": 50,
+      "touched_round": 60,
       "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
     },
     "CHG-065": {
@@ -7655,6 +7655,158 @@
       "source": "tests/core/test_rope.py::TestRotaryPositionEmbedding::test_forward_position_ids_beyond_max_seq_len",
       "confidence": 1.0,
       "summary": "RED: 2-token decode at [8,9] on max_seq_len=8 raised index-out-of-bounds; rotates correctly after"
+    },
+    "ISS-142": {
+      "id": "ISS-142",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T20:58:06+00:00",
+      "updated_at": "2026-08-15T21:37:51+00:00",
+      "touched_round": 60,
+      "severity": 0.75,
+      "title": "TorchScript trace export fails for every RoPE model (TracingCheckError)",
+      "summary": "RoPE._update_cos_sin_cache mutates _seq_len_cached/_cos_cached behind data-dependent 'if seq_len > cached' control flow inside forward; torch.jit.trace re-runs for its sanity check, the 2nd run skips the update branch -> graphs differ -> TracingCheckError. from_pretrained defaults externals to use_rope=True, so TorchScript export is broken for its primary case (ONNX works). Fix: hoist/pre-seed the cos/sin cache out of traced forward or make the update unconditional."
+    },
+    "ISS-143": {
+      "id": "ISS-143",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T20:58:06+00:00",
+      "updated_at": "2026-08-15T21:28:47+00:00",
+      "touched_round": 60,
+      "severity": 0.7,
+      "title": "from_pretrained leaves lm_head at random init for tied-embedding checkpoints (tie_word_embeddings=True)",
+      "summary": "hf_loader strict=False + weight_mapping never reads tie_word_embeddings -> external tied checkpoint (no lm_head.weight) 'loads' cleanly with lm_head at random init (Missing-keys warning only). Measured: lm_head differs by 0.249, logits diverge ~2.95. Llama-2/3 ship lm_head; Qwen/GPT-2/Phi and many fine-tunes tie. Fix: copy embed_tokens -> lm_head when head key absent; mirror on publish."
+    },
+    "ISS-144": {
+      "id": "ISS-144",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T20:58:06+00:00",
+      "updated_at": "2026-08-15T22:04:21+00:00",
+      "touched_round": 60,
+      "severity": 0.7,
+      "title": "from_pretrained advertises Mixtral but silently discards every MoE expert/router tensor",
+      "summary": "list_supported_architectures includes mixtral but MISTRAL_MAPPING is dense-only (no block_sparse_moe.experts.*/gate) and hf_loader never passes mlp_impl/num_experts/top_k -> builds a DENSE model, strict=False drops all MoE tensors, runs with random routers+experts silently. Fix: real MoE mapping + config pass-through, or stop advertising mixtral."
+    },
+    "ISS-145": {
+      "id": "ISS-145",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T21:00:16+00:00",
+      "updated_at": "2026-08-15T21:28:47+00:00",
+      "touched_round": 60,
+      "severity": 0.6,
+      "title": "External checkpoints with attention_bias=True silently drop every attention/MLP bias",
+      "summary": "weight_mapping qkv_bias reads only repo-custom key (default False), never HF's attention_bias; hf_loader 133-134. External Qwen-style checkpoint with attention_bias:true -> bias flags default False, model bias-free, converted bias weights dropped as Unexpected keys (verified: qkv_proj.bias is None). Silent behavior change. Fix: map HF attention_bias -> qkv_bias for externals."
+    },
+    "ISS-146": {
+      "id": "ISS-146",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T21:00:16+00:00",
+      "updated_at": "2026-08-15T21:46:27+00:00",
+      "touched_round": 60,
+      "severity": 0.2,
+      "title": "Deterministic sine-PE pe buffer (persistent) bloats exported artifacts and is Q4_0-quantized in GGUF",
+      "summary": "positional_encoding pe buffer registered persistent -> ~134MB per 4096x4096 model, embedded in every ONNX/TorchScript/GGUF artifact; GGUF additionally Q4_0-quantizes it with a llama.cpp-unknown name. Correctness-safe (recomputed identically, diff=0.0). Fix: persistent=False or skip in exporters."
+    },
+    "CHG-132": {
+      "id": "CHG-132",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T21:28:46+00:00",
+      "updated_at": "2026-08-15T21:28:46+00:00",
+      "touched_round": 60,
+      "summary": "hf compat: tied-embedding ckpts copy input embeddings into lm_head; get_config_mapping falls back to HF attention_bias for external bias flags",
+      "commit": "5de1f6c"
+    },
+    "EV-161": {
+      "id": "EV-161",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T21:28:46+00:00",
+      "updated_at": "2026-08-15T21:28:46+00:00",
+      "touched_round": 60,
+      "source": "tests/compat/test_hf_loader.py::TestHFLoader::test_from_pretrained_ties_lm_head_to_embeddings_when_key_absent,tests/compat/test_hf_loader.py::TestWeightMapping::test_get_config_mapping_honors_hf_attention_bias_for_external",
+      "confidence": 1.0,
+      "summary": "RED: tied head stayed random before, attention_bias stayed False; both fixed"
+    },
+    "CHG-133": {
+      "id": "CHG-133",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T21:37:51+00:00",
+      "updated_at": "2026-08-15T21:37:51+00:00",
+      "touched_round": 60,
+      "summary": "export_to_torchscript pre-seeds every RotaryPositionEmbedding cache to the example seq len before trace, making torch.jit.trace's two runs take the identical (populated) path",
+      "commit": "4aba307"
+    },
+    "EV-162": {
+      "id": "EV-162",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T21:37:51+00:00",
+      "updated_at": "2026-08-15T21:37:51+00:00",
+      "touched_round": 60,
+      "source": "tests/export/test_torchscript_export.py::TestExportToTorchscript::test_export_trace_rope_model_exports",
+      "confidence": 1.0,
+      "summary": "RED: use_rope model raised TracingCheckError before; exports + torch.jit.load round-trips after"
+    },
+    "CHG-134": {
+      "id": "CHG-134",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T21:46:27+00:00",
+      "updated_at": "2026-08-15T21:46:27+00:00",
+      "touched_round": 60,
+      "summary": "PositionalEncoding pe sine table registered persistent=False — regenerated on construction, no longer bloats checkpoints/exports/GGUF",
+      "commit": "0fb5b35"
+    },
+    "EV-163": {
+      "id": "EV-163",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T21:46:27+00:00",
+      "updated_at": "2026-08-15T21:46:27+00:00",
+      "touched_round": 60,
+      "source": "tests/core/test_positional_encoding.py::test_sinusoidal_encoding_initialization",
+      "confidence": 1.0,
+      "summary": "RED: pe was persistent; now absent from state_dict while still functional + round-trips exact"
+    },
+    "CHG-135": {
+      "id": "CHG-135",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T22:04:20+00:00",
+      "updated_at": "2026-08-15T22:04:20+00:00",
+      "touched_round": 60,
+      "summary": "Mixtral: detect_architecture returns 'mixtral' (not dense mistral), from_pretrained raises NotImplementedError, list_supported_architectures no longer advertises it",
+      "commit": "7b54e18"
+    },
+    "EV-164": {
+      "id": "EV-164",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T22:04:20+00:00",
+      "updated_at": "2026-08-15T22:04:20+00:00",
+      "touched_round": 60,
+      "source": "tests/compat/test_hf_loader.py::TestHFLoader::test_mixtral_is_not_advertised_or_loadable,tests/compat/test_hf_loader.py::TestWeightMapping::test_detect_architecture_mixtral_is_distinct",
+      "confidence": 1.0,
+      "summary": "RED: mixtral advertised + collapsed to mistral; now absent + rejected with clear error"
     }
   },
   "edges": [
@@ -11015,6 +11167,66 @@
       "to": "ISS-141",
       "type": "resolves",
       "created_at": "2026-08-15T20:27:40+00:00"
+    },
+    {
+      "from": "ISS-142",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-15T21:00:16+00:00"
+    },
+    {
+      "from": "ISS-143",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-15T21:00:16+00:00"
+    },
+    {
+      "from": "ISS-144",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-15T21:00:16+00:00"
+    },
+    {
+      "from": "ISS-145",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-15T21:00:16+00:00"
+    },
+    {
+      "from": "ISS-146",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-15T21:00:16+00:00"
+    },
+    {
+      "from": "CHG-132",
+      "to": "ISS-143",
+      "type": "resolves",
+      "created_at": "2026-08-15T21:28:46+00:00"
+    },
+    {
+      "from": "CHG-132",
+      "to": "ISS-145",
+      "type": "resolves",
+      "created_at": "2026-08-15T21:28:47+00:00"
+    },
+    {
+      "from": "CHG-133",
+      "to": "ISS-142",
+      "type": "resolves",
+      "created_at": "2026-08-15T21:37:51+00:00"
+    },
+    {
+      "from": "CHG-134",
+      "to": "ISS-146",
+      "type": "resolves",
+      "created_at": "2026-08-15T21:46:27+00:00"
+    },
+    {
+      "from": "CHG-135",
+      "to": "ISS-144",
+      "type": "resolves",
+      "created_at": "2026-08-15T22:04:20+00:00"
     }
   ]
 }
