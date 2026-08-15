@@ -143,3 +143,24 @@ def test_load_checkpoint(checkpoint_manager):
 
     assert start_epoch == 1
     assert best_loss == 0.5
+
+
+def test_load_checkpoint_mismatched_architecture_raises(checkpoint_manager):
+    """Resume from a checkpoint whose model architecture differs from the
+    current one must RAISE with a clear error, not silently restart from
+    scratch (RIL ISS-108).
+
+    A shape/key mismatch means the user changed config (e.g. hidden_size) or
+    pointed at the wrong checkpoint; silently discarding the resume trains a
+    full run the user believes continued the old one.
+    """
+    import torch.nn as nn
+
+    saved = nn.Linear(4, 4)
+    checkpoint_manager.save_checkpoint(0, saved, None, None, None, loss=0.5)
+    checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
+
+    # Different architecture (5x5 vs saved 4x4) → load_state_dict size mismatch.
+    different_arch = nn.Linear(5, 5)
+    with pytest.raises(RuntimeError, match=r"checkpoint|architecture|config"):
+        checkpoint_manager.load_checkpoint(different_arch, None, None, None, device=DEFAULT_DEVICE)

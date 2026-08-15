@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 55,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T02:06:05+00:00",
+  "updated_at": "2026-08-15T02:17:50+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 48,
+      "touched_round": 55,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 17,
+      "touched_round": 55,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -6320,10 +6320,10 @@
     "TASK-097": {
       "id": "TASK-097",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-15T02:01:37+00:00",
-      "updated_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T02:13:00+00:00",
       "touched_round": 55,
       "category": "correctness",
       "severity": 0.3,
@@ -6334,10 +6334,10 @@
     "TASK-098": {
       "id": "TASK-098",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 4,
       "created_at": "2026-08-15T02:01:37+00:00",
-      "updated_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T02:17:22+00:00",
       "touched_round": 55,
       "category": "correctness",
       "severity": 0.3,
@@ -6381,10 +6381,10 @@
     "ISS-110": {
       "id": "ISS-110",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T02:02:17+00:00",
-      "updated_at": "2026-08-15T02:02:17+00:00",
+      "updated_at": "2026-08-15T02:13:00+00:00",
       "touched_round": 55,
       "severity": 0.3,
       "title": "AdaLoRA tfinal fallback (steps_per_epoch None) collapses every layer to target_rank at the first prune"
@@ -6392,10 +6392,10 @@
     "ISS-111": {
       "id": "ISS-111",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 2,
       "created_at": "2026-08-15T02:02:17+00:00",
-      "updated_at": "2026-08-15T02:02:17+00:00",
+      "updated_at": "2026-08-15T02:17:22+00:00",
       "touched_round": 55,
       "severity": 0.3,
       "title": "AdaLoRA gradient-EMA accumulates post-clip gradients (clip_grad_norm runs before on_optimizer_step)"
@@ -6411,6 +6411,57 @@
       "source": "empirical: seed-42 DecoderModel rebuild determinism check",
       "title": "TASK-096/ISS-109 REFUTED: on resume DPOTask rebuilds policy+ref via build_model() under the same DistributedManager seed (42+rank); same-seed rebuild reproduces byte-identical init, so resume-ref == original pre-DPO base — which is exactly what the DPO objective anchors to. ref != trained policy is EXPECTED (base vs fine-tuned). Verified: same-seed rebuild identical weights (True), resume-ref == original base (True). Residual fragility: an architecture/config change between runs shifts init — that is the resume-contract issue ISS-108, not a DPO-specific bug.",
       "confidence": 1.0
+    },
+    "EV-130": {
+      "id": "EV-130",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:13:00+00:00",
+      "updated_at": "2026-08-15T02:13:00+00:00",
+      "touched_round": 55,
+      "source": "tests/training/test_adalora_callback.py::test_no_schedule_defers_prune_instead_of_collapsing",
+      "title": "Verified: with no steps_per_epoch/tfinal, update_budget(step=10,tinit=0,tfinal=10) -> target_rank=2 (collapse at first prune, RED); fix defers prune (stays init_rank=4). Note: MagicMock engine.config auto-creates truthy steps_per_epoch (int()=1) — must set config=None to model non-streaming. Training+adalora 496 passed",
+      "confidence": 1.0
+    },
+    "CHG-100": {
+      "id": "CHG-100",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:13:00+00:00",
+      "updated_at": "2026-08-15T02:13:00+00:00",
+      "touched_round": 55,
+      "commit": "ff10e8c",
+      "title": "AdaLoRA prune deferred when schedule unknowable (TASK-097)"
+    },
+    "EV-131": {
+      "id": "EV-131",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T02:17:21+00:00",
+      "updated_at": "2026-08-15T02:17:21+00:00",
+      "touched_round": 55,
+      "source": "empirical: AdaLoRALinear + AdaLoRAGradientEMA, clip simulation",
+      "title": "TASK-098/ISS-111 REFUTED: clip_grad_norm_ is a uniform scalar rescale (clip_coef clamped <=1 multiplies EVERY grad), so within-layer |grad_i| ratios and the |lambda_i|*EMA ranking that prune_to_rank/keep-highest uses are preserved. Measured: single extreme clip (f=1/50) keeps ranking+ratios; 200 mixed clip/no-clip steps keep identical ranking vs never-clipped. The claim 'huge and tiny steps contribute identically' is factually wrong (they contribute (1-alpha)*1.0 vs (1-alpha)*0.1). At most a benign absolute-magnitude bias on pathological spiky steps, not a ranking corruption.",
+      "confidence": 1.0
+    },
+    "TASK-099": {
+      "id": "TASK-099",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T02:17:50+00:00",
+      "updated_at": "2026-08-15T02:17:50+00:00",
+      "touched_round": 55,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 0.9,
+      "effort": 0.2,
+      "title": "load_checkpoint distinguishes fatal config mismatch (raise) from benign corrupt-state cases instead of silently restarting from scratch (ISS-108)",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T02:47:50+00:00"
     }
   },
   "edges": [
@@ -9252,6 +9303,36 @@
       "to": "ISS-111",
       "type": "addresses",
       "created_at": "2026-08-15T02:02:18+00:00"
+    },
+    {
+      "from": "CHG-100",
+      "to": "ISS-110",
+      "type": "resolves",
+      "created_at": "2026-08-15T02:13:00+00:00"
+    },
+    {
+      "from": "CHG-100",
+      "to": "TASK-097",
+      "type": "implements",
+      "created_at": "2026-08-15T02:13:00+00:00"
+    },
+    {
+      "from": "ISS-107",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-15T02:17:50+00:00"
+    },
+    {
+      "from": "ISS-108",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-15T02:17:50+00:00"
+    },
+    {
+      "from": "TASK-099",
+      "to": "ISS-108",
+      "type": "addresses",
+      "created_at": "2026-08-15T02:17:50+00:00"
     }
   ]
 }

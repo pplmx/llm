@@ -586,6 +586,24 @@ class CheckpointManager:
             )
             return start_epoch, best_loss
         except (OSError, RuntimeError, KeyError, ValueError) as e:
+            # A state_dict shape/key incompatibility means the current model
+            # architecture does NOT match the checkpoint — the user changed
+            # config (e.g. hidden_size) or pointed at the wrong checkpoint.
+            # Silently falling back to scratch would train a full run that
+            # looks like a resume but discards all prior state (RIL ISS-108);
+            # fail loudly instead so the mismatch is surfaced immediately.
+            message = str(e)
+            if isinstance(e, RuntimeError) and any(
+                marker in message
+                for marker in ("size mismatch", "unexpected key", "missing key", "too many dimensions")
+            ):
+                raise RuntimeError(
+                    f"Checkpoint at {ckp_path} does not match the current model architecture "
+                    f"(state_dict mismatch: {message.splitlines()[0]}). Refusing to silently "
+                    "restart from scratch — fix the model config or point resume_from_checkpoint "
+                    "at a compatible checkpoint."
+                ) from e
+
             self.logger.error(f"Failed to load checkpoint from {ckp_path}: {e}")
             self.logger.warning("Starting from scratch due to checkpoint loading error.")
             return 0, float("inf")
