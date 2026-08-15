@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 57,
+  "round": 59,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T03:55:29+00:00",
+  "updated_at": "2026-08-15T05:20:59+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6352,7 +6352,7 @@
       "version": 1,
       "created_at": "2026-08-15T02:01:37+00:00",
       "updated_at": "2026-08-15T02:01:37+00:00",
-      "touched_round": 55,
+      "touched_round": 59,
       "severity": 0.3,
       "title": "GradScaler-skipped (inf/NaN) optimizer steps advance global_step + fold NaN into AdaLoRA EMA poisoning future prunes"
     },
@@ -6793,6 +6793,45 @@
       "touched_round": 57,
       "commit": "5267f4f",
       "title": "KL penalty aligned to response-predicting states (TASK-105)"
+    },
+    "TASK-106": {
+      "id": "TASK-106",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T05:17:18+00:00",
+      "updated_at": "2026-08-15T05:20:30+00:00",
+      "touched_round": 59,
+      "category": "correctness",
+      "severity": "high",
+      "title": "Fix GradScaler-skipped (inf/NaN) steps advancing global_step + NaN-poisoning AdaLoRA EMA",
+      "summary": "Mirror scaler found_inf skip via non-finite clip grad_norm; skip step does not bump global_step nor fire on_optimizer_step; keep scaler.step/update for stage machine"
+    },
+    "TASK-107": {
+      "id": "TASK-107",
+      "type": "task",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-15T05:18:47+00:00",
+      "updated_at": "2026-08-15T05:20:30+00:00",
+      "touched_round": 59,
+      "category": "correctness",
+      "severity": 0.8,
+      "priority_score": 0,
+      "title": "Fix GradScaler-skipped (inf/NaN) steps advancing global_step + NaN-poisoning AdaLoRA EMA",
+      "summary": "Mirror scaler found_inf skip via non-finite clip grad_norm; skip step does not bump global_step nor fire on_optimizer_step; keep scaler.step/update for stage machine"
+    },
+    "EV-139": {
+      "id": "EV-139",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T05:20:59+00:00",
+      "updated_at": "2026-08-15T05:20:59+00:00",
+      "touched_round": 59,
+      "source": "test_engine_skipped_step_does_not_advance_global_step_or_fire_optimizer_hook (pass)",
+      "title": "NaN-gradient steps leave global_step=0 and on_optimizer_step unfired; finite control fires 4x on 4-step epoch",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -9796,6 +9835,18 @@
       "to": "TASK-105",
       "type": "implements",
       "created_at": "2026-08-15T03:55:29+00:00"
+    },
+    {
+      "from": "TASK-106",
+      "to": "ISS-107",
+      "type": "addresses",
+      "created_at": "2026-08-15T05:20:00+00:00"
+    },
+    {
+      "from": "TASK-107",
+      "to": "ISS-107",
+      "type": "addresses",
+      "created_at": "2026-08-15T05:20:50+00:00"
     }
   ]
 }

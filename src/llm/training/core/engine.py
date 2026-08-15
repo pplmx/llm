@@ -402,14 +402,36 @@ class TrainingEngine:
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.config.training.gradient_clip_val
                 )
-                self.scaler.step(self.optimizer)
+                # GradScaler silently skips the real parameter update when a
+                # gradient is inf/NaN (found_inf, recorded during unscale_).
+                # ``clip_grad_norm_`` computes its total norm from the same
+                # unscaled gradients, so a non-finite ``grad_norm`` is exactly
+                # the scaler's skip signal — detected here with zero extra
+                # syncs (RIL ISS-107). A skipped step must NOT advance
+                # ``global_step`` (that counter drives max_steps and the
+                # AdaLoRA prune cadence) and must NOT fire
+                # ``on_optimizer_step`` — the AdaLoRA gradient-EMA would fold
+                # ``|inf/NaN|`` into its running importance and stay
+                # NaN-poisoned forever (``alpha * NaN = NaN``).
+                step_skipped = not bool(torch.isfinite(grad_norm))
+                if step_skipped and not self.scaler.is_enabled():
+                    # No GradScaler protection (fp32/bf16/CPU): refusing the
+                    # update ourselves keeps poisoned gradients out of the
+                    # parameters instead of writing NaN weights.
+                    pass
+                else:
+                    self.scaler.step(self.optimizer)
+                # update() must still run on the skipped path: it advances the
+                # scaler's internal stage machine and decays the loss scale.
                 self.scaler.update()
-                # Fire ``on_optimizer_step`` BEFORE zero_grad so
-                # gradient-reading observers (AdaLoRA EMA tracker) get
-                # the real gradients, not the post-zero zeros.
-                self._run_callbacks("on_optimizer_step", epoch=epoch, batch_idx=batch_idx)
+                if not step_skipped:
+                    # Fire ``on_optimizer_step`` BEFORE zero_grad so
+                    # gradient-reading observers (AdaLoRA EMA tracker) get
+                    # the real gradients, not the post-zero zeros.
+                    self._run_callbacks("on_optimizer_step", epoch=epoch, batch_idx=batch_idx)
                 self.optimizer.zero_grad(set_to_none=True)
-                self.global_step += 1
+                if not step_skipped:
+                    self.global_step += 1
             else:
                 # Calculate grad norm even if not stepping? Or skip?
                 # Usually we track grad norm of the step.

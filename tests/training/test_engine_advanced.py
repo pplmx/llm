@@ -221,3 +221,109 @@ def test_evaluation_callback_fires_without_attribute_error(mock_config):
     for cb in engine.callbacks:
         cb.set_engine(engine)
     engine._run_callbacks("on_train_step_end", epoch=0, batch_idx=0, loss=torch.tensor(1.0), metrics={"loss": 1.0})
+
+
+@pytest.mark.heavy
+def test_engine_skipped_step_does_not_advance_global_step_or_fire_optimizer_hook(mock_config):
+    """Regression (RIL ISS-107): a GradScaler-skipped optimizer step (a
+    gradient that is inf/NaN after ``unscale_``) must NOT advance
+    ``global_step`` and must NOT fire ``on_optimizer_step``.
+
+    When ``unscale_`` flags inf/NaN, ``GradScaler.step`` silently skips the
+    real parameter update. Before this fix the engine still advanced
+    ``global_step`` (inflation of the max_steps counter / AdaLoRA prune
+    cadence) and still fired ``on_optimizer_step``, so the AdaLoRA
+    gradient-EMA folded ``|inf/NaN|`` into its running importance and was
+    NaN-poisoned forever (``alpha * NaN = NaN``).
+
+    Uses a real engine + a real task that produces a NaN loss; a spy
+    callback records ``on_optimizer_step`` invocations.
+    """
+    from llm.training.core.callbacks import Callback
+    from llm.training.core.engine import TrainingEngine
+
+    class _SpyCallback(Callback):
+        def __init__(self):
+            self.calls = 0
+
+        def on_optimizer_step(self, epoch, batch_idx, logs=None):
+            self.calls += 1
+
+    class _NaNTask(LanguageModelingTask):
+        """Deliberately emits a NaN loss so every backward produces
+        inf/NaN gradients and GradScaler (or the preempted path) skips
+        the step. Loss is NaN every batch, so every optimizer step is
+        skipped."""
+
+        def train_step(self, batch, model, criterion):
+            logits = model(batch[0] if not isinstance(batch, dict) else batch["input_ids"])
+            # (logits * NaN).sum() propagates NaN through the autograd graph
+            # to the parameters — a bare `+ nan` constant wouldn't reach them.
+            loss = (logits * float("nan")).sum()
+            return loss, {"loss": float("nan")}
+
+    mock_config.training.epochs = 1
+    mock_config.training.run_validation = False
+    mock_config.optimization.use_compile = False
+    mock_config.optimization.gradient_accumulation_steps = 1
+    mock_config.optimization.amp_dtype = "float16"  # engages GradScaler on CUDA, no-op on CPU
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    spy = _SpyCallback()
+    task = _NaNTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm, callbacks=[spy])
+
+    from torch.utils.data import DataLoader, TensorDataset
+
+    ids = torch.randint(0, mock_config.model.vocab_size, (8, 16), dtype=torch.long)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=2)  # 4 batches
+    engine.val_dataloader = None
+
+    engine._run_epoch(0)
+
+    # Every optimizer step was skipped because the loss (and therefore the
+    # gradient) is NaN — the step counter and the prune-cadence hook must
+    # both be untouched.
+    assert engine.global_step == 0, f"skipped steps must not advance global_step, got {engine.global_step}"
+    assert spy.calls == 0, f"on_optimizer_step must not fire on a skipped step, got {spy.calls} calls"
+
+
+@pytest.mark.heavy
+def test_engine_finite_steps_still_fire_optimizer_hook(mock_config):
+    """Control for the skipped-step test: on a healthy (finite-gradient)
+    run, ``on_optimizer_step`` fires exactly once per optimizer step, so
+    the zero-call assertion in the NaN test is not vacuously green."""
+    from llm.training.core.callbacks import Callback
+    from llm.training.core.engine import TrainingEngine
+
+    class _SpyCallback(Callback):
+        def __init__(self):
+            self.calls = 0
+
+        def on_optimizer_step(self, epoch, batch_idx, logs=None):
+            self.calls += 1
+
+    mock_config.training.epochs = 1
+    mock_config.training.run_validation = False
+    mock_config.optimization.use_compile = False
+    mock_config.optimization.gradient_accumulation_steps = 1
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    spy = _SpyCallback()
+    task = LanguageModelingTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm, callbacks=[spy])
+
+    from torch.utils.data import DataLoader, TensorDataset
+
+    ids = torch.randint(0, mock_config.model.vocab_size, (8, 16), dtype=torch.long)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=2)  # 4 batches
+    engine.val_dataloader = None
+
+    engine._run_epoch(0)
+
+    assert engine.global_step == 4, f"healthy run should take 4 steps, got {engine.global_step}"
+    assert spy.calls == 4, f"healthy run should fire hook 4 times, got {spy.calls}"
