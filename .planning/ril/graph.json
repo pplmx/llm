@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T15:11:30+00:00",
+  "updated_at": "2026-08-15T15:41:29+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 59,
+      "touched_round": 60,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 59,
+      "touched_round": 60,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -7048,6 +7048,77 @@
       "source": "tests/training/tasks/test_dpo_task.py::test_dpo_ref_model_synced_from_loaded_checkpoint,tests/training/tasks/test_dpo_task.py::test_dpo_ref_model_persisted_and_restored",
       "confidence": 1.0,
       "summary": "ref == checkpoint-loaded base weights after resume (RED->GREEN); persisted ref restored bit-identical"
+    },
+    "ISS-124": {
+      "id": "ISS-124",
+      "type": "issue",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T15:11:56+00:00",
+      "updated_at": "2026-08-15T15:12:04+00:00",
+      "touched_round": 60,
+      "severity": 0.6,
+      "title": "Speculative decoding has no max_seq_len guard — long prompts/contexts crash (ValueError) while eager truncates",
+      "summary": "speculative_generate never calls the eager backend's _reject_impossible_context and never truncates the prompt; context rebuild + target forward grow past max_seq_len and learned-position tables throw. Inconsistent API: eager handles the same input fine."
+    },
+    "ISS-125": {
+      "id": "ISS-125",
+      "type": "issue",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-15T15:11:56+00:00",
+      "updated_at": "2026-08-15T15:41:29+00:00",
+      "touched_round": 60,
+      "severity": 0.55,
+      "title": "Eager/speculative generation KeyError mid-stream when model vocab > tokenizer vocab",
+      "summary": "decode([token_id]) raises KeyError when sampling a tail id in [tokenizer_vocab, model_vocab) (e.g. padded vocab); penalty helpers already guard out-of-range ids but the sampled token is never bounded. Crashes generator after part of the stream was yielded."
+    },
+    "ISS-126": {
+      "id": "ISS-126",
+      "type": "issue",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T15:11:56+00:00",
+      "updated_at": "2026-08-15T15:12:04+00:00",
+      "touched_round": 60,
+      "severity": 0.5,
+      "title": "Resume silently accepts a checkpoint whose model/training config differs from the current run",
+      "summary": "load_checkpoint applies weights/optimizer/scheduler and ignores payload model_config entirely (serving validates; training does not). Scheduler milestone mismatches and tokenizer changes silently corrupt training."
+    },
+    "ISS-127": {
+      "id": "ISS-127",
+      "type": "issue",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T15:11:56+00:00",
+      "updated_at": "2026-08-15T15:12:04+00:00",
+      "touched_round": 60,
+      "severity": 0.45,
+      "title": "Checkpoint save not transactional across the three sidecars and never fsyncs",
+      "summary": "weights/meta/extra_state written as separate tmp+rename; a crash mid-save leaves a complete-looking but inconsistent trio that resumes silently (stale optimizer state vs new weights). No cross-file generation stamp; no fsync before rename."
+    },
+    "CHG-115": {
+      "id": "CHG-115",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T15:41:29+00:00",
+      "updated_at": "2026-08-15T15:41:29+00:00",
+      "touched_round": 60,
+      "summary": "shared sampling.mask_undecodable_logits masks tail logits at every eager/speculative sampling site; no more KeyError when model vocab exceeds tokenizer vocab",
+      "commit": "9be98d9"
+    },
+    "EV-144": {
+      "id": "EV-144",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T15:41:29+00:00",
+      "updated_at": "2026-08-15T15:41:29+00:00",
+      "touched_round": 60,
+      "source": "tests/generation/test_eager.py::test_stream_generate_masks_undecodable_tail_vocab,tests/generation/test_eager.py::test_batch_generate_masks_undecodable_tail_vocab,tests/generation/test_speculative.py::test_speculative_masks_undecodable_tail_vocab",
+      "confidence": 1.0,
+      "summary": "RED-verified: stream/batch/speculative all raised KeyError on padded-vocab model before fix; all pass after"
     }
   },
   "edges": [
@@ -10192,6 +10263,36 @@
       "to": "TASK-096",
       "type": "implements",
       "created_at": "2026-08-15T15:10:17+00:00"
+    },
+    {
+      "from": "ISS-124",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-15T15:12:36+00:00"
+    },
+    {
+      "from": "ISS-125",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-15T15:12:36+00:00"
+    },
+    {
+      "from": "ISS-126",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-15T15:12:36+00:00"
+    },
+    {
+      "from": "ISS-127",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-15T15:12:36+00:00"
+    },
+    {
+      "from": "CHG-115",
+      "to": "ISS-125",
+      "type": "resolves",
+      "created_at": "2026-08-15T15:41:29+00:00"
     }
   ]
 }
