@@ -128,6 +128,8 @@ class PPOTrainer:
             state["value_model"] = self._snapshot_state(self.value_model.state_dict())
         if self.value_optimizer is not None:
             state["value_optimizer"] = self._snapshot_state(self.value_optimizer.state_dict())
+        if self.ref_model is not None:
+            state["ref_model"] = self._snapshot_state(self.ref_model.state_dict())
         return state
 
     def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
@@ -138,6 +140,34 @@ class PPOTrainer:
             self.value_model.load_state_dict(state["value_model"])
         if self.value_optimizer is not None and "value_optimizer" in state:
             self.value_optimizer.load_state_dict(state["value_optimizer"])
+        if self.ref_model is not None and "ref_model" in state:
+            self.ref_model.load_state_dict(state["ref_model"])
+            # A persisted reference was restored — keep THIS base (the
+            # original at the moment the checkpoint was saved) instead of
+            # re-syncing to the now-moved policy in on_checkpoint_loaded.
+            self._ref_restored_from_ckpt = True
+
+    def on_checkpoint_loaded(self, model: nn.Module) -> None:
+        """Align the frozen reference with a checkpoint-loaded base policy.
+
+        Called by the engine right after ``load_checkpoint`` applies resumed
+        weights to the policy (RIL round-60 deep-dive Finding 1, same contract
+        as ``DPOTask.on_checkpoint_loaded``).
+
+        - Resuming from an SFT/base checkpoint (no persisted ``ref_model`` in
+          extra_state): the reference must equal the loaded policy — that IS
+          the base the policy is regularised against. In the PPO flow
+          ``prepare_training`` deep-copies the policy into ``ref_model``
+          BEFORE the engine loads the checkpoint, so without this hook the KL
+          penalty would be computed against a stale (pre-resume) model.
+        - Resuming from a mid-PPO checkpoint: ``load_checkpoint_state`` already
+          restored the ORIGINAL base reference; keep it.
+        """
+        if self.ref_model is None:
+            return
+        if getattr(self, "_ref_restored_from_ckpt", False):
+            return
+        self.ref_model.load_state_dict(model.state_dict())
 
     def _policy_base(self) -> nn.Module:
         """The bare module behind a possibly DDP-wrapped policy.

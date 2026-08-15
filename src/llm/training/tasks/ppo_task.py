@@ -72,6 +72,17 @@ class PPOTask(TrainingTask):
             return
         self.ppo_trainer.load_checkpoint_state(state.get("ppo"))
 
+    def on_checkpoint_loaded(self, model: nn.Module) -> None:
+        """Forward the engine's post-load hook to the PPO trainer.
+
+        The trainer's reference model is deep-copied from the policy inside
+        ``prepare_training`` — BEFORE the engine loads any checkpoint into
+        the policy — so a resumed PPO run would otherwise compute its KL
+        penalty against a stale model (RIL round-60 deep-dive Finding 1).
+        """
+        if self.ppo_trainer is not None:
+            self.ppo_trainer.on_checkpoint_loaded(model)
+
     def _unwrap_model(self, model: nn.Module) -> nn.Module:
         """Return the bare module behind any parallelism wrapper.
 
