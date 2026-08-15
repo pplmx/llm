@@ -222,3 +222,49 @@ def test_lm_task_predict_variable_length_batches(tmp_path):
 
     # Padded to the global max sequence length (5), one row per input.
     assert out.shape == (4, 5, task.tokenizer.vocab_size)
+
+
+def test_lm_task_predict_clamps_to_model_capacity(tmp_path):
+    """RIL ISS-130: ``predict`` must clamp the batch to the model's OWN
+    context window.
+
+    The old code hardcoded ``TextDataset(max_seq_len=128)`` and padded every
+    batch to the global max — a model with ``max_seq_len < 128`` then received
+    128-token rows and crashed against its positional-encoding table
+    ("Sequence endpoint 128 exceeds maximum sequence length"). The batch's seq
+    dim must never exceed what the model can attend to.
+    """
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world\n" * 8, encoding="utf-8")
+
+    task = LMTask(dataset_path=str(corpus), batch_size=4, max_seq_len=128)
+
+    seq_len_seen: list[int] = []
+
+    class SmallModel:
+        max_seq_len = 32
+
+        def __init__(self):
+            self.vocab_size = task.tokenizer.vocab_size
+
+        def __call__(self, input_ids, attn_mask=None):
+            batch, seq = input_ids.shape
+            seq_len_seen.append(seq)
+            return torch.zeros(batch, seq, self.vocab_size)
+
+    task.predict(SmallModel(), [torch.tensor([1] * 128, dtype=torch.long)])
+
+    assert seq_len_seen, "model forward must have been called"
+    assert all(seq <= 32 for seq in seq_len_seen), f"batch exceeded model capacity: {seq_len_seen}"
+
+
+def test_lm_task_respects_explicit_max_seq_len(tmp_path):
+    """RIL ISS-130: the caller-settable ``max_seq_len`` (not a hardcoded 128)
+    is passed through to the dataset truncation."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world hello world\n" * 8, encoding="utf-8")
+
+    task = LMTask(dataset_path=str(corpus), batch_size=2, max_seq_len=16)
+
+    inputs, _ = task.prepare_data("val")
+    assert all(len(x) <= 16 for x in inputs), "dataset must be truncated to max_seq_len"
