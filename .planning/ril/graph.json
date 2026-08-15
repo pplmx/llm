@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 57,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T03:46:59+00:00",
+  "updated_at": "2026-08-15T03:55:29+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6664,10 +6664,10 @@
     "ISS-118": {
       "id": "ISS-118",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:55:29+00:00",
       "touched_round": 57,
       "severity": 0.25,
       "title": "PPO KL-penalty window unshifted vs policy-loss shift_response_mask — one-position ahead of token alignment (small systematic bias)"
@@ -6714,18 +6714,16 @@
     "TASK-105": {
       "id": "TASK-105",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:46:59+00:00",
+      "updated_at": "2026-08-15T03:55:29+00:00",
       "touched_round": 57,
       "category": "correctness",
       "severity": 0.25,
       "confidence": 0.9,
       "effort": 0.25,
-      "title": "PPO KL-penalty mask aligned with policy loss shift (one-position fix)",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T04:16:59+00:00"
+      "title": "PPO KL-penalty mask aligned with policy loss shift (one-position fix)"
     },
     "EV-136": {
       "id": "EV-136",
@@ -6772,6 +6770,29 @@
       "touched_round": 57,
       "commit": Infinity,
       "title": "PPO rollout EOS early-stop via eos_token_id (TASK-103)"
+    },
+    "EV-138": {
+      "id": "EV-138",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:55:29+00:00",
+      "updated_at": "2026-08-15T03:55:29+00:00",
+      "touched_round": 57,
+      "source": "tests/training/rlhf/test_ppo.py::test_compute_kl_penalty_aligned_to_response_predicting_states",
+      "title": "Verified: with perturbed ref (nonzero KL), unshifted response_mask window [2,5) != correct state window [1,4) (RED); fix kl[:,:-1]*response_mask[:,1:] matches shifted alignment. Entropy already correct (uses response_mask[:,1:]). PPO 21 passed, training 426",
+      "confidence": 1.0
+    },
+    "CHG-107": {
+      "id": "CHG-107",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:55:29+00:00",
+      "updated_at": "2026-08-15T03:55:29+00:00",
+      "touched_round": 57,
+      "commit": "5267f4f",
+      "title": "KL penalty aligned to response-predicting states (TASK-105)"
     }
   },
   "edges": [
@@ -9763,6 +9784,18 @@
       "to": "TASK-103",
       "type": "implements",
       "created_at": "2026-08-15T03:46:54+00:00"
+    },
+    {
+      "from": "CHG-107",
+      "to": "ISS-118",
+      "type": "resolves",
+      "created_at": "2026-08-15T03:55:29+00:00"
+    },
+    {
+      "from": "CHG-107",
+      "to": "TASK-105",
+      "type": "implements",
+      "created_at": "2026-08-15T03:55:29+00:00"
     }
   ]
 }
