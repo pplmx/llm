@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 57,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T03:35:42+00:00",
+  "updated_at": "2026-08-15T03:46:59+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6642,10 +6642,10 @@
     "ISS-116": {
       "id": "ISS-116",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:46:54+00:00",
       "touched_round": 57,
       "severity": 0.35,
       "title": "ppo_trainer rollout EOS early-stop is dead code (hasattr 'eos_id' but tokenizers expose eos_token_id); rollouts run to full length with post-EOS junk folded into training"
@@ -6686,18 +6686,16 @@
     "TASK-103": {
       "id": "TASK-103",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:35:42+00:00",
+      "updated_at": "2026-08-15T03:46:54+00:00",
       "touched_round": 57,
       "category": "correctness",
       "severity": 0.35,
       "confidence": 0.9,
       "effort": 0.2,
-      "title": "ppo_trainer EOS early-stop uses eos_token_id (fix dead hasattr('eos_id') guard)",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T04:05:42+00:00"
+      "title": "ppo_trainer EOS early-stop uses eos_token_id (fix dead hasattr('eos_id') guard)"
     },
     "TASK-104": {
       "id": "TASK-104",
@@ -6717,15 +6715,17 @@
       "id": "TASK-105",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-15T03:32:01+00:00",
-      "updated_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:46:59+00:00",
       "touched_round": 57,
       "category": "correctness",
       "severity": 0.25,
       "confidence": 0.9,
       "effort": 0.25,
-      "title": "PPO KL-penalty mask aligned with policy loss shift (one-position fix)"
+      "title": "PPO KL-penalty mask aligned with policy loss shift (one-position fix)",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T04:16:59+00:00"
     },
     "EV-136": {
       "id": "EV-136",
@@ -6749,6 +6749,29 @@
       "touched_round": 57,
       "commit": "b1c9161",
       "title": "stream_request finally holds _step_lock around scheduler.remove (TASK-104)"
+    },
+    "EV-137": {
+      "id": "EV-137",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:46:54+00:00",
+      "updated_at": "2026-08-15T03:46:54+00:00",
+      "touched_round": 57,
+      "source": "tests/training/rlhf/test_ppo.py::test_generate_responses_stops_at_eos",
+      "title": "Verified RED against old hasattr('eos_id') guard (rollout ran response_max_len), GREEN with eos_token_id fix (stopped at 1 token). All tokenizers expose eos_token_id; renamed misleading 'eos_id' fixtures to eos_token_id=None (no behavior change). Training 425 passed",
+      "confidence": 1.0
+    },
+    "CHG-106": {
+      "id": "CHG-106",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:46:54+00:00",
+      "updated_at": "2026-08-15T03:46:54+00:00",
+      "touched_round": 57,
+      "commit": Infinity,
+      "title": "PPO rollout EOS early-stop via eos_token_id (TASK-103)"
     }
   },
   "edges": [
@@ -9728,6 +9751,18 @@
       "to": "TASK-104",
       "type": "implements",
       "created_at": "2026-08-15T03:35:36+00:00"
+    },
+    {
+      "from": "CHG-106",
+      "to": "ISS-116",
+      "type": "resolves",
+      "created_at": "2026-08-15T03:46:54+00:00"
+    },
+    {
+      "from": "CHG-106",
+      "to": "TASK-103",
+      "type": "implements",
+      "created_at": "2026-08-15T03:46:54+00:00"
     }
   ]
 }

@@ -363,8 +363,18 @@ class PPOTrainer:
         # KL = sum(p * (log p - log q))
         kl = (policy_log_probs.exp() * (policy_log_probs - ref_log_probs)).sum(dim=-1)
 
-        # Mask to response tokens only
-        kl = (kl * response_mask).sum() / response_mask.sum().clamp(min=1)
+        # Mask to the states that PREDICT response tokens. ``kl`` at state
+        # ``k`` is the KL between the next-token distributions at ``k``, i.e.
+        # the state generating ``input[k+1]``; response tokens occupy
+        # ``[prompt_len, total_len)`` so their generating states are
+        # ``[prompt_len-1, total_len-1)``. Masking with the *unshifted*
+        # ``response_mask`` covered the state AFTER the last response token
+        # and skipped the first response token's predictor — a one-position
+        # bias that misregularized the shift-aligned policy loss (RIL
+        # ISS-118). ``response_mask[:, 1:]`` selects exactly the predicting
+        # states; drop ``kl[:, -1]`` (the state predicting beyond the window).
+        state_mask = response_mask[:, 1:]
+        kl = (kl[:, :-1] * state_mask).sum() / state_mask.sum().clamp(min=1)
 
         return kl
 

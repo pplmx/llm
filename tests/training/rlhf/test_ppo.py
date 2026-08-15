@@ -2,6 +2,7 @@
 
 import pytest
 import torch
+import torch.nn.functional as functional
 
 from llm.training.core.config import PPOConfig
 from llm.training.rlhf.rollout_buffer import RolloutBuffer
@@ -580,6 +581,57 @@ class TestPPOTrainer:
         # With a 2-row padded batch the masked and unmasked means differ
         # (masked == real-token mean, unmasked == padded mean).
         assert abs(float(masked_loss - unmasked_loss)) > 1e-9
+
+    def test_compute_kl_penalty_aligned_to_response_predicting_states(self, tiny_setup):
+        """Regression (RIL ISS-118): the KL penalty must average over the
+        states that PREDICT response tokens — ``[prompt_len-1, total_len-1)``,
+        one slot before each response token, matching the policy-loss shift —
+        not the unshifted response positions (which include the state after
+        the last response token and skip the first response token's state)."""
+        import torch
+
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        # Make ref diverge from the policy, otherwise KL is 0 everywhere and
+        # any masking window trivially agrees (tiny_setup's ref is a copy of
+        # the untrained policy).
+        with torch.no_grad():
+            for p in trainer.ref_model.parameters():
+                p.add_(torch.randn_like(p) * 0.2)
+
+        # 2-token prompt + 3-token response.
+        input_ids = torch.tensor([[10, 11, 5, 6, 7]], device=DEFAULT_DEVICE)
+        attention_mask = torch.ones(1, 5, device=DEFAULT_DEVICE)
+        response_mask = torch.tensor([[0, 0, 1, 1, 1]], device=DEFAULT_DEVICE)
+
+        kl_value = trainer.compute_kl_penalty(input_ids, attention_mask, response_mask)
+
+        # Reference: the correctly-aligned window is states [prompt_len-1,
+        # total_len-1) = [1, 4) — states whose next-token distribution emits
+        # a response token.
+        with torch.no_grad():
+            ref_logits = trainer.ref_model(input_ids)
+            pol_logits = trainer.policy(input_ids)
+        ref_lp = functional.log_softmax(ref_logits, dim=-1)
+        pol_lp = functional.log_softmax(pol_logits, dim=-1)
+        kl = (pol_lp.exp() * (pol_lp - ref_lp)).sum(dim=-1)  # [1, 5]
+
+        correct_mask = torch.tensor([[0, 1, 1, 1, 0]], device=DEFAULT_DEVICE)
+        expected = (kl * correct_mask).sum() / correct_mask.sum()
+
+        assert abs(float(kl_value.detach()) - float(expected.detach())) < 1e-6, (
+            f"KL penalty window must match the response-predicting states: "
+            f"trainer={float(kl_value.detach()):.6f} expected={float(expected.detach()):.6f}"
+        )
 
     def test_ppo_step_approx_kl_normalized_over_real_tokens(self):
         """Regression (RIL ISS-090): ``approx_kl`` / ``ratio_mean`` telemetry
