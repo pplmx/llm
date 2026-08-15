@@ -267,6 +267,7 @@ class LlamaLmEvalLM:
                 # Stop if the suffix matches any ``until`` token sequence
                 # (id lists) or the decoded text ends with any string stop.
                 if self._matches_any_stop(generated, stops):
+                    generated = self._truncate_id_stop_suffix(generated, stops)
                     break
 
             results.append(self._strip_stop_strings(self.tokenizer.decode(generated), stops))
@@ -318,6 +319,27 @@ class LlamaLmEvalLM:
         if not isinstance(ids, list):
             ids = ids.tolist() if hasattr(ids, "tolist") else list(ids)
         return list(ids)
+
+    @staticmethod
+    def _truncate_id_stop_suffix(generated: list[int], until: list) -> list[int]:
+        """Drop the matched token-id-sequence stop suffix before decoding.
+
+        ``_matches_any_stop`` halts generation the moment an ``until``
+        id-sequence becomes a *suffix* of ``generated``, but the stop ids are
+        still in ``generated`` — decoding the whole run embeds the stop's
+        text in the returned completion (RIL ISS-106). String stops have the
+        post-decode :meth:`_strip_stop_strings` cut; id-sequence stops need
+        an exact token-boundary cut here (lossless, unlike a
+        ``decode(stop_ids)`` text round-trip). String entries are skipped —
+        they are stripped post-decode.
+        """
+        for stop in until:
+            if isinstance(stop, str):
+                continue
+            stop_ids = list(stop) if not isinstance(stop, list) else stop
+            if stop_ids and len(generated) >= len(stop_ids) and generated[-len(stop_ids) :] == stop_ids:
+                return generated[: -len(stop_ids)]
+        return generated
 
     @staticmethod
     def _matches_any_suffix(generated: list[int], until: list) -> bool:

@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 54,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T01:13:40+00:00",
+  "updated_at": "2026-08-15T01:18:39+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6103,32 +6103,32 @@
     "TASK-092": {
       "id": "TASK-092",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T01:13:09+00:00",
-      "updated_at": "2026-08-15T01:13:40+00:00",
+      "updated_at": "2026-08-15T01:18:34+00:00",
       "touched_round": 54,
       "category": "correctness",
       "severity": 0.4,
       "confidence": 0.9,
       "effort": 0.2,
-      "title": "batch_engine _emit_tokens/_lock_step_post must exclude EOS decoded text (ISS-96/98 parity on batched path)",
-      "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T01:43:40+00:00"
+      "title": "batch_engine _emit_tokens/_lock_step_post must exclude EOS decoded text (ISS-96/98 parity on batched path)"
     },
     "TASK-093": {
       "id": "TASK-093",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-15T01:13:09+00:00",
-      "updated_at": "2026-08-15T01:13:09+00:00",
+      "updated_at": "2026-08-15T01:18:39+00:00",
       "touched_round": 54,
       "category": "correctness",
       "severity": 0.3,
       "confidence": 0.9,
       "effort": 0.2,
-      "title": "generate_until strips token-id-sequence until stops like string stops (adjacent to ISS-101)"
+      "title": "generate_until strips token-id-sequence until stops like string stops (adjacent to ISS-101)",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T01:48:39+00:00"
     },
     "TASK-094": {
       "id": "TASK-094",
@@ -6158,10 +6158,10 @@
     "ISS-104": {
       "id": "ISS-104",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T01:13:31+00:00",
-      "updated_at": "2026-08-15T01:13:31+00:00",
+      "updated_at": "2026-08-15T01:18:34+00:00",
       "touched_round": 54,
       "severity": 0.4,
       "title": "batch_engine emits EOS decoded text into streamed/final output (batched path missed ISS-96/98)"
@@ -6187,6 +6187,29 @@
       "touched_round": 54,
       "severity": 0.3,
       "title": "generate_until token-id-sequence until stops left embedded in completion (string stops stripped only)"
+    },
+    "EV-125": {
+      "id": "EV-125",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:18:33+00:00",
+      "updated_at": "2026-08-15T01:18:33+00:00",
+      "touched_round": 54,
+      "source": "tests/serving/test_engine.py::test_engine_excludes_eos_text_from_output",
+      "title": "Repro: forced _forward_and_sample to emit eos=99; generate_request('abcd') returned 'abcd99' (EOS text '99' leaked). Fix: _emit_tokens breaks on eos_id before decode. Serving suite 316 passed",
+      "confidence": 1.0
+    },
+    "CHG-096": {
+      "id": "CHG-096",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T01:18:34+00:00",
+      "updated_at": "2026-08-15T01:18:34+00:00",
+      "touched_round": 54,
+      "commit": "806754b",
+      "title": "batch_engine _emit_tokens excludes EOS decoded text (TASK-092)"
     }
   },
   "edges": [
@@ -8962,6 +8985,18 @@
       "to": "COMP-013",
       "type": "located_in",
       "created_at": "2026-08-15T01:13:40+00:00"
+    },
+    {
+      "from": "CHG-096",
+      "to": "ISS-104",
+      "type": "resolves",
+      "created_at": "2026-08-15T01:18:34+00:00"
+    },
+    {
+      "from": "CHG-096",
+      "to": "TASK-092",
+      "type": "implements",
+      "created_at": "2026-08-15T01:18:34+00:00"
     }
   ]
 }

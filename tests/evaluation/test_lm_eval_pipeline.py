@@ -512,6 +512,25 @@ def test_lm_eval_lm_generate_until_stops_on_until_token():
     assert len(out[0]) <= 2
 
 
+def test_lm_eval_lm_generate_until_strips_token_id_stop():
+    """Regression (RIL ISS-106, sibling of the string-stop strip): an
+    ``until`` *token-id sequence* must be cut from the returned generation
+    the same way the string path is.
+
+    The loop already halts when the id sequence becomes a suffix of
+    ``generated``, but the stop ids are still *in* ``generated`` and get
+    decoded into the completion (string stops are stripped post-decode;
+    id-sequence stops had no equivalent).
+    """
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
+    # Model emits 1 every step; after two tokens [1,1] is a suffix stop. The
+    # stop ids are the whole run, so the completion must be empty — not
+    # decode([1,1]) == "\\x01\\x01".
+    out = lm.generate_until([_FakeRequest(("ctx", {"until": [[1, 1]], "max_gen_toks": 5}))])
+    assert out == [""]
+
+
 def test_lm_eval_lm_generate_until_stops_on_string_until():
     """Regression (RIL ISS-049): lm_eval passes ``until`` as a list of
     *strings* for essentially all generation tasks, so ``generate_until``
