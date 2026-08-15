@@ -85,24 +85,43 @@ def sdpa(
             # Assuming bool mask for complex merging.
             if attn_mask.dtype == torch.bool:
                 full_mask = attn_mask if full_mask is None else (full_mask | attn_mask)
-            else:
-                # Float/int additive mask (0 = keep, -inf = mask out, Torch
-                # SDPA convention). It cannot be merged with the boolean
+            elif attn_mask.dtype.is_floating_point:
+                # Float additive mask (0 = keep, -inf = mask out, Torch SDPA
+                # convention). It cannot be merged with the boolean
                 # ``full_mask`` via ``|`` — additive and boolean masks are
                 # different spaces. Convert the boolean part to an additive
                 # mask (0 / -inf) and sum them, so the caller's additive mask
                 # is NOT silently dropped on the window / causal+mask path
                 # (RIL ISS-115).
                 bool_part = full_mask
+                # Normalize the float mask's shape to a key-additive layout
+                # ([B, 1, 1, S_k]) so it plays well with the rank-2
+                # causal/window ``full_mask``. reward_task / reward tests
+                # pass a plain ``[B, S]`` float mask.
+                float_mask = attn_mask
+                if float_mask.ndim == 2:
+                    float_mask = float_mask.unsqueeze(1).unsqueeze(1)
                 if bool_part is not None:
                     additive_base = torch.where(
                         bool_part,
-                        torch.tensor(float("-inf"), device=query.device, dtype=attn_mask.dtype),
-                        torch.zeros((), device=query.device, dtype=attn_mask.dtype),
+                        torch.tensor(float("-inf"), device=query.device, dtype=float_mask.dtype),
+                        torch.zeros((), device=query.device, dtype=float_mask.dtype),
                     )
-                    full_mask = additive_base + attn_mask
+                    full_mask = additive_base + float_mask
                 else:
-                    full_mask = attn_mask
+                    full_mask = float_mask
+            else:
+                # Integer 0/1 mask (e.g. the long padding mask emitted by the
+                # SFT/DPO/reward data pipelines, where 1 = real token and
+                # 0 = pad). 1 is *keep*, so the mask-out predicate here is
+                # ``== 0`` — NOT ``to(bool)`` (which would flip padding to
+                # keep and *real* tokens to mask out). The data pipeline
+                # emits ``[B, S]``; expand to ``[B, 1, S]`` so it broadcasts
+                # against the ``[Sq, Sk]`` causal/window ``full_mask``.
+                mask_out = attn_mask == 0
+                if mask_out.ndim == 2:
+                    mask_out = mask_out.unsqueeze(1)
+                full_mask = mask_out if full_mask is None else (full_mask | mask_out)
 
         # Now we have a mask where True = Mask Out (bool) or 0/-inf additive
         # (float), matching the caller's convention.
@@ -113,6 +132,14 @@ def sdpa(
         torch_mask = None
         if full_mask is not None:
             torch_mask = ~full_mask if full_mask.dtype == torch.bool else full_mask
+            # F.sdpa expects a boolean mask of rank >= 3 (broadcastable to
+            # [B, N, Sq, Sk]). The window/causal construction is rank-2
+            # ([Sq, Sk]); a caller-supplied [B, 1, S] int mask merges to
+            # rank-3 ([B, Sq, Sk]), which has no head dimension. Expand the
+            # head axis so the merged mask actually applies per head instead
+            # of raising "expanded size ... at non-singleton dimension 1".
+            if torch_mask.ndim == 3 and query.ndim == 4:
+                torch_mask = torch_mask.unsqueeze(1)
 
         return functional.scaled_dot_product_attention(
             query,
@@ -131,7 +158,29 @@ def sdpa(
     if attn_mask is not None:
         # My convention: True = Mask Out
         # Torch convention: True = Keep
-        torch_attn_mask = ~attn_mask if attn_mask.dtype == torch.bool else attn_mask
+        if attn_mask.dtype == torch.bool:
+            torch_attn_mask = ~attn_mask
+        elif attn_mask.dtype.is_floating_point:
+            # Float additive mask (0 = keep, -inf = mask out): pass through
+            # unchanged — this is already the Torch SDPA convention. A
+            # caller-supplied [B, S] float mask (reward_task / reward tests)
+            # needs a broadcastable key axis for 4-D query, same as int.
+            torch_attn_mask = attn_mask
+            if torch_attn_mask.ndim == 2 and query.ndim == 4:
+                torch_attn_mask = torch_attn_mask.unsqueeze(1).unsqueeze(1)
+        else:
+            # Integer 0/1 mask (e.g. a long padding mask from a data
+            # pipeline): 1 = real = keep, 0 = pad. Torch wants True = Keep,
+            # so the long mask maps 1:1 onto a bool mask with NO inversion
+            # (1 -> True = keep); passing the raw long mask would be the
+            # bitwise-not-free path but Torch SDPA rejects non-bool/float
+            # dtypes. The data pipeline emits ``[B, S]``; F.sdpa rejects a
+            # 2-D bool mask (and even ``[B, 1, S]``) for a 4-D query — it
+            # needs at least ``[B, 1, 1, S]`` / ``[1, 1, S_q, S_k]``. Insert
+            # a broadcastable head+key axis.
+            torch_attn_mask = attn_mask.to(torch.bool)
+            if torch_attn_mask.ndim == 2 and query.ndim == 4:
+                torch_attn_mask = torch_attn_mask.unsqueeze(1).unsqueeze(1)
 
     return functional.scaled_dot_product_attention(
         query, key, value, attn_mask=torch_attn_mask, dropout_p=dropout_p, is_causal=is_causal, scale=scale

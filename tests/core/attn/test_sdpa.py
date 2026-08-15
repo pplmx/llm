@@ -121,3 +121,67 @@ def test_sdpa_bool_mask_plus_window_merges(sample_qkv_tensors):
     ref = functional.scaled_dot_product_attention(q, k, v, attn_mask=~ref_mask, is_causal=False)
     out = sdpa(q, k, v, attn_mask=mask, window_size=2)
     assert torch.allclose(out, ref, atol=1e-5)
+
+
+def test_sdpa_long_01_mask_matches_additive_reference(sample_qkv_tensors):
+    """Int64 0/1 masks from the data pipeline (SFT/DPO/reward emit
+    ``torch.LongTensor`` attention_mask where 1 = real token, 0 = pad) must
+    be honored on both the complex (causal + mask) and fast paths.
+
+    The plant was a latent correctness bug: the long mask hit a bare
+    ``pass`` on the complex path (padding tokens silently attended) and a
+    dtype error on the fast path. The 0/1 convention is 1 = *keep*, so the
+    mask-out predicate is ``== 0`` and the fast path maps 1:1 to bool
+    (True = keep) — inverting either would mask the real tokens instead.
+    """
+    import torch.nn.functional as functional
+
+    q, k, v = sample_qkv_tensors
+    batch_size, _num_heads, seq_len, _ = q.shape
+
+    # Right-padding: no query row is fully masked after the causal merge, so
+    # the additive reference stays finite and comparable.
+    mask = torch.ones(batch_size, seq_len, dtype=torch.long)
+    mask[0, seq_len - 2 :] = 0
+    mask[1, seq_len - 1] = 0
+
+    # Additive reference: causal (-inf upper) + pad-key (-inf at 0 positions).
+    causal_keep = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool), 1)
+    causal_add = causal_keep.to(q.dtype).masked_fill(causal_keep, float("-inf"))
+    pad4 = (mask == 0).unsqueeze(1).unsqueeze(2)
+    pad_add = pad4.to(q.dtype).masked_fill(pad4, float("-inf"))
+    add = causal_add.expand(batch_size, 1, seq_len, seq_len) + pad_add
+
+    ref = functional.scaled_dot_product_attention(q, k, v, attn_mask=add, is_causal=False)
+    out = sdpa(q, k, v, attn_mask=mask, is_causal=True)
+    assert torch.allclose(out, ref, atol=1e-5)
+
+    # Fast path: no causal, padding keys only. Reference additive mask is
+    # just the pad-key -inf.
+    ref_fast = functional.scaled_dot_product_attention(q, k, v, attn_mask=pad_add, is_causal=False)
+    out_fast = sdpa(q, k, v, attn_mask=mask)
+    assert torch.allclose(out_fast, ref_fast, atol=1e-5)
+
+    # The mask is actually doing something: without it (causal only) the
+    # padded keys are attended, so the outputs must differ.
+    out_no_mask = sdpa(q, k, v, is_causal=True)
+    assert not torch.allclose(out, out_no_mask)
+
+
+def test_sdpa_float_2d_fast_path_broadcasts(sample_qkv_tensors):
+    """A ``[B, S]`` float mask (reward_task / reward tests pass float32
+    attention_mask) on the no-causal fast path must be broadcast to a key
+    axis instead of raising a shape error."""
+    import torch.nn.functional as functional
+
+    q, k, v = sample_qkv_tensors
+    batch_size, _num_heads, seq_len, _ = q.shape
+
+    fm = torch.ones(batch_size, seq_len, dtype=torch.float32)
+    fm[0, seq_len - 1] = 0.0
+    fm[1, :2] = 0.0
+
+    out = sdpa(q, k, v, attn_mask=fm)
+    add = fm.unsqueeze(1).unsqueeze(1)  # [B, 1, 1, S] additive reference
+    ref = functional.scaled_dot_product_attention(q, k, v, attn_mask=add, is_causal=False)
+    assert torch.allclose(out, ref, atol=1e-5)

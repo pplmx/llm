@@ -21,15 +21,18 @@ import llm.export.registry as export_reg
 import llm.generation.registry as gen_reg
 
 
-def _cold_start_twice(ensure, registry):
+def _cold_start_twice(ensure, registry, guard_module, guard_flag):
     """Race ``ensure()`` on two threads from a cold registry state.
 
     Returns the list of per-thread results (True on success, or the raised
     exception object) so the caller can assert None raised.
     """
-    # Force a cold start: clear the registry entries and the guard flag.
+    # Force a cold start: clear the registry entries AND the guard flag, so
+    # both threads actually re-enter the bootstrap. (Clearing only the
+    # entries leaves the flag True, which makes ``ensure`` return early and
+    # the race invisible.)
     registry._entries.clear()
-    ensure.__module__  # noqa: B018 — touch to avoid unused-argument lint
+    setattr(guard_module, guard_flag, False)
     results: list[BaseException | bool] = []
     barrier = threading.Barrier(3)  # 2 workers + main
 
@@ -53,7 +56,7 @@ def _cold_start_twice(ensure, registry):
 
 def test_generation_backend_cold_start_race_is_serialized():
     ensure = gen_reg.ensure_backends_registered
-    results = _cold_start_twice(ensure, gen_reg.BACKEND_REGISTRY)
+    results = _cold_start_twice(ensure, gen_reg.BACKEND_REGISTRY, gen_reg, "_backends_registered")
 
     assert len(results) == 2
     for r in results:
@@ -66,7 +69,7 @@ def test_generation_backend_cold_start_race_is_serialized():
 
 def test_export_backend_cold_start_race_is_serialized():
     ensure = export_reg.ensure_exporters_registered
-    results = _cold_start_twice(ensure, export_reg.EXPORT_REGISTRY)
+    results = _cold_start_twice(ensure, export_reg.EXPORT_REGISTRY, export_reg, "_exporters_registered")
 
     assert len(results) == 2
     for r in results:
@@ -78,7 +81,7 @@ def test_export_backend_cold_start_race_is_serialized():
 
 def test_peft_method_cold_start_race_is_serialized():
     ensure = peft_reg.ensure_methods_registered
-    results = _cold_start_twice(ensure, peft_reg.PEFT_REGISTRY)
+    results = _cold_start_twice(ensure, peft_reg.PEFT_REGISTRY, peft_reg, "_methods_registered")
 
     assert len(results) == 2
     for r in results:
