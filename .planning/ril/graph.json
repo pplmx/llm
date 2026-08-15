@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 51,
+  "round": 52,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T00:25:23+00:00",
+  "updated_at": "2026-08-15T00:37:16+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5768,7 +5768,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:28:25+00:00",
       "updated_at": "2026-08-14T15:28:25+00:00",
-      "touched_round": 50,
+      "touched_round": 52,
       "severity": 0.4,
       "title": "speculative acceptance ratio scores against the full-softmax distribution while the draft sampled from a top-k/top-p-truncated one",
       "summary": "speculative.py computes q_draft = softmax(draft_penalized/temperature) over the FULL vocab and ratio = q_target/q_draft, but draft proposals come from sample_next_token(..., top_k, top_p). With top_p/top_k set, accepted tokens are scored against probabilities of tokens the draft could never propose, so the output distribution diverges from EagerGenerationBackend with identical params (medium confidence; some impls accept the approximation). Verify before acting."
@@ -5776,10 +5776,10 @@
     "ISS-100": {
       "id": "ISS-100",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-14T15:28:26+00:00",
-      "updated_at": "2026-08-14T15:28:26+00:00",
+      "updated_at": "2026-08-15T00:36:44+00:00",
       "touched_round": 51,
       "severity": 0.4,
       "title": "eager prefill shrink lets decode over-run max_seq_len when max_new_tokens >= max_seq_len",
@@ -5922,18 +5922,66 @@
     "TASK-088": {
       "id": "TASK-088",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-15T00:25:16+00:00",
-      "updated_at": "2026-08-15T00:25:23+00:00",
+      "updated_at": "2026-08-15T00:36:44+00:00",
       "touched_round": 51,
       "category": "correctness",
       "severity": 0.4,
       "confidence": 0.9,
       "effort": 0.2,
-      "title": "stream_generate/batch_generate raise up-front ValueError when max_new_tokens >= max_seq_len (mirror serving guard; avoid cache-overflow crash)",
+      "title": "stream_generate/batch_generate raise up-front ValueError when max_new_tokens >= max_seq_len (mirror serving guard; avoid cache-overflow crash)"
+    },
+    "CHG-092": {
+      "id": "CHG-092",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:35:58+00:00",
+      "updated_at": "2026-08-15T00:35:58+00:00",
+      "touched_round": 51,
+      "commit": "423c229",
+      "title": "stream/batch_generate up-front max_new_tokens >= max_seq_len ValueError guard (TASK-088)"
+    },
+    "EV-121": {
+      "id": "EV-121",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:36:20+00:00",
+      "updated_at": "2026-08-15T00:36:20+00:00",
+      "touched_round": 51,
+      "source": "423c229",
+      "title": "Repro: with max_seq_len=16, stream_generate and batch_generate both crash (Sequence endpoint 17 exceeds max) when max_new_tokens=16; guard raises ValueError before prefill; serving tier had the same guard",
+      "confidence": 1.0
+    },
+    "DEC-033": {
+      "id": "DEC-033",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T00:36:35+00:00",
+      "updated_at": "2026-08-15T00:36:35+00:00",
+      "touched_round": 51,
+      "rationale": "batch_generate with max_new_tokens >= max_seq_len crashes on any real model (decode over-runs context); the previous truncate_len <= 0 'support' was only reachable via a mock. Guard both library entry points with up-front ValueError mirroring the serving tier (generation_service._generation_config), keeping the truncation branch only for models without a max_seq_len attr.",
+      "alternatives_rejected": "(1) guard stream_generate only — leaves a crash at batch_generate; (2) silently clamp max_new_tokens — hides misconfig instead of failing fast; (3) keep mock-only branch — tests a crash path 'for coverage'"
+    },
+    "TASK-089": {
+      "id": "TASK-089",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T00:37:08+00:00",
+      "updated_at": "2026-08-15T00:37:16+00:00",
+      "touched_round": 52,
+      "category": "correctness",
+      "severity": 0.4,
+      "confidence": 0.5,
+      "effort": 0.5,
+      "title": "speculative acceptance ratio must use the same top-k/top-p-filtered distributions the draft/target actually sample from (ISS-99); verify divergence first",
       "lock_owner": "claude-session",
-      "lock_until": "2026-08-15T00:55:23+00:00"
+      "lock_until": "2026-08-15T01:07:16+00:00"
     }
   },
   "edges": [
@@ -8619,6 +8667,24 @@
       "to": "ISS-100",
       "type": "addresses",
       "created_at": "2026-08-15T00:25:23+00:00"
+    },
+    {
+      "from": "CHG-092",
+      "to": "ISS-100",
+      "type": "resolves",
+      "created_at": "2026-08-15T00:36:20+00:00"
+    },
+    {
+      "from": "CHG-092",
+      "to": "TASK-088",
+      "type": "implements",
+      "created_at": "2026-08-15T00:36:20+00:00"
+    },
+    {
+      "from": "TASK-089",
+      "to": "ISS-99",
+      "type": "addresses",
+      "created_at": "2026-08-15T00:37:16+00:00"
     }
   ]
 }

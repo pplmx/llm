@@ -247,6 +247,64 @@ def test_speculative_stochastic_rejection_preserves_target_distribution():
     assert float((empirical - expected).abs().max()) < 0.08
 
 
+def test_speculative_top_k_acceptance_uses_filtered_distributions():
+    """The acceptance ratio must be scored against the **filtered** target/draft
+    distributions the samplers actually draw from (ISS-99).
+
+    With ``top_k=1`` the draft proposes its argmax token (token 1, q_log[1]=3.0)
+    with probability 1, and the target's filtered distribution is a one-hot on
+    its own argmax (token 0). Since the proposal token is NOT the target's
+    argmax, the correct acceptance probability is ``min(1, p_filtered/q_filtered)
+    = min(1, 0/1) = 0``.
+
+    The bug: ``_verify_speculative_tokens`` scores the ratio against the
+    *unfiltered* full-vocab softmax, where ``p[1] ≈ 0.113`` and ``q[1] ≈ 0.859``,
+    so it accepts the divergent token with probability ≈ 0.13 — a measurable
+    departure from the target (eager-equivalent) distribution.
+    """
+    from llm.generation.speculative import _verify_speculative_tokens
+
+    torch.manual_seed(0)
+    vocab = 8
+    # Target prefers token 0; token 1 (the draft's top pick) is a long tail.
+    p_log = torch.full((vocab,), 0.0, device=DEFAULT_DEVICE)
+    p_log[0] = 3.0
+    p_log[1] = 1.2
+    # Draft strongly prefers token 1, which the target rates low.
+    q_log = torch.full((vocab,), -1.0, device=DEFAULT_DEVICE)
+    q_log[0] = 0.1
+    q_log[1] = 3.0
+    target = _ConstLogitsModel(p_log)
+    draft = _ConstLogitsModel(q_log)
+
+    # Sanity: under the unfiltered softmax the draft would accept ~13% of the
+    # time (the buggy behaviour); the correct filtered theory is 0.
+    unfiltered_ratio = (torch.softmax(p_log, -1)[1] / torch.softmax(q_log, -1)[1]).item()
+    assert 0.05 < unfiltered_ratio < 0.3, f"unexpected unfiltered ratio {unfiltered_ratio}"
+    p_accept_theory = 0.0  # top_k=1: proposal (1) has p_filtered = 0
+
+    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long, device=DEFAULT_DEVICE)
+    n = 2000
+    accepted = 0
+    for _ in range(n):
+        accept_count, _ = _verify_speculative_tokens(
+            target,
+            draft,
+            prompt,
+            [1],
+            temperature=1.0,
+            top_k=1,
+            top_p=None,
+        )
+        accepted += int(accept_count == 1)
+
+    empirical = accepted / n
+    assert abs(empirical - p_accept_theory) < 0.04, (
+        f"top_k=1 acceptance {empirical:.3f} should match filtered theory "
+        f"{p_accept_theory} but scores against the unfiltered distribution"
+    )
+
+
 def test_speculative_greedy_rejection_uses_target_argmax():
     """A greedy rejection emits the target's argmax at the rejection
     position — not the argmax of the logit difference.

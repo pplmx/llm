@@ -32,6 +32,7 @@ from llm.generation.sampling import (
     apply_presence_penalty,
     apply_repetition_penalty,
     sample_next_token,
+    sampling_probs,
 )
 from llm.models.decoder import DecoderModel
 
@@ -140,17 +141,22 @@ def _verify_speculative_tokens(
         [_apply_penalties(relevant[i], full_ids[: context_len + i]) for i in range(gamma + 1)]
     )
 
-    # The "target prob of draft token at position i" is
-    # softmax(target_penalized[i])[draft_tokens[i]]. We use the same
-    # temperature scaling as the sample function so the acceptance
-    # ratio is well-defined.
+    # The "target prob of draft token at position i" is the prob under
+    # the distribution the *sampler* would draw from at that position.
+    # ``sample_next_token`` applies top-k/top-p filtering on top of
+    # temperature scaling, so scoring the acceptance ratio against a raw
+    # full-vocab softmax would make the accepted-token set diverge from
+    # the eager backend's output (RIL ISS-99) — e.g. it could accept a
+    # token top-k would have masked. Use the exact filtered distribution
+    # via ``sampling_probs`` (same helper as ``sample_next_token``) for
+    # both the target and the draft.
     target_relevant = target_penalized[:gamma]  # only the draft-token positions
     if temperature == 0:
         # Greedy: always accept tokens whose argmax matches.
         target_argmax = target_relevant.argmax(dim=-1)
         accepted = (target_argmax == torch.tensor(draft_tokens, device=device)).tolist()
     else:
-        target_probs = torch.softmax(target_relevant / temperature, dim=-1)
+        target_probs = sampling_probs(target_relevant, temperature=temperature, top_k=top_k, top_p=top_p)
         draft_tensor_dev = torch.tensor(draft_tokens, device=device)
         q_target = target_probs[torch.arange(gamma, device=device), draft_tensor_dev]
 
@@ -165,7 +171,7 @@ def _verify_speculative_tokens(
         draft_penalized = torch.stack(
             [_apply_penalties(draft_relevant[i], full_ids[: context_len + i]) for i in range(gamma)]
         )
-        draft_probs = torch.softmax(draft_penalized / temperature, dim=-1)
+        draft_probs = sampling_probs(draft_penalized, temperature=temperature, top_k=top_k, top_p=top_p)
         q_draft = draft_probs[torch.arange(gamma, device=device), draft_tensor_dev]
 
         # Acceptance ratio: clip to avoid div-by-zero / numerical

@@ -200,17 +200,32 @@ def apply_logit_bias(
     return adjusted
 
 
-def sample_next_token(
+def sampling_probs(
     logits: torch.Tensor,
     *,
     temperature: float = 1.0,
     top_k: int | None = None,
     top_p: float | None = None,
-) -> int:
-    """Sample one token id from 1D logits."""
-    if temperature == 0:
-        return int(torch.argmax(logits, dim=-1).item())
+) -> torch.Tensor:
+    """Return the exact softmax distribution ``sample_next_token`` draws from.
 
+    Applies temperature scaling, top-k and top-p filtering identically to
+    :func:`sample_next_token` and returns the full-vocab probability vector
+    (masked-out tokens carry zero mass). Used by speculative decoding to
+    score acceptance ratios against the **same filtered distributions** the
+    draft/target samplers actually propose from — scoring against the raw
+    full-vocab softmax would make the accepted-token set diverge from the
+    eager backend's output (RIL ISS-99).
+
+    Args:
+        logits: 1D ``[vocab_size]`` logits. Not mutated.
+        temperature: Sampling temperature. Must be non-zero — the
+            caller handles the ``temperature == 0`` (greedy) case via
+            ``argmax``.
+        top_k: Top-k filter; only the ``top_k`` largest logits survive.
+        top_p: Nucleus filter; the smallest tokens whose cumulative
+            probability exceeds ``top_p`` are masked out.
+    """
     next_logits = logits / temperature
 
     if top_k is not None:
@@ -228,5 +243,24 @@ def sample_next_token(
         next_logits = next_logits.clone()
         next_logits[sorted_indices[sorted_indices_to_remove]] = -float("inf")
 
-    probs = torch.softmax(next_logits, dim=-1)
+    return torch.softmax(next_logits, dim=-1)
+
+
+def sample_next_token(
+    logits: torch.Tensor,
+    *,
+    temperature: float = 1.0,
+    top_k: int | None = None,
+    top_p: float | None = None,
+) -> int:
+    """Sample one token id from 1D logits."""
+    if temperature == 0:
+        return int(torch.argmax(logits, dim=-1).item())
+
+    probs = sampling_probs(
+        logits,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
+    )
     return int(torch.multinomial(probs, num_samples=1).item())
