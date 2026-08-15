@@ -6,7 +6,8 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncGenerator
-from typing import Annotated
+from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
@@ -80,6 +81,96 @@ def _require_generation_service():
     if generation_service is None:
         raise RuntimeError("Generation service not initialized")
     return generation_service
+
+
+# Own thread pool for the streaming bridge instead of ``asyncio.to_thread``:
+# ``asyncio.to_thread`` uses the loop's default executor, and
+# ``asyncio.run``'s ``shutdown_default_executor`` JOINS it — a stalled
+# stream's abandoned ``next()`` would then block the whole test/CLI teardown
+# for the duration of the stall. A module-level executor is never joined by
+# the loop, and abandoned threads are free to finish (and release the sync
+# generator's slot) on their own.
+_sync_stream_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="llm-sync-stream")
+
+
+def _close_sync_iterator(iterator: Any) -> None:
+    """Best-effort ``close()`` of a sync generator (its ``finally`` reap).
+
+    ``close()`` cannot interrupt an executing generator (``ValueError``) and
+    is a no-op on an exhausted one (``StopIteration``) — both are fine, the
+    slot is released exactly when the generator leaves its yield point.
+    """
+    with contextlib.suppress(StopIteration, ValueError, RuntimeError):
+        iterator.close()
+
+
+async def _drive_sync_iterator(iterator):
+    """Yield from ``iterator`` (a sync generator) off the event loop, and
+    CLOSE it the moment the async consumer abandons it.
+
+    Starlette's ``iterate_in_threadpool`` never closes the sync generator
+    when the async consumer stops pulling (idle timeout / disconnect), so a
+    timeout-aborted stream leaves the engine's ``stream_request`` generator
+    suspended mid-generation — holding its KV/scheduler slot and burning
+    forward passes until the async generator is finally GC'd (RIL ISS-122,
+    F2). This adapter guarantees the sync generator's ``finally`` reap runs
+    as soon as the consumer walks away.
+
+    Cancelling the awaiting task does NOT stop the worker thread: the
+    in-flight ``next()`` is a bounded engine step. A done-callback on that
+    future closes the generator as soon as the step returns (in the worker
+    thread itself), so the reap is prompt and does not depend on the event
+    loop staying alive. The 504/error response is never blocked waiting for
+    the stalled forward.
+
+    Yields each chunk. Raises ``StopAsyncIteration`` at exhaustion and
+    propagates the worker exception (or ``CancelledError`` after the close
+    has been scheduled).
+    """
+    from concurrent.futures import Future
+
+    pending: Future | None = None
+
+    def _next() -> tuple[bool, Any]:
+        # Convert StopIteration into a sentinel result: raw StopIteration
+        # cannot propagate through a Future ("interacts badly with
+        # generators").
+        try:
+            return False, next(iterator)
+        except StopIteration:
+            return True, None
+
+    def _abandon() -> None:
+        # Arranges the close to run exactly when the in-flight next() in the
+        # worker thread returns. A raw concurrent.futures done-callback fires
+        # from the worker thread itself, so the reap does NOT depend on the
+        # event loop staying alive (the route teardown / asyncio.run may have
+        # already closed it).
+        if pending is None or pending.done():
+            _close_sync_iterator(iterator)
+        else:
+            pending.add_done_callback(lambda _f: _close_sync_iterator(iterator))
+
+    try:
+        while True:
+            pending = _sync_stream_executor.submit(_next)
+            wrapped = asyncio.wrap_future(pending)
+            try:
+                exhausted, chunk = await asyncio.shield(wrapped)
+            except asyncio.CancelledError, GeneratorExit:
+                # Consumer gave up (idle timeout / disconnect / route teardown).
+                # Reap the generator once the abandoned forward returns; the
+                # error response is not held up by it.
+                _abandon()
+                raise
+            if exhausted:
+                return
+            yield chunk
+    finally:
+        # Belt-and-suspenders: if the consumer drops this async generator
+        # without a cancellation (plain GC of the bridge), close the sync
+        # iterator here too.
+        _close_sync_iterator(iterator)
 
 
 def _validate_prompt_encodable(prompt: str) -> None:
@@ -186,8 +277,6 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
     timed_out = False
     with timer as t:
         try:
-            from starlette.concurrency import iterate_in_threadpool
-
             # Acquire the inference semaphore for the *lifetime of the
             # stream*, exactly like the chat streaming route does. The
             # original concurrency-control fix (RIL ISS-036) scoped the
@@ -211,7 +300,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                         stop=request.stop,
                     )
                     timeout_s = config.request_timeout if config is not None else 60.0
-                    async_chunks = iterate_in_threadpool(iterator)
+                    async_chunks = _drive_sync_iterator(iterator)
                     while True:
                         try:
                             async with asyncio.timeout(timeout_s):
@@ -220,9 +309,12 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                             break
                         except TimeoutError:
                             # No token for the whole window — abort the stream
-                            # and release the semaphore slot. (Cancelling the
-                            # threadpool await frees the slot; the orphaned
-                            # sync generator finishes on its own thread.)
+                            # and release the semaphore slot.
+                            # ``_drive_sync_iterator`` closes the abandoned
+                            # sync generator in the background so
+                            # ``stream_request``'s finally-reap (scheduler
+                            # remove + slot release) runs promptly instead of
+                            # at asyncgen GC (RIL ISS-122).
                             timed_out = True
                             t.set_status(504)
                             yield "Error: stream timed out (no tokens for the request_timeout window)"

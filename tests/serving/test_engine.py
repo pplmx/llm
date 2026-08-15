@@ -1130,6 +1130,65 @@ def test_engine_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device, mock
     assert engine.scheduler.get_sequence("ok") is not None
 
 
+def test_engine_rejects_duplicate_request_id_with_different_content(tiny_model, device, mock_tokenizer):
+    """RIL ISS-123/F3: a *distinct* request reusing an active request_id must
+    be rejected at add_request.
+
+    The slot allocator keys KV slots by request_id, so two different requests
+    claiming the same id would both allocate the SAME slot — their K/V and
+    generated tokens contaminate each other, and when the first finishes a
+    ``free()`` returns the second's still-live slot to the free pool.
+    """
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    req_a = GenerationRequest(prompt="hello", max_new_tokens=3)
+    req_a.request_id = "shared-id"
+    engine.add_request(req_a)
+
+    # Different prompt, same request_id -> genuine cross-request collision.
+    req_b = GenerationRequest(prompt="different content", max_new_tokens=3)
+    req_b.request_id = "shared-id"
+    with pytest.raises(ValueError, match="already in use"):
+        engine.add_request(req_b)
+
+    # A request_id whose holder has already FINISHED is free to be reused.
+    req_a_seq = engine.scheduler.get_sequence("shared-id")
+    req_a_seq.status = RequestState.FINISHED
+    req_c = GenerationRequest(prompt="after finish", max_new_tokens=3)
+    req_c.request_id = "shared-id"
+    engine.add_request(req_c)
+    assert engine.scheduler.get_sequence("shared-id") is not None
+
+
+def test_engine_allows_double_add_of_same_logical_request(tiny_model, device, mock_tokenizer):
+    """RIL ISS-123/F3 guard must NOT break the double-add contract: the
+    engine re-adds the SAME request inside ``generate_request`` ->
+    ``stream_request``, and the reap loop explicitly removes every copy.
+    An id re-add with *identical* content is the same logical request and must
+    be accepted."""
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    req = GenerationRequest(prompt="hello", max_new_tokens=2)
+    req.request_id = "double-same"
+    # Both adds carry identical content -> both permitted (double-add contract).
+    engine.add_request(req)
+    result = engine.generate_request(req)
+    assert isinstance(result, str)
+    assert engine.scheduler.get_sequence("double-same") is None  # was reaped
+
+
 def test_engine_paged_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device, mock_tokenizer):
     """Same rejection on the paged-attention path (the guard lives in
     add_request, before any forward touches the block cache)."""

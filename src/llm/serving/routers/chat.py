@@ -20,6 +20,7 @@ from llm.serving.config import ServingConfig
 from llm.serving.errors import APIError, ErrorCode
 from llm.serving.metrics import METRICS, ServingMetrics
 from llm.serving.routers.generate import (
+    _drive_sync_iterator,
     _sync_generate,
     _sync_stream_generate,
 )
@@ -184,8 +185,6 @@ async def _chat_stream_generator(
     logit_bias: dict[str, float] | None,
 ) -> AsyncGenerator[str]:
     """Generate SSE stream for chat completions."""
-    from starlette.concurrency import iterate_in_threadpool
-
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     created = int(time.time())
 
@@ -233,7 +232,7 @@ async def _chat_stream_generator(
                     # semaphore slot forever — with max_concurrent_requests
                     # stuck chat streams the whole API would stop admitting
                     # new requests.
-                    async_chunks = iterate_in_threadpool(iterator)
+                    async_chunks = _drive_sync_iterator(iterator)
                     while True:
                         try:
                             async with asyncio.timeout(timeout_s):
@@ -246,6 +245,11 @@ async def _chat_stream_generator(
                             # slot. Since SSE has already started the client
                             # gets the in-band error; the timer records 504
                             # so the failure is visible in metrics.
+                            # ``_drive_sync_iterator`` closes the abandoned
+                            # sync generator in the background, so the
+                            # engine's finally-reap frees the KV/scheduler
+                            # slot promptly instead of at asyncgen GC
+                            # (RIL ISS-122).
                             t.set_status(504)
                             timeout_chunk = ChatCompletionChunk(
                                 id=completion_id,

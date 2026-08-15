@@ -1,4 +1,5 @@
 from collections import deque
+from collections.abc import Callable
 from threading import Lock
 
 from llm.serving.schemas import RequestState, Sequence
@@ -49,6 +50,40 @@ class Scheduler:
                     f"Waiting queue full ({len(self.waiting)}/{self.max_waiting}); retry later or increase max_waiting."
                 )
             self.waiting.append(seq)
+
+    def add_sequence_if_not_conflicting(self, seq: Sequence, matches: Callable[[Sequence], bool] | None = None) -> bool:
+        """Add ``seq`` unless an ACTIVE sequence already occupies its request_id.
+
+        Guard for RIL ISS-123: two distinct requests sharing one client
+        request_id hash to the SAME KV slot (``SlotAllocator`` keys slots by
+        request_id), so their K/V and generated tokens contaminate each other
+        and a ``free()`` by either returns the other's live slot to the pool.
+
+        The engine's internal *double-add* contract (``generate_request`` ->
+        ``stream_request`` re-adding the SAME logical request so the reap loop
+        can remove every copy) stays intact: when an ``matches`` callback is
+        supplied, a duplicate whose content equals the active holder is
+        allowed (it is the same request re-added). By default (no callback)
+        ANY active duplicate is rejected.
+
+        Returns ``True`` when the sequence was enqueued, ``False`` when it was
+        rejected as a conflicting duplicate.
+
+        Raises:
+            RuntimeError: If the waiting queue is at capacity.
+        """
+        with self._lock:
+            for s in list(self.running) + list(self.waiting):
+                if s.request_id == seq.request_id and not s.is_finished():
+                    if matches is not None and matches(s):
+                        continue  # same logical request re-added — permit
+                    return False
+            if len(self.waiting) >= self.max_waiting:
+                raise RuntimeError(
+                    f"Waiting queue full ({len(self.waiting)}/{self.max_waiting}); retry later or increase max_waiting."
+                )
+            self.waiting.append(seq)
+            return True
 
     def schedule(self) -> list[Sequence]:
         """

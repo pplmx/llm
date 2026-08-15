@@ -363,7 +363,39 @@ class ContinuousBatchingEngine:
             logit_bias=request.logit_bias,
             stop=request.stop,
         )
-        self.scheduler.add_sequence(seq)
+
+        # Reject a *different* request that reuses an active request_id (RIL
+        # ISS-123/F3). The slot allocator keys KV slots by request_id, so two
+        # distinct requests claiming the same id would both write into the
+        # same slot — cross-request contamination plus a freed-slot reuse when
+        # the first finishes. We must NOT reject unconditionally: the engine's
+        # own ``generate_request`` -> ``stream_request`` re-adds the SAME
+        # logical request (double-add contract), and the streaming reap loop
+        # explicitly removes every copy. Only a request whose content differs
+        # from the active holder's is a genuine collision.
+        if request.request_id is not None:
+            added = self.scheduler.add_sequence_if_not_conflicting(
+                seq,
+                matches=lambda existing: (
+                    existing.prompt == seq.prompt
+                    and existing.max_new_tokens == seq.max_new_tokens
+                    and existing.temperature == seq.temperature
+                    and existing.top_k == seq.top_k
+                    and existing.top_p == seq.top_p
+                    and existing.repetition_penalty == seq.repetition_penalty
+                    and existing.frequency_penalty == seq.frequency_penalty
+                    and existing.presence_penalty == seq.presence_penalty
+                    and existing.logit_bias == seq.logit_bias
+                    and existing.stop == seq.stop
+                ),
+            )
+            if not added:
+                raise ValueError(
+                    f"request_id '{req_id}' is already in use by a different active "
+                    "request; duplicate request ids would share one KV slot"
+                )
+        else:
+            self.scheduler.add_sequence(seq)
         return req_id
 
     def _emit_tokens(
