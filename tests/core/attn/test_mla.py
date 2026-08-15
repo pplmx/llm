@@ -139,6 +139,31 @@ def test_mla_norm_first():
     assert output.shape == input_tensor.shape
 
 
+def test_mla_plain_sublayer_without_norm_residual():
+    """RIL ISS-139: with ``include_norm_residual=False`` (what the
+    TransformerBlock passes for a plain sublayer), MLA must NOT own a norm
+    or apply an internal residual — the block adds the residual. Before the
+    fix MLA always built ``self.norm`` and applied an internal norm+residual,
+    so the block's residual was DOUBLED and the already-normalized input was
+    normalized AGAIN."""
+    mla = MultiLatentAttention(
+        hidden_size=32, num_heads=4, num_latents=8, include_norm_residual=False, norm_first=False
+    ).to(DEFAULT_DEVICE)
+    assert mla.norm is None, "plain sublayer must not own a norm"
+    x = torch.randn(2, 8, 32, device=DEFAULT_DEVICE)
+    out = mla(x)
+    assert out.shape == x.shape
+
+
+def test_mla_norm_owned_only_when_include_norm_residual():
+    """When ``include_norm_residual=True`` MLA owns the norm (the previous
+    behavior is preserved for direct users)."""
+    mla = MultiLatentAttention(
+        hidden_size=32, num_heads=4, num_latents=8, include_norm_residual=True, norm_first=True
+    ).to(DEFAULT_DEVICE)
+    assert mla.norm is not None
+
+
 # --- KV cache forward path (T3 #31) --------------------------------------
 #
 # These tests verify the placeholder MLA + KV-cache contract:

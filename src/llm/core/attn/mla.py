@@ -91,8 +91,13 @@ class MultiLatentAttention(nn.Module):
         self.dropout_p = p
         self.include_norm_residual = include_norm_residual
 
-        # Layer Normalization - shared for all attention operations
-        self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs)
+        # Layer Normalization - shared for all attention operations.
+        # Only built when this module OWNS the norm+residual (the block passes
+        # include_norm_residual=False, expecting a plain sublayer — MHA
+        # mirrors this by leaving self.norm None). When False, MLA must NOT
+        # apply an internal norm/residual; the block adds the residual (RIL
+        # ISS-139, double-norm regression otherwise).
+        self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs) if include_norm_residual else None
 
         # Learnable latent vectors - initialized directly with normal distribution
         self.latents = nn.Parameter(torch.randn(1, num_latents, self.latent_dim, **factory_kwargs) * 0.02)
@@ -263,8 +268,9 @@ class MultiLatentAttention(nn.Module):
         # Get shape parameters once
         batch_size, seq_len = hidden_states.shape[:2]
 
-        # Apply Layer Normalization if Pre-LN architecture
-        if self.norm_first:
+        # Pre-LN norm only when this module owns the norm+residual (the block
+        # passes include_norm_residual=False for a plain sublayer).
+        if self.include_norm_residual and self.norm is not None and self.norm_first:
             hidden_states = self.norm(hidden_states)
 
         # Project input to key-value pairs in a single operation
@@ -373,12 +379,13 @@ class MultiLatentAttention(nn.Module):
         output = self.out_proj(output)
         output = self.dropout(output)
 
-        # Add residual connection
-        output = output + residual
-
-        # Apply Layer Normalization if Post-LN architecture
-        if not self.norm_first:
-            output = self.norm(output)
+        # Residual + Post-LN only when this module owns the norm+residual (the
+        # block passes include_norm_residual=False for a plain sublayer; adding
+        # a residual here would double it, RIL ISS-139).
+        if self.include_norm_residual and self.norm is not None:
+            output = output + residual
+            if not self.norm_first:
+                output = self.norm(output)
 
         # Match the MHA contract:
         # - paged path returns the output tensor directly (the cache is

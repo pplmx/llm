@@ -204,3 +204,17 @@ class TestConfig:
         assert config.attn_impl == "flash_attn"
         # ``use_kv_cache`` is accepted because flash_attn declared its
         # capability at import time.
+
+    def test_model_config_rejects_rope_for_mla(self):
+        """RIL ISS-140: ``use_rope=True`` with ``attn_impl='mla'`` is
+        rejected at config time. MLA's static-latent-query scheme performs no
+        positional encoding, and its ``**`` catch-all silently swallowed the
+        RoPE kwargs — a config validated, the model built, and the position
+        encoding was simply ABSENT (silently wrong). Refuse loudly."""
+        with pytest.raises(ValueError, match="use_rope"):
+            ModelConfig(attn_impl="mla", use_rope=True)
+
+    def test_model_config_accepts_rope_for_mha(self):
+        """RoPE is a first-class option for MHA."""
+        config = ModelConfig(attn_impl="mha", use_rope=True, use_kv_cache=True)
+        assert config.use_rope is True

@@ -86,6 +86,20 @@ class ModelConfig(BaseModel):
                 f"(capability=False). Set model.use_kv_cache=False or switch "
                 f"to an attention impl that supports KV cache (currently: mha)."
             )
+
+        # RoPE is only wired into the MHA and flash_attn backends (the block
+        # threads the kwargs; the kernels rotate Q/K by head position). MLA's
+        # static-latent-query scheme performs no positional encoding, and its
+        # ``**`` catch-all used to SILENTLY swallow ``use_rope=True`` — the
+        # config validated, the model built, and the position encoding was
+        # simply absent (RIL ISS-140). Refuse loudly instead of running a
+        # silently wrong model.
+        if self.use_rope and self.attn_impl not in ("mha", "flash_attn"):
+            raise ValueError(
+                f"attn_impl='{self.attn_impl}' does not support use_rope=True. "
+                f"RoPE is wired for 'mha' and 'flash_attn' only; switch "
+                f"attn_impl or set model.use_rope=False."
+            )
         return self
 
 
