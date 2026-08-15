@@ -722,6 +722,43 @@ def test_abandoned_stream_request_releases_slot_and_sequence(tiny_model, device,
     assert engine.scheduler.get_sequence("req-abandon") is None, "abandoned sequence must be reaped"
 
 
+def test_abandoned_stream_removes_under_step_lock(tiny_model, device, mock_tokenizer):
+    """Regression (RIL ISS-117): the abandoned-generator cleanup mutates the
+    scheduler's live ``running`` list, so ``scheduler.remove`` must run under
+    the engine's ``_step_lock`` — otherwise it races with ``_lock_step_pre``
+    iterating that list in a concurrent ``step()`` (a mid-iteration pop
+    silently skips/duplicates a sequence)."""
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    req = GenerationRequest(prompt="abcd", max_new_tokens=100)
+    req.request_id = "req-abandon-lock"
+    gen = engine.stream_request(req)
+    next(gen)
+
+    locked_observations: list[bool] = []
+    orig_remove = engine.scheduler.remove
+
+    def locked_remove(request_id):
+        locked_observations.append(engine._step_lock.locked())
+        return orig_remove(request_id)
+
+    engine.scheduler.remove = locked_remove  # type: ignore[method-assign]
+    try:
+        gen.close()
+    finally:
+        engine.scheduler.remove = orig_remove
+
+    assert locked_observations, "scheduler.remove should have been called on abandonment"
+    assert all(locked_observations), "scheduler.remove must run while _step_lock is held"
+
+
 def test_persistent_forward_failure_does_not_livelock_engine(tiny_model, device, mock_tokenizer):
     """Regression (RIL ISS-051): a request whose forward persistently fails
     (OOM / bad token id / shape mismatch) must be dropped, not re-scheduled

@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 56,
+  "round": 57,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T03:07:57+00:00",
+  "updated_at": "2026-08-15T03:32:01+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 55,
+      "touched_round": 57,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -6638,6 +6638,94 @@
       "touched_round": 56,
       "commit": "62928ad",
       "title": "chat whitespace preservation + finish_reason length/stop (TASK-102)"
+    },
+    "ISS-116": {
+      "id": "ISS-116",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:32:01+00:00",
+      "touched_round": 57,
+      "severity": 0.35,
+      "title": "ppo_trainer rollout EOS early-stop is dead code (hasattr 'eos_id' but tokenizers expose eos_token_id); rollouts run to full length with post-EOS junk folded into training"
+    },
+    "ISS-117": {
+      "id": "ISS-117",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:32:01+00:00",
+      "touched_round": 57,
+      "severity": 0.3,
+      "title": "stream_request finally calls scheduler.remove() OUTSIDE _step_lock — races with _lock_step_pre iterating the live running list (regression from ISS-105 fix); silently skips/duplicates a step under client disconnect"
+    },
+    "ISS-118": {
+      "id": "ISS-118",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:32:01+00:00",
+      "touched_round": 57,
+      "severity": 0.25,
+      "title": "PPO KL-penalty window unshifted vs policy-loss shift_response_mask — one-position ahead of token alignment (small systematic bias)"
+    },
+    "ISS-119": {
+      "id": "ISS-119",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:32:01+00:00",
+      "touched_round": 57,
+      "severity": 0.2,
+      "title": "registry ensure_backends_registered non-atomic check-then-act; concurrent cold-start get_generation_backend could double-register (latent, single caller today)"
+    },
+    "TASK-103": {
+      "id": "TASK-103",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:32:01+00:00",
+      "touched_round": 57,
+      "category": "correctness",
+      "severity": 0.35,
+      "confidence": 0.9,
+      "effort": 0.2,
+      "title": "ppo_trainer EOS early-stop uses eos_token_id (fix dead hasattr('eos_id') guard)"
+    },
+    "TASK-104": {
+      "id": "TASK-104",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:32:01+00:00",
+      "touched_round": 57,
+      "category": "stability",
+      "severity": 0.3,
+      "confidence": 0.8,
+      "effort": 0.2,
+      "title": "stream_request finally must hold _step_lock around scheduler.remove() to serialize with step iterations",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T04:02:01+00:00"
+    },
+    "TASK-105": {
+      "id": "TASK-105",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T03:32:01+00:00",
+      "updated_at": "2026-08-15T03:32:01+00:00",
+      "touched_round": 57,
+      "category": "correctness",
+      "severity": 0.25,
+      "confidence": 0.9,
+      "effort": 0.25,
+      "title": "PPO KL-penalty mask aligned with policy loss shift (one-position fix)"
     }
   },
   "edges": [
@@ -9581,6 +9669,30 @@
       "to": "TASK-102",
       "type": "implements",
       "created_at": "2026-08-15T03:07:56+00:00"
+    },
+    {
+      "from": "TASK-103",
+      "to": "ISS-116",
+      "type": "addresses",
+      "created_at": "2026-08-15T03:32:01+00:00"
+    },
+    {
+      "from": "TASK-104",
+      "to": "ISS-117",
+      "type": "addresses",
+      "created_at": "2026-08-15T03:32:01+00:00"
+    },
+    {
+      "from": "TASK-105",
+      "to": "ISS-118",
+      "type": "addresses",
+      "created_at": "2026-08-15T03:32:01+00:00"
+    },
+    {
+      "from": "ISS-119",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-15T03:32:01+00:00"
     }
   ]
 }

@@ -494,8 +494,16 @@ class ContinuousBatchingEngine:
             # freed (normal completion, stop-halt, forward failure). Loop
             # because a caller may have added the request twice (a stray
             # ``add_request`` before streaming) — every copy must be reaped.
-            while self.scheduler.remove(req_id) is not None:
-                with self._step_lock:
+            #
+            # ``scheduler.remove`` mutates the LIVE ``running``/``waiting``
+            # lists, so it MUST run under ``_step_lock`` like every other
+            # engine mutation — otherwise it races with ``_lock_step_pre``
+            # iterating the ``running`` list a concurrent ``step()`` returned,
+            # and the mid-iteration pop silently skips/duplicates a sequence
+            # for that step (RIL ISS-117, a regression the ISS-105 fix
+            # originally left un-serialized).
+            with self._step_lock:
+                while self.scheduler.remove(req_id) is not None:
                     self._release_request_slot_by_id(req_id)
 
     def generate_request(self, request: GenerationRequest) -> str:
