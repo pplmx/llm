@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 60,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T14:42:17+00:00",
+  "updated_at": "2026-08-15T15:11:30+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6306,11 +6306,11 @@
     "TASK-096": {
       "id": "TASK-096",
       "type": "task",
-      "status": "abandoned",
-      "version": 4,
+      "status": "resolved",
+      "version": 5,
       "created_at": "2026-08-15T02:01:37+00:00",
-      "updated_at": "2026-08-15T02:06:05+00:00",
-      "touched_round": 55,
+      "updated_at": "2026-08-15T15:10:17+00:00",
+      "touched_round": 60,
       "category": "correctness",
       "severity": 0.4,
       "confidence": 0.9,
@@ -6370,11 +6370,11 @@
     "ISS-109": {
       "id": "ISS-109",
       "type": "issue",
-      "status": "abandoned",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-15T02:02:17+00:00",
-      "updated_at": "2026-08-15T02:06:05+00:00",
-      "touched_round": 55,
+      "updated_at": "2026-08-15T15:10:17+00:00",
+      "touched_round": 60,
       "severity": 0.4,
       "title": "DPO resume rebuilds ref_model as a fresh random copy instead of restoring checkpoint weights (ref stays random on resume)"
     },
@@ -7025,6 +7025,29 @@
       "source": "tests/serving/test_engine.py::test_engine_rejects_duplicate_request_id_with_different_content,tests/serving/test_engine.py::test_engine_allows_double_add_of_same_logical_request",
       "confidence": 1.0,
       "summary": "F3 fixed: distinct-content dup rejected; same-content double-add preserved"
+    },
+    "CHG-114": {
+      "id": "CHG-114",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T15:10:08+00:00",
+      "updated_at": "2026-08-15T15:11:30+00:00",
+      "touched_round": 60,
+      "summary": "DPO ref model now follows the loaded policy: persisted in checkpoint extra_state (get/load_checkpoint_state) and re-synced to the checkpoint-loaded base via new engine on_checkpoint_loaded hook; fixes random-ref on SFT->DPO AND DPO-crash-resume",
+      "commit": "0e183f8"
+    },
+    "EV-143": {
+      "id": "EV-143",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T15:10:08+00:00",
+      "updated_at": "2026-08-15T15:10:08+00:00",
+      "touched_round": 60,
+      "source": "tests/training/tasks/test_dpo_task.py::test_dpo_ref_model_synced_from_loaded_checkpoint,tests/training/tasks/test_dpo_task.py::test_dpo_ref_model_persisted_and_restored",
+      "confidence": 1.0,
+      "summary": "ref == checkpoint-loaded base weights after resume (RED->GREEN); persisted ref restored bit-identical"
     }
   },
   "edges": [
@@ -10156,6 +10179,19 @@
       "to": "TASK-110",
       "type": "implements",
       "created_at": "2026-08-15T14:41:28+00:00"
+    },
+    {
+      "from": "CHG-114",
+      "to": "ISS-109",
+      "type": "resolves",
+      "created_at": "2026-08-15T15:10:17+00:00",
+      "message": "DPO ref follows loaded policy via on_checkpoint_loaded + persisted extra_state; also fixes SFT->DPO random-ref (deep-dive Finding 1)"
+    },
+    {
+      "from": "CHG-114",
+      "to": "TASK-096",
+      "type": "implements",
+      "created_at": "2026-08-15T15:10:17+00:00"
     }
   ]
 }
