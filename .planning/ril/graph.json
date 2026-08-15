@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 59,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T05:20:59+00:00",
+  "updated_at": "2026-08-15T05:23:15+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -6348,10 +6348,10 @@
     "ISS-107": {
       "id": "ISS-107",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-15T02:01:37+00:00",
-      "updated_at": "2026-08-15T02:01:37+00:00",
+      "updated_at": "2026-08-15T05:23:15+00:00",
       "touched_round": 59,
       "severity": 0.3,
       "title": "GradScaler-skipped (inf/NaN) optimizer steps advance global_step + fold NaN into AdaLoRA EMA poisoning future prunes"
@@ -6797,10 +6797,10 @@
     "TASK-106": {
       "id": "TASK-106",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-15T05:17:18+00:00",
-      "updated_at": "2026-08-15T05:20:30+00:00",
+      "updated_at": "2026-08-15T05:23:15+00:00",
       "touched_round": 59,
       "category": "correctness",
       "severity": "high",
@@ -6832,6 +6832,17 @@
       "source": "test_engine_skipped_step_does_not_advance_global_step_or_fire_optimizer_hook (pass)",
       "title": "NaN-gradient steps leave global_step=0 and on_optimizer_step unfired; finite control fires 4x on 4-step epoch",
       "confidence": 1.0
+    },
+    "CHG-108": {
+      "id": "CHG-108",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-15T05:22:47+00:00",
+      "updated_at": "2026-08-15T05:22:47+00:00",
+      "touched_round": 59,
+      "commit": "e1b80bb",
+      "title": "GradScaler-skipped steps no longer advance global_step or poison AdaLoRA EMA"
     }
   },
   "edges": [
@@ -9847,6 +9858,18 @@
       "to": "ISS-107",
       "type": "addresses",
       "created_at": "2026-08-15T05:20:50+00:00"
+    },
+    {
+      "from": "CHG-108",
+      "to": "ISS-107",
+      "type": "resolves",
+      "created_at": "2026-08-15T05:23:08+00:00"
+    },
+    {
+      "from": "CHG-108",
+      "to": "TASK-106",
+      "type": "implements",
+      "created_at": "2026-08-15T05:23:08+00:00"
     }
   ]
 }
