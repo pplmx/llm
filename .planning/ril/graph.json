@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 50,
+  "round": 51,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-14T15:40:39+00:00",
+  "updated_at": "2026-08-15T00:25:23+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5780,7 +5780,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:28:26+00:00",
       "updated_at": "2026-08-14T15:28:26+00:00",
-      "touched_round": 50,
+      "touched_round": 51,
       "severity": 0.4,
       "title": "eager prefill shrink lets decode over-run max_seq_len when max_new_tokens >= max_seq_len",
       "summary": "stream_generate truncates the prompt to keep=max(1, max_seq_len - max_new_tokens)=1 token when max_new_tokens >= max_seq_len, then decodes max_new_tokens steps past the KV-cache bound → Cache overflow ValueError mid-stream (or attention beyond context with use_cache=False). Serving rejects this config up front; library entry points do not guard. Consider an up-front ValueError (note batch_generate deliberately supports it per its truncation test)."
@@ -5918,6 +5918,22 @@
       "touched_round": 50,
       "commit": "7af33d7",
       "title": "fix(eval): LMTask.predict pads to the global max length"
+    },
+    "TASK-088": {
+      "id": "TASK-088",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-15T00:25:16+00:00",
+      "updated_at": "2026-08-15T00:25:23+00:00",
+      "touched_round": 51,
+      "category": "correctness",
+      "severity": 0.4,
+      "confidence": 0.9,
+      "effort": 0.2,
+      "title": "stream_generate/batch_generate raise up-front ValueError when max_new_tokens >= max_seq_len (mirror serving guard; avoid cache-overflow crash)",
+      "lock_owner": "claude-session",
+      "lock_until": "2026-08-15T00:55:23+00:00"
     }
   },
   "edges": [
@@ -8597,6 +8613,12 @@
       "to": "HYP-52",
       "type": "validates",
       "created_at": "2026-08-14T15:40:39+00:00"
+    },
+    {
+      "from": "TASK-088",
+      "to": "ISS-100",
+      "type": "addresses",
+      "created_at": "2026-08-15T00:25:23+00:00"
     }
   ]
 }

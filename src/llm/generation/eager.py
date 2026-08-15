@@ -26,6 +26,24 @@ def _mask_pad_logits(logits: torch.Tensor, pad_token_id: int | None) -> None:
             logits[:, pad_token_id] = -float("inf")
 
 
+def _reject_impossible_context(max_seq_len: int | None, max_new_tokens: int) -> None:
+    """Reject a generation budget that cannot fit in the context window.
+
+    When ``max_new_tokens >= max_seq_len`` there is no room for even a
+    single prompt token plus the requested budget: the prefill is clamped
+    to one token and every decode step over-runs the KV cache (or attends
+    beyond context with ``use_cache=False``), crashing mid-stream with an
+    opaque cache-overflow error. Mirror the serving tier's up-front
+    ``ValueError`` so library callers fail fast with a clear message.
+    """
+    if max_seq_len is not None and max_new_tokens >= max_seq_len:
+        raise ValueError(
+            f"max_new_tokens ({max_new_tokens}) must be less than the model's "
+            f"max_seq_len ({max_seq_len}); the prompt would have no room "
+            "to fit in the context window."
+        )
+
+
 def _normalize_stop(stop: str | list[str] | None) -> list[str] | None:
     """Normalize the OpenAI-compat ``stop`` field to ``list[str] | None``.
 
@@ -76,6 +94,7 @@ def stream_generate(
     """
     model.eval()
     device = next(model.parameters()).device
+    _reject_impossible_context(getattr(model, "max_seq_len", None), max_new_tokens)
     input_ids = tokenizer.encode(prompt)
     input_tensor = torch.tensor(input_ids, dtype=torch.long, device=device).unsqueeze(0)
     max_seq_len = getattr(model, "max_seq_len", 512)
@@ -274,6 +293,7 @@ def batch_generate(
 
     model.eval()
     device = next(model.parameters()).device
+    _reject_impossible_context(getattr(model, "max_seq_len", None), max_new_tokens)
     batch_size = len(prompts)
 
     # Encode all prompts

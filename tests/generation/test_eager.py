@@ -12,7 +12,8 @@ These tests close coverage gaps in:
   ``stream_generate`` (with and without stop sequences, with and
   without KV cache).
 - ``batch_generate``: empty-prompt short-circuit, penalty / logit-bias
-  application, the ``truncate_len <= 0`` branch, and stop-sequence
+  application, the up-front ``max_new_tokens >= max_seq_len`` rejection
+  (shared guard with ``stream_generate``), and stop-sequence
   truncation during the decode loop.
 """
 
@@ -553,6 +554,29 @@ def test_stream_generate_pad_token_id_out_of_bounds(tiny_model):
 # ---------------------------------------------------------------------------
 
 
+def test_stream_generate_rejects_max_new_tokens_at_context(tiny_model):
+    """``max_new_tokens >= max_seq_len`` raises up front instead of crashing
+    with a cache overflow / out-of-context error mid-stream.
+
+    With ``max_seq_len=16`` and ``max_new_tokens=16`` the prefill is clamped
+    to a single token and every decode step still over-runs the KV cache
+    (endpoint 17 > 16). Matching the serving tier's up-front ValueError.
+    """
+    tok = _make_stop_tokenizer(["a", "b", "c", "d", "e"])
+    max_seq = getattr(tiny_model, "max_seq_len", None)
+    assert max_seq == 16
+    with pytest.raises(ValueError, match="max_new_tokens"):
+        list(
+            stream_generate(
+                model=tiny_model,
+                tokenizer=tok(),
+                prompt="p",
+                max_new_tokens=16,
+                temperature=0.0,
+            )
+        )
+
+
 def test_generate_returns_prompt_plus_generated(tiny_model):
     """``generate`` concatenates the prompt with the streamed tokens."""
     tok = _make_stop_tokenizer(["a", "b", "c"])
@@ -740,50 +764,27 @@ def test_batch_generate_empty_prompts_returns_empty():
     assert result == []
 
 
-def test_batch_generate_truncate_len_zero_skips_truncation_branch():
-    """When ``max_new_tokens >= max_seq_len``, ``truncate_len <= 0`` and the
-    truncation block is skipped entirely (covers the ``275->280``
-    branch).
+def test_batch_generate_rejects_max_new_tokens_at_context(tiny_model):
+    """``batch_generate`` mirrors the up-front guard: when
+    ``max_new_tokens >= max_seq_len`` there is no room for even a single
+    prompt token plus the generated budget.
 
-    We use a mock model because ``max_new_tokens >= max_seq_len`` means
-    even a 1-token prompt + ``max_new_tokens`` decode steps would exceed
-    the positional-encoding limit.  The mock lets us verify the code path
-    without the model actually running.
-
-    ``max_seq_len=16``, ``max_new_tokens=16`` → ``truncate_len = 0``.
-    The prefill forward should receive the full untruncated 5-token prompt.
+    Previously this config "worked" only because ``truncate_len <= 0`` skipped
+    the truncation block — on a real model the decode loop then over-ran the
+    context and crashed with ``Sequence endpoint 17 exceeds maximum sequence
+    length 16`` (the old test could only reach that branch via a mock). The
+    guard now fails fast with a clear ValueError, matching ``stream_generate``
+    and the serving tier.
     """
-    mock_model = MagicMock()
-    mock_model.max_seq_len = 16
-    mock_logits = torch.randn(1, 1, 100)
-    mock_model.return_value = (mock_logits, [])
-    # ``next(model.parameters())`` must return a real tensor so
-    # ``.device`` works for tensor creation.  ``next()`` requires an
-    # iterator, so we wrap the list.
-    mock_model.parameters.return_value = iter([torch.nn.Parameter(torch.zeros(1))])
-
-    tok = _CharTokenizer([1, 2, 3, 4, 5])  # 5-token prompt
-
-    with (
-        patch("llm.generation.eager.create_decoder_kv_caches", return_value=[]),
-        patch(
-            "llm.generation.eager.sample_next_token",
-            side_effect=lambda logits, **kw: 1,
-        ),
-    ):
-        result = batch_generate(
-            model=mock_model,
-            tokenizer=tok,
+    tok = _make_stop_tokenizer(["a", "b", "c", "d", "e"])
+    with pytest.raises(ValueError, match="max_new_tokens"):
+        batch_generate(
+            model=tiny_model,
+            tokenizer=tok(),
             prompts=["p"],
             max_new_tokens=16,
             temperature=0.0,
         )
-
-    # The prefill forward (call 0) should have received the full 5-token prompt
-    # — no truncation happened because truncate_len <= 0.
-    prefill_input = mock_model.call_args_list[0].args[0]
-    assert prefill_input.shape[-1] == 5
-    assert len(result) == 1
 
 
 # ---------------------------------------------------------------------------
