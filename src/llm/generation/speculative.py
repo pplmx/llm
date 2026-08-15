@@ -31,6 +31,7 @@ from llm.generation.sampling import (
     apply_logit_bias,
     apply_presence_penalty,
     apply_repetition_penalty,
+    mask_undecodable_logits,
     sample_next_token,
     sampling_probs,
 )
@@ -62,6 +63,7 @@ def _verify_speculative_tokens(
     frequency_penalty: float = 0.0,
     presence_penalty: float = 0.0,
     logit_bias: dict[int, float] | None = None,
+    tokenizer_vocab_size: int | None = None,
 ) -> tuple[int, int | None]:
     """Score ``draft_tokens`` with the target and return (accept_count, bonus).
 
@@ -134,6 +136,12 @@ def _verify_speculative_tokens(
         # ``[T-1, T-1+gamma+1)`` = ``[T-1, T+gamma]`` for a length of
         # ``gamma + 1``.
         relevant = target_logits[0, context_len - 1 : context_len + gamma, :]
+    # Mask any token id the tokenizer cannot decode (the model vocab may
+    # exceed the tokenizer's — padding etc.), so an accepted/bonus token
+    # sampled below is always decodable by the caller (RIL ISS-125). Must
+    # be applied BEFORE the penalty/acceptance math so the scored
+    # distribution still matches what the sampler draws from.
+    mask_undecodable_logits(relevant, tokenizer_vocab_size)
 
     # Row ``i`` uses the context plus the first ``i`` draft tokens as
     # its penalty history; the bonus row (``gamma``) uses everything.
@@ -168,6 +176,7 @@ def _verify_speculative_tokens(
             draft_out = draft(full, kv_caches=None, use_cache=False)
             draft_logits = draft_out[0] if isinstance(draft_out, tuple) else draft_out
         draft_relevant = draft_logits[0, context_len - 1 : context_len + gamma, :]
+        mask_undecodable_logits(draft_relevant, tokenizer_vocab_size)
         draft_penalized = torch.stack(
             [_apply_penalties(draft_relevant[i], full_ids[: context_len + i]) for i in range(gamma)]
         )
@@ -333,6 +342,7 @@ def speculative_generate(
             draft_out = draft(ctx, use_cache=False)
             logits = draft_out[0] if isinstance(draft_out, tuple) else draft_out
             next_logits = logits[0, -1, :]
+            mask_undecodable_logits(next_logits, getattr(tokenizer, "vocab_size", None))
             if repetition_penalty != 1.0:
                 next_logits = apply_repetition_penalty(next_logits, draft_ids, repetition_penalty)
             if frequency_penalty != 0.0:
@@ -365,6 +375,7 @@ def speculative_generate(
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
             logit_bias=logit_bias,
+            tokenizer_vocab_size=getattr(tokenizer, "vocab_size", None),
         )
 
         # 3. Emit accepted tokens + bonus (or correction). The EOS token is

@@ -8,6 +8,7 @@ from llm.generation.sampling import (
     apply_logit_bias,
     apply_presence_penalty,
     apply_repetition_penalty,
+    mask_undecodable_logits,
     sample_next_token,
 )
 from llm.models.decoder import DecoderModel
@@ -120,6 +121,7 @@ def stream_generate(
         next_token_logits = logits[0, -1, :]
 
     _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+    mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     generated_ids = input_ids.copy()
 
@@ -199,6 +201,7 @@ def stream_generate(
             next_token_logits = logits[0, -1, :]
 
         _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+        mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     # Flush any remaining buffered text after the loop ends (e.g. when
     # the buffer never exceeded max_stop_len or no stop sequence was found).
@@ -360,6 +363,7 @@ def batch_generate(
     next_token_logits = logits[:, -1, :]  # [B, vocab_size]
 
     _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+    mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     for step in range(max_new_tokens):
         for i in range(batch_size):
@@ -397,6 +401,7 @@ def batch_generate(
         next_token_logits = logits[:, -1, :]
 
         _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+        mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     # Truncate each sequence at its first EOS so both decode paths below
     # omit the EOS token and any junk generated after it (a sequence that

@@ -200,6 +200,35 @@ def apply_logit_bias(
     return adjusted
 
 
+def mask_undecodable_logits(logits: torch.Tensor, tokenizer_vocab_size: int | None) -> None:
+    """Mask every logit whose token id the tokenizer cannot decode.
+
+    ``sample_next_token`` returns any id in ``[0, model_vocab)``; when the
+    model's vocabulary is *larger* than the tokenizer's (a padded vocab, or a
+    BPE/HF model served with a char tokenizer), sampling a tail id used to
+    crash mid-stream — ``tokenizer.decode([token_id])`` raises ``KeyError``
+    after part of the text was already yielded (RIL ISS-125). The penalty
+    helpers already guard out-of-range ids; the sampled id itself must be
+    bounded to the tokenizer's decodeable range too, by zeroing the tail
+    probability mass (equivalently pinning those logits to ``-inf``).
+
+    Args:
+        logits: 1D ``[vocab_size]`` or ``[B, vocab_size]`` logits. Mutated
+            in place.
+        tokenizer_vocab_size: The tokenizer's decodeable vocabulary size.
+            ``None`` or ``>=`` the logits' vocab means nothing to mask.
+    """
+    if tokenizer_vocab_size is None:
+        return
+    vocab_size = logits.size(-1)
+    if tokenizer_vocab_size >= vocab_size:
+        return
+    if logits.dim() == 1:
+        logits[tokenizer_vocab_size:] = -float("inf")
+    else:
+        logits[:, tokenizer_vocab_size:] = -float("inf")
+
+
 def sampling_probs(
     logits: torch.Tensor,
     *,

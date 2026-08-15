@@ -87,6 +87,65 @@ def test_speculative_matches_eager_greedy_when_draft_equals_target():
     assert spec_out == eager_out, (eager_out, spec_out)
 
 
+def test_speculative_masks_undecodable_tail_vocab():
+    """RIL ISS-125 on the speculative backend: draft candidates AND the
+    target-verified bonus must be bounded to the tokenizer's decodeable
+    vocab. A padded-vocab model (model vocab > tokenizer vocab) used to
+    emit an id in the tail, which ``tokenizer.decode`` rejected with
+    ``KeyError`` mid-stream. The raw draft/target logits are now masked
+    (pinned to ``-inf``) before sampling/acceptance, so every emitted id
+    is decodable.
+    """
+    from unittest.mock import patch
+
+    target = _make_tiny_decoder(seed=42)
+    draft = _make_tiny_decoder(seed=42)
+
+    def _fixed_forward(input_ids, *_args, **_kwargs):
+        # Model emits a 100-wide vocab whose argmax at EVERY row is the
+        # undecodable tail id 99 (> tokenizer.vocab_size=5) — so the draft
+        # proposes 99, the target verifies it, and decode([99]) raises
+        # KeyError unless the tail logits are masked before sampling.
+        t = max(input_ids.shape[1], 8)
+        logits = torch.full((1, t, 100), -1.0, device=input_ids.device)
+        logits[0, :, 99] = 10.0
+        return logits, None
+
+    class _SmallVocabDecoder:
+        vocab_size, pad_token_id = 5, 0
+
+        def encode(self, text):
+            return [1]
+
+        def decode(self, ids):
+            for i in ids:
+                if i >= self.vocab_size:
+                    raise KeyError(f"Token ID '{i}' not found in tokenizer vocabulary")
+            return "".join(chr(ord("a") + i) for i in ids)
+
+    tok = _SmallVocabDecoder()
+    with (
+        patch.object(target, "forward", side_effect=_fixed_forward),
+        patch.object(draft, "forward", side_effect=_fixed_forward),
+    ):
+        tokens = list(
+            speculative_generate(
+                target,
+                draft,
+                tok,
+                "abc",
+                max_new_tokens=3,
+                gamma=2,
+                temperature=0.0,
+            )
+        )
+
+    # Pre-fix, sampling id 99 crashed decode with KeyError; with the mask
+    # every candidate/bonus is a decodable id in [0, 5).
+    assert tokens, "speculative_generate must not crash on a padded-vocab model"
+    assert all(isinstance(t, str) for t in tokens)
+
+
 # --- gamma validation -------------------------------------------------------
 
 

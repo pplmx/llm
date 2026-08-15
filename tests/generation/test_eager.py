@@ -549,6 +549,92 @@ def test_stream_generate_pad_token_id_out_of_bounds(tiny_model):
     assert len(chunks) == 2
 
 
+class _SmallVocabDecoder:
+    """Tokenizer whose ``decode`` rejects any id >= its ``vocab_size``.
+
+    Simulates a padded model vocab (or a BPE/HF model served with a char
+    tokenizer): the model may emit ids up to its own vocab, but only the
+    first ``vocab_size`` are decodable.
+    """
+
+    vocab_size: int = 5
+    pad_token_id: int = 0
+
+    def encode(self, text: str) -> list[int]:
+        return [1]
+
+    def decode(self, ids: list[int]) -> str:
+        out: list[str] = []
+        for i in ids:
+            if i >= self.vocab_size:
+                raise KeyError(f"Token ID '{i}' not found in tokenizer vocabulary")
+            out.append(chr(ord("a") + i))
+        return "".join(out)
+
+
+def test_stream_generate_masks_undecodable_tail_vocab(tiny_model):
+    """RIL ISS-125: a model whose vocab exceeds the tokenizer's must not
+    sample a token the tokenizer cannot decode.
+
+    ``sample_next_token`` returns any id in ``[0, model_vocab)``; with a
+    padded-vocab model (or a small char tokenizer serving a BPE model), an
+    id in ``[tokenizer_vocab, model_vocab)`` used to reach
+    ``tokenizer.decode([token_id])`` and raise ``KeyError`` mid-stream —
+    after part of the text was already yielded. The tail logits must be
+    masked (pinned to ``-inf``) so the sampled id is always decodable.
+    """
+    bs, seq, vocab = 1, 1, 100  # model emits a 100-wide vocab, tokenizer only 5
+    logits = torch.full((bs, seq, vocab), -1.0)
+    logits[0, 0, 99] = 10.0  # greedy argmax lands on id 99 (> tokenizer.vocab_size=5)
+    tok = _SmallVocabDecoder()
+
+    def _fixed_forward(*_args, **_kwargs):
+        return logits, None
+
+    with patch.object(tiny_model, "forward", side_effect=_fixed_forward):
+        chunks = list(
+            stream_generate(
+                model=tiny_model,
+                tokenizer=tok,
+                prompt="p",
+                max_new_tokens=2,
+                temperature=0.0,
+            )
+        )
+
+    # Without the mask the first sampled id (vocab-1) would raise
+    # ``KeyError`` in ``decode``. With it, all tail ids are -inf so the
+    # sampler picks a decodable one.
+    assert chunks, "stream_generate must not crash on a padded-vocab model"
+    for text in chunks:
+        assert isinstance(text, str)
+
+
+def test_batch_generate_masks_undecodable_tail_vocab(tiny_model):
+    """RIL ISS-125 on the batched path: the ``[B, vocab]`` next-token logits
+    are masked too, so a padded-vocab decode never raises ``KeyError``."""
+    bs, seq, vocab = 2, 1, 100  # two prompts, 100-wide model vocab
+    logits = torch.full((bs, seq, vocab), -1.0)
+    logits[:, 0, 99] = 10.0  # greedy argmax lands on id 99 for every row
+    tok = _SmallVocabDecoder()
+
+    def _fixed_forward(*_args, **_kwargs):
+        return logits, None
+
+    with patch.object(tiny_model, "forward", side_effect=_fixed_forward):
+        results = batch_generate(
+            model=tiny_model,
+            tokenizer=tok,
+            prompts=["p", "q"],
+            max_new_tokens=2,
+            temperature=0.0,
+        )
+
+    assert len(results) == 2
+    for text in results:
+        assert isinstance(text, str), "batched decode must never hit a tail id"
+
+
 # ---------------------------------------------------------------------------
 # generate (non-streaming wrapper)
 # ---------------------------------------------------------------------------
