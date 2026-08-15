@@ -146,6 +146,82 @@ def test_speculative_masks_undecodable_tail_vocab():
     assert all(isinstance(t, str) for t in tokens)
 
 
+def _make_small_ctx_decoder(seed: int = 0) -> torch.nn.Module:
+    """Tiny non-RoPE decoder with a small context window (learned PE table)."""
+    return _make_tiny_decoder(seed, max_seq_len=8, use_rope=False)
+
+
+def test_speculative_rejects_impossible_context_budget():
+    """RIL ISS-124: like the eager backend, speculative must reject a
+    ``max_new_tokens`` budget that cannot fit the context window up front.
+
+    ``max_new_tokens >= max_seq_len`` leaves no room for even a single prompt
+    token; without the guard the learned-position table indexed past
+    ``max_seq_len`` and raised ``ValueError: Sequence endpoint ... exceeds
+    maximum sequence length`` (the eager backend rejects it with a clear
+    message instead).
+    """
+    target = _make_small_ctx_decoder(seed=0)
+    draft = _make_small_ctx_decoder(seed=0)
+    tok = StubTokenizer()
+    with pytest.raises(ValueError, match="max_new_tokens"):
+        list(
+            speculative_generate(
+                target,
+                draft,
+                tok,
+                "abc",
+                max_new_tokens=8,  # == max_seq_len (8) → impossible budget
+                gamma=2,
+                temperature=0.0,
+            )
+        )
+
+
+class _OrdTokenizer:
+    """One token per character, ids ``[1, 2, ...]`` (mirrors StubTokenizer ids
+    but with real per-char lengths so prompts can genuinely overflow)."""
+
+    pad_token_id: int = 0
+
+    def encode(self, text: str) -> list[int]:
+        return list(range(1, len(text) + 1))
+
+    def decode(self, ids: list[int]) -> str:
+        return "".join(chr(96 + i) for i in ids if i < 27)
+
+
+def test_speculative_truncates_long_prompt_like_eager():
+    """RIL ISS-124: a prompt that exceeds ``max_seq_len`` is truncated to fit
+    (same shrink the eager backend applies), not left to crash the learned-PE
+    table. Parity: on the same inputs, speculative and eager emit the same
+    decoded tokens.
+    """
+    from llm.generation.eager import stream_generate
+
+    target = _make_small_ctx_decoder(seed=42)
+    draft = _make_small_ctx_decoder(seed=42)
+    tok = _OrdTokenizer()
+
+    prompt = "x" * 12  # 12 tokens > max_seq_len=8
+    spec_out = list(
+        speculative_generate(
+            target,
+            draft,
+            tok,
+            prompt,
+            max_new_tokens=2,
+            gamma=2,
+            temperature=0.0,
+        )
+    )
+    eager_out = list(stream_generate(target, tok, prompt, max_new_tokens=2, temperature=0.0, use_cache=False))
+    # Both must truncate rather than crash, and produce the same first tokens.
+    assert spec_out, "speculative_generate must not crash on an over-long prompt"
+    assert eager_out, "eager stream_generate must not crash on an over-long prompt"
+    assert spec_out[0] == eager_out[0], (spec_out, eager_out)
+
+
 # --- gamma validation -------------------------------------------------------
 
 

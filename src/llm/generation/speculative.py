@@ -25,7 +25,7 @@ from typing import Protocol
 
 import torch
 
-from llm.generation.eager import _normalize_stop
+from llm.generation.eager import _normalize_stop, _reject_impossible_context
 from llm.generation.sampling import (
     apply_frequency_penalty,
     apply_logit_bias,
@@ -318,7 +318,20 @@ def speculative_generate(
     target.eval()
     draft.eval()
     device = next(target.parameters()).device
+
+    # Same context-window handshake as the eager backend (RIL ISS-124): a
+    # budget that cannot fit is rejected up front, and an over-long prompt is
+    # truncated to fit. The speculative backend keeps rebuilding the full
+    # context tensor each round and forwarding it through the learned
+    # positional-encoding table, so without this a long prompt crashed with
+    # ``ValueError: Sequence endpoint N exceeds maximum sequence length``
+    # while the eager backend served the same input fine (it truncates).
+    max_seq_len = getattr(target, "max_seq_len", None)
+    _reject_impossible_context(max_seq_len, max_new_tokens)
     prompt_ids = tokenizer.encode(prompt)
+    if max_seq_len is not None and len(prompt_ids) + max_new_tokens > max_seq_len:
+        keep = max(1, max_seq_len - max_new_tokens)
+        prompt_ids = prompt_ids[-keep:]
 
     generated_ids: list[int] = list(prompt_ids)
     eos_id = getattr(tokenizer, "eos_token_id", None)
