@@ -28,6 +28,7 @@ from torch import Tensor, nn
 
 from llm.core.kv_cache import KVCache
 from llm.core.registry import register_attention, set_attention_kv_cache_capability
+from llm.core.rope import RotaryPositionEmbedding
 from llm.utils.common import make_factory_kwargs
 
 # Probe the optional dependency at import time so the registry entry is
@@ -110,6 +111,17 @@ class FlashAttention(nn.Module):
         num_kv_heads: int | None = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
+        # Same optional kwargs the TransformerBlock always threads (RIL
+        # ISS-137): the block historically passed ``window_size=`` and (when
+        # ``use_rope``) ``max_seq_len=``/``use_rope=True``/``rope_theta=``
+        # UNCONDITIONALLY, so ``FlashAttention`` without these params raised
+        # ``TypeError: got an unexpected keyword argument 'window_size'`` on
+        # EVERY ``attn_impl='flash_attn'`` model build. Adopt the MHA
+        # contract so the backend is actually constructible.
+        window_size: int | None = None,  # Sliding window attention
+        max_seq_len: int | None = None,  # RoPE max context (required if use_rope)
+        use_rope: bool = False,  # Rotary position embedding (real Llama/Mistral)
+        rope_theta: float = 10000.0,  # RoPE base frequency
     ):
         super().__init__()
 
@@ -133,6 +145,21 @@ class FlashAttention(nn.Module):
         self.is_causal = is_causal
         self.p = p
         self.include_norm_residual = include_norm_residual
+        self.window_size = window_size
+        self.use_rope = use_rope
+
+        if use_rope:
+            # RoPE rotates Q/K by head position (real Llama/Mistral inject
+            # position here, not via additive embeddings), identically to MHA
+            # (RIL ISS-062). ``max_seq_len`` sizes the cos/sin table.
+            if max_seq_len is None:
+                raise ValueError("use_rope=True requires max_seq_len for the RoPE cos/sin table")
+            self.rope = RotaryPositionEmbedding(
+                dim=self.head_dim,
+                max_seq_len=max_seq_len,
+                base=rope_theta,
+                **factory_kwargs,
+            )
 
         if self.num_heads % self.num_kv_heads != 0:
             raise ValueError(f"num_heads ({self.num_heads}) must be divisible by num_kv_heads ({self.num_kv_heads})")
@@ -154,6 +181,29 @@ class FlashAttention(nn.Module):
             nn.init.xavier_uniform_(proj.weight)
             if proj.bias is not None:
                 nn.init.zeros_(proj.bias)
+
+    def _rope_positions(
+        self,
+        batch_size: int,
+        seq_len: int,
+        start_pos: int | Tensor | None,
+        device: torch.device,
+    ) -> Tensor | None:
+        """Compute per-token positions for RoPE (same contract as MHA).
+
+        * ``start_pos`` Tensor (batch-serving path): return unchanged.
+        * ``start_pos`` int (KV-cache decode): ``[start_pos, start_pos+seq_len)``.
+        * ``start_pos`` None (pure prefill): ``[0, seq_len)`` — return None so
+          RoPE's internal default applies.
+        """
+        if start_pos is None:
+            return None
+        if isinstance(start_pos, Tensor):
+            return start_pos
+        if start_pos == 0:
+            return None
+        base = int(start_pos)
+        return torch.arange(base, base + seq_len, device=device, dtype=torch.long).expand(batch_size, -1)
 
     def forward(
         self,
@@ -226,6 +276,14 @@ class FlashAttention(nn.Module):
         k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
 
+        if self.use_rope:
+            # Apply RoPE to Q/K BEFORE the kernel (flash_attn_func performs no
+            # positional encoding of its own). Identical to MHA's wiring — the
+            # kernel then sees rotated Q/K and the KV cache stores the rotated
+            # K, exactly like the MHA backend (RIL ISS-137).
+            positions = self._rope_positions(batch_size, seq_len, start_pos, device=q.device)
+            q, k = self.rope(q, k, positions)
+
         has_past = False
         if kv_cache is not None:
             if batch_indices is not None:
@@ -289,12 +347,16 @@ class FlashAttention(nn.Module):
         # by the caller (MHA does the same — float dtype falls back via
         # the engine layer). Apply causal only when there is no past
         # context: with KV cache populated, the cache handles positions.
+        # Sliding-window attention (``window_size``) is supported by the
+        # kernel via a (left, right) tuple; unlimited defaults to (-1,-1).
+        window_pair = (-1, -1) if self.window_size is None else (self.window_size, self.window_size)
         attn_output = flash_attn_func(
             q_bsh,
             k_bsh,
             v_bsh,
             dropout_p=self.p if self.training else 0.0,
             causal=use_causal if not has_past else False,
+            window_size=window_pair,
         )
 
         # Output back to [B, N, S, D].

@@ -20,6 +20,7 @@ installed.
 from __future__ import annotations
 
 import importlib
+from unittest.mock import patch
 
 import pytest
 
@@ -103,3 +104,51 @@ def test_flash_attn_instantiates_when_dependency_present():
     # Default num_kv_heads == num_heads, head_dim = hidden_size / num_heads.
     assert attn.qkv_dim == (4 + 2 * 4) * (64 // 4)  # 192
     assert attn.out_proj.in_features == 64
+
+
+def test_flash_attn_constructible_through_transformer_block():
+    """RIL ISS-137: ``attn_impl='flash_attn'`` must build through the model
+    stack (TransformerBlock threads ``window_size=`` and — when requested —
+    the RoPE kwargs into every attention backend).
+
+    Before the fix, ``FlashAttention.__init__`` declared none of
+    ``window_size`` / ``max_seq_len`` / ``use_rope`` / ``rope_theta``, so a
+    block passed ``window_size=None`` unconditionally and EVERY
+    ``attn_impl='flash_attn'`` model raised
+    ``TypeError: got an unexpected keyword argument 'window_size'`` at build
+    time (configs check out fine — it only broke on construction).
+    """
+    from llm.core.transformer_block import TransformerBlock
+
+    # Patch the availability gate so construction trips on kwarg binding, not
+    # the (absent) flash-attn package. The kernel is never invoked here.
+    with (
+        patch("llm.core.attn.flash_attn.FLASH_ATTN_AVAILABLE", True),
+        patch.object(FlashAttention, "forward", lambda *a, **k: None),
+    ):
+        block = TransformerBlock(
+            hidden_size=64,
+            num_heads=4,
+            attn_impl="flash_attn",
+            mlp_impl="mlp",
+            is_causal=True,
+        )
+    assert isinstance(block.self_attn, FlashAttention)
+
+    # Same build when the model requests RoPE (block threads the Rope kwargs).
+    with (
+        patch("llm.core.attn.flash_attn.FLASH_ATTN_AVAILABLE", True),
+        patch.object(FlashAttention, "forward", lambda *a, **k: None),
+    ):
+        block = TransformerBlock(
+            hidden_size=64,
+            num_heads=4,
+            attn_impl="flash_attn",
+            mlp_impl="mlp",
+            is_causal=True,
+            use_rope=True,
+            max_seq_len=32,
+            rope_theta=10000.0,
+        )
+    assert isinstance(block.self_attn, FlashAttention)
+    assert block.self_attn.use_rope is True
