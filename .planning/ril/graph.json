@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T01:27:33+00:00",
+  "updated_at": "2026-08-16T01:32:10+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7901,10 +7901,10 @@
     "ISS-156": {
       "id": "ISS-156",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:32:10+00:00",
       "touched_round": 61,
       "severity": "0.85|title=AdaLoRA crashes on any fp16/bf16 base layer (torch.linalg.qr not implemented for Half)|summary=core/adalora.py:29 lora_P/Q/lambda/mask adopt base dtype; forward:210 and merge/unmerge call torch.linalg.qr which torch does not implement for Half/BFloat16 -> NotImplementedError geqrf_cpu not implemented for Half on any native fp16/bf16 model; AMP survives only because autocast leaves fp32 params. CONFIRMED live: nn.Linear(32,32).half() -> AdaLoRALinear -> crash."
     },
@@ -8022,15 +8022,17 @@
       "id": "TASK-113",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T01:15:56+00:00",
-      "updated_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:27:51+00:00",
       "touched_round": 61,
       "title": "AdaLoRA fp16/bf16 crash: compute QR/SVD in fp32",
       "category": "correctness",
       "severity": 0.85,
       "confidence": 1.0,
-      "effort": 0.7
+      "effort": 0.7,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T02:57:51+00:00"
     },
     "TASK-114": {
       "id": "TASK-114",
@@ -8279,6 +8281,17 @@
       "touched_round": 61,
       "commit": "f068e92",
       "summary": "/generate + /batch_generate strip echoed prompt (ISS-148)"
+    },
+    "CHG-138": {
+      "id": "CHG-138",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:31:58+00:00",
+      "updated_at": "2026-08-16T01:31:58+00:00",
+      "touched_round": 61,
+      "commit": "73709db",
+      "summary": "AdaLoRA _orthonormalize upcasts to fp32 for QR (ISS-156, also unblocks half-precision orth_reg_loss)"
     }
   },
   "edges": [
@@ -11939,6 +11952,18 @@
       "to": "TASK-116",
       "type": "implements",
       "created_at": "2026-08-16T01:26:57+00:00"
+    },
+    {
+      "from": "CHG-138",
+      "to": "ISS-156",
+      "type": "resolves",
+      "created_at": "2026-08-16T01:32:10+00:00"
+    },
+    {
+      "from": "CHG-138",
+      "to": "TASK-113",
+      "type": "implements",
+      "created_at": "2026-08-16T01:32:10+00:00"
     }
   ]
 }
