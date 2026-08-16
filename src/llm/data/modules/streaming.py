@@ -37,6 +37,13 @@ class StreamingTextDataModule(StreamDataModule):
         # World size seen by ``train_dataloader``; stamped into checkpoints so
         # resume can reject layouts whose shard cursors are not interchangeable.
         self._world_size: int | None = None
+        # World size carried by a checkpoint loaded BEFORE ``train_dataloader``
+        # ran (and therefore before ``_world_size`` was known). The mismatch
+        # check is deferred to ``train_dataloader`` instead of being silently
+        # skipped (RIL ISS-204: the guard was order-dependent on
+        # ``_world_size`` already being set when ``load_checkpoint_state``
+        # ran — ``load_extra_state`` makes no such ordering guarantee).
+        self._pending_world_size: int | None = None
 
     def prepare_data(self):
         TokenizerFactory.cache_hf_tokenizer(self.config.data)
@@ -72,6 +79,27 @@ class StreamingTextDataModule(StreamDataModule):
     def _load_tokenizer(self) -> BaseTokenizer:
         return TokenizerFactory.from_data_config(self.config.data)
 
+    def _validate_world_size(self, saved_world_size: int | None) -> None:
+        """Refuse a checkpoint whose shard cursors were built for another
+        rank layout.
+
+        Shard cursors depend on the ``rank % num_shards`` arithmetic, so a
+        checkpoint saved under ``world_size=A`` is meaningless to a run using
+        ``world_size=B`` (ranks silently re-train wrong shards). Called both
+        from ``load_checkpoint_state`` (when ``_world_size`` is already known)
+        and from ``train_dataloader`` (for a checkpoint loaded earlier —
+        RIL ISS-204).
+        """
+        if saved_world_size is None or self._world_size is None:
+            return
+        if int(saved_world_size) != self._world_size:
+            raise ValueError(
+                "Streaming checkpoint was saved with world_size="
+                f"{saved_world_size} but this run uses world_size={self._world_size}. "
+                "Shard cursors depend on the rank layout and are not interchangeable "
+                "across world sizes; resume with the same number of ranks."
+            )
+
     def train_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader, None]:
         if self.train_dataset is None:
             raise ValueError("Train dataset not initialized.")
@@ -79,6 +107,10 @@ class StreamingTextDataModule(StreamDataModule):
         self.train_dataset.rank = rank
         self.train_dataset.world_size = world_size
         self._world_size = world_size
+        # A checkpoint may have been loaded before the world size was known;
+        # validate the deferred mismatch now that it is.
+        self._validate_world_size(self._pending_world_size)
+        self._pending_world_size = None
 
         optimization = self.config.optimization
         # The resume cursor (``stream_data_state``) lives on the dataset
@@ -152,13 +184,13 @@ class StreamingTextDataModule(StreamDataModule):
             source_fingerprint_from_config(self.config.data),
         )
         saved_world_size = state.get("stream_world_size")
-        if saved_world_size is not None and self._world_size is not None and int(saved_world_size) != self._world_size:
-            raise ValueError(
-                "Streaming checkpoint was saved with world_size="
-                f"{saved_world_size} but this run uses world_size={self._world_size}. "
-                "Shard cursors depend on the rank layout and are not interchangeable "
-                "across world sizes; resume with the same number of ranks."
-            )
+        if self._world_size is None:
+            # Loaded before ``train_dataloader``: stash for deferred validation
+            # (RIL ISS-204 — the pre-fix guard only fired when ``_world_size``
+            # was already set, silently skipping the check for early loads).
+            self._pending_world_size = None if saved_world_size is None else int(saved_world_size)
+        else:
+            self._validate_world_size(saved_world_size)
         self.stream_data_state = StreamDataState.from_dict(state.get("stream_data"))
         if self.train_dataset is not None:
             self.train_dataset.stream_data_state = self.stream_data_state

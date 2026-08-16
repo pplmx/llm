@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T13:54:01+00:00",
+  "updated_at": "2026-08-16T14:04:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9619,10 +9619,10 @@
     "ISS-204": {
       "id": "ISS-204",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:22:19+00:00",
-      "updated_at": "2026-08-16T12:22:19+00:00",
+      "updated_at": "2026-08-16T14:04:31+00:00",
       "touched_round": 69,
       "severity": "low",
       "title": "stream_world_size resume guard is order-dependent (only enforced when _world_size is set)",
@@ -9820,10 +9820,10 @@
     "TASK-172": {
       "id": "TASK-172",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-16T13:15:08+00:00",
-      "updated_at": "2026-08-16T13:15:08+00:00",
+      "updated_at": "2026-08-16T14:04:31+00:00",
       "touched_round": 69,
       "category": "stability",
       "severity": "low",
@@ -9916,6 +9916,18 @@
       "commit": "PENDING",
       "title": "Simple-PTQ rejects bits=4 (would store 4-bit grid as int8, no packing); scale param typed Tensor|float",
       "body": "ptq.py: NotImplementedError for bits!=8 pointing at GPTQ/AWQ packed paths (ISS-197); widened scale: float|torch.Tensor|None on from_linear + quantize_linear_layer — latent ty errors surfaced by bits narrowing. 1 test."
+    },
+    "CHG-170": {
+      "id": "CHG-170",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:04:31+00:00",
+      "updated_at": "2026-08-16T14:04:31+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "stream_world_size guard is order-independent (deferred validation)",
+      "body": "streaming.py: load_checkpoint_state stashes saved_world_size into _pending_world_size when _world_size unknown; train_dataloader validates it once world_size is known. 1 test. ISS-204."
     }
   },
   "edges": [
@@ -14590,6 +14602,18 @@
       "to": "ISS-197",
       "type": "resolves",
       "created_at": "2026-08-16T13:54:01+00:00"
+    },
+    {
+      "from": "CHG-170",
+      "to": "TASK-172",
+      "type": "implements",
+      "created_at": "2026-08-16T14:04:31+00:00"
+    },
+    {
+      "from": "CHG-170",
+      "to": "ISS-204",
+      "type": "resolves",
+      "created_at": "2026-08-16T14:04:31+00:00"
     }
   ]
 }

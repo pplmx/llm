@@ -181,6 +181,47 @@ def test_streaming_module_rejects_world_size_mismatch(tmp_path, monkeypatch, lin
         data_module.load_checkpoint_state(foreign_state)
 
 
+def test_streaming_module_world_size_guard_order_independent(tmp_path, monkeypatch, line_tokenizer):
+    """Regression (RIL ISS-204): the world-size resume guard must not depend
+    on call order. The old guard compared ``saved_world_size`` only when
+    ``self._world_size`` had ALREADY been set — i.e. only when
+    ``train_dataloader`` happened to run before ``load_checkpoint_state``.
+    ``load_extra_state`` calls the module's ``load_checkpoint_state`` without
+    any ordering guarantee, so a foreign-world-size checkpoint loaded before
+    ``train_dataloader`` silently bypassed the mismatch check and every rank
+    would re-train the corpus with wrong shard arithmetic."""
+    from llm.data.modules.streaming import StreamingTextDataModule
+    from llm.training.core.config import Config
+
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text("hello world\n" * 10, encoding="utf-8")
+
+    config = Config()
+    config.data.dataset_path = str(text_file)
+    config.data.max_seq_len = 8
+    config.data.steps_per_epoch = 2
+
+    data_module = StreamingTextDataModule(config)
+    monkeypatch.setattr(data_module, "_load_tokenizer", lambda: line_tokenizer)
+    data_module.setup()
+
+    foreign_state = {
+        "stream_data": {"0": {"line_index": 3, "token_buffer": []}},
+        "stream_world_size": 4,
+        "stream_source": data_module.get_checkpoint_state()["stream_source"],
+    }
+
+    # Loaded BEFORE train_dataloader sets _world_size, so the world size is
+    # not yet known here — the module must defer the mismatch check, not
+    # silently skip it.
+    data_module.load_checkpoint_state(foreign_state)
+    assert data_module._pending_world_size == 4
+
+    # The guard must fire at the first dataloader call — never silently pass.
+    with pytest.raises(ValueError, match="world_size"):
+        data_module.train_dataloader(rank=0, world_size=1)
+
+
 def test_streaming_module_accepts_legacy_checkpoint_without_world_size(tmp_path, monkeypatch, line_tokenizer):
     """Checkpoints written before the world-size stamp must keep loading."""
     from llm.data.modules.streaming import StreamingTextDataModule
