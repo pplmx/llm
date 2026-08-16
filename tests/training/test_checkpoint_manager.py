@@ -215,6 +215,57 @@ def test_load_rejects_inconsistent_trio_stale_extra(checkpoint_manager):
         checkpoint_manager.load_checkpoint(saved, None, None, None, device=DEFAULT_DEVICE)
 
 
+def test_load_optimizer_mismatch_raises_not_silent_hybrid_resume(checkpoint_manager):
+    """RIL ISS-206: a structural optimizer mismatch (changed param-group
+    layout) must raise loudly instead of silently "starting from scratch"
+    AFTER the model has already been mutated.
+
+    The pre-fix code loaded model → optimizer → scheduler → scaler inside
+    the same try that swallowed non-marker load errors, then returned
+    ``(0, inf)``. A ``ValueError: loaded state dict has a different number
+    of parameter groups`` from the optimizer was swallowed — so training
+    ran "from scratch" with a fresh epoch counter over the ALREADY-RESUMED
+    weights: a silent hybrid. The load must refuse loudly, and the model
+    must NOT be mutated when the mismatch is in optimizer/scheduler/scaler.
+    """
+    from torch import nn
+    from torch.optim import AdamW
+
+    saved = nn.Linear(4, 1)
+    # Save with a 2-group optimizer so the checkpoint carries two groups.
+    save_opt = AdamW(
+        [
+            {"params": [saved.weight], "lr": 1e-3},
+            {"params": [saved.bias], "lr": 1e-2},
+        ]
+    )
+    save_opt.zero_grad()
+    loss = saved(torch.randn(2, 4)).pow(2).mean()
+    loss.backward()
+    save_opt.step()
+    checkpoint_manager.save_checkpoint(0, saved, save_opt, DummyState(), DummyState(), loss=0.5)
+    checkpoint_manager.config.resume_from_checkpoint = str(Path(checkpoint_manager.config.checkpoint_dir) / "latest.pt")
+
+    # Resume into a 1-group optimizer — structurally incompatible.
+    target_model = nn.Linear(4, 1)
+    target_opt = AdamW(target_model.parameters())
+    # Snapshot the target's own (random) weights before the load attempt.
+    target_model.eval()
+    with torch.no_grad():
+        initial_weight = target_model.weight.detach().clone()
+        initial_bias = target_model.bias.detach().clone()
+
+    with pytest.raises(RuntimeError, match="state could not be loaded"):
+        checkpoint_manager.load_checkpoint(target_model, target_opt, None, None, device=DEFAULT_DEVICE)
+
+    # The failure happened in the OPTIMIZER load, before the model load —
+    # the model must be untouched (not the hybrid "scratch but resumed").
+    assert torch.equal(target_model.weight.detach(), initial_weight), (
+        "optimizer mismatch must not mutate the model into a hybrid resume state"
+    )
+    assert torch.equal(target_model.bias.detach(), initial_bias)
+
+
 def test_load_rejects_resume_with_mismatched_model_config(checkpoint_manager):
     """RIL ISS-126: resuming must not silently accept a checkpoint whose
     architecture-defining config differs from the current run.

@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T15:52:03+00:00",
+  "updated_at": "2026-08-16T16:13:45+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10068,10 +10068,10 @@
     "TASK-174": {
       "id": "TASK-174",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-16T15:16:08+00:00",
-      "updated_at": "2026-08-16T15:16:08+00:00",
+      "updated_at": "2026-08-16T16:13:45+00:00",
       "touched_round": 69,
       "category": "stability",
       "severity": 0.6,
@@ -10112,10 +10112,10 @@
     "ISS-206": {
       "id": "ISS-206",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T15:16:37+00:00",
-      "updated_at": "2026-08-16T15:16:37+00:00",
+      "updated_at": "2026-08-16T16:13:45+00:00",
       "touched_round": 69,
       "severity": "medium",
       "title": "Failed checkpoint load partially mutates model/optimizer then silently starts from scratch",
@@ -10156,6 +10156,18 @@
       "commit": "477f3d2",
       "title": "GGUF writer: reject empty tensors with clear error; coerce numpy-scalar metadata",
       "body": "writer.py add_tensor rejects size==0 (was ZeroDivisionError in q4_0 block serialization); metadata._coerce_scalar normalizes np.int64/float32/bool_ (ndim==0 + item()) to Python natives. 5 tests. ISS-207."
+    },
+    "CHG-173": {
+      "id": "CHG-173",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T16:13:45+00:00",
+      "updated_at": "2026-08-16T16:13:45+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "Checkpoint load: structural mismatches fail loud; model loaded last (no hybrid resume)",
+      "body": "checkpoint.py: split load into corrupt-file swallow (payload read, nothing mutated) vs state loads (outside swallow, loud). optimizer/scheduler/scaler load before model so a mismatch leaves the model untouched. 1 test. ISS-206."
     }
   },
   "edges": [
@@ -14908,6 +14920,18 @@
       "to": "ISS-207",
       "type": "resolves",
       "created_at": "2026-08-16T15:49:59+00:00"
+    },
+    {
+      "from": "CHG-173",
+      "to": "TASK-174",
+      "type": "implements",
+      "created_at": "2026-08-16T16:13:45+00:00"
+    },
+    {
+      "from": "CHG-173",
+      "to": "ISS-206",
+      "type": "resolves",
+      "created_at": "2026-08-16T16:13:45+00:00"
     }
   ]
 }

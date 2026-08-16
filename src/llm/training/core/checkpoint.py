@@ -848,50 +848,67 @@ class CheckpointManager:
 
         try:
             payload = load_checkpoint_payload(ckp_path)
-            if payload is None:
-                self.logger.warning(
-                    f"Checkpoint at {ckp_path} exists but no recognized layout "
-                    "(neither split nor legacy). Starting from scratch."
+        except (OSError, EOFError, pickle.UnpicklingError, TypeError) as e:
+            # File-level corruption: the payload itself could not be read
+            # (truncated pickle stream, wrong-kind ``.pt``, ``[None]*n``
+            # padding) — the designed degrade-to-scratch path (RIL ISS-172).
+            # Nothing has been mutated yet, so degrading to scratch here is
+            # GENUINE. Structural mismatches (model shape, optimizer /
+            # scheduler / scaler layout) NEVER land here — they are raised
+            # after payload load, below. ``pickle`` is imported at module top
+            # for the weights_only fix.
+            self.logger.error(f"Failed to read checkpoint from {ckp_path}: {e}")
+            self.logger.warning("Starting from scratch due to checkpoint read error.")
+            return 0, float("inf")
+
+        if payload is None:
+            self.logger.warning(
+                f"Checkpoint at {ckp_path} exists but no recognized layout "
+                "(neither split nor legacy). Starting from scratch."
+            )
+            return 0, float("inf")
+
+        # Resume-config compatibility check (RIL ISS-126): a checkpoint
+        # whose model_config differs from the current run's in any
+        # architecture-defining field means the user changed config (or
+        # pointed at the wrong checkpoint). Weight-shape mismatches are
+        # already caught loudly by load_model_state_dict below; but
+        # non-tensor differences the state dict CANNOT expose — a changed
+        # scheduler_type/epochs/warmup whose state dict loads fine into a
+        # differently-shaped scheduler, a changed tokenizer re-tokenizing
+        # with new ids over old weights, a changed max_seq_len — would
+        # silently corrupt or mis-anneal the resume. Compare the fields
+        # that define the model/schedule and refuse loudly.
+        if expected_model_config and payload.get("model_config"):
+            mismatches = _model_config_mismatches(expected_model_config, payload["model_config"])
+            if mismatches:
+                raise ValueError(
+                    f"Checkpoint at {ckp_path} was saved with a different model/schedule "
+                    f"configuration: {', '.join(f'{k} (ckpt {v[0]}, now {v[1]})' for k, v in mismatches.items())}. "
+                    "Refusing to silently resume with mismatched weights — fix the config or "
+                    "point resume_from_checkpoint at a compatible checkpoint."
                 )
-                return 0, float("inf")
 
-            # Resume-config compatibility check (RIL ISS-126): a checkpoint
-            # whose model_config differs from the current run's in any
-            # architecture-defining field means the user changed config (or
-            # pointed at the wrong checkpoint). Weight-shape mismatches are
-            # already caught loudly by load_model_state_dict below; but
-            # non-tensor differences the state dict CANNOT expose — a changed
-            # scheduler_type/epochs/warmup whose state dict loads fine into a
-            # differently-shaped scheduler, a changed tokenizer re-tokenizing
-            # with new ids over old weights, a changed max_seq_len — would
-            # silently corrupt or mis-anneal the resume. Compare the fields
-            # that define the model/schedule and refuse loudly.
-            if expected_model_config and payload.get("model_config"):
-                mismatches = _model_config_mismatches(expected_model_config, payload["model_config"])
-                if mismatches:
-                    raise ValueError(
-                        f"Checkpoint at {ckp_path} was saved with a different model/schedule "
-                        f"configuration: {', '.join(f'{k} (ckpt {v[0]}, now {v[1]})' for k, v in mismatches.items())}. "
-                        "Refusing to silently resume with mismatched weights — fix the config or "
-                        "point resume_from_checkpoint at a compatible checkpoint."
-                    )
-
-            load_model_state_dict(model, payload["model_state"])
+        # ---- State loads (outside the corrupt-file swallow) ----
+        # The payload is on hand, so a failure to load its state is a
+        # STRUCTURAL mismatch (changed scheduler_type, changed param-group
+        # count, resized model), NOT a corrupt file. These must fail loud:
+        # the pre-fix code swallowed them and returned ``(0, inf)`` while the
+        # model (and maybe the optimizer) already held checkpoint weights — a
+        # silent hybrid resume that trains a fresh epoch counter / LR
+        # schedule over resumed weights (RIL ISS-206). Data-integrity errors
+        # from the payload read (ISS-126/127/205) are also re-raised by the
+        # loader and must NOT be swallowed here. Optimizer / scheduler /
+        # scaler load BEFORE the model so a mismatch leaves the model
+        # untouched — never a partially-resumed model behind a scratch notice.
+        try:
             if optimizer is not None and payload.get("optimizer_state") is not None:
                 optimizer.load_state_dict(payload["optimizer_state"])
             if scheduler is not None and payload.get("scheduler_state") is not None:
                 scheduler.load_state_dict(payload["scheduler_state"])
             if scaler is not None and payload.get("scaler_state") is not None:
                 scaler.load_state_dict(payload["scaler_state"])
-            start_epoch = payload["epoch"] + 1
-            best_loss = payload.get("best_loss", float("inf"))
-            self.best_loss = best_loss
-            self.loaded_extra_state = payload.get("extra_state")
-            self.logger.info(
-                f"✅ Resumed training from epoch {start_epoch} using checkpoint {ckp_path} "
-                f"(format={payload.get('format_version', 'legacy')})"
-            )
-            return start_epoch, best_loss
+            load_model_state_dict(model, payload["model_state"])
         except (
             OSError,
             RuntimeError,
@@ -901,18 +918,11 @@ class CheckpointManager:
             pickle.UnpicklingError,
             TypeError,
         ) as e:
-            # A state_dict shape/key incompatibility means the current model
-            # architecture does NOT match the checkpoint — the user changed
-            # config (e.g. hidden_size) or pointed at the wrong checkpoint.
-            # Silently falling back to scratch would train a full run that
-            # looks like a resume but discards all prior state (RIL ISS-108);
-            # fail loudly instead so the mismatch is surfaced immediately.
-            #
-            # EOFError / pickle.UnpicklingError / TypeError are the exact
-            # classes a truncated or wrong-kind ``.pt`` file raises (corrupt
-            # pickle stream, ``torch.load`` of a non-dict, ``[None]*n``
-            # padding) — the designed degrade-to-scratch path (RIL ISS-172).
-            # ``pickle`` is imported at module top for the weights_only fix.
+            # Any mismatch here is structural, not a corrupt file. A model
+            # shape/key incompatibility (the most common) means the current
+            # model architecture does NOT match the checkpoint. Fail loud
+            # instead of silently training a full run that looks like a
+            # resume but discards all prior state (RIL ISS-108 / ISS-206).
             message = str(e)
             if isinstance(e, RuntimeError) and any(
                 marker in message
@@ -924,26 +934,22 @@ class CheckpointManager:
                     "restart from scratch — fix the model config or point resume_from_checkpoint "
                     "at a compatible checkpoint."
                 ) from e
-
-            # Three data-integrity/refusal errors are NOT recoverable format
-            # issues — they mean the user pointed at the wrong checkpoint or a
-            # save was interrupted:
-            #  - ISS-127: the three sidecars disagree about which save they
-            #    belong to (meta vs extra_state save_id/epoch mismatch), so
-            #    resuming would pair fresh weights with stale optimizer state.
-            #  - ISS-126: the checkpoint's model_config differs from the
-            #    current run's architecture-defining fields, so the weights
-            #    were not trained for this model/schedule.
-            #  - ISS-205: a partial split trio (1-2 sidecars) from a crashed
-            #    save must not silently become "start from scratch" — the
-            #    partial trio represents real epochs that would be discarded.
-            # All must propagate to the caller instead of silently restarting
-            # from scratch.
             if isinstance(e, ValueError) and ("inconsistent" in message or "Refusing to silently resume" in message):
                 raise
-            if isinstance(e, CheckpointIncompleteError):
-                raise
+            raise RuntimeError(
+                f"Checkpoint at {ckp_path} state could not be loaded into the "
+                f"current model/optimizer/scheduler/scaler ({type(e).__name__}: "
+                f"{message.splitlines()[0]}). Refusing to silently resume with "
+                "partially-loaded state — fix the config or point "
+                "resume_from_checkpoint at a compatible checkpoint."
+            ) from e
 
-            self.logger.error(f"Failed to load checkpoint from {ckp_path}: {e}")
-            self.logger.warning("Starting from scratch due to checkpoint loading error.")
-            return 0, float("inf")
+        start_epoch = payload["epoch"] + 1
+        best_loss = payload.get("best_loss", float("inf"))
+        self.best_loss = best_loss
+        self.loaded_extra_state = payload.get("extra_state")
+        self.logger.info(
+            f"✅ Resumed training from epoch {start_epoch} using checkpoint {ckp_path} "
+            f"(format={payload.get('format_version', 'legacy')})"
+        )
+        return start_epoch, best_loss
