@@ -25,7 +25,18 @@ def _orthonormalize(matrix: torch.Tensor) -> torch.Tensor:
     For an ``(m, n)`` input, ``torch.linalg.qr(mode='reduced')`` returns
     Q of shape ``(m, min(m, n))`` with orthonormal columns. The returned
     matrix has the same dtype and device as the input.
+
+    ``torch.linalg.qr`` is **not implemented for Half/BFloat16** (raises
+    ``NotImplementedError: "geqrf_cpu" not implemented for 'Half'``), so
+    for low-precision inputs the decomposition runs in fp32 and the
+    orthonormal factor is cast back to the input dtype. AdaLoRA layers
+    adopt their base layer's dtype (RIL ISS-156), so a natively fp16/
+    bf16 model — the norm for this framework's serve/export paths — would
+    otherwise crash on every forward, merge and unmerge.
     """
+    if matrix.dtype in (torch.float16, torch.bfloat16):
+        Q, _ = torch.linalg.qr(matrix.to(torch.float32), mode="reduced")  # noqa: N806
+        return Q.to(matrix.dtype)
     Q, _ = torch.linalg.qr(matrix, mode="reduced")  # noqa: N806
     return Q
 

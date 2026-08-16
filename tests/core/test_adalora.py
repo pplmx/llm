@@ -168,6 +168,32 @@ class TestOrthogonalityRegularization:
         loss = layer.orth_reg_loss()
         assert torch.isfinite(loss)
 
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+    def test_half_precision_base_layer_works(self, dtype):
+        """Regression (RIL ISS-156): ``torch.linalg.qr`` is not
+        implemented for Half/BFloat16, and every AdaLoRA forward/merge
+        orthonormalizes P/Q via QR. A model whose base layer is natively
+        fp16/bf16 (the norm for this framework's serve/export paths) must
+        still run forward + merge + unmerge — the QR step must upcast to
+        fp32 internally."""
+        base = nn.Linear(32, 32, dtype=dtype)
+        layer = AdaLoRALinear(base_layer=base, init_rank=8, alpha=32.0)
+        x = torch.randn(4, 32, dtype=dtype)
+        out = layer(x)
+        assert out.shape == (4, 32)
+        assert out.dtype == dtype
+
+        with torch.no_grad():
+            layer.lora_lambda.fill_(0.3)
+        merged_base = base.weight.detach().clone()
+        layer.merge_weights()
+        assert layer.scaling == 0.0
+        layer.unmerge_weights()
+        assert torch.allclose(base.weight, merged_base, atol=1e-2)
+
+        # orth_reg_loss must also not crash on a half-precision layer.
+        assert torch.isfinite(layer.orth_reg_loss())
+
 
 class TestMergeUnmerge:
     """merge_weights / unmerge_weights must roundtrip the base weight."""
