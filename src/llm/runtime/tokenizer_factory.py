@@ -10,7 +10,22 @@ import torch
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
 
-DEFAULT_SIMPLE_CORPUS = ["<PAD>", "<EOS>", "<BOS>"]
+
+def _default_simple_corpus() -> list[str]:
+    """The documented default corpus for a ``simple`` tokenizer with no path.
+
+    ``string.printable`` so real text is encodable (RIL ISS-196: the old
+    corpus of just the three markers produced a vocab of only their
+    constituent characters, so the default config raised ``KeyError`` on any
+    real corpus), plus the three markers so ``<PAD>``/``<EOS>``/``<BOS>`` are
+    still registered as multi-char special tokens.
+    """
+    import string
+
+    return [string.printable, "<PAD>", "<EOS>", "<BOS>"]
+
+
+DEFAULT_SIMPLE_CORPUS = _default_simple_corpus()
 
 _SAFE_GLOBALS_REGISTERED = False
 

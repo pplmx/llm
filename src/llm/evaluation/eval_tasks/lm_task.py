@@ -12,7 +12,13 @@ from llm.tokenization.tokenizer import BaseTokenizer
 class LMTask(BaseTask):
     name = "lm"
 
-    def __init__(self, dataset_path: str, batch_size: int = 8, max_seq_len: int | None = None):
+    def __init__(
+        self,
+        dataset_path: str,
+        batch_size: int = 8,
+        max_seq_len: int | None = None,
+        tokenizer: BaseTokenizer | None = None,
+    ):
         """Perplexity evaluation on a text corpus.
 
         Args:
@@ -24,11 +30,18 @@ class LMTask(BaseTask):
                 smaller context ("Sequence endpoint 128 exceeds maximum
                 sequence length", RIL ISS-130). Defaults to 128 for backward
                 compatibility with callers that never tuned it.
+            tokenizer: The tokenizer bound to the model being evaluated. When
+                provided it replaces the corpus-derived one so the vocab ids
+                fed to the model actually match its trained vocabulary (RIL
+                ISS-195: the old behavior always re-derived a character
+                tokenizer from the eval corpus, so any model trained with a
+                real tokenizer was scored with mismatched ids). Defaults to a
+                corpus-derived simple tokenizer for backward compatibility.
         """
         self.dataset_path = dataset_path
         self.batch_size = batch_size
         self.max_seq_len = max_seq_len or 128
-        self.tokenizer = TokenizerFactory.from_dataset_text(dataset_path)
+        self.tokenizer = tokenizer or TokenizerFactory.from_dataset_text(dataset_path)
         # Mask padded positions so short trailing sequences are scored
         # only over real tokens. TextDataset marks padded label slots with
         # the standard ignore index -100 (never a real token id), so the

@@ -45,8 +45,13 @@ class DatasetPreset:
         dataset_split: Split to stream. ``"train"`` is the default
             for all built-in presets.
         text_column: Name of the text field in each row. Most
-            English-text datasets use ``"text"``; RedPajama's
-            Wikipedia subset uses ``"raw_content"``.
+            English-text datasets use ``"text"``. The RedPajama HF
+            loader normalizes EVERY subset (including ``wikipedia``)
+            to a uniform ``{"text", "meta", "red_pajama_subset"}``
+            schema, so ``"text"`` applies there too — the
+            ``raw_content`` field only exists in the raw
+            together.xyz jsonl files before they go through
+            ``datasets.load_dataset`` (RIL ISS-203).
         description: Human-readable one-liner for CLI / docs.
         preset_name: Canonical short name (lowercase, kebab-case)
             used by :func:`resolve_preset`. Defaults to the
@@ -95,6 +100,9 @@ THEPILE_PRESET = DatasetPreset(
 # by subset without re-typing the ``togethercomputer/RedPajama-Data-1T``
 # id. The dict key equals ``DatasetPreset.preset_name`` so
 # :data:`BUILTIN_PRESETS` (which spreads this dict) stays consistent.
+# All subsets share the same ``text`` column: the RedPajama HF loader
+# maps the per-subset raw jsonl (whose wikipedia entry really is
+# ``raw_content`` on disk) onto one uniform schema (RIL ISS-203).
 _REDPAJAMA_DATASET = "togethercomputer/RedPajama-Data-1T"
 
 

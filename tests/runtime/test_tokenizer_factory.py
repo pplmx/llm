@@ -58,6 +58,25 @@ def test_from_data_config_no_path_uses_default_corpus():
     assert tokenizer.vocab_size > 3
 
 
+def test_from_data_config_default_tokenizer_encodes_real_text():
+    """Regression (RIL ISS-196): the documented default simple tokenizer
+    (``tokenizer_type="simple"`` with no path) must be able to encode real
+    text. The old default corpus ``["<PAD>", "<EOS>", "<BOS>"]`` produced a
+    vocab of only the three markers' constituent characters, so any real
+    corpus raised ``KeyError`` on the first non-marker character — the
+    default config was unusable for actual training data.
+    """
+    config = Config()
+    config.data.tokenizer_type = "simple"
+    config.data.tokenizer_path = None
+
+    tokenizer = TokenizerFactory.from_data_config(config.data)
+    sample = "The quick brown fox jumps over the lazy dog, 123!"
+    encoded = tokenizer.encode(sample)
+    assert tokenizer.decode(encoded) == sample
+    assert tokenizer.pad_token_id is not None
+
+
 def test_from_data_config_hf_requires_path():
     config = Config()
     config.data.tokenizer_type = "hf"

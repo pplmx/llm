@@ -4,6 +4,8 @@ import torch
 from llm.evaluation.eval_tasks.lm_task import LMTask
 from llm.evaluation.metrics.perplexity import PerplexityMetric
 from llm.evaluation.runner import EvaluationRunner
+from llm.runtime.tokenizer_factory import TokenizerFactory
+from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 
 def test_perplexity_metric_perfect_prediction():
@@ -304,3 +306,38 @@ def test_lm_task_respects_explicit_max_seq_len(tmp_path):
 
     inputs, _ = task.prepare_data("val")
     assert all(len(x) <= 16 for x in inputs), "dataset must be truncated to max_seq_len"
+
+
+def test_lm_task_uses_explicit_tokenizer_not_corpus(tmp_path):
+    """RIL ISS-195: a caller-supplied tokenizer (bound to the model's vocab
+    during training) must win over the corpus-derived one.
+
+    Without this, evaluating a model trained with an arbitrary tokenizer
+    re-derives a character tokenizer from the eval corpus, so the vocab ids
+    fed to the model never match its trained vocabulary — the reported
+    perplexity is meaningful only by accident.
+    """
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world\n" * 4, encoding="utf-8")
+
+    model_tok = TokenizerFactory.from_printable_corpus()
+    task = LMTask(dataset_path=str(corpus), batch_size=2, tokenizer=model_tok)
+
+    assert task.tokenizer is model_tok
+    assert task.pad_token_id == model_tok.pad_token_id
+    # The eval dataset must be encoded with the model's vocab, not the corpus.
+    inputs, _ = task.prepare_data("val")
+    assert all(x.max().item() < model_tok.vocab_size for x in inputs)
+
+
+def test_lm_task_tokenizer_defaults_to_corpus_derived(tmp_path):
+    """RIL ISS-195: without an explicit tokenizer, behavior is unchanged —
+    ``LMTask`` derives a character tokenizer from the eval corpus (backward
+    compatibility with all existing callers)."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world\n" * 2, encoding="utf-8")
+
+    task = LMTask(dataset_path=str(corpus))
+    assert isinstance(task.tokenizer, SimpleCharacterTokenizer)
+    # Corpus-derived vocab covers the corpus characters.
+    assert task.tokenizer.encode("h")[0] is not None  # encodes without KeyError

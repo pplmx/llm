@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 68,
+  "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T13:03:55+00:00",
+  "updated_at": "2026-08-16T13:32:53+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9511,11 +9511,11 @@
     "ISS-195": {
       "id": "ISS-195",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:20:43+00:00",
-      "updated_at": "2026-08-16T12:20:43+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T13:32:53+00:00",
+      "touched_round": 69,
       "severity": "medium",
       "title": "LMTask tokenizer is derived from the eval corpus, never bound to the model's vocab",
       "summary": "lm_task.py:31,40-46 builds TokenizerFactory.from_dataset_text(dataset_path): eval vocab (char set, id ordering, pad/eos/bos ids) is a function of the eval file only. Evaluating a model trained on a different corpus (or with an HF tokenizer) can produce eval token ids >= model embedding vocab_size -> IndexError in EmbeddingLayer, or silently different pad/EOS semantics vs training. No API to pass the model's own tokenizer. PLAUSIBLE (needs a concrete train-vs-eval pair; failure loud when ids exceed vocab). Backlog from round-66 eval deep-dive; no test coverage."
@@ -9523,11 +9523,11 @@
     "ISS-196": {
       "id": "ISS-196",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:20:43+00:00",
-      "updated_at": "2026-08-16T12:20:43+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T13:25:45+00:00",
+      "touched_round": 69,
       "severity": "medium",
       "title": "Default-config simple char tokenizer cannot encode real text (KeyError) yet is the documented default",
       "summary": "tokenizer_factory.py:13,87-88: from_data_config with tokenizer_type=simple and no tokenizer_path returns SimpleCharacterTokenizer over only the 9 chars of ['<PAD>','<EOS>','<BOS>']+'special ids'. encode of any real text (e.g. 'hello') raises KeyError: Character 'h' not found; the map/streaming data modules call from_data_config(config.data) with these defaults, so default-config training on a normal text file dies at the first tokenize. Design-locked by test_from_data_config_simple_fallback (only asserts <PAD> round-trips). PLAUSIBLE-until-real-run; backlog from round-66 eval deep-dive."
@@ -9539,7 +9539,7 @@
       "version": 1,
       "created_at": "2026-08-16T12:20:43+00:00",
       "updated_at": "2026-08-16T12:20:43+00:00",
-      "touched_round": 66,
+      "touched_round": 69,
       "severity": "low",
       "title": "PTQ bits=4 silently stores 8-bit with a 4-bit grid — no packing, no memory saving",
       "summary": "ptq.py:27 accepts bits in (4,8) but :144/167/177 always clamp into a full int8 tensor of shape [out_f,in_f]; only qmax changes with bits. A bits=4 layer uses the 15-level grid but occupies 1 byte/value — the caller asking for ~2x compression gets none plus degraded accuracy. Verified (100 vs 15 distinct levels, same byte count). No in-repo consumer of the ptq stats API. Backlog from round-66 quant deep-dive; low priority (dead-ish surface)."
@@ -9551,7 +9551,7 @@
       "version": 1,
       "created_at": "2026-08-16T12:20:43+00:00",
       "updated_at": "2026-08-16T12:20:43+00:00",
-      "touched_round": 66,
+      "touched_round": 69,
       "severity": "medium",
       "title": "save_pretrained lm_head dtype sniffing crashes on a quantized model; no safetensors quant roundtrip",
       "summary": "hf_publisher.py:85-89 reads model.lm_head.weight.dtype; a GPTQ/AWQ/SmoothQuant layer exposes weight_packed (buffer) but no .weight attribute -> AttributeError if lm_head is quantized (default target_modules=None). No quant metadata persisted; hf_loader has zero quant handling and load_state_dict(strict=False) silently drops weight_packed/scales. HF roundtrip of a quantized model cannot preserve quantization — currently fails loudly rather than rejecting up front. PLAUSIBLE; backlog from round-66 quant deep-dive."
@@ -9607,11 +9607,11 @@
     "ISS-203": {
       "id": "ISS-203",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:22:19+00:00",
-      "updated_at": "2026-08-16T12:22:19+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T13:20:43+00:00",
+      "touched_round": 69,
       "severity": "low",
       "title": "RedPajama 'wikipedia' preset may point at wrong text_column (docstring says raw_content, code hardcodes text)",
       "summary": "data/presets.py:50 docstring (Wikipedia uses raw_content) vs :101-118 REDPAJAMA_PRESETS hardcodes text_column='text' for every subset. If the remote wikipedia config stores text under raw_content, HFStreamTextSource.iter_texts row.get('text')->None drops every record -> streaming 'corpus is empty' at runtime. PLAUSIBLE (cannot verify remote schema offline; code and its own docstring disagree). test_presets.py:118 asserts 'text', locking in the code not the remote."
@@ -9623,7 +9623,7 @@
       "version": 1,
       "created_at": "2026-08-16T12:22:19+00:00",
       "updated_at": "2026-08-16T12:22:19+00:00",
-      "touched_round": 66,
+      "touched_round": 69,
       "severity": "low",
       "title": "stream_world_size resume guard is order-dependent (only enforced when _world_size is set)",
       "summary": "data/modules/streaming.py:154-161: load_checkpoint_state only enforces world-size check when self._world_size is not None (populated by train_dataloader :79-81). Today the engine calls train_dataloader before resume-state loading (engine.py:211 vs 283-294) so the guard fires; but if load_checkpoint_state is ever called first (module's own legacy-path tests do), a world-size mismatch passes silently and shard cursors misalign on resume. CONFIRMED (code trace, not currently triggerable in shipped engine flow)."
@@ -9736,6 +9736,162 @@
       "touched_round": 67,
       "commit": "cca6e8a",
       "title": "StreamingTextDataset negative overlap guard"
+    },
+    "TASK-167": {
+      "id": "TASK-167",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T13:14:50+00:00",
+      "updated_at": "2026-08-16T13:32:53+00:00",
+      "touched_round": 69,
+      "category": "correctness",
+      "severity": "medium",
+      "confidence": 0.9,
+      "effort": 1.5,
+      "unlock_factor": 1.2,
+      "title": "Allow LMTask to accept a tokenizer bound to the model vocab; corpus-derived tokenizer as fallback only",
+      "body": "ISS-195: LMTask.__init__ always builds tokenizer via TokenizerFactory.from_dataset_text(dataset_path), never bound to the model vocab"
+    },
+    "TASK-168": {
+      "id": "TASK-168",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T13:14:50+00:00",
+      "updated_at": "2026-08-16T13:25:45+00:00",
+      "touched_round": 69,
+      "category": "correctness",
+      "severity": "medium",
+      "confidence": 0.9,
+      "effort": 1.0,
+      "unlock_factor": 1.0,
+      "title": "Make default simple tokenizer able to encode real text instead of KeyError crash",
+      "body": "ISS-196: DEFAULT_SIMPLE_CORPUS = [\"<PAD>\",\"<EOS>\",\"<BOS>\"], used when no tokenizer_path configured, produces a vocab of only the marker chars - real text raises KeyError"
+    },
+    "TASK-169": {
+      "id": "TASK-169",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:14:50+00:00",
+      "updated_at": "2026-08-16T13:14:50+00:00",
+      "touched_round": 69,
+      "category": "correctness",
+      "severity": "medium",
+      "confidence": 0.9,
+      "effort": 1.5,
+      "unlock_factor": 1.0,
+      "title": "save_pretrained: robust lm_head dtype sniffing for quantized models",
+      "body": "ISS-198: hf_publisher._build_hf_config sniffs model.lm_head.weight.dtype but quantized models have no .weight attr"
+    },
+    "TASK-170": {
+      "id": "TASK-170",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:15:08+00:00",
+      "updated_at": "2026-08-16T13:15:08+00:00",
+      "touched_round": 69,
+      "category": "stability",
+      "severity": "low",
+      "confidence": 0.9,
+      "effort": 1.0,
+      "unlock_factor": 1.0,
+      "title": "PTQ bits=4 must either pack to 4-bit or fail loud instead of storing 8-bit",
+      "body": "ISS-197: simple PTQ QuantizedLinear always stores int8 weight_quantized even for bits=4; scale uses 4-bit grid but storage is int8, so no memory saving and a misleading 4-bit claim"
+    },
+    "TASK-171": {
+      "id": "TASK-171",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T13:15:08+00:00",
+      "updated_at": "2026-08-16T13:20:43+00:00",
+      "touched_round": 69,
+      "category": "correctness",
+      "severity": "low",
+      "confidence": 0.95,
+      "effort": 0.5,
+      "unlock_factor": 1.0,
+      "title": "RedPajama wikipedia preset: use correct text_column (raw_content)",
+      "body": "ISS-203: REDPAJAMA_PRESETS hardcodes text_column=\"text\" for all subsets; docstring says wikipedia uses raw_content"
+    },
+    "TASK-172": {
+      "id": "TASK-172",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:15:08+00:00",
+      "updated_at": "2026-08-16T13:15:08+00:00",
+      "touched_round": 69,
+      "category": "stability",
+      "severity": "low",
+      "confidence": 0.9,
+      "effort": 1.0,
+      "unlock_factor": 1.0,
+      "title": "stream_world_size resume guard: enforce order-independently",
+      "body": "ISS-204: streaming.load_checkpoint_state only guards saved_world_size when self._world_size is already set; if checkpoint loaded before train_dataloader sets it, guard silently passes"
+    },
+    "EV-171": {
+      "id": "EV-171",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:20:14+00:00",
+      "updated_at": "2026-08-16T13:20:14+00:00",
+      "touched_round": 69,
+      "source": "https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T/resolve/main/RedPajama-Data-1T.py",
+      "confidence": 1.0,
+      "body": "Verified the authoritative HF dataset script: _info() declares features {\"text\",\"meta\",\"red_pajama_subset\"} for ALL configs including wikipedia; _generate_examples reads data[\"text\"]. The code text_column=\"text\" in REDPAJAMA_PRESETS is correct; raw_content exists only in raw together.xyz jsonl."
+    },
+    "CHG-165": {
+      "id": "CHG-165",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:20:14+00:00",
+      "updated_at": "2026-08-16T13:20:14+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "Correct misleading RedPajama wikipedia text_column docstring",
+      "body": "presets.py: docstring now documents that all RedPajama HF subsets normalize to text (raw_content is pre-load only). Code unchanged (correct)."
+    },
+    "HYP-055": {
+      "id": "HYP-055",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T13:20:34+00:00",
+      "updated_at": "2026-08-16T13:20:43+00:00",
+      "touched_round": 69,
+      "confidence": 0.9,
+      "title": "RedPajama wikipedia preset text_column is wrong (code says text, docstring says raw_content)",
+      "body": "ISS-203 root-cause hypothesis: the preset hardcodes text_column=\"text\" for all subsets but wikipedia actually uses raw_content. VERIFY: HF loader normalizes all subsets to text."
+    },
+    "CHG-166": {
+      "id": "CHG-166",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:25:44+00:00",
+      "updated_at": "2026-08-16T13:25:44+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "Default simple tokenizer corpus now includes string.printable so real text is encodable",
+      "body": "tokenizer_factory.py: DEFAULT_SIMPLE_CORPUS = [string.printable, <PAD>, <EOS>, <BOS>] via _default_simple_corpus(); preserves ISS-152 EOS/BOS special registration; pad=100/eos=101/bos=102 vocab=103."
+    },
+    "CHG-167": {
+      "id": "CHG-167",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:32:53+00:00",
+      "updated_at": "2026-08-16T13:32:53+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "LMTask accepts an explicit tokenizer bound to the model vocab",
+      "body": "eval_tasks/lm_task.py: new tokenizer kwarg, defaults to corpus-derived TokenizerFactory.from_dataset_text for backward compat; tests in test_lm_task.py (ISS-195)."
     }
   },
   "edges": [
@@ -14308,6 +14464,84 @@
       "to": "ISS-202",
       "type": "resolves",
       "created_at": "2026-08-16T13:03:17+00:00"
+    },
+    {
+      "from": "TASK-167",
+      "to": "ISS-195",
+      "type": "addresses",
+      "created_at": "2026-08-16T13:15:22+00:00"
+    },
+    {
+      "from": "TASK-168",
+      "to": "ISS-196",
+      "type": "addresses",
+      "created_at": "2026-08-16T13:15:22+00:00"
+    },
+    {
+      "from": "TASK-169",
+      "to": "ISS-198",
+      "type": "addresses",
+      "created_at": "2026-08-16T13:15:22+00:00"
+    },
+    {
+      "from": "TASK-170",
+      "to": "ISS-197",
+      "type": "addresses",
+      "created_at": "2026-08-16T13:15:22+00:00"
+    },
+    {
+      "from": "TASK-171",
+      "to": "ISS-203",
+      "type": "addresses",
+      "created_at": "2026-08-16T13:15:22+00:00"
+    },
+    {
+      "from": "TASK-172",
+      "to": "ISS-204",
+      "type": "addresses",
+      "created_at": "2026-08-16T13:15:22+00:00"
+    },
+    {
+      "from": "CHG-165",
+      "to": "TASK-171",
+      "type": "implements",
+      "created_at": "2026-08-16T13:20:23+00:00"
+    },
+    {
+      "from": "CHG-165",
+      "to": "ISS-203",
+      "type": "resolves",
+      "created_at": "2026-08-16T13:20:23+00:00"
+    },
+    {
+      "from": "EV-171",
+      "to": "HYP-055",
+      "type": "refutes",
+      "created_at": "2026-08-16T13:20:43+00:00"
+    },
+    {
+      "from": "CHG-166",
+      "to": "TASK-168",
+      "type": "implements",
+      "created_at": "2026-08-16T13:25:44+00:00"
+    },
+    {
+      "from": "CHG-166",
+      "to": "ISS-196",
+      "type": "resolves",
+      "created_at": "2026-08-16T13:25:45+00:00"
+    },
+    {
+      "from": "CHG-167",
+      "to": "TASK-167",
+      "type": "implements",
+      "created_at": "2026-08-16T13:32:53+00:00"
+    },
+    {
+      "from": "CHG-167",
+      "to": "ISS-195",
+      "type": "resolves",
+      "created_at": "2026-08-16T13:32:53+00:00"
     }
   ]
 }
