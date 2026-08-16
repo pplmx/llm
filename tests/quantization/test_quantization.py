@@ -340,3 +340,12 @@ class TestQuantizeModel:
         linear = torch.nn.Linear(4, 4)
         with pytest.raises(NotImplementedError, match="Asymmetric"):
             QuantizedLinear.from_linear(linear, QuantConfig(bits=8, symmetric=False))
+
+    def test_from_linear_rejects_4bit_no_packing(self):
+        """Regression (RIL ISS-197): simple-PTQ ``bits=4`` silently stored
+        the 4-bit grid as int8 — no packing, no memory saving, while
+        advertising a 4-bit model. It must fail loud and point at the packed
+        GPTQ/AWQ paths instead of pretending compression happened."""
+        linear = torch.nn.Linear(4, 4)
+        with pytest.raises(NotImplementedError, match="4-bit"):
+            QuantizedLinear.from_linear(linear, QuantConfig(bits=4))

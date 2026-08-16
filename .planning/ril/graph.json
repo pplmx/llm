@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T13:41:15+00:00",
+  "updated_at": "2026-08-16T13:54:01+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9535,10 +9535,10 @@
     "ISS-197": {
       "id": "ISS-197",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:20:43+00:00",
-      "updated_at": "2026-08-16T12:20:43+00:00",
+      "updated_at": "2026-08-16T13:54:01+00:00",
       "touched_round": 69,
       "severity": "low",
       "title": "PTQ bits=4 silently stores 8-bit with a 4-bit grid — no packing, no memory saving",
@@ -9788,10 +9788,10 @@
     "TASK-170": {
       "id": "TASK-170",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-16T13:15:08+00:00",
-      "updated_at": "2026-08-16T13:15:08+00:00",
+      "updated_at": "2026-08-16T13:54:01+00:00",
       "touched_round": 69,
       "category": "stability",
       "severity": "low",
@@ -9904,6 +9904,18 @@
       "commit": "PENDING",
       "title": "Robust lm_head dtype sniffing via _model_weight_dtype (embedding fallback)",
       "body": "hf_publisher.py: _model_weight_dtype handles QuantizedLinear (no .weight); falls back to never-quantized embedding then first float param then float32. _build_hf_config uses it. 3 tests. ISS-198."
+    },
+    "CHG-169": {
+      "id": "CHG-169",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:54:01+00:00",
+      "updated_at": "2026-08-16T13:54:01+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "Simple-PTQ rejects bits=4 (would store 4-bit grid as int8, no packing); scale param typed Tensor|float",
+      "body": "ptq.py: NotImplementedError for bits!=8 pointing at GPTQ/AWQ packed paths (ISS-197); widened scale: float|torch.Tensor|None on from_linear + quantize_linear_layer — latent ty errors surfaced by bits narrowing. 1 test."
     }
   },
   "edges": [
@@ -14566,6 +14578,18 @@
       "to": "ISS-198",
       "type": "resolves",
       "created_at": "2026-08-16T13:41:14+00:00"
+    },
+    {
+      "from": "CHG-169",
+      "to": "TASK-170",
+      "type": "implements",
+      "created_at": "2026-08-16T13:54:01+00:00"
+    },
+    {
+      "from": "CHG-169",
+      "to": "ISS-197",
+      "type": "resolves",
+      "created_at": "2026-08-16T13:54:01+00:00"
     }
   ]
 }

@@ -102,7 +102,7 @@ class QuantizedLinear(nn.Module):
         cls,
         linear: nn.Linear,
         config: QuantConfig | None = None,
-        scale: float | None = None,
+        scale: float | torch.Tensor | None = None,
     ) -> QuantizedLinear:
         """
         Create QuantizedLinear from a regular Linear layer.
@@ -126,6 +126,19 @@ class QuantizedLinear(nn.Module):
             raise NotImplementedError(
                 "Asymmetric simple-PTQ is not implemented. Use symmetric=True "
                 "or the GPTQ path (llm.quantization.gptq) for asymmetric quantization."
+            )
+        if config.bits != 8:
+            # The simple-PTQ layer stores weights in an int8 buffer. A
+            # ``bits=4`` config quantized to a 4-bit *range* but persisted
+            # them as full int8 values — no packing, no memory saving, while
+            # still advertising a 4-bit model (RIL ISS-197). Real 4-bit
+            # packing lives in the GPTQ/AWQ layers; fail fast instead of
+            # silently storing 8-bit weights behind a 4-bit claim.
+            raise NotImplementedError(
+                f"Simple-PTQ only supports bits=8 (got bits={config.bits}). "
+                "4-bit simple-PTQ would store the 4-bit grid as int8 with no "
+                "memory saving; use the GPTQ or AWQ path "
+                "(llm.quantization.gptq / llm.quantization.awq) for packed 4-bit."
             )
         quant_linear = cls(
             in_features=linear.in_features,
@@ -188,7 +201,7 @@ class QuantizedLinear(nn.Module):
 def quantize_linear_layer(
     layer: nn.Linear,
     config: QuantConfig | None = None,
-    scale: float | None = None,
+    scale: float | torch.Tensor | None = None,
 ) -> QuantizedLinear:
     """
     Quantize a single Linear layer.
