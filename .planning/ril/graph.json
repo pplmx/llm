@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T01:32:10+00:00",
+  "updated_at": "2026-08-16T01:37:51+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7941,12 +7941,13 @@
     "ISS-160": {
       "id": "ISS-160",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:37:43+00:00",
       "touched_round": 61,
-      "severity": "0.55|title=Post-LN (norm_first=False) block builds non-canonical residual: MLP input is post-attention-norm value not raw residual|summary=transformer_block.py:211: Post-LN reassigns residual=norm1(x+attn_out), so MLP consumes/residuals off normalized value; differs from canonical norm2((x+attn)+mlp(x+attn)) by max abs 0.43 at hidden 8. CONFIRMED numeric. Pre-LN default unaffected."
+      "severity": "0.55|title=Post-LN (norm_first=False) block builds non-canonical residual: MLP input is post-attention-norm value not raw residual|summary=transformer_block.py:211: Post-LN reassigns residual=norm1(x+attn_out), so MLP consumes/residuals off normalized value; differs from canonical norm2((x+attn)+mlp(x+attn)) by max abs 0.43 at hidden 8. CONFIRMED numeric. Pre-LN default unaffected.",
+      "summary": "REFUTED (round 61): canonical Post-LN (Vaswani 2017 / nn.TransformerEncoderLayer norm_first=False) is exactly norm2(norm1(x+attn)+mlp(norm1(x+attn))): each sublayer is LayerNorm(x + Sublayer(x)) sequentially, so the FFN consumes the post-norm attention value. The deep-dive agent's claimed 'canonical' norm2((x+attn)+mlp(x+attn)) is NOT standard Post-LN. Numeric proof: our block equals a line-by-line replica to 1e-6. HYP-053/EV-165. Do not fix."
     },
     "ISS-161": {
       "id": "ISS-161",
@@ -8021,10 +8022,10 @@
     "TASK-113": {
       "id": "TASK-113",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T01:15:56+00:00",
-      "updated_at": "2026-08-16T01:27:51+00:00",
+      "updated_at": "2026-08-16T01:32:19+00:00",
       "touched_round": 61,
       "title": "AdaLoRA fp16/bf16 crash: compute QR/SVD in fp32",
       "category": "correctness",
@@ -8095,16 +8096,18 @@
     "TASK-118": {
       "id": "TASK-118",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 3,
       "created_at": "2026-08-16T01:15:56+00:00",
-      "updated_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:37:51+00:00",
       "touched_round": 61,
       "title": "Post-LN block: MLP consumes raw residual not norm(x+attn) (ISS-160)",
       "category": "correctness",
       "severity": 0.55,
       "confidence": 1.0,
-      "effort": 0.35
+      "effort": 0.35,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T02:32:42+00:00"
     },
     "TASK-119": {
       "id": "TASK-119",
@@ -8292,6 +8295,28 @@
       "touched_round": 61,
       "commit": "73709db",
       "summary": "AdaLoRA _orthonormalize upcasts to fp32 for QR (ISS-156, also unblocks half-precision orth_reg_loss)"
+    },
+    "HYP-053": {
+      "id": "HYP-053",
+      "type": "hypothesis",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-16T01:37:17+00:00",
+      "updated_at": "2026-08-16T01:37:51+00:00",
+      "touched_round": 61,
+      "title": "Post-LN (norm_first=False) block uses non-canonical residual: MLP should consume raw x+attn not norm1(x+attn)",
+      "confidence": 0.0
+    },
+    "EV-165": {
+      "id": "EV-165",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:37:17+00:00",
+      "updated_at": "2026-08-16T01:37:17+00:00",
+      "touched_round": 61,
+      "source": "round61 numeric trace (transformer_block.py:176-221): ours == line-by-line replica norm2(norm1(x+attn)+mlp(norm1(x+attn))) allclose 1e-6; matches nn.TransformerEncoderLayer(norm_first=False) sequential sublayer structure Vaswani 2017",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -11964,6 +11989,12 @@
       "to": "TASK-113",
       "type": "implements",
       "created_at": "2026-08-16T01:32:10+00:00"
+    },
+    {
+      "from": "EV-165",
+      "to": "HYP-053",
+      "type": "refutes",
+      "created_at": "2026-08-16T01:37:43+00:00"
     }
   ]
 }
