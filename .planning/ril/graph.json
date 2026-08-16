@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 70,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T17:14:22+00:00",
+  "updated_at": "2026-08-16T17:15:22+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10281,11 +10281,11 @@
       "id": "CHG-176",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T17:14:21+00:00",
-      "updated_at": "2026-08-16T17:14:21+00:00",
+      "updated_at": "2026-08-16T17:15:22+00:00",
       "touched_round": 70,
-      "commit": "PENDING",
+      "commit": "6e1383b",
       "title": "load_peft: per-parameter shape check with clear error; drop broken rank-widening doc claim",
       "body": "checkpoint.py: shape check before p.data.copy_ raises clear msg naming param + saved/live shapes; module + load_peft docstrings corrected (rank widening NOT implemented). 1 test. ISS-210."
     }
