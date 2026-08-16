@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T02:44:30+00:00",
+  "updated_at": "2026-08-16T02:49:09+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7881,12 +7881,13 @@
     "ISS-154": {
       "id": "ISS-154",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T02:49:09+00:00",
       "touched_round": 61,
-      "severity": "0.3|title=E2E run_inference mis-slices result when prompt truncated to fit context|summary=utils/e2e.py:162 generated[len(prompt):] assumes generate returned prompt+output; stream_generate truncates prompt to last max_seq_len-max_new_tokens whereby slice lands inside generated text dropping leading output chars. PLAUSIBLE traced: E2EConfig(max_seq_len=10, max_new_tokens=8, prompt='hello')."
+      "severity": "0.3|title=E2E run_inference mis-slices result when prompt truncated to fit context|summary=utils/e2e.py:162 generated[len(prompt):] assumes generate returned prompt+output; stream_generate truncates prompt to last max_seq_len-max_new_tokens whereby slice lands inside generated text dropping leading output chars. PLAUSIBLE traced: E2EConfig(max_seq_len=10, max_new_tokens=8, prompt='hello').",
+      "summary": "REFUTED (round 61): run_inference slicing is correct. generate() (eager.py:245) re-prepends the ORIGINAL prompt after stream_generate's internal truncation, so generated[len(prompt):] strips exactly the full prompt. Live: with keep=1 (prompt 5 chars, max_seq_len 9, max_new_tokens 8) run_inference returns exactly 8 chars (== max_new_tokens). HYP-054/EV-166."
     },
     "ISS-155": {
       "id": "ISS-155",
@@ -8196,16 +8197,18 @@
     "TASK-124": {
       "id": "TASK-124",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 3,
       "created_at": "2026-08-16T01:15:57+00:00",
-      "updated_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T02:49:09+00:00",
       "touched_round": 61,
       "title": "e2e run_inference slice from model-seen window (ISS-154)",
       "category": "correctness",
       "severity": 0.3,
       "confidence": 0.8,
-      "effort": 0.3
+      "effort": 0.3,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T03:44:47+00:00"
     },
     "TASK-125": {
       "id": "TASK-125",
@@ -8434,6 +8437,28 @@
       "touched_round": 61,
       "commit": 1.636e+28,
       "summary": "BPETokenizer.pad_token_id never None (ISS-155)"
+    },
+    "HYP-054": {
+      "id": "HYP-054",
+      "type": "hypothesis",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-16T02:48:29+00:00",
+      "updated_at": "2026-08-16T02:49:09+00:00",
+      "touched_round": 61,
+      "title": "E2E run_inference mis-slices generated text when stream_generate truncates the prompt to fit the context",
+      "confidence": 0.0
+    },
+    "EV-166": {
+      "id": "EV-166",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T02:48:29+00:00",
+      "updated_at": "2026-08-16T02:48:29+00:00",
+      "touched_round": 61,
+      "source": "round61 live run (e2e.py:162, eager.py:245): run_inference returns exactly max_new_tokens chars (8/8) even when keep=max(1,max_seq_len-max_new_tokens)=1 trashes the prompt; generate() re-prepends the ORIGINAL prompt (return prompt + ''.join(chunks)) AFTER stream_generate's internal truncation, so generated[len(prompt):] strips exactly the full prompt and never lands inside the output",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -12220,6 +12245,12 @@
       "to": "TASK-125",
       "type": "implements",
       "created_at": "2026-08-16T02:44:30+00:00"
+    },
+    {
+      "from": "EV-166",
+      "to": "HYP-054",
+      "type": "refutes",
+      "created_at": "2026-08-16T02:49:09+00:00"
     }
   ]
 }
