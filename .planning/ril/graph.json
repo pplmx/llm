@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 66,
+  "round": 67,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T12:22:45+00:00",
+  "updated_at": "2026-08-16T12:32:20+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9559,11 +9559,11 @@
     "ISS-199": {
       "id": "ISS-199",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:22:19+00:00",
-      "updated_at": "2026-08-16T12:22:19+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T12:32:20+00:00",
+      "touched_round": 67,
       "severity": "high",
       "title": "DataConfig.max_seq_len unvalidated (no gt=0) -> negative truncation + attention_mask longer than input_ids (SFT/DPO/Reward)",
       "summary": "core/config.py:546 max_seq_len: int = 512 has no gt=0 (ModelConfig.max_seq_len at :21 does). datasets/sft.py:123-136 dpo.py:76-89 reward.py:67-78 slice input_ids[:max_seq_len] then pad_len = max_seq_len - len(input_ids); with max_seq_len=-1 inputs get truncated and attention_mask ends up LONGER than input_ids ((145,) vs (293,) verified) -> opaque shape crash mid-training. TextDataset/StreamingTextDataset reject <=0, so behavior differs per module. CONFIRMED (runtime-verified); no test covers negative max_seq_len."
@@ -9571,11 +9571,11 @@
     "ISS-200": {
       "id": "ISS-200",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:22:19+00:00",
-      "updated_at": "2026-08-16T12:22:19+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T12:32:20+00:00",
+      "touched_round": 67,
       "severity": "medium",
       "title": "split_train_val produces an empty train set for a 1-sample file -> silent zero-epoch training",
       "summary": "data/modules/map_base.py:92-95: train_size = int(0.9*len(dataset)); for len==1 train_size=0, val=1; the if val_size<=0 guard misses it, random_split([0,1]) yields empty train -> DistributedSampler 0-length -> num_batches=0 -> epoch trains on nothing, epoch_loss stays 0 corrupting save_best/EarlyStopping. Reachable from every map DataModule with default 90/10 split and no val_dataset_path. CONFIRMED (runtime-verified, torch warns). Tests cover 100/4-sample cases only."
@@ -9583,11 +9583,11 @@
     "ISS-201": {
       "id": "ISS-201",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:22:19+00:00",
-      "updated_at": "2026-08-16T12:22:19+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T12:32:20+00:00",
+      "touched_round": 67,
       "severity": "medium",
       "title": "RewardDataset._load_data lacks JSONDecodeError handling (SFT/DPO wrap it, Reward doesn't)",
       "summary": "data/datasets/reward.py:46-59: json.loads(line) with only FileNotFoundError handled -> one malformed line aborts dataset construction with raw json.JSONDecodeError and no file context. SFTDataset (sft.py:66-67) and DPODataset (dpo.py:59-60) wrap the same failure in ValueError('Invalid JSON in ... file'). Inconsistent; crash surfaces at training startup. CONFIRMED (code trace); no Reward analog of test_dpo_dataset_json_decode_error."
@@ -9627,6 +9627,65 @@
       "severity": "low",
       "title": "stream_world_size resume guard is order-dependent (only enforced when _world_size is set)",
       "summary": "data/modules/streaming.py:154-161: load_checkpoint_state only enforces world-size check when self._world_size is not None (populated by train_dataloader :79-81). Today the engine calls train_dataloader before resume-state loading (engine.py:211 vs 283-294) so the guard fires; but if load_checkpoint_state is ever called first (module's own legacy-path tests do), a world-size mismatch passes silently and shard cursors misalign on resume. CONFIRMED (code trace, not currently triggerable in shipped engine flow)."
+    },
+    "TASK-163": {
+      "id": "TASK-163",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T12:25:06+00:00",
+      "updated_at": "2026-08-16T12:32:20+00:00",
+      "touched_round": 67,
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 0.97,
+      "effort": 0.5,
+      "unlock_factor": 1.2,
+      "title": "Validate DataConfig.max_seq_len > 0 + runtime guard in SFT/DPO/Reward datasets (ISS-199)",
+      "summary": "negative/zero max_seq_len truncates input_ids from the end and lets attention_mask grow LONGER than input_ids (146 vs 293 verified) -> opaque shape crash mid-training. Add gt=0 Field constraint on DataConfig.max_seq_len and a fail-fast ValueError in SFT/DPO/Reward dataset constructors (direct construction bypasses pydantic). Regression tests for negative + zero."
+    },
+    "TASK-164": {
+      "id": "TASK-164",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-16T12:25:06+00:00",
+      "updated_at": "2026-08-16T12:32:20+00:00",
+      "touched_round": 67,
+      "category": "stability",
+      "severity": 0.7,
+      "confidence": 0.97,
+      "effort": 0.3,
+      "unlock_factor": 1.0,
+      "title": "split_train_val: 1-sample file must not produce an empty train set (ISS-200)",
+      "summary": "train_size=int(0.9*len); for len==1 -> empty train + full val -> zero-epoch silent training + corrupted save_best/EarlyStopping. When either side is 0 (tiny corpus) fall back to whole-dataset train with no val split. Regression test for len==1 and len==2."
+    },
+    "TASK-165": {
+      "id": "TASK-165",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T12:25:07+00:00",
+      "updated_at": "2026-08-16T12:32:20+00:00",
+      "touched_round": 67,
+      "category": "maintainability",
+      "severity": 0.6,
+      "confidence": 0.97,
+      "effort": 0.3,
+      "unlock_factor": 1.0,
+      "title": "RewardDataset: wrap JSONDecodeError like SFT/DPO (ISS-201)",
+      "summary": "_load_data bare json.loads -> raw JSONDecodeError on one malformed line with no file context, unlike SFT/DPO's ValueError('Invalid JSON in ... file'). Align Reward to the sibling pattern. Regression test mirroring test_dpo_dataset_json_decode_error."
+    },
+    "CHG-162": {
+      "id": "CHG-162",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:32:07+00:00",
+      "updated_at": "2026-08-16T12:32:07+00:00",
+      "touched_round": 67,
+      "commit": "8bb275e",
+      "title": "Validate max_seq_len > 0, guard empty-train split, align Reward JSON errors"
     }
   },
   "edges": [
@@ -14109,6 +14168,60 @@
       "to": "COMP-001",
       "type": "located_in",
       "created_at": "2026-08-16T12:22:45+00:00"
+    },
+    {
+      "from": "TASK-163",
+      "to": "ISS-199",
+      "type": "addresses",
+      "created_at": "2026-08-16T12:25:07+00:00"
+    },
+    {
+      "from": "TASK-164",
+      "to": "ISS-200",
+      "type": "addresses",
+      "created_at": "2026-08-16T12:25:07+00:00"
+    },
+    {
+      "from": "TASK-165",
+      "to": "ISS-201",
+      "type": "addresses",
+      "created_at": "2026-08-16T12:25:07+00:00"
+    },
+    {
+      "from": "CHG-162",
+      "to": "TASK-163",
+      "type": "implements",
+      "created_at": "2026-08-16T12:32:19+00:00"
+    },
+    {
+      "from": "CHG-162",
+      "to": "TASK-164",
+      "type": "implements",
+      "created_at": "2026-08-16T12:32:19+00:00"
+    },
+    {
+      "from": "CHG-162",
+      "to": "TASK-165",
+      "type": "implements",
+      "created_at": "2026-08-16T12:32:20+00:00"
+    },
+    {
+      "from": "CHG-162",
+      "to": "ISS-199",
+      "type": "resolves",
+      "created_at": "2026-08-16T12:32:20+00:00"
+    },
+    {
+      "from": "CHG-162",
+      "to": "ISS-200",
+      "type": "resolves",
+      "created_at": "2026-08-16T12:32:20+00:00"
+    },
+    {
+      "from": "CHG-162",
+      "to": "ISS-201",
+      "type": "resolves",
+      "created_at": "2026-08-16T12:32:20+00:00"
     }
   ]
 }
