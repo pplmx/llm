@@ -145,7 +145,11 @@ def test_awq_layer_bias_preserved():
 
 
 def test_awq_layer_forward_accepts_fp16_bf16_input():
-    """fp16/bf16 inputs must not crash (regression for ISS-018)."""
+    """fp16/bf16 inputs must not crash (regression for ISS-018).
+
+    RIL ISS-191: the output follows the input dtype (native Linear
+    semantics) so the quantized layer feeds surrounding half-precision
+    linears without a dtype crash; it no longer always emits fp32."""
     layer = _build_awq_layer()
     x32 = torch.randn(3, 16)
     ref = layer(x32)

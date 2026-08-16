@@ -608,6 +608,11 @@ def quantize_model_gptq(
         if layer.bias is not None:
             with torch.no_grad():
                 new_layer.bias.copy_(layer.bias.data)
+        # Adopt the replaced layer's dtype (RIL ISS-191): selective
+        # quantization over an already fp16/bf16 base must yield an fp16
+        # quant layer, otherwise the forward emits fp32 into the remaining
+        # half-precision linears and crashes.
+        new_layer = new_layer.to(layer.weight.dtype)
         _replace_module(model, name, new_layer)
         logger.info(
             f"Quantized layer {name}: {layer.weight.shape} → "

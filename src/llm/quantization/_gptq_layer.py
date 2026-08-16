@@ -111,15 +111,18 @@ class GPTQQuantizedLinear(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with dequantized weights.
 
-        Always materializes fp32 weights: input `x` is upcast to fp32 if needed,
-        output is fp32 regardless of `x` dtype. Asymmetric quantization
+        Dequantizes to fp32 and computes the matmul in fp32 for accuracy,
+        then returns in the input's dtype — native ``nn.Linear`` semantics,
+        keeping the layer a faithful drop-in replacement even after the
+        model is cast to fp16/bf16 (serving default) or selectively
+        quantized over a half base (RIL ISS-191). Asymmetric quantization
         (`sym=False`) is not yet implemented — raises NotImplementedError.
 
         Args:
             x: Input tensor of shape [..., in_features].
 
         Returns:
-            Output tensor of shape [..., out_features], dtype fp32.
+            Output tensor of shape [..., out_features].
 
         Raises:
             NotImplementedError: If `sym=False` was passed at construction.
@@ -148,7 +151,19 @@ class GPTQQuantizedLinear(nn.Module):
             scales_expanded = scales.to(torch.float32).repeat_interleave(gs, dim=1)
             w_fp = w_int_signed * scales_expanded
 
-        # Weights are materialised in fp32; upcast the input so fp16/bf16
-        # model inference (the HF loader / serving default) works.  Output
-        # is fp32 regardless of ``x`` dtype (matches the docstring).
-        return torch.nn.functional.linear(x.to(torch.float32), w_fp, self.bias)
+        # Dequantize in fp32 for accuracy, then compute in fp32 and return
+        # in the layer's effective dtype (RIL ISS-191). A post-quant
+        # fp16/bf16 cast — the serving engine's
+        # ``model.to(device, dtype=torch.float16)``, or selective
+        # quantization over an already-half base — converts ``bias``/scales
+        # to half; computing in fp32 avoids mixing dtypes inside
+        # ``F.linear`` (crash) and returning the layer's dtype avoids
+        # emitting fp32 into half-precision residual linears (crash). An
+        # fp32 model is unchanged (fp32 in -> fp32 out).
+        dtype = self.bias.dtype if self.bias is not None else x.dtype
+        out = torch.nn.functional.linear(
+            x.to(torch.float32),
+            w_fp,
+            self.bias.to(torch.float32) if self.bias is not None else self.bias,
+        )
+        return out.to(dtype)

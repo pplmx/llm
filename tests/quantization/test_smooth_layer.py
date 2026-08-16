@@ -108,7 +108,11 @@ def test_smooth_layer_no_input_scales_path():
 
 
 def test_smooth_layer_forward_accepts_fp16_bf16_input():
-    """fp16/bf16 inputs must not crash (regression for ISS-018)."""
+    """fp16/bf16 inputs must not crash (regression for ISS-018).
+
+    RIL ISS-191: the output follows the input dtype (native Linear
+    semantics) so the quantized layer feeds surrounding half-precision
+    linears without a dtype crash; it no longer always emits fp32."""
     layer = _build_smooth_layer()
     x32 = torch.randn(2, 16)
     ref = layer(x32)

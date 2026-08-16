@@ -76,13 +76,17 @@ class SmoothQuantLinear(nn.Module):
         """Forward pass: ``Q8(W·s)·Q8(x/s)`` with INT8 fake quantization.
 
         Activations are quantized per-tensor (the SmoothQuant contract), then
-        multiplied by the dequantized smoothed weights.
+        multiplied by the dequantized smoothed weights. The matmul runs in
+        fp32 for accuracy and the result returns in the input's dtype —
+        native ``nn.Linear`` semantics — so post-quant fp16/bf16 casts don't
+        mix dtypes inside ``F.linear`` or emit fp32 into half-precision
+        residual linears (RIL ISS-191). An fp32 model is unchanged.
 
         Args:
             x: Input tensor of shape [..., in_features].
 
         Returns:
-            Output tensor of shape [..., out_features], dtype fp32.
+            Output tensor of shape [..., out_features].
 
         Raises:
             NotImplementedError: If ``sym=False`` was passed at construction.
@@ -101,6 +105,15 @@ class SmoothQuantLinear(nn.Module):
         x_q = torch.clamp(torch.round(x / act_scale), -128, 127) * act_scale
 
         w_fp = self._dequantize_weights()
-        # Weights are materialised in fp32; upcast the (fake-quantised) input
-        # so fp16/bf16 model inference works.  Output is fp32.
-        return torch.nn.functional.linear(x_q.to(torch.float32), w_fp, self.bias)
+        # Compute in fp32 for accuracy, return in the layer's effective
+        # dtype (RIL ISS-191) — see GPTQQuantizedLinear for the same
+        # reasoning; the output must follow the surrounding model's dtype
+        # (fp32 model stays fp32; a post-quant fp16/bf16 cast produces
+        # half output), not always be fp32.
+        dtype = self.bias.dtype if self.bias is not None else x_q.dtype
+        out = torch.nn.functional.linear(
+            x_q.to(torch.float32),
+            w_fp,
+            self.bias.to(torch.float32) if self.bias is not None else self.bias,
+        )
+        return out.to(dtype)

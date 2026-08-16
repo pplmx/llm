@@ -374,8 +374,103 @@ def test_gptq_layer_forward_accepts_fp16_bf16_input():
     ref = layer(x32)  # fp32 baseline
     for x in (x32.half(), x32.bfloat16()):
         out = layer(x)
+        # RIL ISS-191: an fp32 layer keeps fp32 output for half inputs (the
+        # layer's effective dtype follows bias), so this contract is
+        # unchanged; the dtype-aware paths are covered by the fp16-cast
+        # and partial-quant regressions below.
         assert out.dtype == torch.float32
         assert torch.allclose(out, ref, atol=1e-2)
+
+
+def _build_gptq_layer(out_f: int = 4, in_f: int = 8, *, bias: bool = True):
+    """Build a deterministic 4-bit GPTQQuantizedLinear (per-channel)."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
+
+    torch.manual_seed(0)
+    w = torch.randn(out_f, in_f) * 0.3
+    qmax = 7.0
+    scale = w.abs().max(dim=1, keepdim=True)[0].clamp(min=1e-8) / qmax
+    w_int = (w / scale).round().clamp(-8, 7).to(torch.int8) + 8  # unsigned [0,15]
+    packed = _pack_4bit(w_int.flatten())
+    return GPTQQuantizedLinear(
+        in_features=in_f,
+        out_features=out_f,
+        bits=4,
+        group_size=-1,
+        sym=True,
+        weight_packed=packed,
+        scales=scale,
+        zeros=None,
+        bias=bias,
+    )
+
+
+def test_gptq_layer_forward_after_fp16_cast_matches():
+    """Post-quant fp16 cast (serving engine default) must not crash and must
+    feed half-precision downstream linears (RIL ISS-191).
+
+    The old forward always emitted fp32 — ``model.to(dtype=torch.float16)``
+    converts the fp32 ``bias`` (and scales) to half, so ``F.linear(x_f32,
+    w_f32, bias_f16)`` raised a dtype-mismatch RuntimeError on the very first
+    forward of a quantized model under the serving engine."""
+    layer = _build_gptq_layer()
+    x32 = torch.randn(2, 8)
+    ref = layer(x32)  # fp32 baseline
+
+    layer.half()  # what batch_engine.py's model.to(device, dtype=float16) does
+    x16 = x32.half()
+    out16 = layer(x16)  # must not raise
+    assert out16.dtype == torch.float16
+    assert torch.allclose(out16.float(), ref, atol=1e-2)
+
+    # The fp16 output must be consumable by an fp16 nn.Linear (the residual
+    # path) without a mat dtype error.
+    residual = torch.nn.Linear(4, 4).half()
+    assert residual(out16).dtype == torch.float16
+
+
+def test_selective_quant_of_fp16_model_does_not_crash():
+    """Quantizing one layer of an already-fp16 model must keep the whole
+    model runnable in fp16 (regression for RIL ISS-191).
+
+    The selective-quant path copies the original (fp16) bias via
+    ``new_layer.bias.copy_(layer.bias.data)`` — ``copy_`` keeps the fp32
+    destination dtype — so without the conversion-time
+    ``new_layer.to(layer.weight.dtype)`` a quantized layer that always
+    emitted fp32 fed fp32 activations into the remaining fp16 linears and
+    crashed."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
+
+    torch.manual_seed(0)
+    model = torch.nn.Sequential(torch.nn.Linear(8, 8), torch.nn.ReLU(), torch.nn.Linear(8, 4)).half()
+    # Reproduce the repo conversion path for the first linear: replace it
+    # with a quantized layer, copy the fp16 bias into the fp32 parameter,
+    # then adopt the replaced layer's dtype (quantize_model_gptq now does
+    # ``new_layer.to(layer.weight.dtype)``, RIL ISS-191).
+    w = torch.randn(8, 8) * 0.3
+    qmax = 7.0
+    scale = w.abs().max(dim=1, keepdim=True)[0].clamp(min=1e-8) / qmax
+    w_int = (w / scale).round().clamp(-8, 7).to(torch.int8) + 8
+
+    new0 = GPTQQuantizedLinear(
+        in_features=8,
+        out_features=8,
+        bits=4,
+        group_size=-1,
+        sym=True,
+        weight_packed=_pack_4bit(w_int.flatten()),
+        scales=scale,
+        zeros=None,
+        bias=True,
+    )
+    with torch.no_grad():
+        new0.bias.copy_(model[0].bias.data)  # copy_ keeps fp32 dest dtype
+    new0 = new0.to(torch.float16)
+    model[0] = new0
+
+    out = model(torch.randn(2, 8, dtype=torch.float16))
+    assert out.dtype == torch.float16
+    assert out.shape == (2, 4)
 
 
 def test_quantizer_grouped_scale_matches_per_row_dequant():

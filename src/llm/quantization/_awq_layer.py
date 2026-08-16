@@ -76,11 +76,18 @@ class AWQQuantizedLinear(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass: ``Q(W·s)·(x/s)`` with exact AWQ scale compensation.
 
+        Computes the matmul in fp32 for accuracy, then returns in the input's
+        dtype — native ``nn.Linear`` semantics — so post-quant fp16/bf16
+        casts (serving engine default, or selective quantization over a half
+        base) don't mix dtypes inside ``F.linear`` or emit fp32 into
+        half-precision residual linears (RIL ISS-191). An fp32 model is
+        unchanged.
+
         Args:
             x: Input tensor of shape [..., in_features].
 
         Returns:
-            Output tensor of shape [..., out_features], dtype fp32.
+            Output tensor of shape [..., out_features].
 
         Raises:
             NotImplementedError: If ``sym=False`` was passed at construction.
@@ -107,6 +114,15 @@ class AWQQuantizedLinear(nn.Module):
             scales_expanded = scales.to(torch.float32).repeat_interleave(gs, dim=1)
             w_fp = w_int_signed * scales_expanded
 
-        # Weights are materialised in fp32; upcast the input so fp16/bf16
-        # model inference works.  Output is fp32 (matches the docstring).
-        return torch.nn.functional.linear(x.to(torch.float32), w_fp, self.bias)
+        # Compute in fp32 for accuracy, return in the layer's effective
+        # dtype (RIL ISS-191) — see GPTQQuantizedLinear for the same
+        # reasoning; the output must follow the surrounding model's dtype
+        # (fp32 model stays fp32; a post-quant fp16/bf16 cast produces
+        # half output), not always be fp32.
+        dtype = self.bias.dtype if self.bias is not None else x.dtype
+        out = torch.nn.functional.linear(
+            x.to(torch.float32),
+            w_fp,
+            self.bias.to(torch.float32) if self.bias is not None else self.bias,
+        )
+        return out.to(dtype)
