@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 67,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T12:32:20+00:00",
+  "updated_at": "2026-08-16T12:37:00+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9366,10 +9366,10 @@
       "id": "TASK-159",
       "type": "task",
       "status": "active",
-      "version": 2,
+      "version": 3,
       "created_at": "2026-08-16T11:44:56+00:00",
-      "updated_at": "2026-08-16T11:54:07+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T12:37:00+00:00",
+      "touched_round": 67,
       "category": "core-feature",
       "severity": 0.5,
       "confidence": 0.95,
@@ -9377,7 +9377,9 @@
       "unlock_factor": 1.2,
       "title": "Wire ALiBi as a pos_encoding option (BLOOM-style linear-bias PE) into DecoderModel + attention",
       "summary": "ISS-190: core/alibi.py is complete+tested with zero consumers. Integrate ALiBiPositionBias into the attention score path for the supported attn_impls (inject before softmax), add pos_encoding=alibi plumbing through DecoderModel/model_factory/config, and cover with tests incl. causal masking interplay. Milestone: new PE family without touching RoPE/learned paths.",
-      "note": "deferred to round 67; round 66 focused on quant+eval verified fixes"
+      "note": "deferred to round 67; round 66 focused on quant+eval verified fixes",
+      "lock_owner": "round68-session",
+      "lock_until": "2026-08-16T13:07:00+00:00"
     },
     "ISS-191": {
       "id": "ISS-191",
@@ -9686,6 +9688,18 @@
       "touched_round": 67,
       "commit": "8bb275e",
       "title": "Validate max_seq_len > 0, guard empty-train split, align Reward JSON errors"
+    },
+    "DEC-041": {
+      "id": "DEC-041",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:36:49+00:00",
+      "updated_at": "2026-08-16T12:36:49+00:00",
+      "touched_round": 67,
+      "rationale": "ALiBi should ship as a real pos_encoding option, not remain a tested-but-unwired module (ISS-190). Wiring strategy: pass the ALiBi [1,N,Sq,Sk] bias through F.scaled_dot_product_attention's attn_bias channel — SDPA accepts arbitrary float additive biases, which is exactly ALiBi's semantics (signed linear bias, NOT a 0/-inf mask). Supported backends: mha (default) and sdpa, both of which route through llm.core.attn.sdpa.sdpa(). flash_attn/mla/paged do NOT get alibi in this milestone — they raise NotImplementedError at DecoderModel build time (loud-fail) instead of silently producing wrong PE (the repo's established contract, cf. Mixtral/MLA loud-fail). use_alibi conflicts with use_rope -> rejected at build. Final norm/no positional table: ALiBi adds no positional parameters, so eval/export weight formats are unchanged.",
+      "alternatives_rejected": "1) Merge alibi into the existing 0/-inf additive mask channel: REJECTED — ALiBi is a signed positional bias, folding it through mask normalization would double-apply window/causal masks and corrupt the mask logic that rounds 42-62 stabilized. 2) Materialize full [B,N,S,S] scores and add bias pre-softmax manually in every backend: REJECTED — that kills SDPA flash-fused attention and duplicates per-backend score loops. 3) Delete alibi.py as dead code: REJECTED — BLOOM-style PE is a real, roadmap-relevant family (P1).",
+      "title": "Ship ALiBi as pos_encoding via SDPA attn_bias channel (mha+sdpa), loud-fail others"
     }
   },
   "edges": [
@@ -14222,6 +14236,12 @@
       "to": "ISS-201",
       "type": "resolves",
       "created_at": "2026-08-16T12:32:20+00:00"
+    },
+    {
+      "from": "DEC-041",
+      "to": "TASK-159",
+      "type": "governs",
+      "created_at": "2026-08-16T12:37:00+00:00"
     }
   ]
 }
