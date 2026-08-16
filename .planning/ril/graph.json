@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 60,
+  "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-15T22:04:21+00:00",
+  "updated_at": "2026-08-16T01:16:37+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 46,
+      "touched_round": 61,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -871,7 +871,7 @@
       "version": 1,
       "created_at": "2026-08-10T13:37:15+00:00",
       "updated_at": "2026-08-10T13:37:15+00:00",
-      "touched_round": 26,
+      "touched_round": 61,
       "title": "serving routers (generate/chat)",
       "details": "FastAPI routers wiring generation backend to REST/SSE"
     },
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 60,
+      "touched_round": 61,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -1070,7 +1070,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:35:49+00:00",
       "updated_at": "2026-08-10T14:35:49+00:00",
-      "touched_round": 60,
+      "touched_round": 61,
       "title": "quantization module",
       "details": "ptq/gptq/awq/smooth quantize + layers"
     },
@@ -4218,7 +4218,7 @@
       "version": 1,
       "created_at": "2026-08-13T07:38:08+00:00",
       "updated_at": "2026-08-13T07:38:08+00:00",
-      "touched_round": 60,
+      "touched_round": 61,
       "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
     },
     "CHG-065": {
@@ -5854,7 +5854,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:36:27+00:00",
       "updated_at": "2026-08-14T15:36:27+00:00",
-      "touched_round": 60,
+      "touched_round": 61,
       "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
     },
     "ISS-102": {
@@ -7807,6 +7807,450 @@
       "source": "tests/compat/test_hf_loader.py::TestHFLoader::test_mixtral_is_not_advertised_or_loadable,tests/compat/test_hf_loader.py::TestWeightMapping::test_detect_architecture_mixtral_is_distinct",
       "confidence": 1.0,
       "summary": "RED: mixtral advertised + collapsed to mistral; now absent + rejected with clear error"
+    },
+    "ISS-147": {
+      "id": "ISS-147",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.8|title=Chat route returns HTTP 500 internal instead of 400 for un-encodable content|summary=src/llm/serving/routers/chat.py:133 except ValueError omits KeyError (what char/printable tokenizers raise for out-of-corpus chars) -> falls to generic except -> 500 code:internal; /generate sibling catches (ValueError,KeyError)->400. CONFIRMED live: emoji content -> /generate 400, chat 500. Client-caused error misclassified as server failure."
+    },
+    "ISS-148": {
+      "id": "ISS-148",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.55|title=/generate non-streaming echoes prompt into generated_text + counts prompt chars as generated tokens|summary=src/llm/serving/routers/generate.py:263 passes through backends.py:58 prompt+completion; token_count=len(prompt+completion). Streaming returns completion only. chat.py:151 strips echo; generate does not. CONFIRMED live: generated_text:'hello world Hq@Wt', token_count 17."
+    },
+    "ISS-149": {
+      "id": "ISS-149",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.5|title=Streaming endpoints surface client-caused generation errors as HTTP 200 SSE text + log 500 metrics|summary=generate.py:327-330 chat.py:291-304: generator raises ValueError/KeyError inside stream -> generic except -> in-band 'Error: ValueError' under 200; metrics record 500. Pre-flight guard only covers encodability (not max_new_tokens>=max_seq_len); chat stream pre-validates neither. CONFIRMED live. Leaks internals to client."
+    },
+    "ISS-150": {
+      "id": "ISS-150",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.55|title=generation_backend=batched cannot start REST server|summary=src/llm/serving/api.py:119 builds ServingGenerationService before engine, never binds engine; generation_service.py:54 get_generation_backend(batched, engine=None) raises ValueError at startup. Documented config option + main-path YAML broken. CONFIRMED: direct call raises."
+    },
+    "ISS-151": {
+      "id": "ISS-151",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.25|title=Streaming chat always reports finish_reason=stop even on max_tokens truncation|summary=chat.py:280-285 final SSE chunk hardcodes finish_reason=stop; non-streaming computes length-vs-stop at chat.py:160. Same request -> non-stream length vs stream stop. Violates OpenAI convention."
+    },
+    "ISS-152": {
+      "id": "ISS-152",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.5|title=EOS/BOS special tokens silently never registered in eval tokenizer|summary=tokenizer_factory.py:89 builds corpus [PAD,EOS,BOS,*chars] but SimpleCharacterTokenizer only special-forms PAD (pad_char); EOS/BOS flatten to plain chars -> eos_token_id None; eval LM perplexity + generate_until stop paths get None, generations never halt on the model's EOS. CONFIRMED: encode('<EOS>')==[2,7,8,10,3]."
+    },
+    "ISS-153": {
+      "id": "ISS-153",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.2|title=SimpleCharacterTokenizer.encode non-compositional at pad boundary|summary=simple_tokenizer.py:72-73: encode('<PAD>')==[pad_token_id] but encode('<PAD>x')==5 char ids; supersets decode back to same '<PAD>' text. Cannot express literal '<PAD>' as chars -> content silently erased for exact-match files/prompts. CONFIRMED."
+    },
+    "ISS-154": {
+      "id": "ISS-154",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.3|title=E2E run_inference mis-slices result when prompt truncated to fit context|summary=utils/e2e.py:162 generated[len(prompt):] assumes generate returned prompt+output; stream_generate truncates prompt to last max_seq_len-max_new_tokens whereby slice lands inside generated text dropping leading output chars. PLAUSIBLE traced: E2EConfig(max_seq_len=10, max_new_tokens=8, prompt='hello')."
+    },
+    "ISS-155": {
+      "id": "ISS-155",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.3|title=BPETokenizer.pad_token_id None -> [None]*n list -> torch.tensor TypeError in padding paths|summary=bpe_tokenizer.py:130-134 pad_token_id returns token_to_id('[PAD]') which is None when vocab lacks it; callers getattr(...,0) fallback still gets None; eager batch_generate + TextDataset padding build [None]*n. CONFIRMED: torch.tensor([None,...]) raises TypeError."
+    },
+    "ISS-156": {
+      "id": "ISS-156",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.85|title=AdaLoRA crashes on any fp16/bf16 base layer (torch.linalg.qr not implemented for Half)|summary=core/adalora.py:29 lora_P/Q/lambda/mask adopt base dtype; forward:210 and merge/unmerge call torch.linalg.qr which torch does not implement for Half/BFloat16 -> NotImplementedError geqrf_cpu not implemented for Half on any native fp16/bf16 model; AMP survives only because autocast leaves fp32 params. CONFIRMED live: nn.Linear(32,32).half() -> AdaLoRALinear -> crash."
+    },
+    "ISS-157": {
+      "id": "ISS-157",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.45|title=AdaLoRA orth_reg_loss is a dead regularizer (computed on already-orthonormalized matrices)|summary=adalora.py:230-231 feeds the QR factors (orthonormal by construction) into ||P^T P - I||^2 + ||Q Q^T - I||^2 -> loss ~8.3e-13 regardless of how degenerate raw lora_P/Q are. orth_reg_weight never conditions P/Q. CONFIRMED live after forcing rank-1 lora_P."
+    },
+    "ISS-158": {
+      "id": "ISS-158",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.5|title=PrefixTuningAttention allocates params on default device/dtype ignoring base attention device/dtype|summary=prefix_tuning.py:113-115 prefix_small/reparam_k/v created with factory defaults (CPU/fp32); base attention torch.cat(prefix_k,k) at mha.py:291 / flash_attn.py:330 -> RuntimeError device mismatch when wrapping a CUDA/fp16 model post-placement. Only PEFT wrapper that does this. CONFIRMED trace."
+    },
+    "ISS-159": {
+      "id": "ISS-159",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.25|title=LoRA/AdaLoRA merge_weights not idempotent: second merge clobbers unmerge snapshot, permanently baking stale fold|summary=lora.py:96-100 mirror adalora.py:248-252: second merge_weights stores _merged_scaling=0 (scaling already 0), re-fold no-ops, unmerge restores scaling=0 -> base weight permanently folded at 2x adapter strength, no error raised. CONFIRMED."
+    },
+    "ISS-160": {
+      "id": "ISS-160",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:13:07+00:00",
+      "touched_round": 61,
+      "severity": "0.55|title=Post-LN (norm_first=False) block builds non-canonical residual: MLP input is post-attention-norm value not raw residual|summary=transformer_block.py:211: Post-LN reassigns residual=norm1(x+attn_out), so MLP consumes/residuals off normalized value; differs from canonical norm2((x+attn)+mlp(x+attn)) by max abs 0.43 at hidden 8. CONFIRMED numeric. Pre-LN default unaffected."
+    },
+    "ISS-161": {
+      "id": "ISS-161",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:08+00:00",
+      "updated_at": "2026-08-16T01:13:08+00:00",
+      "touched_round": 61,
+      "severity": "0.5|title=llm-quantize --output non-atomic + unprotected: corrupt artifact on mid-save failure, silent overwrite, --output==--model destroys source checkpoint|summary=cli/quantize.py:311-317 direct torch.save to output, no tmp/rename/exists/path-equality check unlike checkpoint.py atomic writer.  irretrievably replaces FP weights; ENOSPC leaves truncated file. CONFIRMED trace."
+    },
+    "ISS-162": {
+      "id": "ISS-162",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:08+00:00",
+      "updated_at": "2026-08-16T01:13:08+00:00",
+      "touched_round": 61,
+      "severity": "0.3|title=llm-migrate-ckpt only catches CheckpointMigrationError; non-training .pt raises uncaught TypeError/KeyError raw traceback|summary=cli/migrate_ckpt.py:205-213 bare except CheckpointMigrationError; payload['model_state'] at checkpoint.py:474 throws TypeError/KeyError for bare torch.save(model) blob -> Rich stack trace instead of clean documented one-line error + exit 1. CONFIRMED trace."
+    },
+    "ISS-163": {
+      "id": "ISS-163",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:08+00:00",
+      "updated_at": "2026-08-16T01:13:08+00:00",
+      "touched_round": 61,
+      "severity": "0.2|title=Export registry docs promise duplicate onnx plugin 'raises loudly' but loader silently ignores|summary=export/registry.py:93-94 docstring vs runtime/plugins.py:57-58: load_entry_point_registry default overwrite=False hits 'if not overwrite and preexisting: continue' -> plugin silently dropped with no log; packaging conflict goes unnoticed. CONFIRMED."
+    },
+    "COMP-014": {
+      "id": "COMP-014",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:13:47+00:00",
+      "updated_at": "2026-08-16T01:13:47+00:00",
+      "touched_round": 61,
+      "title": "Core PEFT families + transformer block (src/llm/core: adalora, prefix_tuning, lora, qlora, ia3, bitfit, pfeiffer_adapter, adapter, transformer_block, mlp)"
+    },
+    "TASK-111": {
+      "id": "TASK-111",
+      "type": "task",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-16T01:14:34+00:00",
+      "updated_at": "2026-08-16T01:15:39+00:00",
+      "touched_round": 61,
+      "category": "correctness",
+      "severity": 0.8,
+      "priority_score": 17.89,
+      "title": "Chat route: catch KeyError -> 400"
+    },
+    "TASK-112": {
+      "id": "TASK-112",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:14:48+00:00",
+      "updated_at": "2026-08-16T01:14:48+00:00",
+      "touched_round": 61,
+      "category": "correctness",
+      "severity": 0.8,
+      "priority_score": 17.89,
+      "title": "Chat non-streaming: catch KeyError alongside ValueError -> 400, align with /generate"
+    },
+    "TASK-113": {
+      "id": "TASK-113",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:15:56+00:00",
+      "touched_round": 61,
+      "title": "AdaLoRA fp16/bf16 crash: compute QR/SVD in fp32",
+      "category": "correctness",
+      "severity": 0.85,
+      "confidence": 1.0,
+      "effort": 0.7
+    },
+    "TASK-114": {
+      "id": "TASK-114",
+      "type": "task",
+      "status": "abandoned",
+      "version": 2,
+      "created_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:16:13+00:00",
+      "touched_round": 61,
+      "title": "Chat non-streaming: catch KeyError -> 400 (ISS-147)",
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-115": {
+      "id": "TASK-115",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:15:56+00:00",
+      "touched_round": 61,
+      "title": "Serve batched backend: bind engine into ServingGenerationService (ISS-150)",
+      "category": "stability",
+      "severity": 0.55,
+      "confidence": 1.0,
+      "effort": 0.25
+    },
+    "TASK-116": {
+      "id": "TASK-116",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:15:56+00:00",
+      "touched_round": 61,
+      "title": "/generate strip prompt echo from generated_text + token_count (ISS-148)",
+      "category": "correctness",
+      "severity": 0.55,
+      "confidence": 1.0,
+      "effort": 0.25
+    },
+    "TASK-117": {
+      "id": "TASK-117",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:15:56+00:00",
+      "touched_round": 61,
+      "title": "Streaming endpoints pre-validate max_new_tokens/encodability (ISS-149)",
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 0.3
+    },
+    "TASK-118": {
+      "id": "TASK-118",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:15:56+00:00",
+      "touched_round": 61,
+      "title": "Post-LN block: MLP consumes raw residual not norm(x+attn) (ISS-160)",
+      "category": "correctness",
+      "severity": 0.55,
+      "confidence": 1.0,
+      "effort": 0.35
+    },
+    "TASK-119": {
+      "id": "TASK-119",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:15:56+00:00",
+      "touched_round": 61,
+      "title": "PrefixTuningAttention: allocate on base device/dtype (ISS-158)",
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 0.3
+    },
+    "TASK-120": {
+      "id": "TASK-120",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "llm-quantize --output atomic write + path-equality guard (ISS-161)",
+      "category": "stability",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 0.3
+    },
+    "TASK-121": {
+      "id": "TASK-121",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "Eval tokenizer: register EOS/BOS specials (ISS-152)",
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 0.9,
+      "effort": 0.4
+    },
+    "TASK-122": {
+      "id": "TASK-122",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "AdaLoRA orth_reg_loss on raw P/Q (ISS-157)",
+      "category": "correctness",
+      "severity": 0.45,
+      "confidence": 0.9,
+      "effort": 0.35
+    },
+    "TASK-123": {
+      "id": "TASK-123",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "migrate-ckpt clean error for non-training blobs (ISS-162)",
+      "category": "stability",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-124": {
+      "id": "TASK-124",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "e2e run_inference slice from model-seen window (ISS-154)",
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 0.8,
+      "effort": 0.3
+    },
+    "TASK-125": {
+      "id": "TASK-125",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "BPETokenizer.pad_token_id None: safe fallback (ISS-155)",
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 0.9,
+      "effort": 0.3
+    },
+    "TASK-126": {
+      "id": "TASK-126",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "Export registry: warn on entry-point conflict (ISS-163)",
+      "category": "maintainability",
+      "severity": 0.2,
+      "confidence": 1.0,
+      "effort": 0.25
+    },
+    "TASK-127": {
+      "id": "TASK-127",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "LoRA/AdaLoRA merge_weights idempotency guard (ISS-159)",
+      "category": "correctness",
+      "severity": 0.25,
+      "confidence": 1.0,
+      "effort": 0.35
+    },
+    "TASK-128": {
+      "id": "TASK-128",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "Streaming chat finish_reason length-vs-stop (ISS-151)",
+      "category": "correctness",
+      "severity": 0.25,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-129": {
+      "id": "TASK-129",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T01:15:57+00:00",
+      "touched_round": 61,
+      "title": "SimpleCharTokenizer literal <PAD> expressible (ISS-153)",
+      "category": "correctness",
+      "severity": 0.2,
+      "confidence": 1.0,
+      "effort": 0.3
     }
   },
   "edges": [
@@ -11227,6 +11671,222 @@
       "to": "ISS-144",
       "type": "resolves",
       "created_at": "2026-08-15T22:04:20+00:00"
+    },
+    {
+      "from": "ISS-147",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:13:59+00:00"
+    },
+    {
+      "from": "ISS-148",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-149",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-151",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-150",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-152",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-153",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-154",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-155",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-156",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-157",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-158",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-159",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-160",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-161",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-162",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "ISS-163",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-16T01:14:00+00:00"
+    },
+    {
+      "from": "TASK-112",
+      "to": "ISS-147",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:13+00:00"
+    },
+    {
+      "from": "TASK-113",
+      "to": "ISS-156",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:13+00:00"
+    },
+    {
+      "from": "TASK-115",
+      "to": "ISS-150",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:13+00:00"
+    },
+    {
+      "from": "TASK-116",
+      "to": "ISS-148",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:13+00:00"
+    },
+    {
+      "from": "TASK-117",
+      "to": "ISS-149",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:13+00:00"
+    },
+    {
+      "from": "TASK-118",
+      "to": "ISS-160",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:13+00:00"
+    },
+    {
+      "from": "TASK-119",
+      "to": "ISS-158",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:13+00:00"
+    },
+    {
+      "from": "TASK-120",
+      "to": "ISS-161",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-121",
+      "to": "ISS-152",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-122",
+      "to": "ISS-157",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-123",
+      "to": "ISS-162",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-124",
+      "to": "ISS-154",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-125",
+      "to": "ISS-155",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-126",
+      "to": "ISS-163",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-127",
+      "to": "ISS-159",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-128",
+      "to": "ISS-151",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-129",
+      "to": "ISS-153",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:14+00:00"
+    },
+    {
+      "from": "TASK-111",
+      "to": "ISS-147",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:36+00:00"
+    },
+    {
+      "from": "TASK-114",
+      "to": "ISS-147",
+      "type": "addresses",
+      "created_at": "2026-08-16T01:16:37+00:00"
     }
   ]
 }
