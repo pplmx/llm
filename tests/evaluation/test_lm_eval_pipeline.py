@@ -538,6 +538,70 @@ def test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc():
     )
 
 
+def test_lm_eval_lm_loglikelihood_rolling_covers_final_token_at_boundary():
+    """RIL ISS-193: a window boundary landing exactly on ``len(ids) - 1`` must
+    not drop the final token.
+
+    With ``max_length == 64`` a 65-token doc is exactly the old break condition
+    ``end >= len(ids) - 1`` corner case: the first window (start=0, end=64)
+    scores only ``ids[1:64]`` and the loop breaks because ``end == 64 ==
+    len(ids) - 1``, never scoring ``ids[-1]``. Uniform-logits model: the sum
+    must equal ``-(len(ids) - 1) * ln(vocab)`` (all 64 shift-targets).
+    """
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+    import math
+
+    tokenizer = _FakeTokenizer()
+
+    class _UniformModel:
+        vocab_size = 16
+        max_seq_len = 64
+
+        def __init__(self):
+            self._dummy = torch.nn.Parameter(torch.zeros(1))
+
+        def parameters(self):
+            return iter([self._dummy])
+
+        def eval(self):
+            return self
+
+        def __call__(self, input_ids, use_cache=None):
+            b, t = input_ids.shape
+            return torch.zeros(b, t, self.vocab_size)
+
+    text = "a" * 65  # 65 tokens: L == 2 mod (max_length - 1)
+    lm = LlamaLmEvalLM(_UniformModel(), tokenizer, batch_size=1)
+    assert lm.max_length == 64
+
+    (total,) = lm.loglikelihood_rolling([_FakeRequest((text,))])
+    n_tokens = len(tokenizer.encode(text))
+    expected = -(n_tokens - 1) * math.log(_UniformModel.vocab_size)
+    assert total == pytest.approx(expected, rel=1e-4), (
+        f"rolling sum {total:.4f} != {expected:.4f}: the final token of a "
+        "65-token doc (L == 2 mod (max_length-1)) must be scored, not dropped "
+        "(RIL ISS-193)"
+    )
+
+
+def test_lm_eval_lm_strip_stops_cuts_at_earliest_occurrence():
+    """RIL ISS-194: ``_strip_stop_strings`` must cut at the EARLIEST string
+    stop in the text, not the first stop in list order.
+
+    lm_eval's canonical ``postprocess_generated_text`` takes ``min`` over
+    stops; returning at the first list-order match retains an earlier
+    delimiter in the completion."""
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+
+    # "ANSWER" (index 4) precedes "END" (index 14); list order must not win.
+    assert LlamaLmEvalLM._strip_stop_strings("foo ANSWER bar END", ["END", "ANSWER"]) == "foo "
+    assert LlamaLmEvalLM._strip_stop_strings("foo ANSWER bar END", ["ANSWER", "END"]) == "foo "
+    # No stop present -> unchanged.
+    assert LlamaLmEvalLM._strip_stop_strings("no delimiters here", ["END", "ANSWER"]) == "no delimiters here"
+    # Empty stop list -> unchanged.
+    assert LlamaLmEvalLM._strip_stop_strings("abc", []) == "abc"
+
+
 def test_lm_eval_lm_generate_until_respects_max_gen_toks():
     pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)

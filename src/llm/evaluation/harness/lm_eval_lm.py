@@ -271,7 +271,14 @@ class LlamaLmEvalLM:
                 position_mask = torch.arange(len(target_ids), device=self.device)
                 token_log_probs = log_probs[position_mask, torch.tensor(target_ids, device=self.device)]
                 total += float(token_log_probs.sum().item())
-                if end >= len(ids) - 1:
+                # Only stop once the LAST token (``ids[-1]``) has been a
+                # target. Breaking at ``end >= len(ids) - 1`` terminates one
+                # window early whenever a boundary lands exactly on
+                # ``len(ids) - 1`` (doc length ≡ 2 mod (max_length-1)), so
+                # ``ids[-1]`` is never scored while the downstream metric
+                # divides by the full doc word count — a silently deflated
+                # perplexity (RIL ISS-193).
+                if end >= len(ids):
                     break
                 start = end - 1  # overlap one context token for the next window
             results.append(total)
@@ -329,22 +336,27 @@ class LlamaLmEvalLM:
 
     @staticmethod
     def _strip_stop_strings(text: str, stops: list) -> str:
-        """Cut ``text`` at the first occurrence of any string stop.
+        """Cut ``text`` at the earliest occurrence of any string stop.
 
         Mirrors lm_eval's ``postprocess_generated_text``: a generation
         answer must not contain the stop delimiter (upstream LMs strip it
         before returning). Token-id ``until`` entries are matched pre-decode
         (as suffixes) and never appear as text, so only strings are
         post-processed here.
+
+        RIL ISS-194: take the MINIMUM index across all string stops, not the
+        first stop in ``stops`` list order — list order is not occurrence
+        order. E.g. ``stops=["END", "ANSWER"]`` on text ``"foo ANSWER bar
+        END"`` must cut at ``"ANSWER"`` (index 4), not at ``"END"`` (index
+        14), or the returned completion still contains a delimiter.
         """
         if not stops:
             return text
-        for stop in stops:
-            if isinstance(stop, str) and stop:
-                idx = text.find(stop)
-                if idx != -1:
-                    return text[:idx]
-        return text
+        indices = [text.find(s) for s in stops if isinstance(s, str) and s]
+        occurrences = [i for i in indices if i != -1]
+        if not occurrences:
+            return text
+        return text[: min(occurrences)]
 
     def _matches_any_stop(self, generated: list[int], until: list) -> bool:
         """Return True when ``generated`` should stop w.r.t. ``until``.
