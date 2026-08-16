@@ -57,6 +57,27 @@ def test_bpe_tokenizer_empty_input():
 
 
 @pytest.mark.quick
+def test_bpe_pad_token_id_is_valid_when_pad_missing_from_vocab(sample_text_file):
+    """Regression (RIL ISS-155): ``pad_token_id`` returned
+    ``token_to_id("[PAD]")`` which is ``None`` whenever the trained/loaded
+    vocab does not contain ``[PAD]`` (custom ``special_tokens``, or a
+    foreign ``tokenizer.json``). Callers use ``getattr(tokenizer,
+    'pad_token_id', 0)`` — the attribute *exists* as None so the fallback
+    never fires, and padding builds ``[None] * n`` which crashes
+    ``torch.tensor`` in ``batch_generate`` / ``TextDataset.__getitem__``.
+
+    The documented convention (text.py) is "no pad id → 0"; the property
+    must never return ``None``."""
+    special_tokens = ["[UNK]", "[MASK]", "CustomToken"]  # deliberately no [PAD]
+    tokenizer = BPETokenizer.train([sample_text_file], vocab_size=100, min_frequency=1, special_tokens=special_tokens)
+
+    assert tokenizer.pad_token_id is not None
+    assert tokenizer.pad_token_id >= 0
+    # The safe fallback must not collide with a real token's id.
+    assert 0 <= tokenizer.pad_token_id < tokenizer.vocab_size
+
+
+@pytest.mark.quick
 def test_bpe_tokenizer_save_creates_parent_dirs(sample_text_file, tmp_path):
     """``save`` should create the parent directory if it does not exist."""
     tokenizer = BPETokenizer.train([sample_text_file], vocab_size=100, min_frequency=1)

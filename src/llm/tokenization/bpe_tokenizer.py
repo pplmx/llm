@@ -130,5 +130,15 @@ class BPETokenizer:
     def pad_token_id(self) -> int:
         """
         Returns the ID of the [PAD] token.
+
+        ``token_to_id("[PAD]")`` is ``None`` whenever the trained/loaded
+        vocab lacks ``[PAD]`` (custom ``special_tokens``, or a foreign
+        ``tokenizer.json``). Callers fall back with ``getattr(tokenizer,
+        "pad_token_id", 0)`` — but the attribute *exists* as None, so the
+        default never fires and padding builds ``[None] * n``, crashing
+        ``torch.tensor`` in ``batch_generate`` / ``TextDataset`` (RIL
+        ISS-155). Fall back to the UNK token's id (always present: it is
+        the BPE model's ``unk_token``) then the documented ``0``, so the
+        property never returns ``None`` and never collides with content.
         """
-        return self.tokenizer.token_to_id("[PAD]")
+        return self.tokenizer.token_to_id("[PAD]") or self.tokenizer.token_to_id(DEFAULT_UNK_TOKEN) or 0
