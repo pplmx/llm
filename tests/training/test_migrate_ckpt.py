@@ -287,3 +287,29 @@ class TestMigrateCkptCli:
         result = cli_runner.invoke(app, [str(stem)])
         assert result.exit_code == 0, result.stderr
         assert stem.with_suffix(SAFETENSORS_SUFFIX).exists()
+
+    def test_non_training_blob_exits_1_cleanly(self, cli_runner: CliRunner, tmp_path: Path):
+        """Regression (RIL ISS-162): a ``.pt`` blob that is NOT a v0.0.5
+        training dict (e.g. a bare ``torch.save`` of a model object from
+        ``llm-quantize``) raises ``TypeError``/``KeyError`` deep inside
+        ``convert_legacy_checkpoint_to_split``. The CLI must surface it as
+        the documented clean one-line error (exit 1), not let the raw
+        exception escape and print a traceback."""
+        bad_blob = tmp_path / "quantized.pt"
+        torch.save({"not_a_training_checkpoint": 1}, bad_blob)
+
+        result = cli_runner.invoke(app, [str(bad_blob)])
+        assert result.exit_code == 1, f"expected exit 1, got {result.exit_code}"
+        # A clean typer.Exit(1) — NOT the raw KeyError/TypeError escaping.
+        assert isinstance(result.exception, SystemExit), f"raw exception escaped the CLI: {result.exception!r}"
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "training checkpoint" in combined.lower() or "conversion failed" in combined.lower()
+
+    def test_non_training_blob_helper_raises_migration_error(self, tmp_path: Path):
+        """The helper maps a non-training blob to ``CheckpointMigrationError``
+        so CLI-level code can rely on a single, documented exception type."""
+        bad_blob = tmp_path / "quantized.pt"
+        torch.save({"not_a_training_checkpoint": 1}, bad_blob)
+
+        with pytest.raises(CheckpointMigrationError, match="training checkpoint"):
+            convert_legacy_checkpoint_to_split(bad_blob)

@@ -468,6 +468,20 @@ def convert_legacy_checkpoint_to_split(
     # Load the legacy blob.
     payload = torch.load(legacy_path, map_location="cpu", weights_only=False)
 
+    # Validate the payload is a v0.0.5 training dict BEFORE indexing it. A
+    # `.pt` file that loads but is not a training checkpoint — e.g. a bare
+    # ``torch.save(model)`` blob from ``llm-quantize``, or any module /
+    # non-dict pickle — raises TypeError/KeyError on ``payload["model_state"]``
+    # below. The CLI only catches CheckpointMigrationError, so the raw
+    # exception would have escaped as a traceback instead of the documented
+    # clean one-line error (RIL ISS-162).
+    if not isinstance(payload, dict) or "model_state" not in payload:
+        raise CheckpointMigrationError(
+            f"{legacy_path} does not appear to be a v0.0.5 training checkpoint "
+            "(missing 'model_state'). Only training checkpoints produced by "
+            "CheckpointManager can be migrated."
+        )
+
     # Write the split trio. Stamp a shared save_id into meta + extra_state so
     # the loader can cross-check the trio came from one write (RIL ISS-127).
     migrated_save_id = uuid.uuid4().hex
