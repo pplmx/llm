@@ -229,6 +229,32 @@ class TestMergeUnmerge:
         layer.unmerge_weights()
         assert torch.allclose(base.weight, original_weight, atol=1e-5)
 
+    def test_double_merge_is_idempotent_then_unmerge_restores(self):
+        """Regression (RIL ISS-159): a second ``merge_weights`` (defensive /
+        loop caller, or serve-merge after an earlier export-merge) must NOT
+        clobber the unmerge snapshot — mirror of the LoRA fix. The old code
+        re-stored ``_merged_scaling = self.scaling`` on the second call
+        (scaling already 0), so the re-fold no-oped AND the snapshot became
+        0; the later ``unmerge_weights`` restored scaling=0 and left the
+        base permanently folded at 2x strength with no error."""
+        base = nn.Linear(64, 128)
+        layer = AdaLoRALinear(base, init_rank=8, alpha=32.0)
+        with torch.no_grad():
+            layer.lora_lambda.fill_(0.3)
+            layer.lora_P.normal_()
+            layer.lora_Q.normal_()
+        original_weight = base.weight.detach().clone()
+        scaling = layer.scaling
+
+        layer.merge_weights()
+        layer.merge_weights()  # second merge must not clobber the snapshot
+        layer.unmerge_weights()
+
+        assert torch.allclose(base.weight, original_weight, atol=1e-5), (
+            "double-merge + unmerge must roundtrip the base weight"
+        )
+        assert layer.scaling == scaling
+
     def test_merge_is_output_preserving(self):
         """Merge must not double-count the adapter in forward.
 

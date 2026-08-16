@@ -109,6 +109,28 @@ class TestLoRALinear:
         # unmerge also restores the adapter path (scaling no longer 0)
         assert lora_layer.scaling == lora_layer.alpha / lora_layer.rank
 
+    def test_double_merge_is_idempotent_then_unmerge_restores(self, lora_layer):
+        """Regression (RIL ISS-159): calling ``merge_weights`` twice (a
+        defensive/loop caller, or serve-merge after an earlier export-merge)
+        must NOT clobber the unmerge snapshot. The old code re-stored
+        ``_merged_scaling = self.scaling`` on the second call — but scaling
+        is already 0 post-first-merge, so the re-fold no-ops AND the
+        snapshot becomes 0; the later ``unmerge_weights`` then restores
+        scaling=0 and leaves the base permanently folded at 2x adapter
+        strength with no error raised. A second merge must be a no-op."""
+        original_weight = lora_layer.base_layer.weight.clone()
+        scaling = lora_layer.scaling
+        lora_layer.lora_B.data.fill_(0.1)
+
+        lora_layer.merge_weights()
+        lora_layer.merge_weights()  # second merge must not clobber the snapshot
+        lora_layer.unmerge_weights()
+
+        assert torch.allclose(lora_layer.base_layer.weight, original_weight, atol=1e-5), (
+            "double-merge + unmerge must roundtrip the base weight"
+        )
+        assert lora_layer.scaling == scaling
+
     def test_merge_then_forward_equals_base_after_disable(self, lora_layer):
         """Merged layer's forward matches its folded base exactly.
 

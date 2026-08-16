@@ -35,6 +35,9 @@ class LoRALinear(nn.Module):
     """
 
     _original_scaling: float | None
+    # Set only by ``merge_weights`` (and read/cleared by ``unmerge_weights``);
+    # declared here so static analysis sees a float, not an inferred union.
+    _merged_scaling: float | None = None
 
     def __init__(
         self,
@@ -92,7 +95,16 @@ class LoRALinear(nn.Module):
 
         :meth:`unmerge_weights` restores both the original base weight
         and this scaling snapshot.
+
+        Idempotent: a second call while already merged is a no-op. Re-running
+        the fold would re-store ``_merged_scaling = self.scaling`` where
+        ``scaling`` is already 0 (post first merge), so the re-fold no-ops
+        AND the snapshot becomes 0 — the later ``unmerge_weights`` then
+        restores scaling=0 and leaves the base permanently folded at 2x
+        adapter strength (RIL ISS-159).
         """
+        if self._merged_scaling is not None:
+            return
         with torch.no_grad():
             self._merged_scaling = self.scaling
             delta_w = (self.lora_A @ self.lora_B) * self.scaling
@@ -106,12 +118,13 @@ class LoRALinear(nn.Module):
         path.  No-op if :meth:`merge_weights` was never called.
         """
         with torch.no_grad():
-            if not hasattr(self, "_merged_scaling"):
+            merged_scaling = self._merged_scaling
+            if merged_scaling is None:
                 return
-            delta_w = (self.lora_A @ self.lora_B) * self._merged_scaling
+            delta_w = (self.lora_A @ self.lora_B) * merged_scaling
             self.base_layer.weight.sub_(delta_w.T)
-            self.scaling = self._merged_scaling
-            del self._merged_scaling
+            self.scaling = merged_scaling
+            self._merged_scaling = None
 
     @property
     def trainable_parameters(self) -> int:

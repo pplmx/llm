@@ -57,6 +57,9 @@ class IA3Linear(nn.Module):
     """
 
     _original_ia3_l: torch.Tensor | None
+    # Set only by ``merge_weights`` (and read/cleared by ``unmerge_weights``);
+    # declared here so static analysis sees a Tensor, not an inferred union.
+    _merged_ia3_l: torch.Tensor | None = None
 
     def __init__(
         self,
@@ -97,6 +100,14 @@ class IA3Linear(nn.Module):
         weight — useful for checkpoint roundtrip where the same model
         needs to be saved both pre- and post-merge.
         """
+        # Idempotent: a second call while already merged is a no-op (mirrors
+        # the LoRA fix — see LoRALinear.merge_weights). Re-running would
+        # re-snapshot ``_merged_ia3_l`` as ones (the active scale
+        # post-first-merge) and multiply by ones (no-op), so the snapshot
+        # becomes ones; the later ``unmerge_weights`` then divides by ones
+        # and leaves the base permanently scaled (RIL ISS-159).
+        if self._merged_ia3_l is not None:
+            return
         with torch.no_grad():
             # Save the original scale so ``unmerge_weights`` can
             # restore it after dividing the base weight back out.
@@ -120,12 +131,13 @@ class IA3Linear(nn.Module):
         :meth:`merge_weights` was never called.
         """
         with torch.no_grad():
-            if not hasattr(self, "_merged_ia3_l"):
+            merged_ia3_l = self._merged_ia3_l
+            if merged_ia3_l is None:
                 return
             # Restore the active scale to its pre-merge value, then
             # divide it back out of the base weight.
-            self.ia3_l.copy_(self._merged_ia3_l)
-            del self._merged_ia3_l
+            self.ia3_l.copy_(merged_ia3_l)
+            self._merged_ia3_l = None
             self.base_layer.weight.div_(self.ia3_l.unsqueeze(1))
             if self.base_layer.bias is not None:
                 self.base_layer.bias.div_(self.ia3_l)

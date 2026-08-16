@@ -208,6 +208,26 @@ class TestIA3LinearMerge:
         layer.unmerge_weights()
         assert torch.allclose(base.weight, original_weight, atol=1e-5)
 
+    def test_double_merge_is_idempotent_then_unmerge_restores(self):
+        """Regression (RIL ISS-159): a second ``merge_weights`` must not
+        clobber the unmerge snapshot (mirror of the LoRA/AdaLoRA fix).
+        Re-snapshotting at ones makes the later ``unmerge_weights`` divide
+        by ones — leaving the base permanently scaled with no error."""
+        torch.manual_seed(0)
+        base = nn.Linear(16, 32)
+        original_weight = base.weight.detach().clone()
+        layer = IA3Linear(base)
+        orig_scale = torch.linspace(0.5, 1.5, 32)
+        with torch.no_grad():
+            layer.ia3_l.copy_(orig_scale)
+        layer.merge_weights()
+        layer.merge_weights()  # second merge must be a no-op
+        layer.unmerge_weights()
+        assert torch.allclose(base.weight, original_weight, atol=1e-5), (
+            "double-merge + unmerge must roundtrip the base weight"
+        )
+        assert torch.allclose(layer.ia3_l, orig_scale, atol=1e-5)
+
     def test_merge_handles_no_bias(self):
         """``merge_weights`` doesn't crash when the base has no bias."""
         base = nn.Linear(16, 32, bias=False)
