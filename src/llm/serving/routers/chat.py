@@ -23,6 +23,7 @@ from llm.serving.routers.generate import (
     _drive_sync_iterator,
     _sync_generate,
     _sync_stream_generate,
+    _validate_stream_request,
 )
 from llm.serving.schemas import (
     ChatCompletionChoice,
@@ -94,6 +95,11 @@ async def chat_completions(
     repetition_penalty = 1.0
 
     if request.stream:
+        # Validate before the SSE starts so an un-encodable message or a
+        # context-overflowing ``max_tokens`` is a real 4xx, not an
+        # "Error: ..." chunk inside a 200 stream — the sibling ``/generate``
+        # stream pre-validates the same way (RIL ISS-113, ISS-149).
+        _validate_stream_request(prompt, request.max_tokens)
         return StreamingResponse(
             _chat_stream_generator(
                 request,

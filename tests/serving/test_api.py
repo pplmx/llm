@@ -182,6 +182,53 @@ def test_chat_completions_oov_prompt_returns_400_not_500(oov_client):
 
 
 @pytest.mark.slow
+def test_generate_stream_oversized_max_new_tokens_returns_400(oov_client):
+    """Regression (RIL ISS-149): streaming /generate with
+    ``max_new_tokens >= model.max_seq_len`` must be a client 400 before the
+    SSE starts — not a 200 stream containing an in-band 'Error: ValueError'
+    (the eager service rejects it, but only once the generator runs)."""
+    payload = {"prompt": "abc", "max_new_tokens": 16, "stream": True}  # model max_seq_len=16
+    response = oov_client.post("/generate", json=payload)
+    assert response.status_code == 400, response.text
+    assert "max_new_tokens" in response.text
+
+
+@pytest.mark.slow
+def test_chat_stream_oov_prompt_returns_400(oov_client):
+    """Regression (RIL ISS-149): a streaming chat with un-encodable content
+    must be a client 400 before the SSE starts, not a 200 stream containing
+    'Error: KeyError'."""
+    payload = {
+        "model": "tiny",
+        "messages": [{"role": "user", "content": "héllo"}],
+        "max_tokens": 2,
+        "temperature": 0.0,
+        "stream": True,
+    }
+    response = oov_client.post("/v1/chat/completions", json=payload)
+    assert response.status_code == 400, response.text
+    assert "not found in tokenizer" in response.text
+
+
+@pytest.mark.slow
+def test_chat_stream_oversized_max_tokens_returns_400(oov_client):
+    """Regression (RIL ISS-149): a streaming chat with
+    ``max_tokens >= model.max_seq_len`` must be a client 400 pre-SSE (here
+    the encodability check on the rendered prompt may legitimately fire
+    first for the tiny abc-corpus tokenizer — the contract is the 400 status
+    before any SSE bytes, not a 200 stream with an in-band error)."""
+    payload = {
+        "model": "tiny",
+        "messages": [{"role": "user", "content": "abc"}],
+        "max_tokens": 16,  # model max_seq_len=16
+        "temperature": 0.0,
+        "stream": True,
+    }
+    response = oov_client.post("/v1/chat/completions", json=payload)
+    assert response.status_code == 400, response.text
+
+
+@pytest.mark.slow
 def test_health_check(client):
     """测试健康检查端点."""
     response = client.get("/health")

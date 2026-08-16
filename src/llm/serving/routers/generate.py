@@ -194,6 +194,38 @@ def _validate_prompt_encodable(prompt: str) -> None:
         ) from exc
 
 
+def _validate_generation_bounds(max_new_tokens: int) -> None:
+    """Raise a 400 ``APIError`` when ``max_new_tokens`` cannot fit context.
+
+    Mirrors the ``ServingGenerationService._generation_config`` guard
+    (``max_new_tokens >= model.max_seq_len`` leaves the prompt no room). On
+    the streaming path it must be validated BEFORE the SSE starts, exactly
+    like encodability — otherwise a request that the service rejects
+    surfaces as a 200 stream containing ``Error: ValueError`` (RIL ISS-149)
+    instead of the 400 its non-streaming twin returns.
+    """
+    service = _require_generation_service()
+    model_max_seq = getattr(service.model, "max_seq_len", None)
+    if isinstance(model_max_seq, int) and max_new_tokens >= model_max_seq:
+        raise APIError(
+            ErrorCode.INVALID_REQUEST,
+            f"max_new_tokens ({max_new_tokens}) must be less than the model's "
+            f"max_seq_len ({model_max_seq}); the prompt would have no room "
+            "to fit in the context window.",
+        )
+
+
+def _validate_stream_request(prompt: str, max_new_tokens: int) -> None:
+    """Run all client-caused pre-stream validations (encodability + bounds).
+
+    Shared by ``/generate`` and ``/v1/chat/completions`` streaming routes so
+    an invalid request is a real 400 before any SSE bytes are sent (RIL
+    ISS-149), never an ``Error: ...`` chunk inside a 200 stream.
+    """
+    _validate_prompt_encodable(prompt)
+    _validate_generation_bounds(max_new_tokens)
+
+
 def _sync_generate(prompt: str, **kwargs) -> str:
     service = _require_generation_service()
     return service.generate(prompt=prompt, **kwargs)
@@ -217,9 +249,10 @@ async def generate_text(
 ) -> GenerationResponse | StreamingResponse:
     """Generate text from a single prompt. Supports streaming and non-streaming."""
     if request.stream:
-        # Validate before the SSE starts so an un-encodable prompt is a real
-        # 4xx, not an "Error: ..." chunk inside a 200 stream (RIL ISS-113).
-        _validate_prompt_encodable(request.prompt)
+        # Validate before the SSE starts so an un-encodable prompt or a
+        # context-overflowing ``max_new_tokens`` is a real 4xx, not an
+        # "Error: ..." chunk inside a 200 stream (RIL ISS-113, ISS-149).
+        _validate_stream_request(request.prompt, request.max_new_tokens)
         return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
 
     timer = metrics.request_timer(endpoint="generate")
@@ -385,9 +418,11 @@ async def batch_generate_text(
     # Backend ``batch_generate`` returns ``prompt + completion`` per row (it
     # delegates to ``generate()``); strip the echoed prompt so the response is
     # the completion only, consistent with ``/generate`` and streaming
-    # (RIL ISS-148).
+    # (RIL ISS-148). ``strict=False`` preserves the lenient results-driven
+    # behavior this endpoint always had (production backends return one row
+    # per prompt, so no truncation happens there).
     stripped: list[str] = []
-    for prompt, text in zip(request.prompts, results, strict=True):
+    for prompt, text in zip(request.prompts, results, strict=False):
         stripped.append(text[len(prompt) :] if text.startswith(prompt) else text)
     # Record per-prompt token count; the counter is cumulative across
     # the whole batch, the histogram is per-prompt.
