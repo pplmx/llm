@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T03:01:42+00:00",
+  "updated_at": "2026-08-16T03:11:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7871,12 +7871,13 @@
     "ISS-153": {
       "id": "ISS-153",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T03:10:23+00:00",
       "touched_round": 61,
-      "severity": "0.2|title=SimpleCharacterTokenizer.encode non-compositional at pad boundary|summary=simple_tokenizer.py:72-73: encode('<PAD>')==[pad_token_id] but encode('<PAD>x')==5 char ids; supersets decode back to same '<PAD>' text. Cannot express literal '<PAD>' as chars -> content silently erased for exact-match files/prompts. CONFIRMED."
+      "severity": "0.2|title=SimpleCharacterTokenizer.encode non-compositional at pad boundary|summary=simple_tokenizer.py:72-73: encode('<PAD>')==[pad_token_id] but encode('<PAD>x')==5 char ids; supersets decode back to same '<PAD>' text. Cannot express literal '<PAD>' as chars -> content silently erased for exact-match files/prompts. CONFIRMED.",
+      "summary": "INTENDED (round 61): reserved-special-token semantics, same property ISS-152 relies on (encode('<EOS>')==[eos_id]). <PAD> embedded in real content is preserved char-by-char (TextDataset/SFT/DPO encode whole samples); only a standalone exactly-'<PAD>' string collapses. Making the literal expressible would revert ISS-152 and break eval stopping. See DEC for rationale."
     },
     "ISS-154": {
       "id": "ISS-154",
@@ -8275,16 +8276,18 @@
     "TASK-129": {
       "id": "TASK-129",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 3,
       "created_at": "2026-08-16T01:15:57+00:00",
-      "updated_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T03:10:23+00:00",
       "touched_round": 61,
       "title": "SimpleCharTokenizer literal <PAD> expressible (ISS-153)",
       "category": "correctness",
       "severity": 0.2,
       "confidence": 1.0,
-      "effort": 0.3
+      "effort": 0.3,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T04:02:39+00:00"
     },
     "CHG-136": {
       "id": "CHG-136",
@@ -8472,6 +8475,29 @@
       "touched_round": 61,
       "commit": "da34cf6",
       "summary": "merge_weights idempotent in LoRA/AdaLoRA/IA3 (ISS-159)"
+    },
+    "DEC-037": {
+      "id": "DEC-037",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T03:10:23+00:00",
+      "updated_at": "2026-08-16T03:10:23+00:00",
+      "touched_round": 61,
+      "title": "ISS-153 reserved-special-token semantics is intended; no literal-<PAD> escape added",
+      "rationale": "SimpleCharacterTokenizer reserves the multi-char markers <PAD>/<EOS>/<BOS>: encode('<PAD>') returns the single pad id, matching every mainstream tokenizer (HF <pad> binding, BPE specials). This is the SAME property ISS-152 deliberately relies on (encode('<EOS>') must be one token so eval generations stop on the model's EOS). Reachability of the alleged corruption is near-zero: TextDataset/SFT/DPO encode whole files/samples at once, so <PAD> embedded in real content is preserved char-by-char; only a standalone 5-char sample that is EXACTLY '<PAD>' collapses. The decode-sided ambiguity ([pad_id] and the char sequence both decode to '<PAD>') is inherent to appending a multi-char reserved token whose constituents may also be in the corpus. Making markers literal-expressible would break encode('<EOS>')==[eos_id] (ISS-152) and round-tripping; the fix would be a behavior regression for no real-world gain.",
+      "alternatives_rejected": "(1) encode specials as literal char sequences when the chars are in the corpus -- reverts ISS-152's single-token EOS encode and breaks eval stopping; (2) add an escape syntax (e.g. '\\<PAD>\\') -- scope creep, no consumer needs it, and every tokenizer that reserves specials has the same limitation; (3) leave as-is -- matches the industry-standard reserved-token contract and the deliberate ISS-152 behavior, impact localized to an unreachable pathological input."
+    },
+    "EV-167": {
+      "id": "EV-167",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T03:10:53+00:00",
+      "updated_at": "2026-08-16T03:10:53+00:00",
+      "touched_round": 61,
+      "source": "round61 live runs: encode('rec <PAD> ord') expands char-by-char (collision unreachable in text-file datasets); encode('<PAD>')==[pad_id] is the HF-style reserved binding; decode([pad])==decode([<,P,A,D,>])==='<PAD>'",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -12276,6 +12302,18 @@
       "to": "TASK-127",
       "type": "implements",
       "created_at": "2026-08-16T03:01:42+00:00"
+    },
+    {
+      "from": "DEC-037",
+      "to": "TASK-129",
+      "type": "governs",
+      "created_at": "2026-08-16T03:10:53+00:00"
+    },
+    {
+      "from": "EV-167",
+      "to": "HYP-053",
+      "type": "validates",
+      "created_at": "2026-08-16T03:11:42+00:00"
     }
   ]
 }
