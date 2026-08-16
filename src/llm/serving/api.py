@@ -117,10 +117,18 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
         )
 
     generation_service = ServingGenerationService.from_config(config)
-    engine = ContinuousBatchingEngine.from_serving_config(
+    model = generation_service.model
+    tokenizer = generation_service.tokenizer
+    # The ``batched`` backend owns its own ContinuousBatchingEngine (built
+    # inside ``from_config`` so ``generation_backend=batched`` can start the
+    # server at all — RIL ISS-150); reuse it for the step observer and
+    # shutdown instead of building a second, unwired engine the service never
+    # uses. Every other backend has no engine, so build one for the observer/
+    # unload wiring as before.
+    engine = getattr(generation_service.backend, "engine", None) or ContinuousBatchingEngine.from_serving_config(
         config,
-        model=generation_service.model,
-        tokenizer=generation_service.tokenizer,
+        model=model,
+        tokenizer=tokenizer,
     )
 
     # Publish ``llm_batch_fill_ratio`` after every ``engine.step()``.

@@ -46,6 +46,17 @@ class ServingGenerationService:
         if engine is None:
             model.to(device)
             model.eval()
+            # The "batched" backend requires a ContinuousBatchingEngine, but
+            # ``api.lifespan`` constructs the service before the engine —
+            # so build one from the just-loaded model here instead of
+            # letting ``get_generation_backend`` raise ValueError and abort
+            # server startup (RIL ISS-150).
+            if config.generation_backend == "batched":
+                engine = ContinuousBatchingEngine.from_serving_config(
+                    config,
+                    model=model,
+                    tokenizer=tokenizer,
+                )
         else:
             if engine.model is None:
                 raise RuntimeError("engine model was unloaded")
