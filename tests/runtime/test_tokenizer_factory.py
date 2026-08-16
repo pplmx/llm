@@ -115,3 +115,50 @@ def test_from_dataset_text_registers_eos_bos_specials(tmp_path):
     assert tokenizer.encode(SimpleCharacterTokenizer.bos_char) == [tokenizer.bos_token_id]
     assert tokenizer.decode([tokenizer.eos_token_id]) == SimpleCharacterTokenizer.eos_char
     assert tokenizer.decode([tokenizer.bos_token_id]) == SimpleCharacterTokenizer.bos_char
+
+
+def test_tokenizer_loader_refuses_malicious_pickle(tmp_path):
+    """Regression (RIL ISS-185): ``TokenizerFactory`` on an attacker-controlled
+    ``tokenizer.pt`` must NOT run arbitrary ``__reduce__`` code. The old
+    ``weights_only=False`` load executed the payload (os.system-touch a marker);
+    the hardened loader refuses via the allowlist and no marker is created."""
+    import os
+    import pickle
+
+    marker = tmp_path / "pwned"
+    payload = tmp_path / "evil.pt"
+
+    class _Exploit:
+        def __reduce__(self):
+            return (os.system, (f"touch {marker}",))
+
+    with payload.open("wb") as f:
+        pickle.dump(_Exploit(), f)
+
+    class _Cfg:
+        tokenizer_type = "simple"
+        tokenizer_path = str(payload)
+
+    from llm.runtime.tokenizer_factory import TokenizerFactory
+
+    # The hardened loader refuses the foreign global (os.system) — the exact
+    # class torch's weights_only unpickler raises.
+    with pytest.raises(Exception, match=r"global|weights_only|load"):
+        TokenizerFactory.from_serving_config(_Cfg())
+
+    assert not marker.exists(), "malicious pickle executed code during tokenizer load"
+
+
+def test_tokenizer_roundtrip_still_works_weights_only(tmp_path):
+    """The hardening must not break the legit framework round-trip: a pickle
+    written by ``torch.save(SimpleCharacterTokenizer(...))`` loads fine."""
+    from llm.runtime.tokenizer_factory import TokenizerFactory
+
+    config = Config()
+    tokenizer = SimpleCharacterTokenizer(["abc", "<PAD>"])
+    path = tmp_path / "tok.pt"
+    torch.save(tokenizer, path)
+    config.data.tokenizer_path = str(path)
+
+    loaded = TokenizerFactory.from_data_config(config.data)
+    assert loaded.encode("<PAD>") == tokenizer.encode("<PAD>")

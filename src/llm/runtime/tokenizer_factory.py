@@ -12,6 +12,42 @@ from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
 
 DEFAULT_SIMPLE_CORPUS = ["<PAD>", "<EOS>", "<BOS>"]
 
+_SAFE_GLOBALS_REGISTERED = False
+
+
+def _register_tokenizer_safe_globals() -> None:
+    """Allowlist the framework's tokenizer classes and the transformers
+    tokenizer base, so ``torch.load(..., weights_only=True)`` can reconstruct
+    a user-saved ``tokenizer.pt`` WITHOUT executing arbitrary pickled code.
+
+    Security (RIL ISS-185): before this, both ``from_data_config`` and
+    ``from_serving_config`` loaded a user-supplied ``tokenizer.pt`` with
+    ``weights_only=False`` — an unrestricted ``pickle.load`` where a crafted
+    ``__reduce__`` (e.g. ``os.system``) ran as the training/serving process
+    before any input reached the model. With the allowlist, a pickle that
+    references any class OUTSIDE these (an attacker's ``os.system`` /
+    ``subprocess`` / a genuinely custom undeclared tokenizer class) raises
+    UnpicklingError and is refused — no ``weights_only=False`` fallback
+    (consistent with the round-62 checkpoint hardening, ISS-170).
+    """
+    global _SAFE_GLOBALS_REGISTERED
+    if _SAFE_GLOBALS_REGISTERED:
+        return
+    classes: list[Any] = [BaseTokenizer, SimpleCharacterTokenizer, HFTokenizer]
+    # An HFTokenizer pickle embeds the wrapped transformers object; allowlist
+    # the tokenizer base classes when the optional dependency is present
+    # (transformers absent is fine — the allowlist stays framework-only).
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        from transformers import PreTrainedTokenizer, PreTrainedTokenizerBase, PreTrainedTokenizerFast
+
+        classes.extend([PreTrainedTokenizer, PreTrainedTokenizerBase, PreTrainedTokenizerFast])
+    # ty models add_safe_globals' arg as callables; classes are callables at
+    # runtime but ty widens them to ``type`` — ignore the arg-type nit.
+    torch.serialization.add_safe_globals(classes)  # type: ignore[arg-type]
+    _SAFE_GLOBALS_REGISTERED = True
+
 
 class TokenizerConfig(Protocol):
     tokenizer_type: str
@@ -44,7 +80,8 @@ class TokenizerFactory:
                 # tokenizer that can't round-trip the intended vocab, and the
                 # mismatch is invisible until serve-time decode errors.
                 raise FileNotFoundError(f"Tokenizer file not found: {path}")
-            loaded = torch.load(path, map_location="cpu", weights_only=False)
+            _register_tokenizer_safe_globals()
+            loaded = torch.load(path, map_location="cpu", weights_only=True)
             return cast(BaseTokenizer, loaded)
 
         corpus = default_corpus or DEFAULT_SIMPLE_CORPUS
@@ -58,7 +95,8 @@ class TokenizerFactory:
                 return HFTokenizer.from_pretrained(config.tokenizer_path)
             if not path.exists():
                 raise FileNotFoundError(f"Tokenizer file not found: {path}")
-            return torch.load(path, map_location="cpu", weights_only=False)
+            _register_tokenizer_safe_globals()
+            return torch.load(path, map_location="cpu", weights_only=True)
 
         if getattr(config, "model_path", None):
             raise ValueError("tokenizer_path is required when model_path is set for serving")
