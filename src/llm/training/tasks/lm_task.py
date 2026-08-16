@@ -193,14 +193,35 @@ class LanguageModelingTask(TrainingTask):
         )
 
     def build_scheduler(self, optimizer: optim.Optimizer) -> LRScheduler | None:
-        if self.config.training.scheduler_type == "cosine":
+        scheduler_type = self.config.training.scheduler_type
+
+        # ReduceLROnPlateau is NOT an LRScheduler, so it cannot compose with
+        # the LinearLR warmup (SequentialLR requires LRScheduler items). The
+        # engine special-cases its metric-based step (val/avg loss). Before
+        # RIL ISS-182 the config advertised ``step``/``plateau`` but built no
+        # scheduler, silently training at constant LR.
+        if scheduler_type == "plateau":
+            return optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode="min",
+                factor=0.5,
+                patience=max(1, self.config.training.epochs // 5),
+            )
+
+        if scheduler_type == "step":
+            main_scheduler = optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=max(1, self.config.training.epochs // 2),
+                gamma=0.5,
+            )
+        elif scheduler_type == "cosine":
             main_scheduler = optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
                 T_max=max(1, self.config.training.epochs - self.config.training.warmup_epochs),
                 eta_min=self.config.training.lr * 0.1,
             )
         else:
-            # Default to step or none if not specified/supported
+            # Unknown/unsupported scheduler type: run at constant LR.
             return None
 
         if self.config.training.warmup_epochs > 0:

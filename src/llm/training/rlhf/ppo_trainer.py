@@ -36,7 +36,7 @@ class PPOTrainer:
         tokenizer: Any,
         config: PPOConfig,
         ref_model: nn.Module | None = None,
-        value_model: nn.Module | None = None,
+        value_model: ValueModel | None = None,
         device: str | torch.device = "cuda",
     ):
         """
@@ -84,6 +84,13 @@ class PPOTrainer:
             self.ref_model.eval()
         if self.value_model is not None:
             self.value_model.to(self.device)
+            # RIL ISS-173: the critic deep-copies the policy (which the engine
+            # broadcasts before prepare_training), but broadcast it explicitly
+            # too — if the copy ran before a rank-0 sync, multi-GPU ranks
+            # would start with divergent critic weights and GAE bootstraps.
+            from llm.training.core.distributed import broadcast_parameters
+
+            broadcast_parameters(self.value_model)
 
         # Optimizers
         policy_lr = config.policy_lr or 1e-5
@@ -138,6 +145,10 @@ class PPOTrainer:
         self.global_step = int(state.get("global_step", self.global_step))
         if self.value_model is not None and "value_model" in state:
             self.value_model.load_state_dict(state["value_model"])
+            # A persisted critic was restored — keep it (the critic's base at
+            # the moment the checkpoint was saved) instead of re-syncing to
+            # the now-moved policy in on_checkpoint_loaded (RIL ISS-175).
+            self._value_restored_from_ckpt = True
         if self.value_optimizer is not None and "value_optimizer" in state:
             self.value_optimizer.load_state_dict(state["value_optimizer"])
         if self.ref_model is not None and "ref_model" in state:
@@ -148,26 +159,53 @@ class PPOTrainer:
             self._ref_restored_from_ckpt = True
 
     def on_checkpoint_loaded(self, model: nn.Module) -> None:
-        """Align the frozen reference with a checkpoint-loaded base policy.
+        """Align the frozen companions with a checkpoint-loaded base policy.
 
         Called by the engine right after ``load_checkpoint`` applies resumed
         weights to the policy (RIL round-60 deep-dive Finding 1, same contract
         as ``DPOTask.on_checkpoint_loaded``).
 
-        - Resuming from an SFT/base checkpoint (no persisted ``ref_model`` in
-          extra_state): the reference must equal the loaded policy — that IS
-          the base the policy is regularised against. In the PPO flow
-          ``prepare_training`` deep-copies the policy into ``ref_model``
-          BEFORE the engine loads the checkpoint, so without this hook the KL
-          penalty would be computed against a stale (pre-resume) model.
+        - Resuming from an SFT/base checkpoint (no persisted ``ref_model`` /
+          ``value_model`` in extra_state): the reference AND the critic must
+          equal the loaded policy — that IS the base the policy is
+          regularised / bootstrapped against. Both are deep-copied inside
+          ``prepare_training`` BEFORE the engine loads the checkpoint, so
+          without this hook the KL penalty and the GAE value bootstrap use
+          stale (pre-resume) models (RIL round-60 Finding 1 + round-62
+          surface-B Finding 3 / ISS-175).
         - Resuming from a mid-PPO checkpoint: ``load_checkpoint_state`` already
-          restored the ORIGINAL base reference; keep it.
+          restored the original companion weights; keep them.
         """
-        if self.ref_model is None:
+        if self.ref_model is not None and not getattr(self, "_ref_restored_from_ckpt", False):
+            self.ref_model.load_state_dict(model.state_dict())
+        # The critic's base is deep-copied from the policy at build time too;
+        # re-align it with the loaded policy unless the checkpoint carried a
+        # persisted value model (mid-PPO resume), which is authoritative.
+        if self.value_model is not None and not getattr(self, "_value_restored_from_ckpt", False):
+            self.value_model.base_model.load_state_dict(model.state_dict())
+
+    def _sync_value_grads(self) -> None:
+        """All-reduce the critic's gradients across ranks (RIL ISS-173).
+
+        No-op when not running distributed. Mirrors what DDP does for the
+        policy: gradients are summed then divided by the world size so every
+        rank's ``value_optimizer.step()`` applies the SAME mean gradient and
+        the critic stays a single shared model across ranks.
+        """
+        if self.value_model is None:
             return
-        if getattr(self, "_ref_restored_from_ckpt", False):
+        if not (
+            torch.distributed.is_available()
+            and torch.distributed.is_initialized()
+            and torch.distributed.get_world_size() > 1
+        ):
             return
-        self.ref_model.load_state_dict(model.state_dict())
+        world = torch.distributed.get_world_size()
+        for param in self.value_model.parameters():
+            if param.grad is None:
+                continue
+            torch.distributed.all_reduce(param.grad, op=torch.distributed.ReduceOp.SUM)
+            param.grad.div_(world)
 
     def _policy_base(self) -> nn.Module:
         """The bare module behind a possibly DDP-wrapped policy.
@@ -422,6 +460,21 @@ class PPOTrainer:
         advantages = batch.advantages
         returns = batch.returns
 
+        # Deterministic re-scoring (RIL ISS-174): ``old_log_probs`` were
+        # computed under ``policy.eval()`` during rollout generation. Re-
+        # scoring the SAME inputs in train mode applies dropout (default
+        # p=0.1), so even at epoch 0 ``ratio = exp(new - old) != 1``, the
+        # approx_kl is spuriously nonzero, and a configured ``target_kl``
+        # early-stops without any policy movement (clip fires on dropout
+        # noise, not divergence). Keep autograd (the surrogate is the
+        # training objective) but score every model in eval mode; restore
+        # train mode before returning.
+        self.policy.eval()
+        if self.value_model is not None:
+            self.value_model.eval()
+        if self.ref_model is not None:
+            self.ref_model.eval()
+
         # Forward pass
         logits = self.policy(input_ids)
 
@@ -539,6 +592,13 @@ class PPOTrainer:
 
         self.optimizer.step()
         if self.value_optimizer is not None:
+            # RIL ISS-173: the critic is trained OUTSIDE the policy's DDP
+            # wrapper, so its gradients must be all-reduced explicitly before
+            # stepping — otherwise rank R's critic diverges after the first
+            # update and the shared policy is trained against rank-inconsistent
+            # advantage/target scales (the same gradients-not-synchronized
+            # class round-47 fixed for the policy).
+            self._sync_value_grads()
             self.value_optimizer.step()
 
         # Metrics
@@ -552,7 +612,7 @@ class PPOTrainer:
             approx_kl = ((ratio - 1) - ratio.log()).mul(response_window_mask).sum() / real_tokens
             ratio_mean = (ratio * response_window_mask).sum() / real_tokens
 
-        return {
+        result = {
             "loss": loss.item(),
             "policy_loss": policy_loss.item(),
             "value_loss": value_loss.item() if isinstance(value_loss, torch.Tensor) else value_loss,
@@ -562,6 +622,16 @@ class PPOTrainer:
             "approx_kl": approx_kl.item(),
             "ratio_mean": ratio_mean.item(),
         }
+
+        # Restore train mode (RIL ISS-174): generation re-evals the policy
+        # anyway, but leaving dropout modules silently off would change
+        # behavior for any caller that trains after ppo_step.
+        self.policy.train()
+        if self.value_model is not None:
+            self.value_model.train()
+        if self.ref_model is not None:
+            self.ref_model.train()
+        return result
 
     def train_step(self, prompts: list[str]) -> dict[str, float]:
         """
@@ -627,12 +697,17 @@ class PPOTrainer:
 
         self.global_step += 1
 
-        # Aggregate metrics
+        # Aggregate metrics — a degenerate-but-legal config (ppo_epochs=0, or
+        # an empty buffer because mini_batch_size slicing produced nothing)
+        # yields no batches; return zeroed metrics instead of IndexError-ing
+        # on ``all_metrics[0]`` or dividing by zero (RIL ISS-177).
         avg_metrics = {}
-        for key in all_metrics[0]:
-            avg_metrics[key] = sum(m[key] for m in all_metrics) / len(all_metrics)
-
-        avg_metrics["reward_mean"] = sum(r.item() for r in rewards) / len(rewards)
-        avg_metrics["response_len_mean"] = sum(len(r) for r in response_ids) / len(response_ids)
+        if all_metrics:
+            for key in all_metrics[0]:
+                avg_metrics[key] = sum(m[key] for m in all_metrics) / len(all_metrics)
+        avg_metrics["reward_mean"] = sum(r.item() for r in rewards) / len(rewards) if rewards else 0.0
+        avg_metrics["response_len_mean"] = (
+            sum(len(r) for r in response_ids) / len(response_ids) if response_ids else 0.0
+        )
 
         return avg_metrics

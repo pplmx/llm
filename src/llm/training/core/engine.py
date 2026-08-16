@@ -4,6 +4,7 @@ from typing import Any, cast
 
 import torch
 import torch.nn as nn
+from torch.nn.parallel import DistributedDataParallel
 
 from llm.data.base import BaseDataModule
 from llm.runtime.checkpoint import collect_extra_state, load_extra_state
@@ -378,30 +379,52 @@ class TrainingEngine:
             batch_count += 1
             self._run_callbacks("on_batch_start", epoch=epoch, batch_idx=batch_idx)
             batch_start_time = time.time()
-            # Move batch to device
+            # Move batch to device. Non-tensor keys (integer lengths,
+            # dataset indices, masks-as-lists) are preserved — silently
+            # dropping them broke tasks that read batch metadata, with no way
+            # to tell an absent key from a dropped one (RIL ISS-184).
             if isinstance(batch, dict):
                 batch = {
-                    k: v.to(self.device, non_blocking=True) for k, v in batch.items() if isinstance(v, torch.Tensor)
+                    k: v.to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v
+                    for k, v in batch.items()
                 }
             else:
                 batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
+            # AMP dtype: honor the resolved choice. "float32" (the CPU /
+            # no-AMP resolved value) must NOT issue fp16 autocast — CPU
+            # autocast silently no-ops fp16 and would error if PyTorch
+            # hardens it; fp32 needs no autocast at all (RIL ISS-181).
             amp_dtype = torch.float16
+            amp_enabled = self.config.optimization.use_amp
             if self.resolved_amp_dtype == "bfloat16":
                 amp_dtype = torch.bfloat16
+            elif self.resolved_amp_dtype == "float32":
+                amp_enabled = False
 
-            with torch.autocast(
-                device_type=self.device.type, enabled=self.config.optimization.use_amp, dtype=amp_dtype
-            ):
+            with torch.autocast(device_type=self.device.type, enabled=amp_enabled, dtype=amp_dtype):
                 loss, metrics = self.task.train_step(batch, self.model, self.criterion)
-                # Scale loss for gradient accumulation
-                loss = loss / accum_steps
+                # Gradient-accum scaling: the RAW loss is what callbacks and
+                # logging should see (RIL ISS-180); the scaled copy backprops.
+                scaled_loss = loss / accum_steps
 
-            self.scaler.scale(loss).backward()
             accum_counter += 1
+            is_step_boundary = (batch_idx + 1) % accum_steps == 0 or (batch_idx + 1 == num_batches)
+
+            # DDP subtlety (RIL ISS-183): interior accumulation micro-batches
+            # must not trigger a gradient all-reduce — only the final boundary
+            # backward synchronizes. All-reducing every micro-batch multiplies
+            # cross-rank communication by accum_steps (the entire reason
+            # ``no_sync()`` exists). Model may be the wrapped DDP module or a
+            # plain module in single-process / CPU runs.
+            if isinstance(self.model, DistributedDataParallel) and not is_step_boundary:
+                with self.model.no_sync():
+                    self.scaler.scale(scaled_loss).backward()
+            else:
+                self.scaler.scale(scaled_loss).backward()
 
             # Perform optimization step every accum_steps or at end of epoch
-            if (batch_idx + 1) % accum_steps == 0 or (batch_idx + 1 == num_batches):
+            if is_step_boundary:
                 self.scaler.unscale_(self.optimizer)
                 if accum_counter != accum_steps:
                     # Partial final window (epoch tail): every loss was scaled
@@ -455,15 +478,13 @@ class TrainingEngine:
                 # Logic: We only log roughly.
                 grad_norm = torch.tensor(0.0)
 
+            # ``loss`` here is the RAW micro-batch loss (the accum scaling only
+            # went into ``scaled_loss`` for backprop), so step-end callbacks
+            # and epoch aggregation see the true value even under gradient
+            # accumulation (RIL ISS-180).
             self._run_callbacks("on_train_step_end", epoch=epoch, batch_idx=batch_idx, loss=loss, metrics=metrics)
 
-            # NOTE: loss logged is scaled loss or raw loss?
-            # Usually we want raw loss. Task returns raw loss.
-            # We scaled `loss` variable.
-            # metrics['loss'] is usually raw loss item.
-            # If task returns loss tensor, metrics dict might satisfy raw loss.
-
-            batch_loss = metrics.get("loss", loss.item() * accum_steps)  # Restore scale for logging if needed
+            batch_loss = metrics.get("loss", loss.item())  # raw loss from the task
             epoch_loss += batch_loss
 
             # Performance monitoring
@@ -510,10 +531,12 @@ class TrainingEngine:
 
         with torch.no_grad():  # Disable gradient calculations
             for batch_idx, batch in enumerate(self.val_dataloader):
-                # Move batch to device
+                # Move batch to device. Preserve non-tensor keys (RIL ISS-184,
+                # mirrors the training loop).
                 if isinstance(batch, dict):
                     batch = {
-                        k: v.to(self.device, non_blocking=True) for k, v in batch.items() if isinstance(v, torch.Tensor)
+                        k: v.to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v
+                        for k, v in batch.items()
                     }
                 else:
                     batch = tuple(t.to(self.device, non_blocking=True) for t in batch)

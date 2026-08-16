@@ -172,6 +172,14 @@ class PPOTask(TrainingTask):
             if epoch_metrics:
                 avg_loss = sum(m.get("loss", 0.0) for m in epoch_metrics) / len(epoch_metrics)
 
+            # Collect extra state on ALL ranks BEFORE the rank-0 save gate
+            # (mirrors the engine's standard loop, RIL ISS-179): streaming
+            # DataModules gather per-rank shard cursors collectively
+            # (all_gather_object), so calling this only on rank 0 would
+            # DEADLOCK (rank 1 never enters the collective) and would drop all
+            # other shards' resume cursors.
+            extra_state = collect_extra_state(engine, self, engine.data_module)
+
             if engine.rank == 0:
                 engine.logger.info("-" * 80)
                 engine.logger.info(
@@ -185,7 +193,7 @@ class PPOTask(TrainingTask):
                     None,
                     None,
                     avg_loss,
-                    extra_state=collect_extra_state(engine, self, engine.data_module),
+                    extra_state=extra_state,
                     model_config=engine.config.model.model_dump(),
                 )
                 engine._run_callbacks("on_save_checkpoint", epoch=epoch)

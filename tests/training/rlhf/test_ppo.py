@@ -869,3 +869,65 @@ class TestPPOTrainer:
         assert torch.allclose(response_values[0, :2], torch.tensor([100.0, 101.0], device=str(DEFAULT_DEVICE)))
         # Sample 1: response len 1 → position [2] → 202.
         assert torch.allclose(response_values[1, :1], torch.tensor([202.0], device=str(DEFAULT_DEVICE)))
+
+    def test_ppo_step_epoch0_ratio_is_identity_under_eval(self, tiny_setup):
+        """Regression (RIL ISS-174): re-scoring a rollout with the SAME policy
+        must give an identity ratio at epoch 0 — the policy's weights have not
+        moved, and old_log_probs were computed under eval() (no dropout). The
+        old code re-scored in train() mode, so dropout (p=0.1) made ratio != 1
+        spuriously and a configured ``target_kl`` early-stopped with zero
+        policy movement."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+        from llm.training.rlhf.rollout_buffer import RolloutBuffer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        assert hasattr(policy, "training")  # real DecoderModel — has dropout ops
+        assert any(m.__class__.__name__ == "Dropout" for m in policy.modules()), (
+            "test precondition: tiny_model must contain dropout to expose ISS-174"
+        )
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        prompts = ["Hello", "Hi there"]
+        prompt_ids, response_ids, log_probs = trainer.generate_responses(prompts)
+        assert all(len(p) > 0 for p in response_ids)
+
+        buffer = RolloutBuffer(normalize_advantages=False)
+        for p_ids, r_ids, lp in zip(prompt_ids, response_ids, log_probs, strict=True):
+            buffer.add(
+                prompt_ids=p_ids,
+                response_ids=r_ids,
+                rewards=torch.tensor(1.0),
+                old_log_probs=lp,
+            )
+        buffer.compute_advantages()
+        batch = next(iter(buffer.get_batches(mini_batch_size=16, shuffle=False, device=str(DEFAULT_DEVICE))))
+
+        metrics = trainer.ppo_step(batch)
+        assert abs(metrics["ratio_mean"] - 1.0) < 1e-3, f"epoch-0 ratio should be ~1, got {metrics['ratio_mean']}"
+        assert abs(metrics["approx_kl"]) < 1e-3, f"epoch-0 approx_kl should be ~0, got {metrics['approx_kl']}"
+
+    def test_train_step_empty_prompts_returns_zeroed_metrics(self, tiny_setup):
+        """Regression (RIL ISS-177): a degenerate-but-legal step (empty prompt
+        list -> empty buffer -> no mini-batches) must return zeroed metrics
+        instead of IndexError on ``all_metrics[0]`` or dividing by zero."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        metrics = trainer.train_step([])
+        assert metrics["reward_mean"] == 0.0
+        assert "approx_kl" not in metrics  # no batches -> no ppo metrics, but no crash
