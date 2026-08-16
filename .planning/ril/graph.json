@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T14:06:12+00:00",
+  "updated_at": "2026-08-16T14:34:50+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9928,6 +9928,126 @@
       "commit": "dbd7a10",
       "title": "stream_world_size guard is order-independent (deferred validation)",
       "body": "streaming.py: load_checkpoint_state stashes saved_world_size into _pending_world_size when _world_size unknown; train_dataloader validates it once world_size is known. 1 test. ISS-204."
+    },
+    "EV-172": {
+      "id": "EV-172",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:33:50+00:00",
+      "updated_at": "2026-08-16T14:33:50+00:00",
+      "touched_round": 69,
+      "source": "tests/runtime/test_tokenizer_factory.py::test_from_data_config_default_tokenizer_encodes_real_text",
+      "confidence": 1.0,
+      "body": "Default simple tokenizer now roundtrips \"The quick brown fox, 123!\" (vocab 103, pad=100/eos=101/bos=102 specials preserved)."
+    },
+    "EV-173": {
+      "id": "EV-173",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:33:50+00:00",
+      "updated_at": "2026-08-16T14:33:50+00:00",
+      "touched_round": 69,
+      "source": "tests/evaluation/test_lm_task.py::test_lm_task_uses_explicit_tokenizer_not_corpus",
+      "confidence": 1.0,
+      "body": "LMTask tokenizer kwarg honored; explicit model-tokenizer wins over corpus-derived; encode ids < model vocab."
+    },
+    "EV-174": {
+      "id": "EV-174",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:33:50+00:00",
+      "updated_at": "2026-08-16T14:33:50+00:00",
+      "touched_round": 69,
+      "source": "tests/compat/test_hf_publisher.py::test_model_weight_dtype_quantized_falls_back_to_embedding",
+      "confidence": 1.0,
+      "body": "_model_weight_dtype on QuantizedLinear model returns embedding dtype (no AttributeError); _build_hf_config yields valid torch_dtype."
+    },
+    "EV-175": {
+      "id": "EV-175",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:33:50+00:00",
+      "updated_at": "2026-08-16T14:33:50+00:00",
+      "touched_round": 69,
+      "source": "tests/quantization/test_quantization.py::test_from_linear_rejects_4bit_no_packing",
+      "confidence": 1.0,
+      "body": "Simple-PTQ bits=4 now raises NotImplementedError (was silent 8-bit storage)."
+    },
+    "EV-176": {
+      "id": "EV-176",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:33:50+00:00",
+      "updated_at": "2026-08-16T14:33:50+00:00",
+      "touched_round": 69,
+      "source": "tests/data/test_streaming_resume.py::test_streaming_module_world_size_guard_order_independent",
+      "confidence": 1.0,
+      "body": "load_checkpoint_state before train_dataloader: _pending_world_size stashed; mismatch fires at first train_dataloader call."
+    },
+    "EV-177": {
+      "id": "EV-177",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:33:50+00:00",
+      "updated_at": "2026-08-16T14:33:50+00:00",
+      "touched_round": 69,
+      "source": "tests/data/test_presets.py (25 pass)",
+      "confidence": 1.0,
+      "body": "RedPajama preset text_column=text confirmed correct vs authoritative HF dataset script; docstring-only fix."
+    },
+    "HYP-056": {
+      "id": "HYP-056",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:34:18+00:00",
+      "updated_at": "2026-08-16T14:34:18+00:00",
+      "touched_round": 69,
+      "confidence": 0.9,
+      "title": "Default simple tokenizer cannot encode real text (ISS-196 root cause)",
+      "body": "Default corpus of just markers produced a marker-only vocab."
+    },
+    "HYP-057": {
+      "id": "HYP-057",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:34:18+00:00",
+      "updated_at": "2026-08-16T14:34:18+00:00",
+      "touched_round": 69,
+      "confidence": 0.9,
+      "title": "LMTask eval vocab never matches model vocab (ISS-195 root cause)",
+      "body": "Corpus-derived char tokenizer always wins."
+    },
+    "HYP-058": {
+      "id": "HYP-058",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:34:18+00:00",
+      "updated_at": "2026-08-16T14:34:18+00:00",
+      "touched_round": 69,
+      "confidence": 0.9,
+      "title": "save_pretrained dtype sniff assumed dense lm_head.weight (ISS-198)",
+      "body": "Quantized layers lack .weight."
+    },
+    "HYP-059": {
+      "id": "HYP-059",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T14:34:18+00:00",
+      "updated_at": "2026-08-16T14:34:18+00:00",
+      "touched_round": 69,
+      "confidence": 0.9,
+      "title": "stream world-size guard order-dependent on _world_size (ISS-204)",
+      "body": "Early load skips the check."
     }
   },
   "edges": [
@@ -14614,6 +14734,30 @@
       "to": "ISS-204",
       "type": "resolves",
       "created_at": "2026-08-16T14:04:31+00:00"
+    },
+    {
+      "from": "EV-172",
+      "to": "HYP-056",
+      "type": "validates",
+      "created_at": "2026-08-16T14:34:49+00:00"
+    },
+    {
+      "from": "EV-173",
+      "to": "HYP-057",
+      "type": "validates",
+      "created_at": "2026-08-16T14:34:50+00:00"
+    },
+    {
+      "from": "EV-174",
+      "to": "HYP-058",
+      "type": "validates",
+      "created_at": "2026-08-16T14:34:50+00:00"
+    },
+    {
+      "from": "EV-176",
+      "to": "HYP-059",
+      "type": "validates",
+      "created_at": "2026-08-16T14:34:50+00:00"
     }
   ]
 }
