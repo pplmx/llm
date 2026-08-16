@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T02:20:22+00:00",
+  "updated_at": "2026-08-16T02:26:19+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7911,10 +7911,10 @@
     "ISS-157": {
       "id": "ISS-157",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T02:26:19+00:00",
       "touched_round": 61,
       "severity": "0.45|title=AdaLoRA orth_reg_loss is a dead regularizer (computed on already-orthonormalized matrices)|summary=adalora.py:230-231 feeds the QR factors (orthonormal by construction) into ||P^T P - I||^2 + ||Q Q^T - I||^2 -> loss ~8.3e-13 regardless of how degenerate raw lora_P/Q are. orth_reg_weight never conditions P/Q. CONFIRMED live after forcing rank-1 lora_P."
     },
@@ -8164,16 +8164,18 @@
     "TASK-122": {
       "id": "TASK-122",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T01:15:57+00:00",
-      "updated_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T02:26:19+00:00",
       "touched_round": 61,
       "title": "AdaLoRA orth_reg_loss on raw P/Q (ISS-157)",
       "category": "correctness",
       "severity": 0.45,
       "confidence": 0.9,
-      "effort": 0.35
+      "effort": 0.35,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T03:20:34+00:00"
     },
     "TASK-123": {
       "id": "TASK-123",
@@ -8382,6 +8384,17 @@
       "touched_round": 61,
       "commit": "42cfb24",
       "summary": "SimpleCharacterTokenizer registers EOS/BOS specials when corpus declares them (ISS-152)"
+    },
+    "CHG-144": {
+      "id": "CHG-144",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T02:25:41+00:00",
+      "updated_at": "2026-08-16T02:25:41+00:00",
+      "touched_round": 61,
+      "commit": "74243aa",
+      "summary": "AdaLoRA orth_reg_loss computed on raw P/Q params (ISS-157)"
     }
   },
   "edges": [
@@ -12120,6 +12133,18 @@
       "to": "TASK-121",
       "type": "implements",
       "created_at": "2026-08-16T02:20:21+00:00"
+    },
+    {
+      "from": "CHG-144",
+      "to": "ISS-157",
+      "type": "resolves",
+      "created_at": "2026-08-16T02:26:19+00:00"
+    },
+    {
+      "from": "CHG-144",
+      "to": "TASK-122",
+      "type": "implements",
+      "created_at": "2026-08-16T02:26:19+00:00"
     }
   ]
 }
