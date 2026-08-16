@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 67,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T12:37:00+00:00",
+  "updated_at": "2026-08-16T12:54:35+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9353,11 +9353,11 @@
     "ISS-190": {
       "id": "ISS-190",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T11:44:26+00:00",
-      "updated_at": "2026-08-16T11:44:26+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T12:54:15+00:00",
+      "touched_round": 67,
       "severity": "medium",
       "title": "ALiBi position-encoding module is complete + tested but never wired into DecoderModel/attention",
       "summary": "src/llm/core/alibi.py implements get_alibi_slopes/build_alibi_bias/ALiBiPositionBias with dedicated tests (tests/core/test_alibi.py) but zero consumers anywhere in src/ (grep alibi/ALiBi across src/ tests/ configs/ examples/ finds the module and its own test only). DecoderModel exposes only pos_encoding_learned and use_rope (decoder.py:45,68); no PE registry option reaches the attention blocks. The tested-but-unwired module is effectively dormant feature debt: a user configuring any alibi-style option (none exists) or expecting BLOOM-style PE gets nothing, silently. Either wire it as a pos_encoding=alibi option (injecting ALiBiPositionBias into attention before softmax in the supported attn_impls) or delete as dead code; currently it is neither usable nor declared deprecated. VERIFIED via grep: no import of llm.core.alibi outside its own test."
@@ -9365,10 +9365,10 @@
     "TASK-159": {
       "id": "TASK-159",
       "type": "task",
-      "status": "active",
-      "version": 3,
+      "status": "resolved",
+      "version": 5,
       "created_at": "2026-08-16T11:44:56+00:00",
-      "updated_at": "2026-08-16T12:37:00+00:00",
+      "updated_at": "2026-08-16T12:54:35+00:00",
       "touched_round": 67,
       "category": "core-feature",
       "severity": 0.5,
@@ -9377,9 +9377,7 @@
       "unlock_factor": 1.2,
       "title": "Wire ALiBi as a pos_encoding option (BLOOM-style linear-bias PE) into DecoderModel + attention",
       "summary": "ISS-190: core/alibi.py is complete+tested with zero consumers. Integrate ALiBiPositionBias into the attention score path for the supported attn_impls (inject before softmax), add pos_encoding=alibi plumbing through DecoderModel/model_factory/config, and cover with tests incl. causal masking interplay. Milestone: new PE family without touching RoPE/learned paths.",
-      "note": "deferred to round 67; round 66 focused on quant+eval verified fixes",
-      "lock_owner": "round68-session",
-      "lock_until": "2026-08-16T13:07:00+00:00"
+      "note": "deferred to round 67; round 66 focused on quant+eval verified fixes"
     },
     "ISS-191": {
       "id": "ISS-191",
@@ -9700,6 +9698,17 @@
       "rationale": "ALiBi should ship as a real pos_encoding option, not remain a tested-but-unwired module (ISS-190). Wiring strategy: pass the ALiBi [1,N,Sq,Sk] bias through F.scaled_dot_product_attention's attn_bias channel — SDPA accepts arbitrary float additive biases, which is exactly ALiBi's semantics (signed linear bias, NOT a 0/-inf mask). Supported backends: mha (default) and sdpa, both of which route through llm.core.attn.sdpa.sdpa(). flash_attn/mla/paged do NOT get alibi in this milestone — they raise NotImplementedError at DecoderModel build time (loud-fail) instead of silently producing wrong PE (the repo's established contract, cf. Mixtral/MLA loud-fail). use_alibi conflicts with use_rope -> rejected at build. Final norm/no positional table: ALiBi adds no positional parameters, so eval/export weight formats are unchanged.",
       "alternatives_rejected": "1) Merge alibi into the existing 0/-inf additive mask channel: REJECTED — ALiBi is a signed positional bias, folding it through mask normalization would double-apply window/causal masks and corrupt the mask logic that rounds 42-62 stabilized. 2) Materialize full [B,N,S,S] scores and add bias pre-softmax manually in every backend: REJECTED — that kills SDPA flash-fused attention and duplicates per-backend score loops. 3) Delete alibi.py as dead code: REJECTED — BLOOM-style PE is a real, roadmap-relevant family (P1).",
       "title": "Ship ALiBi as pos_encoding via SDPA attn_bias channel (mha+sdpa), loud-fail others"
+    },
+    "CHG-163": {
+      "id": "CHG-163",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:53:56+00:00",
+      "updated_at": "2026-08-16T12:53:56+00:00",
+      "touched_round": 67,
+      "commit": "58d0513",
+      "title": "Wire ALiBi linear-bias PE as use_alibi pos_encoding (mha backend, SDPA attn_bias)"
     }
   },
   "edges": [
@@ -14242,6 +14251,18 @@
       "to": "TASK-159",
       "type": "governs",
       "created_at": "2026-08-16T12:37:00+00:00"
+    },
+    {
+      "from": "CHG-163",
+      "to": "TASK-159",
+      "type": "implements",
+      "created_at": "2026-08-16T12:54:15+00:00"
+    },
+    {
+      "from": "CHG-163",
+      "to": "ISS-190",
+      "type": "resolves",
+      "created_at": "2026-08-16T12:54:15+00:00"
     }
   ]
 }
