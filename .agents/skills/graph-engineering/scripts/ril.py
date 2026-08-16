@@ -158,14 +158,26 @@ def parse_fields(pairs: list[str]) -> dict:
     return fields
 
 
+def _num(task: dict, key: str, default: float) -> float:
+    """Coerce a task score field to float, degrading to `default` on missing or
+    non-numeric legacy data instead of crashing the whole command."""
+    value = task.get(key)
+    if value is None or isinstance(value, bool):
+        return default
+    try:
+        return float(value)
+    except TypeError, ValueError:
+        return default
+
+
 def priority_score(task: dict) -> float:
     weight = CATEGORY_WEIGHTS.get(task.get("category", ""), 1)
     if "category_weight" in task:
-        weight = float(task["category_weight"])
-    severity = float(task.get("severity", 0.5))
-    confidence = float(task.get("confidence", 0.5))
-    effort = max(float(task.get("effort", 1.0)), 0.1)
-    unlock = float(task.get("unlock_factor", 1.0))
+        weight = _num(task, "category_weight", weight)
+    severity = _num(task, "severity", 0.5)
+    confidence = _num(task, "confidence", 0.5)
+    effort = max(_num(task, "effort", 1.0), 0.1)
+    unlock = _num(task, "unlock_factor", 1.0)
     return round(weight * severity * confidence * (1.0 / (effort**0.5)) * unlock, 3)
 
 
@@ -451,6 +463,10 @@ def cmd_check(_args: argparse.Namespace) -> None:
 
     problems.extend(f"dependency cycle involving {source}" for source in deps if has_cycle(source))
     for node in graph["nodes"].values():
+        if node["type"] == "task":
+            sev = node.get("severity")
+            if sev is not None and not isinstance(sev, (int, float)):
+                problems.append(f"task {node['id']} severity is non-numeric: {sev!r} (expect 0-1 float)")
         if node["type"] == "hypothesis" and node["status"] == "active":
             has_evidence = any(
                 edge["to"] == node["id"] and edge["type"] in {"validates", "refutes"} for edge in graph["edges"]

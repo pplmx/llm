@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 65,
+  "round": 66,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T10:36:55+00:00",
+  "updated_at": "2026-08-16T11:23:40+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 60,
+      "touched_round": 66,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -6798,12 +6798,12 @@
       "id": "TASK-106",
       "type": "task",
       "status": "resolved",
-      "version": 3,
+      "version": 4,
       "created_at": "2026-08-15T05:17:18+00:00",
-      "updated_at": "2026-08-15T05:23:15+00:00",
-      "touched_round": 59,
+      "updated_at": "2026-08-16T11:22:54+00:00",
+      "touched_round": 66,
       "category": "correctness",
-      "severity": "high",
+      "severity": 0.8,
       "title": "Fix GradScaler-skipped (inf/NaN) steps advancing global_step + NaN-poisoning AdaLoRA EMA",
       "summary": "Mirror scaler found_inf skip via non-finite clip grad_norm; skip step does not bump global_step nor fire on_optimizer_step; keep scaler.step/update for stage machine"
     },
@@ -9310,6 +9310,36 @@
       "touched_round": 65,
       "commit": "8b07c29",
       "title": "PPO truncated-episode V(s_L) bootstrap (ISS-178/TASK-147)"
+    },
+    "TASK-158": {
+      "id": "TASK-158",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-16T11:22:18+00:00",
+      "updated_at": "2026-08-16T11:22:35+00:00",
+      "touched_round": 66,
+      "category": "dx",
+      "severity": 0.6,
+      "confidence": 0.95,
+      "effort": 0.5,
+      "unlock_factor": 1.0,
+      "title": "ril.py tasks --all crashes on legacy string severity; check() never validates numeric task severity",
+      "summary": "TASK-106 (resolved) carries severity='high' (string). cmd_tasks sorts all non-abandoned tasks by priority_score, whose bare float(task['severity']) raises ValueError -> the core CLI command is crashable by one bad historical node. ril.py check has no data-quality guard for task severity being numeric 0-1, so the corruption sails through consistency checks. Fix: coerce non-numeric score fields to defaults in priority_score + add a check() problem for task nodes with non-numeric severity + repair TASK-106 to a numeric value.",
+      "lock_owner": "round66-session",
+      "lock_until": "2026-08-16T11:52:35+00:00"
+    },
+    "ISS-189": {
+      "id": "ISS-189",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T11:23:40+00:00",
+      "updated_at": "2026-08-16T11:23:40+00:00",
+      "touched_round": 66,
+      "severity": "high",
+      "title": "ril.py tasks --all crashes on legacy string severity in a resolved task node",
+      "summary": "TASK-106 (resolved) holds severity='high' (string, schema-invalid). cmd_tasks --all sorts every non-abandoned task by priority_score whose bare float(task['severity']) raises ValueError -> crash trace, so the audit command is unusable. Default  survived only because the bad node was resolved. check() had no data-quality guard for numeric task severity, so the corruption went unflagged. CONFIRMED (reproduced the traceback)."
     }
   },
   "edges": [
@@ -13606,6 +13636,18 @@
       "to": "TASK-147",
       "type": "implements",
       "created_at": "2026-08-16T10:36:55+00:00"
+    },
+    {
+      "from": "TASK-158",
+      "to": "ISS-189",
+      "type": "addresses",
+      "created_at": "2026-08-16T11:23:40+00:00"
+    },
+    {
+      "from": "ISS-189",
+      "to": "COMP-006",
+      "type": "located_in",
+      "created_at": "2026-08-16T11:23:40+00:00"
     }
   ]
 }
