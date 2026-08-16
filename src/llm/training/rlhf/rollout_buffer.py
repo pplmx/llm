@@ -20,6 +20,15 @@ class RolloutSample:
     rewards: torch.Tensor  # [1] scalar reward from reward model
     old_log_probs: torch.Tensor  # [response_len] log probs from policy
     values: torch.Tensor | None = None  # [response_len] value estimates (optional)
+    # RIL ISS-178: whether the episode was cut off by ``response_max_len``
+    # (as opposed to genuinely terminating at EOS). Truncated episodes are
+    # NOT terminal — GAE must bootstrap from the critic's value at the
+    # post-response state ``s_L`` instead of hardcoding next_value=0.
+    truncated: bool = False
+    # Critic value V(s_L) at the state after the last response token, used
+    # to bootstrap truncated episodes. Scalar tensor; only meaningful when
+    # ``truncated`` is True and a critic is in use.
+    terminal_value: torch.Tensor | None = None
     advantages: torch.Tensor | None = None  # [response_len] computed advantages
     returns: torch.Tensor | None = None  # [response_len] raw returns (advantage + value)
 
@@ -65,8 +74,18 @@ class RolloutBuffer:
         rewards: torch.Tensor,
         old_log_probs: torch.Tensor,
         values: torch.Tensor | None = None,
+        truncated: bool = False,
+        terminal_value: torch.Tensor | None = None,
     ):
-        """Add a rollout sample to the buffer."""
+        """Add a rollout sample to the buffer.
+
+        Args:
+            truncated: True when the response hit ``response_max_len``
+                instead of terminating at EOS — such episodes are not
+                genuinely terminal and GAE bootstraps from ``terminal_value``.
+            terminal_value: Critic estimate V(s_L) at the state after the
+                last response token (only used for truncated episodes).
+        """
         full_input_ids = torch.cat([prompt_ids, response_ids], dim=0)
         attention_mask = torch.ones(len(full_input_ids), dtype=torch.long)
 
@@ -78,6 +97,8 @@ class RolloutBuffer:
             rewards=rewards,
             old_log_probs=old_log_probs,
             values=values,
+            truncated=truncated,
+            terminal_value=terminal_value,
         )
         self.samples.append(sample)
 
@@ -101,8 +122,21 @@ class RolloutBuffer:
 
                 for t in reversed(range(response_len)):
                     if t == response_len - 1:
-                        next_value = 0.0
                         reward_t = reward
+                        # RIL ISS-178: the episode's last state is terminal
+                        # ONLY when the response ended at EOS — then nothing
+                        # follows and next_value is 0. A response truncated
+                        # by ``response_max_len`` is NOT finished: the policy
+                        # would keep generating, so the last state must be
+                        # bootstrapped from the critic's value V(s_L) at the
+                        # post-response state (decayed by ``gamma`` like any
+                        # bootstrap). Hardcoding 0 modeled both cases
+                        # identically and systematically deflated the
+                        # final-token advantages of every truncated rollout.
+                        if sample.truncated and sample.terminal_value is not None:
+                            next_value = sample.terminal_value.item()
+                        else:
+                            next_value = 0.0
                     else:
                         next_value = values[t + 1].item()
                         reward_t = 0.0

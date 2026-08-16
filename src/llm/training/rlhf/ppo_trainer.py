@@ -298,10 +298,36 @@ class PPOTrainer:
         self.value_model.train()
         return torch.stack(values)
 
+    def compute_terminal_value(
+        self,
+        prompt_ids: torch.Tensor,
+        response_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        """Critic's bootstrap value V(s_L) at the state AFTER the response.
+
+        ``compute_response_values`` emits a value before each generated token
+        but never scores the post-response state s_L (prompt + full response,
+        i.e. the state that would predict one more token). That state is the
+        continuation point of a max-len-truncated episode — GAE must bootstrap
+        from V(s_L) there instead of treating the cut as terminal (RIL
+        ISS-178). Returns a scalar tensor.
+        """
+        if self.value_model is None:
+            raise RuntimeError("value_model is required to compute the terminal value")
+
+        full_ids = torch.cat([prompt_ids, response_ids]).unsqueeze(0)
+        attention_mask = torch.ones_like(full_ids)
+
+        self.value_model.eval()
+        with torch.no_grad():
+            terminal_value = self.value_model(full_ids, attention_mask)[0, -1]
+        self.value_model.train()
+        return terminal_value
+
     def generate_responses(
         self,
         prompts: list[str],
-    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor], list[bool]]:
         """
         Generate responses for a batch of prompts.
 
@@ -309,6 +335,11 @@ class PPOTrainer:
             prompt_ids: List of prompt token tensors
             response_ids: List of response token tensors
             log_probs: List of log probability tensors for responses
+            truncated: List of bools — True when the response hit
+                ``response_max_len`` instead of terminating at EOS. Truncated
+                episodes are not genuinely terminal and must be bootstrapped
+                with V(s_L) in GAE (RIL ISS-178). With a tokenizer that has
+                no EOS every rollout is truncated.
         """
         self.policy.eval()
         # The tokenizer API is ``eos_token_id`` (SimpleCharacterTokenizer,
@@ -322,6 +353,7 @@ class PPOTrainer:
         all_prompt_ids = []
         all_response_ids = []
         all_log_probs = []
+        all_truncated: list[bool] = []
 
         with torch.no_grad():
             for prompt in prompts:
@@ -334,6 +366,11 @@ class PPOTrainer:
                 # Generate response autoregressively
                 response_ids = []
                 log_probs = []
+
+                # The episode is truncated iff generation exhausts
+                # ``response_max_len`` without emitting EOS (RIL ISS-178).
+                # Assume truncated; an EOS hit below clears it.
+                truncated = True
 
                 input_ids = prompt_ids.unsqueeze(0)  # [1, prompt_len]
 
@@ -384,16 +421,21 @@ class PPOTrainer:
 
                     # Stop at EOS so post-EOS continuation is not folded into
                     # the response training signal (and rollout compute is not
-                    # wasted on the tail).
+                    # wasted on the tail). Only an EOS termination makes the
+                    # episode genuinely terminal — anything else is a
+                    # truncation whose last state must be bootstrapped (RIL
+                    # ISS-178).
                     if eos_id is not None and next_token.item() == eos_id:
+                        truncated = False
                         break
 
                 all_prompt_ids.append(prompt_ids)
                 all_response_ids.append(torch.tensor(response_ids, device=self.device))
                 all_log_probs.append(torch.tensor(log_probs, device=self.device))
+                all_truncated.append(truncated)
 
         self.policy.train()
-        return all_prompt_ids, all_response_ids, all_log_probs
+        return all_prompt_ids, all_response_ids, all_log_probs, all_truncated
 
     def compute_rewards(
         self,
@@ -658,8 +700,10 @@ class PPOTrainer:
         Returns:
             Dictionary of training metrics.
         """
-        # 1. Generate responses
-        prompt_ids, response_ids, log_probs = self.generate_responses(prompts)
+        # 1. Generate responses. The fourth element reports which episodes
+        # were truncated at ``response_max_len`` rather than EOS-terminated;
+        # those need a V(s_L) bootstrap in GAE (RIL ISS-178).
+        prompt_ids, response_ids, log_probs, truncated = self.generate_responses(prompts)
 
         # 2. Compute rewards
         rewards = self.compute_rewards(prompt_ids, response_ids)
@@ -675,16 +719,31 @@ class PPOTrainer:
 
         # 3. Store in buffer
         self.buffer.clear()
-        for p_ids, r_ids, lp, reward in zip(prompt_ids, response_ids, log_probs, rewards, strict=True):
+        for p_ids, r_ids, lp, reward, trunc in zip(
+            prompt_ids,
+            response_ids,
+            log_probs,
+            rewards,
+            truncated,
+            strict=True,
+        ):
             values = None
+            terminal_value = None
             if self.value_model is not None:
                 values = self.compute_response_values(p_ids, r_ids)
+                # Truncated episodes are not terminal: collect the critic's
+                # V(s_L) at the post-response state so GAE bootstraps it
+                # instead of assuming a hard stop (RIL ISS-178).
+                if trunc:
+                    terminal_value = self.compute_terminal_value(p_ids, r_ids)
             self.buffer.add(
                 prompt_ids=p_ids,
                 response_ids=r_ids,
                 rewards=reward,
                 old_log_probs=lp,
                 values=values,
+                truncated=trunc,
+                terminal_value=terminal_value,
             )
 
         # 4. Compute advantages

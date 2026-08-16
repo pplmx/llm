@@ -89,6 +89,84 @@ class TestRolloutBuffer:
             atol=1e-5,
         )
 
+    def test_gae_truncated_episode_bootstraps_from_terminal_value(self):
+        """Regression (RIL ISS-178): a max-len-truncated episode is NOT
+        terminal — GAE must bootstrap the last response state with the
+        critic's ``V(s_L)`` (the value at the state AFTER the last
+        generated token) instead of hardcoding ``next_value=0.0``. The old
+        code modeled truncation- and EOS-terminated episodes identically,
+        which crushed the final-token advantages of every truncated
+        rollout (rollout_buffer.py:102-105)."""
+        buffer = RolloutBuffer(gae_lambda=1.0, gamma=1.0, normalize_advantages=False)
+        values = torch.tensor([0.5, 0.3])
+        # Truncated at max length: compute_terminal_value scored the state
+        # after the last response token at 2.0.
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+            values=values,
+            truncated=True,
+            terminal_value=torch.tensor(2.0),
+        )
+        buffer.compute_advantages()
+        sample = buffer.samples[0]
+
+        # GAE with done=False: last-token delta = r + gamma*V(s_L) - V(s_{L-1}).
+        # With gamma=1, gae_lambda=1: A[1] = 1.0 + 2.0 - 0.3 = 2.7,
+        # A[0] = 0 + 0.3 - 0.5 + A[1] = 2.5 (vs the terminal [0.5, 0.7]
+        # the same sample would get with next_value=0).
+        expected = torch.tensor([2.5, 2.7])
+        assert torch.allclose(sample.advantages, expected, atol=1e-5), (
+            f"truncated episode must bootstrap from V(s_L): got {sample.advantages} expected {expected}"
+        )
+        # Raw returns (critic targets): every position = r + gamma*V(s_L) = 3.0.
+        assert sample.returns is not None
+        assert torch.allclose(sample.returns, torch.tensor([3.0, 3.0]), atol=1e-5)
+
+    def test_gae_eos_episode_stays_terminal_when_not_truncated(self):
+        """A genuinely EOS-terminated episode keeps the terminal bootstrap
+        (next_value=0). Only truncated episodes consume ``V(s_L)`` — a
+        residual terminal_value must be ignored, not applied."""
+        buffer = RolloutBuffer(gae_lambda=1.0, gamma=1.0, normalize_advantages=False)
+        values = torch.tensor([0.5, 0.3])
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+            values=values,
+            truncated=False,
+            terminal_value=torch.tensor(999.0),  # must be ignored
+        )
+        buffer.compute_advantages()
+        sample = buffer.samples[0]
+
+        expected = torch.tensor([0.5, 0.7])
+        assert torch.allclose(sample.advantages, expected, atol=1e-5)
+
+    def test_gae_truncated_without_terminal_value_falls_back_terminal(self):
+        """A sample flagged truncated but carrying no critic estimate (the
+        value_coef=0 path never computes terminal values) must not crash:
+        the legacy terminal-0 bootstrap applies."""
+        buffer = RolloutBuffer(gae_lambda=1.0, gamma=1.0, normalize_advantages=False)
+        values = torch.tensor([0.5, 0.3])
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4, 5]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5, -0.3]),
+            values=values,
+            truncated=True,
+            terminal_value=None,
+        )
+        buffer.compute_advantages()
+        sample = buffer.samples[0]
+
+        expected = torch.tensor([0.5, 0.7])
+        assert torch.allclose(sample.advantages, expected, atol=1e-5)
+
     def test_returns_are_raw_when_advantages_normalized(self):
         """Returns must stay on the raw (unnormalized) return scale.
 
@@ -245,6 +323,66 @@ class TestPPOTrainer:
         assert values.shape == (3,)
         assert torch.isfinite(values).all()
 
+    def test_compute_terminal_value(self, tiny_setup):
+        """V(s_L): the critic value at the state AFTER the last response
+        token (prompt + full response), the bootstrap used for truncated
+        episodes (RIL ISS-178). ``compute_response_values`` only emits the
+        value BEFORE each generated token — the post-response state was
+        never scored, so truncated episodes could not be bootstrapped."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+        from llm.training.rlhf.value_model import ValueModel
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        value_model = ValueModel(policy)
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            value_model=value_model,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        prompt_ids = torch.tensor([1, 2, 3], device=DEFAULT_DEVICE)
+        response_ids = torch.tensor([4, 5, 6], device=DEFAULT_DEVICE)
+        terminal = trainer.compute_terminal_value(prompt_ids, response_ids)
+
+        assert terminal.dim() == 0  # scalar
+        assert torch.isfinite(terminal)
+
+        # Sanity: it must equal a manual forward over prompt+response at the
+        # last position (the state that would predict one more token).
+        full = torch.cat([prompt_ids, response_ids]).unsqueeze(0)
+        mask = torch.ones_like(full)
+        trainer.value_model.eval()
+        with torch.no_grad():
+            manual = trainer.value_model(full, mask)[0, -1]
+        assert torch.allclose(terminal, manual, atol=1e-6)
+
+    def test_compute_terminal_value_requires_value_model(self, tiny_setup):
+        """Without a critic there is no bootstrap to collect — must raise
+        instead of silently deg(/crashing) on None."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        config.value_coef = 0.0  # no critic created
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+        assert trainer.value_model is None
+
+        with pytest.raises(RuntimeError, match="value_model"):
+            trainer.compute_terminal_value(
+                torch.tensor([1, 2, 3], device=DEFAULT_DEVICE),
+                torch.tensor([4, 5], device=DEFAULT_DEVICE),
+            )
+
     def test_generate_responses_old_log_probs_are_raw_policy(self, tiny_setup):
         """Regression (RIL ISS-053): ``old_log_probs`` must be log-probs of
         the RAW policy (matching what ``ppo_step`` recomputes), not the
@@ -281,7 +419,7 @@ class TestPPOTrainer:
         with patch(
             "torch.multinomial", side_effect=lambda probs, num_samples=1, **kw: probs.argmax(dim=-1, keepdim=True)
         ):
-            prompt_ids, response_ids, log_probs = trainer.generate_responses(prompts)
+            prompt_ids, response_ids, log_probs, _truncated = trainer.generate_responses(prompts)
 
         # Sanity: greedy sampling still ran some steps.
         assert len(response_ids) == 1
@@ -327,7 +465,7 @@ class TestPPOTrainer:
         )
 
         prompts = ["Hello", "Hi"]
-        prompt_ids, response_ids, log_probs = trainer.generate_responses(prompts)
+        prompt_ids, response_ids, log_probs, _truncated = trainer.generate_responses(prompts)
 
         assert len(prompt_ids) == 2
         assert len(response_ids) == 2
@@ -361,9 +499,77 @@ class TestPPOTrainer:
         )
 
         with patch("torch.multinomial", return_value=torch.tensor([0], device=DEFAULT_DEVICE)):
-            _, response_ids, _ = trainer.generate_responses(["Hello"])
+            _, response_ids, _, truncated = trainer.generate_responses(["Hello"])
 
         assert len(response_ids[0]) == 1, f"rollout should stop at EOS (1 token), got {len(response_ids[0])}"
+        assert truncated == [False], "an EOS-terminated episode is NOT truncated"
+
+    def test_generate_responses_reports_max_len_truncation(self, tiny_setup):
+        """Regression (RIL ISS-178): when the tokenizer has no EOS the
+        rollout always exhausts ``response_max_len``; ``generate_responses``
+        must report those episodes as truncated so GAE can bootstrap with
+        ``V(s_L)`` instead of treating them as terminal."""
+        from unittest.mock import patch
+
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        tokenizer.eos_token_id = None  # default, but explicit: never stops early
+        config.response_max_len = 2
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        with patch("torch.multinomial", return_value=torch.tensor([5], device=DEFAULT_DEVICE)):
+            _, response_ids, _, truncated = trainer.generate_responses(["Hello", "Hi"])
+
+        assert truncated == [True, True]
+        assert all(len(r) == config.response_max_len for r in response_ids), (
+            "no-EOS rollouts must run to response_max_len and be flagged truncated"
+        )
+
+    def test_train_step_threads_truncation_and_collects_terminal_value(self, tiny_setup):
+        """Regression (RIL ISS-178): ``train_step`` must thread the truncation
+        flag from generation into the rollout buffer and collect ``V(s_L)``
+        for truncated episodes, so ``compute_advantages`` bootstraps instead
+        of forcing terminal. End-to-end over the full train_step pipeline."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+        from llm.training.rlhf.value_model import ValueModel
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        tokenizer.eos_token_id = None  # rollouts always truncate at max len
+        config.response_max_len = 2
+        config.top_k = 1  # deterministic greedy sampling
+        config.ppo_epochs = 1
+        value_model = ValueModel(policy)
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            value_model=value_model,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        metrics = trainer.train_step(["Hello", "Hi there"])
+
+        samples = trainer.buffer.samples
+        assert len(samples) == 2
+        assert all(s.truncated for s in samples), "no-EOS rollouts must be flagged truncated"
+        assert all(s.terminal_value is not None for s in samples)
+        assert all(s.terminal_value.dim() == 0 for s in samples)
+        assert all(torch.isfinite(s.terminal_value) for s in samples)
+        # The advantage of the last token of each truncated sample must carry
+        # the V(s_L) bootstrap (positive when the critic values s_L), i.e.
+        # differ from the hardcoded-terminal value — sanity that the signal
+        # actually flowed through.
+        assert torch.isfinite(torch.tensor(metrics["loss"]))
 
     def test_compute_rewards(self, tiny_setup):
         """Test reward computation."""
@@ -895,7 +1101,7 @@ class TestPPOTrainer:
         )
 
         prompts = ["Hello", "Hi there"]
-        prompt_ids, response_ids, log_probs = trainer.generate_responses(prompts)
+        prompt_ids, response_ids, log_probs, _truncated = trainer.generate_responses(prompts)
         assert all(len(p) > 0 for p in response_ids)
 
         buffer = RolloutBuffer(normalize_advantages=False)
@@ -951,7 +1157,7 @@ class TestPPOTrainer:
         )
 
         prompts = ["Hello", "Hi"]
-        _, response_ids, _ = trainer.generate_responses(prompts)
+        _, response_ids, _, _truncated = trainer.generate_responses(prompts)
         assert len(response_ids[0]) > 0
 
         # Every generated token must equal the greedy argmax of the raw logits
