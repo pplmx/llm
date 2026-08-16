@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T02:49:09+00:00",
+  "updated_at": "2026-08-16T03:01:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7932,10 +7932,10 @@
     "ISS-159": {
       "id": "ISS-159",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T03:01:42+00:00",
       "touched_round": 61,
       "severity": "0.25|title=LoRA/AdaLoRA merge_weights not idempotent: second merge clobbers unmerge snapshot, permanently baking stale fold|summary=lora.py:96-100 mirror adalora.py:248-252: second merge_weights stores _merged_scaling=0 (scaling already 0), re-fold no-ops, unmerge restores scaling=0 -> base weight permanently folded at 2x adapter strength, no error raised. CONFIRMED."
     },
@@ -8243,16 +8243,18 @@
     "TASK-127": {
       "id": "TASK-127",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T01:15:57+00:00",
-      "updated_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T03:01:42+00:00",
       "touched_round": 61,
       "title": "LoRA/AdaLoRA merge_weights idempotency guard (ISS-159)",
       "category": "correctness",
       "severity": 0.25,
       "confidence": 1.0,
-      "effort": 0.35
+      "effort": 0.35,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T03:49:20+00:00"
     },
     "TASK-128": {
       "id": "TASK-128",
@@ -8459,6 +8461,17 @@
       "touched_round": 61,
       "source": "round61 live run (e2e.py:162, eager.py:245): run_inference returns exactly max_new_tokens chars (8/8) even when keep=max(1,max_seq_len-max_new_tokens)=1 trashes the prompt; generate() re-prepends the ORIGINAL prompt (return prompt + ''.join(chunks)) AFTER stream_generate's internal truncation, so generated[len(prompt):] strips exactly the full prompt and never lands inside the output",
       "confidence": 1.0
+    },
+    "CHG-148": {
+      "id": "CHG-148",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T03:01:33+00:00",
+      "updated_at": "2026-08-16T03:01:33+00:00",
+      "touched_round": 61,
+      "commit": "da34cf6",
+      "summary": "merge_weights idempotent in LoRA/AdaLoRA/IA3 (ISS-159)"
     }
   },
   "edges": [
@@ -12251,6 +12264,18 @@
       "to": "HYP-054",
       "type": "refutes",
       "created_at": "2026-08-16T02:49:09+00:00"
+    },
+    {
+      "from": "CHG-148",
+      "to": "ISS-159",
+      "type": "resolves",
+      "created_at": "2026-08-16T03:01:42+00:00"
+    },
+    {
+      "from": "CHG-148",
+      "to": "TASK-127",
+      "type": "implements",
+      "created_at": "2026-08-16T03:01:42+00:00"
     }
   ]
 }
