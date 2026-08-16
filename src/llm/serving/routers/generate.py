@@ -259,8 +259,16 @@ async def generate_text(
             raise APIError(ErrorCode.INTERNAL, "Internal server error") from exc
         else:
             t.set_status(200)
-    metrics.observe_tokens(endpoint="generate", token_count=len(generated_text))
-    return GenerationResponse(generated_text=generated_text, token_count=len(generated_text))
+    # The eager backend's ``generate()`` returns ``prompt + completion`` (its
+    # ``stream()`` yields chunks only). Reported as-is, the prompt would be
+    # echoed into ``generated_text`` and counted as generated tokens,
+    # diverging from both this route's streaming mode and ``/v1/chat``
+    # (chat.py strips the same prior-echo — RIL ISS-148). Strip the prompt
+    # if the model echoed it back, mirroring chat.py's completion extraction.
+    completion = generated_text[len(request.prompt) :] if generated_text.startswith(request.prompt) else generated_text
+
+    metrics.observe_tokens(endpoint="generate", token_count=len(completion))
+    return GenerationResponse(generated_text=completion, token_count=len(completion))
 
 
 async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
@@ -374,10 +382,17 @@ async def batch_generate_text(
             raise APIError(ErrorCode.INTERNAL, "Internal server error") from exc
         else:
             t.set_status(200)
+    # Backend ``batch_generate`` returns ``prompt + completion`` per row (it
+    # delegates to ``generate()``); strip the echoed prompt so the response is
+    # the completion only, consistent with ``/generate`` and streaming
+    # (RIL ISS-148).
+    stripped: list[str] = []
+    for prompt, text in zip(request.prompts, results, strict=True):
+        stripped.append(text[len(prompt) :] if text.startswith(prompt) else text)
     # Record per-prompt token count; the counter is cumulative across
     # the whole batch, the histogram is per-prompt.
-    for text in results:
+    for text in stripped:
         metrics.observe_tokens(endpoint="batch_generate", token_count=len(text))
     return BatchGenerationResponse(
-        results=[GenerationResponse(generated_text=text, token_count=len(text)) for text in results]
+        results=[GenerationResponse(generated_text=text, token_count=len(text)) for text in stripped]
     )

@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T01:16:37+00:00",
+  "updated_at": "2026-08-16T01:26:27+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7811,10 +7811,10 @@
     "ISS-147": {
       "id": "ISS-147",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:19:25+00:00",
       "touched_round": 61,
       "severity": "0.8|title=Chat route returns HTTP 500 internal instead of 400 for un-encodable content|summary=src/llm/serving/routers/chat.py:133 except ValueError omits KeyError (what char/printable tokenizers raise for out-of-corpus chars) -> falls to generic except -> 500 code:internal; /generate sibling catches (ValueError,KeyError)->400. CONFIRMED live: emoji content -> /generate 400, chat 500. Client-caused error misclassified as server failure."
     },
@@ -8004,15 +8004,19 @@
     "TASK-112": {
       "id": "TASK-112",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-16T01:14:48+00:00",
-      "updated_at": "2026-08-16T01:14:48+00:00",
+      "updated_at": "2026-08-16T01:19:33+00:00",
       "touched_round": 61,
       "category": "correctness",
       "severity": 0.8,
       "priority_score": 17.89,
-      "title": "Chat non-streaming: catch KeyError alongside ValueError -> 400, align with /generate"
+      "title": "Chat non-streaming: catch KeyError alongside ValueError -> 400, align with /generate",
+      "confidence": 1.0,
+      "effort": 0.2,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T02:17:47+00:00"
     },
     "TASK-113": {
       "id": "TASK-113",
@@ -8060,15 +8064,17 @@
       "id": "TASK-116",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T01:15:56+00:00",
-      "updated_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:20:00+00:00",
       "touched_round": 61,
       "title": "/generate strip prompt echo from generated_text + token_count (ISS-148)",
       "category": "correctness",
       "severity": 0.55,
       "confidence": 1.0,
-      "effort": 0.25
+      "effort": 0.25,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T02:20:00+00:00"
     },
     "TASK-117": {
       "id": "TASK-117",
@@ -8251,6 +8257,28 @@
       "severity": 0.2,
       "confidence": 1.0,
       "effort": 0.3
+    },
+    "CHG-136": {
+      "id": "CHG-136",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:19:33+00:00",
+      "updated_at": "2026-08-16T01:19:33+00:00",
+      "touched_round": 61,
+      "commit": "c50dfdc",
+      "summary": "chat non-streaming maps un-encodable content KeyError to 400 (ISS-147)"
+    },
+    "CHG-137": {
+      "id": "CHG-137",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:26:27+00:00",
+      "updated_at": "2026-08-16T01:26:27+00:00",
+      "touched_round": 61,
+      "commit": "c50dfdc",
+      "summary": "/generate + /batch_generate strip echoed prompt (ISS-148)"
     }
   },
   "edges": [
@@ -11887,6 +11915,18 @@
       "to": "ISS-147",
       "type": "addresses",
       "created_at": "2026-08-16T01:16:37+00:00"
+    },
+    {
+      "from": "CHG-136",
+      "to": "ISS-147",
+      "type": "resolves",
+      "created_at": "2026-08-16T01:19:39+00:00"
+    },
+    {
+      "from": "CHG-136",
+      "to": "TASK-112",
+      "type": "implements",
+      "created_at": "2026-08-16T01:19:39+00:00"
     }
   ]
 }

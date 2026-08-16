@@ -200,7 +200,11 @@ def test_generate_text(client):
     data = response.json()
     assert "generated_text" in data
     assert "token_count" in data
-    assert len(data["generated_text"]) >= len(payload["prompt"])
+    # Regression (RIL ISS-148): the eager backend returns prompt+completion;
+    # the route must strip the prompt so generated_text is the completion only
+    # and token_count counts generated tokens, not prompt chars.
+    assert not data["generated_text"].startswith(payload["prompt"])
+    assert data["token_count"] == len(data["generated_text"])
 
 
 @pytest.mark.slow
@@ -213,7 +217,9 @@ def test_generate_advanced_params(client):
     assert response.status_code == 200
     data = response.json()
     assert "generated_text" in data
-    assert len(data["generated_text"]) >= len(payload["prompt"])
+    # Non-streaming /generate must not echo the prompt (RIL ISS-148).
+    assert not data["generated_text"].startswith(payload["prompt"])
+    assert data["token_count"] == len(data["generated_text"])
 
 
 @pytest.mark.slow
