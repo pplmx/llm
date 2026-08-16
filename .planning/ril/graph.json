@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T16:13:45+00:00",
+  "updated_at": "2026-08-16T16:15:55+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10161,11 +10161,11 @@
       "id": "CHG-173",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T16:13:45+00:00",
-      "updated_at": "2026-08-16T16:13:45+00:00",
+      "updated_at": "2026-08-16T16:15:55+00:00",
       "touched_round": 69,
-      "commit": "PENDING",
+      "commit": "3b81fe4",
       "title": "Checkpoint load: structural mismatches fail loud; model loaded last (no hybrid resume)",
       "body": "checkpoint.py: split load into corrupt-file swallow (payload read, nothing mutated) vs state loads (outside swallow, loud). optimizer/scheduler/scaler load before model so a mismatch leaves the model untouched. 1 test. ISS-206."
     }
