@@ -39,6 +39,10 @@ class StreamingTextDataset(IterableDataset):
         self.padding_value = padding_value if padding_value is not None else getattr(tokenizer, "pad_token_id", 0)
         self.stream_data_state = stream_data_state or StreamDataState()
 
+        if overlap < 0:
+            # RIL ISS-202: silently treating a negative ``overlap`` as "no
+            # overlap" hides a config bug; TextDataset already rejects it.
+            raise ValueError("overlap must be a non-negative integer")
         if overlap >= max_seq_len:
             raise ValueError("overlap must be smaller than max_seq_len")
 

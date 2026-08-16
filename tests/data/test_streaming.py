@@ -185,3 +185,27 @@ def test_streaming_data_module_warns_on_inmemory_dedup(tmp_path, monkeypatch, li
     data_module.setup()
 
     assert "write_seen_hashes" in caplog.text
+
+
+def test_streaming_dataset_rejects_negative_overlap(tmp_path, line_tokenizer):
+    """RIL ISS-202: a negative ``overlap`` must fail fast instead of being
+    silently treated as "no overlap" (TextDataset already rejects it).
+
+    The old ``__init__`` only checked ``overlap >= max_seq_len``, so a
+    negative value sailed through and ``__iter__`` silently treated it as
+    zero overlap — hiding the config bug."""
+    import pytest
+
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text("abcdefghij\n", encoding="utf-8")
+    source = LocalLineTextSource(text_file)
+
+    with pytest.raises(ValueError, match="non-negative"):
+        StreamingTextDataset(
+            text_source=source,
+            tokenizer=line_tokenizer,
+            max_seq_len=8,
+            rank=0,
+            world_size=1,
+            overlap=-1,
+        )
