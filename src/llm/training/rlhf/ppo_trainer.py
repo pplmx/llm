@@ -13,6 +13,7 @@ import torch.nn.functional as functional
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim import AdamW
 
+from llm.generation.sampling import sampling_probs as _sampling_probs
 from llm.models.decoder import DecoderModel
 from llm.training.core.config import PPOConfig
 from llm.training.rlhf.rollout_buffer import RolloutBatch, RolloutBuffer
@@ -351,14 +352,23 @@ class PPOTrainer:
                     # ``T != 1`` the old code logged ``log_softmax(logits/T)``
                     # and silently mixed two differently-scaled policies in
                     # the ratio (RIL ISS-053).
-                    if self.config.temperature != 1.0:
-                        sampling_logits = next_token_logits / self.config.temperature
+                    # Sample from the temperature- AND top-k/top-p-filtered
+                    # distribution (RIL ISS-176: the config declared these
+                    # knobs but generation honored only temperature — pure
+                    # multinomial over the full distribution otherwise). The
+                    # recorded ``old_log_prob`` below stays the RAW unscaled
+                    # log-softmax so the IS ratio ``exp(new - old)`` matches
+                    # ppo_step's raw re-score (RIL ISS-053).
+                    if self.config.temperature == 0:
+                        next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
                     else:
-                        sampling_logits = next_token_logits
-
-                    # Sample next token from the (temperature-scaled) policy.
-                    probs = functional.softmax(sampling_logits, dim=-1)
-                    next_token = torch.multinomial(probs, num_samples=1)
+                        probs = _sampling_probs(
+                            next_token_logits,
+                            temperature=self.config.temperature,
+                            top_k=self.config.top_k,
+                            top_p=self.config.top_p,
+                        )
+                        next_token = torch.multinomial(probs, num_samples=1)
 
                     # Get log probability under the RAW (unscaled) policy.
                     log_prob = functional.log_softmax(next_token_logits, dim=-1)[next_token]
@@ -653,6 +663,15 @@ class PPOTrainer:
 
         # 2. Compute rewards
         rewards = self.compute_rewards(prompt_ids, response_ids)
+
+        # ``normalize_rewards`` (RIL ISS-176): standardize the reward batch
+        # to zero-mean/unit-variance before storing (general-preferences-style
+        # reward standardization). Previously the knob was never read — the
+        # raw reward scale fed GAE/returns unchanged.
+        if self.config.normalize_rewards and rewards:
+            stacked = torch.stack(rewards)
+            normalized = (stacked - stacked.mean()) / stacked.std().clamp(min=1e-6)
+            rewards = [normalized[i] for i in range(len(rewards))]
 
         # 3. Store in buffer
         self.buffer.clear()

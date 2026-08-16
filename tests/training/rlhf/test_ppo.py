@@ -931,3 +931,64 @@ class TestPPOTrainer:
         metrics = trainer.train_step([])
         assert metrics["reward_mean"] == 0.0
         assert "approx_kl" not in metrics  # no batches -> no ppo metrics, but no crash
+
+    def test_generate_responses_honors_top_k(self, tiny_setup):
+        """Regression (RIL ISS-176): ``top_k=1`` must make every sampled token
+        the argmax (deterministic greedy); previously the knob was declared in
+        the config but generation sampled pure multinomial over the full
+        distribution."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        config.top_k = 1
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        prompts = ["Hello", "Hi"]
+        _, response_ids, _ = trainer.generate_responses(prompts)
+        assert len(response_ids[0]) > 0
+
+        # Every generated token must equal the greedy argmax of the raw logits
+        # (re-checked under eval() so dropout does not change the logits).
+        was_training = policy.training
+        try:
+            policy.eval()
+            prompt_ids = torch.tensor(tokenizer.encode(prompts[0]), device=DEFAULT_DEVICE).unsqueeze(0)
+            with torch.no_grad():
+                for tok in response_ids[0]:
+                    logits = policy(prompt_ids)[0, -1, :]
+                    assert tok.item() == int(torch.argmax(logits))
+                    prompt_ids = torch.cat([prompt_ids, tok.reshape(1, 1)], dim=1)
+        finally:
+            if was_training:
+                policy.train()
+
+    def test_train_step_normalize_rewards_standardizes(self, tiny_setup):
+        """Regression (RIL ISS-176): ``normalize_rewards=True`` must
+        standardize the reward batch to ~zero mean / unit variance before it
+        feeds GAE/returns; previously the knob was never read."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        config.normalize_rewards = True
+        config.ppo_epochs = 1
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        metrics = trainer.train_step(["Hello", "Hi there", "How are you", "Test prompt"])
+        # Zero-mean rewards across the batch -> reward_mean ~ 0 (finite model
+        # rewards are not all equal, so the mean is well-defined).
+        assert torch.isfinite(torch.tensor(metrics["reward_mean"]))
+        assert abs(metrics["reward_mean"]) < 1e-5
