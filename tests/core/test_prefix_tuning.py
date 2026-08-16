@@ -232,6 +232,22 @@ class TestPrefixTuningAttentionForward:
         with pytest.raises(TypeError, match="PrefixCapableAttention"):
             PrefixTuningAttention(base_attn=fake_attn, prefix_len=3, reparam_hidden=16)
 
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+    def test_half_precision_base_mha_works(self, dtype):
+        """Regression (RIL ISS-158): prefix params must be created on the
+        base attention's device/dtype. Wrapping an already fp16/bf16 base
+        (serve/export paths) and running forward would otherwise crash in
+        ``torch.cat(prefix_k, k)`` on the dtype mismatch, since the prefix
+        params defaulted to CPU/fp32."""
+        torch.manual_seed(0)
+        mha = MultiHeadAttention(hidden_size=32, num_heads=4, dtype=dtype)
+        attn = PrefixTuningAttention(base_attn=mha, prefix_len=3, reparam_hidden=16)
+        assert attn.prefix_small.dtype == dtype
+        x = torch.randn(2, 5, 32, dtype=dtype)
+        out = attn(x)
+        assert out.shape == (2, 5, 32)
+        assert out.dtype == dtype
+
 
 class TestPrefixTuningAttentionProtocolGate:
     """Wrapper accepts any ``PrefixCapableAttention`` base (MHA / Flash / MLA).

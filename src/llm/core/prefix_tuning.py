@@ -106,13 +106,24 @@ class PrefixTuningAttention(nn.Module):
         self.kv_dim = self.num_kv_heads * self.head_dim
         self.reparam_hidden = reparam_hidden if reparam_hidden is not None else self.kv_dim
 
+        # The base attention may live on GPU and/or in fp16/bf16 (serve/export
+        # paths, or applying PEFT to an already-placed model). Unlike the
+        # linear-based PEFT wrappers (LoRA/IA3/Adapter read
+        # ``base_layer.weight.device``), an attention module has no single
+        # ``weight`` — derive device/dtype from its first parameter and create
+        # the prefix params there, so ``torch.cat(prefix_k, k)`` inside the
+        # base attention never hits a device/dtype mismatch (RIL ISS-158).
+        first_param = next(self.base_attn.parameters())
+        device = first_param.device
+        dtype = first_param.dtype
+
         # Trainable parameters.
         # prefix_small is the "small latent" prefix - lives in
         # ``(prefix_len, reparam_hidden)`` and gets projected into K/V
         # space by the reparam MLPs below.
-        self.prefix_small = nn.Parameter(torch.empty(prefix_len, self.reparam_hidden))
-        self._reparam_k = nn.Linear(self.reparam_hidden, self.kv_dim, bias=True)
-        self._reparam_v = nn.Linear(self.reparam_hidden, self.kv_dim, bias=True)
+        self.prefix_small = nn.Parameter(torch.empty(prefix_len, self.reparam_hidden, device=device, dtype=dtype))
+        self._reparam_k = nn.Linear(self.reparam_hidden, self.kv_dim, bias=True, device=device, dtype=dtype)
+        self._reparam_v = nn.Linear(self.reparam_hidden, self.kv_dim, bias=True, device=device, dtype=dtype)
 
         # Init: prefix_small and both reparam weight matrices use Kaiming
         # uniform so gradients flow at step 1 (a zero-init for the
