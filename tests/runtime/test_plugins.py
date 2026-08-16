@@ -21,6 +21,29 @@ def test_load_entry_point_registry_skips_existing_names():
     assert registry.get("builtin") == "factory-a"
 
 
+def test_load_entry_point_registry_warns_on_skipped_collision(caplog):
+    """Regression (RIL ISS-163): a plugin claiming a built-in's name is
+    silently dropped by the default ``overwrite=False`` path. The
+    ``export/registry.py`` docstring claims this "raises loudly", but the
+    loader used to skip with no log line — a packaging conflict that went
+    completely unnoticed. The skip must at least emit a warning."""
+    registry: Registry[str] = Registry("test")
+    registry.register("onnx", "builtin-onnx")
+
+    ep = MagicMock()
+    ep.name = "onnx"
+    ep.load.return_value = "plugin-onnx"
+
+    with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
+        loaded = load_entry_point_registry("llm.export_backends", registry)
+
+    assert loaded == []
+    assert registry.get("onnx") == "builtin-onnx"
+    warning_records = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("onnx" in r.getMessage() for r in warning_records), "collision must be logged"
+    assert any("already registered" in r.getMessage() for r in warning_records)
+
+
 def test_load_entry_point_registry_overwrite_replaces_existing_names():
     """Regression (RIL ISS-061): ``overwrite=True`` must REPLACE a
     pre-registered name instead of crashing.

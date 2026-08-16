@@ -56,6 +56,19 @@ def load_entry_point_registry[T](
     for ep in _iter_group_entry_points(group):
         preexisting = ep.name in registry
         if not overwrite and preexisting:
+            # A third-party plugin claiming a built-in's name (e.g. an
+            # exporter named ``onnx``) is silently kept out of the registry:
+            # the built-in wins without a hint that the plugin was dropped.
+            # Log it so the packaging conflict (which export/registry.py's
+            # docstring claims "raises loudly") is at least observable
+            # (RIL ISS-163).
+            logger.warning(
+                "Skipping entry point '%s' in group '%s': name already "
+                "registered (built-in or earlier plugin); pass overwrite=True "
+                "to replace it.",
+                ep.name,
+                group,
+            )
             continue
         factory = _load_one(ep.name, group, ep)
         if factory is None:
