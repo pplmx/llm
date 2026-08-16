@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 66,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T12:20:51+00:00",
+  "updated_at": "2026-08-16T12:22:45+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 60,
+      "touched_round": 66,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -9555,6 +9555,78 @@
       "severity": "medium",
       "title": "save_pretrained lm_head dtype sniffing crashes on a quantized model; no safetensors quant roundtrip",
       "summary": "hf_publisher.py:85-89 reads model.lm_head.weight.dtype; a GPTQ/AWQ/SmoothQuant layer exposes weight_packed (buffer) but no .weight attribute -> AttributeError if lm_head is quantized (default target_modules=None). No quant metadata persisted; hf_loader has zero quant handling and load_state_dict(strict=False) silently drops weight_packed/scales. HF roundtrip of a quantized model cannot preserve quantization — currently fails loudly rather than rejecting up front. PLAUSIBLE; backlog from round-66 quant deep-dive."
+    },
+    "ISS-199": {
+      "id": "ISS-199",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:22:19+00:00",
+      "updated_at": "2026-08-16T12:22:19+00:00",
+      "touched_round": 66,
+      "severity": "high",
+      "title": "DataConfig.max_seq_len unvalidated (no gt=0) -> negative truncation + attention_mask longer than input_ids (SFT/DPO/Reward)",
+      "summary": "core/config.py:546 max_seq_len: int = 512 has no gt=0 (ModelConfig.max_seq_len at :21 does). datasets/sft.py:123-136 dpo.py:76-89 reward.py:67-78 slice input_ids[:max_seq_len] then pad_len = max_seq_len - len(input_ids); with max_seq_len=-1 inputs get truncated and attention_mask ends up LONGER than input_ids ((145,) vs (293,) verified) -> opaque shape crash mid-training. TextDataset/StreamingTextDataset reject <=0, so behavior differs per module. CONFIRMED (runtime-verified); no test covers negative max_seq_len."
+    },
+    "ISS-200": {
+      "id": "ISS-200",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:22:19+00:00",
+      "updated_at": "2026-08-16T12:22:19+00:00",
+      "touched_round": 66,
+      "severity": "medium",
+      "title": "split_train_val produces an empty train set for a 1-sample file -> silent zero-epoch training",
+      "summary": "data/modules/map_base.py:92-95: train_size = int(0.9*len(dataset)); for len==1 train_size=0, val=1; the if val_size<=0 guard misses it, random_split([0,1]) yields empty train -> DistributedSampler 0-length -> num_batches=0 -> epoch trains on nothing, epoch_loss stays 0 corrupting save_best/EarlyStopping. Reachable from every map DataModule with default 90/10 split and no val_dataset_path. CONFIRMED (runtime-verified, torch warns). Tests cover 100/4-sample cases only."
+    },
+    "ISS-201": {
+      "id": "ISS-201",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:22:19+00:00",
+      "updated_at": "2026-08-16T12:22:19+00:00",
+      "touched_round": 66,
+      "severity": "medium",
+      "title": "RewardDataset._load_data lacks JSONDecodeError handling (SFT/DPO wrap it, Reward doesn't)",
+      "summary": "data/datasets/reward.py:46-59: json.loads(line) with only FileNotFoundError handled -> one malformed line aborts dataset construction with raw json.JSONDecodeError and no file context. SFTDataset (sft.py:66-67) and DPODataset (dpo.py:59-60) wrap the same failure in ValueError('Invalid JSON in ... file'). Inconsistent; crash surfaces at training startup. CONFIRMED (code trace); no Reward analog of test_dpo_dataset_json_decode_error."
+    },
+    "ISS-202": {
+      "id": "ISS-202",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:22:19+00:00",
+      "updated_at": "2026-08-16T12:22:19+00:00",
+      "touched_round": 66,
+      "severity": "low",
+      "title": "StreamingTextDataset silently accepts negative overlap (treated as 0); TextDataset rejects it",
+      "summary": "data/datasets/streaming.py:42-43 only checks overlap >= max_seq_len so overlap=-1 passes; __iter__ (:103) then treats it as no-overlap via 'if self.overlap > 0 else []'. TextDataset raises ValueError('overlap must be a non-negative integer') for the same input. Silent config-behavior mismatch (only reachable via direct construction; config surface doesn't expose overlap). CONFIRMED (code trace)."
+    },
+    "ISS-203": {
+      "id": "ISS-203",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:22:19+00:00",
+      "updated_at": "2026-08-16T12:22:19+00:00",
+      "touched_round": 66,
+      "severity": "low",
+      "title": "RedPajama 'wikipedia' preset may point at wrong text_column (docstring says raw_content, code hardcodes text)",
+      "summary": "data/presets.py:50 docstring (Wikipedia uses raw_content) vs :101-118 REDPAJAMA_PRESETS hardcodes text_column='text' for every subset. If the remote wikipedia config stores text under raw_content, HFStreamTextSource.iter_texts row.get('text')->None drops every record -> streaming 'corpus is empty' at runtime. PLAUSIBLE (cannot verify remote schema offline; code and its own docstring disagree). test_presets.py:118 asserts 'text', locking in the code not the remote."
+    },
+    "ISS-204": {
+      "id": "ISS-204",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:22:19+00:00",
+      "updated_at": "2026-08-16T12:22:19+00:00",
+      "touched_round": 66,
+      "severity": "low",
+      "title": "stream_world_size resume guard is order-dependent (only enforced when _world_size is set)",
+      "summary": "data/modules/streaming.py:154-161: load_checkpoint_state only enforces world-size check when self._world_size is not None (populated by train_dataloader :79-81). Today the engine calls train_dataloader before resume-state loading (engine.py:211 vs 283-294) so the guard fires; but if load_checkpoint_state is ever called first (module's own legacy-path tests do), a world-size mismatch passes silently and shard cursors misalign on resume. CONFIRMED (code trace, not currently triggerable in shipped engine flow)."
     }
   },
   "edges": [
@@ -14001,6 +14073,42 @@
       "to": "COMP-011",
       "type": "located_in",
       "created_at": "2026-08-16T12:20:51+00:00"
+    },
+    {
+      "from": "ISS-199",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:22:45+00:00"
+    },
+    {
+      "from": "ISS-200",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:22:45+00:00"
+    },
+    {
+      "from": "ISS-201",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:22:45+00:00"
+    },
+    {
+      "from": "ISS-202",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:22:45+00:00"
+    },
+    {
+      "from": "ISS-203",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:22:45+00:00"
+    },
+    {
+      "from": "ISS-204",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:22:45+00:00"
     }
   ]
 }
