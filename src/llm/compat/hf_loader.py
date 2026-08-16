@@ -145,6 +145,7 @@ def _load_from_local(
         norm_first=our_config.get("norm_first", True),
         use_rope=our_config.get("use_rope", True),
         rope_theta=our_config.get("rope_theta", 10000.0),
+        use_alibi=our_config.get("use_alibi", False),
         qkv_bias=our_config.get("qkv_bias", False),
         mlp_bias=our_config.get("mlp_bias", False),
         lm_head_bias=our_config.get("lm_head_bias", False),

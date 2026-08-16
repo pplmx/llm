@@ -5,6 +5,7 @@ from collections.abc import Callable
 import torch
 import torch.nn as nn
 
+from llm.core.alibi import ALiBiPositionBias
 from llm.core.kv_cache import KVCache
 from llm.utils.common import make_factory_kwargs
 
@@ -40,6 +41,7 @@ class TransformerBlock(nn.Module):
         max_seq_len: int | None = None,  # RoPE context (required if use_rope)
         use_rope: bool = False,  # Rotary position embedding (real Llama/Mistral)
         rope_theta: float = 10000.0,  # RoPE base frequency
+        alibi: ALiBiPositionBias | None = None,  # Linear-bias PE (mha backend)
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
         # Registry keys
@@ -93,6 +95,11 @@ class TransformerBlock(nn.Module):
             # (flash_attn, MLA) do not declare these kwargs. Thread them only
             # when requested so the default path's call shape is unchanged.
             attention_kwargs.update(max_seq_len=max_seq_len, use_rope=True, rope_theta=rope_theta)
+        if alibi is not None:
+            # ALiBi is wired into the mha backend only (RIL — ALiBi milestone);
+            # DecoderModel rejects alibi with any other attn_impl before this
+            # point, so the kwargs legitimately only reach MHA.
+            attention_kwargs.update(alibi=alibi)
         self.self_attn = attn_cls(**attention_kwargs)
 
         # Initialize MLP via Registry

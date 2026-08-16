@@ -152,6 +152,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "norm_impl": norm_impl,
         "norm_first": norm_first,
         "use_rope": use_rope,
+        "use_alibi": bool(getattr(model, "use_alibi", False)),
         "qkv_bias": qkv_bias,
         "mlp_bias": mlp_bias,
         "lm_head_bias": lm_head_bias,

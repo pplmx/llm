@@ -48,6 +48,7 @@ class ModelConfig(BaseModel):
     lm_head_bias: bool = True
     use_rope: bool = False
     rope_theta: float = 10000.0
+    use_alibi: bool = False  # ALiBi linear-bias PE (BLOOM-style, mha backend only)
 
     @model_validator(mode="after")
     def check_consistency(self) -> ModelConfig:
@@ -99,6 +100,16 @@ class ModelConfig(BaseModel):
                 f"attn_impl='{self.attn_impl}' does not support use_rope=True. "
                 f"RoPE is wired for 'mha' and 'flash_attn' only; switch "
                 f"attn_impl or set model.use_rope=False."
+            )
+        # ALiBi is mutually exclusive with RoPE and (in this milestone) only
+        # wired for the mha backend (RIL — ALiBi milestone).
+        if self.use_alibi and self.use_rope:
+            raise ValueError("use_alibi=True and use_rope=True are mutually exclusive position encodings")
+        if self.use_alibi and self.attn_impl != "mha":
+            raise ValueError(
+                f"attn_impl='{self.attn_impl}' does not support use_alibi=True. "
+                f"ALiBi is wired for 'mha' only in this milestone; switch "
+                f"attn_impl or set model.use_alibi=False."
             )
         return self
 

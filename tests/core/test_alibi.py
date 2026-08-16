@@ -2,6 +2,7 @@
 Tests for ALiBi (Attention with Linear Biases) module.
 """
 
+import pytest
 import torch
 
 from llm.core.alibi import (
@@ -117,3 +118,123 @@ class TestALiBiPositionBias:
             scores = torch.randn(2, 4, seq_len, seq_len, device=device)
             result = alibi(scores)
             assert result.shape == scores.shape
+
+
+class TestAliBiModelIntegration:
+    """DecoderModel-level ALiBi wiring (RIL — ALiBi milestone, TASK-159/ISS-190)."""
+
+    def _model(self, use_alibi):
+        torch.manual_seed(0)
+        from llm.models.decoder import DecoderModel
+
+        return DecoderModel(
+            vocab_size=32,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            max_seq_len=64,
+            intermediate_size=64,
+            attn_impl="mha",
+            use_alibi=use_alibi,
+        )
+
+    def test_builds_and_forwards(self):
+        m = self._model(True)
+        assert m.use_alibi is True
+        assert m.alibi is not None
+        assert isinstance(m.alibi, ALiBiPositionBias)
+        out = m(torch.randint(0, 32, (2, 16)))
+        assert out.shape == (2, 16, 32)
+
+    def test_alibi_changes_attention_output(self):
+        m_on = self._model(True)
+        m_off = self._model(False)
+        x = torch.randint(0, 32, (2, 16))
+        with torch.no_grad():
+            o_on = m_on(x)
+            o_off = m_off(x)
+        assert not torch.allclose(o_on, o_off, atol=1e-4), "ALiBi must change attention scores"
+
+    def test_alibi_and_rope_are_mutually_exclusive(self):
+        from llm.models.decoder import DecoderModel
+
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            DecoderModel(
+                vocab_size=32,
+                hidden_size=32,
+                num_layers=1,
+                num_heads=4,
+                use_alibi=True,
+                use_rope=True,
+                attn_impl="mha",
+            )
+
+    def test_alibi_rejected_for_non_mha_backends(self):
+        from llm.models.decoder import DecoderModel
+
+        for impl in ("flash_attn", "mla"):
+            with pytest.raises((NotImplementedError, ValueError), match="mha"):
+                DecoderModel(
+                    vocab_size=32,
+                    hidden_size=32,
+                    num_layers=1,
+                    num_heads=4,
+                    use_alibi=True,
+                    attn_impl=impl,
+                )
+
+    def test_decode_with_kv_cache(self):
+        m = self._model(True)
+        m.eval()
+        from llm.core.kv_cache import KVCache
+
+        cache = KVCache(max_batch_size=1, max_seq_len=64, num_kv_heads=4, head_dim=8)
+        x = torch.randint(0, 32, (1, 16))
+        with torch.no_grad():
+            prefill, _ = m(x[:, :8], kv_caches=[cache] * 2, use_cache=True)
+            decode, _ = m(x[:, 8:9], kv_caches=[cache] * 2, use_cache=True)
+        assert prefill.shape == (1, 8, 32)
+        assert decode.shape == (1, 1, 32)
+
+    def test_model_config_validation(self):
+        from llm.training.core.config import ModelConfig
+
+        with pytest.raises(Exception, match="mutually exclusive"):
+            ModelConfig(hidden_size=32, num_heads=4, num_layers=1, use_alibi=True, use_rope=True)
+        with pytest.raises(Exception, match="mha"):
+            ModelConfig(hidden_size=32, num_heads=4, num_layers=1, use_alibi=True, attn_impl="mla")
+
+
+class TestSDPAWithAttnBias:
+    """Direct sdpa() wrapper ALiBi bias tests (RIL — ALiBi milestone)."""
+
+    @staticmethod
+    def _sdpa(**kw):
+        from llm.core.attn.sdpa import sdpa
+
+        q, k, v = (torch.randn(2, 4, 8, 8) for _ in range(3))
+        return sdpa(q, k, v, **kw)
+
+    def test_attn_bias_without_mask(self):
+        from llm.core.alibi import build_alibi_bias
+
+        bias = build_alibi_bias(4, 8)
+        out = self._sdpa(attn_bias=bias, is_causal=False)
+        assert out.shape == (2, 4, 8, 8)
+
+    def test_attn_bias_with_causal(self):
+        from llm.core.alibi import build_alibi_bias
+
+        bias = build_alibi_bias(4, 8)
+        out = self._sdpa(attn_bias=bias, is_causal=True)
+        assert out.shape == (2, 4, 8, 8)
+
+    def test_attn_bias_with_bool_mask(self):
+        from llm.core.alibi import build_alibi_bias
+
+        bias = build_alibi_bias(4, 8)
+        import torch as _torch
+
+        mask = _torch.zeros(2, 1, 1, 8, dtype=_torch.bool)
+        out = self._sdpa(attn_bias=bias, attn_mask=mask, is_causal=False)
+        assert out.shape == (2, 4, 8, 8)

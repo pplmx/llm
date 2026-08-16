@@ -3,11 +3,34 @@ import torch.nn.functional as functional
 from torch import Tensor
 
 
+def _add_attn_bias(mask: Tensor | None, bias: Tensor, query: Tensor) -> Tensor:
+    """Fold a signed additive ``bias`` (ALiBi) into the SDPA mask.
+
+    ``F.scaled_dot_product_attention`` accepts a single float additive mask;
+    the codebase's bool mask convention (True = keep) and 0/-inf float
+    additive masks must be converted to a float additive tensor first, then
+    the signed ALiBi bias is summed in (ALiBi is NOT a mask — it is a
+    position-dependent score adjustment, RIL — ALiBi milestone).
+    """
+    if mask is None:
+        return bias.to(query.dtype)
+    if mask.dtype == torch.bool:
+        base = torch.where(
+            mask,
+            torch.zeros((), device=query.device, dtype=query.dtype),
+            torch.full((), float("-inf"), device=query.device, dtype=query.dtype),
+        )
+    else:
+        base = mask.to(query.dtype)
+    return base + bias
+
+
 def sdpa(
     query: Tensor,
     key: Tensor,
     value: Tensor,
     attn_mask: Tensor | None = None,
+    attn_bias: Tensor | None = None,
     dropout_p: float = 0.0,
     is_causal: bool = False,
     scale: float | None = None,
@@ -19,6 +42,7 @@ def sdpa(
     Acts as a compatibility wrapper for the codebase conventions:
     1. Handles `attn_mask` where True indicates masking out (opposite to Torch SDPA).
     2. Handles `window_size` by manually merging masks if necessary.
+    3. Folds a signed additive `attn_bias` (ALiBi) into the float mask.
 
     Args:
         query (Tensor): Shape (B, N, Sq, D).
@@ -26,6 +50,10 @@ def sdpa(
         value (Tensor): Shape (B, N, Sk, D).
         attn_mask (Tensor | None): Mask where True indicates elements to MASK OUT.
                                    Can be boolean or 0/1 float additive (legacy).
+        attn_bias (Tensor | None): Signed additive score bias (ALiBi), shape
+                                   broadcastable to [B, N, Sq, Sk]. Summed
+                                   into the mask (never through the 0/-inf
+                                   masking channels).
         dropout_p (float): Dropout probability.
         is_causal (bool): Whether to apply causal masking.
         scale (float | None): Scaling factor.
@@ -141,6 +169,9 @@ def sdpa(
             if torch_mask.ndim == 3 and query.ndim == 4:
                 torch_mask = torch_mask.unsqueeze(1)
 
+        if attn_bias is not None:
+            torch_mask = _add_attn_bias(torch_mask, attn_bias, query)
+
         return functional.scaled_dot_product_attention(
             query,
             key,
@@ -181,6 +212,28 @@ def sdpa(
             torch_attn_mask = attn_mask.to(torch.bool)
             if torch_attn_mask.ndim == 2 and query.ndim == 4:
                 torch_attn_mask = torch_attn_mask.unsqueeze(1).unsqueeze(1)
+
+    if attn_bias is not None:
+        if is_causal:
+            # ``F.scaled_dot_product_attention`` rejects an explicit float
+            # mask combined with ``is_causal=True``, and ALiBi forces a float
+            # additive mask. Materialise the causal mask (upper triangle →
+            # -inf) and fold ALiBi in; the mask now does the causality work.
+            seq_len_q, seq_len_k = query.size(-2), key.size(-2)
+            causal = torch.triu(
+                torch.full(
+                    (seq_len_q, seq_len_k),
+                    float("-inf"),
+                    device=query.device,
+                    dtype=query.dtype,
+                ),
+                diagonal=1,
+            )  # [Sq, Sk]; lower triangle = 0 (keep)
+            torch_attn_mask = _add_attn_bias(torch_attn_mask, causal, query)
+            torch_attn_mask = _add_attn_bias(torch_attn_mask, attn_bias.to(query.dtype), query)
+            is_causal = False
+        else:
+            torch_attn_mask = _add_attn_bias(torch_attn_mask, attn_bias, query)
 
     return functional.scaled_dot_product_attention(
         query, key, value, attn_mask=torch_attn_mask, dropout_p=dropout_p, is_causal=is_causal, scale=scale

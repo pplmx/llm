@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 
+from llm.core.alibi import ALiBiPositionBias
 from llm.core.kv_cache import KVCache
 from llm.core.paged_attention.attention import paged_attention_forward
 from llm.core.paged_attention.paged_kv_cache import PagedKVCache
@@ -57,6 +58,7 @@ class MultiHeadAttention(nn.Module):
         max_seq_len: int | None = None,  # RoPE max context (required if use_rope)
         use_rope: bool = False,  # Rotary position embedding (real Llama/Mistral)
         rope_theta: float = 10000.0,  # RoPE base frequency
+        alibi: ALiBiPositionBias | None = None,  # Linear-bias positional encoding
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ):
@@ -77,6 +79,7 @@ class MultiHeadAttention(nn.Module):
         self.include_norm_residual = include_norm_residual
         self.window_size = window_size
         self.use_rope = use_rope
+        self.alibi = alibi
 
         if use_rope:
             # RoPE rotates Q and K by head position (real Llama/Mistral inject
@@ -237,6 +240,15 @@ class MultiHeadAttention(nn.Module):
 
         # KV Cache handling
         if paged_kv_cache is not None:
+            if self.alibi is not None:
+                # ALiBi is only wired into the linear (non-paged) path in this
+                # milestone; paged attention has no additive-bias channel, so
+                # reject loudly instead of silently dropping the PE (RIL —
+                # ALiBi milestone).
+                raise NotImplementedError(
+                    "ALiBi (use_alibi=True) is not supported with paged attention; "
+                    "use attn_impl='mha' with the linear KV cache."
+                )
             return self._forward_paged(
                 q=q,
                 k=k,
@@ -299,11 +311,25 @@ class MultiHeadAttention(nn.Module):
 
         # 3. Attention computation
         # Use common SDPA wrapper to handle mask polarity and window size
+        #
+        # ALiBi bias (RIL — ALiBi milestone): a square [1, N, Sk, Sk] bias
+        # reflects key column j at absolute position j. The queries sit at the
+        # LAST ``Sq`` absolute positions (prefill with no cache: 0..Sq-1; with
+        # KV-cache decode, the current tokens are at ``Sk-Sq..Sk-1``), and
+        # ALiBi is translation-covariant (bias = slope * (key_pos - query_pos)),
+        # so taking the last ``Sq`` rows is correct in all three cases.
+        attn_bias = None
+        if self.alibi is not None:
+            seq_len_q = q.size(-2)
+            seq_len_k = k.size(-2)
+            attn_bias = self.alibi.get_bias(seq_len_k, device=q.device, dtype=q.dtype)[:, :, -seq_len_q:, :]
+
         attn_output = sdpa(
             query=q,
             key=k,
             value=v,
             attn_mask=attn_mask,
+            attn_bias=attn_bias,
             dropout_p=self.p if self.training else 0.0,
             is_causal=use_causal if not has_past else False,
             scale=None,

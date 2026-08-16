@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
+from llm.core.alibi import ALiBiPositionBias
 from llm.core.embedding import EmbeddingLayer
 from llm.core.kv_cache import KVCache
 from llm.core.transformer_block import TransformerBlock
@@ -67,11 +68,23 @@ class DecoderModel(nn.Module):
         window_size: int | None = None,
         use_rope: bool = False,
         rope_theta: float = 10000.0,
+        use_alibi: bool = False,  # ALiBi linear-bias PE (BLOOM-style, mha backend)
     ):
         """
         Initializes the DecoderModel.
         """
         super().__init__()
+        # ALiBi is a second positional-encoding system; it cannot coexist with
+        # RoPE, and this milestone wires it only into the mha attention
+        # backend (flash_attn/MLA/paged reject loudly rather than silently
+        # dropping the PE — RIL — ALiBi milestone).
+        if use_alibi and use_rope:
+            raise ValueError("use_alibi=True and use_rope=True are mutually exclusive position encodings")
+        if use_alibi and attn_impl != "mha":
+            raise NotImplementedError(
+                f"use_alibi=True is only supported with attn_impl='mha', got attn_impl={attn_impl!r}; "
+                "flash_attn/MLA have no additive-bias channel in this milestone"
+            )
         factory_kwargs = make_factory_kwargs(device, dtype)
         resolved_norm_factory = _resolve_norm_factory(norm_impl)
         self.hidden_size = hidden_size
@@ -87,6 +100,7 @@ class DecoderModel(nn.Module):
         # and the loader honors it (RIL ISS-062).
         self.use_rope = use_rope
         self.rope_theta = rope_theta
+        self.use_alibi = use_alibi
         # Bias flags are model-defining too: real Llama/Mistral are bias-free
         # (qkv/mlp/lm_head), while our grown-from-scratch default is biased.
         # Store them so hf_publisher persists the actual values and the loader
@@ -109,6 +123,12 @@ class DecoderModel(nn.Module):
 
         if intermediate_size is None:
             intermediate_size = 4 * hidden_size
+
+        # ALiBi linear-bias PE: one shared bias module (its ``num_heads`` x
+        # ``max_seq_len`` score cache) threaded into every attention block.
+        self.alibi = (
+            ALiBiPositionBias(num_heads=num_heads, max_seq_len=max_seq_len, **factory_kwargs) if use_alibi else None
+        )
 
         self.transformer_blocks = nn.ModuleList(
             [
@@ -135,6 +155,7 @@ class DecoderModel(nn.Module):
                     max_seq_len=max_seq_len,  # RoPE context for the block
                     use_rope=use_rope,
                     rope_theta=rope_theta,
+                    alibi=self.alibi,
                     **factory_kwargs,
                 )
                 for _ in range(num_layers)
