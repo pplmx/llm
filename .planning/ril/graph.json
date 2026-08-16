@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T03:11:59+00:00",
+  "updated_at": "2026-08-16T03:17:03+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7974,10 +7974,10 @@
     "ISS-163": {
       "id": "ISS-163",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:08+00:00",
-      "updated_at": "2026-08-16T01:13:08+00:00",
+      "updated_at": "2026-08-16T03:17:03+00:00",
       "touched_round": 61,
       "severity": "0.2|title=Export registry docs promise duplicate onnx plugin 'raises loudly' but loader silently ignores|summary=export/registry.py:93-94 docstring vs runtime/plugins.py:57-58: load_entry_point_registry default overwrite=False hits 'if not overwrite and preexisting: continue' -> plugin silently dropped with no log; packaging conflict goes unnoticed. CONFIRMED."
     },
@@ -8230,16 +8230,18 @@
     "TASK-126": {
       "id": "TASK-126",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T01:15:57+00:00",
-      "updated_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T03:17:03+00:00",
       "touched_round": 61,
       "title": "Export registry: warn on entry-point conflict (ISS-163)",
       "category": "maintainability",
       "severity": 0.2,
       "confidence": 1.0,
-      "effort": 0.25
+      "effort": 0.25,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T04:12:56+00:00"
     },
     "TASK-127": {
       "id": "TASK-127",
@@ -8498,6 +8500,17 @@
       "touched_round": 61,
       "source": "round61 live runs: encode('rec <PAD> ord') expands char-by-char (collision unreachable in text-file datasets); encode('<PAD>')==[pad_id] is the HF-style reserved binding; decode([pad])==decode([<,P,A,D,>])==='<PAD>'",
       "confidence": 1.0
+    },
+    "CHG-149": {
+      "id": "CHG-149",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T03:16:45+00:00",
+      "updated_at": "2026-08-16T03:16:45+00:00",
+      "touched_round": 61,
+      "commit": "d7dabcb",
+      "summary": "plugin entry-point collision logged as warning (ISS-163)"
     }
   },
   "edges": [
@@ -12308,6 +12321,18 @@
       "to": "TASK-129",
       "type": "governs",
       "created_at": "2026-08-16T03:10:53+00:00"
+    },
+    {
+      "from": "CHG-149",
+      "to": "ISS-163",
+      "type": "resolves",
+      "created_at": "2026-08-16T03:17:03+00:00"
+    },
+    {
+      "from": "CHG-149",
+      "to": "TASK-126",
+      "type": "implements",
+      "created_at": "2026-08-16T03:17:03+00:00"
     }
   ]
 }
