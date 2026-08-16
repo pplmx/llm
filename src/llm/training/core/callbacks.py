@@ -665,10 +665,20 @@ class PEFTAdapterCheckpointCallback(Callback):
         ``on_train_end`` fires, and losing the sidecar is recoverable
         (re-train, or use the main checkpoint). Crashing here would
         lose the main checkpoint too.
+
+        Rank-gated to rank 0 (RIL ISS-208): the engine invokes
+        ``on_train_end`` on EVERY rank, and ``save_peft`` does an
+        unconditional ``torch.save`` to the same path — under DDP, N
+        processes concurrently write/truncate the same file (race
+        corruption) and do N-1 redundant full writes. This mirrors the
+        main checkpoint save, which is rank-0-gated by the engine.
         """
         if self.peft_method is None or self.peft_save_path is None:
             return
         if self._engine is None:
+            return
+        if getattr(self.engine, "rank", 0) != 0:
+            # Non-rank-0 processes must NOT write the shared sidecar.
             return
         try:
             # Lazy import — the callback module is on the trainer hot

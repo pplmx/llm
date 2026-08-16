@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T16:15:55+00:00",
+  "updated_at": "2026-08-16T16:27:34+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10168,6 +10168,46 @@
       "commit": "3b81fe4",
       "title": "Checkpoint load: structural mismatches fail loud; model loaded last (no hybrid resume)",
       "body": "checkpoint.py: split load into corrupt-file swallow (payload read, nothing mutated) vs state loads (outside swallow, loud). optimizer/scheduler/scaler load before model so a mismatch leaves the model untouched. 1 test. ISS-206."
+    },
+    "ISS-208": {
+      "id": "ISS-208",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T16:19:14+00:00",
+      "updated_at": "2026-08-16T16:27:34+00:00",
+      "touched_round": 69,
+      "severity": "medium",
+      "title": "PEFT adapter sidecar written by every DDP rank (no rank guard)",
+      "body": "Found by PEFT deep-dive #2: engine:594/690 call on_train_end on all ranks; PEFTAdapterCheckpointCallback.save_peft -> torch.save same path concurrently (race/corruption), N-1 redundant writes; FSDP model shards also yield partial adapter weights."
+    },
+    "TASK-176": {
+      "id": "TASK-176",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T16:19:14+00:00",
+      "updated_at": "2026-08-16T16:27:34+00:00",
+      "touched_round": 69,
+      "category": "stability",
+      "severity": 0.6,
+      "confidence": 0.95,
+      "effort": 1.0,
+      "unlock_factor": 1.0,
+      "title": "Rank-guard PEFT adapter sidecar write (rank 0 only)",
+      "body": "ISS-208: gate PEFTAdapterCheckpointCallback.on_train_end save_peft behind self.engine.rank==0 (mirror on_save_checkpoint merged into main checkpoint). Prevents concurrent torch.save corruption under DDP."
+    },
+    "CHG-174": {
+      "id": "CHG-174",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T16:27:33+00:00",
+      "updated_at": "2026-08-16T16:27:33+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "Rank-guard PEFT adapter sidecar write (rank 0 only)",
+      "body": "callbacks.py PEFTAdapterCheckpointCallback.on_train_end returns early for engine.rank != 0; prevents concurrent torch.save corruption under DDP. 1 test. ISS-208."
     }
   },
   "edges": [
@@ -14932,6 +14972,24 @@
       "to": "ISS-206",
       "type": "resolves",
       "created_at": "2026-08-16T16:13:45+00:00"
+    },
+    {
+      "from": "TASK-176",
+      "to": "ISS-208",
+      "type": "addresses",
+      "created_at": "2026-08-16T16:19:14+00:00"
+    },
+    {
+      "from": "CHG-174",
+      "to": "TASK-176",
+      "type": "implements",
+      "created_at": "2026-08-16T16:27:34+00:00"
+    },
+    {
+      "from": "CHG-174",
+      "to": "ISS-208",
+      "type": "resolves",
+      "created_at": "2026-08-16T16:27:34+00:00"
     }
   ]
 }

@@ -180,6 +180,23 @@ class TestPEFTAdapterCheckpointCallbackSave:
         cb.on_train_end()
         assert not path.exists()
 
+    def test_save_skipped_on_nonzero_rank(self, engine_mock: MagicMock, tmp_dir: Path) -> None:
+        """Regression (RIL ISS-208): ``on_train_end`` runs on EVERY rank, but
+        ``save_peft`` unconditionally ``torch.save``s the same path — under
+        DDP, N processes concurrently truncate/write the same file (race
+        corruption) and do N-1 redundant full writes. Only rank 0 must write
+        the shared sidecar; a non-zero rank must leave it unwritten."""
+        path = tmp_dir / "adapter.bin"
+        cb = PEFTAdapterCheckpointCallback(
+            peft_method="lora",
+            peft_kwargs={"rank": 4},
+            peft_save_path=path,
+        )
+        engine_mock.rank = 3
+        cb.set_engine(engine_mock)
+        cb.on_train_end()
+        assert not path.exists(), "non-rank-0 must NOT write the shared adapter sidecar"
+
     def test_save_writes_valid_peft_file(self, engine_mock: MagicMock, tmp_dir: Path) -> None:
         """The written file must be a valid save_peft envelope that
         round-trips through load_peft into a fresh model."""
