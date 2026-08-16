@@ -92,3 +92,26 @@ def test_from_dataset_text_round_trips_file_contents(tmp_path):
 
     assert tokenizer.decode(tokenizer.encode("cab")) == "cab"
     assert len(tokenizer.encode("cab")) == 3
+
+
+def test_from_dataset_text_registers_eos_bos_specials(tmp_path):
+    """Regression (RIL ISS-152): ``from_dataset_text`` builds its corpus as
+    ``["<PAD>", "<EOS>", "<BOS>", *chars]`` intending all three markers to be
+    registered as special tokens. Only ``<PAD>`` was special-cased — the
+    ``<EOS>``/``<BOS>`` markers were flattened into their constituent plain
+    characters and ``eos_token_id``/``bos_token_id`` stayed ``None``, so
+    eval generations (LMTask / lm_eval generate_until) never stopped on the
+    model's EOS. The eval tokenizer must expose real EOS/BOS token ids."""
+    data_file = tmp_path / "corpus.txt"
+    data_file.write_text("cab", encoding="utf-8")
+
+    tokenizer = TokenizerFactory.from_dataset_text(data_file)
+
+    assert tokenizer.eos_token_id is not None
+    assert tokenizer.bos_token_id is not None
+    # The special markers must encode to exactly one token (not the char ids
+    # of '<', 'E', 'O', 'S', '>').
+    assert tokenizer.encode(SimpleCharacterTokenizer.eos_char) == [tokenizer.eos_token_id]
+    assert tokenizer.encode(SimpleCharacterTokenizer.bos_char) == [tokenizer.bos_token_id]
+    assert tokenizer.decode([tokenizer.eos_token_id]) == SimpleCharacterTokenizer.eos_char
+    assert tokenizer.decode([tokenizer.bos_token_id]) == SimpleCharacterTokenizer.bos_char

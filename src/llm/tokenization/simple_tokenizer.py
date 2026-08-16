@@ -7,6 +7,10 @@ class SimpleCharacterTokenizer:
     tokens back into text.
     """
 
+    pad_char: str = "<PAD>"
+    eos_char: str = "<EOS>"
+    bos_char: str = "<BOS>"
+
     def __init__(self, corpus: list[str]):
         """
         Initializes the SimpleCharacterTokenizer.
@@ -30,7 +34,6 @@ class SimpleCharacterTokenizer:
         self.vocab_size: int = len(self.chars)
 
         # Add PAD token
-        self.pad_char: str = "<PAD>"
         if self.pad_char not in self.stoi:
             pad_token_id = self.vocab_size
             self.stoi[self.pad_char] = pad_token_id
@@ -43,13 +46,33 @@ class SimpleCharacterTokenizer:
 
         self.pad_token_id: int = pad_token_id
 
+        # ``<EOS>`` / ``<BOS>`` markers, declared alongside ``<PAD>`` by the
+        # shared default corpus (``DEFAULT_SIMPLE_CORPUS``) and by
+        # ``TokenizerFactory.from_dataset_text``. They are registered as real
+        # multi-char special tokens *only when the corpus lists them*: without
+        # this, the markers were flattened into their constituent plain
+        # characters and ``eos_token_id`` stayed ``None``, so eval generations
+        # (LMTask / lm_eval generate_until) never stopped on the model's EOS
+        # (RIL ISS-152). Corpora that don't declare them keep the exact same
+        # vocab layout as before.
+        self._bos_token_id: int | None = None
+        self._eos_token_id: int | None = None
+        for marker, attr in ((self.eos_char, "_eos_token_id"), (self.bos_char, "_bos_token_id")):
+            if marker in corpus and marker not in self.stoi:
+                special_id = self.vocab_size
+                self.stoi[marker] = special_id
+                self.itos[special_id] = marker
+                self.chars.append(marker)
+                self.vocab_size += 1
+                setattr(self, attr, special_id)
+
     @property
     def bos_token_id(self) -> int | None:
-        return None
+        return self._bos_token_id
 
     @property
     def eos_token_id(self) -> int | None:
-        return None
+        return self._eos_token_id
 
     def encode(self, text: str) -> list[int]:
         """
@@ -69,8 +92,12 @@ class SimpleCharacterTokenizer:
         if not isinstance(text, str):
             raise TypeError("Input text must be a string.")
 
-        if text == self.pad_char:
-            return [self.pad_token_id]
+        # A special marker encoded verbatim maps to its single token id (the
+        # pad precedent). Without this, ``encode("<EOS>")`` flattened to the
+        # char ids of '<','E','O','S','>' even when the tokenizer had
+        # registered the marker as a special (RIL ISS-152).
+        if text in (self.pad_char, self.eos_char, self.bos_char):
+            return [self.stoi[text]]
 
         tokens: list[int] = []
         for char in text:
