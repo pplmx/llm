@@ -286,12 +286,18 @@ async def _chat_stream_generator(
                         )
                         yield f"data: {chunk.model_dump_json()}\n\n"
 
-            # Final chunk with finish_reason.
+            # Final chunk with finish_reason. Mirror the non-streaming
+            # handler's ``"length"``-on-truncation heuristic: a completion
+            # that hit the ``max_tokens`` budget is ``"length"`` per the
+            # OpenAI spec, not ``"stop"``. ``token_count`` is the number of
+            # streamed tokens — the same count the non-streaming path
+            # approximates with ``len(completion)`` (RIL ISS-151).
+            finish_reason = "length" if token_count >= request.max_tokens else "stop"
             final_chunk = ChatCompletionChunk(
                 id=completion_id,
                 created=created,
                 model=request.model,
-                choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(), finish_reason="stop")],
+                choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(), finish_reason=finish_reason)],
             )
             yield f"data: {final_chunk.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"

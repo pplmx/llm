@@ -283,6 +283,52 @@ def test_chat_completions_value_error_returns_400(client, monkeypatch):
     assert response.status_code == 400
 
 
+def _finish_reason_from_stream(client, monkeypatch, stream_tokens, max_tokens):
+    """Drive a streaming chat request and return the final ``finish_reason``."""
+    import json
+    from unittest.mock import MagicMock
+
+    mock = MagicMock()
+    mock.stream.return_value = iter(stream_tokens)
+    mock.generate.return_value = "ok"
+    monkeypatch.setattr("llm.serving.routers.generate.generation_service", mock)
+
+    payload = {
+        "messages": [{"role": "user", "content": "hello"}],
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+        assert response.status_code == 200
+        finish = None
+        for line in response.iter_lines():
+            if not (line and line.startswith("data: ") and line != "data: [DONE]"):
+                continue
+            data = json.loads(line[6:])
+            fr = data["choices"][0].get("finish_reason")
+            if fr is not None:
+                finish = fr
+        return finish
+
+
+@pytest.mark.slow
+def test_chat_stream_finish_reason_length_when_budget_exhausted(client, monkeypatch):
+    """Regression (RIL ISS-151): streaming chat must report
+    ``finish_reason="length"`` when the stream consumed the full
+    ``max_tokens`` budget — not hard-code ``"stop"`` like the non-streaming
+    sibling (which reports ``"length"`` for identical input)."""
+    # Exactly max_tokens (3) tokens streamed → the budget was exhausted.
+    result = _finish_reason_from_stream(client, monkeypatch, ["a", "b", "c"], max_tokens=3)
+    assert result == "length"
+
+
+@pytest.mark.slow
+def test_chat_stream_finish_reason_stop_when_natural_stop(client, monkeypatch):
+    """A short stream well under max_tokens keeps finish_reason ``"stop"``."""
+    result = _finish_reason_from_stream(client, monkeypatch, ["a"], max_tokens=10)
+    assert result == "stop"
+
+
 @pytest.mark.slow
 def test_chat_completions_stream_error_yields_error_chunk(client, monkeypatch):
     """Streaming chat: if the generation service raises, the stream emits an
