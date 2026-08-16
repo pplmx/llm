@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T01:50:02+00:00",
+  "updated_at": "2026-08-16T01:54:28+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7921,10 +7921,10 @@
     "ISS-158": {
       "id": "ISS-158",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:54:28+00:00",
       "touched_round": 61,
       "severity": "0.5|title=PrefixTuningAttention allocates params on default device/dtype ignoring base attention device/dtype|summary=prefix_tuning.py:113-115 prefix_small/reparam_k/v created with factory defaults (CPU/fp32); base attention torch.cat(prefix_k,k) at mha.py:291 / flash_attn.py:330 -> RuntimeError device mismatch when wrapping a CUDA/fp16 model post-placement. Only PEFT wrapper that does this. CONFIRMED trace."
     },
@@ -8115,15 +8115,17 @@
       "id": "TASK-119",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T01:15:56+00:00",
-      "updated_at": "2026-08-16T01:15:56+00:00",
+      "updated_at": "2026-08-16T01:50:18+00:00",
       "touched_round": 61,
       "title": "PrefixTuningAttention: allocate on base device/dtype (ISS-158)",
       "category": "correctness",
       "severity": 0.5,
       "confidence": 1.0,
-      "effort": 0.3
+      "effort": 0.3,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T02:50:18+00:00"
     },
     "TASK-120": {
       "id": "TASK-120",
@@ -8330,6 +8332,17 @@
       "touched_round": 61,
       "commit": "7c842ea",
       "summary": "streaming endpoints pre-validate max_new_tokens/encodability -> 400 (ISS-149)"
+    },
+    "CHG-140": {
+      "id": "CHG-140",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T01:54:17+00:00",
+      "updated_at": "2026-08-16T01:54:17+00:00",
+      "touched_round": 61,
+      "commit": "173e8af",
+      "summary": "PrefixTuningAttention allocates on base device/dtype (ISS-158)"
     }
   },
   "edges": [
@@ -12020,6 +12033,18 @@
       "to": "TASK-117",
       "type": "implements",
       "created_at": "2026-08-16T01:49:56+00:00"
+    },
+    {
+      "from": "CHG-140",
+      "to": "ISS-158",
+      "type": "resolves",
+      "created_at": "2026-08-16T01:54:28+00:00"
+    },
+    {
+      "from": "CHG-140",
+      "to": "TASK-119",
+      "type": "implements",
+      "created_at": "2026-08-16T01:54:28+00:00"
     }
   ]
 }
