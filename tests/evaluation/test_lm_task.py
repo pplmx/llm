@@ -258,6 +258,42 @@ def test_lm_task_predict_clamps_to_model_capacity(tmp_path):
     assert all(seq <= 32 for seq in seq_len_seen), f"batch exceeded model capacity: {seq_len_seen}"
 
 
+def test_lm_task_metric_aligns_clamped_predictions(tmp_path):
+    """RIL ISS-192: with a small-context model, the clamped predictions are
+    narrower than the references — the perplexity metric must slice the
+    labels to the prediction horizon instead of crashing with a cross_entropy
+    shape error.
+
+    ``predict`` truncates inputs to ``model.max_seq_len`` (32) while
+    ``prepare_data`` yields references padded to the dataset ``max_seq_len``
+    (128). Before the fix ``cross_entropy(logits[B,31,V], labels[B,127])``
+    raised a RuntimeError, replacing the ISS-130 positional-encoding crash
+    with a metric crash one call later."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world\n" * 8, encoding="utf-8")
+
+    task = LMTask(dataset_path=str(corpus), batch_size=4, max_seq_len=128)
+    inputs, references = task.prepare_data("val")
+    assert all(len(r) == 128 for r in references), "references must be padded to dataset max_seq_len"
+
+    class SmallModel:
+        max_seq_len = 32
+
+        def __init__(self):
+            self.vocab_size = task.tokenizer.vocab_size
+
+        def __call__(self, input_ids, attn_mask=None):
+            batch, seq = input_ids.shape
+            return torch.zeros(batch, seq, self.vocab_size)
+
+    predictions = task.predict(SmallModel(), inputs)
+    assert predictions.shape == (len(inputs), 32, task.tokenizer.vocab_size)
+
+    result = PerplexityMetric(ignore_index=-100).compute(predictions, references)
+    assert "perplexity" in result
+    assert result["perplexity"] != float("inf")  # scored over real tokens, not a shape crash
+
+
 def test_lm_task_respects_explicit_max_seq_len(tmp_path):
     """RIL ISS-130: the caller-settable ``max_seq_len`` (not a hardcoded 128)
     is passed through to the dataset truncation."""

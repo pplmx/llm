@@ -52,9 +52,19 @@ class PerplexityMetric(BaseMetric):
         _batch, _seq_len, vocab_size = predictions.shape
 
         logits = predictions[:, :-1, :].contiguous().view(-1, vocab_size)
-        labels = references[:, 1:].contiguous().view(-1)
 
-        if logits.shape[0] == 0:
+        # RIL ISS-192: ``LMTask.predict`` clamps inputs to the model's
+        # context window (``min(max_seq_len, model.max_seq_len)``) while the
+        # references are padded to the dataset's ``max_seq_len`` — for a
+        # small-context model the predictions are *narrower* than the
+        # references, so the naive ``references[:, 1:]`` yields more label
+        # positions than logits rows and ``cross_entropy`` raises a shape
+        # error mid-evaluation. Slice the labels to the prediction horizon;
+        # the truncated tail was never scored anyway.
+        label_width = min(references.shape[1] - 1, _seq_len - 1)
+        labels = references[:, 1 : 1 + label_width].contiguous().view(-1)
+
+        if logits.shape[0] == 0 or labels.numel() == 0:
             return {"perplexity": float("inf")}
 
         if self.ignore_index is not None and labels.numel() > 0 and bool((labels == self.ignore_index).all().item()):
