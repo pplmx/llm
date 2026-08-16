@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T01:26:27+00:00",
+  "updated_at": "2026-08-16T01:27:33+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7821,10 +7821,10 @@
     "ISS-148": {
       "id": "ISS-148",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T01:26:57+00:00",
       "touched_round": 61,
       "severity": "0.55|title=/generate non-streaming echoes prompt into generated_text + counts prompt chars as generated tokens|summary=src/llm/serving/routers/generate.py:263 passes through backends.py:58 prompt+completion; token_count=len(prompt+completion). Streaming returns completion only. chat.py:151 strips echo; generate does not. CONFIRMED live: generated_text:'hello world Hq@Wt', token_count 17."
     },
@@ -8063,10 +8063,10 @@
     "TASK-116": {
       "id": "TASK-116",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T01:15:56+00:00",
-      "updated_at": "2026-08-16T01:20:00+00:00",
+      "updated_at": "2026-08-16T01:27:33+00:00",
       "touched_round": 61,
       "title": "/generate strip prompt echo from generated_text + token_count (ISS-148)",
       "category": "correctness",
@@ -8273,11 +8273,11 @@
       "id": "CHG-137",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T01:26:27+00:00",
-      "updated_at": "2026-08-16T01:26:27+00:00",
+      "updated_at": "2026-08-16T01:26:57+00:00",
       "touched_round": 61,
-      "commit": "c50dfdc",
+      "commit": "f068e92",
       "summary": "/generate + /batch_generate strip echoed prompt (ISS-148)"
     }
   },
@@ -11927,6 +11927,18 @@
       "to": "TASK-112",
       "type": "implements",
       "created_at": "2026-08-16T01:19:39+00:00"
+    },
+    {
+      "from": "CHG-137",
+      "to": "ISS-148",
+      "type": "resolves",
+      "created_at": "2026-08-16T01:26:57+00:00"
+    },
+    {
+      "from": "CHG-137",
+      "to": "TASK-116",
+      "type": "implements",
+      "created_at": "2026-08-16T01:26:57+00:00"
     }
   ]
 }
