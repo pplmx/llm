@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T02:26:19+00:00",
+  "updated_at": "2026-08-16T02:31:30+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7851,10 +7851,10 @@
     "ISS-151": {
       "id": "ISS-151",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T02:31:29+00:00",
       "touched_round": 61,
       "severity": "0.25|title=Streaming chat always reports finish_reason=stop even on max_tokens truncation|summary=chat.py:280-285 final SSE chunk hardcodes finish_reason=stop; non-streaming computes length-vs-stop at chat.py:160. Same request -> non-stream length vs stream stop. Violates OpenAI convention."
     },
@@ -8250,16 +8250,18 @@
     "TASK-128": {
       "id": "TASK-128",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T01:15:57+00:00",
-      "updated_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T02:31:30+00:00",
       "touched_round": 61,
       "title": "Streaming chat finish_reason length-vs-stop (ISS-151)",
       "category": "correctness",
       "severity": 0.25,
       "confidence": 1.0,
-      "effort": 0.2
+      "effort": 0.2,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T03:26:33+00:00"
     },
     "TASK-129": {
       "id": "TASK-129",
@@ -8395,6 +8397,17 @@
       "touched_round": 61,
       "commit": "74243aa",
       "summary": "AdaLoRA orth_reg_loss computed on raw P/Q params (ISS-157)"
+    },
+    "CHG-145": {
+      "id": "CHG-145",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T02:31:15+00:00",
+      "updated_at": "2026-08-16T02:31:15+00:00",
+      "touched_round": 61,
+      "commit": "b494121",
+      "summary": "streaming chat finish_reason length-vs-stop (ISS-151)"
     }
   },
   "edges": [
@@ -12145,6 +12158,18 @@
       "to": "TASK-122",
       "type": "implements",
       "created_at": "2026-08-16T02:26:19+00:00"
+    },
+    {
+      "from": "CHG-145",
+      "to": "ISS-151",
+      "type": "resolves",
+      "created_at": "2026-08-16T02:31:29+00:00"
+    },
+    {
+      "from": "CHG-145",
+      "to": "TASK-128",
+      "type": "implements",
+      "created_at": "2026-08-16T02:31:29+00:00"
     }
   ]
 }
