@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 63,
+  "round": 65,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T05:45:43+00:00",
+  "updated_at": "2026-08-16T10:26:26+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 63,
+      "touched_round": 64,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -9136,6 +9136,136 @@
       "title": "Defer PPO V(s_L) bootstrap for max-len-truncated episodes (ISS-178)",
       "rationale": "The finding is PLAUSIBLE and LOW (0.35): GAE hardcodes next_value=0.0 at the last response step, so max-len-truncated and EOS-terminated episodes are modeled identically even though only the latter is truly terminal. Correcting it requires threading a done/truncated flag AND the post-window value V(s_L) through RolloutBuffer.add / compute_response_values / compute_advantages — a cross-cutting ABI change touching every buffer.add call site and all PPO tests, for a bias that only matters when responses routinely hit response_max_len. Deferred as backlog; revisit if truncation-dominated rollouts are measured to materially distort advantages.",
       "alternatives_rejected": "Rushed implementation would expand RolloutBatch (done flag + final_value) and break the existing buffer contract for all callers (tests/training/rlhf/test_ppo.py, RolloutBuffer.add in train_step) for a LOW-severity bias on a truncated-only path. Not doing anything also rejected: the current hardcoded zero overestimates truncated-episode value estimates; keeping TASK-147 active records the known gap."
+    },
+    "DEC-040": {
+      "id": "DEC-040",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T07:14:51+00:00",
+      "updated_at": "2026-08-16T07:14:51+00:00",
+      "touched_round": 64,
+      "title": "Round 63 milestone: fresh-surface deep dive over 4 more never-scanned clusters",
+      "rationale": "Round 62 converged (21 fixes, 0 active). Round 63 continues the milestone loop with the next-untouched surfaces: PEFT core families beyond round-61 (bitfit/pfeiffer_adapter/qlora/adapter/peft-methods+types+registry), distributed+runtime plumbing (core/distributed, parallel, runtime/checkpoint collect_extra_state, tokenizer_factory weights_only=False RCE path), evaluation metrics+harness (accuracy/generation/perplexity/base, presets, eval_tasks), and serving side-pieces + attention wrapper + BPE training (peft_adapter, chat_template, metrics, sdpa/base, train_bpe). Identical round-62 methodology: parallel read-only agents, CONFIRMED/PLAUSIBLE verdicts, adversarial verification before touching code.",
+      "alternatives_rejected": "Rounds 57-62 covered serving/generation/quant/data/attn/distributed-adjacent/export/compat/PEFT-lora/checkpoint/eval-runner. Re-scanning those returns diminishing returns. Stopping at convergence leaves the 4 clusters above (several security-relevant: tokenizer RCE path, serve-time PEFT adapter) with zero dedicated scan."
+    },
+    "ISS-185": {
+      "id": "ISS-185",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T07:39:37+00:00",
+      "updated_at": "2026-08-16T08:54:12+00:00",
+      "touched_round": 64,
+      "severity": "0.85|title=torch.load(weights_only=False) on tokenizer pickles — arbitrary code execution (the last un-hardened spot after ISS-170)|summary=runtime/tokenizer_factory.py:47 + :61 load a user-supplied tokenizer.pt with weights_only=False = unrestricted pickle.load; crafted __reduce__ (os.system) runs as the training/serving process (training: StreamingTextDataModule.setup; serving: serving/loader.py from_serving_config). Framework tests save plain torch.save(tokenizer, path). Both SimpleCharacterTokenizer and HFTokenizer reconstruct via __new__+__dict__ under add_safe_globals + weights_only=True (verified round-trip). CONFIRMED."
+    },
+    "ISS-186": {
+      "id": "ISS-186",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T07:39:37+00:00",
+      "updated_at": "2026-08-16T08:54:12+00:00",
+      "touched_round": 64,
+      "severity": "0.7|title=FSDP checkpoint save runs a cross-rank collective (model_state_dict FULL_STATE_DICT) on rank 0 only — deadlock at first epoch-end save|summary=checkpoint.py:703-706: save_checkpoint early-returns on non-zero ranks BEFORE model_state_dict(model); for an FSDP wrapper model_state_dict enters FULL_STATE_DICT, a cross-rank all-gather every shard must join; non-zero ranks never call it -> rank 0 blocks, others reach next barrier -> hang. No e2e test exercises FSDP save. Load side is all-ranks (safe). CONFIRMED."
+    },
+    "ISS-187": {
+      "id": "ISS-187",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T07:39:37+00:00",
+      "updated_at": "2026-08-16T08:54:12+00:00",
+      "touched_round": 64,
+      "severity": "0.4|title=DistributedManager.setup unconditionally overwrites launcher-provided MASTER_ADDR/MASTER_PORT|summary=core/distributed.py:52-53 sets os.environ MASTER_ADDR/PORT to config defaults (127.0.0.1/12355) before init_process_group; torchrun (which FSDP docstring recommends) has already set correct multi-node values, so worker ranks rendezvous with 127.0.0.1 node 0 and hang. Fix: use config only when env unset. PLAUSIBLE."
+    },
+    "ISS-188": {
+      "id": "ISS-188",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T07:39:37+00:00",
+      "updated_at": "2026-08-16T08:54:12+00:00",
+      "touched_round": 64,
+      "severity": "0.25|title=FSDP fsdp_mixed_precision=fp16 enables fp16 params/reduction without any loss scaler (un-winnable run)|summary=distributed/parallel.py:58-68 wires fp16 autocast in FSDP but explicitly no scaler; engine GradScaler enabled only when amp_dtype resolves float16 (default auto->bf16 on capable GPU) -> fp16 grad underflow/overflow, silently wasted run; config accepts it with no error. PLAUSIBLE."
+    },
+    "TASK-154": {
+      "id": "TASK-154",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T07:39:37+00:00",
+      "updated_at": "2026-08-16T08:54:12+00:00",
+      "touched_round": 64,
+      "title": "Tokenizer factory: add_safe_globals allowlist + weights_only=True; refuse foreign globals (never weights_only=False)",
+      "category": "security",
+      "severity": 0.85,
+      "confidence": 1.0,
+      "effort": 0.4
+    },
+    "TASK-155": {
+      "id": "TASK-155",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T07:39:37+00:00",
+      "updated_at": "2026-08-16T08:54:12+00:00",
+      "touched_round": 64,
+      "title": "FSDP: call model_state_dict / save shard on ALL ranks (rank-0 save deadlock)",
+      "category": "stability",
+      "severity": 0.7,
+      "confidence": 1.0,
+      "effort": 0.6
+    },
+    "TASK-156": {
+      "id": "TASK-156",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T07:39:37+00:00",
+      "updated_at": "2026-08-16T08:54:12+00:00",
+      "touched_round": 64,
+      "title": "DistributedManager.setup: respect pre-set MASTER_ADDR/MASTER_PORT (only apply config when unset)",
+      "category": "stability",
+      "severity": 0.4,
+      "confidence": 0.7,
+      "effort": 0.2
+    },
+    "TASK-157": {
+      "id": "TASK-157",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T07:39:37+00:00",
+      "updated_at": "2026-08-16T08:54:12+00:00",
+      "touched_round": 64,
+      "title": "FSDP fp16: wire a loss scaler or reject fp16 mixed-precision without one",
+      "category": "performance",
+      "severity": 0.25,
+      "confidence": 0.7,
+      "effort": 0.4
+    },
+    "CHG-155": {
+      "id": "CHG-155",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T08:54:11+00:00",
+      "updated_at": "2026-08-16T08:54:11+00:00",
+      "touched_round": 64,
+      "commit": "54f7fb9",
+      "title": "tokenizer loader weights_only allowlist — close last RCE path (ISS-185)"
+    },
+    "CHG-156": {
+      "id": "CHG-156",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T08:54:11+00:00",
+      "updated_at": "2026-08-16T08:54:11+00:00",
+      "touched_round": 64,
+      "commit": Infinity,
+      "title": "FSDP checkpoint deadlock + MASTER_ADDR overwrite + fp16 refusal (ISS-186/187/188)"
     }
   },
   "edges": [
@@ -13348,6 +13478,78 @@
       "to": "ISS-176",
       "type": "resolves",
       "created_at": "2026-08-16T05:44:37+00:00"
+    },
+    {
+      "from": "TASK-154",
+      "to": "ISS-185",
+      "type": "addresses",
+      "created_at": "2026-08-16T07:39:37+00:00"
+    },
+    {
+      "from": "TASK-155",
+      "to": "ISS-186",
+      "type": "addresses",
+      "created_at": "2026-08-16T07:39:37+00:00"
+    },
+    {
+      "from": "TASK-156",
+      "to": "ISS-187",
+      "type": "addresses",
+      "created_at": "2026-08-16T07:39:37+00:00"
+    },
+    {
+      "from": "TASK-157",
+      "to": "ISS-188",
+      "type": "addresses",
+      "created_at": "2026-08-16T07:39:37+00:00"
+    },
+    {
+      "from": "ISS-185",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T07:39:37+00:00"
+    },
+    {
+      "from": "ISS-186",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T07:39:37+00:00"
+    },
+    {
+      "from": "ISS-187",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T07:39:37+00:00"
+    },
+    {
+      "from": "ISS-188",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T07:39:38+00:00"
+    },
+    {
+      "from": "CHG-155",
+      "to": "ISS-185",
+      "type": "resolves",
+      "created_at": "2026-08-16T08:54:12+00:00"
+    },
+    {
+      "from": "CHG-156",
+      "to": "ISS-186",
+      "type": "resolves",
+      "created_at": "2026-08-16T08:54:12+00:00"
+    },
+    {
+      "from": "CHG-156",
+      "to": "ISS-187",
+      "type": "resolves",
+      "created_at": "2026-08-16T08:54:12+00:00"
+    },
+    {
+      "from": "CHG-156",
+      "to": "ISS-188",
+      "type": "resolves",
+      "created_at": "2026-08-16T08:54:12+00:00"
     }
   ]
 }
