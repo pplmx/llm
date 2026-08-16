@@ -130,7 +130,11 @@ async def chat_completions(
         except RuntimeError as exc:
             t.set_status(503)
             raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
-        except ValueError as exc:
+        # Character-level tokenizers raise ``KeyError`` for characters outside
+        # their corpus (the same exception the ``/generate`` sibling maps to a
+        # client 400 — RIL ISS-147). Without it this client-caused error would
+        # fall through to the generic handler and surface as a spurious 500.
+        except (ValueError, KeyError) as exc:
             t.set_status(400)
             raise APIError(ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}) from exc
         except APIError as exc:

@@ -164,6 +164,24 @@ def test_generate_stream_oov_prompt_returns_400(oov_client):
 
 
 @pytest.mark.slow
+def test_chat_completions_oov_prompt_returns_400_not_500(oov_client):
+    """Regression (RIL ISS-147): an out-of-vocabulary character in the chat
+    message content raises ``KeyError`` from the char tokenizer; the chat
+    router must map it to a client 400 (like the ``/generate`` sibling), not
+    fall through to the generic handler and surface a 500 'Internal server
+    error'."""
+    payload = {
+        "model": "tiny",
+        "messages": [{"role": "user", "content": "héllo"}],
+        "max_tokens": 2,
+        "temperature": 0.0,
+    }
+    response = oov_client.post("/v1/chat/completions", json=payload)
+    assert response.status_code == 400, response.text
+    assert "not found in tokenizer" in response.text
+
+
+@pytest.mark.slow
 def test_health_check(client):
     """测试健康检查端点."""
     response = client.get("/health")
