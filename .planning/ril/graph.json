@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T16:29:01+00:00",
+  "updated_at": "2026-08-16T16:47:01+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10208,6 +10208,46 @@
       "commit": 3322518,
       "title": "Rank-guard PEFT adapter sidecar write (rank 0 only)",
       "body": "callbacks.py PEFTAdapterCheckpointCallback.on_train_end returns early for engine.rank != 0; prevents concurrent torch.save corruption under DDP. 1 test. ISS-208."
+    },
+    "ISS-209": {
+      "id": "ISS-209",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T16:38:22+00:00",
+      "updated_at": "2026-08-16T16:47:01+00:00",
+      "touched_round": 69,
+      "severity": "medium",
+      "title": "save_peft/load_peft crashes on a folded PrefixTuning model (AttributeError)",
+      "body": "PEFT deep-dive #4: fold_reparameterization deletes prefix_small/_reparam_k/_reparam_v, but get_prefix_parameters (registry get_parameters) unconditionally accesses them. Fold-then-share workflow produces no adapter file (silent) or AttributeError."
+    },
+    "TASK-177": {
+      "id": "TASK-177",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T16:38:22+00:00",
+      "updated_at": "2026-08-16T16:47:01+00:00",
+      "touched_round": 69,
+      "category": "correctness",
+      "severity": 0.6,
+      "confidence": 0.95,
+      "effort": 1.5,
+      "unlock_factor": 1.0,
+      "title": "Folded PrefixTuning model: skip folded wrappers in get_prefix_parameters + clean error in load_peft",
+      "body": "ISS-209: get_prefix_parameters must yield nothing for folded (buffer-only) wrappers so save_peft/load_peft handle them; load_peft on a folded model should raise a clean error pointing at reload."
+    },
+    "CHG-175": {
+      "id": "CHG-175",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T16:47:01+00:00",
+      "updated_at": "2026-08-16T16:47:01+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "Folded PrefixTuning wrappers skipped in get_prefix_parameters (save_peft no-crash)",
+      "body": "prefix_tuning.py get_prefix_parameters: hasattr(module, prefix_small) guard skips folded wrappers (buffer-only, no trainable params); save_peft/load_peft no longer AttributeError on fold-then-share. 1 test. ISS-209."
     }
   },
   "edges": [
@@ -14990,6 +15030,24 @@
       "to": "ISS-208",
       "type": "resolves",
       "created_at": "2026-08-16T16:27:34+00:00"
+    },
+    {
+      "from": "TASK-177",
+      "to": "ISS-209",
+      "type": "addresses",
+      "created_at": "2026-08-16T16:38:22+00:00"
+    },
+    {
+      "from": "CHG-175",
+      "to": "TASK-177",
+      "type": "implements",
+      "created_at": "2026-08-16T16:47:01+00:00"
+    },
+    {
+      "from": "CHG-175",
+      "to": "ISS-209",
+      "type": "resolves",
+      "created_at": "2026-08-16T16:47:01+00:00"
     }
   ]
 }

@@ -290,9 +290,20 @@ def get_prefix_parameters(model: nn.Module) -> Iterator[torch.Tensor]:
     - ``prefix_small``
     - ``_reparam_k.weight``, ``_reparam_k.bias``
     - ``_reparam_v.weight``, ``_reparam_v.bias``
+
+    A wrapper that has been through :func:`fold_reparameterization` has
+    HAD these deleted (replaced by the static ``prefix_k``/``prefix_v``
+    buffers) and yields nothing — the PEFT registry's ``get_parameters``
+    for ``prefix_tuning`` feeds :func:`llm.core.peft.checkpoint.save_peft`,
+    which must not crash with ``AttributeError`` on a folded-and-share
+    workflow (RIL ISS-209).
     """
     for module in model.modules():
         if isinstance(module, PrefixTuningAttention):
+            if not hasattr(module, "prefix_small"):
+                # Folded (prefix_small + reparam MLPs removed); no trainable
+                # prefix parameters remain to collect.
+                continue
             yield module.prefix_small
             yield module._reparam_k.weight
             assert module._reparam_k.bias is not None  # noqa: S101

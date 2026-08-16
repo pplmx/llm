@@ -431,6 +431,23 @@ class TestFoldReparameterization:
         fold_reparameterization(attn)
         assert torch.allclose(attn.prefix_k, snapshot_k)
 
+    def test_get_prefix_parameters_skips_folded_wrappers(self):
+        """Regression (RIL ISS-209): after ``fold_reparameterization`` the
+        reparam MLPs are deleted, but ``get_prefix_parameters`` (the PEFT
+        registry's ``get_parameters`` for ``prefix_tuning``, used by
+        ``save_peft``/``load_peft``) unconditionally yielded them —
+        ``AttributeError: 'PrefixTuningAttention' object has no attribute
+        'prefix_small'`` on any folded model reaching ``save_peft``. A
+        folded wrapper has no trainable prefix parameters, so the iterator
+        must yield nothing for it (adapter save/load become a clean no-op
+        for the prefix component)."""
+        attn = PrefixTuningAttention(_make_mha(32, 4), prefix_len=3, reparam_hidden=16)
+        assert len(list(get_prefix_parameters(attn))) == 5
+
+        fold_reparameterization(attn)
+        folded = list(get_prefix_parameters(attn))
+        assert folded == [], "folded wrappers (buffer-only) must yield no trainable prefix params"
+
 
 # ---------------------------------------------------------------------------
 # 3) Module-level helpers
