@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 67,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T12:54:35+00:00",
+  "updated_at": "2026-08-16T13:03:17+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9595,11 +9595,11 @@
     "ISS-202": {
       "id": "ISS-202",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:22:19+00:00",
-      "updated_at": "2026-08-16T12:22:19+00:00",
-      "touched_round": 66,
+      "updated_at": "2026-08-16T13:03:17+00:00",
+      "touched_round": 67,
       "severity": "low",
       "title": "StreamingTextDataset silently accepts negative overlap (treated as 0); TextDataset rejects it",
       "summary": "data/datasets/streaming.py:42-43 only checks overlap >= max_seq_len so overlap=-1 passes; __iter__ (:103) then treats it as no-overlap via 'if self.overlap > 0 else []'. TextDataset raises ValueError('overlap must be a non-negative integer') for the same input. Silent config-behavior mismatch (only reachable via direct construction; config surface doesn't expose overlap). CONFIRMED (code trace)."
@@ -9709,6 +9709,33 @@
       "touched_round": 67,
       "commit": "58d0513",
       "title": "Wire ALiBi linear-bias PE as use_alibi pos_encoding (mha backend, SDPA attn_bias)"
+    },
+    "TASK-166": {
+      "id": "TASK-166",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T13:02:59+00:00",
+      "updated_at": "2026-08-16T13:03:17+00:00",
+      "touched_round": 67,
+      "category": "maintainability",
+      "severity": 0.5,
+      "confidence": 0.97,
+      "effort": 0.2,
+      "unlock_factor": 1.0,
+      "title": "StreamingTextDataset: reject negative overlap at construction (ISS-202)",
+      "summary": "_init only checked overlap >= max_seq_len so overlap=-1 passed and __iter__ silently treated it as no overlap; TextDataset raises. Add fail-fast ValueError; regression test mirrors the TextDataset contract."
+    },
+    "CHG-164": {
+      "id": "CHG-164",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:02:59+00:00",
+      "updated_at": "2026-08-16T13:02:59+00:00",
+      "touched_round": 67,
+      "commit": "cca6e8a",
+      "title": "StreamingTextDataset negative overlap guard"
     }
   },
   "edges": [
@@ -14263,6 +14290,24 @@
       "to": "ISS-190",
       "type": "resolves",
       "created_at": "2026-08-16T12:54:15+00:00"
+    },
+    {
+      "from": "TASK-166",
+      "to": "ISS-202",
+      "type": "addresses",
+      "created_at": "2026-08-16T13:02:59+00:00"
+    },
+    {
+      "from": "CHG-164",
+      "to": "TASK-166",
+      "type": "implements",
+      "created_at": "2026-08-16T13:03:17+00:00"
+    },
+    {
+      "from": "CHG-164",
+      "to": "ISS-202",
+      "type": "resolves",
+      "created_at": "2026-08-16T13:03:17+00:00"
     }
   ]
 }
