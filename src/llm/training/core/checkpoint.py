@@ -281,16 +281,30 @@ def _save_extra_state_pt(
 
 
 def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
-    """Load the v2 three-file layout; return ``None`` if incomplete.
+    """Load the v2 three-file layout.
 
-    A "complete" split checkpoint has all three sidecars. Missing
-    files → ``None`` (the caller will try the legacy layout).
+    A "complete" split checkpoint has all three sidecars. If any (but not
+    all) exist the save was interrupted mid-write: raise
+    :class:`CheckpointIncompleteError` rather than returning ``None``
+    (which the caller would treat as "nothing here" and silently fall back
+    to scratch — RIL ISS-205). Only when NO sidecar exists does the caller
+    legitimately fall through to the legacy layout.
     """
     safetensors_path = stem_dir.with_name(stem_dir.name + SAFETENSORS_SUFFIX)
     meta_path = stem_dir.with_name(stem_dir.name + META_SUFFIX)
     extra_state_path = stem_dir.with_name(stem_dir.name + EXTRA_STATE_SUFFIX)
-    if not (safetensors_path.exists() and meta_path.exists() and extra_state_path.exists()):
+    present = [p for p in (safetensors_path, meta_path, extra_state_path) if p.exists()]
+    if len(present) == 0:
         return None
+    if len(present) < 3:
+        missing = [p.name for p in (safetensors_path, meta_path, extra_state_path) if not p.exists()]
+        raise CheckpointIncompleteError(
+            f"Checkpoint {stem_dir} is incomplete: present sidecars "
+            f"{[p.name for p in present]}, missing {missing}. The save was "
+            "interrupted mid-write; point resume_from_checkpoint at a previous "
+            "intact epoch checkpoint (or run llm-migrate-ckpt on the legacy "
+            ".pt if one exists at this stem)."
+        )
 
     from safetensors.torch import load_file, safe_open
 
@@ -442,26 +456,47 @@ def load_checkpoint_payload(path: str | Path) -> dict[str, Any] | None:
     Useful for callers that want to introspect a checkpoint without
     instantiating a full :class:`CheckpointManager`.
     """
-    legacy_path, _safetensors, _meta, _extra = _resolve_checkpoint_paths(path)
+    legacy_path, safetensors_path, meta_path, extra_state_path = _resolve_checkpoint_paths(path)
     stem = legacy_path.with_suffix("")
 
-    # Legacy first — if the legacy .pt exists at the exact path the
-    # caller gave, that's the most explicit signal. The split layout
-    # only wins when the legacy file is missing.
-    if legacy_path.exists():
-        return _load_legacy_checkpoint(legacy_path)
+    # The split layout is authoritative whenever ANY split sidecar exists.
+    # ``CheckpointManager.save_checkpoint`` writes only the split trio, and
+    # ``llm-migrate-ckpt`` keeps the legacy ``.pt`` by default
+    # (``in_place=False``) — so a coexisting legacy file is a FROZEN
+    # pre-migration snapshot that would silently stale-resume every
+    # post-migration epoch (RIL ISS-205). Legacy is the fallback only when
+    # no split sidecar is present at all.
+    any_split = any(p.exists() for p in (safetensors_path, meta_path, extra_state_path))
+    if any_split or not legacy_path.exists():
+        split = _load_split_checkpoint(stem)
+        if split is not None:
+            return split
+        if any_split:
+            # Partial trio already raised CheckpointIncompleteError; an
+            # all-present-but-None split is impossible.
+            raise CheckpointIncompleteError(f"Checkpoint at {stem} has split sidecars but could not be loaded.")
+        # No split sidecar and no legacy file: nothing at this stem.
+        return None
 
-    # Split layout at the same stem.
-    split = _load_split_checkpoint(stem)
-    if split is not None:
-        return split
-
-    return None
+    # Only reachable when the legacy .pt exists AND no split sidecar does.
+    return _load_legacy_checkpoint(legacy_path)
 
 
 # ---------------------------------------------------------------------------
 # Conversion: legacy v0.0.5 single-file .pt -> v2 split trio
 # ---------------------------------------------------------------------------
+
+
+class CheckpointIncompleteError(RuntimeError):
+    """Raised when a v2 split checkpoint has only part of its three sidecars.
+
+    A crash between the ``_save_split`` renames (weights -> meta ->
+    extra_state) leaves one or two sidecars at the stem but not all three.
+    Resuming from that is unsafe — it would silently re-train from epoch 0
+    while the partial trio represents a later epoch (RIL ISS-205). The
+    loader raises this instead of silently returning ``None`` so the caller
+    can point at the previous intact epoch checkpoint.
+    """
 
 
 class CheckpointMigrationError(RuntimeError):
@@ -890,7 +925,7 @@ class CheckpointManager:
                     "at a compatible checkpoint."
                 ) from e
 
-            # Two data-integrity/refusal errors are NOT recoverable format
+            # Three data-integrity/refusal errors are NOT recoverable format
             # issues — they mean the user pointed at the wrong checkpoint or a
             # save was interrupted:
             #  - ISS-127: the three sidecars disagree about which save they
@@ -899,9 +934,14 @@ class CheckpointManager:
             #  - ISS-126: the checkpoint's model_config differs from the
             #    current run's architecture-defining fields, so the weights
             #    were not trained for this model/schedule.
-            # Both must propagate to the caller instead of silently
-            # restarting from scratch.
+            #  - ISS-205: a partial split trio (1-2 sidecars) from a crashed
+            #    save must not silently become "start from scratch" — the
+            #    partial trio represents real epochs that would be discarded.
+            # All must propagate to the caller instead of silently restarting
+            # from scratch.
             if isinstance(e, ValueError) and ("inconsistent" in message or "Refusing to silently resume" in message):
+                raise
+            if isinstance(e, CheckpointIncompleteError):
                 raise
 
             self.logger.error(f"Failed to load checkpoint from {ckp_path}: {e}")

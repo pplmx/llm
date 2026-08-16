@@ -206,6 +206,68 @@ class TestLoadSplitFormat:
         assert best_loss == 0.5
         assert checkpoint_manager.loaded_extra_state["stream_data"]["0"]["line_index"] == 99
 
+    def test_split_layout_wins_over_stale_legacy_shadow(self, checkpoint_manager, tmp_path: Path):
+        """RIL ISS-205: a legacy ``.pt`` frozen at a pre-migration epoch must
+        NOT shadow a newer split trio at the same stem.
+
+        ``llm-migrate-ckpt`` keeps the legacy file by default
+        (``in_place=False``), and ``CheckpointManager.save_checkpoint`` only
+        ever rewrites the split sidecars — so after migrate+train, a resume
+        that prefers the legacy ``.pt`` silently discards every post-migration
+        epoch. The split trio must win whenever its sidecars exist.
+        """
+        ts = TensorState()
+        # Write a stale legacy .pt claiming epoch 0.
+        ckpt_dir = tmp_path / "checkpoints"
+        legacy_blob = {
+            "epoch": 0,
+            "loss": 9.9,
+            "best_loss": 9.0,
+            "model_state": {"weight": torch.zeros(2, 3), "step": 0},
+            "optimizer_state": None,
+            "scheduler_state": None,
+            "scaler_state": None,
+            "extra_state": {},
+        }
+        torch.save(legacy_blob, ckpt_dir / "latest.pt")
+
+        # Then train/save through the manager -> split trio with epoch 5.
+        checkpoint_manager.save_checkpoint(
+            epoch=5,
+            model=ts,
+            optimizer=ts,
+            scheduler=ts,
+            scaler=ts,
+            loss=0.5,
+        )
+
+        payload = load_checkpoint_payload(ckpt_dir / "latest.pt")
+        assert payload is not None
+        assert payload["epoch"] == 5, "split trio must win over the stale legacy shadow"
+        assert payload["loss"] == 0.5
+
+    def test_partial_split_trio_fails_loud_not_silent_scratch(self, checkpoint_manager, tmp_path: Path):
+        """RIL ISS-205 (companion): a partial split trio (1-2 sidecars, e.g.
+        a crash between the meta and extra_state renames) must raise loudly
+        instead of silently degrading to "start from scratch".
+
+        Write order in ``_save_split`` is weights -> meta -> extra, so a
+        crash usually leaves weights+meta but no extra_state. The old loader
+        returned ``None`` for the incomplete trio -> ``load_checkpoint``
+        warned "no recognized layout" and silently re-trained from epoch 0,
+        discarding every epoch this checkpoint represented.
+        """
+        ts = TensorState()
+        checkpoint_manager.save_checkpoint(epoch=2, model=ts, optimizer=ts, scheduler=ts, scaler=ts, loss=0.3)
+
+        ckpt_dir = tmp_path / "checkpoints"
+        # Remove the extra_state sidecar -> only weights + meta remain.
+        (ckpt_dir / f"latest{EXTRA_STATE_SUFFIX}").unlink()
+        assert not (ckpt_dir / "latest.pt").exists(), "no legacy fallback should mask the partial trio"
+
+        with pytest.raises(Exception, match="incomplete"):
+            load_checkpoint_payload(ckpt_dir / "latest")
+
 
 # ---------------------------------------------------------------------------
 # Read side — legacy .pt compatibility

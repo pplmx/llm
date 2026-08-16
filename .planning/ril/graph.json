@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T14:34:50+00:00",
+  "updated_at": "2026-08-16T15:32:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10048,6 +10048,102 @@
       "confidence": 0.9,
       "title": "stream world-size guard order-dependent on _world_size (ISS-204)",
       "body": "Early load skips the check."
+    },
+    "TASK-173": {
+      "id": "TASK-173",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T15:16:08+00:00",
+      "updated_at": "2026-08-16T15:32:54+00:00",
+      "touched_round": 69,
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 0.95,
+      "effort": 2.0,
+      "unlock_factor": 1.5,
+      "title": "Checkpoint loader: make split trio authoritative; legacy .pt only when no split sidecar exists",
+      "body": "ISS-205: load_checkpoint_payload prefers legacy .pt whenever it exists, and migrate keeps legacy by default. After migration+training, the frozen pre-migration .pt shadows the newer split trio on EVERY resume (silent stale-state resume). Flip to: any split sidecar present -> split wins; also tighten partial-trio (1-2 sidecars) to loud CheckpointIncompleteError instead of silent scratch."
+    },
+    "TASK-174": {
+      "id": "TASK-174",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T15:16:08+00:00",
+      "updated_at": "2026-08-16T15:16:08+00:00",
+      "touched_round": 69,
+      "category": "stability",
+      "severity": 0.6,
+      "confidence": 0.9,
+      "effort": 2.5,
+      "unlock_factor": 1.2,
+      "title": "Checkpoint load: rollback partial mutation before degrade-to-scratch",
+      "body": "ISS-206: load_checkpoint mutates model->optimizer->scheduler->scaler in place with no rollback; if optimizer/scheduler/scaler load_state_dict raises outside the re-raise markers, the except swallows it and returns (0,inf) while model already holds checkpoint weights - a silent hybrid resume. Snapshot/rollback or validate shapes before mutating."
+    },
+    "TASK-175": {
+      "id": "TASK-175",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T15:16:08+00:00",
+      "updated_at": "2026-08-16T15:16:08+00:00",
+      "touched_round": 69,
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 0.95,
+      "effort": 1.0,
+      "unlock_factor": 1.0,
+      "title": "GGUF writer: reject empty/small tensors + numpy-scalar metadata with clear errors",
+      "body": "GGUF findings: add_tensor on empty float tensor (last dim %32==0, size 0) -> ZeroDivisionError from data_per_block = data.size//scales.size; numpy scalar metadata -> GGUFError. Guard both with clear messages."
+    },
+    "ISS-205": {
+      "id": "ISS-205",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T15:16:37+00:00",
+      "updated_at": "2026-08-16T15:32:54+00:00",
+      "touched_round": 69,
+      "severity": "high",
+      "title": "Stale legacy .pt shadows newer split trio on every resume",
+      "body": "Checkpoint finding #1 (CONFIRMED): load_checkpoint_payload:451 prefers legacy .pt; migrate keeps legacy by default (in_place=False); CheckpointManager.save_checkpoint writes only split. After migration+train+n resume, loader returns stale pre-migration blob."
+    },
+    "ISS-206": {
+      "id": "ISS-206",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T15:16:37+00:00",
+      "updated_at": "2026-08-16T15:16:37+00:00",
+      "touched_round": 69,
+      "severity": "medium",
+      "title": "Failed checkpoint load partially mutates model/optimizer then silently starts from scratch",
+      "body": "Checkpoint finding #2 (CONFIRMED): in-place load_state_dict sequence with no rollback; scheduler/optimizer ValueError swallowed -> (0,inf) with model already holding ckpt weights."
+    },
+    "ISS-207": {
+      "id": "ISS-207",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T15:16:37+00:00",
+      "updated_at": "2026-08-16T15:16:37+00:00",
+      "touched_round": 69,
+      "severity": "low",
+      "title": "GGUF writer crashes on empty tensors and numpy-scalar metadata",
+      "body": "GGUF findings #3/#6: ZeroDivisionError on 0-element Q4_0 tensor; GGUFError on np.int32 metadata. No clear guard."
+    },
+    "CHG-171": {
+      "id": "CHG-171",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T15:32:54+00:00",
+      "updated_at": "2026-08-16T15:32:54+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "Checkpoint loader: split trio authoritative over stale legacy .pt; partial trio raises CheckpointIncompleteError",
+      "body": "checkpoint.py: load_checkpoint_payload now prefers split whenever any sidecar exists (legacy .pt only when no split sidecar); _load_split_checkpoint raises CheckpointIncompleteError for 1-2 sidecars; CheckpointManager.load_checkpoint propagates it instead of silent scratch. 2 tests. ISS-205."
     }
   },
   "edges": [
@@ -14758,6 +14854,36 @@
       "to": "HYP-059",
       "type": "validates",
       "created_at": "2026-08-16T14:34:50+00:00"
+    },
+    {
+      "from": "TASK-173",
+      "to": "ISS-205",
+      "type": "addresses",
+      "created_at": "2026-08-16T15:16:37+00:00"
+    },
+    {
+      "from": "TASK-174",
+      "to": "ISS-206",
+      "type": "addresses",
+      "created_at": "2026-08-16T15:16:37+00:00"
+    },
+    {
+      "from": "TASK-175",
+      "to": "ISS-207",
+      "type": "addresses",
+      "created_at": "2026-08-16T15:16:37+00:00"
+    },
+    {
+      "from": "CHG-171",
+      "to": "TASK-173",
+      "type": "implements",
+      "created_at": "2026-08-16T15:32:54+00:00"
+    },
+    {
+      "from": "CHG-171",
+      "to": "ISS-205",
+      "type": "resolves",
+      "created_at": "2026-08-16T15:32:54+00:00"
     }
   ]
 }
