@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 66,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T11:27:42+00:00",
+  "updated_at": "2026-08-16T12:20:51+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -21,7 +21,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 50,
+      "touched_round": 66,
       "title": "Quantization (src/llm/quantization: GPTQ/AWQ/SmoothQuant/PTQ)"
     },
     "COMP-003": {
@@ -4218,7 +4218,7 @@
       "version": 1,
       "created_at": "2026-08-13T07:38:08+00:00",
       "updated_at": "2026-08-13T07:38:08+00:00",
-      "touched_round": 63,
+      "touched_round": 66,
       "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
     },
     "CHG-065": {
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 60,
+      "touched_round": 66,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -5854,7 +5854,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:36:27+00:00",
       "updated_at": "2026-08-14T15:36:27+00:00",
-      "touched_round": 61,
+      "touched_round": 66,
       "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
     },
     "ISS-102": {
@@ -9349,6 +9349,212 @@
       "touched_round": 66,
       "commit": "839d0b2",
       "title": "Harden ril.py priority_score + validate task severity in check(); repair TASK-106 data"
+    },
+    "ISS-190": {
+      "id": "ISS-190",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T11:44:26+00:00",
+      "updated_at": "2026-08-16T11:44:26+00:00",
+      "touched_round": 66,
+      "severity": "medium",
+      "title": "ALiBi position-encoding module is complete + tested but never wired into DecoderModel/attention",
+      "summary": "src/llm/core/alibi.py implements get_alibi_slopes/build_alibi_bias/ALiBiPositionBias with dedicated tests (tests/core/test_alibi.py) but zero consumers anywhere in src/ (grep alibi/ALiBi across src/ tests/ configs/ examples/ finds the module and its own test only). DecoderModel exposes only pos_encoding_learned and use_rope (decoder.py:45,68); no PE registry option reaches the attention blocks. The tested-but-unwired module is effectively dormant feature debt: a user configuring any alibi-style option (none exists) or expecting BLOOM-style PE gets nothing, silently. Either wire it as a pos_encoding=alibi option (injecting ALiBiPositionBias into attention before softmax in the supported attn_impls) or delete as dead code; currently it is neither usable nor declared deprecated. VERIFIED via grep: no import of llm.core.alibi outside its own test."
+    },
+    "TASK-159": {
+      "id": "TASK-159",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-16T11:44:56+00:00",
+      "updated_at": "2026-08-16T11:54:07+00:00",
+      "touched_round": 66,
+      "category": "core-feature",
+      "severity": 0.5,
+      "confidence": 0.95,
+      "effort": 3.0,
+      "unlock_factor": 1.2,
+      "title": "Wire ALiBi as a pos_encoding option (BLOOM-style linear-bias PE) into DecoderModel + attention",
+      "summary": "ISS-190: core/alibi.py is complete+tested with zero consumers. Integrate ALiBiPositionBias into the attention score path for the supported attn_impls (inject before softmax), add pos_encoding=alibi plumbing through DecoderModel/model_factory/config, and cover with tests incl. causal masking interplay. Milestone: new PE family without touching RoPE/learned paths.",
+      "note": "deferred to round 67; round 66 focused on quant+eval verified fixes"
+    },
+    "ISS-191": {
+      "id": "ISS-191",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T11:53:19+00:00",
+      "updated_at": "2026-08-16T12:20:14+00:00",
+      "touched_round": 66,
+      "severity": "critical",
+      "title": "Quantized layers are dtype-frozen: model.half()/serving fp16 .to() crashes every quant forward and partial-quant fp16 models break",
+      "summary": "_gptq_layer.py:154 _awq_layer.py:112 _smooth_layer.py:106 all run F.linear(x.to(fp32), w_fp(f32), bias) where bias is a plain fp32 Parameter. After model.to(dtype=torch.float16) (serving batch_engine.py:227 default fp16) the bias buffer becomes fp16 while w_fp+input stay fp32 -> RuntimeError 'self and mat2 must have the same dtype'. Introduced dtype ≈ serving w/ quantized model => first forward crashes. Same root cause also emits fp32 output into a half-precision ResidualLinear under partial quantization (target_modules leaves one fp16 Linear) -> mat1/mat2 dtype crash on a 'working' fp16 checkpoint. Reproduced per deep-dive agent (CONFIRMED); repo tests only cover fp16 *input* with fp32 bias, never a post-quant .half() cast or fp16-model partial quant."
+    },
+    "ISS-192": {
+      "id": "ISS-192",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T11:53:19+00:00",
+      "updated_at": "2026-08-16T12:20:14+00:00",
+      "touched_round": 66,
+      "severity": "high",
+      "title": "LMTask.predict clamps inputs to model capacity but references stay full max_seq_len -> metric shape-mismatch crash on small-context models",
+      "summary": "lm_task.py:75-81 truncates/pads inputs to global_max_len=min(max, model.max_seq_len); prepare_data yields references padded to self.max_seq_len (default 128). PerplexityMetric (perplexity.py:54-55) cross_entropy(logits[:,:-1], labels=references[:,1:]) — when model.max_seq_len < 128 preds are B x (cap-1) x V but labels B x 127 -> RuntimeError. Reachable via EvaluationCallback with any small-context model; replaces the ISS-130 PE-crash with a metric crash right after. Verified by trace (CONFIRMED); existing clamp test never runs the metric."
+    },
+    "ISS-193": {
+      "id": "ISS-193",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T11:53:19+00:00",
+      "updated_at": "2026-08-16T12:20:14+00:00",
+      "touched_round": 66,
+      "severity": "high",
+      "title": "lm_eval loglikelihood_rolling drops the final token when any window ends exactly at len(ids)-1",
+      "summary": "lm_eval_lm.py:274 breaks when end >= len(ids)-1; when a window boundary lands exactly on len(ids)-1 (doc length == 2 mod (max_length-1), e.g. L=65,max_length=64) the loop never runs the window whose targets include ids[-1] — last token never scored while downstream divides by the full doc word count -> corrupted (deflated) perplexity. Verified by trace (CONFIRMED); test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc uses a 120-token doc, a non-drop length."
+    },
+    "ISS-194": {
+      "id": "ISS-194",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T11:53:19+00:00",
+      "updated_at": "2026-08-16T12:20:14+00:00",
+      "touched_round": 66,
+      "severity": "high",
+      "title": "_strip_stop_strings cuts at the first stop in list order, not the earliest occurrence",
+      "summary": "lm_eval_lm.py:330-347 returns text[:idx] on the first matching stop in  order; lm_eval's canonical postprocess takes min(idx) across stops. With >=2 string stops (e.g. ['END','ANSWER']) generated 'foo ANSWER bar END' halts on END-suffix but stripping returns the text up to END, retaining the earlier ANSWER delimiter -> systematically wrong exact_match/acc. Verified by trace (CONFIRMED); all tests use a single stop."
+    },
+    "TASK-160": {
+      "id": "TASK-160",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T11:53:51+00:00",
+      "updated_at": "2026-08-16T12:20:18+00:00",
+      "touched_round": 66,
+      "category": "critical-bug",
+      "severity": 0.85,
+      "confidence": 0.95,
+      "effort": 2.0,
+      "unlock_factor": 1.2,
+      "title": "Make quantized layer forwards dtype-aware so fp16/.half() models and fp16 serving work (GPTQ/AWQ/SmoothQuant)",
+      "summary": "ISS-191: quant layers compute w_fp in fp32, upcast input, keep fp32 bias -> after model.to(dtype=fp16) (serving default) bias is fp16 and F.linear mixes dtypes; outputs are also always fp32 so a partial-quant fp16 checkpoint crashes on the residual fp16 Linear. Fix forward in all three modules to compute in the layer's effective dtype (bias.dtype else scales.dtype): cast x and w_fp there; output follows module dtype. Add regression tests: layer.half() forward, fp16-model partial quant, serving-owned dtype cast."
+    },
+    "TASK-161": {
+      "id": "TASK-161",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T11:53:51+00:00",
+      "updated_at": "2026-08-16T12:20:18+00:00",
+      "touched_round": 66,
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 0.95,
+      "effort": 0.5,
+      "unlock_factor": 1.1,
+      "title": "Align PerplexityMetric labels to prediction seq width (E1 small-context crash)",
+      "summary": "ISS-192: slice references to predictions.shape[1] columns so labels line up with the clamped logits; keep -100 ignore semantics. Regression test: model.max_seq_len < max_seq_len with a real metric compute."
+    },
+    "TASK-162": {
+      "id": "TASK-162",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T11:53:51+00:00",
+      "updated_at": "2026-08-16T12:20:18+00:00",
+      "touched_round": 66,
+      "category": "correctness",
+      "severity": 0.7,
+      "confidence": 0.95,
+      "effort": 0.5,
+      "unlock_factor": 1.0,
+      "title": "Fix lm_eval_lm long-doc rolling (final-token drop) + multi-stop string strip (min index)",
+      "summary": "ISS-193: break at end>=len(ids) so a window ending at len(ids)-1 continues and the final token is scored. ISS-194: _strip_stop_strings takes min(find(stop)) over all string stops. Regression tests for both (L==2 mod (max_length-1) doc; two string stops)."
+    },
+    "CHG-159": {
+      "id": "CHG-159",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:19:11+00:00",
+      "updated_at": "2026-08-16T12:19:11+00:00",
+      "touched_round": 66,
+      "commit": "9fe6e47",
+      "title": "Dtype-aware quant layer forwards + conversion-time dtype adoption (GPTQ/AWQ/SmoothQuant)"
+    },
+    "CHG-160": {
+      "id": "CHG-160",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:19:18+00:00",
+      "updated_at": "2026-08-16T12:19:18+00:00",
+      "touched_round": 66,
+      "commit": "2585e9d",
+      "title": "PerplexityMetric aligns labels to prediction horizon"
+    },
+    "CHG-161": {
+      "id": "CHG-161",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:19:18+00:00",
+      "updated_at": "2026-08-16T12:19:18+00:00",
+      "touched_round": 66,
+      "commit": "5145c97",
+      "title": "lm_eval rolling final-token coverage + earliest-stop string strip"
+    },
+    "ISS-195": {
+      "id": "ISS-195",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:20:43+00:00",
+      "updated_at": "2026-08-16T12:20:43+00:00",
+      "touched_round": 66,
+      "severity": "medium",
+      "title": "LMTask tokenizer is derived from the eval corpus, never bound to the model's vocab",
+      "summary": "lm_task.py:31,40-46 builds TokenizerFactory.from_dataset_text(dataset_path): eval vocab (char set, id ordering, pad/eos/bos ids) is a function of the eval file only. Evaluating a model trained on a different corpus (or with an HF tokenizer) can produce eval token ids >= model embedding vocab_size -> IndexError in EmbeddingLayer, or silently different pad/EOS semantics vs training. No API to pass the model's own tokenizer. PLAUSIBLE (needs a concrete train-vs-eval pair; failure loud when ids exceed vocab). Backlog from round-66 eval deep-dive; no test coverage."
+    },
+    "ISS-196": {
+      "id": "ISS-196",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:20:43+00:00",
+      "updated_at": "2026-08-16T12:20:43+00:00",
+      "touched_round": 66,
+      "severity": "medium",
+      "title": "Default-config simple char tokenizer cannot encode real text (KeyError) yet is the documented default",
+      "summary": "tokenizer_factory.py:13,87-88: from_data_config with tokenizer_type=simple and no tokenizer_path returns SimpleCharacterTokenizer over only the 9 chars of ['<PAD>','<EOS>','<BOS>']+'special ids'. encode of any real text (e.g. 'hello') raises KeyError: Character 'h' not found; the map/streaming data modules call from_data_config(config.data) with these defaults, so default-config training on a normal text file dies at the first tokenize. Design-locked by test_from_data_config_simple_fallback (only asserts <PAD> round-trips). PLAUSIBLE-until-real-run; backlog from round-66 eval deep-dive."
+    },
+    "ISS-197": {
+      "id": "ISS-197",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:20:43+00:00",
+      "updated_at": "2026-08-16T12:20:43+00:00",
+      "touched_round": 66,
+      "severity": "low",
+      "title": "PTQ bits=4 silently stores 8-bit with a 4-bit grid — no packing, no memory saving",
+      "summary": "ptq.py:27 accepts bits in (4,8) but :144/167/177 always clamp into a full int8 tensor of shape [out_f,in_f]; only qmax changes with bits. A bits=4 layer uses the 15-level grid but occupies 1 byte/value — the caller asking for ~2x compression gets none plus degraded accuracy. Verified (100 vs 15 distinct levels, same byte count). No in-repo consumer of the ptq stats API. Backlog from round-66 quant deep-dive; low priority (dead-ish surface)."
+    },
+    "ISS-198": {
+      "id": "ISS-198",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T12:20:43+00:00",
+      "updated_at": "2026-08-16T12:20:43+00:00",
+      "touched_round": 66,
+      "severity": "medium",
+      "title": "save_pretrained lm_head dtype sniffing crashes on a quantized model; no safetensors quant roundtrip",
+      "summary": "hf_publisher.py:85-89 reads model.lm_head.weight.dtype; a GPTQ/AWQ/SmoothQuant layer exposes weight_packed (buffer) but no .weight attribute -> AttributeError if lm_head is quantized (default target_modules=None). No quant metadata persisted; hf_loader has zero quant handling and load_state_dict(strict=False) silently drops weight_packed/scales. HF roundtrip of a quantized model cannot preserve quantization — currently fails loudly rather than rejecting up front. PLAUSIBLE; backlog from round-66 quant deep-dive."
     }
   },
   "edges": [
@@ -13669,6 +13875,132 @@
       "to": "ISS-189",
       "type": "resolves",
       "created_at": "2026-08-16T11:26:21+00:00"
+    },
+    {
+      "from": "ISS-190",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-16T11:44:34+00:00"
+    },
+    {
+      "from": "TASK-159",
+      "to": "ISS-190",
+      "type": "addresses",
+      "created_at": "2026-08-16T11:44:56+00:00"
+    },
+    {
+      "from": "TASK-160",
+      "to": "ISS-191",
+      "type": "addresses",
+      "created_at": "2026-08-16T11:54:06+00:00"
+    },
+    {
+      "from": "TASK-161",
+      "to": "ISS-192",
+      "type": "addresses",
+      "created_at": "2026-08-16T11:54:06+00:00"
+    },
+    {
+      "from": "TASK-162",
+      "to": "ISS-193",
+      "type": "addresses",
+      "created_at": "2026-08-16T11:54:06+00:00"
+    },
+    {
+      "from": "TASK-162",
+      "to": "ISS-194",
+      "type": "addresses",
+      "created_at": "2026-08-16T11:54:06+00:00"
+    },
+    {
+      "from": "ISS-191",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-16T11:54:07+00:00"
+    },
+    {
+      "from": "ISS-192",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T11:54:07+00:00"
+    },
+    {
+      "from": "ISS-193",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T11:54:07+00:00"
+    },
+    {
+      "from": "ISS-194",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T11:54:07+00:00"
+    },
+    {
+      "from": "CHG-159",
+      "to": "TASK-160",
+      "type": "implements",
+      "created_at": "2026-08-16T12:19:33+00:00"
+    },
+    {
+      "from": "CHG-160",
+      "to": "TASK-161",
+      "type": "implements",
+      "created_at": "2026-08-16T12:19:34+00:00"
+    },
+    {
+      "from": "CHG-161",
+      "to": "TASK-162",
+      "type": "implements",
+      "created_at": "2026-08-16T12:19:34+00:00"
+    },
+    {
+      "from": "CHG-159",
+      "to": "ISS-191",
+      "type": "resolves",
+      "created_at": "2026-08-16T12:19:34+00:00"
+    },
+    {
+      "from": "CHG-160",
+      "to": "ISS-192",
+      "type": "resolves",
+      "created_at": "2026-08-16T12:19:34+00:00"
+    },
+    {
+      "from": "CHG-161",
+      "to": "ISS-193",
+      "type": "resolves",
+      "created_at": "2026-08-16T12:19:34+00:00"
+    },
+    {
+      "from": "CHG-161",
+      "to": "ISS-194",
+      "type": "resolves",
+      "created_at": "2026-08-16T12:19:34+00:00"
+    },
+    {
+      "from": "ISS-195",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:20:50+00:00"
+    },
+    {
+      "from": "ISS-196",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:20:51+00:00"
+    },
+    {
+      "from": "ISS-197",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:20:51+00:00"
+    },
+    {
+      "from": "ISS-198",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-16T12:20:51+00:00"
     }
   ]
 }
