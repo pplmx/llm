@@ -29,7 +29,10 @@ adapter parameter at index ``i``.
 The ``peft_kwargs`` dict is informational — :func:`load_peft` uses
 it to re-apply the method when the model hasn't been wrapped yet
 (common case for adapter sharing). The user can override individual
-kwargs via :func:`load_peft`'s ``**override_kwargs``.
+kwargs via :func:`load_peft`'s ``**override_kwargs``, but only
+shape-preserving ones (e.g. ``alpha``); a shape-defining override
+(e.g. ``rank``) raises a clear mismatch error — widening is not
+implemented (RIL ISS-210).
 
 Forward compatibility: bumping :data:`PEFT_CHECKPOINT_FORMAT_VERSION`
 is the supported migration path. :func:`load_peft` rejects unknown
@@ -142,8 +145,13 @@ def load_peft(
         method_name: Expected method name — must match the
             ``method_name`` field in the checkpoint.
         **override_kwargs: Override individual ``peft_kwargs`` from
-            the checkpoint (e.g. ``rank=16`` to widen an adapter when
-            loading). Useful for adapter-surgery workflows.
+            the checkpoint. Only safe for kwargs that do NOT change the
+            adapter parameter SHAPES (e.g. ``alpha`` for LoRA). Changing a
+            shape-defining kwarg (e.g. ``rank``) leaves the checkpoint's
+            tensors incompatible with the fresh model and raises a clear
+            shape-mismatch error (RIL ISS-210) — rank widening is not
+            implemented; load into a model built with the SAME shape-defining
+            kwargs.
 
     Returns:
         The same ``model`` with the adapter parameters loaded
@@ -225,6 +233,23 @@ def load_peft(
     with torch.no_grad():
         for i, p in enumerate(current):
             saved_tensor = saved[f"{method_name}.{i}"]
+            # Shape check before the copy (RIL ISS-210). The count check
+            # above catches a different number of adapter parameters, but it
+            # CANNOT catch a same-count, different-shape layout — e.g. LoRA
+            # adapter-surgery where the checkpoint was written at rank=4 and
+            # the destination model applies rank=16 (same 2-params-per-linear
+            # count regardless of rank). The old positional ``copy_`` raised a
+            # cryptic ``size of tensor a (16) must match … (4)`` with no
+            # guidance. Names the parameter + both shapes so the user can act.
+            if tuple(saved_tensor.shape) != tuple(p.shape):
+                raise RuntimeError(
+                    f"PEFT adapter param {method_name}.{i} shape mismatch: "
+                    f"checkpoint has {tuple(saved_tensor.shape)}, live model has "
+                    f"{tuple(p.shape)}. The destination model was built with a "
+                    "different rank/architecture than the checkpoint — load the "
+                    "adapter into a model built with the same peft_kwargs "
+                    "(e.g. same rank), not by overriding kwargs on load."
+                )
             # Cast to the live parameter's device + dtype to handle
             # cross-device / cross-dtype transfers cleanly (e.g.
             # load a CPU checkpoint into a CUDA model — common for

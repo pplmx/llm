@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 70,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T16:59:38+00:00",
+  "updated_at": "2026-08-16T17:14:22+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10248,6 +10248,46 @@
       "commit": "1ecbd3a",
       "title": "Folded PrefixTuning wrappers skipped in get_prefix_parameters (save_peft no-crash)",
       "body": "prefix_tuning.py get_prefix_parameters: hasattr(module, prefix_small) guard skips folded wrappers (buffer-only, no trainable params); save_peft/load_peft no longer AttributeError on fold-then-share. 1 test. ISS-209."
+    },
+    "ISS-210": {
+      "id": "ISS-210",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T17:02:36+00:00",
+      "updated_at": "2026-08-16T17:14:22+00:00",
+      "touched_round": 70,
+      "severity": "medium",
+      "title": "load_peft advertises rank-widening via override_kwargs but crashes on the shape mismatch",
+      "body": "PEFT deep-dive #3 (CONFIRMED): docstring says pass rank=16 to widen an adapter; implementation does positional p.data.copy_(saved_tensor) with only a length check. rank=16 vs saved rank=4 raises a cryptic copy_ shape RuntimeError. Contract break."
+    },
+    "TASK-178": {
+      "id": "TASK-178",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T17:02:36+00:00",
+      "updated_at": "2026-08-16T17:14:22+00:00",
+      "touched_round": 70,
+      "category": "correctness",
+      "severity": 0.6,
+      "confidence": 0.95,
+      "effort": 1.5,
+      "unlock_factor": 1.2,
+      "title": "load_peft: clear error for rank/shape-mismatched adapter load (drop documented-but-broken widening claim)",
+      "body": "ISS-210: catch shape mismatch in the copy loop and raise a clear message naming the parameter + saved-vs-live shapes, or drop the widening docstring claim. Prefer loud shape-aware error over silent partial copy."
+    },
+    "CHG-176": {
+      "id": "CHG-176",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T17:14:21+00:00",
+      "updated_at": "2026-08-16T17:14:21+00:00",
+      "touched_round": 70,
+      "commit": "PENDING",
+      "title": "load_peft: per-parameter shape check with clear error; drop broken rank-widening doc claim",
+      "body": "checkpoint.py: shape check before p.data.copy_ raises clear msg naming param + saved/live shapes; module + load_peft docstrings corrected (rank widening NOT implemented). 1 test. ISS-210."
     }
   },
   "edges": [
@@ -15048,6 +15088,24 @@
       "to": "ISS-209",
       "type": "resolves",
       "created_at": "2026-08-16T16:47:01+00:00"
+    },
+    {
+      "from": "TASK-178",
+      "to": "ISS-210",
+      "type": "addresses",
+      "created_at": "2026-08-16T17:02:36+00:00"
+    },
+    {
+      "from": "CHG-176",
+      "to": "TASK-178",
+      "type": "implements",
+      "created_at": "2026-08-16T17:14:21+00:00"
+    },
+    {
+      "from": "CHG-176",
+      "to": "ISS-210",
+      "type": "resolves",
+      "created_at": "2026-08-16T17:14:21+00:00"
     }
   ]
 }

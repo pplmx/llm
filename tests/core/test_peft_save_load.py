@@ -273,6 +273,38 @@ class TestLoadPeftRoundTrip:
         for loaded, saved in zip(loaded_params, saved_params, strict=True):
             assert torch.equal(loaded, saved)
 
+    def test_lora_rank_mismatch_raises_clear_error_not_copy_runtimeerror(self, tmp_path: Path) -> None:
+        """Regression (RIL ISS-210): ``load_peft`` into a model whose adapter
+        has a DIFFERENT rank than the checkpoint must raise a clear,
+        param-shape-aware error — not a cryptic ``copy_`` size RuntimeError.
+
+        The old docstring advertised ``override_kwargs rank=16`` as "widening"
+        an adapter, but the implementation positionally copies saved tensors
+        into live params with only a count check — widening crashed with
+        ``RuntimeError: the size of tensor a (16) must match the size of tensor
+        b (4)`` and zero guidance. Either widening is a real feature (then it
+        must be implemented) or it isn't (then it must fail clear); a silent
+        partial copy is never acceptable.
+        """
+        from llm.core.lora import apply_lora
+        from llm.core.peft import load_peft, save_peft
+
+        torch.manual_seed(0)
+        src = _TinyMLP()
+        apply_lora(src, rank=4, alpha=8.0)
+        path = tmp_path / "rank4.bin"
+        save_peft(src, path, "lora")
+
+        # Fresh model with a DIFFERENT rank — count happens to match (LoRA
+        # adds 2 params per linear regardless of rank), so only the shape
+        # check can catch it.
+        torch.manual_seed(0)
+        dst = _TinyMLP()
+        apply_lora(dst, rank=16, alpha=8.0)
+
+        with pytest.raises(RuntimeError, match="shape"):
+            load_peft(dst, path, "lora")
+
     def test_ia3_round_trip(self, tmp_path: Path) -> None:
         from llm.core.ia3 import apply_ia3
         from llm.core.peft import load_peft, save_peft
