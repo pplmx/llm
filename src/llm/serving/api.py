@@ -22,7 +22,7 @@ import sys
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import json
 
@@ -45,7 +45,7 @@ from llm.serving.config import ServingConfig
 from llm.serving.errors import register_exception_handlers
 from llm.serving.generation_service import ServingGenerationService
 from llm.serving.metrics import METRICS
-from llm.serving.middleware import RequestIDMiddleware
+from llm.serving.middleware import RequestBodySizeLimit, RequestIDMiddleware
 from llm.serving.routers import chat as chat_router
 from llm.serving.routers import generate as generate_router
 from llm.serving.routers import health as health_router
@@ -106,15 +106,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     # than only in ``cli.main``: a Docker/uvicorn launch that skipped the CLI
     # used to bind 0.0.0.0 with ``api_key=None`` and serve /generate fully
     # anonymously by default.
-    from llm.serving.auth import is_loopback
+    #
+    # The bind and the guard now share ONE address: the Docker CMD binds
+    # ``$LLM_SERVING_HOST`` and this lifespan validates the same
+    # ``ServingConfig.host``, so the fail-closed check fires for direct
+    # uvicorn launches too (RIL ISS-164).
+    from llm.serving.auth import assert_safe_bind
 
-    if not is_loopback(config.host) and not config.api_key:
-        raise RuntimeError(
-            f"Refusing to start: ServingConfig.host={config.host!r} binds to a "
-            f"non-loopback address but api_key is not set. Anonymous access on a "
-            f"public interface is unsafe. Either set LLM_SERVING_HOST to a loopback "
-            f"address (127.0.0.1) or set LLM_SERVING_API_KEY."
-        )
+    assert_safe_bind(config.host, config.api_key)
 
     generation_service = ServingGenerationService.from_config(config)
     model = generation_service.model
@@ -217,6 +216,12 @@ app = FastAPI(
 # Middleware (order matters: outer middleware runs first on the way in,
 # last on the way out — so the request_id is set before anything else
 # reads it).
+#
+# Request-body cap first-added = outermost after the harness sees every
+# request, so oversized bodies are rejected before the routers or schema
+# validation buffer them (RIL ISS-171). RequestID stays outermost for
+# request tracking on every response, including 413s.
+app.add_middleware(RequestBodySizeLimit, max_bytes=config.max_request_bytes)
 app.add_middleware(RequestIDMiddleware)
 
 # Routers.
@@ -225,7 +230,14 @@ app.include_router(generate_router.router)
 app.include_router(chat_router.router)
 
 # Prometheus RED metrics + custom /metrics endpoint.
-Instrumentator().instrument(app).expose(app)
+#
+# /metrics is guarded with the SAME api_key dependency as the inference
+# endpoints (RIL ISS-165): previously Instrumentator.expose registered a
+# plain GET /metrics with no auth, so live throughput/latency metadata was
+# scrapable by anyone even when api_key was set. When no api_key is
+# configured, get_api_key returns None and the endpoint stays open, matching
+# the auth policy of the inference routes.
+Instrumentator().instrument(app).expose(app, dependencies=[Depends(get_api_key)])
 
 
 # Centralized error handling — see :func:`llm.serving.errors.register_exception_handlers`.

@@ -308,6 +308,48 @@ def test_metrics_endpoint(client):
 
 
 @pytest.mark.slow
+def test_metrics_endpoint_requires_api_key_when_configured(monkeypatch):
+    """Regression (RIL ISS-165): with ``api_key`` set, the Prometheus
+    /metrics endpoint must be guarded like the inference routes — 403 without
+    the key, 200 with it. Previously ``Instrumentator.expose`` registered a
+    plain, unauthenticated GET /metrics."""
+    from unittest.mock import MagicMock
+
+    import llm.serving.api as api_module
+    from llm.serving.api import app, config
+    from llm.serving.batch_engine import ContinuousBatchingEngine
+    from llm.serving.generation_service import ServingGenerationService
+
+    # Keep the lifespan memory-free (guard-only test).
+    monkeypatch.setattr(
+        ServingGenerationService,
+        "from_config",
+        classmethod(lambda cls, config, **kw: MagicMock()),
+    )
+    monkeypatch.setattr(
+        ContinuousBatchingEngine,
+        "from_serving_config",
+        classmethod(lambda cls, config, **kw: MagicMock()),
+    )
+    monkeypatch.setattr(api_module, "_log_server_config", lambda *a, **kw: None)
+
+    original_key = config.api_key
+    config.api_key = "test-key"
+    try:
+        with TestClient(app) as c:
+            # Without a key: 403.
+            resp = c.get("/metrics")
+            assert resp.status_code == 403, resp.text
+            # With the correct key: 200 + metrics payload.
+            c.headers["X-API-Key"] = "test-key"
+            resp = c.get("/metrics")
+            assert resp.status_code == 200, resp.text
+            assert "http_requests_total" in resp.text
+    finally:
+        config.api_key = original_key
+
+
+@pytest.mark.slow
 def test_batch_generate_basic(client):
     """测试批处理生成 - 多个 prompt."""
     payload = {
@@ -514,6 +556,10 @@ def test_generate_runtime_error_returns_503(monkeypatch):
             payload = {"prompt": "hello", "max_new_tokens": 5}
             response = c.post("/generate", json=payload)
             assert response.status_code == 503
+            # RIL ISS-168: the 503 envelope must NOT echo the backend
+            # exception text back to the client.
+            assert "model crashed" not in response.text
+            assert response.json()["error"]["message"] == "Model unavailable during generation"
     finally:
         config.api_key = original_key
 

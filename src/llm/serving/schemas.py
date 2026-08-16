@@ -6,6 +6,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+# Request-input bounds — defense-in-depth against client memory-exhaustion
+# DoS (RIL ISS-171). The schema caps are a fast 422 fail BEFORE encoding;
+# the transport-level body-size middleware (serving/middleware.py) is the
+# hard cap on the whole request, so every layer is bounded.
+MAX_PROMPT_CHARS = 256_000  # ~64K tokens of prompt text — generous but bounded
+MAX_BATCH_PROMPTS = 32
+MAX_MESSAGES = 128
+MAX_STOP_STRINGS = 4
+MAX_STOP_LEN = 512  # per stop string
+
 
 def _validate_stop(value: str | list[str] | None) -> str | list[str] | None:
     """Enforce the documented ``stop`` contract: a single string OR a list of
@@ -15,14 +25,22 @@ def _validate_stop(value: str | list[str] | None) -> str | list[str] | None:
     to *both* branches, so a legitimate stop sequence like ``"\\n\\n###"`` or
     ``"Human:"`` (longer than 4 characters) was 422-rejected even though the
     documented contract only caps the *list cardinality*.
+
+    Also bounds each stop string's length (``MAX_STOP_LEN``) so an unbounded
+    per-string stop cannot contribute to request-body unboundedness.
     """
     if value is None:
         return value
     if isinstance(value, str):
+        if len(value) > MAX_STOP_LEN:
+            raise ValueError(f"stop string may be at most {MAX_STOP_LEN} characters")
         return value
     if isinstance(value, list):
-        if len(value) > 4:
-            raise ValueError("stop list may contain at most 4 strings")
+        if len(value) > MAX_STOP_STRINGS:
+            raise ValueError(f"stop list may contain at most {MAX_STOP_STRINGS} strings")
+        for s in value:
+            if not isinstance(s, str) or len(s) > MAX_STOP_LEN:
+                raise ValueError(f"each stop string must be a str of at most {MAX_STOP_LEN} characters")
         return value
     raise TypeError(f"stop must be a string or a list of strings, got {type(value).__name__}")
 
@@ -77,7 +95,11 @@ class GenerationRequest(BaseModel):
     """Generation request model."""
 
     request_id: str | None = Field(None, description="Client-provided request ID.")
-    prompt: str = Field(..., description="Input prompt text.")
+    prompt: str = Field(
+        ...,
+        max_length=MAX_PROMPT_CHARS,
+        description=f"Input prompt text (max {MAX_PROMPT_CHARS} characters).",
+    )
     max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum number of tokens to generate.")
     temperature: float = Field(1.0, ge=0.0, description="Controls randomness. 0 for Greedy Search.")
     top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter. None to disable.")
@@ -121,7 +143,21 @@ class GenerationResponse(BaseModel):
 class BatchGenerationRequest(BaseModel):
     """Batch generation request model."""
 
-    prompts: list[str] = Field(..., min_length=1, max_length=32, description="List of input prompts.")
+    prompts: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_BATCH_PROMPTS,
+        description=f"List of input prompts (1..{MAX_BATCH_PROMPTS} entries, each at most {MAX_PROMPT_CHARS} chars).",
+    )
+
+    @field_validator("prompts")
+    @classmethod
+    def _check_prompts(cls, v):
+        for s in v:
+            if len(s) > MAX_PROMPT_CHARS:
+                raise ValueError(f"each prompt may be at most {MAX_PROMPT_CHARS} characters")
+        return v
+
     max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum tokens to generate per prompt.")
     temperature: float = Field(1.0, ge=0.0, description="Sampling temperature. 0 for greedy.")
     top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter.")
@@ -164,14 +200,23 @@ class ChatMessage(BaseModel):
     """OpenAI-compatible chat message."""
 
     role: Literal["system", "user", "assistant"] = Field(..., description="Role of the message author.")
-    content: str = Field(..., description="Content of the message.")
+    content: str = Field(
+        ...,
+        max_length=MAX_PROMPT_CHARS,
+        description=f"Content of the message (max {MAX_PROMPT_CHARS} characters).",
+    )
 
 
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request."""
 
     model: str = Field("llm", description="Model ID (ignored, for compatibility).")
-    messages: list[ChatMessage] = Field(..., min_length=1, description="List of messages.")
+    messages: list[ChatMessage] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_MESSAGES,
+        description=f"List of messages (1..{MAX_MESSAGES}).",
+    )
     max_tokens: int = Field(50, ge=1, le=4096, description="Maximum tokens to generate.")
     temperature: float = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature.")
     top_p: float | None = Field(

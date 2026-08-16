@@ -247,14 +247,22 @@ class TestEnvelopeFromUnexpected:
         env = envelope_from_unexpected(exc, "req-1")
         assert env["error"]["code"] == "internal"
         assert env["error"]["message"] == "Internal server error."
-        assert env["error"]["details"]["type"] == "ValueError"
+
+    def test_does_not_leak_exception_class_name(self):
+        """Regression (RIL ISS-168): the envelope must NOT carry
+        ``type(exc).__name__`` — it let a client fingerprint the framework and
+        backend class from any 500."""
+        exc = RuntimeError("crash")
+        env = envelope_from_unexpected(exc, "req-3")
+        assert env["error"]["code"] == "internal"
+        assert "type" not in str(env["error"].get("details", {}))
+        assert "RuntimeError" not in str(env)
 
     def test_with_logger(self):
         exc = RuntimeError("crash")
         logger = logging.getLogger("test")
         env = envelope_from_unexpected(exc, "req-2", logger=logger)
         assert env["error"]["code"] == "internal"
-        assert env["error"]["details"]["type"] == "RuntimeError"
 
 
 # --------------------------------------------------------------------------- #

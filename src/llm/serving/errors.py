@@ -180,8 +180,12 @@ def envelope_from_api_error(exc: APIError, request_id: str) -> dict[str, Any]:
 def envelope_from_unexpected(exc: Exception, request_id: str, *, logger=None) -> dict[str, Any]:
     """Convert an unexpected ``Exception`` to the envelope shape.
 
-    Logs the exception with the request_id so operators can correlate.
-    The envelope does NOT leak internal details to clients.
+    Logs the exception (class + traceback) with the request_id so operators
+    can correlate. The envelope does NOT leak internal details to clients —
+    not even the exception class name (RIL ISS-168): ``type(exc).__name__``
+    previously let a client fingerprint the framework/backend from any 500
+    (``"RuntimeError"``, ``"CUDA error"`` classes, filesystem paths inside
+    backend ``str(exc)`` messages).
     """
     if logger is not None:
         logger.exception("unexpected error during request %s", request_id, exc_info=exc)
@@ -189,7 +193,6 @@ def envelope_from_unexpected(exc: Exception, request_id: str, *, logger=None) ->
         code="internal",
         message="Internal server error.",
         request_id=request_id,
-        details={"type": type(exc).__name__},
     )
 
 

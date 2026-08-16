@@ -32,6 +32,14 @@ class ServingConfig(BaseSettings):
     # block arithmetic that divides by ``block_size``.
     compile_model: bool = False  # Enable torch.compile for acceleration
     max_concurrent_requests: int = Field(4, ge=1, description="Max concurrent inference requests")
+    max_request_bytes: int = Field(
+        16 * 1024 * 1024,
+        ge=1,
+        description=(
+            "Maximum accepted request-body size in bytes; larger bodies get "
+            "413 before the model does any work (RIL ISS-171)."
+        ),
+    )
     request_timeout: float = Field(60.0, gt=0.0, description="Request timeout in seconds")
 
     # Chat template (OpenAI /v1/chat/completions).

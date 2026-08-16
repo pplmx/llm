@@ -278,8 +278,12 @@ async def generate_text(
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc
         except RuntimeError as exc:
+            # Do NOT echo the backend exception text back to the client (RIL
+            # ISS-168): it can contain filesystem paths / framework internals
+            # that aid fingerprinting. Log it server-side, send a fixed message.
             t.set_status(503)
-            raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
+            logger.error("backend generation failed: %s", exc)
+            raise APIError(ErrorCode.MODEL_UNAVAILABLE, "Model unavailable during generation") from exc
         except (ValueError, KeyError) as exc:
             t.set_status(400)
             raise APIError(ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}) from exc
@@ -401,8 +405,12 @@ async def batch_generate_text(
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc
         except RuntimeError as exc:
+            # Do NOT echo the backend exception text back to the client (RIL
+            # ISS-168): it can contain filesystem paths / framework internals
+            # that aid fingerprinting. Log it server-side, send a fixed message.
             t.set_status(503)
-            raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
+            logger.error("backend generation failed: %s", exc)
+            raise APIError(ErrorCode.MODEL_UNAVAILABLE, "Model unavailable during generation") from exc
         except (ValueError, KeyError) as exc:
             t.set_status(400)
             raise APIError(ErrorCode.INVALID_REQUEST, f"Invalid request: {exc}", details={"field": str(exc)}) from exc

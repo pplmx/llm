@@ -134,8 +134,11 @@ async def chat_completions(
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc
         except RuntimeError as exc:
+            # Do NOT echo the backend exception text back to the client (RIL
+            # ISS-168): it can contain filesystem paths / framework internals.
             t.set_status(503)
-            raise APIError(ErrorCode.MODEL_UNAVAILABLE, str(exc)) from exc
+            logger.error("backend generation failed: %s", exc)
+            raise APIError(ErrorCode.MODEL_UNAVAILABLE, "Model unavailable during generation") from exc
         # Character-level tokenizers raise ``KeyError`` for characters outside
         # their corpus (the same exception the ``/generate`` sibling maps to a
         # client 400 — RIL ISS-147). Without it this client-caused error would

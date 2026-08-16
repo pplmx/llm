@@ -134,6 +134,100 @@ def test_main_allows_non_loopback_with_api_key(monkeypatch):
     assert started.get("host") == "0.0.0.0"  # noqa: S104
 
 
+# --- the shared fail-closed bind guard (RIL ISS-164) ---
+#
+# The Docker image runs ``uvicorn llm.serving.api:app --host $LLM_SERVING_HOST``
+# directly — it never calls ``main()`` — so the guard had to move into the
+# shared :func:`llm.serving.auth.assert_safe_bind` that BOTH ``cli.main`` and
+# the FastAPI lifespan call, and the Docker bind had to be driven by the same
+# ``LLM_SERVING_HOST`` value the guard validates. These tests pin that contract.
+
+
+@pytest.mark.parametrize(
+    ("host", "key"),
+    [
+        ("0.0.0.0", None),  # noqa: S104
+        ("192.168.1.10", None),
+        ("example.com", None),
+    ],
+)
+def test_assert_safe_bind_refuses_public_bind_without_key(host, key):
+    from llm.serving.auth import assert_safe_bind
+
+    with pytest.raises(RuntimeError, match="Refusing to start"):
+        assert_safe_bind(host, key)
+
+
+@pytest.mark.parametrize(
+    ("host", "key"),
+    [
+        ("127.0.0.1", None),
+        ("localhost", None),
+        ("::1", None),
+        ("0.0.0.0", "some-secret"),  # noqa: S104
+        ("192.168.1.10", "some-secret"),
+    ],
+)
+def test_assert_safe_bind_allows_safe_combinations(host, key):
+    from llm.serving.auth import assert_safe_bind
+
+    assert_safe_bind(host, key)  # must not raise
+
+
+def test_lifespan_calls_shared_guard_with_actual_bind(monkeypatch):
+    """The lifespan must hand assert_safe_bind the exact config host+key, so a
+    direct-uvicorn launch (the Docker path, which never calls main()) is
+    guarded with the SAME policy as the CLI."""
+
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_guard(host, key):
+        calls.append((host, key))
+        raise RuntimeError("Refusing to start (guard invoked)")
+
+    # The lifespan imports the guard in-function, so patch the auth-module
+    # attribute (the name both the lifespan and cli.main resolve at call time).
+    import llm.serving.auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "assert_safe_bind", fake_guard)
+
+    original_host = api.config.host
+    original_key = api.config.api_key
+    api.config.host = "0.0.0.0"  # noqa: S104
+    api.config.api_key = None
+    try:
+        import asyncio
+
+        async def _enter() -> None:
+            async with api.app.router.lifespan_context(api.app):
+                pass
+
+        with pytest.raises(RuntimeError, match="Refusing to start"):
+            asyncio.run(_enter())
+    finally:
+        api.config.host = original_host
+        api.config.api_key = original_key
+
+    assert calls == [("0.0.0.0", None)]  # noqa: S104
+
+
+# --- Dockerfile single-source-of-truth regression (RIL ISS-164) ---
+
+
+def test_dockerfile_binds_from_llm_serving_host():
+    """The Docker CMD must bind ``$LLM_SERVING_HOST`` (not hardcode 0.0.0.0) so
+    the lifespan guard validates the SAME address uvicorn binds."""
+    from pathlib import Path
+
+    dockerfile = Path(__file__).resolve().parents[2] / "Dockerfile"
+    assert dockerfile.exists(), "repo Dockerfile not found"
+    text = dockerfile.read_text(encoding="utf-8")
+    # The CMD must shell-expand the env var, not hardcode a literal bind.
+    assert '--host "$LLM_SERVING_HOST"' in text or "--host $LLM_SERVING_HOST" in text
+    # The default must be a public bind so a key-less `docker run` fails closed.
+    assert 'ENV LLM_SERVING_HOST="0.0.0.0"' in text
+
+
 def test_main_allows_loopback_without_api_key(monkeypatch):
     """Loopback bind is allowed without an api_key (dev/local use case)."""
     from llm.serving import api

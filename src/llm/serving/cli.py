@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 
-from llm.serving.auth import is_loopback
+from llm.serving.auth import assert_safe_bind
 from llm.serving.config import ServingConfig
 
 logger = logging.getLogger(__name__)
@@ -37,13 +37,8 @@ def main(config: ServingConfig | None = None) -> None:
     """
     if config is None:
         config = ServingConfig()
-    if not is_loopback(config.host) and not config.api_key:
-        raise RuntimeError(
-            f"Refusing to start: ServingConfig.host='{config.host}' binds to a "
-            f"non-loopback address but api_key is not set. Anonymous access on a "
-            f"public interface is unsafe. Either set LLM_SERVING_HOST to a loopback "
-            f"address (127.0.0.1) or set LLM_SERVING_API_KEY."
-        )
+    # Shared fail-closed guard — see llm.serving.auth.assert_safe_bind.
+    assert_safe_bind(config.host, config.api_key)
 
     reload = os.environ.get("LLM_SERVING_RELOAD", "").lower() in ("1", "true", "yes")
     # Imported lazily so ``main`` is cheap to import (e.g. for `--help`).

@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.testclient import TestClient
 
-from llm.serving.middleware import REQUEST_ID_HEADER, RequestIDMiddleware
+from llm.serving.middleware import REQUEST_ID_HEADER, RequestBodySizeLimit, RequestIDMiddleware
 
 
 async def home(request: Request):
@@ -67,3 +67,45 @@ def test_echoes_request_id_even_on_5xx(app_with_middleware):
     client = TestClient(app_with_middleware, raise_server_exceptions=False)
     response = client.get("/crash")
     assert response.status_code == 500
+
+
+# --- Request body size limit (RIL ISS-171) ---
+
+
+async def _echo_body(request: Request):
+    body = await request.body()
+    return PlainTextResponse(f"len={len(body)}")
+
+
+@pytest.fixture
+def body_limit_app():
+    app = Starlette()
+    app.add_middleware(RequestBodySizeLimit, max_bytes=1024)
+    app.add_route("/echo", _echo_body, methods=["POST"])
+    return app
+
+
+def test_rejects_declared_oversized_body(body_limit_app):
+    """Content-Length over the cap is rejected 413 without processing."""
+    client = TestClient(body_limit_app, raise_server_exceptions=False)
+    # Declare huge Content-Length with a tiny body — must 413 before app reads.
+    response = client.post(
+        "/echo",
+        content=b"x" * 100,
+        headers={"content-length": str(2 * 1024 * 1024)},
+    )
+    assert response.status_code == 413
+
+
+def test_rejects_oversized_body_incrementally(body_limit_app):
+    """A body that exceeds the cap while streaming is rejected 413."""
+    client = TestClient(body_limit_app, raise_server_exceptions=False)
+    response = client.post("/echo", content=b"x" * (2048))
+    assert response.status_code == 413
+
+
+def test_accepts_body_under_cap(body_limit_app):
+    client = TestClient(body_limit_app, raise_server_exceptions=False)
+    response = client.post("/echo", content=b"ok" * 100)
+    assert response.status_code == 200
+    assert response.text == "len=200"

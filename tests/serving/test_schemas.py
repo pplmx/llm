@@ -63,3 +63,55 @@ def test_top_p_accepts_openai_default_one():
     assert req.top_p == 1.0
     req2 = ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], top_p=1.0)
     assert req2.top_p == 1.0
+
+
+# --- Request-input bounds (RIL ISS-171): schema-level 422 fast-fail caps ---
+
+
+def test_generation_request_caps_prompt_length():
+    """prompt over MAX_PROMPT_CHARS is rejected before any encoding."""
+    from llm.serving.schemas import MAX_PROMPT_CHARS, GenerationRequest
+
+    with pytest.raises(ValidationError):
+        GenerationRequest(prompt="x" * (MAX_PROMPT_CHARS + 1))
+    # Exactly at the cap is still fine.
+    req = GenerationRequest(prompt="x" * MAX_PROMPT_CHARS)
+    assert len(req.prompt) == MAX_PROMPT_CHARS
+
+
+@pytest.mark.parametrize(
+    "req_kwargs",
+    [
+        {"prompt": "hi", "stop": ["a" * 600]},
+        {"prompt": "hi", "stop": "b" * 600},
+    ],
+)
+def test_generation_request_rejects_oversized_stop(req_kwargs):
+    from llm.serving.schemas import GenerationRequest
+
+    with pytest.raises(ValidationError):
+        GenerationRequest(**req_kwargs)
+
+
+def test_batch_generation_request_caps_each_prompt():
+    from llm.serving.schemas import MAX_PROMPT_CHARS, BatchGenerationRequest
+
+    with pytest.raises(ValidationError):
+        BatchGenerationRequest(prompts=["ok", "y" * (MAX_PROMPT_CHARS + 1)])
+    # Cardinality over the batch cap is also rejected.
+    with pytest.raises(ValidationError):
+        BatchGenerationRequest(prompts=["ok"] * 33)
+
+
+def test_chat_completion_request_caps_messages_and_content():
+    from llm.serving.schemas import MAX_MESSAGES, MAX_PROMPT_CHARS, ChatCompletionRequest
+
+    # Single message content over cap.
+    with pytest.raises(ValidationError):
+        ChatCompletionRequest(messages=[{"role": "user", "content": "z" * (MAX_PROMPT_CHARS + 1)}])
+    # Too many messages.
+    with pytest.raises(ValidationError):
+        ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}] * (MAX_MESSAGES + 1))
+    # Legit list still validates.
+    req = ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}])
+    assert req.messages[0].content == "hi"
