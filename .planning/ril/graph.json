@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T02:12:20+00:00",
+  "updated_at": "2026-08-16T02:20:22+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7861,10 +7861,10 @@
     "ISS-152": {
       "id": "ISS-152",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:07+00:00",
-      "updated_at": "2026-08-16T01:13:07+00:00",
+      "updated_at": "2026-08-16T02:20:22+00:00",
       "touched_round": 61,
       "severity": "0.5|title=EOS/BOS special tokens silently never registered in eval tokenizer|summary=tokenizer_factory.py:89 builds corpus [PAD,EOS,BOS,*chars] but SimpleCharacterTokenizer only special-forms PAD (pad_char); EOS/BOS flatten to plain chars -> eos_token_id None; eval LM perplexity + generate_until stop paths get None, generations never halt on the model's EOS. CONFIRMED: encode('<EOS>')==[2,7,8,10,3]."
     },
@@ -8148,16 +8148,18 @@
     "TASK-121": {
       "id": "TASK-121",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T01:15:57+00:00",
-      "updated_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T02:20:22+00:00",
       "touched_round": 61,
       "title": "Eval tokenizer: register EOS/BOS specials (ISS-152)",
       "category": "correctness",
       "severity": 0.5,
       "confidence": 0.9,
-      "effort": 0.4
+      "effort": 0.4,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T03:12:34+00:00"
     },
     "TASK-122": {
       "id": "TASK-122",
@@ -8369,6 +8371,17 @@
       "touched_round": 61,
       "commit": "5a556d5",
       "summary": "llm-quantize atomic save + clobber guard (ISS-161)"
+    },
+    "CHG-143": {
+      "id": "CHG-143",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T02:20:11+00:00",
+      "updated_at": "2026-08-16T02:20:11+00:00",
+      "touched_round": 61,
+      "commit": "42cfb24",
+      "summary": "SimpleCharacterTokenizer registers EOS/BOS specials when corpus declares them (ISS-152)"
     }
   },
   "edges": [
@@ -12095,6 +12108,18 @@
       "to": "TASK-120",
       "type": "implements",
       "created_at": "2026-08-16T02:12:20+00:00"
+    },
+    {
+      "from": "CHG-143",
+      "to": "ISS-152",
+      "type": "resolves",
+      "created_at": "2026-08-16T02:20:21+00:00"
+    },
+    {
+      "from": "CHG-143",
+      "to": "TASK-121",
+      "type": "implements",
+      "created_at": "2026-08-16T02:20:21+00:00"
     }
   ]
 }
