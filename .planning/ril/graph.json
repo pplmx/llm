@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 62,
+  "round": 63,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T03:18:35+00:00",
+  "updated_at": "2026-08-16T05:45:43+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 61,
+      "touched_round": 63,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 60,
+      "touched_round": 63,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 61,
+      "touched_round": 63,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -4218,7 +4218,7 @@
       "version": 1,
       "created_at": "2026-08-13T07:38:08+00:00",
       "updated_at": "2026-08-13T07:38:08+00:00",
-      "touched_round": 61,
+      "touched_round": 63,
       "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
     },
     "CHG-065": {
@@ -8511,6 +8511,631 @@
       "touched_round": 61,
       "commit": "d7dabcb",
       "summary": "plugin entry-point collision logged as warning (ISS-163)"
+    },
+    "ISS-164": {
+      "id": "ISS-164",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:07+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "severity": "0.9|title=Docker image serves anonymous inference on 0.0.0.0: lifespan guard checks ServingConfig.host (default 127.0.0.1) not the real uvicorn bind|summary=serving/api.py:111 guard vs Dockerfile:47 CMD uvicorn --host 0.0.0.0: config.host stays loopback so guard passes, but the socket binds 0.0.0.0 with api_key=None -> /generate /v1/chat/completions fully anonymous on the documented container deployment. CONFIRMED."
+    },
+    "ISS-165": {
+      "id": "ISS-165",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:07+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "severity": "0.5|title=Prometheus /metrics endpoint bypasses api_key auth|summary=serving/api.py:228 Instrumentator().expose registers GET /metrics with no Security dependency; get_api_key only wired to generate/batch_generate/v1 chat -> live throughput/latency metadata scrapable without a key. CONFIRMED."
+    },
+    "ISS-166": {
+      "id": "ISS-166",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:08+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "severity": "0.7|title=torch.load(weights_only=False) in serving probe + training legacy/extra_state load executes attacker pickle|summary=serving/loader.py:67 probe and training/core/checkpoint.py:292,343,469 load user-supplied .pt with weights_only=False = arbitrary __reduce__ RCE; PEFT sidecar already hardened weights_only=True (ISS-074) so main path is inconsistent. Fix: weights_only=True + framework safe-global allowlist + refuse foreign globals. CONFIRMED."
+    },
+    "ISS-167": {
+      "id": "ISS-167",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:08+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "severity": "0.5|title=No request-body-size limit: unbounded prompt/messages/stop strings allow memory-exhaustion DoS|summary=serving/schemas.py:80,174 no length caps; only RequestIDMiddleware, no body-size middleware; a multi-hundred-MB JSON with one giant prompt is encoded full -> serving OOM. Amplified when anonymous (ISS-164). CONFIRMED."
+    },
+    "ISS-168": {
+      "id": "ISS-168",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:08+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "severity": "0.2|title=500 error envelope leaks internal exception class names + backend message text|summary=serving/errors.py:192 details type=type(exc).__name__ + routers embed str(exc) (may contain fs paths) into 503s, defeating the does-not-leak-internal-details contract at errors.py:185; aids framework fingerprinting. CONFIRMED."
+    },
+    "ISS-169": {
+      "id": "ISS-169",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:08+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "severity": "0.55|title=Checkpoint save_id cross-check cannot detect weights-save/meta-save split: weights.safetensors carries no generation stamp|summary=training/core/checkpoint.py:574-594 saves weights->meta->extra, save_id stamped only in meta+extra; crash between weights and meta leaves NEW weights + OLD mutually-consistent meta/extra -> ISS-127 check passes, resume pairs fresh weights with stale optimizer/epoch. Fix: stamp save_id into weights.safetensors metadata (safetensors supports metadata=). CONFIRMED."
+    },
+    "ISS-170": {
+      "id": "ISS-170",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:08+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "severity": "0.5|title=MLA model roundtrip through save_pretrained/from_pretrained silently rebuilds as random-init MHA|summary=compat/hf_publisher.py:54-150 never persists attn_impl; hf_loader.py:132 hardcodes attn_impl=mha; MLA tensors dropped via load_state_dict(strict=False) with only a warning -> garbage outputs. Same silent-weight-drop class ISS-144 rejects loudly for Mixtral. CONFIRMED."
+    },
+    "ISS-171": {
+      "id": "ISS-171",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:08+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "severity": "0.4|title=Corrupt/wrong-kind checkpoint exceptions escape fail-loud handler as raw traceback|summary=training/core/checkpoint.py:759 except (OSError,RuntimeError,KeyError,ValueError) misses EOFError/pickle.UnpicklingError/TypeError that truncated/corrupt .pt files raise -> load_checkpoint crashes instead of ISS-108 degrade path. Also meta format_version mismatch only warns. CONFIRMED."
+    },
+    "ISS-172": {
+      "id": "ISS-172",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:09:08+00:00",
+      "updated_at": "2026-08-16T05:05:37+00:00",
+      "touched_round": 63,
+      "severity": "0.3|title=infer_vocab_size fallback checks dead key embedding.token_embedding.weight (real key embedding_layer.token_embeddings.weight)|summary=serving/loader.py:98-99: tied-embedding/config-less checkpoint with no lm_head.weight raises ValueError Cannot infer vocab_size though embedding tensor present and loadable. Misspelled key makes the fallback branch unreachable. CONFIRMED."
+    },
+    "DEC-038": {
+      "id": "DEC-038",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T04:10:35+00:00",
+      "updated_at": "2026-08-16T04:10:35+00:00",
+      "touched_round": 63,
+      "title": "Round 62 milestone: fresh-surface deep dive over 4 never-scanned module clusters",
+      "rationale": "Round 61 converged (0 active). Round 62 opens a new milestone via Repository Intelligence Deep Dive over 4 surfaces prior rounds never deeply covered: serving HTTP security boundary (auth/middleware/metrics/chat_template), PPO RLHF core (value_model never touched), training engine+task internals, eval config+runtime checkpoint layer. Methodology identical to round 61: parallel read-only deep-dive agents, CONFIRMED/PLAUSIBLE verdicts, adversarial verification before touching code.",
+      "alternatives_rejected": "Rounds 57-59 covered serving/generation internals; round 60 eval/quant/attn/distributed/export; round 61 serving routers+PEFT+cli/runtime. Re-litigating those surfaces would return diminishing returns. Stopping at convergence instead of deep-diving would leave 4 never-touched security/correctness surfaces (auth.py, middleware.py, value_model.py, eval config) unexplored with no backlog."
+    },
+    "TASK-130": {
+      "id": "TASK-130",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:34+00:00",
+      "updated_at": "2026-08-16T05:05:35+00:00",
+      "touched_round": 63,
+      "title": "Docker default: bind guard must check served host or inject API key (ISS-164)",
+      "category": "security",
+      "severity": 0.9,
+      "confidence": 1.0,
+      "effort": 0.25
+    },
+    "TASK-131": {
+      "id": "TASK-131",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:34+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "title": "Guard /metrics endpoint behind api_key auth (ISS-165)",
+      "category": "security",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-132": {
+      "id": "TASK-132",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:34+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "title": "Stamp save_id into weights.safetensors + extend trio cross-check (ISS-166)",
+      "category": "correctness",
+      "severity": 0.55,
+      "confidence": 1.0,
+      "effort": 0.5
+    },
+    "TASK-133": {
+      "id": "TASK-133",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:34+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "title": "Fix infer_vocab_size dead embedding key name (ISS-167)",
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 0.15
+    },
+    "TASK-134": {
+      "id": "TASK-134",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:34+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "title": "Scrub exception class names/messages from HTTP error envelope (ISS-168)",
+      "category": "security",
+      "severity": 0.2,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-135": {
+      "id": "TASK-135",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:34+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "title": "Persist+honor attn_impl so MLA roundtrips as MLA or fails loud (ISS-169)",
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 0.5
+    },
+    "TASK-136": {
+      "id": "TASK-136",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:34+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "title": "Harden torch.load to weights_only=True + framework safe-global allowlist (ISS-170)",
+      "category": "security",
+      "severity": 0.7,
+      "confidence": 1.0,
+      "effort": 0.6
+    },
+    "TASK-137": {
+      "id": "TASK-137",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:35+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "title": "Bound request body/prompt/stop sizes to prevent memory-exhaustion DoS (ISS-171)",
+      "category": "security",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 0.3
+    },
+    "TASK-138": {
+      "id": "TASK-138",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T04:11:35+00:00",
+      "updated_at": "2026-08-16T05:05:36+00:00",
+      "touched_round": 63,
+      "title": "Add EOFError/UnpicklingError/TypeError to checkpoint fail-loud handler (ISS-172)",
+      "category": "stability",
+      "severity": 0.4,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "CHG-150": {
+      "id": "CHG-150",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T05:05:13+00:00",
+      "updated_at": "2026-08-16T05:05:13+00:00",
+      "touched_round": 63,
+      "commit": "c782e8d",
+      "title": "Serving fail-closed bind guard + authed /metrics + body caps + sanitized 5xx (ISS-164/165/168/171)"
+    },
+    "CHG-151": {
+      "id": "CHG-151",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T05:05:13+00:00",
+      "updated_at": "2026-08-16T05:05:13+00:00",
+      "touched_round": 63,
+      "commit": "d6080bd",
+      "title": "weights_only hardening + weights save_id stamp + corrupt-file degrade + infer_vocab key (ISS-166/170/172/167)"
+    },
+    "CHG-152": {
+      "id": "CHG-152",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T05:05:13+00:00",
+      "updated_at": "2026-08-16T05:05:13+00:00",
+      "touched_round": 63,
+      "commit": "fda8cfb",
+      "title": "MLA roundtrip via persisted attn_impl + identity mapping + loud-fail guard (ISS-169)"
+    },
+    "ISS-173": {
+      "id": "ISS-173",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.75|title=PPO critic (value model) is trained rank-locally under DDP — never synchronized while the policy it shapes advantages is|summary=ppo_trainer.py:194-201 critic deep-copied from unwrapped policy; only engine.model is DDP-wrapped (engine.py:199); value_optimizer.step (ppo_trainer.py:541) diverges critic per rank; GAE bootstrap consumes rank-local critic (rollout_buffer.py:96-122). On multi-GPU PPO the shared policy is trained against rank-inconsistent advantage/target scales — the same gradients-not-synchronized class round-47 fixed for the policy. CONFIRMED."
+    },
+    "ISS-174": {
+      "id": "ISS-174",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.55|title=PPO ratio/KL/value targets re-scored in train mode — dropout mismatch vs eval-mode old_log_probs|summary=ppo_trainer.py:274 policy.eval during generation vs :347 policy.train right after (no eval inside ppo_step); surrogate (426), KL (387), value (495) forwards run with dropout defaults 0.1. Even at epoch 0 ratio=exp(new-old) != 1, approx_kl spurious non-zero, target_kl early-stop fires without policy movement, clip triggered by dropout noise. CONFIRMED."
+    },
+    "ISS-175": {
+      "id": "ISS-175",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.5|title=Resuming from a base/SFT checkpoint leaves the PPO critic stale — only ref_model is re-aligned|summary=ppo_trainer.py:150-170 on_checkpoint_loaded re-syncs only ref_model; critic deep-copied from the pre-load build-time policy inside prepare_training (:194-201) which runs BEFORE load_checkpoint writes the policy (engine.py:275-283); no value-model entry to restore. GAE bootstrap uses the frozen random-ish critic for the first rollout(s). PLAUSIBLE."
+    },
+    "ISS-176": {
+      "id": "ISS-176",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.4|title=Declared PPO config knobs are silently never wired (top_k/top_p/normalize_rewards/ref_model_update_freq/rollout_batch_size)|summary=config.py:596-606 declares the knobs; generation honors only temperature (ppo_trainer.py:316, pure multinomial softmax logits/T); normalize_rewards never read in compute_rewards/compute_advantages. User believes they configured a different algorithm; zero effect with no warning. CONFIRMED."
+    },
+    "ISS-177": {
+      "id": "ISS-177",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.3|title=Empty all_metrics crashes PPO metric aggregation (ppo_epochs=0 / empty buffer)|summary=ppo_trainer.py:632 for key in all_metrics[0] raises IndexError when the epoch loop yields no batches; reward_mean divides by len(rewards)=0. A degenerate-but-legal config crashes instead of returning zeroed metrics. CONFIRMED."
+    },
+    "ISS-178": {
+      "id": "ISS-178",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:08:14+00:00",
+      "touched_round": 63,
+      "severity": "0.35|title=Truncated-at-max-len PPO episodes are forcibly terminal — V(s_L) never collected|summary=rollout_buffer.py:102-105 hardcodes next_value=0.0 at t==response_len-1 while ppo_trainer.py:246-260 compute_response_values never emits the post-response state V(s_L). Max-len-truncated and EOS-terminated episodes modeled identically even though only the latter is genuinely terminal, biasing value/GAE for truncated rollouts. PLAUSIBLE."
+    },
+    "ISS-179": {
+      "id": "ISS-179",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.75|title=PPOTask checkpoint save calls the streaming collective (all_gather_object) only on rank 0 — multi-GPU deadlock|summary=tasks/ppo_task.py:181-190 wraps engine.checkpoint_manager.save_checkpoint (incl collect_extra_state) inside if engine.rank==0; StreamingTextDataModule.get_checkpoint_state (data/modules/streaming.py:134-140) does dist.all_gather_object — rank0 blocks forever, rank1 never calls — NCCL/Gloo hang. The engine standard loop fixed this (engine.py:615-620) but the PPO path was left with the bug. CONFIRMED."
+    },
+    "ISS-180": {
+      "id": "ISS-180",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.5|title=on_train_step_end callbacks receive the grad-accumulation-scaled loss, not the true step loss|summary=engine.py:398 divides loss by accum_steps then :458 hands it to every step-end callback; TensorBoardLogger.on_train_step_end (callbacks.py:341) writes Batch/Loss=0.75 for a true 3.0 loss. Primary training-loss curve systematically deflated under gradient accumulation. CONFIRMED."
+    },
+    "ISS-181": {
+      "id": "ISS-181",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.3|title=AMP dtype resolution never maps float32 so CPU autocast runs with dtype=float16 (dead code)|summary=engine.py:241 sets resolved_amp_dtype=float32 for CPU but :389-395 only overwrites amp_dtype for bfloat16; torch.autocast(cpu, dtype=float16) silently no-ops. Selected dtype never honored on CPU path; becomes an error if PyTorch hardens fp16 autocast. CONFIRMED."
+    },
+    "ISS-182": {
+      "id": "ISS-182",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.3|title=scheduler_type step and plateau accepted by config but silently produce no LR scheduler|summary=config.py:123 pattern cosine|step|plateau vs lm_task.py:195-204 / reward_task.py:119-121 only handle cosine else None; engine ReduceLROnPlateau branch (engine.py:592-595) unreachable. Validated knob ignored — runs at fixed LR with no warning. CONFIRMED."
+    },
+    "ISS-183": {
+      "id": "ISS-183",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.3|title=DDP gradient accumulation never uses model.no_sync() — every micro-batch all-reduces|summary=engine.py:398-404 no no_sync() anywhere in training/; each micro-batch backward triggers a full all-reduce (parallel.py:161-165) so each step costs accum_steps reductions. Mathematically correct (1/accum_steps + tail rescale verified), but multiplies communication by accum_steps. CONFIRMED (behavioral, not corruption)."
+    },
+    "ISS-184": {
+      "id": "ISS-184",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:08:14+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "severity": "0.3|title=Engine silently drops non-tensor keys from dict batches when moving to device|summary=engine.py:383-385 comprehension {k: v.to(device) for k,v in batch.items() if isinstance(v, torch.Tensor)} removes keys like lengths [3,5,2] / dataset indices; tasks depending on non-tensor batch metadata receive a batch missing those fields with no way to distinguish absence from drop. CONFIRMED."
+    },
+    "TASK-139": {
+      "id": "TASK-139",
+      "type": "task",
+      "status": "superseded",
+      "version": 2,
+      "created_at": "2026-08-16T05:09:06+00:00",
+      "updated_at": "2026-08-16T05:10:21+00:00",
+      "touched_round": 63,
+      "title": "PPO: synchronize the critic across ranks (DDP wrap / broadcast params) so advantages use a consistent value model",
+      "category": "correctness",
+      "severity": 0.75,
+      "confidence": 1.0,
+      "effort": 0.6
+    },
+    "TASK-140": {
+      "id": "TASK-140",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-16T05:09:53+00:00",
+      "updated_at": "2026-08-16T05:45:24+00:00",
+      "touched_round": 63,
+      "title": "PPO: synchronize the critic across ranks (DDP wrap / broadcast params) so advantages use a consistent value model",
+      "category": "correctness",
+      "severity": 0.75,
+      "confidence": 1.0,
+      "effort": 0.6
+    },
+    "TASK-141": {
+      "id": "TASK-141",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:10:21+00:00",
+      "updated_at": "2026-08-16T05:44:37+00:00",
+      "touched_round": 63,
+      "title": "PPO: evaluate policy/model (no dropout) when re-scoring old_log_probs / surrogate / KL / value targets",
+      "category": "correctness",
+      "severity": 0.55,
+      "confidence": 1.0,
+      "effort": 0.35
+    },
+    "TASK-142": {
+      "id": "TASK-142",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:15+00:00",
+      "updated_at": "2026-08-16T05:45:24+00:00",
+      "touched_round": 63,
+      "title": "PPO: refresh critic weights from the loaded policy on checkpoint resume (mirror ref_model sync)",
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 0.7,
+      "effort": 0.4
+    },
+    "TASK-143": {
+      "id": "TASK-143",
+      "type": "task",
+      "status": "superseded",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:57+00:00",
+      "updated_at": "2026-08-16T05:12:15+00:00",
+      "touched_round": 63,
+      "title": "PPO: refresh critic weights from the loaded policy on checkpoint resume (mirror ref_model sync)",
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 0.7,
+      "effort": 0.4
+    },
+    "TASK-144": {
+      "id": "TASK-144",
+      "type": "task",
+      "status": "superseded",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:57+00:00",
+      "updated_at": "2026-08-16T05:12:14+00:00",
+      "touched_round": 63,
+      "title": "PPO: synchronize the critic across ranks (DDP wrap / broadcast params) so advantages use a consistent value model",
+      "category": "correctness",
+      "severity": 0.75,
+      "confidence": 1.0,
+      "effort": 0.6
+    },
+    "TASK-145": {
+      "id": "TASK-145",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:57+00:00",
+      "updated_at": "2026-08-16T05:44:38+00:00",
+      "touched_round": 63,
+      "title": "PPO: wire top_k/top_p/normalize_rewards config knobs into generation+returns",
+      "category": "correctness",
+      "severity": 0.4,
+      "confidence": 1.0,
+      "effort": 0.4
+    },
+    "TASK-146": {
+      "id": "TASK-146",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:58+00:00",
+      "updated_at": "2026-08-16T05:44:38+00:00",
+      "touched_round": 63,
+      "title": "PPO: guard empty all_metrics / zero rewards -> zeroed metrics instead of IndexError",
+      "category": "stability",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-147": {
+      "id": "TASK-147",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T05:11:58+00:00",
+      "updated_at": "2026-08-16T05:11:58+00:00",
+      "touched_round": 63,
+      "title": "PPO: collect+use V(s_L) for max-len-truncated episodes (bootstrap truncated rollouts)",
+      "category": "correctness",
+      "severity": 0.35,
+      "confidence": 0.7,
+      "effort": 0.5
+    },
+    "TASK-148": {
+      "id": "TASK-148",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:58+00:00",
+      "updated_at": "2026-08-16T05:44:38+00:00",
+      "touched_round": 63,
+      "title": "PPOTask: run checkpoint save + collect_extra_state on ALL ranks (mirror engine fix) to avoid streaming all_gather deadlock",
+      "category": "stability",
+      "severity": 0.75,
+      "confidence": 1.0,
+      "effort": 0.5
+    },
+    "TASK-149": {
+      "id": "TASK-149",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:58+00:00",
+      "updated_at": "2026-08-16T05:44:38+00:00",
+      "touched_round": 63,
+      "title": "Engine: pass the TRUE per-step loss to on_train_step_end callbacks, not the accum-scaled micro-loss",
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 0.3
+    },
+    "TASK-150": {
+      "id": "TASK-150",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:58+00:00",
+      "updated_at": "2026-08-16T05:44:38+00:00",
+      "touched_round": 63,
+      "title": "Engine: honor resolved amp dtype float32 (disable autocast on CPU instead of fp16 no-op)",
+      "category": "performance",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 0.2
+    },
+    "TASK-151": {
+      "id": "TASK-151",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:58+00:00",
+      "updated_at": "2026-08-16T05:44:38+00:00",
+      "touched_round": 63,
+      "title": "Engine: implement step/plateau LR schedulers or reject them at config validation",
+      "category": "core-feature",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 0.3
+    },
+    "TASK-152": {
+      "id": "TASK-152",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:58+00:00",
+      "updated_at": "2026-08-16T05:44:38+00:00",
+      "touched_round": 63,
+      "title": "Engine: use model.no_sync() for interior DDP grad-accum micro-batches",
+      "category": "performance",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 0.3
+    },
+    "TASK-153": {
+      "id": "TASK-153",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-16T05:11:58+00:00",
+      "updated_at": "2026-08-16T05:44:38+00:00",
+      "touched_round": 63,
+      "title": "Engine: preserve non-tensor keys in dict batches when moving to device",
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 0.15
+    },
+    "CHG-153": {
+      "id": "CHG-153",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T05:44:36+00:00",
+      "updated_at": "2026-08-16T05:44:36+00:00",
+      "touched_round": 63,
+      "commit": "60d70f2",
+      "title": "PPO critic DDP sync + eval-mode re-score + checkpoint deadlock + engine/metric hardening (ISS-173/174/175/177/179/180/181/182/183/184)"
+    },
+    "CHG-154": {
+      "id": "CHG-154",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T05:44:36+00:00",
+      "updated_at": "2026-08-16T05:44:36+00:00",
+      "touched_round": 63,
+      "commit": "8fd7ff1",
+      "title": "wire top_k/top_p/normalize_rewards PPO knobs (ISS-176)"
+    },
+    "DEC-039": {
+      "id": "DEC-039",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T05:45:43+00:00",
+      "updated_at": "2026-08-16T05:45:43+00:00",
+      "touched_round": 63,
+      "title": "Defer PPO V(s_L) bootstrap for max-len-truncated episodes (ISS-178)",
+      "rationale": "The finding is PLAUSIBLE and LOW (0.35): GAE hardcodes next_value=0.0 at the last response step, so max-len-truncated and EOS-terminated episodes are modeled identically even though only the latter is truly terminal. Correcting it requires threading a done/truncated flag AND the post-window value V(s_L) through RolloutBuffer.add / compute_response_values / compute_advantages — a cross-cutting ABI change touching every buffer.add call site and all PPO tests, for a bias that only matters when responses routinely hit response_max_len. Deferred as backlog; revisit if truncation-dominated rollouts are measured to materially distort advantages.",
+      "alternatives_rejected": "Rushed implementation would expand RolloutBatch (done flag + final_value) and break the existing buffer contract for all callers (tests/training/rlhf/test_ppo.py, RolloutBuffer.add in train_step) for a LOW-severity bias on a truncated-only path. Not doing anything also rejected: the current hardcoded zero overestimates truncated-episode value estimates; keeping TASK-147 active records the known gap."
     }
   },
   "edges": [
@@ -12333,6 +12958,396 @@
       "to": "TASK-126",
       "type": "implements",
       "created_at": "2026-08-16T03:17:03+00:00"
+    },
+    {
+      "from": "ISS-164",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "ISS-165",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "ISS-166",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "ISS-167",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "ISS-168",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "ISS-169",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "ISS-170",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "ISS-171",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "ISS-172",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-16T04:11:00+00:00"
+    },
+    {
+      "from": "TASK-130",
+      "to": "ISS-164",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:34+00:00"
+    },
+    {
+      "from": "TASK-131",
+      "to": "ISS-165",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:34+00:00"
+    },
+    {
+      "from": "TASK-132",
+      "to": "ISS-166",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:34+00:00"
+    },
+    {
+      "from": "TASK-133",
+      "to": "ISS-167",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:34+00:00"
+    },
+    {
+      "from": "TASK-134",
+      "to": "ISS-168",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:34+00:00"
+    },
+    {
+      "from": "TASK-135",
+      "to": "ISS-169",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:34+00:00"
+    },
+    {
+      "from": "TASK-136",
+      "to": "ISS-170",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:34+00:00"
+    },
+    {
+      "from": "TASK-137",
+      "to": "ISS-171",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:35+00:00"
+    },
+    {
+      "from": "TASK-138",
+      "to": "ISS-172",
+      "type": "addresses",
+      "created_at": "2026-08-16T04:11:35+00:00"
+    },
+    {
+      "from": "CHG-150",
+      "to": "ISS-164",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:13+00:00"
+    },
+    {
+      "from": "CHG-150",
+      "to": "ISS-165",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:13+00:00"
+    },
+    {
+      "from": "CHG-150",
+      "to": "ISS-168",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:13+00:00"
+    },
+    {
+      "from": "CHG-150",
+      "to": "ISS-171",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:13+00:00"
+    },
+    {
+      "from": "CHG-151",
+      "to": "ISS-166",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:13+00:00"
+    },
+    {
+      "from": "CHG-151",
+      "to": "ISS-170",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:13+00:00"
+    },
+    {
+      "from": "CHG-151",
+      "to": "ISS-172",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:13+00:00"
+    },
+    {
+      "from": "CHG-151",
+      "to": "ISS-167",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:13+00:00"
+    },
+    {
+      "from": "CHG-152",
+      "to": "ISS-169",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:05:14+00:00"
+    },
+    {
+      "from": "ISS-173",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:06+00:00"
+    },
+    {
+      "from": "ISS-174",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-175",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-176",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-177",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-178",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-179",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-180",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-181",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-182",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-183",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "ISS-184",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-16T05:09:07+00:00"
+    },
+    {
+      "from": "TASK-142",
+      "to": "ISS-175",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:57+00:00"
+    },
+    {
+      "from": "TASK-140",
+      "to": "ISS-173",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:57+00:00"
+    },
+    {
+      "from": "TASK-141",
+      "to": "ISS-174",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:57+00:00"
+    },
+    {
+      "from": "TASK-144",
+      "to": "ISS-173",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:57+00:00"
+    },
+    {
+      "from": "TASK-145",
+      "to": "ISS-176",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:58+00:00"
+    },
+    {
+      "from": "TASK-146",
+      "to": "ISS-177",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:58+00:00"
+    },
+    {
+      "from": "TASK-147",
+      "to": "ISS-178",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:58+00:00"
+    },
+    {
+      "from": "TASK-148",
+      "to": "ISS-179",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:58+00:00"
+    },
+    {
+      "from": "TASK-149",
+      "to": "ISS-180",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:58+00:00"
+    },
+    {
+      "from": "TASK-150",
+      "to": "ISS-181",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:58+00:00"
+    },
+    {
+      "from": "TASK-151",
+      "to": "ISS-182",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:58+00:00"
+    },
+    {
+      "from": "TASK-152",
+      "to": "ISS-183",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:58+00:00"
+    },
+    {
+      "from": "TASK-153",
+      "to": "ISS-184",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:11:59+00:00"
+    },
+    {
+      "from": "TASK-139",
+      "to": "ISS-173",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:13:15+00:00"
+    },
+    {
+      "from": "TASK-143",
+      "to": "ISS-175",
+      "type": "addresses",
+      "created_at": "2026-08-16T05:13:15+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-173",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:36+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-174",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:36+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-175",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:36+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-177",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:36+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-179",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:36+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-180",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:36+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-181",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:37+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-182",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:37+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-183",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:37+00:00"
+    },
+    {
+      "from": "CHG-153",
+      "to": "ISS-184",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:37+00:00"
+    },
+    {
+      "from": "CHG-154",
+      "to": "ISS-176",
+      "type": "resolves",
+      "created_at": "2026-08-16T05:44:37+00:00"
     }
   ]
 }
