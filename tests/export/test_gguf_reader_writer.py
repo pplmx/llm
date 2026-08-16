@@ -238,6 +238,37 @@ class TestTensorRoundTrip:
         with pytest.raises(ValueError, match="multiple of 32"):
             writer.add_tensor("w", np.zeros((3, 10), dtype=np.float32), ggml_type="q4_0")
 
+    @pytest.mark.parametrize("type_name", ["q4_0", "q8_0", "f32", "f16"])
+    def test_empty_tensor_rejected_with_clear_error(self, type_name):
+        """Regression (GGUF deep-dive finding #3): a 0-element float tensor
+        passed to ``add_tensor`` crashed block-quantization with a raw
+        ``ZeroDivisionError`` (``data_per_block = data.size // scales.size``
+        → ``0 // 0``) — the write aborted with a cryptic division-by-zero
+        instead of a clear error. An empty tensor is never a legitimate
+        weight; reject it up front."""
+        writer = GGUFWriter("x.gguf")
+        with pytest.raises(ValueError, match="empty"):
+            writer.add_tensor("w", np.zeros((0, 32), dtype=np.float32), ggml_type=type_name)
+
+    def test_numpy_scalar_metadata_accepted(self, tmp_path):
+        """Regression (GGUF deep-dive finding #6): numpy scalar metadata
+        values (``np.int64`` / ``np.float32`` / ``np.bool_``) aborted the
+        whole export with ``GGUFError: cannot encode metadata value
+        np.int64(5)`` — the value-type inference only knew Python int/float/
+        bool. Numpy scalars are common when metadata derives from config or
+        checkpoint fields; they must coerce to their Python-native type."""
+        writer = GGUFWriter(tmp_path / "np.gguf")
+        writer.add_metadata("iter", np.int64(5))
+        writer.add_metadata("loss", np.float32(0.5))
+        writer.add_metadata("ok", np.bool_(True))
+        writer.add_tensor("w", np.zeros(32, dtype=np.float32), ggml_type="f16")
+        writer.write()
+
+        reader = GGUFReader(tmp_path / "np.gguf")
+        assert reader.metadata["iter"] == 5
+        assert reader.metadata["loss"] == 0.5
+        assert reader.metadata["ok"] is True
+
     def test_missing_tensor_raises_keyerror(self, tmp_path):
         writer = GGUFWriter(tmp_path / "x.gguf")
         writer.add_tensor("w", np.zeros(32, dtype=np.float32), ggml_type="f16")

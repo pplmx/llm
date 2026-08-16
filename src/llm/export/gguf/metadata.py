@@ -28,12 +28,39 @@ _FIXED = {
 }
 
 
+def _coerce_scalar(value: Any) -> Any:
+    """Normalize numpy scalars (``np.int64``, ``np.float32``, ``np.bool_``…)
+    to their Python-native equivalent so GGUF type inference sees a real
+    ``int``/``float``/``bool``.
+
+    Numpy scalars are not ``isinstance`` instances of the Python builtins
+    (``np.int64(5)`` is not an ``int``), so the eager type checks below
+    rejected them with ``GGUFError`` — an export abort whenever metadata
+    derived from a config or checkpoint field happened to be a numpy scalar
+    (GGUF deep-dive finding #6). This file stays dependency-free: it probes
+    the scalar protocol (``ndim == 0`` + ``item()``) instead of importing
+    numpy. 0-d ``torch.Tensor`` scalars share the same protocol and are
+    coerced the same way.
+    """
+    ndim = getattr(value, "ndim", None)
+    item = getattr(value, "item", None)
+    if ndim == 0 and callable(item):
+        try:
+            return item()
+        except TypeError, ValueError, OverflowError:
+            # Not coercible as a plain scalar (e.g. a 0-d object array) —
+            # leave it for the value-type checks to reject with context.
+            return value
+    return value
+
+
 def value_type(value: Any) -> GGUFValueType:
     """Infer the GGUF value type for a Python value (writer-side inference).
 
     Mapping: ``bool`` → BOOL, ``str`` → STRING, ``int`` → INT64,
     ``float`` → FLOAT32, homogeneous ``list``/``tuple`` → ARRAY.
     """
+    value = _coerce_scalar(value)
     if isinstance(value, bool):
         return GGUFValueType.BOOL
     if isinstance(value, str):

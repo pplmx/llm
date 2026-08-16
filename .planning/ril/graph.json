@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T15:32:54+00:00",
+  "updated_at": "2026-08-16T15:50:45+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10084,10 +10084,10 @@
     "TASK-175": {
       "id": "TASK-175",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-16T15:16:08+00:00",
-      "updated_at": "2026-08-16T15:16:08+00:00",
+      "updated_at": "2026-08-16T15:49:59+00:00",
       "touched_round": 69,
       "category": "correctness",
       "severity": 0.5,
@@ -10124,10 +10124,10 @@
     "ISS-207": {
       "id": "ISS-207",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T15:16:37+00:00",
-      "updated_at": "2026-08-16T15:16:37+00:00",
+      "updated_at": "2026-08-16T15:49:59+00:00",
       "touched_round": 69,
       "severity": "low",
       "title": "GGUF writer crashes on empty tensors and numpy-scalar metadata",
@@ -10137,13 +10137,25 @@
       "id": "CHG-171",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T15:32:54+00:00",
-      "updated_at": "2026-08-16T15:32:54+00:00",
+      "updated_at": "2026-08-16T15:35:54+00:00",
       "touched_round": 69,
-      "commit": "PENDING",
+      "commit": "853657f",
       "title": "Checkpoint loader: split trio authoritative over stale legacy .pt; partial trio raises CheckpointIncompleteError",
       "body": "checkpoint.py: load_checkpoint_payload now prefers split whenever any sidecar exists (legacy .pt only when no split sidecar); _load_split_checkpoint raises CheckpointIncompleteError for 1-2 sidecars; CheckpointManager.load_checkpoint propagates it instead of silent scratch. 2 tests. ISS-205."
+    },
+    "CHG-172": {
+      "id": "CHG-172",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-16T15:49:59+00:00",
+      "updated_at": "2026-08-16T15:50:45+00:00",
+      "touched_round": 69,
+      "commit": "853657f",
+      "title": "GGUF writer: reject empty tensors with clear error; coerce numpy-scalar metadata",
+      "body": "writer.py add_tensor rejects size==0 (was ZeroDivisionError in q4_0 block serialization); metadata._coerce_scalar normalizes np.int64/float32/bool_ (ndim==0 + item()) to Python natives. 5 tests. ISS-207."
     }
   },
   "edges": [
@@ -14884,6 +14896,18 @@
       "to": "ISS-205",
       "type": "resolves",
       "created_at": "2026-08-16T15:32:54+00:00"
+    },
+    {
+      "from": "CHG-172",
+      "to": "TASK-175",
+      "type": "implements",
+      "created_at": "2026-08-16T15:49:59+00:00"
+    },
+    {
+      "from": "CHG-172",
+      "to": "ISS-207",
+      "type": "resolves",
+      "created_at": "2026-08-16T15:49:59+00:00"
     }
   ]
 }

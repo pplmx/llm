@@ -180,6 +180,13 @@ class GGUFWriter:
         arr = _as_float32_array(data)
         if arr.ndim == 0:
             raise ValueError(f"tensor {name!r}: scalar tensors are not supported")
+        if arr.size == 0:
+            # An empty tensor is never a legitimate weight. In the quantized
+            # types it also crashed with a raw ``ZeroDivisionError``
+            # (``data_per_block = data.size // scales.size`` → ``0 // 0``)
+            # deep inside block serialization (GGUF deep-dive finding #3).
+            # Reject it up front so the export fails with a clear message.
+            raise ValueError(f"tensor {name!r}: empty tensors (0 elements) are not supported")
         shape = tuple(int(d) for d in arr.shape)
         if ttype in (GGMLQuantizationType.Q4_0, GGMLQuantizationType.Q8_0) and not can_quantize_shape(shape):
             raise ValueError(
