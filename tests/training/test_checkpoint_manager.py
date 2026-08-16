@@ -265,3 +265,52 @@ def test_load_resume_matching_model_config_is_accepted(checkpoint_manager):
         saved, None, None, None, device=DEFAULT_DEVICE, expected_model_config=expected
     )
     assert start_epoch == 1
+
+
+def test_load_rejects_fresh_weights_with_stale_meta_extra(checkpoint_manager):
+    """RIL ISS-166: the meta↔extra cross-check alone could NOT catch the exact
+    crash window a fresh weights file sits beside a stale-but-mutually-
+    consistent meta/extra pair. The weights sidecar now carries the save_id,
+    so a weights-vs-meta mismatch must raise instead of silently resuming with
+    new weights + old optimizer/epoch."""
+    from torch import nn
+
+    saved = nn.Linear(4, 4)
+    checkpoint_manager.save_checkpoint(0, saved, None, None, None, loss=0.5)
+    ckpt_dir = Path(checkpoint_manager.config.checkpoint_dir)
+
+    # Simulate "crash before meta/extra write": rewrite weights.safetensors
+    # with a DIFFERENT save_id while leaving meta.json + extra_state.pt (which
+    # still agree with each other) untouched. The meta↔extra check passes; the
+    # new weights-stamp check must catch it.
+    from safetensors.torch import load_file, save_file
+
+    weights = load_file(str(ckpt_dir / "latest.safetensors"))
+    save_file(weights, str(ckpt_dir / "latest.safetensors"), metadata={"save_id": "FRESH-SAVE", "epoch": "0"})
+
+    checkpoint_manager.config.resume_from_checkpoint = str(ckpt_dir / "latest.pt")
+    with pytest.raises(ValueError, match=r"weights\.safetensors save_id"):
+        checkpoint_manager.load_checkpoint(saved, None, None, None, device=DEFAULT_DEVICE)
+
+
+def test_load_corrupt_legacy_checkpoint_degrades_not_crashes(checkpoint_manager):
+    """RIL ISS-172: a truncated/corrupt ``.pt`` raises EOFError/
+    UnpicklingError (NOT in the old OSError/RuntimeError/KeyError/ValueError
+    except tuple), so it used to crash with a raw traceback instead of the
+    designed degrade-to-scratch path. It must now log + start from scratch."""
+    import torch.nn as nn
+
+    saved = nn.Linear(4, 4)
+    checkpoint_manager.save_checkpoint(0, saved, None, None, None, loss=0.5)
+    ckpt_dir = Path(checkpoint_manager.config.checkpoint_dir)
+    # Leave only a corrupt legacy .pt at the resume path.
+    corrupt = ckpt_dir / "corrupt.pt"
+    corrupt.write_bytes(b"this is not a valid pickle blob\x00\x01" + b"x" * 64)
+    checkpoint_manager.config.resume_from_checkpoint = str(corrupt)
+
+    # Loader resolution: corrupt.pt exists → _load_legacy_checkpoint raises
+    # pickle.UnpicklingError → load_checkpoint catches it (via the extended
+    # except tuple) → logs error and returns scratch (0, inf).
+    start_epoch, best_loss = checkpoint_manager.load_checkpoint(saved, None, None, None, device=DEFAULT_DEVICE)
+    assert start_epoch == 0
+    assert best_loss == float("inf")

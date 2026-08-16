@@ -80,7 +80,10 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
     the actual sidecar contents, so we read them directly.
     """
     # Legacy side: load the .pt directly (bypassing the helper).
-    legacy_payload = torch.load(legacy, map_location="cpu", weights_only=False)
+    # ``weights_only=True`` (RIL ISS-170): both sides are framework-authored
+    # tensors+primitives payloads; arbitrary-pickle loading an untrusted file
+    # here would be an RCE on `llm-migrate-ckpt`.
+    legacy_payload = torch.load(legacy, map_location="cpu", weights_only=True)
 
     # New side: read each sidecar explicitly.
     from safetensors.torch import load_file
@@ -90,7 +93,7 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
     except (OSError, ValueError, RuntimeError) as exc:
         return False, f"new safetensors sidecar failed to load: {exc}"
     new_meta = json.loads(sidecars["meta"].read_text())
-    new_extra = torch.load(sidecars["extra_state"], map_location="cpu", weights_only=False)
+    new_extra = torch.load(sidecars["extra_state"], map_location="cpu", weights_only=True)
 
     # model_state: compare tensors element-wise.
     legacy_model_state = legacy_payload.get("model_state", {})

@@ -62,9 +62,18 @@ def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
     # checkpoint dict: detect it before the layout resolution below so it is
     # not routed through the legacy path (which would emit a misleading
     # "run llm-migrate-ckpt" DeprecationWarning for a quantized artifact).
+    #
+    # Security (RIL ISS-170): the probe loads with ``weights_only=True`` so an
+    # untrusted ``.pt`` cannot execute arbitrary ``__reduce__`` code at serve
+    # time. The framework's own module classes are allowlisted (see
+    # ``_register_framework_safe_globals``), so legitimate quantized blobs load
+    # normally; a pickle referencing anything outside the allowlist raises
+    # UnpicklingError and is REFUSED rather than silently re-loaded with
+    # ``weights_only=False`` (matching the already-hardened PEFT sidecar path).
     if ckpt_path.exists() and ckpt_path.suffix == ".pt":
+        _register_framework_safe_globals()
         try:
-            obj = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            obj = torch.load(ckpt_path, map_location="cpu", weights_only=True)
         except Exception:  # noqa: BLE001 - probe only; any failure falls through
             # to the checkpoint-layout resolution below, which raises the
             # proper format-specific error for this path.
@@ -91,12 +100,79 @@ def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
     )
 
 
+_SAFE_GLOBALS_REGISTERED = False
+
+
+def _register_framework_safe_globals() -> None:
+    """Allowlist the framework's built-in torch.nn.Module classes so
+    ``torch.load(..., weights_only=True)`` can reconstruct legitimate model
+    blobs (e.g. the bare module ``llm-quantize --output model.pt`` artifact)
+    WITHOUT falling back to the arbitrary-pickle ``weights_only=False``.
+
+    Security contract (RIL ISS-170): with this allowlist, ``weights_only=True``
+    can only instantiate classes defined inside ``llm.core``,
+    ``llm.models``, or ``llm.quantization`` — an attacker's pickle that
+    references ``os.system`` / ``subprocess`` / arbitrary builtins is refused
+    before any code runs, instead of executing ``__reduce__`` like
+    ``weights_only=False`` did.
+
+    Intentionally broad (every nn.Module subclass in those packages) so new
+    attention/MLP/quantized-layer variants are covered without a hand-maintained
+    list; the packages are small and already imported by the model loading path.
+    """
+    global _SAFE_GLOBALS_REGISTERED
+    if _SAFE_GLOBALS_REGISTERED:
+        return
+
+    import contextlib
+    import importlib
+    import pkgutil
+
+    classes: dict[int, type] = {}
+
+    def _collect_module_classes(pkg_name: str) -> None:
+        """Collect every ``torch.nn.Module`` subclass defined in ``pkg_name``."""
+        for mod in pkgutil.walk_packages(
+            importlib.import_module(pkg_name).__path__,
+            prefix=pkg_name + ".",
+        ):
+            with contextlib.suppress(Exception):
+                # Optional deps (flash_attn etc.) may be absent — skip, don't
+                # block serving with an import failure.
+                module = importlib.import_module(mod.name)
+                for obj in vars(module).values():
+                    if isinstance(obj, type) and issubclass(obj, torch.nn.Module) and obj is not torch.nn.Module:
+                        classes[id(obj)] = obj
+
+    # Framework built-ins (the classes a model blob / checkpoint may embed).
+    with contextlib.suppress(Exception):
+        for pkg_name in ("llm.core", "llm.models", "llm.quantization"):
+            _collect_module_classes(pkg_name)
+    # torch.nn container/layer classes embedded by any nn.Module graph
+    # (nn.Embedding, nn.Linear, nn.Dropout, nn.LayerNorm, nn.GELU, ...).
+    # They have no code-execution surface under weights_only, so allowlisting
+    # the whole built-in module namespace is safe.
+    with contextlib.suppress(Exception):
+        _collect_module_classes("torch.nn.modules")
+
+    torch.serialization.add_safe_globals(list(classes.values()))
+    _SAFE_GLOBALS_REGISTERED = True
+
+
 def infer_vocab_size(state_dict: dict[str, torch.Tensor]) -> int:
-    """Infer vocabulary size from an LM head or embedding weight tensor."""
+    """Infer vocabulary size from an LM head or embedding weight tensor.
+
+    The embedding fallback key was a misspelling (``embedding.token_embedding``
+    vs the real ``embedding_layer.token_embeddings``), making the branch
+    unreachable — a config-less **tied-embedding** checkpoint (no
+    ``lm_head.weight``, per ``llm.compat.weight_mapping``) wrongly raised
+    ``Cannot infer vocab_size`` even though the embedding tensor was present
+    and loadable (RIL ISS-167).
+    """
     if "lm_head.weight" in state_dict:
         return int(state_dict["lm_head.weight"].shape[0])
-    if "embedding.token_embedding.weight" in state_dict:
-        return int(state_dict["embedding.token_embedding.weight"].shape[0])
+    if "embedding_layer.token_embeddings.weight" in state_dict:
+        return int(state_dict["embedding_layer.token_embeddings.weight"].shape[0])
     raise ValueError("Cannot infer vocab_size from checkpoint state dict")
 
 

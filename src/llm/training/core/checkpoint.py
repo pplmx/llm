@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import pickle
 import uuid
 import warnings
 from pathlib import Path
@@ -193,8 +194,21 @@ def _atomic_write_bytes(target: Path, payload: bytes) -> None:
     tmp.replace(target)
 
 
-def _save_weights_safetensors(state_dict: dict[str, torch.Tensor], path: Path) -> None:
+def _save_weights_safetensors(
+    state_dict: dict[str, torch.Tensor],
+    path: Path,
+    *,
+    save_id: str | None = None,
+    epoch: int | None = None,
+) -> None:
     """Save ``state_dict`` to ``path`` as safetensors (contiguous + clone).
+
+    ``save_id``/``epoch`` (RIL ISS-127 + ISS-166) are stored in the file's
+    metadata header so the loader can prove the WEIGHTS sidecar came from the
+    same atomic save as the meta.json and extra_state.pt sidecars. Previously
+    the generation marker lived only in meta/extra, so a crash between the
+    weights write and the meta write left fresh weights beside a stale but
+    mutually-consistent meta/extra pair that the meta↔extra check accepted.
 
     Raises ``ImportError`` when safetensors is not installed — the
     caller is expected to gate on :func:`_safetensors_available` or
@@ -208,8 +222,13 @@ def _save_weights_safetensors(state_dict: dict[str, torch.Tensor], path: Path) -
     # state dicts (which contain ints for step counts, etc.) go into
     # the .extra_state.pt sidecar instead.
     contiguous = {k: v.detach().contiguous().clone() for k, v in state_dict.items() if isinstance(v, torch.Tensor)}
+    metadata: dict[str, str] | None = None
+    if save_id is not None:
+        metadata = {"save_id": save_id}
+        if epoch is not None:
+            metadata["epoch"] = str(epoch)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    save_file(contiguous, str(tmp))
+    save_file(contiguous, str(tmp), metadata=metadata)
     _fsync_file(tmp)
     tmp.replace(path)
 
@@ -273,11 +292,19 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
     if not (safetensors_path.exists() and meta_path.exists() and extra_state_path.exists()):
         return None
 
-    from safetensors.torch import load_file
+    from safetensors.torch import load_file, safe_open
 
     model_state = load_file(str(safetensors_path))
     # Re-wrap into a torch state_dict (still tensors, just not safetensors-format).
     model_state = dict(model_state.items())
+    # The weights-sidecar generation stamp (RIL ISS-166): read the safetensors
+    # header metadata written by ``_save_weights_safetensors``.
+    weights_meta: dict[str, str] = {}
+    try:
+        with safe_open(str(safetensors_path), framework="pt", device="cpu") as f:
+            weights_meta = dict(f.metadata() or {})
+    except OSError, ValueError, RuntimeError:
+        weights_meta = {}
 
     with meta_path.open("r", encoding="utf-8") as f:
         meta = json.load(f)
@@ -289,29 +316,51 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
             CHECKPOINT_FORMAT_VERSION,
         )
 
-    extra = torch.load(extra_state_path, map_location="cpu", weights_only=False)
+    # ``weights_only=True`` (RIL ISS-170): this sidecar is written by
+    # CheckpointManager and contains only optimizer/scheduler/scaler state
+    # (tensors + primitives) plus the ``save_id``/``epoch`` stamps — no
+    # arbitrary user objects. Loading with arbitrary-pickle semantics let a
+    # user-supplied/untrusted checkpoint execute ``__reduce__`` code on
+    # resume. Parse failures are normalized (RIL ISS-172) so a corrupt
+    # sidecar degrades to the fail-loud path instead of crashing.
+    extra = _torch_load_checkpoint_sidecar(extra_state_path)
 
-    # Cross-check the trio came from ONE atomic save (RIL ISS-127). Each
-    # save stamps a ``save_id`` and ``epoch`` into both the meta.json and
-    # the extra_state.pt sidecars; if a crash interrupted the save, a fresh
-    # weights file can sit beside a stale meta/extra trio. Resuming that
+    # Cross-check the trio came from ONE atomic save (RIL ISS-127 + ISS-166).
+    # Each save stamps a ``save_id`` and ``epoch`` into the weights file, the
+    # meta.json, and the extra_state.pt; if a crash interrupted the save, one
+    # sidecar can sit beside a stale pair from another save. Resuming that
     # would silently re-train from the old optimizer/epoch with new weights.
-    # (Backward-compatible: checkpoints written before the stamp have no
+    # (Backward-compatible: checkpoints written before the stamps have no
     # ``save_id`` and are loaded as-is.)
     meta_save_id = meta.get("save_id")
     extra_save_id = extra.get("save_id")
+    weights_save_id = weights_meta.get("save_id")
     if meta_save_id is not None and extra_save_id is not None and meta_save_id != extra_save_id:
         raise ValueError(
             f"Checkpoint {stem_dir} is inconsistent: meta.json save_id={meta_save_id} != "
             f"extra_state.pt save_id={extra_save_id}. The save was interrupted mid-write; "
             "restore all three sidecars from the same save (or a previous checkpoint)."
         )
+    if weights_save_id is not None and meta_save_id is not None and weights_save_id != meta_save_id:
+        raise ValueError(
+            f"Checkpoint {stem_dir} is inconsistent: weights.safetensors save_id={weights_save_id} != "
+            f"meta.json save_id={meta_save_id}. A fresh weights file sits beside a stale "
+            "meta/extra pair from another save — restore all three sidecars from the same "
+            "save (or a previous checkpoint)."
+        )
     meta_epoch = meta.get("epoch")
     extra_epoch = extra.get("epoch")
+    weights_epoch = weights_meta.get("epoch")
     if meta_epoch is not None and extra_epoch is not None and meta_epoch != extra_epoch:
         raise ValueError(
             f"Checkpoint {stem_dir} is inconsistent: meta.json epoch={meta_epoch} != "
             f"extra_state.pt epoch={extra_epoch}. The save was interrupted mid-write; "
+            "restore all three sidecars from the same save (or a previous checkpoint)."
+        )
+    if weights_epoch is not None and meta_epoch is not None and str(weights_epoch) != str(meta_epoch):
+        raise ValueError(
+            f"Checkpoint {stem_dir} is inconsistent: weights.safetensors epoch={weights_epoch} != "
+            f"meta.json epoch={meta_epoch}. The save was interrupted mid-write; "
             "restore all three sidecars from the same save (or a previous checkpoint)."
         )
 
@@ -329,6 +378,31 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
     }
 
 
+def _torch_load_checkpoint_sidecar(path: Path) -> Any:
+    """``torch.load`` a framework sidecar with ``weights_only=True``.
+
+    Normalizes any parse failure into :class:`pickle.UnpicklingError` so the
+    caller's fail-loud / degrade logic sees a stable error class. torch's
+    weights-only Unpickler raises internal exceptions for a malformed stream
+    (``IndexError: pop from empty list``, ``EOFError``, ``AttributeError``,
+    ``ValueError``, ...) that are NOT in the standard pickle exceptions —
+    without normalization those escaped the resume degrade path as raw
+    tracebacks (RIL ISS-172).
+    """
+    try:
+        return torch.load(path, map_location="cpu", weights_only=True)
+    except (
+        pickle.PickleError,
+        EOFError,
+        IndexError,
+        AttributeError,
+        KeyError,
+        ValueError,
+        TypeError,
+    ) as exc:
+        raise pickle.UnpicklingError(f"corrupt checkpoint sidecar {path}: {exc}") from exc
+
+
 def _load_legacy_checkpoint(legacy_path: Path) -> dict[str, Any] | None:
     """Load a v0.0.5-era single-file checkpoint; return ``None`` if absent."""
     if not legacy_path.exists():
@@ -340,7 +414,12 @@ def _load_legacy_checkpoint(legacy_path: Path) -> dict[str, Any] | None:
         DeprecationWarning,
         stacklevel=3,
     )
-    return torch.load(legacy_path, map_location="cpu", weights_only=False)
+    # ``weights_only=True`` (RIL ISS-170): legacy checkpoints are a plain
+    # ``torch.save`` of a dict (model_state tensors + model_config dict +
+    # optimizer/scheduler/scaler primitives) — nothing that needs arbitrary
+    # pickle. Loading with ``weights_only=False`` here would execute
+    # ``__reduce__`` from an untrusted file at resume/serve time.
+    return _torch_load_checkpoint_sidecar(legacy_path)
 
 
 def load_checkpoint_payload(path: str | Path) -> dict[str, Any] | None:
@@ -465,8 +544,11 @@ def convert_legacy_checkpoint_to_split(
             "(or move the existing sidecars aside first)."
         )
 
-    # Load the legacy blob.
-    payload = torch.load(legacy_path, map_location="cpu", weights_only=False)
+    # Load the legacy blob. ``weights_only=True`` (RIL ISS-170): the migration
+    # path runs on user-supplied files, and a framework legacy dict is a plain
+    # tensors+primitives payload — arbitrary-pickle loading here would be an
+    # RCE on `llm-migrate-ckpt attacker.pt`.
+    payload = torch.load(legacy_path, map_location="cpu", weights_only=True)
 
     # Validate the payload is a v0.0.5 training dict BEFORE indexing it. A
     # `.pt` file that loads but is not a training checkpoint — e.g. a bare
@@ -482,10 +564,17 @@ def convert_legacy_checkpoint_to_split(
             "CheckpointManager can be migrated."
         )
 
-    # Write the split trio. Stamp a shared save_id into meta + extra_state so
-    # the loader can cross-check the trio came from one write (RIL ISS-127).
+    # Write the split trio. Stamp a shared save_id into the weights file AND
+    # meta + extra_state so the loader can cross-check the trio came from one
+    # write (RIL ISS-127; the weights stamp closes the meta↔extra-only window
+    # of RIL ISS-166 for freshly-migrated checkpoints too).
     migrated_save_id = uuid.uuid4().hex
-    _save_weights_safetensors(payload["model_state"], safetensors_path)
+    _save_weights_safetensors(
+        payload["model_state"],
+        safetensors_path,
+        save_id=migrated_save_id,
+        epoch=payload.get("epoch", 0),
+    )
     _save_metadata_json(
         {
             "format_version": CHECKPOINT_FORMAT_VERSION,
@@ -571,7 +660,13 @@ class CheckpointManager:
         # optimizer/epoch. ``epoch`` is cross-checked the same way.
         save_id = uuid.uuid4().hex
 
-        _save_weights_safetensors(model_state, weights_path)
+        # Stamp the save_id into the weights sidecar FIRST (RIL ISS-166): the
+        # three sidecars only prove they came from one atomic save if the
+        # weights file also carries the generation marker — a crash between a
+        # weights write and the meta/extra write would otherwise leave a fresh
+        # weights file beside a stale but mutually-consistent meta/extra pair
+        # that the meta↔extra check cannot detect.
+        _save_weights_safetensors(model_state, weights_path, save_id=save_id, epoch=epoch)
         _save_metadata_json(
             {
                 "format_version": CHECKPOINT_FORMAT_VERSION,
@@ -756,13 +851,27 @@ class CheckpointManager:
                 f"(format={payload.get('format_version', 'legacy')})"
             )
             return start_epoch, best_loss
-        except (OSError, RuntimeError, KeyError, ValueError) as e:
+        except (
+            OSError,
+            RuntimeError,
+            KeyError,
+            ValueError,
+            EOFError,
+            pickle.UnpicklingError,
+            TypeError,
+        ) as e:
             # A state_dict shape/key incompatibility means the current model
             # architecture does NOT match the checkpoint — the user changed
             # config (e.g. hidden_size) or pointed at the wrong checkpoint.
             # Silently falling back to scratch would train a full run that
             # looks like a resume but discards all prior state (RIL ISS-108);
             # fail loudly instead so the mismatch is surfaced immediately.
+            #
+            # EOFError / pickle.UnpicklingError / TypeError are the exact
+            # classes a truncated or wrong-kind ``.pt`` file raises (corrupt
+            # pickle stream, ``torch.load`` of a non-dict, ``[None]*n``
+            # padding) — the designed degrade-to-scratch path (RIL ISS-172).
+            # ``pickle`` is imported at module top for the weights_only fix.
             message = str(e)
             if isinstance(e, RuntimeError) and any(
                 marker in message

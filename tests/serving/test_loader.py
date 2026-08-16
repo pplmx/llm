@@ -1,5 +1,7 @@
 """Tests for serving checkpoint loader."""
 
+import os
+import pickle
 import string
 
 import pytest
@@ -21,9 +23,41 @@ def test_infer_vocab_size_from_lm_head(tiny_model, tiny_config):
     assert infer_vocab_size(state) == tiny_config.model.vocab_size
 
 
+def test_infer_vocab_size_from_tied_embedding(tiny_model, tiny_config):
+    """Regression (RIL ISS-167): a config-less checkpoint with tied embeddings
+    has no ``lm_head.weight`` — the embedding fallback must use the REAL key
+    (``embedding_layer.token_embeddings.weight``), not the misspelled one."""
+    state = model_state_dict(tiny_model)
+    state.pop("lm_head.weight", None)
+    assert infer_vocab_size(state) == tiny_config.model.vocab_size
+
+
 def test_infer_num_layers(tiny_model, tiny_config):
     state = model_state_dict(tiny_model)
     assert infer_num_layers(state) == tiny_config.model.num_layers
+
+
+def test_loader_refuses_malicious_pickle_without_executing(tmp_path):
+    """Regression (RIL ISS-170): ``load_training_checkpoint`` on an
+    attacker-controlled ``.pt`` must NOT run arbitrary ``__reduce__`` code.
+    The file below would ``os.system``-touch a marker if executed under the
+    old ``weights_only=False`` probe; the hardened loader refuses it."""
+    marker = tmp_path / "pwned"
+    payload = tmp_path / "evil.pt"
+
+    class _Exploit:
+        def __reduce__(self):
+            return (os.system, (f"touch {marker}",))
+
+    with payload.open("wb") as f:
+        pickle.dump(_Exploit(), f)
+
+    with pytest.raises((Exception,)):
+        # The probe (weights_only=True) refuses the foreign global; the
+        # legacy-payload path must not re-load it with weights_only=False.
+        load_training_checkpoint(payload)
+
+    assert not marker.exists(), "malicious pickle executed code during load"
 
 
 def test_load_training_checkpoint_roundtrip(tmp_path, tiny_model, tiny_config):
