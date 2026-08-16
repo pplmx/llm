@@ -610,3 +610,81 @@ def test_module_exposes_save_and_push():
     module = importlib.import_module("llm.compat.hf_publisher")
     assert module.save_pretrained is save_pretrained
     assert module.push_to_hub is push_to_hub
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_roundtrip_mla(tmp_path: Path):
+    """Regression (RIL ISS-169): an ``attn_impl='mla'`` model must roundtrip
+    through save_pretrained/from_pretrained AS MLA — not silently rebuild as
+    MHA with every MLA tensor (latents / latent_*_proj / input_kv_proj)
+    dropped by ``load_state_dict(strict=False)`` (garbage output)."""
+    from llm.core.attn.mla import MultiLatentAttention
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(
+        **decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            intermediate_size=64,
+            max_seq_len=32,
+            attn_impl="mla",
+            mlp_impl="mlp",
+            use_glu=False,
+            device=str(DEFAULT_DEVICE),
+        )
+    )
+    model.eval()
+    assert isinstance(model.transformer_blocks[0].self_attn, MultiLatentAttention)
+
+    save_pretrained(model, tmp_path)
+
+    # The config must persist attn_impl so the loader rebuilds MLA.
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config.get("attn_impl") == "mla", "attn_impl must be persisted in config.json"
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+    reloaded.eval()
+    assert isinstance(reloaded.transformer_blocks[0].self_attn, MultiLatentAttention), (
+        "reloaded model must be MLA, not MHA"
+    )
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        original_logits = model(input_ids=ids).detach()
+        reloaded_logits = reloaded(input_ids=ids).detach()
+    assert torch.allclose(original_logits, reloaded_logits, atol=1e-5)
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_from_pretrained_refuses_mla_weights_into_mha(tmp_path: Path):
+    """Regression (RIL ISS-169): an MLA checkpoint whose ``attn_impl`` was NOT
+    persisted must be refused loudly instead of silently rebuilding as MHA
+    with the MLA tensors dropped at random init."""
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(
+        **decoder_model_kwargs(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            intermediate_size=64,
+            max_seq_len=32,
+            attn_impl="mla",
+            mlp_impl="mlp",
+            use_glu=False,
+            device=str(DEFAULT_DEVICE),
+        )
+    )
+    save_pretrained(model, tmp_path)
+
+    # Simulate the pre-fix artifact: strip attn_impl from config.json.
+    config = json.loads((tmp_path / "config.json").read_text())
+    config.pop("attn_impl", None)
+    (tmp_path / "config.json").write_text(json.dumps(config))
+
+    with pytest.raises(ValueError, match="MLA"):
+        from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)

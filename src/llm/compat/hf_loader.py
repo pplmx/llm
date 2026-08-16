@@ -129,7 +129,10 @@ def _load_from_local(
         num_kv_heads=our_config.get("num_kv_heads"),
         intermediate_size=our_config.get("intermediate_size"),
         norm_eps=our_config.get("rms_norm_eps", 1e-5),
-        attn_impl="mha",
+        # Honor the persisted ``attn_impl`` (our publisher) so an MLA model
+        # roundtrips as MLA (RIL ISS-169); external real-Llama/Mistral
+        # checkpoints have no such key and default to MHA.
+        attn_impl=our_config.get("attn_impl", "mha"),
         # Honor the persisted ``use_glu`` (our publisher) or default to True
         # for external real-Llama/Mistral checkpoints. Hardcoding True here
         # rebuilt a GLU MLP for a DEFAULT non-GLU model and left every
@@ -179,6 +182,36 @@ def _load_from_local(
         num_kv_heads=attn0.num_kv_heads,
         head_dim=attn0.head_dim,
     )
+
+    # Loud-fail guard (RIL ISS-169): an MLA checkpoint must NEVER silently
+    # rebuild as MHA (or vice versa) — every MLA tensor would be dropped by
+    # ``load_state_dict(strict=False)`` leaving attention at random init, the
+    # exact silent-weight-drop class ISS-144 rejects loudly for Mixtral.
+    # Detect by whether the state dict carries MLA-only parameters.
+    mla_key_prefixes = (
+        ".self_attn.latents",
+        ".self_attn.latent_q_proj",
+        ".self_attn.latent_v_proj",
+        ".self_attn.latent_output_proj",
+        ".self_attn.input_kv_proj",
+    )
+    has_mla_weights = any(k.endswith(mla_key_prefixes) for k in converted_state_dict)
+    from llm.core.attn.mla import MultiLatentAttention
+
+    is_mla_model = isinstance(attn0, MultiLatentAttention)
+    if has_mla_weights and not is_mla_model:
+        raise ValueError(
+            "Checkpoint contains MLA attention tensors (latents / latent_*_proj / "
+            "input_kv_proj) but the rebuilt model is MHA. This checkpoint was "
+            "saved from an MLA model whose 'attn_impl' was not persisted; refusing "
+            "to silently run with random-init attention."
+        )
+    if is_mla_model and not has_mla_weights:
+        raise ValueError(
+            "Config declares attn_impl='mla' but the checkpoint contains no MLA "
+            "attention tensors — pointing at an MHA checkpoint, or the weights "
+            "were not saved from this architecture."
+        )
 
     # Load into model
     missing, unexpected = model.load_state_dict(converted_state_dict, strict=False)

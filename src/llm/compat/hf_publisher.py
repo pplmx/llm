@@ -124,6 +124,13 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     qkv_bias = bool(getattr(model, "qkv_bias", True))
     mlp_bias = bool(getattr(model, "mlp_bias", True))
     lm_head_bias = bool(getattr(model, "lm_head_bias", True))
+    # Attention family is model-defining (RIL ISS-169): without persisting it,
+    # an MLA model roundtrips through save_pretrained/from_pretrained as a
+    # plain MHA and every MLA tensor (latents / latent_*_proj / input_kv_proj)
+    # is silently dropped by ``load_state_dict(strict=False)`` — garbage
+    # output with only a warning. Persist the same way hidden_act / use_glu /
+    # norm_first are handled.
+    attn_impl = "mla" if type(model.transformer_blocks[0].self_attn).__name__ == "MultiLatentAttention" else "mha"
 
     return {
         "model_type": "llama",
@@ -140,6 +147,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "torch_dtype": dtype_str,
         "hidden_act": hidden_act,
         "use_glu": use_glu,
+        "attn_impl": attn_impl,
         "pos_encoding_learned": pos_encoding_learned,
         "norm_impl": norm_impl,
         "norm_first": norm_first,

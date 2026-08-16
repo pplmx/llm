@@ -47,6 +47,21 @@ LLAMA_MAPPING = {
     "model.layers.{layer}.self_attn.v_proj.bias": "transformer_blocks.{layer}.self_attn.v_proj.bias",
     "model.layers.{layer}.self_attn.o_proj.weight": "transformer_blocks.{layer}.self_attn.out_proj.weight",
     "model.layers.{layer}.self_attn.o_proj.bias": "transformer_blocks.{layer}.self_attn.out_proj.bias",
+    # MLA extra parameters (our pseudo-MLA): identity through the Llama
+    # naming scheme so a trained MLA model round-trips save_pretrained ->
+    # from_pretrained with its latents / latent_*_proj / input_kv_proj
+    # intact instead of being silently dropped at random init (RIL ISS-169).
+    # External DeepSeek-style MLA checkpoints use different names and are out
+    # of scope for the llama loader.
+    "model.layers.{layer}.self_attn.latents": "transformer_blocks.{layer}.self_attn.latents",
+    "model.layers.{layer}.self_attn.latent_q_proj.weight": "transformer_blocks.{layer}.self_attn.latent_q_proj.weight",
+    "model.layers.{layer}.self_attn.latent_q_proj.bias": "transformer_blocks.{layer}.self_attn.latent_q_proj.bias",
+    "model.layers.{layer}.self_attn.latent_v_proj.weight": "transformer_blocks.{layer}.self_attn.latent_v_proj.weight",
+    "model.layers.{layer}.self_attn.latent_v_proj.bias": "transformer_blocks.{layer}.self_attn.latent_v_proj.bias",
+    "model.layers.{layer}.self_attn.latent_output_proj.weight": "transformer_blocks.{layer}.self_attn.latent_output_proj.weight",
+    "model.layers.{layer}.self_attn.latent_output_proj.bias": "transformer_blocks.{layer}.self_attn.latent_output_proj.bias",
+    "model.layers.{layer}.self_attn.input_kv_proj.weight": "transformer_blocks.{layer}.self_attn.input_kv_proj.weight",
+    "model.layers.{layer}.self_attn.input_kv_proj.bias": "transformer_blocks.{layer}.self_attn.input_kv_proj.bias",
     # MLP projections. Our MLP exposes:
     #   * ``fc1`` — activated path (``silu(fc1(x))``, the *gate* role)
     #   * ``gate_proj`` — the raw multiplying path (the *up* role)
@@ -421,6 +436,11 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # loader maps this onto our ``mlp_activation`` so a published model
         # (or HF checkpoint) round-trips with the *same* MLP function rather
         # than silently defaulting to gelu.
+        # Attention family so an MLA model round-trips as MLA instead of
+        # silently rebuilding as MHA with every MLA tensor dropped at random
+        # init (RIL ISS-169). Our own publisher persists it; external
+        # Llama/Mistral checkpoints carry no such key and default to MHA.
+        "attn_impl": hf_config.get("attn_impl", "mha"),
         "mlp_activation": hf_config.get("hidden_act", "silu"),
         # Whether the MLP is gated (SwiGLU). Real Llama/Mistral default to
         # True, but our own ``save_pretrained`` persists the actual
