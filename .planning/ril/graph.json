@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T13:32:53+00:00",
+  "updated_at": "2026-08-16T13:41:15+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -9547,10 +9547,10 @@
     "ISS-198": {
       "id": "ISS-198",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T12:20:43+00:00",
-      "updated_at": "2026-08-16T12:20:43+00:00",
+      "updated_at": "2026-08-16T13:41:15+00:00",
       "touched_round": 69,
       "severity": "medium",
       "title": "save_pretrained lm_head dtype sniffing crashes on a quantized model; no safetensors quant roundtrip",
@@ -9772,10 +9772,10 @@
     "TASK-169": {
       "id": "TASK-169",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-16T13:14:50+00:00",
-      "updated_at": "2026-08-16T13:14:50+00:00",
+      "updated_at": "2026-08-16T13:41:15+00:00",
       "touched_round": 69,
       "category": "correctness",
       "severity": "medium",
@@ -9849,11 +9849,11 @@
       "id": "CHG-165",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T13:20:14+00:00",
-      "updated_at": "2026-08-16T13:20:14+00:00",
+      "updated_at": "2026-08-16T13:34:07+00:00",
       "touched_round": 69,
-      "commit": "PENDING",
+      "commit": "e69f554",
       "title": "Correct misleading RedPajama wikipedia text_column docstring",
       "body": "presets.py: docstring now documents that all RedPajama HF subsets normalize to text (raw_content is pre-load only). Code unchanged (correct)."
     },
@@ -9873,11 +9873,11 @@
       "id": "CHG-166",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T13:25:44+00:00",
-      "updated_at": "2026-08-16T13:25:44+00:00",
+      "updated_at": "2026-08-16T13:34:07+00:00",
       "touched_round": 69,
-      "commit": "PENDING",
+      "commit": "e69f554",
       "title": "Default simple tokenizer corpus now includes string.printable so real text is encodable",
       "body": "tokenizer_factory.py: DEFAULT_SIMPLE_CORPUS = [string.printable, <PAD>, <EOS>, <BOS>] via _default_simple_corpus(); preserves ISS-152 EOS/BOS special registration; pad=100/eos=101/bos=102 vocab=103."
     },
@@ -9885,13 +9885,25 @@
       "id": "CHG-167",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T13:32:53+00:00",
-      "updated_at": "2026-08-16T13:32:53+00:00",
+      "updated_at": "2026-08-16T13:34:07+00:00",
       "touched_round": 69,
-      "commit": "PENDING",
+      "commit": "e69f554",
       "title": "LMTask accepts an explicit tokenizer bound to the model vocab",
       "body": "eval_tasks/lm_task.py: new tokenizer kwarg, defaults to corpus-derived TokenizerFactory.from_dataset_text for backward compat; tests in test_lm_task.py (ISS-195)."
+    },
+    "CHG-168": {
+      "id": "CHG-168",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T13:41:14+00:00",
+      "updated_at": "2026-08-16T13:41:14+00:00",
+      "touched_round": 69,
+      "commit": "PENDING",
+      "title": "Robust lm_head dtype sniffing via _model_weight_dtype (embedding fallback)",
+      "body": "hf_publisher.py: _model_weight_dtype handles QuantizedLinear (no .weight); falls back to never-quantized embedding then first float param then float32. _build_hf_config uses it. 3 tests. ISS-198."
     }
   },
   "edges": [
@@ -14542,6 +14554,18 @@
       "to": "ISS-195",
       "type": "resolves",
       "created_at": "2026-08-16T13:32:53+00:00"
+    },
+    {
+      "from": "CHG-168",
+      "to": "TASK-169",
+      "type": "implements",
+      "created_at": "2026-08-16T13:41:14+00:00"
+    },
+    {
+      "from": "CHG-168",
+      "to": "ISS-198",
+      "type": "resolves",
+      "created_at": "2026-08-16T13:41:14+00:00"
     }
   ]
 }

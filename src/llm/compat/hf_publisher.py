@@ -51,6 +51,35 @@ HF_HUB_AVAILABLE: bool = _hf_hub_spec is not None
 # --- Llama-shaped config builder -------------------------------------------
 
 
+def _model_weight_dtype(model: DecoderModel) -> torch.dtype:
+    """Best-effort weight dtype for the ``torch_dtype`` config field.
+
+    On a dense model this is ``lm_head.weight.dtype`` (the same signal the
+    old inline sniff used). On a quantized model the ``lm_head`` has been
+    replaced by a quantized layer that stores *integer* weights (int8
+    ``weight_quantized`` / packed buffers) with float scales — reading
+    ``lm_head.weight`` then raises ``AttributeError`` (RIL ISS-198). The
+    embedding layer is never quantized (it is an ``nn.Embedding``), so its
+    weight dtype is the representative compute dtype of the model.
+    """
+    lm_head = getattr(model, "lm_head", None)
+    weight = getattr(lm_head, "weight", None)
+    if isinstance(weight, torch.Tensor):
+        return weight.dtype
+    embedding_layer = getattr(model, "embedding_layer", None)
+    token_embeddings = getattr(embedding_layer, "token_embeddings", None)
+    weight = getattr(token_embeddings, "weight", None)
+    if isinstance(weight, torch.Tensor):
+        return weight.dtype
+    # Last-resort fallback: any floating-point parameter (a quantized model
+    # keeps float scales/bias even when raw weights are int). Fails into
+    # float32 so the config stays JSON-serializable rather than raising.
+    for param in model.parameters():
+        if param.dtype.is_floating_point:
+            return param.dtype
+    return torch.float32
+
+
 def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[str, Any]:
     """Build a HuggingFace-style ``config.json`` payload from a DecoderModel.
 
@@ -83,9 +112,10 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         intermediate_size = 4 * model.hidden_size
 
     dtype_str = "float16"
-    if model.lm_head.weight.dtype == torch.bfloat16:
+    model_dtype = _model_weight_dtype(model)
+    if model_dtype == torch.bfloat16:
         dtype_str = "bfloat16"
-    elif model.lm_head.weight.dtype == torch.float32:
+    elif model_dtype == torch.float32:
         dtype_str = "float32"
 
     # Persist the MLP activation so ``from_pretrained`` rebuilds the model

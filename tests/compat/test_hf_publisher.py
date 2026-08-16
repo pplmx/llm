@@ -28,6 +28,8 @@ from llm.compat.hf_loader import from_pretrained
 from llm.compat.hf_publisher import (
     HF_HUB_AVAILABLE,
     SAFETENSORS_AVAILABLE,
+    _build_hf_config,
+    _model_weight_dtype,
     push_to_hub,
     save_pretrained,
 )
@@ -66,6 +68,45 @@ def test_module_imports_cleanly():
     """Module imports even when ``safetensors`` / ``huggingface_hub`` are absent."""
     assert isinstance(SAFETENSORS_AVAILABLE, bool)
     assert isinstance(HF_HUB_AVAILABLE, bool)
+
+
+# --- Quantized-model dtype sniffing (RIL ISS-198) --------------------------
+
+
+def test_model_weight_dtype_dense_uses_lm_head():
+    """On a dense model the reported dtype is ``lm_head.weight.dtype``."""
+    model = _make_small_decoder()
+    assert _model_weight_dtype(model) == model.lm_head.weight.dtype
+
+
+def test_model_weight_dtype_quantized_falls_back_to_embedding():
+    """Regression (RIL ISS-198): a PTQ-quantized model replaces ``lm_head``
+    (and every Linear) with :class:`QuantizedLinear`, which stores integer
+    ``weight_quantized`` buffers — the old ``lm_head.weight.dtype`` sniff
+    raised ``AttributeError``. The helper must fall back to the never-
+    quantized embedding layer's dtype instead of crashing."""
+    from llm.quantization import QuantConfig, quantize_model
+
+    model = _make_small_decoder()
+    q_model = quantize_model(model, QuantConfig(bits=8))
+    assert type(q_model.lm_head).__name__ == "QuantizedLinear"
+
+    dtype = _model_weight_dtype(q_model)
+    assert dtype == q_model.embedding_layer.token_embeddings.weight.dtype
+
+
+def test_save_pretrained_config_builds_for_quantized_model_no_crash():
+    """Regression (RIL ISS-198): ``_build_hf_config`` must not crash on a
+    quantized model — the ``torch_dtype`` field is derived defensively and
+    the full config payload comes out JSON-ready."""
+    from llm.quantization import QuantConfig, quantize_model
+
+    model = _make_small_decoder()
+    q_model = quantize_model(model, QuantConfig(bits=8))
+
+    config = _build_hf_config(q_model)
+    assert "torch_dtype" in config
+    assert config["torch_dtype"] in ("float16", "bfloat16", "float32")
 
 
 # --- Reverse mapping (unit) ----------------------------------------------
