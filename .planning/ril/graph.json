@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T15:50:45+00:00",
+  "updated_at": "2026-08-16T15:52:03+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10149,11 +10149,11 @@
       "id": "CHG-172",
       "type": "change",
       "status": "active",
-      "version": 2,
+      "version": 3,
       "created_at": "2026-08-16T15:49:59+00:00",
-      "updated_at": "2026-08-16T15:50:45+00:00",
+      "updated_at": "2026-08-16T15:52:03+00:00",
       "touched_round": 69,
-      "commit": "853657f",
+      "commit": "477f3d2",
       "title": "GGUF writer: reject empty tensors with clear error; coerce numpy-scalar metadata",
       "body": "writer.py add_tensor rejects size==0 (was ZeroDivisionError in q4_0 block serialization); metadata._coerce_scalar normalizes np.int64/float32/bool_ (ndim==0 + item()) to Python natives. 5 tests. ISS-207."
     }
