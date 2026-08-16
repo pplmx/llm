@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 61,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T02:31:30+00:00",
+  "updated_at": "2026-08-16T02:38:40+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7962,10 +7962,10 @@
     "ISS-162": {
       "id": "ISS-162",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-16T01:13:08+00:00",
-      "updated_at": "2026-08-16T01:13:08+00:00",
+      "updated_at": "2026-08-16T02:38:40+00:00",
       "touched_round": 61,
       "severity": "0.3|title=llm-migrate-ckpt only catches CheckpointMigrationError; non-training .pt raises uncaught TypeError/KeyError raw traceback|summary=cli/migrate_ckpt.py:205-213 bare except CheckpointMigrationError; payload['model_state'] at checkpoint.py:474 throws TypeError/KeyError for bare torch.save(model) blob -> Rich stack trace instead of clean documented one-line error + exit 1. CONFIRMED trace."
     },
@@ -8180,16 +8180,18 @@
     "TASK-123": {
       "id": "TASK-123",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T01:15:57+00:00",
-      "updated_at": "2026-08-16T01:15:57+00:00",
+      "updated_at": "2026-08-16T02:38:40+00:00",
       "touched_round": 61,
       "title": "migrate-ckpt clean error for non-training blobs (ISS-162)",
       "category": "stability",
       "severity": 0.3,
       "confidence": 1.0,
-      "effort": 0.2
+      "effort": 0.2,
+      "lock_owner": "round61",
+      "lock_until": "2026-08-16T03:31:47+00:00"
     },
     "TASK-124": {
       "id": "TASK-124",
@@ -8408,6 +8410,17 @@
       "touched_round": 61,
       "commit": "b494121",
       "summary": "streaming chat finish_reason length-vs-stop (ISS-151)"
+    },
+    "CHG-146": {
+      "id": "CHG-146",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-16T02:38:28+00:00",
+      "updated_at": "2026-08-16T02:38:28+00:00",
+      "touched_round": 61,
+      "commit": "8b42539",
+      "summary": "migrate-ckpt clean error for non-training blobs (ISS-162)"
     }
   },
   "edges": [
@@ -12170,6 +12183,18 @@
       "to": "TASK-128",
       "type": "implements",
       "created_at": "2026-08-16T02:31:29+00:00"
+    },
+    {
+      "from": "CHG-146",
+      "to": "ISS-162",
+      "type": "resolves",
+      "created_at": "2026-08-16T02:38:40+00:00"
+    },
+    {
+      "from": "CHG-146",
+      "to": "TASK-123",
+      "type": "implements",
+      "created_at": "2026-08-16T02:38:40+00:00"
     }
   ]
 }
