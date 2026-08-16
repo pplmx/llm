@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 69,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T16:27:34+00:00",
+  "updated_at": "2026-08-16T16:29:01+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10201,11 +10201,11 @@
       "id": "CHG-174",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-16T16:27:33+00:00",
-      "updated_at": "2026-08-16T16:27:33+00:00",
+      "updated_at": "2026-08-16T16:29:01+00:00",
       "touched_round": 69,
-      "commit": "PENDING",
+      "commit": 3322518,
       "title": "Rank-guard PEFT adapter sidecar write (rank 0 only)",
       "body": "callbacks.py PEFTAdapterCheckpointCallback.on_train_end returns early for engine.rank != 0; prevents concurrent torch.save corruption under DDP. 1 test. ISS-208."
     }
