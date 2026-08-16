@@ -440,3 +440,73 @@ def test_load_calibration_batches_unknown_shape_passthrough(tmp_path: Path):
 
     result = _load_calibration_batches(None, calib, None)
     assert result == {"unexpected": "dict"}
+
+
+# ---------------------------------------------------------------------------
+# ISS-161: clobber guard + atomic save
+# ---------------------------------------------------------------------------
+
+
+def test_cli_rejects_output_equal_to_model(runner, tmp_path):
+    """Regression (RIL ISS-161): ``--output == --model`` must exit 1 before
+    quantization, not overwrite the source checkpoint with the quantized
+    model."""
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+    result = runner.invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(model_path),  # same file!
+            "--calib-data-tokens",
+            str(tmp_path / "c.pt"),
+        ],
+    )
+    assert result.exit_code == 1
+    stderr = strip_ansi(result.stderr or "")
+    assert "same file" in stderr.lower()
+
+
+def test_cli_rejects_output_aliasing_model_via_resolved_path(runner, tmp_path):
+    """Regression (RIL ISS-161): `--output ./model.pt` with `--model
+    model.pt` refers to the same file — the resolve()-based guard must
+    catch the alias, not just the byte-identical string."""
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+    result = runner.invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path) + "/./model.pt",  # same file via a different spelling
+            "--calib-data-tokens",
+            str(tmp_path / "c.pt"),
+        ],
+    )
+    assert result.exit_code == 1
+    stderr = strip_ansi(result.stderr or "")
+    assert "same file" in stderr.lower()
+
+
+def test_atomic_save_leaves_no_tmp_and_writes_loadable_output(tmp_path):
+    """Regression (RIL ISS-161): the quantization write goes through a temp
+    file + atomic rename. A successful save must leave no ``.tmp`` sibling
+    and the output must load as the saved object."""
+    import torch
+
+    from llm.cli.quantize import _atomic_save_quantized
+
+    payload = {"kind": "quantized", "value": 42, "tensor": torch.ones(2, 3)}
+    output = tmp_path / "quant.pt"
+    _atomic_save_quantized(payload, output)
+
+    assert output.exists()
+    assert not output.with_suffix(output.suffix + ".tmp").exists()
+    loaded = torch.load(output, map_location="cpu", weights_only=False)
+    assert loaded["value"] == 42
+    assert torch.equal(loaded["tensor"], torch.ones(2, 3))

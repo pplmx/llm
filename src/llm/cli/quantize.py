@@ -95,6 +95,51 @@ def _validate_calib_inputs(
         )
 
 
+def _atomic_save_quantized(model_obj, output: Path) -> None:
+    """Write ``model_obj`` to ``output`` atomically (temp + fsync + rename).
+
+    Mirrors the checkpoint manager's ``_atomic_write_bytes`` pattern (RIL
+    ISS-127): a direct ``torch.save`` to the final path leaves a corrupt
+    partial file if it is interrupted (ENOSPC, crash, Ctrl-C). ``torch.save``
+    has no bytes-level hook here (the payload is a pickled module, not a
+    bytes buffer we control), so write to a sibling temp file first, fsync it,
+    then rename into place — a crash before the rename leaves the temp behind
+    but never a truncated file under the final name. Also removes a stale
+    temp from a previous interrupted run before re-saving (RIL ISS-161).
+    """
+    import torch
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output.with_suffix(output.suffix + ".tmp")
+    tmp.unlink(missing_ok=True)
+    torch.save(model_obj, tmp)
+    # fsync so the rename only lands after the bytes are durable.
+    import os
+
+    with tmp.open("rb") as fh:
+        os.fsync(fh.fileno())
+    tmp.replace(output)
+
+
+def _reject_clobbering_input(output: Path, model: Path) -> None:
+    """Refuse to overwrite the source checkpoint in place.
+
+    ``torch.save(quantized, output)`` with ``--output == --model``
+    irretrievably replaces the original FP weights after an expensive
+    quantization — the single most destructive misuse of this CLI. The
+    comparison resolves symlinks and relative paths so ``out.pt`` vs
+    ``./out.pt`` vs a symlink to ``out.pt`` are all caught (RIL ISS-161).
+    """
+    out_resolved = output.resolve()
+    model_resolved = model.resolve()
+    if out_resolved == model_resolved:
+        _die(
+            f"--output ({output}) must not be the same file as --model ({model}); "
+            "writing would destroy the source checkpoint. Choose a different "
+            "output path."
+        )
+
+
 def _validate_model_path(model: Path) -> None:
     """The model file must exist and be a regular file.
 
@@ -261,6 +306,7 @@ def gptq(
     _validate_quant_params(bits, group_size, percdamp, blocksize)
     _validate_calib_inputs(calib_data, calib_data_tokens, tokenizer)
     _validate_model_path(model)
+    _reject_clobbering_input(output, model)
 
     # --- 2. Late imports (keep startup cheap) ---------------------------
     import torch
@@ -310,8 +356,7 @@ def gptq(
 
     # --- 5. Save --------------------------------------------------------
     try:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(quantized, output)
+        _atomic_save_quantized(quantized, output)
     except Exception as exc:
         typer.echo(f"Error: failed to save quantized model to {output}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
