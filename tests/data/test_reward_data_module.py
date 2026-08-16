@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 import torch
 
 from llm.data.modules.reward import RewardDataModule
@@ -77,3 +78,35 @@ def test_reward_data_module_explicit_val_file(tmp_path):
     assert len(data_module.val_dataset) == 1
     assert data_module.train_dataset.data[0]["prompt"] == "Q"
     assert data_module.val_dataset.data[0]["prompt"] == "Q2"
+
+
+def test_reward_dataset_rejects_nonpositive_max_seq_len(tmp_path):
+    """RIL ISS-199: a non-positive ``max_seq_len`` fails fast instead of
+    silently producing misaligned attention_mask/input_ids."""
+    from string import printable
+
+    from llm.data.datasets.reward import RewardDataset
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([printable])
+    fp = tmp_path / "x.jsonl"
+    fp.write_text('{"prompt":"Q:","chosen":"Good","rejected":"Bad"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="max_seq_len"):
+        RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=0)
+    with pytest.raises(ValueError, match="max_seq_len"):
+        RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=-1)
+
+
+def test_reward_dataset_json_decode_error(tmp_path):
+    """RIL ISS-201: a malformed JSONL line raises an actionable ValueError
+    with the file path, aligned with SFT/DPO — not a raw JSONDecodeError."""
+    from string import printable
+
+    from llm.data.datasets.reward import RewardDataset
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([printable])
+    fp = tmp_path / "bad_json.jsonl"
+    fp.write_text("not valid json\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid JSON"):
+        RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=20)

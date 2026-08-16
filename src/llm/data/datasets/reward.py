@@ -36,6 +36,11 @@ class RewardDataset(Dataset):
         max_seq_len: int = 1024,
         padding_value: int = 0,
     ):
+        if max_seq_len <= 0:
+            # RIL ISS-199: mirrors the SFTDataset guard — a non-positive
+            # ``max_seq_len`` truncates ids and grows attention_mask past
+            # input_ids, crashing downstream with an opaque shape error.
+            raise ValueError(f"max_seq_len must be positive, got {max_seq_len}")
         self.file_path = Path(file_path)
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
@@ -48,12 +53,18 @@ class RewardDataset(Dataset):
             raise FileNotFoundError(f"File not found: {self.file_path}")
 
         data = []
-        with self.file_path.open(encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    item = json.loads(line)
-                    if all(k in item for k in ("prompt", "chosen", "rejected")):
-                        data.append(item)
+        try:
+            with self.file_path.open(encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        item = json.loads(line)
+                        if all(k in item for k in ("prompt", "chosen", "rejected")):
+                            data.append(item)
+        except json.JSONDecodeError as e:
+            # RIL ISS-201: SFT/DPO already wrap a malformed line in an
+            # actionable ValueError with the file path; Reward leaked the raw
+            # exception with no context. Align the three datasets.
+            raise ValueError(f"Invalid JSON in Reward file {self.file_path}: {e}")
 
         logger.info(f"Loaded {len(data)} preference pairs from {self.file_path}")
         return data

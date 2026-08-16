@@ -91,7 +91,13 @@ class TokenizedMapDataModule(SamplerMapDataModule):
             raise TypeError("dataset must be sized for train/val splitting")
         train_size = int(train_ratio * len(dataset))
         val_size = len(dataset) - train_size
-        if val_size <= 0:
+        if val_size <= 0 or train_size <= 0:
+            # RIL ISS-200: a 1-sample corpus makes train_size = int(0.9*1) = 0
+            # while val_size = 1, so the ``val_size <= 0`` guard alone yields
+            # random_split([0, 1]) — an EMPTY train set. The epoch then trains
+            # on zero batches and save_best/EarlyStopping read a meaningless
+            # 0.0 epoch_loss. Fall back to whole-dataset train with no val
+            # split whenever either side would be empty.
             return dataset, None
         # ``random_split`` with a list of lengths returns a ``list[Subset]``;
         # normalize to a tuple so both branches share one container type.

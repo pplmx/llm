@@ -139,3 +139,15 @@ def test_dpo_dataset_directory_as_file(tmp_path, tokenizer):
     """OSError raised when file path is a directory."""
     with pytest.raises(OSError, match="Error reading DPO file"):
         DPODataset(file_path=tmp_path, tokenizer=tokenizer, max_seq_len=20)
+
+
+def test_dpo_dataset_rejects_nonpositive_max_seq_len(tmp_path, tokenizer):
+    """RIL ISS-199: a non-positive ``max_seq_len`` fails fast instead of
+    silently truncating ids and misaligning attention_mask against
+    input_ids."""
+    fp = tmp_path / "x.jsonl"
+    fp.write_text('{"prompt":"Q:","chosen":"Good","rejected":"Bad"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="max_seq_len"):
+        DPODataset(file_path=fp, tokenizer=tokenizer, max_seq_len=0)
+    with pytest.raises(ValueError, match="max_seq_len"):
+        DPODataset(file_path=fp, tokenizer=tokenizer, max_seq_len=-1)

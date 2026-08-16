@@ -1,5 +1,6 @@
 import json
 
+import pytest
 import torch
 
 from llm.data.datasets.sft import SFTDataset
@@ -100,3 +101,20 @@ def test_sft_dataset_truncation(tmp_path):
 
     # So all 10 tokens are prompt tokens -> all masked
     assert torch.all(item["labels"] == -100)
+
+
+def test_sft_dataset_rejects_nonpositive_max_seq_len(tmp_path):
+    """RIL ISS-199: a non-positive ``max_seq_len`` fails fast instead of
+    silently truncating ids and misaligning attention_mask against
+    input_ids."""
+    from string import printable
+
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    fp = tmp_path / "x.jsonl"
+    fp.write_text('{"instruction":"Hi","input":"","output":"Hello"}\n', encoding="utf-8")
+    tok = SimpleCharacterTokenizer([printable])
+    with pytest.raises(ValueError, match="max_seq_len"):
+        SFTDataset(file_path=fp, tokenizer=tok, max_seq_len=0)
+    with pytest.raises(ValueError, match="max_seq_len"):
+        SFTDataset(file_path=fp, tokenizer=tok, max_seq_len=-1)

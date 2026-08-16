@@ -118,3 +118,30 @@ def test_split_train_val_identical_across_ranks():
     assert t0 == t1, "train partition must be identical on every DDP rank"
     assert v0 == v1, "val partition must be identical on every DDP rank"
     assert len(t0) + len(v0) == 100
+
+
+def test_split_train_val_single_sample_uses_whole_dataset_as_train():
+    """RIL ISS-200: a 1-sample corpus must not yield an empty train set.
+
+    ``int(0.9 * 1) == 0`` and ``val_size = 1``, so the old ``val_size <= 0``
+    guard let ``random_split(dataset, [0, 1])`` produce an EMPTY train subset
+    — the epoch then trained on zero batches and save_best/EarlyStopping read
+    a meaningless 0.0 epoch_loss. A tiny corpus should fall back to
+    whole-dataset train with no val split.
+    """
+    import torch
+    from torch.utils.data import TensorDataset
+
+    from llm.data.modules.map_base import TokenizedMapDataModule
+
+    ds = TensorDataset(torch.tensor([1.0]))
+    train, val = TokenizedMapDataModule.split_train_val(ds, 0.9)
+
+    assert val is None, "no val split for a single-sample corpus"
+    assert len(train) == 1, "train must keep the single sample"
+    # Two-sample corpus still splits 1/1 (both sides non-empty).
+    ds2 = TensorDataset(torch.tensor([1.0, 2.0]))
+    train2, val2 = TokenizedMapDataModule.split_train_val(ds2, 0.9)
+    assert val2 is not None
+    assert len(train2) == 1
+    assert len(val2) == 1

@@ -31,6 +31,11 @@ class DPODataset(Dataset):
         padding_value: int = 0,
         ignore_index: int = -100,
     ):
+        if max_seq_len <= 0:
+            # RIL ISS-199: mirrors the SFTDataset guard — a non-positive
+            # ``max_seq_len`` truncates ids and grows attention_mask past
+            # input_ids, crashing downstream with an opaque shape error.
+            raise ValueError(f"max_seq_len must be positive, got {max_seq_len}")
         self.file_path = Path(file_path)
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len

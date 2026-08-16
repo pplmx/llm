@@ -543,7 +543,11 @@ class DataConfig(BaseModel):
     dataset_config: str | None = None
     dataset_split: str = "train"
     text_column: str = "text"
-    max_seq_len: int = 512
+    max_seq_len: int = Field(
+        512,
+        gt=0,
+        description="Context length each sample is truncated/padded to; must be positive (RIL ISS-199 — a non-positive value silently truncates ids and misaligns attention_mask).",
+    )
     steps_per_epoch: int | None = Field(
         None,
         gt=0,

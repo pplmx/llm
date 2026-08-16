@@ -43,6 +43,13 @@ class SFTDataset(Dataset):
             padding_value: Token ID for padding input_ids.
             ignore_index: Label value for masked tokens (padding/prompt).
         """
+        if max_seq_len <= 0:
+            # RIL ISS-199: a non-positive ``max_seq_len`` truncates the token
+            # ids from the end while ``pad_len`` goes negative, making
+            # ``attention_mask`` LONGER than ``input_ids`` (verified 146 vs
+            # 293 with max_seq_len=-1) — an opaque shape crash deep in
+            # training. Fail fast here instead of mid-run.
+            raise ValueError(f"max_seq_len must be positive, got {max_seq_len}")
         self.file_path = Path(file_path)
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
