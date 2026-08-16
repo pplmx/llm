@@ -225,8 +225,8 @@ class AdaLoRALinear(nn.Module):
     def orth_reg_loss(self) -> torch.Tensor:
         """Orthogonality regularization loss.
 
-        Per the AdaLoRA paper, the loss penalises deviation from
-        orthonormality::
+        Per the AdaLoRA paper (arXiv:2303.10512), the loss penalises
+        deviation from orthonormality of the *learned parameters*::
 
             ||P^T P - I||_F^2 + ||Q Q^T - I||_F^2
 
@@ -234,15 +234,22 @@ class AdaLoRALinear(nn.Module):
         task loss (scaled by :attr:`orth_reg_weight`) to keep P and Q
         well-conditioned during training.
 
-        The loss is exactly zero when P and Q are themselves
-        orthonormal, which the QR step on every forward already
-        enforces up to floating-point noise.
+        The loss is computed over ``lora_P`` / ``lora_Q`` themselves —
+        the matrices the optimizer updates — NOT over the QR factors used
+        in forward (RIL ISS-157). Those factors are orthonormal by
+        construction, so penalising them returns ~float noise no matter
+        how degenerate the underlying P/Q are: a regularizer that cannot
+        distinguish a rank-1 P from a perfectly orthonormal one is dead
+        weight. Penalising the raw parameters gives gradient descent a
+        real signal to keep them well-conditioned.
         """
-        P_ortho = self._orthonormalized_P()  # noqa: N806
-        Q_ortho = self._orthonormalized_Q()  # noqa: N806
-        identity = torch.eye(self.init_rank, device=P_ortho.device, dtype=P_ortho.dtype)
-        loss_p = torch.linalg.norm(P_ortho.T @ P_ortho - identity, ord="fro") ** 2
-        loss_q = torch.linalg.norm(Q_ortho @ Q_ortho.T - identity, ord="fro") ** 2
+        P = self.lora_P  # noqa: N806
+        Q = self.lora_Q  # noqa: N806
+        identity = torch.eye(self.init_rank, device=P.device, dtype=P.dtype)
+        # P is (out, rank) -> PᵀP is (rank, rank). Q is (rank, in) ->
+        # Q Qᵀ is (rank, rank).
+        loss_p = torch.linalg.norm(P.T @ P - identity, ord="fro") ** 2
+        loss_q = torch.linalg.norm(Q @ Q.T - identity, ord="fro") ** 2
         return loss_p + loss_q
 
     def merge_weights(self) -> None:

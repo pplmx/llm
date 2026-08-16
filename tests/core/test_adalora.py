@@ -139,34 +139,42 @@ class TestAdaLoRALinear:
 
 
 class TestOrthogonalityRegularization:
-    """The orthogonality regularization loss must respect QR."""
+    """The orthogonality regularization must act on the RAW P/Q params."""
 
     @pytest.fixture
     def layer(self):
         return AdaLoRALinear(nn.Linear(64, 128), init_rank=8, alpha=32.0)
-
-    def test_loss_near_zero_after_qr(self, layer):
-        """QR orthonormalizes P and Q every forward, so the loss is
-        essentially zero (≤ 1e-9)."""
-        loss = layer.orth_reg_loss()
-        assert loss.item() < 1e-9
 
     def test_loss_non_negative(self, layer):
         """||X - I||²_F ≥ 0 trivially; both terms are sums of squares."""
         loss = layer.orth_reg_loss()
         assert loss.item() >= 0.0
 
-    def test_loss_increases_when_P_perturbed(self, layer):  # noqa: N802
-        """Perturbing P so the QR result no longer matches the
-        expected identity should push the loss above zero."""
-        with torch.no_grad():
-            layer.lora_P.fill_(0.0)
-            layer.lora_P[0, 0] = 1.0
-            # Skip the QR-once verification — the loss function
-            # itself applies QR, so we just check that it returns a
-            # finite scalar.
+    def test_loss_is_nonzero_for_untrained_random_parameters(self, layer):
+        """Regression (RIL ISS-157): the regularizer must penalise the RAW
+        ``lora_P`` / ``lora_Q`` parameters (the ones the optimizer trains),
+        not the QR-orthonormalized forward copies. The old implementation fed
+        the orthonormal-by-construction factors into ``||PᵀP - I||²`` and
+        returned ~1e-13 regardless of how degenerate the raw P/Q were — a
+        dead regularizer. A random (non-orthonormal) init must produce a
+        meaningfully non-zero loss."""
         loss = layer.orth_reg_loss()
-        assert torch.isfinite(loss)
+        assert loss.item() > 0.01
+
+    def test_loss_increases_when_P_perturbed(self, layer):  # noqa: N802
+        """Making P highly degenerate (all columns identical → rank 1) must
+        push the loss well above the near-zero value of a well-conditioned
+        P — the regularizer is responsive, not constant (RIL ISS-157)."""
+        baseline = layer.orth_reg_loss().item()
+        with torch.no_grad():
+            layer.lora_P.normal_()
+            # All columns identical -> matrix_rank 1, maximally non-orthonormal.
+            layer.lora_P[:, 1:] = layer.lora_P[:, 0:1].clone()
+        degenerate = layer.orth_reg_loss().item()
+        assert degenerate > baseline
+        assert degenerate > 0.01
+        # The old implementation returned ~4e-13 for exactly this input.
+        assert degenerate > 1e-6
 
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
     def test_half_precision_base_layer_works(self, dtype):
