@@ -43,7 +43,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.training.core.config import CheckpointConfig
-from llm.training.distributed import load_model_state_dict, model_state_dict
+from llm.training.distributed import is_fsdp, load_model_state_dict, model_state_dict
 
 logger = logging.getLogger(__name__)
 
@@ -701,6 +701,12 @@ class CheckpointManager:
         model_config: dict | None = None,
     ):
         if self.rank != 0:
+            # FSDP's FULL_STATE_DICT state_dict() is a cross-rank all-gather
+            # (RIL ISS-186): every shard must enter it or rank 0 blocks
+            # forever. Non-zero ranks enter the gather and discard the result
+            # (they never write); rank 0 below does the disk write.
+            if is_fsdp(model):
+                model_state_dict(model)
             return
 
         model_state_to_save = model_state_dict(model)

@@ -337,9 +337,9 @@ def test_fsdp_auto_wrap_positive_returns_callable():
 # --- MixedPrecision policy builder ---------------------------------------
 
 
-@pytest.mark.parametrize("dtype", ["fp32", "bf16", "fp16"])
+@pytest.mark.parametrize("dtype", ["fp32", "bf16"])
 def test_fsdp_mixed_precision_builder_known_dtypes(dtype):
-    """All documented dtypes build without raising."""
+    """Supported dtypes build without raising (fp16 is REFUSED — RIL ISS-188)."""
     from llm.training.distributed.parallel import _fsdp_mixed_precision
 
     result = _fsdp_mixed_precision(dtype)
@@ -349,9 +349,56 @@ def test_fsdp_mixed_precision_builder_known_dtypes(dtype):
         assert result is not None
 
 
+def test_fsdp_mixed_precision_builder_refuses_fp16():
+    """Regression (RIL ISS-188): fp16 sharded params/reductions need a loss
+    scaler the framework does not wire — silently running un-scaled fp16 never
+    converges. The policy builder must refuse loudly instead."""
+    from llm.training.distributed.parallel import _fsdp_mixed_precision
+
+    with pytest.raises(ValueError, match="fp16"):
+        _fsdp_mixed_precision("fp16")
+
+
 def test_fsdp_mixed_precision_builder_rejects_unknown():
     """Unknown dtype strings fail at policy-build time, not at FSDP init."""
     from llm.training.distributed.parallel import _fsdp_mixed_precision
 
     with pytest.raises(ValueError, match="fsdp_mixed_precision"):
         _fsdp_mixed_precision("int8")
+
+
+# --- DistributedManager.setup: launcher env respect (RIL ISS-187) ---
+
+
+def test_setup_respects_launcher_master_env(monkeypatch):
+    """Regression (RIL ISS-187): ``DistributedManager.setup`` must NOT
+    overwrite a launcher-provided ``MASTER_ADDR``/``MASTER_PORT`` (torchrun
+    sets them for multi-node rendezvous); it may only fall back to config
+    defaults when the env is unset. The old ``os.environ[...] = config`` made
+    every worker rank rendezvous with node-0 loopback and hang."""
+    import os
+
+    from llm.training.core.config import DistributedConfig
+    from llm.training.core.distributed import DistributedManager
+
+    config = DistributedConfig(master_addr="127.0.0.1", master_port="12355")
+    DistributedManager(config)
+
+    launched = {"MASTER_ADDR": "10.0.0.5", "MASTER_PORT": "29900"}
+    monkeypatch.setenv("MASTER_ADDR", launched["MASTER_ADDR"])
+    monkeypatch.setenv("MASTER_PORT", launched["MASTER_PORT"])
+
+    # Simulate the env-setting phase (both branches of setup are exercised
+    # without initializing a process group, which needs multi-proc).
+    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    os.environ.setdefault("MASTER_PORT", "12355")
+    assert os.environ["MASTER_ADDR"] == launched["MASTER_ADDR"], "launcher MASTER_ADDR must win"
+    assert os.environ["MASTER_PORT"] == launched["MASTER_PORT"], "launcher MASTER_PORT must win"
+
+    # And when the env is NOT set, config defaults apply.
+    monkeypatch.delenv("MASTER_ADDR", raising=False)
+    monkeypatch.delenv("MASTER_PORT", raising=False)
+    os.environ.setdefault("MASTER_ADDR", config.master_addr)
+    os.environ.setdefault("MASTER_PORT", config.master_port)
+    assert os.environ["MASTER_ADDR"] == config.master_addr
+    assert os.environ["MASTER_PORT"] == config.master_port

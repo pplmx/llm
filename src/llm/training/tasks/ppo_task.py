@@ -15,6 +15,7 @@ from llm.models.decoder import DecoderModel
 from llm.runtime.checkpoint import collect_extra_state
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.tokenizer import BaseTokenizer
+from llm.training.distributed import is_fsdp
 from llm.training.rlhf.ppo_trainer import PPOTrainer
 from llm.training.tasks.base_task import TrainingTask
 from llm.training.tasks.lm_task import LanguageModelingTask
@@ -180,7 +181,10 @@ class PPOTask(TrainingTask):
             # other shards' resume cursors.
             extra_state = collect_extra_state(engine, self, engine.data_module)
 
-            if engine.rank == 0:
+            # FSDP FULL_STATE_DICT is a cross-rank all-gather (RIL ISS-186):
+            # every rank must enter save_checkpoint; non-rank-0 ranks gather-
+            # and-discard inside, only rank 0 writes + fires the callback.
+            if engine.rank == 0 or is_fsdp(engine.model):
                 engine.logger.info("-" * 80)
                 engine.logger.info(
                     f"Epoch {epoch + 1:2d}/{engine.config.training.epochs} SUMMARY | PPO Loss: {avg_loss:.4f}"
@@ -196,6 +200,7 @@ class PPOTask(TrainingTask):
                     extra_state=extra_state,
                     model_config=engine.config.model.model_dump(),
                 )
+            if engine.rank == 0:
                 engine._run_callbacks("on_save_checkpoint", epoch=epoch)
 
             # Forward the epoch summary to on_epoch_end so epoch-level

@@ -56,15 +56,16 @@ def _fsdp_mixed_precision(dtype: str) -> Any | None:
             buffer_dtype=buffer_dtype,
         )
     if dtype == "fp16":
-        from torch.distributed.fsdp import MixedPrecision
-
-        # FP16 needs a loss scaler; we don't wire one here because
-        # AMP is the trainer's responsibility. Recommend BF16 unless
-        # the user has a specific reason for FP16.
-        return MixedPrecision(
-            param_dtype=torch.float16,
-            reduce_dtype=torch.float16,
-            buffer_dtype=torch.float16,
+        # Refuse rather than silently produce an un-winnable run (RIL ISS-188):
+        # FP16 parameters/reductions need a loss scaler or gradients underflow
+        # and the run never converges. The engine only wires a GradScaler for
+        # float16 AMP (not the default bf16/auto path), and FSDP's own scaling
+        # is not wired here. Fail fast; the user should pick bf16 (on capable
+        # GPUs) or fp32.
+        raise ValueError(
+            "fsdp_mixed_precision='fp16' is not supported: FP16 sharded parameters and "
+            "gradient reductions require a loss scaler the framework does not wire. "
+            "Use 'bf16' (on GPUs that support it) or 'fp32'."
         )
     raise ValueError(f"Unsupported fsdp_mixed_precision {dtype!r}; expected 'fp32', 'bf16', or 'fp16'.")
 
@@ -245,6 +246,16 @@ def load_model_state_dict(
             model.load_state_dict(_strip_compile_prefix(state_dict))
         return
     model_for_checkpoint_io(model).load_state_dict(_strip_compile_prefix(state_dict))
+
+
+def is_fsdp(model: nn.Module) -> bool:
+    """True when ``model`` is an FSDP wrapper (by class name, so no torch-dep).
+
+    Used to decide whether a checkpoint save is a cross-rank collective:
+    FSDP's ``FULL_STATE_DICT`` ``state_dict()`` all-gathers every shard, so
+    every rank must enter it or rank 0 blocks forever (RIL ISS-186).
+    """
+    return model.__class__.__name__ == "FullyShardedDataParallel"
 
 
 def model_state_dict(

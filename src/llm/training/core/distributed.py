@@ -49,8 +49,15 @@ class DistributedManager:
         torch.manual_seed(42 + rank)  # Seed for CPU operations
 
         if world_size > 1 and torch.cuda.is_available() and torch.cuda.device_count() > 0:
-            os.environ["MASTER_ADDR"] = self.config.master_addr
-            os.environ["MASTER_PORT"] = self.config.master_port
+            # Respect launcher-provided rendezvous env (torchrun / mp.spawn /
+            # SLURM all set MASTER_ADDR / MASTER_PORT before this process
+            # starts). Only fall back to the config defaults when the env has
+            # NOT already set them — unconditionally overwriting a launcher's
+            # correct multi-node address with the config default
+            # (127.0.0.1:12355) makes every worker rank rendezvous with node 0
+            # loopback and hang (RIL ISS-187).
+            os.environ.setdefault("MASTER_ADDR", self.config.master_addr)
+            os.environ.setdefault("MASTER_PORT", self.config.master_port)
             # Ensure backend is NCCL if GPUs are used for DDP
             backend = self.config.backend if self.config.backend else "nccl"
             if backend != "nccl" and torch.cuda.is_available() and backend != "gloo":

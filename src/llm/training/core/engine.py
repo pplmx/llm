@@ -12,7 +12,7 @@ from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.distributed import broadcast_parameters
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
-from llm.training.distributed import model_for_checkpoint_io, wrap_model_for_training
+from llm.training.distributed import is_fsdp, model_for_checkpoint_io, wrap_model_for_training
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
@@ -643,7 +643,11 @@ class TrainingEngine:
                 # from line 0 on resume) and would deadlock any collective.
                 extra_state = collect_extra_state(self, self.data_module, self.task, *self.callbacks)
 
-                if self.rank == 0:
+                # FSDP's FULL_STATE_DICT state_dict() is a cross-rank all-gather
+                # (RIL ISS-186): EVERY rank must enter it via save_checkpoint or
+                # rank 0 blocks forever on the gather. Non-rank-0 ranks enter
+                # and discard; only rank 0 writes and fires the callback.
+                if self.rank == 0 or is_fsdp(self.model):
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
                     self.checkpoint_manager.save_checkpoint(
@@ -656,6 +660,7 @@ class TrainingEngine:
                         extra_state=extra_state,
                         model_config=self.config.model.model_dump(),
                     )
+                if self.rank == 0:
                     self._run_callbacks("on_save_checkpoint", epoch=epoch)
 
                 logs = {"avg_loss": avg_loss}
