@@ -381,6 +381,33 @@ class _FakeRequest:
         self.args = args
 
 
+class _HfLikeTokenizer:
+    """Mimics transformers' default decode: special tokens (id 9) are SKIPPED,
+    so ``decode([eos_id]) == \"\"`` — the exact shape that defeated the
+    ISS-049 decoded-string EOS stop (round-73 FINDING 6 / ISS-226)."""
+
+    eos_token_id = 9
+    pad_token_id = 0
+
+    def encode(self, text):
+        return [ord(c) % 16 for c in text]
+
+    def decode(self, ids):
+        return "".join(chr(int(i) % 128) for i in ids if i != 9)
+
+
+class _CountingModel(_FakeModel):
+    """Fake model that counts its own forward calls (for early-stop assertions)."""
+
+    def __init__(self, argmax_id: int = 1):
+        super().__init__(argmax_id)
+        self.calls = 0
+
+    def __call__(self, input_ids, use_cache=None):
+        self.calls += 1
+        return super().__call__(input_ids, use_cache)
+
+
 def test_lm_eval_lm_init_with_fake_model():
     """``LlamaLmEvalLM`` initializes and binds to the model's device."""
     pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
@@ -645,6 +672,29 @@ def test_lm_eval_lm_generate_until_strips_token_id_stop():
     # stop ids are the whole run, so the completion must be empty — not
     # decode([1,1]) == "\\x01\\x01".
     out = lm.generate_until([_FakeRequest(("ctx", {"until": [[1, 1]], "max_gen_toks": 5}))])
+    assert out == [""]
+
+
+def test_lm_eval_lm_generate_until_stops_on_hf_eos_token():
+    """RIL ISS-226: an HF-style tokenizer whose ``decode([eos_id])`` returns
+    \"\" must still halt generation the moment the model emits EOS.
+
+    A decoded-string EOS stop can't fire for such a tokenizer (special tokens
+    are skipped on decode, so ``eos_str == \"\"``), and generation used to
+    over-run to ``max_gen_toks`` past the EOS — the very ISS-049 regression
+    the string guard intended to solve. The EOS is now also registered as a
+    token-id-sequence stop, which is token-precise and decode-independent.
+    """
+    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+    model = _CountingModel(argmax_id=9)  # model always emits the EOS token
+    lm = LlamaLmEvalLM(model, _HfLikeTokenizer(), batch_size=1, max_length=64)
+    requests = [_FakeRequest(("ctx", {"until": [], "max_gen_toks": 5}))]
+    out = lm.generate_until(requests)
+    # Stopped at the EOS after ONE generation forward (the prefill is the same
+    # call); an over-run to max_gen_toks=5 would have made 5 forwards.
+    assert model.calls <= 2, f"expected early stop at EOS, ran {model.calls} forwards"
+    # The EOS (a special token that decodes to "") is cut from the completion,
+    # so the generated text is empty.
     assert out == [""]
 
 

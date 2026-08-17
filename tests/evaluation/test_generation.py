@@ -105,12 +105,15 @@ def test_rouge_metric_compute_raises_without_rouge_score(monkeypatch):
 
 
 def test_rouge_metric_empty_inputs_without_rouge_score(monkeypatch):
-    """Empty predictions/references return ``{}`` without importing rouge_score."""
+    """Empty predictions/references report ``0.0`` per dimension WITHOUT
+    importing rouge_score (the short-circuit precedes the import). Matches the
+    sibling-metric convention; an empty ``{}`` made rouge keys vanish from eval
+    output (round-73 FINDING 5 / ISS-228)."""
     monkeypatch.setitem(sys.modules, "rouge_score", None)
 
     metric = RougeMetric()
     result = metric.compute([], [])
-    assert result == {}
+    assert result == {"rouge-1": 0.0, "rouge-2": 0.0, "rouge-l": 0.0}
 
 
 # --------------------------------------------------------------------------- #

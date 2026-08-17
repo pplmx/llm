@@ -315,6 +315,16 @@ class LlamaLmEvalLM:
                 eos_str = self.tokenizer.decode([eos_id])
                 if eos_str and eos_str not in stops:
                     stops.append(eos_str)
+                # Register the EOS as a token-id-sequence stop too. HF
+                # tokenizers decode special tokens to "" by default
+                # (``skip_special_tokens=True``), so a decoded-string stop
+                # never fires and ``generate_until`` over-ran to
+                # ``max_gen_toks`` past the EOS — the ISS-049 regression the
+                # string guard intended to solve (RIL ISS-226 / round-73
+                # FINDING 6). The id sequence is token-precise and
+                # decode-independent.
+                if [eos_id] not in stops:
+                    stops.append([eos_id])
 
             ctx_ids = self._encode(context)
             generated: list[int] = []

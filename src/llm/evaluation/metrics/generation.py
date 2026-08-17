@@ -43,9 +43,13 @@ class RougeMetric(BaseMetric):
 
     def compute(self, predictions: list, references: list) -> dict:
         # Empty inputs — nothing to score, and we shouldn't require the
-        # optional dependency just to short-circuit.
+        # optional dependency just to short-circuit. Every sibling metric
+        # reports ``0.0`` on empty input (``BleuMetric`` -> ``{"bleu": 0.0}``,
+        # ``AccuracyMetric``/``F1Metric`` -> 0.0); an empty ``{}`` made the
+        # per-dimension keys silently vanish from eval output and consumers
+        # doing ``results["rouge-1"]`` hit a KeyError (round-73 FINDING 5).
         if not predictions:
-            return {}
+            return {t.replace("rouge", "rouge-").lower(): 0.0 for t in self.rouge_types}
 
         if self._scorer is None:
             self._scorer = self._build_scorer(self.rouge_types)
