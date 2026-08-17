@@ -1,5 +1,6 @@
 """Tests for streaming text datasets."""
 
+import pytest
 import torch
 
 from llm.data.datasets.streaming import StreamingTextDataset
@@ -209,3 +210,42 @@ def test_streaming_dataset_rejects_negative_overlap(tmp_path, line_tokenizer):
             world_size=1,
             overlap=-1,
         )
+
+
+def test_streaming_skips_undecodable_rows(tmp_path, sample_text_tokenizer):
+    """A row the tokenizer cannot encode is skipped (with a warning), not fatal.
+
+    The default character tokenizer is ASCII-only, so a real corpus always
+    contains un-encodable rows; one such row must not abort multi-hour
+    pretraining (round-76 TASK-189).
+    """
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text(
+        "apple banana cherry\né très café gênt\nfig grape\n",
+        encoding="utf-8",
+    )
+    source = LocalLineTextSource(text_file)
+    dataset = StreamingTextDataset(
+        text_source=source,
+        tokenizer=sample_text_tokenizer,  # lowercase ASCII + ' .,' only
+        max_seq_len=8,
+        rank=0,
+        world_size=1,
+    )
+    samples = list(dataset)  # the é-laden line is skipped, not raised
+    assert samples
+    assert all(torch.equal(s["input_ids"], s["labels"]) for s in samples)
+
+
+def test_streaming_undecodable_rows_fail_loud_when_not_skipping(tmp_path, sample_text_tokenizer):
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text("apple banana cherry\nétrès café\nfig grape\n", encoding="utf-8")
+    source = LocalLineTextSource(text_file)
+    dataset = StreamingTextDataset(
+        text_source=source,
+        tokenizer=sample_text_tokenizer,
+        max_seq_len=8,
+        skip_undecodable=False,
+    )
+    with pytest.raises(KeyError, match="not found in tokenizer vocabulary"):
+        list(dataset)

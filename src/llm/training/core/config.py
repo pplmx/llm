@@ -483,12 +483,23 @@ class DistributedConfig(BaseSettings):
     @field_validator("gpus_per_node", mode="before")
     @classmethod
     def set_gpus_per_node(cls, v: int | None) -> int:
+        # pydantic-settings feeds the raw env string into a ``mode="before"``
+        # validator, so ``v`` is a ``str`` when set via ``GPUS_PER_NODE=2`` /
+        # ``LLM_DISTRIBUTED__GPUS_PER_NODE=2`` (round-76 deep-dive D3 — the
+        # env-scaled path crashed with ``'>' not supported between str and
+        # int`` before training); coerce before comparing.
+        try:
+            if isinstance(v, float) and not v.is_integer():
+                raise ValueError(f"gpus_per_node must be an integer, got {v!r}")
+            requested = int(v) if v is not None else None
+        except TypeError, ValueError:
+            raise ValueError(f"gpus_per_node must be an integer, got {v!r}") from None
         available = torch.cuda.device_count()
-        if v is None:
+        if requested is None:
             return available
-        if v > available:
-            raise ValueError(f"Requested {v} GPUs but only {available} available")
-        return v
+        if requested > available:
+            raise ValueError(f"Requested {requested} GPUs but only {available} available")
+        return requested
 
 
 class OptimizationConfig(BaseModel):
@@ -563,6 +574,16 @@ class DataConfig(BaseModel):
         None,
         gt=0,
         description="Fixed optimizer steps per epoch for streaming DataModules",
+    )
+    skip_undecodable_rows: bool = Field(
+        True,
+        description=(
+            "Skip text rows the tokenizer cannot encode (characters outside "
+            "its vocabulary) with a logged warning instead of aborting the "
+            "run. The default character tokenizer is ASCII-only, so a real "
+            "corpus almost always contains un-encodable rows; set False to "
+            "fail loud on the first such row (round-76 TASK-189)."
+        ),
     )
 
     # Dedup wrapper knobs (only consulted when data_source starts with

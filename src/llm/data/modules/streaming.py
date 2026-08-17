@@ -66,6 +66,7 @@ class StreamingTextDataModule(StreamDataModule):
             tokenizer=self.tokenizer,
             max_seq_len=self.config.data.max_seq_len,
             stream_data_state=self.stream_data_state,
+            skip_undecodable=self.config.data.skip_undecodable_rows,
         )
 
         val_path = self.config.data.val_dataset_path
@@ -74,6 +75,7 @@ class StreamingTextDataModule(StreamDataModule):
                 file_path=val_path,
                 tokenizer=self.tokenizer,
                 max_seq_len=self.config.data.max_seq_len,
+                skip_undecodable=self.config.data.skip_undecodable_rows,
             )
 
     def _load_tokenizer(self) -> BaseTokenizer:

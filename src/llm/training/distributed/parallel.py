@@ -18,6 +18,7 @@ Note:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, Literal, cast
 
 import torch
@@ -191,6 +192,26 @@ def _strip_compile_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
     return state_dict
 
 
+def _align_state_dict_keys(state_dict: dict[str, Any], expected_keys: Iterable[str]) -> dict[str, Any]:
+    """Remap a checkpoint's keys onto the namespace a wrapped module expects.
+
+    An FSDP ``FULL_STATE_DICT`` ``state_dict()``/``load_state_dict`` names its
+    keys after the *wrapped* module: plain when wrapping a bare model,
+    ``_orig_mod.*`` when the engine compiled the model before wrapping (FSDP
+    over ``torch.compile``).  Checkpoints are stored plain, so on FSDP load
+    we must add the ``_orig_mod.`` prefix back when (and only when) the live
+    model exposes it (round-76 deep-dive D1).  A no-op when the namespaces
+    already agree, and it also accepts the legacy prefixed form.
+    """
+    prefixed_expected = any(key.startswith("_orig_mod.") for key in expected_keys)
+    prefixed_state = any(key.startswith("_orig_mod.") for key in state_dict)
+    if prefixed_state and not prefixed_expected:
+        return {key.removeprefix("_orig_mod."): value for key, value in state_dict.items()}
+    if not prefixed_state and prefixed_expected:
+        return {f"_orig_mod.{key}": value for key, value in state_dict.items()}
+    return state_dict
+
+
 def model_for_checkpoint_io(model: nn.Module) -> nn.Module:
     """Return the module that should receive load_state_dict during resume."""
     if isinstance(model, DistributedDataParallel):
@@ -243,7 +264,8 @@ def load_model_state_dict(
 
         sdt, cfg = _fsdp_state_dict_setup(state_dict_type)
         with FullyShardedDataParallel.state_dict_type(model, sdt, cfg):
-            model.load_state_dict(_strip_compile_prefix(state_dict))
+            expected = list(model.state_dict().keys())
+            model.load_state_dict(_align_state_dict_keys(_strip_compile_prefix(state_dict), expected))
         return
     model_for_checkpoint_io(model).load_state_dict(_strip_compile_prefix(state_dict))
 
@@ -270,13 +292,20 @@ def model_state_dict(
     """
     if isinstance(model, DistributedDataParallel):
         model = model.module
+    fsdp_state: dict[str, Any] | None = None
     if model.__class__.__name__ == "FullyShardedDataParallel":
         from torch.distributed.fsdp import FullyShardedDataParallel
 
         sdt, cfg = _fsdp_state_dict_setup(state_dict_type)
         with FullyShardedDataParallel.state_dict_type(model, sdt, cfg):
-            return model.state_dict()
+            fsdp_state = model.state_dict()
     # ``torch.compile`` wraps the module as ``_orig_mod`` and prefixes its
     # state-dict keys; unwrap so checkpoints are portable (llm-serve loads
-    # plain module keys and has no torch.compile graph).
-    return model_for_checkpoint_io(model).state_dict()
+    # plain module keys and has no torch.compile graph).  Applies to the FSDP
+    # FULL_STATE_DICT too: the engine compiles the model *before* wrapping it
+    # in FSDP, so an FSDP full-state dict carries ``_orig_mod.*`` keys just
+    # like a bare compiled module, and a checkpoint missing the strip cannot
+    # be resumed (load always normalizes, and FSDP expects ``_orig_mod.*``)
+    # nor transferred to ``llm-serve`` (round-76 deep-dive D1).
+    state = fsdp_state if fsdp_state is not None else model_for_checkpoint_io(model).state_dict()
+    return _strip_compile_prefix(state)

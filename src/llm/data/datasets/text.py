@@ -1,9 +1,15 @@
+import logging
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 
 from llm.tokenization.tokenizer import BaseTokenizer
+
+logger = logging.getLogger(__name__)
+
+# Same encoder-failure contract as StreamingTextDataset (round-76 TASK-189).
+_UNDECODABLE_ERRORS = (KeyError, ValueError, UnicodeError)
 
 
 class TextDataset(Dataset):
@@ -22,6 +28,7 @@ class TextDataset(Dataset):
         max_seq_len: int,
         overlap: int = 0,
         padding_value: int | None = None,  # Allow None to use tokenizer's pad_id
+        skip_undecodable: bool = True,
     ):
         """
         Initializes the TextDataset.
@@ -35,6 +42,10 @@ class TextDataset(Dataset):
             padding_value (int, optional): Value to use for padding shorter sequences.
                                            If None, defaults to `tokenizer.pad_token_id`.
                                            If tokenizer has no `pad_token_id`, defaults to 0.
+            skip_undecodable (bool, default=True): Skip lines the tokenizer
+                cannot encode (with a logged warning) instead of failing on the
+                first one. The default character tokenizer is ASCII-only, so
+                real corpora contain un-encodable rows.
         """
         if not isinstance(file_path, str | Path):
             raise TypeError("file_path must be a string or Path object.")
@@ -58,6 +69,7 @@ class TextDataset(Dataset):
             raise ValueError("overlap must be less than max_seq_len.")
 
         self.overlap = overlap
+        self.skip_undecodable = skip_undecodable
 
         if padding_value is None:
             if hasattr(self.tokenizer, "pad_token_id") and self.tokenizer.pad_token_id is not None:
@@ -84,7 +96,46 @@ class TextDataset(Dataset):
             self.sequences: list[list[int]] = []
             return
 
-        all_token_ids: list[int] = self.tokenizer.encode(text_content)
+        try:
+            all_token_ids = self.tokenizer.encode(text_content)
+        except _UNDECODABLE_ERRORS:
+            # Whole-file encode can only fail because *some* row is outside the
+            # tokenizer's vocabulary (the default ASCII character tokenizer
+            # cannot represent e.g. '\n', CJK, or emoji).  The old behaviour
+            # aborted the dataset at setup on the first such row; when
+            # ``skip_undecodable`` we degrade to per-line encoding and skip
+            # the offending rows with a warning (round-76 TASK-189).  Rows are
+            # split WITHOUT their trailing newline so a newline-less vocab
+            # (the demo tokenizer) still encodes multi-line files.
+            if not self.skip_undecodable:
+                raise
+            all_token_ids = []
+            skipped = 0
+            warned = False
+            for line in text_content.splitlines():
+                try:
+                    all_token_ids.extend(self.tokenizer.encode(line))
+                except _UNDECODABLE_ERRORS as exc:
+                    skipped += 1
+                    if not warned:
+                        warned = True
+                        logger.warning(
+                            "Skipping rows %s cannot encode (first: %r: %s). Set "
+                            "skip_undecodable=False to fail instead of skipping.",
+                            type(self.tokenizer).__name__,
+                            line[:60],
+                            exc,
+                        )
+            if skipped:
+                logger.warning(
+                    "Skipped %d row(s) %s could not encode in %s.",
+                    skipped,
+                    type(self.tokenizer).__name__,
+                    self.file_path,
+                )
+            if not all_token_ids:
+                self.sequences = []
+                return
 
         # Chunk token_ids into sequences
         self.sequences = []

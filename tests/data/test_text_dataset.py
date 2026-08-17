@@ -256,3 +256,32 @@ class TestCreateDataLoader:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_text_dataset_skips_undecodable_rows(tmp_path, sample_text_tokenizer):
+    """A single un-encodable row must not fail the whole dataset; it is
+    skipped with a warning (round-76 TASK-189 — same guarantee as the
+    streaming path)."""
+    file_path = tmp_path / "mixed.txt"
+    file_path.write_text(
+        "apple banana cherry\né très café gênt\nfig grape\n",
+        encoding="utf-8",
+    )
+    dataset = TextDataset(
+        file_path=str(file_path),
+        tokenizer=sample_text_tokenizer,  # lowercase ASCII + ' .,' only
+        max_seq_len=8,
+    )
+    assert len(dataset) > 0  # built from the two encodable rows
+
+
+def test_text_dataset_undecodable_fails_loud_when_not_skipping(tmp_path, sample_text_tokenizer):
+    file_path = tmp_path / "mixed.txt"
+    file_path.write_text("apple banana cherry\nétrès café\nfig grape\n", encoding="utf-8")
+    with pytest.raises(KeyError, match="not found in tokenizer vocabulary"):
+        TextDataset(
+            file_path=str(file_path),
+            tokenizer=sample_text_tokenizer,
+            max_seq_len=8,
+            skip_undecodable=False,
+        )

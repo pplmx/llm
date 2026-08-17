@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from llm.training.core.config import DistributedConfig
 from llm.training.distributed.parallel import (
+    load_model_state_dict,
     model_state_dict,
     wrap_model_for_training,
 )
@@ -85,6 +86,75 @@ def test_load_model_state_dict_accepts_compiled_prefix():
     load_model_state_dict(compiled2, source.state_dict())
     for key, value in source.state_dict().items():
         assert torch.allclose(value, compiled2._orig_mod.state_dict()[key])
+
+
+def test_fsdp_over_compile_roundtrip_plain_keys():
+    """FSDP full-state checkpoints of a compiled model must be resumable.
+
+    The engine compiles the model *before* wrapping it in FSDP, so an FSDP
+    FULL_STATE_DICT names its keys ``_orig_mod.*``.  Save must strip that
+    prefix (plain keys, portable to ``llm-serve`` / DDP), and load must re-add
+    it for a compiled-FSDP model (round-76 deep-dive D1 — previously the
+    default fsdp job could not resume its own checkpoint).
+    """
+    import os
+
+    import torch.distributed as dist
+    import torch.distributed.fsdp as fsdp_module
+
+    if not cuda_usable():
+        pytest.skip("CUDA required for FSDP full-state roundtrip")
+    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    os.environ.setdefault("MASTER_PORT", "29610")
+    if dist.is_initialized():
+        dist.destroy_process_group()
+    dist.init_process_group("nccl", rank=0, world_size=1)
+    try:
+        fsdp_cls = fsdp_module.FullyShardedDataParallel
+        source = torch.compile(_Tiny().cuda())
+        fsdp = fsdp_cls(source, device_id=0)
+        saved = model_state_dict(fsdp, "full")
+        assert set(saved) == {"linear.weight", "linear.bias"}
+        assert not any(key.startswith("_orig_mod.") for key in saved)
+
+        target = fsdp_cls(torch.compile(_Tiny().cuda()), device_id=0)
+        load_model_state_dict(target, saved, "full")
+        for key, value in model_state_dict(fsdp, "full").items():
+            assert torch.allclose(
+                value.detach().cpu().float(),
+                model_state_dict(target, "full")[key].detach().cpu().float(),
+            )
+    finally:
+        dist.destroy_process_group()
+
+
+def test_gpus_per_node_env_var_parses():
+    """``GPUS_PER_NODE=2`` (and the nested config env spelling) must scale the
+    job without crashing: the before-validator previously compared the raw env
+    string to an int (round-76 deep-dive D3)."""
+    with patch.dict("os.environ", {"GPUS_PER_NODE": "2"}, clear=False):
+        cfg = DistributedConfig()
+    assert cfg.gpus_per_node == 2
+
+    # Nested spelling through the top-level Config (env_prefix="LLM_").
+    from llm.training.core.config import Config
+
+    with patch.dict("os.environ", {"LLM_DISTRIBUTED__GPUS_PER_NODE": "3"}, clear=False):
+        cfg2 = Config()
+    assert cfg2.distributed.gpus_per_node == 3
+
+
+def test_gpus_per_node_env_var_rejects_non_integer():
+    with (
+        patch.dict("os.environ", {"GPUS_PER_NODE": "many"}, clear=False),
+        pytest.raises(ValidationError, match="gpus_per_node must be an integer"),
+    ):
+        DistributedConfig()
+    with (
+        patch.dict("os.environ", {"GPUS_PER_NODE": "2.5"}, clear=False),
+        pytest.raises(ValidationError, match="gpus_per_node must be an integer"),
+    ):
+        DistributedConfig()
 
 
 def test_unknown_parallel_strategy_raises():

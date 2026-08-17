@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 
 import torch
@@ -10,6 +11,14 @@ from torch.utils.data import IterableDataset, get_worker_info
 from llm.data.sources import TextSource
 from llm.data.stream_state import StreamDataState
 from llm.tokenization.tokenizer import BaseTokenizer
+
+logger = logging.getLogger(__name__)
+
+# Encoder failures that mean "this row cannot be represented", not "the
+# pipeline is broken": a KeyError from the character tokenizer, a ValueError
+# from HF/tokenizers on out-of-vocabulary sequences, and Unicode encoding
+# errors.  Anything else (TypeError/E.g. wrong arg types) still propagates.
+_UNDECODABLE_ERRORS = (KeyError, ValueError, UnicodeError)
 
 
 class StreamingTextDataset(IterableDataset):
@@ -29,6 +38,7 @@ class StreamingTextDataset(IterableDataset):
         overlap: int = 0,
         padding_value: int | None = None,
         stream_data_state: StreamDataState | None = None,
+        skip_undecodable: bool = True,
     ):
         self.text_source = text_source
         self.tokenizer = tokenizer
@@ -38,6 +48,12 @@ class StreamingTextDataset(IterableDataset):
         self.overlap = overlap
         self.padding_value = padding_value if padding_value is not None else getattr(tokenizer, "pad_token_id", 0)
         self.stream_data_state = stream_data_state or StreamDataState()
+        self.skip_undecodable = skip_undecodable
+        # Count of rows skipped for being un-encodable; the first one logs a
+        # full warning and the summary is emitted on reset (avoids one log
+        # line per offending row on a real corpus).
+        self._skipped_undecodable = 0
+        self._warned_undecodable = False
 
         if overlap < 0:
             # RIL ISS-202: silently treating a negative ``overlap`` as "no
@@ -79,6 +95,12 @@ class StreamingTextDataset(IterableDataset):
         ``"streaming corpus is empty"`` (RIL ISS-064). In-memory per-pass
         dedup is unaffected.
         """
+        if self._skipped_undecodable:
+            logger.warning(
+                "Skipped %d row(s) %s could not encode this pass.",
+                self._skipped_undecodable,
+                type(self.tokenizer).__name__,
+            )
         self.stream_data_state.reset()
         reset_cross_run = getattr(self.text_source, "reset_cross_run_seen", None)
         if reset_cross_run is not None:
@@ -98,7 +120,28 @@ class StreamingTextDataset(IterableDataset):
                 state.line_index = line_idx + 1
                 continue
 
-            token_buffer.extend(self.tokenizer.encode(line))
+            try:
+                encoded = self.tokenizer.encode(line)
+            except _UNDECODABLE_ERRORS as exc:
+                # A row the tokenizer cannot represent must not abort
+                # multi-hour pretraining (the default character tokenizer is
+                # ASCII-only; any real corpus has un-encodable rows).
+                # ``line_index`` still advances so resume does not re-read it.
+                if self.skip_undecodable:
+                    self._skipped_undecodable += 1
+                    if not self._warned_undecodable:
+                        self._warned_undecodable = True
+                        logger.warning(
+                            "Skipping rows %s cannot encode (first: %r: %s). Set "
+                            "data.skip_undecodable_rows=False to fail instead of skipping.",
+                            type(self.tokenizer).__name__,
+                            line[:60],
+                            exc,
+                        )
+                    state.line_index = line_idx + 1
+                    continue
+                raise
+            token_buffer.extend(encoded)
             state.line_index = line_idx + 1
             state.token_buffer = token_buffer
 
