@@ -395,11 +395,19 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                         yield chunk
             if not timed_out:
                 t.set_status(200)
-                metrics.observe_tokens(endpoint="generate", token_count=token_count)
-        except Exception as exc:
+            # Count every token actually streamed, even on timeout/failure —
+            # a stalled or failed stream otherwise silently undercounts token
+            # volume (RIL round-73 FINDING 7 / ISS-227).
+            metrics.observe_tokens(endpoint="generate", token_count=token_count)
+        except Exception:
             logger.exception("Error in stream generation")
             t.set_status(500)
-            yield f"Error: {type(exc).__name__}"
+            # Do NOT echo the exception class name back to the client (RIL
+            # ISS-168): it lets a client fingerprint the framework/backend.
+            # Log server-side, send a fixed message. Count the tokens streamed
+            # before the failure.
+            metrics.observe_tokens(endpoint="generate", token_count=token_count)
+            yield "Error: stream failed"
 
 
 @router.post("/batch_generate", response_model=BatchGenerationResponse)

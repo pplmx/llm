@@ -280,6 +280,10 @@ async def _chat_stream_generator(
                             )
                             yield f"data: {timeout_chunk.model_dump_json()}\n\n"
                             yield "data: [DONE]\n\n"
+                            # Count the tokens streamed before the stall — a
+                            # timed-out stream must not undercount volume
+                            # (RIL round-73 FINDING 7 / ISS-227).
+                            metrics.observe_tokens(endpoint="chat_completions", token_count=token_count)
                             return
                         token_count += 1
 
@@ -309,17 +313,20 @@ async def _chat_stream_generator(
             t.set_status(200)
             metrics.observe_tokens(endpoint="chat_completions", token_count=token_count)
 
-        except Exception as exc:
+        except Exception:
             logger.exception("Error in chat stream generation")
             t.set_status(500)
+            # Do NOT echo the exception class name back to the client (RIL
+            # ISS-168): it lets a client fingerprint the framework/backend.
+            # Log server-side, send a fixed message. Count the tokens streamed
+            # before the failure (round-73 FINDING 7 / ISS-227).
+            metrics.observe_tokens(endpoint="chat_completions", token_count=token_count)
 
             error_chunk = ChatCompletionChunk(
                 id=completion_id,
                 created=created,
                 model=request.model,
-                choices=[
-                    ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=f"Error: {type(exc).__name__}"))
-                ],
+                choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content="Error: stream failed"))],
             )
             yield f"data: {error_chunk.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"

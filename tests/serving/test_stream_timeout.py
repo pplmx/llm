@@ -291,6 +291,33 @@ def _histogram_count_and_sum(hist, **labels):
 
 
 @pytest.mark.quick
+def test_generate_stream_unexpected_error_leaks_no_class(monkeypatch):
+    """RIL ISS-227 / ISS-168: an unexpected mid-stream backend failure must
+    yield a FIXED error chunk — not the exception class name (which would let
+    a client fingerprint the framework/backend) — and still count the tokens
+    streamed before the failure."""
+
+    def _boom():
+        yield "hello"
+        raise RuntimeError("backend exploded")
+
+    monkeypatch.setattr(generate_module, "config", ServingConfig(request_timeout=5.0))
+    monkeypatch.setattr(generate_module, "_sync_stream_generate", lambda **kw: _boom())
+    monkeypatch.setattr(generate_module, "inference_semaphore", None)
+
+    async def _collect():
+        return [
+            chunk async for chunk in generate_module._stream_generator(GenerationRequest(prompt="x", max_new_tokens=5))
+        ]
+
+    chunks = asyncio.run(_collect())
+
+    assert chunks[0] == "hello", "the token streamed before the failure is still emitted"
+    assert "Error: stream failed" in chunks[1], chunks
+    assert "RuntimeError" not in "\n".join(chunks), "must not leak the exception class name"
+
+
+@pytest.mark.quick
 def test_generate_stream_timeout_records_504_status(monkeypatch):
     """A timed-out stream must be recorded in the request_duration histogram
     under status=504, not clobbered to 200 by the happy-path footer."""
