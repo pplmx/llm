@@ -87,3 +87,53 @@ def test_duplicate_registration_raises():
     ensure_builtins_registered()
     with pytest.raises(ValueError, match="already registered"):
         MODEL_REGISTRY.register("decoder", lambda **kwargs: torch.nn.Linear(1, 1))
+
+
+def test_bootstrap_cold_start_race_is_serialized():
+    """Regression (RIL ISS-212): two threads racing ``ensure_builtins_registered``
+    on a cold MODEL_REGISTRY must not both run ``load_entry_point_registry``
+    and double-register ``decoder``.
+
+    Mirrors the sibling-registry fix (RIL ISS-119,
+    ``tests/core/test_registry_cold_start_race.py``) that this runtime
+    bootstrap was missing — the guard was a bare check-then-act flag.
+    """
+    import threading
+
+    import llm.runtime.bootstrap as boot
+
+    # Lock must be a module-level singleton so every caller serializes
+    # against the same lock object.
+    assert isinstance(boot._registration_lock, threading.Lock)
+
+    # Force a cold start: wipe the registry entries AND the guard flag so both
+    # threads actually re-enter the bootstrap. (Clearing only the entries
+    # leaves the flag True, making ``ensure`` return early and the race
+    # invisible.)
+    MODEL_REGISTRY._entries.clear()
+    boot._builtins_registered = False
+    results: list[BaseException | bool] = []
+    barrier = threading.Barrier(3)  # 2 workers + main
+
+    def worker():
+        barrier.wait()  # maximize the race window: both threads start together
+        try:
+            ensure_builtins_registered()
+            results.append(True)
+        except Exception as exc:  # noqa: BLE001 — we want any raised error
+            results.append(exc)
+
+    t1 = threading.Thread(target=worker)
+    t2 = threading.Thread(target=worker)
+    t1.start()
+    t2.start()
+    barrier.wait()
+    t1.join()
+    t2.join()
+
+    assert len(results) == 2
+    for r in results:
+        assert r is True, f"concurrent cold-start raised: {r!r}"
+    # And the bootstrapped state is intact / usable.
+    assert "decoder" in MODEL_REGISTRY.names()
+    assert boot._builtins_registered is True
