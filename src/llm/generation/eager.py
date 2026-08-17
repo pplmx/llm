@@ -97,6 +97,14 @@ def stream_generate(
     device = next(model.parameters()).device
     _reject_impossible_context(getattr(model, "max_seq_len", None), max_new_tokens)
     input_ids = tokenizer.encode(prompt)
+    if not input_ids:
+        # A prompt that decodes to zero tokens (empty string, or a tokenizer
+        # with no char for it) would reach ``logits[0, -1, :]`` with a
+        # zero-length sequence and crash with an opaque IndexError — and a
+        # batch row never did the decode at all (round-71 empty-prompt fix).
+        # The serving tier rejects an empty prompt up front; reject here too
+        # for direct API callers.
+        raise ValueError("prompt must decode to at least one token (got an empty token sequence)")
     input_tensor = torch.tensor(input_ids, dtype=torch.long, device=device).unsqueeze(0)
     max_seq_len = getattr(model, "max_seq_len", 512)
     kv_caches = create_decoder_kv_caches(model, batch_size=1) if use_cache else None
@@ -299,8 +307,13 @@ def batch_generate(
     _reject_impossible_context(getattr(model, "max_seq_len", None), max_new_tokens)
     batch_size = len(prompts)
 
-    # Encode all prompts
+    # Encode all prompts. An empty row decodes to zero tokens and would either
+    # crash the padded prefill or emit garbage (all-PAD prefill → arbitrary
+    # sampled token, round-71 empty-prompt fix) — reject it up front.
     encoded_prompts = [tokenizer.encode(p) for p in prompts]
+    for i, ids in enumerate(encoded_prompts):
+        if not ids:
+            raise ValueError(f"prompt[{i}] must decode to at least one token (got an empty token sequence)")
 
     # Truncate prompts that exceed ``max_seq_len - max_new_tokens`` **before**
     # padding and ``generated_ids`` initialisation.  Doing the truncate here

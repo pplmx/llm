@@ -146,6 +146,63 @@ def test_speculative_masks_undecodable_tail_vocab():
     assert all(isinstance(t, str) for t in tokens)
 
 
+def test_speculative_never_emits_pad_token():
+    """RIL round-71 speculative fix: the PAD sentinel must be masked from the
+    draft candidates AND the target acceptance/correction scoring, exactly like
+    the eager backend does at every decode step.
+
+    With a fixed model whose argmax is id 0 (the tokenizer's PAD), the pre-fix
+    draft proposed PAD, the target accepted it, and '<PAD>' landed in the
+    generated text. After the fix the threshold token stays unreachable in both
+    the draft and the verified distributions.
+    """
+    from unittest.mock import patch
+
+    target = _make_tiny_decoder(seed=7)
+    draft = _make_tiny_decoder(seed=7)
+
+    def _argmax_pad(input_ids, *_args, **_kwargs):
+        # Every position's argmax is the PAD id 0.
+        t = max(input_ids.shape[1], 8)
+        logits = torch.full((1, t, 8), -1.0, device=input_ids.device)
+        logits[0, :, 0] = 10.0
+        return logits, None
+
+    class _PaddedVocabTok:
+        vocab_size, eos_token_id = 8, None
+
+        @property
+        def pad_token_id(self):
+            return 0
+
+        def encode(self, text):
+            return [1]
+
+        def decode(self, ids):
+            return "".join("[PAD]" if i == 0 else chr(ord("a") + i) for i in ids)
+
+    tok = _PaddedVocabTok()
+    with (
+        patch.object(target, "forward", side_effect=_argmax_pad),
+        patch.object(draft, "forward", side_effect=_argmax_pad),
+    ):
+        tokens = list(
+            speculative_generate(
+                target,
+                draft,
+                tok,
+                "abc",
+                max_new_tokens=4,
+                gamma=3,
+                temperature=0.0,
+            )
+        )
+
+    out = "".join(tokens)
+    assert "[PAD]" not in out, f"speculative emitted the PAD sentinel: {out!r}"
+    assert out, "expected some generated output"
+
+
 def _make_small_ctx_decoder(seed: int = 0) -> torch.nn.Module:
     """Tiny non-RoPE decoder with a small context window (learned PE table)."""
     return _make_tiny_decoder(seed, max_seq_len=8, use_rope=False)

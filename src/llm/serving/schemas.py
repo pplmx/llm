@@ -97,8 +97,12 @@ class GenerationRequest(BaseModel):
     request_id: str | None = Field(None, description="Client-provided request ID.")
     prompt: str = Field(
         ...,
+        min_length=1,
         max_length=MAX_PROMPT_CHARS,
-        description=f"Input prompt text (max {MAX_PROMPT_CHARS} characters).",
+        description=(
+            f"Input prompt text (1..{MAX_PROMPT_CHARS} characters). An empty prompt is "
+            "rejected: the eager backend cannot decode a zero-length context."
+        ),
     )
     max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum number of tokens to generate.")
     temperature: float = Field(1.0, ge=0.0, description="Controls randomness. 0 for Greedy Search.")
@@ -154,6 +158,8 @@ class BatchGenerationRequest(BaseModel):
     @classmethod
     def _check_prompts(cls, v):
         for s in v:
+            if not s:
+                raise ValueError("each prompt must be a non-empty string")
             if len(s) > MAX_PROMPT_CHARS:
                 raise ValueError(f"each prompt may be at most {MAX_PROMPT_CHARS} characters")
         return v
