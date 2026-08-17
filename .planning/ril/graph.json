@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 75,
+  "round": 76,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T19:39:08+00:00",
+  "updated_at": "2026-08-17T23:18:57+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 66,
+      "touched_round": 76,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 64,
+      "touched_round": 76,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -10940,6 +10940,131 @@
       "source": "94ae966",
       "confidence": 1.0,
       "summary": "dequantizers verified bit-identical to gguf-py 0.19 on random+structured payloads (all 8 types); e2e Q6_K/Q5_K/Q4_K foreign imports within quantum error; empty K-quant tensors read back empty; full fast suite exit 0; prek hooks green (ruff/ty/doctest/commitizen)"
+    },
+    "TASK-188": {
+      "id": "TASK-188",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T21:19:01+00:00",
+      "updated_at": "2026-08-17T23:11:30+00:00",
+      "touched_round": 76,
+      "category": "correctness",
+      "severity": 0.9,
+      "effort": 1.0,
+      "title": "FSDP + torch.compile checkpoints must be resumable (strip _orig_mod. on FSDP save)",
+      "summary": "parallel.py model_state_dict FSDP branch returns model.state_dict() raw; engine applies compile BEFORE FSDP wrap, so full-state keys are _orig_mod.*, while load_model_state_dict strips the prefix -> default fsdp job (compile on by default) cannot resume from its own checkpoint. Fix: _strip_compile_prefix(model.state_dict()) in the FSDP save branch + regression test (round-76 distributed deep-dive D1)."
+    },
+    "TASK-189": {
+      "id": "TASK-189",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T21:19:01+00:00",
+      "updated_at": "2026-08-17T23:11:30+00:00",
+      "touched_round": 76,
+      "category": "correctness",
+      "severity": 0.8,
+      "effort": 1.5,
+      "title": "Streaming/TextDataset must not crash on non-ASCII with the default tokenizer",
+      "summary": "StreamingTextDataset __iter__ calls tokenizer.encode(line) unguarded with the default SimpleCharacterTokenizer (ASCII-only vocab); one é/ə/CJK/emoji line raises KeyError and aborts multi-hour pretraining (same latent risk in TextDataset). Fix: robust row handling (skip+log undecodable rows) or tokenizer-from-data default; regression test with a non-ASCII corpus line (round-76 data deep-dive Da1)."
+    },
+    "TASK-190": {
+      "id": "TASK-190",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T21:19:01+00:00",
+      "updated_at": "2026-08-17T23:11:30+00:00",
+      "touched_round": 76,
+      "category": "dx",
+      "severity": 0.6,
+      "effort": 0.5,
+      "title": "gpus_per_node env-var scaling must not crash with TypeError (coerce int in before-validator)",
+      "summary": "DistributedConfig.set_gpus_per_node runs 'v > available' in a pydantic mode='before' validator, so GPUS_PER_NODE=2 (or LLM_DISTRIBUTED__GPUS_PER_NODE=2) compares str vs int -> TypeError before training; only a YAML int works. Fix: coerce int(v) with a clean ValueError. Regression test for env spellings (round-76 distributed deep-dive D3)."
+    },
+    "ISS-229": {
+      "id": "ISS-229",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T21:20:01+00:00",
+      "updated_at": "2026-08-17T21:20:01+00:00",
+      "touched_round": 76,
+      "severity": 0.85,
+      "category": "correctness",
+      "summary": "multi-node launch is broken: node_rank never applied to global rank (train.py spawns world_size local procs on every node; both nodes claim ranks 0..ws-1 -> EADDRINUSE/hang). Documented feature (distributed.md NUM_NODES/NODE_RANK). Deferred to round 77 milestone (DEC decision)."
+    },
+    "ISS-230": {
+      "id": "ISS-230",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T21:20:01+00:00",
+      "updated_at": "2026-08-17T21:20:01+00:00",
+      "touched_round": 76,
+      "severity": 0.3,
+      "category": "maintainability",
+      "summary": "init_dvc does not gate on DVC_AVAILABLE unlike dvc_add/dvc_pull; when the dvc CLI is missing it raises FileNotFoundError, violating the documented no-op+warning degradation. Small fix."
+    },
+    "ISS-231": {
+      "id": "ISS-231",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T21:20:02+00:00",
+      "updated_at": "2026-08-17T21:20:02+00:00",
+      "touched_round": 76,
+      "severity": 0.3,
+      "category": "maintainability",
+      "summary": "PromptDataset raises raw json.JSONDecodeError with no file/line context on a malformed JSONL row, unlike SFT/DPO/Reward datasets which wrap in ValueError('Invalid JSON in <file>: ...') (RIL ISS-201 alignment). Small fix."
+    },
+    "ISS-232": {
+      "id": "ISS-232",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T21:20:02+00:00",
+      "updated_at": "2026-08-17T21:20:02+00:00",
+      "touched_round": 76,
+      "severity": 0.5,
+      "category": "stability",
+      "summary": "a single-rank exception after group init deadlocks all ranks under NCCL (no fail-fast/timeout; finally-barrier wedges too). Design-level guardrail; logged for a future round."
+    },
+    "ISS-233": {
+      "id": "ISS-233",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T21:20:02+00:00",
+      "updated_at": "2026-08-17T21:20:02+00:00",
+      "touched_round": 76,
+      "severity": 0.4,
+      "category": "performance",
+      "summary": "multi-rank persisted-append dedup appends every surviving hash N times to the shared seen-hashes file (per-rank DedupTextSource, no cross-rank coordination) -> N*x corpus-size file re-read wholesale; correct but unbounded bloat. Needs rank-0-only append or file locking."
+    },
+    "DEC-044": {
+      "id": "DEC-044",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T21:21:40+00:00",
+      "updated_at": "2026-08-17T21:21:40+00:00",
+      "touched_round": 76,
+      "title": "Round 76: execute 3 quick confirmed fixes (FSDP resume, streaming non-ASCII, gpus_per_node env); multi-node launch (ISS-229) becomes the round-77 milestone mainline",
+      "rationale": "Deep-dive (quantization/data/distributed) confirmed 9 defects. Cap of 3 task nodes per round: chose the quick, high-value, low-risk fixes (TASK-188/189/190). Multi-node rank offset is milestone-grade (documented headline feature, needs careful spawn/setup surgery + 2-process verification) so it gets its own focused round. Remaining issues logged to backlog.",
+      "alternatives_rejected": "Doing multi-node first this round: larger blast radius, deserves a dedicated round; bundling all tiny fixes into one mega-task: hurts reviewability and muddy scope."
+    },
+    "CHG-192": {
+      "id": "CHG-192",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T23:11:30+00:00",
+      "updated_at": "2026-08-17T23:11:30+00:00",
+      "touched_round": 76,
+      "commit": "08ac6f7",
+      "summary": "TASK-188/189/190: FSDP+compile checkpoint resumability (strip _orig_mod. on FSDP save, align on load); streaming/TextDataset skip un-encodable rows (DataConfig.skip_undecodable_rows); gpus_per_node env int coercion"
     }
   },
   "edges": [
@@ -16106,6 +16231,54 @@
       "to": "TASK-187",
       "type": "governs",
       "created_at": "2026-08-17T19:37:16+00:00"
+    },
+    {
+      "from": "CHG-192",
+      "to": "TASK-188",
+      "type": "implements",
+      "created_at": "2026-08-17T23:11:30+00:00"
+    },
+    {
+      "from": "CHG-192",
+      "to": "TASK-189",
+      "type": "implements",
+      "created_at": "2026-08-17T23:11:30+00:00"
+    },
+    {
+      "from": "CHG-192",
+      "to": "TASK-190",
+      "type": "implements",
+      "created_at": "2026-08-17T23:11:30+00:00"
+    },
+    {
+      "from": "ISS-229",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-17T23:18:57+00:00"
+    },
+    {
+      "from": "ISS-232",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-17T23:18:57+00:00"
+    },
+    {
+      "from": "ISS-230",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-17T23:18:57+00:00"
+    },
+    {
+      "from": "ISS-231",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-17T23:18:57+00:00"
+    },
+    {
+      "from": "ISS-233",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-08-17T23:18:57+00:00"
     }
   ]
 }
