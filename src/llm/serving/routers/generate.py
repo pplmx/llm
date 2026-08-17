@@ -83,6 +83,33 @@ def _require_generation_service():
     return generation_service
 
 
+def _token_count(text: str) -> int:
+    """The generated token count for ``text`` (non-streaming responses).
+
+    The non-streaming routes used ``len(text)`` — a char-count proxy that is
+    exact for character-level tokenizers but wrong for HF/BPE tokenizers
+    (one token spans several chars), and it diverged from the streaming path,
+    which counts tokens as they are decoded (RIL round-73 serving deep-dive
+    FINDING 4 / ISS-225). Re-encode ``text`` with the serving tokenizer for
+    the true count; any tokenizer that is unset or fails to round-trip its own
+    output falls back to ``len(text)``.
+    """
+    service = generation_service
+    encoder = getattr(getattr(service, "tokenizer", None), "encode", None)
+    if encoder is None:
+        return len(text)
+    try:
+        encoded = encoder(text)
+    except KeyError, ValueError, TypeError, RuntimeError:
+        return len(text)
+    if isinstance(encoded, (list, tuple)):
+        return len(encoded)
+    numel = getattr(encoded, "numel", None)
+    if numel is not None and getattr(encoded, "ndim", None) == 1:
+        return int(numel())
+    return len(text)
+
+
 # Own thread pool for the streaming bridge instead of ``asyncio.to_thread``:
 # ``asyncio.to_thread`` uses the loop's default executor, and
 # ``asyncio.run``'s ``shutdown_default_executor`` JOINS it — a stalled
@@ -304,8 +331,8 @@ async def generate_text(
     # if the model echoed it back, mirroring chat.py's completion extraction.
     completion = generated_text[len(request.prompt) :] if generated_text.startswith(request.prompt) else generated_text
 
-    metrics.observe_tokens(endpoint="generate", token_count=len(completion))
-    return GenerationResponse(generated_text=completion, token_count=len(completion))
+    metrics.observe_tokens(endpoint="generate", token_count=_token_count(completion))
+    return GenerationResponse(generated_text=completion, token_count=_token_count(completion))
 
 
 async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
@@ -435,7 +462,7 @@ async def batch_generate_text(
     # Record per-prompt token count; the counter is cumulative across
     # the whole batch, the histogram is per-prompt.
     for text in stripped:
-        metrics.observe_tokens(endpoint="batch_generate", token_count=len(text))
+        metrics.observe_tokens(endpoint="batch_generate", token_count=_token_count(text))
     return BatchGenerationResponse(
         results=[GenerationResponse(generated_text=text, token_count=len(text)) for text in stripped]
     )

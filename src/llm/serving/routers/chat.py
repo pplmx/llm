@@ -23,6 +23,7 @@ from llm.serving.routers.generate import (
     _drive_sync_iterator,
     _sync_generate,
     _sync_stream_generate,
+    _token_count,
     _validate_stream_request,
 )
 from llm.serving.schemas import (
@@ -163,14 +164,15 @@ async def chat_completions(
     # verbatim (RIL ISS-114).
     completion = generated_text[len(prompt) :] if generated_text.startswith(prompt) else generated_text
 
-    metrics.observe_tokens(endpoint="chat_completions", token_count=len(completion))
-
     # Per the OpenAI spec, a completion truncated by the ``max_tokens`` budget
-    # is ``finish_reason="length"``, not ``"stop"``. We approximate the
-    # generated token count with ``len(completion)`` (the same char-count
-    # proxy this endpoint already uses for ``completion_tokens``); for the
-    # char-level tokenizers this is exact.
-    finish_reason = "length" if len(completion) >= request.max_tokens else "stop"
+    # is ``finish_reason="length"``, not ``"stop"``. Token counts come from
+    # re-encoding the text with the serving tokenizer (exact for char
+    # tokenizers, and correct for HF/BPE tokenizers where one token spans
+    # several chars) — matching the ``token_count`` the streaming path
+    # accumulates per decoded token (RIL ISS-151 / round-73 FINDING 4).
+    completion_tokens = _token_count(completion)
+    metrics.observe_tokens(endpoint="chat_completions", token_count=completion_tokens)
+    finish_reason = "length" if completion_tokens >= request.max_tokens else "stop"
 
     return ChatCompletionResponse(
         model=request.model,
@@ -182,9 +184,9 @@ async def chat_completions(
             )
         ],
         usage=ChatCompletionUsage(
-            prompt_tokens=len(prompt),
-            completion_tokens=len(completion),
-            total_tokens=len(prompt) + len(completion),
+            prompt_tokens=_token_count(prompt),
+            completion_tokens=completion_tokens,
+            total_tokens=_token_count(prompt) + completion_tokens,
         ),
     )
 

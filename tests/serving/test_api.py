@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from llm.serving.api import app
+from tests.support.tokenizers import StubTokenizer
 
 
 @pytest.fixture
@@ -249,9 +250,12 @@ def test_generate_text(client):
     assert "token_count" in data
     # Regression (RIL ISS-148): the eager backend returns prompt+completion;
     # the route must strip the prompt so generated_text is the completion only
-    # and token_count counts generated tokens, not prompt chars.
+    # and token_count counts generated tokens, not prompt chars. Since round-73
+    # ISS-225 the count comes from re-encoding the completion with the serving
+    # tokenizer (``StubTokenizer.encode`` here returns a fixed [1,2,3]), so it
+    # is the tokenizer's token count, not a character count.
     assert not data["generated_text"].startswith(payload["prompt"])
-    assert data["token_count"] == len(data["generated_text"])
+    assert data["token_count"] == len(StubTokenizer().encode(data["generated_text"]))
 
 
 @pytest.mark.slow
@@ -266,7 +270,32 @@ def test_generate_advanced_params(client):
     assert "generated_text" in data
     # Non-streaming /generate must not echo the prompt (RIL ISS-148).
     assert not data["generated_text"].startswith(payload["prompt"])
-    assert data["token_count"] == len(data["generated_text"])
+    # Token-count is the serving tokenizer's count of the completion (ISS-225),
+    # not a character count.
+    assert data["token_count"] == len(StubTokenizer().encode(data["generated_text"]))
+
+
+def test_token_count_uses_tokenizer_not_char_length(monkeypatch):
+    """ISS-225: non-streaming token counts re-encode with the serving tokenizer,
+    so a multi-char-token tokenizer (HF/BPE) reports the true token count
+    instead of the character count the routes used before."""
+    from types import SimpleNamespace
+
+    import llm.serving.routers.generate as gen
+
+    class _BpeishToks:
+        """Tokenizer whose tokens span multiple chars (like a BPE merge)."""
+
+        def encode(self, text: str) -> list[int]:
+            return [1, 2, 3] if len(text) > 2 else [1]
+
+    monkeypatch.setattr(gen, "generation_service", SimpleNamespace(tokenizer=_BpeishToks()))
+    assert gen._token_count("abcdef") == 3, "multi-char tokens: 3 tokens, not 6 chars"
+    assert gen._token_count("ab") == 1
+
+    # No tokenizer configured -> char-count fallback (char-level tokenizers).
+    monkeypatch.setattr(gen, "generation_service", SimpleNamespace(tokenizer=None))
+    assert gen._token_count("abcdef") == 6
 
 
 @pytest.mark.slow
