@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 70,
+  "round": 71,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-16T17:16:32+00:00",
+  "updated_at": "2026-08-17T02:19:27+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 63,
+      "touched_round": 71,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -1070,7 +1070,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:35:49+00:00",
       "updated_at": "2026-08-10T14:35:49+00:00",
-      "touched_round": 61,
+      "touched_round": 71,
       "title": "quantization module",
       "details": "ptq/gptq/awq/smooth quantize + layers"
     },
@@ -5854,7 +5854,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:36:27+00:00",
       "updated_at": "2026-08-14T15:36:27+00:00",
-      "touched_round": 66,
+      "touched_round": 71,
       "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
     },
     "ISS-102": {
@@ -10288,6 +10288,205 @@
       "commit": "6e1383b",
       "title": "load_peft: per-parameter shape check with clear error; drop broken rank-widening doc claim",
       "body": "checkpoint.py: shape check before p.data.copy_ raises clear msg naming param + saved/live shapes; module + load_peft docstrings corrected (rank widening NOT implemented). 1 test. ISS-210."
+    },
+    "COMP-015": {
+      "id": "COMP-015",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T01:17:44+00:00",
+      "updated_at": "2026-08-17T01:17:44+00:00",
+      "touched_round": 71,
+      "title": "Runtime + model registry (src/llm/runtime: bootstrap, plugins, model_factory, tokenizer_factory)"
+    },
+    "ISS-211": {
+      "id": "ISS-211",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T01:18:38+00:00",
+      "updated_at": "2026-08-17T02:16:49+00:00",
+      "touched_round": 71,
+      "severity": 0.78,
+      "title": "quantize CLI torch.load weights_only=False reopens pickle RCE (calib tokens + model blob)",
+      "summary": "llm/cli/quantize.py:219 _load_calibration_tokens and :324 gptq model load use torch.load(weights_only=False) on user-supplied files; a crafted third-party --calib-data-tokens file or .pt runs __reduce__ code. serving/loader.py already hardens the same blob class with _register_framework_safe_globals() + weights_only=True (ISS-170/185). Verified: both sites exist."
+    },
+    "ISS-212": {
+      "id": "ISS-212",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T01:18:38+00:00",
+      "updated_at": "2026-08-17T02:16:49+00:00",
+      "touched_round": 71,
+      "severity": 0.5,
+      "title": "runtime/bootstrap.ensure_builtins_registered bare check-then-act flag (no lock)",
+      "summary": "runtime/bootstrap.py:11-18 two threads cold-starting MODEL_REGISTRY both pass the _builtins_registered gate and both run load_entry_point_registry; second thread Registry.register(decoder) raises ValueError. generation/registry.py:68-86 already fixed the same class double-checked (ISS-119). Verified: no lock in bootstrap.py."
+    },
+    "ISS-213": {
+      "id": "ISS-213",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T01:18:38+00:00",
+      "updated_at": "2026-08-17T02:16:49+00:00",
+      "touched_round": 71,
+      "severity": 0.3,
+      "title": "llm-migrate-ckpt no is_file() validation on legacy path",
+      "summary": "cli/migrate_ckpt.py:178 gates on legacy_path.exists() only; a directory named foo.pt passes then torch.load raises IsADirectoryError (not CheckpointMigrationError) -> raw traceback. Sibling quantize._validate_model_path checks is_file(). Cheap fix."
+    },
+    "ISS-214": {
+      "id": "ISS-214",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T01:19:19+00:00",
+      "updated_at": "2026-08-17T02:16:49+00:00",
+      "touched_round": 71,
+      "severity": 0.38,
+      "title": "SimpleCharacterTokenizer.encode marker fast-path raises bare KeyError when marker undeclared",
+      "summary": "simple_tokenizer.py:99-100 encode('<EOS>') uses ungated self.stoi[text]; a tokenizer with no declared specials (e.g. printable-only corpus) raises bare KeyError instead of the friendly vocab error or char-wise composition. Guard fast path with 'and text in self.stoi': preserves ISS-152 marker semantics when declared, falls through otherwise. Verified by executing in venv."
+    },
+    "TASK-179": {
+      "id": "TASK-179",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-17T01:20:33+00:00",
+      "updated_at": "2026-08-17T02:16:49+00:00",
+      "touched_round": 71,
+      "category": "security",
+      "severity": 0.78,
+      "title": "quantize CLI loads via weights_only=True + framework safe-globals",
+      "summary": "Mirror serving/loader._register_framework_safe_globals() for torch.load in quantize.py (model blob path) and use weights_only=True for --calib-data-tokens (plain tensors/lists always load). Kill both pickle-RCE sites.",
+      "lock_owner": "round71",
+      "lock_until": "2026-08-17T01:50:56+00:00"
+    },
+    "TASK-180": {
+      "id": "TASK-180",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-17T01:20:33+00:00",
+      "updated_at": "2026-08-17T02:16:49+00:00",
+      "touched_round": 71,
+      "category": "stability",
+      "severity": 0.5,
+      "title": "bootstrap.ensure_builtins_registered double-checked locking",
+      "summary": "Wrap module-level registration in a threading.Lock with double-checked re-read, mirroring generation/registry.py ISS-119 fix. Add cold-start race test like tests/core/test_registry_cold_start_race.py.",
+      "lock_owner": "round71",
+      "lock_until": "2026-08-17T01:50:56+00:00"
+    },
+    "TASK-181": {
+      "id": "TASK-181",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-17T01:20:33+00:00",
+      "updated_at": "2026-08-17T02:16:50+00:00",
+      "touched_round": 71,
+      "category": "correctness",
+      "severity": 0.35,
+      "title": "Error-path hardening: tokenizer marker guard + migrate is_file",
+      "summary": "(a) simple_tokenizer fast path guards \"and text in self.stoi\" so undeclared markers fall through to char-wise or friendly error; (b) llm-migrate-ckpt validates legacy path is_file() before convert, matching quantize._validate_model_path.",
+      "lock_owner": "round71",
+      "lock_until": "2026-08-17T01:50:56+00:00"
+    },
+    "CHG-177": {
+      "id": "CHG-177",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:16:26+00:00",
+      "updated_at": "2026-08-17T02:16:26+00:00",
+      "touched_round": 71,
+      "commit": "eb4ae2f",
+      "title": "quantize weights_only=True + framework safe-globals",
+      "summary": "collect TASK-179: shared allowlist extracted to llm/utils/serialization; quantize calib+model loads hardened; malicious-pickle + e2e regression tests"
+    },
+    "CHG-178": {
+      "id": "CHG-178",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:16:26+00:00",
+      "updated_at": "2026-08-17T02:16:26+00:00",
+      "touched_round": 71,
+      "commit": "df46eab",
+      "title": "bootstrap double-checked lock",
+      "summary": "TASK-180: module lock + re-read guard; cold-start race test"
+    },
+    "CHG-179": {
+      "id": "CHG-179",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:16:27+00:00",
+      "updated_at": "2026-08-17T02:16:27+00:00",
+      "touched_round": 71,
+      "commit": "ecab9aa",
+      "title": "tokenizer marker guard + migrate is_file",
+      "summary": "TASK-181: tokenizer fast-path guard; migrate is_file validation; regression tests"
+    },
+    "DEC-042": {
+      "id": "DEC-042",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:19:04+00:00",
+      "updated_at": "2026-08-17T02:19:04+00:00",
+      "touched_round": 71,
+      "rationale": "llm-quantize must not execute arbitrary pickle __reduce__ code from a model or --calib-data-tokens file (the repo already fail-closed in serving ISS-170/185). Load both with weights_only=True + a framework nn.Module allowlist; custom non-framework classes require explicit torch.serialization.add_safe_globals by the user, matching the trust model of serving.",
+      "alternatives_rejected": "keep weights_only=False because the user owns the trust boundary (rejected: inconsistent with ISS-170/185 and reopens RCE on shared/downloaded artifacts); extract safe-globals into shared llm.utils.serialization so the CLI does not import the FastAPI-heavy serving stack",
+      "title": "quantize loads weight_only=True + shared framework allowlist (round 71)"
+    },
+    "EV-178": {
+      "id": "EV-178",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:19:05+00:00",
+      "updated_at": "2026-08-17T02:19:05+00:00",
+      "touched_round": 71,
+      "source": "tests/cli/test_quantize_cli.py::test_load_calibration_tokens_refuses_malicious_pickle",
+      "summary": "crafted --calib-data-tokens with os.system __reduce__ is refused with UnpicklingError and the marker file is never created",
+      "confidence": 1.0
+    },
+    "EV-179": {
+      "id": "EV-179",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:19:05+00:00",
+      "updated_at": "2026-08-17T02:19:05+00:00",
+      "touched_round": 71,
+      "source": "tests/runtime/test_model_factory.py::test_bootstrap_cold_start_race_is_serialized",
+      "summary": "two threads cold-starting MODEL_REGISTRY both succeed (no duplicate-registration ValueError); decoder registered once",
+      "confidence": 1.0
+    },
+    "EV-180": {
+      "id": "EV-180",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:19:05+00:00",
+      "updated_at": "2026-08-17T02:19:05+00:00",
+      "touched_round": 71,
+      "source": "tests/tokenization/test_simple_tokenizer.py::test_encode_undeclared_marker_falls_through",
+      "summary": "undeclared EOS/BOS marker encodes as literal chars or contextual KeyError; declared marker still single-token",
+      "confidence": 1.0
+    },
+    "EV-181": {
+      "id": "EV-181",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:19:05+00:00",
+      "updated_at": "2026-08-17T02:19:05+00:00",
+      "touched_round": 71,
+      "source": "tests/training/test_migrate_ckpt.py::test_directory_named_pt_exits_1",
+      "summary": "directory named foo.pt exits 1 with one-line error, no IsADirectoryError traceback",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -15106,6 +15305,102 @@
       "to": "ISS-210",
       "type": "resolves",
       "created_at": "2026-08-16T17:14:21+00:00"
+    },
+    {
+      "from": "TASK-179",
+      "to": "ISS-211",
+      "type": "addresses",
+      "created_at": "2026-08-17T01:20:55+00:00"
+    },
+    {
+      "from": "TASK-180",
+      "to": "ISS-212",
+      "type": "addresses",
+      "created_at": "2026-08-17T01:20:55+00:00"
+    },
+    {
+      "from": "TASK-181",
+      "to": "ISS-214",
+      "type": "addresses",
+      "created_at": "2026-08-17T01:20:55+00:00"
+    },
+    {
+      "from": "TASK-181",
+      "to": "ISS-213",
+      "type": "addresses",
+      "created_at": "2026-08-17T01:20:55+00:00"
+    },
+    {
+      "from": "ISS-211",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-17T01:20:55+00:00"
+    },
+    {
+      "from": "ISS-212",
+      "to": "COMP-015",
+      "type": "located_in",
+      "created_at": "2026-08-17T01:20:55+00:00"
+    },
+    {
+      "from": "ISS-214",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-17T01:20:56+00:00"
+    },
+    {
+      "from": "ISS-213",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-17T01:20:56+00:00"
+    },
+    {
+      "from": "CHG-177",
+      "to": "ISS-211",
+      "type": "resolves",
+      "created_at": "2026-08-17T02:16:48+00:00"
+    },
+    {
+      "from": "CHG-178",
+      "to": "ISS-212",
+      "type": "resolves",
+      "created_at": "2026-08-17T02:16:48+00:00"
+    },
+    {
+      "from": "CHG-179",
+      "to": "ISS-214",
+      "type": "resolves",
+      "created_at": "2026-08-17T02:16:48+00:00"
+    },
+    {
+      "from": "CHG-179",
+      "to": "ISS-213",
+      "type": "resolves",
+      "created_at": "2026-08-17T02:16:48+00:00"
+    },
+    {
+      "from": "CHG-177",
+      "to": "TASK-179",
+      "type": "implements",
+      "created_at": "2026-08-17T02:16:49+00:00"
+    },
+    {
+      "from": "CHG-178",
+      "to": "TASK-180",
+      "type": "implements",
+      "created_at": "2026-08-17T02:16:49+00:00"
+    },
+    {
+      "from": "CHG-179",
+      "to": "TASK-181",
+      "type": "implements",
+      "created_at": "2026-08-17T02:16:49+00:00"
+    },
+    {
+      "from": "DEC-042",
+      "to": "COMP-009",
+      "type": "governs",
+      "created_at": "2026-08-17T02:19:27+00:00"
     }
   ]
 }
