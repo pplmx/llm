@@ -442,6 +442,34 @@ def test_load_calibration_batches_unknown_shape_passthrough(tmp_path: Path):
     assert result == {"unexpected": "dict"}
 
 
+def test_load_calibration_tokens_refuses_malicious_pickle(tmp_path: Path):
+    """Regression (RIL ISS-211): a pre-tokenized calibration file must NOT
+    execute arbitrary ``__reduce__`` code.
+
+    The old ``weights_only=False`` would run ``os.system`` from a crafted
+    third-party ``--calib-data-tokens`` file; the hardened load refuses it
+    before any code runs (same posture as the serving loader, ISS-170).
+    """
+    import os
+    import pickle
+
+    marker = tmp_path / "pwned"
+    evil = tmp_path / "evil.pt"
+
+    class _Exploit:
+        def __reduce__(self):  # pragma: no cover - must never run
+            return (os.system, (f"touch {marker}",))
+
+    with evil.open("wb") as fh:
+        pickle.dump(_Exploit(), fh, protocol=2)
+
+    from llm.cli.quantize import _load_calibration_batches
+
+    with pytest.raises(pickle.UnpicklingError, match="Weights only load failed"):
+        _load_calibration_batches(None, evil, None)
+    assert not marker.exists(), "malicious calibration pickle executed code"
+
+
 # ---------------------------------------------------------------------------
 # ISS-161: clobber guard + atomic save
 # ---------------------------------------------------------------------------

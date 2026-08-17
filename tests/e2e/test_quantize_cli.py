@@ -58,6 +58,20 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _allowlist_test_model() -> None:
+    """Register the test-local ``_TwoLayerMLP`` as a trusted pickle class.
+
+    ``llm-quantize`` loads model blobs with ``weights_only=True`` plus the
+    framework allowlist (RIL ISS-211), refusing anything outside it. This
+    test model is a plain ``nn.Module`` defined in this test module, so it is
+    registered up front — exactly what a user with a custom non-framework
+    module class must do before invoking the CLI.
+    """
+    torch.serialization.add_safe_globals([_TwoLayerMLP])
+    return
+
+
 @pytest.mark.e2e
 def test_cli_quantize_happy_path_replaces_linears(runner: CliRunner, tmp_path):
     """Full CLI invocation: model in → quantized model out.

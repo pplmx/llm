@@ -211,12 +211,14 @@ def _load_calibration_batches(
     # calib_data_tokens path
     typer.echo(f"Loading pre-tokenized calibration from {calib_data_tokens}...")
     # ``weights_only=False`` — calibration .pt files are user-supplied
-    # and may contain custom token tensors (e.g. wrappers from a
-    # different framework's tokenizer pipeline). PyTorch 2.6's default
-    # ``weights_only=True`` would reject anything beyond plain tensors.
+    # Calibration files are a tensor or a list of tensors — plain payloads
+    # that ``weights_only=True`` loads fine. Loading with the old
+    # ``weights_only=False`` executed arbitrary ``__reduce__`` code from a
+    # third-party/shared calibration file (RIL ISS-211), matching the
+    # arbitrary-pickle RCE the repo closed elsewhere (ISS-170/ISS-185).
     if calib_data_tokens is None:
         raise RuntimeError("pre-tokenized calibration path is required")
-    loaded = torch.load(calib_data_tokens, map_location="cpu", weights_only=False)
+    loaded = torch.load(calib_data_tokens, map_location="cpu", weights_only=True)
     if isinstance(loaded, list):
         return loaded
     if isinstance(loaded, torch.Tensor):
@@ -316,12 +318,18 @@ def gptq(
     # --- 3. Load inputs -------------------------------------------------
     try:
         typer.echo(f"Loading model from {model}...")
-        # ``weights_only=False`` is required: DecoderModel is a custom
-        # class that PyTorch 2.6's default ``weights_only=True`` would
-        # reject (it only allows a small allow-list of stdlib + torch
-        # types). The model file is user-supplied and the user owns the
-        # trust boundary — same trust model as ``pickle.load``.
-        model_obj = torch.load(model, map_location="cpu", weights_only=False)
+        # Framework model/quantization classes are allowlisted and loaded with
+        # ``weights_only=True`` (RIL ISS-211), closing the arbitrary-pickle RCE
+        # that ``weights_only=False`` left open on a user-supplied model file
+        # (a shared/community ``.pt`` can smuggle a ``__reduce__``). A pickle
+        # referencing anything outside the framework + torch.nn allowlist is
+        # REFUSED — matching the hardened serving loader (ISS-170). Callers
+        # with a genuinely custom non-framework model class register it via
+        # ``torch.serialization.add_safe_globals`` before invoking the CLI.
+        from llm.utils.serialization import register_framework_safe_globals
+
+        register_framework_safe_globals()
+        model_obj = torch.load(model, map_location="cpu", weights_only=True)
     except Exception as exc:
         typer.echo(f"Error: failed to load model {model}: {exc}", err=True)
         raise typer.Exit(code=2) from exc

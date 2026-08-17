@@ -15,6 +15,9 @@ from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.serving.config import ServingConfig
 from llm.training.core.checkpoint import load_checkpoint_payload
 from llm.training.core.config import ModelConfig
+from llm.utils.serialization import (
+    register_framework_safe_globals as _register_framework_safe_globals,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,65 +101,6 @@ def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
         epoch=payload.get("epoch"),
         loss=payload.get("loss"),
     )
-
-
-_SAFE_GLOBALS_REGISTERED = False
-
-
-def _register_framework_safe_globals() -> None:
-    """Allowlist the framework's built-in torch.nn.Module classes so
-    ``torch.load(..., weights_only=True)`` can reconstruct legitimate model
-    blobs (e.g. the bare module ``llm-quantize --output model.pt`` artifact)
-    WITHOUT falling back to the arbitrary-pickle ``weights_only=False``.
-
-    Security contract (RIL ISS-170): with this allowlist, ``weights_only=True``
-    can only instantiate classes defined inside ``llm.core``,
-    ``llm.models``, or ``llm.quantization`` — an attacker's pickle that
-    references ``os.system`` / ``subprocess`` / arbitrary builtins is refused
-    before any code runs, instead of executing ``__reduce__`` like
-    ``weights_only=False`` did.
-
-    Intentionally broad (every nn.Module subclass in those packages) so new
-    attention/MLP/quantized-layer variants are covered without a hand-maintained
-    list; the packages are small and already imported by the model loading path.
-    """
-    global _SAFE_GLOBALS_REGISTERED
-    if _SAFE_GLOBALS_REGISTERED:
-        return
-
-    import contextlib
-    import importlib
-    import pkgutil
-
-    classes: dict[int, type] = {}
-
-    def _collect_module_classes(pkg_name: str) -> None:
-        """Collect every ``torch.nn.Module`` subclass defined in ``pkg_name``."""
-        for mod in pkgutil.walk_packages(
-            importlib.import_module(pkg_name).__path__,
-            prefix=pkg_name + ".",
-        ):
-            with contextlib.suppress(Exception):
-                # Optional deps (flash_attn etc.) may be absent — skip, don't
-                # block serving with an import failure.
-                module = importlib.import_module(mod.name)
-                for obj in vars(module).values():
-                    if isinstance(obj, type) and issubclass(obj, torch.nn.Module) and obj is not torch.nn.Module:
-                        classes[id(obj)] = obj
-
-    # Framework built-ins (the classes a model blob / checkpoint may embed).
-    with contextlib.suppress(Exception):
-        for pkg_name in ("llm.core", "llm.models", "llm.quantization"):
-            _collect_module_classes(pkg_name)
-    # torch.nn container/layer classes embedded by any nn.Module graph
-    # (nn.Embedding, nn.Linear, nn.Dropout, nn.LayerNorm, nn.GELU, ...).
-    # They have no code-execution surface under weights_only, so allowlisting
-    # the whole built-in module namespace is safe.
-    with contextlib.suppress(Exception):
-        _collect_module_classes("torch.nn.modules")
-
-    torch.serialization.add_safe_globals(list(classes.values()))
-    _SAFE_GLOBALS_REGISTERED = True
 
 
 def infer_vocab_size(state_dict: dict[str, torch.Tensor]) -> int:
