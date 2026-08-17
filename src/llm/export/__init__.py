@@ -10,13 +10,15 @@ Public surface:
       target (ADR-011): GGUF v3 container with F16/F32/Q4_0/Q8_0 tensor
       types. Registered via the ``llm.export_backends`` setuptools
       entry point.
+    - ``load_gguf_model`` — rebuild a model from a GGUF the exporter
+      wrote with ``model_config=`` (round-71 load-back milestone).
     - :data:`EXPORT_REGISTRY` and :func:`export_model` — the
       registry-driven dispatch for any export target (built-in
       ``onnx`` plus third-party plugins via the
       ``llm.export_backends`` entry-point group).
 """
 
-from llm.export.gguf import build_gguf_exporter, export_to_gguf
+from llm.export.gguf import build_gguf_exporter, export_to_gguf, load_gguf_model
 from llm.export.onnx import export_to_onnx, get_onnx_info, verify_onnx
 from llm.export.registry import (
     EXPORT_REGISTRY,
@@ -39,5 +41,6 @@ __all__ = [
     "export_to_onnx",
     "export_to_torchscript",
     "get_onnx_info",
+    "load_gguf_model",
     "verify_onnx",
 ]

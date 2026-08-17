@@ -18,6 +18,7 @@ torch, via the model argument.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,7 @@ def _default_metadata(
     model_name: str | None,
     quant_type: GGMLQuantizationType,
     user_metadata: dict[str, Any] | None,
+    model_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     defaults: dict[str, Any] = {
         "general.architecture": "llm",
@@ -80,6 +82,12 @@ def _default_metadata(
         "general.file_type": _FILE_TYPE[quant_type],
         "general.quantization_version": 2,
     }
+    if model_config is not None:
+        # Full architecture config as a JSON string so ``load_gguf_model`` can
+        # rebuild the exact model (GGUF metadata is typed but has no nested
+        # dict type; a JSON string round-trips losslessly). Keys are sorted for
+        # deterministic output. (RIL round-71 GGUF loader milestone.)
+        defaults["general.llm_model_config"] = json.dumps(model_config, sort_keys=True)
     if user_metadata:
         defaults.update(user_metadata)
     return defaults
@@ -106,6 +114,7 @@ def export_to_gguf(
     metadata: dict[str, Any] | None = None,
     model_name: str | None = None,
     quantize_min_ndim: int = 2,
+    model_config: dict[str, Any] | None = None,
 ) -> Path:
     """Export ``model.state_dict()`` to a GGUF v3 file.
 
@@ -126,6 +135,11 @@ def export_to_gguf(
             class name).
         quantize_min_ndim: Minimum tensor rank eligible for
             block-quantization.
+        model_config: Optional architecture config as a JSON-safe dict
+            (e.g. ``ModelConfig.model_dump()``). When present it is
+            persisted as ``general.llm_model_config`` so
+            :func:`llm.export.gguf.loader.load_gguf_model` can rebuild
+            the exact model — closing the export-only loop (round 71).
 
     Returns:
         The resolved output path.
@@ -138,7 +152,7 @@ def export_to_gguf(
     quant_type = _resolve_quant_type(quantize)
 
     writer = GGUFWriter(output_path)
-    for key, value in _default_metadata(model, model_name, quant_type, metadata).items():
+    for key, value in _default_metadata(model, model_name, quant_type, metadata, model_config).items():
         writer.add_metadata(key, value)
 
     for name, tensor in model.state_dict().items():

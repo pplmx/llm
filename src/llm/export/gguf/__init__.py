@@ -13,10 +13,13 @@ Public surface:
 - I/O: :class:`GGUFWriter` / :class:`GGUFReader`;
 - quantization: :func:`quantize_q4_0` / :func:`dequantize_q4_0` and
   :func:`quantize_q8_0` / :func:`dequantize_q8_0`;
-- export: :func:`export_to_gguf` / :func:`build_gguf_exporter`.
+- export: :func:`export_to_gguf` / :func:`build_gguf_exporter`;
+- load-back: :func:`load_gguf_model` (re-build a model from a GGUF the
+  exporter wrote with ``model_config=``).
 """
 
 from llm.export.gguf.exporter import build_gguf_exporter, export_to_gguf
+from llm.export.gguf.loader import load_gguf_model
 from llm.export.gguf.quant import (
     dequantize_q4_0,
     dequantize_q8_0,
@@ -53,6 +56,7 @@ __all__ = [
     "dequantize_q4_0",
     "dequantize_q8_0",
     "export_to_gguf",
+    "load_gguf_model",
     "quantize_q4_0",
     "quantize_q8_0",
 ]
