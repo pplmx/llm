@@ -108,6 +108,7 @@ class ServingGenerationService:
         self,
         prompt: str,
         *,
+        request_id: str | None = None,
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: int | None = None,
@@ -129,12 +130,13 @@ class ServingGenerationService:
             logit_bias=logit_bias,
             stop=stop,
         )
-        return self.backend.generate(self.model, self.tokenizer, prompt, gen_config)
+        return self.backend.generate(self.model, self.tokenizer, prompt, gen_config, request_id=request_id)
 
     def stream(
         self,
         prompt: str,
         *,
+        request_id: str | None = None,
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: int | None = None,
@@ -156,7 +158,7 @@ class ServingGenerationService:
             logit_bias=logit_bias,
             stop=stop,
         )
-        yield from self.backend.stream(self.model, self.tokenizer, prompt, gen_config)
+        yield from self.backend.stream(self.model, self.tokenizer, prompt, gen_config, request_id=request_id)
 
     def batch_generate(
         self,

@@ -129,3 +129,44 @@ def test_engine_rejects_prompt_exceeding_model_capacity(device):
     # 3 prompt tokens + 6 generated fit the window (32) but not the model (8).
     with pytest.raises(ValueError, match=r"model's context window is 8"):
         engine.add_request(GenerationRequest(prompt="x", max_new_tokens=6))
+
+
+@pytest.mark.quick
+def test_backend_threads_client_request_id_into_engine(tiny_model, device, stub_tokenizer):
+    """ISS-224: the client's request_id must reach the engine, so its
+    duplicate-request-id protection (RIL ISS-123/F3) works from the HTTP path
+    (it was previously dropped at every layer between router and engine)."""
+    engine = ContinuousBatchingEngine(
+        model=tiny_model.to(device),
+        tokenizer=stub_tokenizer,
+        device=device,
+        max_batch_size=2,
+    )
+    backend = BatchedGenerationBackend(engine)
+
+    first = backend.stream(
+        model=engine.model,
+        tokenizer=stub_tokenizer,
+        prompt="hi",
+        config=GenerationConfig(max_new_tokens=5, temperature=0.0),
+        request_id="client-abc",
+    )
+    assert next(first) is not None
+    # The engine registered the sequence under the client-supplied id.
+    assert engine.scheduler.get_sequence("client-abc") is not None, (
+        "client request_id must thread into the engine's sequence key"
+    )
+
+    # A distinct request reusing the id is rejected by the engine — the
+    # protection that used to be dead code from the HTTP layer.
+    second = backend.stream(
+        model=engine.model,
+        tokenizer=stub_tokenizer,
+        prompt="different",
+        config=GenerationConfig(max_new_tokens=5, temperature=0.0),
+        request_id="client-abc",
+    )
+    with pytest.raises(ValueError, match="already in use"):
+        next(second)
+
+    list(first)  # drain — the engine's finally-reap frees the slot

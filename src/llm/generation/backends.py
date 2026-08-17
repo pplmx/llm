@@ -44,6 +44,8 @@ class GenerationBackend(abc.ABC):
         tokenizer: Any,
         prompt: str,
         config: GenerationConfig,
+        *,
+        request_id: str | None = None,
     ) -> Generator[str]:
         pass
 
@@ -53,8 +55,10 @@ class GenerationBackend(abc.ABC):
         tokenizer: Any,
         prompt: str,
         config: GenerationConfig,
+        *,
+        request_id: str | None = None,
     ) -> str:
-        chunks = list(self.stream(model, tokenizer, prompt, config))
+        chunks = list(self.stream(model, tokenizer, prompt, config, request_id=request_id))
         return prompt + "".join(chunks)
 
     def batch_generate(
@@ -76,6 +80,8 @@ class EagerGenerationBackend(GenerationBackend):
         tokenizer: Any,
         prompt: str,
         config: GenerationConfig,
+        *,
+        request_id: str | None = None,  # accepted for the ABC; eager has no request identity
     ) -> Generator[str]:
         from llm.generation.eager import stream_generate
 
@@ -132,10 +138,13 @@ class BatchedGenerationBackend(GenerationBackend):
         tokenizer: Any,
         prompt: str,
         config: GenerationConfig,
+        *,
+        request_id: str | None = None,
     ) -> Generator[str]:
         from llm.serving.schemas import GenerationRequest
 
         request = GenerationRequest(
+            request_id=request_id,
             prompt=prompt,
             max_new_tokens=config.max_new_tokens,
             temperature=config.temperature,
@@ -220,6 +229,8 @@ class SpeculativeDecodingBackend(GenerationBackend):
         tokenizer: Any,
         prompt: str,
         config: GenerationConfig,
+        *,
+        request_id: str | None = None,  # accepted for the ABC; speculative has no request identity
     ) -> Generator[str]:
         from llm.generation.speculative import speculative_generate
 

@@ -291,6 +291,12 @@ async def generate_text(
                         generated_text = await run_in_threadpool(
                             _sync_generate,
                             prompt=request.prompt,
+                            # Thread the client's request_id to the engine so
+                            # batched/continuous-batching duplicate-request-id
+                            # protection (RIL ISS-123/F3) works from the HTTP
+                            # path — it was previously dropped at every layer
+                            # (round-73 FINDING 3 / ISS-224).
+                            request_id=request.request_id,
                             max_new_tokens=request.max_new_tokens,
                             temperature=request.temperature,
                             top_k=request.top_k,
@@ -361,6 +367,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                 with metrics.track_inflight():
                     iterator = _sync_stream_generate(
                         prompt=request.prompt,
+                        request_id=request.request_id,  # ISS-224: thread to the engine
                         max_new_tokens=request.max_new_tokens,
                         temperature=request.temperature,
                         top_k=request.top_k,
