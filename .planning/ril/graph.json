@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 71,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T02:19:27+00:00",
+  "updated_at": "2026-08-17T02:36:52+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10487,6 +10487,45 @@
       "source": "tests/training/test_migrate_ckpt.py::test_directory_named_pt_exits_1",
       "summary": "directory named foo.pt exits 1 with one-line error, no IsADirectoryError traceback",
       "confidence": 1.0
+    },
+    "TASK-182": {
+      "id": "TASK-182",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-17T02:35:19+00:00",
+      "updated_at": "2026-08-17T02:36:52+00:00",
+      "touched_round": 71,
+      "category": "core-feature",
+      "severity": 0.45,
+      "title": "GGUF load-back milestone: exporter config metadata + load_gguf_model",
+      "summary": "The GGUF exporter was write-only (general.architecture hardcoded 'llm', no loader). Now export_to_gguf(..., model_config=...) persists the full ModelConfig as general.llm_model_config JSON, and llm.export.gguf.loader.load_gguf_model rebuilds the exact model via ModelFactory.from_config + strict load_state_dict. Close the round trip; foreign-ttar llama.cpp GGUF import remains future work (needs weight_mapping name mapping).",
+      "lock_owner": "round71",
+      "lock_until": "2026-08-17T03:05:19+00:00"
+    },
+    "CHG-180": {
+      "id": "CHG-180",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:36:23+00:00",
+      "updated_at": "2026-08-17T02:36:23+00:00",
+      "touched_round": 71,
+      "commit": Infinity,
+      "title": "GGUF load-back milestone",
+      "summary": "TASK-182: exporter model_config metadata + load_gguf_model; 7 round-trip tests"
+    },
+    "EV-182": {
+      "id": "EV-182",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T02:36:51+00:00",
+      "updated_at": "2026-08-17T02:36:51+00:00",
+      "touched_round": 71,
+      "source": "tests/export/test_gguf_roundtrip.py",
+      "summary": "export->load round-trips: f32 bit-exact, f16/q8 within quantizer error, forward matches, missing/bad config refused",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -15401,6 +15440,12 @@
       "to": "COMP-009",
       "type": "governs",
       "created_at": "2026-08-17T02:19:27+00:00"
+    },
+    {
+      "from": "CHG-180",
+      "to": "TASK-182",
+      "type": "implements",
+      "created_at": "2026-08-17T02:36:51+00:00"
     }
   ]
 }
