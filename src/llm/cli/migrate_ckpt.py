@@ -179,6 +179,14 @@ def main(
         typer.echo(f"error: legacy checkpoint not found: {legacy_path}", err=True)
         raise typer.Exit(code=1)
 
+    # A directory named ``foo.pt`` would pass the exists() gate, then
+    # ``torch.load(directory)`` raised an IsADirectoryError raw traceback
+    # (RIL ISS-213); mirror quantize's ``_validate_model_path`` which checks
+    # ``is_file()`` so the error is the documented one-line exit-1 form.
+    if not legacy_path.is_file():
+        typer.echo(f"error: legacy checkpoint is not a regular file: {legacy_path}", err=True)
+        raise typer.Exit(code=1)
+
     stem = legacy_path.with_suffix("")
     sidecars = {
         "weights": stem.with_suffix(".safetensors"),

@@ -95,8 +95,13 @@ class SimpleCharacterTokenizer:
         # A special marker encoded verbatim maps to its single token id (the
         # pad precedent). Without this, ``encode("<EOS>")`` flattened to the
         # char ids of '<','E','O','S','>' even when the tokenizer had
-        # registered the marker as a special (RIL ISS-152).
-        if text in (self.pad_char, self.eos_char, self.bos_char):
+        # registered the marker as a special (RIL ISS-152). The guard keeps
+        # the fast path for declared markers only: a tokenizer built from a
+        # corpus that never registers EOS/BOS (e.g. a printable-only one)
+        # would otherwise raise a bare ``KeyError: '<EOS>'`` with no context
+        # (RIL ISS-214) — it now falls through to the char-wise loop, which
+        # returns the literal composition or the contextual vocab error.
+        if text in (self.pad_char, self.eos_char, self.bos_char) and text in self.stoi:
             return [self.stoi[text]]
 
         tokens: list[int] = []

@@ -262,6 +262,35 @@ class TestSimpleCharacterTokenizerEndToEnd:
         with pytest.raises(KeyError):  # Any other non-empty string will fail
             tokenizer.encode("a")
 
+    def test_encode_undeclared_marker_falls_through(self, basic_tokenizer):
+        """Regression (RIL ISS-214): encoding an EOS/BOS marker when the
+        tokenizer never declared it must NOT raise a bare ``KeyError:
+        '<EOS>'`` with no context.
+
+        It falls through to the char-wise path: literal composition when the
+        marker chars are in the vocab, or the contextual vocab error
+        otherwise. Declared markers keep the single-token fast path (ISS-152).
+        """
+        import string
+
+        # basic_tokenizer's corpus has no '<' char → contextual error, not the
+        # raw marker KeyError.
+        assert "<EOS>" not in basic_tokenizer.stoi
+        with pytest.raises(KeyError, match="Character '<' not found"):
+            basic_tokenizer.encode("<EOS>")
+
+        # A printable-only corpus contains the marker chars but never registers
+        # the special token → the literal is expressed char-by-char.
+        tokenizer = SimpleCharacterTokenizer([string.printable])
+        assert tokenizer.eos_token_id is None
+        assert tokenizer.bos_token_id is None
+        assert "<EOS>" not in tokenizer.stoi
+        assert tokenizer.encode("<EOS>") == [tokenizer.stoi[c] for c in "<EOS>"]
+
+        # A declared marker still maps to its single token id (ISS-152).
+        declared = SimpleCharacterTokenizer(["<EOS>"])
+        assert declared.encode("<EOS>") == [declared.eos_token_id]
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

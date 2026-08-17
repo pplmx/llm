@@ -273,6 +273,18 @@ class TestMigrateCkptCli:
         assert result.exit_code == 1
         assert "not found" in strip_ansi(result.stderr)
 
+    def test_directory_named_pt_exits_1(self, cli_runner: CliRunner, tmp_path: Path):
+        """Regression (RIL ISS-213): a *directory* named ``foo.pt`` passed the
+        ``exists()`` gate then died with an ``IsADirectoryError`` raw
+        traceback deep in ``torch.load``. It must exit 1 with the clean
+        one-line error, matching the ``is_file()`` guard in quantize."""
+        directory = tmp_path / "dangling.pt"
+        directory.mkdir()
+
+        result = cli_runner.invoke(app, [str(directory)])
+        assert result.exit_code == 1
+        assert "not a regular file" in strip_ansi(result.stderr)
+
     def test_split_layout_already_present_exits_1(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         # Pre-create a sidecar so the convert refuses.
         stem = legacy_checkpoint.with_suffix("")
