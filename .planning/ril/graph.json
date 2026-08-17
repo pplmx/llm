@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 71,
+  "round": 72,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T04:07:49+00:00",
+  "updated_at": "2026-08-17T11:50:22+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10679,6 +10679,40 @@
       "commit": "fb4e84c",
       "title": "unknown HF architecture refusal",
       "summary": "TASK-185: detect_architecture returns unknown; from_pretrained NotImplementedError; tests"
+    },
+    "TASK-186": {
+      "id": "TASK-186",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T11:24:48+00:00",
+      "updated_at": "2026-08-17T11:49:43+00:00",
+      "touched_round": 71,
+      "category": "core-feature",
+      "summary": "Foreign llama.cpp GGUF import milestone: load_gguf_model imports third-party dense Llama-style GGUFs (general.architecture + llama.* metadata -> ModelConfig; GGUF_MAPPING/convert_gguf_weights maps token_embd/blk.*/output_norm/output tensor names into llm state-dict naming)"
+    },
+    "EV-183": {
+      "id": "EV-183",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T11:48:57+00:00",
+      "updated_at": "2026-08-17T11:48:57+00:00",
+      "touched_round": 71,
+      "source": "2e28ebd",
+      "summary": "foreign GGUF import verified: f32 exact roundtrip + forward equality, GQA, tied-head, q8 within quantizer error; tests/export+compat 211 passed; full make test-fast exit 0",
+      "confidence": 1.0
+    },
+    "CHG-184": {
+      "id": "CHG-184",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T11:49:13+00:00",
+      "updated_at": "2026-08-17T11:49:13+00:00",
+      "touched_round": 71,
+      "commit": "2e28ebd",
+      "summary": "Foreign llama.cpp GGUF import (TASK-186): GGUF_MAPPING/convert_gguf_weights in weight_mapping + foreign path in load_gguf_model; 8 new tests"
     }
   },
   "edges": [
@@ -15725,6 +15759,12 @@
       "to": "TASK-185",
       "type": "implements",
       "created_at": "2026-08-17T04:07:14+00:00"
+    },
+    {
+      "from": "CHG-184",
+      "to": "TASK-186",
+      "type": "implements",
+      "created_at": "2026-08-17T11:49:43+00:00"
     }
   ]
 }
