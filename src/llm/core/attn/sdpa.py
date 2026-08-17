@@ -35,6 +35,7 @@ def sdpa(
     is_causal: bool = False,
     scale: float | None = None,
     window_size: int | None = None,
+    prefix_len: int = 0,
 ) -> Tensor:
     """
     Computes Scaled Dot-Product Attention using `torch.nn.functional.scaled_dot_product_attention`.
@@ -58,6 +59,9 @@ def sdpa(
         is_causal (bool): Whether to apply causal masking.
         scale (float | None): Scaling factor.
         window_size (int | None): Sliding window size.
+        prefix_len (int): How many prefix K/V columns were prepended ahead of
+            the real keys (Prefix Tuning). Shifts any causal diagonal by this
+            amount so the real context stays visible (round-71 fix).
     """
 
     # 1. Handle Window Size and Mask Merging
@@ -67,7 +71,10 @@ def sdpa(
     # Complex path: We need to construct a mask manually if:
     # - We have a window constraint (Torch SDPA doesn't support window_size directly yet for all backends/cases easily without mask)
     # - We have BOTH causal=True AND an attention mask (Torc SDPA generally prefers one or the other, or merged)
-    if has_window or (is_causal and attn_mask is not None):
+    # - causal=True with a prefix shift: torch's native is_causal mask is
+    #   left-aligned (diagonal=1) and cannot express the prefix offset, so the
+    #   shifted causal mask must be materialized here (round-71 prefix fix).
+    if has_window or (is_causal and (attn_mask is not None or prefix_len != 0)):
         seq_len_q = query.size(-2)
         seq_len_k = key.size(-2)
         device = query.device
@@ -79,9 +86,18 @@ def sdpa(
         if is_causal:
             # True = Mask out (Upper triangle)
             # Shape: (Sq, Sk)
+            #
+            # ``prefix_len`` shifts the diagonal: when prefix K/V was prepended
+            # ahead of the real keys (Prefix Tuning), key column ``j`` is at
+            # absolute position ``j`` while query row ``i`` is at absolute
+            # position ``prefix_len + i`` — so the causal bound is
+            # ``j <= prefix_len + i``, i.e. ``diagonal = 1 + prefix_len``.
+            # Without the shift the real (right-shifted) context keys were all
+            # masked and the query attended only prefix keys (RIL round-71,
+            # prefix-causal HIGH).
             full_mask = torch.triu(
                 torch.ones((seq_len_q, seq_len_k), device=device, dtype=torch.bool),
-                diagonal=1,
+                diagonal=1 + prefix_len,
             )
 
         if has_window:
@@ -227,8 +243,8 @@ def sdpa(
                     device=query.device,
                     dtype=query.dtype,
                 ),
-                diagonal=1,
-            )  # [Sq, Sk]; lower triangle = 0 (keep)
+                diagonal=1 + prefix_len,
+            )  # [Sq, Sk]; lower triangle = 0 (keep); diagonal shifted by prefix
             torch_attn_mask = _add_attn_bias(torch_attn_mask, causal, query)
             torch_attn_mask = _add_attn_bias(torch_attn_mask, attn_bias.to(query.dtype), query)
             is_causal = False

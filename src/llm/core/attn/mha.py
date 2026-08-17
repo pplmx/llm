@@ -249,6 +249,17 @@ class MultiHeadAttention(nn.Module):
                     "ALiBi (use_alibi=True) is not supported with paged attention; "
                     "use attn_impl='mha' with the linear KV cache."
                 )
+            if prefix_kv is not None:
+                # ``_forward_paged`` never threads ``prefix_kv`` through the
+                # block allocator, so a PrefixTuningAttention-wrapped MHA under
+                # paged/continuous-batching serving silently ignored the prefix
+                # and ran as though the model was never prefix-tuned (silent
+                # wrong answer). Reject loudly, matching FlashAttention's
+                # existing refusal (RIL round-71 paged-prefix fix).
+                raise NotImplementedError(
+                    "prefix tuning (prefix_kv) is not supported with paged attention; "
+                    "use the linear KV-cache path (kv_caches) instead."
+                )
             return self._forward_paged(
                 q=q,
                 k=k,
@@ -334,6 +345,11 @@ class MultiHeadAttention(nn.Module):
             is_causal=use_causal if not has_past else False,
             scale=None,
             window_size=self.window_size,
+            # The prefix was prepended to K/V above (k_len = prefix_len + q_len
+            # in prefill), so an unshifted top-left causal mask hides every real
+            # key. Shift the causal diagonal by the prefix length (round-71
+            # prefix-causal fix).
+            prefix_len=prefix_k.shape[2] if prefix_kv is not None else 0,
         )  # Output shape: [B, N, S, D]
 
         # 4. Combine head outputs
