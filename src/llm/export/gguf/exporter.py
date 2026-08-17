@@ -27,7 +27,7 @@ import numpy as np
 import torch.nn as nn
 
 from llm.export.gguf.spec import (
-    SUPPORTED_TENSOR_TYPES,
+    EXPORT_TENSOR_TYPES,
     GGMLQuantizationType,
     GGUFError,
     can_quantize_shape,
@@ -64,8 +64,15 @@ def _resolve_quant_type(quantize: str | GGMLQuantizationType | None) -> GGMLQuan
                 f"quantize must be one of {sorted(_QUANT_NAME_TO_TYPE)} or a GGMLQuantizationType, got {quantize!r}"
             )
         ttype = _QUANT_NAME_TO_TYPE[key]
-    if ttype not in SUPPORTED_TENSOR_TYPES:
-        raise GGUFError(f"unsupported GGML tensor type {ttype.name}")
+    # The reader supports the K-quant / legacy types too, but export only
+    # emits F32/F16/Q4_0/Q8_0 — refuse the reader-only types (which also have
+    # no ``general.file_type`` mapping) rather than crashing with a KeyError
+    # later (round-75 review HIGH).
+    if ttype not in EXPORT_TENSOR_TYPES:
+        raise GGUFError(
+            f"{ttype.name} is reader-supported but not exportable; "
+            f"export supports {sorted(t.name for t in EXPORT_TENSOR_TYPES)}"
+        )
     return ttype
 
 

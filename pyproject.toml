@@ -51,6 +51,7 @@ dev = [
 ]
 test = [
     "allure-pytest>=2.16.0",
+    "gguf>=0.18.0",  # llama.cpp's official reader — reference for GGUF k-quant dequant cross-checks
     "httpx2>=2.9.0",
     "hypothesis>=6.0",
     "ipykernel>=7.2.0",

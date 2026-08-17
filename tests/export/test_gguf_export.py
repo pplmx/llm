@@ -15,7 +15,7 @@ from llm.export import (
     export_model,
 )
 from llm.export.gguf import GGUFReader, build_gguf_exporter, export_to_gguf
-from llm.export.gguf.spec import GGMLQuantizationType
+from llm.export.gguf.spec import GGMLQuantizationType, GGUFError
 from llm.models.decoder import DecoderModel
 
 
@@ -93,6 +93,14 @@ class TestExportPolicy:
     def test_unknown_quantize_raises(self, small_model, tmp_path):
         with pytest.raises(ValueError, match="quantize must be one of"):
             export_to_gguf(small_model, tmp_path / "m.gguf", quantize="q4_1")
+
+    def test_reader_only_quantize_enum_raises_cleanly(self, small_model, tmp_path):
+        """A reader-supported-but-not-exportable type must raise GGUFError,
+        not crash with a KeyError in the file_type mapping (round-75 review
+        HIGH regression)."""
+        for reader_only in (GGMLQuantizationType.Q4_1, GGMLQuantizationType.Q5_K):
+            with pytest.raises(GGUFError, match="reader-supported but not exportable"):
+                export_to_gguf(small_model, tmp_path / "m.gguf", quantize=reader_only)
 
     def test_non_float_tensor_raises(self, tmp_path):
         model = _IntBufferModel()

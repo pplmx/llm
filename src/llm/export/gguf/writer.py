@@ -18,12 +18,12 @@ import numpy as np
 from llm.export.gguf.metadata import encode_metadata
 from llm.export.gguf.quant import quantize_q4_0, quantize_q8_0
 from llm.export.gguf.spec import (
+    EXPORT_TENSOR_TYPES,
     GGML_BLOCK_SIZE,
     GGUF_DEFAULT_ALIGNMENT,
     GGUF_HEADER_SIZE,
     GGUF_MAGIC,
     GGUF_VERSION,
-    SUPPORTED_TENSOR_TYPES,
     GGMLQuantizationType,
     GGUFError,
     align_up,
@@ -172,10 +172,10 @@ class GGUFWriter:
         if any(existing == name for existing, _, _, _ in self._tensors):
             raise ValueError(f"duplicate tensor name {name!r}")
         ttype = ggml_type if isinstance(ggml_type, GGMLQuantizationType) else parse_ggml_type(str(ggml_type))
-        if ttype not in SUPPORTED_TENSOR_TYPES:
+        if ttype not in EXPORT_TENSOR_TYPES:
             raise GGUFError(
-                f"unsupported GGML tensor type {ttype.name}; "
-                f"v1 supports {sorted(t.name for t in SUPPORTED_TENSOR_TYPES)}"
+                f"{ttype.name} is reader-supported but not exportable; "
+                f"the writer emits {sorted(t.name for t in EXPORT_TENSOR_TYPES)}"
             )
         arr = _as_float32_array(data)
         if arr.ndim == 0:

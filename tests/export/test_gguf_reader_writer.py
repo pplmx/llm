@@ -229,9 +229,13 @@ class TestTensorRoundTrip:
             writer.add_tensor("w", np.zeros(32, dtype=np.int64), ggml_type="f16")
 
     def test_unsupported_type_raises(self):
+        # K-quants / Q4_1 are reader-supported but not exportable (round 75):
+        # the writer must refuse them up front, naming the exportable set.
         writer = GGUFWriter("x.gguf")
-        with pytest.raises(GGUFError, match="unsupported GGML tensor type"):
+        with pytest.raises(GGUFError, match="reader-supported but not exportable"):
             writer.add_tensor("w", np.zeros(32, dtype=np.float32), ggml_type="q4_1")
+        with pytest.raises(GGUFError, match="reader-supported but not exportable"):
+            writer.add_tensor("w", np.zeros(256, dtype=np.float32), ggml_type="q6_k")
 
     def test_quantized_last_dim_must_be_multiple_of_32(self):
         writer = GGUFWriter("x.gguf")
@@ -388,7 +392,9 @@ class TestCorruptFiles:
             GGUFReader(path)
 
     def test_unsupported_tensor_type(self, tmp_path):
-        head = _header() + _tensor_info(type_code=GGMLQuantizationType.Q4_1)
+        # Q8_1 / IQ* are not understood by the v1 reader (deprecated upstream /
+        # grid-based); Q4_1 and the K-quants are now supported (round 75).
+        head = _header() + _tensor_info(type_code=GGMLQuantizationType.Q8_1)
         path = tmp_path / "unsup_tt.gguf"
         path.write_bytes(_assemble(head))
         with pytest.raises(GGUFError, match="unsupported GGML type"):

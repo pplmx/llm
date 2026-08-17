@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 74,
+  "round": 75,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T15:03:55+00:00",
+  "updated_at": "2026-08-17T16:26:37+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10891,6 +10891,34 @@
       "touched_round": 74,
       "commit": "7467b5f",
       "summary": "ISS-224: thread client request_id through routers->generation_service->backends->engine GenerationRequest so batched dup-id protection (ISS-123/F3) works from HTTP"
+    },
+    "TASK-187": {
+      "id": "TASK-187",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-17T16:25:54+00:00",
+      "updated_at": "2026-08-17T16:26:37+00:00",
+      "touched_round": 75,
+      "category": "core-feature",
+      "severity": 0.8,
+      "effort": 3.0,
+      "title": "GGUF K-quant import — dequantize real llama.cpp quantized files (Q4_1/Q5_0/Q5_1 + Q2_K/Q3_K/Q4_K/Q5_K/Q6_K)",
+      "summary": "Reader only supports F32/F16/Q4_0/Q8_0, so round-72 foreign import rejects every real llama.cpp publish file (Q4_K_M/Q5_K_M/Q6_K are 256-block K-quants). Implement dequantization for 8 common types (port ggml-quants.c math verified against gguf-py), wire into read_tensor + spec data sizes. Import-only; K-quant export quantizers deferred.",
+      "lock_owner": "round75",
+      "lock_until": "2026-08-17T16:56:37+00:00"
+    },
+    "DEC-043": {
+      "id": "DEC-043",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T16:26:22+00:00",
+      "updated_at": "2026-08-17T16:26:22+00:00",
+      "touched_round": 75,
+      "title": "Milestone r75: GGUF K-quant import (dequantize-only) is the next milestone",
+      "rationale": "Foreign llama.cpp import (rounds 72-73) is in practice limited to F16/F32 files: the reader and spec support only F32/F16/Q4_0/Q8_0, yet virtually every downloadable llama.cpp GGUF is a 256-block K-quant (Q4_K_M/Q5_K_M/Q6_K/Q3_K_M). Dequant is a bounded, mechanical port of ggml-quants.c math (verified byte-for-byte against gguf-py 0.19); no quantizers needed. Milestone unlocks importing real models, extending round-72's capability to actual use.",
+      "alternatives_rejected": "K-quant export (quantize_row_qX_K_ref): rejected for this round - even gguf-py omits K-quant quantizers, the C quantizers are long/priority-optimized, and export users can get K-quants from llama.cpp; mmap reader: orthogonal perf work; IQ* / Q8_1: Q8_1 dequant removed upstream and is never a top-level model quant; IQ* are rare and grid-based (separate follow-up)."
     }
   },
   "edges": [

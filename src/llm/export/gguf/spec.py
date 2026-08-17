@@ -32,8 +32,10 @@ GGUF_VERSION = 3
 GGUF_DEFAULT_ALIGNMENT = 32
 # Serialized header size: magic u32 + version u32 + tensor count u64 + KV count u64.
 GGUF_HEADER_SIZE = 24
-# Element count per block for the block-quantized types (QK4_0 / QK8_0).
+# Element count per block for the legacy 32-wide block types (QK4_0/QK4_1/...).
 GGML_BLOCK_SIZE = 32
+# Element count per block for the K-quant family (``QK_K`` in ggml).
+GGML_K_BLOCK_SIZE = 256
 
 
 class GGUFError(ValueError):
@@ -61,10 +63,13 @@ class GGUFValueType(IntEnum):
 class GGMLQuantizationType(IntEnum):
     """GGML tensor data types as stored in GGUF tensor info (``ggml_type``).
 
-    The integer type codes were renumbered by ggml PR #6050; the four
-    types implemented in v1 (``F32`` / ``F16`` / ``Q4_0`` / ``Q8_0``)
-    have stable codes across all versions. The remaining values follow
-    the current ggml.h enumeration.
+    The integer type codes were renumbered by ggml PR #6050.  ``F32`` /
+    ``F16`` / ``Q4_0`` / ``Q8_0`` have stable codes across all versions and
+    are the types this repo *exports*.  Reading additionally supports the
+    legacy 32-wide schemes (``Q4_1`` / ``Q5_0`` / ``Q5_1``) and the 256-wide
+    K-quant family (``Q2_K`` .. ``Q6_K``) that make up virtually every
+    downloadable llama.cpp GGUF.  The remaining values follow the current
+    ggml.h enumeration.
     """
 
     F32 = 0
@@ -128,15 +133,56 @@ _RAW_TYPE_SIZES = {
     GGMLQuantizationType.F16: 2,
 }
 
-# Per-block byte size for the block-quantized types implemented in v1:
-# fp16 scale + packed payload (16 nibble bytes for Q4_0, 32 int8 bytes for Q8_0).
+# Per-block byte size for the block-quantized types: ``(block_size, bytes)``.
+# The legacy 32-wide schemes are ``fp16 scale`` (and, where applicable, an
+# fp16 min) followed by the packed values: Q4_0 = 2+16, Q4_1 = 2+2+16,
+# Q5_0 = 2+4+16, Q5_1 = 2+2+4+16, Q8_0 = 2+32.  The K-quant family uses the
+# 256-wide ``block_qX_K`` structs from ggml-quants.h: Q2_K = scales(16)+qs(64)
+# +d(2)+dmin(2), Q3_K = hmask(32)+qs(64)+scales(12)+d(2), Q4_K = d(2)+dmin(2)
+# +scales(12)+qs(128), Q5_K = d(2)+dmin(2)+scales(12)+qh(32)+qs(128),
+# Q6_K = ql(128)+qh(64)+scales(16)+d(2).
 _BLOCK_TYPE_SIZES = {
-    GGMLQuantizationType.Q4_0: 2 + 16,
-    GGMLQuantizationType.Q8_0: 2 + 32,
+    GGMLQuantizationType.Q4_0: (GGML_BLOCK_SIZE, 2 + 16),
+    GGMLQuantizationType.Q4_1: (GGML_BLOCK_SIZE, 2 + 2 + 16),
+    GGMLQuantizationType.Q5_0: (GGML_BLOCK_SIZE, 2 + 4 + 16),
+    GGMLQuantizationType.Q5_1: (GGML_BLOCK_SIZE, 2 + 2 + 4 + 16),
+    GGMLQuantizationType.Q8_0: (GGML_BLOCK_SIZE, 2 + 32),
+    GGMLQuantizationType.Q2_K: (GGML_K_BLOCK_SIZE, 16 + 64 + 4),
+    GGMLQuantizationType.Q3_K: (GGML_K_BLOCK_SIZE, 32 + 64 + 12 + 2),
+    GGMLQuantizationType.Q4_K: (GGML_K_BLOCK_SIZE, 4 + 12 + 128),
+    GGMLQuantizationType.Q5_K: (GGML_K_BLOCK_SIZE, 4 + 12 + 32 + 128),
+    GGMLQuantizationType.Q6_K: (GGML_K_BLOCK_SIZE, 2 + 16 + 128 + 64),
 }
 
+# Types the **reader** can parse and dequantize (F32/F16/Q4_0/Q8_0 plus the
+# legacy 32-wide schemes and the K-quant family imported from real llama.cpp
+# files).
 SUPPORTED_TENSOR_TYPES = frozenset(
-    {GGMLQuantizationType.F32, GGMLQuantizationType.F16, GGMLQuantizationType.Q4_0, GGMLQuantizationType.Q8_0}
+    {
+        GGMLQuantizationType.F32,
+        GGMLQuantizationType.F16,
+        GGMLQuantizationType.Q4_0,
+        GGMLQuantizationType.Q4_1,
+        GGMLQuantizationType.Q5_0,
+        GGMLQuantizationType.Q5_1,
+        GGMLQuantizationType.Q8_0,
+        GGMLQuantizationType.Q2_K,
+        GGMLQuantizationType.Q3_K,
+        GGMLQuantizationType.Q4_K,
+        GGMLQuantizationType.Q5_K,
+        GGMLQuantizationType.Q6_K,
+    }
+)
+
+# Types the **writer** can emit (this repo exports only F32/F16/Q4_0/Q8_0;
+# the reader-only types above are imported but never written by us).
+EXPORT_TENSOR_TYPES = frozenset(
+    {
+        GGMLQuantizationType.F32,
+        GGMLQuantizationType.F16,
+        GGMLQuantizationType.Q4_0,
+        GGMLQuantizationType.Q8_0,
+    }
 )
 
 
@@ -147,11 +193,12 @@ def tensor_data_size(t: GGMLQuantizationType | int, shape: Sequence[int]) -> int
     if ttype in _RAW_TYPE_SIZES:
         return numel * _RAW_TYPE_SIZES[ttype]
     if ttype in _BLOCK_TYPE_SIZES:
-        if numel % GGML_BLOCK_SIZE:
+        block_size, block_bytes = _BLOCK_TYPE_SIZES[ttype]
+        if numel % block_size:
             raise GGUFError(
-                f"{ttype.name} requires a multiple of {GGML_BLOCK_SIZE} elements, got {numel} (shape {tuple(shape)})"
+                f"{ttype.name} requires a multiple of {block_size} elements, got {numel} (shape {tuple(shape)})"
             )
-        return (numel // GGML_BLOCK_SIZE) * _BLOCK_TYPE_SIZES[ttype]
+        return (numel // block_size) * block_bytes
     raise GGUFError(
         f"unsupported GGML tensor type {ttype.name} ({ttype.value}); "
         f"v1 supports {sorted(t.name for t in SUPPORTED_TENSOR_TYPES)}"
@@ -159,7 +206,7 @@ def tensor_data_size(t: GGMLQuantizationType | int, shape: Sequence[int]) -> int
 
 
 def is_quantized(t: GGMLQuantizationType | int) -> bool:
-    """Return True if the type is one of the block-quantized v1 schemes."""
+    """Return True if the type is one of the supported block-quantized schemes."""
     return GGMLQuantizationType(t) in _BLOCK_TYPE_SIZES
 
 

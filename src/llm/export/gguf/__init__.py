@@ -13,6 +13,10 @@ Public surface:
 - I/O: :class:`GGUFWriter` / :class:`GGUFReader`;
 - quantization: :func:`quantize_q4_0` / :func:`dequantize_q4_0` and
   :func:`quantize_q8_0` / :func:`dequantize_q8_0`;
+- dequantization (reader side): :func:`dequantize_q4_1` /
+  :func:`dequantize_q5_0` / :func:`dequantize_q5_1` and the K-quant family
+  :func:`dequantize_q2_k` .. :func:`dequantize_q6_k` (import real llama.cpp
+  files);
 - export: :func:`export_to_gguf` / :func:`build_gguf_exporter`;
 - load-back: :func:`load_gguf_model` (re-build a model from a GGUF the
   exporter wrote with ``model_config=``).
@@ -21,7 +25,15 @@ Public surface:
 from llm.export.gguf.exporter import build_gguf_exporter, export_to_gguf
 from llm.export.gguf.loader import load_gguf_model
 from llm.export.gguf.quant import (
+    dequantize_q2_k,
+    dequantize_q3_k,
     dequantize_q4_0,
+    dequantize_q4_1,
+    dequantize_q4_k,
+    dequantize_q5_0,
+    dequantize_q5_1,
+    dequantize_q5_k,
+    dequantize_q6_k,
     dequantize_q8_0,
     quantize_q4_0,
     quantize_q8_0,
@@ -53,7 +65,15 @@ __all__ = [
     "GGUFValueType",
     "GGUFWriter",
     "build_gguf_exporter",
+    "dequantize_q2_k",
+    "dequantize_q3_k",
     "dequantize_q4_0",
+    "dequantize_q4_1",
+    "dequantize_q4_k",
+    "dequantize_q5_0",
+    "dequantize_q5_1",
+    "dequantize_q5_k",
+    "dequantize_q6_k",
     "dequantize_q8_0",
     "export_to_gguf",
     "load_gguf_model",

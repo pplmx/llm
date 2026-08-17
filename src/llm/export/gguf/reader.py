@@ -19,7 +19,18 @@ from pathlib import Path
 import numpy as np
 
 from llm.export.gguf.metadata import decode_value
-from llm.export.gguf.quant import dequantize_q4_0, dequantize_q8_0
+from llm.export.gguf.quant import (
+    dequantize_q2_k,
+    dequantize_q3_k,
+    dequantize_q4_0,
+    dequantize_q4_1,
+    dequantize_q4_k,
+    dequantize_q5_0,
+    dequantize_q5_1,
+    dequantize_q5_k,
+    dequantize_q6_k,
+    dequantize_q8_0,
+)
 from llm.export.gguf.spec import (
     GGML_BLOCK_SIZE,
     GGUF_DEFAULT_ALIGNMENT,
@@ -34,6 +45,21 @@ from llm.export.gguf.spec import (
     align_up,
     tensor_data_size,
 )
+
+# Reader-side dequantizers for the block-quantized types beyond Q4_0/Q8_0:
+# legacy 32-wide schemes (Q4_1/Q5_0/Q5_1) and the 256-wide K-quant family
+# (Q2_K..Q6_K) that dominate real llama.cpp files (round 75 milestone).  Each
+# takes the flat uint8 payload and returns the dequantized float32 vector.
+_READER_DEQUANTIZERS = {
+    GGMLQuantizationType.Q4_1: dequantize_q4_1,
+    GGMLQuantizationType.Q5_0: dequantize_q5_0,
+    GGMLQuantizationType.Q5_1: dequantize_q5_1,
+    GGMLQuantizationType.Q2_K: dequantize_q2_k,
+    GGMLQuantizationType.Q3_K: dequantize_q3_k,
+    GGMLQuantizationType.Q4_K: dequantize_q4_k,
+    GGMLQuantizationType.Q5_K: dequantize_q5_k,
+    GGMLQuantizationType.Q6_K: dequantize_q6_k,
+}
 
 _MAX_STRING = 1 << 24
 _MAX_RANK = 64
@@ -156,7 +182,8 @@ class GGUFReader:
     def read_tensor(self, name: str) -> np.ndarray:
         """Read and dequantize ``name`` into a float32 array of its logical shape.
 
-        F32/F16 payloads are returned as-is (F16 widened); Q4_0/Q8_0 are
+        F32/F16 payloads are returned as-is (F16 widened); Q4_0/Q8_0 and the
+        reader-side legacy/K-quant types (Q4_1/Q5_0/Q5_1, Q2_K..Q6_K) are
         dequantized with the reference ggml math.
         """
         info = self._info(name)
@@ -167,6 +194,14 @@ class GGUFReader:
             return np.frombuffer(raw, dtype="<f2").astype(np.float32).reshape(info.shape)
 
         numel = math.prod(info.shape)
+        if numel == 0:
+            # An empty quantized tensor has no blocks to dequantize; mirror
+            # the F32/F16 empty-array return instead of raising from the
+            # block parser (round-75 review LOW).
+            return np.empty(info.shape, dtype=np.float32)
+        if info.ggml_type in _READER_DEQUANTIZERS:
+            return _READER_DEQUANTIZERS[info.ggml_type](np.frombuffer(raw, dtype=np.uint8), numel).reshape(info.shape)
+
         block_count = numel // GGML_BLOCK_SIZE
         # ggml block layout is interleaved per 32-element block: a 2-byte
         # fp16 scale followed by the packed values (16 bytes for Q4_0, 32

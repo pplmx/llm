@@ -67,14 +67,22 @@ path = export_to_gguf(model, "model-q4.gguf", quantize="q4_0", model_name="my-mo
 （llama / llama2 / llama3 / mistral / qwen2 系）；MoE 与使用了 RoPE scaling
 的模型等其它情形显式拒绝。
 
+读取端不仅支持 F32 / F16 / Q4_0 / Q8_0，还反量化了真实 llama.cpp 文件几乎
+必用的 K-quant 家族与 legacy 类型——Q4_1 / Q5_0 / Q5_1（32 元素块）和
+Q2_K / Q3_K / Q4_K / Q5_K / Q6_K（256 元素块，即 `Q4_K_M` / `Q5_K_M` /
+`Q6_K` 等常见发布格式）。反量化数学逐行转录自 `ggml-quants.c`，并与 llama.cpp
+官方 Python 读取器 `gguf-py` 逐位一致，因此仓库外下载的量化模型可直接导入。
+
 ```python
 from llm.export import load_gguf_model
 
-imported = load_gguf_model("llama-2-7b.Q8_0.gguf")
+imported = load_gguf_model("llama-2-7b.Q4_K_M.gguf")  # 真实 K-quant 文件
 ```
 
-> v1 限制：K-quants / Q4_1 / IQ 类型、mmap 读取、llama.cpp 架构张量命名
-> （`blk.*`）用于**导出**与 tokenizer 元数据是后续规划，暂未覆盖。
+> v1 限制：K-quant / Q4_1 等类型反量化（导入）已支持，但**导出**仍限
+> F32 / F16 / Q4_0 / Q8_0（llama.cpp 等工具的 K-quant 量化器更完整，建议
+> 由它们产 K-quant 文件）；IQ* / Q8_1 类型、mmap 读取、tokenizer 元数据是
+> 后续规划。
 
 ## TorchScript：trace 优先
 

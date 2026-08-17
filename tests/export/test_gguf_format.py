@@ -115,9 +115,19 @@ class TestTensorDataSize:
         with pytest.raises(GGUFError, match="multiple of 32"):
             tensor_data_size(GGMLQuantizationType.Q4_0, (3, 10))
 
+    def test_q4_1_and_k_quants_supported_by_reader(self):
+        # The reader dequantizes the legacy Q4_1 and the K-quant family (round 75).
+        assert tensor_data_size(GGMLQuantizationType.Q4_1, (3, 64)) == (192 // 32) * 20
+        assert tensor_data_size(GGMLQuantizationType.Q4_K, (3, 256)) == 3 * 144
+        assert tensor_data_size(GGMLQuantizationType.Q6_K, (3, 256)) == 3 * 210
+
     def test_unsupported_type_raises(self):
+        # Q8_1 is a deprecated/ambiguous ggml type (dequant removed upstream) and
+        # the IQ* grid-based types remain unsupported by the v1 reader.
         with pytest.raises(GGUFError, match="unsupported GGML tensor type"):
-            tensor_data_size(GGMLQuantizationType.Q4_1, (3, 64))
+            tensor_data_size(GGMLQuantizationType.Q8_1, (3, 64))
+        with pytest.raises(GGUFError, match="unsupported GGML tensor type"):
+            tensor_data_size(GGMLQuantizationType.IQ2_XXS, (3, 256))
 
     def test_can_quantize_shape(self):
         assert can_quantize_shape((3, 64))
