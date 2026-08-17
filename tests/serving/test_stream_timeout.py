@@ -94,7 +94,10 @@ def test_generate_stream_timeout_releases_engine_slot(tiny_model, device, stub_t
         device=str(device),
     )
 
-    req = GenerationRequest(prompt="abcd", max_new_tokens=50)
+    # 3 encoded tokens + 12 new tokens fit tiny_model's 16-token context; the
+    # generation is long enough that the idle window fires mid-stream (each
+    # step is slowed to 0.4s), so the value is not what matters.
+    req = GenerationRequest(prompt="abcd", max_new_tokens=12)
     req.request_id = "idle-timeout-slot"
 
     real_step = engine.step
@@ -113,7 +116,7 @@ def test_generate_stream_timeout_releases_engine_slot(tiny_model, device, stub_t
     async def _collect():
         return [
             chunk
-            async for chunk in generate_module._stream_generator(GenerationRequest(prompt="abcd", max_new_tokens=50))
+            async for chunk in generate_module._stream_generator(GenerationRequest(prompt="abcd", max_new_tokens=12))
         ]
 
     try:

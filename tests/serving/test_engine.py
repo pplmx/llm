@@ -705,7 +705,10 @@ def test_abandoned_stream_request_releases_slot_and_sequence(tiny_model, device,
         device=str(device),
     )
 
-    req = GenerationRequest(prompt="abcd", max_new_tokens=100)
+    # 4 prompt tokens + 12 generated fit tiny_model's 16-token context; the
+    # generation is long enough that abandoning it mid-stream still exercises
+    # the slot/sequence reap (the token count is not what matters).
+    req = GenerationRequest(prompt="abcd", max_new_tokens=12)
     req.request_id = "req-abandon"
 
     # ``stream_request`` adds the request itself (production path — no
@@ -737,7 +740,7 @@ def test_abandoned_stream_removes_under_step_lock(tiny_model, device, mock_token
         device=str(device),
     )
 
-    req = GenerationRequest(prompt="abcd", max_new_tokens=100)
+    req = GenerationRequest(prompt="abcd", max_new_tokens=12)
     req.request_id = "req-abandon-lock"
     gen = engine.stream_request(req)
     next(gen)
@@ -1116,11 +1119,11 @@ def test_engine_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device, mock
     )
 
     # 40-token prompt beyond the 16-token context.
-    with pytest.raises(ValueError, match="max_seq_len"):
+    with pytest.raises(ValueError, match=r"model's context window"):
         engine.add_request(GenerationRequest(prompt="x" * 40, max_new_tokens=2))
 
     # Prompt fits, but the requested new tokens overflow the cap.
-    with pytest.raises(ValueError, match="max_seq_len"):
+    with pytest.raises(ValueError, match=r"model's context window"):
         engine.add_request(GenerationRequest(prompt="x" * 15, max_new_tokens=4))
 
     # Exactly at the cap is accepted (each decode position stays < max_seq_len).
@@ -1152,7 +1155,9 @@ def test_engine_rejects_duplicate_request_id_with_different_content(tiny_model, 
     engine.add_request(req_a)
 
     # Different prompt, same request_id -> genuine cross-request collision.
-    req_b = GenerationRequest(prompt="different content", max_new_tokens=3)
+    # (Prompt kept within the model's context — the earlier context-window
+    # guard would otherwise reject it before the duplicate-id check.)
+    req_b = GenerationRequest(prompt="other text", max_new_tokens=3)
     req_b.request_id = "shared-id"
     with pytest.raises(ValueError, match="already in use"):
         engine.add_request(req_b)
@@ -1203,5 +1208,5 @@ def test_engine_paged_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device
         max_blocks=64,
         block_size=8,
     )
-    with pytest.raises(ValueError, match="max_seq_len"):
+    with pytest.raises(ValueError, match=r"model's context window"):
         engine.add_request(GenerationRequest(prompt="x" * 40, max_new_tokens=2))

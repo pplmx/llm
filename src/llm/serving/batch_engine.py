@@ -18,6 +18,7 @@ from llm.generation.sampling import (
     apply_logit_bias,
     apply_presence_penalty,
     apply_repetition_penalty,
+    mask_undecodable_logits,
     sample_next_token,
 )
 from llm.models.decoder import DecoderModel
@@ -334,16 +335,24 @@ class ContinuousBatchingEngine:
 
         # Reject requests that would outgrow the context window BEFORE they
         # are scheduled. The model computes a position id for every prompt and
-        # generated token; past max_seq_len the positional-encoding table is
+        # generated token; past the capacity the positional-encoding table is
         # indexed out of bounds, which surfaces on CUDA as a device-side
         # assert that corrupts the CUDA context and can crash the whole
         # serving process, not just this request.
-        if len(input_ids) + request.max_new_tokens > self.max_seq_len:
+        #
+        # The hard ceiling is the MODEL's positional capacity, not the engine's
+        # KV-window budget — the engine window may be configured (or resized)
+        # larger than the checkpoint's ``max_seq_len``, and a request that fits
+        # the engine budget but exceeds the model capacity used to crash in the
+        # positional-encoding range check (RIL round-73 serving deep-dive:
+        # ``max_seq_len=128`` engine serving a ``max_seq_len=8`` model).
+        budget = min(getattr(self.model, "max_seq_len", self.max_seq_len), self.max_seq_len)
+        if len(input_ids) + request.max_new_tokens > budget:
             raise ValueError(
                 f"Prompt has {len(input_ids)} tokens and max_new_tokens="
-                f"{request.max_new_tokens}, but the engine's max_seq_len is "
-                f"{self.max_seq_len}; the request would exceed the context "
-                "window and crash the forward pass"
+                f"{request.max_new_tokens}, but the model's context window is "
+                f"{budget}; the request would exceed the context window and "
+                "crash the forward pass"
             )
 
         req_id = request.request_id or uuid.uuid4().hex
@@ -781,6 +790,12 @@ class ContinuousBatchingEngine:
                 if pad_id is not None and 0 <= pad_id < seq_logits.size(-1):
                     seq_logits = seq_logits.clone()
                     seq_logits[pad_id] = float("-inf")
+                # Sample only tokenizer-decodable ids: a padded-vocab or
+                # BPE/HF model served with a smaller-vocab tokenizer would
+                # otherwise sample a tail id and crash in ``_emit_tokens`` at
+                # ``tokenizer.decode([id])`` (KeyError), while eager and
+                # speculative mask it on every step (RIL ISS-125).
+                mask_undecodable_logits(seq_logits, getattr(self.tokenizer, "vocab_size", None))
                 context_ids = seq.input_ids + seq.generated_ids
                 if seq.repetition_penalty != 1.0:
                     seq_logits = apply_repetition_penalty(seq_logits, context_ids, seq.repetition_penalty)
