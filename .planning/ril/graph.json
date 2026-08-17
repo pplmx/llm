@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 72,
+  "round": 73,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T11:50:22+00:00",
+  "updated_at": "2026-08-17T12:29:19+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 50,
+      "touched_round": 72,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -7988,7 +7988,7 @@
       "version": 1,
       "created_at": "2026-08-16T01:13:47+00:00",
       "updated_at": "2026-08-16T01:13:47+00:00",
-      "touched_round": 61,
+      "touched_round": 72,
       "title": "Core PEFT families + transformer block (src/llm/core: adalora, prefix_tuning, lora, qlora, ia3, bitfit, pfeiffer_adapter, adapter, transformer_block, mlp)"
     },
     "TASK-111": {
@@ -10687,7 +10687,7 @@
       "version": 2,
       "created_at": "2026-08-17T11:24:48+00:00",
       "updated_at": "2026-08-17T11:49:43+00:00",
-      "touched_round": 71,
+      "touched_round": 72,
       "category": "core-feature",
       "summary": "Foreign llama.cpp GGUF import milestone: load_gguf_model imports third-party dense Llama-style GGUFs (general.architecture + llama.* metadata -> ModelConfig; GGUF_MAPPING/convert_gguf_weights maps token_embd/blk.*/output_norm/output tensor names into llm state-dict naming)"
     },
@@ -10713,6 +10713,40 @@
       "touched_round": 71,
       "commit": "2e28ebd",
       "summary": "Foreign llama.cpp GGUF import (TASK-186): GGUF_MAPPING/convert_gguf_weights in weight_mapping + foreign path in load_gguf_model; 8 new tests"
+    },
+    "ISS-221": {
+      "id": "ISS-221",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T12:26:39+00:00",
+      "updated_at": "2026-08-17T12:27:02+00:00",
+      "touched_round": 72,
+      "severity": "high",
+      "summary": "GGUF import hardcoded llama.* metadata keys; gguf-py prefixes every model key with general.architecture (mistral.*/qwen2.*/qwen3.*) so declared mistral/qwen2 support was dead and non-llama files would silently default norm_eps/rope_theta (round-73 review HIGH)"
+    },
+    "CHG-185": {
+      "id": "CHG-185",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T12:26:39+00:00",
+      "updated_at": "2026-08-17T12:26:39+00:00",
+      "touched_round": 72,
+      "commit": "835cbbd",
+      "summary": "Fix gguf metadata key prefix (derive from general.architecture + llama fallback); REFUSE RoPE-scaled files; wrap metadata/load errors as GGUFError (round-73 review)"
+    },
+    "EV-184": {
+      "id": "EV-184",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T12:26:40+00:00",
+      "updated_at": "2026-08-17T12:26:40+00:00",
+      "touched_round": 72,
+      "source": "835cbbd",
+      "summary": "prefix fix verified: qwen2.* + mistral.* fixtures import exactly (forward equality), multi-layer, kv-mismatch + head-dim refusals; RoPE-scaled file refused; tests/export+compat 216 passed",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -15765,6 +15799,24 @@
       "to": "TASK-186",
       "type": "implements",
       "created_at": "2026-08-17T11:49:43+00:00"
+    },
+    {
+      "from": "CHG-185",
+      "to": "ISS-221",
+      "type": "resolves",
+      "created_at": "2026-08-17T12:27:01+00:00"
+    },
+    {
+      "from": "CHG-185",
+      "to": "TASK-186",
+      "type": "implements",
+      "created_at": "2026-08-17T12:27:02+00:00"
+    },
+    {
+      "from": "ISS-221",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-17T12:28:43+00:00"
     }
   ]
 }
