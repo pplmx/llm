@@ -115,6 +115,41 @@ QWEN2_MAPPING = {
     **LLAMA_MAPPING,
 }
 
+# llama.cpp GGUF tensor names -> our names. llama.cpp emits these exact
+# names for every dense Llama-style architecture (llama/mistral/qwen2/...):
+# ``token_embd`` / ``output_norm`` / ``output`` for embedding, final norm and
+# head, and per-layer ``blk.{i}.attn_(q|k|v|output)`` /
+# ``blk.{i}.ffn_(gate|up|down)`` / ``blk.{i}.attn_norm`` /
+# ``blk.{i}.ffn_norm``. The GLU role split mirrors the HF mapping — GGUF
+# ``ffn_gate`` is the SILU-activated gate (our ``fc1``), ``ffn_up`` the raw
+# multiplier (our ``gate_proj``), ``ffn_down`` the output projection (our
+# ``fc2``). Q/K/V stay split here exactly like the HF loader's intermediate
+# names so ``convert_hf_to_combined_qkv`` can fuse them back into our combined
+# ``qkv_proj``.
+GGUF_MAPPING = {
+    "token_embd.weight": "embedding_layer.token_embeddings.weight",
+    "output_norm.weight": "final_norm.weight",
+    "output.weight": "lm_head.weight",
+    "blk.{layer}.attn_norm.weight": "transformer_blocks.{layer}.norm1.weight",
+    "blk.{layer}.attn_norm.bias": "transformer_blocks.{layer}.norm1.bias",
+    "blk.{layer}.ffn_norm.weight": "transformer_blocks.{layer}.norm2.weight",
+    "blk.{layer}.ffn_norm.bias": "transformer_blocks.{layer}.norm2.bias",
+    "blk.{layer}.attn_q.weight": "transformer_blocks.{layer}.self_attn.q_proj.weight",
+    "blk.{layer}.attn_q.bias": "transformer_blocks.{layer}.self_attn.q_proj.bias",
+    "blk.{layer}.attn_k.weight": "transformer_blocks.{layer}.self_attn.k_proj.weight",
+    "blk.{layer}.attn_k.bias": "transformer_blocks.{layer}.self_attn.k_proj.bias",
+    "blk.{layer}.attn_v.weight": "transformer_blocks.{layer}.self_attn.v_proj.weight",
+    "blk.{layer}.attn_v.bias": "transformer_blocks.{layer}.self_attn.v_proj.bias",
+    "blk.{layer}.attn_output.weight": "transformer_blocks.{layer}.self_attn.out_proj.weight",
+    "blk.{layer}.attn_output.bias": "transformer_blocks.{layer}.self_attn.out_proj.bias",
+    "blk.{layer}.ffn_gate.weight": "transformer_blocks.{layer}.mlp.fc1.weight",
+    "blk.{layer}.ffn_gate.bias": "transformer_blocks.{layer}.mlp.fc1.bias",
+    "blk.{layer}.ffn_up.weight": "transformer_blocks.{layer}.mlp.gate_proj.weight",
+    "blk.{layer}.ffn_up.bias": "transformer_blocks.{layer}.mlp.gate_proj.bias",
+    "blk.{layer}.ffn_down.weight": "transformer_blocks.{layer}.mlp.fc2.weight",
+    "blk.{layer}.ffn_down.bias": "transformer_blocks.{layer}.mlp.fc2.bias",
+}
+
 # Architecture type to mapping
 ARCHITECTURE_MAPPINGS = {
     "llama": LLAMA_MAPPING,
@@ -245,6 +280,39 @@ def convert_hf_weights(
         logger.warning(f"Unmapped weights: {unmapped[:10]}{'...' if len(unmapped) > 10 else ''}")
 
     return converted
+
+
+def convert_gguf_weights(
+    gguf_state_dict: dict[str, Any],
+    num_layers: int,
+) -> tuple[dict[str, Any], list[str]]:
+    """Translate llama.cpp GGUF tensor names into our naming convention.
+
+    Args:
+        gguf_state_dict: GGUF tensors keyed by llama.cpp names (``token_embd``,
+            ``blk.N.attn_q``, ``blk.N.ffn_gate``, ...).
+        num_layers: Number of transformer layers (to expand the ``{layer}``
+            placeholders).
+
+    Returns:
+        ``(converted, unmapped)`` — converted tensors keyed by our naming
+        (q/k/v still *split* as ``.*_proj``, ready for
+        :func:`convert_hf_to_combined_qkv`), and the list of GGUF tensor names
+        that had no mapping. A non-empty ``unmapped`` list means the file is
+        not a pure dense Llama-style GGUF (or carries extra tensors); the
+        caller should refuse rather than silently drop them (RIL ISS-220
+        philosophy).
+    """
+    mapping = expand_layer_mapping(GGUF_MAPPING, num_layers)
+    converted: dict[str, Any] = {}
+    unmapped: list[str] = []
+    for gguf_name, tensor in gguf_state_dict.items():
+        our_name = mapping.get(gguf_name)
+        if our_name is not None:
+            converted[our_name] = tensor
+        else:
+            unmapped.append(gguf_name)
+    return converted, unmapped
 
 
 def convert_our_weights(

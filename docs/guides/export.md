@@ -58,8 +58,21 @@ path = export_to_gguf(model, "model-q4.gguf", quantize="q4_0", model_name="my-mo
 
 导出的 GGUF 文件可直接交给 llama.cpp 等 GGML 系运行时加载。
 
+反向路径也已打通：`load_gguf_model` 能加载**第三方 llama.cpp 文件**——没有
+`general.llm_model_config` 配置块、但带有 `general.architecture` + `llama.*`
+元数据和 llama 风格张量名（`token_embd` / `blk.N.attn_*` / `blk.N.ffn_*` /
+`output_norm` / `output`）的 GGUF 会被导入：元数据重建 `ModelConfig`，张量名经
+`llm.compat.weight_mapping` 映射进本项目命名。当前支持 dense Llama 系架构
+（llama / llama2 / llama3 / mistral / qwen2 系）；MoE 等其它架构显式拒绝。
+
+```python
+from llm.export import load_gguf_model
+
+imported = load_gguf_model("llama-2-7b.Q8_0.gguf")
+```
+
 > v1 限制：K-quants / Q4_1 / IQ 类型、mmap 读取、llama.cpp 架构张量命名
-> （`blk.*`）与 tokenizer 元数据是后续规划，暂未覆盖。
+> （`blk.*`）用于**导出**与 tokenizer 元数据是后续规划，暂未覆盖。
 
 ## TorchScript：trace 优先
 

@@ -10,8 +10,11 @@ Public surface:
       target (ADR-011): GGUF v3 container with F16/F32/Q4_0/Q8_0 tensor
       types. Registered via the ``llm.export_backends`` setuptools
       entry point.
-    - ``load_gguf_model`` — rebuild a model from a GGUF the exporter
-      wrote with ``model_config=`` (round-71 load-back milestone).
+    - ``load_gguf_model`` — rebuild a model from a GGUF: either a
+      self-export (written with ``model_config=``, round-71 load-back
+      milestone) **or** a third-party llama.cpp file (round-72 foreign
+      import — ``general.architecture`` / ``llama.*`` metadata +
+      llama-style tensor names mapped into llm state-dict naming).
     - :data:`EXPORT_REGISTRY` and :func:`export_model` — the
       registry-driven dispatch for any export target (built-in
       ``onnx`` plus third-party plugins via the

@@ -8,7 +8,10 @@ from it. These tests pin the round trip:
 
 - F32 exports restore the state dict bit-exactly;
 - F16 / block-quantized exports restore within the quantizer's error;
-- a GGUF without the config blob is refused with a clear error.
+- a GGUF that is neither a self-export (no config blob) nor a valid llama.cpp
+  import (no ``general.architecture`` / ``llama.*`` metadata) is refused with
+  a clear error. (Importing genuine third-party llama.cpp files is covered by
+  ``test_gguf_foreign_import.py``.)
 """
 
 from __future__ import annotations
@@ -164,14 +167,19 @@ def test_config_persisted_in_metadata(roundtrip_config, tmp_path):
     assert cfg.qkv_bias == roundtrip_config.qkv_bias
 
 
-def test_missing_config_is_refused(tmp_path):
-    """A GGUF with no config blob (e.g. a third-party file) is rejected."""
+def test_unparseable_foreign_file_is_refused(tmp_path):
+    """Neither a self-export nor a valid llama.cpp import → clear refusal.
+
+    This file claims ``general.architecture`` but carries none of the
+    required ``llama.*`` metadata, so the import path cannot rebuild a
+    config and must refuse (rather than guess).
+    """
     writer = GGUFWriter(tmp_path / "foreign.gguf")
     writer.add_metadata("general.architecture", "llama")
     writer.add_tensor("some.weight", np.ones((4, 4), dtype=np.float32), ggml_type="f32")
     path = writer.write()
 
-    with pytest.raises(GGUFError, match=r"general\.llm_model_config"):
+    with pytest.raises(GGUFError, match=r"missing required llama\.cpp metadata"):
         load_gguf_model(path)
 
 
