@@ -73,27 +73,31 @@ def llama_config_gqa() -> ModelConfig:
     )
 
 
-def _build_model(cfg: ModelConfig) -> torch.nn.Module:
+def _build_model(cfg: ModelConfig, *, norm_eps: float = 1e-5) -> torch.nn.Module:
     ensure_builtins_registered()
-    return ModelFactory.from_config(cfg, norm_eps=1e-5).eval()
+    return ModelFactory.from_config(cfg, norm_eps=norm_eps).eval()
 
 
-def _llama_cpp_metadata(cfg: ModelConfig) -> dict:
-    """The llama.cpp metadata a converter would write for ``cfg``."""
+def _llama_cpp_metadata(cfg: ModelConfig, prefix: str = "llama") -> dict:
+    """The llama.cpp metadata a converter would write for ``cfg``.
+
+    ``prefix`` is the ``general.architecture`` value — gguf-py prefixes every
+    model key with it (``llama.*`` for Llama, ``qwen2.*`` for Qwen2, ...).
+    """
     return {
-        "general.architecture": "llama",
-        "general.name": "tiny-llama",
+        "general.architecture": prefix,
+        "general.name": f"tiny-{prefix}",
         "general.file_type": 0,
         "general.quantization_version": 2,
-        "llama.context_length": cfg.max_seq_len,
-        "llama.embedding_length": cfg.hidden_size,
-        "llama.block_count": cfg.num_layers,
-        "llama.feed_forward_length": cfg.intermediate_size,
-        "llama.attention.head_count": cfg.num_heads,
-        "llama.attention.head_count_kv": cfg.num_kv_heads or cfg.num_heads,
-        "llama.attention.layer_norm_rms_epsilon": 1e-5,
-        "llama.rope.freq_base": cfg.rope_theta,
-        "llama.vocab_size": cfg.vocab_size,
+        f"{prefix}.context_length": cfg.max_seq_len,
+        f"{prefix}.embedding_length": cfg.hidden_size,
+        f"{prefix}.block_count": cfg.num_layers,
+        f"{prefix}.feed_forward_length": cfg.intermediate_size,
+        f"{prefix}.attention.head_count": cfg.num_heads,
+        f"{prefix}.attention.head_count_kv": cfg.num_kv_heads or cfg.num_heads,
+        f"{prefix}.attention.layer_norm_rms_epsilon": 1e-5,
+        f"{prefix}.rope.freq_base": cfg.rope_theta,
+        f"{prefix}.vocab_size": cfg.vocab_size,
     }
 
 
@@ -310,17 +314,127 @@ def test_foreign_import_unmapped_tensor_refused(llama_config, tmp_path):
         load_gguf_model(path)
 
 
-def test_foreign_import_rope_scaling_warns(llama_config, tmp_path, caplog):
-    """RoPE scaling metadata is not applied on import — warn loudly."""
+def test_foreign_import_rope_scaling_refused(llama_config, tmp_path):
+    """RoPE scaling (YaRN/linear) is not supported — refuse, don't import wrong."""
     torch.manual_seed(4)
     model = _build_model(llama_config)
     metadata = dict(_llama_cpp_metadata(llama_config))
     metadata["llama.rope.scaling.type"] = "yarn"
     path = _write_foreign_gguf(tmp_path, llama_config, _llama_cpp_tensors(model), metadata=metadata)
 
-    with caplog.at_level("WARNING", logger="llm.export.gguf.loader"):
-        restored = load_gguf_model(path)
+    with pytest.raises(GGUFError, match=r"RoPE scaling type 'yarn' is not supported"):
+        load_gguf_model(path)
 
-    assert any("RoPE scaling" in record.message for record in caplog.records)
+
+def test_foreign_import_qwen2_prefix(llama_config, tmp_path):
+    """Qwen2 files carry ``qwen2.*`` metadata (arch-prefixed, NOT ``llama.*``).
+
+    The key prefix must come from ``general.architecture`` (gguf-py writes
+    ``{arch}.*`` keys), otherwise a real Qwen2 file is refused or its norm_eps
+    silently defaults wrong (round-73 review HIGH).
+    """
+    cfg = llama_config.model_copy(update={"hidden_size": 32, "num_heads": 4, "intermediate_size": 64})
+    torch.manual_seed(5)
+    model = _build_model(cfg, norm_eps=1e-6)  # Qwen2's real RMSNorm eps
+    metadata = _llama_cpp_metadata(cfg, prefix="qwen2")
+    metadata["qwen2.attention.layer_norm_rms_epsilon"] = 1e-6
+    path = _write_foreign_gguf(tmp_path, cfg, _llama_cpp_tensors(model), metadata=metadata)
+
+    restored = load_gguf_model(path)
+
+    original = _state_dict_tensors(model.state_dict())
+    recovered = _state_dict_tensors(restored.state_dict())
+    for name in original:
+        assert torch.equal(original[name], recovered[name]), name
+    ids = torch.randint(0, cfg.vocab_size, (1, 8))
+    assert torch.equal(_forward(model, ids), _forward(restored, ids))
+
+
+def test_foreign_import_mistral_prefix(llama_config, tmp_path):
+    """Mistral files carry ``mistral.*`` metadata."""
+    torch.manual_seed(6)
+    model = _build_model(llama_config)
+    metadata = _llama_cpp_metadata(llama_config, prefix="mistral")
+    path = _write_foreign_gguf(tmp_path, llama_config, _llama_cpp_tensors(model), metadata=metadata)
+
+    restored = load_gguf_model(path)
+
     ids = torch.randint(0, llama_config.vocab_size, (1, 8))
     assert torch.equal(_forward(model, ids), _forward(restored, ids))
+
+
+def test_foreign_import_multilayer(tmp_path):
+    """{{layer}} expansion: hidden/attention/ffn tensors for every block."""
+    cfg = ModelConfig(
+        vocab_size=32,
+        hidden_size=16,
+        num_layers=2,
+        num_heads=2,
+        num_kv_heads=2,
+        intermediate_size=32,
+        max_seq_len=16,
+        use_glu=True,
+        mlp_activation="silu",
+        norm_impl="rms_norm",
+        norm_first=True,
+        qkv_bias=False,
+        mlp_bias=False,
+        lm_head_bias=False,
+        use_rope=True,
+        rope_theta=10000.0,
+    )
+    torch.manual_seed(7)
+    model = _build_model(cfg)
+    path = _write_foreign_gguf(tmp_path, cfg, _llama_cpp_tensors(model))
+
+    restored = load_gguf_model(path)
+
+    original = _state_dict_tensors(model.state_dict())
+    recovered = _state_dict_tensors(restored.state_dict())
+    assert set(original) == set(recovered)
+    for name in original:
+        assert torch.equal(original[name], recovered[name]), name
+
+
+def test_foreign_import_undividable_kv_refused(llama_config, tmp_path):
+    """head_count not divisible by head_count_kv is not representable by MHA.
+
+    The source model is divisible (2/2); the file metadata claims 3/2, which
+    the loader rejects on metadata before weights are ever read.
+    """
+    torch.manual_seed(8)
+    model = _build_model(llama_config)
+    metadata = dict(_llama_cpp_metadata(llama_config))
+    metadata["llama.attention.head_count"] = 4  # divides hidden (16)
+    metadata["llama.attention.head_count_kv"] = 3  # but 4 % 3 != 0
+    path = _write_foreign_gguf(tmp_path, llama_config, _llama_cpp_tensors(model), metadata=metadata)
+
+    with pytest.raises(GGUFError, match=r"head_count 4 not divisible by head_count_kv 3"):
+        load_gguf_model(path)
+
+
+def test_foreign_import_nonstandard_head_dim_refused(tmp_path):
+    """key_length != hidden//heads (non-standard head dim) is rejected."""
+    cfg = ModelConfig(
+        vocab_size=32,
+        hidden_size=32,
+        num_layers=1,
+        num_heads=4,
+        num_kv_heads=4,
+        intermediate_size=64,
+        max_seq_len=16,
+        use_glu=True,
+        mlp_activation="silu",
+        norm_impl="rms_norm",
+        norm_first=True,
+        use_rope=True,
+        rope_theta=10000.0,
+    )
+    torch.manual_seed(9)
+    model = _build_model(cfg)
+    metadata = dict(_llama_cpp_metadata(cfg))
+    metadata["llama.attention.key_length"] = 4  # != head_dim 8
+    path = _write_foreign_gguf(tmp_path, cfg, _llama_cpp_tensors(model), metadata=metadata)
+
+    with pytest.raises(GGUFError, match=r"non-standard head dimensions"):
+        load_gguf_model(path)

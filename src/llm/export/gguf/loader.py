@@ -10,9 +10,9 @@ Two file kinds are supported:
   ``model_config=`` carry the full architecture config as
   ``general.llm_model_config``; the exact model is rebuilt from it (round 71).
 * **Foreign llama.cpp files** — a GGUF with no config blob but standard
-  llama.cpp metadata (``general.architecture`` + ``llama.*`` keys) and
+  llama.cpp metadata (``general.architecture`` + ``{arch}.*`` keys) and
   llama-style tensor names (``token_embd`` / ``blk.N.attn_*`` /
-  ``blk.N.ffn_*`` / ``output_norm`` / ``output``) is imported (round 72):
+  ``blk.N.ffn_*`` / ``output_norm`` / ``output``) is imported (round 72/73):
   the metadata rebuilds a :class:`ModelConfig` and
   :func:`llm.compat.weight_mapping.convert_gguf_weights` maps the tensor
   names into our state-dict naming (same q/k/v fusion and tied-head
@@ -62,29 +62,24 @@ class _SizedAttention(Protocol):
     head_dim: int
 
 
-# llama.cpp architecture names (gguf-py ``LLM_ARCH_*`` name table) that map onto
-# our DENSE Llama-style architecture — identical tensor layout (token_embd /
-# blk.{i}.attn_* / blk.{i}.ffn_* / output_norm / output). Everything else
-# (mixtral, qwen2moe, gemma, phi3, ...) is refused loudly rather than importing
-# a model every weight of which lands at random init (RIL ISS-220 philosophy).
+# llama.cpp architecture names (gguf-py ``MODEL_ARCH_NAMES`` table) that map
+# onto our DENSE Llama-style architecture — identical tensor layout
+# (token_embd / blk.{i}.attn_* / blk.{i}.ffn_* / output_norm / output) and
+# identical ``{arch}.*`` metadata keys. Everything else (mixtral, qwen2moe,
+# qwen3moe, gemma, phi3, ...) is refused loudly rather than importing a model
+# every weight of which lands at random init (RIL ISS-220 philosophy).
+#
+# ``llama2``/``llama3`` are defensive aliases: modern gguf writes the plain
+# ``llama`` arch for all of Llama 1/2/3, but old converters declared the
+# per-generation names. ``llama.mistral`` is the dense Mistral; ``qwen3``
+# (dense) shares Qwen2's Llama-style layout.
 _GGUF_ARCH_TO_MODEL_TYPE = {
     "llama": "llama",
     "llama2": "llama",
     "llama3": "llama",
     "mistral": "mistral",
-    "mistral2": "mistral",
     "qwen2": "qwen2",
-    "qwen2.5": "qwen2",
     "qwen3": "qwen2",
-}
-
-# llama.cpp metadata keys without which the file cannot describe a model.
-# Each maps to the ModelConfig field it feeds, for a helpful error.
-_REQUIRED_GGUF_METADATA = {
-    "llama.embedding_length": "hidden_size",
-    "llama.block_count": "num_layers",
-    "llama.attention.head_count": "num_heads",
-    "llama.vocab_size": "vocab_size",
 }
 
 
@@ -107,8 +102,9 @@ def load_gguf_model(
         GGUFError: If the file is malformed; if a self-export carries an
             invalid ``general.llm_model_config``; or if a foreign file is not
             a supported dense Llama-style architecture, is missing required
-            ``llama.*`` metadata, or carries tensors that do not map into
-            ``llm`` state-dict naming.
+            ``{arch}.*`` metadata, carries tensors that do not map into
+            ``llm`` state-dict naming, or uses an unsupported feature (RoPE
+            scaling, non-standard head dims).
         RuntimeError: If the tensor names/shapes in a self-export do not match
             the model rebuilt from the embedded config (strict
             ``load_state_dict``).
@@ -161,12 +157,20 @@ def _load_foreign_gguf(
     device: torch.device | str | None,
 ) -> nn.Module:
     """Import a third-party llama.cpp GGUF (no ``general.llm_model_config``)."""
-    cfg = _gguf_metadata_to_model_config(reader.metadata, reader.path)
-    # ``norm_eps`` is not a ModelConfig field (pydantic would silently drop it),
-    # so thread the file's RMSNorm epsilon through the factory override. Foreign
-    # Dense Llama-style GGUFs are always RMSNorm; the file's epsilon is
-    # architecture-defining (1e-5 for Llama/Mistral, 1e-6 for Qwen2).
-    model = ModelFactory.from_config(cfg, norm_eps=_rms_norm_eps(reader.metadata))
+    try:
+        cfg, prefix = _gguf_metadata_to_model_config(reader.metadata, reader.path)
+        # ``norm_eps`` is not a ModelConfig field (pydantic would silently drop
+        # it), so thread the file's RMSNorm epsilon through the factory
+        # override. Dense Llama-style GGUFs are always RMSNorm; the file's
+        # epsilon is architecture-defining (1e-5 for Llama/Mistral, 1e-6 for
+        # Qwen2).
+        model = ModelFactory.from_config(cfg, norm_eps=_rms_norm_eps(reader.metadata, prefix))
+    except GGUFError:
+        raise
+    except (ValueError, TypeError, ZeroDivisionError) as exc:
+        # Badly-typed / contradictory metadata must surface as a GGUF error
+        # naming the file, not a raw ValueError traceback (round-73 review).
+        raise GGUFError(f"{reader.path}: invalid llama.cpp metadata: {exc}") from exc
     if not isinstance(model, DecoderModel):
         raise GGUFError(f"{reader.path}: imported a {type(model).__name__}, expected a dense DecoderModel")
 
@@ -196,7 +200,12 @@ def _load_foreign_gguf(
         head_dim=attn0.head_dim,
     )
 
-    missing, unexpected = model.load_state_dict(converted, strict=False)
+    try:
+        missing, unexpected = model.load_state_dict(converted, strict=False)
+    except RuntimeError as exc:
+        # A real-file vocab/head-size mismatch surfaces as a torch shape error;
+        # wrap it so the caller gets a GGUF error with the file path.
+        raise GGUFError(f"{reader.path}: weights do not match the metadata-described architecture: {exc}") from exc
 
     # Tied embeddings (llama.cpp omits ``output.weight`` when the head is tied
     # to the embeddings): copy the embedding tensor into the LM head, mirroring
@@ -227,45 +236,80 @@ def _load_foreign_gguf(
     return model
 
 
-def _rms_norm_eps(metadata: dict[str, Any]) -> float:
+def _gguf_key_prefix(metadata: dict[str, Any]) -> str:
+    """The file's llama.cpp metadata key prefix.
+
+    gguf-py writes every model key as ``{arch}.*`` where ``{arch}`` is the
+    exact ``general.architecture`` value — a Mistral file carries
+    ``mistral.embedding_length``, a Qwen2 ``qwen2.*``, a Qwen3 ``qwen3.*``, so
+    the prefix must come from the FILE, not from the mapped ``model_type``
+    (round-73 review HIGH). Dense Llama-family files virtually always declare
+    the plain ``llama`` arch; a file declaring a llama-family alias (old
+    converter's ``llama2``/``llama3``) while still writing ``llama.*`` keys
+    falls back to the ``llama`` prefix.
+    """
+    arch = str(metadata.get("general.architecture", "")).lower()
+    if not arch:
+        return ""
+    if f"{arch}.embedding_length" in metadata:
+        return arch
+    if "llama.embedding_length" in metadata:
+        return "llama"
+    return arch
+
+
+def _rms_norm_eps(metadata: dict[str, Any], prefix: str) -> float:
     """The file's RMSNorm epsilon (1e-5 default — Llama/Mistral reference)."""
-    return float(metadata.get("llama.attention.layer_norm_rms_epsilon", 1e-5))
+    return float(metadata.get(f"{prefix}.attention.layer_norm_rms_epsilon", 1e-5))
 
 
-def _gguf_metadata_to_model_config(metadata: dict[str, Any], path: Path) -> ModelConfig:
-    """Translate llama.cpp GGUF metadata into a dense Llama-style ModelConfig."""
-    arch = metadata.get("general.architecture")
-    if not isinstance(arch, str):
+def _gguf_metadata_to_model_config(
+    metadata: dict[str, Any],
+    path: Path,
+) -> tuple[ModelConfig, str]:
+    """Translate llama.cpp GGUF metadata into a dense Llama-style ModelConfig.
+
+    Returns ``(config, key_prefix)`` so the caller can read eps/rope keys with
+    the same prefix.
+    """
+    raw_arch = metadata.get("general.architecture")
+    if not isinstance(raw_arch, str):
         raise GGUFError(
             f"{path}: not a compatible GGUF — no 'general.llm_model_config' "
             "(self-export) and no 'general.architecture' metadata (llama.cpp import)"
         )
 
-    model_type = _GGUF_ARCH_TO_MODEL_TYPE.get(arch.lower())
+    arch = raw_arch.lower()
+    model_type = _GGUF_ARCH_TO_MODEL_TYPE.get(arch)
     if model_type is None:
         raise GGUFError(
-            f"{path}: unsupported GGUF architecture {arch!r} (supported dense "
+            f"{path}: unsupported GGUF architecture {raw_arch!r} (supported dense "
             f"Llama-style: {sorted(set(_GGUF_ARCH_TO_MODEL_TYPE.values()))})"
         )
 
-    missing = [k for k in _REQUIRED_GGUF_METADATA if k not in metadata]
+    prefix = _gguf_key_prefix(metadata)
+    key = lambda suffix: f"{prefix}.{suffix}"  # noqa: E731 - short local alias
+
+    missing = [
+        s for s in ("embedding_length", "block_count", "attention.head_count", "vocab_size") if key(s) not in metadata
+    ]
     if missing:
-        raise GGUFError(f"{path}: missing required llama.cpp metadata: {', '.join(missing)}")
+        raise GGUFError(f"{path}: missing required llama.cpp metadata: {', '.join(key(s) for s in missing)}")
 
-    hidden_size = int(metadata["llama.embedding_length"])
-    num_layers = int(metadata["llama.block_count"])
-    num_heads = int(metadata["llama.attention.head_count"])
-    num_kv_heads = int(metadata.get("llama.attention.head_count_kv", num_heads))
-    vocab_size = int(metadata["llama.vocab_size"])
-    intermediate_size = int(metadata["llama.feed_forward_length"]) if "llama.feed_forward_length" in metadata else None
-    max_seq_len = int(metadata.get("llama.context_length", 4096))
-    rope_theta = float(metadata.get("llama.rope.freq_base", 10000.0))
+    hidden_size = int(metadata[key("embedding_length")])
+    num_layers = int(metadata[key("block_count")])
+    num_heads = int(metadata[key("attention.head_count")])
+    num_kv_heads = int(metadata.get(key("attention.head_count_kv"), num_heads))
+    vocab_size = int(metadata[key("vocab_size")])
+    intermediate_size = int(metadata[key("feed_forward_length")]) if key("feed_forward_length") in metadata else None
+    max_seq_len = int(metadata.get(key("context_length"), 4096))
+    rope_theta = float(metadata.get(key("rope.freq_base"), 10000.0))
 
-    # Guard against non-standard per-head dims (``llama.attention.key_length`` /
-    # ``value_length`` emitted for archs whose head dim is not hidden//heads).
+    # Guard against non-standard per-head dims (``llama.attention.key_length``
+    # / ``value_length`` emitted for archs whose head dim is not hidden//heads).
     # Our MHA hardcodes head_dim = hidden_size // num_heads, so a mismatching
-    # file would import with every attention weight mis-sized and be rejected by
-    # load_state_dict anyway — refuse up front with the reason.
+    # file would import with every attention weight mis-sized and be rejected
+    # by load_state_dict anyway — refuse up front with the reason.
     if hidden_size % num_heads != 0:
         raise GGUFError(
             f"{path}: embedding_length {hidden_size} not divisible by head_count "
@@ -273,11 +317,11 @@ def _gguf_metadata_to_model_config(metadata: dict[str, Any], path: Path) -> Mode
             f"not representable by llm's MHA"
         )
     head_dim = hidden_size // num_heads
-    for key in ("llama.attention.key_length", "llama.attention.value_length"):
-        if key in metadata and int(metadata[key]) != head_dim:
+    for suffix in ("attention.key_length", "attention.value_length"):
+        if key(suffix) in metadata and int(metadata[key(suffix)]) != head_dim:
             raise GGUFError(
-                f"{path}: {key} = {metadata[key]} != head_dim {head_dim}; non-standard "
-                f"head dimensions are not representable by llm's MHA"
+                f"{path}: {key(suffix)} = {metadata[key(suffix)]} != head_dim {head_dim}; "
+                f"non-standard head dimensions are not representable by llm's MHA"
             )
     if num_heads % num_kv_heads != 0:
         raise GGUFError(
@@ -285,38 +329,45 @@ def _gguf_metadata_to_model_config(metadata: dict[str, Any], path: Path) -> Mode
             f"{num_kv_heads} — llm's MHA requires num_heads % num_kv_heads == 0"
         )
 
-    scaling = metadata.get("llama.rope.scaling.type")
+    # RoPE scaling (YaRN / linear / ...): our RoPE has no scaled-frequency
+    # support, so a scaled file would import with the base freq_base and be
+    # positionally wrong beyond the unscaled context. Refuse loudly rather
+    # than ship a silently-wrong model (RIL ISS-220 philosophy; round-73
+    # review MEDIUM — warn-and-import is a silent failure path).
+    scaling = metadata.get(key("rope.scaling.type"))
     if scaling not in (None, "none"):
-        logger.warning(
-            "%s: RoPE scaling (%s) is not applied on import — position frequencies use the base freq_base of %s",
-            path,
-            scaling,
-            rope_theta,
+        raise GGUFError(
+            f"{path}: RoPE scaling type {scaling!r} is not supported by llm's RoPE; "
+            f"refusing rather than importing a model that is positionally wrong "
+            f"beyond the base {max_seq_len} context. Use an unscaled GGUF."
         )
 
     # Dense Llama-style GGUFs are always pre-LN SwiGLU + RMSNorm + RoPE and
     # bias-free (attention/MLP/head). These are the model-defining flags that
     # would otherwise silently rebuild as LayerNorm / gelu-GLU / biased MHA with
     # every such tensor dropped (RIL ISS-056/062/129).
-    return ModelConfig(
-        vocab_size=vocab_size,
-        hidden_size=hidden_size,
-        num_layers=num_layers,
-        num_heads=num_heads,
-        num_kv_heads=num_kv_heads,
-        intermediate_size=intermediate_size,
-        max_seq_len=max_seq_len,
-        use_glu=True,
-        mlp_activation="silu",
-        norm_impl="rms_norm",
-        norm_first=True,
-        qkv_bias=False,
-        mlp_bias=False,
-        lm_head_bias=False,
-        use_rope=True,
-        rope_theta=rope_theta,
-        use_alibi=False,
-        attn_impl="mha",
-        mlp_impl="mlp",
-        dropout=0.0,
+    return (
+        ModelConfig(
+            vocab_size=vocab_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            num_kv_heads=num_kv_heads,
+            intermediate_size=intermediate_size,
+            max_seq_len=max_seq_len,
+            use_glu=True,
+            mlp_activation="silu",
+            norm_impl="rms_norm",
+            norm_first=True,
+            qkv_bias=False,
+            mlp_bias=False,
+            lm_head_bias=False,
+            use_rope=True,
+            rope_theta=rope_theta,
+            use_alibi=False,
+            attn_impl="mha",
+            mlp_impl="mlp",
+            dropout=0.0,
+        ),
+        prefix,
     )
