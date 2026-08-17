@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 73,
+  "round": 74,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T12:29:19+00:00",
+  "updated_at": "2026-08-17T13:26:02+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 63,
+      "touched_round": 74,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -5854,7 +5854,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:36:27+00:00",
       "updated_at": "2026-08-14T15:36:27+00:00",
-      "touched_round": 71,
+      "touched_round": 74,
       "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
     },
     "ISS-102": {
@@ -10747,6 +10747,106 @@
       "source": "835cbbd",
       "summary": "prefix fix verified: qwen2.* + mistral.* fixtures import exactly (forward equality), multi-layer, kv-mismatch + head-dim refusals; RoPE-scaled file refused; tests/export+compat 216 passed",
       "confidence": 1.0
+    },
+    "CHG-186": {
+      "id": "CHG-186",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T13:23:46+00:00",
+      "updated_at": "2026-08-17T13:23:46+00:00",
+      "touched_round": 73,
+      "commit": "df44a75",
+      "summary": "Batched engine masks undecodable tail vocab (ISS-125 parity, sampling) + validates add_request against min(model.max_seq_len, engine window) (round-73 serving deep-dive findings 1/2)"
+    },
+    "EV-185": {
+      "id": "EV-185",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T13:23:46+00:00",
+      "updated_at": "2026-08-17T13:23:46+00:00",
+      "touched_round": 73,
+      "source": "df44a75",
+      "summary": "serving fixes RED->GREEN: without mask argmax-99 -> KeyError 'Token ID 99'; without budget fix add_request admitted over-capacity prompt; 2 new regressions + 5 reconciled tests; full fast suite exit 0",
+      "confidence": 1.0
+    },
+    "ISS-222": {
+      "id": "ISS-222",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T13:23:46+00:00",
+      "updated_at": "2026-08-17T13:24:21+00:00",
+      "touched_round": 73,
+      "severity": "high",
+      "summary": "batched engine samples undecodable tail-vocab tokens (no mask_undecodable_logits, only pad); padded-vocab/HF-model + smaller tokenizer crashes mid-stream at tokenizer.decode -> KeyError; eager/speculative already mask (ISS-125) (round-73 serving deep-dive FINDING 1, reproduced)"
+    },
+    "ISS-223": {
+      "id": "ISS-223",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T13:23:47+00:00",
+      "updated_at": "2026-08-17T13:24:21+00:00",
+      "touched_round": 73,
+      "severity": "medium",
+      "summary": "batched engine add_request validates against engine max_seq_len config, not model positional capacity; prompt exceeding model window crashes in PE range check mid-forward (round-73 serving deep-dive FINDING 2, reproduced)"
+    },
+    "ISS-224": {
+      "id": "ISS-224",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T13:24:52+00:00",
+      "updated_at": "2026-08-17T13:24:52+00:00",
+      "touched_round": 74,
+      "severity": "medium",
+      "summary": "client-provided request_id silently dropped end-to-end from HTTP; routers/generation_service/backend never thread it, engine dup-request-id protection (ISS-123/F3) dead via HTTP (round-73 serving deep-dive FINDING 3, grep-verified)"
+    },
+    "ISS-225": {
+      "id": "ISS-225",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T13:24:52+00:00",
+      "updated_at": "2026-08-17T13:24:52+00:00",
+      "touched_round": 74,
+      "severity": "medium",
+      "summary": "non-streaming chat/generate finish_reason + usage computed from character len(completion), not tokens; wrong for HF/BPE tokenizers and divergent from streaming path (round-73 serving deep-dive FINDING 4, reproduced)"
+    },
+    "ISS-226": {
+      "id": "ISS-226",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T13:24:52+00:00",
+      "updated_at": "2026-08-17T13:24:52+00:00",
+      "touched_round": 74,
+      "severity": "low",
+      "summary": "streaming generate/chat error paths leak exception class name to client (Error: {type(exc).__name__}) and skip metrics.observe_tokens on timeout/error — ISS-168 no-leak policy + undercounting (round-73 serving deep-dive FINDING 7)"
+    },
+    "ISS-227": {
+      "id": "ISS-227",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T13:24:53+00:00",
+      "updated_at": "2026-08-17T13:24:53+00:00",
+      "touched_round": 74,
+      "severity": "low",
+      "summary": "lm_eval generate_until EOS stop skipped when EOS decodes to empty string (HFTokenizer decode skip_special_tokens -> '') turning off early stopping (round-73 serving deep-dive FINDING 6)"
+    },
+    "ISS-228": {
+      "id": "ISS-228",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T13:24:53+00:00",
+      "updated_at": "2026-08-17T13:24:53+00:00",
+      "touched_round": 74,
+      "severity": "low",
+      "summary": "RougeMetric returns {} on empty predictions vs sibling metrics returning {name: 0.0}; consumer KeyError (round-73 serving deep-dive FINDING 5)"
     }
   },
   "edges": [
@@ -15817,6 +15917,60 @@
       "to": "COMP-003",
       "type": "located_in",
       "created_at": "2026-08-17T12:28:43+00:00"
+    },
+    {
+      "from": "CHG-186",
+      "to": "ISS-222",
+      "type": "resolves",
+      "created_at": "2026-08-17T13:24:21+00:00"
+    },
+    {
+      "from": "CHG-186",
+      "to": "ISS-223",
+      "type": "resolves",
+      "created_at": "2026-08-17T13:24:21+00:00"
+    },
+    {
+      "from": "ISS-222",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-17T13:24:21+00:00"
+    },
+    {
+      "from": "ISS-223",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-17T13:24:21+00:00"
+    },
+    {
+      "from": "ISS-224",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-17T13:26:02+00:00"
+    },
+    {
+      "from": "ISS-225",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-17T13:26:02+00:00"
+    },
+    {
+      "from": "ISS-227",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-17T13:26:02+00:00"
+    },
+    {
+      "from": "ISS-226",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-17T13:26:02+00:00"
+    },
+    {
+      "from": "ISS-228",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-17T13:26:02+00:00"
     }
   ]
 }
