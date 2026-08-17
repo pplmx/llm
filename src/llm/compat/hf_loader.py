@@ -102,6 +102,17 @@ def _load_from_local(
             "qwen) or load the model via llm-train with an explicit MoE config."
         )
 
+    # Unknown model_type (gpt2, gemma, baichuan, ...): the mapping has no rules
+    # for it. Loading with strict=False used to leave EVERY unmapped weight at
+    # random init — garbage generation with only warning logs (round-71 compat
+    # fix). Refuse loudly, mirroring the Mixtral rejection.
+    if architecture == "unknown":
+        raise NotImplementedError(
+            f"model_type {hf_config.get('model_type', '<missing>')!r} is not supported by "
+            "from_pretrained: the weight mapping has no rules for it and would leave every "
+            "weight at random init. Supported: llama, mistral, qwen, qwen2."
+        )
+
     logger.info(f"Detected architecture: {architecture}")
 
     # Determine dtype

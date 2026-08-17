@@ -76,6 +76,18 @@ class TestWeightMapping:
         config = {"model_type": "Qwen2ForCausalLM"}
         assert detect_architecture(config) == "qwen2"
 
+    def test_detect_architecture_unknown_is_distinct(self):
+        """Round-71 compat fix: an unsupported model_type (gpt2, gemma,
+        baichuan, ...) must NOT collapse into the llama mapping — the loader
+        previously loaded every weight at RANDOM init with only warnings.
+        It must be distinguishable so from_pretrained can refuse it."""
+        config = {"model_type": "gpt2"}
+        assert detect_architecture(config) == "unknown"
+        config = {"model_type": "gemma"}
+        assert detect_architecture(config) == "unknown"
+        config = {}  # no model_type at all
+        assert detect_architecture(config) == "unknown"
+
     def test_convert_hf_weights(self):
         """Test weight conversion."""
         hf_state_dict = {
@@ -295,6 +307,19 @@ class TestHFLoader:
 
         (tmp_path / "config.json").write_text(json.dumps({"model_type": "mixtral", "num_experts": 8, "top_k": 2}))
         with pytest.raises(NotImplementedError, match=r"[Mm]ixtral"):
+            from_pretrained(str(tmp_path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+
+    def test_unknown_arch_is_not_loadable(self, tmp_path):
+        """Round-71 compat fix: a config with an unsupported model_type (gpt2,
+        gemma, ...) must be refused by from_pretrained. Before the fix the
+        loader defaulted to the llama mapping and loaded every unmapped weight
+        at RANDOM init — garbage generation with warnings only."""
+        import json
+
+        from llm.compat.hf_loader import from_pretrained
+
+        (tmp_path / "config.json").write_text(json.dumps({"model_type": "gpt2"}))
+        with pytest.raises(NotImplementedError, match="not supported"):
             from_pretrained(str(tmp_path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
 
     def test_load_weights_missing_raises(self, tmp_path):

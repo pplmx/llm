@@ -132,7 +132,8 @@ def detect_architecture(config: dict[str, Any]) -> str:
         config: HuggingFace model config dict.
 
     Returns:
-        Architecture name (llama, mistral, qwen, qwen2).
+        Architecture name (llama, mistral, qwen, qwen2, mixtral) or
+        ``"unknown"`` for an unsupported ``model_type``.
     """
     model_type = config.get("model_type", "").lower()
 
@@ -152,8 +153,12 @@ def detect_architecture(config: dict[str, Any]) -> str:
     elif "qwen" in model_type:
         return "qwen"
     else:
-        # Default to llama-style for unknown
-        return "llama"
+        # Unknown model_type (gpt2, gemma, baichuan, ...). Previously this
+        # defaulted to the llama mapping and from_pretrained loaded with
+        # strict=False — every unmapped weight stayed at random init and the
+        # model generated garbage with only warning logs (round-71 compat
+        # fix). Return a distinguishable token so the loader REFUSES instead.
+        return "unknown"
 
 
 def get_weight_mapping(architecture: str) -> dict[str, str]:
