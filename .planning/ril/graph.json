@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 71,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T02:36:52+00:00",
+  "updated_at": "2026-08-17T04:07:49+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4218,7 +4218,7 @@
       "version": 1,
       "created_at": "2026-08-13T07:38:08+00:00",
       "updated_at": "2026-08-13T07:38:08+00:00",
-      "touched_round": 66,
+      "touched_round": 71,
       "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
     },
     "CHG-065": {
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 66,
+      "touched_round": 71,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -10526,6 +10526,159 @@
       "source": "tests/export/test_gguf_roundtrip.py",
       "summary": "export->load round-trips: f32 bit-exact, f16/q8 within quantizer error, forward matches, missing/bad config refused",
       "confidence": 1.0
+    },
+    "ISS-215": {
+      "id": "ISS-215",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:48+00:00",
+      "touched_round": 71,
+      "severity": 0.72,
+      "title": "Prefix + is_causal attention mask misaligned: real context keys masked, query attends only prefix (mha/sdpa)",
+      "summary": "core/attn/mha.py prepends prefix K/V but hands unshifted is_causal=True to sdpa; torch top-left causal diag=1 masks every real key (k_len=prefix+q_len). PrefixTuningAttention always injects prefix_kv and the decoder constructs blocks with is_causal=True, so prefix-tuned training/forward on the default MHA backend silently corrupts. All prefix tests pass is_causal=False so the path was untested. FIXED: sdpa(prefix_len=...) shifts the causal diagonal; complex path materializes the shifted mask."
+    },
+    "ISS-216": {
+      "id": "ISS-216",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:48+00:00",
+      "touched_round": 71,
+      "severity": 0.42,
+      "title": "Prefix + sliding-window + causal prefill fully masked (empty visible keys)",
+      "summary": "core/attn/sdpa.py complex path ORs an unshifted relative causal triu(Sq,Sk,1) with the absolute window mask under prefix: every query row ends fully masked (zeros/NaN). FIXED by prefix_len shifting the causal diagonal into the same absolute coordinate space as the row-offset window mask."
+    },
+    "ISS-217": {
+      "id": "ISS-217",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:48+00:00",
+      "touched_round": 71,
+      "severity": 0.4,
+      "title": "Paged/continuous-batching path silently drops prefix_kv (prefix-tuned model behaves un-prefixed)",
+      "summary": "core/attn/mha.py paged branch returns into _forward_paged before the prefix-concat block, so PrefixTuningAttention under paged serving is a silent no-op. FIXED: NotImplementedError (matches flash_attn refusal)."
+    },
+    "ISS-218": {
+      "id": "ISS-218",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:48+00:00",
+      "touched_round": 71,
+      "severity": 0.52,
+      "title": "Speculative backend never masks PAD logits; emits <PAD> into generated text",
+      "summary": "generation/speculative.py draft loop + target/draft acceptance scoring bypass _mask_pad_logits (eager applies it every step). Reproduced: 20/50 seeds emitted <PAD> mid-output. FIXED: mask in draft loop, target relevant, draft relevant; pad_token_id threaded through _verify_speculative_tokens."
+    },
+    "ISS-219": {
+      "id": "ISS-219",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:48+00:00",
+      "touched_round": 71,
+      "severity": 0.46,
+      "title": "Empty prompt crashes eager with IndexError / silently corrupts batch row; serving 500",
+      "summary": "generation/eager.py stream_generate() -> index -1 on size-0 dim; batch_generate mixed batch emits garbage for the empty row; GenerationRequest.prompt had no non-empty check -> {prompt:} 500. FIXED: raise ValueError in stream+batch; schemas min_length=1 + batch validator rejects empty strings."
+    },
+    "ISS-220": {
+      "id": "ISS-220",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:48+00:00",
+      "touched_round": 71,
+      "severity": 0.48,
+      "title": "Unknown HF model_type silently defaults to llama mapping -> all weights random init",
+      "summary": "compat/weight_mapping.detect_architecture else-guard returned llama for gpt2/gemma/baichuan etc.; hf_loader from_pretrained strict=False left EVERY unmapped weight random -> garbage with warnings only (only Mixtral had a loud rejection, ISS-144). FIXED: return unknown + NotImplementedError listing supported archs."
+    },
+    "TASK-183": {
+      "id": "TASK-183",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:49+00:00",
+      "touched_round": 71,
+      "category": "correctness",
+      "severity": 0.72,
+      "title": "Prefix attention causal calibration (sdpa prefix_len shift)",
+      "summary": "Shift the causal diagonal by prefix_len in sdpa (complex + ALiBi paths); pass prefix_len from MHA; force complex path when prefix_len>0 so torch native left-aligned causal is never used with a prefix. Fixes ISS-215 + ISS-216; regression tests in test_mha_prefix (causal vs explicit mask, window+prefix).",
+      "lock_owner": "round71",
+      "lock_until": "2026-08-17T04:31:20+00:00"
+    },
+    "TASK-184": {
+      "id": "TASK-184",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:49+00:00",
+      "touched_round": 71,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Generation edge guards: empty-prompt reject + speculative PAD mask",
+      "summary": "eager stream/batch raise on empty token sequences; schemas min_length=1 + batch non-empty; speculative masks PAD in draft loop + target/draft scoring (pad_token_id threaded). Fixes ISS-218 + ISS-219.",
+      "lock_owner": "round71",
+      "lock_until": "2026-08-17T04:31:20+00:00"
+    },
+    "TASK-185": {
+      "id": "TASK-185",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-08-17T04:00:36+00:00",
+      "updated_at": "2026-08-17T04:07:49+00:00",
+      "touched_round": 71,
+      "category": "stability",
+      "severity": 0.45,
+      "title": "Silent-wrong-model hardening: paged prefix reject + unknown-HF-arch refusal",
+      "summary": "mha paged branch NotImplementedError for prefix_kv (no silent un-prefixed serve); weight_mapping unknown -> load refusal. Fixes ISS-217 + ISS-220.",
+      "lock_owner": "round71",
+      "lock_until": "2026-08-17T04:31:20+00:00"
+    },
+    "CHG-181": {
+      "id": "CHG-181",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T04:07:13+00:00",
+      "updated_at": "2026-08-17T04:07:13+00:00",
+      "touched_round": 71,
+      "commit": "2abb798",
+      "title": "sdpa prefix_len causal shift; paged prefix reject",
+      "summary": "TASK-183: diagonal=1+prefix_len in sdpa causal + ALiBi paths; complex path forced with prefix; paged prefix_kv NotImplementedError; regression tests"
+    },
+    "CHG-182": {
+      "id": "CHG-182",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T04:07:13+00:00",
+      "updated_at": "2026-08-17T04:07:13+00:00",
+      "touched_round": 71,
+      "commit": "453f075",
+      "title": "speculative PAD mask + empty-prompt guards",
+      "summary": "TASK-184: _mask_pad_logits in draft loop + target/draft scoring; eager stream/batch ValueError on empty; schemas min_length=1; regression tests"
+    },
+    "CHG-183": {
+      "id": "CHG-183",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T04:07:13+00:00",
+      "updated_at": "2026-08-17T04:07:13+00:00",
+      "touched_round": 71,
+      "commit": "fb4e84c",
+      "title": "unknown HF architecture refusal",
+      "summary": "TASK-185: detect_architecture returns unknown; from_pretrained NotImplementedError; tests"
     }
   },
   "edges": [
@@ -15446,6 +15599,132 @@
       "to": "TASK-182",
       "type": "implements",
       "created_at": "2026-08-17T02:36:51+00:00"
+    },
+    {
+      "from": "TASK-183",
+      "to": "ISS-215",
+      "type": "addresses",
+      "created_at": "2026-08-17T04:01:19+00:00"
+    },
+    {
+      "from": "TASK-183",
+      "to": "ISS-216",
+      "type": "addresses",
+      "created_at": "2026-08-17T04:01:19+00:00"
+    },
+    {
+      "from": "TASK-184",
+      "to": "ISS-218",
+      "type": "addresses",
+      "created_at": "2026-08-17T04:01:19+00:00"
+    },
+    {
+      "from": "TASK-184",
+      "to": "ISS-219",
+      "type": "addresses",
+      "created_at": "2026-08-17T04:01:19+00:00"
+    },
+    {
+      "from": "TASK-185",
+      "to": "ISS-217",
+      "type": "addresses",
+      "created_at": "2026-08-17T04:01:19+00:00"
+    },
+    {
+      "from": "TASK-185",
+      "to": "ISS-220",
+      "type": "addresses",
+      "created_at": "2026-08-17T04:01:20+00:00"
+    },
+    {
+      "from": "ISS-215",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-17T04:01:20+00:00"
+    },
+    {
+      "from": "ISS-216",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-17T04:01:20+00:00"
+    },
+    {
+      "from": "ISS-217",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-17T04:01:20+00:00"
+    },
+    {
+      "from": "ISS-218",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-17T04:01:20+00:00"
+    },
+    {
+      "from": "ISS-219",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-17T04:01:20+00:00"
+    },
+    {
+      "from": "ISS-220",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-17T04:01:20+00:00"
+    },
+    {
+      "from": "CHG-181",
+      "to": "ISS-215",
+      "type": "resolves",
+      "created_at": "2026-08-17T04:07:13+00:00"
+    },
+    {
+      "from": "CHG-181",
+      "to": "ISS-216",
+      "type": "resolves",
+      "created_at": "2026-08-17T04:07:13+00:00"
+    },
+    {
+      "from": "CHG-181",
+      "to": "ISS-217",
+      "type": "resolves",
+      "created_at": "2026-08-17T04:07:13+00:00"
+    },
+    {
+      "from": "CHG-182",
+      "to": "ISS-218",
+      "type": "resolves",
+      "created_at": "2026-08-17T04:07:14+00:00"
+    },
+    {
+      "from": "CHG-182",
+      "to": "ISS-219",
+      "type": "resolves",
+      "created_at": "2026-08-17T04:07:14+00:00"
+    },
+    {
+      "from": "CHG-183",
+      "to": "ISS-220",
+      "type": "resolves",
+      "created_at": "2026-08-17T04:07:14+00:00"
+    },
+    {
+      "from": "CHG-181",
+      "to": "TASK-183",
+      "type": "implements",
+      "created_at": "2026-08-17T04:07:14+00:00"
+    },
+    {
+      "from": "CHG-182",
+      "to": "TASK-184",
+      "type": "implements",
+      "created_at": "2026-08-17T04:07:14+00:00"
+    },
+    {
+      "from": "CHG-183",
+      "to": "TASK-185",
+      "type": "implements",
+      "created_at": "2026-08-17T04:07:14+00:00"
     }
   ]
 }
