@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 74,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T13:26:02+00:00",
+  "updated_at": "2026-08-17T15:03:55+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10796,10 +10796,10 @@
     "ISS-224": {
       "id": "ISS-224",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T13:24:52+00:00",
-      "updated_at": "2026-08-17T13:24:52+00:00",
+      "updated_at": "2026-08-17T15:03:55+00:00",
       "touched_round": 74,
       "severity": "medium",
       "summary": "client-provided request_id silently dropped end-to-end from HTTP; routers/generation_service/backend never thread it, engine dup-request-id protection (ISS-123/F3) dead via HTTP (round-73 serving deep-dive FINDING 3, grep-verified)"
@@ -10807,10 +10807,10 @@
     "ISS-225": {
       "id": "ISS-225",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T13:24:52+00:00",
-      "updated_at": "2026-08-17T13:24:52+00:00",
+      "updated_at": "2026-08-17T14:15:13+00:00",
       "touched_round": 74,
       "severity": "medium",
       "summary": "non-streaming chat/generate finish_reason + usage computed from character len(completion), not tokens; wrong for HF/BPE tokenizers and divergent from streaming path (round-73 serving deep-dive FINDING 4, reproduced)"
@@ -10818,10 +10818,10 @@
     "ISS-226": {
       "id": "ISS-226",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T13:24:52+00:00",
-      "updated_at": "2026-08-17T13:24:52+00:00",
+      "updated_at": "2026-08-17T14:15:13+00:00",
       "touched_round": 74,
       "severity": "low",
       "summary": "streaming generate/chat error paths leak exception class name to client (Error: {type(exc).__name__}) and skip metrics.observe_tokens on timeout/error — ISS-168 no-leak policy + undercounting (round-73 serving deep-dive FINDING 7)"
@@ -10829,10 +10829,10 @@
     "ISS-227": {
       "id": "ISS-227",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T13:24:53+00:00",
-      "updated_at": "2026-08-17T13:24:53+00:00",
+      "updated_at": "2026-08-17T15:03:55+00:00",
       "touched_round": 74,
       "severity": "low",
       "summary": "lm_eval generate_until EOS stop skipped when EOS decodes to empty string (HFTokenizer decode skip_special_tokens -> '') turning off early stopping (round-73 serving deep-dive FINDING 6)"
@@ -10840,13 +10840,57 @@
     "ISS-228": {
       "id": "ISS-228",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T13:24:53+00:00",
-      "updated_at": "2026-08-17T13:24:53+00:00",
+      "updated_at": "2026-08-17T14:15:13+00:00",
       "touched_round": 74,
       "severity": "low",
       "summary": "RougeMetric returns {} on empty predictions vs sibling metrics returning {name: 0.0}; consumer KeyError (round-73 serving deep-dive FINDING 5)"
+    },
+    "CHG-187": {
+      "id": "CHG-187",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T14:15:13+00:00",
+      "updated_at": "2026-08-17T14:15:13+00:00",
+      "touched_round": 74,
+      "commit": "5fc4167",
+      "summary": "ISS-225: non-streaming token counts via tokenizer re-encode (_token_count) in /generate, /batch_generate, /v1/chat/completions finish_reason+usage"
+    },
+    "CHG-188": {
+      "id": "CHG-188",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T14:15:13+00:00",
+      "updated_at": "2026-08-17T14:15:13+00:00",
+      "touched_round": 74,
+      "commit": "bc9844d",
+      "summary": "ISS-226: EOS registered as [eos_id] token-id stop in generate_until (HF decode-safe); ISS-228: RougeMetric 0.0-per-dim on empty input"
+    },
+    "CHG-189": {
+      "id": "CHG-189",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T15:03:55+00:00",
+      "updated_at": "2026-08-17T15:03:55+00:00",
+      "touched_round": 74,
+      "commit": "7a08029",
+      "summary": "ISS-227: streaming /generate + chat error paths yield fixed 'Error: stream failed' (no class-name leak, ISS-168) + observe partial token counts on timeout/error"
+    },
+    "CHG-190": {
+      "id": "CHG-190",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-17T15:03:55+00:00",
+      "updated_at": "2026-08-17T15:03:55+00:00",
+      "touched_round": 74,
+      "commit": "7467b5f",
+      "summary": "ISS-224: thread client request_id through routers->generation_service->backends->engine GenerationRequest so batched dup-id protection (ISS-123/F3) works from HTTP"
     }
   },
   "edges": [
@@ -15971,6 +16015,36 @@
       "to": "COMP-013",
       "type": "located_in",
       "created_at": "2026-08-17T13:26:02+00:00"
+    },
+    {
+      "from": "CHG-187",
+      "to": "ISS-225",
+      "type": "resolves",
+      "created_at": "2026-08-17T14:15:13+00:00"
+    },
+    {
+      "from": "CHG-188",
+      "to": "ISS-226",
+      "type": "resolves",
+      "created_at": "2026-08-17T14:15:13+00:00"
+    },
+    {
+      "from": "CHG-188",
+      "to": "ISS-228",
+      "type": "resolves",
+      "created_at": "2026-08-17T14:15:13+00:00"
+    },
+    {
+      "from": "CHG-189",
+      "to": "ISS-227",
+      "type": "resolves",
+      "created_at": "2026-08-17T15:03:55+00:00"
+    },
+    {
+      "from": "CHG-190",
+      "to": "ISS-224",
+      "type": "resolves",
+      "created_at": "2026-08-17T15:03:55+00:00"
     }
   ]
 }
