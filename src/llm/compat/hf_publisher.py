@@ -172,7 +172,13 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "num_key_value_heads": num_kv_heads if num_kv_heads is not None else model.num_heads,
         "intermediate_size": intermediate_size,
         "max_position_embeddings": model.max_seq_len,
-        "rms_norm_eps": 1e-5,
+        # Persist the model's ACTUAL norm epsilon. The default was a hardcoded
+        # 1e-5, so a model trained with any other eps (e.g. 1e-6, Qwen2's
+        # convention) rebuilt with a silently different normalization function
+        # across save_pretrained -> from_pretrained (the loader honors
+        # whatever is written — we were writing the wrong value). Both
+        # LayerNorm and RMSNorm carry ``eps``.
+        "rms_norm_eps": float(getattr(model.transformer_blocks[0].norm1, "eps", 1e-5)),
         "rope_theta": rope_theta,
         "torch_dtype": dtype_str,
         "hidden_act": hidden_act,

@@ -183,6 +183,14 @@ def detect_architecture(config: dict[str, Any]) -> str:
         return "mixtral"
     elif "mistral" in model_type:
         return "mistral"
+    elif model_type in {"qwen2_moe", "qwen2moe", "qwen3", "qwen3_moe", "qwen3moe"}:
+        # Qwen2MoE / Qwen3(MoE) are NOT supported. The substring rules below
+        # would map ``qwen2_moe`` onto the DENSE Qwen2 rules (dropping every
+        # expert/router tensor) and ``qwen3`` onto the Qwen1 GPT-style rules
+        # (dropping most weights) — both then run from RANDOM init with
+        # warnings only (the ISS-144 / round-71 anti-garbage-load philosophy).
+        # Route them to "unknown" so the loader refuses loudly.
+        return "unknown"
     elif "qwen2" in model_type:
         return "qwen2"
     elif "qwen" in model_type:

@@ -181,6 +181,37 @@ def test_save_pretrained_config_is_llama_shaped(tmp_path: Path):
 
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
+def test_save_pretrained_persists_actual_norm_eps(tmp_path: Path):
+    """``rms_norm_eps`` in config.json must be the model's real norm epsilon.
+
+    It was hardcoded to 1e-5, so a model trained with any other eps (e.g.
+    1e-6, Qwen2's convention) rebuilt with a silently different
+    normalization function across a save_pretrained -> from_pretrained
+    roundtrip (the loader honors whatever is written — we were writing the
+    wrong value).
+    """
+    from llm.models.decoder import DecoderModel
+
+    kwargs = decoder_model_kwargs(
+        vocab_size=64,
+        hidden_size=32,
+        num_layers=2,
+        num_heads=4,
+        intermediate_size=64,
+        max_seq_len=32,
+        use_glu=True,
+        norm_eps=1e-6,
+        device="cpu",
+    )
+    model = DecoderModel(**kwargs)
+    save_pretrained(model, tmp_path)
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config["rms_norm_eps"] == 1e-6
+    # And the live norms really carry the custom eps (the value we persist).
+    assert model.transformer_blocks[0].norm1.eps == 1e-6
+
+
+@pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_through_from_pretrained(tmp_path: Path):
     """Roundtrip: ``save_pretrained`` → ``from_pretrained`` → equivalent forward.
 

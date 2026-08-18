@@ -76,6 +76,16 @@ class TestWeightMapping:
         config = {"model_type": "Qwen2ForCausalLM"}
         assert detect_architecture(config) == "qwen2"
 
+    def test_detect_architecture_qwen_moe_and_qwen3_refused_as_unknown(self):
+        """Qwen2MoE / Qwen3(MoE) must NOT collapse onto the dense qwen2 or
+        qwen1 mappings (which would silently drop every expert / most-model
+        tensor and run from RANDOM init with warnings only). They must route
+        to "unknown" so from_pretrained refuses loudly (iss-144 / round-71
+        anti-garbage-load philosophy)."""
+        for model_type in ("qwen2moe", "qwen2_moe", "qwen3", "qwen3moe", "qwen3_moe"):
+            config = {"model_type": model_type}
+            assert detect_architecture(config) == "unknown", model_type
+
     def test_detect_architecture_unknown_is_distinct(self):
         """Round-71 compat fix: an unsupported model_type (gpt2, gemma,
         baichuan, ...) must NOT collapse into the llama mapping — the loader
