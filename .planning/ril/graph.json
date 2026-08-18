@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 78,
+  "round": 79,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T01:29:20+00:00",
+  "updated_at": "2026-08-18T02:01:06+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11034,11 +11034,11 @@
     "ISS-233": {
       "id": "ISS-233",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T21:20:02+00:00",
-      "updated_at": "2026-08-17T21:20:02+00:00",
-      "touched_round": 76,
+      "updated_at": "2026-08-18T01:59:53+00:00",
+      "touched_round": 79,
       "severity": 0.4,
       "category": "performance",
       "summary": "multi-rank persisted-append dedup appends every surviving hash N times to the shared seen-hashes file (per-rank DedupTextSource, no cross-rank coordination) -> N*x corpus-size file re-read wholesale; correct but unbounded bloat. Needs rank-0-only append or file locking."
@@ -11129,6 +11129,31 @@
       "touched_round": 78,
       "commit": "c52ef51",
       "summary": "TASK-192/193 (ISS-230/231): init_dvc degrades to logged no-op when dvc unavailable; PromptDataset wraps malformed JSONL in ValueError naming the file (ISS-201 alignment)"
+    },
+    "CHG-195": {
+      "id": "CHG-195",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T01:59:52+00:00",
+      "updated_at": "2026-08-18T01:59:52+00:00",
+      "touched_round": 79,
+      "commit": "562befe",
+      "summary": "TASK-194 / ISS-233: dedup seen-hashes file appends only on rank 0 (or a single process); all ranks still read+dedup against the durable file"
+    },
+    "TASK-194": {
+      "id": "TASK-194",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T02:01:06+00:00",
+      "updated_at": "2026-08-18T02:01:06+00:00",
+      "touched_round": 79,
+      "category": "performance",
+      "severity": 0.5,
+      "effort": 1.0,
+      "title": "Only rank 0 appends to the shared dedup seen-hashes file (ISS-233)",
+      "summary": "Persisted-append dedup (write_seen_hashes=True) under DDP wrote every surviving hash once per rank -> seen file grew up to world_size x the corpus. Fix: DedupTextSource appends only when rank 0 (or no process group). Resolved via CHG-195."
     }
   },
   "edges": [
@@ -16397,6 +16422,18 @@
       "to": "ISS-231",
       "type": "resolves",
       "created_at": "2026-08-18T01:29:20+00:00"
+    },
+    {
+      "from": "CHG-195",
+      "to": "ISS-233",
+      "type": "resolves",
+      "created_at": "2026-08-18T01:59:53+00:00"
+    },
+    {
+      "from": "CHG-195",
+      "to": "TASK-194",
+      "type": "implements",
+      "created_at": "2026-08-18T02:01:06+00:00"
     }
   ]
 }
