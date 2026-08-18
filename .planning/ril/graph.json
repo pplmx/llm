@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 82,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T16:17:29+00:00",
+  "updated_at": "2026-08-18T19:30:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4218,7 +4218,7 @@
       "version": 1,
       "created_at": "2026-08-13T07:38:08+00:00",
       "updated_at": "2026-08-13T07:38:08+00:00",
-      "touched_round": 71,
+      "touched_round": 82,
       "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
     },
     "CHG-065": {
@@ -10296,7 +10296,7 @@
       "version": 1,
       "created_at": "2026-08-17T01:17:44+00:00",
       "updated_at": "2026-08-17T01:17:44+00:00",
-      "touched_round": 71,
+      "touched_round": 82,
       "title": "Runtime + model registry (src/llm/runtime: bootstrap, plugins, model_factory, tokenizer_factory)"
     },
     "ISS-211": {
@@ -11505,6 +11505,89 @@
       "effort": 5.0,
       "title": "TP scope extension: serving + flash/sdpa/mla + MoE expert-parallel",
       "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). Follow-up: expert-parallel routing for MoE under TP, TP-compatible attention backends, and TP load for llm-serve."
+    },
+    "ISS-241": {
+      "id": "ISS-241",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T19:02:39+00:00",
+      "updated_at": "2026-08-18T19:02:39+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "high",
+      "summary": "GGUF self-export roundtrip loses non-default norm_eps: ModelConfig has no norm_eps field, so _load_self_export rebuilds with the default 1e-5 while _load_foreign_gguf threads _rms_norm_eps(...). A repo-exported file roundtrips less faithfully than a third-party one. (export deep-dive finding #3; hf_publisher fixed via live eps in CHG-201, GGUF side still open.)"
+    },
+    "ISS-242": {
+      "id": "ISS-242",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T19:02:39+00:00",
+      "updated_at": "2026-08-18T19:02:39+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "medium",
+      "summary": "Mistral sliding_window / window_size is never mapped, persisted, or passed to the builder in compat/export: loading mistral-7b-v0.1 (window 4096) runs full-context attention past the window — silently different logits on long prompts. DecoderModel/MHA support it; the HF mapping + publisher config just never carry it. (export deep-dive finding #4.)"
+    },
+    "ISS-243": {
+      "id": "ISS-243",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T19:02:39+00:00",
+      "updated_at": "2026-08-18T19:02:39+00:00",
+      "touched_round": 82,
+      "category": "stability",
+      "severity": "low",
+      "summary": "serialization.add_safe_globals allowlist collection swallows every exception yet still pins _SAFE_GLOBALS_REGISTERED=True: one broken submodule during the walk aborts registration permanently (partial allowlist, UnpicklingError later with no repair). Also allowlisting all of torch.nn.modules is broader than the docstring's rationale. (export deep-dive finding #5.)"
+    },
+    "ISS-244": {
+      "id": "ISS-244",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T19:02:39+00:00",
+      "updated_at": "2026-08-18T19:02:39+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "medium",
+      "summary": "hf_loader only WARNS on leftover missing/unexpected keys (random-init submodule loads silently), while the GGUF loader RAISES on the same condition. Inconsistent; a partially-mapped-but-supported checkpoint can load with garbage output. (export deep-dive finding #6 — full raise may break legit HF-flexible loads; needs a middle ground.)"
+    },
+    "ISS-245": {
+      "id": "ISS-245",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T19:26:15+00:00",
+      "updated_at": "2026-08-18T19:26:15+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "high",
+      "summary": "Weight-mapping architecture detection used substring matching ('qwen2' in model_type) so qwen2_moe collapsed onto the dense Qwen2 mapping and qwen3 onto the Qwen1 GPT-style mapping — both loaded with most tensors at RANDOM init and warnings only. Fixed in CHG-201: route qwen2_moe/qwen3*/qwen3_moe to 'unknown' so from_pretrained refuses loudly. (export deep-dive F1.)"
+    },
+    "ISS-246": {
+      "id": "ISS-246",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T19:26:15+00:00",
+      "updated_at": "2026-08-18T19:26:15+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "medium",
+      "summary": "hf_publisher._build_hf_config hardcoded rms_norm_eps=1e-5 in config.json, so a model trained with any other eps rebuilt with a silently different normalization across save_pretrained -> from_pretrained. Fixed in CHG-201: persist the live norm eps. (export deep-dive F2; GGUF self-roundtrip side still tracked as ISS-241.)"
+    },
+    "CHG-201": {
+      "id": "CHG-201",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T19:26:15+00:00",
+      "updated_at": "2026-08-18T19:26:15+00:00",
+      "touched_round": 82,
+      "commit": "15b2634",
+      "summary": "Export deep-dive F1/F2: detect_architecture refuses qwen2_moe/qwen3(q3_moe) as 'unknown' (no more random-init garbage loads); hf_publisher persists the live norm eps. Regression tests added (compat suite 42 passed)."
     }
   },
   "edges": [
@@ -16942,6 +17025,60 @@
       "to": "TASK-201",
       "type": "implements",
       "created_at": "2026-08-18T15:32:14+00:00"
+    },
+    {
+      "from": "CHG-201",
+      "to": "ISS-245",
+      "type": "resolves",
+      "created_at": "2026-08-18T19:26:15+00:00"
+    },
+    {
+      "from": "CHG-201",
+      "to": "ISS-246",
+      "type": "resolves",
+      "created_at": "2026-08-18T19:26:15+00:00"
+    },
+    {
+      "from": "DEC-045",
+      "to": "TASK-202",
+      "type": "governs",
+      "created_at": "2026-08-18T19:30:41+00:00"
+    },
+    {
+      "from": "DEC-046",
+      "to": "TASK-203",
+      "type": "governs",
+      "created_at": "2026-08-18T19:30:41+00:00"
+    },
+    {
+      "from": "DEC-045",
+      "to": "TASK-204",
+      "type": "governs",
+      "created_at": "2026-08-18T19:30:41+00:00"
+    },
+    {
+      "from": "ISS-241",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-18T19:30:41+00:00"
+    },
+    {
+      "from": "ISS-242",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-18T19:30:41+00:00"
+    },
+    {
+      "from": "ISS-243",
+      "to": "COMP-015",
+      "type": "located_in",
+      "created_at": "2026-08-18T19:30:41+00:00"
+    },
+    {
+      "from": "ISS-244",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-18T19:30:42+00:00"
     }
   ]
 }
