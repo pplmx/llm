@@ -162,10 +162,21 @@ class DistributedManager:
         if not (dist.is_available() and dist.is_initialized()):
             return
         try:
-            dist.monitored_barrier(timeout=timeout)
+            if dist.get_backend() == dist.Backend.GLOO:
+                dist.monitored_barrier(timeout=timeout)
+            else:
+                # ``dist.monitored_barrier`` is GLOO-only; on NCCL/XCCL it
+                # raises immediately, which broke teardown for every multi-rank
+                # nccl run (a rank that finished training would fail its own
+                # finally-block barrier and wedge the job — RIL TASK-200 / this
+                # TP milestone). Plain ``barrier()`` here is still bounded by
+                # the process group's ``collective_timeout_seconds`` (RIL
+                # TASK-195), so a crashed sibling surfaces as a timeout instead
+                # of an infinite block.
+                dist.barrier()
         except Exception as exc:  # noqa: BLE001 - teardown is best-effort
             logger.warning(
-                "monitored_barrier failed during teardown (a rank likely failed): %s",
+                "teardown barrier failed (a rank likely failed): %s",
                 exc,
             )
 

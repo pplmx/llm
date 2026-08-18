@@ -444,7 +444,18 @@ class DistributedConfig(BaseSettings):
     gpus_per_node: int | None = None  # Lazy init
     node_rank: int = 0
     backend: str = "nccl"
-    parallel_strategy: str = Field("ddp", pattern="^(ddp|fsdp)$")
+    parallel_strategy: str = Field("ddp", pattern="^(ddp|fsdp|tp)$")
+    tp_size: int = Field(
+        0,
+        ge=0,
+        description=(
+            "Tensor-parallel size for parallel_strategy='tp'. v1 uses the "
+            "whole world as one TP group, so a value of 0 means 'use "
+            "world_size'; must equal world_size when both are > 1. Every "
+            "partitioned axis (num_heads / num_kv_heads / vocabulary / "
+            "intermediate width) must divide evenly by it."
+        ),
+    )
     collective_timeout_seconds: int = Field(
         1800,
         gt=0,

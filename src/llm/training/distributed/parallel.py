@@ -22,8 +22,11 @@ from collections.abc import Iterable
 from typing import Any, Literal, cast
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
+
+from llm.training.distributed.tensor_parallel import apply_tensor_parallel
 
 # State-dict strategy for FSDP save / load.
 #
@@ -121,6 +124,7 @@ def wrap_model_for_training(
     fsdp_mixed_precision: str = "bf16",
     fsdp_auto_wrap_min_params: int = 10_000_000,
     fsdp_cpu_offload: bool = False,
+    tp_size: int = 1,
 ) -> nn.Module:
     """Wrap a model for distributed training.
 
@@ -131,7 +135,7 @@ def wrap_model_for_training(
 
     Args:
         model: The bare ``nn.Module`` to wrap.
-        parallel_strategy: ``"ddp"`` or ``"fsdp"``.
+        parallel_strategy: ``"ddp"``, ``"fsdp"`` or ``"tp"``.
         device: Target device (used to set ``device_ids`` for DDP
             and ``device_id`` for FSDP).
         world_size: Number of ranks in the process group.
@@ -140,13 +144,19 @@ def wrap_model_for_training(
         fsdp_auto_wrap_min_params: FSDP size-based auto-wrap
             threshold. ``0`` disables auto-wrap.
         fsdp_cpu_offload: Offload FSDP params to CPU when idle.
+        tp_size: Tensor-parallel size for ``parallel_strategy="tp"``.
+            v1 uses the whole world as one TP group, so it defaults to
+            ``world_size``; must be > 1 and divide every partitioned axis.
 
     Raises:
         ValueError: if ``parallel_strategy`` is not recognised.
         RuntimeError: if FSDP is requested on a CPU-only host
             (FSDP needs CUDA + a process group).
+        NotImplementedError: for unsupported tensor-parallel
+            configurations (see ``apply_tensor_parallel`` scope guards).
     """
-    if world_size <= 1 or device.type != "cuda":
+    if parallel_strategy != "tp" and (world_size <= 1 or device.type != "cuda"):
+        # DDP/FSDP are no-ops for single-rank or CPU-only runs.
         return model
 
     if parallel_strategy == "ddp":
@@ -175,7 +185,26 @@ def wrap_model_for_training(
             cpu_offload=fsdp_cpu_offload,
         )
 
-    raise ValueError(f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp' or 'fsdp'.")
+    if parallel_strategy == "tp":
+        # Tensor parallelism CAN run on CPU ranks (gloo) — the early
+        # DDP/FSDP CPU no-op deliberately does not apply here so 2-process
+        # CPU verification of TP numerics is possible. Single-rank TP stays
+        # a no-op identity (mirrors DDP/FSDP world_size<=1).
+        if world_size <= 1:
+            return model
+        if tp_size is None or tp_size <= 0:
+            tp_size = world_size
+        if tp_size > world_size:
+            raise ValueError(f"tp_size={tp_size} cannot exceed world_size={world_size}.")
+        if tp_size != world_size:
+            raise NotImplementedError(
+                f"Tensor parallelism v1 uses the whole world as one TP group; "
+                f"tp_size={tp_size} with world_size={world_size} (data-parallel over TP "
+                "groups) is a follow-up. Set tp_size=world_size."
+            )
+        return apply_tensor_parallel(cast(Any, model), process_group=dist.group.WORLD)
+
+    raise ValueError(f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp', 'fsdp' or 'tp'.")
 
 
 def _strip_compile_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -267,6 +296,11 @@ def load_model_state_dict(
             expected = list(model.state_dict().keys())
             model.load_state_dict(_align_state_dict_keys(_strip_compile_prefix(state_dict), expected))
         return
+    if is_tp(model):
+        # Slice the full state dict into this rank's shards, in place
+        # (RIL TASK-200 / DEC-045 — TP checkpoint boundary mirrors FSDP-full).
+        cast(Any, model)._tp.scatter_load_state_dict(model_for_checkpoint_io(model), _strip_compile_prefix(state_dict))
+        return
     model_for_checkpoint_io(model).load_state_dict(_strip_compile_prefix(state_dict))
 
 
@@ -278,6 +312,17 @@ def is_fsdp(model: nn.Module) -> bool:
     every rank must enter it or rank 0 blocks forever (RIL ISS-186).
     """
     return model.__class__.__name__ == "FullyShardedDataParallel"
+
+
+def is_tp(model: nn.Module) -> bool:
+    """True when ``model`` has been tensor-parallelised.
+
+    ``apply_tensor_parallel`` tags the (possibly ``torch.compile``-wrapped)
+    model with ``_tp`` metadata; the tensor distribution collectives make a
+    checkpoint save a cross-rank operation exactly like FSDP's full state
+    dict.
+    """
+    return getattr(model, "_tp", None) is not None
 
 
 def model_state_dict(
@@ -307,5 +352,10 @@ def model_state_dict(
     # like a bare compiled module, and a checkpoint missing the strip cannot
     # be resumed (load always normalizes, and FSDP expects ``_orig_mod.*``)
     # nor transferred to ``llm-serve`` (round-76 deep-dive D1).
+    if is_tp(model):
+        # Cross-rank all-gather: EVERY rank must enter it (mirrors the FSDP
+        # FULL_STATE_DICT rule — RIL ISS-186) so rank 0's save does not block.
+        # Each rank rebuilds the full dict; the manager writes rank 0's.
+        return cast(Any, model)._tp.gather_full_state_dict(model_for_checkpoint_io(model))
     state = fsdp_state if fsdp_state is not None else model_for_checkpoint_io(model).state_dict()
     return _strip_compile_prefix(state)

@@ -12,7 +12,7 @@ from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.distributed import broadcast_parameters
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
-from llm.training.distributed import is_fsdp, model_for_checkpoint_io, wrap_model_for_training
+from llm.training.distributed import is_fsdp, is_tp, model_for_checkpoint_io, wrap_model_for_training
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
@@ -186,7 +186,17 @@ class TrainingEngine:
         # previous hardcoded "reduce-overhead" used CUDA graphs, which is
         # incompatible with variable-length sequences and KV-cache eviction.
         # Users who want CUDA-graph capture can still opt in explicitly.
-        if self.config.optimization.use_compile and sys.version_info >= (3, 8):
+        #
+        # TP v1 is NOT compiled (RIL TASK-200/DEC-045): its correctness rests
+        # on custom autograd Functions around raw collectives
+        # (_BackwardAllReduce / _ForwardAllReduce) and an autograd-aware
+        # logits all-gather; tracing those with torch.compile risks silent
+        # miscompiles or graph-broken collectives. Correctness first; compile
+        # over TP is a follow-up optimization.
+        self.is_training_tp = self.config.distributed.parallel_strategy == "tp"
+        if self.config.optimization.use_compile and self.is_training_tp:
+            self.logger.info("TP v1 skips torch.compile (custom-collective autograd graphs); running eager.")
+        if self.config.optimization.use_compile and not self.is_training_tp and sys.version_info >= (3, 8):
             self.logger.info(
                 f"🚀 Compiling model with torch.compile (mode={self.config.optimization.compile_mode!r})..."
             )
@@ -207,14 +217,20 @@ class TrainingEngine:
             parallel_strategy=self.config.distributed.parallel_strategy,
             device=self.device,
             world_size=self.world_size,
+            tp_size=self.config.distributed.tp_size,
         )
 
         self.use_standard_loop = self.task.uses_standard_training_loop()
 
-        # Use data_module to get dataloaders
+        # Use data_module to get dataloaders. Tensor parallelism replicates
+        # the batch on every rank (v1 semantics: each rank trains the SAME
+        # microbatches so column/row partials and replicated-parameter
+        # gradients stay consistent — RIL TASK-200/DEC-045), so TP ranks all
+        # load data as rank 0 over world 1 instead of sharding it per rank.
+        data_rank, data_world = (0, 1) if self.is_training_tp else (self.rank, self.world_size)
         self.is_streaming = getattr(self.data_module, "is_streaming", False)
-        self.dataloader, self.sampler = self.data_module.train_dataloader(self.rank, self.world_size)
-        self.val_dataloader, self.val_sampler = self.data_module.val_dataloader(self.rank, self.world_size)
+        self.dataloader, self.sampler = self.data_module.train_dataloader(data_rank, data_world)
+        self.val_dataloader, self.val_sampler = self.data_module.val_dataloader(data_rank, data_world)
 
         if self.is_streaming and self.config.data.steps_per_epoch is None:
             raise ValueError("Streaming DataModules require data.steps_per_epoch to be set.")
@@ -648,11 +664,12 @@ class TrainingEngine:
                 # from line 0 on resume) and would deadlock any collective.
                 extra_state = collect_extra_state(self, self.data_module, self.task, *self.callbacks)
 
-                # FSDP's FULL_STATE_DICT state_dict() is a cross-rank all-gather
-                # (RIL ISS-186): EVERY rank must enter it via save_checkpoint or
-                # rank 0 blocks forever on the gather. Non-rank-0 ranks enter
-                # and discard; only rank 0 writes and fires the callback.
-                if self.rank == 0 or is_fsdp(self.model):
+                # FSDP's FULL_STATE_DICT state_dict() and the TP full-state-dict
+                # gather are cross-rank collectives (RIL ISS-186 / TASK-200):
+                # EVERY rank must enter them via save_checkpoint or rank 0
+                # blocks forever on the gather. Non-rank-0 ranks enter and
+                # discard; only rank 0 writes and fires the callback.
+                if self.rank == 0 or is_fsdp(self.model) or is_tp(self.model):
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
                     self.checkpoint_manager.save_checkpoint(

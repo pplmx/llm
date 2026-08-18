@@ -1,0 +1,340 @@
+"""Tensor-parallelism milestone tests (``parallel_strategy='tp'``).
+
+Verification strategy (RIL TASK-200 / DEC-045): numeric parity against a full
+single-rank reference model. Every rank builds the SAME ``DecoderModel`` from
+the same CPU seed (deterministic init), then rank-slices it in place; a
+forward with dropout disabled must produce bit-comparable logits, a single
+backward must produce full-model-matching gradients (this is what proves the
+``_BackwardAllReduce`` / ``_ForwardAllReduce`` wiring is right), and the
+full-state-dict gather/scatter checkpoint boundary must roundtrip a plain
+full state dict identical to the reference's.
+
+These tests need >= 2 GPUs (NCCL). They are skipped automatically otherwise.
+"""
+
+from __future__ import annotations
+
+import os
+import socket
+import time
+
+import pytest
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+
+from llm.models.decoder import DecoderModel
+from llm.training.distributed import (
+    apply_tensor_parallel,
+    is_tp,
+    load_model_state_dict,
+    model_state_dict,
+    wrap_model_for_training,
+)
+from tests.support.devices import all_gpu_devices
+
+TP_MIN_FREE_BYTES = 1 * 1024**3
+TP_JOIN_TIMEOUT_S = 180
+
+
+def _free_port() -> int:
+    """Bind an ephemeral port so consecutive TP tests do not share MASTER_PORT."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        return int(sock.getsockname()[1])
+
+
+def _release_parent_cuda_caches() -> None:
+    if not torch.cuda.is_available():
+        return
+    for index in range(torch.cuda.device_count()):
+        try:
+            with torch.cuda.device(index):
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+        except RuntimeError, torch.AcceleratorError:
+            continue
+
+
+def _setup_tp_env() -> int:
+    port = _free_port()
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["NCCL_DEBUG"] = "WARN"
+    os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
+    return port
+
+
+def _build_model(seed: int = 7, device=None, layers: int = 2, num_kv_heads: int | None = None) -> DecoderModel:
+    torch.manual_seed(seed)
+    return DecoderModel(
+        vocab_size=64,
+        hidden_size=32,
+        num_layers=layers,
+        num_heads=4,
+        max_seq_len=24,
+        intermediate_size=64,
+        attn_dropout_p=0.0,
+        mlp_dropout_p=0.0,
+        embedding_dropout_p=0.0,
+        num_kv_heads=num_kv_heads,
+        qkv_bias=True,
+        mlp_bias=True,
+        lm_head_bias=True,
+        device=device,
+    )
+
+
+def _gather_tp_grads(model) -> dict[str, torch.Tensor]:
+    """Assemble the full-model gradient from per-rank shards (test helper).
+
+    Mirrors the checkpoint gather (``_TPState.gather_full_state_dict``): the
+    fused-QKV column shards are stored in local [q,k,v]-block order and must
+    be scattered back into the full q/k/v blocks via ``full_index``.
+    """
+    tp = model._tp
+    full: dict[str, torch.Tensor] = {}
+    for key, param in model.named_parameters():
+        if param.grad is None:
+            continue
+        axis = tp.partition.get(key)
+        if axis is None:
+            full[key] = param.grad.detach().clone().contiguous()
+            continue
+        idx_all = tp.full_index.get(key)
+        if idx_all is not None:
+            pieces = [torch.empty_like(param.grad) for _ in range(tp.world_size)]
+            dist.all_gather(pieces, param.grad.detach().contiguous(), group=tp.group)
+            full_shape = list(param.grad.shape)
+            full_shape[axis] = max(int(idx.max().item()) for idx in idx_all) + 1
+            full_t = torch.zeros(full_shape, dtype=param.grad.dtype, device=param.grad.device)
+            for r, piece in enumerate(pieces):
+                full_t.index_copy_(axis, idx_all[r].to(param.grad.device), piece)
+            full[key] = full_t
+            continue
+        pieces = [torch.empty_like(param.grad) for _ in range(tp.world_size)]
+        dist.all_gather(pieces, param.grad.detach().contiguous(), group=tp.group)
+        full[key] = torch.cat(pieces, dim=axis)
+    return full
+
+
+def _parity_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
+    try:
+        device_index = device_indices[rank]
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(device_index)
+        dev = torch.device(f"cuda:{device_index}")
+
+        # Identical weights on every rank: same CPU seed -> same init.
+        ref = _build_model().to(dev)  # full single-rank reference
+        model = _build_model().to(dev)  # will be TP-partitioned in place
+        model = apply_tensor_parallel(model, process_group=dist.group.WORLD)
+        assert is_tp(model)
+
+        x = torch.randint(0, 64, (2, 12), device=dev, dtype=torch.long)
+
+        # --- forward parity (eval: dropout disabled) ---
+        ref.eval()
+        model.eval()
+        with torch.no_grad():
+            ref_logits = ref(x)
+        train_logits = model(x)  # TP forward is collective; identical every rank
+        torch.testing.assert_close(train_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        # --- gradient parity: one backward against the same loss ---
+        model.train()
+        ref.train()
+        ref.zero_grad()
+        model.zero_grad()
+        tp_loss = model(x).float().mean()
+        tp_loss.backward()
+        # ref backward on identical logits — must run the reference AFTER the
+        # TP all-gather is done (NCCL sync) to avoid interleaving collectives.
+        ref_loss = ref(x).float().mean()
+        ref_loss.backward()
+
+        ref_grads = {k: v.grad for k, v in ref.named_parameters() if v.grad is not None}
+        tp_grads = _gather_tp_grads(model)
+        assert set(ref_grads.keys()) == set(tp_grads.keys()), (
+            f"grad key sets differ: missing {set(ref_grads) - set(tp_grads)}, extra {set(tp_grads) - set(ref_grads)}"
+        )
+        for key in ref_grads:
+            torch.testing.assert_close(
+                tp_grads[key], ref_grads[key], atol=1e-4, rtol=1e-4, msg=f"grad mismatch on {key}"
+            )
+
+        # --- checkpoint boundary: full gather == reference state dict ---
+        full = model_state_dict(model)  # collective; every rank enters
+        for key, value in ref.state_dict().items():
+            assert key in full, f"gathered state dict missing {key}"
+            torch.testing.assert_close(full[key], value, atol=0, rtol=0, msg=f"state mismatch on {key}")
+
+        # --- scatter load roundtrip: load ref full dict, forward again ---
+        load_model_state_dict(model, ref.state_dict())
+        model.eval()
+        with torch.no_grad():
+            reload_logits = model(x)
+        torch.testing.assert_close(reload_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+def _run_parity(world_size: int) -> None:
+    gpu_devices = all_gpu_devices(min_free_bytes=TP_MIN_FREE_BYTES)
+    if len(gpu_devices) < world_size:
+        pytest.skip(f"need at least {world_size} free GPUs")
+    device_indices = [device.index for device in gpu_devices[:world_size]]
+    _release_parent_cuda_caches()
+    _setup_tp_env()
+
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(
+        _parity_worker,
+        args=(world_size, device_indices, results),
+        nprocs=world_size,
+        join=False,
+    )
+
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"TP parity spawn exceeded {TP_JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+
+    for rank in range(world_size):
+        assert rank in results, f"rank {rank} produced no result"
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_tp_forward_grad_checkpoint_parity_two_gpu():
+    """Forward / gradient / checkpoint-gather parity vs a full reference (2 GPUs)."""
+    _run_parity(2)
+
+
+def _wrap_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
+    """Engine entry path: ``wrap_model_for_training`` tp branch + full gather/load."""
+    try:
+        device_index = device_indices[rank]
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(device_index)
+        dev = torch.device(f"cuda:{device_index}")
+
+        ref = _build_model().to(dev)
+        model = _build_model().to(dev)
+        wrapped = wrap_model_for_training(
+            model,
+            parallel_strategy="tp",
+            device=dev,
+            world_size=world_size,
+            tp_size=world_size,
+        )
+        assert wrapped is model  # in-place mutation, not a wrapper
+        assert is_tp(model)
+
+        x = torch.randint(0, 64, (2, 12), device=dev)
+        model.eval()
+        with torch.no_grad():
+            tp_logits = model(x)  # collective
+        ref.eval()
+        with torch.no_grad():
+            ref_logits = ref(x)
+        torch.testing.assert_close(tp_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        # Full-state-dict gather/scatter roundtrip through the public helper.
+        full = model_state_dict(model)  # collective; every rank enters
+        for key, value in ref.state_dict().items():
+            torch.testing.assert_close(full[key], value, atol=0, rtol=0, msg=f"state mismatch on {key}")
+        load_model_state_dict(model, ref.state_dict())
+        model.eval()
+        with torch.no_grad():
+            reloaded = model(x)
+        torch.testing.assert_close(reloaded, ref_logits, atol=1e-5, rtol=1e-5)
+
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+def _run_wrap(world_size: int) -> None:
+    gpu_devices = all_gpu_devices(min_free_bytes=TP_MIN_FREE_BYTES)
+    if len(gpu_devices) < world_size:
+        pytest.skip(f"need at least {world_size} free GPUs")
+    device_indices = [device.index for device in gpu_devices[:world_size]]
+    _release_parent_cuda_caches()
+    _setup_tp_env()
+
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(_wrap_worker, args=(world_size, device_indices, results), nprocs=world_size, join=False)
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"TP wrap spawn exceeded {TP_JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+    for rank in range(world_size):
+        assert rank in results, f"rank {rank} produced no result"
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_tp_wrap_engine_path_roundtrip_two_gpu():
+    """``wrap_model_for_training(tp)`` engine path + full state-dict roundtrip (2 GPUs)."""
+    _run_wrap(2)
+
+
+# ---------------------------------------------------------------------------
+# Non-GPU / cheap unit checks
+# ---------------------------------------------------------------------------
+
+
+def test_tp_strategy_accepted_by_config():
+    from pydantic import ValidationError
+
+    from llm.training.core.config import DistributedConfig
+
+    DistributedConfig(parallel_strategy="tp", tp_size=2)
+    with pytest.raises(ValidationError):
+        DistributedConfig(parallel_strategy="tp_and_bad")
+
+
+def test_tp_world_size_one_is_noop():
+    """Single-rank TP returns the model unchanged (mirrors DDP/FSDP)."""
+    model = torch.nn.Linear(4, 2)
+    wrapped = wrap_model_for_training(
+        model,
+        parallel_strategy="tp",
+        device=torch.device("cpu"),
+        world_size=1,
+    )
+    assert wrapped is model
+    assert not is_tp(model)
+
+
+def test_tp_rejects_tp_size_gt_world():
+    with pytest.raises(ValueError, match="tp_size"):
+        wrap_model_for_training(
+            torch.nn.Linear(4, 2),
+            parallel_strategy="tp",
+            device=torch.device("cpu"),
+            world_size=2,
+            tp_size=4,
+        )
