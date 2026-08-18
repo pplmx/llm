@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 77,
+  "round": 78,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T00:35:13+00:00",
+  "updated_at": "2026-08-18T01:29:20+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10998,11 +10998,11 @@
     "ISS-230": {
       "id": "ISS-230",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T21:20:01+00:00",
-      "updated_at": "2026-08-17T21:20:01+00:00",
-      "touched_round": 76,
+      "updated_at": "2026-08-18T01:29:20+00:00",
+      "touched_round": 78,
       "severity": 0.3,
       "category": "maintainability",
       "summary": "init_dvc does not gate on DVC_AVAILABLE unlike dvc_add/dvc_pull; when the dvc CLI is missing it raises FileNotFoundError, violating the documented no-op+warning degradation. Small fix."
@@ -11010,11 +11010,11 @@
     "ISS-231": {
       "id": "ISS-231",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T21:20:02+00:00",
-      "updated_at": "2026-08-17T21:20:02+00:00",
-      "touched_round": 76,
+      "updated_at": "2026-08-18T01:29:20+00:00",
+      "touched_round": 78,
       "severity": 0.3,
       "category": "maintainability",
       "summary": "PromptDataset raises raw json.JSONDecodeError with no file/line context on a malformed JSONL row, unlike SFT/DPO/Reward datasets which wrap in ValueError('Invalid JSON in <file>: ...') (RIL ISS-201 alignment). Small fix."
@@ -11090,6 +11090,45 @@
       "touched_round": 77,
       "commit": "3fb5a98",
       "summary": "TASK-191/ISS-229: multi-node launch works end-to-end — per-node spawn of gpus_per_node workers, global rank = node_rank*local_world_size+local_rank; setup/engine take global+local; real two-node rendezvous verified (gloo group ranks {0,1} all_reduce=1; nccl 2-proc group OK)"
+    },
+    "TASK-192": {
+      "id": "TASK-192",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T00:50:58+00:00",
+      "updated_at": "2026-08-18T01:29:20+00:00",
+      "touched_round": 78,
+      "category": "maintainability",
+      "severity": 0.4,
+      "effort": 0.5,
+      "title": "init_dvc must degrade to a logged no-op when dvc is missing (ISS-230)",
+      "summary": "dvc.py docstring promises every helper gates on DVC_AVAILABLE and degrades with a warning, and dvc_add/dvc_pull do; init_dvc does not and raises FileNotFoundError when the CLI is absent. Gate it like its siblings + regression test."
+    },
+    "TASK-193": {
+      "id": "TASK-193",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T00:50:58+00:00",
+      "updated_at": "2026-08-18T01:29:20+00:00",
+      "touched_round": 78,
+      "category": "maintainability",
+      "severity": 0.4,
+      "effort": 0.5,
+      "title": "PromptDataset must wrap malformed JSONL in a ValueError naming the file (ISS-231)",
+      "summary": "PromptDataset.__init__ lets json.loads raise a raw JSONDecodeError with no file context, unlike SFT/DPO/Reward datasets which wrap in ValueError('Invalid JSON in <file>: ...') (RIL ISS-201 alignment). Align the contract + regression test."
+    },
+    "CHG-194": {
+      "id": "CHG-194",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T01:29:20+00:00",
+      "updated_at": "2026-08-18T01:29:20+00:00",
+      "touched_round": 78,
+      "commit": "c52ef51",
+      "summary": "TASK-192/193 (ISS-230/231): init_dvc degrades to logged no-op when dvc unavailable; PromptDataset wraps malformed JSONL in ValueError naming the file (ISS-201 alignment)"
     }
   },
   "edges": [
@@ -16322,6 +16361,42 @@
       "to": "ISS-229",
       "type": "resolves",
       "created_at": "2026-08-18T00:34:13+00:00"
+    },
+    {
+      "from": "TASK-192",
+      "to": "ISS-230",
+      "type": "addresses",
+      "created_at": "2026-08-18T00:50:58+00:00"
+    },
+    {
+      "from": "TASK-193",
+      "to": "ISS-231",
+      "type": "addresses",
+      "created_at": "2026-08-18T00:50:58+00:00"
+    },
+    {
+      "from": "CHG-194",
+      "to": "TASK-192",
+      "type": "implements",
+      "created_at": "2026-08-18T01:29:20+00:00"
+    },
+    {
+      "from": "CHG-194",
+      "to": "TASK-193",
+      "type": "implements",
+      "created_at": "2026-08-18T01:29:20+00:00"
+    },
+    {
+      "from": "CHG-194",
+      "to": "ISS-230",
+      "type": "resolves",
+      "created_at": "2026-08-18T01:29:20+00:00"
+    },
+    {
+      "from": "CHG-194",
+      "to": "ISS-231",
+      "type": "resolves",
+      "created_at": "2026-08-18T01:29:20+00:00"
     }
   ]
 }
