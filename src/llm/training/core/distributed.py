@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import timedelta
 
 import torch
 import torch.distributed as dist
@@ -77,7 +78,12 @@ class DistributedManager:
                     backend,
                 )
 
-            dist.init_process_group(backend=backend, rank=global_rank, world_size=world_size)
+            dist.init_process_group(
+                backend=backend,
+                rank=global_rank,
+                world_size=world_size,
+                timeout=timedelta(seconds=self.config.collective_timeout_seconds),
+            )
 
             # Only set device and CUDA seed if CUDA is available and being used
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
@@ -140,6 +146,28 @@ class DistributedManager:
     def barrier():
         if dist.is_initialized():
             dist.barrier()
+
+    @staticmethod
+    def monitored_barrier(timeout: timedelta = timedelta(seconds=60)) -> None:
+        """Best-effort teardown barrier that reports missing ranks.
+
+        A rank that crashed and already tore down leaves every other rank
+        blocking in a plain ``barrier()`` forever (the 'finally' teardown of a
+        dead worker also never arrives), which is how a single-rank failure
+        wedges the whole job under NCCL (RIL TASK-195 / ISS-232).
+        ``dist.monitored_barrier`` raises when not all ranks arrive within
+        ``timeout``; we log it instead of re-raising so an unwinding worker's
+        original exception is not masked, and the caller proceeds to cleanup.
+        """
+        if not (dist.is_available() and dist.is_initialized()):
+            return
+        try:
+            dist.monitored_barrier(timeout=timeout)
+        except Exception as exc:  # noqa: BLE001 - teardown is best-effort
+            logger.warning(
+                "monitored_barrier failed during teardown (a rank likely failed): %s",
+                exc,
+            )
 
     @staticmethod
     def reduce_mean(tensor: torch.Tensor) -> torch.Tensor:

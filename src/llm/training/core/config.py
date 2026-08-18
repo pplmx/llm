@@ -445,6 +445,18 @@ class DistributedConfig(BaseSettings):
     node_rank: int = 0
     backend: str = "nccl"
     parallel_strategy: str = Field("ddp", pattern="^(ddp|fsdp)$")
+    collective_timeout_seconds: int = Field(
+        1800,
+        gt=0,
+        description=(
+            "Bounded timeout for the distributed process group. A rank that "
+            "crashes mid-epoch otherwise leaves every other rank blocking "
+            "forever in a collective (all_reduce / barrier / FSDP ops) with "
+            "no error — the job hangs instead of failing loudly. Lower it "
+            "for fast fail-fast in tests; raises "
+            "torch.distributed.TimeoutError on lapse (RIL TASK-195/ISS-232)."
+        ),
+    )
 
     # FSDP-specific knobs. Only consulted when ``parallel_strategy="fsdp"``.
     # The defaults are conservative: BF16 mixed precision matches what

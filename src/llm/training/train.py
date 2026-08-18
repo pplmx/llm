@@ -93,7 +93,11 @@ def train_worker(
         raise
     finally:
         if world_size > 1:
-            DistributedManager.barrier()
+            # A plain barrier here would wedge if a sibling already crashed
+            # and tore down; monitored_barrier bounds that and logs the
+            # missing ranks instead of masking this worker's own exception
+            # (RIL TASK-195 / ISS-232).
+            DistributedManager.monitored_barrier()
         distributed_manager.cleanup()
 
 
