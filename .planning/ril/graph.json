@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 76,
+  "round": 77,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-17T23:18:57+00:00",
+  "updated_at": "2026-08-18T00:35:13+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10986,11 +10986,11 @@
     "ISS-229": {
       "id": "ISS-229",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T21:20:01+00:00",
-      "updated_at": "2026-08-17T21:20:01+00:00",
-      "touched_round": 76,
+      "updated_at": "2026-08-18T00:34:13+00:00",
+      "touched_round": 77,
       "severity": 0.85,
       "category": "correctness",
       "summary": "multi-node launch is broken: node_rank never applied to global rank (train.py spawns world_size local procs on every node; both nodes claim ranks 0..ws-1 -> EADDRINUSE/hang). Documented feature (distributed.md NUM_NODES/NODE_RANK). Deferred to round 77 milestone (DEC decision)."
@@ -11065,6 +11065,31 @@
       "touched_round": 76,
       "commit": "08ac6f7",
       "summary": "TASK-188/189/190: FSDP+compile checkpoint resumability (strip _orig_mod. on FSDP save, align on load); streaming/TextDataset skip un-encodable rows (DataConfig.skip_undecodable_rows); gpus_per_node env int coercion"
+    },
+    "TASK-191": {
+      "id": "TASK-191",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-17T23:25:10+00:00",
+      "updated_at": "2026-08-18T00:35:13+00:00",
+      "touched_round": 77,
+      "category": "core-feature",
+      "severity": 0.9,
+      "effort": 3.0,
+      "title": "Multi-node launch: apply node_rank to global rank assignment (ISS-229)",
+      "summary": "train.py spawns world_size local procs on EVERY node with ranks 0..ws-1 and never applies node_rank, so both nodes' process groups collide (EADDRINUSE / hang) — the documented NUM_NODES/NODE_RANK flow is structurally broken. Fix: spawn gpus_per_node procs per node, compute global_rank = node_rank*gpus_per_node + local_rank, init group with global rank, set device with local rank. Single-node path unchanged. Real 2-process rendezvous verification."
+    },
+    "CHG-193": {
+      "id": "CHG-193",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T00:34:12+00:00",
+      "updated_at": "2026-08-18T00:34:12+00:00",
+      "touched_round": 77,
+      "commit": "3fb5a98",
+      "summary": "TASK-191/ISS-229: multi-node launch works end-to-end — per-node spawn of gpus_per_node workers, global rank = node_rank*local_world_size+local_rank; setup/engine take global+local; real two-node rendezvous verified (gloo group ranks {0,1} all_reduce=1; nccl 2-proc group OK)"
     }
   },
   "edges": [
@@ -16279,6 +16304,24 @@
       "to": "COMP-001",
       "type": "located_in",
       "created_at": "2026-08-17T23:18:57+00:00"
+    },
+    {
+      "from": "TASK-191",
+      "to": "ISS-229",
+      "type": "addresses",
+      "created_at": "2026-08-17T23:26:34+00:00"
+    },
+    {
+      "from": "CHG-193",
+      "to": "TASK-191",
+      "type": "implements",
+      "created_at": "2026-08-18T00:34:13+00:00"
+    },
+    {
+      "from": "CHG-193",
+      "to": "ISS-229",
+      "type": "resolves",
+      "created_at": "2026-08-18T00:34:13+00:00"
     }
   ]
 }
