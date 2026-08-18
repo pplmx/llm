@@ -85,6 +85,15 @@ class TestPromptDataset:
         with pytest.raises(FileNotFoundError):
             PromptDataset(tmp_path / "nonexistent.jsonl")
 
+    def test_malformed_row_raises_value_error_naming_file(self, tmp_path):
+        """A malformed JSONL row must surface as a ValueError naming the file
+        (aligned with the SFT/DPO/Reward datasets, RIL ISS-201), not a raw
+        JSONDecodeError (round-78 TASK-193 / ISS-231)."""
+        data_path = tmp_path / "broken.jsonl"
+        data_path.write_text('{"prompt": "ok"}\n{"broken}\n', encoding="utf-8")
+        with pytest.raises(ValueError, match="Invalid JSON in prompt file"):
+            PromptDataset(data_path)
+
     def test_accepts_string_path(self, tmp_path):
         data_path = tmp_path / "prompts.jsonl"
         _write_jsonl(data_path, [{"prompt": "hello"}])

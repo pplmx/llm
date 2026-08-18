@@ -17,14 +17,20 @@ class PromptDataset(Dataset):
             raise FileNotFoundError(f"File not found: {self.file_path}")
 
         self.prompts: list[str] = []
-        with self.file_path.open(encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                item = json.loads(line)
-                prompt = item.get("prompt") or item.get("instruction") or item.get("text")
-                if prompt:
-                    self.prompts.append(str(prompt))
+        try:
+            with self.file_path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    item = json.loads(line)
+                    prompt = item.get("prompt") or item.get("instruction") or item.get("text")
+                    if prompt:
+                        self.prompts.append(str(prompt))
+        except json.JSONDecodeError as exc:
+            # Match the SFT/DPO/Reward datasets' contract (RIL ISS-201): a
+            # malformed row must surface as a ValueError naming the file,
+            # not a raw JSONDecodeError with no context (round-78 TASK-193).
+            raise ValueError(f"Invalid JSON in prompt file {self.file_path}: {exc}") from None
 
         if not self.prompts:
             raise ValueError(f"No prompts found in {self.file_path}")

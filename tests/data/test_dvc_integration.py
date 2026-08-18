@@ -121,6 +121,15 @@ class TestDvcNotInstalledPath:
         target.write_text("hello")
         assert dvc_mod.dvc_pull(target, repo_root=tmp_path) is False
 
+    def test_init_dvc_is_noop_when_dvc_unavailable(self, tmp_path: Path, monkeypatch):
+        """``init_dvc`` must degrade like its siblings instead of raising
+        FileNotFoundError when the dvc CLI is missing (round-78 TASK-192 /
+        ISS-230). Forcing ``DVC_AVAILABLE`` False exercises the gate even on
+        hosts where the dvc package happens to be importable."""
+        monkeypatch.setattr(dvc_mod, "DVC_AVAILABLE", False)
+        assert dvc_mod.init_dvc(tmp_path) is False
+        assert not (tmp_path / ".dvc").exists()
+
 
 # ---------------------------------------------------------------------------
 # Filesystem-only helpers — work regardless of DVC availability
