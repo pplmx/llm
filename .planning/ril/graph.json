@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 80,
+  "round": 81,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T02:51:20+00:00",
+  "updated_at": "2026-08-18T04:31:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -21,7 +21,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 66,
+      "touched_round": 81,
       "title": "Quantization (src/llm/quantization: GPTQ/AWQ/SmoothQuant/PTQ)"
     },
     "COMP-003": {
@@ -61,7 +61,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 66,
+      "touched_round": 81,
       "title": "Agent skills (.agents/skills)"
     },
     "ISS-001": {
@@ -11179,6 +11179,119 @@
       "touched_round": 80,
       "commit": "48b2072",
       "summary": "TASK-195 / ISS-232: bounded init_process_group timeout (collective_timeout_seconds, default 1800) + monitored teardown barrier so a single-rank crash fails loudly instead of deadlocking all ranks; real 2-process gloo timeout test"
+    },
+    "TASK-196": {
+      "id": "TASK-196",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-18T03:05:34+00:00",
+      "updated_at": "2026-08-18T04:31:31+00:00",
+      "touched_round": 81,
+      "category": "correctness",
+      "severity": 0.85,
+      "effort": 0.5,
+      "title": "QuantizedLinear.forward must be a dtype-safe drop-in (bias cast) for half serving (quant deep-dive F1)",
+      "summary": "ptq.py QuantizedLinear.forward does F.linear(x.to(f32), w_f32, self.bias); a post-quant model.to(device, dtype=fp16) (serving default) leaves bias fp16 -> RuntimeError 'self and mat2 must have the same dtype'. Apply the same RIL ISS-191 pattern as GPTQ/AWQ/SmoothQuant: cast bias to fp32, compute fp32, return in the layer's effective dtype."
+    },
+    "TASK-197": {
+      "id": "TASK-197",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T03:05:34+00:00",
+      "updated_at": "2026-08-18T04:29:53+00:00",
+      "touched_round": 81,
+      "category": "correctness",
+      "severity": 0.8,
+      "effort": 1.0,
+      "title": "Quantization calibration total-failure must not silently feed raw token ids as activations (quant deep-dive F2)",
+      "summary": "In gptq.py/awq.py/smooth.py, when model(batch) raises on EVERY calibration batch the handler logs only at DEBUG then falls back to captured[n]=[batch ...] — feeding model-level tensors (integer token ids) as layer activations: silent wrong-math that yields garbage quantized weights with no warning. Add a loud warning/abort in the total-failure branch (any_captured=False)."
+    },
+    "TASK-198": {
+      "id": "TASK-198",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T03:05:34+00:00",
+      "updated_at": "2026-08-18T04:29:53+00:00",
+      "touched_round": 81,
+      "category": "correctness",
+      "severity": 0.6,
+      "effort": 1.0,
+      "title": "4-bit group quantization odd total-weight-count is unguarded (late _pack_4bit ValueError) (quant deep-dive F3)",
+      "summary": "The per-channel divisibility guard (gptq.py:126-132 / awq.py:326-331) covers only group_size==-1; with bits=4 group quantization where total weight count is odd, _pack_4bit ValueError fires after expensive Hessian/grid search + partial model mutation. Extend the fail-fast guard to the group path."
+    },
+    "ISS-234": {
+      "id": "ISS-234",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T03:07:15+00:00",
+      "updated_at": "2026-08-18T03:07:15+00:00",
+      "touched_round": 81,
+      "severity": "low",
+      "category": "correctness",
+      "summary": "Suspected: GPTQ act_order + group quantization re-packs contiguous groups after per-column quantize, losing the act-order reconstruction the algorithm intended (weighted MSE deviates ~1e-5 vs ~1e-9 without act_order). quant deep-dive F4; lower confidence — accuracy consequence of a deliberate re-pack, not a crash."
+    },
+    "ISS-235": {
+      "id": "ISS-235",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T03:07:15+00:00",
+      "updated_at": "2026-08-18T03:07:15+00:00",
+      "touched_round": 81,
+      "severity": "low",
+      "category": "correctness",
+      "summary": "Suspected: SmoothQuant has no dead-layer guard — act_scale==0 (all-zero calibration activations) yields x/act_scale -> NaN silently, unlike GPTQ's dead-column handling. quant deep-dive F5; guards n_samples==0 but not zero-magnitude activations."
+    },
+    "ISS-236": {
+      "id": "ISS-236",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T03:15:44+00:00",
+      "updated_at": "2026-08-18T04:31:30+00:00",
+      "touched_round": 81,
+      "severity": 0.85,
+      "category": "correctness",
+      "summary": "QuantizedLinear.forward is not a dtype-safe drop-in: crashes the half-precision serving path (bias stays fp16 vs fp32 weight in F.linear) — sibling GPTQ/AWQ/SmoothQuant layers fixed for this in ISS-191."
+    },
+    "ISS-237": {
+      "id": "ISS-237",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T03:15:44+00:00",
+      "updated_at": "2026-08-18T04:31:31+00:00",
+      "touched_round": 81,
+      "severity": 0.8,
+      "category": "correctness",
+      "summary": "Quantization calibration total-failure (model(batch) raises everywhere) silently feeds raw model inputs (token ids) as each layer's activations with no warning — garbage quantized weights (quant deep-dive F2)."
+    },
+    "ISS-238": {
+      "id": "ISS-238",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T03:15:44+00:00",
+      "updated_at": "2026-08-18T04:31:31+00:00",
+      "touched_round": 81,
+      "severity": 0.6,
+      "category": "correctness",
+      "summary": "4-bit group quantization with an odd total weight count is unguarded -> late _pack_4bit ValueError after expensive compute + partial model mutation (per-channel guard only covers group_size==-1) (quant deep-dive F3)."
+    },
+    "CHG-197": {
+      "id": "CHG-197",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T04:29:53+00:00",
+      "updated_at": "2026-08-18T04:29:53+00:00",
+      "touched_round": 81,
+      "commit": "c54d492",
+      "summary": "TASK-196/197/198 (ISS-236/237/238): QuantizedLinear dtype-safe fp16 forward; calibration total-failure warns loudly; 4-bit odd total-weight-count guard extended to group path"
     }
   },
   "edges": [
@@ -16477,6 +16590,90 @@
       "to": "ISS-232",
       "type": "resolves",
       "created_at": "2026-08-18T02:47:42+00:00"
+    },
+    {
+      "from": "ISS-234",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-18T03:10:31+00:00"
+    },
+    {
+      "from": "ISS-235",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-18T03:10:31+00:00"
+    },
+    {
+      "from": "ISS-236",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-18T03:17:00+00:00"
+    },
+    {
+      "from": "ISS-237",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-18T03:17:00+00:00"
+    },
+    {
+      "from": "ISS-238",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-18T03:17:00+00:00"
+    },
+    {
+      "from": "TASK-196",
+      "to": "ISS-236",
+      "type": "addresses",
+      "created_at": "2026-08-18T03:17:00+00:00"
+    },
+    {
+      "from": "TASK-197",
+      "to": "ISS-237",
+      "type": "addresses",
+      "created_at": "2026-08-18T03:17:01+00:00"
+    },
+    {
+      "from": "TASK-198",
+      "to": "ISS-238",
+      "type": "addresses",
+      "created_at": "2026-08-18T03:17:01+00:00"
+    },
+    {
+      "from": "CHG-197",
+      "to": "TASK-196",
+      "type": "implements",
+      "created_at": "2026-08-18T04:31:31+00:00"
+    },
+    {
+      "from": "CHG-197",
+      "to": "TASK-197",
+      "type": "implements",
+      "created_at": "2026-08-18T04:31:31+00:00"
+    },
+    {
+      "from": "CHG-197",
+      "to": "TASK-198",
+      "type": "implements",
+      "created_at": "2026-08-18T04:31:31+00:00"
+    },
+    {
+      "from": "CHG-197",
+      "to": "ISS-236",
+      "type": "resolves",
+      "created_at": "2026-08-18T04:31:31+00:00"
+    },
+    {
+      "from": "CHG-197",
+      "to": "ISS-237",
+      "type": "resolves",
+      "created_at": "2026-08-18T04:31:31+00:00"
+    },
+    {
+      "from": "CHG-197",
+      "to": "ISS-238",
+      "type": "resolves",
+      "created_at": "2026-08-18T04:31:31+00:00"
     }
   ]
 }
