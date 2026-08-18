@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 82,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T19:30:42+00:00",
+  "updated_at": "2026-08-18T20:54:13+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5854,7 +5854,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:36:27+00:00",
       "updated_at": "2026-08-14T15:36:27+00:00",
-      "touched_round": 74,
+      "touched_round": 82,
       "title": "Evaluation + tokenization (src/llm/evaluation: harness/eval_tasks/metrics; src/llm/tokenization)"
     },
     "ISS-102": {
@@ -11588,6 +11588,77 @@
       "touched_round": 82,
       "commit": "15b2634",
       "summary": "Export deep-dive F1/F2: detect_architecture refuses qwen2_moe/qwen3(q3_moe) as 'unknown' (no more random-init garbage loads); hf_publisher persists the live norm eps. Regression tests added (compat suite 42 passed)."
+    },
+    "ISS-247": {
+      "id": "ISS-247",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T20:54:12+00:00",
+      "updated_at": "2026-08-18T20:54:13+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "medium",
+      "summary": "PerplexityMetric.compute: 1-D single-sequence references and ragged reference lists crashed with an opaque IndexError / torch raw ValueError deep in cross_entropy. Fixed in CHG-202 (atleast_2d + clear metric-level error). (eval deep-dive F1.)"
+    },
+    "ISS-248": {
+      "id": "ISS-248",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T20:54:13+00:00",
+      "updated_at": "2026-08-18T20:54:13+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "high",
+      "summary": "RewardTask: a fully-masked batch ROW (mask.sum(dim=1)==0, e.g. an empty prompt+response row that got fully padded) computes mask.sum-1 = -1 and hidden_states[batch_indices, -1] silently harvests the LAST (padding) hidden state as the reward — a garbage reward fed into the Bradley-Terry loss with no error. Should raise/flag fully-masked rows instead. (eval deep-dive F2.)"
+    },
+    "ISS-249": {
+      "id": "ISS-249",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T20:54:13+00:00",
+      "updated_at": "2026-08-18T20:54:13+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "medium",
+      "summary": "DPOTask discards the attention masks the data pipeline builds (chosen/rejected_attention_mask computed but never passed to the model — SFT and Reward pass theirs) and padding uses hardcoded id 0 (a real content token for tokenizers whose id 0 is <unk>). Dead data + inconsistency; bounded impact (causal right-padded decode). (eval deep-dive F3.)"
+    },
+    "ISS-250": {
+      "id": "ISS-250",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T20:54:13+00:00",
+      "updated_at": "2026-08-18T20:54:13+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "medium",
+      "summary": "train_bpe CLI default special-token list was ['[UNK]',...] while the library default + models.BPE(unk_token=...) use '<unk>' — a CLI-trained tokenizer declared a UNK token never added to the vocab, giving a different UNK/id layout than BPETokenizer.train. Fixed in CHG-202 (CLI default now DEFAULT_UNK_TOKEN). (eval deep-dive F4.)"
+    },
+    "ISS-251": {
+      "id": "ISS-251",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T20:54:13+00:00",
+      "updated_at": "2026-08-18T20:54:13+00:00",
+      "touched_round": 82,
+      "category": "maintainability",
+      "severity": "low",
+      "summary": "EvalConfig.metrics (a list of metric NAMES) is dead config: EvaluationRunner._collect_metrics only ever runs task.metrics (metric objects); nothing resolves EvalConfig.metrics names to metric instances, so setting metrics=['rouge','f1'] in config has zero effect. Silent misconfiguration trap. (eval deep-dive F5.)"
+    },
+    "CHG-202": {
+      "id": "CHG-202",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T20:54:13+00:00",
+      "updated_at": "2026-08-18T20:54:13+00:00",
+      "touched_round": 82,
+      "commit": "9a7a0c4",
+      "summary": "eval deep-dive F1+F4: PerplexityMetric 1-D/ragged reference coercion (no more opaque IndexError/ValueError); train_bpe CLI default special-token list uses DEFAULT_UNK_TOKEN so <unk> is in the vocab. Regression tests; eval+tokenization suites 164 passed."
     }
   },
   "edges": [
@@ -17079,6 +17150,36 @@
       "to": "COMP-011",
       "type": "located_in",
       "created_at": "2026-08-18T19:30:42+00:00"
+    },
+    {
+      "from": "CHG-202",
+      "to": "ISS-247",
+      "type": "resolves",
+      "created_at": "2026-08-18T20:54:13+00:00"
+    },
+    {
+      "from": "CHG-202",
+      "to": "ISS-250",
+      "type": "resolves",
+      "created_at": "2026-08-18T20:54:13+00:00"
+    },
+    {
+      "from": "ISS-248",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-18T20:54:13+00:00"
+    },
+    {
+      "from": "ISS-249",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-18T20:54:13+00:00"
+    },
+    {
+      "from": "ISS-251",
+      "to": "COMP-013",
+      "type": "located_in",
+      "created_at": "2026-08-18T20:54:13+00:00"
     }
   ]
 }
