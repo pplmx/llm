@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 82,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T06:43:41+00:00",
+  "updated_at": "2026-08-18T13:17:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 76,
+      "touched_round": 82,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -11341,6 +11341,67 @@
       "confidence": 0.9,
       "source": "tests/quantization/test_smooth_algorithm.py + manual audit smooth.py:152",
       "summary": "Audit of the other fp16-stored SmoothQuant buffers (ISS-239): weight_scales is MULTIPLIED at forward (w_int*scale), never divided — an fp16 flush to 0 yields a zero output row, which is finite (benign dead-row), unlike act_scale/input_scales divisions that NaN. input_scales needed the same fp16-safe floor (fixed in CHG-198)."
+    },
+    "DEC-045": {
+      "id": "DEC-045",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T07:07:18+00:00",
+      "updated_at": "2026-08-18T07:07:18+00:00",
+      "touched_round": 82,
+      "rationale": "ROADMAP P2 declares advanced distributed training (TP/PP/DeepSpeed) as the next milestone bucket after quant (P1 done rounds 70-82). parallel_strategy currently accepts only ddp|fsdp; TP is the canonical next step, standard Megatron-style design, numerically verifiable (TP vs single-rank parity), and the 8x A100 box gives a real multi-rank verify story. v1 scope: replicated-data TP (all ranks train the same microbatches), mha + standard mlp(+GLU) only, full-gather checkpoint (mirrors FSDP FULL_STATE_DICT so checkpoint manager + llm-serve stay unchanged), reject moe/flash/sdpa/mla/alibi combos loudly.",
+      "alternatives_rejected": "PP: larger, no-communication-shape precedent in repo, harder to verify (schedule/chunk surgery). DeepSpeed ZeRO: dependency-import milestone, less framework-native. Real DeepSeek-V2 MLA: rewrite ripples through many MLA-parameterized roundtrip tests; placeholder is documented stable. Multimodal: ROADMAP requires a design spike first, huge surface. TP delivers a frame-native, deterministic, fully-verifiable milestone that unblocks 3D parallel later.",
+      "summary": "Next milestone: Tensor Parallelism as parallel_strategy='tp' (Megatron-style column/row parallel, replicated-data v1, full-gather checkpoints)"
+    },
+    "TASK-200": {
+      "id": "TASK-200",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-18T07:07:18+00:00",
+      "updated_at": "2026-08-18T13:17:38+00:00",
+      "touched_round": 82,
+      "category": "core-feature",
+      "severity": 2.0,
+      "effort": 6.0,
+      "title": "Tensor Parallelism milestone: parallel_strategy='tp' (column/row parallel + replicated data + full-gather checkpoint)",
+      "summary": "Implement Megatron-style TP: Column/RowParallelLinear, head-partitioned attention (qkv_proj column, out_proj row), MLP (fc1/gate column, fc2 row), column-parallel lm_head + logits all-gather, replicated embedding; TensorParallelModel wrapper with full-state-dict gather/scatter; DistributedConfig parallel_strategy='tp' + tp_size; engine replicates data for TP ranks; reject unsupported combos loudly; numeric-parity + 2-process e2e verification (DEC-045)."
+    },
+    "ISS-240": {
+      "id": "ISS-240",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T12:57:30+00:00",
+      "updated_at": "2026-08-18T13:16:03+00:00",
+      "touched_round": 82,
+      "category": "stability",
+      "severity": "high",
+      "summary": "Round-80 monitored teardown barrier (CHG-196/TASK-195, ISS-232) is GLOO-only: dist.monitored_barrier raises on nccl, so EVERY multi-rank llm-train on nccl failed its own finally-block teardown (raised during unwinding after a successful run, wedging the job). Fixed in CHG-199 (TP milestone): non-GLOO falls back to a plain barrier, bounded by the process-group collective_timeout_seconds."
+    },
+    "CHG-199": {
+      "id": "CHG-199",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T13:14:17+00:00",
+      "updated_at": "2026-08-18T13:14:17+00:00",
+      "touched_round": 82,
+      "commit": "5501de2",
+      "summary": "TASK-200 (DEC-045, ISS-240): Tensor Parallelism milestone — apply_tensor_parallel in-place transform (fused-QKV block split w/ full_index gather, row/column parallel, vocab-parallel lm_head with scatter-backward all-gather), full-gather checkpoint boundary, engine tp wiring (replicated data, compile skip, save-gate TP arm), nccl monitored_barrier fallback; verified by 2x-A100 parity + e2e ckpt/resume"
+    },
+    "EV-188": {
+      "id": "EV-188",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T13:14:18+00:00",
+      "updated_at": "2026-08-18T13:14:18+00:00",
+      "touched_round": 82,
+      "confidence": 1.0,
+      "source": "tests/training/distributed/test_tensor_parallel.py + e2e llm-train (2x A100)",
+      "summary": "TP verified: forward bit-parity vs single-rank reference (CPU exact, GPU 1e-5), full-model gradient parity (1e-4), checkpoint gather==reference state dict (atol 0) + scatter-load roundtrip; e2e llm-train --parallel_strategy=tp runs 12 steps, saves full best/latest/epoch_1 safetensors (full [512,32] lm_head, full [96,32] QKV), resumes from checkpoint exit 0; full fast suite exit 0. ROOT-CAUSE BUGS FOUND: (1) fused-QKV contiguous slice handed ranks other ranks' q/k/v rows; (2) torch.distributed.nn all_gather backward reduce-scatters (x tp gradient in replicated data); (3) engine save gate missed TP (rank-1 never entered the gather)."
     }
   },
   "edges": [
@@ -16748,6 +16809,30 @@
       "to": "ISS-239",
       "type": "resolves",
       "created_at": "2026-08-18T06:40:44+00:00"
+    },
+    {
+      "from": "ISS-240",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-18T12:57:30+00:00"
+    },
+    {
+      "from": "TASK-200",
+      "to": "ISS-240",
+      "type": "addresses",
+      "created_at": "2026-08-18T12:57:30+00:00"
+    },
+    {
+      "from": "CHG-199",
+      "to": "TASK-200",
+      "type": "implements",
+      "created_at": "2026-08-18T13:14:17+00:00"
+    },
+    {
+      "from": "CHG-199",
+      "to": "ISS-240",
+      "type": "resolves",
+      "created_at": "2026-08-18T13:14:17+00:00"
     }
   ]
 }
