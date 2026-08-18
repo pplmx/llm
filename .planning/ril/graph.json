@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 81,
+  "round": 82,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T04:31:31+00:00",
+  "updated_at": "2026-08-18T06:43:41+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11237,11 +11237,11 @@
     "ISS-235": {
       "id": "ISS-235",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-18T03:07:15+00:00",
-      "updated_at": "2026-08-18T03:07:15+00:00",
-      "touched_round": 81,
+      "updated_at": "2026-08-18T06:43:41+00:00",
+      "touched_round": 82,
       "severity": "low",
       "category": "correctness",
       "summary": "Suspected: SmoothQuant has no dead-layer guard — act_scale==0 (all-zero calibration activations) yields x/act_scale -> NaN silently, unlike GPTQ's dead-column handling. quant deep-dive F5; guards n_samples==0 but not zero-magnitude activations."
@@ -11292,6 +11292,55 @@
       "touched_round": 81,
       "commit": "c54d492",
       "summary": "TASK-196/197/198 (ISS-236/237/238): QuantizedLinear dtype-safe fp16 forward; calibration total-failure warns loudly; 4-bit odd total-weight-count guard extended to group path"
+    },
+    "TASK-199": {
+      "id": "TASK-199",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T06:17:01+00:00",
+      "updated_at": "2026-08-18T06:43:41+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": 0.6,
+      "effort": 0.5,
+      "title": "SmoothQuant zero-activation calibration must not NaN at forward (act_scale fp16 flush)",
+      "summary": "ISS-235: all-zero calibration activations -> act_scale 0 -> the 1e-8 fp32 clamp floor is BELOW the fp16 subnormal floor (~5.96e-8), so the packed fp16 scale flushes to 0.0 and x/0.0 NaNs on forward. Clamp _activation_scale to torch.finfo(fp16).tiny (smallest normal fp16, ~6.1e-5) so a dead-in-calibration layer degrades to a finite near-zero output."
+    },
+    "ISS-239": {
+      "id": "ISS-239",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-18T06:17:09+00:00",
+      "updated_at": "2026-08-18T06:43:41+00:00",
+      "touched_round": 82,
+      "category": "correctness",
+      "severity": "low",
+      "summary": "RESOLVED 2026-08-18 (CHG-198): input_scales needed the same fp16-safe floor (_smoothing_scales min 1e-8 flushed in alpha=1.0 near-dead channels -> x/0 NaN) — fixed; weight_scales audited BENIGN (only multiplied at forward, flush -> finite zero row)."
+    },
+    "CHG-198": {
+      "id": "CHG-198",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T06:40:19+00:00",
+      "updated_at": "2026-08-18T06:40:19+00:00",
+      "touched_round": 82,
+      "commit": "3c5f7a7",
+      "summary": "TASK-199 (ISS-235/239): SmoothQuant dead-layer fp16-scale floor — _activation_scale/_smoothing_scales clamp to torch.finfo(fp16).tiny so zero/vanishing-magnitude calibration packs a strict-positive fp16 act_scale & input_scales instead of flushing to 0 (x/0 NaN at forward). 2 regression tests RED against HEAD."
+    },
+    "EV-187": {
+      "id": "EV-187",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T06:40:44+00:00",
+      "updated_at": "2026-08-18T06:40:44+00:00",
+      "touched_round": 82,
+      "confidence": 0.9,
+      "source": "tests/quantization/test_smooth_algorithm.py + manual audit smooth.py:152",
+      "summary": "Audit of the other fp16-stored SmoothQuant buffers (ISS-239): weight_scales is MULTIPLIED at forward (w_int*scale), never divided — an fp16 flush to 0 yields a zero output row, which is finite (benign dead-row), unlike act_scale/input_scales divisions that NaN. input_scales needed the same fp16-safe floor (fixed in CHG-198)."
     }
   },
   "edges": [
@@ -16674,6 +16723,31 @@
       "to": "ISS-238",
       "type": "resolves",
       "created_at": "2026-08-18T04:31:31+00:00"
+    },
+    {
+      "from": "TASK-199",
+      "to": "ISS-235",
+      "type": "addresses",
+      "created_at": "2026-08-18T06:17:09+00:00",
+      "note": "zero-activation calibration NaN guard"
+    },
+    {
+      "from": "CHG-198",
+      "to": "TASK-199",
+      "type": "implements",
+      "created_at": "2026-08-18T06:40:44+00:00"
+    },
+    {
+      "from": "CHG-198",
+      "to": "ISS-235",
+      "type": "resolves",
+      "created_at": "2026-08-18T06:40:44+00:00"
+    },
+    {
+      "from": "CHG-198",
+      "to": "ISS-239",
+      "type": "resolves",
+      "created_at": "2026-08-18T06:40:44+00:00"
     }
   ]
 }
