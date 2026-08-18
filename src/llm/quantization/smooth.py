@@ -85,6 +85,17 @@ class SmoothQuantConfig:
 
 ALPHA_SEARCH_GRID = (0.25, 0.5, 0.75, 1.0)
 
+# Smallest normal fp16.  The packed layer stores both ``act_scale`` AND
+# ``input_scales`` as fp16 (smooth._quantize_linear_with_smoothquant /
+# _smooth_layer.py) and divides by both at forward time (``x / input_scales``,
+# ``x / act_scale``), so any scale below fp16's subnormal floor (~5.96e-8)
+# would FLUSH to 0.0 on storage and ``x / 0.0`` yields NaN — the all-zero /
+# vanishing-magnitude calibration cases crashed silently (round-82 / ISS-235,
+# ISS-239).  Clamping to this floor keeps every packed scale strictly positive
+# AND exact in fp16, so dead-in-calibration layers degrade to a finite
+# near-zero output instead.
+_ACT_SCALE_FLOOR = float(torch.finfo(torch.float16).tiny)
+
 
 def _smoothing_scales(
     act_max: torch.Tensor,
@@ -94,7 +105,10 @@ def _smoothing_scales(
     """Per-input-channel smoothing factors ``s_j = a**alpha / w**(1-alpha)``.
 
     Channels with zero activation or zero weight magnitude get scale 1
-    (nothing to smooth). Scales are clamped to a small positive floor.
+    (nothing to smooth). Scales are clamped to an fp16-safe positive floor
+    (``_ACT_SCALE_FLOOR``) so a vanishing-magnitude channel never stores a
+    scale that flushes to 0 in the packed fp16 ``input_scales`` (that would
+    NaN the ``x / input_scales`` forward — round-82 / ISS-239).
 
     Args:
         act_max: Per-channel max abs activation [in_features].
@@ -104,13 +118,13 @@ def _smoothing_scales(
     Returns:
         Per-input-channel smoothing scales [in_features].
     """
-    a = act_max.clamp(min=1e-8)
-    w = w_max.clamp(min=1e-8)
+    a = act_max.clamp(min=_ACT_SCALE_FLOOR)
+    w = w_max.clamp(min=_ACT_SCALE_FLOOR)
     s = a**alpha / w ** (1.0 - alpha)
     # Dead channels: no smoothing (scale 1).
     dead = (act_max == 0) | (w_max == 0)
     s = torch.where(dead, torch.ones_like(s), s)
-    return s.clamp(min=1e-8)
+    return s.clamp(min=_ACT_SCALE_FLOOR)
 
 
 def _activation_scale(act_max: torch.Tensor, s: torch.Tensor) -> float:
@@ -119,8 +133,16 @@ def _activation_scale(act_max: torch.Tensor, s: torch.Tensor) -> float:
     max over samples and channels of ``|x_j| / s_j`` equals
     ``max_j (act_max[j] / s_j)`` because ``s`` is constant per channel —
     so the scale is computable from the activation stats alone.
+
+    A layer whose calibration activations have zero magnitude yields a zero
+    (or vanishing) scale; that must not reach the fp16-stored ``act_scale``
+    where it would flush to 0 and NaN the forward.  Clamp at
+    ``_ACT_SCALE_FLOOR`` so dead-in-calibration layers produce a small
+    finite output instead (round-82 / ISS-235) — the same degradation GPTQ
+    already gives its dead columns.
     """
-    return (act_max / s).max().item() / 127.0
+    scale = (act_max / s).max().item() / 127.0
+    return max(scale, _ACT_SCALE_FLOOR)
 
 
 def _quantize_layer_components(

@@ -253,3 +253,42 @@ def test_smoothquant_rejects_asymmetric():
     quantizer.add_batch(torch.randn(16, 8))
     with pytest.raises(NotImplementedError, match="Asymmetric"):
         quantizer.quantize()
+
+
+def test_zero_activation_calibration_does_not_produce_nan():
+    """A layer whose calibration activations are ALL zero yields act_scale=0;
+    forward must degrade to a finite near-zero output, not NaN (round-82 /
+    ISS-235 — the dead-layer guard GPTQ already has)."""
+    from llm.quantization.smooth import SmoothQuantConfig, _quantize_linear_with_smoothquant
+
+    layer = nn.Linear(8, 4)
+    zero_calib = [torch.zeros(4, 8) for _ in range(2)]
+    qlayer = _quantize_linear_with_smoothquant(layer, zero_calib, SmoothQuantConfig())
+
+    out_zero = qlayer(torch.zeros(3, 8))
+    assert torch.isfinite(out_zero).all()
+    assert torch.allclose(out_zero, torch.zeros(3, 4), atol=1e-6)
+
+    # A live input also stays finite (act_scale clamped to a small floor).
+    out_live = qlayer(torch.randn(3, 8))
+    assert torch.isfinite(out_live).all()
+
+
+def test_vanishing_channel_input_scales_do_not_produce_nan():
+    """A nearly-dead channel (act_max tiny but nonzero, e.g. 1e-20) is not the
+    exact-zero 'dead' mask, so under alpha=1.0 _smoothing_scales yields a
+    sub-fp16 input scale that flushed to 0 in the packed fp16 buffer — and a
+    live forward carrying an exact 0.0 on that channel hit 0/0 -> NaN. The
+    fp16-safe floor must keep the forward finite (round-82 / ISS-239)."""
+    from llm.quantization.smooth import SmoothQuantConfig, _quantize_linear_with_smoothquant
+
+    layer = nn.Linear(8, 4)
+    calib = [torch.zeros(4, 8)]
+    calib[0][:, 7] = 1e-20  # nearly-dead channel, not exactly dead
+    qlayer = _quantize_linear_with_smoothquant(layer, calib, SmoothQuantConfig(alpha=1.0))
+
+    # Live forward: the nearly-dead channel emits exact 0.0 activation.
+    x = torch.randn(3, 8)
+    x[:, 7] = 0.0
+    out = qlayer(x)
+    assert torch.isfinite(out).all()
