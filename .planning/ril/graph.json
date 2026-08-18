@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 82,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T15:36:59+00:00",
+  "updated_at": "2026-08-18T16:17:29+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11463,6 +11463,48 @@
       "confidence": 1.0,
       "source": "tests/quantization/test_fp8_quantization.py (15 tests)",
       "summary": "FP8 verified: weight_fp8 is real float8 (1 byte/weight), layer forward within a few % of fp32 (cosine > 0.999, max rel < 5%), E5M2 variant, per-tensor + per-channel, model e2e quantized logits correlate with the fp32 baseline (> 0.99), static requires calib + dynamic no-calib, saturating cast stays within E4M3 max 448, size accounting < 2 bytes/param, CLI help/validation/dynamic-save/static-gate; quant suite 241 passed."
+    },
+    "TASK-202": {
+      "id": "TASK-202",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T16:17:29+00:00",
+      "updated_at": "2026-08-18T16:17:29+00:00",
+      "touched_round": 82,
+      "category": "core-feature",
+      "severity": 1.5,
+      "effort": 6.0,
+      "title": "TP + data-parallel 2D (tp_size < world_size, DP groups over TP groups)",
+      "summary": "Natural follow-up to CHG-199: allow tp_size < world_size with data-parallel groups over TP groups — create TP subgroups via dist.new_group, replicate data per DP group (each TP group's ranks share batches, DP groups differ), all-reduce gradients across DP ranks. Unlocks 8-GPU throughput for the TP strategy. DEC-045 on the roadmap P2."
+    },
+    "TASK-203": {
+      "id": "TASK-203",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T16:17:29+00:00",
+      "updated_at": "2026-08-18T16:17:29+00:00",
+      "touched_round": 82,
+      "category": "core-feature",
+      "severity": 1.2,
+      "effort": 2.0,
+      "title": "FP8 per-layer policies / LayerQuantPolicy parity",
+      "summary": "CHG-200 (TCask-201) deliberately left Fp8Config without LayerQuantPolicy wiring: the shared policy fields (bits/group_size/sym/act_order) cannot express FP8's weight_dtype/per_channel/activation knobs. Provide a way to mix FP8 layers into a mixed-precision quantization plan, or extend the policy model."
+    },
+    "TASK-204": {
+      "id": "TASK-204",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T16:17:29+00:00",
+      "updated_at": "2026-08-18T16:17:29+00:00",
+      "touched_round": 82,
+      "category": "core-feature",
+      "severity": 1.2,
+      "effort": 5.0,
+      "title": "TP scope extension: serving + flash/sdpa/mla + MoE expert-parallel",
+      "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). Follow-up: expert-parallel routing for MoE under TP, TP-compatible attention backends, and TP load for llm-serve."
     }
   },
   "edges": [
