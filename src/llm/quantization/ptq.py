@@ -290,12 +290,13 @@ def compute_model_size(model: nn.Module) -> dict[str, Any]:
     Compute model size statistics.
 
     Recognizes all quantized layer flavors in the library:
-    :class:`QuantizedLinear` (simple PTQ), and the GPTQ / AWQ / SmoothQuant
-    layers (:class:`~llm.quantization._gptq_layer.GPTQQuantizedLinear`,
+    :class:`QuantizedLinear` (simple PTQ), and the GPTQ / AWQ / SmoothQuant /
+    FP8 layers (:class:`~llm.quantization._gptq_layer.GPTQQuantizedLinear`,
     :class:`~llm.quantization._awq_layer.AWQQuantizedLinear`,
-    :class:`~llm.quantization._smooth_layer.SmoothQuantLinear`). Those three
-    replace ``nn.Linear`` entirely, so without explicit handling a
-    GPTQ/AWQ/Smooth-quantized model reported zero parameters and zero bytes.
+    :class:`~llm.quantization._smooth_layer.SmoothQuantLinear`,
+    :class:`~llm.quantization._fp8_layer.Fp8QuantizedLinear`). Those replace
+    ``nn.Linear`` entirely, so without explicit handling a
+    GPTQ/AWQ/Smooth/FP8-quantized model reported zero parameters and zero bytes.
 
     ``total_params`` counts **true weights**: for 4-bit GPTQ/AWQ layers each
     packed int8 byte stores two int4 weights, so ``total_params`` is the
@@ -309,6 +310,7 @@ def compute_model_size(model: nn.Module) -> dict[str, Any]:
     # Lazy import to keep this module import-light and avoid a circular
     # dependency (the layer modules import from llm.quantization too).
     from llm.quantization._awq_layer import AWQQuantizedLinear
+    from llm.quantization._fp8_layer import Fp8QuantizedLinear
     from llm.quantization._gptq_layer import GPTQQuantizedLinear
     from llm.quantization._smooth_layer import SmoothQuantLinear
 
@@ -337,6 +339,20 @@ def compute_model_size(model: nn.Module) -> dict[str, Any]:
             zeros_attr = cast(torch.Tensor | None, getattr(module, "zeros", None))
             if zeros_attr is not None:
                 total_bytes += zeros_attr.numel() * zeros_attr.element_size()
+            if module.bias is not None:
+                total_bytes += module.bias.numel() * module.bias.element_size()
+        elif isinstance(module, Fp8QuantizedLinear):
+            quantized_layers += 1
+            # FP8 weights are real float8 storage (1 byte/weight). The
+            # ``weight_scale`` is fp32 per-tensor (1 value) or per-channel.
+            weight_attr = module.weight_fp8
+            total_params += weight_attr.numel()
+            total_bytes += weight_attr.numel() * weight_attr.element_size()  # 1 byte
+            scales_attr = module.weight_scale
+            total_bytes += scales_attr.numel() * scales_attr.element_size()
+            act_attr = cast(torch.Tensor | None, getattr(module, "activation_scale", None))
+            if act_attr is not None:
+                total_bytes += act_attr.numel() * act_attr.element_size()
             if module.bias is not None:
                 total_bytes += module.bias.numel() * module.bias.element_size()
         elif isinstance(module, SmoothQuantLinear):

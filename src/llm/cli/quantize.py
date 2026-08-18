@@ -34,6 +34,7 @@ Exit codes:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal, cast
 
 import typer
 
@@ -41,7 +42,10 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
     add_completion=False,
-    help=("Model quantization CLI. Currently supports `gptq` (Frantar 2022, Hessian-aware 4-bit / 8-bit)."),
+    help=(
+        "Model quantization CLI. Subcommands: `gptq` (Frantar 2022, Hessian-aware "
+        "4-bit / 8-bit) and `fp8` (E4M3/E5M2 weight+activation PTQ)."
+    ),
 )
 
 
@@ -363,6 +367,131 @@ def gptq(
         raise typer.Exit(code=2) from exc
 
     # --- 5. Save --------------------------------------------------------
+    try:
+        _atomic_save_quantized(quantized, output)
+    except Exception as exc:
+        typer.echo(f"Error: failed to save quantized model to {output}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(f"Quantized model saved to {output}")
+
+
+@app.command()
+def fp8(
+    model: Path = typer.Option(
+        ...,
+        "--model",
+        help="Path to model checkpoint (.pt with DecoderModel state_dict).",
+    ),
+    output: Path = typer.Option(
+        ...,
+        "--output",
+        help="Output path for quantized model (torch.save blob).",
+    ),
+    weight_dtype: str = typer.Option(
+        "e4m3",
+        "--weight-dtype",
+        help="FP8 weight format: 'e4m3' (E4M3FN, default) or 'e5m2' (wider range).",
+    ),
+    per_channel: bool = typer.Option(
+        True,
+        "--per-channel/--per-tensor",
+        help="Per-output-row (default) vs per-tensor weight scaling.",
+    ),
+    activation: str = typer.Option(
+        "static",
+        "--activation",
+        help="Activation scaling: 'static' (from calibration, default) or 'dynamic' (per forward).",
+    ),
+    calib_data: Path | None = typer.Option(
+        None,
+        "--calib-data",
+        help="Path to raw text file (one sample per line). Requires --tokenizer. Needed only for static activation.",
+    ),
+    calib_data_tokens: Path | None = typer.Option(
+        None,
+        "--calib-data-tokens",
+        help="Path to pre-tokenized .pt file (tensor or list of tensors). Needed only for static activation.",
+    ),
+    tokenizer: Path | None = typer.Option(
+        None,
+        "--tokenizer",
+        help="Path to HF tokenizer (required when --calib-data is set).",
+    ),
+    target_modules: str | None = typer.Option(
+        None,
+        "--target-modules",
+        help="Comma-separated layer names to quantize (default: all nn.Linear).",
+    ),
+) -> None:
+    """Quantize a model's Linear weights + activations with FP8 (E4M3/E5M2).
+
+    Stores real float8 weights (1 byte/weight) and simulates the fp8 matmul
+    in fp32. Static activation scaling captures per-layer abs-max over the
+    calibration batches; dynamic computes it per forward and needs no
+    calibration data.
+    """
+    if weight_dtype not in ("e4m3", "e5m2"):
+        _die(f"--weight-dtype must be 'e4m3' or 'e5m2'; got {weight_dtype}.")
+    if activation not in ("static", "dynamic"):
+        _die(f"--activation must be 'static' or 'dynamic'; got {activation}.")
+
+    if activation == "static":
+        _validate_calib_inputs(calib_data, calib_data_tokens, tokenizer)
+    elif calib_data is not None or calib_data_tokens is not None or tokenizer is not None:
+        # Calibration is ignored under dynamic activation — refuse rather than
+        # silently drop the user's data.
+        _die("activation='dynamic' needs no calibration; drop --calib-data / --calib-data-tokens / --tokenizer.")
+    _validate_model_path(model)
+    _reject_clobbering_input(output, model)
+
+    import torch
+
+    from llm.quantization.fp8 import quantize_model_fp8
+    from llm.utils.serialization import register_framework_safe_globals
+
+    try:
+        register_framework_safe_globals()
+        model_obj = torch.load(model, map_location="cpu", weights_only=True)
+    except Exception as exc:
+        typer.echo(f"Error: failed to load model {model}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    batches = None
+    if activation == "static":
+        try:
+            batches = _load_calibration_batches(calib_data, calib_data_tokens, tokenizer)
+        except Exception as exc:
+            typer.echo(f"Error: failed to load calibration data: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+    else:
+        # Dynamic activation: quantize_model_fp8 accepts None calib_iter.
+        batches = None
+
+    target_list = _resolve_target_modules(target_modules)
+    typer.echo(
+        f"Quantizing model with FP8 (weight_dtype={weight_dtype}, "
+        f"per_channel={per_channel}, activation={activation}, "
+        f"target_modules={target_list or 'all'})..."
+    )
+    try:
+        from llm.quantization.fp8 import Fp8Config
+
+        fp8_cfg = Fp8Config(
+            weight_dtype=cast(Literal["e4m3", "e5m2"], weight_dtype),
+            per_channel=per_channel,
+            activation=cast(Literal["static", "dynamic"], activation),
+        )
+        quantized = quantize_model_fp8(
+            model_obj,
+            iter(batches) if batches is not None else None,
+            fp8_cfg,
+            target_modules=target_list,
+        )
+    except Exception as exc:
+        typer.echo(f"Error: quantization failed: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
     try:
         _atomic_save_quantized(quantized, output)
     except Exception as exc:
