@@ -50,14 +50,19 @@ class TrainingEngine:
         world_size: int,
         data_module: BaseDataModule,
         callbacks: list[Callback] | None = None,
+        local_rank: int | None = None,
     ):
+        # ``rank`` is the GLOBAL rank (identity, rank-0 gating, data sharding,
+        # checkpoint ownership); the CUDA device index is the per-node LOCAL
+        # rank when a multi-node launcher supplies it (RIL TASK-191 / ISS-229),
+        # otherwise ``rank`` (single-node == local).
         self.config = config
         self.task = task
         self.rank = rank
         self.world_size = world_size
 
         if torch.cuda.is_available() and torch.cuda.device_count() > 0 and self.world_size > 0:
-            cuda_idx = rank % torch.cuda.device_count()
+            cuda_idx = (local_rank if local_rank is not None else rank) % torch.cuda.device_count()
             # world_size > 0 is a proxy for intending to use GPUs if available
             if _cuda_usable(cuda_idx):
                 self.device = torch.device(f"cuda:{cuda_idx}")

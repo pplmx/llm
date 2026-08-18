@@ -32,11 +32,38 @@ def configure_logging(log_level: str = "INFO"):
     )
 
 
-def train_worker(rank: int, world_size: int, config: Config, task_name: str):
-    """The worker function for each DDP process."""
+def _global_rank(node_rank: int, local_rank: int, local_world_size: int) -> int:
+    """Global process-group rank for a worker on a node (RIL TASK-191).
+
+    Every node spawns ``gpus_per_node`` local workers; the global rank
+    ``node_rank * local_world_size + local_rank`` makes them all rendezvous
+    into ONE process group without the per-node rank collisions that broke
+    multi-node launch (ISS-229).
+    """
+    return node_rank * local_world_size + local_rank
+
+
+def train_worker(
+    local_rank: int,
+    world_size: int,
+    config: Config,
+    task_name: str,
+    node_rank: int = 0,
+    local_world_size: int | None = None,
+):
+    """The worker function for each DDP process.
+
+    ``local_rank`` is the GPU-local index on this node; the process-group
+    identity is the GLOBAL rank (see :func:`_global_rank`).
+    """
+    global_rank = _global_rank(
+        node_rank,
+        local_rank,
+        local_world_size if local_world_size is not None else world_size,
+    )
     distributed_manager = DistributedManager(config.distributed)
     try:
-        distributed_manager.setup(rank, world_size)
+        distributed_manager.setup(global_rank, world_size, local_rank=local_rank)
 
         task_spec = TASK_REGISTRY.get(task_name)
         data_module = task_spec.data_module_factory(config)
@@ -54,14 +81,15 @@ def train_worker(rank: int, world_size: int, config: Config, task_name: str):
         engine = TrainingEngine(
             config,
             task,
-            rank,
+            global_rank,
             world_size,
             data_module=data_module,
             callbacks=callbacks,
+            local_rank=local_rank,
         )
         engine.run()
     except Exception:
-        logging.getLogger().exception(f"An error occurred in rank {rank}")
+        logging.getLogger().exception(f"An error occurred in rank {global_rank}")
         raise
     finally:
         if world_size > 1:
@@ -112,18 +140,33 @@ def main(
 
     distributed_manager = DistributedManager(config.distributed)
     world_size = distributed_manager.get_world_size()
+    node_rank = config.distributed.node_rank
+    # Each node spawns only its OWN ``gpus_per_node`` workers; the global
+    # process-group rank offsets by ``node_rank * local_world_size`` so
+    # multiple nodes join one group without collisions (RIL TASK-191/ISS-229).
+    # Single-node keeps node_rank=0 and local == world (identical behaviour).
+    gpus_per_node = config.distributed.gpus_per_node
+    local_world_size = gpus_per_node if (gpus_per_node is not None and gpus_per_node > 0) else 1
 
     logger.info(f"Selected Task: {task}")
-    logger.info(f"Determined world_size: {world_size}")
+    logger.info(f"Determined world_size: {world_size} (node {node_rank}, local workers {local_world_size})")
     logger.info(f"CUDA Available: {torch.cuda.is_available()}, Count: {torch.cuda.device_count()}")
 
     if world_size > 1:
-        if not (torch.cuda.is_available() and torch.cuda.device_count() >= world_size):
-            logger.error(f"❌ DDP Error: world_size={world_size}, but available GPUs={torch.cuda.device_count()}.")
+        if not (torch.cuda.is_available() and torch.cuda.device_count() >= local_world_size):
+            logger.error(
+                f"❌ DDP Error: world_size={world_size}, but each node only has "
+                f"GPUs={torch.cuda.device_count()} for local_world_size={local_world_size}."
+            )
             sys.exit(1)
 
-        logger.info(f"🚀 Spawning {world_size} DDP processes...")
-        mp.spawn(train_worker, args=(world_size, config, task), nprocs=world_size, join=True)
+        logger.info(f"🚀 Node {node_rank}: spawning {local_world_size} DDP processes (global world {world_size})...")
+        mp.spawn(
+            train_worker,
+            args=(world_size, config, task, node_rank, local_world_size),
+            nprocs=local_world_size,
+            join=True,
+        )
     elif world_size == 1:
         if torch.cuda.is_available() and torch.cuda.device_count() > 0:
             logger.info("🚀 Single-process GPU training...")

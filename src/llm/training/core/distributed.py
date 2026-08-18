@@ -45,8 +45,17 @@ class DistributedManager:
     def __init__(self, config: DistributedConfig):
         self.config = config
 
-    def setup(self, rank: int, world_size: int):
-        torch.manual_seed(42 + rank)  # Seed for CPU operations
+    def setup(self, global_rank: int, world_size: int, local_rank: int | None = None):
+        """Initialise the process group for ``global_rank`` of ``world_size``.
+
+        ``global_rank`` is the identity across all nodes — a multi-node worker
+        on node ``node_rank`` gets ``node_rank * local_world_size + local``
+        (RIL TASK-191 / ISS-229) so every node's workers rendezvous into one
+        group without rank collisions.  ``local_rank`` is only used to select
+        the CUDA device index (the per-GPU index on this node); when None it
+        falls back to ``global_rank`` (single-node, where they coincide).
+        """
+        torch.manual_seed(42 + global_rank)  # Seed for CPU operations
 
         if world_size > 1 and torch.cuda.is_available() and torch.cuda.device_count() > 0:
             # Respect launcher-provided rendezvous env (torchrun / mp.spawn /
@@ -68,16 +77,17 @@ class DistributedManager:
                     backend,
                 )
 
-            dist.init_process_group(backend=backend, rank=rank, world_size=world_size)
+            dist.init_process_group(backend=backend, rank=global_rank, world_size=world_size)
 
             # Only set device and CUDA seed if CUDA is available and being used
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-                torch.cuda.set_device(rank % torch.cuda.device_count())
-                torch.cuda.manual_seed_all(42 + rank)
+                device_rank = local_rank if local_rank is not None else global_rank
+                torch.cuda.set_device(device_rank % torch.cuda.device_count())
+                torch.cuda.manual_seed_all(42 + global_rank)
         elif world_size == 1:
             # Single process execution (could be CPU or single GPU without DDP)
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-                torch.cuda.manual_seed_all(42 + rank)  # Still seed CUDA if available
+                torch.cuda.manual_seed_all(42 + global_rank)  # Still seed CUDA if available
             pass  # No DDP setup needed
         else:
             # This case should ideally be prevented by get_world_size logic
