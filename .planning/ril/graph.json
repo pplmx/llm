@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 82,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T13:40:07+00:00",
+  "updated_at": "2026-08-18T15:36:59+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11414,6 +11414,55 @@
       "confidence": 0.9,
       "source": "empirical roundtrip experiment (round-82)",
       "summary": "ISS-234 investigated and REFUTED as a defect: packing is bit-exact (0.0) without act_order; with act_order the packed dequant differs from the GPTQ-iterated weights by ~1 int8 ulp (~0.3-0.4% relative, 6e-4 abs) — an inherent bounded rounding of re-quantizing to the contiguous group/row grid, present in standard GPTQ act_order+group composition, NOT a lost reconstruction or accuracy regression beyond one ulp. No crash, no API gap."
+    },
+    "DEC-046": {
+      "id": "DEC-046",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T13:43:47+00:00",
+      "updated_at": "2026-08-18T13:43:47+00:00",
+      "touched_round": 82,
+      "rationale": "ROADMAP P1 'quantization deepening' is the next bucket after round-82 quant + TP (P2). FP8 (E4M3/E5M2) is the industry-standard post-Hopper LLM format and complements the existing INT8 SmoothQuant (INT16 grid) and weight-only GPTQ/AWQ — a per-tensor (or per-channel) FP8 E4M3 weight+activation PTQ path with simulated cast, verifiable numerically on CPU/GPU vs fp32 reference and via e2e llm-quantize export parity. Mirrors the repo's ptq.py QuantizedLinear + llm-quantize structure.",
+      "alternatives_rejected": "TP+DP 2D: natural but builds on the just-shipped TP milestone (risky to layer two stepping stones at once). Pipeline Parallelism: very large, hard to verify in one loop. DeepSpeed ZeRO: dependency-import milestone, less framework-native. Multimodal: requires a design spike first per ROADMAP.",
+      "summary": "Next milestone: FP8 E4M3 PTQ as an llm-quantize method (fp8), simulated-cast, verifiable"
+    },
+    "TASK-201": {
+      "id": "TASK-201",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-18T13:43:47+00:00",
+      "updated_at": "2026-08-18T15:36:59+00:00",
+      "touched_round": 82,
+      "category": "core-feature",
+      "severity": 2.0,
+      "effort": 5.0,
+      "title": "FP8 quantization milestone: E4M3/E5M2 PTQ method for llm-quantize",
+      "summary": "Add an FP8 path (fp8 method) to src/llm/quantization: FP8QuantizedLinear (per-tensor or per-channel E4M3/E5M2 simulated cast of weight + activation, autograd-free), wiring into the quantize entry points + llm-quantize CLI + CLI type mapping, scripted like SmoothQuant/GPTQ; verify single-layer cast numerics vs fp32 reference and model e2e (quantized logits close to fp16); reject unsupported combos loudly (DEC-046)."
+    },
+    "CHG-200": {
+      "id": "CHG-200",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T15:32:14+00:00",
+      "updated_at": "2026-08-18T15:32:14+00:00",
+      "touched_round": 82,
+      "commit": "9fd156c",
+      "summary": "TASK-201 (DEC-046): FP8 E4M3/E5M2 PTQ milestone — Fp8QuantizedLinear (real float8 storage, simulated matmul), quantize_model_fp8 (static/dynamic activation scaling), compute_model_size fp8 accounting, llm-quantize fp8 subcommand; verified: layer within a few % of fp32, model e2e logits correlate ~0.999, 241 quant tests pass"
+    },
+    "EV-190": {
+      "id": "EV-190",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T15:32:14+00:00",
+      "updated_at": "2026-08-18T15:32:14+00:00",
+      "touched_round": 82,
+      "confidence": 1.0,
+      "source": "tests/quantization/test_fp8_quantization.py (15 tests)",
+      "summary": "FP8 verified: weight_fp8 is real float8 (1 byte/weight), layer forward within a few % of fp32 (cosine > 0.999, max rel < 5%), E5M2 variant, per-tensor + per-channel, model e2e quantized logits correlate with the fp32 baseline (> 0.99), static requires calib + dynamic no-calib, saturating cast stays within E4M3 max 448, size accounting < 2 bytes/param, CLI help/validation/dynamic-save/static-gate; quant suite 241 passed."
     }
   },
   "edges": [
@@ -16845,6 +16894,12 @@
       "to": "ISS-240",
       "type": "resolves",
       "created_at": "2026-08-18T13:14:17+00:00"
+    },
+    {
+      "from": "CHG-200",
+      "to": "TASK-201",
+      "type": "implements",
+      "created_at": "2026-08-18T15:32:14+00:00"
     }
   ]
 }
