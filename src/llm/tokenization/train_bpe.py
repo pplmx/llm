@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from llm.tokenization.bpe_tokenizer import BPETokenizer
+from llm.tokenization.bpe_tokenizer import DEFAULT_UNK_TOKEN, BPETokenizer
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
     parser.add_argument(
         "--special_tokens",
         nargs="+",
-        default=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
+        default=[DEFAULT_UNK_TOKEN, "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
         help="List of special tokens to include.",
     )
 

@@ -91,6 +91,35 @@ def test_train_bpe_custom_special_tokens(tmp_path):
     assert (tmp_path / "custom.json").exists()
 
 
+def test_train_bpe_default_special_tokens_include_unk(tmp_path):
+    """The CLI default special-token list must match the library default and
+    include the BPE model's declared ``<unk>`` token (eval deep-dive F4). It
+    used to default to ``["[UNK]", ...]`` — the ``<unk>`` UNK token was
+    declared but never added to the vocab, so a default CLI-trained tokenizer
+    reported ``token_to_id("<unk>") is None`` and produced a different
+    UNK/id layout than ``BPETokenizer.train`` on the same input."""
+    text_file = _write_text_file(str(tmp_path / "unk.txt"), ["the quick brown fox\n", "jumps over the lazy dog\n"])
+    output_path = str(tmp_path / "unk.json")
+    test_args = [
+        "train_bpe",
+        "--files",
+        text_file,
+        "--output",
+        output_path,
+        "--vocab_size",
+        "40",
+        "--min_frequency",
+        "1",
+    ]
+    with patch("sys.argv", test_args):
+        main()
+
+    from llm.tokenization.bpe_tokenizer import BPETokenizer
+
+    loaded = BPETokenizer.load(str(output_path))
+    assert loaded.get_vocab().get("<unk>") is not None  # the declared UNK must be in the vocab
+
+
 def test_train_bpe_skips_missing_files(tmp_path):
     """Warning is printed for missing files but training continues if at least one valid file exists."""
     valid_file = _write_text_file(str(tmp_path / "valid.txt"), ["only this one\n"])

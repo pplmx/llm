@@ -43,7 +43,22 @@ class PerplexityMetric(BaseMetric):
             if references and isinstance(references[0], torch.Tensor):
                 references = torch.stack(references)
             else:
-                references = torch.as_tensor(references, dtype=torch.long)
+                try:
+                    references = torch.as_tensor(references, dtype=torch.long)
+                except (ValueError, TypeError) as exc:
+                    # Ragged (ragged-nested-list) references raise torch's raw
+                    # ValueError here; surface a clear metric-level error with
+                    # the actual fix instead of an opaque stack trace deep in
+                    # cross_entropy (eval deep-dive F1).
+                    raise ValueError(
+                        "perplexity references must be a rectangular tensor/list of token "
+                        f"ids, got {type(references).__name__}; ragged sequences are not "
+                        "supported — pad/truncate the references to equal length first."
+                    ) from exc
+
+        # A single-sequence reference (1-D) must broadcast to one batch row,
+        # not crash on ``references.shape[1]`` below with an opaque IndexError.
+        references = torch.atleast_2d(references)
 
         batch_size = predictions.shape[0]
         if batch_size == 0:

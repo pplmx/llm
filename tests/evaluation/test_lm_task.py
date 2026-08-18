@@ -35,6 +35,30 @@ def test_perplexity_metric_single_token_returns_finite():
     assert result["perplexity"] == float("inf")
 
 
+def test_perplexity_metric_accepts_1d_references():
+    """A single-sequence (1-D) reference must broadcast to one batch row, not
+    crash with an opaque IndexError on ``references.shape[1]`` (eval deep-dive
+    F1)."""
+    metric = PerplexityMetric()
+    logits = torch.zeros(1, 3, 10)
+    logits[0, 0, 1] = 10.0
+    logits[0, 1, 2] = 10.0
+    labels_2d = metric.compute(logits, torch.tensor([[1, 2, 0]]))["perplexity"]
+    labels_1d = metric.compute(logits, [1, 2, 0])["perplexity"]
+    labels_1d_tensor = metric.compute(logits, torch.tensor([1, 2, 0]))["perplexity"]
+    for value in (labels_1d, labels_1d_tensor):
+        assert value == pytest.approx(labels_2d)
+
+
+def test_perplexity_metric_ragged_references_clear_error():
+    """Ragged reference lists raise a metric-level ValueError (not torch's raw
+    ValueError deep inside cross_entropy) — eval deep-dive F1."""
+    metric = PerplexityMetric()
+    logits = torch.zeros(1, 3, 10)
+    with pytest.raises(ValueError, match="rectangular"):
+        metric.compute(logits, [[1, 2, 0], [1, 2]])
+
+
 def test_lm_task_prepare_data_returns_token_tensors(tmp_path):
     corpus = tmp_path / "eval.txt"
     corpus.write_text("hello world\n" * 4, encoding="utf-8")
