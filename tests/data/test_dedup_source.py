@@ -173,6 +173,66 @@ def test_dedup_write_seen_hashes_appends_new_hashes(tmp_path):
     assert written == [h_a, h_b]
 
 
+def test_dedup_nonzero_rank_does_not_bloat_seen_file(tmp_path):
+    """Only rank 0 may append to the shared seen-hashes file: every DDP rank
+    walks the whole corpus, so without the gate each hash is written once per
+    rank and the file grows up to world_size times its size (round-79 TASK-194 / ISS-233)."""
+    from unittest.mock import patch
+
+    data_path = _write(tmp_path, "data.txt", ["a", "b", "a"])
+    seen_path = tmp_path / "seen.txt"
+    seen_path.write_text("", encoding="utf-8")
+
+    def build():
+        return DedupTextSource(
+            LocalLineTextSource(data_path),
+            seen_hashes_path=seen_path,
+            write_seen_hashes=True,
+        )
+
+    with (
+        patch("torch.distributed.is_available", return_value=True),
+        patch("torch.distributed.is_initialized", return_value=True),
+        patch("torch.distributed.get_rank", return_value=1),
+    ):
+        deduped = list(build().iter_texts())
+    assert deduped == ["a", "b"]
+    assert seen_path.read_text(encoding="utf-8") == ""  # non-zero rank: read-only
+
+    # Rank 0 still persists every record.
+    with (
+        patch("torch.distributed.is_available", return_value=True),
+        patch("torch.distributed.is_initialized", return_value=True),
+        patch("torch.distributed.get_rank", return_value=0),
+    ):
+        deduped = list(build().iter_texts())
+    assert deduped == ["a", "b"]
+    written = seen_path.read_text(encoding="utf-8").splitlines()
+    assert written == [hashlib.sha256(b"a").hexdigest(), hashlib.sha256(b"b").hexdigest()]
+
+
+def test_dedup_single_process_still_persists(tmp_path):
+    """No process group -> the single process writes as before."""
+    from unittest.mock import patch
+
+    data_path = _write(tmp_path, "data.txt", ["a", "b"])
+    seen_path = tmp_path / "seen.txt"
+    seen_path.write_text("", encoding="utf-8")
+
+    with (
+        patch("torch.distributed.is_available", return_value=True),
+        patch("torch.distributed.is_initialized", return_value=False),
+    ):
+        list(
+            DedupTextSource(
+                LocalLineTextSource(data_path),
+                seen_hashes_path=seen_path,
+                write_seen_hashes=True,
+            ).iter_texts()
+        )
+    assert len(seen_path.read_text(encoding="utf-8").splitlines()) == 2
+
+
 def test_dedup_write_seen_hashes_requires_path():
     inner = LocalLineTextSource(__file__)  # any existing local source
     with pytest.raises(ValueError, match="seen_hashes_path"):

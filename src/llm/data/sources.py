@@ -252,6 +252,27 @@ class DedupTextSource(TextSource):
         """
         self._persisted = set()
 
+    def _should_persist_writes(self) -> bool:
+        """True when this process may append hashes to the shared file.
+
+        Only rank 0 may write it: every DDP rank walks the *whole* raw corpus
+        (dedup happens before the dataset's per-rank sharding), so without
+        this guard each surviving digest is appended once per rank and the
+        file grows up to world_size times the corpus size (round-79
+        TASK-194 / ISS-233).  Rank 0 alone persists every record (it sees
+        them all too), and the other ranks keep deduping against the durable
+        file, so cross-run dedup is unchanged.
+        """
+        if not self.write_seen_hashes:
+            return False
+        try:
+            import torch.distributed as dist
+        except ImportError:  # pragma: no cover - torch is always present here
+            return True
+        if dist.is_available() and dist.is_initialized():
+            return dist.get_rank() == 0
+        return True
+
     def iter_texts(self, skip: int = 0) -> Iterator[str]:
         # The ``skip`` contract is the one StreamingTextDataset relies on
         # for checkpoint resume: "skip the first ``skip`` records *of this
@@ -304,7 +325,7 @@ class DedupTextSource(TextSource):
                 if digest in seen:
                     continue
                 seen.add(digest)
-                if self.seen_hashes_path is not None and digest not in self._written:
+                if self._should_persist_writes() and self.seen_hashes_path is not None and digest not in self._written:
                     if handle is None:
                         handle = self.seen_hashes_path.open("a", encoding="utf-8")
                     handle.write(digest + "\n")
