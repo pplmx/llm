@@ -508,3 +508,22 @@ def test_act_order_group_scales_aligned_with_original_columns():
         f"reconstruction error ({mean_abs_err:.4f}) exceeds the weight magnitude"
         f" ({layer.weight.data.abs().mean().item():.4f}) — scales are misaligned"
     )
+
+
+def test_4bit_odd_total_count_fails_fast_per_group_and_per_channel():
+    """4-bit packing stores two weights per byte over the whole tensor, so an
+    odd TOTAL weight count must fail fast for per-GROUP 4-bit too — previously
+    only group_size == -1 was guarded (round-81 quant deep-dive F3 / TASK-198)
+    and the group path crashed later in ``_pack_4bit`` after Hessian compute."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    # group_size=3 divides in_features=9, but 9*7=63 is odd. (blocksize is
+    # set to a multiple of the group size so config validation passes and the
+    # packing guard is the thing that trips.)
+    for group_size, blocksize in ((3, 3), (-1, 128)):
+        with pytest.raises(ValueError, match="even total weight count"):
+            GPTQQuantizer(nn.Linear(9, 7), GPTQConfig(bits=4, group_size=group_size, blocksize=blocksize))
+
+    # 8-bit has no pairing constraint: constructing is fine.
+    q8 = GPTQQuantizer(nn.Linear(9, 7), GPTQConfig(bits=8, group_size=3, blocksize=3))
+    assert q8 is not None

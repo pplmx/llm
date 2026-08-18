@@ -320,14 +320,15 @@ def _pack_weights(
     if effective_group_size != -1 and effective_group_size > in_f:
         effective_group_size = in_f
 
-    # 4-bit per-channel packing stores two weights per int8 byte; reject an
-    # odd total weight count up front (same guard as GPTQQuantizer) instead
-    # of a late ``_pack_4bit`` ValueError after scale search.
-    if bits == 4 and effective_group_size == -1 and (out_f * in_f) % 2 != 0:
+    # 4-bit packing stores two weights per int8 byte over the whole tensor;
+    # reject an odd total weight count up front (same guard as GPTQQuantizer)
+    # for BOTH per-channel and per-group 4-bit (round-81 quant deep-dive F3)
+    # instead of a late ``_pack_4bit`` ValueError after scale search.
+    if bits == 4 and (out_f * in_f) % 2 != 0:
         raise ValueError(
-            f"4-bit per-channel quantization requires an even total weight count; "
+            f"4-bit quantization requires an even total weight count; "
             f"got shape {(out_f, in_f)} (product {out_f * in_f} is odd). "
-            "Use group_size != -1 or an architecture with even in/out features."
+            "Use an architecture with even in/out features."
         )
 
     qmax = 2 ** (bits - 1) - 1
@@ -481,6 +482,18 @@ def quantize_model_awq(
                 "failure (%s); falling back to direct layer calls for ALL targets "
                 "so every layer quantizes over the same calibration set.",
                 capt_sizes,
+            )
+        elif not any_captured:
+            logger.warning(
+                "Model forward failed on EVERY calibration batch (see the "
+                "DEBUG log above for the first error); no per-layer inputs "
+                "were captured. Falling back to feeding the raw calibration "
+                "batches directly as each target layer's inputs — this is only "
+                "valid when those tensors ARE the layers' activations (e.g. a "
+                "bare sequence of target layers). If the model embeds or "
+                "reshapes inputs first (a real decoder), the quantized weights "
+                "will be garbage; fix the model forward signature or use "
+                "quantize_model_with_collector."
             )
         for h in hooks:
             h.remove()

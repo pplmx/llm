@@ -254,3 +254,26 @@ def _getattr_nested(module: nn.Module, dotted: str):
     for part in dotted.split("."):
         module = getattr(module, part)
     return module
+
+
+class _ForwardAlwaysRaises(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(16, 32)
+
+    def forward(self, x):
+        raise RuntimeError("model forward intentionally broken for calibration")
+
+
+def test_quantize_model_smoothquant_warns_when_forward_always_fails(caplog):
+    """Total calibration-failure must warn loudly instead of silently feeding
+    raw batches as layer activations (RIL TASK-197 / ISS-237)."""
+    from llm.quantization._smooth_layer import SmoothQuantLinear
+    from llm.quantization.smooth import SmoothQuantConfig, quantize_model_smoothquant
+
+    model = _ForwardAlwaysRaises()
+    calib = [torch.randn(8, 16) for _ in range(4)]
+    with caplog.at_level("WARNING", logger="llm.quantization.smooth"):
+        quantized = quantize_model_smoothquant(model, iter(calib), SmoothQuantConfig())
+    assert any("failed on EVERY calibration batch" in r.getMessage() for r in caplog.records)
+    assert isinstance(quantized.fc1, SmoothQuantLinear)

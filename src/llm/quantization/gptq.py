@@ -119,16 +119,18 @@ class GPTQQuantizer:
                 f"({self.in_features}); got remainder {self.in_features % gs}. "
                 "Use group_size=-1 (per-channel) or a divisor of in_features."
             )
-        # 4-bit per-channel packing stores two weights per int8 byte; an odd
-        # total weight count would crash mid-pipeline in ``_pack_4bit`` (after
-        # Hessian accumulation). Fail fast with the same "clear error instead
-        # of a late crash" spirit as the group-size check above.
-        if self.config.bits == 4 and self.config.group_size == -1 and (self.out_features * self.in_features) % 2 != 0:
+        # 4-bit packing stores two weights per int8 byte over the whole
+        # tensor, so an odd total weight count would crash mid-pipeline in
+        # ``_pack_4bit`` (after Hessian accumulation) for BOTH per-channel and
+        # per-group 4-bit. Fail fast with the same "clear error instead of a
+        # late crash" spirit as the group-size check above (round-81 quant
+        # deep-dive F3 — the guard previously covered only group_size == -1).
+        if self.config.bits == 4 and (self.out_features * self.in_features) % 2 != 0:
             raise ValueError(
-                f"4-bit per-channel quantization requires an even total weight "
-                f"count; {self.layer.weight.shape} has an odd product "
-                f"({self.out_features * self.in_features}). Use group_size != -1 "
-                "or an architecture with even in/out features."
+                f"4-bit quantization requires an even total weight count; "
+                f"{self.layer.weight.shape} has an odd product "
+                f"({self.out_features * self.in_features}). Use an "
+                "architecture with even in/out features."
             )
 
         # Hessian accumulator
@@ -582,6 +584,18 @@ def quantize_model_gptq(
                 "failure (%s); falling back to direct layer calls for ALL targets "
                 "so every layer quantizes over the same calibration set.",
                 capt_sizes,
+            )
+        elif not any_captured:
+            logger.warning(
+                "Model forward failed on EVERY calibration batch (see the "
+                "DEBUG log above for the first error); no per-layer inputs "
+                "were captured. Falling back to feeding the raw calibration "
+                "batches directly as each target layer's inputs — this is only "
+                "valid when those tensors ARE the layers' activations (e.g. a "
+                "bare sequence of target layers). If the model embeds or "
+                "reshapes inputs first (a real decoder), the quantized weights "
+                "will be garbage; fix the model forward signature or use "
+                "quantize_model_with_collector."
             )
         for h in hooks:
             h.remove()

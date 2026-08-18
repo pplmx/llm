@@ -78,13 +78,26 @@ class QuantizedLinear(nn.Module):
             self.register_parameter("bias", None)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass with dequantized weights."""
-        # Dequantize weights
-        weight = self._dequantize_weight()
+        """Forward pass with dequantized weights.
 
-        # ``_dequantize_weight`` materialises fp32 weights; upcast the
-        # input so fp16/bf16 model inference works.  Output is fp32.
-        return nn.functional.linear(x.to(torch.float32), weight, self.bias)
+        Dequantizes to fp32, computes in fp32 for accuracy, and returns in
+        the layer's effective dtype (native ``nn.Linear`` semantics).  This
+        keeps the layer a faithful drop-in even after the model is cast to
+        fp16/bf16 — the serving engine's ``model.to(device, dtype=fp16)`` or
+        selective quantization over a half base converts ``bias`` to half,
+        and passing it straight into ``F.linear`` against fp32 weights
+        crashed with a dtype mismatch (RIL TASK-196 / ISS-236, quant
+        deep-dive F1; same fix as the GPTQ/AWQ/SmoothQuant layers in
+        ISS-191).
+        """
+        weight = self._dequantize_weight()
+        dtype = self.bias.dtype if self.bias is not None else x.dtype
+        out = nn.functional.linear(
+            x.to(torch.float32),
+            weight,
+            self.bias.to(torch.float32) if self.bias is not None else self.bias,
+        )
+        return out.to(dtype)
 
     def _dequantize_weight(self) -> torch.Tensor:
         """Dequantize stored weights."""

@@ -468,3 +468,36 @@ def test_calibration_consumes_all_batches(monkeypatch):
     assert all(n == 3 for n in samples_seen), f"unexpected batch shapes: {samples_seen}"
     # fc1 and fc2 each got 4 add_batch calls (one per batch).
     assert len(samples_seen) == 2 * len(calib), f"expected 8 add_batch calls, got {len(samples_seen)}"
+
+
+class _ForwardAlwaysRaises(nn.Module):
+    """A model whose forward fails on every calibration batch — the
+    total-failure case that previously fed raw model inputs (token ids) as
+    layer activations with only a DEBUG log (RIL TASK-197 / ISS-237)."""
+
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(16, 32)
+
+    def forward(self, x):
+        # Raise before touching any target layer so NO hook fires — the
+        # total-failure case (any_captured == False).
+        raise RuntimeError("model forward intentionally broken for calibration")
+
+
+def test_quantize_model_gptq_warns_when_forward_always_fails(caplog):
+    """When the model forward fails on EVERY calibration batch, the fallback
+    to direct layer calls must warn loudly — previously it fed raw batches as
+    layer activations with only a DEBUG log and silently produced garbage
+    weights."""
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    model = _ForwardAlwaysRaises()
+    calib = [torch.randn(8, 16) for _ in range(4)]  # direct-call shape for fc1
+    with caplog.at_level("WARNING", logger="llm.quantization.gptq"):
+        quantized = quantize_model_gptq(model, iter(calib), GPTQConfig())
+    assert any("failed on EVERY calibration batch" in r.getMessage() for r in caplog.records)
+    # The fallback still runs (direct calls over the calibration set) and is
+    # dimensionally valid here.
+    assert isinstance(quantized.fc1, GPTQQuantizedLinear)

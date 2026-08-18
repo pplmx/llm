@@ -282,3 +282,26 @@ def test_awq_per_channel_4bit_rejects_odd_total_weights():
 
     quantized = quantize_model_awq(model, iter(calib), AWQConfig(bits=4, group_size=-1))
     assert any(isinstance(m, AWQQuantizedLinear) for m in quantized.modules())
+
+
+class _ForwardAlwaysRaises(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(16, 32)
+
+    def forward(self, x):
+        raise RuntimeError("model forward intentionally broken for calibration")
+
+
+def test_quantize_model_awq_warns_when_forward_always_fails(caplog):
+    """Total calibration-failure must warn loudly instead of silently feeding
+    raw batches as layer activations (RIL TASK-197 / ISS-237)."""
+    from llm.quantization._awq_layer import AWQQuantizedLinear
+    from llm.quantization.awq import AWQConfig, quantize_model_awq
+
+    model = _ForwardAlwaysRaises()
+    calib = [torch.randn(8, 16) for _ in range(4)]
+    with caplog.at_level("WARNING", logger="llm.quantization.awq"):
+        quantized = quantize_model_awq(model, iter(calib), AWQConfig())
+    assert any("failed on EVERY calibration batch" in r.getMessage() for r in caplog.records)
+    assert isinstance(quantized.fc1, AWQQuantizedLinear)

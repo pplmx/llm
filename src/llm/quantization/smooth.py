@@ -376,6 +376,18 @@ def quantize_model_smoothquant(
                 "so every layer quantizes over the same calibration set.",
                 capt_sizes,
             )
+        elif not any_captured:
+            logger.warning(
+                "Model forward failed on EVERY calibration batch (see the "
+                "DEBUG log above for the first error); no per-layer inputs "
+                "were captured. Falling back to feeding the raw calibration "
+                "batches directly as each target layer's inputs — this is only "
+                "valid when those tensors ARE the layers' activations (e.g. a "
+                "bare sequence of target layers). If the model embeds or "
+                "reshapes inputs first (a real decoder), the quantized weights "
+                "will be garbage; fix the model forward signature or use "
+                "quantize_model_with_collector."
+            )
         for h in hooks:
             h.remove()
         for n, _m in targets:

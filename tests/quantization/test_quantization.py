@@ -203,6 +203,28 @@ class TestQuantizedLinear:
             assert out.dtype == torch.float32
             assert torch.allclose(out, ref, atol=1e-1)
 
+    def test_forward_after_fp16_cast_matches(self):
+        """Post-quant fp16 cast (serving engine default) must not crash and
+        must feed half-precision downstream linears (RIL TASK-196 / ISS-236,
+        quant deep-dive F1).
+
+        ``model.to(device, dtype=torch.float16)`` converts the fp32 ``bias``
+        to half, so the old forward's ``F.linear(x_f32, w_f32, bias_f16)``
+        raised a dtype-mismatch RuntimeError on the first forward of a
+        quantized model under the serving engine."""
+        for with_bias in (True, False):
+            layer = QuantizedLinear.from_linear(nn.Linear(8, 4, bias=with_bias))
+            x32 = torch.randn(2, 8)
+            ref = layer(x32)  # fp32 baseline
+
+            layer.half()  # what batch_engine.py's model.to(device, dtype=float16) does
+            out16 = layer(x32.half())  # must not raise
+            assert out16.dtype == torch.float16
+            assert torch.allclose(out16.float(), ref, atol=1e-2)
+
+            residual = nn.Linear(4, 4).half()
+            assert residual(out16).dtype == torch.float16
+
 
 class TestQuantizeModel:
     """Tests for model quantization."""

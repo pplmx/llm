@@ -290,3 +290,17 @@ def test_awq_search_rejects_asymmetric():
     quantizer.add_batch(torch.randn(16, 8))
     with pytest.raises(NotImplementedError, match="Asymmetric"):
         quantizer.search_scale()
+
+
+def test_4bit_odd_total_count_fails_fast_per_group_and_per_channel():
+    """4-bit packing stores two weights per byte over the whole tensor, so an
+    odd TOTAL weight count must fail fast for per-GROUP 4-bit too (round-81
+    quant deep-dive F3 / TASK-198; only group_size == -1 was guarded before)."""
+    from llm.quantization.awq import AWQConfig, AWQQuantizer
+
+    for group_size in (3, -1):
+        layer = nn.Linear(9, 7)
+        quantizer = AWQQuantizer(layer, AWQConfig(bits=4, group_size=group_size))
+        scale = torch.ones(9)  # per-input-channel activation scale
+        with pytest.raises(ValueError, match="even total weight count"):
+            quantizer.quantize(scale)
