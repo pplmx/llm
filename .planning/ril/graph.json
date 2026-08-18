@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 79,
+  "round": 80,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T02:01:06+00:00",
+  "updated_at": "2026-08-18T02:51:20+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11022,11 +11022,11 @@
     "ISS-232": {
       "id": "ISS-232",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-17T21:20:02+00:00",
-      "updated_at": "2026-08-17T21:20:02+00:00",
-      "touched_round": 76,
+      "updated_at": "2026-08-18T02:47:42+00:00",
+      "touched_round": 80,
       "severity": 0.5,
       "category": "stability",
       "summary": "a single-rank exception after group init deadlocks all ranks under NCCL (no fail-fast/timeout; finally-barrier wedges too). Design-level guardrail; logged for a future round."
@@ -11154,6 +11154,31 @@
       "effort": 1.0,
       "title": "Only rank 0 appends to the shared dedup seen-hashes file (ISS-233)",
       "summary": "Persisted-append dedup (write_seen_hashes=True) under DDP wrote every surviving hash once per rank -> seen file grew up to world_size x the corpus. Fix: DedupTextSource appends only when rank 0 (or no process group). Resolved via CHG-195."
+    },
+    "TASK-195": {
+      "id": "TASK-195",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-18T02:05:30+00:00",
+      "updated_at": "2026-08-18T02:51:20+00:00",
+      "touched_round": 80,
+      "category": "stability",
+      "severity": 0.6,
+      "effort": 2.0,
+      "title": "Distributed fail-fast: a single-rank exception must not deadlock all ranks (ISS-232)",
+      "summary": "Under NCCL a rank that raises mid-epoch wedges every other rank: the survivors' all_reduce never returns and the crashed rank's finally{barrier()} blocks too — no error propagation, no timeout (round-76 deep-dive D4). Design: configurable process-group rendezvous timeout + monitored_barrier in the worker's teardown so a lost/wedged rank surfaces as a bounded error instead of an infinite hang."
+    },
+    "CHG-196": {
+      "id": "CHG-196",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T02:47:42+00:00",
+      "updated_at": "2026-08-18T02:47:42+00:00",
+      "touched_round": 80,
+      "commit": "48b2072",
+      "summary": "TASK-195 / ISS-232: bounded init_process_group timeout (collective_timeout_seconds, default 1800) + monitored teardown barrier so a single-rank crash fails loudly instead of deadlocking all ranks; real 2-process gloo timeout test"
     }
   },
   "edges": [
@@ -16434,6 +16459,24 @@
       "to": "TASK-194",
       "type": "implements",
       "created_at": "2026-08-18T02:01:06+00:00"
+    },
+    {
+      "from": "TASK-195",
+      "to": "ISS-232",
+      "type": "addresses",
+      "created_at": "2026-08-18T02:05:30+00:00"
+    },
+    {
+      "from": "CHG-196",
+      "to": "TASK-195",
+      "type": "implements",
+      "created_at": "2026-08-18T02:47:42+00:00"
+    },
+    {
+      "from": "CHG-196",
+      "to": "ISS-232",
+      "type": "resolves",
+      "created_at": "2026-08-18T02:47:42+00:00"
     }
   ]
 }
