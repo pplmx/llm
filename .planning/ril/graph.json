@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 82,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T13:17:38+00:00",
+  "updated_at": "2026-08-18T13:40:07+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11225,14 +11225,14 @@
     "ISS-234": {
       "id": "ISS-234",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-18T03:07:15+00:00",
-      "updated_at": "2026-08-18T03:07:15+00:00",
-      "touched_round": 81,
+      "updated_at": "2026-08-18T13:40:07+00:00",
+      "touched_round": 82,
       "severity": "low",
       "category": "correctness",
-      "summary": "Suspected: GPTQ act_order + group quantization re-packs contiguous groups after per-column quantize, losing the act-order reconstruction the algorithm intended (weighted MSE deviates ~1e-5 vs ~1e-9 without act_order). quant deep-dive F4; lower confidence — accuracy consequence of a deliberate re-pack, not a crash."
+      "summary": "RESOLVED (round-82, REFUTED): act_order + group packing re-quantizes to contiguous group grids; measured error is a single int8 ulp (0.3-0.4% rel) vs the iterated weights — an inherent property of combining act_order with group quantization, verified bit-exact when act_order=False. Not a defect; closed with evidence EV-189."
     },
     "ISS-235": {
       "id": "ISS-235",
@@ -11402,6 +11402,18 @@
       "confidence": 1.0,
       "source": "tests/training/distributed/test_tensor_parallel.py + e2e llm-train (2x A100)",
       "summary": "TP verified: forward bit-parity vs single-rank reference (CPU exact, GPU 1e-5), full-model gradient parity (1e-4), checkpoint gather==reference state dict (atol 0) + scatter-load roundtrip; e2e llm-train --parallel_strategy=tp runs 12 steps, saves full best/latest/epoch_1 safetensors (full [512,32] lm_head, full [96,32] QKV), resumes from checkpoint exit 0; full fast suite exit 0. ROOT-CAUSE BUGS FOUND: (1) fused-QKV contiguous slice handed ranks other ranks' q/k/v rows; (2) torch.distributed.nn all_gather backward reduce-scatters (x tp gradient in replicated data); (3) engine save gate missed TP (rank-1 never entered the gather)."
+    },
+    "EV-189": {
+      "id": "EV-189",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-18T13:40:07+00:00",
+      "updated_at": "2026-08-18T13:40:07+00:00",
+      "touched_round": 82,
+      "confidence": 0.9,
+      "source": "empirical roundtrip experiment (round-82)",
+      "summary": "ISS-234 investigated and REFUTED as a defect: packing is bit-exact (0.0) without act_order; with act_order the packed dequant differs from the GPTQ-iterated weights by ~1 int8 ulp (~0.3-0.4% relative, 6e-4 abs) — an inherent bounded rounding of re-quantizing to the contiguous group/row grid, present in standard GPTQ act_order+group composition, NOT a lost reconstruction or accuracy regression beyond one ulp. No crash, no API gap."
     }
   },
   "edges": [
