@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 82,
+  "round": 83,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-18T20:54:13+00:00",
+  "updated_at": "2026-08-19T12:56:48+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10004,10 +10004,10 @@
     "HYP-056": {
       "id": "HYP-056",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "stale",
+      "version": 2,
       "created_at": "2026-08-16T14:34:18+00:00",
-      "updated_at": "2026-08-16T14:34:18+00:00",
+      "updated_at": "2026-08-19T12:56:48+00:00",
       "touched_round": 69,
       "confidence": 0.9,
       "title": "Default simple tokenizer cannot encode real text (ISS-196 root cause)",
@@ -10016,10 +10016,10 @@
     "HYP-057": {
       "id": "HYP-057",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "stale",
+      "version": 2,
       "created_at": "2026-08-16T14:34:18+00:00",
-      "updated_at": "2026-08-16T14:34:18+00:00",
+      "updated_at": "2026-08-19T12:56:48+00:00",
       "touched_round": 69,
       "confidence": 0.9,
       "title": "LMTask eval vocab never matches model vocab (ISS-195 root cause)",
@@ -10028,10 +10028,10 @@
     "HYP-058": {
       "id": "HYP-058",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "stale",
+      "version": 2,
       "created_at": "2026-08-16T14:34:18+00:00",
-      "updated_at": "2026-08-16T14:34:18+00:00",
+      "updated_at": "2026-08-19T12:56:48+00:00",
       "touched_round": 69,
       "confidence": 0.9,
       "title": "save_pretrained dtype sniff assumed dense lm_head.weight (ISS-198)",
@@ -10040,10 +10040,10 @@
     "HYP-059": {
       "id": "HYP-059",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "stale",
+      "version": 2,
       "created_at": "2026-08-16T14:34:18+00:00",
-      "updated_at": "2026-08-16T14:34:18+00:00",
+      "updated_at": "2026-08-19T12:56:48+00:00",
       "touched_round": 69,
       "confidence": 0.9,
       "title": "stream world-size guard order-dependent on _world_size (ISS-204)",
@@ -11467,10 +11467,10 @@
     "TASK-202": {
       "id": "TASK-202",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-18T16:17:29+00:00",
-      "updated_at": "2026-08-18T16:17:29+00:00",
+      "updated_at": "2026-08-19T12:56:22+00:00",
       "touched_round": 82,
       "category": "core-feature",
       "severity": 1.5,
@@ -11659,6 +11659,79 @@
       "touched_round": 82,
       "commit": "9a7a0c4",
       "summary": "eval deep-dive F1+F4: PerplexityMetric 1-D/ragged reference coercion (no more opaque IndexError/ValueError); train_bpe CLI default special-token list uses DEFAULT_UNK_TOKEN so <unk> is in the vocab. Regression tests; eval+tokenization suites 164 passed."
+    },
+    "ISS-252": {
+      "id": "ISS-252",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T12:05:13+00:00",
+      "updated_at": "2026-08-19T12:05:13+00:00",
+      "touched_round": 82,
+      "title": "TP val_loss divided by world_size (pure-TP replicates the same val shard)",
+      "severity": 1.2,
+      "summary": "Under parallel_strategy='tp' the engine loads val with data_rank/data_world=(0,1) (every TP rank evaluates the SAME full val shard), then DistributedManager.reduce_mean divides the identical per-rank val_loss by world_size. Logged/checkpointed val_loss is therefore val_loss/world — a misleading metric (best-model ordering is unchanged by the constant factor, so EarlyStopping/save_best still work, but reported thresholds are wrong and cross-strategy comparisons break). Pre-existing in TP v1; surfaced while wiring TP+DP 2D data sharding (TASK-202).",
+      "confidence": 0.7
+    },
+    "ISS-253": {
+      "id": "ISS-253",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T12:05:13+00:00",
+      "updated_at": "2026-08-19T12:05:13+00:00",
+      "touched_round": 82,
+      "title": "TP grad clipping uses per-rank local norm (no global all-reduce)",
+      "severity": 1.1,
+      "summary": "clip_grad_norm_(self.model.parameters()) computes the norm over THIS rank's disjoint shards only — under TP each rank's local total is a fraction of the true full-model norm, so shards are clipped by slightly different factors (Megatron all-reduces the squared norm and clips globally). Shard consistency is preserved (per-rank factor is identical across DP replicas), but training dynamics diverge from a true global-norm clip. Pre-existing in TP v1 (TASK-200/DEC-045), noted during the TASK-202 milestone.",
+      "confidence": 0.75
+    },
+    "DEC-047": {
+      "id": "DEC-047",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T12:38:57+00:00",
+      "updated_at": "2026-08-19T12:38:57+00:00",
+      "touched_round": 82,
+      "summary": "TP + data-parallel 2D as parallel_strategy='tp' with tp_size < world_size (TASK-202): row-major [DP][TP] grid (TP groups contiguous rank ranges, DP groups strided columns holding the same shard); TP applies over the TP subgroup, the engine shards data per DP group (data_world=dp_size), and gradients are averaged (ReduceOp.AVG) across the DP group at step boundaries after unscale_/rescale and before clip. Full-model state-dict gather/scatter stays per TP group and is identical across DP groups, so checkpoints and llm-serve are unchanged. dp_size=1 reproduces pure-TP v1 exactly.",
+      "rationale": "TASK-202 was the natural next milestone after the shipped TP (CHG-199): it unlocks real multi-GPU training throughput for the TP strategy (8-GPU box), layers cleanly (wrap_time group creation + one step-boundary reduce + data sharding change), and is numerically verifiable via full-batch-reference parity at 3 grid shapes (2x2, 2x3, 4x2) plus real-engine e2e. DEC-046's earlier reservation (don't layer 2D on the just-shipped TP) no longer holds: TP has been parity-tested and stable.",
+      "alternatives_rejected": "Explicit per-DP hook gating vs framework-native DDP wrapper: chose NOT to wrap TP models in DistributedDataParallel(process_group=dp_group) because DDP needs CUDA (breaking gloo/CPU TP verification), requires find_unused handling, and would change the model type the engine's is_tp checkpoint gate sees. A single explicit allreduce_dp_grads call at the engine step boundary is smaller, preserves the TP model type + checkpoint path, and is exactly where Megatron-style frameworks reduce grads before the optimizer step."
+    },
+    "EV-191": {
+      "id": "EV-191",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T12:55:11+00:00",
+      "updated_at": "2026-08-19T12:55:11+00:00",
+      "touched_round": 82,
+      "source": "6b9baa9:tests/training/distributed/test_tensor_parallel.py",
+      "summary": "TP+DP 2D numeric parity on 3 grids: tp=2 dp=2 (4-GPU), tp=2 dp=3 (6-GPU), tp=4 dp=2 (8-GPU) — forward parity per DP shard, full-batch gradient parity after allreduce_dp_grads (AVG), checkpoint gather/scatter roundtrip (atol=0), and 2-step SGD training-dynamics parity vs a full single-rank reference.",
+      "confidence": 1.0
+    },
+    "EV-192": {
+      "id": "EV-192",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T12:55:11+00:00",
+      "updated_at": "2026-08-19T12:55:11+00:00",
+      "touched_round": 82,
+      "source": "6b9baa9:tests/e2e/test_tp_dp_2d_engine.py",
+      "summary": "Real TrainingEngine TP+DP 2D e2e on 4 GPUs (tp=2 dp=2) and 6 GPUs (tp=2 dp=3): training completes, and the full state dict every rank reconstructs is bit-identical across all ranks (no shard/replicated-param divergence across DP groups).",
+      "confidence": 1.0
+    },
+    "CHG-203": {
+      "id": "CHG-203",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T12:55:11+00:00",
+      "updated_at": "2026-08-19T12:55:11+00:00",
+      "touched_round": 82,
+      "commit": "6b9baa9",
+      "title": "TP + data-parallel 2D (tp_size < world_size): DP groups over TP groups"
     }
   },
   "edges": [
@@ -17180,6 +17253,30 @@
       "to": "COMP-013",
       "type": "located_in",
       "created_at": "2026-08-18T20:54:13+00:00"
+    },
+    {
+      "from": "ISS-252",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-19T12:10:02+00:00"
+    },
+    {
+      "from": "ISS-253",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-19T12:10:02+00:00"
+    },
+    {
+      "from": "CHG-203",
+      "to": "TASK-202",
+      "type": "implements",
+      "created_at": "2026-08-19T12:55:12+00:00"
+    },
+    {
+      "from": "DEC-047",
+      "to": "TASK-202",
+      "type": "governs",
+      "created_at": "2026-08-19T12:55:12+00:00"
     }
   ]
 }
