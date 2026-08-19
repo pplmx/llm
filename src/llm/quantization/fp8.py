@@ -22,6 +22,7 @@ import torch
 import torch.nn as nn
 
 from llm.quantization._fp8_layer import FP8_MAX, Fp8QuantizedLinear, quantize_fp8_linear
+from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
 
 logger = logging.getLogger(__name__)
 
@@ -38,23 +39,28 @@ class Fp8Config:
         activation: ``"static"`` (capture per-layer scales from the
             calibration batches; default) or ``"dynamic"`` (per-forward
             absmax, needs no calibration).
-
-    Note:
-        LayerQuantPolicy overrides are NOT wired in v1 — FP8's knobs
-        (weight_dtype / per_channel / activation) are not expressible in the
-        shared policy fields, so per-layer overrides stay a follow-up rather
-        than a silently-ignored option.
+        layer_policies: Atomic per-layer override policies (algorithm-agnostic
+            LayerQuantPolicy tuples). Empty tuple (default) → all layers use
+            this base config. FP8's knobs ARE expressible in the policy model
+            (weight_dtype / per_channel / activation — RIL TASK-203), so a
+            policy can e.g. keep the shared E4M3/per-channel base while
+            demoting outlier layers to the wider-range E5M2 per-tensor /
+            dynamic-activation, mixing FP8 variants in one plan.
     """
 
     weight_dtype: Literal["e4m3", "e5m2"] = "e4m3"
     per_channel: bool = True
     activation: Literal["static", "dynamic"] = "static"
+    layer_policies: tuple[LayerQuantPolicy, ...] = ()
 
     def __post_init__(self):
         if self.weight_dtype not in ("e4m3", "e5m2"):
             raise ValueError(f"Fp8Config.weight_dtype must be 'e4m3' or 'e5m2', got {self.weight_dtype!r}.")
         if self.activation not in ("static", "dynamic"):
             raise ValueError(f"Fp8Config.activation must be 'static' or 'dynamic', got {self.activation!r}.")
+        for i, policy in enumerate(self.layer_policies):
+            if not isinstance(policy, LayerQuantPolicy):
+                raise TypeError(f"Fp8Config.layer_policies[{i}] must be LayerQuantPolicy; got {type(policy).__name__}.")
 
 
 def _replace_module(parent: nn.Module, name: str, new_module: nn.Module) -> None:
@@ -112,15 +118,25 @@ def quantize_model_fp8(
     else:
         targets = linear_layers
 
-    # --- static activation scaling: capture per-layer abs-max --------------
+    # --- per-layer effective configs (base + layer_policies overrides) ------
+    effective_configs = resolve_layer_policies(
+        config.layer_policies,
+        available_names={n for n, _ in targets},
+        base_config=config,
+    )
+
+    # --- static activation scaling: capture per-layer abs-max ONLY for the --
+    # --- layers whose EFFECTIVE config asks for it (dynamic layers need --- #
+    # --- none — a per-layer "dynamic" override must not demand a scale). ---#
     act_scale: dict[str, torch.Tensor] = {}
-    if config.activation == "static":
+    static_names = [n for n, _ in targets if effective_configs.get(n, config).activation == "static"]
+    if static_names:
         if calib_iter is None:
-            raise ValueError("activation='static' requires calib_iter (calibration batches).")
+            raise ValueError("static activation (any target layer) requires calib_iter (calibration batches).")
         batches = list(calib_iter)
         if not batches:
             raise ValueError("calib_iter is empty; need at least 1 batch for activation statistics.")
-        captured: dict[str, torch.Tensor] = {n: torch.zeros(1) for n, _ in targets}
+        captured: dict[str, torch.Tensor] = {n: torch.zeros(1) for n in static_names}
         hooks = []
 
         def make_hook(name: str):
@@ -135,7 +151,8 @@ def quantize_model_fp8(
             return hook
 
         for n, m in targets:
-            hooks.append(m.register_forward_hook(make_hook(n)))
+            if n in static_names:
+                hooks.append(m.register_forward_hook(make_hook(n)))
 
         model.eval()
         with torch.no_grad():
@@ -151,30 +168,33 @@ def quantize_model_fp8(
         for h in hooks:
             h.remove()
 
-        fmax = FP8_MAX[config.weight_dtype]
         for n, amax in captured.items():
+            fmax = FP8_MAX[effective_configs.get(n, config).weight_dtype]
             act_scale[n] = (amax.clamp(min=1e-8) / fmax).to(torch.float32)
 
     # --- replace linears ----------------------------------------------------
     replaced = 0
     for name, layer in targets:
-        if config.activation == "static" and name not in act_scale:
+        eff = effective_configs.get(name, config)
+        if eff.activation == "static" and name not in act_scale:
             raise RuntimeError(
                 f"static activation calibration produced no scale for target layer {name} "
                 "(its forward hook never fired) — use activation='dynamic' or fix the model forward."
             )
-        as_scale = act_scale.get(name) if config.activation == "static" else None
+        as_scale = act_scale.get(name) if eff.activation == "static" else None
         new_layer = quantize_fp8_linear(
             layer,
-            dtype_name=config.weight_dtype,
-            per_channel=config.per_channel,
+            dtype_name=eff.weight_dtype,
+            per_channel=eff.per_channel,
             activation_scale=as_scale,
         )
         _replace_module(model, name, new_layer)
         replaced += 1
 
     logger.info(
-        f"FP8-quantized {replaced} linear layers (weight={config.weight_dtype}, "
-        f"per_channel={config.per_channel}, activation={config.activation})"
+        f"FP8-quantized {replaced} linear layers "
+        f"(base: weight={config.weight_dtype}, per_channel={config.per_channel}, "
+        f"activation={config.activation}"
+        + (f", {len(config.layer_policies)} layer-policy override(s))" if config.layer_policies else ")")
     )
     return model

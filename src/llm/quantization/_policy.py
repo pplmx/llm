@@ -40,6 +40,19 @@ class LayerQuantPolicy:
         sym:        True (symmetric) or False (asymmetric)
         act_order:  True (sort columns by diag(H) descending) or False
 
+    The last three fields are the FP8 knobs (RIL TASK-203). FP8's knobs are
+    NOT expressible in the shared fields above (an FP8 layer has no bits /
+    group_size / symmetry in the int-quant sense), so the policy model is
+    extended instead of abusing ``bits``:
+        weight_dtype: "e4m3" (E4M3FN, default) or "e5m2" — the FP8 format
+        per_channel: True (per-output-row weight scale) or False (per-tensor)
+        activation:  "static" (calibration-captured per-layer scale) or
+                     "dynamic" (per-forward absmax, no calibration)
+
+    ``resolve_layer_policies`` applies ONLY the override fields the target
+    algorithm's base config actually has; an FP8 field on an int algorithm
+    (or an int field on FP8) is rejected loudly rather than silently dropped.
+
     Attributes:
         target_modules: Tuple of fully-qualified layer names (dotted notation,
             matching the `target_modules` arg style of quantize_model_gptq).
@@ -47,6 +60,9 @@ class LayerQuantPolicy:
         group_size: Override group size (None = inherit).
         sym: Override symmetry (None = inherit).
         act_order: Override act-order (None = inherit).
+        weight_dtype: Override FP8 format (None = inherit).
+        per_channel: Override FP8 weight-scale granularity (None = inherit).
+        activation: Override FP8 activation mode (None = inherit).
     """
 
     target_modules: tuple[str, ...]
@@ -54,6 +70,9 @@ class LayerQuantPolicy:
     group_size: int | None = None
     sym: bool | None = None
     act_order: bool | None = None
+    weight_dtype: str | None = None
+    per_channel: bool | None = None
+    activation: str | None = None
 
     def __post_init__(self):
         # target_modules: non-empty, no duplicates within one policy
@@ -82,6 +101,19 @@ class LayerQuantPolicy:
             raise ValueError(f"LayerQuantPolicy.sym must be bool or None; got {type(self.sym).__name__}.")
         if self.act_order is not None and not isinstance(self.act_order, bool):
             raise ValueError(f"LayerQuantPolicy.act_order must be bool or None; got {type(self.act_order).__name__}.")
+        # FP8-specific knobs.
+        if self.weight_dtype is not None and self.weight_dtype not in ("e4m3", "e5m2"):
+            raise ValueError(
+                f"LayerQuantPolicy.weight_dtype must be 'e4m3', 'e5m2', or None (inherit); got {self.weight_dtype!r}."
+            )
+        if self.per_channel is not None and not isinstance(self.per_channel, bool):
+            raise ValueError(
+                f"LayerQuantPolicy.per_channel must be bool or None; got {type(self.per_channel).__name__}."
+            )
+        if self.activation is not None and self.activation not in ("static", "dynamic"):
+            raise ValueError(
+                f"LayerQuantPolicy.activation must be 'static', 'dynamic', or None (inherit); got {self.activation!r}."
+            )
 
 
 def resolve_layer_policies[T](
@@ -91,10 +123,13 @@ def resolve_layer_policies[T](
 ) -> dict[str, T]:
     """Build layer-name -> effective config map from policies.
 
-    Generic over the base config type (T). Works for GPTQConfig today and
-    any future algorithm config (AWQConfig, SmoothQuantConfig, ...) as long
-    as the base config dataclass has the four override fields
-    (bits, group_size, sym, act_order).
+    Generic over the base config type (T). Works for GPTQConfig and AWQ /
+    SmoothQuantConfig today, and for Fp8Config since TASK-203 extended
+    LayerQuantPolicy with the FP8 knobs. Each override field is applied only
+    when the base config dataclass actually has that field — an FP8 override
+    on an int algorithm (or an int override on FP8) is rejected with a clear
+    error instead of crashing deep in ``dataclasses.replace`` or being
+    silently dropped.
 
     Args:
         policies: Tuple of LayerQuantPolicy to resolve. Empty tuple is a no-op.
@@ -109,7 +144,8 @@ def resolve_layer_policies[T](
 
     Raises:
         ValueError: If any policy targets a name not in `available_names`,
-            or if the same layer name appears in multiple policies.
+            if the same layer name appears in multiple policies, or if a
+            non-None policy field is not a field of `base_config`.
     """
     if not policies:
         return {}
@@ -145,17 +181,32 @@ def resolve_layer_policies[T](
         )
 
     # Phase 3: build effective configs (base + non-None overrides).
+    base_fields: set[str] = set(getattr(base_config, "__dataclass_fields__", {}))
     effective_map: dict[str, T] = {}
     for name, policy in name_to_policy.items():
         overrides: dict[str, object] = {}
-        if policy.bits is not None:
-            overrides["bits"] = policy.bits
-        if policy.group_size is not None:
-            overrides["group_size"] = policy.group_size
-        if policy.sym is not None:
-            overrides["sym"] = policy.sym
-        if policy.act_order is not None:
-            overrides["act_order"] = policy.act_order
+        # Every optional override, in policy-declaration order. Only fields
+        # the base config actually HAS are applied; a non-None field the base
+        # lacks is a config/model mismatch and must fail loudly, never be a
+        # silently-ignored option (TASK-203).
+        for key, value in (
+            ("bits", policy.bits),
+            ("group_size", policy.group_size),
+            ("sym", policy.sym),
+            ("act_order", policy.act_order),
+            ("weight_dtype", policy.weight_dtype),
+            ("per_channel", policy.per_channel),
+            ("activation", policy.activation),
+        ):
+            if value is None:
+                continue
+            if key not in base_fields:
+                raise ValueError(
+                    f"LayerQuantPolicy for {sorted(policy.target_modules)} sets "
+                    f"{key}={value!r}, but {type(base_config).__name__} has no {key} field. "
+                    f"Available override fields: {sorted(base_fields)}"
+                )
+            overrides[key] = value
         # Strip recursion-vector field if base config has one (e.g.
         # GPTQConfig.layer_policies). Effective configs must NOT carry the
         # policies that produced them, or infinite recursion ensues.
