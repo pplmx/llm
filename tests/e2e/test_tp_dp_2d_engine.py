@@ -35,6 +35,7 @@ import torch.multiprocessing as mp
 
 from llm.data.modules.sft import SFTDataModule
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.training.core.callbacks import Callback
 from llm.training.core.config import (
     Config,
     DataConfig,
@@ -71,6 +72,48 @@ def _release_parent_cuda_caches() -> None:
             continue
 
 
+def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: int) -> Config:
+    """Shared tiny-SFT config builder (identical model/loss schedule across runs)."""
+    return Config(
+        model=ModelConfig(
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,  # 32/4 = 8 dim per head; divisible by tp_size
+            vocab_size=ctx["vocab_size"],
+            max_seq_len=32,
+        ),
+        training=TrainingConfig(
+            batch_size=2,
+            epochs=1,
+            lr=5e-3,
+            warmup_epochs=0,
+            log_every_n_steps=1,
+        ),
+        data=DataConfig(
+            dataset_path=ctx["data_path"],
+            max_seq_len=32,
+            tokenizer_type="simple",
+            tokenizer_path=ctx["tokenizer_path"],
+        ),
+        optimization=OptimizationConfig(use_compile=False, use_amp=False, num_workers=0),
+        distributed=DistributedConfig(backend=backend, parallel_strategy=parallel_strategy, tp_size=tp_size),
+    )
+
+
+class _CaptureEpochLoss(Callback):
+    """Records the last epoch's avg_loss / val_loss from ``on_epoch_end``."""
+
+    def __init__(self) -> None:
+        self.avg_loss: float | None = None
+        self.val_loss: float | None = None
+
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        if logs and "avg_loss" in logs:
+            self.avg_loss = logs["avg_loss"]
+        if logs and "val_loss" in logs:
+            self.val_loss = logs["val_loss"]
+
+
 def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx: dict, results) -> None:
     try:
         device_index = device_indices[rank]
@@ -78,32 +121,7 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
         torch.cuda.set_device(device_index)
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
 
-        tp_size = ctx["tp_size"]
-        config = Config(
-            model=ModelConfig(
-                hidden_size=32,
-                num_layers=2,
-                num_heads=4,  # 32/4 = 8 dim per head; divisible by tp_size
-                vocab_size=ctx["vocab_size"],
-                max_seq_len=32,
-            ),
-            training=TrainingConfig(
-                batch_size=2,
-                epochs=1,
-                lr=5e-3,
-                warmup_epochs=0,
-                log_every_n_steps=1,
-            ),
-            data=DataConfig(
-                dataset_path=ctx["data_path"],
-                max_seq_len=32,
-                tokenizer_type="simple",
-                tokenizer_path=ctx["tokenizer_path"],
-            ),
-            optimization=OptimizationConfig(use_compile=False, use_amp=False, num_workers=0),
-            distributed=DistributedConfig(backend="nccl", parallel_strategy="tp", tp_size=tp_size),
-        )
-
+        config = _build_config(ctx, backend="nccl", parallel_strategy="tp", tp_size=ctx["tp_size"])
         data_module = SFTDataModule(config)
         data_module.prepare_data()
         data_module.setup()
@@ -204,3 +222,104 @@ def test_engine_tp_dp_2d_four_gpu(tmp_path):
 def test_engine_tp_dp_2d_wide_grid_six_gpu(tmp_path):
     """Real-engine TP+DP 2D with a wider DP grid (6 GPUs, tp=2 dp=3)."""
     _run_engine_2d(tmp_path, world_size=6, tp_size=2)
+
+
+def _pure_tp_metric_worker(rank: int, world_size: int, ctx: dict, results) -> None:
+    """Pure TP (tp_size == world_size == 2) on CPU/gloo: report the epoch loss."""
+    try:
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        torch.manual_seed(42 + rank)
+
+        config = _build_config(ctx, backend="gloo", parallel_strategy="tp", tp_size=world_size)
+        data_module = SFTDataModule(config)
+        data_module.prepare_data()
+        data_module.setup()
+        task = SFTTask(config, data_module)
+        cap = _CaptureEpochLoss()
+        engine = TrainingEngine(
+            config=config,
+            task=task,
+            rank=rank,
+            world_size=world_size,
+            data_module=data_module,
+            callbacks=[cap],
+        )
+        engine.run()
+        assert cap.avg_loss is not None, "engine never fired on_epoch_end with avg_loss"
+        results[rank] = {"success": True, "avg_loss": cap.avg_loss, "val_loss": cap.val_loss}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+def _single_rank_avg_loss(ctx: dict) -> float:
+    """Reference: the SAME config/data as one plain-rank run (TP is a no-op
+    at world_size=1, so this is exactly the value pure-TP must report)."""
+    torch.manual_seed(42)
+    config = _build_config(ctx, backend="gloo", parallel_strategy="tp", tp_size=2)
+    data_module = SFTDataModule(config)
+    data_module.prepare_data()
+    data_module.setup()
+    task = SFTTask(config, data_module)
+    cap = _CaptureEpochLoss()
+    engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=data_module, callbacks=[cap])
+    engine.run()
+    assert cap.avg_loss is not None
+    return cap.avg_loss
+
+
+@pytest.mark.quick
+def test_pure_tp_reports_true_metric_loss_not_divided_by_world(tmp_path):
+    """Regression for RIL ISS-252: pure TP (every rank trains the SAME data)
+    must report the true epoch loss, not the single-rank loss / world_size.
+
+    The engine metrics reducer divides by the number of DISTINCT data shards
+    (1 under pure TP, world elsewhere). A /world reduce would report ref/2
+    here, so this test fails on the pre-fix behaviour.
+    """
+    tokenizer = SimpleCharacterTokenizer([printable])
+    tokenizer_path = tmp_path / "tokenizer.pt"
+    torch.save(tokenizer, tokenizer_path)
+    data_path = tmp_path / "sft_data.jsonl"
+    with data_path.open("w") as f:
+        for i in range(12):
+            f.write(json.dumps({"instruction": f"Inst {i}", "input": "", "output": f"Out {i}"}) + "\n")
+    ctx = {
+        "data_path": str(data_path),
+        "tokenizer_path": str(tokenizer_path),
+        "vocab_size": tokenizer.vocab_size + 10 + (tokenizer.vocab_size % 2),
+        "tp_size": 2,
+    }
+
+    port = _free_port()
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(_pure_tp_metric_worker, args=(2, ctx, results), nprocs=2, join=False)
+    end_at = time.monotonic() + ENGINE_2D_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError("pure-TP loss spawn exceeded timeout")
+        if context.join(timeout=remaining):
+            break
+    for rank in range(2):
+        assert rank in results, f"rank {rank} produced no result"
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+    # Both pure-TP ranks saw the same data — identical reported loss.
+    avg_0, avg_1 = results[0]["avg_loss"], results[1]["avg_loss"]
+    assert abs(avg_0 - avg_1) < 1e-6, f"pure-TP ranks disagree on loss: {avg_0} vs {avg_1}"
+
+    ref = _single_rank_avg_loss(ctx)
+    assert avg_0 == pytest.approx(ref, rel=1e-3), (
+        f"pure-TP reported epoch loss {avg_0} != single-rank reference {ref} "
+        f"(the ISS-252 /world bug would report ~{ref / 2})"
+    )

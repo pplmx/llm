@@ -3,6 +3,7 @@ import time
 from typing import Any, cast
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
 
@@ -153,6 +154,22 @@ class TrainingEngine:
                 parts.append(f"{key}: {value}")
         self.logger.info("Evaluation metrics: " + " | ".join(parts))
 
+    def _reduce_metric(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Sum-reduce a per-rank metric across ranks, then divide by the number
+        of DISTINCT data shards it was computed from.
+
+        ``DistributedManager.reduce_mean`` divides by the full world, which is
+        wrong under pure TP where every rank sees the same data (RIL ISS-252);
+        the divisor is set in ``_setup_components`` — 1 for pure TP, the world
+        size otherwise. A no-op for single-rank / pure-TP runs.
+        """
+        divisor = self._metric_reduce_divisor
+        if divisor <= 1:
+            return tensor
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        tensor = tensor / divisor
+        return tensor
+
     def _setup_components(self):
         """Builds all necessary components for training from the task."""
         self.logger.info("Setting up training components...")
@@ -238,10 +255,21 @@ class TrainingEngine:
         # still loads the SAME shard as its group (so the TP internals see
         # replicated data within the group); gradients are later averaged
         # across DP groups at the step boundary (``allreduce_dp_grads``).
-        if self.is_training_tp:
+        if self.is_training_tp and self.world_size > 1:
             _tp_size, data_world, data_rank, _tp_rank = tp_dp_layout(self.world_size, self.config.distributed.tp_size)
         else:
+            # Single-rank TP is a no-op identity (mirrors the wrap path), so an
+            # explicit tp_size > 1 config on a 1-GPU run must not be validated
+            # as if a TP grid existed — it loads like any serial run.
             data_rank, data_world = self.rank, self.world_size
+        # Metric-reduction divisor: ``DistributedManager.reduce_mean`` divides
+        # by the full WORLD, which is the right denominator only when every
+        # rank computed a DIFFERENT value — DDP/FSDP data shards, and TP+DP 2D
+        # where each DP-group shard appears tp_size times so the world-average
+        # equals the DP-group average. PURE TP (dp_size=1) instead has every
+        # rank evaluate the SAME data and produce the SAME loss; dividing by
+        # world deflates the logged train/val loss by world_size (RIL ISS-252).
+        self._metric_reduce_divisor = 1 if (self.is_training_tp and data_world == 1) else self.world_size
         self.is_streaming = getattr(self.data_module, "is_streaming", False)
         self.dataloader, self.sampler = self.data_module.train_dataloader(data_rank, data_world)
         self.val_dataloader, self.val_sampler = self.data_module.val_dataloader(data_rank, data_world)
@@ -544,7 +572,7 @@ class TrainingEngine:
             return 0.0
 
         loss_tensor = torch.tensor(epoch_loss / batch_count, device=self.device)
-        global_avg_loss = DistributedManager.reduce_mean(loss_tensor).item()
+        global_avg_loss = self._reduce_metric(loss_tensor).item()
 
         return global_avg_loss
 
@@ -597,7 +625,7 @@ class TrainingEngine:
                     self._log_batch_stats(epoch, batch_idx, num_batches, metrics)  # Reuse log_batch_stats
 
         loss_tensor = torch.tensor(val_loss / num_batches, device=self.device)
-        global_avg_loss = DistributedManager.reduce_mean(loss_tensor).item()
+        global_avg_loss = self._reduce_metric(loss_tensor).item()
         self._run_callbacks("on_validation_end", epoch=epoch, logs={"val_loss": global_avg_loss})
 
         return global_avg_loss
