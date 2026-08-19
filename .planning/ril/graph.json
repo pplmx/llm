@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 83,
+  "round": 84,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-19T12:56:48+00:00",
+  "updated_at": "2026-08-19T15:10:27+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11481,11 +11481,11 @@
     "TASK-203": {
       "id": "TASK-203",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-18T16:17:29+00:00",
-      "updated_at": "2026-08-18T16:17:29+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-19T15:08:45+00:00",
+      "touched_round": 83,
       "category": "core-feature",
       "severity": 1.2,
       "effort": 2.0,
@@ -11732,6 +11732,41 @@
       "touched_round": 82,
       "commit": "6b9baa9",
       "title": "TP + data-parallel 2D (tp_size < world_size): DP groups over TP groups"
+    },
+    "DEC-048": {
+      "id": "DEC-048",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T14:47:37+00:00",
+      "updated_at": "2026-08-19T14:47:37+00:00",
+      "touched_round": 83,
+      "summary": "Extend the policy model rather than fork it: LayerQuantPolicy gains the three FP8 knobs (weight_dtype/per_channel/activation) and resolve_layer_policies applies fields only when the base config has them, rejecting mismatches loudly (TASK-203). Fp8Config.layer_policies + per-layer effective resolution in quantize_model_fp8, with per-layer static-scale capture (dynamic overrides never demand calibration, and each static layer's scale bound uses its own effective FP8 format max).",
+      "rationale": "The task offered two routes: mix FP8 layers into a plan, or extend the policy model. Extending is the smaller, codebase-consistent choice — GPTQ/AWQ/SmoothQuant already consume LayerQuantPolicy via the same resolve_layer_policies helper, so the FP8 override fields ride the SAME additive policy machinery. A field-vs-config mismatch now fails with a clear error instead of dataclasses.replace's cryptic TypeError or a silent drop.",
+      "alternatives_rejected": "An FP8-specific Fp8LayerPolicy dataclass: would fork the policy model and need a parallel resolve helper for zero benefit. A free-form overrides mapping on LayerQuantPolicy: loses the typed, validated field set and the cross-algorithm safety that per-field checks give."
+    },
+    "EV-193": {
+      "id": "EV-193",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T14:47:37+00:00",
+      "updated_at": "2026-08-19T14:47:37+00:00",
+      "touched_round": 83,
+      "source": "f5b4f03ests/quantization/test_fp8_quantization.py",
+      "summary": "6 new FP8 per-layer policy tests: policy field validation; Fp8Config type check; cross-algorithm mismatch errors (bits on Fp8Config, weight_dtype on GPTQConfig) fail loudly; a policy flipping one layer to e5m2/per-tensor/dynamic applies only to it (other layers keep base, per-tensor scale is a scalar, dynamic layer has no captured scale); a mixed e4m3/e5m2 plan correlates >0.99 with fp32; a single-dynamic-target plan needs no calibration. Full quantization suite + ty + ruff green.",
+      "confidence": 1.0
+    },
+    "CHG-204": {
+      "id": "CHG-204",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-19T15:08:44+00:00",
+      "updated_at": "2026-08-19T15:08:44+00:00",
+      "touched_round": 83,
+      "commit": "f5b4f03",
+      "title": "FP8 per-layer policies / LayerQuantPolicy FP8 knobs"
     }
   },
   "edges": [
@@ -17277,6 +17312,18 @@
       "to": "TASK-202",
       "type": "governs",
       "created_at": "2026-08-19T12:55:12+00:00"
+    },
+    {
+      "from": "CHG-204",
+      "to": "TASK-203",
+      "type": "implements",
+      "created_at": "2026-08-19T15:08:44+00:00"
+    },
+    {
+      "from": "DEC-048",
+      "to": "TASK-203",
+      "type": "governs",
+      "created_at": "2026-08-19T15:08:44+00:00"
     }
   ]
 }
