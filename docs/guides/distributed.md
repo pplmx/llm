@@ -7,10 +7,11 @@ tags:
 
 # Distributed Training Guide
 
-This guide covers the two distributed-training strategies the
-framework supports out of the box: **DDP** (data-parallel, the
-default) and **FSDP** (fully-sharded data-parallel, opt-in via
-`parallel_strategy="fsdp"`).
+This guide covers the distributed-training strategies the framework
+supports: **DDP** (data-parallel, the default), **FSDP**
+(fully-sharded data-parallel, opt-in via `parallel_strategy="fsdp"`)
+and **Tensor Parallelism** (`parallel_strategy="tp"`, optionally
+combined with a data-parallel dimension — see the TP section).
 
 Both strategies are exposed through a single entry point —
 `llm.training.distributed.wrap_model_for_training` — so the trainer
@@ -166,6 +167,63 @@ writing the per-rank files.
 - **Activation checkpointing** is orthogonal but complementary
   — combine both for the largest memory savings.
 
+## Tensor Parallelism quick start
+
+Tensor parallelism (`parallel_strategy="tp"`) partitions the model's
+weights across a group of GPUs (Megatron-style column / row parallel
+linears): attention heads, the fused QKV projection, the MLP
+intermediate width and the vocabulary of the output head are sliced
+across the group. It is the option when a single GPU cannot hold the
+*weights* of the model and you want low communication overhead
+(all-reduces only on the group's boundaries).
+
+```yaml
+# configs/tp-pretrain.yaml
+distributed:
+  parallel_strategy: tp
+  backend: nccl
+```
+
+`tp_size: 0` (the default) means "use all ranks as one TP group".
+Using the whole world is the *pure TP* mode: every rank processes the
+**same** microbatches (replicated data), and each rank's optimizer
+step moves only its own shards.
+
+### TP + data-parallel 2D
+
+Set `tp_size` smaller than the total number of ranks to add a
+data-parallel dimension. Ranks are laid out in a row-major `[DP][TP]`
+grid — **TP groups are contiguous rank ranges** (intra-node friendly),
+DP groups are the strided columns that hold the *same* shard across TP
+groups:
+
+```yaml
+# 8 GPUs, 4 TP groups of 2 — gradient-averaged across the 4 DP columns
+distributed:
+  parallel_strategy: tp
+  tp_size: 2
+  backend: nccl
+```
+
+- Each TP group partitions the model in parallel and sees **its own
+  data shard** (the engine shards the dataset per DP group).
+- After each step's backward, gradients are **averaged across the DP
+  group** (DDP semantics) so every shard converges to the true
+  full-batch gradient — plus the intra-group reduce the tensor
+  parallelism already does.
+- Checkpoints are the *full* model state dict (gathered) on rank 0,
+  identical to a plain single-GPU checkpoint — `llm-serve` and resume
+  need no special handling.
+
+Requirements and constraints (all fail loudly, not silently wrong):
+
+- `world_size` must divide evenly by `tp_size` (`n % tp == 0`).
+- `tp_size` must divide `num_heads`, `num_kv_heads`, `vocab_size` and
+  the MLP intermediate width evenly.
+- TP supports the `mha` attention backend and the standard MLP;
+  `flash` / `sdpa` / `mla` attention, MoE (expert parallelism), ALiBi
+  and serving are out of scope (rejected at wrap time).
+
 ## Single-rank and CPU behaviour
 
 `wrap_model_for_training` short-circuits when `world_size <= 1`
@@ -192,18 +250,19 @@ all.
 
 ### `DistributedConfig` fields
 
-| Field                       | Default           | Description                     |
-| --------------------------- | ----------------- | ------------------------------- |
-| `master_addr`               | `"127.0.0.1"`     | Process-group master address    |
-| `master_port`               | `"12355"`         | Process-group master port       |
-| `num_nodes`                 | `1`               | Total number of nodes           |
-| `gpus_per_node`             | auto (CUDA count) | GPUs per node                   |
-| `node_rank`                 | `0`               | This node's rank                |
-| `backend`                   | `"nccl"`          | `torch.distributed` backend     |
-| `parallel_strategy`         | `"ddp"`           | `"ddp"` or `"fsdp"`             |
-| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` / `"fp16"`  |
-| `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold  |
-| `fsdp_cpu_offload`          | `false`           | Offload params to CPU when idle |
+| Field                       | Default           | Description                                         |
+| --------------------------- | ----------------- | --------------------------------------------------- |
+| `master_addr`               | `"127.0.0.1"`     | Process-group master address                        |
+| `master_port`               | `"12355"`         | Process-group master port                           |
+| `num_nodes`                 | `1`               | Total number of nodes                               |
+| `gpus_per_node`             | auto (CUDA count) | GPUs per node                                       |
+| `node_rank`                 | `0`               | This node's rank                                    |
+| `backend`                   | `"nccl"`          | `torch.distributed` backend                         |
+| `parallel_strategy`         | `"ddp"`           | `"ddp"` / `"fsdp"` / `"tp"`                         |
+| `tp_size`                   | `0` (= world)     | TP size for `"tp"`; `< world_size` enables TP+DP 2D |
+| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` / `"fp16"`                      |
+| `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold                      |
+| `fsdp_cpu_offload`          | `false`           | Offload params to CPU when idle                     |
 
 ### Environment variables
 

@@ -25,6 +25,7 @@ import torch.multiprocessing as mp
 
 from llm.models.decoder import DecoderModel
 from llm.training.distributed import (
+    allreduce_dp_grads,
     apply_tensor_parallel,
     is_tp,
     load_model_state_dict,
@@ -301,6 +302,289 @@ def test_tp_wrap_engine_path_roundtrip_two_gpu():
     _run_wrap(2)
 
 
+def _parity_2d_worker(rank: int, world_size: int, device_indices: list[int], results, tp_size: int) -> None:
+    """TP + data-parallel 2D (TASK-202): tp_size x dp_size grid on ``world_size`` GPUs.
+
+    Every rank builds the same full model (one CPU seed), wraps it with
+    ``wrap_model_for_training(tp, tp_size=world_size//2)`` and compares
+    against a full single-rank reference that sees the WHOLE batch:
+
+    * forward parity per DP group's data shard (each TP group replicates its
+      own shard internally);
+    * gradient parity: shard-agnostic gradients AFTER the DP-group average
+      (``allreduce_dp_grads`` — the exact engine step-boundary hook) must
+      equal the reference's full-batch gradients;
+    * checkpoint gather/scatter roundtrip (the TP group's full-state dict
+      must reproduce the reference's, atol=0 absent any optimizer step);
+    * training-dynamics parity: after a few SGD steps (with the DP average
+      applied each step) the gathered full state dict must still match the
+      reference stepped on the full batch.
+    """
+    try:
+        device_index = device_indices[rank]
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(device_index)
+        dev = torch.device(f"cuda:{device_index}")
+
+        ref = _build_model().to(dev)
+        model = _build_model().to(dev)
+        wrapped = wrap_model_for_training(
+            model, parallel_strategy="tp", device=dev, world_size=world_size, tp_size=tp_size
+        )
+        assert wrapped is model  # in-place mutation, not a wrapper
+        assert is_tp(model)
+        tp = model._tp
+        assert tp.world_size == tp_size  # group-LOCAL world (== tp_size)
+        assert tp.rank == rank % tp_size
+        dp_size = world_size // tp_size
+        if dp_size > 1:
+            assert tp.dp_group is not None  # 2D: DP averaging is wired
+        else:
+            assert tp.dp_group is None  # pure TP v1: no DP dimension
+
+        dp_rank = rank // tp_size
+        batch_per_dp = 2
+        x_full = torch.randint(0, 64, (batch_per_dp * dp_size, 12), device=dev, dtype=torch.long)
+        x_local = x_full[dp_rank * batch_per_dp : (dp_rank + 1) * batch_per_dp]
+
+        # --- forward parity: this DP group's shard through the TP model ===  #
+        # --- reference on the same shard rows of the FULL batch           ---#
+        ref.eval()
+        model.eval()
+        with torch.no_grad():
+            ref_logits = ref(x_full)[dp_rank * batch_per_dp : (dp_rank + 1) * batch_per_dp]
+        tp_logits = model(x_local)  # collective within the TP group
+        torch.testing.assert_close(tp_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        # --- gradient parity after the DP-group average ---
+        model.train()
+        ref.train()
+        model.zero_grad()
+        ref.zero_grad()
+        tp_loss = model(x_local).float().mean()
+        tp_loss.backward()
+        # The engine's step-boundary hook: average grads across the strided DP
+        # group so each shard/param converges to the full-batch gradient.
+        allreduce_dp_grads(model)
+        # Reference MUST run after the TP+DP collectives (NCCL ordering).
+        ref_loss = ref(x_full).float().mean()
+        ref_loss.backward()
+
+        ref_grads = {k: v.grad for k, v in ref.named_parameters() if v.grad is not None}
+        tp_grads = _gather_tp_grads(model)
+        assert set(ref_grads.keys()) == set(tp_grads.keys()), (
+            f"grad key sets differ: missing {set(ref_grads) - set(tp_grads)}, extra {set(tp_grads) - set(ref_grads)}"
+        )
+        for key in ref_grads:
+            torch.testing.assert_close(
+                tp_grads[key], ref_grads[key], atol=1e-4, rtol=1e-4, msg=f"grad mismatch on {key}"
+            )
+
+        # --- checkpoint boundary: full gather == reference state dict ---
+        full = model_state_dict(model)  # collective; every rank enters
+        for key, value in ref.state_dict().items():
+            assert key in full, f"gathered state dict missing {key}"
+            torch.testing.assert_close(full[key], value, atol=0, rtol=0, msg=f"state mismatch on {key}")
+
+        # --- scatter load roundtrip + forward ---
+        load_model_state_dict(model, ref.state_dict())
+        model.eval()
+        with torch.no_grad():
+            reloaded = model(x_local)
+        torch.testing.assert_close(reloaded, ref_logits, atol=1e-5, rtol=1e-5)
+
+        # --- training-dynamics parity: SGD keeps shards consistent across ---
+        # --- DP groups (would diverge without allreduce_dp_grads)        ---#
+        opt = torch.optim.SGD(model.parameters(), lr=0.05)
+        ref_opt = torch.optim.SGD(ref.parameters(), lr=0.05)
+        for _ in range(2):
+            model.train()
+            ref.train()
+            model.zero_grad()
+            m_loss = model(x_local).float().mean()
+            m_loss.backward()
+            allreduce_dp_grads(model)
+            opt.step()
+            # Reference on the FULL batch — same schedule, after TP collectives.
+            ref.zero_grad()
+            r_loss = ref(x_full).float().mean()
+            r_loss.backward()
+            ref_opt.step()
+        full = model_state_dict(model)
+        for key, value in ref.state_dict().items():
+            torch.testing.assert_close(full[key], value, atol=1e-5, rtol=1e-5, msg=f"post-step mismatch on {key}")
+
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+def _run_parity_2d(world_size: int, tp_size: int, min_free_bytes: int = TP_MIN_FREE_BYTES) -> None:
+    gpu_devices = all_gpu_devices(min_free_bytes=min_free_bytes)
+    if len(gpu_devices) < world_size:
+        pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D)")
+    device_indices = [device.index for device in gpu_devices[:world_size]]
+    _release_parent_cuda_caches()
+    _setup_tp_env()
+
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(
+        _parity_2d_worker,
+        args=(world_size, device_indices, results, tp_size),
+        nprocs=world_size,
+        join=False,
+    )
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"TP+DP 2D parity spawn exceeded {TP_JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+    for rank in range(world_size):
+        assert rank in results, f"rank {rank} produced no result"
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+
+@pytest.mark.need_gpu(4)
+@pytest.mark.slow
+def test_tp_dp_2d_parity_four_gpu():
+    """TP + data-parallel 2D numeric parity vs a full-batch reference (4 GPUs, tp=2 dp=2)."""
+    _run_parity_2d(4, tp_size=2)
+
+
+@pytest.mark.need_gpu(8)
+@pytest.mark.slow
+def test_tp_dp_2d_parity_square_grid_eight_gpu():
+    """TP + data-parallel 2D parity, deep-TP square grid (8 GPUs, tp=4 dp=2).
+
+    ``tp_size`` need not be 2: a square ``[DP][TP]`` layout with tp = 4
+    exercises deeper tensor sharding (every partition axis ÷ 4) alongside
+    the DP dimension.
+
+    Requires a FRESH 8-GPU box (high per-GPU free-memory threshold): an
+    8-rank spawn after a heavy GPU battery in the same pytest process can
+    OOM on a device whose free memory dropped just below the default 1 GiB
+    gate even though no test "owns" it. On a fresh 8x80GB box every GPU has
+    well over this threshold, so the test runs there and skips on a depleted
+    one — an environment gate, not a correctness guard.
+    """
+    _run_parity_2d(8, tp_size=4, min_free_bytes=16 * 1024**3)
+
+
+@pytest.mark.need_gpu(6)
+@pytest.mark.slow
+def test_tp_dp_2d_parity_wide_grid_six_gpu():
+    """TP + data-parallel 2D parity with a wide DP grid (6 GPUs, tp=2 dp=3)."""
+    _run_parity_2d(6, tp_size=2)
+
+
+@pytest.mark.need_gpu(4)
+@pytest.mark.slow
+def test_tp_deep_partition_parity_four_gpu():
+    """Deep tensor partition parity: tp_size=4 over a whole 4-rank group (dp=1).
+
+    ``apply_tensor_parallel`` v1 and the 2D milestone only exercised tp_size=2
+    (2 blocked-QKV fragments, half-vocab heads). A tp=4 pure-TP group forces
+    every partitioned axis ÷ 4 — the 4-fragment fused-QKV scatter, quarter
+    vocab / heads / intermediate slices — through the same parity gate. Needs
+    only 4 GPUs (robust on busy shared boxes), unlike the 8-GPU square-grid
+    companion which additionally stacks a DP dimension.
+    """
+    _run_parity_2d(4, tp_size=4)
+
+
+def _wrap_2d_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
+    """2D wrap sanity: subgroup wiring + engine-path checkpoint roundtrip (tp=2 dp=dp_size)."""
+    try:
+        device_index = device_indices[rank]
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(device_index)
+        dev = torch.device(f"cuda:{device_index}")
+
+        tp_size = world_size // 2
+        ref = _build_model().to(dev)
+        model = _build_model().to(dev)
+        wrapped = wrap_model_for_training(
+            model, parallel_strategy="tp", device=dev, world_size=world_size, tp_size=tp_size
+        )
+        assert wrapped is model
+        assert is_tp(model)
+        tp = model._tp
+        dp_size = world_size // tp_size
+        assert tp.dp_group is not None
+        dp_rank = rank // tp_size
+
+        # The strided DP communicator really spans the dp_size replicas that
+        # hold this shard: a SUM over it equals dp_size (every member adds 1).
+        card = torch.ones(1, device=dev, dtype=torch.long)
+        dist.all_reduce(card, group=tp.dp_group)
+        assert card.item() == dp_size
+
+        x_full = torch.randint(0, 64, (2 * dp_size, 12), device=dev, dtype=torch.long)
+        x_local = x_full[dp_rank * 2 : (dp_rank + 1) * 2]
+        model.eval()
+        with torch.no_grad():
+            tp_logits = model(x_local)
+        ref.eval()
+        with torch.no_grad():
+            ref_logits = ref(x_full)[dp_rank * 2 : (dp_rank + 1) * 2]
+        torch.testing.assert_close(tp_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        # Full-state-dict gather/scatter roundtrip through the public helpers.
+        full = model_state_dict(model)
+        for key, value in ref.state_dict().items():
+            torch.testing.assert_close(full[key], value, atol=0, rtol=0, msg=f"state mismatch on {key}")
+        load_model_state_dict(model, ref.state_dict())
+        model.eval()
+        with torch.no_grad():
+            reloaded = model(x_local)
+        torch.testing.assert_close(reloaded, ref_logits, atol=1e-5, rtol=1e-5)
+
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+def _run_wrap_2d(world_size: int) -> None:
+    gpu_devices = all_gpu_devices(min_free_bytes=TP_MIN_FREE_BYTES)
+    if len(gpu_devices) < world_size:
+        pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D wrap)")
+    device_indices = [device.index for device in gpu_devices[:world_size]]
+    _release_parent_cuda_caches()
+    _setup_tp_env()
+
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(_wrap_2d_worker, args=(world_size, device_indices, results), nprocs=world_size, join=False)
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"TP+DP 2D wrap spawn exceeded {TP_JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+    for rank in range(world_size):
+        assert rank in results, f"rank {rank} produced no result"
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+
+@pytest.mark.need_gpu(4)
+@pytest.mark.slow
+def test_tp_dp_2d_wrap_roundtrip_four_gpu():
+    """2D subgroup wiring + engine-path state-dict roundtrip (4 GPUs, tp=2 dp=2)."""
+    _run_wrap_2d(4)
+
+
 # ---------------------------------------------------------------------------
 # Non-GPU / cheap unit checks
 # ---------------------------------------------------------------------------
@@ -338,3 +622,35 @@ def test_tp_rejects_tp_size_gt_world():
             world_size=2,
             tp_size=4,
         )
+
+
+def test_tp_rejects_tp_size_not_dividing_world():
+    with pytest.raises(ValueError, match="divide world_size"):
+        wrap_model_for_training(
+            torch.nn.Linear(4, 2),
+            parallel_strategy="tp",
+            device=torch.device("cpu"),
+            world_size=6,
+            tp_size=4,
+        )
+
+
+def test_tp_dp_layout_2d():
+    """TP + DP 2D rank-layout math (row-major [DP][TP], ``rank`` injectable)."""
+    from llm.training.distributed import tp_dp_layout
+
+    # Pure TP: tp_size 0/None/world -> one TP group, dp_size 1.
+    assert tp_dp_layout(8, 0, rank=3) == (8, 1, 0, 3)
+    assert tp_dp_layout(8, 8, rank=5) == (8, 1, 0, 5)
+    # 2D row-major [DP][TP]: rank = dp_rank * tp_size + tp_rank.
+    assert tp_dp_layout(8, 4, rank=0) == (4, 2, 0, 0)
+    assert tp_dp_layout(8, 4, rank=3) == (4, 2, 0, 3)
+    assert tp_dp_layout(8, 4, rank=4) == (4, 2, 1, 0)
+    assert tp_dp_layout(8, 4, rank=7) == (4, 2, 1, 3)
+    assert tp_dp_layout(8, 2, rank=5) == (2, 4, 2, 1)
+    assert tp_dp_layout(6, 2, rank=4) == (2, 3, 2, 0)
+    # Validation.
+    with pytest.raises(ValueError, match="divide world_size"):
+        tp_dp_layout(8, 3, rank=0)
+    with pytest.raises(ValueError, match="tp_size"):
+        tp_dp_layout(8, 12, rank=0)

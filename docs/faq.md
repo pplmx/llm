@@ -77,7 +77,8 @@ uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
 distributed:
   gpus_per_node: 4
   backend: nccl
-  parallel_strategy: ddp   # 或 fsdp
+  parallel_strategy: ddp   # 或 fsdp / tp; tp 时可加 tp_size: 2 启用 TP+DP 2D (每 TP 组 2 卡)
+                            # 例如 8 卡 world_size=8, tp_size=2 -> dp=4 个 TP 组, 组内张量并行 + 组间数据并行
 ```
 
 ```bash

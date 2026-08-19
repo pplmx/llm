@@ -12,7 +12,14 @@ from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
 from llm.training.core.distributed import broadcast_parameters
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
-from llm.training.distributed import is_fsdp, is_tp, model_for_checkpoint_io, wrap_model_for_training
+from llm.training.distributed import (
+    allreduce_dp_grads,
+    is_fsdp,
+    is_tp,
+    model_for_checkpoint_io,
+    tp_dp_layout,
+    wrap_model_for_training,
+)
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
@@ -222,12 +229,19 @@ class TrainingEngine:
 
         self.use_standard_loop = self.task.uses_standard_training_loop()
 
-        # Use data_module to get dataloaders. Tensor parallelism replicates
-        # the batch on every rank (v1 semantics: each rank trains the SAME
-        # microbatches so column/row partials and replicated-parameter
-        # gradients stay consistent — RIL TASK-200/DEC-045), so TP ranks all
-        # load data as rank 0 over world 1 instead of sharding it per rank.
-        data_rank, data_world = (0, 1) if self.is_training_tp else (self.rank, self.world_size)
+        # Use data_module to get dataloaders. TP v1 replicated the batch to
+        # every rank (each rank trains the SAME microbatches so column/row
+        # partials and replicated-parameter gradients stay consistent — RIL
+        # TASK-200/DEC-045). TP + data-parallel 2D (TASK-202) shards the data
+        # across data-parallel GROUPS instead: each DP group owns a disjoint
+        # ``DistributedSampler`` shard, and every rank inside one TP group
+        # still loads the SAME shard as its group (so the TP internals see
+        # replicated data within the group); gradients are later averaged
+        # across DP groups at the step boundary (``allreduce_dp_grads``).
+        if self.is_training_tp:
+            _tp_size, data_world, data_rank, _tp_rank = tp_dp_layout(self.world_size, self.config.distributed.tp_size)
+        else:
+            data_rank, data_world = self.rank, self.world_size
         self.is_streaming = getattr(self.data_module, "is_streaming", False)
         self.dataloader, self.sampler = self.data_module.train_dataloader(data_rank, data_world)
         self.val_dataloader, self.val_sampler = self.data_module.val_dataloader(data_rank, data_world)
@@ -459,6 +473,15 @@ class TrainingEngine:
                         if _param.grad is not None:
                             _param.grad.mul_(_scale)
                 accum_counter = 0
+                # TP + data-parallel 2D (TASK-202): average gradients across
+                # the data-parallel groups so replicated params and shard
+                # copies converge to the true full-batch gradient. Runs AFTER
+                # unscale_ + partial-window re-scaling (fp32 reduce, correct
+                # scale) and ONLY at the step boundary — interior
+                # gradient-accumulation microbatches must not sync (the same
+                # rule the DDP no_sync() branch above enforces).
+                if is_tp(self.model):
+                    allreduce_dp_grads(self.model)
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.config.training.gradient_clip_val
                 )

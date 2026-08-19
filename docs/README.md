@@ -66,14 +66,14 @@ Registry + entry points，模型、数据源、后端、PEFT 均可扩展。
 
 ### 🚀 训练与数据
 
-| 指南                                                  | 说明                             |
-| ----------------------------------------------------- | -------------------------------- |
-| [数据管线](guides/data.md)                            | 数据源、数据集预设、`DataConfig` |
-| [流式预训练](guides/streaming.md)                     | `stream_lm` 流式 pipeline        |
-| [Checkpoint](guides/checkpoints.md)                   | v2 三件套、保存/恢复/迁移        |
-| [分布式训练](guides/distributed.md)                   | DDP 与 FSDP                      |
-| [PEFT 微调](guides/finetuning.md)                     | 8 种参数高效微调方法             |
-| [训练流程开发](development/training-flow.md)          | 引擎、回调、调度器扩展           |
+| 指南                                         | 说明                                |
+| -------------------------------------------- | ----------------------------------- |
+| [数据管线](guides/data.md)                   | 数据源、数据集预设、`DataConfig`    |
+| [流式预训练](guides/streaming.md)            | `stream_lm` 流式 pipeline           |
+| [Checkpoint](guides/checkpoints.md)          | v2 三件套、保存/恢复/迁移           |
+| [分布式训练](guides/distributed.md)          | DDP / FSDP / Tensor 并行 (TP+DP 2D) |
+| [PEFT 微调](guides/finetuning.md)            | 8 种参数高效微调方法                |
+| [训练流程开发](development/training-flow.md) | 引擎、回调、调度器扩展              |
 
 ### ⚡ 部署与压缩
 

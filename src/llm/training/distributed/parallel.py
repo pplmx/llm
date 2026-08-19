@@ -41,6 +41,44 @@ from llm.training.distributed.tensor_parallel import apply_tensor_parallel
 StateDictType = Literal["full", "sharded"]
 
 
+def tp_dp_layout(world_size: int, tp_size: int, rank: int | None = None) -> tuple[int, int, int, int]:
+    """Resolve the TP + data-parallel 2D layout of the calling rank.
+
+    TP+DP 2D (RIL TASK-202) arranges ranks in a row-major ``[DP][TP]`` grid:
+    ``rank = dp_rank * tp_size + tp_rank``, so every TP group is a CONTIGUOUS
+    run of ``tp_size`` ranks (intra-node friendly for the TP all-reduces) and
+    the ``dp_size`` DP groups are strided — the ranks that hold the SAME model
+    shard across TP groups (the ones whose gradients must be averaged).
+
+    Returns ``(tp_size, dp_size, dp_rank, tp_rank)``.
+
+    Args:
+        world_size: Total number of ranks.
+        tp_size: Tensor-parallel size; ``0`` or negative means "use the whole
+            world as one TP group" (pure TP, no DP dimension).
+        rank: Global rank (defaults to ``dist.get_rank()``; injectable for
+            unit tests outside a live process group).
+
+    Raises:
+        ValueError: if ``tp_size`` exceeds ``world_size`` or does not divide
+            it evenly (every rank must agree on the same grid).
+    """
+    if tp_size is None or tp_size <= 0:
+        tp_size = world_size
+    if tp_size > world_size:
+        raise ValueError(f"tp_size={tp_size} cannot exceed world_size={world_size}.")
+    if world_size % tp_size != 0:
+        raise ValueError(
+            f"tp_size={tp_size} must divide world_size={world_size} evenly for tensor "
+            "parallelism (each TP group is a contiguous world_size/tp_size-rank range)."
+        )
+    dp_size = world_size // tp_size
+    if rank is None:
+        rank = dist.get_rank() if dist.is_available() else 0
+    dp_rank, tp_rank = divmod(rank, tp_size)
+    return tp_size, dp_size, dp_rank, tp_rank
+
+
 def _fsdp_mixed_precision(dtype: str) -> Any | None:
     """Build a ``MixedPrecision`` policy from the ``fsdp_mixed_precision`` string.
 
@@ -192,17 +230,26 @@ def wrap_model_for_training(
         # a no-op identity (mirrors DDP/FSDP world_size<=1).
         if world_size <= 1:
             return model
-        if tp_size is None or tp_size <= 0:
-            tp_size = world_size
-        if tp_size > world_size:
-            raise ValueError(f"tp_size={tp_size} cannot exceed world_size={world_size}.")
-        if tp_size != world_size:
-            raise NotImplementedError(
-                f"Tensor parallelism v1 uses the whole world as one TP group; "
-                f"tp_size={tp_size} with world_size={world_size} (data-parallel over TP "
-                "groups) is a follow-up. Set tp_size=world_size."
-            )
-        return apply_tensor_parallel(cast(Any, model), process_group=dist.group.WORLD)
+        tp_size, dp_size, dp_rank, tp_rank = tp_dp_layout(world_size, tp_size)
+        # Row-major [DP][TP] grid (world_size % tp_size == 0 guaranteed by
+        # ``tp_dp_layout``): TP groups are contiguous rank ranges, DP groups
+        # are strided. ``dist.new_group`` is a collective over the WORLD
+        # group, so EVERY rank must create the SAME set of subgroups in the
+        # SAME order (building only "my own" groups would mismatch the other
+        # ranks' calls and deadlock); each rank then picks the handles for
+        # the groups it belongs to.
+        tp_groups = [dist.new_group(ranks=list(range(d * tp_size, (d + 1) * tp_size))) for d in range(dp_size)]
+        dp_groups = [dist.new_group(ranks=list(range(t, world_size, tp_size))) for t in range(tp_size)]
+        tp_group = tp_groups[dp_rank]
+        dp_group = dp_groups[tp_rank]
+        model = apply_tensor_parallel(cast(Any, model), process_group=tp_group)
+        if dp_size > 1:
+            # TP + data-parallel 2D: record the DP group so the engine (or any
+            # caller) can average gradients across data shards at step
+            # boundaries via :func:`allreduce_dp_grads`. dp_size == 1 is pure
+            # TP v1 (every rank already sees identical replicated data).
+            cast(Any, model)._tp.dp_group = dp_group
+        return model
 
     raise ValueError(f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp', 'fsdp' or 'tp'.")
 
@@ -323,6 +370,33 @@ def is_tp(model: nn.Module) -> bool:
     dict.
     """
     return getattr(model, "_tp", None) is not None
+
+
+def allreduce_dp_grads(model: nn.Module) -> None:
+    """Average every parameter gradient across a TP model's DP group.
+
+    TP + data-parallel 2D (RIL TASK-202): each DP group trains on a different
+    data shard, so after each rank's backward the replicated parameters
+    (embedding, norms) and each TP rank's shard copy only carry THAT group's
+    shard gradient. Averaging across the DP group is required to converge to
+    the true full-batch gradient (DDP semantics) — otherwise the identical
+    shard copies held by different DP groups diverge.
+
+    Runs AFTER the last gradient contribution of a step (post ``unscale_`` so
+    the reduce happens in fp32, post partial-window re-scaling) and BEFORE grad
+    clipping / ``optimizer.step``. It MUST NOT run on gradient-accumulation
+    interior microbatches (that is exactly what DDP's ``no_sync()`` avoids);
+    the engine gates it on step boundaries. A no-op for models that are not
+    tensor-parallel or were built pure-TP (``dp_size == 1``, no DP group).
+    """
+    if not is_tp(model):
+        return
+    dp_group = getattr(cast(Any, model)._tp, "dp_group", None)
+    if dp_group is None:
+        return
+    for param in model.parameters():
+        if param.grad is not None:
+            dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, group=dp_group)
 
 
 def model_state_dict(

@@ -9,7 +9,7 @@
 ✅ **已完成的核心能力**:
 
 - 现代化 Decoder-only Transformer 架构 (GQA, SwiGLU, MoE)
-- 完善的分布式训练框架 (DDP, AMP, FSDP)
+- 完善的分布式训练框架 (DDP, AMP, FSDP, Tensor 并行 + TP/DP 2D)
 - 高质量工程实践 (1900+ 测试用例全部通过)
 - 插件内核架构 (`runtime/` registries + setuptools entry points)
 - 完整推理能力 (KV Cache, Top-k/Top-p 采样, 三种 GenerationBackend — eager/batched/speculative)
@@ -108,8 +108,11 @@
 ### 5. 高级分布式训练 🔄
 
 - [x] FSDP — `parallel_strategy=fsdp` + `wrap_model_for_training()` 已实现
+- [x] Tensor Parallelism — `parallel_strategy=tp` (Megatron 风格 column/row 并行 + 全量 state-dict checkpoint, RIL CHG-199)
+- [x] TP + 数据并行 2D — `tp_size < world_size` `[DP][TP]` 网格, DP 组间梯度平均 (RIL TASK-202/CHG-203)
 - [ ] Pipeline Parallelism
 - [ ] DeepSpeed ZeRO 集成
+- [ ] 3D Parallelism (DP + PP + TP)
 
 ---
 
@@ -547,9 +550,11 @@
 #### 15.5 高级分布式训练
 
 - [x] FSDP — config + `wrap_model_for_training()` 已实现
+- [x] Tensor Parallelism — `parallel_strategy=tp`, `apply_tensor_parallel` (column/row 并行, fused-QKV 分片, vocab-parallel lm_head + logits all-gather, 全量 state-dict gather/scatter checkpoint, 数值恒等 parity 测试)
+- [x] TP + 数据并行 2D — `tp_size < world_size`: 行主序 `[DP][TP]` 网格 (TP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_dp_grads` (AVG) 平均 DP 组梯度; 2x2 / 2x3 / 4x2 网格 parity + 4/6-GPU 真实引擎 e2e 全绿 (RIL TASK-202)
 - [ ] Pipeline Parallelism
 - [ ] 集成 DeepSpeed ZeRO (Stage 2/3)
-- [ ] 探索 3D Parallelism (DP + PP + TP)
+- [ ] 3D Parallelism (DP + PP + TP)
 
 #### 15.6 文档与社区
 

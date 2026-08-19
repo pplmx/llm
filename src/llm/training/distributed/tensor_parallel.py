@@ -277,6 +277,10 @@ class _TPState:
         self.group = group
         self.world_size = world_size
         self.rank = rank
+        # TP + data-parallel 2D (TASK-202): the strided group of ranks holding
+        # the SAME shard across TP groups, averaged at step boundaries.
+        # ``None`` in pure TP v1 (whole world = one TP group, no DP dimension).
+        self.dp_group: dist.ProcessGroup | None = None
         self.partition: dict[str, int | None] = {}
         # key -> per-rank local-row -> full-row index for block-interleaved
         # partitions (only the fused QKV column linears today), a list of

@@ -449,11 +449,16 @@ class DistributedConfig(BaseSettings):
         0,
         ge=0,
         description=(
-            "Tensor-parallel size for parallel_strategy='tp'. v1 uses the "
-            "whole world as one TP group, so a value of 0 means 'use "
-            "world_size'; must equal world_size when both are > 1. Every "
-            "partitioned axis (num_heads / num_kv_heads / vocabulary / "
-            "intermediate width) must divide evenly by it."
+            "Tensor-parallel size for parallel_strategy='tp'. A value of 0 "
+            "means 'use world_size' (pure TP, one TP group = the whole world). "
+            "A value less than world_size enables TP + data-parallel 2D "
+            "(TASK-202): ranks are laid out row-major as [DP][TP] - each TP "
+            "group is a contiguous world_size/tp_size-rank range that "
+            "partitions the model in parallel over its own data-parallel "
+            "shard, and the world_size/tp_size DP groups average gradients "
+            "across data shards at each step. world_size must divide evenly "
+            "by tp_size. Every partitioned axis (num_heads / num_kv_heads / "
+            "vocabulary / intermediate width) must divide evenly by it."
         ),
     )
     collective_timeout_seconds: int = Field(
