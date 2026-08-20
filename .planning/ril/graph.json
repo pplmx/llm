@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 85,
+  "round": 86,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-20T00:41:35+00:00",
+  "updated_at": "2026-08-20T04:24:52+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11803,6 +11803,41 @@
       "touched_round": 84,
       "commit": "a596d2a",
       "title": "TP global-norm clip + replicated-grad TP-group coherence + real 2D e2e"
+    },
+    "ISS-255": {
+      "id": "ISS-255",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-20T02:35:01+00:00",
+      "updated_at": "2026-08-20T02:56:34+00:00",
+      "touched_round": 85,
+      "title": "Vacuous tiny-SFT e2e: response truncated at short max_seq_len -> all labels -100 -> NaN guard -> no training",
+      "severity": 1.3,
+      "confidence": 0.95,
+      "summary": "The Alpaca-style template prompt is 146 tokens. e2e tests using max_seq_len <= 64 truncate the response entirely, every label becomes -100, CrossEntropyLoss returns NaN (0 valid targets), and the SFT task's NaN guard returns a constant 0.0 loss — the run silently trains nothing while assertions like global_step > 0 pass. Fixed in the TP+DP 2D engine e2e (max_seq_len=256 + vacuous-run guards) and 4151e31 (tests/e2e/test_sft.py)."
+    },
+    "CHG-206": {
+      "id": "CHG-206",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T02:35:02+00:00",
+      "updated_at": "2026-08-20T02:35:02+00:00",
+      "touched_round": 85,
+      "commit": 4.151e+34,
+      "title": "Vacuous tiny-SFT e2e fix (max_seq_len 256 + non-ignored-label guard)"
+    },
+    "CHG-207": {
+      "id": "CHG-207",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T04:24:52+00:00",
+      "updated_at": "2026-08-20T04:24:52+00:00",
+      "touched_round": 85,
+      "commit": "ef81f7c",
+      "title": "test_sft_main_path vacuous-e2e fix (max_seq_len 256 + real-label guard)"
     }
   },
   "edges": [
@@ -17378,6 +17413,18 @@
       "to": "ISS-254",
       "type": "resolves",
       "created_at": "2026-08-20T00:39:25+00:00"
+    },
+    {
+      "from": "CHG-206",
+      "to": "ISS-255",
+      "type": "resolves",
+      "created_at": "2026-08-20T02:35:02+00:00"
+    },
+    {
+      "from": "CHG-207",
+      "to": "ISS-255",
+      "type": "resolves",
+      "created_at": "2026-08-20T04:24:52+00:00"
     }
   ]
 }
