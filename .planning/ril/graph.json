@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 86,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-20T04:24:52+00:00",
+  "updated_at": "2026-08-20T14:50:48+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11838,6 +11838,57 @@
       "touched_round": 85,
       "commit": "ef81f7c",
       "title": "test_sft_main_path vacuous-e2e fix (max_seq_len 256 + real-label guard)"
+    },
+    "TASK-205": {
+      "id": "TASK-205",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-20T04:43:13+00:00",
+      "updated_at": "2026-08-20T14:50:48+00:00",
+      "touched_round": 86,
+      "category": "core-feature",
+      "severity": 1.6,
+      "effort": 3.0,
+      "title": "TP+DP 2D checkpoint on-disk roundtrip: save via checkpoint manager, resume, single-GPU serve-load",
+      "summary": "The TP milestone verified the state-dict gather/scatter helpers but never round-tripped a real TP+DP 2D training run through the ON-DISK checkpoint manager, nor proved a TP-saved checkpoint loads into a single-GPU model for llm-serve. Milestone: (1) 4-GPU tp=2 dp=2 engine run saves via CheckpointManager -> resume from disk continues training with the restored optimizer/step state; (2) a 2-GPU TP-saved full state dict loads into a plain DecoderModel and its forward matches the TP model's gathered forward bit-for-bit (the portability claim llm-serve relies on). Hardens TASK-200's checkpoint boundary end-to-end."
+    },
+    "ISS-256": {
+      "id": "ISS-256",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-20T13:34:26+00:00",
+      "updated_at": "2026-08-20T14:50:48+00:00",
+      "touched_round": 86,
+      "title": "TP+DP 2D engine on-disk checkpoint diverges from re-gathered state on the embedding",
+      "severity": 1.7,
+      "confidence": 0.8,
+      "summary": "With parallel_strategy=tp / tp_size<world (2D), the CheckpointManager save inside the real engine writes latest.safetensors whose embedding_layer.token_embeddings.weight differs from model_state_dict(engine.model) re-gathered after run() (bit-exact compare fails on rank 0). Pure-TP roundtrips (tp_size==world, 2 and 4 GPUs) pass bit-for-bit, so the divergence is 2D-specific. Best tooling: tests/e2e/test_tp_checkpoint_roundtrip.py test_engine_tp_dp_2d_on_disk_checkpoint_four_gpu (instrumented to print the magnitude). The replicated-component coherence added for ISS-254 makes post-training params bit-identical, so the save-time vs re-gather divergence indicates the engine mutates or re-orders something between save and run() return (e.g. an extra post-save epoch-end callback or a second save path) OR collect_extra_state triggers a model write. 6-GPU wide-grid variant additionally OOMs on this shared box (environmental)."
+    },
+    "CHG-208": {
+      "id": "CHG-208",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T14:49:55+00:00",
+      "updated_at": "2026-08-20T14:49:55+00:00",
+      "touched_round": 86,
+      "commit": "d255b1f",
+      "title": "CheckpointManager collective save durable-before-return (TP/FSDP all-world barrier after rank-0 write)",
+      "summary": "save_checkpoint on TP/FSDP now barriers all ranks after rank 0's disk writes, so a non-zero rank returning from a collective save is guaranteed the checkpoint is on disk. Fixes the TP+DP 2D engine e2e race (FileNotFoundError / stale-file reads on latest.safetensors). Adds TASK-205 resume leg (test_engine_tp_dp_2d_resume_from_disk_four_gpu)."
+    },
+    "EV-195": {
+      "id": "EV-195",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T14:50:37+00:00",
+      "updated_at": "2026-08-20T14:50:37+00:00",
+      "touched_round": 86,
+      "source": "tests/e2e/test_tp_checkpoint_roundtrip.py (5 tests) + tests/training/test_checkpoint_format_split.py + test_checkpoint_manager.py + test_loader.py + test_dpo_task.py + test_resume_training.py + test_tensor_parallel.py + test_engine_advanced.py + test_tp_dp_2d_engine.py",
+      "summary": "All 5 TP checkpoint roundtrip tests green with the durable-barrier change: 2/4-GPU pure TS, 4/6-GPU 2D engine on-disk==gathered, 4-GPU 2D resume-continues; plus the full checkpoint/loader/DPO/resume/tensor-parallel regression (exit 0) and ruff+ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -17425,6 +17476,18 @@
       "to": "ISS-255",
       "type": "resolves",
       "created_at": "2026-08-20T04:24:52+00:00"
+    },
+    {
+      "from": "CHG-208",
+      "to": "ISS-256",
+      "type": "resolves",
+      "created_at": "2026-08-20T14:50:37+00:00"
+    },
+    {
+      "from": "TASK-205",
+      "to": "ISS-256",
+      "type": "addresses",
+      "created_at": "2026-08-20T14:50:37+00:00"
     }
   ]
 }
