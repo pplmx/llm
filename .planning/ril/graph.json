@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 84,
+  "round": 85,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-19T15:10:27+00:00",
+  "updated_at": "2026-08-20T00:41:35+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11663,11 +11663,11 @@
     "ISS-252": {
       "id": "ISS-252",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-19T12:05:13+00:00",
-      "updated_at": "2026-08-19T12:05:13+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-20T00:41:35+00:00",
+      "touched_round": 84,
       "title": "TP val_loss divided by world_size (pure-TP replicates the same val shard)",
       "severity": 1.2,
       "summary": "Under parallel_strategy='tp' the engine loads val with data_rank/data_world=(0,1) (every TP rank evaluates the SAME full val shard), then DistributedManager.reduce_mean divides the identical per-rank val_loss by world_size. Logged/checkpointed val_loss is therefore val_loss/world — a misleading metric (best-model ordering is unchanged by the constant factor, so EarlyStopping/save_best still work, but reported thresholds are wrong and cross-strategy comparisons break). Pre-existing in TP v1; surfaced while wiring TP+DP 2D data sharding (TASK-202).",
@@ -11676,11 +11676,11 @@
     "ISS-253": {
       "id": "ISS-253",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-19T12:05:13+00:00",
-      "updated_at": "2026-08-19T12:05:13+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-20T00:41:35+00:00",
+      "touched_round": 84,
       "title": "TP grad clipping uses per-rank local norm (no global all-reduce)",
       "severity": 1.1,
       "summary": "clip_grad_norm_(self.model.parameters()) computes the norm over THIS rank's disjoint shards only — under TP each rank's local total is a fraction of the true full-model norm, so shards are clipped by slightly different factors (Megatron all-reduces the squared norm and clips globally). Shard consistency is preserved (per-rank factor is identical across DP replicas), but training dynamics diverge from a true global-norm clip. Pre-existing in TP v1 (TASK-200/DEC-045), noted during the TASK-202 milestone.",
@@ -11767,6 +11767,42 @@
       "touched_round": 83,
       "commit": "f5b4f03",
       "title": "FP8 per-layer policies / LayerQuantPolicy FP8 knobs"
+    },
+    "ISS-254": {
+      "id": "ISS-254",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-20T00:39:25+00:00",
+      "updated_at": "2026-08-20T00:41:35+00:00",
+      "touched_round": 84,
+      "title": "TP replicated-param gradients differ between TP-group ranks (FP drift) — latent pure-TP v1 bug",
+      "severity": 1.4,
+      "confidence": 0.95,
+      "summary": "Replicated parameters (embedding, norms, row-parallel biases) are not sharded by apply_tensor_parallel, so their per-rank gradients are not forced identical across the TP group — small FP drift compounds across optimizer steps and silently desyncs the group's replicas. Latent in pure-TP v1 (parity tests asserted CLOSE, never bit-exact); exposed by the bit-exact cross-rank state-dict check in the TP+DP 2D engine e2e once that test started training for real (r0==r2 and r1==r3, but r0!=r1). Fixed in CHG-205: allreduce_dp_grads now averages replicated-param grads over the TP group (Megatron standard)."
+    },
+    "EV-194": {
+      "id": "EV-194",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T00:39:25+00:00",
+      "updated_at": "2026-08-20T00:39:25+00:00",
+      "touched_round": 84,
+      "source": "a596d2a:tests/e2e/test_tp_dp_2d_engine.py",
+      "summary": "2D engine e2e now trains for real (max_seq_len 256 keeps labels non-trivial; vacuous-run guards assert weights moved and loss is finite) and proves bit-identical full state dicts across 4 ranks for tp=2 dp=2 and 2x3 grids. This check exposed the within-TP-group replicated-param drift (pre-fix r0 != r1 by ~3.5e-3 after 3 steps) and now passes with the TP-group replicated-grad average.",
+      "confidence": 1.0
+    },
+    "CHG-205": {
+      "id": "CHG-205",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T00:39:25+00:00",
+      "updated_at": "2026-08-20T00:39:25+00:00",
+      "touched_round": 84,
+      "commit": "a596d2a",
+      "title": "TP global-norm clip + replicated-grad TP-group coherence + real 2D e2e"
     }
   },
   "edges": [
@@ -17324,6 +17360,24 @@
       "to": "TASK-203",
       "type": "governs",
       "created_at": "2026-08-19T15:08:44+00:00"
+    },
+    {
+      "from": "CHG-205",
+      "to": "ISS-252",
+      "type": "resolves",
+      "created_at": "2026-08-20T00:39:25+00:00"
+    },
+    {
+      "from": "CHG-205",
+      "to": "ISS-253",
+      "type": "resolves",
+      "created_at": "2026-08-20T00:39:25+00:00"
+    },
+    {
+      "from": "CHG-205",
+      "to": "ISS-254",
+      "type": "resolves",
+      "created_at": "2026-08-20T00:39:25+00:00"
     }
   ]
 }
