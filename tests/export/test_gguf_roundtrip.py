@@ -100,6 +100,30 @@ def test_roundtrip_f16_within_quantizer_error(roundtrip_config, tmp_path):
         assert float((original[name] - recovered[name]).abs().max()) <= bound, name
 
 
+def test_roundtrip_preserves_nondefault_norm_eps(roundtrip_config, tmp_path):
+    """Regression for RIL ISS-241: a model with a non-default norm eps (e.g.
+    Qwen2's 1e-6) must round-trip through a self-export. ModelConfig has no
+    norm_eps field, so the exporter persists the model's LIVE eps separately
+    and the loader threads it back — before the fix the rebuilt model silently
+    fell back to the 1e-5 default and RMS-normalized with the wrong scale."""
+    torch.manual_seed(4)
+    model = ModelFactory.from_config(roundtrip_config, norm_eps=1e-6).eval()
+    path = export_to_gguf(
+        model,
+        tmp_path / "eps.gguf",
+        quantize="f32",
+        model_config=roundtrip_config.model_dump(),
+    )
+
+    reader = GGUFReader(path)
+    assert reader.metadata.get("general.llm_norm_eps") == pytest.approx(1e-6)
+
+    restored = load_gguf_model(path)
+    # The rebuilt model's pre-norm carries the persisted eps — a 1e-5 fallback
+    # here means the roundtrip silently lost it.
+    assert float(restored.transformer_blocks[0].norm1.eps) == pytest.approx(1e-6)
+
+
 def test_roundtrip_q8_within_quantizer_error(roundtrip_config, tmp_path):
     torch.manual_seed(2)
     model = _build_model(roundtrip_config).eval()

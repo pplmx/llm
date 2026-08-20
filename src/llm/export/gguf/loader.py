@@ -134,7 +134,15 @@ def _load_self_export(
     except Exception as exc:
         raise GGUFError(f"{reader.path}: invalid 'general.llm_model_config' JSON: {exc}") from exc
 
-    model = ModelFactory.from_config(cfg)
+    # ``norm_eps`` is not a ModelConfig field (pydantic would silently drop
+    # it), and the exporter persists the model's LIVE eps separately as
+    # ``general.llm_norm_eps`` (CHG-209 era / RIL ISS-241, mirroring the
+    # foreign path's ``_rms_norm_eps`` override below). Thread it through the
+    # factory override so a self-export with a non-default eps round-trips
+    # faithfully instead of silently resetting to 1e-5.
+    raw_eps = reader.metadata.get("general.llm_norm_eps")
+    norm_eps = float(raw_eps) if isinstance(raw_eps, (int, float)) else 1e-5
+    model = ModelFactory.from_config(cfg, norm_eps=norm_eps)
 
     state: dict[str, torch.Tensor] = {}
     for name in reader.tensors:

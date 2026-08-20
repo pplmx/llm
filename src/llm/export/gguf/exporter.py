@@ -95,9 +95,32 @@ def _default_metadata(
         # dict type; a JSON string round-trips losslessly). Keys are sorted for
         # deterministic output. (RIL round-71 GGUF loader milestone.)
         defaults["general.llm_model_config"] = json.dumps(model_config, sort_keys=True)
+        # Persist the model's LIVE norm epsilon as its own key: ``ModelConfig``
+        # has no ``norm_eps`` field, so a non-default eps (e.g. Qwen2's 1e-6)
+        # cannot travel inside the config blob and a self-export would
+        # round-trip to the loader default 1e-5 — RMS norm scaled differently
+        # means wrong inference (RIL ISS-241; mirrors the hf_publisher fix in
+        # CHG-201, which persists ``rms_norm_eps`` the same way).
+        defaults["general.llm_norm_eps"] = float(_model_norm_eps(model))
     if user_metadata:
         defaults.update(user_metadata)
     return defaults
+
+
+def _model_norm_eps(model: nn.Module) -> float:
+    """The model's ACTUAL pre-norm epsilon (LayerNorm/RMSNorm ``eps``).
+
+    ``DecoderModel`` holds it on its block pre-norms (``norm1``); fall back
+    to the default (1e-5) when the architecture exposes no norm module.
+    """
+    blocks = getattr(model, "transformer_blocks", None)
+    if blocks:
+        for attr in ("norm1", "norm"):
+            norm = getattr(blocks[0], attr, None)
+            eps = getattr(norm, "eps", None)
+            if eps is not None:
+                return float(eps)
+    return 1e-5
 
 
 def _pick_tensor_type(
