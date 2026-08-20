@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 86,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-20T16:46:11+00:00",
+  "updated_at": "2026-08-20T18:11:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11616,11 +11616,11 @@
     "ISS-249": {
       "id": "ISS-249",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-18T20:54:13+00:00",
-      "updated_at": "2026-08-18T20:54:13+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-20T18:11:54+00:00",
+      "touched_round": 86,
       "category": "correctness",
       "severity": "medium",
       "summary": "DPOTask discards the attention masks the data pipeline builds (chosen/rejected_attention_mask computed but never passed to the model — SFT and Reward pass theirs) and padding uses hardcoded id 0 (a real content token for tokenizers whose id 0 is <unk>). Dead data + inconsistency; bounded impact (causal right-padded decode). (eval deep-dive F3.)"
@@ -11961,6 +11961,30 @@
       "touched_round": 86,
       "source": "tests/training/tasks/test_reward_task.py (5 tests incl. new masked-row rejection) + tests/export/test_gguf_roundtrip.py (incl. norm_eps regression) + test_gguf_foreign_import.py + test_gguf_kquant.py; ruff+ty+prek green",
       "summary": "ISS-248: fully-masked-row regression passes, reward backward/trainability intact. ISS-241: 1e-6-eps model round-trips with the eps key persisted and restored; f32/f16/q8/kquant/foreign-import all still green.",
+      "confidence": 1.0
+    },
+    "CHG-212": {
+      "id": "CHG-212",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T18:11:54+00:00",
+      "updated_at": "2026-08-20T18:11:54+00:00",
+      "touched_round": 86,
+      "commit": "bad6de4",
+      "title": "DPOTask forwards per-row attention masks to policy + reference forwards",
+      "summary": "Reads chosen/rejected_attention_mask and passes attn_mask to both forwards. Verified during the fix: the model's [B,S] int mask path is CORRECT (== the [B,1,S,S] kernel form); sinusoidal PE (always on when use_rope=False) makes the model position-sensitive, so right-vs-left padded outputs legitimately differ; standard causal right-padded layout masks trailing pads by causality (why the old discard was bounded)."
+    },
+    "EV-198": {
+      "id": "EV-198",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T18:11:54+00:00",
+      "updated_at": "2026-08-20T18:11:54+00:00",
+      "touched_round": 86,
+      "source": "tests/training/tasks/test_dpo_task.py (6 incl. test_dpo_attention_masks_reach_the_model) + tests/data/test_dpo_dataset.py (9); ruff+ty+prek green",
+      "summary": "Regression proves loss is mask-sensitive now (masking a real content token changes the DPO loss); verified all real data batches carry the mask keys (KeyError-safe). Model-level probes confirm [B,S] int masks map identically to the 4D kernel mask and the sinusoidal PE (always applied when use_rope=False) is the reason padded layouts differ — not a mask bug.",
       "confidence": 1.0
     }
   },
@@ -17585,6 +17609,12 @@
       "to": "ISS-241",
       "type": "resolves",
       "created_at": "2026-08-20T16:46:11+00:00"
+    },
+    {
+      "from": "CHG-212",
+      "to": "ISS-249",
+      "type": "resolves",
+      "created_at": "2026-08-20T18:11:54+00:00"
     }
   ]
 }
