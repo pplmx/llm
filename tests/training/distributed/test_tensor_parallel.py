@@ -72,7 +72,14 @@ def _setup_tp_env() -> int:
     return port
 
 
-def _build_model(seed: int = 7, device=None, layers: int = 2, num_kv_heads: int | None = None) -> DecoderModel:
+def _build_model(
+    seed: int = 7,
+    device=None,
+    layers: int = 2,
+    num_kv_heads: int | None = None,
+    attn_impl: str = "mha",
+    use_rope: bool = False,
+) -> DecoderModel:
     torch.manual_seed(seed)
     return DecoderModel(
         vocab_size=64,
@@ -88,6 +95,8 @@ def _build_model(seed: int = 7, device=None, layers: int = 2, num_kv_heads: int 
         qkv_bias=True,
         mlp_bias=True,
         lm_head_bias=True,
+        attn_impl=attn_impl,
+        use_rope=use_rope,
         device=device,
     )
 
@@ -227,6 +236,140 @@ def _run_parity(world_size: int) -> None:
 def test_tp_forward_grad_checkpoint_parity_two_gpu():
     """Forward / gradient / checkpoint-gather parity vs a full reference (2 GPUs)."""
     _run_parity(2)
+
+
+def _flash_parity_worker(
+    rank: int, world_size: int, device_indices: list[int], results, use_rope: bool, num_kv_heads: int | None
+) -> None:
+    """FlashAttention TP parity (TASK-204 slice).
+
+    The TP transform extends to ``attn_impl='flash_attn'`` because it shares
+    MHA's projection surface (fused QKV column-parallel over heads + row
+    out_proj). The forward runs under bf16 autocast because the flash kernel
+    requires half precision, so logits/grads are compared with a bf16-scale
+    tolerance rather than the fp32 one the MHA test uses — but the state-dict
+    gather compares at atol=0: TP slicing of the fp32 weights must be exact
+    regardless of the kernel dtype.
+    """
+    try:
+        device_index = device_indices[rank]
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(device_index)
+        dev = torch.device(f"cuda:{device_index}")
+
+        ref = _build_model(attn_impl="flash_attn", use_rope=use_rope, num_kv_heads=num_kv_heads).to(dev)
+        model = _build_model(attn_impl="flash_attn", use_rope=use_rope, num_kv_heads=num_kv_heads).to(dev)
+        model = apply_tensor_parallel(model, process_group=dist.group.WORLD)
+        assert is_tp(model)
+
+        x = torch.randint(0, 64, (2, 12), device=dev, dtype=torch.long)
+
+        # --- forward parity under bf16 autocast (flash kernel requirement) ---
+        ref.eval()
+        model.eval()
+        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            ref_logits = ref(x)
+            train_logits = model(x)  # TP collective; identical on every rank
+        torch.testing.assert_close(train_logits, ref_logits, atol=1e-2, rtol=1e-2)
+
+        # --- gradient parity: one backward against the same loss ---
+        model.train()
+        ref.train()
+        ref.zero_grad()
+        model.zero_grad()
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            tp_loss = model(x).float().mean()
+        tp_loss.backward()
+        # ref backward after the TP collectives have drained (NCCL ordering).
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            ref_loss = ref(x).float().mean()
+        ref_loss.backward()
+
+        ref_grads = {k: v.grad for k, v in ref.named_parameters() if v.grad is not None}
+        tp_grads = _gather_tp_grads(model)
+        assert set(ref_grads.keys()) == set(tp_grads.keys()), (
+            f"grad key sets differ: missing {set(ref_grads) - set(tp_grads)}, extra {set(tp_grads) - set(ref_grads)}"
+        )
+        for key in ref_grads:
+            torch.testing.assert_close(
+                tp_grads[key], ref_grads[key], atol=1e-2, rtol=1e-2, msg=f"grad mismatch on {key}"
+            )
+
+        # --- checkpoint boundary: full gather == reference state dict (fp32, exact) ---
+        full = model_state_dict(model)  # collective; every rank enters
+        for key, value in ref.state_dict().items():
+            assert key in full, f"gathered state dict missing {key}"
+            torch.testing.assert_close(full[key], value, atol=0, rtol=0, msg=f"state mismatch on {key}")
+
+        # --- scatter load roundtrip: load ref full dict, forward again ---
+        load_model_state_dict(model, ref.state_dict())
+        model.eval()
+        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            reload_logits = model(x)
+        torch.testing.assert_close(reload_logits, ref_logits, atol=1e-2, rtol=1e-2)
+
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+def _run_flash_parity(world_size: int, *, use_rope: bool = False, num_kv_heads: int | None = None) -> None:
+    gpu_devices = all_gpu_devices(min_free_bytes=TP_MIN_FREE_BYTES)
+    if len(gpu_devices) < world_size:
+        pytest.skip(f"need at least {world_size} free GPUs (flash TP parity)")
+    device_indices = [device.index for device in gpu_devices[:world_size]]
+    _release_parent_cuda_caches()
+
+    port = _free_port()
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["NCCL_DEBUG"] = "WARN"
+    os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
+
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(
+        _flash_parity_worker,
+        args=(world_size, device_indices, results, use_rope, num_kv_heads),
+        nprocs=world_size,
+        join=False,
+    )
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"flash TP parity spawn exceeded {TP_JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+    for rank in range(world_size):
+        assert rank in results, f"rank {rank} produced no result"
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_tp_flash_attn_parity_two_gpu():
+    """FlashAttention TP forward/grad/checkpoint parity vs the single-GPU flash reference."""
+    _run_flash_parity(2)
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_tp_flash_attn_rope_parity_two_gpu():
+    """FlashAttention + RoPE TP parity (RoPE rotates local head slices — position
+    is token-local, so TP slicing is transparent to it)."""
+    _run_flash_parity(2, use_rope=True)
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_tp_flash_attn_gqa_parity_two_gpu():
+    """FlashAttention + GQA TP parity (num_kv_heads=2 must divide tp_size)."""
+    _run_flash_parity(2, num_kv_heads=2)
 
 
 def _wrap_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
@@ -637,6 +780,41 @@ def test_tp_rejects_tp_size_not_dividing_world():
             device=torch.device("cpu"),
             world_size=6,
             tp_size=4,
+        )
+
+
+def test_tp_still_rejects_mla_and_moe_scope(monkeypatch):
+    """The flash_attn extension (TASK-204) must not silently widen TP scope: MLA
+    (different latent layout, no fused-QKV surface) and MoE (needs expert
+    parallelism) remain rejected. The scope guards fire before any collective,
+    so faking the 2-rank group accessors and passing any group object is enough
+    — no NCCL, no GPUs."""
+    from llm.training.distributed.tensor_parallel import apply_tensor_parallel
+
+    class _StubGroup:
+        pass
+
+    monkeypatch.setattr("torch.distributed.get_world_size", lambda _group: 2)
+    monkeypatch.setattr("torch.distributed.get_rank", lambda _group: 0)
+
+    stub = _StubGroup()
+    with pytest.raises(NotImplementedError, match="mla"):
+        apply_tensor_parallel(
+            DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=4, attn_impl="mla"),
+            process_group=stub,
+        )
+    with pytest.raises(NotImplementedError, match="MoE"):
+        apply_tensor_parallel(
+            DecoderModel(
+                vocab_size=32,
+                hidden_size=16,
+                num_layers=1,
+                num_heads=4,
+                num_experts=4,
+                top_k=2,
+                mlp_impl="moe",  # num_experts only builds MoE with mlp_impl="moe"
+            ),
+            process_group=stub,
         )
 
 

@@ -1,5 +1,6 @@
 import sys
 import time
+from contextlib import AbstractContextManager
 from typing import Any, cast
 
 import torch
@@ -405,6 +406,28 @@ class TrainingEngine:
         for batch_idx, batch in enumerate(self.dataloader):
             yield batch_idx, batch, num_batches
 
+    def _amp_context(self) -> AbstractContextManager:
+        """The autocast context for a model forward under AMP.
+
+        ``resolved_amp_dtype`` is the resolved dtype ("float32" on CPU /
+        no-AMP runs), and "float32" must NOT issue fp16 autocast — CPU
+        autocast silently no-ops fp16 and would error if PyTorch hardens
+        it; fp32 needs no autocast at all (RIL ISS-181).
+
+        Both the training forward and the validation forward use this, so
+        backends that REQUIRE half precision (``flash_attn`` — the kernel
+        rejects fp32) stay in autocast during validation too (surfaced by
+        the TP+flash engine e2e: validation ran the flash forward in fp32
+        and crashed).
+        """
+        amp_dtype = torch.float16
+        amp_enabled = self.config.optimization.use_amp
+        if self.resolved_amp_dtype == "bfloat16":
+            amp_dtype = torch.bfloat16
+        elif self.resolved_amp_dtype == "float32":
+            amp_enabled = False
+        return torch.autocast(device_type=self.device.type, enabled=amp_enabled, dtype=amp_dtype)
+
     def _run_epoch(self, epoch: int) -> float:
         if self.optimizer is None or self.criterion is None:
             raise RuntimeError("standard-loop components are required")
@@ -455,18 +478,7 @@ class TrainingEngine:
             else:
                 batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
-            # AMP dtype: honor the resolved choice. "float32" (the CPU /
-            # no-AMP resolved value) must NOT issue fp16 autocast — CPU
-            # autocast silently no-ops fp16 and would error if PyTorch
-            # hardens it; fp32 needs no autocast at all (RIL ISS-181).
-            amp_dtype = torch.float16
-            amp_enabled = self.config.optimization.use_amp
-            if self.resolved_amp_dtype == "bfloat16":
-                amp_dtype = torch.bfloat16
-            elif self.resolved_amp_dtype == "float32":
-                amp_enabled = False
-
-            with torch.autocast(device_type=self.device.type, enabled=amp_enabled, dtype=amp_dtype):
+            with self._amp_context():
                 loss, metrics = self.task.train_step(batch, self.model, self.criterion)
                 # Gradient-accum scaling: the RAW loss is what callbacks and
                 # logging should see (RIL ISS-180); the scaled copy backprops.
@@ -620,7 +632,12 @@ class TrainingEngine:
                 else:
                     batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
-                loss, metrics = self.task.validation_step(batch, self.model, self.criterion)
+                # Validation runs under the SAME AMP autocast as training
+                # (RIL ISS-257): backends that require half precision
+                # (flash_attn kernel rejects fp32) must not run the
+                # validation forward in fp32.
+                with self._amp_context():
+                    loss, metrics = self.task.validation_step(batch, self.model, self.criterion)
 
                 batch_loss = metrics.get("loss", loss.item())
                 val_loss += batch_loss

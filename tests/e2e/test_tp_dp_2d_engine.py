@@ -77,7 +77,7 @@ def _release_parent_cuda_caches() -> None:
             continue
 
 
-def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: int) -> Config:
+def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: int, flash: bool = False) -> Config:
     """Shared tiny-SFT config builder (identical model/loss schedule across runs).
 
     ``max_seq_len`` must comfortably exceed the verbatim Alpaca-style prompt
@@ -86,6 +86,11 @@ def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: i
     task's NaN guard returns a constant 0.0 loss, and the run silently trains
     NOTHING (the old e2e was vacuous; surfaced while hard-coding the TP+DP
     milestone).
+
+    ``flash=True`` switches the attention backend to ``flash_attn`` (the
+    TASK-204 TP-scope extension) and forces ``use_amp=True``: the flash kernel
+    requires half precision, and the engine resolves this to bf16 autocast on
+    supported hardware.
     """
     return Config(
         model=ModelConfig(
@@ -94,6 +99,7 @@ def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: i
             num_heads=4,  # 32/4 = 8 dim per head; divisible by tp_size
             vocab_size=ctx["vocab_size"],
             max_seq_len=256,
+            attn_impl="flash_attn" if flash else "mha",
         ),
         training=TrainingConfig(
             batch_size=2,
@@ -108,7 +114,7 @@ def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: i
             tokenizer_type="simple",
             tokenizer_path=ctx["tokenizer_path"],
         ),
-        optimization=OptimizationConfig(use_compile=False, use_amp=False, num_workers=0),
+        optimization=OptimizationConfig(use_compile=False, use_amp=flash, num_workers=0),
         distributed=DistributedConfig(backend=backend, parallel_strategy=parallel_strategy, tp_size=tp_size),
     )
 
@@ -134,7 +140,9 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
         torch.cuda.set_device(device_index)
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
 
-        config = _build_config(ctx, backend="nccl", parallel_strategy="tp", tp_size=ctx["tp_size"])
+        config = _build_config(
+            ctx, backend="nccl", parallel_strategy="tp", tp_size=ctx["tp_size"], flash=ctx.get("flash", False)
+        )
         data_module = SFTDataModule(config)
         data_module.prepare_data()
         data_module.setup()
@@ -185,7 +193,7 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
             dist.destroy_process_group()
 
 
-def _run_engine_2d(tmp_path, world_size: int, tp_size: int) -> None:
+def _run_engine_2d(tmp_path, world_size: int, tp_size: int, *, flash: bool = False) -> None:
     gpu_devices = all_gpu_devices(min_free_bytes=ENGINE_2D_MIN_FREE_BYTES)
     if len(gpu_devices) < world_size:
         pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D engine e2e)")
@@ -215,6 +223,7 @@ def _run_engine_2d(tmp_path, world_size: int, tp_size: int) -> None:
         # force an EVEN vocab so the lm_head / embedding axes partition.
         "vocab_size": tokenizer.vocab_size + 10 + (tokenizer.vocab_size % 2),
         "tp_size": tp_size,
+        "flash": flash,
     }
     manager = mp.Manager()
     results = manager.dict()
@@ -246,6 +255,15 @@ def _run_engine_2d(tmp_path, world_size: int, tp_size: int) -> None:
 def test_engine_tp_dp_2d_four_gpu(tmp_path):
     """Real-engine TP+DP 2D training stays in lockstep across 4 GPUs (tp=2 dp=2)."""
     _run_engine_2d(tmp_path, world_size=4, tp_size=2)
+
+
+@pytest.mark.need_gpu(4)
+@pytest.mark.slow
+def test_engine_tp_dp_2d_flash_attn_four_gpu(tmp_path):
+    """Real-engine TP+DP 2D with the flash-attention backend (TASK-204 TP-scope
+    extension): the transformed FlashAttention must train through the REAL loop
+    under bf16 AMP autocast and stay bit-identical across DP groups."""
+    _run_engine_2d(tmp_path, world_size=4, tp_size=2, flash=True)
 
 
 @pytest.mark.need_gpu(4)

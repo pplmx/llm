@@ -432,10 +432,18 @@ def apply_tensor_parallel(
         raise NotImplementedError("Tensor parallelism v1 does not support ALiBi (use_alibi=True).")
     for i, block in enumerate(m.transformer_blocks):
         attn_cls = type(block.self_attn).__name__
-        if attn_cls != "MultiHeadAttention":
+        # v1 supports backends that share the MHA projection surface: fused
+        # QKV (column-parallel over heads) + row-parallel out_proj with
+        # per-rank head geometry patchable via num_heads/num_kv_heads/head_dim/
+        # kv_dim. FlashAttention declares exactly that surface (RIL ISS-137),
+        # so the transform below applies unchanged; the kv-cache / paged
+        # decoding differences live in forward, not in the weights. MLA uses
+        # a different latent layout (no fused QKV in the same sense) and MoE
+        # needs expert-parallel routing — both stay out of scope (TASK-204).
+        if attn_cls not in ("MultiHeadAttention", "FlashAttention"):
             raise NotImplementedError(
-                f"Tensor parallelism v1 supports only attn_impl='mha' (block {i} is {attn_cls}); "
-                "flash/sdpa/mla attention backends are out of scope for the TP milestone."
+                f"Tensor parallelism v1 supports attn_impl in {{'mha', 'flash_attn'}} "
+                f"(block {i} is {attn_cls}); sdpa/mla/MoE are out of scope for the TP milestone."
             )
         if getattr(block.mlp, "num_experts", None):
             raise NotImplementedError("Tensor parallelism with MoE (expert parallelism) is not implemented in v1.")
