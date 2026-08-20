@@ -45,11 +45,16 @@ def test_sft_e2e_flow(tmp_path, device):
             num_layers=2,
             num_heads=4,  # 32/4 = 8 dim per head
             vocab_size=tokenizer.vocab_size + 10,
-            max_seq_len=64,
+            # MUST exceed the 146-token verbatim Alpaca-style prompt or the
+            # response falls outside the truncation window and every label
+            # becomes -100 -> NaN loss -> the SFT NaN guard returns a constant
+            # 0.0 and the run silently trains nothing (the old e2e was
+            # vacuous; RIL round-84/85 finding).
+            max_seq_len=256,
         ),
         training=TrainingConfig(batch_size=2, epochs=1, lr=1e-3, warmup_epochs=0, log_every_n_steps=1),
         data=DataConfig(
-            dataset_path=str(data_path), max_seq_len=64, tokenizer_type="simple", tokenizer_path=str(tokenizer_path)
+            dataset_path=str(data_path), max_seq_len=256, tokenizer_type="simple", tokenizer_path=str(tokenizer_path)
         ),
         optimization=OptimizationConfig(
             use_compile=False,  # Faster for tiny test
@@ -64,6 +69,12 @@ def test_sft_e2e_flow(tmp_path, device):
     data_module = SFTDataModule(config)
     data_module.prepare_data()
     data_module.setup()
+
+    # Vacuous-run guard (RIL round-84 finding): at a too-short max_seq_len the
+    # Alpaca-style response is truncated away -> all labels -100 -> NaN loss ->
+    # constant-0 train step, and this test would pass without training a thing.
+    sample_labels = data_module.train_dataset[0]["labels"]
+    assert (sample_labels != -100).any(), "tiny SFT corpus has NO real labels — training would be a no-op"
 
     task = SFTTask(config, data_module)
 
