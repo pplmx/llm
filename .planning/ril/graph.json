@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 86,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-20T14:50:48+00:00",
+  "updated_at": "2026-08-20T15:58:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11496,15 +11496,15 @@
       "id": "TASK-204",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-08-18T16:17:29+00:00",
-      "updated_at": "2026-08-18T16:17:29+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-20T15:58:31+00:00",
+      "touched_round": 86,
       "category": "core-feature",
       "severity": 1.2,
       "effort": 5.0,
       "title": "TP scope extension: serving + flash/sdpa/mla + MoE expert-parallel",
-      "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). Follow-up: expert-parallel routing for MoE under TP, TP-compatible attention backends, and TP load for llm-serve."
+      "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). PROGRESS — flash_attn slice DONE (CHG-209: scope guard relaxed, 3 flash TP parity tests + 4-GPU TP+DP 2D flash engine e2e; surfaced+fixed ISS-257 validation autocast). REMAINING: sdpa + mla attention backends, MoE expert-parallel routing, llm-serve TP load confirmation."
     },
     "ISS-241": {
       "id": "ISS-241",
@@ -11888,6 +11888,43 @@
       "touched_round": 86,
       "source": "tests/e2e/test_tp_checkpoint_roundtrip.py (5 tests) + tests/training/test_checkpoint_format_split.py + test_checkpoint_manager.py + test_loader.py + test_dpo_task.py + test_resume_training.py + test_tensor_parallel.py + test_engine_advanced.py + test_tp_dp_2d_engine.py",
       "summary": "All 5 TP checkpoint roundtrip tests green with the durable-barrier change: 2/4-GPU pure TS, 4/6-GPU 2D engine on-disk==gathered, 4-GPU 2D resume-continues; plus the full checkpoint/loader/DPO/resume/tensor-parallel regression (exit 0) and ruff+ty clean.",
+      "confidence": 1.0
+    },
+    "CHG-209": {
+      "id": "CHG-209",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T15:57:24+00:00",
+      "updated_at": "2026-08-20T15:57:24+00:00",
+      "touched_round": 86,
+      "commit": "b308d83",
+      "title": "TP scope extended to flash_attn; validation forward now honors AMP autocast",
+      "summary": "Relaxed apply_tensor_parallel scope guard to accept FlashAttention (same fused-QKV/out_proj surface); refactored AMP dtype resolution into engine._amp_context() shared by train+validation forwards (fixes latent ISS-257: validation ran flash under fp32 and the kernel rejected it)."
+    },
+    "ISS-257": {
+      "id": "ISS-257",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-20T15:57:25+00:00",
+      "updated_at": "2026-08-20T15:58:08+00:00",
+      "touched_round": 86,
+      "severity": 1.8,
+      "confidence": 1.0,
+      "title": "Standard-loop validation forward runs outside AMP autocast, crashing half-precision-only attention backends (flash_attn)",
+      "summary": "latent: the epoch-end validation forward ran under no_grad but NOT under the training loop's autocast, so attn_impl=flash_attn (kernel rejects fp32) crashed at first validation. Surfaced by the new TP+flash 2D engine e2e; fixed in CHG-209 via shared _amp_context()."
+    },
+    "EV-196": {
+      "id": "EV-196",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-20T15:58:08+00:00",
+      "updated_at": "2026-08-20T15:58:08+00:00",
+      "touched_round": 86,
+      "source": "tests/training/distributed/test_tensor_parallel.py (flash parity x3 + scope rejection) + tests/e2e/test_tp_dp_2d_engine.py (flash 2D engine e2e)",
+      "summary": "2-GPU flash TP forward/grad/checkpoint parity (incl. RoPE + GQA) bit-exact on fp32 weights; CPU scope guard pins mla/moe still rejected; 4-GPU TP+DP 2D flash engine e2e stays bit-identical across DP groups under bf16 AMP. ruff+ty green; prek hooks passed.",
       "confidence": 1.0
     }
   },
@@ -17488,6 +17525,18 @@
       "to": "ISS-256",
       "type": "addresses",
       "created_at": "2026-08-20T14:50:37+00:00"
+    },
+    {
+      "from": "CHG-209",
+      "to": "ISS-257",
+      "type": "resolves",
+      "created_at": "2026-08-20T15:58:08+00:00"
+    },
+    {
+      "from": "CHG-209",
+      "to": "TASK-204",
+      "type": "implements",
+      "created_at": "2026-08-20T15:58:08+00:00"
     }
   ]
 }
