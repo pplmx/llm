@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
@@ -735,14 +736,25 @@ class CheckpointManager:
         extra_state: dict | None = None,
         model_config: dict | None = None,
     ):
+        collective = is_fsdp(model) or is_tp(model)
         if self.rank != 0:
             # FSDP's FULL_STATE_DICT state_dict() and the TP full-state-dict
             # gather are cross-rank collectives (RIL ISS-186 / TASK-200):
             # every shard must enter them or rank 0 blocks forever. Non-zero
             # ranks enter the gather and discard the result (they never
             # write); rank 0 below does the disk write.
-            if is_fsdp(model) or is_tp(model):
+            if collective:
                 model_state_dict(model)
+            if collective and dist.is_initialized():
+                # Durable-return contract (RIL ISS-256): a collective save
+                # must not return on non-zero ranks before rank 0's disk write
+                # is complete — a rank that reads the checkpoint right after
+                # the call (last-epoch engine e2e, any resume-from-disk on a
+                # non-zero rank) would otherwise race the write and see a
+                # missing / stale / partially-flushed file. Rank 0 reaches the
+                # same barrier after writing, so an all-world barrier here
+                # makes "save_checkpoint returned" mean "checkpoint is on disk".
+                dist.barrier()
             return
 
         model_state_to_save = model_state_dict(model)
@@ -796,6 +808,12 @@ class CheckpointManager:
             self.checkpoints_saved.append(epoch_pt)
             self._cleanup_old_checkpoints()
             self.logger.debug(f"Checkpoint saved to {epoch_name}{SAFETENSORS_SUFFIX}")
+
+        if collective and dist.is_initialized():
+            # Match the non-zero-rank barrier above (RIL ISS-256): every rank
+            # waits here until rank 0's disk writes are durable, so no rank
+            # can return from a collective save ahead of the on-disk state.
+            dist.barrier()
 
     def _cleanup_old_checkpoints(self):
         while len(self.checkpoints_saved) > self.config.keep_last_n:
