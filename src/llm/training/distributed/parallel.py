@@ -373,30 +373,123 @@ def is_tp(model: nn.Module) -> bool:
 
 
 def allreduce_dp_grads(model: nn.Module) -> None:
-    """Average every parameter gradient across a TP model's DP group.
+    """Make every parameter gradient coherent across a TP model's groups.
 
-    TP + data-parallel 2D (RIL TASK-202): each DP group trains on a different
-    data shard, so after each rank's backward the replicated parameters
-    (embedding, norms) and each TP rank's shard copy only carry THAT group's
-    shard gradient. Averaging across the DP group is required to converge to
-    the true full-batch gradient (DDP semantics) — otherwise the identical
-    shard copies held by different DP groups diverge.
+    Two reductions, both required for TP models to stay in lockstep:
+
+    * **DP group (2D, RIL TASK-202):** each data-parallel group trains on a
+      different data shard, so every rank's gradient (for its shard copies AND
+      the replicated parameters) only carries THAT group's shard gradient.
+      Averaging over the DP group converges to the true full-batch gradient
+      (DDP semantics) — otherwise the identical shard copies held by different
+      DP groups diverge.
+    * **TP group (replicated params only):** the replicated parameters
+      (embedding, norms, row-parallel biases — ``_tp.partition`` axis ``None``)
+      must use a BIT-IDENTICAL gradient on every TP rank. They are not
+      sharded, so their per-rank values differ by small floating-point drift
+      that compounds across steps and silently desynchronises the TP-group
+      replicas (surfaced by the bit-exact state-dict check in the 2D engine
+      e2e; also latent in pure-TP v1 where parity was only asserted CLOSE).
+      Averaging them over the TP group forces the replicas to step together.
+
+    Sharded (column/row-parallel) weights are NOT reduced over the TP group —
+    each rank owns a disjoint slice whose gradient belongs only to it.
 
     Runs AFTER the last gradient contribution of a step (post ``unscale_`` so
     the reduce happens in fp32, post partial-window re-scaling) and BEFORE grad
     clipping / ``optimizer.step``. It MUST NOT run on gradient-accumulation
     interior microbatches (that is exactly what DDP's ``no_sync()`` avoids);
     the engine gates it on step boundaries. A no-op for models that are not
-    tensor-parallel or were built pure-TP (``dp_size == 1``, no DP group).
+    tensor-parallel.
     """
     if not is_tp(model):
         return
-    dp_group = getattr(cast(Any, model)._tp, "dp_group", None)
-    if dp_group is None:
-        return
-    for param in model.parameters():
-        if param.grad is not None:
+    tp = cast(Any, model)._tp
+    dp_group = getattr(tp, "dp_group", None)
+    for name, param in model.named_parameters():
+        if param.grad is None:
+            continue
+        if dp_group is not None:
             dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, group=dp_group)
+        if tp.partition.get(name) is None:
+            # Replicated parameter (or full bias of a row-parallel linear):
+            # force a bit-identical gradient across the TP group.
+            dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, group=tp.group)
+
+
+def clip_grad_norm_tp(
+    model: nn.Module,
+    max_norm: float,
+    group: dist.ProcessGroup | None = None,
+    eps: float = 1e-6,
+) -> torch.Tensor:
+    """Clip gradients by the GLOBAL full-model L2 norm, TP-aware.
+
+    ``torch.nn.utils.clip_grad_norm_`` computes the total norm over THIS
+    rank's parameters only — under tensor parallelism each rank holds a
+    DISJOINT shard, so every rank would clip with a different (too small)
+    local factor and the shards drift apart (RIL ISS-253). This helper
+    instead all-reduces the per-rank squared norms over the TP ``group`` so
+    every rank uses the SAME full-model norm, then clips its locals with the
+    common factor (Megatron semantics).
+
+    The per-rank squared sums are already identical across DP groups (the DP
+    gradient average ran first), so one TP-group reduce yields the correct
+    global norm on every rank. A no-op on the result when ``group`` is ``None``
+    (plain ``clip_grad_norm_`` semantics, single-process callers).
+
+    Args:
+        model: The (TP-partitioned) model.
+        max_norm: Maximum global L2 norm. Gradient values are not modified
+            when the global norm stays below it.
+        group: The group over which the norm is global (the TP group).
+            Defaults to ``model._tp.group``.
+        eps: Denominator guard for the clip coefficient.
+
+    Returns:
+        The GLOBAL total norm as a 0-dim float32 tensor (used verbatim like
+        ``clip_grad_norm_``'s return: ``torch.isfinite`` detects a skipped
+        step, ``.item()`` feeds perf monitoring). ``inf``/``NaN`` when any
+        rank's gradient is non-finite.
+    """
+    if group is None and is_tp(model):
+        group = cast(Any, model)._tp.group
+    params = [p for p in model.parameters() if p.grad is not None]
+    # Device comes from the model's parameters, NOT this rank's grads: on a
+    # step where every grad is absent (a detached/constant loss), params still
+    # tell us where the group lives — the all-reduce below then contributes a
+    # proper ZERO on the right device instead of a CPU tensor crashing NCCL
+    # with "No backend type associated with device type cpu" (surfaced by the
+    # vacuous SFT-loss test during the ISS-253 milestone).
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        device = torch.device("cpu")
+    total_sq = torch.zeros((), dtype=torch.float32, device=device)
+    # ``params`` was filtered to only those with a gradient above, but ty
+    # cannot narrow ``Parameter.grad``'s ``Tensor | None`` through the list
+    # comprehension — re-guard here so the attribute access stays typed.
+    for p in params:
+        grad = p.grad
+        if grad is None:
+            continue
+        if not torch.isfinite(grad).all():
+            # A non-finite contribution poisons the global norm (and the step
+            # must be skipped); propagate inf/NaN so the caller's isfinite
+            # check behaves exactly like clip_grad_norm_'s.
+            total_sq = torch.tensor(float("inf"), dtype=torch.float32, device=device)
+            break
+        total_sq += (grad.float() * grad.float()).sum()
+    if group is not None:
+        dist.all_reduce(total_sq, op=dist.ReduceOp.SUM, group=group)
+    total_norm = total_sq.sqrt()
+    clip_coef = max_norm / (total_norm + eps)
+    if bool(clip_coef < 1.0):
+        for p in params:
+            grad = p.grad
+            if grad is not None:
+                grad.mul_(clip_coef)
+    return total_norm
 
 
 def model_state_dict(

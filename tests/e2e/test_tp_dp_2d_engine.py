@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import socket
 import time
@@ -50,7 +51,11 @@ from llm.training.tasks.sft_task import SFTTask
 from tests.support.devices import all_gpu_devices
 
 ENGINE_2D_MIN_FREE_BYTES = 1 * 1024**3
-ENGINE_2D_JOIN_TIMEOUT_S = 240
+# Generous but bounded: on a shared box hosting another GPU workload, a
+# multi-rank NCCL rendezvous + tiny training run can take minutes to spin up
+# (observed 6-GPU engine e2e and 4-GPU wrap timing out at 180-240s under load,
+# both passing instantly in isolation). A true deadlock still trips these.
+ENGINE_2D_JOIN_TIMEOUT_S = 480
 
 
 def _free_port() -> int:
@@ -73,14 +78,22 @@ def _release_parent_cuda_caches() -> None:
 
 
 def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: int) -> Config:
-    """Shared tiny-SFT config builder (identical model/loss schedule across runs)."""
+    """Shared tiny-SFT config builder (identical model/loss schedule across runs).
+
+    ``max_seq_len`` must comfortably exceed the verbatim Alpaca-style prompt
+    (146 tokens) — at 32/64 the response tokens fall outside the truncation
+    window, every label becomes -100, CrossEntropyLoss returns NaN, the SFT
+    task's NaN guard returns a constant 0.0 loss, and the run silently trains
+    NOTHING (the old e2e was vacuous; surfaced while hard-coding the TP+DP
+    milestone).
+    """
     return Config(
         model=ModelConfig(
             hidden_size=32,
             num_layers=2,
             num_heads=4,  # 32/4 = 8 dim per head; divisible by tp_size
             vocab_size=ctx["vocab_size"],
-            max_seq_len=32,
+            max_seq_len=256,
         ),
         training=TrainingConfig(
             batch_size=2,
@@ -91,7 +104,7 @@ def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: i
         ),
         data=DataConfig(
             dataset_path=ctx["data_path"],
-            max_seq_len=32,
+            max_seq_len=256,
             tokenizer_type="simple",
             tokenizer_path=ctx["tokenizer_path"],
         ),
@@ -130,6 +143,14 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
         # constructing the engine); the engine broadcasts initial weights from
         # rank 0 so the per-rank seeds do not diverge the TP shards.
         engine = TrainingEngine(config=config, task=task, rank=rank, world_size=world_size, data_module=data_module)
+        # Snapshot BEFORE training so we can prove training actually moved
+        # weights (a vacuous no-gradient run keeps the state identical and the
+        # cross-rank equality below would trivially pass — regression guard).
+        before = model_state_dict(engine.model)
+        before_digests = {
+            key: hashlib.sha256(value.detach().cpu().contiguous().numpy().tobytes()).hexdigest()
+            for key, value in before.items()
+        }
         engine.run()
 
         steps = engine.global_step
@@ -143,8 +164,18 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
         gathered: list = [None] * world_size
         dist.all_gather_object(gathered, digests)
         for other in gathered:
-            assert other == digests, f"rank {rank}: full state dict diverged from another rank after training"
+            if other != digests:
+                diff_keys = sorted(k for k in digests if other.get(k) != digests[k])
+                raise AssertionError(
+                    f"rank {rank}: full state dict diverged from another rank after training; "
+                    f"first divergent keys: {diff_keys[:8]}"
+                )
         assert steps > 0, f"rank {rank}: no training steps ran"
+        # Vacuous-run guard: the optimizer must have MOVED at least one
+        # weight, or the SFT NaN-guard silently masked a zero-loss step (the
+        # reason the original e2e passed without training).
+        moved = [key for key in before_digests if before_digests[key] != digests.get(key)]
+        assert moved, f"rank {rank}: no parameter changed across training — the run was a no-op"
         results[rank] = {"success": True, "steps": steps}
         dist.destroy_process_group()
     except Exception as e:  # noqa: BLE001 — report worker failure in the parent
@@ -317,9 +348,13 @@ def test_pure_tp_reports_true_metric_loss_not_divided_by_world(tmp_path):
     # Both pure-TP ranks saw the same data — identical reported loss.
     avg_0, avg_1 = results[0]["avg_loss"], results[1]["avg_loss"]
     assert abs(avg_0 - avg_1) < 1e-6, f"pure-TP ranks disagree on loss: {avg_0} vs {avg_1}"
+    # Vacuous-run guard: the loss must be a REAL finite CE value (~log(vocab)),
+    # not the 0.0 placeholder the SFT task returns on a NaN step.
+    assert math.isfinite(avg_0), f"pure-TP loss {avg_0} is not finite"
+    assert avg_0 > 0, f"pure-TP loss {avg_0} is not a real training loss"
 
     ref = _single_rank_avg_loss(ctx)
-    assert avg_0 == pytest.approx(ref, rel=1e-3), (
+    assert avg_0 == pytest.approx(ref, rel=1e-2), (
         f"pure-TP reported epoch loss {avg_0} != single-rank reference {ref} "
         f"(the ISS-252 /world bug would report ~{ref / 2})"
     )

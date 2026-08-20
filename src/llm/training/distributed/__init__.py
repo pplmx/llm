@@ -2,6 +2,7 @@
 
 from llm.training.distributed.parallel import (
     allreduce_dp_grads,
+    clip_grad_norm_tp,
     is_fsdp,
     is_tp,
     load_model_state_dict,
@@ -15,6 +16,7 @@ from llm.training.distributed.tensor_parallel import apply_tensor_parallel
 __all__ = [
     "allreduce_dp_grads",
     "apply_tensor_parallel",
+    "clip_grad_norm_tp",
     "is_fsdp",
     "is_tp",
     "load_model_state_dict",

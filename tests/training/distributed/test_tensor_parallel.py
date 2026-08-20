@@ -22,11 +22,13 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
 from llm.training.distributed import (
     allreduce_dp_grads,
     apply_tensor_parallel,
+    clip_grad_norm_tp,
     is_tp,
     load_model_state_dict,
     model_state_dict,
@@ -35,7 +37,10 @@ from llm.training.distributed import (
 from tests.support.devices import all_gpu_devices
 
 TP_MIN_FREE_BYTES = 1 * 1024**3
-TP_JOIN_TIMEOUT_S = 180
+# Generous-but-bounded: on a shared box hosting another GPU workload the
+# multi-rank NCCL rendezvous can take minutes (4-GPU wrap timed out at 180s
+# under load once; instant in isolation). A true deadlock still trips these.
+TP_JOIN_TIMEOUT_S = 360
 
 
 def _free_port() -> int:
@@ -654,3 +659,84 @@ def test_tp_dp_layout_2d():
         tp_dp_layout(8, 3, rank=0)
     with pytest.raises(ValueError, match="tp_size"):
         tp_dp_layout(8, 12, rank=0)
+
+
+def _clip_global_worker(rank: int, world_size: int, results) -> None:
+    """Global-norm clip parity (RIL ISS-253): every rank clips by the FULL
+    model norm, not its own shard's local norm."""
+    try:
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+
+        class _Pair(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.p = nn.Parameter(torch.zeros(2))
+
+        model = _Pair()
+        # Each rank holds a [3.0, 4.0] gradient (local norm 5.0); the FULL
+        # model norm across both ranks is sqrt(25 + 25) = sqrt(50) ~ 7.071.
+        _ref = nn.Parameter(torch.zeros(4))
+        _ref.grad = torch.tensor([3.0, 4.0, 3.0, 4.0])
+        reference = torch.nn.utils.clip_grad_norm_([_ref], 6.0)
+        coef = float(6.0 / (reference.item() + 1e-6))  # clip_grad_norm_'s own coef
+
+        # 1. global norm clips BOTH shards with the shared coef.
+        model.p.grad = torch.tensor([3.0, 4.0])
+        with torch.no_grad():
+            total = clip_grad_norm_tp(model, 6.0, group=dist.group.WORLD)
+        assert abs(total.item() - reference.item()) < 1e-5, (total.item(), reference.item())
+        assert torch.allclose(model.p.grad, torch.tensor([3.0, 4.0]) * coef, atol=1e-5)
+        if rank == 0:
+            results["clipped_norm"] = total.item()
+            results["clipped_grad"] = model.p.grad.tolist()
+
+        # 2. a capped max_norm leaves grads untouched and still reports the norm.
+        model.p.grad = torch.tensor([3.0, 4.0])
+        total = clip_grad_norm_tp(model, 1000.0, group=dist.group.WORLD)
+        assert torch.equal(model.p.grad, torch.tensor([3.0, 4.0]))
+        if rank == 0:
+            results["uncapped_norm"] = total.item()
+
+        # 3. a non-finite gradient propagates inf into the global norm.
+        model.p.grad = torch.tensor([float("inf"), 4.0])
+        total = clip_grad_norm_tp(model, 6.0, group=dist.group.WORLD)
+        assert not torch.isfinite(total)
+        if rank == 0:
+            results["inf_norm"] = float(total.item())
+
+        results["success"] = True
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results["success"] = False
+        results["error"] = repr(e)
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+@pytest.mark.quick
+def test_clip_grad_norm_tp_global_norm_over_two_ranks():
+    """Global L2 clip parallels clip_grad_norm_ on the concatenated model."""
+
+    _setup_tp_env()
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(_clip_global_worker, args=(2, results), nprocs=2, join=False)
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError("clip-grad-norm-tp spawn exceeded timeout")
+        if context.join(timeout=remaining):
+            break
+    assert results["success"], results.get("error")
+    # Compare the GLOBAL clip against clip_grad_norm_ on the FULL model.
+    coef = 6.0 / (float(results["clipped_norm"]) + 1e-6)
+    expected_full = torch.tensor([3.0, 4.0, 3.0, 4.0]) * coef
+    assert torch.allclose(torch.tensor(results["clipped_grad"]), expected_full[:2], atol=1e-5)
+    assert abs(float(results["clipped_norm"]) - (50.0**0.5)) < 1e-5
+    assert results["uncapped_norm"] == pytest.approx(50.0**0.5, rel=1e-5)
+    assert results["inf_norm"] == float("inf")

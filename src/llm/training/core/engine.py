@@ -15,6 +15,7 @@ from llm.training.core.distributed import broadcast_parameters
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
 from llm.training.distributed import (
     allreduce_dp_grads,
+    clip_grad_norm_tp,
     is_fsdp,
     is_tp,
     model_for_checkpoint_io,
@@ -510,9 +511,15 @@ class TrainingEngine:
                 # rule the DDP no_sync() branch above enforces).
                 if is_tp(self.model):
                     allreduce_dp_grads(self.model)
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.config.training.gradient_clip_val
-                )
+                    # TP-aware global-norm clip: EVERY rank must use the FULL
+                    # model's norm (all-reduced over the TP group), not its own
+                    # shard's local norm, or each shard clips by a different
+                    # factor and the replicated copies drift (RIL ISS-253).
+                    grad_norm = clip_grad_norm_tp(self.model, self.config.training.gradient_clip_val)
+                else:
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.config.training.gradient_clip_val
+                    )
                 # GradScaler silently skips the real parameter update when a
                 # gradient is inf/NaN (found_inf, recorded during unscale_).
                 # ``clip_grad_norm_`` computes its total norm from the same
