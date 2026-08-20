@@ -166,9 +166,60 @@ def test_dpo_task_train_step(tiny_config):
         "chosen_labels": chosen_labels,
         "rejected_input_ids": rejected_ids,
         "rejected_labels": rejected_labels,
+        # The data pipeline always supplies these (RIL ISS-249); DPOTask now
+        # feeds them to the model forwards.
+        "chosen_attention_mask": torch.ones(batch_size, seq_len, dtype=torch.long),
+        "rejected_attention_mask": torch.ones(batch_size, seq_len, dtype=torch.long),
     }
 
     loss, metrics = task.train_step(batch, model, criterion)
 
     assert not torch.isnan(loss)
     assert 0.0 <= metrics["reward_acc"] <= 1.0
+
+
+def test_dpo_attention_masks_reach_the_model(tiny_config):
+    """Regression for RIL ISS-249: DPOTask must pass the per-row attention
+    masks the data pipeline builds into the policy and reference forwards.
+
+    Zeroing a real content token's mask bit must change the DPO loss — before
+    the fix the masks never reached the model, so the loss was completely
+    mask-insensitive. (The standard causal right-padded layout masks trailing
+    pads by causality regardless, which is why the old discard was 'bounded
+    impact', but any non-trailing padding is silently corrupted without it.)
+    """
+    task = DPOTask(tiny_config, data_module=None)
+    model = task.build_model()
+    # Make policy != ref so the BT logit is non-trivial (an identical
+    # policy/ref yields a constant -log(sigmoid(0)) that is mask-invariant).
+    torch.manual_seed(123)
+    task.ref_model.load_state_dict(task.build_model().state_dict())
+    model.eval()
+    task.ref_model.eval()
+
+    batch_size, seq_len = 2, 6
+    vocab_size = tiny_config.model.vocab_size
+    chosen = torch.randint(0, vocab_size, (batch_size, seq_len))
+    rejected = torch.randint(0, vocab_size, (batch_size, seq_len))
+
+    def make_batch(attn: torch.Tensor) -> dict:
+        return {
+            "chosen_input_ids": chosen,
+            "chosen_labels": chosen.clone(),
+            "rejected_input_ids": rejected,
+            "rejected_labels": rejected.clone(),
+            "chosen_attention_mask": attn,
+            "rejected_attention_mask": attn.clone(),
+        }
+
+    ones = torch.ones(batch_size, seq_len, dtype=torch.long)
+    content_masked = ones.clone()
+    content_masked[:, 1] = 0  # mask out the 2nd (real) token of every row
+    with torch.no_grad():
+        loss_ones, _ = task.train_step(make_batch(ones), model, None)
+        loss_masked, _ = task.train_step(make_batch(content_masked), model, None)
+    # Same layout, only the mask differs — a mask-transparent DPO would return
+    # identical losses (the pre-fix behavior this guards against).
+    assert not torch.allclose(loss_ones, loss_masked), (
+        "DPO loss is insensitive to the attention mask — the masks never reach the model (ISS-249)"
+    )

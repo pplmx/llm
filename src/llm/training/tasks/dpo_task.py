@@ -133,9 +133,11 @@ class DPOTask(LanguageModelingTask):
     def train_step(self, batch: dict[str, Any], model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
         chosen_input_ids = batch["chosen_input_ids"]
         chosen_labels = batch["chosen_labels"]
+        chosen_attention_mask = batch["chosen_attention_mask"]
 
         rejected_input_ids = batch["rejected_input_ids"]
         rejected_labels = batch["rejected_labels"]
+        rejected_attention_mask = batch["rejected_attention_mask"]
 
         # Ensure ref_model is on correct device
         if self.ref_model is not None:
@@ -145,19 +147,25 @@ class DPOTask(LanguageModelingTask):
             if ref_device != model_device:
                 self.ref_model = self.ref_model.to(model_device)
 
-        # Policy Forward
-        policy_chosen_logits = model(chosen_input_ids)
-        policy_rejected_logits = model(rejected_input_ids)
+        # Policy Forward. The data pipeline builds per-row attention masks
+        # (chosen/rejected_attention_mask) that SFT and Reward pass to the
+        # model — DPO discarded them, so the causal model attended to the
+        # padding tokens (a right-padded batch leaks pad-token scores into
+        # every valid position's context), diverging from SFT/Reward semantics
+        # (RIL ISS-249).
+        policy_chosen_logits = model(chosen_input_ids, attn_mask=chosen_attention_mask)
+        policy_rejected_logits = model(rejected_input_ids, attn_mask=rejected_attention_mask)
 
         policy_chosen_logps = self._get_batch_logps(policy_chosen_logits, chosen_labels)
         policy_rejected_logps = self._get_batch_logps(policy_rejected_logits, rejected_labels)
 
         if self.ref_model is None:
             raise RuntimeError("reference model was not built")
-        # Reference Forward (No Grad)
+        # Reference Forward (No Grad) — same masks so the reference sees the
+        # identical context the policy sees.
         with torch.no_grad():
-            ref_chosen_logits = self.ref_model(chosen_input_ids)
-            ref_rejected_logits = self.ref_model(rejected_input_ids)
+            ref_chosen_logits = self.ref_model(chosen_input_ids, attn_mask=chosen_attention_mask)
+            ref_rejected_logits = self.ref_model(rejected_input_ids, attn_mask=rejected_attention_mask)
 
             ref_chosen_logps = self._get_batch_logps(ref_chosen_logits, chosen_labels)
             ref_rejected_logps = self._get_batch_logps(ref_rejected_logits, rejected_labels)
