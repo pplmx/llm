@@ -112,3 +112,17 @@ def test_reward_model_value_head_trainable(tiny_model, device):
     # Verify gradients exist
     for param in reward_model.value_head.parameters():
         assert param.grad is not None
+
+
+def test_reward_model_rejects_fully_masked_row(tiny_model, device):
+    """Regression for RIL ISS-248: a fully-masked row (mask.sum == 0) has no
+    reward token — ``seq_lengths`` would be -1 and the old code silently
+    harvested the LAST (padding) hidden state as the reward. Must fail loud."""
+    reward_model = RewardModel(tiny_model).to(device)
+
+    batch_size, seq_len = 2, 16
+    input_ids = torch.randint(0, 100, (batch_size, seq_len), device=device)
+    mask = torch.zeros(batch_size, seq_len, device=device)
+    mask[0, :8] = 1  # row 0 valid; row 1 fully padded
+    with pytest.raises(ValueError, match="fully-masked"):
+        reward_model(input_ids, mask)

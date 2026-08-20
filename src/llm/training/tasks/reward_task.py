@@ -54,6 +54,19 @@ class RewardModel(nn.Module):
         if attention_mask is not None:
             # Find the index of the last valid token for each sequence
             seq_lengths = attention_mask.sum(dim=1).long() - 1  # [batch_size]
+            if int((seq_lengths < 0).sum()):
+                # A fully-masked row (mask.sum == 0) has no valid reward token:
+                # ``seq_lengths`` would be -1 and the harvest below would
+                # silently index hidden_states[..., -1] — the LAST (padding)
+                # hidden state — feeding a garbage reward into the
+                # Bradley-Terry loss with no error (RIL ISS-248). An
+                # all-padded sequence is a data-pipeline corruption signal;
+                # fail loud instead of rewarding the padding token.
+                raise ValueError(
+                    f"RewardModel: {int((seq_lengths < 0).sum())} fully-masked row(s) (attention_mask.sum(dim=1) == 0) — "
+                    "every token was padded, so there is no reward token. Fix the data pipeline "
+                    "that produced an all-pad sequence instead of silently rewarding padding."
+                )
             batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
             last_hidden = hidden_states[batch_indices, seq_lengths]  # [batch_size, hidden_size]
         else:
