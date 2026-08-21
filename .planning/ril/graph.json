@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 87,
+  "round": 88,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-21T07:20:15+00:00",
+  "updated_at": "2026-08-21T11:53:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11496,15 +11496,15 @@
       "id": "TASK-204",
       "type": "task",
       "status": "active",
-      "version": 5,
+      "version": 6,
       "created_at": "2026-08-18T16:17:29+00:00",
-      "updated_at": "2026-08-21T06:15:44+00:00",
-      "touched_round": 86,
+      "updated_at": "2026-08-21T11:53:31+00:00",
+      "touched_round": 88,
       "category": "core-feature",
       "severity": 1.2,
       "effort": 5.0,
       "title": "TP scope extension: serving + flash/sdpa/mla + MoE expert-parallel",
-      "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). PROGRESS — flash_attn slice DONE (CHG-209: scope guard relaxed, 3 flash TP parity tests + 4-GPU TP+DP 2D flash engine e2e; surfaced+fixed ISS-257 validation autocast); MLA slice DONE (CHG-213: MultiLatentAttention TP branch + scope guard accepts mla; 2-GPU MLA TP parity + 4-GPU TP+DP 2D MLA engine e2e; surfaced+fixed ISS-258 2-D long mask crash). REMAINING: MoE expert-parallel (TASK-207, own round), llm-serve TP checkpoint confirmation (TASK-208), sdpa-leg doc clarify (TASK-209 — sdpa is a functional used by every backend, not a registered attn_impl)."
+      "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). PROGRESS — flash_attn slice DONE (CHG-209), MLA slice DONE (CHG-213), serving TP-checkpoint confirmation DONE (CHG-214/TASK-208), MoE expert-parallel DONE (CHG-215/TASK-207: replicated gate + rank-local experts; gate grad SUMmed over TP group; expert shards skip TP AVG; gather/scatter rebuilds the full expert set rank-major). REMAINING: sdpa-leg doc clarify (TASK-209 — sdpa is a functional used by every backend, not a registered attn_impl)."
     },
     "ISS-241": {
       "id": "ISS-241",
@@ -12004,16 +12004,16 @@
     "TASK-207": {
       "id": "TASK-207",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 5,
       "created_at": "2026-08-21T02:35:03+00:00",
-      "updated_at": "2026-08-21T02:35:03+00:00",
-      "touched_round": 86,
+      "updated_at": "2026-08-21T11:52:14+00:00",
+      "touched_round": 88,
       "category": "core-feature",
       "severity": 0.8,
       "effort": 6.0,
       "title": "MoE expert-parallel (TASK-204 leg 2)",
-      "summary": "TP v1 rejects num_experts (expert parallelism): each rank holds a disjoint expert set, gate routing becomes all-to-all for the selected experts, and checkpoint gather/scatter must handle unsharded gate + per-expert shards. LARGE — own round."
+      "summary": "DONE (CHG-215 cd7f4e1): MoE expert-parallel — replicated full gate + rank-local expert shards; EP forward keeps zero-hit ranks on the autograd graph (no backward deadlock); allreduce_dp_grads skips TP AVG for expert shards and SUMs the partial gate grad over the TP group; _TPState gather/scatter rebuilds the full expert set rank-major (bit-exact vs a plain reference, serve/resume portable). Verified: 2-GPU NCCL parity, 2-proc gloo roundtrip + dead-rank regression, 4-GPU TP+DP 2D MoE engine e2e (cross-rank bit-identical state dicts)."
     },
     "TASK-208": {
       "id": "TASK-208",
@@ -12099,6 +12099,29 @@
       "touched_round": 87,
       "source": "391970c tests/e2e/test_serve_tp_checkpoint.py::test_serve_tp_trained_checkpoint_two_gpu (2-GPU, passed 2026-08-21 on shared 8xA100)",
       "summary": "llm-serve serves a real TP-trained checkpoint end-to-end: engine on 2 GPUs (pure TP) auto-saved latest with model_config; FastAPI app via TestClient served /health (ok), /generate (token_count>=1), /v1/chat/completions (non-empty assistant msg); served model rebuilt with embedded hidden_size=32 not fallback 64.",
+      "confidence": 1.0
+    },
+    "CHG-215": {
+      "id": "CHG-215",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T11:50:43+00:00",
+      "updated_at": "2026-08-21T11:50:43+00:00",
+      "touched_round": 88,
+      "title": "MoE expert-parallel slice in apply_tensor_parallel (TASK-207)",
+      "commit": "cd7f4e1",
+      "summary": "TP v1 sharded MoE instead of rejecting num_experts: replicated full gate + rank-local experts split by expert index; EP forward (gate+experts on _BackwardAllReduce input, _ForwardAllReduce partial output, zero-contributing x_ep*0 term keeps zero-hit ranks on the autograd graph so the backward input all-reduce is never skipped). allreduce_dp_grads: expert shards skip TP-group AVG, replicated gate grad SUMmed over TP group, zeros materialised for dead routers/experts (uniform collectives). _TPState expert_shards/gate_params + rank-major gather/scatter of the full expert set (bit-exact checkpoint boundary)."
+    },
+    "EV-201": {
+      "id": "EV-201",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T11:50:43+00:00",
+      "updated_at": "2026-08-21T11:50:43+00:00",
+      "touched_round": 88,
+      "source": "cd7f4e1 tests: test_tp_moe_forward_grad_checkpoint_parity_two_gpu (2-GPU NCCL), test_tp_moe_state_dict_roundtrip_cpu (2-proc gloo), test_tp_moe_dead_rank_no_deadlock_cpu, test_engine_tp_dp_2d_moe_four_gpu (4-GPU TP+DP 2D engine), test_tp_mla_and_moe_scope_boundary — all passed 2026-08-21",
       "confidence": 1.0
     }
   },
@@ -17771,6 +17794,12 @@
       "to": "TASK-208",
       "type": "implements",
       "created_at": "2026-08-21T07:20:14+00:00"
+    },
+    {
+      "from": "CHG-215",
+      "to": "TASK-207",
+      "type": "implements",
+      "created_at": "2026-08-21T11:52:14+00:00"
     }
   ]
 }
