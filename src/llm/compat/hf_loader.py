@@ -16,7 +16,9 @@ from llm.compat.weight_mapping import (
     convert_hf_to_combined_qkv,
     convert_hf_weights,
     detect_architecture,
+    expand_layer_mapping,
     get_config_mapping,
+    get_weight_mapping,
 )
 from llm.models.decoder import DecoderModel
 from llm.runtime import ModelFactory
@@ -179,6 +181,23 @@ def _load_from_local(
         num_layers=our_config["num_layers"],
     )
 
+    # Loud-fail guard (RIL ISS-244): HF tensors the mapping does NOT consume
+    # must not be silently dropped — that is exactly how a partially-mapped
+    # (but config-declared-supported) checkpoint used to load into a model
+    # whose un-mapped weights stayed at RANDOM init with warnings only. The
+    # GGUF loader already raises on the same condition.
+    mapped_hf = expand_layer_mapping(get_weight_mapping(architecture), our_config["num_layers"])
+    unconsumed = [
+        hf_name
+        for hf_name in state_dict
+        if hf_name not in mapped_hf and hf_name.replace(".bias", ".weight") not in mapped_hf
+    ]
+    if unconsumed:
+        raise ValueError(
+            f"checkpoint has {len(unconsumed)} weight(s) the {architecture!r} mapping does not cover "
+            f"(first: {sorted(unconsumed)[:5]}); refusing to silently drop them at random init"
+        )
+
     # Concatenate HF's separate q/k/v projections into our combined
     # ``qkv_proj`` (MHA uses one Linear; HF Llama uses three). Without
     # this step ``load_state_dict`` would warn about a missing
@@ -253,9 +272,20 @@ def _load_from_local(
             )
 
     if missing:
-        logger.warning(f"Missing keys: {missing[:10]}{'...' if len(missing) > 10 else ''}")
+        # Loud, like the GGUF loader (RIL ISS-244): a checkpoint the config
+        # declared SUPPORTED but whose tensors do not fully cover the model
+        # leaves submodules at RANDOM init — garbage generation with a warning
+        # is a silent misconfiguration, not a recoverable condition.
+        raise ValueError(
+            f"checkpoint is missing {len(missing)} model key(s) "
+            f"(first: {sorted(missing)[:5]}); the file's tensors do not cover "
+            f"the architecture described by its config"
+        )
     if unexpected:
-        logger.warning(f"Unexpected keys: {unexpected[:10]}{'...' if len(unexpected) > 10 else ''}")
+        raise ValueError(
+            f"checkpoint has {len(unexpected)} key(s) the model does not have "
+            f"(first: {sorted(unexpected)[:5]}); refusing to silently drop them"
+        )
 
     logger.info(f"Model loaded successfully to {device} with dtype {dtype}")
 

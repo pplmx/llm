@@ -292,6 +292,63 @@ class TestHFLoader:
             emb = reloaded.embedding_layer.token_embeddings.weight.detach().to("cpu")
             assert torch.equal(head, emb), "tied checkpoint must copy embeddings into lm_head"
 
+    def _make_saved_checkpoint(self, tmp_path):
+        """Build + save_pretrained a small llama-style checkpoint directory."""
+        from llm.compat.hf_publisher import save_pretrained
+        from tests.support.models import decoder_model_kwargs
+
+        torch.manual_seed(2)
+        from llm.models.decoder import DecoderModel
+
+        src = DecoderModel(
+            **decoder_model_kwargs(
+                vocab_size=64,
+                hidden_size=32,
+                num_layers=1,
+                num_heads=2,
+                intermediate_size=64,
+                max_seq_len=64,
+                attn_impl="mha",
+                mlp_impl="mlp",
+            )
+        )
+        save_pretrained(src, tmp_path)
+        from llm.compat.hf_loader import from_pretrained
+
+        return from_pretrained, tmp_path
+
+    def test_leftover_missing_weight_raises_not_warns(self, tmp_path):
+        """RIL ISS-244: a checkpoint whose tensors do NOT cover the config's
+        architecture must RAISE (like the GGUF loader) instead of leaving the
+        submodule at RANDOM init with a warning-only load."""
+        from safetensors.torch import save_file
+
+        from_pretrained, path = self._make_saved_checkpoint(tmp_path)
+
+        weights_path = path / "model.safetensors"
+        state_dict = dict(torch.load(str(weights_path)))
+        state_dict.pop("model.layers.0.mlp.down_proj.weight", None)  # drop ONE mapped key
+        save_file(state_dict, str(weights_path))
+
+        with pytest.raises(ValueError, match="missing"):
+            from_pretrained(str(path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+
+    def test_leftover_unexpected_weight_raises_not_warns(self, tmp_path):
+        """RIL ISS-244: tensor keys the model does not have must not be
+        silently dropped — that is exactly how a mismatched (but config-
+        supported) checkpoint used to load into garbage."""
+        from safetensors.torch import save_file
+
+        from_pretrained, path = self._make_saved_checkpoint(tmp_path)
+
+        weights_path = path / "model.safetensors"
+        state_dict = dict(torch.load(str(weights_path)))
+        state_dict["model.bogus.extra.weight"] = torch.zeros(4, 4)
+        save_file(state_dict, str(weights_path))
+
+        with pytest.raises(ValueError, match="does not cover"):
+            from_pretrained(str(path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+
     def test_list_supported_architectures(self):
         """Test listing supported architectures."""
         from llm.compat.hf_loader import list_supported_architectures
