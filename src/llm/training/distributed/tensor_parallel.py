@@ -36,11 +36,12 @@ slices a full state dict back into each rank's shards in place (default
 valid).
 
 Scope guards (rejected loudly, not silently wrong): the ``mha``, ``flash_attn``
-and ``mla`` attention backends are supported; MoE and ALiBi are rejected, and
-every partitioned axis must divide evenly by the tensor-parallel size. ``sdpa``
-is a functional (``core/attn/sdpa.py``) used by every supported backend, not a
-registered ``attn_impl`` — TP covers it transitively. Paged/cache inference
-paths and serving are out of scope for v1 (this is a training strategy).
+and ``mla`` attention backends and MoE expert parallelism are supported; ALiBi
+is rejected, and every partitioned axis must divide evenly by the
+tensor-parallel size. ``sdpa`` is a functional (``core/attn/sdpa.py``) used by
+every supported backend, not a registered ``attn_impl`` — TP covers it
+transitively. Paged/cache inference paths and serving are out of scope for v1
+(this is a training strategy).
 """
 
 from __future__ import annotations
@@ -259,6 +260,100 @@ class VocabParallelHead(nn.Module):
         return logits
 
 
+class _ExpertParallelMoE(nn.Module):
+    """MoE layer under tensor parallelism: expert parallelism (TASK-207).
+
+    Replaces ``block.mlp`` (a ``MoE``) in place. The GATE stays a full
+    replicated ``nn.Linear`` (every rank computes identical routing — the
+    gate is tiny, so duplicating it beats sharding); the EXPERTS are split
+    across ranks by expert index: rank ``r`` owns ``experts[r*n_local :
+    (r+1)*n_local]`` (each expert is held ENTIRELY on its owner — the expert
+    dimension, not the MLP hidden dims, is the shard axis, so the local
+    expert linears stay plain ``nn.Linear``).
+
+    Forward restructures the dense MoE (``out[i] = sum_k w[i,k] * f_{e_k}(x[i])``)
+    for sharded experts:
+
+    * both the GATE and the EXPERTS run on ``_BackwardAllReduce(x)`` (their
+      per-rank gradients are PARTIAL — each rank only holds a subset of the
+      experts, so it can only backprop those experts' contributions through
+      both the expert outputs AND the gate weight-marginal path; the input
+      all-reduce sums them into the full gradient for the attention);
+    * the per-rank partial output (only tokens routed to a local expert
+      contribute) is all-reduced — ``_ForwardAllReduce`` — completing the
+      ``sum_k`` over every rank's experts (matches the dense reference modulo
+      fp summation order).
+
+    Keeps ``num_experts`` = TOTAL expert count (the full gate output dim) so
+    attribute-based MoE detection (DDP ``find_unused_parameters``,
+    ``parallel.py:uses_moe``) and checkpointing see a normal MoE block.
+    """
+
+    def __init__(
+        self,
+        gate: nn.Module,
+        local_experts: list[nn.Module],
+        *,
+        group: dist.ProcessGroup,
+        num_experts: int,
+        top_k: int,
+        hidden_size: int,
+        rank: int,
+        n_local: int,
+    ):
+        super().__init__()
+        self.gate = gate
+        self.experts = nn.ModuleList(local_experts)
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.hidden_size = hidden_size
+        self._group = group
+        self._expert_offset = rank * n_local  # this rank's first global expert
+        self._n_local = n_local
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        original_shape = x.shape
+        x = x.reshape(-1, self.hidden_size)  # [N, hidden]
+
+        # 1. Input gradient all-reduce. ``x`` is the replicated attention
+        # output; both the gate and the expert outputs backprop only into
+        # THIS rank's expert subset, so their partial gradients must be
+        # summed across ranks (column-parallel input rule) — see docstring.
+        x_ep = x if not x.requires_grad else _BackwardAllReduce.apply(x, self._group)
+
+        # 2. Full gate (replicated): identical routing on every rank.
+        gate_logits = self.gate(x_ep)  # [N, num_experts]
+        top_k_logits, top_k_indices = torch.topk(gate_logits, self.top_k, dim=-1)
+        expert_weights = torch.softmax(top_k_logits, dim=-1, dtype=x.dtype)
+
+        # 3. Only tokens routed to a local expert contribute on this rank.
+        lo, hi = self._expert_offset, self._expert_offset + self._n_local
+        partial = torch.zeros_like(x)
+        # Zero-contributing term that ALWAYS connects ``x_ep`` to the output:
+        # on a rank whose local experts receive no routed tokens (collapsed
+        # routing / small microbatches are the norm for MoE, ~every rank dead
+        # some step), the ``index_add_`` below never runs and ``x_ep`` would
+        # otherwise drop off the autograd graph — then THIS rank would skip
+        # ``_BackwardAllReduce.backward``'s all-reduce while a peer that got
+        # hits enters it, deadlocking the backward. ``* 0.0`` keeps the value
+        # (and this rank's expert gradient) exactly zero.
+        partial = partial + x_ep * 0.0
+        hit = (top_k_indices >= lo) & (top_k_indices < hi)  # [N, k]
+        if hit.any():
+            rows, cols = hit.nonzero(as_tuple=True)
+            local_idx = top_k_indices[rows, cols] - lo
+            weights = expert_weights[rows, cols].unsqueeze(-1)
+            for j in range(self._n_local):
+                sel = local_idx == j
+                if not sel.any():
+                    continue
+                tokens = rows[sel]
+                partial.index_add_(0, tokens, self.experts[j](x_ep[tokens]) * weights[sel])
+
+        # 4. Complete the expert sum across ranks and restore the shape.
+        return _ForwardAllReduce.apply(partial, self._group).view(original_shape)
+
+
 class _TPState:
     """Mutation metadata attached to a TP model (``model._tp``).
 
@@ -304,6 +399,52 @@ class _TPState:
                 self.partition[key + ".weight"] = 1
                 if getattr(module, "bias", None) is not None:
                     self.partition[key + ".bias"] = None
+        # Expert-parallel MoE blocks (TASK-207): ``prefix`` -> (total_experts,
+        # n_local), where ``prefix`` is the MoE module's own name (e.g.
+        # "transformer_blocks.0.mlp"), so its state-dict keys live under
+        # ``prefix.experts.{li}.**``. Each rank owns experts
+        # ``[rank*n_local, (rank+1)*n_local)``; the local ModuleList keys map
+        # to global expert ``rank*n_local + li``. The MoE gate is a replicated
+        # ``nn.Linear`` — deliberately absent from ``partition`` so it is
+        # treated as a replicated param by gather/scatter (full copy) and
+        # averaged across the TP group by ``allreduce_dp_grads`` (identical on
+        # every rank, so AVG keeps the replicas in lockstep without changing
+        # the value).
+        self.expert_shards: dict[str, tuple[int, int]] = {}
+        # Replicated MoE routers: their WEIGHT gradient is a per-rank PARTIAL
+        # (each rank backprops only its own experts' contributions through the
+        # routing marginals), so ``allreduce_dp_grads`` must SUM it over the
+        # TP group — unlike other replicated params (norms, embedding) whose
+        # gradients are already complete via the input all-reduces and only
+        # get averaged to keep replicas in lockstep.
+        self.gate_params: set[str] = set()
+        for name, module in model.named_modules():
+            if isinstance(module, _ExpertParallelMoE):
+                self.expert_shards[name] = (module.num_experts, module._n_local)
+                self.gate_params.add(name + ".gate.weight")
+                if getattr(module.gate, "bias", None) is not None:
+                    self.gate_params.add(name + ".gate.bias")
+
+    def is_expert_param(self, key: str) -> bool:
+        """True when ``key`` is an expert-sharded parameter (one rank only).
+
+        Expert params straddle the partition rule: they are sharded (a given
+        expert lives on exactly one rank), but not by the usual axis — so
+        ``partition`` cannot describe them. Used by ``allreduce_dp_grads`` to
+        skip the TP-group average (neighbours hold DIFFERENT experts) while
+        still reducing over the DP group.
+        """
+        return any(key.startswith(prefix + ".experts.") for prefix in self.expert_shards)
+
+    def is_gate_param(self, key: str) -> bool:
+        """True when ``key`` is a replicated MoE router (gate) parameter.
+
+        Unlike other replicated params, the gate does not get its full
+        gradient from the input all-reduces — its weight gradient is a
+        per-rank partial that ``allreduce_dp_grads`` must SUM over the TP
+        group (see ``gate_params`` above).
+        """
+        return key in self.gate_params
 
     # --- checkpoint helpers -------------------------------------------.
 
@@ -319,6 +460,8 @@ class _TPState:
         local = model.state_dict()
         full: dict[str, torch.Tensor] = {}
         for key, tensor in local.items():
+            if self.is_expert_param(key):
+                continue  # local-indexed expert keys — rebuilt below
             axis = self.partition.get(key)
             if axis is None:
                 full[key] = tensor.detach().clone()
@@ -341,7 +484,31 @@ class _TPState:
             pieces = [torch.empty_like(tensor) for _ in range(self.world_size)]
             dist.all_gather(pieces, tensor.contiguous(), group=self.group)
             full[key] = torch.cat(pieces, dim=axis)
+        # Expert-parallel shards: every rank holds a DIFFERENT subset (its own
+        # n_local experts), so the full tensor for global expert ``g`` comes
+        # from owner rank ``g // n_local`` (local copy ``g % n_local``). The
+        # all-gather is rank-major, so rebuilding ``experts.{g}`` in ascending
+        # order yields a full dict identical on every rank.
+        self._gather_expert_shards(full, local)
         return full
+
+    def _gather_expert_shards(self, full: dict[str, torch.Tensor], local: dict[str, torch.Tensor]) -> None:
+        for prefix, (total, n_local) in self.expert_shards.items():
+            marker = prefix + ".experts."
+            by_suffix: dict[str, dict[int, torch.Tensor]] = {}
+            for key, tensor in local.items():
+                if not key.startswith(marker):
+                    continue
+                li_str, suffix = key[len(marker) :].split(".", 1)
+                by_suffix.setdefault(suffix, {})[int(li_str)] = tensor
+            for suffix, tensors_by_li in by_suffix.items():
+                tensors = [tensors_by_li[li] for li in range(n_local)]
+                block = tensors[0].unsqueeze(0) if n_local == 1 else torch.stack(tensors)
+                pieces = [torch.empty_like(block) for _ in range(self.world_size)]
+                dist.all_gather(pieces, block.contiguous(), group=self.group)
+                for g in range(total):
+                    owner, li = divmod(g, n_local)
+                    full[f"{prefix}.experts.{g}.{suffix}"] = pieces[owner][li].detach().clone()
 
     def scatter_load_state_dict(self, model: nn.Module, state_dict: dict[str, torch.Tensor]) -> None:
         """Slice a full state dict into this rank's shards and load them.
@@ -352,6 +519,18 @@ class _TPState:
         """
         sharded: dict[str, torch.Tensor] = {}
         for key, tensor in state_dict.items():
+            match = _expert_prefix_of(self.expert_shards, key)
+            if match is not None:
+                # Global expert ``g`` lives on owner ``g // n_local``; only the
+                # owning rank keeps it, renumbered to its local index.
+                prefix, rest = match
+                _total, n_local = self.expert_shards[prefix]
+                g = int(rest.split(".", 1)[0])
+                owner, li = divmod(g, n_local)
+                if owner == self.rank:
+                    suffix = rest.split(".", 1)[1]
+                    sharded[f"{prefix}.experts.{li}.{suffix}"] = tensor.detach().clone()
+                continue
             axis = self.partition.get(key)
             if axis is None:
                 sharded[key] = tensor.detach().clone()
@@ -378,6 +557,19 @@ def _even(n: int, tp_size: int, what: str) -> None:
         )
 
 
+def _expert_prefix_of(expert_shards: dict[str, tuple[int, int]], key: str) -> tuple[str, str] | None:
+    """Return ``(prefix, rest)`` when ``key`` lives under an expert shard.
+
+    ``rest`` is everything after ``prefix + ".experts."`` (e.g. ``"3.fc1.weight"``
+    for global expert 3); ``None`` when the key is not expert-sharded.
+    """
+    for prefix in expert_shards:
+        marker = prefix + ".experts."
+        if key.startswith(marker):
+            return prefix, key[len(marker) :]
+    return None
+
+
 def _replace(module: nn.Module, attr: str, new: nn.Module) -> None:
     setattr(module, attr, new)
 
@@ -391,8 +583,10 @@ def apply_tensor_parallel(
 
     Args:
         model: A ``DecoderModel`` (may be wrapped in DDP/compile — only the
-            bare decoder underneath is transformed). Must use the ``mha``
-            attention backend with the standard MLP (MoE rejected).
+            bare decoder underneath is transformed). Supported backends: the
+            ``mha`` / ``flash_attn`` / ``mla`` attention and MoE expert
+            parallelism (every partitioned axis must divide evenly by the TP
+            size; ALiBi is rejected).
         process_group: The TP group. Defaults to the default ``WORLD`` group
             (the whole world is one TP group in v1).
 
@@ -444,15 +638,19 @@ def apply_tensor_parallel(
         # dispatched to a dedicated branch — see ``_mha_flash_attn_slice`` /
         # ``_mla_slice``. sdpa is a FUNCTIONAL (core/attn/sdpa.py), not a
         # registered attn_impl: every backend above runs its attention through
-        # it, so TP covers the sdpa kernel transitively (TASK-209). MoE needs
-        # expert-parallel routing and stays out of scope (TASK-207).
+        # it, so TP covers the sdpa kernel transitively (TASK-209). MoE blocks
+        # get expert parallelism (TASK-207): the gate is replicated and the
+        # experts are split across ranks by expert index (guarded below).
         if attn_cls not in ("MultiHeadAttention", "FlashAttention", "MultiLatentAttention"):
             raise NotImplementedError(
                 f"Tensor parallelism v1 supports attn_impl in {{'mha', 'flash_attn', 'mla'}} "
-                f"(block {i} is {attn_cls}); MoE is out of scope for the TP milestone."
+                f"(block {i} is {attn_cls}); this attention backend is out of scope for the TP milestone."
             )
+        # ``num_experts`` is the total expert count (the full gate output dim).
+        # Expert parallelism requires it to split evenly across ranks — the
+        # actual slicing happens in the MLP section below.
         if getattr(block.mlp, "num_experts", None):
-            raise NotImplementedError("Tensor parallelism with MoE (expert parallelism) is not implemented in v1.")
+            _even(block.mlp.num_experts, tp_size, "num_experts")
 
     # --- Partition axes must divide evenly ----------------------------.
     num_heads = m.num_heads
@@ -469,6 +667,10 @@ def apply_tensor_parallel(
             _even(block.self_attn.input_kv_proj.weight.shape[0] // 2, tp_size, "the MLA K/V head blocks")
         else:
             _even(block.self_attn.qkv_proj.weight.shape[0], tp_size, "the fused QKV projection")
+        if getattr(block.mlp, "num_experts", None):
+            # MoE: the expert dimension (not an MLP hidden width) is the shard
+            # axis — already checked for even division in the scope loop.
+            continue
         _even(block.mlp.fc1.weight.shape[0], tp_size, "the MLP intermediate width")
         if getattr(block.mlp, "gate_proj", None) is not None:
             _even(block.mlp.gate_proj.weight.shape[0], tp_size, "the MLP intermediate width")
@@ -633,6 +835,31 @@ def apply_tensor_parallel(
     # --- 2. MLP: column gate/up, row down ------------------------------.
     for block in m.transformer_blocks:
         mlp = block.mlp
+        if getattr(mlp, "num_experts", None):
+            # MoE expert parallelism (TASK-207): the gate is replicated (full
+            # ``nn.Linear`` — identical routing on every rank, averaged across
+            # the TP group like the norms), and only this rank's slice of
+            # experts survives. Each local expert is a complete MLP (full
+            # fc1/fc2) — the EXPERT index is the shard axis, so no intra-expert
+            # slicing. ``_ExpertParallelMoE`` keeps ``num_experts`` = total to
+            # stay attribute-compatible (DDP MoE detection, checkpoints).
+            n_local = mlp.num_experts // tp_size
+            local_experts = [mlp.experts[rank * n_local + i] for i in range(n_local)]
+            _replace(
+                block,
+                "mlp",
+                _ExpertParallelMoE(
+                    mlp.gate,
+                    local_experts,
+                    group=group,
+                    num_experts=mlp.num_experts,
+                    top_k=mlp.top_k,
+                    hidden_size=mlp.hidden_size,
+                    rank=rank,
+                    n_local=n_local,
+                ),
+            )
+            continue
         for name in ("fc1", "gate_proj"):
             lin = getattr(mlp, name, None)
             if lin is None:

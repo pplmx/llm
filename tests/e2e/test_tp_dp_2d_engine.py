@@ -28,6 +28,7 @@ import os
 import socket
 import time
 from string import printable
+from typing import Any
 
 import pytest
 import torch
@@ -92,7 +93,8 @@ def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: i
     requires half precision, and the engine resolves this to bf16 autocast on
     supported hardware. ``mla=True`` switches to ``MultiLatentAttention`` (the
     TASK-206 TP-scope slice); MLA runs through the sdpa functional in fp32, so
-    no AMP is needed.
+    no AMP is needed. ``moe=True`` enables MoE expert parallelism (TASK-207) on
+    the dense MLP blocks (4 experts / 2 ranks, top-2).
     """
     if flash and ctx.get("mla", False):
         raise ValueError("flash and mla are mutually exclusive attention backend overrides")
@@ -101,15 +103,20 @@ def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: i
         attn_impl = "flash_attn"
     elif ctx.get("mla", False):
         attn_impl = "mla"
+    model_kwargs: dict[str, Any] = {
+        "hidden_size": 32,
+        "num_layers": 2,
+        "num_heads": 4,  # 32/4 = 8 dim per head; divisible by tp_size
+        "vocab_size": ctx["vocab_size"],
+        "max_seq_len": 256,
+        "attn_impl": attn_impl,
+    }
+    if ctx.get("moe", False):
+        # Expert parallelism shards the expert dimension: num_experts must
+        # divide evenly by tp_size (4 / 2 = 2 local experts per rank).
+        model_kwargs.update(num_experts=4, top_k=2, mlp_impl="moe")
     return Config(
-        model=ModelConfig(
-            hidden_size=32,
-            num_layers=2,
-            num_heads=4,  # 32/4 = 8 dim per head; divisible by tp_size
-            vocab_size=ctx["vocab_size"],
-            max_seq_len=256,
-            attn_impl=attn_impl,
-        ),
+        model=ModelConfig(**model_kwargs),
         training=TrainingConfig(
             batch_size=2,
             epochs=1,
@@ -206,7 +213,9 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
             dist.destroy_process_group()
 
 
-def _run_engine_2d(tmp_path, world_size: int, tp_size: int, *, flash: bool = False, mla: bool = False) -> None:
+def _run_engine_2d(
+    tmp_path, world_size: int, tp_size: int, *, flash: bool = False, mla: bool = False, moe: bool = False
+) -> None:
     gpu_devices = all_gpu_devices(min_free_bytes=ENGINE_2D_MIN_FREE_BYTES)
     if len(gpu_devices) < world_size:
         pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D engine e2e)")
@@ -238,6 +247,7 @@ def _run_engine_2d(tmp_path, world_size: int, tp_size: int, *, flash: bool = Fal
         "tp_size": tp_size,
         "flash": flash,
         "mla": mla,
+        "moe": moe,
     }
     manager = mp.Manager()
     results = manager.dict()
@@ -289,6 +299,18 @@ def test_engine_tp_dp_2d_mla_four_gpu(tmp_path):
     bit-identical across DP groups — including the replicated ``latents``
     parameter averaged by ``allreduce_dp_grads``."""
     _run_engine_2d(tmp_path, world_size=4, tp_size=2, mla=True)
+
+
+@pytest.mark.need_gpu(4)
+@pytest.mark.slow
+def test_engine_tp_dp_2d_moe_four_gpu(tmp_path):
+    """Real-engine TP+DP 2D with MoE expert parallelism on (TASK-207): the EP
+    slice (replicated gate + rank-local experts + the step-boundary
+    ``allreduce_dp_grads`` expert-skip / gate-SUM) must train through the REAL
+    loop with dead-expert-tolerant routing and stay bit-identical across DP
+    groups — including the CHECKPOINT gather, where the full expert set is
+    rebuilt rank-major from the per-rank shards."""
+    _run_engine_2d(tmp_path, world_size=4, tp_size=2, moe=True)
 
 
 @pytest.mark.need_gpu(4)

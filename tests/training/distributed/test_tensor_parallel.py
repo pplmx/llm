@@ -79,6 +79,9 @@ def _build_model(
     num_kv_heads: int | None = None,
     attn_impl: str = "mha",
     use_rope: bool = False,
+    num_experts: int = 0,
+    top_k: int = 0,
+    mlp_impl: str = "mlp",
 ) -> DecoderModel:
     torch.manual_seed(seed)
     return DecoderModel(
@@ -97,6 +100,9 @@ def _build_model(
         lm_head_bias=True,
         attn_impl=attn_impl,
         use_rope=use_rope,
+        num_experts=num_experts,
+        top_k=top_k,
+        mlp_impl=mlp_impl,  # num_experts > 0 only builds MoE with mlp_impl="moe"
         device=device,
     )
 
@@ -106,13 +112,17 @@ def _gather_tp_grads(model) -> dict[str, torch.Tensor]:
 
     Mirrors the checkpoint gather (``_TPState.gather_full_state_dict``): the
     fused-QKV column shards are stored in local [q,k,v]-block order and must
-    be scattered back into the full q/k/v blocks via ``full_index``.
+    be scattered back into the full q/k/v blocks via ``full_index``; MoE
+    expert-parallel shards (TASK-207) are rebuilt rank-major by global expert
+    index (dead local experts contribute zero).
     """
     tp = model._tp
     full: dict[str, torch.Tensor] = {}
     for key, param in model.named_parameters():
         if param.grad is None:
             continue
+        if tp.is_expert_param(key):
+            continue  # combined below (needs every rank's block)
         axis = tp.partition.get(key)
         if axis is None:
             full[key] = param.grad.detach().clone().contiguous()
@@ -131,6 +141,23 @@ def _gather_tp_grads(model) -> dict[str, torch.Tensor]:
         pieces = [torch.empty_like(param.grad) for _ in range(tp.world_size)]
         dist.all_gather(pieces, param.grad.detach().contiguous(), group=tp.group)
         full[key] = torch.cat(pieces, dim=axis)
+    for prefix, (total, n_local) in tp.expert_shards.items():
+        marker = prefix + ".experts."
+        by_suffix: dict[str, dict[int, torch.Tensor]] = {}
+        for key, param in model.named_parameters():
+            if not key.startswith(marker):
+                continue
+            li_str, suffix = key[len(marker) :].split(".", 1)
+            grad = param.grad.detach() if param.grad is not None else torch.zeros_like(param)
+            by_suffix.setdefault(suffix, {})[int(li_str)] = grad
+        for suffix, grads_by_li in by_suffix.items():
+            grads = [grads_by_li[li] for li in range(n_local)]
+            block = grads[0].unsqueeze(0) if n_local == 1 else torch.stack(grads)
+            pieces = [torch.empty_like(block) for _ in range(tp.world_size)]
+            dist.all_gather(pieces, block.contiguous(), group=tp.group)
+            for g in range(total):
+                owner, li = divmod(g, n_local)
+                full[f"{prefix}.experts.{g}.{suffix}"] = pieces[owner][li].detach().clone()
     return full
 
 
@@ -199,6 +226,18 @@ def _parity_worker(rank: int, world_size: int, device_indices: list[int], result
 
 
 def _run_parity(world_size: int) -> None:
+    _run_spawn_parity(_parity_worker, world_size=world_size)
+
+
+def _run_spawn_parity(worker, world_size: int) -> None:
+    """Spawn ``worker(rank, world_size, device_indices, results)`` over free GPUs.
+
+    Shared harness for the TP parity tests: each worker (re)creates the group,
+    runs forward/grad/checkpoint parity vs a full reference, and reports its
+    own ``{"success": ..., "error": ...}``; the parent polls with a generous
+    timeout (a shared box's NCCL rendezvous can be slow under load) and fails
+    loudly on any rank error or timeout.
+    """
     gpu_devices = all_gpu_devices(min_free_bytes=TP_MIN_FREE_BYTES)
     if len(gpu_devices) < world_size:
         pytest.skip(f"need at least {world_size} free GPUs")
@@ -209,7 +248,7 @@ def _run_parity(world_size: int) -> None:
     manager = mp.Manager()
     results = manager.dict()
     context = mp.spawn(
-        _parity_worker,
+        worker,
         args=(world_size, device_indices, results),
         nprocs=world_size,
         join=False,
@@ -898,12 +937,16 @@ def test_tp_rejects_tp_size_not_dividing_world():
 
 
 def test_tp_mla_and_moe_scope_boundary(monkeypatch):
-    """TP scope after the MLA slice (TASK-206): MLA is now accepted (its latent
-    layout is head-sliced by the dedicated branch), while MoE (needs expert
-    parallelism) remains rejected. The scope guards fire before any collective,
-    so faking the 2-rank group accessors and passing any group object is enough
-    — no NCCL, no GPUs."""
-    from llm.training.distributed.tensor_parallel import apply_tensor_parallel
+    """TP scope after the MLA + MoE slices (TASK-206 / TASK-207): MLA is
+    accepted (its latent layout is head-sliced by the dedicated branch) and MoE
+    is accepted (expert parallelism — replicated gate + rank-local experts).
+    Only a num_experts that fails to divide evenly is rejected. The scope
+    guards fire before any collective, so faking the 2-rank group accessors and
+    passing any group object is enough — no NCCL, no GPUs."""
+    from llm.training.distributed.tensor_parallel import (
+        _ExpertParallelMoE,
+        apply_tensor_parallel,
+    )
 
     class _StubGroup:
         pass
@@ -922,17 +965,39 @@ def test_tp_mla_and_moe_scope_boundary(monkeypatch):
     # head_dim 4 = 16 rows total on each rank.
     assert attn.input_kv_proj.weight.shape[0] == 16
     assert attn.num_heads == 2  # 4 heads / 2 ranks
-    # MoE still rejected loudly.
-    with pytest.raises(NotImplementedError, match="MoE"):
+    # MoE now partitions too: the block's MLP is replaced by the expert-parallel
+    # wrapper holding only this rank's slice of the experts, and the full gate.
+    moe_model = apply_tensor_parallel(
+        DecoderModel(
+            vocab_size=32,
+            hidden_size=16,
+            num_layers=1,
+            num_heads=4,
+            num_experts=4,
+            top_k=2,
+            mlp_impl="moe",  # num_experts only builds MoE with mlp_impl="moe"
+        ),
+        process_group=stub,
+    )
+    assert is_tp(moe_model)
+    moe = moe_model.transformer_blocks[0].mlp
+    assert isinstance(moe, _ExpertParallelMoE)
+    assert moe.num_experts == 4  # full gate output dim kept
+    assert len(moe.experts) == 2  # 4 experts / 2 ranks
+    assert moe._n_local == 2
+    assert moe._expert_offset == 0  # rank 0 owns global experts [0, 2)
+    assert moe_model._tp.expert_shards["transformer_blocks.0.mlp"] == (4, 2)
+    # An odd num_experts cannot split evenly — rejected loudly.
+    with pytest.raises(ValueError, match="num_experts"):
         apply_tensor_parallel(
             DecoderModel(
                 vocab_size=32,
                 hidden_size=16,
                 num_layers=1,
                 num_heads=4,
-                num_experts=4,
+                num_experts=3,
                 top_k=2,
-                mlp_impl="moe",  # num_experts only builds MoE with mlp_impl="moe"
+                mlp_impl="moe",
             ),
             process_group=stub,
         )
@@ -957,6 +1022,235 @@ def test_tp_dp_layout_2d():
         tp_dp_layout(8, 3, rank=0)
     with pytest.raises(ValueError, match="tp_size"):
         tp_dp_layout(8, 12, rank=0)
+
+
+def _moe_roundtrip_worker(rank: int, world_size: int, results) -> None:
+    """MoE expert-parallel checkpoint boundary on CPU (gloo, TASK-207)."""
+    try:
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        dev = torch.device("cpu")
+        ref = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
+        model = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
+        model = apply_tensor_parallel(model, process_group=dist.group.WORLD)
+        assert is_tp(model)
+
+        # Shard layout: rank r owns global experts [r*n_local:(r+1)*n_local).
+        moe = model.transformer_blocks[0].mlp
+        n_local = moe._n_local
+        assert n_local == 4 // world_size
+        assert moe._expert_offset == rank * n_local
+        assert moe.num_experts == 4  # full gate output dim retained
+        tp = model._tp
+        prefix = next(name for name, module in model.named_modules() if module is moe)
+        assert tp.expert_shards[prefix] == (4, n_local)
+        assert tp.is_expert_param(f"{prefix}.experts.0.fc1.weight")
+        assert not tp.is_expert_param(f"{prefix}.gate.weight")  # replicated router
+
+        x = torch.randint(0, 64, (2, 12), device=dev, dtype=torch.long)
+
+        # Full gather must be bit-exact vs the unittest reference despite each
+        # rank holding only half the experts.
+        with torch.no_grad():
+            full = model_state_dict(model)
+        for key, value in ref.state_dict().items():
+            assert key in full, f"gathered state dict missing {key}"
+            torch.testing.assert_close(full[key], value, atol=0, rtol=0, msg=f"state mismatch on {key}")
+
+        # Gradient parity (incl. the replicated gate + expert shards): the
+        # engine's step-boundary reduction (allreduce_dp_grads) SUMs the
+        # gate's per-rank partial weight grad over the TP group.
+        model.train()
+        ref.train()
+        model.zero_grad()
+        ref.zero_grad()
+        tp_loss = model(x).float().mean()
+        tp_loss.backward()
+        allreduce_dp_grads(model)
+        ref_loss = ref(x).float().mean()
+        ref_loss.backward()
+        ref_grads = {k: v.grad for k, v in ref.named_parameters() if v.grad is not None}
+        tp_grads = _gather_tp_grads(model)
+        assert set(ref_grads) <= set(tp_grads), f"tp missing grads: {set(ref_grads) - set(tp_grads)}"
+        for key in ref_grads:
+            torch.testing.assert_close(
+                tp_grads[key], ref_grads[key], atol=2e-3, rtol=2e-3, msg=f"grad mismatch on {key}"
+            )
+
+        # Scatter roundtrip: load the reference full dict -> forward unchanged.
+        load_model_state_dict(model, ref.state_dict())
+        model.eval()
+        ref.eval()
+        with torch.no_grad():
+            train_logits = model(x)
+            ref_logits = ref(x)
+        torch.testing.assert_close(train_logits, ref_logits, atol=1e-5, rtol=1e-5, msg="scatter roundtrip")
+
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+def _moe_dead_rank_worker(rank: int, world_size: int, results) -> None:
+    """Backward with a rank that routes NO token to any local expert (TASK-207).
+
+    A single token with top_k=1 hits exactly ONE expert globally, so exactly
+    one rank's local experts receive zero routed tokens. That rank must still
+    enter every collective in backward and ``allreduce_dp_grads`` (its
+    ``_BackwardAllReduce`` fires through the zero-contributing ``x_ep * 0``
+    term and its dead experts/routers contribute zero grads) — otherwise a peer
+    with hits runs ``dist.all_reduce`` alone and the backward deadlocks (the
+    hang this test protects against; collapsed routing is the MoE norm).
+    """
+    try:
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        dev = torch.device("cpu")
+        # 4 experts / 2 ranks, top_k=1, ONE token -> exactly one rank is dead.
+        model = _build_model(num_experts=4, top_k=1, mlp_impl="moe").to(dev)
+        model = apply_tensor_parallel(model, process_group=dist.group.WORLD)
+        assert is_tp(model)
+        x = torch.randint(0, 64, (1, 1), device=dev, dtype=torch.long)
+        model.train()
+        model.zero_grad()
+        loss = model(x).float().mean()
+        loss.backward()  # must NOT deadlock on the zero-hit rank
+        allreduce_dp_grads(model)  # must NOT deadlock (zeros materialised)
+        for name, param in model.named_parameters():
+            assert param.grad is not None, f"{name} has no grad after allreduce"
+            assert torch.isfinite(param.grad).all(), f"{name} grad not finite"
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+@pytest.mark.quick
+def test_tp_moe_dead_rank_no_deadlock_cpu():
+    """A zero-hit MoE rank still enters every collective (no backward deadlock).
+
+    Routes a single token (top_k=1) so exactly one of the two ranks has no
+    local expert hit, then runs backward + ``allreduce_dp_grads`` — the graph
+    and step-boundary collectives must complete uniformly across ranks.
+    Regression guard for the expert-parallel deadlock (collapsed routing).
+    """
+    _setup_tp_env()
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(_moe_dead_rank_worker, args=(2, results), nprocs=2, join=False)
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        if context.join(timeout=1):
+            break
+        if time.monotonic() > end_at:
+            for p in context.processes:
+                p.terminate()
+            pytest.fail("MoE dead-rank backward timed out (deadlock)")
+    for rank in range(2):
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+
+@pytest.mark.quick
+def test_tp_moe_state_dict_roundtrip_cpu():
+    """MoE expert-parallel state-dict gather/scatter on CPU (gloo, 2 ranks).
+
+    Each rank holds a DISJOINT expert subset and a replicated full gate; the
+    gathered full dict must equal the reference bit-for-bit (this is what
+    ``llm-serve`` / resume rely on) and loading it back must leave the TP
+    forward unchanged (TASK-207).
+    """
+    _setup_tp_env()
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(_moe_roundtrip_worker, args=(2, results), nprocs=2, join=False)
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        if context.join(timeout=1):
+            break
+        if time.monotonic() > end_at:
+            for p in context.processes:
+                p.terminate()
+            pytest.fail("MoE CPU roundtrip timed out (deadlock?)")
+    for rank in range(2):
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+
+def _moe_parity_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
+    """MoE expert-parallel forward / gradient / checkpoint parity (TASK-207).
+
+    The EP forward restructures the dense MoE sum (masked per-local-expert
+    ``index_add_`` + an all-reduce instead of the dense token loop), so
+    forward/grad parity is asserted CLOSE (fp summation order) rather than the
+    bit-exact the non-MoE tests reach; the state-dict gather is still exact.
+    ``allreduce_dp_grads`` runs after the backward, mirroring the engine's
+    step-boundary reduction (the replicated gate's weight grad is a per-rank
+    partial that the TP-group SUM completes).
+    """
+    try:
+        device_index = device_indices[rank]
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(device_index)
+        dev = torch.device(f"cuda:{device_index}")
+
+        ref = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
+        model = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
+        model = apply_tensor_parallel(model, process_group=dist.group.WORLD)
+        assert is_tp(model)
+
+        x = torch.randint(0, 64, (2, 12), device=dev, dtype=torch.long)
+
+        # --- forward parity (eval: dropout disabled; MoE has no dropout) ---
+        ref.eval()
+        model.eval()
+        with torch.no_grad():
+            ref_logits = ref(x)
+        train_logits = model(x)
+        torch.testing.assert_close(train_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        # --- gradient parity ---
+        model.train()
+        ref.train()
+        ref.zero_grad()
+        model.zero_grad()
+        tp_loss = model(x).float().mean()
+        tp_loss.backward()
+        allreduce_dp_grads(model)  # engine step-boundary reduction
+        ref_loss = ref(x).float().mean()
+        ref_loss.backward()
+
+        ref_grads = {k: v.grad for k, v in ref.named_parameters() if v.grad is not None}
+        tp_grads = _gather_tp_grads(model)
+        assert set(ref_grads) <= set(tp_grads), f"tp missing grads: {set(ref_grads) - set(tp_grads)}"
+        for key in ref_grads:
+            torch.testing.assert_close(
+                tp_grads[key], ref_grads[key], atol=2e-3, rtol=2e-3, msg=f"grad mismatch on {key}"
+            )
+
+        # --- checkpoint boundary: full gather == reference state dict ---
+        full = model_state_dict(model)  # collective; every rank enters
+        for key, value in ref.state_dict().items():
+            assert key in full, f"gathered state dict missing {key}"
+            torch.testing.assert_close(full[key], value, atol=0, rtol=0, msg=f"state mismatch on {key}")
+
+        # --- scatter load roundtrip: load ref full dict, forward again ---
+        load_model_state_dict(model, ref.state_dict())
+        model.eval()
+        with torch.no_grad():
+            reload_logits = model(x)
+        torch.testing.assert_close(reload_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_tp_moe_forward_grad_checkpoint_parity_two_gpu():
+    """MoE expert-parallel parity vs a full reference: forward, gradients
+    (incl. the replicated gate + expert shards), and the full-state-dict
+    gather/scatter boundary (2 GPUs, TASK-207)."""
+    _run_spawn_parity(_moe_parity_worker, world_size=2)
 
 
 def _clip_global_worker(rank: int, world_size: int, results) -> None:

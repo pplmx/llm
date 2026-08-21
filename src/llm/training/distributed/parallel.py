@@ -407,10 +407,33 @@ def allreduce_dp_grads(model: nn.Module) -> None:
     tp = cast(Any, model)._tp
     dp_group = getattr(tp, "dp_group", None)
     for name, param in model.named_parameters():
-        if param.grad is None:
+        if param.grad is None and not (tp.is_expert_param(name) or tp.is_gate_param(name)):
             continue
+        if param.grad is None:
+            # MoE router/expert with zero routed tokens (TASK-207): the
+            # gradient is genuinely ZERO, but the collective below must be
+            # entered by EVERY rank — a peer whose experts got hits enters the
+            # gate-SUM / DP-group reduce, so a skipped call would deadlock.
+            # Materialising zeros keeps the reduction uniform and is the
+            # correct contribution (find_unused_parameters semantics).
+            param.grad = torch.zeros_like(param)
         if dp_group is not None:
             dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, group=dp_group)
+        if tp.is_expert_param(name):
+            # Expert-parallel shard (TASK-207): each rank owns a DIFFERENT
+            # expert, so its gradient belongs only to it — never averaged over
+            # the TP group (that would bleed one expert's gradient into its
+            # neighbours'). DP-group averaging above still applies: the same
+            # expert shards held by different data groups train different data.
+            continue
+        if tp.is_gate_param(name):
+            # Replicated MoE router (TASK-207): unlike norms/embedding, the
+            # gate's weight gradient is a per-rank PARTIAL (each rank backprops
+            # only ITS experts' contributions through the routing marginals),
+            # so the true gradient is the SUM over the TP group — the input
+            # all-reduces can never complete it.
+            dist.all_reduce(param.grad, op=dist.ReduceOp.SUM, group=tp.group)
+            continue
         if tp.partition.get(name) is None:
             # Replicated parameter (or full bias of a row-parallel linear):
             # force a bit-identical gradient across the TP group.
