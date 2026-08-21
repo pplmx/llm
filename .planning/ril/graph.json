@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 87,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-21T06:16:41+00:00",
+  "updated_at": "2026-08-21T07:20:15+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12018,11 +12018,11 @@
     "TASK-208": {
       "id": "TASK-208",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-21T02:35:03+00:00",
-      "updated_at": "2026-08-21T02:35:03+00:00",
-      "touched_round": 86,
+      "updated_at": "2026-08-21T07:20:14+00:00",
+      "touched_round": 87,
       "category": "core-feature",
       "severity": 0.6,
       "effort": 2.0,
@@ -12076,6 +12076,29 @@
       "touched_round": 86,
       "source": "128300c: tests/training/distributed/test_tensor_parallel.py::test_tp_mla_parity_two_gpu (2-GPU, need_gpu+gated) + tests/e2e/test_tp_dp_2d_engine.py::test_engine_tp_dp_2d_mla_four_gpu; re-verified 2026-08-21 on 8xA100 shared box",
       "summary": "MLA TP slice parity verified: 2-GPU forward/grad/checkpoint == single-rank reference; 4-GPU TP+DP 2D MLA engine e2e trains bit-identical across DP groups (replicated latents averaged by allreduce_dp_grads). CPU MLA suite (incl. test_mla_with_2d_long_padding_mask) + TP scope-boundary/strategy tests green.",
+      "confidence": 1.0
+    },
+    "CHG-214": {
+      "id": "CHG-214",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T07:19:39+00:00",
+      "updated_at": "2026-08-21T07:19:39+00:00",
+      "touched_round": 87,
+      "commit": "391970c",
+      "summary": "llm-serve TP-trained checkpoint serve e2e (TASK-208): real 2-GPU pure-TP engine run auto-saves latest with model_config embedded; test boots llm.serving.api.app via TestClient and verifies /health, /generate, /v1/chat/completions all serve real output; asserts the served model honors the embedded model_config (hidden_size 32) not the config-less fallback (64). New tests/e2e/test_serve_tp_checkpoint.py."
+    },
+    "EV-200": {
+      "id": "EV-200",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T07:20:15+00:00",
+      "updated_at": "2026-08-21T07:20:15+00:00",
+      "touched_round": 87,
+      "source": "391970c tests/e2e/test_serve_tp_checkpoint.py::test_serve_tp_trained_checkpoint_two_gpu (2-GPU, passed 2026-08-21 on shared 8xA100)",
+      "summary": "llm-serve serves a real TP-trained checkpoint end-to-end: engine on 2 GPUs (pure TP) auto-saved latest with model_config; FastAPI app via TestClient served /health (ok), /generate (token_count>=1), /v1/chat/completions (non-empty assistant msg); served model rebuilt with embedded hidden_size=32 not fallback 64.",
       "confidence": 1.0
     }
   },
@@ -17742,6 +17765,12 @@
       "to": "TASK-204",
       "type": "depends_on",
       "created_at": "2026-08-21T06:15:09+00:00"
+    },
+    {
+      "from": "CHG-214",
+      "to": "TASK-208",
+      "type": "implements",
+      "created_at": "2026-08-21T07:20:14+00:00"
     }
   ]
 }
