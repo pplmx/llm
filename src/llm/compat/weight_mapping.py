@@ -510,6 +510,10 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         "num_kv_heads": hf_config.get("num_key_value_heads"),
         "intermediate_size": hf_config.get("intermediate_size"),
         "max_seq_len": hf_config.get("max_position_embeddings", 4096),
+        # Mistral's sliding-window attention: absent on Llama/Qwen externals
+        # and defaulted to None (full-context) — wiring it prevents the silent
+        # full-context attention past a 4096 window (RIL ISS-242).
+        "window_size": hf_config.get("sliding_window"),
         "rms_norm_eps": hf_config.get("rms_norm_eps", 1e-5),
         "rope_theta": hf_config.get("rope_theta", 10000.0),
         # HF Llama/GPT-style configs carry the MLP activation as

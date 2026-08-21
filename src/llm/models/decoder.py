@@ -101,6 +101,11 @@ class DecoderModel(nn.Module):
         self.use_rope = use_rope
         self.rope_theta = rope_theta
         self.use_alibi = use_alibi
+        # Sliding-window attention size is model-defining (Mistral uses a
+        # 4096-token window): store it so hf_publisher persists it and the
+        # loader honors an external checkpoint's ``sliding_window`` instead of
+        # running full-context attention past the window (RIL ISS-242).
+        self.window_size = window_size
         # Bias flags are model-defining too: real Llama/Mistral are bias-free
         # (qkv/mlp/lm_head), while our grown-from-scratch default is biased.
         # Store them so hf_publisher persists the actual values and the loader

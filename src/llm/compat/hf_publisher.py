@@ -161,6 +161,13 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # output with only a warning. Persist the same way hidden_act / use_glu /
     # norm_first are handled.
     attn_impl = "mla" if type(model.transformer_blocks[0].self_attn).__name__ == "MultiLatentAttention" else "mha"
+    # Sliding-window attention (Mistral-style, RIL ISS-242): persist the window
+    # so a windowed model roundtrips with it instead of silently running
+    # full-context attention on load. Omitted when unset.
+    window_size = getattr(model, "window_size", None)
+    sliding_meta: dict[str, int] = {}
+    if window_size is not None:
+        sliding_meta["sliding_window"] = int(window_size)
 
     return {
         "model_type": "llama",
@@ -189,6 +196,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "norm_first": norm_first,
         "use_rope": use_rope,
         "use_alibi": bool(getattr(model, "use_alibi", False)),
+        **sliding_meta,
         "qkv_bias": qkv_bias,
         "mlp_bias": mlp_bias,
         "lm_head_bias": lm_head_bias,

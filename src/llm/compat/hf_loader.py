@@ -159,6 +159,9 @@ def _load_from_local(
         use_rope=our_config.get("use_rope", True),
         rope_theta=our_config.get("rope_theta", 10000.0),
         use_alibi=our_config.get("use_alibi", False),
+        # Sliding-window attention (Mistral) — threaded from the config's
+        # ``sliding_window``; absent/None runs full-context (RIL ISS-242).
+        window_size=our_config.get("window_size"),
         qkv_bias=our_config.get("qkv_bias", False),
         mlp_bias=our_config.get("mlp_bias", False),
         lm_head_bias=our_config.get("lm_head_bias", False),

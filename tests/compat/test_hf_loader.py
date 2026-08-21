@@ -137,6 +137,14 @@ class TestWeightMapping:
         assert our_config["num_layers"] == 32
         assert our_config["num_heads"] == 32
         assert our_config["num_kv_heads"] == 8
+        # No sliding_window -> full-context (None), matching the default.
+        assert our_config.get("window_size") is None
+
+    def test_get_config_mapping_sliding_window_threaded(self):
+        """Mistral's ``sliding_window`` maps onto our ``window_size`` (RIL
+        ISS-242) instead of silently running full-context attention."""
+        assert get_config_mapping({"sliding_window": 4096})["window_size"] == 4096
+        assert get_config_mapping({"sliding_window": 0})["window_size"] == 0
 
     def test_get_config_mapping_rope_defaults_on_for_external(self):
         """External real-Llama/Mistral checkpoints always use RoPE — their HF
@@ -348,6 +356,45 @@ class TestHFLoader:
 
         with pytest.raises(ValueError, match="does not cover"):
             from_pretrained(str(path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+
+    def test_windowed_model_roundtrip(self, tmp_path):
+        """RIL ISS-242: a model with sliding-window attention roundtrips
+        through save_pretrained/from_pretrained WITH its window — before the
+        wiring, ``sliding_window`` was never persisted or mapped, so the
+        reloaded model silently ran full-context attention (wrong logits on
+        long prompts)."""
+        import json
+
+        from llm.compat.hf_loader import from_pretrained
+        from llm.compat.hf_publisher import save_pretrained
+        from tests.support.models import decoder_model_kwargs
+
+        torch.manual_seed(3)
+        from llm.models.decoder import DecoderModel
+
+        src = DecoderModel(
+            **decoder_model_kwargs(
+                vocab_size=64,
+                hidden_size=32,
+                num_layers=1,
+                num_heads=2,
+                intermediate_size=64,
+                max_seq_len=64,
+                attn_impl="mha",
+                mlp_impl="mlp",
+                window_size=16,  # sliding window
+            )
+        )
+        save_pretrained(src, tmp_path)
+        assert json.loads((tmp_path / "config.json").read_text())["sliding_window"] == 16
+
+        reloaded = from_pretrained(str(tmp_path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+        assert reloaded.window_size == 16
+        from llm.core.attn.mha import MultiHeadAttention
+
+        attn = reloaded.transformer_blocks[0].self_attn
+        assert isinstance(attn, MultiHeadAttention)
+        assert attn.window_size == 16  # actually used by the sdpa path
 
     def test_list_supported_architectures(self):
         """Test listing supported architectures."""
