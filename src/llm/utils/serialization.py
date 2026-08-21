@@ -17,11 +17,13 @@ without pulling the FastAPI-heavy serving stack into the CLI process.
 
 from __future__ import annotations
 
-import contextlib
 import importlib
+import logging
 import pkgutil
 
 import torch
+
+logger = logging.getLogger(__name__)
 
 _SAFE_GLOBALS_REGISTERED = False
 
@@ -43,34 +45,56 @@ def register_framework_safe_globals() -> None:
         return
 
     classes: dict[int, type] = {}
+    # Submodules that failed to import (expected for soft/optional deps like
+    # flash_attn). Each one degrades the allowlist, so it is logged loud and
+    # registration is left UNCOMPLETED — a later call retries instead of
+    # permanently pinning a partial allowlist (RIL ISS-243).
+    failures: list[str] = []
 
     def _collect_module_classes(pkg_name: str) -> None:
         """Collect every ``torch.nn.Module`` subclass defined in ``pkg_name``."""
-        for mod in pkgutil.walk_packages(
-            importlib.import_module(pkg_name).__path__,
-            prefix=pkg_name + ".",
-        ):
-            with contextlib.suppress(Exception):
-                # Optional deps (flash_attn etc.) may be absent — skip, don't
-                # fail the caller over a missing optional dependency.
+        try:
+            paths = importlib.import_module(pkg_name).__path__
+        except Exception as exc:  # noqa: BLE001 — a broken pkg is loud, not fatal
+            failures.append(f"{pkg_name}: {exc!r}")
+            return
+        for mod in pkgutil.walk_packages(paths, prefix=pkg_name + "."):
+            try:
                 module = importlib.import_module(mod.name)
-                for obj in vars(module).values():
-                    if isinstance(obj, type) and issubclass(obj, torch.nn.Module) and obj is not torch.nn.Module:
-                        classes[id(obj)] = obj
+            except Exception as exc:  # noqa: BLE001
+                # Optional deps (flash_attn etc.) may be absent — skip, but
+                # record it so the caller knows the allowlist is partial.
+                failures.append(f"{mod.name}: {exc!r}")
+                continue
+            for obj in vars(module).values():
+                if isinstance(obj, type) and issubclass(obj, torch.nn.Module) and obj is not torch.nn.Module:
+                    classes[id(obj)] = obj
 
     # Framework built-ins (the classes a model blob / checkpoint may embed).
-    with contextlib.suppress(Exception):
-        for pkg_name in _FRAMEWORK_PACKAGES:
-            _collect_module_classes(pkg_name)
+    for pkg_name in _FRAMEWORK_PACKAGES:
+        _collect_module_classes(pkg_name)
     # torch.nn container/layer classes embedded by any nn.Module graph
     # (nn.Embedding, nn.Linear, nn.Dropout, nn.LayerNorm, nn.GELU, ...).
     # They have no code-execution surface under weights_only, so allowlisting
     # the whole built-in module namespace is safe.
-    with contextlib.suppress(Exception):
-        _collect_module_classes("torch.nn.modules")
+    _collect_module_classes("torch.nn.modules")
 
-    torch.serialization.add_safe_globals(list(classes.values()))
-    _SAFE_GLOBALS_REGISTERED = True
+    if classes or not failures:
+        # Register whatever was found (idempotent — overlapping repeats are
+        # merged by torch); a real add_safe_globals failure PROPAGATES, never
+        # swallowed. The flag is pinned only on a clean walk so a partial
+        # allowlist self-heals on the next call.
+        torch.serialization.add_safe_globals(list(classes.values()))
+    if failures:
+        logger.warning(
+            "safe-globals allowlist is PARTIAL: %d submodule(s) failed to import "
+            "(soft deps absent, or a broken module). Registration is NOT finalised "
+            "so the next call retries. First failures: %s",
+            len(failures),
+            "; ".join(failures[:5]),
+        )
+    else:
+        _SAFE_GLOBALS_REGISTERED = True
 
 
 __all__ = ["register_framework_safe_globals"]
