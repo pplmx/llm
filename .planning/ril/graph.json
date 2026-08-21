@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 88,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-21T11:53:31+00:00",
+  "updated_at": "2026-08-21T12:01:56+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11495,16 +11495,16 @@
     "TASK-204": {
       "id": "TASK-204",
       "type": "task",
-      "status": "active",
-      "version": 6,
+      "status": "resolved",
+      "version": 7,
       "created_at": "2026-08-18T16:17:29+00:00",
-      "updated_at": "2026-08-21T11:53:31+00:00",
+      "updated_at": "2026-08-21T12:01:56+00:00",
       "touched_round": 88,
       "category": "core-feature",
       "severity": 1.2,
       "effort": 5.0,
       "title": "TP scope extension: serving + flash/sdpa/mla + MoE expert-parallel",
-      "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). PROGRESS — flash_attn slice DONE (CHG-209), MLA slice DONE (CHG-213), serving TP-checkpoint confirmation DONE (CHG-214/TASK-208), MoE expert-parallel DONE (CHG-215/TASK-207: replicated gate + rank-local experts; gate grad SUMmed over TP group; expert shards skip TP AVG; gather/scatter rebuilds the full expert set rank-major). REMAINING: sdpa-leg doc clarify (TASK-209 — sdpa is a functional used by every backend, not a registered attn_impl)."
+      "summary": "DONE — all TP scope-extension legs landed: flash_attn (CHG-209), mla (CHG-213), serving TP-checkpoint (CHG-214), MoE expert-parallel (CHG-215), sdpa-leg doc clarified (TASK-209/f95dd8a). Remaining TP exclusions: ALiBi and serving-as-a-strategy (documented)."
     },
     "ISS-241": {
       "id": "ISS-241",
@@ -12032,16 +12032,16 @@
     "TASK-209": {
       "id": "TASK-209",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-21T02:35:32+00:00",
-      "updated_at": "2026-08-21T02:35:32+00:00",
-      "touched_round": 86,
+      "updated_at": "2026-08-21T12:01:56+00:00",
+      "touched_round": 88,
       "category": "docs",
       "severity": 0.4,
       "effort": 0.3,
       "title": "Clarify sdpa-leg in TASK-204: sdpa is a functional not a registered attn_impl",
-      "summary": "The \"sdpa\" remaining leg of TASK-204 is a mis-frame: core/attn/sdpa.py exports a FUNCTIONAL sdpa() consumed by mha/mla/flash_attn; there is no attn_impl=\"sdpa\" registry entry (ATTENTION_REGISTRY has mha/mla/flash_attn only). MLA TP (TASK-206) exercises the sdpa kernel; the scope guard message should stop listing \"sdpa\" as a separate backend."
+      "summary": "DONE (f95dd8a): docs/guides/distributed.md no longer lists sdpa as a TP backend — it is a FUNCTIONAL (core/attn/sdpa.py) that every supported backend runs through, covered transitively; the distributed guide now documents the full TP scope (mha/flash_attn/mla + MoE expert-parallel) and the ALiBi/serving exclusions."
     },
     "ISS-258": {
       "id": "ISS-258",
