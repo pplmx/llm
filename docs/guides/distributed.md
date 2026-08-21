@@ -219,10 +219,16 @@ Requirements and constraints (all fail loudly, not silently wrong):
 
 - `world_size` must divide evenly by `tp_size` (`n % tp == 0`).
 - `tp_size` must divide `num_heads`, `num_kv_heads`, `vocab_size` and
-  the MLP intermediate width evenly.
-- TP supports the `mha` attention backend and the standard MLP;
-  `flash` / `sdpa` / `mla` attention, MoE (expert parallelism), ALiBi
-  and serving are out of scope (rejected at wrap time).
+  the MLP intermediate width evenly; with MoE it must also divide
+  `num_experts` evenly.
+- TP supports the `mha`, `flash_attn` and `mla` attention backends and,
+  since TASK-207, MoE via expert parallelism (the gate stays replicated and
+  the experts are split across ranks by expert index; the full state dict is
+  rebuilt rank-major on save so `llm-serve` / resume need no special
+  handling). `sdpa` is a *functional*, not a registered `attn_impl` — every
+  supported backend runs its attention through it, so TP covers the sdpa
+  kernel transitively. ALiBi and serving are out of scope (rejected at wrap
+  time).
 
 ## Single-rank and CPU behaviour
 
