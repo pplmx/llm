@@ -184,3 +184,29 @@ def test_save_report_creates_parent_dirs(tmp_path: Path):
     runner = EvaluationRunner(_StubTask(), output_dir=str(nested))
     runner.save_report({"x": 1})
     assert (nested / "eval_report.json").exists()
+
+
+# --------------------------------------------------------------------------- #
+# metric_names config resolution (ISS-251 — EvalConfig.metrics was dead)
+# --------------------------------------------------------------------------- #
+
+
+def test_runner_metric_names_override_task_metrics(tmp_path: Path):
+    """``metric_names`` resolve via the registry and REPLACE task.metrics."""
+    runner = EvaluationRunner(_StubTask(), output_dir=str(tmp_path), metric_names=["accuracy"])
+    results = runner.run(model=None)
+    assert "accuracy" in results  # resolved registry metric ran
+    assert "dummy_score" not in results  # task.metrics was not used
+
+
+def test_runner_empty_metric_names_fall_back_to_task_metrics(tmp_path: Path):
+    """``None`` / empty ``metric_names`` keep task.metrics (back-compat)."""
+    for names in (None, []):
+        runner = EvaluationRunner(_StubTask(), output_dir=str(tmp_path), metric_names=names)
+        assert [m.name for m in runner.metrics] == ["dummy"]
+
+
+def test_runner_unknown_metric_name_raises(tmp_path: Path):
+    """An unresolvable metric name is loud, not silently ignored (ISS-251)."""
+    with pytest.raises(ValueError, match="unknown metric"):
+        EvaluationRunner(_StubTask(), output_dir=str(tmp_path), metric_names=["nope"])

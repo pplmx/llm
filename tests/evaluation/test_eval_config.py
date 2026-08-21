@@ -33,3 +33,28 @@ def test_eval_config_eval_interval_positive():
     """eval_interval can be set to any positive integer."""
     config = EvalConfig(eval_interval=1)
     assert config.eval_interval == 1
+
+
+def test_eval_config_metrics_names_resolve():
+    """``EvalConfig.metrics`` names resolve to real metric instances.
+
+    The names were previously DEAD CONFIG — nothing looked them up, so
+    setting ``metrics=['rouge', 'f1']`` ran whatever ``task.metrics``
+    happened to be. After ISS-251 the names go through the metric registry.
+    """
+    from llm.evaluation.metrics import METRIC_REGISTRY, resolve_metrics
+
+    resolved = {metric.name for metric in resolve_metrics(EvalConfig().metrics)}
+    assert {"perplexity", "accuracy"} <= resolved
+    for name in ("perplexity", "accuracy", "f1", "rouge", "bleu", "chrf"):
+        assert name in METRIC_REGISTRY
+
+
+def test_eval_config_unknown_metric_name_raises_not_silent():
+    """A typo'd metric name fails loudly instead of silently running nothing."""
+    import pytest
+
+    from llm.evaluation.metrics import resolve_metrics
+
+    with pytest.raises(ValueError, match="unknown metric"):
+        resolve_metrics(["not_a_real_metric"])

@@ -46,17 +46,33 @@ def _to_serializable(obj: Any) -> Any:
 
 
 class EvaluationRunner:
-    """Run evaluation tasks and persist reports."""
+    """Run evaluation tasks and persist reports.
 
-    def __init__(self, task: BaseTask, output_dir: str = "results"):
+    Args:
+        task: The evaluation task (carries ``task.metrics`` — metric
+            instances with task-specific constructor kwargs).
+        output_dir: Where reports are written.
+        metric_names: Optional metric NAMES resolved via
+            :func:`llm.evaluation.metrics.resolve_metrics` (so
+            ``EvalConfig.metrics`` takes effect — RIL ISS-251). When ``None``
+            or empty, the runner falls back to ``task.metrics``.
+    """
+
+    def __init__(self, task: BaseTask, output_dir: str = "results", metric_names: list[str] | None = None):
         self.task = task
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        if metric_names:
+            from llm.evaluation.metrics import resolve_metrics
+
+            self.metrics = resolve_metrics(metric_names)
+        else:
+            self.metrics = list(task.metrics)
 
     def _collect_metrics(self, predictions: Any, references: Any) -> dict[str, Any]:
-        """Run every task metric and return a flat ``{name: value}`` dict."""
+        """Run every configured metric and return a flat ``{name: value}`` dict."""
         results: dict[str, Any] = {}
-        for metric in self.task.metrics:
+        for metric in self.metrics:
             results.update(metric.compute(predictions, references))
         return results
 
