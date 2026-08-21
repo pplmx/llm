@@ -35,11 +35,12 @@ slices a full state dict back into each rank's shards in place (default
 ``assign=False`` keeps parameter object identity, so a live optimizer stays
 valid).
 
-Scope guards (rejected loudly, not silently wrong): only the ``mha``
-attention backend, no MoE, no ALiBi, and every partitioned axis must divide
-evenly by the tensor-parallel size. flash/sdpa/mla attention backends,
-paged/cache inference paths and serving are out of scope for v1 (this is a
-training strategy).
+Scope guards (rejected loudly, not silently wrong): the ``mha``, ``flash_attn``
+and ``mla`` attention backends are supported; MoE and ALiBi are rejected, and
+every partitioned axis must divide evenly by the tensor-parallel size. ``sdpa``
+is a functional (``core/attn/sdpa.py``) used by every supported backend, not a
+registered ``attn_impl`` — TP covers it transitively. Paged/cache inference
+paths and serving are out of scope for v1 (this is a training strategy).
 """
 
 from __future__ import annotations
@@ -437,13 +438,18 @@ def apply_tensor_parallel(
         # per-rank head geometry patchable via num_heads/num_kv_heads/head_dim/
         # kv_dim. FlashAttention declares exactly that surface (RIL ISS-137),
         # so the transform below applies unchanged; the kv-cache / paged
-        # decoding differences live in forward, not in the weights. MLA uses
-        # a different latent layout (no fused QKV in the same sense) and MoE
-        # needs expert-parallel routing — both stay out of scope (TASK-204).
-        if attn_cls not in ("MultiHeadAttention", "FlashAttention"):
+        # decoding differences live in forward, not in the weights.
+        # MultiLatentAttention (TASK-206) uses a different parameter layout
+        # (latent_query/value/output projections + [K,V]-block input_kv_proj),
+        # dispatched to a dedicated branch — see ``_mha_flash_attn_slice`` /
+        # ``_mla_slice``. sdpa is a FUNCTIONAL (core/attn/sdpa.py), not a
+        # registered attn_impl: every backend above runs its attention through
+        # it, so TP covers the sdpa kernel transitively (TASK-209). MoE needs
+        # expert-parallel routing and stays out of scope (TASK-207).
+        if attn_cls not in ("MultiHeadAttention", "FlashAttention", "MultiLatentAttention"):
             raise NotImplementedError(
-                f"Tensor parallelism v1 supports attn_impl in {{'mha', 'flash_attn'}} "
-                f"(block {i} is {attn_cls}); sdpa/mla/MoE are out of scope for the TP milestone."
+                f"Tensor parallelism v1 supports attn_impl in {{'mha', 'flash_attn', 'mla'}} "
+                f"(block {i} is {attn_cls}); MoE is out of scope for the TP milestone."
             )
         if getattr(block.mlp, "num_experts", None):
             raise NotImplementedError("Tensor parallelism with MoE (expert parallelism) is not implemented in v1.")
@@ -455,14 +461,118 @@ def apply_tensor_parallel(
     _even(num_kv_heads, tp_size, "num_kv_heads")
     _even(m.lm_head.weight.shape[0], tp_size, "vocab_size")
     for block in m.transformer_blocks:
-        _even(block.self_attn.qkv_proj.weight.shape[0], tp_size, "the fused QKV projection")
+        attn_cls = type(block.self_attn).__name__
+        if attn_cls == "MultiLatentAttention":
+            # MLA K/V blocks: input_kv_proj output is [K | V] each num_heads
+            # heads; head-slicing requires each block divisible (same
+            # constraint the fused QKV enforces per q/k/v fragment).
+            _even(block.self_attn.input_kv_proj.weight.shape[0] // 2, tp_size, "the MLA K/V head blocks")
+        else:
+            _even(block.self_attn.qkv_proj.weight.shape[0], tp_size, "the fused QKV projection")
         _even(block.mlp.fc1.weight.shape[0], tp_size, "the MLP intermediate width")
         if getattr(block.mlp, "gate_proj", None) is not None:
             _even(block.mlp.gate_proj.weight.shape[0], tp_size, "the MLP intermediate width")
 
-    # --- 1. Attention: head-partition QKV, row-partition output proj ---.
+    # --- 1. Attention: head-partition projections, row-partition output ---.
     for block in m.transformer_blocks:
         attn = block.self_attn
+        if type(attn).__name__ == "MultiLatentAttention":
+            # MLA layout (TASK-206): the head axis threads through four
+            # projections, each sliced per-head:
+            #   * latent_q_proj [hidden, latent_dim] and latent_output_proj
+            #     [hidden, latent_dim] are column-parallel over their OUTPUT
+            #     hidden (= num_heads * head_dim, heads contiguous — a plain
+            #     row slice);
+            #   * input_kv_proj [2*hidden, hidden] is column-parallel over its
+            #     output split into [K | V] blocks (each num_heads heads) —
+            #     same block-interleave trap as the fused QKV, so K/V must be
+            #     sliced separately and reassembled [k_rank, v_rank] with a
+            #     block-aware full_index;
+            #   * latent_v_proj [latent_dim, hidden] and out_proj [hidden,
+            #     hidden] are row-parallel over their INPUT hidden (each rank
+            #     holds its own head slice of the hidden axis).
+            # ``latents`` [1, num_latents, latent_dim] and ``latent_dim`` are
+            # REPLICATED (latent_dim is a latent axis, not a head axis).
+            #
+            # Q projection: column over output hidden (heads contiguous).
+            lq_w = attn.latent_q_proj.weight.detach()
+            lq_b = attn.latent_q_proj.bias.detach() if attn.latent_q_proj.bias is not None else None
+            part = lq_w.shape[0] // tp_size
+            lq_slice = lq_w[rank * part : (rank + 1) * part]
+            lq_b_slice = lq_b[rank * part : (rank + 1) * part] if lq_b is not None else None
+            _replace(
+                attn,
+                "latent_q_proj",
+                ColumnParallelLinear(lq_slice, lq_b_slice, group=group, full_shape=tuple(lq_w.shape)),
+            )
+            # K/V projection: column over 2*hidden, block-interleaved [K | V].
+            kv_w = attn.input_kv_proj.weight.detach()
+            kv_b = attn.input_kv_proj.bias.detach() if attn.input_kv_proj.bias is not None else None
+            kv_block = kv_w.shape[0] // 2  # each of K and V holds ``num_heads`` heads
+            kv_rows = kv_block // tp_size
+            k_slice = kv_w[rank * kv_rows : (rank + 1) * kv_rows]
+            v_slice = kv_w[kv_block + rank * kv_rows : kv_block + (rank + 1) * kv_rows]
+            kv_slice = torch.cat([k_slice, v_slice], dim=0)
+            kv_full_index = [
+                torch.cat(
+                    [
+                        torch.arange(r * kv_rows, (r + 1) * kv_rows),
+                        torch.arange(kv_block + r * kv_rows, kv_block + (r + 1) * kv_rows),
+                    ]
+                )
+                for r in range(tp_size)
+            ]
+            if kv_b is not None:
+                k_b = kv_b[rank * kv_rows : (rank + 1) * kv_rows]
+                v_b = kv_b[kv_block + rank * kv_rows : kv_block + (rank + 1) * kv_rows]
+                kv_b_slice = torch.cat([k_b, v_b])
+            else:
+                kv_b_slice = None
+            _replace(
+                attn,
+                "input_kv_proj",
+                ColumnParallelLinear(
+                    kv_slice,
+                    kv_b_slice,
+                    group=group,
+                    full_shape=tuple(kv_w.shape),
+                    full_index_list=kv_full_index,
+                ),
+            )
+            # Latent-dim projection: row over input hidden (per-rank head slice
+            # ~> full latent_dim). Keep the full-output bias.
+            lv_w = attn.latent_v_proj.weight.detach()
+            lv_b = attn.latent_v_proj.bias.detach() if attn.latent_v_proj.bias is not None else None
+            lv_slice = lv_w[:, rank * (lv_w.shape[1] // tp_size) : (rank + 1) * (lv_w.shape[1] // tp_size)]
+            _replace(
+                attn,
+                "latent_v_proj",
+                RowParallelLinear(lv_slice, lv_b, group=group, full_shape=tuple(lv_w.shape)),
+            )
+            # Output projection: column over output hidden back into heads.
+            lo_w = attn.latent_output_proj.weight.detach()
+            lo_b = attn.latent_output_proj.bias.detach() if attn.latent_output_proj.bias is not None else None
+            lo_part = lo_w.shape[0] // tp_size
+            lo_slice = lo_w[rank * lo_part : (rank + 1) * lo_part]
+            lo_b_slice = lo_b[rank * lo_part : (rank + 1) * lo_part] if lo_b is not None else None
+            _replace(
+                attn,
+                "latent_output_proj",
+                ColumnParallelLinear(lo_slice, lo_b_slice, group=group, full_shape=tuple(lo_w.shape)),
+            )
+            # Final out_proj: row over input hidden. Keep the full-output bias.
+            out_w = attn.out_proj.weight.detach()
+            out_b = attn.out_proj.bias.detach() if attn.out_proj.bias is not None else None
+            out_slice = out_w[:, rank * (out_w.shape[1] // tp_size) : (rank + 1) * (out_w.shape[1] // tp_size)]
+            _replace(attn, "out_proj", RowParallelLinear(out_slice, out_b, group=group, full_shape=tuple(out_w.shape)))
+            # Patch the per-rank geometry so the local views/splits agree with
+            # the sliced projections (MLA has no GQA: num_kv_heads == num_heads,
+            # and no ``kv_dim`` attribute to patch).
+            attn.num_heads = num_heads // tp_size
+            attn.num_kv_heads = num_kv_heads // tp_size
+            attn.hidden_size = attn.num_heads * attn.head_dim
+            continue
+        # --- Fused-QKV backends (mha / flash_attn) ---.
         qkv = attn.qkv_proj
         out = attn.out_proj
         qkv_w = qkv.weight.detach()

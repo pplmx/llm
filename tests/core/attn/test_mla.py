@@ -56,6 +56,28 @@ def test_mla_with_mask(mla, input_tensor):
 
 
 @pytest.mark.slow
+def test_mla_with_2d_long_padding_mask(mla, input_tensor):
+    """Regression (RIL TASK-206 engine e2e): MLA must accept the 2-D ``[B, S]``
+    long 0/1 padding mask (1 = real token) the SFT / DPO / Reward pipelines
+    emit — the ML front-end passed it raw (MHA lowers it inside ``sdpa()``),
+    but the latent attention's mask collapse only understood the 4-D
+    ``[B, 1, S_q, S_k]`` masked-out form and crashed with ``IndexError`` on the
+    first mask-consuming forward. The 2-D mask must produce the SAME output as
+    its 4-D masked-out expansion."""
+    mla = mla.to(DEFAULT_DEVICE)
+    mla.eval()
+    mask2d = torch.ones(2, 10, dtype=torch.long, device=DEFAULT_DEVICE)
+    mask2d[:, 8:] = 0  # last two positions padded
+    mask4d = (mask2d == 0).unsqueeze(1).unsqueeze(1)  # [B, 1, 1, S_k]
+
+    with torch.no_grad():
+        out_2d = mla(input_tensor, attn_mask=mask2d)
+        out_4d = mla(input_tensor, attn_mask=mask4d)
+    assert out_2d.shape == input_tensor.shape
+    torch.testing.assert_close(out_2d, out_4d, atol=0, rtol=0)
+
+
+@pytest.mark.slow
 def test_mla_gradients(mla, input_tensor):
     """Test if gradients are computed correctly."""
     input_tensor.requires_grad_(True)

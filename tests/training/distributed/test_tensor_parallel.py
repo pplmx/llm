@@ -372,6 +372,120 @@ def test_tp_flash_attn_gqa_parity_two_gpu():
     _run_flash_parity(2, num_kv_heads=2)
 
 
+def _mla_parity_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
+    """MultiLatentAttention TP parity (TASK-206, TASK-204 mla leg).
+
+    MLA has a different head-slicing surface than the fused-QKV backends:
+    latent_q_proj / latent_output_proj are column over hidden, input_kv_proj
+    is column over the [K | V] block layout (block-interleaved full_index),
+    latent_v_proj / out_proj are row over hidden, and the learnable
+    ``latents`` vector is replicated. fp32 throughout (MLA's attention runs
+    through the sdpa functional, not the flash kernel), so the MHA-style
+    tolerances apply.
+    """
+    try:
+        device_index = device_indices[rank]
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(device_index)
+        dev = torch.device(f"cuda:{device_index}")
+
+        ref = _build_model(attn_impl="mla").to(dev)
+        model = _build_model(attn_impl="mla").to(dev)
+        model = apply_tensor_parallel(model, process_group=dist.group.WORLD)
+        assert is_tp(model)
+
+        x = torch.randint(0, 64, (2, 12), device=dev, dtype=torch.long)
+
+        # --- forward parity (evel: dropout disabled) ---
+        ref.eval()
+        model.eval()
+        with torch.no_grad():
+            ref_logits = ref(x)
+        train_logits = model(x)  # TP forward is collective; identical every rank
+        torch.testing.assert_close(train_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        # --- gradient parity: one backward against the same loss ---
+        model.train()
+        ref.train()
+        ref.zero_grad()
+        model.zero_grad()
+        tp_loss = model(x).float().mean()
+        tp_loss.backward()
+        # ref backward after the TP collectives have drained (NCCL ordering).
+        ref_loss = ref(x).float().mean()
+        ref_loss.backward()
+
+        ref_grads = {k: v.grad for k, v in ref.named_parameters() if v.grad is not None}
+        tp_grads = _gather_tp_grads(model)
+        assert set(ref_grads.keys()) == set(tp_grads.keys()), (
+            f"grad key sets differ: missing {set(ref_grads) - set(tp_grads)}, extra {set(tp_grads) - set(ref_grads)}"
+        )
+        for key in ref_grads:
+            torch.testing.assert_close(
+                tp_grads[key], ref_grads[key], atol=1e-4, rtol=1e-4, msg=f"grad mismatch on {key}"
+            )
+
+        # --- checkpoint boundary: full gather == reference state dict ---
+        full = model_state_dict(model)  # collective; every rank enters
+        for key, value in ref.state_dict().items():
+            assert key in full, f"gathered state dict missing {key}"
+            torch.testing.assert_close(full[key], value, atol=0, rtol=0, msg=f"state mismatch on {key}")
+
+        # --- scatter load roundtrip: load ref full dict, forward again ---
+        load_model_state_dict(model, ref.state_dict())
+        model.eval()
+        with torch.no_grad():
+            reload_logits = model(x)
+        torch.testing.assert_close(reload_logits, ref_logits, atol=1e-5, rtol=1e-5)
+
+        results[rank] = {"success": True}
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results[rank] = {"success": False, "error": repr(e)}
+
+
+def _run_mla_parity(world_size: int) -> None:
+    gpu_devices = all_gpu_devices(min_free_bytes=TP_MIN_FREE_BYTES)
+    if len(gpu_devices) < world_size:
+        pytest.skip(f"need at least {world_size} free GPUs (MLA TP parity)")
+    device_indices = [device.index for device in gpu_devices[:world_size]]
+    _release_parent_cuda_caches()
+    _setup_tp_env()
+
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(
+        _mla_parity_worker,
+        args=(world_size, device_indices, results),
+        nprocs=world_size,
+        join=False,
+    )
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"MLA TP parity spawn exceeded {TP_JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+    for rank in range(world_size):
+        assert rank in results, f"rank {rank} produced no result"
+        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_tp_mla_parity_two_gpu():
+    """MLA TP forward/grad/checkpoint parity vs the single-rank MLA reference (2 GPUs).
+
+    Exercises the K/V-block column slice (block-interleaved full_index is
+    shared with the fused-QKV path) plus the latent/proj row/column mix.
+    """
+    _run_mla_parity(2)
+
+
 def _wrap_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
     """Engine entry path: ``wrap_model_for_training`` tp branch + full gather/load."""
     try:
@@ -783,10 +897,10 @@ def test_tp_rejects_tp_size_not_dividing_world():
         )
 
 
-def test_tp_still_rejects_mla_and_moe_scope(monkeypatch):
-    """The flash_attn extension (TASK-204) must not silently widen TP scope: MLA
-    (different latent layout, no fused-QKV surface) and MoE (needs expert
-    parallelism) remain rejected. The scope guards fire before any collective,
+def test_tp_mla_and_moe_scope_boundary(monkeypatch):
+    """TP scope after the MLA slice (TASK-206): MLA is now accepted (its latent
+    layout is head-sliced by the dedicated branch), while MoE (needs expert
+    parallelism) remains rejected. The scope guards fire before any collective,
     so faking the 2-rank group accessors and passing any group object is enough
     — no NCCL, no GPUs."""
     from llm.training.distributed.tensor_parallel import apply_tensor_parallel
@@ -798,11 +912,17 @@ def test_tp_still_rejects_mla_and_moe_scope(monkeypatch):
     monkeypatch.setattr("torch.distributed.get_rank", lambda _group: 0)
 
     stub = _StubGroup()
-    with pytest.raises(NotImplementedError, match="mla"):
-        apply_tensor_parallel(
-            DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=4, attn_impl="mla"),
-            process_group=stub,
-        )
+    # MLA now partitions (heads divisible: 4 heads / 2 ranks). Assert the
+    # transform not only runs but tags the model and slices the K/V block.
+    mla_model = DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=4, attn_impl="mla")
+    out = apply_tensor_parallel(mla_model, process_group=stub)
+    assert is_tp(out)
+    attn = out.transformer_blocks[0].self_attn
+    # K/V block of the sliced input_kv_proj: 2 blocks (K, V) x 2 local heads x
+    # head_dim 4 = 16 rows total on each rank.
+    assert attn.input_kv_proj.weight.shape[0] == 16
+    assert attn.num_heads == 2  # 4 heads / 2 ranks
+    # MoE still rejected loudly.
     with pytest.raises(NotImplementedError, match="MoE"):
         apply_tensor_parallel(
             DecoderModel(

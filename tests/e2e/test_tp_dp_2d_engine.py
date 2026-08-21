@@ -90,8 +90,17 @@ def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: i
     ``flash=True`` switches the attention backend to ``flash_attn`` (the
     TASK-204 TP-scope extension) and forces ``use_amp=True``: the flash kernel
     requires half precision, and the engine resolves this to bf16 autocast on
-    supported hardware.
+    supported hardware. ``mla=True`` switches to ``MultiLatentAttention`` (the
+    TASK-206 TP-scope slice); MLA runs through the sdpa functional in fp32, so
+    no AMP is needed.
     """
+    if flash and ctx.get("mla", False):
+        raise ValueError("flash and mla are mutually exclusive attention backend overrides")
+    attn_impl = "mha"
+    if flash:
+        attn_impl = "flash_attn"
+    elif ctx.get("mla", False):
+        attn_impl = "mla"
     return Config(
         model=ModelConfig(
             hidden_size=32,
@@ -99,7 +108,7 @@ def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: i
             num_heads=4,  # 32/4 = 8 dim per head; divisible by tp_size
             vocab_size=ctx["vocab_size"],
             max_seq_len=256,
-            attn_impl="flash_attn" if flash else "mha",
+            attn_impl=attn_impl,
         ),
         training=TrainingConfig(
             batch_size=2,
@@ -141,7 +150,11 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
 
         config = _build_config(
-            ctx, backend="nccl", parallel_strategy="tp", tp_size=ctx["tp_size"], flash=ctx.get("flash", False)
+            ctx,
+            backend="nccl",
+            parallel_strategy="tp",
+            tp_size=ctx["tp_size"],
+            flash=ctx.get("flash", False),
         )
         data_module = SFTDataModule(config)
         data_module.prepare_data()
@@ -193,7 +206,7 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
             dist.destroy_process_group()
 
 
-def _run_engine_2d(tmp_path, world_size: int, tp_size: int, *, flash: bool = False) -> None:
+def _run_engine_2d(tmp_path, world_size: int, tp_size: int, *, flash: bool = False, mla: bool = False) -> None:
     gpu_devices = all_gpu_devices(min_free_bytes=ENGINE_2D_MIN_FREE_BYTES)
     if len(gpu_devices) < world_size:
         pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D engine e2e)")
@@ -224,6 +237,7 @@ def _run_engine_2d(tmp_path, world_size: int, tp_size: int, *, flash: bool = Fal
         "vocab_size": tokenizer.vocab_size + 10 + (tokenizer.vocab_size % 2),
         "tp_size": tp_size,
         "flash": flash,
+        "mla": mla,
     }
     manager = mp.Manager()
     results = manager.dict()
@@ -264,6 +278,17 @@ def test_engine_tp_dp_2d_flash_attn_four_gpu(tmp_path):
     extension): the transformed FlashAttention must train through the REAL loop
     under bf16 AMP autocast and stay bit-identical across DP groups."""
     _run_engine_2d(tmp_path, world_size=4, tp_size=2, flash=True)
+
+
+@pytest.mark.need_gpu(4)
+@pytest.mark.slow
+def test_engine_tp_dp_2d_mla_four_gpu(tmp_path):
+    """Real-engine TP+DP 2D with the MultiLatentAttention backend (TASK-206,
+    TASK-204 mla leg): the block-interleaved K/V column slice must train through
+    the REAL loop (fp32, no AMP needed for the sdpa functional) and stay
+    bit-identical across DP groups — including the replicated ``latents``
+    parameter averaged by ``allreduce_dp_grads``."""
+    _run_engine_2d(tmp_path, world_size=4, tp_size=2, mla=True)
 
 
 @pytest.mark.need_gpu(4)

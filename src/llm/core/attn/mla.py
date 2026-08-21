@@ -189,6 +189,22 @@ class MultiLatentAttention(nn.Module):
         # key (at least one False in True=masked convention); row 0 of a
         # decode row is always real.
         if attn_mask is not None:
+            # Normalize the 2-D ``[B, S]`` padding mask emitted by the SFT /
+            # DPO / Reward data pipelines (long 0/1, 1 = real token) into the
+            # 4-D ``[B, 1, S_q, S_k]`` masked-out form the collapse below
+            # expects — the same lowering ``sdpa()`` applies for MHA. The
+            # latent queries are a single "current position" (``S_q == 1``),
+            # so the key-only mask expands to ``[B, 1, 1, S_k]`` and the
+            # ``flat = attn_mask[:, 0]`` slice still yields ``[B, S_q, S_k]``.
+            # Without this, training a ``mla`` model crashed on the first
+            # mask-consuming forward (no MLA engine e2e existed to catch it —
+            # surfaced by the TASK-206 MLA TP engine test).
+            if attn_mask.ndim == 2:
+                if attn_mask.dtype != torch.bool:
+                    # long/float 0/1: 1 = keep -> mask-out predicate is == 0
+                    # (mirror of sdpa()'s integer-mask path).
+                    attn_mask = attn_mask == 0
+                attn_mask = attn_mask.unsqueeze(1).unsqueeze(1)  # [B, 1, 1, S_k]
             flat = attn_mask[:, 0]  # [B, S_q, S_k]
             row_has_visible = ~flat.all(dim=-1)  # [B, S_q]
             q_idx = torch.arange(flat.shape[1], device=flat.device)
