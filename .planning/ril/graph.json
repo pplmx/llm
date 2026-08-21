@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 88,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-21T12:01:56+00:00",
+  "updated_at": "2026-08-21T14:52:11+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11521,11 +11521,11 @@
     "ISS-242": {
       "id": "ISS-242",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-18T19:02:39+00:00",
-      "updated_at": "2026-08-18T19:02:39+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-21T14:52:11+00:00",
+      "touched_round": 88,
       "category": "correctness",
       "severity": "medium",
       "summary": "Mistral sliding_window / window_size is never mapped, persisted, or passed to the builder in compat/export: loading mistral-7b-v0.1 (window 4096) runs full-context attention past the window — silently different logits on long prompts. DecoderModel/MHA support it; the HF mapping + publisher config just never carry it. (export deep-dive finding #4.)"
@@ -11533,11 +11533,11 @@
     "ISS-243": {
       "id": "ISS-243",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-18T19:02:39+00:00",
-      "updated_at": "2026-08-18T19:02:39+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-21T14:52:11+00:00",
+      "touched_round": 88,
       "category": "stability",
       "severity": "low",
       "summary": "serialization.add_safe_globals allowlist collection swallows every exception yet still pins _SAFE_GLOBALS_REGISTERED=True: one broken submodule during the walk aborts registration permanently (partial allowlist, UnpicklingError later with no repair). Also allowlisting all of torch.nn.modules is broader than the docstring's rationale. (export deep-dive finding #5.)"
@@ -11545,11 +11545,11 @@
     "ISS-244": {
       "id": "ISS-244",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-18T19:02:39+00:00",
-      "updated_at": "2026-08-18T19:02:39+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-21T14:52:11+00:00",
+      "touched_round": 88,
       "category": "correctness",
       "severity": "medium",
       "summary": "hf_loader only WARNS on leftover missing/unexpected keys (random-init submodule loads silently), while the GGUF loader RAISES on the same condition. Inconsistent; a partially-mapped-but-supported checkpoint can load with garbage output. (export deep-dive finding #6 — full raise may break legit HF-flexible loads; needs a middle ground.)"
@@ -11640,11 +11640,11 @@
     "ISS-251": {
       "id": "ISS-251",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-18T20:54:13+00:00",
-      "updated_at": "2026-08-18T20:54:13+00:00",
-      "touched_round": 82,
+      "updated_at": "2026-08-21T14:52:11+00:00",
+      "touched_round": 88,
       "category": "maintainability",
       "severity": "low",
       "summary": "EvalConfig.metrics (a list of metric NAMES) is dead config: EvaluationRunner._collect_metrics only ever runs task.metrics (metric objects); nothing resolves EvalConfig.metrics names to metric instances, so setting metrics=['rouge','f1'] in config has zero effect. Silent misconfiguration trap. (eval deep-dive F5.)"
@@ -12123,6 +12123,54 @@
       "touched_round": 88,
       "source": "cd7f4e1 tests: test_tp_moe_forward_grad_checkpoint_parity_two_gpu (2-GPU NCCL), test_tp_moe_state_dict_roundtrip_cpu (2-proc gloo), test_tp_moe_dead_rank_no_deadlock_cpu, test_engine_tp_dp_2d_moe_four_gpu (4-GPU TP+DP 2D engine), test_tp_mla_and_moe_scope_boundary — all passed 2026-08-21",
       "confidence": 1.0
+    },
+    "CHG-216": {
+      "id": "CHG-216",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T14:50:30+00:00",
+      "updated_at": "2026-08-21T14:50:30+00:00",
+      "touched_round": 88,
+      "title": "EvalConfig.metrics names resolve via METRIC_REGISTRY (ISS-251)",
+      "commit": "a286e44",
+      "summary": "Added METRIC_REGISTRY + resolve_metrics(); EvaluationRunner accepts metric_names (fallback task.metrics); unknown name raises ValueError (loud, not silent dead config)."
+    },
+    "CHG-217": {
+      "id": "CHG-217",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T14:50:31+00:00",
+      "updated_at": "2026-08-21T14:50:31+00:00",
+      "touched_round": 88,
+      "title": "safe-globals allowlist loud + retryable (ISS-243)",
+      "commit": "7ff8a32",
+      "summary": "register_framework_safe_globals no longer swallows import failures nor pins the flag on a partial walk — failures logged by name, discovered classes still registered, flag pinned only on a clean walk (next call retries/self-heals). Tests simulate a broken submodule."
+    },
+    "CHG-218": {
+      "id": "CHG-218",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T14:50:31+00:00",
+      "updated_at": "2026-08-21T14:50:31+00:00",
+      "touched_round": 88,
+      "title": "hf_loader raises on leftover weights (ISS-244)",
+      "commit": "bc9301b",
+      "summary": "Unmapped HF tensors + residual missing/unexpected load_state_dict keys now RAISE (matching the GGUF loader) instead of warn+drop-at-random-init; tied-embeddings copy preserved. Two regression tests."
+    },
+    "CHG-219": {
+      "id": "CHG-219",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T14:50:31+00:00",
+      "updated_at": "2026-08-21T14:50:31+00:00",
+      "touched_round": 88,
+      "title": "Mistral sliding_window wired end-to-end (ISS-242)",
+      "commit": "caadede",
+      "summary": "DecoderModel stores window_size; get_config_mapping reads HF sliding_window; HF loader threads it; save_pretrained persists it. Roundtrip test reaches the MHA sdpa window path."
     }
   },
   "edges": [
@@ -17800,6 +17848,30 @@
       "to": "TASK-207",
       "type": "implements",
       "created_at": "2026-08-21T11:52:14+00:00"
+    },
+    {
+      "from": "CHG-216",
+      "to": "ISS-251",
+      "type": "resolves",
+      "created_at": "2026-08-21T14:52:10+00:00"
+    },
+    {
+      "from": "CHG-217",
+      "to": "ISS-243",
+      "type": "resolves",
+      "created_at": "2026-08-21T14:52:10+00:00"
+    },
+    {
+      "from": "CHG-218",
+      "to": "ISS-244",
+      "type": "resolves",
+      "created_at": "2026-08-21T14:52:10+00:00"
+    },
+    {
+      "from": "CHG-219",
+      "to": "ISS-242",
+      "type": "resolves",
+      "created_at": "2026-08-21T14:52:11+00:00"
     }
   ]
 }
