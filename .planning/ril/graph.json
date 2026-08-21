@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 86,
+  "round": 87,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-20T18:11:54+00:00",
+  "updated_at": "2026-08-21T06:16:41+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11496,15 +11496,15 @@
       "id": "TASK-204",
       "type": "task",
       "status": "active",
-      "version": 2,
+      "version": 5,
       "created_at": "2026-08-18T16:17:29+00:00",
-      "updated_at": "2026-08-20T15:58:31+00:00",
+      "updated_at": "2026-08-21T06:15:44+00:00",
       "touched_round": 86,
       "category": "core-feature",
       "severity": 1.2,
       "effort": 5.0,
       "title": "TP scope extension: serving + flash/sdpa/mla + MoE expert-parallel",
-      "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). PROGRESS — flash_attn slice DONE (CHG-209: scope guard relaxed, 3 flash TP parity tests + 4-GPU TP+DP 2D flash engine e2e; surfaced+fixed ISS-257 validation autocast). REMAINING: sdpa + mla attention backends, MoE expert-parallel routing, llm-serve TP load confirmation."
+      "summary": "CHG-199 v1 scope guards reject tp+flash/sdpa/mla attention, tp+MoE, tp+ALiBi, and TP is a training strategy (serving out of scope). PROGRESS — flash_attn slice DONE (CHG-209: scope guard relaxed, 3 flash TP parity tests + 4-GPU TP+DP 2D flash engine e2e; surfaced+fixed ISS-257 validation autocast); MLA slice DONE (CHG-213: MultiLatentAttention TP branch + scope guard accepts mla; 2-GPU MLA TP parity + 4-GPU TP+DP 2D MLA engine e2e; surfaced+fixed ISS-258 2-D long mask crash). REMAINING: MoE expert-parallel (TASK-207, own round), llm-serve TP checkpoint confirmation (TASK-208), sdpa-leg doc clarify (TASK-209 — sdpa is a functional used by every backend, not a registered attn_impl)."
     },
     "ISS-241": {
       "id": "ISS-241",
@@ -11985,6 +11985,97 @@
       "touched_round": 86,
       "source": "tests/training/tasks/test_dpo_task.py (6 incl. test_dpo_attention_masks_reach_the_model) + tests/data/test_dpo_dataset.py (9); ruff+ty+prek green",
       "summary": "Regression proves loss is mask-sensitive now (masking a real content token changes the DPO loss); verified all real data batches carry the mask keys (KeyError-safe). Model-level probes confirm [B,S] int masks map identically to the 4D kernel mask and the sinusoidal PE (always applied when use_rope=False) is the reason padded layouts differ — not a mask bug.",
+      "confidence": 1.0
+    },
+    "TASK-206": {
+      "id": "TASK-206",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-21T02:30:40+00:00",
+      "updated_at": "2026-08-21T06:15:26+00:00",
+      "touched_round": 86,
+      "category": "core-feature",
+      "severity": 1.2,
+      "effort": 5.0,
+      "title": "MLA TP slice: extend apply_tensor_parallel to MultiLatentAttention",
+      "summary": "TASK-204 remaining leg 1 of ~3. MultiLatentAttention projection surface (latent_q_proj / input_kv_proj K,V blocks / latent_v_proj / latent_output_proj / out_proj + replicated latents) differs from the fused-QKV MHA surface. Extend the transform with a MultiLatentAttention branch: column input_kv_proj over K/V blocks (block-interleaved full_index), column latent_q_proj/latent_output_proj over heads, row latent_v_proj/out_proj, patch num_heads/num_kv_heads/hidden_size. Parity test: 2-GPU MLA TP forward/grad/checkpoint vs single-rank reference."
+    },
+    "TASK-207": {
+      "id": "TASK-207",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T02:35:03+00:00",
+      "updated_at": "2026-08-21T02:35:03+00:00",
+      "touched_round": 86,
+      "category": "core-feature",
+      "severity": 0.8,
+      "effort": 6.0,
+      "title": "MoE expert-parallel (TASK-204 leg 2)",
+      "summary": "TP v1 rejects num_experts (expert parallelism): each rank holds a disjoint expert set, gate routing becomes all-to-all for the selected experts, and checkpoint gather/scatter must handle unsharded gate + per-expert shards. LARGE — own round."
+    },
+    "TASK-208": {
+      "id": "TASK-208",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T02:35:03+00:00",
+      "updated_at": "2026-08-21T02:35:03+00:00",
+      "touched_round": 86,
+      "category": "core-feature",
+      "severity": 0.6,
+      "effort": 2.0,
+      "title": "llm-serve TP-trained checkpoint confirmation (TASK-204 leg 3)",
+      "summary": "Confirm an llm-serve ServingConfig() serves a TP-trained checkpoint end-to-end (model_config roundtrip already proven at loader level in test_tp_checkpoint_roundtrip). Small — likely a serve e2e test."
+    },
+    "TASK-209": {
+      "id": "TASK-209",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T02:35:32+00:00",
+      "updated_at": "2026-08-21T02:35:32+00:00",
+      "touched_round": 86,
+      "category": "docs",
+      "severity": 0.4,
+      "effort": 0.3,
+      "title": "Clarify sdpa-leg in TASK-204: sdpa is a functional not a registered attn_impl",
+      "summary": "The \"sdpa\" remaining leg of TASK-204 is a mis-frame: core/attn/sdpa.py exports a FUNCTIONAL sdpa() consumed by mha/mla/flash_attn; there is no attn_impl=\"sdpa\" registry entry (ATTENTION_REGISTRY has mha/mla/flash_attn only). MLA TP (TASK-206) exercises the sdpa kernel; the scope guard message should stop listing \"sdpa\" as a separate backend."
+    },
+    "ISS-258": {
+      "id": "ISS-258",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-21T05:36:24+00:00",
+      "updated_at": "2026-08-21T06:15:26+00:00",
+      "touched_round": 86,
+      "severity": 0.7,
+      "title": "MLA training crashes on 2-D [B,S] long padding mask from SFT/DPO/Reward pipelines",
+      "summary": "MultiLatentAttention._latent_attention only handled the 4-D [B,1,S_q,S_k] masked-out mask form; the ML data pipelines emit a 2-D [B,S] long 0/1 keep-mask (1=real), and the SFT/DPO/Reward tasks pass it raw to model(). Pre-fix any MLA training forward that reached the mask path crashed with IndexError(tuple index out of range) at flat=attn_mask[:,0]. Latent because no MLA engine/training e2e existed. Fixed by normalizing 2-D masks to [B,1,1,S_k] masked-out form in _latent_attention; regression test test_mla_with_2d_long_padding_mask proves 2-D == 4-D output bit-for-bit."
+    },
+    "CHG-213": {
+      "id": "CHG-213",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T06:14:15+00:00",
+      "updated_at": "2026-08-21T06:14:15+00:00",
+      "touched_round": 86,
+      "commit": "128300cbe32ed08571f9f95023b5421b3d197c3f",
+      "summary": "MLA tensor-parallel slice (TASK-206): apply_tensor_parallel MultiLatentAttention branch — col input_kv_proj over K/V blocks (block-aware full_index), col latent_q_proj/latent_output_proj over heads, row latent_v_proj/out_proj, latents+latent_dim replicated. Scope guard now accepts {mha,flash_attn,mla}; sdpa clarified functional-not-impl; MoE still rejected. 2-GPU MLA TP parity (fwd/grad/checkpoint) + 4-GPU TP+DP 2D MLA engine e2e. Fixed latent ISS-258: MLA _latent_attention crashed on 2-D [B,S] long keep-mask from SFT/DPO/Reward pipelines — normalize to [B,1,1,S_k] masked-out (mirrors sdpa() lowering); test_mla_with_2d_long_padding_mask proves 2-D==4-D bit-for-bit."
+    },
+    "EV-199": {
+      "id": "EV-199",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T06:15:57+00:00",
+      "updated_at": "2026-08-21T06:15:57+00:00",
+      "touched_round": 86,
+      "source": "128300c: tests/training/distributed/test_tensor_parallel.py::test_tp_mla_parity_two_gpu (2-GPU, need_gpu+gated) + tests/e2e/test_tp_dp_2d_engine.py::test_engine_tp_dp_2d_mla_four_gpu; re-verified 2026-08-21 on 8xA100 shared box",
+      "summary": "MLA TP slice parity verified: 2-GPU forward/grad/checkpoint == single-rank reference; 4-GPU TP+DP 2D MLA engine e2e trains bit-identical across DP groups (replicated latents averaged by allreduce_dp_grads). CPU MLA suite (incl. test_mla_with_2d_long_padding_mask) + TP scope-boundary/strategy tests green.",
       "confidence": 1.0
     }
   },
@@ -17615,6 +17706,42 @@
       "to": "ISS-249",
       "type": "resolves",
       "created_at": "2026-08-20T18:11:54+00:00"
+    },
+    {
+      "from": "CHG-213",
+      "to": "TASK-206",
+      "type": "implements",
+      "created_at": "2026-08-21T06:15:09+00:00"
+    },
+    {
+      "from": "CHG-213",
+      "to": "ISS-258",
+      "type": "resolves",
+      "created_at": "2026-08-21T06:15:09+00:00"
+    },
+    {
+      "from": "TASK-206",
+      "to": "TASK-204",
+      "type": "depends_on",
+      "created_at": "2026-08-21T06:15:09+00:00"
+    },
+    {
+      "from": "TASK-207",
+      "to": "TASK-204",
+      "type": "depends_on",
+      "created_at": "2026-08-21T06:15:09+00:00"
+    },
+    {
+      "from": "TASK-208",
+      "to": "TASK-204",
+      "type": "depends_on",
+      "created_at": "2026-08-21T06:15:09+00:00"
+    },
+    {
+      "from": "TASK-209",
+      "to": "TASK-204",
+      "type": "depends_on",
+      "created_at": "2026-08-21T06:15:09+00:00"
     }
   ]
 }
