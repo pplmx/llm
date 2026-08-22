@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 92,
+  "round": 93,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T16:32:44+00:00",
+  "updated_at": "2026-08-22T16:37:03+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12909,6 +12909,105 @@
       "commit": "86f4840",
       "title": "QAT static/learnable scales + floor-cap — completes TASK-220 and the QAT milestone",
       "summary": "FakeQuantize/FakeQuantLinear scale + floor-cap capabilities (EV-222)."
+    },
+    "ISS-261": {
+      "id": "ISS-261",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:33:49+00:00",
+      "updated_at": "2026-08-22T16:33:49+00:00",
+      "touched_round": 93,
+      "title": "Knowledge Distillation (teacher-student) unimplemented (ROADMAP 13.4)",
+      "summary": "ROADMAP §13.4 (model compression) lists knowledge distillation as unimplemented; no distill/teacher/KL code exists in src/llm. A distillation training objective (CE + temperature-scaled KL between teacher and student logits) lets a small student model match a teacher's output distribution.",
+      "severity": 0.4
+    },
+    "DEC-055": {
+      "id": "DEC-055",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:33:56+00:00",
+      "updated_at": "2026-08-22T16:33:56+00:00",
+      "touched_round": 93,
+      "title": "Milestone: Knowledge Distillation (KD) is the next compression capability — CE + temperature-scaled KL teacher-student training, in-repo & CPU-verifiable",
+      "rationale": "ROADMAP §13.4 lists KD as unimplemented, and KD is the natural companion to the just-finished QAT/quant work (compression family). A DistillationLoss (CE + T^2*KL) + a distillation training task is tractable, renders numerically in a CPU regression (student KL/CE loss decays toward the teacher), and reuses the existing training-task/registry/DataModule patterns rather than introducing a new subsystem (unlike multimodal) or an external engine (DeepSpeed).",
+      "alternatives_rejected": "PRuning / low-rank decomposition (ROADMAP 13.4) = separate structural-compression techniques with larger blast radius; multimodal = new vision subsystem with no scaffolding (DEC-049/053); RLAIF/Constitutional-AI = alignment-family, unrelated to compression; DeepSpeed ZeRO = external engine the repo would not own."
+    },
+    "TASK-221": {
+      "id": "TASK-221",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-22T16:34:12+00:00",
+      "updated_at": "2026-08-22T16:37:03+00:00",
+      "touched_round": 93,
+      "category": "core-feature",
+      "severity": 0.5,
+      "effort": 0.3,
+      "confidence": 0.9,
+      "unlock_factor": 1.4,
+      "title": "DistillationLoss (CE + temperature-scaled KL) + unit tests",
+      "summary": "Implement training/distillation.py with DistillationLoss combining hard-label CrossEntropy and the classic temperature-scaled KL term (alpha*CE + (1-alpha)*T^2*KL(softmax(student/T)||softmax(teacher/T))), with teacher logits either given or produced by a frozen teacher module (teacher_logits_fn or a teacher model with gradients detached). Unit tests: correct closed-form for two known distributions, gradient flows only through the student, temperature scaling, alpha interpolation endpoints. First KD slice.",
+      "priority_score": 6.3
+    },
+    "TASK-222": {
+      "id": "TASK-222",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:34:12+00:00",
+      "updated_at": "2026-08-22T16:34:12+00:00",
+      "touched_round": 93,
+      "category": "core-feature",
+      "severity": 0.5,
+      "effort": 0.6,
+      "confidence": 0.8,
+      "unlock_factor": 1.2,
+      "title": "Distillation training integration (distill task / teacher loading + student-loss-descent e2e)",
+      "summary": "Register a distillation training path: a TrainingTask that runs a student on input, computes DistillationLoss against a frozen teacher (loaded from a checkpoint), and trains; e2e shows the student's CE+KL loss decays and it moves toward the teacher's output (small synthetic teacher/student).",
+      "priority_score": 8.5
+    },
+    "TASK-223": {
+      "id": "TASK-223",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:34:12+00:00",
+      "updated_at": "2026-08-22T16:34:12+00:00",
+      "touched_round": 93,
+      "category": "maintainability",
+      "severity": 0.3,
+      "effort": 0.4,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "KD DataModule / CLI: teacher checkpoint + student config pairing, docs",
+      "summary": "Pair a teacher checkpoint + student model in config (teacher_path/temperature/alpha), document the distill workflow, and add CLI smoke coverage so llm-train --task distill is usable. Follow-up to TASK-221/222.",
+      "priority_score": 4.0
+    },
+    "EV-223": {
+      "id": "EV-223",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:36:35+00:00",
+      "updated_at": "2026-08-22T16:36:35+00:00",
+      "touched_round": 93,
+      "source": "tests/training/test_distillation.py (7 tests: CE/KL endpoints, gradient-to-student-only, ignore-index masking, teacher-module path, invalid args)",
+      "summary": "DistillationLoss verified: alpha endpoints reduce to pure CE / pure T^2*KL (matches manual KL), gradients flow only to the student, ignored positions are masked from both terms, and the teacher-module path equals explicit teacher logits. TASK-221 (KD loss) complete.",
+      "confidence": 1.0
+    },
+    "CHG-236": {
+      "id": "CHG-236",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-22T16:36:35+00:00",
+      "updated_at": "2026-08-22T16:36:58+00:00",
+      "touched_round": 93,
+      "commit": "a62516c",
+      "title": "Knowledge Distillation loss (DistillationLoss) — completes TASK-221",
+      "summary": "training/distillation.py DistillationLoss (CE + T^2*KL with ignore-index masking, optional frozen teacher module) + 7 unit tests. TASK-222 (distill task/e2e) and TASK-223 (CLI/docs) remain."
     }
   },
   "edges": [
@@ -18886,6 +18985,60 @@
       "to": "TASK-220",
       "type": "implements",
       "created_at": "2026-08-22T16:32:36+00:00"
+    },
+    {
+      "from": "TASK-221",
+      "to": "ISS-261",
+      "type": "addresses",
+      "created_at": "2026-08-22T16:34:18+00:00"
+    },
+    {
+      "from": "TASK-222",
+      "to": "ISS-261",
+      "type": "addresses",
+      "created_at": "2026-08-22T16:34:18+00:00"
+    },
+    {
+      "from": "TASK-223",
+      "to": "ISS-261",
+      "type": "addresses",
+      "created_at": "2026-08-22T16:34:18+00:00"
+    },
+    {
+      "from": "TASK-222",
+      "to": "TASK-221",
+      "type": "depends_on",
+      "created_at": "2026-08-22T16:34:18+00:00"
+    },
+    {
+      "from": "TASK-223",
+      "to": "TASK-222",
+      "type": "depends_on",
+      "created_at": "2026-08-22T16:34:19+00:00"
+    },
+    {
+      "from": "DEC-055",
+      "to": "TASK-221",
+      "type": "governs",
+      "created_at": "2026-08-22T16:34:19+00:00"
+    },
+    {
+      "from": "DEC-055",
+      "to": "TASK-222",
+      "type": "governs",
+      "created_at": "2026-08-22T16:34:19+00:00"
+    },
+    {
+      "from": "DEC-055",
+      "to": "TASK-223",
+      "type": "governs",
+      "created_at": "2026-08-22T16:34:19+00:00"
+    },
+    {
+      "from": "CHG-236",
+      "to": "TASK-221",
+      "type": "implements",
+      "created_at": "2026-08-22T16:36:58+00:00"
     }
   ]
 }
