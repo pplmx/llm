@@ -15,6 +15,7 @@ from llm.training.core.config import Config
 from llm.training.core.distributed import broadcast_parameters
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
 from llm.training.distributed import (
+    allreduce_3d_dp_grads,
     allreduce_dp_grads,
     allreduce_pp_dp_grads,
     clip_grad_norm_tp,
@@ -318,12 +319,13 @@ class TrainingEngine:
             # step boundary via ``allreduce_pp_dp_grads``.
             _pp_size, data_world, data_rank, _pp_rank = pp_dp_layout(self.world_size, self.config.distributed.pp_size)
         elif self.is_training_3d and self.world_size > 1:
-            # '3d' dp_size==1 (TASK-216): every STAGE must consume the SAME
-            # microbatch sequence (the pipeline pumps it through tensor-
-            # parallelised stages), so all ranks load one replicated shard
-            # (data_rank=0/data_world=1) like pure PP. dp_size>1 (TASK-217)
-            # shards per DP column and averages gradients across columns.
-            data_rank, data_world = 0, 1
+            # '3d' (TASK-216 for dp=1, TASK-217 for dp>1): every STAGE must
+            # consume the SAME microbatch sequence, so each rank loads its DP
+            # COLUMN's shard (data_world = dp_size; all pp*tp ranks inside a
+            # column replicate the same shard). dp_size==1 -> data_world=1
+            # (one replicated shard, like pure PP).
+            rt3 = cast(Any, self.model)._pp3d
+            data_rank, data_world = rt3.data_rank, rt3.data_world
         else:
             # Single-rank TP is a no-op identity (mirrors the wrap path), so an
             # explicit tp_size > 1 config on a 1-GPU run must not be validated
@@ -797,16 +799,19 @@ class TrainingEngine:
                         group=cast(Any, self.model)._pp.group,
                     )
                 elif is_pp3d(self.model):
-                    # '3d' dp_size==1 (TASK-216): every rank holds a DISJOINT
-                    # TP-sharded stage, so the full-model norm is the sum over
-                    # the whole world column — reduce squared norms over the
-                    # WORLD group so every rank clips its stage by the SAME
-                    # factor (mirrors the PP-aware clip, DEC-049). No DP
-                    # gradient averaging at dp_size==1.
+                    # '3d' (TASK-216/217): first average gradients over the
+                    # data-parallel columns (no-op for dp_size==1), then do the
+                    # column-aware global-norm clip — every rank in a column
+                    # holds a DISJOINT TP-sharded stage, so the full norm is the
+                    # sum over the pipeline column and each rank must clip by
+                    # the SAME factor (mirrors the PP-aware clip, DEC-049).
+                    allreduce_3d_dp_grads(self.model)
+                    rt3 = cast(Any, self.model)._pp3d
+                    clip_group = rt3.pp_group if rt3.pp_group is not None else dist.group.WORLD
                     grad_norm = clip_grad_norm_tp(
                         self.model,
                         self.config.training.gradient_clip_val,
-                        group=dist.group.WORLD,
+                        group=clip_group,
                     )
                 else:
                     grad_norm = torch.nn.utils.clip_grad_norm_(

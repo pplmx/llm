@@ -18,7 +18,7 @@ and ``r + tp_size`` (next stage).
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.distributed as dist
@@ -40,25 +40,57 @@ class PPTPRuntime:
         rank: Global rank.
         pp_size: Number of pipeline stages.
         tp_size: Tensor-parallel size (ranks per stage).
+        dp_size: Data-parallel (column) count. ``> 1`` shards the data per
+            column (TASK-217); each rank also gets a ``dp_group`` to average
+            gradients across columns at the step boundary.
+        dp_rank: This rank's data-parallel (column) index.
         stage: This rank's TP-sharded ``_PipelineStage``.
         device: Device the stage runs on.
     """
 
-    def __init__(self, *, rank: int, pp_size: int, tp_size: int, stage: nn.Module, device: torch.device) -> None:
+    def __init__(
+        self,
+        *,
+        rank: int,
+        pp_size: int,
+        tp_size: int,
+        stage: nn.Module,
+        device: torch.device,
+        dp_size: int = 1,
+        dp_rank: int = 0,
+        pp_group: dist.ProcessGroup | None = None,
+        dp_group: dist.ProcessGroup | None = None,
+    ) -> None:
         if pp_size < 2:
             raise ValueError("PP+TP needs pp_size >= 2")
-        if tp_size < 1:
-            raise ValueError("PP+TP needs tp_size >= 1")
+        if tp_size < 1 or dp_size < 1:
+            raise ValueError(f"PP+TP needs tp_size/dp_size >= 1, got tp={tp_size} dp={dp_size}")
         self.rank = rank
-        self.pp_rank = rank // tp_size
-        self.tp_rank = rank % tp_size
         self.pp_size = pp_size
         self.tp_size = tp_size
+        self.dp_size = dp_size
+        self.dp_rank = dp_rank
+        # [DP][PP][TP] row-major grid: the column is a contiguous pp*tp block at
+        # dp_rank*block; within it, stage = local_index // tp, tp = % tp.
+        self.block = pp_size * tp_size
+        within = rank % self.block
+        self.pp_rank = within // tp_size
+        self.tp_rank = within % tp_size
+        self.data_rank = dp_rank
+        self.data_world = dp_size
         self.stage = stage
         self.device = device
+        # Stage-to-stage P2P uses the WORLD group with GLOBAL rank partners so
+        # the (+/- tp) routing is unambiguous even when columns are disjoint; a
+        # column never spuriously talks to its neighbour because prev/next are
+        # clamped at the column's pp_rank boundaries.
         self.group = dist.group.WORLD
-        self.prev_rank = rank - tp_size if self.pp_rank > 0 else None
-        self.next_rank = rank + tp_size if self.pp_rank < pp_size - 1 else None
+        col_start = dp_rank * self.block
+        self.prev_rank = col_start + (self.pp_rank - 1) * tp_size + self.tp_rank if self.pp_rank > 0 else None
+        self.next_rank = col_start + (self.pp_rank + 1) * tp_size + self.tp_rank if self.pp_rank < pp_size - 1 else None
+        # Column-scoped loss broadcast + cross-column gradient averaging.
+        self.pp_group = pp_group
+        self.dp_group = dp_group
         self._fwd_in: torch.Tensor | None = None
         self._fwd_out: torch.Tensor | None = None
         self._loss: torch.Tensor | None = None
@@ -143,9 +175,10 @@ class PPTPRuntime:
 
     def broadcast_last_loss(self, loss: torch.Tensor) -> torch.Tensor:
         t = loss.detach().to(self.device)
-        # The loss lives on the LAST stage's ranks. group=WORLD, so group_src is
-        # an actual GLOBAL rank: the first rank of the last stage,
-        # (pp_size - 1) * tp_size (its TP peers compute the identical loss).
+        # The loss lives on the LAST stage's ranks of this column. Broadcast
+        # within the column (pp_group; WORLD for dp_size==1): group_src is the
+        # group-LOCAL index of the last stage's first TP member.
+        group: Any = self.pp_group if self.pp_group is not None else dist.group.WORLD
         src = (self.pp_size - 1) * self.tp_size
-        dist.broadcast(t, group_src=src, group=dist.group.WORLD)
+        dist.broadcast(t, group_src=src, group=group)
         return t

@@ -371,13 +371,11 @@ def wrap_model_for_training(
         )
 
     if parallel_strategy == "3d":
-        # PP+TP composition (RIL DEC-052/TASK-216), dp_size = 1 (pure pipeline +
-        # tensor-parallel within each stage). Like TP and PP it runs on CPU
-        # ranks (gloo) for multi-process numeric verification, so it does NOT
-        # take the DDP/FSDP CPU-no-op early return below. Layout: row-major
-        # [DP][PP][TP], so every rank's stage index is ``rank // tp_size`` and
-        # its stage TP group is the contiguous ``tp_size``-rank run at
-        # ``pp_rank * tp_size``.
+        # PP+TP composition (RIL DEC-052/TASK-216, dp=1; TASK-217 for dp>1):
+        # data-parallel columns x pipeline stages x tensor-parallel within each
+        # stage. Like TP and PP it runs on CPU ranks (gloo) for multi-process
+        # numeric verification, so it does NOT take the DDP/FSDP CPU-no-op
+        # early return below. Layout: row-major [DP][PP][TP].
         if world_size <= 1:
             raise ValueError("parallel_strategy='3d' needs world_size > 1 (a 2-stage x N-TP grid)")
         if dp_size is None or dp_size < 1:
@@ -386,22 +384,34 @@ def wrap_model_for_training(
             raise ValueError("parallel_strategy='3d' needs an explicit pp_size >= 2")
         if tp_size is None or tp_size < 1:
             raise ValueError("parallel_strategy='3d' needs an explicit tp_size >= 1")
-        if dp_size > 1:
-            raise NotImplementedError(
-                "parallel_strategy='3d' with dp_size>1 (full DP+PP+TP 3D) is RIL TASK-217; "
-                "this slice supports dp_size=1 (pure PP+TP)."
-            )
-        _dp, ppr, tpr, _dp_rank, pp_rank, _tp_rank = three_d_layout(world_size, dp_size, pp_size, tp_size)
-        tp_groups, _pp_groups, _dp_groups = three_d_groups(world_size, dp_size, ppr, tpr)
+        _dp, ppr, tpr, dp_rank, pp_rank, tp_rank = three_d_layout(world_size, dp_size, pp_size, tp_size)
+        tp_groups, pp_groups, dp_groups = three_d_groups(world_size, dp_size, ppr, tpr)
         # ``dist.new_group`` is a world collective: every rank creates the SAME
-        # set of TPG groups in the same order, then keeps its own stage handle.
-        group_handles = [dist.new_group(ranks=list(g)) for g in tp_groups]
-        stage_tp_group = group_handles[pp_rank]
+        # set of groups in the same order, then keeps the handles it belongs to.
+        tp_handles = [dist.new_group(ranks=list(g)) for g in tp_groups]
+        if _dp > 1:
+            pp_handles = [dist.new_group(ranks=list(g)) for g in pp_groups]
+            dp_handles = [dist.new_group(ranks=list(g)) for g in dp_groups]
+            pp_group = pp_handles[dp_rank]
+            dp_group = dp_handles[pp_rank * tpr + tp_rank]
+        else:
+            pp_group, dp_group = None, None
+        stage_tp_group = tp_handles[dp_rank * ppr + pp_rank]
         rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
         stages = partition_decoder_model(cast(Any, model), ppr)
         stage = stages[pp_rank].to(device)
         apply_tensor_parallel_stage(stage, model=cast(Any, model), process_group=stage_tp_group)
-        runtime = PPTPRuntime(rank=rank, pp_size=ppr, tp_size=tpr, stage=stage, device=device)
+        runtime = PPTPRuntime(
+            rank=rank,
+            pp_size=ppr,
+            tp_size=tpr,
+            stage=stage,
+            device=device,
+            dp_size=_dp,
+            dp_rank=dp_rank,
+            pp_group=pp_group,
+            dp_group=dp_group,
+        )
         cast(Any, stage)._pp3d = runtime
         return stage
 
@@ -668,6 +678,33 @@ def allreduce_dp_grads(model: nn.Module) -> None:
             # Replicated parameter (or full bias of a row-parallel linear):
             # force a bit-identical gradient across the TP group.
             dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, group=tp.group)
+
+
+def allreduce_3d_dp_grads(model: nn.Module) -> None:
+    """Average a PP+TP stage's gradients over its data-parallel columns (TASK-217).
+
+    3D with dp_size>1 shards the data per column: every rank in a column trains
+    on the same shard through the whole pipeline, so its stage gradient only
+    carries that column's shard gradient. Each rank's ``dp_group`` is the
+    strided set of DIFFERENT columns holding the SAME parameter shard (same
+    ``(pp_rank, tp_rank)``), and averaging over it converges every column to
+    the true full-batch gradient (DDP semantics) — exactly what
+    :func:`allreduce_pp_dp_grads` does for PP+DP 2D.
+
+    A no-op for pure PP+TP (``dp_size == 1``, no ``dp_group``). Runs at the
+    step boundary, AFTER unscale + partial-window re-scaling (fp32 reduce).
+    """
+    if not is_pp3d(model):
+        return
+    dp_group = getattr(cast(Any, model)._pp3d, "dp_group", None)
+    if dp_group is None:
+        return
+    for param in model.parameters():
+        if param.grad is None:
+            # Keep the collective uniform: a peer whose stage param got a
+            # gradient enters the reduce, so a skipped call would deadlock.
+            param.grad = torch.zeros_like(param)
+        dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, group=dp_group)
 
 
 def clip_grad_norm_tp(

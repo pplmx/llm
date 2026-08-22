@@ -1,6 +1,7 @@
 """Distributed training utilities."""
 
 from llm.training.distributed.parallel import (
+    allreduce_3d_dp_grads,
     allreduce_dp_grads,
     clip_grad_norm_tp,
     is_fsdp,
@@ -28,6 +29,7 @@ from llm.training.distributed.tensor_parallel import apply_tensor_parallel, appl
 
 __all__ = [
     "PPTPRuntime",
+    "allreduce_3d_dp_grads",
     "allreduce_dp_grads",
     "allreduce_pp_dp_grads",
     "apply_tensor_parallel",

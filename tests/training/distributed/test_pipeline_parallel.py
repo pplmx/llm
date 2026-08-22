@@ -29,6 +29,7 @@ import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
 from llm.training.distributed import (
+    allreduce_3d_dp_grads,
     allreduce_pp_dp_grads,
     apply_tensor_parallel_stage,
     build_pipeline_model,
@@ -993,3 +994,119 @@ def test_pp3d_engine_train_four_process_cpu() -> None:
         assert payload["is_pp3d"], f"rank {rank}: model not PP+TP"
         assert losses[rank] < float("inf"), f"rank {rank}: loss is NaN/inf"
     assert losses[0] == pytest.approx(losses[3], abs=1e-4), "broadcast loss must agree across the column"
+
+
+def _pp3d_dp2_worker(rank: int, world_size: int, results: dict) -> None:
+    """Full DP+PP+TP (2x2x2, 8 ranks) runtime: column data split + DP averaging."""
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        torch.manual_seed(SEED)
+        model = _build_model().to(torch.device("cpu"))
+        stage = wrap_model_for_training(
+            model,
+            parallel_strategy="3d",
+            device=torch.device("cpu"),
+            world_size=world_size,
+            dp_size=2,
+            pp_size=2,
+            tp_size=2,
+        )
+        runtime = stage._pp3d
+        dp_rank = runtime.dp_rank
+
+        # Per-column shard: each DP column sees a DIFFERENT batch (data split).
+        torch.manual_seed(1000 + dp_rank)
+        input_ids = torch.randint(0, VOCAB, (BATCH, SEQ))
+        torch.manual_seed(2000 + dp_rank)
+        labels = torch.randint(0, VOCAB, (BATCH, SEQ))
+        criterion = nn.CrossEntropyLoss(ignore_index=-100)
+
+        losses: list = []
+        runtime.step(input_ids, target=labels, criterion=criterion, scale=1.0, losses=losses)
+        last = losses[-1] if losses else torch.zeros((), dtype=torch.float32)
+        col_loss = runtime.broadcast_last_loss(last)  # column-scoped broadcast
+
+        ref_model = _build_model()
+        with torch.no_grad():
+            ref_loss = lm_shift_loss(ref_model(input_ids), labels, criterion)
+
+        allreduce_3d_dp_grads(stage)
+        total_sq = sum((p.grad.detach() ** 2).sum().item() for p in stage.parameters() if p.grad is not None)
+        block = 2 * 2
+        results[rank] = {
+            "col_loss": col_loss.item(),
+            "ref_loss": ref_loss.item(),
+            "dp_rank": dp_rank,
+            "within": rank % block,
+            "total_sq": total_sq,
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_pp3d_dp2_full_3d_grid_eight_process_cpu() -> None:
+    """DP+PP+TP (2x2x2): per-column data/loss, per-column serial parity, and
+    cross-column gradient lockstep after DP averaging (RIL TASK-217)."""
+    out = _run_spawn_worker(_pp3d_dp2_worker, 8)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        # Each column's broadcast loss must equal the serial loss on ITS shard.
+        assert payload["col_loss"] == pytest.approx(payload["ref_loss"], abs=1e-6), f"rank {rank} col loss"
+    # The two columns see different shards -> their losses differ.
+    c0 = [out[r]["col_loss"] for r in (0, 1, 2, 3)]
+    c1 = [out[r]["col_loss"] for r in (4, 5, 6, 7)]
+    assert c0[0] != pytest.approx(c1[0], abs=1e-6), "DP columns must see different data shards"
+    # Cross-column gradient lockstep: pairs (d=0/d=1) at the same (pp,tp) shard
+    # hold identical total-sq gradients after allreduce_3d_dp_grads.
+    for within in range(4):
+        a = out[within]["total_sq"]
+        b = out[within + 4]["total_sq"]
+        assert a == pytest.approx(b, abs=1e-9), f"cross-column grad lockstep failed for shard {within}"
+
+
+def _pp3d_engine_dp2_worker(rank: int, world_size: int, results: dict) -> None:
+    """Full 8-rank TrainingEngine '3d' (dp=2 x pp=2 x tp=2): data split per
+    column, DP gradient averaging, column-clip through _run_epoch."""
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
+        from llm.training.core.engine import TrainingEngine
+        from llm.training.tasks.lm_task import LanguageModelingTask
+        from tests.support.data import DummyLMDataModule
+
+        config = Config(
+            model=ModelConfig(vocab_size=64, hidden_size=16, num_layers=4, num_heads=2, max_seq_len=32),
+            training=TrainingConfig(batch_size=2, epochs=1, num_samples=32),
+            optimization=OptimizationConfig(use_compile=False, use_amp=False),
+            distributed=DistributedConfig(backend="gloo", parallel_strategy="3d", dp_size=2, pp_size=2, tp_size=2),
+        )
+        data_module = DummyLMDataModule(config)
+        task = LanguageModelingTask(config, data_module)
+        engine = TrainingEngine(config=config, task=task, rank=rank, world_size=world_size, data_module=data_module)
+        assert is_pp3d(engine.model), "engine must hold a composed PP+TP stage"
+        loss = engine._run_epoch(0)
+        results[rank] = {"loss": float(loss), "is_pp3d": is_pp3d(engine.model), "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_pp3d_engine_dp2_full_3d_train_eight_process_cpu() -> None:
+    """TrainingEngine drives full 3D (2x2x2): finite loss on all 8 ranks."""
+    out = _run_spawn_worker(_pp3d_engine_dp2_worker, 8)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert payload["is_pp3d"], f"rank {rank}: model not PP+TP"
+        assert payload["loss"] < float("inf"), f"rank {rank}: loss is NaN/inf"
