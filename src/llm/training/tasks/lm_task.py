@@ -236,6 +236,13 @@ class LanguageModelingTask(TrainingTask):
 
         return main_scheduler
 
+    def supports_pipeline_parallel(self) -> bool:
+        # ``train_step`` is exactly the pipeline's contract:
+        # ``model(input_ids)`` + LM shift + CE (no attention mask threaded
+        # into the model), so PP reproduces the serial loss bit-for-bit
+        # (RIL DEC-049 / TASK-210).
+        return True
+
     def build_criterion(self) -> nn.Module:
         # Cross Entropy Loss for next token prediction. ignore_index=-100 is
         # the standard LM convention: datasets mask padding positions with

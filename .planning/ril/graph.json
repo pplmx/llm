@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 88,
+  "round": 89,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-21T14:52:11+00:00",
+  "updated_at": "2026-08-22T01:31:33+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12171,6 +12171,118 @@
       "title": "Mistral sliding_window wired end-to-end (ISS-242)",
       "commit": "caadede",
       "summary": "DecoderModel stores window_size; get_config_mapping reads HF sliding_window; HF loader threads it; save_pretrained persists it. Roundtrip test reaches the MHA sdpa window path."
+    },
+    "DEC-049": {
+      "id": "DEC-049",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-21T19:12:32+00:00",
+      "updated_at": "2026-08-21T19:12:32+00:00",
+      "touched_round": 89,
+      "summary": "Pipeline Parallelism (parallel_strategy='pp') is the next P2 distributed milestone (ROADMAP: DeepSpeed/PP/3D). v1 = PURE pipeline: the whole world is stages (pp_size==world_size, dp_size=1), each rank holds 1/pp_size of the DecoderModel split at transformer_blocks (stage 0 = embedding + first chunk, middle = block chunks, last = blocks + final_norm + lm_head), scheduled by torch.distributed.pipelining.ScheduleGPipe (n_microbatches=1, loss_fn = LM shift + CE on the last stage). 2-process CPU/gloo probe (pp_probe.py) confirmed loss + all 54 owned-stage gradients are BIT-EXACT to the serial reference. Engine integration: PP branch in _run_epoch (schedule.step does fwd+bwd internally), loss broadcast from last stage, metric reduce divisor = world (every rank holds the same loss), PP-aware global grad-norm clip over the PP group, PP gather/scatter state dict (global-name keyed, one stage slice per rank). Refusals: non-standard-loop tasks (PPO/DPO/reward), use_amp=True/bf16, torch.compile, TP+PP (3D) — all following follow-up tasks.",
+      "rationale": "ROADMAP P2 declares advanced distributed training (TP/PP/DeepSpeed) as the next bucket after the TP scope-extension line closed fully (graph 1009, ZERO active tasks/issues, round 89). PP is the natural continuation and torch 2.13 ships the battle-tested pipelining schedule; the bit-exact CPU probe de-risks the whole integration before touching the engine.",
+      "alternatives_rejected": "Multimodal spike (P1) = a new vision subsystem with no existing scaffolding and a much larger design space; DeepSpeed = an external engine the repo would not own; 3D (DP+TP+PP) = depends on PP existing first; hand-rolled stage fwd/bwd = reinventing a schedule torch already provides."
+    },
+    "TASK-210": {
+      "id": "TASK-210",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-21T19:16:48+00:00",
+      "updated_at": "2026-08-21T19:18:56+00:00",
+      "touched_round": 89,
+      "category": "core-feature",
+      "severity": 0.9,
+      "effort": 6,
+      "confidence": 0.95,
+      "title": "Implement Pipeline Parallelism v1 (parallel_strategy='pp')",
+      "summary": "Per DEC-049: add 'pp' to DistributedConfig.parallel_strategy; new src/llm/training/distributed/pipeline.py (partition_decoder_model -> stage modules split at transformer_blocks, PipelineStage/ScheduleGPipe with LM-shift loss_fn, is_pp, pp gather/scatter state dict, clip_grad_norm_pp); engine: build schedule in _setup_components, PP train/val steps (schedule.step/eval, loss broadcast from last stage, metric divisor=world), step-boundary clip; refusals for non-standard tasks / AMP / compile / TP+PP; parity test (2-proc CPU gloo, bit-exact vs serial) + 2-proc e2e SFT smoke; docs/guides/distributed.md.",
+      "lock_owner": "pp-milestone",
+      "lock_until": "2026-08-21T19:48:56+00:00"
+    },
+    "HYP-14": {
+      "id": "HYP-14",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T01:14:06+00:00",
+      "updated_at": "2026-08-22T01:14:06+00:00",
+      "touched_round": 89,
+      "confidence": 1.0,
+      "title": "PP stage scheduling reproduces serial LM training (loss + grads bit-exact)",
+      "summary": "1 stage per rank over transformer_blocks plus torch.distributed.pipelining.ScheduleGPipe (n_microbatches=1) reproduces the serial LMTask forward/backward: same loss to the bit and every owned stage gradient bit-exact vs a single-rank reference (validated on 2 CPU/gloo ranks)."
+    },
+    "TASK-211": {
+      "id": "TASK-211",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T01:14:06+00:00",
+      "updated_at": "2026-08-22T01:14:06+00:00",
+      "touched_round": 89,
+      "category": "core-feature",
+      "severity": 0.7,
+      "effort": 5,
+      "confidence": 0.9,
+      "title": "PP v2: add pp_size<world_size (PP+data-parallel hybrid) with DP-group gradient averaging",
+      "summary": "After PP v1 (DEC-049/TASK-210, pure pipeline = whole world as stages), add a pp_size knob so multiple pipeline groups train disjoint data shards with DP-group gradient averaging (mirror TASK-202's allreduce_dp_grads for PP), making 8-GPU PP+DP runs throughput-sensible. Requires per-PP-group broadcast of weights and metric wiring across DP groups."
+    },
+    "TASK-212": {
+      "id": "TASK-212",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T01:14:06+00:00",
+      "updated_at": "2026-08-22T01:14:06+00:00",
+      "touched_round": 89,
+      "category": "core-feature",
+      "severity": 0.5,
+      "effort": 3,
+      "confidence": 0.9,
+      "title": "PP per-stage optimizer state checkpointing (resume restores optimizer moments)",
+      "summary": "PP v1 resume restores weights+scheduler but skips per-rank optimizer moments with a warning (stages own disjoint params of unequal count, so rank 0's optimizer state_dict cannot be replayed). Save each stage's optimizer state (all_gather_object) keyed by stage index and scatter on load, so a resumed PP run keeps Adam state."
+    },
+    "TASK-213": {
+      "id": "TASK-213",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T01:14:06+00:00",
+      "updated_at": "2026-08-22T01:14:06+00:00",
+      "touched_round": 89,
+      "category": "performance",
+      "severity": 0.4,
+      "effort": 4,
+      "confidence": 0.8,
+      "title": "PP microbatch overlap (n_microbatches>1) + AMP/bf16 + gradient-checkpointing support",
+      "summary": "PP v1 runs n_microbatches=1 (correct, memory-only benefit). Enable pipelining overlap via n_microbatches>1 with the engine loop shape, and lift the v1 refusals (use_amp autocast/GradScaler interaction, gradient checkpointing) once verified bit-stable."
+    },
+    "EV-202": {
+      "id": "EV-202",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T01:16:22+00:00",
+      "updated_at": "2026-08-22T01:16:22+00:00",
+      "touched_round": 89,
+      "source": "tests/training/distributed/test_pipeline_parallel.py::test_pp_loss_and_grad_parity_two_process_cpu",
+      "title": "2-stage PP loss + all owned grads bit-exact to serial (CPU/gloo)",
+      "summary": "2-process gloo/CPU run: schedule.step(scale=1.0) loss equals the serial LM-shift loss and every owned stage gradient (embedding, blocks, final_norm, lm_head) is torch.equal to the single-rank reference's — the forward/backward wiring is right.",
+      "confidence": 1.0
+    },
+    "EV-203": {
+      "id": "EV-203",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T01:16:22+00:00",
+      "updated_at": "2026-08-22T01:16:22+00:00",
+      "touched_round": 89,
+      "source": "tests/e2e/test_pp_engine.py::test_pp_engine_trains_and_resumes_two_process_cpu",
+      "title": "Engine e2e: PP trains, saves a global-named checkpoint, resumes and continues in lockstep",
+      "summary": "Real TrainingEngine (parallel_strategy='pp', 2 CPU/gloo procs): weights moved, full-state gather bit-identical across ranks after epoch-1 train AND epoch-2 resume-continue, start_epoch=1 sensed, global_step advanced, ranks step in lockstep.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -17872,6 +17984,42 @@
       "to": "ISS-242",
       "type": "resolves",
       "created_at": "2026-08-21T14:52:11+00:00"
+    },
+    {
+      "from": "DEC-049",
+      "to": "TASK-210",
+      "type": "governs",
+      "created_at": "2026-08-21T19:18:56+00:00"
+    },
+    {
+      "from": "EV-202",
+      "to": "HYP-14",
+      "type": "validates",
+      "created_at": "2026-08-22T01:16:22+00:00"
+    },
+    {
+      "from": "EV-203",
+      "to": "HYP-14",
+      "type": "validates",
+      "created_at": "2026-08-22T01:16:22+00:00"
+    },
+    {
+      "from": "TASK-211",
+      "to": "TASK-210",
+      "type": "depends_on",
+      "created_at": "2026-08-22T01:31:33+00:00"
+    },
+    {
+      "from": "TASK-212",
+      "to": "TASK-210",
+      "type": "depends_on",
+      "created_at": "2026-08-22T01:31:33+00:00"
+    },
+    {
+      "from": "TASK-213",
+      "to": "TASK-210",
+      "type": "depends_on",
+      "created_at": "2026-08-22T01:31:33+00:00"
     }
   ]
 }

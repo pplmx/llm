@@ -44,7 +44,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.training.core.config import CheckpointConfig
-from llm.training.distributed import is_fsdp, is_tp, load_model_state_dict, model_state_dict
+from llm.training.distributed import is_fsdp, is_pp, is_tp, load_model_state_dict, model_state_dict
 
 logger = logging.getLogger(__name__)
 
@@ -736,7 +736,7 @@ class CheckpointManager:
         extra_state: dict | None = None,
         model_config: dict | None = None,
     ):
-        collective = is_fsdp(model) or is_tp(model)
+        collective = is_fsdp(model) or is_tp(model) or is_pp(model)
         if self.rank != 0:
             # FSDP's FULL_STATE_DICT state_dict() and the TP full-state-dict
             # gather are cross-rank collectives (RIL ISS-186 / TASK-200):
@@ -920,8 +920,23 @@ class CheckpointManager:
         # loader and must NOT be swallowed here. Optimizer / scheduler /
         # scaler load BEFORE the model so a mismatch leaves the model
         # untouched — never a partially-resumed model behind a scratch notice.
+        # Advance the ordering so the no-op note is unambiguous: PP matters
+        # for the optimizer branch but is_pp is already imported at module top.
         try:
-            if optimizer is not None and payload.get("optimizer_state") is not None:
+            if is_pp(model) and optimizer is not None and payload.get("optimizer_state") is not None:
+                # PP stages own DISJOINT parameter slices with per-stage
+                # optimizer state, so the checkpoint's rank-0 optimizer state
+                # cannot be replayed onto a differently-sized stage (RIL
+                # DEC-049/TASK-210). v1 resumes weights + scheduler but resets
+                # per-rank optimizer moments, with an explicit note — never a
+                # silent dropout. Per-stage optimizer checkpointing is a
+                # follow-up task.
+                self.logger.warning(
+                    "PP resume restores weights and scheduler but NOT per-rank optimizer "
+                    "moments (per-stage optimizer checkpointing is a follow-up); "
+                    "the optimizer starts from fresh state."
+                )
+            elif optimizer is not None and payload.get("optimizer_state") is not None:
                 optimizer.load_state_dict(payload["optimizer_state"])
             if scheduler is not None and payload.get("scheduler_state") is not None:
                 scheduler.load_state_dict(payload["scheduler_state"])

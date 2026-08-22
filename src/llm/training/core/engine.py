@@ -18,6 +18,7 @@ from llm.training.distributed import (
     allreduce_dp_grads,
     clip_grad_norm_tp,
     is_fsdp,
+    is_pp,
     is_tp,
     model_for_checkpoint_io,
     tp_dp_layout,
@@ -218,11 +219,20 @@ class TrainingEngine:
         # (_BackwardAllReduce / _ForwardAllReduce) and an autograd-aware
         # logits all-gather; tracing those with torch.compile risks silent
         # miscompiles or graph-broken collectives. Correctness first; compile
-        # over TP is a follow-up optimization.
+        # over TP is a follow-up optimization. PP v1 is likewise NOT compiled:
+        # the pipelining schedule drives the per-stage modules with silent
+        # P2P send/recv ops that a compile graph must not capture (RIL
+        # DEC-049 / TASK-210).
         self.is_training_tp = self.config.distributed.parallel_strategy == "tp"
-        if self.config.optimization.use_compile and self.is_training_tp:
-            self.logger.info("TP v1 skips torch.compile (custom-collective autograd graphs); running eager.")
-        if self.config.optimization.use_compile and not self.is_training_tp and sys.version_info >= (3, 8):
+        self.is_training_pp = self.config.distributed.parallel_strategy == "pp"
+        if self.config.optimization.use_compile and (self.is_training_tp or self.is_training_pp):
+            strategy = "TP" if self.is_training_tp else "PP"
+            self.logger.info(f"{strategy} v1 skips torch.compile (collective-autograd / P2P schedule); running eager.")
+        if (
+            self.config.optimization.use_compile
+            and not (self.is_training_tp or self.is_training_pp)
+            and sys.version_info >= (3, 8)
+        ):
             self.logger.info(
                 f"🚀 Compiling model with torch.compile (mode={self.config.optimization.compile_mode!r})..."
             )
@@ -247,6 +257,25 @@ class TrainingEngine:
         )
 
         self.use_standard_loop = self.task.uses_standard_training_loop()
+        if self.is_training_pp:
+            if not self.use_standard_loop:
+                raise ValueError(
+                    "parallel_strategy='pp' only supports standard-loop tasks whose loss is the "
+                    "pipeline's LM-shift+CE contract (LMTask family). "
+                    f"{type(self.task).__name__} uses a custom training loop."
+                )
+            if not self.task.supports_pipeline_parallel():
+                raise ValueError(
+                    f"parallel_strategy='pp' is incompatible with {type(self.task).__name__}: the "
+                    "task's train_step passes inputs/attention-mask the pipeline stage forward "
+                    "does not reproduce. Use a plain LanguageModelingTask for PP."
+                )
+            if self.config.optimization.use_amp:
+                raise ValueError(
+                    "parallel_strategy='pp' v1 refuses use_amp=True (fp16/bf16 autocast): the "
+                    "pipeline schedule backprops inside step() where the engine's autocast/ "
+                    "GradScaler scaling cannot interact safely. Run PP in fp32 for now."
+                )
 
         # Use data_module to get dataloaders. TP v1 replicated the batch to
         # every rank (each rank trains the SAME microbatches so column/row
@@ -257,8 +286,13 @@ class TrainingEngine:
         # still loads the SAME shard as its group (so the TP internals see
         # replicated data within the group); gradients are later averaged
         # across DP groups at the step boundary (``allreduce_dp_grads``).
+        # PP v1 (pure pipeline) likewise replicates: every STAGE must consume
+        # the SAME microbatch sequence, so all ranks load one replicated
+        # shard (data_rank=0, data_world=1) and the schedule just pumps it.
         if self.is_training_tp and self.world_size > 1:
             _tp_size, data_world, data_rank, _tp_rank = tp_dp_layout(self.world_size, self.config.distributed.tp_size)
+        elif self.is_training_pp and self.world_size > 1:
+            data_rank, data_world = 0, 1
         else:
             # Single-rank TP is a no-op identity (mirrors the wrap path), so an
             # explicit tp_size > 1 config on a 1-GPU run must not be validated
@@ -271,6 +305,8 @@ class TrainingEngine:
         # equals the DP-group average. PURE TP (dp_size=1) instead has every
         # rank evaluate the SAME data and produce the SAME loss; dividing by
         # world deflates the logged train/val loss by world_size (RIL ISS-252).
+        # PURE PP bcast the last stage's loss to every other stage, so every
+        # rank again holds the SAME value and world-size division recovers it.
         self._metric_reduce_divisor = 1 if (self.is_training_tp and data_world == 1) else self.world_size
         self.is_streaming = getattr(self.data_module, "is_streaming", False)
         self.dataloader, self.sampler = self.data_module.train_dataloader(data_rank, data_world)
@@ -428,6 +464,73 @@ class TrainingEngine:
             amp_enabled = False
         return torch.autocast(device_type=self.device.type, enabled=amp_enabled, dtype=amp_dtype)
 
+    def _pp_extract_inputs(self, batch: Any) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pull ``input_ids`` / ``labels`` out of a training batch.
+
+        Mirrors :meth:`llm.training.tasks.lm_task.LMTask.train_step`: a dict
+        batch carries ``input_ids`` / ``labels`` keys, a tuple is
+        ``(input_ids, labels)``. PP v1 only runs for the LMTask family (the
+        task advertises ``supports_pipeline_parallel``), so this contract is
+        guaranteed by the engine's setup guard.
+        """
+        if isinstance(batch, dict):
+            return batch["input_ids"], batch["labels"]
+        return batch[0], batch[1]
+
+    def _pp_train_step(self, batch: Any) -> tuple[torch.Tensor, dict]:
+        """Run one training mini-batch through the pipeline schedule.
+
+        :meth:`ScheduleGPipe.step` chunks the batch and drives every stage's
+        forward AND backward (filling ``losses`` on the last stage). The
+        loss_fn folds the gradient-accumulation 1/accum_steps scale so the
+        accumulated step gradient matches the serial loop's scaled_loss
+        semantics. The last-stage loss is then broadcast so every rank holds
+        the same value for ``reduce_mean`` / ``save_best`` / EarlyStopping.
+        """
+        input_ids, labels = self._pp_extract_inputs(batch)
+        runtime = cast(Any, self.model)._pp
+        accum = self.config.optimization.gradient_accumulation_steps
+        losses: list[Any] = []
+        runtime.schedule.step(
+            input_ids,
+            target=labels,
+            losses=losses,
+            loss_kwargs={"criterion": self.criterion, "scale": accum},
+        )
+        # ``losses[-1]`` is the SCALED loss the schedule backpropped
+        # (raw/accum — the loss_fn folded in the accumulation factor).
+        # Recover the RAW loss for logging / save_best / callbacks so the
+        # PP path honours the same ISS-180 contract as the serial loop.
+        local = losses[-1] * accum if losses else torch.tensor(0.0, device=self.device)
+        loss = runtime.broadcast_loss(local)
+        finite = bool(torch.isfinite(loss))
+        metrics = {
+            "loss": loss.item() if finite else 0.0,
+            "ppl": torch.exp(loss).item() if finite and loss.item() < 20 else float("inf"),
+        }
+        return loss, metrics
+
+    def _pp_validation_step(self, batch: Any) -> tuple[torch.Tensor, dict]:
+        """Forward-only pipeline step for validation (``schedule.eval``)."""
+        input_ids, labels = self._pp_extract_inputs(batch)
+        runtime = cast(Any, self.model)._pp
+        losses: list[Any] = []
+        # ``eval`` keeps the stage forwards without backward; the last stage's
+        # loss still lands in ``losses`` and is broadcast exactly like train.
+        runtime.schedule.eval(
+            input_ids,
+            target=labels,
+            losses=losses,
+            loss_kwargs={"criterion": self.criterion, "scale": 1.0},
+        )
+        local = losses[-1] if losses else torch.tensor(0.0, device=self.device)
+        loss = runtime.broadcast_loss(local)
+        metrics = {
+            "val_loss": loss.item(),
+            "val_ppl": torch.exp(loss).item() if loss.item() < 20 else float("inf"),
+        }
+        return loss, metrics
+
     def _run_epoch(self, epoch: int) -> float:
         if self.optimizer is None or self.criterion is None:
             raise RuntimeError("standard-loop components are required")
@@ -478,11 +581,20 @@ class TrainingEngine:
             else:
                 batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
-            with self._amp_context():
-                loss, metrics = self.task.train_step(batch, self.model, self.criterion)
-                # Gradient-accum scaling: the RAW loss is what callbacks and
-                # logging should see (RIL ISS-180); the scaled copy backprops.
-                scaled_loss = loss / accum_steps
+            if self.is_training_pp:
+                # PP: the pipeline schedule already ran the stage-forward AND
+                # stage-backward inside step() (RIL DEC-049 / TASK-210), and
+                # the 1/accum_steps gradient-accumulation scale is folded into
+                # the schedule's own loss — so there is NO separate backward
+                # here (a second .backward() would double backprop) and no
+                # ``scaled_loss`` to backprop.
+                loss, metrics = self._pp_train_step(batch)
+            else:
+                with self._amp_context():
+                    loss, metrics = self.task.train_step(batch, self.model, self.criterion)
+                    # Gradient-accum scaling: the RAW loss is what callbacks and
+                    # logging should see (RIL ISS-180); the scaled copy backprops.
+                    scaled_loss = loss / accum_steps
 
             accum_counter += 1
             is_step_boundary = (batch_idx + 1) % accum_steps == 0 or (batch_idx + 1 == num_batches)
@@ -492,8 +604,11 @@ class TrainingEngine:
             # backward synchronizes. All-reducing every micro-batch multiplies
             # cross-rank communication by accum_steps (the entire reason
             # ``no_sync()`` exists). Model may be the wrapped DDP module or a
-            # plain module in single-process / CPU runs.
-            if isinstance(self.model, DistributedDataParallel) and not is_step_boundary:
+            # plain module in single-process / CPU runs. The PP branch skips
+            # this entirely — the schedule backpropped already.
+            if self.is_training_pp:
+                pass
+            elif isinstance(self.model, DistributedDataParallel) and not is_step_boundary:
                 with self.model.no_sync():
                     self.scaler.scale(scaled_loss).backward()
             else:
@@ -528,6 +643,18 @@ class TrainingEngine:
                     # shard's local norm, or each shard clips by a different
                     # factor and the replicated copies drift (RIL ISS-253).
                     grad_norm = clip_grad_norm_tp(self.model, self.config.training.gradient_clip_val)
+                elif is_pp(self.model):
+                    # PP-aware global-norm clip: each rank holds a DISJOINT
+                    # stage, so the full-model norm is the sum over the whole
+                    # pipeline group — ``clip_grad_norm_tp`` with an explicit
+                    # group reduces squared norms over that group (RIL
+                    # DEC-049). One all-reduce; every rank clips its stage by
+                    # the SAME full-model factor.
+                    grad_norm = clip_grad_norm_tp(
+                        self.model,
+                        self.config.training.gradient_clip_val,
+                        group=cast(Any, self.model)._pp.group,
+                    )
                 else:
                     grad_norm = torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), self.config.training.gradient_clip_val
@@ -635,9 +762,13 @@ class TrainingEngine:
                 # Validation runs under the SAME AMP autocast as training
                 # (RIL ISS-257): backends that require half precision
                 # (flash_attn kernel rejects fp32) must not run the
-                # validation forward in fp32.
-                with self._amp_context():
-                    loss, metrics = self.task.validation_step(batch, self.model, self.criterion)
+                # validation forward in fp32. PP v1 is fp32-only and uses the
+                # forward-only pipeline schedule (``schedule.eval``) instead.
+                if self.is_training_pp:
+                    loss, metrics = self._pp_validation_step(batch)
+                else:
+                    with self._amp_context():
+                        loss, metrics = self.task.validation_step(batch, self.model, self.criterion)
 
                 batch_loss = metrics.get("loss", loss.item())
                 val_loss += batch_loss
@@ -739,12 +870,13 @@ class TrainingEngine:
                 # from line 0 on resume) and would deadlock any collective.
                 extra_state = collect_extra_state(self, self.data_module, self.task, *self.callbacks)
 
-                # FSDP's FULL_STATE_DICT state_dict() and the TP full-state-dict
-                # gather are cross-rank collectives (RIL ISS-186 / TASK-200):
-                # EVERY rank must enter them via save_checkpoint or rank 0
-                # blocks forever on the gather. Non-rank-0 ranks enter and
-                # discard; only rank 0 writes and fires the callback.
-                if self.rank == 0 or is_fsdp(self.model) or is_tp(self.model):
+                # FSDP's FULL_STATE_DICT state_dict(), the TP full-state-dict
+                # gather AND the PP cross-stage gather are cross-rank
+                # collectives (RIL ISS-186 / TASK-200 / DEC-049): EVERY rank
+                # must enter them via save_checkpoint or rank 0 blocks forever
+                # on the gather. Non-rank-0 ranks enter and discard; only rank
+                # 0 writes and fires the callback.
+                if self.rank == 0 or is_fsdp(self.model) or is_tp(self.model) or is_pp(self.model):
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
                     self.checkpoint_manager.save_checkpoint(

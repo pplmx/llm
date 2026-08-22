@@ -444,7 +444,19 @@ class DistributedConfig(BaseSettings):
     gpus_per_node: int | None = None  # Lazy init
     node_rank: int = 0
     backend: str = "nccl"
-    parallel_strategy: str = Field("ddp", pattern="^(ddp|fsdp|tp)$")
+    parallel_strategy: str = Field(
+        "ddp",
+        pattern="^(ddp|fsdp|tp|pp)$",
+        description=(
+            "Parallel strategy: 'ddp' (default), 'fsdp', 'tp' (tensor parallelism, "
+            "with optional tp_size < world_size for TP+data-parallel 2D), or 'pp' "
+            "(pipeline parallelism, RIL DEC-049/TASK-210). PP v1 lays the whole "
+            "world out as pipeline stages (pp_size == world_size, one stage per "
+            "rank) and only supports the standard-language-modeling loop: it "
+            "refuses non-standard-loop tasks, AMP, torch.compile and TP+FSDP "
+            "composition with a clear error."
+        ),
+    )
     tp_size: int = Field(
         0,
         ge=0,

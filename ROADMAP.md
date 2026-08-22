@@ -110,7 +110,9 @@
 - [x] FSDP — `parallel_strategy=fsdp` + `wrap_model_for_training()` 已实现
 - [x] Tensor Parallelism — `parallel_strategy=tp` (Megatron 风格 column/row 并行 + 全量 state-dict checkpoint, RIL CHG-199)
 - [x] TP + 数据并行 2D — `tp_size < world_size` `[DP][TP]` 网格, DP 组间梯度平均 (RIL TASK-202/CHG-203)
-- [ ] Pipeline Parallelism
+- [x] MoE Expert Parallel — 复制门 + 按 expert 分片, 零命中反向死锁修复 (RIL TASK-207)
+- [x] Pipeline Parallelism v1 — `parallel_strategy=pp`, `ScheduleGPipe` 分阶段前向/反向, stage 划分于 transformer_blocks, 全量 global-name state-dict 收集/散播, PP 组全局梯度裁剪; 与串行 2-stage 逐位一致 (RIL DEC-049/TASK-210)
+- [ ] Pipeline Parallelism v2 — PP+DP 混合 (pp_size 旋钮 + DP 组梯度平均) / microbatch 重叠 (n_microbatches>1) / stage 按需物化 / AMP 与 gradient checkpointing 支持
 - [ ] DeepSpeed ZeRO 集成
 - [ ] 3D Parallelism (DP + PP + TP)
 

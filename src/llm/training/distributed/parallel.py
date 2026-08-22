@@ -26,6 +26,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
 
+from llm.training.distributed.pipeline import build_pipeline_model, is_pp
 from llm.training.distributed.tensor_parallel import apply_tensor_parallel
 
 # State-dict strategy for FSDP save / load.
@@ -173,7 +174,9 @@ def wrap_model_for_training(
 
     Args:
         model: The bare ``nn.Module`` to wrap.
-        parallel_strategy: ``"ddp"``, ``"fsdp"`` or ``"tp"``.
+        parallel_strategy: ``"ddp"``, ``"fsdp"``, ``"tp"`` or ``"pp"``
+            (pipeline parallelism, RIL DEC-049/TASK-210 — see
+            :mod:`llm.training.distributed.pipeline`).
         device: Target device (used to set ``device_ids`` for DDP
             and ``device_id`` for FSDP).
         world_size: Number of ranks in the process group.
@@ -193,6 +196,17 @@ def wrap_model_for_training(
         NotImplementedError: for unsupported tensor-parallel
             configurations (see ``apply_tensor_parallel`` scope guards).
     """
+    if parallel_strategy == "pp":
+        # Pipeline parallelism can run on CPU ranks (gloo) for 2-process
+        # verification of numerics, exactly like TP — so it does NOT take the
+        # DDP/FSDP CPU-no-op early return. Single-rank PP stays a no-op
+        # identity (a 1-stage pipeline is the serial model).
+        if world_size <= 1:
+            return model
+        if is_pp(model) or is_tp(model):
+            raise ValueError("pipeline parallelism cannot be composed with another parallel_strategy in v1")
+        return build_pipeline_model(model, world_size, device)
+
     if parallel_strategy != "tp" and (world_size <= 1 or device.type != "cuda"):
         # DDP/FSDP are no-ops for single-rank or CPU-only runs.
         return model
@@ -251,7 +265,7 @@ def wrap_model_for_training(
             cast(Any, model)._tp.dp_group = dp_group
         return model
 
-    raise ValueError(f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp', 'fsdp' or 'tp'.")
+    raise ValueError(f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp', 'fsdp', 'tp' or 'pp'.")
 
 
 def _strip_compile_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -335,6 +349,12 @@ def load_model_state_dict(
             single-rank save/load, ``"sharded"`` for memory-bounded
             multi-rank save/load. Ignored for DDP / bare models.
     """
+    if is_pp(model):
+        # A pipeline stage owns a DISJOINT slice of the full model; the
+        # checkpoint carries global model names, so each rank scatters its
+        # own slice from the full dict (RIL DEC-049 / TASK-210).
+        cast(Any, model)._pp.scatter_load(_strip_compile_prefix(state_dict))
+        return
     if model.__class__.__name__ == "FullyShardedDataParallel":
         from torch.distributed.fsdp import FullyShardedDataParallel
 
@@ -542,6 +562,12 @@ def model_state_dict(
     # like a bare compiled module, and a checkpoint missing the strip cannot
     # be resumed (load always normalizes, and FSDP expects ``_orig_mod.*``)
     # nor transferred to ``llm-serve`` (round-76 deep-dive D1).
+    if is_pp(model):
+        # Cross-stage all-gather: EVERY rank must enter it (mirrors the TP /
+        # FSDP rule — RIL ISS-186) so rank 0's save does not block. Each rank
+        # contributes its owned slice under GLOBAL model names; the manager
+        # writes rank 0's merged dict, and a resume scatters it back.
+        return cast(Any, model)._pp.full_state_dict()
     if is_tp(model):
         # Cross-rank all-gather: EVERY rank must enter it (mirrors the FSDP
         # FULL_STATE_DICT rule — RIL ISS-186) so rank 0's save does not block.

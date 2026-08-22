@@ -44,6 +44,19 @@ class TrainingTask(abc.ABC, CheckpointContributor):
     def uses_standard_training_loop(self) -> bool:
         return self.uses_standard_loop
 
+    def supports_pipeline_parallel(self) -> bool:
+        """Whether this task's standard-loop loss matches the pipeline contract.
+
+        Pipeline parallelism (RIL DEC-049 / TASK-210) drives the model through
+        a stage schedule whose loss is exactly ``model(input_ids)`` + LM-shift
+        + cross-entropy, computed on the last stage. Tasks whose
+        ``train_step`` deviates — SFT passes an ``attention_mask`` into the
+        model (which the pipeline's no-mask stage forward would silently
+        drop), regression is not next-token loss — must opt out so the
+        engine refuses PP loudly instead of training on the wrong loss.
+        """
+        return False
+
     def prepare_training(self, engine: TrainingEngine) -> None:
         """Hook for custom-loop tasks after the model is on device."""
 

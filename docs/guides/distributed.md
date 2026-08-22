@@ -9,9 +9,11 @@ tags:
 
 This guide covers the distributed-training strategies the framework
 supports: **DDP** (data-parallel, the default), **FSDP**
-(fully-sharded data-parallel, opt-in via `parallel_strategy="fsdp"`)
-and **Tensor Parallelism** (`parallel_strategy="tp"`, optionally
-combined with a data-parallel dimension — see the TP section).
+(fully-sharded data-parallel, opt-in via `parallel_strategy="fsdp"`),
+**Tensor Parallelism** (`parallel_strategy="tp"`, optionally
+combined with a data-parallel dimension — see the TP section) and
+**Pipeline Parallelism** (`parallel_strategy="pp"` — different layers
+on different devices, see the PP section).
 
 Both strategies are exposed through a single entry point —
 `llm.training.distributed.wrap_model_for_training` — so the trainer
@@ -230,6 +232,56 @@ Requirements and constraints (all fail loudly, not silently wrong):
   kernel transitively. ALiBi and serving are out of scope (rejected at wrap
   time).
 
+## Pipeline Parallelism quick start
+
+Pipeline parallelism (`parallel_strategy="pp"`) places **different layers of
+the model on different devices** and streams activations forward / gradients
+backward between them (RIL DEC-049 / TASK-210). It is the option when a single
+GPU cannot hold the model *at all* — TP shards individual weight matrices
+across devices, PP chunks the layer stack itself, cutting each device's
+activation + weight footprint to ~1/`pp_size` of the whole.
+
+```yaml
+# configs/pp-pretrain.yaml
+distributed:
+  parallel_strategy: pp
+  backend: nccl
+```
+
+v1 lays the **whole world out as pipeline stages** (one stage per rank, so
+`pp_size == world_size`). The model is split at `transformer_blocks`: stage 0
+holds the embedding + the first block chunk, the last stage holds the final
+norm + the LM head, every other stage holds a middle block chunk. Training is
+driven by `torch.distributed.pipelining.ScheduleGPipe` (`n_microbatches=1`),
+whose loss is computed on the last stage (the standard LM shift + cross
+entropy) and broadcast back so metric reduction / save_best see the same value
+on every rank.
+
+Like pure TP v1, PP v1 **replicates the data shard** across every stage (all
+stage ranks must pump the same microbatch sequence through the pipeline). The
+engine wires the standard-loop PP step, the PP-group-aware global gradient-norm
+clip (each rank holds a disjoint stage, so the full-model norm is summed over
+the pipeline group), and the full model state dict on rank 0 (gathered
+stage-by-stage under the original model's parameter names), so checkpoints,
+`llm-serve` and resume are unchanged.
+
+PP v1 refuses loudly rather than silently training the wrong loss:
+
+- **Standard-loop LM tasks only** — the task must advertise
+  `supports_pipeline_parallel()` (the `LMTask` family). SFT passes an
+  `attention_mask` into the model that the stage forward would drop; PPO / DPO
+  / reward use custom loops — all rejected at setup.
+- **FP32 only** (`use_amp` is rejected): the schedule backprops inside
+  `step()`, where the engine's autocast/GradScaler scaling cannot interact
+  safely.
+- **No `torch.compile`** (the schedule drives the stages with silent P2P
+  send/recv ops a compile graph must not capture) and no TP/FSDP composition
+  (3D parallel is a follow-up).
+
+The 2-stage numeric parity vs a single-rank serial run (loss to 10 digits,
+every owned stage gradient bit-exact) is a CI-enforced test on CPU + gloo with
+zero GPUs.
+
 ## Single-rank and CPU behaviour
 
 `wrap_model_for_training` short-circuits when `world_size <= 1`
@@ -264,7 +316,7 @@ all.
 | `gpus_per_node`             | auto (CUDA count) | GPUs per node                                       |
 | `node_rank`                 | `0`               | This node's rank                                    |
 | `backend`                   | `"nccl"`          | `torch.distributed` backend                         |
-| `parallel_strategy`         | `"ddp"`           | `"ddp"` / `"fsdp"` / `"tp"`                         |
+| `parallel_strategy`         | `"ddp"`           | `"ddp"` / `"fsdp"` / `"tp"` / `"pp"`                |
 | `tp_size`                   | `0` (= world)     | TP size for `"tp"`; `< world_size` enables TP+DP 2D |
 | `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` / `"fp16"`                      |
 | `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold                      |
