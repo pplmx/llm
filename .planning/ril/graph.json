@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 91,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T16:06:25+00:00",
+  "updated_at": "2026-08-22T16:16:35+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12545,10 +12545,10 @@
     "TASK-217": {
       "id": "TASK-217",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-22T14:50:09+00:00",
-      "updated_at": "2026-08-22T14:50:09+00:00",
+      "updated_at": "2026-08-22T16:16:35+00:00",
       "touched_round": 91,
       "category": "core-feature",
       "severity": 0.6,
@@ -12738,6 +12738,30 @@
       "commit": 6976380,
       "title": "Engine + config '3d' branch — PP+TP end-to-end (completes TASK-216)",
       "summary": "Config accepts '3d'; engine drives PPTPRuntime step/eval + optimizer + column grad clip. EV-218 engine e2e + config test."
+    },
+    "EV-219": {
+      "id": "EV-219",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:16:27+00:00",
+      "updated_at": "2026-08-22T16:16:27+00:00",
+      "touched_round": 91,
+      "source": "tests/training/distributed/test_pipeline_parallel.py::test_pp3d_dp2_full_3d_grid_eight_process_cpu + test_pp3d_engine_dp2_full_3d_train_eight_process_cpu (gloo/CPU, 8 ranks)",
+      "summary": "Full DP+PP+TP (2x2x2) verified: per-column data split (different shards/losses), column loss matches per-shard serial loss, cross-column gradient lockstep after DP averaging, and the TrainingEngine drives the full 3D grid end-to-end with finite loss on all 8 ranks. TASK-217 complete.",
+      "confidence": 1.0
+    },
+    "CHG-232": {
+      "id": "CHG-232",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:16:28+00:00",
+      "updated_at": "2026-08-22T16:16:28+00:00",
+      "touched_round": 91,
+      "commit": "2c1110b",
+      "title": "Full DP+PP+TP 3D engine (dp_size>1) — completes TASK-217",
+      "summary": "Column data split + cross-column DP gradient averaging + column clip in PPTPRuntime/wrap/engine; 8-rank runtime + engine e2e (EV-219)."
     }
   },
   "edges": [
@@ -18631,6 +18655,18 @@
       "to": "ISS-259",
       "type": "resolves",
       "created_at": "2026-08-22T16:06:20+00:00"
+    },
+    {
+      "from": "CHG-232",
+      "to": "TASK-217",
+      "type": "implements",
+      "created_at": "2026-08-22T16:16:31+00:00"
+    },
+    {
+      "from": "CHG-232",
+      "to": "ISS-259",
+      "type": "resolves",
+      "created_at": "2026-08-22T16:16:31+00:00"
     }
   ]
 }
