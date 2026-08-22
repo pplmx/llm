@@ -64,7 +64,11 @@ def _build_config(
     resume_from_checkpoint: str | None = None,
     pp_size: int | None = None,
     pp_n_microbatches: int | None = None,
+    amp_bf16: bool = False,
 ) -> Config:
+    opt_kwargs: dict = {"use_compile": False, "use_amp": amp_bf16, "gradient_accumulation_steps": 2}
+    if amp_bf16:
+        opt_kwargs["amp_dtype"] = "bfloat16"
     config = Config(
         model=ModelConfig(
             vocab_size=64,
@@ -74,7 +78,7 @@ def _build_config(
             max_seq_len=32,
         ),
         training=TrainingConfig(batch_size=2, epochs=epochs, num_samples=16, lr=2e-2, log_every_n_steps=1),
-        optimization=OptimizationConfig(use_compile=False, use_amp=False, gradient_accumulation_steps=2),
+        optimization=OptimizationConfig(**opt_kwargs),
         distributed=DistributedConfig(
             backend="gloo",
             parallel_strategy="pp",
@@ -126,6 +130,7 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         ckpt_dir = ctx["checkpoint_dir"]
         pp_size = ctx.get("pp_size")
         pp_n_microbatches = ctx.get("pp_n_microbatches")
+        amp_bf16 = ctx.get("amp_bf16", False)
 
         # ---- Epoch 1: train from scratch, save checkpoint ----
         config1 = _build_config(
@@ -134,6 +139,7 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
             resume_from_checkpoint=None,
             pp_size=pp_size,
             pp_n_microbatches=pp_n_microbatches,
+            amp_bf16=amp_bf16,
         )
         data_module = DummyLMDataModule(config1)
         data_module.prepare_data()
@@ -175,6 +181,7 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
             resume_from_checkpoint=ckpt_path,
             pp_size=pp_size,
             pp_n_microbatches=pp_n_microbatches,
+            amp_bf16=amp_bf16,
         )
         data_module2 = DummyLMDataModule(config2)
         task2 = LanguageModelingTask(config2, data_module2)
@@ -209,7 +216,12 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
 
 
 def _run_pp_engine_e2e(
-    tmp_path, world_size: int, *, pp_size: int | None = None, pp_n_microbatches: int | None = None
+    tmp_path,
+    world_size: int,
+    *,
+    pp_size: int | None = None,
+    pp_n_microbatches: int | None = None,
+    amp_bf16: bool = False,
 ) -> None:
     port = _free_port()
     os.environ["MASTER_ADDR"] = "127.0.0.1"
@@ -231,7 +243,12 @@ def _run_pp_engine_e2e(
             _worker,
             args=(
                 world_size,
-                {"checkpoint_dir": ckpt_dir, "pp_size": pp_size, "pp_n_microbatches": pp_n_microbatches},
+                {
+                    "checkpoint_dir": ckpt_dir,
+                    "pp_size": pp_size,
+                    "pp_n_microbatches": pp_n_microbatches,
+                    "amp_bf16": amp_bf16,
+                },
                 results,
             ),
             nprocs=world_size,
@@ -291,3 +308,16 @@ def test_pp_microbatch_overlap_engine_trains_and_resumes_two_process_cpu(tmp_pat
     per-stage optimizer moments restored.
     """
     _run_pp_engine_e2e(tmp_path, 2, pp_n_microbatches=2)
+
+
+def test_pp_bf16_amp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
+    """PP + bf16 AMP (RIL TASK-214) through the REAL engine on CPU.
+
+    ``use_amp=True`` with ``amp_dtype='bfloat16'`` runs every stage's forward
+    AND the schedule's internal backward inside bf16 autocast — no GradScaler
+    (bf16 needs no loss scaling, and float16 is refused because the schedule
+    cannot scale losses before its internal backward). Train/save/resume must
+    keep all ranks' bf16-trained weights bit-identical and restore the (fp32)
+    optimizer moments.
+    """
+    _run_pp_engine_e2e(tmp_path, 2, amp_bf16=True)

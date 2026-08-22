@@ -285,12 +285,9 @@ class TrainingEngine:
                     "task's train_step passes inputs/attention-mask the pipeline stage forward "
                     "does not reproduce. Use a plain LanguageModelingTask for PP."
                 )
-            if self.config.optimization.use_amp:
-                raise ValueError(
-                    "parallel_strategy='pp' v1 refuses use_amp=True (fp16/bf16 autocast): the "
-                    "pipeline schedule backprops inside step() where the engine's autocast/ "
-                    "GradScaler scaling cannot interact safely. Run PP in fp32 for now."
-                )
+            # The AMP dtype / GradScaler interaction must be judged AFTER
+            # ``resolved_amp_dtype`` is known, so the actual PP+AMP refusal
+            # lives further down (near the scaler construction).
 
         # Use data_module to get dataloaders. TP v1 replicated the batch to
         # every rank (each rank trains the SAME microbatches so column/row
@@ -370,6 +367,21 @@ class TrainingEngine:
             self.config.optimization.use_amp and self.device.type == "cuda" and self.resolved_amp_dtype == "float16"
         )
         self.scaler = torch.amp.GradScaler(enabled=use_scaler)
+
+        # PP + AMP (RIL TASK-214): only BF16 is viable. ScheduleGPipe computes
+        # AND backprops the loss inside step(), so a GradScaler (float16 AMP)
+        # cannot scale the loss before the schedule's backward — the update
+        # would use unscaled fp16 gradients and diverge. BF16 needs no loss
+        # scaling, so ``use_amp + amp_dtype in (auto, bfloat16)`` runs the
+        # schedule's forward/backward inside bf16 autocast (the engine wraps
+        # ``step``/``eval`` in ``_amp_context``); float16 is refused loudly.
+        if self.is_training_pp and self.config.optimization.use_amp and self.resolved_amp_dtype == "float16":
+            raise ValueError(
+                "parallel_strategy='pp' with use_amp=True requires bf16 (set amp_dtype='bfloat16'): "
+                "the pipeline schedule computes AND backprops the loss inside step(), so a GradScaler "
+                "(float16 AMP) cannot scale the loss before the schedule's backward. Use bf16 (no "
+                "loss scaling) or fp32."
+            )
 
         # Task-supplied callbacks (e.g. AdaLoRA pruning) are wired last
         # so they see the wrapped, device-resident model.
@@ -534,12 +546,16 @@ class TrainingEngine:
         runtime = cast(Any, self.model)._pp
         accum = self.config.optimization.gradient_accumulation_steps
         losses: list[Any] = []
-        runtime.schedule.step(
-            input_ids,
-            target=labels,
-            losses=losses,
-            loss_kwargs={"criterion": self.criterion, "scale": accum},
-        )
+        # PP AMP (TASK-214): the schedule's forward AND its internal backward
+        # both run under the same autocast context, so the bf16 path applies
+        # mixed precision to every stage. A no-op for fp32/CPU-auto.
+        with self._amp_context():
+            runtime.schedule.step(
+                input_ids,
+                target=labels,
+                losses=losses,
+                loss_kwargs={"criterion": self.criterion, "scale": accum},
+            )
         # With n_microbatches=1, ``losses`` has one entry = the whole batch's
         # SCALED loss (raw/accum — the loss_fn folded in the accumulation
         # factor); with n_microbatches>1 each entry is one chunk's scaled loss
@@ -563,12 +579,14 @@ class TrainingEngine:
         losses: list[Any] = []
         # ``eval`` keeps the stage forwards without backward; the last stage's
         # loss still lands in ``losses`` and is broadcast exactly like train.
-        runtime.schedule.eval(
-            input_ids,
-            target=labels,
-            losses=losses,
-            loss_kwargs={"criterion": self.criterion, "scale": 1.0},
-        )
+        # The same autocast context as training applies (TASK-214).
+        with self._amp_context():
+            runtime.schedule.eval(
+                input_ids,
+                target=labels,
+                losses=losses,
+                loss_kwargs={"criterion": self.criterion, "scale": 1.0},
+            )
         if runtime.stage_index == runtime.num_stages - 1 and not losses:
             # The schedule's loss contract for ``eval`` is a silent-pass-through
             # (``**kwargs`` into ``step``); if a torch minor release stops

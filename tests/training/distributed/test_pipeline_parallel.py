@@ -780,3 +780,45 @@ def test_pp_n_microbatches_build_rejects_zero() -> None:
     model = _build_model()
     with pytest.raises(ValueError, match="n_microbatches"):
         build_pipeline_model(model, 2, torch.device("cpu"), n_microbatches=0)
+
+
+def _pp_amp_worker(rank: int, world_size: int, results: dict) -> None:
+    """Engine construction with PP + float16 AMP must refuse loudly (TASK-214)."""
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
+        from llm.training.core.engine import TrainingEngine
+        from llm.training.tasks.lm_task import LanguageModelingTask
+        from tests.support.data import DummyLMDataModule
+
+        config = Config(
+            model=ModelConfig(vocab_size=64, hidden_size=16, num_layers=4, num_heads=2, max_seq_len=32),
+            training=TrainingConfig(batch_size=2, epochs=1, num_samples=8),
+            optimization=OptimizationConfig(use_compile=False, use_amp=True, amp_dtype="float16"),
+            distributed=DistributedConfig(backend="gloo", parallel_strategy="pp"),
+        )
+        data_module = DummyLMDataModule(config)
+        task = LanguageModelingTask(config, data_module)
+        TrainingEngine(config=config, task=task, rank=rank, world_size=world_size, data_module=data_module)
+        results[rank] = {"error": "engine constructed despite float16 AMP refusal"}
+        dist.destroy_process_group()
+    except ValueError as exc:
+        results[rank] = {"refused": str(exc)}
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+def test_pp_refuses_float16_amp_two_process_cpu() -> None:
+    """PP + use_amp only supports bf16 (TASK-214): the schedule computes AND
+    backprops the loss inside step(), so a GradScaler (float16 AMP) cannot
+    scale the loss before the schedule's backward. float16 must refuse loudly
+    on construction; bf16 is exercised by the engine e2e."""
+    out = _run_spawn_worker(_pp_amp_worker, 2)
+    for rank, payload in out.items():
+        err = payload.get("error")
+        assert err is None, f"rank {rank}: {err}"
+        assert "requires bf16" in payload["refused"], f"rank {rank}: unexpected message {payload['refused']}"

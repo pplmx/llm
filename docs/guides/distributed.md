@@ -312,9 +312,11 @@ PP refuses loudly rather than silently training the wrong loss:
   `supports_pipeline_parallel()` (the `LMTask` family). SFT passes an
   `attention_mask` into the model that the stage forward would drop; PPO / DPO
   / reward use custom loops — all rejected at setup.
-- **FP32 only** (`use_amp` is rejected): the schedule backprops inside
-  `step()`, where the engine's autocast/GradScaler scaling cannot interact
-  safely (bf16 AMP is a logged follow-up).
+- **AMP must be bf16** (`use_amp=True` needs `amp_dtype='bfloat16'`; float16 is
+  refused, RIL TASK-214): the schedule computes AND backprops the loss inside
+  `step()`, so a GradScaler (float16 AMP) cannot scale the loss before the
+  schedule's backward. BF16 needs no loss scaling and runs every stage's
+  forward/backward inside bf16 autocast.
 - **No `torch.compile`** (the schedule drives the stages with silent P2P
   send/recv ops a compile graph must not capture) and no TP/FSDP composition
   (3D parallel is a follow-up).
