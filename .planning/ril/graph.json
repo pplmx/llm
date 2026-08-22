@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 91,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T15:11:26+00:00",
+  "updated_at": "2026-08-22T15:38:44+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12642,6 +12642,30 @@
       "commit": "eebdc3a",
       "title": "3D per-rank group-membership selection (three_d_rank_groups) — TASK-216 groundwork",
       "summary": "Adds three_d_rank_groups to parallel.py + export + unit tests. Building block for the deferred PP+TP runtime schedule."
+    },
+    "EV-215": {
+      "id": "EV-215",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T15:38:20+00:00",
+      "updated_at": "2026-08-22T15:38:20+00:00",
+      "touched_round": 91,
+      "source": "tests/training/distributed/test_tensor_parallel.py::test_stage_tp_forward_parity_two_process_cpu (gloo/CPU, 2 ranks)",
+      "summary": "apply_tensor_parallel_stage verified: TP-sharding a 2-stage pipeline's stage-0 block slice via the monolithic-transform proxy preserves the un-sharded stage-0 forward to float tolerance on both ranks (software decouples DEC-053 blocker (b): apply_tensor_parallel is no longer monolithic-only for the pipeline runtime). ruff/ty clean; monolithic apply_tensor_parallel untouched.",
+      "confidence": 1.0
+    },
+    "CHG-228": {
+      "id": "CHG-228",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T15:38:44+00:00",
+      "updated_at": "2026-08-22T15:38:44+00:00",
+      "touched_round": 91,
+      "commit": Infinity,
+      "title": "Stage-aware tensor parallelism (apply_tensor_parallel_stage) — removes DEC-053 blocker (b) for TASK-216",
+      "summary": "Adds apply_tensor_parallel_stage + _decoder_shell_for_stage; reuses the monolithic transform over a pipeline stage's block slice; gloo 2-process forward-parity verified (EV-215). Runtime PP+TP schedule (blocker a) remains."
     }
   },
   "edges": [
@@ -18505,6 +18529,12 @@
       "to": "TASK-216",
       "type": "implements",
       "created_at": "2026-08-22T15:11:26+00:00"
+    },
+    {
+      "from": "CHG-228",
+      "to": "TASK-216",
+      "type": "implements",
+      "created_at": "2026-08-22T15:38:44+00:00"
     }
   ]
 }
