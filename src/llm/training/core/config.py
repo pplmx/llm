@@ -489,6 +489,20 @@ class DistributedConfig(BaseSettings):
             "world_size must divide evenly by pp_size."
         ),
     )
+    pp_n_microbatches: int = Field(
+        1,
+        ge=1,
+        description=(
+            "Number of microbatches (chunks) the pipeline schedule splits "
+            "each training batch into (parallel_strategy='pp', TASK-213). "
+            "n_microbatches > 1 lets the ScheduleGPipe overlap stages "
+            "(reducing bubbles) and shrinks activation memory per stage; the "
+            "schedule normalizes the gradient by the microbatch count, so the "
+            "per-optimizer-step gradient is identical to n_microbatches=1. "
+            "Only the reported loss changes shape: the engine reports the "
+            "MEAN of the per-microbatch losses."
+        ),
+    )
     collective_timeout_seconds: int = Field(
         1800,
         gt=0,

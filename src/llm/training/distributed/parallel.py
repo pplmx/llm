@@ -165,6 +165,7 @@ def wrap_model_for_training(
     fsdp_cpu_offload: bool = False,
     tp_size: int = 1,
     pp_size: int = 0,
+    pp_n_microbatches: int = 1,
 ) -> nn.Module:
     """Wrap a model for distributed training.
 
@@ -199,6 +200,12 @@ def wrap_model_for_training(
             strided columns holding the same stage) average gradients across
             data shards at each step. ``world_size`` must divide evenly by
             ``pp_size``.
+        pp_n_microbatches: Pipeline microbatch count for
+            ``parallel_strategy="pp"`` (RIL TASK-213). ``1`` (default) runs
+            one chunk per batch; ``> 1`` chunks each batch so the schedule can
+            overlap stages and shrink per-stage activation memory. The
+            schedule normalizes the gradient by the microbatch count, so the
+            optimizer step is numerically unchanged.
 
     Raises:
         ValueError: if ``parallel_strategy`` is not recognised.
@@ -237,6 +244,7 @@ def wrap_model_for_training(
             pp_group=pp_group,
             dp_group=dp_group,
             pp_rank=pp_rank,
+            n_microbatches=pp_n_microbatches,
         )
 
     if parallel_strategy != "tp" and (world_size <= 1 or device.type != "cuda"):

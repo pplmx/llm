@@ -293,7 +293,20 @@ distributed:
 `world_size` must divide evenly by `pp_size` (a non-divisor is rejected at
 wrap time).
 
-PP v1 refuses loudly rather than silently training the wrong loss:
+### Pipelining knobs (RIL TASK-213)
+
+- **Microbatch overlap** — `pp_n_microbatches > 1` chunks each training batch
+  so `ScheduleGPipe` can overlap stage compute (`n_microbatches=1` is pure
+  fill-drain). The schedule normalises the accumulated gradient by the
+  microbatch count, so the optimizer step is numerically unchanged (verified
+  to ~1e-5 against the serial reference); the engine reports the mean of the
+  per-microbatch losses.
+- **Gradient checkpointing** — a model with gradient checkpointing enabled
+  partitions like any other; each stage forward recomputes its block
+  activations in the backward, cutting per-stage activation memory with the
+  numerics unchanged (parity-tested on CPU).
+
+PP refuses loudly rather than silently training the wrong loss:
 
 - **Standard-loop LM tasks only** — the task must advertise
   `supports_pipeline_parallel()` (the `LMTask` family). SFT passes an
@@ -301,7 +314,7 @@ PP v1 refuses loudly rather than silently training the wrong loss:
   / reward use custom loops — all rejected at setup.
 - **FP32 only** (`use_amp` is rejected): the schedule backprops inside
   `step()`, where the engine's autocast/GradScaler scaling cannot interact
-  safely.
+  safely (bf16 AMP is a logged follow-up).
 - **No `torch.compile`** (the schedule drives the stages with silent P2P
   send/recv ops a compile graph must not capture) and no TP/FSDP composition
   (3D parallel is a follow-up).
@@ -336,20 +349,21 @@ all.
 
 ### `DistributedConfig` fields
 
-| Field                       | Default           | Description                                         |
-| --------------------------- | ----------------- | --------------------------------------------------- |
-| `master_addr`               | `"127.0.0.1"`     | Process-group master address                        |
-| `master_port`               | `"12355"`         | Process-group master port                           |
-| `num_nodes`                 | `1`               | Total number of nodes                               |
-| `gpus_per_node`             | auto (CUDA count) | GPUs per node                                       |
-| `node_rank`                 | `0`               | This node's rank                                    |
-| `backend`                   | `"nccl"`          | `torch.distributed` backend                         |
-| `parallel_strategy`         | `"ddp"`           | `"ddp"` / `"fsdp"` / `"tp"` / `"pp"`                |
-| `tp_size`                   | `0` (= world)     | TP size for `"tp"`; `< world_size` enables TP+DP 2D |
-| `pp_size`                   | `0` (= world)     | PP size for `"pp"`; `< world_size` enables PP+DP 2D |
-| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` / `"fp16"`                      |
-| `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold                      |
-| `fsdp_cpu_offload`          | `false`           | Offload params to CPU when idle                     |
+| Field                       | Default           | Description                                             |
+| --------------------------- | ----------------- | ------------------------------------------------------- |
+| `master_addr`               | `"127.0.0.1"`     | Process-group master address                            |
+| `master_port`               | `"12355"`         | Process-group master port                               |
+| `num_nodes`                 | `1`               | Total number of nodes                                   |
+| `gpus_per_node`             | auto (CUDA count) | GPUs per node                                           |
+| `node_rank`                 | `0`               | This node's rank                                        |
+| `backend`                   | `"nccl"`          | `torch.distributed` backend                             |
+| `parallel_strategy`         | `"ddp"`           | `"ddp"` / `"fsdp"` / `"tp"` / `"pp"`                    |
+| `tp_size`                   | `0` (= world)     | TP size for `"tp"`; `< world_size` enables TP+DP 2D     |
+| `pp_size`                   | `0` (= world)     | PP size for `"pp"`; `< world_size` enables PP+DP 2D     |
+| `pp_n_microbatches`         | `1`               | Pipeline microbatch count (overlap + memory) for `"pp"` |
+| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` / `"fp16"`                          |
+| `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold                          |
+| `fsdp_cpu_offload`          | `false`           | Offload params to CPU when idle                         |
 
 ### Environment variables
 

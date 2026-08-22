@@ -340,11 +340,13 @@ def test_pp_partition_refuses_unsupported_models() -> None:
     mlp = nn.Sequential(nn.Linear(8, 8), nn.ReLU())
     with pytest.raises(NotImplementedError, match="transformer_blocks"):
         partition_decoder_model(mlp, 2)
-    # gradient checkpointing is out of PP v1 scope.
+    # Gradient checkpointing is SUPPORTED since RIL TASK-213 (the stage forward
+    # wraps block calls like the monolithic model does) — the model must
+    # partition, not refuse.
     model = _build_model()
     model.enable_gradient_checkpointing()
-    with pytest.raises(NotImplementedError, match="gradient checkpointing"):
-        partition_decoder_model(model, 2)
+    stages = partition_decoder_model(model, 2)
+    assert all(getattr(stage, "gradient_checkpointing", False) for stage in stages)
     # flash_attn cannot run in PP's forced fp32 (review MEDIUM on TASK-210).
     # Charade the model attr (the real flash kernel is an optional dependency,
     # so constructing a flash model would gate this test on it); the
@@ -646,3 +648,135 @@ def test_pp_dp_layout_validation() -> None:
         pp_dp_layout(2, 4)
     with pytest.raises(ValueError, match="divide"):
         pp_dp_layout(6, 4)
+
+
+# ---------------------------------------------------------------------------
+# PP microbatch overlap + gradient checkpointing (RIL TASK-213)
+# ---------------------------------------------------------------------------
+
+
+def _pp_gc_worker(rank: int, world_size: int, results: dict) -> None:
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        torch.manual_seed(SEED)
+        model = _build_model().to(torch.device("cpu"))
+        model.enable_gradient_checkpointing()
+        stage = build_pipeline_model(model, world_size, torch.device("cpu"))
+        rt = stage._pp
+        assert rt.stage_module.gradient_checkpointing, (
+            "partitioner must propagate the GC flag to every stage (TASK-213)"
+        )
+        criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        input_ids, labels = _make_inputs()
+        losses: list = []
+        rt.schedule.step(input_ids, target=labels, losses=losses, loss_kwargs={"criterion": criterion, "scale": 1.0})
+        loss = rt.broadcast_loss(losses[-1] if losses else torch.tensor(0.0))
+        grads = {}
+        for local_name, p in stage.named_parameters():
+            grads[local_name] = p.grad.clone() if p.grad is not None else None
+        results[rank] = {"loss": loss.item(), "grads": grads, "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+def test_pp_gradient_checkpointing_parity_two_process_cpu() -> None:
+    """A gradient-checkpointed model must partition (no refusal since TASK-213)
+    and the stage forwards must recompute activations WITHOUT changing the
+    numerics vs the (equally checkpointed) serial reference."""
+    torch.manual_seed(SEED)
+    ref_model = _build_model()
+    ref_model.enable_gradient_checkpointing()
+    criterion = nn.CrossEntropyLoss(ignore_index=-100)
+    input_ids, labels = _make_inputs()
+    ref_loss = lm_shift_loss(ref_model(input_ids), labels, criterion)
+    ref_loss.backward()
+    ref_grads = {n: p.grad.clone() for n, p in ref_model.named_parameters()}
+
+    out = _run_spawn_worker(_pp_gc_worker, 2)
+    for rank, payload in out.items():
+        assert payload["loss"] == pytest.approx(ref_loss.item(), abs=1e-5), f"rank {rank}: GC loss diverged"
+    # The checkpointed path must reproduce the reference gradients (~1e-5:
+    # activation recomputation is deterministic but the backward graph differs).
+    for rank, payload in out.items():
+        for local_name, grad in payload["grads"].items():
+            if grad is None:
+                continue
+            if local_name.startswith("blocks."):
+                idx = int(local_name.split(".")[1])
+                global_name = f"transformer_blocks.{2 * rank + idx}" + "." + ".".join(local_name.split(".")[2:])
+            else:
+                global_name = local_name
+            torch.testing.assert_close(
+                grad.detach(), ref_grads[global_name], atol=1e-4, rtol=1e-4, msg=f"rank {rank} {global_name}"
+            )
+
+
+def _pp_mb_worker(rank: int, world_size: int, results: dict) -> None:
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        torch.manual_seed(SEED)
+        model = _build_model().to(torch.device("cpu"))
+        mb = 2
+        stage = build_pipeline_model(model, world_size, torch.device("cpu"), n_microbatches=mb)
+        rt = stage._pp
+        criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        input_ids, labels = _make_inputs()
+        losses: list = []
+        rt.schedule.step(input_ids, target=labels, losses=losses, loss_kwargs={"criterion": criterion, "scale": 1.0})
+        # n_microbatches=2 -> TWO per-chunk losses on the LAST stage (the only
+        # rank that computes them); the batch loss is their mean. Other stages
+        # pass a zero placeholder and receive the true value via broadcast.
+        if losses:
+            assert len(losses) == mb, f"expected {mb} per-microbatch losses, got {len(losses)}"
+            batch_loss = sum(losses) / len(losses)
+        else:
+            batch_loss = torch.tensor(0.0)
+        loss = rt.broadcast_loss(batch_loss)
+        grads = {}
+        for local_name, p in stage.named_parameters():
+            grads[local_name] = p.grad.clone() if p.grad is not None else None
+        results[rank] = {"loss": loss.item(), "grads": grads, "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+def test_pp_n_microbatches_grad_parity_two_process_cpu() -> None:
+    """n_microbatches=2 must leave the optimisation step UNCHANGED: the schedule
+    normalises the accumulated gradient by the microbatch count, so the loss
+    (mean of the two chunks) and the per-stage gradients equal the serial
+    full-batch reference (~1e-5 — chunking reorders the fp32 reductions)."""
+    ref = _serial_reference()
+    out = _run_spawn_worker(_pp_mb_worker, 2)
+    for rank, payload in out.items():
+        assert payload["loss"] == pytest.approx(ref["loss"], abs=1e-5), f"rank {rank}: microbatch loss diverged"
+    checked = 0
+    for rank, payload in out.items():
+        for local_name, grad in payload["grads"].items():
+            if grad is None:
+                continue
+            if local_name.startswith("blocks."):
+                idx = int(local_name.split(".")[1])
+                global_name = f"transformer_blocks.{2 * rank + idx}" + "." + ".".join(local_name.split(".")[2:])
+            else:
+                global_name = local_name
+            ref_grad = ref["grads"][global_name]
+            assert ref_grad is not None, f"{global_name} not in reference"
+            checked += 1
+            torch.testing.assert_close(grad.detach(), ref_grad, atol=1e-4, rtol=1e-4, msg=f"rank {rank} {global_name}")
+    assert checked > 0
+
+
+def test_pp_n_microbatches_build_rejects_zero() -> None:
+    model = _build_model()
+    with pytest.raises(ValueError, match="n_microbatches"):
+        build_pipeline_model(model, 2, torch.device("cpu"), n_microbatches=0)

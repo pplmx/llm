@@ -58,7 +58,12 @@ def _free_port() -> int:
 
 
 def _build_config(
-    *, checkpoint_dir: str, epochs: int, resume_from_checkpoint: str | None = None, pp_size: int | None = None
+    *,
+    checkpoint_dir: str,
+    epochs: int,
+    resume_from_checkpoint: str | None = None,
+    pp_size: int | None = None,
+    pp_n_microbatches: int | None = None,
 ) -> Config:
     config = Config(
         model=ModelConfig(
@@ -71,7 +76,10 @@ def _build_config(
         training=TrainingConfig(batch_size=2, epochs=epochs, num_samples=16, lr=2e-2, log_every_n_steps=1),
         optimization=OptimizationConfig(use_compile=False, use_amp=False, gradient_accumulation_steps=2),
         distributed=DistributedConfig(
-            backend="gloo", parallel_strategy="pp", **({"pp_size": pp_size} if pp_size is not None else {})
+            backend="gloo",
+            parallel_strategy="pp",
+            **({"pp_size": pp_size} if pp_size is not None else {}),
+            **({"pp_n_microbatches": pp_n_microbatches} if pp_n_microbatches is not None else {}),
         ),
     )
     config.checkpoint.save_interval = 1
@@ -117,9 +125,16 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
         ckpt_dir = ctx["checkpoint_dir"]
         pp_size = ctx.get("pp_size")
+        pp_n_microbatches = ctx.get("pp_n_microbatches")
 
         # ---- Epoch 1: train from scratch, save checkpoint ----
-        config1 = _build_config(checkpoint_dir=ckpt_dir, epochs=1, resume_from_checkpoint=None, pp_size=pp_size)
+        config1 = _build_config(
+            checkpoint_dir=ckpt_dir,
+            epochs=1,
+            resume_from_checkpoint=None,
+            pp_size=pp_size,
+            pp_n_microbatches=pp_n_microbatches,
+        )
         data_module = DummyLMDataModule(config1)
         data_module.prepare_data()
         data_module.setup()
@@ -159,6 +174,7 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
             epochs=2,
             resume_from_checkpoint=ckpt_path,
             pp_size=pp_size,
+            pp_n_microbatches=pp_n_microbatches,
         )
         data_module2 = DummyLMDataModule(config2)
         task2 = LanguageModelingTask(config2, data_module2)
@@ -192,7 +208,9 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
             dist.destroy_process_group()
 
 
-def _run_pp_engine_e2e(tmp_path, world_size: int, *, pp_size: int | None = None) -> None:
+def _run_pp_engine_e2e(
+    tmp_path, world_size: int, *, pp_size: int | None = None, pp_n_microbatches: int | None = None
+) -> None:
     port = _free_port()
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
@@ -211,7 +229,11 @@ def _run_pp_engine_e2e(tmp_path, world_size: int, *, pp_size: int | None = None)
     try:
         context = mp.spawn(
             _worker,
-            args=(world_size, {"checkpoint_dir": ckpt_dir, "pp_size": pp_size}, results),
+            args=(
+                world_size,
+                {"checkpoint_dir": ckpt_dir, "pp_size": pp_size, "pp_n_microbatches": pp_n_microbatches},
+                results,
+            ),
             nprocs=world_size,
             join=False,
             start_method="spawn",
@@ -258,3 +280,14 @@ def test_pp_dp_2d_engine_trains_and_resumes_four_process_cpu(tmp_path) -> None:
     failure mode this milestone exists to prevent fails the equality check.
     """
     _run_pp_engine_e2e(tmp_path, 4, pp_size=2)
+
+
+def test_pp_microbatch_overlap_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
+    """PP with n_microbatches=2 (RIL TASK-213) through the REAL engine.
+
+    The schedule chunks each batch into two microbatches (different loss
+    entries, gradient normalised internally) — the engine must still train,
+    save and resume with all ranks' full state dicts bit-identical and the
+    per-stage optimizer moments restored.
+    """
+    _run_pp_engine_e2e(tmp_path, 2, pp_n_microbatches=2)

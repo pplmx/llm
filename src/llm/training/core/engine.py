@@ -268,6 +268,7 @@ class TrainingEngine:
             world_size=self.world_size,
             tp_size=self.config.distributed.tp_size,
             pp_size=self.config.distributed.pp_size,
+            pp_n_microbatches=self.config.distributed.pp_n_microbatches,
         )
 
         self.use_standard_loop = self.task.uses_standard_training_loop()
@@ -518,12 +519,16 @@ class TrainingEngine:
     def _pp_train_step(self, batch: Any) -> tuple[torch.Tensor, dict]:
         """Run one training mini-batch through the pipeline schedule.
 
-        :meth:`ScheduleGPipe.step` chunks the batch and drives every stage's
-        forward AND backward (filling ``losses`` on the last stage). The
-        loss_fn folds the gradient-accumulation 1/accum_steps scale so the
-        accumulated step gradient matches the serial loop's scaled_loss
-        semantics. The last-stage loss is then broadcast so every rank holds
-        the same value for ``reduce_mean`` / ``save_best`` / EarlyStopping.
+        :meth:`ScheduleGPipe.step` chunks the batch (into ``n_microbatches``
+        when configured, RIL TASK-213) and drives every stage's forward AND
+        backward (filling ``losses`` on the last stage — one entry per
+        microbatch; the schedule normalises gradients by the microbatch count,
+        so the optimisation step is unchanged by the chunking). The loss_fn
+        folds the gradient-accumulation 1/accum_steps scale so the accumulated
+        step gradient matches the serial loop's scaled_loss semantics. The
+        MEAN of the per-microbatch losses (each scaled by 1/accum) is the
+        batch loss; it is broadcast so every rank holds the same value for
+        ``reduce_mean`` / ``save_best`` / EarlyStopping.
         """
         input_ids, labels = self._pp_extract_inputs(batch)
         runtime = cast(Any, self.model)._pp
@@ -535,11 +540,14 @@ class TrainingEngine:
             losses=losses,
             loss_kwargs={"criterion": self.criterion, "scale": accum},
         )
-        # ``losses[-1]`` is the SCALED loss the schedule backpropped
-        # (raw/accum — the loss_fn folded in the accumulation factor).
-        # Recover the RAW loss for logging / save_best / callbacks so the
-        # PP path honours the same ISS-180 contract as the serial loop.
-        local = losses[-1] * accum if losses else torch.tensor(0.0, device=self.device)
+        # With n_microbatches=1, ``losses`` has one entry = the whole batch's
+        # SCALED loss (raw/accum — the loss_fn folded in the accumulation
+        # factor); with n_microbatches>1 each entry is one chunk's scaled loss
+        # and the batch loss is their mean. Recover the RAW loss for logging /
+        # save_best / callbacks so the PP path honours the same ISS-180
+        # contract as the serial loop.
+        batch_loss = sum(losses) / len(losses) if losses else torch.tensor(0.0, device=self.device)
+        local = batch_loss * accum
         loss = runtime.broadcast_loss(local)
         finite = bool(torch.isfinite(loss))
         metrics = {
@@ -570,8 +578,8 @@ class TrainingEngine:
                 "pipeline `eval` returned no per-microbatch losses on the last stage — the "
                 "torch.distributed.pipelining loss contract may have changed."
             )
-        local = losses[-1] if losses else torch.tensor(0.0, device=self.device)
-        loss = runtime.broadcast_loss(local)
+        batch_loss = sum(losses) / len(losses) if losses else torch.tensor(0.0, device=self.device)
+        loss = runtime.broadcast_loss(batch_loss)
         metrics = {
             "val_loss": loss.item(),
             "val_ppl": torch.exp(loss).item() if loss.item() < 20 else float("inf"),

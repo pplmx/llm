@@ -115,6 +115,13 @@ class _PipelineStage(nn.Module):
     not owned so the same forward body handles every stage. ``forward`` takes
     ``input_ids`` on stage 0 and hidden states elsewhere, and returns hidden
     states — or ``logits`` on the last stage.
+
+    ``gradient_checkpointing`` (propagated from the source model by
+    :func:`partition_decoder_model`, RIL TASK-213) makes the stage forward
+    wrap each block call in ``torch.utils.checkpoint`` exactly like
+    :meth:`DecoderModel.forward` does — recomputing block activations in the
+    backward instead of storing them — so per-stage activation memory drops
+    with the numerics unchanged.
     """
 
     def __init__(self) -> None:
@@ -123,13 +130,30 @@ class _PipelineStage(nn.Module):
         self.final_norm: nn.Module | None = None
         self.lm_head: nn.Module | None = None
         self.blocks: nn.ModuleList = nn.ModuleList()
+        self.gradient_checkpointing = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h = self.embedding_layer(x, start_pos=0, position_ids=None) if self.embedding_layer is not None else x
         for _i, blk in enumerate(self.blocks):
-            # The exact training call DecoderModel.forward makes with
-            # use_cache=False: causal by the block's own is_causal.
-            h = blk(h, attn_mask=None, is_causal=None, use_cache=False, start_pos=0, layer_idx=None)
+            if self.gradient_checkpointing and self.training:
+                # The exact checkpointed block call DecoderModel.forward makes
+                # (TASK-213): recompute block activations in the backward by
+                # wrapping the same argument sequence the plain path uses.
+                from torch.utils.checkpoint import checkpoint
+
+                h = checkpoint(
+                    blk,
+                    h,
+                    None,  # attn_mask
+                    None,  # is_causal
+                    None,  # kv_cache
+                    False,  # use_cache
+                    use_reentrant=False,
+                )
+            else:
+                # The exact training call DecoderModel.forward makes with
+                # use_cache=False: causal by the block's own is_causal.
+                h = blk(h, attn_mask=None, is_causal=None, use_cache=False, start_pos=0, layer_idx=None)
         if self.final_norm is not None:
             h = self.final_norm(h)
         if self.lm_head is not None:
@@ -150,12 +174,13 @@ def partition_decoder_model(model: nn.Module, num_stages: int) -> list[nn.Module
 
     Raises:
         NotImplementedError: for models without ``transformer_blocks``, with
-            ``use_alibi``, with ``attn_impl='flash_attn'``, or with gradient
-            checkpointing enabled — PP v1 does not cover these (kept out; the
-            bit-exact parity against a serial reference is verified at the
-            dropout=0 test configuration — with dropout > 0 each stage draws
-            its own RNG stream and the parity is approximate, which is the
-            standard GPipe caveat).
+            ``use_alibi``, or with ``attn_impl='flash_attn'`` — PP v1 does not
+            cover these (kept out; the bit-exact parity against a serial
+            reference is verified at the dropout=0 test configuration — with
+            dropout > 0 each stage draws its own RNG stream and the parity is
+            approximate, which is the standard GPipe caveat). Gradient
+            checkpointing IS supported since TASK-213 (the stage forward
+            wraps block calls like the monolithic model does).
     """
     am = cast(Any, model)  # nn.Module attr access types as Tensor|Module; we know what we built
     if not (isinstance(getattr(am, "transformer_blocks", None), nn.ModuleList) and len(am.transformer_blocks) > 0):
@@ -167,11 +192,6 @@ def partition_decoder_model(model: nn.Module, num_stages: int) -> list[nn.Module
         raise NotImplementedError(
             "Pipeline parallelism v1 does not partition ALiBi models (the shared bias "
             "module would be duplicated across stage state dicts)."
-        )
-    if getattr(am, "gradient_checkpointing", False):
-        raise NotImplementedError(
-            "Pipeline parallelism v1 does not support gradient checkpointing (the "
-            "checkpointed block call differs from the plain call the stage uses)."
         )
     if getattr(am, "attn_impl", None) == "flash_attn":
         # PP v1 is fp32-only (the engine refuses use_amp), and the flash_attn
@@ -198,6 +218,10 @@ def partition_decoder_model(model: nn.Module, num_stages: int) -> list[nn.Module
         if s == num_stages - 1:
             stage.final_norm = am.final_norm
             stage.lm_head = am.lm_head
+        # Propagate the source model's activation-recomputation flag (TASK-213)
+        # so each stage forward checkpoints its blocks like the monolithic
+        # model does.
+        stage.gradient_checkpointing = bool(getattr(am, "gradient_checkpointing", False))
         stages.append(stage)
 
     return stages
@@ -305,6 +329,7 @@ def build_pipeline_model(
     pp_group: dist.ProcessGroup | None = None,
     dp_group: dist.ProcessGroup | None = None,
     pp_rank: int | None = None,
+    n_microbatches: int = 1,
 ) -> nn.Module:
     """Partition ``model`` into this rank's pipeline stage and schedule.
 
@@ -314,6 +339,11 @@ def build_pipeline_model(
     index in the ``[DP][PP]`` grid), a ``pp_group`` for the pipeline P2P and a
     ``dp_group`` for step-boundary gradient averaging; stage ``pp_rank`` then
     belongs to DP column ``dp_rank`` instead of being a whole-world stage.
+
+    ``n_microbatches`` > 1 (RIL TASK-213) chunks each training batch so the
+    pipeline schedule can overlap stages and shrink per-stage activation
+    memory; the schedule normalizes the gradient by the microbatch count, so
+    the per-optimizer-step gradient is identical to ``n_microbatches=1``.
 
     Weight initialisation is handled by the caller (the engine broadcasts
     rank 0's full model before wrapping); the stage modules *share* the
@@ -325,6 +355,8 @@ def build_pipeline_model(
     """
     if num_stages <= 1:
         raise ValueError("pipeline parallelism needs num_stages > 1")
+    if n_microbatches < 1:
+        raise ValueError(f"n_microbatches must be >= 1, got {n_microbatches}")
     if pp_rank is None:
         pp_rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
     partitions = partition_decoder_model(model, num_stages)
@@ -339,7 +371,7 @@ def build_pipeline_model(
     # ``group=pp_group`` routes the P2P links over the pipeline subgroup
     # (TASK-211); ``None`` = the default/world group (pure PP v1).
     pipeline_stage = PipelineStage(stage_module, pp_rank, num_stages, device, input_args=None, group=pp_group)
-    schedule = ScheduleGPipe(pipeline_stage, n_microbatches=1, loss_fn=lm_shift_loss)
+    schedule = ScheduleGPipe(pipeline_stage, n_microbatches=n_microbatches, loss_fn=lm_shift_loss)
 
     group = (
         pp_group
