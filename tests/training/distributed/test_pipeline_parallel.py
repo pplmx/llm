@@ -343,6 +343,70 @@ def test_pp_partition_refuses_unsupported_models() -> None:
     model.enable_gradient_checkpointing()
     with pytest.raises(NotImplementedError, match="gradient checkpointing"):
         partition_decoder_model(model, 2)
+    # flash_attn cannot run in PP's forced fp32 (review MEDIUM on TASK-210).
+    # Charade the model attr (the real flash kernel is an optional dependency,
+    # so constructing a flash model would gate this test on it); the
+    # partitioner must refuse on the attr alone.
+    flash_model = _build_model()
+    flash_model.attn_impl = "flash_attn"
+    with pytest.raises(NotImplementedError, match="flash_attn"):
+        partition_decoder_model(flash_model, 2)
+
+
+def test_pp_single_rank_engine_is_serial_noop() -> None:
+    """High review fix: single-rank 'pp' must run the standard loop, not crash.
+
+    The wrap path returns the bare model for world_size<=1; the engine must
+    NOT dispatch ``_pp_train_step`` (which would AttributeError on a model
+    with no ``_pp`` tag and log a misleading 'completed with inf' summary).
+    """
+    from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
+    from llm.training.core.engine import TrainingEngine
+    from llm.training.tasks.lm_task import LanguageModelingTask
+    from tests.support.data import DummyLMDataModule
+
+    config = Config(
+        model=ModelConfig(vocab_size=64, hidden_size=16, num_layers=4, num_heads=2, max_seq_len=32),
+        training=TrainingConfig(batch_size=2, epochs=1, num_samples=8),
+        optimization=OptimizationConfig(use_compile=False, use_amp=False),
+        distributed=DistributedConfig(backend="gloo", parallel_strategy="pp"),
+    )
+    data_module = DummyLMDataModule(config)
+    task = LanguageModelingTask(config, data_module)
+    engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=data_module)
+    assert engine.is_training_pp is False, "single-rank PP must run the serial loop"
+    assert not is_pp(engine.model), "single-rank PP must leave the model unwrapped"
+
+
+def test_pp_batch_validation_fails_loud() -> None:
+    """Review MEDIUM fix: a malformed PP batch refuses loudly, not silently."""
+    from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
+    from llm.training.core.engine import TrainingEngine
+    from llm.training.tasks.lm_task import LanguageModelingTask
+    from tests.support.data import DummyLMDataModule
+
+    config = Config(
+        model=ModelConfig(vocab_size=64, hidden_size=16, num_layers=4, num_heads=2, max_seq_len=32),
+        training=TrainingConfig(batch_size=2, epochs=1, num_samples=8),
+        optimization=OptimizationConfig(use_compile=False, use_amp=False),
+        distributed=DistributedConfig(backend="gloo", parallel_strategy="pp"),
+    )
+    data_module = DummyLMDataModule(config)
+    task = LanguageModelingTask(config, data_module)
+    engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=data_module)
+
+    input_ids = torch.randint(0, VOCAB, (2, SEQ))
+    labels = torch.randint(0, VOCAB, (2, SEQ))
+    # Valid shapes extract fine.
+    assert engine._pp_extract_inputs({"input_ids": input_ids, "labels": labels}) == (input_ids, labels)
+    assert engine._pp_extract_inputs((input_ids, labels)) == (input_ids, labels)
+    # A dict missing labels is refused.
+    with pytest.raises(ValueError, match=r"input_ids.*labels"):
+        engine._pp_extract_inputs({"input_ids": input_ids})
+    # A tuple wider than (input_ids, labels) — e.g. extra attention_mask — is
+    # refused instead of silently treating the mask as labels.
+    with pytest.raises(ValueError, match="exactly"):
+        engine._pp_extract_inputs((input_ids, torch.ones(2, SEQ), labels))
 
 
 def test_pp_strategy_accepted_by_config() -> None:

@@ -224,7 +224,18 @@ class TrainingEngine:
         # P2P send/recv ops that a compile graph must not capture (RIL
         # DEC-049 / TASK-210).
         self.is_training_tp = self.config.distributed.parallel_strategy == "tp"
-        self.is_training_pp = self.config.distributed.parallel_strategy == "pp"
+        # Single-rank PP is a no-op identity ("a 1-stage pipeline is the serial
+        # model" — the wrap path returns the bare model untouched). Disabling
+        # the PP branch here means the standard loop runs instead of dispatching
+        # ``_pp_train_step`` on a model with no ``_pp`` tag (which crashed with
+        # a raw AttributeError and a misleading "completed with inf" log — review
+        # HIGH on DEC-049/TASK-210).
+        self.is_training_pp = self.config.distributed.parallel_strategy == "pp" and self.world_size > 1
+        if self.config.distributed.parallel_strategy == "pp" and self.world_size <= 1:
+            self.logger.info(
+                "PP on a single rank is a no-op identity (a 1-stage pipeline IS the serial "
+                "model); running the standard loop."
+            )
         if self.config.optimization.use_compile and (self.is_training_tp or self.is_training_pp):
             strategy = "TP" if self.is_training_tp else "PP"
             self.logger.info(f"{strategy} v1 skips torch.compile (collective-autograd / P2P schedule); running eager.")
@@ -471,10 +482,27 @@ class TrainingEngine:
         batch carries ``input_ids`` / ``labels`` keys, a tuple is
         ``(input_ids, labels)``. PP v1 only runs for the LMTask family (the
         task advertises ``supports_pipeline_parallel``), so this contract is
-        guaranteed by the engine's setup guard.
+        normally guaranteed by the engine's setup guard — but the guard gates
+        on the TASK, not the DATA MODULE, so a malformed batch is validated
+        here and refused loudly rather than silently mis-binding a wider tuple
+        (e.g. ``(input_ids, attention_mask, labels)`` would otherwise treat
+        the mask as labels and train on a nonsense loss; review MEDIUM on
+        DEC-049/TASK-210).
         """
         if isinstance(batch, dict):
+            if "input_ids" not in batch or "labels" not in batch:
+                raise ValueError(
+                    f"PP batch dict must carry 'input_ids' and 'labels' keys, got {sorted(batch.keys())}. "
+                    "A data module that yields richer batches (attention_mask etc.) is incompatible "
+                    "with pipeline parallelism v1."
+                )
             return batch["input_ids"], batch["labels"]
+        if len(batch) != 2:
+            raise ValueError(
+                f"PP batch tuple must be exactly (input_ids, labels), got {len(batch)} elements. "
+                "A data module that yields wider tuples (attention_mask, extra targets, ...) is "
+                "incompatible with pipeline parallelism v1."
+            )
         return batch[0], batch[1]
 
     def _pp_train_step(self, batch: Any) -> tuple[torch.Tensor, dict]:
@@ -523,6 +551,15 @@ class TrainingEngine:
             losses=losses,
             loss_kwargs={"criterion": self.criterion, "scale": 1.0},
         )
+        if runtime.stage_index == runtime.num_stages - 1 and not losses:
+            # The schedule's loss contract for ``eval`` is a silent-pass-through
+            # (``**kwargs`` into ``step``); if a torch minor release stops
+            # filling ``losses`` here, a 0.0 val loss would broadcast and mask
+            # the breakage (review LOW on DEC-049/TASK-210). Fail loud.
+            raise RuntimeError(
+                "pipeline `eval` returned no per-microbatch losses on the last stage — the "
+                "torch.distributed.pipelining loss contract may have changed."
+            )
         local = losses[-1] if losses else torch.tensor(0.0, device=self.device)
         loss = runtime.broadcast_loss(local)
         metrics = {

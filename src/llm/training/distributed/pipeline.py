@@ -128,6 +128,16 @@ def partition_decoder_model(model: nn.Module, num_stages: int) -> list[nn.Module
             "Pipeline parallelism v1 does not support gradient checkpointing (the "
             "checkpointed block call differs from the plain call the stage uses)."
         )
+    if getattr(am, "attn_impl", None) == "flash_attn":
+        # PP v1 is fp32-only (the engine refuses use_amp), and the flash_attn
+        # kernel rejects fp32 — running it here would crash on the first stage
+        # forward with an opaque torch backend error instead of this setup
+        # refusal (review MEDIUM on DEC-049/TASK-210).
+        raise NotImplementedError(
+            "Pipeline parallelism v1 does not support attn_impl='flash_attn' (the flash kernel "
+            "requires half precision, but PP v1 is fp32-only). Use attn_impl='mha', 'sdpa' or "
+            "'mla' for now."
+        )
 
     blocks = am.transformer_blocks
     num_layers = len(blocks)
@@ -159,8 +169,13 @@ def _build_name_maps(stage_module: nn.Module, lo: int) -> dict[str, str]:
     for key in stage_module.state_dict():
         if key.startswith("blocks."):
             rest = key[len("blocks.") :]
-            idx_str = rest.split(".", 1)[0]
-            mapping[key] = f"transformer_blocks.{lo + int(idx_str)}.{rest.split('.', 1)[1]}"
+            if "." not in rest:
+                raise RuntimeError(
+                    f"unexpected stage state-dict key {key!r}: a block key must carry a "
+                    "parameter/buffer suffix, not name the block module itself."
+                )
+            idx_str, suffix = rest.split(".", 1)
+            mapping[key] = f"transformer_blocks.{lo + int(idx_str)}.{suffix}"
         else:
             mapping[key] = key
     return mapping
@@ -208,7 +223,17 @@ class _PPRuntime:
         dist.all_gather_object(gathered, mine, group=self.group)
         merged: dict[str, Any] = {}
         for d in gathered:
-            merged.update(d)
+            for name, value in d.items():
+                # Stages own DISJOINT global-name slices; a collision means a
+                # stage emitted a non-owned (e.g. duplicated) name and one
+                # copy would be silently dropped from the checkpoint — fail
+                # loud instead (review LOW on DEC-049/TASK-210).
+                if name in merged:
+                    raise RuntimeError(
+                        f"pipeline stage overlap: global name {name!r} was produced by more than one "
+                        "stage; the model is not partitioned into disjoint slices."
+                    )
+                merged[name] = value
         return merged
 
     def scatter_load(self, state_dict: dict[str, Any]) -> None:
