@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 90,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T10:06:23+00:00",
+  "updated_at": "2026-08-22T10:42:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12230,11 +12230,11 @@
     "TASK-212": {
       "id": "TASK-212",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-22T01:14:06+00:00",
-      "updated_at": "2026-08-22T01:14:06+00:00",
-      "touched_round": 89,
+      "updated_at": "2026-08-22T10:42:38+00:00",
+      "touched_round": 90,
       "category": "core-feature",
       "severity": 0.5,
       "effort": 3,
@@ -12375,6 +12375,29 @@
       "updated_at": "2026-08-22T10:05:50+00:00",
       "touched_round": 90,
       "summary": "llm.training.distributed.pipeline — pipeline-stage partition / ScheduleGPipe driver (PP v1 + PP+DP 2D)"
+    },
+    "CHG-223": {
+      "id": "CHG-223",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T10:42:38+00:00",
+      "updated_at": "2026-08-22T10:42:38+00:00",
+      "touched_round": 90,
+      "commit": "48f967a",
+      "summary": "PP per-stage optimizer state checkpointing (TASK-212): save_checkpoint all-gathers every rank's stage optimizer state over the WORLD (keyed by global rank under __pp_stage_states__), load restores each rank's own slice; pre-212 checkpoints degrade to the old weights-only note"
+    },
+    "EV-207": {
+      "id": "EV-207",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T10:42:38+00:00",
+      "updated_at": "2026-08-22T10:42:38+00:00",
+      "touched_round": 90,
+      "source": "tests/e2e/test_pp_engine.py (pure-PP 2-proc + 2D 4-proc)",
+      "summary": "The checkpoint persists each rank's Adam exp_avg under __pp_stage_states__ and the resumed engine's first moment equals the saved one bit-for-bit (pre-fix resume reset it to fresh state)",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -18136,6 +18159,12 @@
       "to": "COMP-016",
       "type": "governs",
       "created_at": "2026-08-22T10:06:23+00:00"
+    },
+    {
+      "from": "CHG-223",
+      "to": "TASK-212",
+      "type": "implements",
+      "created_at": "2026-08-22T10:42:38+00:00"
     }
   ]
 }
