@@ -16,11 +16,13 @@ from llm.training.core.distributed import broadcast_parameters
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
 from llm.training.distributed import (
     allreduce_dp_grads,
+    allreduce_pp_dp_grads,
     clip_grad_norm_tp,
     is_fsdp,
     is_pp,
     is_tp,
     model_for_checkpoint_io,
+    pp_dp_layout,
     tp_dp_layout,
     wrap_model_for_training,
 )
@@ -265,6 +267,7 @@ class TrainingEngine:
             device=self.device,
             world_size=self.world_size,
             tp_size=self.config.distributed.tp_size,
+            pp_size=self.config.distributed.pp_size,
         )
 
         self.use_standard_loop = self.task.uses_standard_training_loop()
@@ -303,7 +306,14 @@ class TrainingEngine:
         if self.is_training_tp and self.world_size > 1:
             _tp_size, data_world, data_rank, _tp_rank = tp_dp_layout(self.world_size, self.config.distributed.tp_size)
         elif self.is_training_pp and self.world_size > 1:
-            data_rank, data_world = 0, 1
+            # PURE PP (pp_size == world_size) replicates the data shard across
+            # every stage (all stage ranks pump the same microbatch sequence
+            # through the pipeline, so data_rank=0/data_world=1). PP +
+            # data-parallel 2D (RIL TASK-211) instead shards the data per DP
+            # group: each DP column owns a disjoint shard (pipelined within
+            # the group), and gradients are averaged across DP groups at the
+            # step boundary via ``allreduce_pp_dp_grads``.
+            _pp_size, data_world, data_rank, _pp_rank = pp_dp_layout(self.world_size, self.config.distributed.pp_size)
         else:
             # Single-rank TP is a no-op identity (mirrors the wrap path), so an
             # explicit tp_size > 1 config on a 1-GPU run must not be validated
@@ -681,12 +691,17 @@ class TrainingEngine:
                     # factor and the replicated copies drift (RIL ISS-253).
                     grad_norm = clip_grad_norm_tp(self.model, self.config.training.gradient_clip_val)
                 elif is_pp(self.model):
+                    # PP + data-parallel 2D (TASK-211): average gradients
+                    # across the strided DP group so identical stage copies on
+                    # different data shards converge to the true full-batch
+                    # gradient. A no-op for pure PP (no DP group). Then the
                     # PP-aware global-norm clip: each rank holds a DISJOINT
                     # stage, so the full-model norm is the sum over the whole
                     # pipeline group — ``clip_grad_norm_tp`` with an explicit
                     # group reduces squared norms over that group (RIL
                     # DEC-049). One all-reduce; every rank clips its stage by
                     # the SAME full-model factor.
+                    allreduce_pp_dp_grads(self.model)
                     grad_norm = clip_grad_norm_tp(
                         self.model,
                         self.config.training.gradient_clip_val,

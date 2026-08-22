@@ -554,7 +554,8 @@
 - [x] FSDP — config + `wrap_model_for_training()` 已实现
 - [x] Tensor Parallelism — `parallel_strategy=tp`, `apply_tensor_parallel` (column/row 并行, fused-QKV 分片, vocab-parallel lm_head + logits all-gather, 全量 state-dict gather/scatter checkpoint, 数值恒等 parity 测试)
 - [x] TP + 数据并行 2D — `tp_size < world_size`: 行主序 `[DP][TP]` 网格 (TP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_dp_grads` (AVG) 平均 DP 组梯度; 2x2 / 2x3 / 4x2 网格 parity + 4/6-GPU 真实引擎 e2e 全绿 (RIL TASK-202)
-- [ ] Pipeline Parallelism
+- [x] Pipeline Parallelism — `parallel_strategy='pp'` (RIL DEC-049/TASK-210): 按 `transformer_blocks` 切分 stage (stage 0 = embedding + 首块, 末 stage = final_norm + lm_head), `ScheduleGPipe` 驱动, 纯 pipeline 两进程 CPU/gloo bit-exact parity + 引擎 e2e 训练/保存/恢复; 强制 FP32 + LM-only 拒绝
+- [x] PP + 数据并行 2D — `pp_size < world_size`: 行主序 `[DP][PP]` 网格 (PP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_pp_dp_grads` (AVG) 平均 DP 组梯度, loss 按 PP 组 broadcast (`group_src`); 2x2 网格 bit-parity + 4 进程 CPU/gloo 引擎 e2e 全绿 + 状态字典跨 4 rank 逐位一致 (RIL TASK-211)
 - [ ] 集成 DeepSpeed ZeRO (Stage 2/3)
 - [ ] 3D Parallelism (DP + PP + TP)
 

@@ -450,11 +450,12 @@ class DistributedConfig(BaseSettings):
         description=(
             "Parallel strategy: 'ddp' (default), 'fsdp', 'tp' (tensor parallelism, "
             "with optional tp_size < world_size for TP+data-parallel 2D), or 'pp' "
-            "(pipeline parallelism, RIL DEC-049/TASK-210). PP v1 lays the whole "
-            "world out as pipeline stages (pp_size == world_size, one stage per "
-            "rank) and only supports the standard-language-modeling loop: it "
-            "refuses non-standard-loop tasks, AMP, torch.compile and TP+FSDP "
-            "composition with a clear error."
+            "(pipeline parallelism, RIL DEC-049/TASK-210, with optional "
+            "pp_size < world_size for PP+data-parallel 2D, RIL TASK-211). PP lays "
+            "the world out as pipeline stages (one stage per rank) and only "
+            "supports the standard-language-modeling loop: it refuses "
+            "non-standard-loop tasks, AMP, torch.compile and TP+FSDP composition "
+            "with a clear error."
         ),
     )
     tp_size: int = Field(
@@ -471,6 +472,21 @@ class DistributedConfig(BaseSettings):
             "across data shards at each step. world_size must divide evenly "
             "by tp_size. Every partitioned axis (num_heads / num_kv_heads / "
             "vocabulary / intermediate width) must divide evenly by it."
+        ),
+    )
+    pp_size: int = Field(
+        0,
+        ge=0,
+        description=(
+            "Pipeline size for parallel_strategy='pp'. A value of 0 "
+            "means 'use world_size' (pure PP, one pipeline group = the whole "
+            "world). A value less than world_size enables PP + data-parallel "
+            "2D (TASK-211): ranks are laid out row-major as [DP][PP] - each "
+            "pipeline group is a contiguous world_size/pp_size-rank range "
+            "whose stage-to-stage P2P stays intranode-friendly, and the "
+            "world_size/pp_size DP groups (strided columns holding the same "
+            "stage) average gradients across data shards at each step. "
+            "world_size must divide evenly by pp_size."
         ),
     )
     collective_timeout_seconds: int = Field(

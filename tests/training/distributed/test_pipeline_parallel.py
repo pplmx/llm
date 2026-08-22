@@ -29,10 +29,12 @@ import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
 from llm.training.distributed import (
+    allreduce_pp_dp_grads,
     build_pipeline_model,
     clip_grad_norm_tp,
     lm_shift_loss,
     partition_decoder_model,
+    pp_dp_layout,
     wrap_model_for_training,
 )
 from llm.training.distributed.parallel import is_pp
@@ -443,3 +445,204 @@ def test_lm_shift_loss_contract() -> None:
     assert torch.equal(serial, task_loss)
     # The gradient-accum scale is a plain multiplicative factor.
     assert torch.equal(lm_shift_loss(model(input_ids), labels, criterion, scale=ACCUM), serial / ACCUM)
+
+
+# ---------------------------------------------------------------------------
+# PP + data-parallel 2D (RIL TASK-211): pp_size < world_size
+# ---------------------------------------------------------------------------
+
+
+def _make_full_batch(dp_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """A globally-consistent ``(BATCH * dp_size, SEQ)`` batch to shard per DP group."""
+    torch.manual_seed(999)
+    input_ids = torch.randint(0, VOCAB, (BATCH * dp_size, SEQ))
+    torch.manual_seed(1000)
+    labels = torch.randint(0, VOCAB, (BATCH * dp_size, SEQ))
+    return input_ids, labels
+
+
+def _pp_2d_reference(dp_size: int) -> dict:
+    """Serial references: per-shard losses + FULL-batch gradients.
+
+    ``(G0 + G1) / 2 == full-batch gradient`` when the DP shards are equal-sized
+    (each shard's pipeline loss divides by the same token count), which is what
+    ``allreduce_pp_dp_grads`` must reproduce.
+    """
+    full_ids, full_labels = _make_full_batch(dp_size)
+    criterion = nn.CrossEntropyLoss(ignore_index=-100)
+    shard_losses = []
+    for d in range(dp_size):
+        torch.manual_seed(SEED)
+        m = _build_model()
+        with torch.no_grad():
+            shard_losses.append(
+                lm_shift_loss(
+                    m(full_ids[d * BATCH : (d + 1) * BATCH]), full_labels[d * BATCH : (d + 1) * BATCH], criterion
+                ).item()
+            )
+    torch.manual_seed(SEED)
+    ref = _build_model()
+    loss = lm_shift_loss(ref(full_ids), full_labels, criterion)
+    loss.backward()
+    ref_grads = {n: (p.grad.clone() if p.grad is not None else None) for n, p in ref.named_parameters()}
+    return {"shard_losses": shard_losses, "ref_grads": ref_grads, "ref_loss": loss.item()}
+
+
+def _pp_2d_parity_worker(rank: int, world_size: int, results: dict) -> None:
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        pp_size, dp_size = 2, 2
+        torch.manual_seed(SEED)
+        model = _build_model().to(torch.device("cpu"))
+        # The REAL engine wrap path: [DP][PP] subgroups + stage partition.
+        stage = wrap_model_for_training(
+            model,
+            parallel_strategy="pp",
+            device=torch.device("cpu"),
+            world_size=world_size,
+            pp_size=pp_size,
+        )
+        assert is_pp(stage)
+        rt = stage._pp
+        assert rt.dp_group is not None, "2D PP must wire a DP group for gradient averaging"
+        assert rt.group is not None, "2D PP must run P2P over the PP subgroup"
+        assert rt.group != dist.group.WORLD, "2D PP must run P2P over the PP subgroup (not the world)"
+        _, _, dp_rank, pp_rank = pp_dp_layout(world_size, pp_size, rank)
+        assert rt.stage_index == pp_rank
+
+        criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        full_ids, full_labels = _make_full_batch(dp_size)
+        shard_ids = full_ids[dp_rank * BATCH : (dp_rank + 1) * BATCH]
+        shard_labels = full_labels[dp_rank * BATCH : (dp_rank + 1) * BATCH]
+
+        losses: list = []
+        rt.schedule.step(
+            shard_ids, target=shard_labels, losses=losses, loss_kwargs={"criterion": criterion, "scale": 1.0}
+        )
+        loss = rt.broadcast_loss(losses[-1] if losses else torch.tensor(0.0))
+
+        # The engine's step-boundary hook.
+        allreduce_pp_dp_grads(stage)
+
+        owned = {rt.local_to_global[k]: v.grad.clone() for k, v in stage.named_parameters()}
+        full = rt.full_state_dict()
+        results[rank] = {
+            "loss": loss.item(),
+            "owned": owned,
+            "full": full,
+            "dp_rank": dp_rank,
+            "pp_rank": pp_rank,
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+def test_pp_dp_2d_loss_and_grad_parity_four_process_cpu() -> None:
+    """PP + data-parallel 2D (TASK-211) on a 2x2 [DP][PP] gloo/CPU grid.
+
+    Each DP group pipelines its own data shard; the loss must equal that
+    shard's serial LM-shift loss (broadcast over the PP subgroup), and the
+    DP-group gradient average must reproduce the serial FULL-batch gradients
+    — the exact semantics ``allreduce_pp_dp_grads`` implements at the engine's
+    step boundary.
+    """
+    ref = _pp_2d_reference(dp_size=2)
+    out = _run_spawn_worker(_pp_2d_parity_worker, 4)
+
+    # 1. Per-DP-group loss equals that shard's serial loss (all ranks of a PP
+    #    group broadcast the same value).
+    for rank, payload in out.items():
+        d = payload["dp_rank"]
+        assert payload["loss"] == pytest.approx(ref["shard_losses"][d], abs=1e-12), f"rank {rank} shard {d}"
+    assert out[0]["loss"] == pytest.approx(out[1]["loss"], abs=1e-12)  # PP group 0
+    assert out[2]["loss"] == pytest.approx(out[3]["loss"], abs=1e-12)  # PP group 1
+
+    # 2. DP-averaged owned gradients equal the serial FULL-batch gradients.
+    checked = 0
+    for rank, payload in out.items():
+        for global_name, grad in payload["owned"].items():
+            ref_grad = ref["ref_grads"][global_name]
+            assert ref_grad is not None, f"{global_name} not in reference grads"
+            checked += 1
+            torch.testing.assert_close(
+                grad, ref_grad, atol=1e-4, rtol=1e-4, msg=f"grad {global_name} (rank {rank}) after DP average"
+            )
+    assert checked > 0
+
+    # 3. The merged full state dict (PP-subgroup gather) is bit-identical
+    #    across ALL ranks and carries exactly the serial model's names.
+    full_keys = set(out[0]["full"].keys())
+    assert full_keys == set(ref["ref_grads"].keys())
+    for payload in out.values():
+        assert set(payload["full"].keys()) == full_keys
+        for key in full_keys:
+            assert torch.equal(payload["full"][key], out[0]["full"][key]), f"{key} diverged from rank 0"
+
+
+def _pp_2d_dyn_worker(rank: int, world_size: int, results: dict) -> None:
+    """A couple of SGD steps with the DP average: shards must stay in lockstep."""
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        pp_size, dp_size = 2, 2
+        torch.manual_seed(SEED)
+        model = _build_model().to(torch.device("cpu"))
+        stage = wrap_model_for_training(
+            model,
+            parallel_strategy="pp",
+            device=torch.device("cpu"),
+            world_size=world_size,
+            pp_size=pp_size,
+        )
+        rt = stage._pp
+        criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        full_ids, full_labels = _make_full_batch(dp_size)
+        _, _, dp_rank, _pp_rank = pp_dp_layout(world_size, pp_size, rank)
+        opt = torch.optim.SGD(stage.parameters(), lr=0.05)
+        for _ in range(2):
+            stage.zero_grad()
+            shard_ids = full_ids[dp_rank * BATCH : (dp_rank + 1) * BATCH]
+            shard_labels = full_labels[dp_rank * BATCH : (dp_rank + 1) * BATCH]
+            rt.schedule.step(shard_ids, target=shard_labels, loss_kwargs={"criterion": criterion, "scale": 1.0})
+            allreduce_pp_dp_grads(stage)
+            opt.step()
+        full = rt.full_state_dict()
+        results[rank] = {"full": {k: v.detach().cpu() for k, v in full.items()}, "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+def test_pp_dp_2d_training_stays_in_lockstep_four_process_cpu() -> None:
+    """After a few SGD steps the DP-averaged stage copies must stay bit-identical
+    across all four ranks (a DP-group divergence — the TASK-211 failure mode —
+    fails this equality)."""
+    out = _run_spawn_worker(_pp_2d_dyn_worker, 4)
+    keys = set(out[0]["full"].keys())
+    assert keys  # non-empty
+    for rank, payload in out.items():
+        for key in keys:
+            assert torch.equal(payload["full"][key], out[0]["full"][key]), f"{key} diverged from rank 0 (rank {rank})"
+
+
+def test_pp_dp_layout_validation() -> None:
+    assert pp_dp_layout(4, 2, rank=0) == (2, 2, 0, 0)
+    assert pp_dp_layout(4, 2, rank=1) == (2, 2, 0, 1)
+    assert pp_dp_layout(4, 2, rank=3) == (2, 2, 1, 1)
+    # 0 / negative means "whole world" (pure PP).
+    assert pp_dp_layout(4, 0, rank=2) == (4, 1, 0, 2)
+    assert pp_dp_layout(4, -1, rank=2) == (4, 1, 0, 2)
+    assert pp_dp_layout(6, 3, rank=5) == (3, 2, 1, 2)
+    with pytest.raises(ValueError, match="exceed"):
+        pp_dp_layout(2, 4)
+    with pytest.raises(ValueError, match="divide"):
+        pp_dp_layout(6, 4)

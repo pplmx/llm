@@ -26,7 +26,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
 
-from llm.training.distributed.pipeline import build_pipeline_model, is_pp
+from llm.training.distributed.pipeline import build_pipeline_model, is_pp, pp_dp_layout
 from llm.training.distributed.tensor_parallel import apply_tensor_parallel
 
 # State-dict strategy for FSDP save / load.
@@ -164,6 +164,7 @@ def wrap_model_for_training(
     fsdp_auto_wrap_min_params: int = 10_000_000,
     fsdp_cpu_offload: bool = False,
     tp_size: int = 1,
+    pp_size: int = 0,
 ) -> nn.Module:
     """Wrap a model for distributed training.
 
@@ -188,6 +189,16 @@ def wrap_model_for_training(
         tp_size: Tensor-parallel size for ``parallel_strategy="tp"``.
             v1 uses the whole world as one TP group, so it defaults to
             ``world_size``; must be > 1 and divide every partitioned axis.
+        pp_size: Pipeline size for ``parallel_strategy="pp"``. ``0`` (default)
+            means "use the whole world as one pipeline group" (pure PP v1,
+            RIL DEC-049/TASK-210). A value below ``world_size`` enables PP +
+            data-parallel 2D (RIL TASK-211): ranks are laid out row-major as
+            ``[DP][PP]`` — each pipeline group is a CONTIGUOUS
+            ``world_size/pp_size``-rank range whose stage-to-stage P2P stays
+            intranode-friendly, and the ``world_size/pp_size`` DP groups (the
+            strided columns holding the same stage) average gradients across
+            data shards at each step. ``world_size`` must divide evenly by
+            ``pp_size``.
 
     Raises:
         ValueError: if ``parallel_strategy`` is not recognised.
@@ -205,7 +216,28 @@ def wrap_model_for_training(
             return model
         if is_pp(model) or is_tp(model):
             raise ValueError("pipeline parallelism cannot be composed with another parallel_strategy in v1")
-        return build_pipeline_model(model, world_size, device)
+        pp_size, dp_size, dp_rank, pp_rank = pp_dp_layout(world_size, pp_size)
+        if dp_size > 1:
+            # PP + data-parallel 2D (TASK-211): ``dist.new_group`` is a
+            # collective over the WORLD group, so EVERY rank must create the
+            # SAME set of subgroups in the SAME order; each rank then picks
+            # the handles for the groups it belongs to (mirrors the TP+DP 2D
+            # rule, RIL TASK-202). Pure PP (dp_size == 1) skips subgroup
+            # creation entirely and keeps using the default group.
+            pp_groups = [dist.new_group(ranks=list(range(d * pp_size, (d + 1) * pp_size))) for d in range(dp_size)]
+            dp_groups = [dist.new_group(ranks=list(range(p, world_size, pp_size))) for p in range(pp_size)]
+            pp_group = pp_groups[dp_rank]
+            dp_group = dp_groups[pp_rank]
+        else:
+            pp_group, dp_group = None, None
+        return build_pipeline_model(
+            model,
+            pp_size,
+            device,
+            pp_group=pp_group,
+            dp_group=dp_group,
+            pp_rank=pp_rank,
+        )
 
     if parallel_strategy != "tp" and (world_size <= 1 or device.type != "cuda"):
         # DDP/FSDP are no-ops for single-rank or CPU-only runs.

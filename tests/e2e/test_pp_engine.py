@@ -56,7 +56,9 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _build_config(*, checkpoint_dir: str, epochs: int, resume_from_checkpoint: str | None = None) -> Config:
+def _build_config(
+    *, checkpoint_dir: str, epochs: int, resume_from_checkpoint: str | None = None, pp_size: int | None = None
+) -> Config:
     config = Config(
         model=ModelConfig(
             vocab_size=64,
@@ -67,7 +69,9 @@ def _build_config(*, checkpoint_dir: str, epochs: int, resume_from_checkpoint: s
         ),
         training=TrainingConfig(batch_size=2, epochs=epochs, num_samples=16, lr=2e-2, log_every_n_steps=1),
         optimization=OptimizationConfig(use_compile=False, use_amp=False, gradient_accumulation_steps=2),
-        distributed=DistributedConfig(backend="gloo", parallel_strategy="pp"),
+        distributed=DistributedConfig(
+            backend="gloo", parallel_strategy="pp", **({"pp_size": pp_size} if pp_size is not None else {})
+        ),
     )
     config.checkpoint.save_interval = 1
     config.checkpoint.checkpoint_dir = checkpoint_dir
@@ -101,9 +105,10 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         dist.init_process_group("gloo", rank=rank, world_size=world_size)
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
         ckpt_dir = ctx["checkpoint_dir"]
+        pp_size = ctx.get("pp_size")
 
         # ---- Epoch 1: train from scratch, save checkpoint ----
-        config1 = _build_config(checkpoint_dir=ckpt_dir, epochs=1, resume_from_checkpoint=None)
+        config1 = _build_config(checkpoint_dir=ckpt_dir, epochs=1, resume_from_checkpoint=None, pp_size=pp_size)
         data_module = DummyLMDataModule(config1)
         data_module.prepare_data()
         data_module.setup()
@@ -127,7 +132,10 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         # and the scatter load agree. On rank 0 the saved checkpoint exists;
         # all ranks read the same files (shared filesystem).
         config2 = _build_config(
-            checkpoint_dir=ckpt_dir, epochs=2, resume_from_checkpoint=str(Path(ckpt_dir) / "epoch_1.pt")
+            checkpoint_dir=ckpt_dir,
+            epochs=2,
+            resume_from_checkpoint=str(Path(ckpt_dir) / "epoch_1.pt"),
+            pp_size=pp_size,
         )
         data_module2 = DummyLMDataModule(config2)
         task2 = LanguageModelingTask(config2, data_module2)
@@ -153,7 +161,7 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
             dist.destroy_process_group()
 
 
-def test_pp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
+def _run_pp_engine_e2e(tmp_path, world_size: int, *, pp_size: int | None = None) -> None:
     port = _free_port()
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
@@ -171,7 +179,11 @@ def test_pp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     try:
         context = mp.spawn(
-            _worker, args=(2, {"checkpoint_dir": ckpt_dir}, results), nprocs=2, join=False, start_method="spawn"
+            _worker,
+            args=(world_size, {"checkpoint_dir": ckpt_dir, "pp_size": pp_size}, results),
+            nprocs=world_size,
+            join=False,
+            start_method="spawn",
         )
     finally:
         if saved_visible is None:
@@ -190,10 +202,28 @@ def test_pp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
         if context.join(timeout=remaining):
             break
     results = dict(results)
-    assert len(results) == 2, f"expected 2 ranks, got {len(results)}"
+    assert len(results) == world_size, f"expected {world_size} ranks, got {len(results)}"
     for rank, payload in results.items():
         assert payload["success"], f"rank {rank} failed: {payload.get('error')}"
-    assert results[0]["steps1"] == results[1]["steps1"], "ranks must step in lockstep (epoch 1)"
-    assert results[0]["steps2"] == results[1]["steps2"], "ranks must step in lockstep (epoch 2)"
+    step1 = {results[rank]["steps1"] for rank in results}
+    step2 = {results[rank]["steps2"] for rank in results}
+    assert len(step1) == 1, f"ranks must step in lockstep (epoch 1): {step1}"
+    assert len(step2) == 1, f"ranks must step in lockstep (epoch 2): {step2}"
     assert results[0]["moved"] > 0
     assert results[0]["steps2"] > results[0]["steps1"]
+
+
+def test_pp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
+    _run_pp_engine_e2e(tmp_path, 2)
+
+
+def test_pp_dp_2d_engine_trains_and_resumes_four_process_cpu(tmp_path) -> None:
+    """PP + data-parallel 2D (RIL TASK-211) engine e2e on a 2x2 [DP][PP] grid.
+
+    Four CPU/gloo ranks with ``pp_size=2``: the DP dimension shards the data
+    per DP group, ``allreduce_pp_dp_grads`` averages at each step boundary,
+    and the checkpoint path (collective save + scatter resume) must keep all
+    four ranks' full state dicts bit-identical — the DP-group-divergence
+    failure mode this milestone exists to prevent fails the equality check.
+    """
+    _run_pp_engine_e2e(tmp_path, 4, pp_size=2)

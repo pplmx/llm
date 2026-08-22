@@ -257,13 +257,41 @@ whose loss is computed on the last stage (the standard LM shift + cross
 entropy) and broadcast back so metric reduction / save_best see the same value
 on every rank.
 
-Like pure TP v1, PP v1 **replicates the data shard** across every stage (all
-stage ranks must pump the same microbatch sequence through the pipeline). The
-engine wires the standard-loop PP step, the PP-group-aware global gradient-norm
-clip (each rank holds a disjoint stage, so the full-model norm is summed over
-the pipeline group), and the full model state dict on rank 0 (gathered
-stage-by-stage under the original model's parameter names), so checkpoints,
-`llm-serve` and resume are unchanged.
+Like pure TP v1, the pure pipeline **replicates the data shard** across every
+stage (all stage ranks must pump the same microbatch sequence through the
+pipeline). The engine wires the standard-loop PP step, the PP-group-aware
+global gradient-norm clip (each rank holds a disjoint stage, so the full-model
+norm is summed over the pipeline group), and the full model state dict on rank
+0 (gathered stage-by-stage under the original model's parameter names), so
+checkpoints, `llm-serve` and resume are unchanged.
+
+### PP + data-parallel 2D
+
+Set `pp_size` smaller than the total number of ranks to add a data-parallel
+dimension (RIL TASK-211). Ranks are laid out in a row-major `[DP][PP]` grid —
+**pipeline groups are contiguous rank ranges** (the stage-to-stage P2P
+activation/gradient links stay intranode-friendly), DP groups are the strided
+columns that hold the *same* stage across pipeline groups:
+
+```yaml
+# 8 GPUs, 4 pipeline groups of 2 — gradient-averaged across the 4 DP columns
+distributed:
+  parallel_strategy: pp
+  pp_size: 2
+  backend: nccl
+```
+
+- Each pipeline group chunks the model into its `pp_size` stages and sees
+  **its own data shard** (the engine shards the dataset per DP group).
+- After each step's backward, gradients are **averaged across the DP group**
+  (DDP semantics, `allreduce_pp_dp_grads`) so every stage copy converges to
+  the true full-batch gradient.
+- Checkpoints are the *full* model state dict (gathered stage-by-stage per
+  pipeline group) on rank 0, identical to a plain single-GPU checkpoint —
+  `llm-serve` and resume need no special handling.
+
+`world_size` must divide evenly by `pp_size` (a non-divisor is rejected at
+wrap time).
 
 PP v1 refuses loudly rather than silently training the wrong loss:
 
@@ -318,6 +346,7 @@ all.
 | `backend`                   | `"nccl"`          | `torch.distributed` backend                         |
 | `parallel_strategy`         | `"ddp"`           | `"ddp"` / `"fsdp"` / `"tp"` / `"pp"`                |
 | `tp_size`                   | `0` (= world)     | TP size for `"tp"`; `< world_size` enables TP+DP 2D |
+| `pp_size`                   | `0` (= world)     | PP size for `"pp"`; `< world_size` enables PP+DP 2D |
 | `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` / `"fp16"`                      |
 | `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold                      |
 | `fsdp_cpu_offload`          | `false`           | Offload params to CPU when idle                     |

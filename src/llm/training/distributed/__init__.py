@@ -12,11 +12,18 @@ from llm.training.distributed.parallel import (
     tp_dp_layout,
     wrap_model_for_training,
 )
-from llm.training.distributed.pipeline import build_pipeline_model, lm_shift_loss, partition_decoder_model
+from llm.training.distributed.pipeline import (
+    allreduce_pp_dp_grads,
+    build_pipeline_model,
+    lm_shift_loss,
+    partition_decoder_model,
+    pp_dp_layout,
+)
 from llm.training.distributed.tensor_parallel import apply_tensor_parallel
 
 __all__ = [
     "allreduce_dp_grads",
+    "allreduce_pp_dp_grads",
     "apply_tensor_parallel",
     "build_pipeline_model",
     "clip_grad_norm_tp",
@@ -28,6 +35,7 @@ __all__ = [
     "model_for_checkpoint_io",
     "model_state_dict",
     "partition_decoder_model",
+    "pp_dp_layout",
     "tp_dp_layout",
     "wrap_model_for_training",
 ]
