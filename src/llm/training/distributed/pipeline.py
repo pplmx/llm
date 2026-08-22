@@ -108,9 +108,12 @@ def partition_decoder_model(model: nn.Module, num_stages: int) -> list[nn.Module
 
     Raises:
         NotImplementedError: for models without ``transformer_blocks``, with
-            ``use_alibi``, or with gradient checkpointing enabled — PP v1
-            does not cover these (kept out so the parity guarantee stays
-            exact).
+            ``use_alibi``, with ``attn_impl='flash_attn'``, or with gradient
+            checkpointing enabled — PP v1 does not cover these (kept out; the
+            bit-exact parity against a serial reference is verified at the
+            dropout=0 test configuration — with dropout > 0 each stage draws
+            its own RNG stream and the parity is approximate, which is the
+            standard GPipe caveat).
     """
     am = cast(Any, model)  # nn.Module attr access types as Tensor|Module; we know what we built
     if not (isinstance(getattr(am, "transformer_blocks", None), nn.ModuleList) and len(am.transformer_blocks) > 0):
