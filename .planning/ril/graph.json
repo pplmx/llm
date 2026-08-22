@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 92,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T16:23:44+00:00",
+  "updated_at": "2026-08-22T16:28:33+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12807,10 +12807,10 @@
     "TASK-219": {
       "id": "TASK-219",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-22T16:20:06+00:00",
-      "updated_at": "2026-08-22T16:20:06+00:00",
+      "updated_at": "2026-08-22T16:28:33+00:00",
       "touched_round": 92,
       "category": "core-feature",
       "severity": 0.5,
@@ -12861,6 +12861,30 @@
       "commit": "ca41908",
       "title": "QAT fake quantization + STE (completes TASK-218)",
       "summary": "FakeQuantize/FakeQuantLinear with straight-through estimator + 6 unit tests (EV-220). TASK-219 (training integration) and TASK-220 (scales) remain."
+    },
+    "EV-221": {
+      "id": "EV-221",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:28:23+00:00",
+      "updated_at": "2026-08-22T16:28:23+00:00",
+      "touched_round": 92,
+      "source": "tests/quantization/test_qat_integration.py (build_model applies fake-quant; qat_bits validation; single-rank engine finite run) + tests/quantization/test_fake_quant.py::test_fake_quant_linear_trains_and_reduces_loss",
+      "summary": "QAT training integration verified: apply_fake_quant preserves weights, build_model applies FakeQuantLinear when use_qat=True, qat_bits validated, and a single-rank engine QAT run stays finite/fake-quantized across epochs; FakeQuantLinear reduces loss on learnable data. TASK-219 complete.",
+      "confidence": 1.0
+    },
+    "CHG-234": {
+      "id": "CHG-234",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:28:24+00:00",
+      "updated_at": "2026-08-22T16:28:24+00:00",
+      "touched_round": 92,
+      "commit": "18d16d0",
+      "title": "QAT training integration (use_qat + build_model) — completes TASK-219",
+      "summary": "apply_fake_quant helper, TrainingConfig qat fields, build_model branch; EV integration tests. TASK-220 (scales) remains."
     }
   },
   "edges": [
@@ -18826,6 +18850,12 @@
       "to": "TASK-218",
       "type": "implements",
       "created_at": "2026-08-22T16:23:40+00:00"
+    },
+    {
+      "from": "CHG-234",
+      "to": "TASK-219",
+      "type": "implements",
+      "created_at": "2026-08-22T16:28:24+00:00"
     }
   ]
 }
