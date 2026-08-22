@@ -737,6 +737,25 @@ class CheckpointManager:
         model_config: dict | None = None,
     ):
         collective = is_fsdp(model) or is_tp(model) or is_pp(model)
+        # PP stages own DISJOINT parameter slices, so each rank's optimizer
+        # state only covers its own stage (RIL TASK-212). Rank 0's state dict
+        # alone cannot replay the other stages' moments at resume, so gather
+        # EVERY rank's stage optimizer state over the WORLD before the write
+        # and persist them keyed by GLOBAL rank. The gather is world-wide (not
+        # PP-group-wide) deliberately: under PP+DP (TASK-211) different DP
+        # groups hold DISTINCT moments, and a PP-group-only gather would drop
+        # the other groups from rank 0's file. Every rank must enter it (it is
+        # a collective) even though non-zero ranks discard the result.
+        pp_optimizer_state: dict[str, Any] | None = None
+        if collective and is_pp(model) and optimizer is not None and dist.is_initialized():
+            mine = {str(dist.get_rank()): optimizer.state_dict()}
+            gathered: list[dict[str, Any]] = [{} for _ in range(dist.get_world_size())]
+            dist.all_gather_object(gathered, mine)
+            merged: dict[str, Any] = {}
+            for other in gathered:
+                merged.update(other)
+            pp_optimizer_state = {"__pp_stage_states__": merged}
+
         if self.rank != 0:
             # FSDP's FULL_STATE_DICT state_dict() and the TP full-state-dict
             # gather are cross-rank collectives (RIL ISS-186 / TASK-200):
@@ -758,6 +777,9 @@ class CheckpointManager:
             return
 
         model_state_to_save = model_state_dict(model)
+        opt_state = (
+            optimizer.state_dict() if optimizer is not None and pp_optimizer_state is None else pp_optimizer_state
+        )
 
         # ``save_best`` updates best_loss before writing the rest of the
         # meta, so the .meta.json best_loss is consistent across files.
@@ -767,7 +789,7 @@ class CheckpointManager:
             self._save_split(
                 name="best",
                 model_state=model_state_to_save,
-                optimizer_state=optimizer.state_dict() if optimizer is not None else None,
+                optimizer_state=opt_state,
                 scheduler_state=scheduler.state_dict() if scheduler is not None else None,
                 scaler_state=scaler.state_dict() if scaler is not None else None,
                 epoch=epoch,
@@ -780,7 +802,7 @@ class CheckpointManager:
         self._save_split(
             name="latest",
             model_state=model_state_to_save,
-            optimizer_state=optimizer.state_dict() if optimizer is not None else None,
+            optimizer_state=opt_state,
             scheduler_state=scheduler.state_dict() if scheduler is not None else None,
             scaler_state=scaler.state_dict() if scaler is not None else None,
             epoch=epoch,
@@ -795,7 +817,7 @@ class CheckpointManager:
             _, _, _ = self._save_split(
                 name=epoch_name,
                 model_state=model_state_to_save,
-                optimizer_state=optimizer.state_dict() if optimizer is not None else None,
+                optimizer_state=opt_state,
                 scheduler_state=scheduler.state_dict() if scheduler is not None else None,
                 scaler_state=scaler.state_dict() if scaler is not None else None,
                 epoch=epoch,
@@ -924,18 +946,31 @@ class CheckpointManager:
         # for the optimizer branch but is_pp is already imported at module top.
         try:
             if is_pp(model) and optimizer is not None and payload.get("optimizer_state") is not None:
-                # PP stages own DISJOINT parameter slices with per-stage
-                # optimizer state, so the checkpoint's rank-0 optimizer state
-                # cannot be replayed onto a differently-sized stage (RIL
-                # DEC-049/TASK-210). v1 resumes weights + scheduler but resets
-                # per-rank optimizer moments, with an explicit note — never a
-                # silent dropout. Per-stage optimizer checkpointing is a
-                # follow-up task.
-                self.logger.warning(
-                    "PP resume restores weights and scheduler but NOT per-rank optimizer "
-                    "moments (per-stage optimizer checkpointing is a follow-up); "
-                    "the optimizer starts from fresh state."
-                )
+                opt_blob = payload["optimizer_state"]
+                if isinstance(opt_blob, dict) and "__pp_stage_states__" in opt_blob:
+                    # TASK-212: per-stage optimizer states persisted by GLOBAL
+                    # rank (under PP+DP, TASK-211, different DP groups hold
+                    # distinct moments, so stage index alone would collide).
+                    # Each rank restores its own slice — same topology on
+                    # resume, so global keys still match the same stages.
+                    my_state = opt_blob["__pp_stage_states__"].get(str(dist.get_rank()))
+                    if my_state is None:
+                        self.logger.warning(
+                            f"PP resume: checkpoint has no optimizer state for rank {dist.get_rank()}; "
+                            "the optimizer starts from fresh state."
+                        )
+                    else:
+                        optimizer.load_state_dict(my_state)
+                else:
+                    # Pre-TASK-212 checkpoint: the optimizer slot holds rank 0's
+                    # partial state which cannot be replayed onto every stage.
+                    # Restore weights + scheduler but reset the optimizer, with
+                    # an explicit note — never a silent dropout.
+                    self.logger.warning(
+                        "PP resume: checkpoint predates per-stage optimizer checkpointing "
+                        "(TASK-212) — restoring weights and scheduler but starting the "
+                        "optimizer from fresh state."
+                    )
             elif optimizer is not None and payload.get("optimizer_state") is not None:
                 optimizer.load_state_dict(payload["optimizer_state"])
             if scheduler is not None and payload.get("scheduler_state") is not None:

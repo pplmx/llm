@@ -34,6 +34,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
+from llm.training.core.checkpoint import load_checkpoint_payload
 from llm.training.core.config import (
     Config,
     DistributedConfig,
@@ -87,6 +88,16 @@ def _digests(model_state: dict) -> dict[str, str]:
     }
 
 
+def _first_moment(optimizer_state: dict) -> torch.Tensor | None:
+    """The first Adam exp_avg in an optimizer state dict, if the state is non-empty."""
+    state = optimizer_state.get("state", {})
+    for entry in state.values():
+        exp_avg = entry.get("exp_avg")
+        if exp_avg is not None:
+            return exp_avg.detach().cpu()
+    return None
+
+
 def _assert_ranks_bit_identical(rank: int, digests: dict[str, str], world_size: int, phase: str) -> None:
     gathered: list = [None] * world_size
     dist.all_gather_object(gathered, digests)
@@ -126,6 +137,18 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         moved = [key for key in before_digests if before_digests[key] != digests1.get(key)]
         assert moved, f"rank {rank}: no parameter changed across PP training — the run was a no-op"
 
+        # ---- TASK-212: the checkpoint must carry THIS rank's optimizer ----#
+        # ---- moments (Adam exp_avg), with an entry per stage/rank.      ---#
+        ckpt_path = str(Path(ckpt_dir) / "epoch_1.pt")
+        payload = load_checkpoint_payload(ckpt_path)
+        optimizer_blob = payload.get("optimizer_state")
+        assert isinstance(optimizer_blob, dict), "PP checkpoint must persist an optimizer_state"
+        stage_states = optimizer_blob.get("__pp_stage_states__")
+        assert isinstance(stage_states, dict), "PP checkpoint must persist per-stage optimizer states (TASK-212)"
+        assert str(rank) in stage_states, f"rank {rank}: own stage optimizer state missing from checkpoint"
+        saved_moment = _first_moment(stage_states[str(rank)])
+        assert saved_moment is not None, "PP optimizer moments must be non-empty after training (TASK-212)"
+
         # ---- Epoch 2: resume from the checkpoint, continue ----
         # Every rank must load its OWN slice from the global-named dict; a
         # second engine run finishing in lockstep proves the collective save
@@ -134,7 +157,7 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         config2 = _build_config(
             checkpoint_dir=ckpt_dir,
             epochs=2,
-            resume_from_checkpoint=str(Path(ckpt_dir) / "epoch_1.pt"),
+            resume_from_checkpoint=ckpt_path,
             pp_size=pp_size,
         )
         data_module2 = DummyLMDataModule(config2)
@@ -142,6 +165,14 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         engine2 = TrainingEngine(config=config2, task=task2, rank=rank, world_size=world_size, data_module=data_module2)
         # The resumed engine must sense it starts at epoch index 1.
         assert engine2.start_epoch == 1, f"rank {rank}: resume did not sense start_epoch=1"
+        # TASK-212: the resumed optimizer must have restored ITS OWN stage's
+        # moments (the pre-fix behavior reset them to a fresh state, so the
+        # first exp_avg would be None here).
+        resumed_moment = _first_moment(engine2.optimizer.state_dict())
+        assert resumed_moment is not None, f"rank {rank}: resume reset the optimizer moments (TASK-212)"
+        assert torch.equal(resumed_moment, saved_moment), (
+            f"rank {rank}: resumed moments differ from checkpoint (TASK-212)"
+        )
         engine2.run()
         assert engine2.global_step > steps1, f"rank {rank}: resume did not advance global_step"
         full2 = model_state_dict(engine2.model)
