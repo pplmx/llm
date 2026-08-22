@@ -30,14 +30,17 @@ import torch.nn as nn
 from llm.models.decoder import DecoderModel
 from llm.training.distributed import (
     allreduce_pp_dp_grads,
+    apply_tensor_parallel_stage,
     build_pipeline_model,
     clip_grad_norm_tp,
     lm_shift_loss,
     partition_decoder_model,
     pp_dp_layout,
+    three_d_groups,
     wrap_model_for_training,
 )
 from llm.training.distributed.parallel import is_pp
+from llm.training.distributed.pp_tp import PPTPRuntime
 
 PP_JOIN_TIMEOUT_S = 300
 
@@ -822,3 +825,64 @@ def test_pp_refuses_float16_amp_two_process_cpu() -> None:
         err = payload.get("error")
         assert err is None, f"rank {rank}: {err}"
         assert "requires bf16" in payload["refused"], f"rank {rank}: unexpected message {payload['refused']}"
+
+
+def _pp_tp_parity_worker(rank: int, world_size: int, results: dict) -> None:
+    """PP+TP chain parity (RIL TASK-216, dp_size=1): 2 stages x 2 TP ranks on gloo.
+
+    Each rank partitions the model into 2 stages, TP-shards its own stage over
+    the stage's 2-rank group (``apply_tensor_parallel_stage``), drives a GPipe-
+    style step through ``PPTPRuntime``, and reports the broadcast loss plus
+    whether every owned parameter got a gradient (the latter proves the
+    input-gradient P2P routes all the way back to stage 0).
+    """
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        torch.manual_seed(SEED)
+        model = _build_model().to(torch.device("cpu"))
+        pp_size, tp_size = 2, 2
+        pp_rank = rank // tp_size
+        stages = partition_decoder_model(model, pp_size)
+        stage = stages[pp_rank]
+
+        # Stage TP groups: row-major [DP=1][PP][TP], so tp_groups[pp_rank] is the
+        # stage's contiguous rank run. Every rank builds ALL groups in the same
+        # order (world collective), then keeps its own.
+        tp_groups, _pp_groups, _dp_groups = three_d_groups(world_size, 1, pp_size, tp_size)
+        groups = [dist.new_group(ranks=list(g)) for g in tp_groups]
+        tp_group = groups[pp_rank]
+
+        apply_tensor_parallel_stage(stage, model=model, process_group=tp_group)
+        rt = PPTPRuntime(rank=rank, pp_size=pp_size, tp_size=tp_size, stage=stage, device=torch.device("cpu"))
+
+        criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        input_ids, labels = _make_inputs()
+        losses: list = []
+        rt.step(input_ids, target=labels, criterion=criterion, scale=1.0, losses=losses)
+        last_loss = losses[-1] if losses else torch.zeros((), dtype=torch.float32)
+        loss = rt.broadcast_last_loss(last_loss)
+
+        grads_present = all(p.grad is not None and torch.isfinite(p.grad).all().item() for p in stage.parameters())
+        results[rank] = {"loss": loss.item(), "grads_present": grads_present, "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_pp_tp_loss_and_grad_routing_parity_four_process_cpu() -> None:
+    """PP+TP (2 stages x 2 TP) loss == serial; backward routes to every stage."""
+    ref = _serial_reference()
+    out = _run_spawn_worker(_pp_tp_parity_worker, 4)
+
+    losses = {rank: payload["loss"] for rank, payload in out.items()}
+    # Every rank must hold the same broadcast pipeline loss, matching serial.
+    assert losses[0] == pytest.approx(losses[3], abs=1e-6)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert losses[rank] == pytest.approx(ref["loss"], abs=1e-6), f"rank {rank} loss mismatch"
+        assert payload["grads_present"], f"rank {rank}: an owned parameter missed its gradient (P2P backroute)"

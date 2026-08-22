@@ -22,9 +22,11 @@ from llm.training.distributed.pipeline import (
     partition_decoder_model,
     pp_dp_layout,
 )
+from llm.training.distributed.pp_tp import PPTPRuntime
 from llm.training.distributed.tensor_parallel import apply_tensor_parallel, apply_tensor_parallel_stage
 
 __all__ = [
+    "PPTPRuntime",
     "allreduce_dp_grads",
     "allreduce_pp_dp_grads",
     "apply_tensor_parallel",
