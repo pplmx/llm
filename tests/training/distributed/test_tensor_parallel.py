@@ -28,10 +28,12 @@ from llm.models.decoder import DecoderModel
 from llm.training.distributed import (
     allreduce_dp_grads,
     apply_tensor_parallel,
+    apply_tensor_parallel_stage,
     clip_grad_norm_tp,
     is_tp,
     load_model_state_dict,
     model_state_dict,
+    partition_decoder_model,
     wrap_model_for_training,
 )
 from tests.support.devices import all_gpu_devices
@@ -1431,3 +1433,64 @@ def test_clip_grad_norm_tp_global_norm_over_two_ranks():
     assert abs(float(results["clipped_norm"]) - (50.0**0.5)) < 1e-5
     assert results["uncapped_norm"] == pytest.approx(50.0**0.5, rel=1e-5)
     assert results["inf_norm"] == float("inf")
+
+
+def _stage0_tp_forward_worker(rank: int, world_size: int, results) -> None:
+    """Stage-aware TP parity (RIL TASK-216 / DEC-053 blocker (b), gloo/CPU).
+
+    Stage 0 of a 2-stage pipeline (embedding + first half of the blocks) is
+    tensor-parallelised in place via the monolithic-transform proxy, and its
+    forward must equal the un-sharded stage-0 forward (the TP all-reduces
+    restore the full hidden state inside the stage).
+    """
+    try:
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        dev = torch.device("cpu")
+        model = _build_model(layers=4).to(dev)  # 4 blocks, mha, non-GQA
+        torch.manual_seed(999)
+        input_ids = torch.randint(0, 64, (2, 12), device=dev)
+
+        stages = partition_decoder_model(model, 2)
+        stage0 = stages[0]
+        with torch.no_grad():
+            ref = stage0(input_ids.clone())  # un-sharded stage-0 forward
+        dist.broadcast(ref, src=0)
+
+        apply_tensor_parallel_stage(stage0, model=model, process_group=dist.group.WORLD)
+        assert is_tp(stage0), "stage must be tagged with TP metadata"
+        with torch.no_grad():
+            out = stage0(input_ids.clone())
+        # Column-parallel partial sums + all-reduce must reconstruct the full
+        # hidden state to float tolerance.
+        results[f"ok_{rank}"] = bool(torch.allclose(out, ref, atol=1e-4, rtol=1e-4))
+        results[f"diff_{rank}"] = float((out - ref).abs().max())
+        results["success"] = True
+        dist.destroy_process_group()
+    except Exception as e:  # noqa: BLE001 — report worker failure in the parent
+        results["success"] = False
+        results["error"] = repr(e)
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+@pytest.mark.quick
+def test_stage_tp_forward_parity_two_process_cpu():
+    """TP-sharding a pipeline stage preserved its forward (2 ranks, gloo/CPU)."""
+    _setup_tp_env()
+    manager = mp.Manager()
+    results = manager.dict()
+    context = mp.spawn(_stage0_tp_forward_worker, args=(2, results), nprocs=2, join=False)
+    end_at = time.monotonic() + TP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError("stage-TP forward parity spawn exceeded timeout")
+        if context.join(timeout=remaining):
+            break
+    assert results["success"], results.get("error")
+    for rank in (0, 1):
+        assert results[f"ok_{rank}"], f"rank {rank} stage-TP forward diverged from reference"

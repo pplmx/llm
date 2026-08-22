@@ -46,7 +46,7 @@ transitively. Paged/cache inference paths and serving are out of scope for v1
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.distributed as dist
@@ -889,3 +889,114 @@ def apply_tensor_parallel(
     # --- 4. Tag the model so checkpoint helpers are TP-aware -----------.
     m._tp = _TPState(m, group, world_size, rank)  # type: ignore[attr-defined]
     return model
+
+
+def _decoder_shell_for_stage(stage: nn.Module, model: DecoderModel) -> DecoderModel:
+    """Build a DecoderModel proxy that owns exactly one pipeline stage's blocks.
+
+    3D parallel (RIL TASK-216 / DEC-052, DEC-053): pipelining partitions the
+    model into ``_PipelineStage`` modules, each referencing a DISJOINT slice
+    of the original ``transformer_blocks`` (plus the embedding on stage 0 and
+    final-norm + lm_head on the last stage). ``apply_tensor_parallel`` is
+    monolithic-only (it iterates ``model.transformer_blocks``), so to tensor-
+    parallelise a single stage we hand it a proxy whose ``transformer_blocks``
+    *is* the stage's own block slice. ``apply_tensor_parallel`` rewires the
+    block objects in place (``_replace``), and the stage references those same
+    objects, so the sharding lands on the stage automatically; only the lm_head
+    is re-pointed back explicitly on the last stage (it is a plain attribute
+    swap on the shell, not an in-place mutation of the shared head).
+
+    Middle stages get a PRIVATE throwaway lm_head (and a ``None`` final_norm /
+    embedding) so the monolithic guard never dereferences a missing head and
+    never corrupts the real head a different stage owns.
+    """
+    m: Any = model
+    st: Any = stage
+    first_attn = m.transformer_blocks[0].self_attn
+    first_mlp = m.transformer_blocks[0].mlp
+    attn_impl = {
+        "MultiHeadAttention": "mha",
+        "FlashAttention": "flash_attn",
+        "MultiLatentAttention": "mla",
+    }.get(type(first_attn).__name__)
+    if attn_impl is None:
+        raise NotImplementedError(
+            f"stage tensor parallelism does not recognise attention backend "
+            f"{type(first_attn).__name__}; expected mha/flash_attn/mla (RIL DEC-052)."
+        )
+    n_experts = int(getattr(first_mlp, "num_experts", 0) or 0)
+    hidden = int(m.hidden_size)
+    vocab = int(m.lm_head.weight.shape[0])
+    n_heads = int(m.num_heads)
+    n_kv = int(getattr(first_attn, "num_kv_heads", n_heads) or n_heads)
+
+    shell = DecoderModel(
+        vocab_size=vocab,
+        hidden_size=hidden,
+        # The proxy is immediately re-pointed at the stage's block slice, so
+        # ``num_layers`` only needs to be >= 1 and match the actual stage size.
+        num_layers=max(1, len(st.blocks)),
+        num_heads=n_heads,
+        max_seq_len=int(m.max_seq_len),
+        intermediate_size=int(first_mlp.fc1.weight.shape[0]),
+        pos_encoding_learned=bool(getattr(m, "pos_encoding_learned", False)),
+        norm_first=bool(getattr(m, "norm_first", True)),
+        norm_impl=getattr(m, "norm_impl", "layer_norm"),
+        use_glu=getattr(first_mlp, "gate_proj", None) is not None,
+        use_rope=bool(getattr(m, "use_rope", False)),
+        rope_theta=float(getattr(m, "rope_theta", 10000.0)),
+        window_size=getattr(m, "window_size", None),
+        use_alibi=bool(getattr(m, "use_alibi", False)),
+        qkv_bias=bool(getattr(m, "qkv_bias", True)),
+        mlp_bias=bool(getattr(m, "mlp_bias", True)),
+        lm_head_bias=bool(getattr(m, "lm_head_bias", True)),
+        num_experts=n_experts,
+        top_k=int(getattr(first_mlp, "top_k", 0) or 0),
+        num_kv_heads=n_kv,
+        attn_impl=attn_impl,
+        mlp_impl="moe" if n_experts else "mlp",
+    )
+    cast(Any, shell).transformer_blocks = nn.ModuleList(st.blocks)
+    cast(Any, shell).embedding_layer = getattr(st, "embedding_layer", None) or m.embedding_layer
+    cast(Any, shell).final_norm = getattr(st, "final_norm", None) or None
+    owned_head = getattr(st, "lm_head", None)
+    if owned_head is not None:
+        cast(Any, shell).lm_head = owned_head
+    else:
+        # Private throwaway head: sharded then discarded, never reflects back.
+        cast(Any, shell).lm_head = nn.Linear(hidden, vocab, bias=bool(getattr(m, "lm_head_bias", True)))
+    return shell
+
+
+def apply_tensor_parallel_stage(
+    stage: nn.Module,
+    *,
+    model: DecoderModel,
+    process_group: dist.ProcessGroup | None = None,
+) -> nn.Module:
+    """Tensor-parallelise a single pipeline stage in place, reusing the
+    monolithic transform (RIL TASK-216 / DEC-053 blocker (b)).
+
+    Builds a DecoderModel proxy around the stage's block slice and runs
+    :func:`apply_tensor_parallel` on it (which rewires the shared block
+    objects in place), then re-points the last stage's ``lm_head`` at the
+    sharded head and tags the stage with the TP metadata for the checkpoint
+    gather/scatter helpers.
+
+    Args:
+        stage: A ``_PipelineStage`` produced by ``partition_decoder_model``.
+        model: The original ``DecoderModel`` (source of architecture/geometry).
+        process_group: The stage's TP group.
+
+    Returns:
+        The same ``stage``, mutated in place and tagged with ``._tp``.
+    """
+    shell = _decoder_shell_for_stage(stage, model)
+    apply_tensor_parallel(shell, process_group=process_group)
+    st: Any = stage
+    tp_state = getattr(shell, "_tp", None)
+    if tp_state is not None:
+        st._tp = tp_state
+    if getattr(st, "lm_head", None) is not None:
+        st.lm_head = cast(Any, shell).lm_head
+    return stage

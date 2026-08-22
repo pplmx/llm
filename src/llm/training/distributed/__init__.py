@@ -22,12 +22,13 @@ from llm.training.distributed.pipeline import (
     partition_decoder_model,
     pp_dp_layout,
 )
-from llm.training.distributed.tensor_parallel import apply_tensor_parallel
+from llm.training.distributed.tensor_parallel import apply_tensor_parallel, apply_tensor_parallel_stage
 
 __all__ = [
     "allreduce_dp_grads",
     "allreduce_pp_dp_grads",
     "apply_tensor_parallel",
+    "apply_tensor_parallel_stage",
     "build_pipeline_model",
     "clip_grad_norm_tp",
     "is_fsdp",
