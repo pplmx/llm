@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 89,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T03:14:54+00:00",
+  "updated_at": "2026-08-22T05:39:16+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12293,6 +12293,18 @@
       "commit": "0d02b78",
       "title": "PP v1 milestone - parallel_strategy=pp",
       "summary": "Implements TASK-210 per DEC-049: pipeline.py, wrap pp branch, engine PP step/val/clip/save-gate, checkpoint collective, tests, docs."
+    },
+    "CHG-221": {
+      "id": "CHG-221",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T05:39:16+00:00",
+      "updated_at": "2026-08-22T05:39:16+00:00",
+      "touched_round": 89,
+      "commit": "b122230",
+      "title": "PP v1 review fixes (single-rank no-op, batch validation, flash_attn refusal)",
+      "summary": "Fixes from the independent PP review: HIGH single-rank pp runs the serial loop (no raw AttributeError behind misleading inf-loss logs); MEDIUM malformed batches refuse loudly; MEDIUM flash_attn refused under PP's fp32-only; LOW merge-collision / name-map / eval-loss guards. Adds 3 regression tests."
     }
   },
   "edges": [
@@ -18036,6 +18048,12 @@
       "to": "TASK-210",
       "type": "implements",
       "created_at": "2026-08-22T02:54:36+00:00"
+    },
+    {
+      "from": "CHG-221",
+      "to": "TASK-210",
+      "type": "implements",
+      "created_at": "2026-08-22T05:39:16+00:00"
     }
   ]
 }
