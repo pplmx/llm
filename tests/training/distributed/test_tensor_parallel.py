@@ -1095,6 +1095,34 @@ def test_three_d_groups_bijection_and_contiguity():
     assert set().union(*(set(g) for g in pp_groups)) == set(range(8))
 
 
+def test_three_d_rank_groups_selection():
+    """Per-rank group membership: every 3D coordinate maps to the correct
+    tp/pp/dp group it belongs to (TASK-216 groundwork, no live group needed).
+    """
+    from llm.training.distributed import three_d_rank_groups
+
+    # 2x2x2 over 8 ranks. rank=3 -> dp=0, pp=1, tp=1.
+    got = three_d_rank_groups(8, 2, 2, 2, rank=3)
+    assert got[:6] == (2, 2, 2, 0, 1, 1)
+    # Its TP group is the stage (dp=0, pp=1) -> ranks [2, 3]; PP column dp=0 ->
+    # [0,1,2,3]; DP shard (pp=1, tp=1) -> strided [3, 7].
+    assert got[6:] == ([2, 3], [0, 1, 2, 3], [3, 7])
+
+    # rank=5 -> dp=1, pp=0, tp=1.
+    got = three_d_rank_groups(8, 2, 2, 2, rank=5)
+    assert got[:6] == (2, 2, 2, 1, 0, 1)
+    assert got[6:] == ([4, 5], [4, 5, 6, 7], [1, 5])
+
+    # 2x1x2 over 4 ranks (PP=1: pure TP+DP). rank=3 -> dp=1, pp=0, tp=1.
+    got = three_d_rank_groups(4, 2, 1, 2, rank=3)
+    assert got[:6] == (2, 1, 2, 1, 0, 1)
+    assert got[6:] == ([2, 3], [2, 3], [1, 3])
+
+    # Invalid grid is rejected through the resolver.
+    with pytest.raises(ValueError, match="world_size"):
+        three_d_rank_groups(8, 3, 2, 2, rank=0)
+
+
 def _moe_roundtrip_worker(rank: int, world_size: int, results) -> None:
     """MoE expert-parallel checkpoint boundary on CPU (gloo, TASK-207)."""
     try:

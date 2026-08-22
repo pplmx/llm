@@ -175,6 +175,32 @@ def three_d_groups(
     return tp_groups, pp_groups, dp_groups
 
 
+def three_d_rank_groups(
+    world_size: int,
+    dp_size: int,
+    pp_size: int,
+    tp_size: int,
+    rank: int | None = None,
+) -> tuple[int, int, int, int, int, int, list[int], list[int], list[int]]:
+    """Resolve the 3D grid and pick the calling rank's tp/pp/dp group memberships.
+
+    Convenience over :func:`three_d_layout` + :func:`three_d_groups`: returns
+    the rank's coordinates AND the three rank lists describing the groups it
+    belongs to. The caller (TASK-216/217 stage composition) builds
+    ``dist.new_group`` handles from these lists; returning plain rank lists
+    keeps the selection unit-testable without a live process group.
+
+    Returns ``(dp_size, pp_size, tp_size, dp_rank, pp_rank, tp_rank,
+    tp_group, pp_group, dp_group)``.
+    """
+    dp_size, pp_size, tp_size, dp_rank, pp_rank, tp_rank = three_d_layout(world_size, dp_size, pp_size, tp_size, rank)
+    tp_groups, pp_groups, dp_groups = three_d_groups(world_size, dp_size, pp_size, tp_size)
+    tp_group = tp_groups[dp_rank * pp_size + pp_rank]
+    pp_group = pp_groups[dp_rank]
+    dp_group = dp_groups[pp_rank * tp_size + tp_rank]
+    return dp_size, pp_size, tp_size, dp_rank, pp_rank, tp_rank, tp_group, pp_group, dp_group
+
+
 def _fsdp_mixed_precision(dtype: str) -> Any | None:
     """Build a ``MixedPrecision`` policy from the ``fsdp_mixed_precision`` string.
 
