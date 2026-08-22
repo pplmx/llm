@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 90,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T10:42:38+00:00",
+  "updated_at": "2026-08-22T11:19:06+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12245,11 +12245,11 @@
     "TASK-213": {
       "id": "TASK-213",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-22T01:14:06+00:00",
-      "updated_at": "2026-08-22T01:14:06+00:00",
-      "touched_round": 89,
+      "updated_at": "2026-08-22T11:16:54+00:00",
+      "touched_round": 90,
       "category": "performance",
       "severity": 0.4,
       "effort": 4,
@@ -12398,6 +12398,56 @@
       "source": "tests/e2e/test_pp_engine.py (pure-PP 2-proc + 2D 4-proc)",
       "summary": "The checkpoint persists each rank's Adam exp_avg under __pp_stage_states__ and the resumed engine's first moment equals the saved one bit-for-bit (pre-fix resume reset it to fresh state)",
       "confidence": 1.0
+    },
+    "CHG-224": {
+      "id": "CHG-224",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T11:16:54+00:00",
+      "updated_at": "2026-08-22T11:16:54+00:00",
+      "touched_round": 90,
+      "commit": "7151b20",
+      "summary": "PP microbatch overlap (pp_n_microbatches config knob; engine reports MEAN of per-microbatch losses, GPipe normalises grads) + gradient checkpointing (partitioner propagates the model flag; stage forward checkpoints block calls) (TASK-213)"
+    },
+    "EV-208": {
+      "id": "EV-208",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T11:16:54+00:00",
+      "updated_at": "2026-08-22T11:16:54+00:00",
+      "touched_round": 90,
+      "source": "tests/training/distributed/test_pipeline_parallel.py (n_microbatches + GC parity)",
+      "summary": "n_microbatches=2: loss = mean of the 2 chunks == serial full-batch loss and per-stage grads == serial (~1e-5, chunking reorders fp32 reductions); GC model partitions and its stage grads match the checkpointed serial reference (loss abs 1e-5, grads atol/rtol 1e-4)",
+      "confidence": 1.0
+    },
+    "EV-209": {
+      "id": "EV-209",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T11:16:54+00:00",
+      "updated_at": "2026-08-22T11:16:54+00:00",
+      "touched_round": 90,
+      "source": "tests/e2e/test_pp_engine.py::test_pp_microbatch_overlap_engine_trains_and_resumes_two_process_cpu",
+      "summary": "Engine e2e with pp_n_microbatches=2 trains/saves/resumes with all ranks' state dicts bit-identical and optimizer moments restored",
+      "confidence": 1.0
+    },
+    "TASK-214": {
+      "id": "TASK-214",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T11:17:40+00:00",
+      "updated_at": "2026-08-22T11:17:40+00:00",
+      "touched_round": 90,
+      "category": "performance",
+      "severity": 0.4,
+      "effort": 4,
+      "confidence": 0.7,
+      "title": "PP AMP/bf16 support (schedule-internal backward; bf16-only due to loss scaling)",
+      "summary": "The last PP v2 slice scoped out of TASK-213: enable use_amp=True with parallel_strategy='pp'. Constraint found during TASK-213: ScheduleGPipe computes AND backprops the loss inside step(), so a GradScaler cannot scale the loss before the schedule's backward — fp16/AMP is structurally incompatible (scaled-loss requirement). bf16 autocast (no loss scaling) is the viable direction: wrap schedule.step/eval in torch.autocast and verify bit-numerics vs the fp32 pipeline. Needs GPU verification for the real memory/throughput claim; the CPU/gloo parity tests can verify correctness."
     }
   },
   "edges": [
@@ -18165,6 +18215,18 @@
       "to": "TASK-212",
       "type": "implements",
       "created_at": "2026-08-22T10:42:38+00:00"
+    },
+    {
+      "from": "CHG-224",
+      "to": "TASK-213",
+      "type": "implements",
+      "created_at": "2026-08-22T11:16:54+00:00"
+    },
+    {
+      "from": "TASK-214",
+      "to": "TASK-213",
+      "type": "depends_on",
+      "created_at": "2026-08-22T11:19:06+00:00"
     }
   ]
 }
