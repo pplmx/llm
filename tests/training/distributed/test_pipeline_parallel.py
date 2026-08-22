@@ -951,3 +951,45 @@ def test_pp_tp_wrap_composes_and_trains_four_process_cpu() -> None:
         assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
         assert payload["is_pp3d"], f"rank {rank}: composed model not tagged as PP+TP"
         assert payload["loss_first"] > payload["loss_last"], "PP+TP loss did not decrease over optimizer steps"
+
+
+def _pp3d_engine_train_worker(rank: int, world_size: int, results: dict) -> None:
+    """Full TrainingEngine '3d' path: wrap + _run_epoch driver on 4 ranks."""
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
+        from llm.training.core.engine import TrainingEngine
+        from llm.training.tasks.lm_task import LanguageModelingTask
+        from tests.support.data import DummyLMDataModule
+
+        config = Config(
+            model=ModelConfig(vocab_size=64, hidden_size=16, num_layers=4, num_heads=2, max_seq_len=32),
+            training=TrainingConfig(batch_size=2, epochs=1, num_samples=8),
+            optimization=OptimizationConfig(use_compile=False, use_amp=False),
+            distributed=DistributedConfig(backend="gloo", parallel_strategy="3d", dp_size=1, pp_size=2, tp_size=2),
+        )
+        data_module = DummyLMDataModule(config)
+        task = LanguageModelingTask(config, data_module)
+        engine = TrainingEngine(config=config, task=task, rank=rank, world_size=world_size, data_module=data_module)
+        assert is_pp3d(engine.model), "engine must hold a composed PP+TP stage"
+        loss = engine._run_epoch(0)
+        results[rank] = {"loss": float(loss), "is_pp3d": is_pp3d(engine.model), "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_pp3d_engine_train_four_process_cpu() -> None:
+    """TrainingEngine drives '3d' (pp=2 x tp=2) end-to-end: finite, equal loss."""
+    out = _run_spawn_worker(_pp3d_engine_train_worker, 4)
+    losses = [payload["loss"] for rank, payload in out.items()]
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert payload["is_pp3d"], f"rank {rank}: model not PP+TP"
+        assert losses[rank] < float("inf"), f"rank {rank}: loss is NaN/inf"
+    assert losses[0] == pytest.approx(losses[3], abs=1e-4), "broadcast loss must agree across the column"

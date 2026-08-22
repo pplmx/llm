@@ -446,7 +446,7 @@ class DistributedConfig(BaseSettings):
     backend: str = "nccl"
     parallel_strategy: str = Field(
         "ddp",
-        pattern="^(ddp|fsdp|tp|pp)$",
+        pattern="^(ddp|fsdp|tp|pp|3d)$",
         description=(
             "Parallel strategy: 'ddp' (default), 'fsdp', 'tp' (tensor parallelism, "
             "with optional tp_size < world_size for TP+data-parallel 2D), or 'pp' "
@@ -455,7 +455,10 @@ class DistributedConfig(BaseSettings):
             "the world out as pipeline stages (one stage per rank) and only "
             "supports the standard-language-modeling loop: it refuses "
             "non-standard-loop tasks, AMP, torch.compile and TP+FSDP composition "
-            "with a clear error."
+            "with a clear error. '3d' (RIL DEC-052/TASK-216) composes pipeline + "
+            "tensor parallelism (dp_size data-parallel size, dp=1 for pure PP+TP); "
+            "it needs explicit dp_size*pp_size*tp_size == world_size and the "
+            "standard-loop LM contract."
         ),
     )
     tp_size: int = Field(
@@ -487,6 +490,16 @@ class DistributedConfig(BaseSettings):
             "world_size/pp_size DP groups (strided columns holding the same "
             "stage) average gradients across data shards at each step. "
             "world_size must divide evenly by pp_size."
+        ),
+    )
+    dp_size: int = Field(
+        1,
+        ge=0,
+        description=(
+            "Data-parallel size for parallel_strategy='3d' (RIL DEC-052/TASK-216). "
+            "1 (default) means pure pipeline+tensor parallel (no data-parallel "
+            "dimension); > 1 enables the full DP+PP+TP grid (TASK-217). "
+            "world_size must equal dp_size * pp_size * tp_size."
         ),
     )
     pp_n_microbatches: int = Field(
@@ -570,6 +583,18 @@ class DistributedConfig(BaseSettings):
         if requested > available:
             raise ValueError(f"Requested {requested} GPUs but only {available} available")
         return requested
+
+    @model_validator(mode="after")
+    def validate_3d_grid(self) -> DistributedConfig:
+        if self.parallel_strategy != "3d":
+            return self
+        if self.dp_size < 1 or self.pp_size < 1 or self.tp_size < 1:
+            raise ValueError(
+                "parallel_strategy='3d' requires explicit, positive dp_size / pp_size / "
+                f"tp_size (got dp_size={self.dp_size}, pp_size={self.pp_size}, tp_size={self.tp_size}); "
+                "the 3D grid must tile the world exactly."
+            )
+        return self
 
 
 class OptimizationConfig(BaseModel):

@@ -182,6 +182,29 @@ def test_distributed_config_defaults_include_fsdp_knobs():
     assert cfg.fsdp_cpu_offload is False
 
 
+def test_distributed_config_accepts_3d_with_explicit_grid():
+    """'3d' is accepted with explicit dp/pp/tp sizes; missing/invalid rejected.
+
+    RIL DEC-052/TASK-216: '3d' composes pipeline + tensor parallelism, so it
+    requires a positive, explicit dp_size*pp_size*tp_size grid at config load.
+    """
+    cfg = DistributedConfig(parallel_strategy="3d", dp_size=1, pp_size=2, tp_size=2)
+    assert cfg.parallel_strategy == "3d"
+    assert cfg.dp_size == 1
+    assert cfg.pp_size == 2
+    assert cfg.tp_size == 2
+
+    # A '3d' config without an explicit positive grid must refuse loudly.
+    with pytest.raises(ValidationError, match="requires explicit"):
+        DistributedConfig(parallel_strategy="3d")
+    with pytest.raises(ValidationError, match="requires explicit"):
+        DistributedConfig(parallel_strategy="3d", dp_size=0, pp_size=2, tp_size=2)
+
+    # Unknown strategies are still rejected.
+    with pytest.raises(ValidationError, match="parallel_strategy"):
+        DistributedConfig(parallel_strategy="megatron")
+
+
 @pytest.mark.parametrize("dtype", ["fp32", "bf16", "fp16"])
 def test_distributed_config_accepts_known_fsdp_dtypes(dtype):
     cfg = DistributedConfig(fsdp_mixed_precision=dtype)

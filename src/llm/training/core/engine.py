@@ -20,6 +20,7 @@ from llm.training.distributed import (
     clip_grad_norm_tp,
     is_fsdp,
     is_pp,
+    is_pp3d,
     is_tp,
     model_for_checkpoint_io,
     pp_dp_layout,
@@ -238,12 +239,15 @@ class TrainingEngine:
                 "PP on a single rank is a no-op identity (a 1-stage pipeline IS the serial "
                 "model); running the standard loop."
             )
-        if self.config.optimization.use_compile and (self.is_training_tp or self.is_training_pp):
-            strategy = "TP" if self.is_training_tp else "PP"
+        self.is_training_3d = self.config.distributed.parallel_strategy == "3d" and self.world_size > 1
+        if self.config.distributed.parallel_strategy == "3d" and self.world_size <= 1:
+            raise ValueError("parallel_strategy='3d' needs world_size > 1 (a 2-stage x N-TP grid)")
+        if self.config.optimization.use_compile and (self.is_training_tp or self.is_training_pp or self.is_training_3d):
+            strategy = "TP" if self.is_training_tp else ("PP" if self.is_training_pp else "3D")
             self.logger.info(f"{strategy} v1 skips torch.compile (collective-autograd / P2P schedule); running eager.")
         if (
             self.config.optimization.use_compile
-            and not (self.is_training_tp or self.is_training_pp)
+            and not (self.is_training_tp or self.is_training_pp or self.is_training_3d)
             and sys.version_info >= (3, 8)
         ):
             self.logger.info(
@@ -267,21 +271,22 @@ class TrainingEngine:
             device=self.device,
             world_size=self.world_size,
             tp_size=self.config.distributed.tp_size,
+            dp_size=self.config.distributed.dp_size,
             pp_size=self.config.distributed.pp_size,
             pp_n_microbatches=self.config.distributed.pp_n_microbatches,
         )
 
         self.use_standard_loop = self.task.uses_standard_training_loop()
-        if self.is_training_pp:
+        if self.is_training_pp or self.is_training_3d:
             if not self.use_standard_loop:
                 raise ValueError(
-                    "parallel_strategy='pp' only supports standard-loop tasks whose loss is the "
+                    "parallel_strategy='pp'/'3d' only supports standard-loop tasks whose loss is the "
                     "pipeline's LM-shift+CE contract (LMTask family). "
                     f"{type(self.task).__name__} uses a custom training loop."
                 )
             if not self.task.supports_pipeline_parallel():
                 raise ValueError(
-                    f"parallel_strategy='pp' is incompatible with {type(self.task).__name__}: the "
+                    f"parallel_strategy='pp'/'3d' is incompatible with {type(self.task).__name__}: the "
                     "task's train_step passes inputs/attention-mask the pipeline stage forward "
                     "does not reproduce. Use a plain LanguageModelingTask for PP."
                 )
@@ -312,6 +317,13 @@ class TrainingEngine:
             # the group), and gradients are averaged across DP groups at the
             # step boundary via ``allreduce_pp_dp_grads``.
             _pp_size, data_world, data_rank, _pp_rank = pp_dp_layout(self.world_size, self.config.distributed.pp_size)
+        elif self.is_training_3d and self.world_size > 1:
+            # '3d' dp_size==1 (TASK-216): every STAGE must consume the SAME
+            # microbatch sequence (the pipeline pumps it through tensor-
+            # parallelised stages), so all ranks load one replicated shard
+            # (data_rank=0/data_world=1) like pure PP. dp_size>1 (TASK-217)
+            # shards per DP column and averages gradients across columns.
+            data_rank, data_world = 0, 1
         else:
             # Single-rank TP is a no-op identity (mirrors the wrap path), so an
             # explicit tp_size > 1 config on a 1-GPU run must not be validated
@@ -375,9 +387,13 @@ class TrainingEngine:
         # scaling, so ``use_amp + amp_dtype in (auto, bfloat16)`` runs the
         # schedule's forward/backward inside bf16 autocast (the engine wraps
         # ``step``/``eval`` in ``_amp_context``); float16 is refused loudly.
-        if self.is_training_pp and self.config.optimization.use_amp and self.resolved_amp_dtype == "float16":
+        if (
+            (self.is_training_pp or self.is_training_3d)
+            and self.config.optimization.use_amp
+            and self.resolved_amp_dtype == "float16"
+        ):
             raise ValueError(
-                "parallel_strategy='pp' with use_amp=True requires bf16 (set amp_dtype='bfloat16'): "
+                "parallel_strategy='pp'/'3d' with use_amp=True requires bf16 (set amp_dtype='bfloat16'): "
                 "the pipeline schedule computes AND backprops the loss inside step(), so a GradScaler "
                 "(float16 AMP) cannot scale the loss before the schedule's backward. Use bf16 (no "
                 "loss scaling) or fp32."
@@ -604,6 +620,48 @@ class TrainingEngine:
         }
         return loss, metrics
 
+    def _pp3d_train_step(self, batch: Any) -> tuple[torch.Tensor, dict]:
+        """Run one training mini-batch through the PP+TP schedule (TASK-216)."""
+        input_ids, labels = self._pp_extract_inputs(batch)
+        runtime = cast(Any, self.model)._pp3d
+        accum = self.config.optimization.gradient_accumulation_steps
+        losses: list[Any] = []
+        with self._amp_context():
+            # The runtime folds the 1/accum_steps scale into its own loss, so
+            # the accumulated step gradient matches the serial loop (same
+            # contract as _pp_train_step).
+            runtime.step(
+                input_ids,
+                target=labels,
+                criterion=self.criterion,
+                scale=accum,
+                losses=losses,
+            )
+        batch_loss = sum(losses) / len(losses) if losses else torch.tensor(0.0, device=self.device)
+        local = batch_loss * accum
+        loss = runtime.broadcast_last_loss(local)
+        finite = bool(torch.isfinite(loss))
+        metrics = {
+            "loss": loss.item() if finite else 0.0,
+            "ppl": torch.exp(loss).item() if finite and loss.item() < 20 else float("inf"),
+        }
+        return loss, metrics
+
+    def _pp3d_validation_step(self, batch: Any) -> tuple[torch.Tensor, dict]:
+        """Forward-only PP+TP validation step (TASK-216)."""
+        input_ids, labels = self._pp_extract_inputs(batch)
+        runtime = cast(Any, self.model)._pp3d
+        evals: list[Any] = []
+        with self._amp_context():
+            runtime.eval(input_ids, target=labels, criterion=self.criterion, evals=evals)
+        batch_loss = sum(evals) / len(evals) if evals else torch.tensor(0.0, device=self.device)
+        loss = runtime.broadcast_last_loss(batch_loss)
+        metrics = {
+            "val_loss": loss.item(),
+            "val_ppl": torch.exp(loss).item() if loss.item() < 20 else float("inf"),
+        }
+        return loss, metrics
+
     def _run_epoch(self, epoch: int) -> float:
         if self.optimizer is None or self.criterion is None:
             raise RuntimeError("standard-loop components are required")
@@ -662,6 +720,11 @@ class TrainingEngine:
                 # here (a second .backward() would double backprop) and no
                 # ``scaled_loss`` to backprop.
                 loss, metrics = self._pp_train_step(batch)
+            elif self.is_training_3d:
+                # '3d' (TASK-216): the PPTPRuntime step does stage forward AND
+                # backward + folds the 1/accum_steps scale into the loss, so
+                # like PP there is no separate backward / scaled_loss here.
+                loss, metrics = self._pp3d_train_step(batch)
             else:
                 with self._amp_context():
                     loss, metrics = self.task.train_step(batch, self.model, self.criterion)
@@ -679,7 +742,7 @@ class TrainingEngine:
             # ``no_sync()`` exists). Model may be the wrapped DDP module or a
             # plain module in single-process / CPU runs. The PP branch skips
             # this entirely — the schedule backpropped already.
-            if self.is_training_pp:
+            if self.is_training_pp or self.is_training_3d:
                 pass
             elif isinstance(self.model, DistributedDataParallel) and not is_step_boundary:
                 with self.model.no_sync():
@@ -732,6 +795,18 @@ class TrainingEngine:
                         self.model,
                         self.config.training.gradient_clip_val,
                         group=cast(Any, self.model)._pp.group,
+                    )
+                elif is_pp3d(self.model):
+                    # '3d' dp_size==1 (TASK-216): every rank holds a DISJOINT
+                    # TP-sharded stage, so the full-model norm is the sum over
+                    # the whole world column — reduce squared norms over the
+                    # WORLD group so every rank clips its stage by the SAME
+                    # factor (mirrors the PP-aware clip, DEC-049). No DP
+                    # gradient averaging at dp_size==1.
+                    grad_norm = clip_grad_norm_tp(
+                        self.model,
+                        self.config.training.gradient_clip_val,
+                        group=dist.group.WORLD,
                     )
                 else:
                     grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -844,6 +919,8 @@ class TrainingEngine:
                 # forward-only pipeline schedule (``schedule.eval``) instead.
                 if self.is_training_pp:
                     loss, metrics = self._pp_validation_step(batch)
+                elif self.is_training_3d:
+                    loss, metrics = self._pp3d_validation_step(batch)
                 else:
                     with self._amp_context():
                         loss, metrics = self.task.validation_step(batch, self.model, self.criterion)
@@ -954,7 +1031,13 @@ class TrainingEngine:
                 # must enter them via save_checkpoint or rank 0 blocks forever
                 # on the gather. Non-rank-0 ranks enter and discard; only rank
                 # 0 writes and fires the callback.
-                if self.rank == 0 or is_fsdp(self.model) or is_tp(self.model) or is_pp(self.model):
+                if (
+                    self.rank == 0
+                    or is_fsdp(self.model)
+                    or is_tp(self.model)
+                    or is_pp(self.model)
+                    or is_pp3d(self.model)
+                ):
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss
                     self.checkpoint_manager.save_checkpoint(
