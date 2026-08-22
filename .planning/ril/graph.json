@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 91,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T15:38:44+00:00",
+  "updated_at": "2026-08-22T15:49:53+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12529,9 +12529,9 @@
       "id": "TASK-216",
       "type": "task",
       "status": "active",
-      "version": 3,
+      "version": 5,
       "created_at": "2026-08-22T14:49:56+00:00",
-      "updated_at": "2026-08-22T15:11:26+00:00",
+      "updated_at": "2026-08-22T15:49:53+00:00",
       "touched_round": 91,
       "category": "core-feature",
       "severity": 0.5,
@@ -12666,6 +12666,30 @@
       "commit": Infinity,
       "title": "Stage-aware tensor parallelism (apply_tensor_parallel_stage) — removes DEC-053 blocker (b) for TASK-216",
       "summary": "Adds apply_tensor_parallel_stage + _decoder_shell_for_stage; reuses the monolithic transform over a pipeline stage's block slice; gloo 2-process forward-parity verified (EV-215). Runtime PP+TP schedule (blocker a) remains."
+    },
+    "EV-216": {
+      "id": "EV-216",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T15:49:33+00:00",
+      "updated_at": "2026-08-22T15:49:33+00:00",
+      "touched_round": 91,
+      "source": "tests/training/distributed/test_pipeline_parallel.py::test_pp_tp_loss_and_grad_routing_parity_four_process_cpu (gloo/CPU, pp=2 x tp=2)",
+      "summary": "PPTPRuntime (GPipe-style PP+TP schedule, dp_size=1) verified: 4-rank pipeline loss equals the serial LM-shift loss, and every owned parameter across all stages (incl. stage 0) receives a finite gradient - proving the activation and input-gradient P2P route correctly stage-to-stage at fixed tp_rank (DEC-053 blocker (a), schedule half). ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "CHG-229": {
+      "id": "CHG-229",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T15:49:53+00:00",
+      "updated_at": "2026-08-22T15:49:53+00:00",
+      "touched_round": 91,
+      "commit": "6b24497",
+      "title": "PP+TP pipeline schedule (PPTPRuntime) — removes DEC-053 blocker (a) schedule half for TASK-216",
+      "summary": "PPTPRuntime GPipe-style driver verified by 4-rank parity (EV-216). Engine '3d' integration (wrap_model_for_training branch + engine driver) remains in TASK-216."
     }
   },
   "edges": [
@@ -18535,6 +18559,12 @@
       "to": "TASK-216",
       "type": "implements",
       "created_at": "2026-08-22T15:38:44+00:00"
+    },
+    {
+      "from": "CHG-229",
+      "to": "TASK-216",
+      "type": "implements",
+      "created_at": "2026-08-22T15:49:53+00:00"
     }
   ]
 }
