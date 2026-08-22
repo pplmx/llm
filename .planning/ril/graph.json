@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 89,
+  "round": 90,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T05:39:16+00:00",
+  "updated_at": "2026-08-22T10:06:23+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12214,17 +12214,18 @@
     "TASK-211": {
       "id": "TASK-211",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-22T01:14:06+00:00",
-      "updated_at": "2026-08-22T01:14:06+00:00",
-      "touched_round": 89,
+      "updated_at": "2026-08-22T10:04:42+00:00",
+      "touched_round": 90,
       "category": "core-feature",
       "severity": 0.7,
       "effort": 5,
       "confidence": 0.9,
       "title": "PP v2: add pp_size<world_size (PP+data-parallel hybrid) with DP-group gradient averaging",
-      "summary": "After PP v1 (DEC-049/TASK-210, pure pipeline = whole world as stages), add a pp_size knob so multiple pipeline groups train disjoint data shards with DP-group gradient averaging (mirror TASK-202's allreduce_dp_grads for PP), making 8-GPU PP+DP runs throughput-sensible. Requires per-PP-group broadcast of weights and metric wiring across DP groups."
+      "summary": "After PP v1 (DEC-049/TASK-210, pure pipeline = whole world as stages), add a pp_size knob so multiple pipeline groups train disjoint data shards with DP-group gradient averaging (mirror TASK-202's allreduce_dp_grads for PP), making 8-GPU PP+DP runs throughput-sensible. Requires per-PP-group broadcast of weights and metric wiring across DP groups.",
+      "summary-ledger": "resolved by CHG-222 (b1e094c)"
     },
     "TASK-212": {
       "id": "TASK-212",
@@ -12305,6 +12306,75 @@
       "commit": "b122230",
       "title": "PP v1 review fixes (single-rank no-op, batch validation, flash_attn refusal)",
       "summary": "Fixes from the independent PP review: HIGH single-rank pp runs the serial loop (no raw AttributeError behind misleading inf-loss logs); MEDIUM malformed batches refuse loudly; MEDIUM flash_attn refused under PP's fp32-only; LOW merge-collision / name-map / eval-loss guards. Adds 3 regression tests."
+    },
+    "CHG-222": {
+      "id": "CHG-222",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T10:03:23+00:00",
+      "updated_at": "2026-08-22T10:03:23+00:00",
+      "touched_round": 90,
+      "commit": "b1e094c",
+      "summary": "PP+DP 2D hybrid (pp_size < world_size): [DP][PP] row-major grid, PipelineStage over pp-group subgroup with group_src loss broadcast, allreduce_pp_dp_grads at the step boundary, pp_size DistributedConfig knob, engine data sharding per DP group; 2x2 CPU/gloo parity + 4-proc engine e2e"
+    },
+    "EV-204": {
+      "id": "EV-204",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T10:03:23+00:00",
+      "updated_at": "2026-08-22T10:03:23+00:00",
+      "touched_round": 90,
+      "source": "tests/training/distributed/test_pipeline_parallel.py::test_pp_dp_2d_loss_and_grad_parity_four_process_cpu",
+      "summary": "2x2 [DP][PP] PCB: each DP-group loss is bit-exact to the serial shard loss; DP-averaged stage grads equal the serial full-batch grads (atol/rtol 1e-4); merged full state dict bit-identical across all 4 ranks",
+      "confidence": 1.0
+    },
+    "EV-205": {
+      "id": "EV-205",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T10:03:23+00:00",
+      "updated_at": "2026-08-22T10:03:23+00:00",
+      "touched_round": 90,
+      "source": "tests/e2e/test_pp_engine.py::test_pp_dp_2d_engine_trains_and_resumes_four_process_cpu",
+      "summary": "4-process CPU/gloo engine e2e: trains/saves/resumes with pp_size=2 and all four ranks stepping in lockstep, weights moved, full state dicts bit-identical",
+      "confidence": 1.0
+    },
+    "EV-206": {
+      "id": "EV-206",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T10:03:23+00:00",
+      "updated_at": "2026-08-22T10:03:23+00:00",
+      "touched_round": 90,
+      "source": "/tmp/pp_dp_probe.py (TASK-211)",
+      "summary": "torch 2.13 broadcast() treats src as the GLOBAL rank regardless of group; passing the group-LOCAL last-stage index as src deadlocks PP group 1 in a 2x2 grid (src not in the group). Fix = group_src (group-local). Applied in _PPRuntime.broadcast_loss",
+      "confidence": 1.0
+    },
+    "DEC-050": {
+      "id": "DEC-050",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T10:04:42+00:00",
+      "updated_at": "2026-08-22T10:04:42+00:00",
+      "touched_round": 90,
+      "rationale": "PP+DP 2D mirrors TP+DP 2D (TASK-202): [DP][PP] row-major grid keeps pipeline P2P groups contiguous (intranode-friendly), DP groups strided. The step-boundary allreduce_pp_dp_grads (AVG over the DP group) converges stage copies to the full-batch gradient; loss broadcast uses group_src because torch 2.13's broadcast src is the global rank (probe deadlock. Pure PP keeps dp_group=None (no-op).",
+      "alternatives_rejected": "[PP][DP] layout (PP groups strided) would scatter the P2P links across node boundaries; broadcasting weights over each PP group instead of the world adds collectives for no benefit (the engine already broadcasts rank-0's full model).",
+      "summary": "PP + data-parallel 2D grid (TASK-211): [DP][PP] row-major, group_src loss broadcast, DP-group gradient averaging"
+    },
+    "COMP-016": {
+      "id": "COMP-016",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T10:05:50+00:00",
+      "updated_at": "2026-08-22T10:05:50+00:00",
+      "touched_round": 90,
+      "summary": "llm.training.distributed.pipeline — pipeline-stage partition / ScheduleGPipe driver (PP v1 + PP+DP 2D)"
     }
   },
   "edges": [
@@ -18054,6 +18124,18 @@
       "to": "TASK-210",
       "type": "implements",
       "created_at": "2026-08-22T05:39:16+00:00"
+    },
+    {
+      "from": "CHG-222",
+      "to": "TASK-211",
+      "type": "implements",
+      "created_at": "2026-08-22T10:04:42+00:00"
+    },
+    {
+      "from": "DEC-050",
+      "to": "COMP-016",
+      "type": "governs",
+      "created_at": "2026-08-22T10:06:23+00:00"
     }
   ]
 }
