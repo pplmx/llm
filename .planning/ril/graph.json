@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 91,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T14:58:10+00:00",
+  "updated_at": "2026-08-22T15:11:26+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12529,9 +12529,9 @@
       "id": "TASK-216",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 3,
       "created_at": "2026-08-22T14:49:56+00:00",
-      "updated_at": "2026-08-22T14:49:56+00:00",
+      "updated_at": "2026-08-22T15:11:26+00:00",
       "touched_round": 91,
       "category": "core-feature",
       "severity": 0.5,
@@ -12594,6 +12594,54 @@
       "commit": "aa00427",
       "title": "3D [DP][PP][TP] grid layout resolver + group membership tables (TASK-215)",
       "summary": "Adds three_d_layout and three_d_groups to training/distributed/parallel.py, exports them, and adds two unit tests. Foundational slice of the 3D-parallelism milestone."
+    },
+    "EV-213": {
+      "id": "EV-213",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T15:10:34+00:00",
+      "updated_at": "2026-08-22T15:10:34+00:00",
+      "touched_round": 91,
+      "source": "torch/distributed/pipelining/stage.py:181 (PipelineStage group_size<=num_stages) + tensor_parallel.apply_tensor_parallel (monolithic-only: iterates transformer_blocks/lm_head/embedding_layer on the full DecoderModel)",
+      "summary": "Two architectural constraints block the naive '3d' runtime composition: (1) torch 2.13 PipelineStage raises if group_size > num_stages and routes P2P by stage_index % group_size, so ScheduleGPipe cannot drive TP-sharded (multi-rank) stages; (2) apply_tensor_parallel only shards a monolithic DecoderModel, so a pipeline-stage submodule cannot be TP-wrapped without new stage-aware sharding. Verified by reading stage.py:170-215/335-350 and tensor_parallel.py scope.",
+      "confidence": 1.0
+    },
+    "DEC-053": {
+      "id": "DEC-053",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T15:10:41+00:00",
+      "updated_at": "2026-08-22T15:10:41+00:00",
+      "touched_round": 91,
+      "title": "3D PP+TP runtime needs stage-aware tensor-parallelism + a bespoke pipeline schedule (torch ScheduleGPipe cannot drive multi-rank stages)",
+      "rationale": "TASK-216's runtime (parallel_strategy='3d', dp_size=1) cannot reuse torch.distributed.pipelining as-is: PipelineStage forbids group_size>num_stages and derives P2P peers from stage_index%group_size, i.e. it models exactly-one-rank-per-stage. With TP sharding inside a stage the P2P of hidden states must go rank-to-rank between stage TP groups at a fixed tp_rank, which the built-in schedule does not express. The verified 3D grid/group primitives (three_d_layout/three_d_groups/three_d_rank_groups, TASK-215 + this round) give the exact tp/pp/dp rank lists the runtime will need.",
+      "alternatives_rejected": "DTensor/DeviceMesh-based pipelining (torch-native PP+TP) = a large rewrite of apply_tensor_parallel to DTensor placements, out of scope for TASK-216; faking multi-rank stages through the existing ScheduleGPipe = impossible (group_size<=num_stages guard); shipping the '3d' config acceptance before the runtime lands = misleading UX, so config acceptance stays deferred until the schedule exists."
+    },
+    "EV-214": {
+      "id": "EV-214",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T15:11:00+00:00",
+      "updated_at": "2026-08-22T15:11:00+00:00",
+      "touched_round": 91,
+      "source": "tests/training/distributed/test_tensor_parallel.py::test_three_d_rank_groups_selection",
+      "summary": "three_d_rank_groups (per-rank tp/pp/dp membership selection over the 3D grid) verified via pytest; extends the TASK-215 group tables into the exact rank lists the PP+TP runtime (TASK-216) will feed to dist.new_group.",
+      "confidence": 1.0
+    },
+    "CHG-227": {
+      "id": "CHG-227",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T15:11:26+00:00",
+      "updated_at": "2026-08-22T15:11:26+00:00",
+      "touched_round": 91,
+      "commit": "eebdc3a",
+      "title": "3D per-rank group-membership selection (three_d_rank_groups) — TASK-216 groundwork",
+      "summary": "Adds three_d_rank_groups to parallel.py + export + unit tests. Building block for the deferred PP+TP runtime schedule."
     }
   },
   "edges": [
@@ -18445,6 +18493,18 @@
       "to": "ISS-259",
       "type": "resolves",
       "created_at": "2026-08-22T14:57:58+00:00"
+    },
+    {
+      "from": "DEC-053",
+      "to": "TASK-216",
+      "type": "governs",
+      "created_at": "2026-08-22T15:11:00+00:00"
+    },
+    {
+      "from": "CHG-227",
+      "to": "TASK-216",
+      "type": "implements",
+      "created_at": "2026-08-22T15:11:26+00:00"
     }
   ]
 }
