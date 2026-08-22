@@ -9,6 +9,7 @@ from llm.core.bitfit import apply_bitfit
 from llm.core.ia3 import apply_ia3
 from llm.core.peft import apply_peft
 from llm.core.prefix_tuning import apply_prefix_tuning
+from llm.quantization.fake_quant import apply_fake_quant
 from llm.runtime import ModelFactory
 from llm.training.core.callbacks import AdaLoRAPruningCallback
 from llm.training.tasks.base_task import TrainingTask
@@ -106,6 +107,19 @@ class LanguageModelingTask(TrainingTask):
                 model,
                 bottleneck_dim=t_cfg.adapter_bottleneck_dim,
                 target_modules=t_cfg.adapter_target_modules,
+            )
+        # QAT (ROADMAP 13.2 / RIL DEC-054): opt-in fake-quantization. When
+        # ``use_qat=True`` every matching nn.Linear is wrapped in
+        # FakeQuantLinear (dynamic scale, straight-through estimator) so
+        # training adapts the full-precision weights to the deployment
+        # quantization grid — improving post-quant accuracy vs PTQ, which is
+        # unchanged.
+        if getattr(t_cfg, "use_qat", False):
+            apply_fake_quant(
+                model,
+                bits=t_cfg.qat_bits,
+                quant_activation=t_cfg.qat_quant_activation,
+                target_modules=t_cfg.qat_target_modules,
             )
         return model
 

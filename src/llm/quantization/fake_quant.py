@@ -134,3 +134,48 @@ class FakeQuantLinear(nn.Module):
             x = self.fake_a(x)
         w = self.fake_w(self.weight)
         return functional.linear(x, w, self.bias)
+
+
+def _module_matches(name: str, target_modules) -> bool:
+    if not target_modules:
+        return True
+    return any(name.endswith(t) for t in target_modules)
+
+
+def apply_fake_quant(
+    model: nn.Module,
+    *,
+    bits: int = 8,
+    quant_activation: bool = False,
+    target_modules=None,
+) -> nn.Module:
+    """Replace matching ``nn.Linear`` layers with :class:`FakeQuantLinear`.
+
+    The replacement copies the source weights/biases and keeps them as
+    full-precision trainable Parameters (fake quantization only rounds in the
+    forward via the STE), so the QAT training loop can adapt them. ``target_modules``
+    is an iterable of name suffixes (e.g. ``("fc1", "fc2", "qkv_proj")``) or
+    ``None``/empty to quantize every ``nn.Linear``.
+    """
+    targets = [(n, m) for n, m in model.named_modules() if isinstance(m, nn.Linear)]
+    targets = [t for t in targets if _module_matches(t[0], target_modules)]
+    if not targets:
+        raise ValueError(f"apply_fake_quant matched no nn.Linear layers for target_modules={target_modules!r}.")
+    for name, module in targets:
+        parts = name.split(".")
+        parent = model
+        for part in parts[:-1]:
+            parent = getattr(parent, part)
+        replacement = FakeQuantLinear(
+            module.in_features,
+            module.out_features,
+            bias=module.bias is not None,
+            bits=bits,
+            quant_activation=quant_activation,
+        )
+        with torch.no_grad():
+            replacement.weight.copy_(module.weight)
+            if module.bias is not None and replacement.bias is not None:
+                replacement.bias.copy_(module.bias)
+        setattr(parent, parts[-1], replacement)
+    return model

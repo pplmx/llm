@@ -407,6 +407,36 @@ class TrainingConfig(BaseModel):
         ),
     )
 
+    # Quantization-Aware Training (QAT, ROADMAP 13.2 / RIL DEC-054). Optional.
+    # When enabled, ``LanguageModelingTask.build_model`` wraps matching
+    # ``nn.Linear`` layers in ``FakeQuantLinear`` so the forward fake-quantizes
+    # (dynamic scale, straight-through estimator) while the full-precision
+    # weights stay trainable — improving post-quant accuracy vs PTQ.
+    use_qat: bool = Field(False, description="Enable QAT: fake-quantize linear weights during training.")
+    qat_bits: int = Field(
+        8,
+        ge=0,
+        description="QAT uniform symmetric bit width (4 or 8) for the fake quantizer.",
+    )
+    qat_quant_activation: bool = Field(
+        False,
+        description="QAT: also fake-quantize activations (per-tensor) in the quantized linears.",
+    )
+    qat_target_modules: list[str] | None = Field(
+        None,
+        description=(
+            "QAT: name suffixes of the nn.Linear layers to fake-quantize "
+            "(e.g. ['fc1', 'fc2', 'qkv_proj']); None/empty -> every nn.Linear."
+        ),
+    )
+
+    @field_validator("qat_bits")
+    @classmethod
+    def _validate_qat_bits(cls, value: int) -> int:
+        if value not in (4, 8):
+            raise ValueError(f"qat_bits must be 4 or 8, got {value}")
+        return value
+
     @field_validator("peft_method", mode="after")
     @classmethod
     def _validate_peft_method(cls, value: str | None) -> str | None:
