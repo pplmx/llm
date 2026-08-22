@@ -1024,6 +1024,77 @@ def test_tp_dp_layout_2d():
         tp_dp_layout(8, 12, rank=0)
 
 
+def test_three_d_layout_resolver():
+    """DP + PP + TP 3D rank-layout math (row-major [DP][PP][TP], rank injectable).
+
+    Rank = ((dp_rank * pp_size) + pp_rank) * tp_size + tp_rank, so every rank
+    maps to exactly one grid point (TASK-215 / DEC-052).
+    """
+    from llm.training.distributed import three_d_layout
+
+    # Pure / degenerate configurations: an unspecified (<=0) dim defaults to 1,
+    # and the remaining dims must multiply to the world size.
+    assert three_d_layout(8, 1, 8, 1, rank=3) == (1, 8, 1, 0, 3, 0)  # pure PP
+    assert three_d_layout(8, 1, 1, 8, rank=5) == (1, 1, 8, 0, 0, 5)  # pure TP
+    assert three_d_layout(8, 1, 0, 8, rank=7) == (1, 1, 8, 0, 0, 7)  # pp defaults to 1
+
+    # 2x2x2 grid over 8 ranks: rank = ((dp*2)+pp)*2 + tp.
+    assert three_d_layout(8, 2, 2, 2, rank=0) == (2, 2, 2, 0, 0, 0)
+    assert three_d_layout(8, 2, 2, 2, rank=3) == (2, 2, 2, 0, 1, 1)
+    assert three_d_layout(8, 2, 2, 2, rank=5) == (2, 2, 2, 1, 0, 1)
+    assert three_d_layout(8, 2, 2, 2, rank=7) == (2, 2, 2, 1, 1, 1)
+
+    # Uneven 3D: dp=2, pp=1, tp=2 over world 4 (rank = (dp*1 + pp)*2 + tp).
+    assert three_d_layout(4, 2, 1, 2, rank=0) == (2, 1, 2, 0, 0, 0)
+    assert three_d_layout(4, 2, 1, 2, rank=3) == (2, 1, 2, 1, 0, 1)
+
+    # dp=3, pp=2, tp=2 over world 12.
+    assert three_d_layout(12, 3, 2, 2, rank=0) == (3, 2, 2, 0, 0, 0)
+    assert three_d_layout(12, 3, 2, 2, rank=10) == (3, 2, 2, 2, 1, 0)
+    assert three_d_layout(12, 3, 2, 2, rank=11) == (3, 2, 2, 2, 1, 1)
+
+    # Validation: a grid that does not tile the world exactly is rejected.
+    with pytest.raises(ValueError, match="world_size"):
+        three_d_layout(8, 3, 2, 2, rank=0)  # 3*2*2=12 != 8
+    with pytest.raises(ValueError, match="world_size"):
+        three_d_layout(9, 2, 2, 2, rank=0)  # 8 != 9
+
+
+def test_three_d_groups_bijection_and_contiguity():
+    """3D group membership tables: one group per family per rank, contiguous
+    TP/PP runs and strided DP columns (TASK-215).
+    """
+    from llm.training.distributed import three_d_groups
+
+    tp_groups, pp_groups, dp_groups = three_d_groups(8, 2, 2, 2)
+
+    # TP groups: dp*pp = 4 stages, each a contiguous tp_size=2 run.
+    assert tp_groups == [[0, 1], [2, 3], [4, 5], [6, 7]]
+    for g in tp_groups:
+        assert g == list(range(g[0], g[0] + 2)), "TP groups must be contiguous runs"
+
+    # PP groups: dp=2 full pipeline columns of pp*tp = 4 contiguous ranks.
+    assert pp_groups == [[0, 1, 2, 3], [4, 5, 6, 7]]
+    for g in pp_groups:
+        assert g == list(range(g[0], g[0] + 4)), "PP groups must be contiguous columns"
+
+    # DP groups: pp*tp = 4 shards, each strided by pp*tp=4 across DP blocks.
+    assert dp_groups == [[0, 4], [1, 5], [2, 6], [3, 7]]
+
+    # Bijection: every rank is in exactly one group of each family.
+    for family in (tp_groups, pp_groups, dp_groups):
+        seen: set[int] = set()
+        for g in family:
+            for r in g:
+                assert r not in seen, f"rank {r} appears in two groups of the same family"
+                seen.add(r)
+        assert seen == set(range(8)), "every rank must belong to exactly one group per family"
+
+    # Union of all TP-stage params == the world, and PP columns partition it.
+    assert set().union(*(set(g) for g in tp_groups)) == set(range(8))
+    assert set().union(*(set(g) for g in pp_groups)) == set(range(8))
+
+
 def _moe_roundtrip_worker(rank: int, world_size: int, results) -> None:
     """MoE expert-parallel checkpoint boundary on CPU (gloo, TASK-207)."""
     try:

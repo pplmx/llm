@@ -75,9 +75,104 @@ def tp_dp_layout(world_size: int, tp_size: int, rank: int | None = None) -> tupl
         )
     dp_size = world_size // tp_size
     if rank is None:
-        rank = dist.get_rank() if dist.is_available() else 0
+        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
     dp_rank, tp_rank = divmod(rank, tp_size)
     return tp_size, dp_size, dp_rank, tp_rank
+
+
+def three_d_layout(
+    world_size: int,
+    dp_size: int,
+    pp_size: int,
+    tp_size: int,
+    rank: int | None = None,
+) -> tuple[int, int, int, int, int, int]:
+    """Resolve the DP + PP + TP 3D layout of the calling rank.
+
+    3D parallelism (RIL TASK-215, DEC-052) arranges ranks in a row-major
+    ``[DP][PP][TP]`` grid, nesting the two 2D conventions already in the repo:
+    ``rank = ((dp_rank * pp_size) + pp_rank) * tp_size + tp_rank``. TP groups
+    are the innermost contiguous runs of ``tp_size`` ranks (intra-node friendly
+    for the within-stage TP all-reduces); each PP column is the contiguous
+    ``pp_size * tp_size``-rank block holding one pipeline's stages; and the DP
+    copies of a given parameter shard are the strided columns at stride
+    ``pp_size * tp_size`` (the ranks whose gradients must be averaged).
+
+    Returns ``(dp_size, pp_size, tp_size, dp_rank, pp_rank, tp_rank)``.
+
+    Args:
+        world_size: Total number of ranks.
+        dp_size: Data-parallel size. ``None`` / ``0`` / negative collapses to
+            ``1`` (no DP dimension).
+        pp_size: Pipeline size. ``None`` / ``0`` / negative collapses to ``1``
+            (no PP dimension).
+        tp_size: Tensor-parallel size. ``None`` / ``0`` / negative collapses
+            to ``1`` (no TP dimension).
+        rank: Global rank (defaults to ``dist.get_rank()``; injectable for
+            unit tests outside a live process group).
+
+    Raises:
+        ValueError: if ``dp_size * pp_size * tp_size != world_size`` (the grid
+            must tile the world exactly so every rank agrees on one layout).
+    """
+    dp_size = max(1, dp_size or 1)
+    pp_size = max(1, pp_size or 1)
+    tp_size = max(1, tp_size or 1)
+    if dp_size * pp_size * tp_size != world_size:
+        raise ValueError(
+            f"dp_size={dp_size} * pp_size={pp_size} * tp_size={tp_size} = "
+            f"{dp_size * pp_size * tp_size} != world_size={world_size}; the 3D grid must "
+            "tile the world exactly (every rank must agree on one layout)."
+        )
+    if rank is None:
+        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    dp_rank, rem = divmod(rank, pp_size * tp_size)
+    pp_rank, tp_rank = divmod(rem, tp_size)
+    return dp_size, pp_size, tp_size, dp_rank, pp_rank, tp_rank
+
+
+def three_d_groups(
+    world_size: int,
+    dp_size: int,
+    pp_size: int,
+    tp_size: int,
+) -> tuple[list[list[int]], list[list[int]], list[list[int]]]:
+    """Return the rank lists for the three grid families of a ``[DP][PP][TP]``
+    layout, as pure (side-effect-free) membership tables.
+
+    The caller builds ``dist.new_group`` handle lists from these rank lists —
+    a world collective that must be issued identically on every rank — then
+    picks the handles for the groups this rank belongs to (mirroring
+    ``tp_dp_layout`` / ``pp_dp_layout``). Returning plain rank lists keeps this
+    slice testable without a live process group (TASK-215) while giving
+    TASK-216/217 the exact groups to materialise.
+
+    Returns ``(tp_groups, pp_groups, dp_groups)`` where:
+
+    * ``tp_groups``: one per ``(dp, pp)`` stage, a contiguous ``tp_size`` run
+      within the stage (``dp_size * pp_size`` groups).
+    * ``pp_groups``: one per ``dp``, the whole contiguous pipeline column of
+      ``pp_size * tp_size`` ranks (``dp_size`` groups).
+    * ``dp_groups``: one per ``(pp, tp)`` parameter shard, the strided column
+      at stride ``pp_size * tp_size`` across DP blocks (``pp_size * tp_size``
+      groups).
+
+    Every rank belongs to exactly one group of each family (bijection is
+    asserted in the unit tests).
+    """
+    dp_size, pp_size, tp_size, *_ = three_d_layout(world_size, dp_size, pp_size, tp_size)
+    block = pp_size * tp_size
+
+    tp_groups: list[list[int]] = []
+    for d in range(dp_size):
+        for p in range(pp_size):
+            base = d * block + p * tp_size
+            tp_groups.append(list(range(base, base + tp_size)))
+
+    pp_groups = [list(range(d * block, (d + 1) * block)) for d in range(dp_size)]
+
+    dp_groups = [[base + d * block for d in range(dp_size)] for base in range(block)]
+    return tp_groups, pp_groups, dp_groups
 
 
 def _fsdp_mixed_precision(dtype: str) -> Any | None:

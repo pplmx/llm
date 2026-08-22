@@ -9,6 +9,8 @@ from llm.training.distributed.parallel import (
     load_model_state_dict,
     model_for_checkpoint_io,
     model_state_dict,
+    three_d_groups,
+    three_d_layout,
     tp_dp_layout,
     wrap_model_for_training,
 )
@@ -36,6 +38,8 @@ __all__ = [
     "model_state_dict",
     "partition_decoder_model",
     "pp_dp_layout",
+    "three_d_groups",
+    "three_d_layout",
     "tp_dp_layout",
     "wrap_model_for_training",
 ]
