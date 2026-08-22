@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 90,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T11:19:06+00:00",
+  "updated_at": "2026-08-22T11:40:41+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12437,10 +12437,10 @@
     "TASK-214": {
       "id": "TASK-214",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-22T11:17:40+00:00",
-      "updated_at": "2026-08-22T11:17:40+00:00",
+      "updated_at": "2026-08-22T11:40:41+00:00",
       "touched_round": 90,
       "category": "performance",
       "severity": 0.4,
@@ -12448,6 +12448,41 @@
       "confidence": 0.7,
       "title": "PP AMP/bf16 support (schedule-internal backward; bf16-only due to loss scaling)",
       "summary": "The last PP v2 slice scoped out of TASK-213: enable use_amp=True with parallel_strategy='pp'. Constraint found during TASK-213: ScheduleGPipe computes AND backprops the loss inside step(), so a GradScaler cannot scale the loss before the schedule's backward — fp16/AMP is structurally incompatible (scaled-loss requirement). bf16 autocast (no loss scaling) is the viable direction: wrap schedule.step/eval in torch.autocast and verify bit-numerics vs the fp32 pipeline. Needs GPU verification for the real memory/throughput claim; the CPU/gloo parity tests can verify correctness."
+    },
+    "CHG-225": {
+      "id": "CHG-225",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T11:40:41+00:00",
+      "updated_at": "2026-08-22T11:40:41+00:00",
+      "touched_round": 90,
+      "commit": "e09157b",
+      "summary": "PP bf16 AMP support (TASK-214): schedule.step/eval wrapped in _amp_context; float16 refused (GradScaler cannot scale losses before the schedule's internal backward); blanket use_amp refusal lifted to bf16-only"
+    },
+    "EV-210": {
+      "id": "EV-210",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T11:40:41+00:00",
+      "updated_at": "2026-08-22T11:40:41+00:00",
+      "touched_round": 90,
+      "source": "tests/e2e/test_pp_engine.py::test_pp_bf16_amp_engine_trains_and_resumes_two_process_cpu",
+      "summary": "2-process CPU/gloo engine e2e under bf16 autocast trains/saves/resumes with weights bit-identical across ranks and fp32 optimizer moments restored; float16 AMP refused at setup (test_pp_refuses_float16_amp_two_process_cpu)",
+      "confidence": 1.0
+    },
+    "DEC-051": {
+      "id": "DEC-051",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T11:40:41+00:00",
+      "updated_at": "2026-08-22T11:40:41+00:00",
+      "touched_round": 90,
+      "rationale": "PP AMP is bf16-only because ScheduleGPipe computes AND backprops the loss inside step(); a GradScaler (float16) cannot scale the loss before the schedule's backward, so fp16 would update with unscaled gradients. bf16 needs no scaling and runs the whole stage forward/backward inside autocast.",
+      "alternatives_rejected": "Wrapping each stage forward in its own autocast and scaling the loss at the last stage would require forking the schedule's loss path; patching torch pipelining is out of scope. fp16 via manual scaling before step() is impossible (the schedule splits the batch internally).",
+      "summary": "PP + AMP uses bf16 only; float16 refused (TASK-214)"
     }
   },
   "edges": [
@@ -18227,6 +18262,12 @@
       "to": "TASK-213",
       "type": "depends_on",
       "created_at": "2026-08-22T11:19:06+00:00"
+    },
+    {
+      "from": "CHG-225",
+      "to": "TASK-214",
+      "type": "implements",
+      "created_at": "2026-08-22T11:40:41+00:00"
     }
   ]
 }
