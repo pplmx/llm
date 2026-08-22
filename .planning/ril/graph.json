@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 91,
+  "round": 92,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T16:17:16+00:00",
+  "updated_at": "2026-08-22T16:23:44+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12762,6 +12762,105 @@
       "commit": "2c1110b",
       "title": "Full DP+PP+TP 3D engine (dp_size>1) — completes TASK-217",
       "summary": "Column data split + cross-column DP gradient averaging + column clip in PPTPRuntime/wrap/engine; 8-rank runtime + engine e2e (EV-219)."
+    },
+    "ISS-260": {
+      "id": "ISS-260",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:19:43+00:00",
+      "updated_at": "2026-08-22T16:19:43+00:00",
+      "touched_round": 92,
+      "title": "QAT (Quantization-Aware Training) unimplemented — fake quantization + STE missing (ROADMAP 13.2)",
+      "summary": "ROADMAP §13.2 lists QAT (fake quantization + quantized training loop + quant-param search) as unchecked. Only PTQ exists (simple/GPTQ/AWQ/SmoothQuant/FP8). A fake-quant path with a straight-through estimator lets weights train through quantization so the model is robust to deployment in the target format (INT8/FP8).",
+      "severity": 0.4
+    },
+    "DEC-054": {
+      "id": "DEC-054",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:19:50+00:00",
+      "updated_at": "2026-08-22T16:19:50+00:00",
+      "touched_round": 92,
+      "title": "Milestone: QAT (fake quantization w/ straight-through estimator + trainable weights) is the next quantization milestone after PTQ (incl. FP8)",
+      "rationale": "Quantization is a declared P1/P2 bucket (DEC-046/048) and PTQ is complete (simple/GPTQ/AWQ/SmoothQuant/FP8). ROADMAP §13.2 (QAT) is the natural completion: fake-quant in the forward with an approximate (straight-through) gradient lets training adapt weights to the deployment quantization grid, improving post-quant accuracy vs PTQ while reusing the existing layer/CLI surface. In-repo and CPU-verifiable (no multiprocess/GPU), unlike DeepSpeed ZeRO (external engine) or multimodal (large design space).",
+      "alternatives_rejected": "DeepSpeed ZeRO = external engine the repo would not own (DEC-049/053); multimodal = new vision subsystem with no scaffolding; knowledge-distillation / pruning (ROADMAP 13.4) = separate compression concerns that depend on a usable QAT base; GPTQ/AWQ/SmoothQuant-style PTQ = already complete and does not make weights trainable."
+    },
+    "TASK-218": {
+      "id": "TASK-218",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-22T16:20:06+00:00",
+      "updated_at": "2026-08-22T16:23:44+00:00",
+      "touched_round": 92,
+      "category": "core-feature",
+      "severity": 0.5,
+      "effort": 0.3,
+      "confidence": 0.9,
+      "unlock_factor": 1.4,
+      "title": "FakeQuantize (straight-through estimator) + FakeQuantLinear + unit tests",
+      "summary": "Implement quantization/fake_quant.py with a FakeQuantize module (symmetric INT8 grid + FP8/E4M3/E5M2 grids) that rounds in forward and passes the gradient through unchanged (straight-through estimator), plus FakeQuantLinear that fake-quants weights (and optionally activations). Unit tests: forward equals hard-quantized grid values; STE gives finite, non-degenerate gradients so underlying fp32 weights stay trainable; round-trip error bounded per grid. First QAT slice.",
+      "priority_score": 6.3
+    },
+    "TASK-219": {
+      "id": "TASK-219",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:20:06+00:00",
+      "updated_at": "2026-08-22T16:20:06+00:00",
+      "touched_round": 92,
+      "category": "core-feature",
+      "severity": 0.5,
+      "effort": 0.6,
+      "confidence": 0.8,
+      "unlock_factor": 1.2,
+      "title": "QAT training integration (TrainingConfig opt-in + build_model apply fake-quant + loss-decrease e2e)",
+      "summary": "Add a TrainingConfig.use_qat flag + LanguageModelingTask.build_model applies FakeQuantLinear to target modules; a small QAT training loop (fake-quant weights/acts, STE backward) must decrease loss and leave deployable fp32 weights. e2e verifies the quantized forward path trains.",
+      "priority_score": 8.5
+    },
+    "TASK-220": {
+      "id": "TASK-220",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:20:06+00:00",
+      "updated_at": "2026-08-22T16:20:06+00:00",
+      "touched_round": 92,
+      "category": "performance",
+      "severity": 0.4,
+      "effort": 0.5,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "QAT quant-parameter fit: calibration-initialized / learnable scales + floor-cap per channel",
+      "summary": "Extend fake-quant to fit per-channel scale from calibration (or a learnable high-precision scale) and apply a quantization floor-cap so small magnitudes do not collapse; verify gradient flows through the scale parameter. Follow-up to TASK-218/219.",
+      "priority_score": 5.0
+    },
+    "EV-220": {
+      "id": "EV-220",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:23:07+00:00",
+      "updated_at": "2026-08-22T16:23:07+00:00",
+      "touched_round": 92,
+      "source": "tests/quantization/test_fake_quant.py::test_ste_round_forward_hard_backward_identity, test_fake_quant_linear_trains_and_reduces_loss (CPU)",
+      "summary": "FakeQuantize/FakeQuantLinear verified: STE round gives identity backward, forward matches the hard per-channel symmetric grid, round-trip error bounded, and a QAT loop (fake-quant weights+acts, SGD) reduces loss through the quantizer - the TASK-218 fake-quant slice is complete and CPU-verifiable.",
+      "confidence": 1.0
+    },
+    "CHG-233": {
+      "id": "CHG-233",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:23:40+00:00",
+      "updated_at": "2026-08-22T16:23:40+00:00",
+      "touched_round": 92,
+      "commit": "ca41908",
+      "title": "QAT fake quantization + STE (completes TASK-218)",
+      "summary": "FakeQuantize/FakeQuantLinear with straight-through estimator + 6 unit tests (EV-220). TASK-219 (training integration) and TASK-220 (scales) remain."
     }
   },
   "edges": [
@@ -18667,6 +18766,66 @@
       "to": "ISS-259",
       "type": "resolves",
       "created_at": "2026-08-22T16:16:31+00:00"
+    },
+    {
+      "from": "TASK-218",
+      "to": "ISS-260",
+      "type": "addresses",
+      "created_at": "2026-08-22T16:20:14+00:00"
+    },
+    {
+      "from": "TASK-219",
+      "to": "ISS-260",
+      "type": "addresses",
+      "created_at": "2026-08-22T16:20:14+00:00"
+    },
+    {
+      "from": "TASK-220",
+      "to": "ISS-260",
+      "type": "addresses",
+      "created_at": "2026-08-22T16:20:14+00:00"
+    },
+    {
+      "from": "TASK-219",
+      "to": "TASK-218",
+      "type": "depends_on",
+      "created_at": "2026-08-22T16:20:14+00:00"
+    },
+    {
+      "from": "TASK-220",
+      "to": "TASK-218",
+      "type": "depends_on",
+      "created_at": "2026-08-22T16:20:14+00:00"
+    },
+    {
+      "from": "TASK-220",
+      "to": "TASK-219",
+      "type": "depends_on",
+      "created_at": "2026-08-22T16:20:14+00:00"
+    },
+    {
+      "from": "DEC-054",
+      "to": "TASK-218",
+      "type": "governs",
+      "created_at": "2026-08-22T16:20:14+00:00"
+    },
+    {
+      "from": "DEC-054",
+      "to": "TASK-219",
+      "type": "governs",
+      "created_at": "2026-08-22T16:20:14+00:00"
+    },
+    {
+      "from": "DEC-054",
+      "to": "TASK-220",
+      "type": "governs",
+      "created_at": "2026-08-22T16:20:15+00:00"
+    },
+    {
+      "from": "CHG-233",
+      "to": "TASK-218",
+      "type": "implements",
+      "created_at": "2026-08-22T16:23:40+00:00"
     }
   ]
 }
