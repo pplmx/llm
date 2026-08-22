@@ -33,6 +33,7 @@ from llm.training.distributed import (
     apply_tensor_parallel_stage,
     build_pipeline_model,
     clip_grad_norm_tp,
+    is_pp3d,
     lm_shift_loss,
     partition_decoder_model,
     pp_dp_layout,
@@ -886,3 +887,67 @@ def test_pp_tp_loss_and_grad_routing_parity_four_process_cpu() -> None:
         assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
         assert losses[rank] == pytest.approx(ref["loss"], abs=1e-6), f"rank {rank} loss mismatch"
         assert payload["grads_present"], f"rank {rank}: an owned parameter missed its gradient (P2P backroute)"
+
+
+def _pp_tp_wrap_train_worker(rank: int, world_size: int, results: dict) -> None:
+    """Compose via ``wrap_model_for_training('3d')`` and drive an optimizer.
+
+    Proves the wrap '3d' branch (RIL TASK-216) produces a trainable composed
+    stage: the PPTPRuntime step + optimizer cycle decreases the broadcast loss
+    (the mechanics the engine training loop will call).
+    """
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        import torch.optim as optim
+
+        torch.manual_seed(SEED)
+        model = _build_model().to(torch.device("cpu"))
+        stage = wrap_model_for_training(
+            model,
+            parallel_strategy="3d",
+            device=torch.device("cpu"),
+            world_size=world_size,
+            tp_size=2,
+            dp_size=1,
+            pp_size=2,
+        )
+        assert is_pp3d(stage), "wrap '3d' must tag the composed stage"
+        runtime = stage._pp3d
+        optimizer = optim.SGD(stage.parameters(), lr=0.01)
+        criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        input_ids, labels = _make_inputs()
+        losses: list = []
+        first = last = float("inf")
+        for step_idx in range(3):
+            losses.clear()
+            runtime.step(input_ids, target=labels, criterion=criterion, scale=1.0, losses=losses)
+            local = losses[-1] if losses else torch.zeros((), dtype=torch.float32)
+            loss = runtime.broadcast_last_loss(local)
+            optimizer.step()
+            optimizer.zero_grad()
+            if step_idx == 0:
+                first = loss.item()
+            last = loss.item()
+        results[rank] = {
+            "loss_first": first,
+            "loss_last": last,
+            "is_pp3d": is_pp3d(stage),
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_pp_tp_wrap_composes_and_trains_four_process_cpu() -> None:
+    """wrap_model_for_training('3d') yields a trainable PP+TP stage on 4 ranks."""
+    out = _run_spawn_worker(_pp_tp_wrap_train_worker, 4)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert payload["is_pp3d"], f"rank {rank}: composed model not tagged as PP+TP"
+        assert payload["loss_first"] > payload["loss_last"], "PP+TP loss did not decrease over optimizer steps"

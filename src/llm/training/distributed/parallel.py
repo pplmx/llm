@@ -26,8 +26,9 @@ import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
 
-from llm.training.distributed.pipeline import build_pipeline_model, is_pp, pp_dp_layout
-from llm.training.distributed.tensor_parallel import apply_tensor_parallel
+from llm.training.distributed.pipeline import build_pipeline_model, is_pp, partition_decoder_model, pp_dp_layout
+from llm.training.distributed.pp_tp import PPTPRuntime
+from llm.training.distributed.tensor_parallel import apply_tensor_parallel, apply_tensor_parallel_stage
 
 # State-dict strategy for FSDP save / load.
 #
@@ -285,6 +286,7 @@ def wrap_model_for_training(
     fsdp_auto_wrap_min_params: int = 10_000_000,
     fsdp_cpu_offload: bool = False,
     tp_size: int = 1,
+    dp_size: int = 1,
     pp_size: int = 0,
     pp_n_microbatches: int = 1,
 ) -> nn.Module:
@@ -367,6 +369,41 @@ def wrap_model_for_training(
             pp_rank=pp_rank,
             n_microbatches=pp_n_microbatches,
         )
+
+    if parallel_strategy == "3d":
+        # PP+TP composition (RIL DEC-052/TASK-216), dp_size = 1 (pure pipeline +
+        # tensor-parallel within each stage). Like TP and PP it runs on CPU
+        # ranks (gloo) for multi-process numeric verification, so it does NOT
+        # take the DDP/FSDP CPU-no-op early return below. Layout: row-major
+        # [DP][PP][TP], so every rank's stage index is ``rank // tp_size`` and
+        # its stage TP group is the contiguous ``tp_size``-rank run at
+        # ``pp_rank * tp_size``.
+        if world_size <= 1:
+            raise ValueError("parallel_strategy='3d' needs world_size > 1 (a 2-stage x N-TP grid)")
+        if dp_size is None or dp_size < 1:
+            dp_size = 1
+        if pp_size is None or pp_size < 2:
+            raise ValueError("parallel_strategy='3d' needs an explicit pp_size >= 2")
+        if tp_size is None or tp_size < 1:
+            raise ValueError("parallel_strategy='3d' needs an explicit tp_size >= 1")
+        if dp_size > 1:
+            raise NotImplementedError(
+                "parallel_strategy='3d' with dp_size>1 (full DP+PP+TP 3D) is RIL TASK-217; "
+                "this slice supports dp_size=1 (pure PP+TP)."
+            )
+        _dp, ppr, tpr, _dp_rank, pp_rank, _tp_rank = three_d_layout(world_size, dp_size, pp_size, tp_size)
+        tp_groups, _pp_groups, _dp_groups = three_d_groups(world_size, dp_size, ppr, tpr)
+        # ``dist.new_group`` is a world collective: every rank creates the SAME
+        # set of TPG groups in the same order, then keeps its own stage handle.
+        group_handles = [dist.new_group(ranks=list(g)) for g in tp_groups]
+        stage_tp_group = group_handles[pp_rank]
+        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+        stages = partition_decoder_model(cast(Any, model), ppr)
+        stage = stages[pp_rank].to(device)
+        apply_tensor_parallel_stage(stage, model=cast(Any, model), process_group=stage_tp_group)
+        runtime = PPTPRuntime(rank=rank, pp_size=ppr, tp_size=tpr, stage=stage, device=device)
+        cast(Any, stage)._pp3d = runtime
+        return stage
 
     if parallel_strategy != "tp" and (world_size <= 1 or device.type != "cuda"):
         # DDP/FSDP are no-ops for single-rank or CPU-only runs.
@@ -551,6 +588,18 @@ def is_tp(model: nn.Module) -> bool:
     dict.
     """
     return getattr(model, "_tp", None) is not None
+
+
+def is_pp3d(model: nn.Module) -> bool:
+    """True when ``model`` is a PP+TP composed stage tagged by the '3d' branch.
+
+    ``wrap_model_for_training(..., parallel_strategy='3d')`` partitions the
+    model into pipeline stages, tensor-parallelises this rank's stage, and tags
+    it with ``_pp3d`` carrying the :class:`PPTPRuntime` (<RIL TASK-216>). The
+    tag lets the engine / checkpoint helpers recognise the composed stage like
+    ``is_pp`` / ``is_tp`` do for their strategies.
+    """
+    return getattr(model, "_pp3d", None) is not None
 
 
 def allreduce_dp_grads(model: nn.Module) -> None:
