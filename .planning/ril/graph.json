@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 90,
+  "round": 91,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T11:40:41+00:00",
+  "updated_at": "2026-08-22T14:58:10+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12483,6 +12483,117 @@
       "rationale": "PP AMP is bf16-only because ScheduleGPipe computes AND backprops the loss inside step(); a GradScaler (float16) cannot scale the loss before the schedule's backward, so fp16 would update with unscaled gradients. bf16 needs no scaling and runs the whole stage forward/backward inside autocast.",
       "alternatives_rejected": "Wrapping each stage forward in its own autocast and scaling the loss at the last stage would require forking the schedule's loss path; patching torch pipelining is out of scope. fp16 via manual scaling before step() is impossible (the schedule splits the batch internally).",
       "summary": "PP + AMP uses bf16 only; float16 refused (TASK-214)"
+    },
+    "ISS-259": {
+      "id": "ISS-259",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T14:49:35+00:00",
+      "updated_at": "2026-08-22T14:49:35+00:00",
+      "touched_round": 91,
+      "title": "3D parallelism (DP+PP+TP) unsupported — pipeline refuses composition with TP",
+      "summary": "DEC-049 (PP milestone) anticipated 3D (DP+TP+PP) as a follow-up once PP existed. Current wrap_model_for_training v1 raises 'pipeline parallelism cannot be composed with another parallel_strategy in v1' (parallel.py:225). All three strategies + both 2D combos (TP+DP TASK-202, PP+DP TASK-211) exist individually; 3D is the natural next distributed milestone.",
+      "severity": 0.4
+    },
+    "DEC-052": {
+      "id": "DEC-052",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T14:49:46+00:00",
+      "updated_at": "2026-08-22T14:49:46+00:00",
+      "touched_round": 91,
+      "title": "Milestone: 3D parallelism (DP+PP+TP) is the next distributed milestone after the PP v2 line closed",
+      "rationale": "ROADMAP P2 declares advanced distributed training (TP/PP/DeepSpeed/3D). The PP v2 line (TASK-211/212/213/214) closed fully (graph 1034, ZERO active tasks). DEC-049 explicitly rejected 3D only because it 'depends on PP existing first' — PP now exists (v1 + v2 scope). Every ingredient is in-repo: tp_dp_layout (TASK-202), pp_dp_layout (TASK-211), apply_tensor_parallel, build_pipeline_model, allreduce_dp_grads/allreduce_pp_dp_grads. 3D grids real multi-GPU training across DP×PP×TP; keeping PP P2P groups and TP groups contiguous (row-major [DP][PP][TP]) mirrors the existing 2D conventions.",
+      "alternatives_rejected": "DeepSpeed ZeRO = external engine the repo would not own (DEC-049); multimodal spike (P1) = brand-new vision subsystem with no scaffolding; quant FP8 line = already scoped/bucket (DEC-046/048) and orthogonal to the distributed trajectory; jumping straight to a full 3D engine without a validated grid layout/groups first risks a large untestable change."
+    },
+    "TASK-215": {
+      "id": "TASK-215",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-22T14:49:53+00:00",
+      "updated_at": "2026-08-22T14:58:10+00:00",
+      "touched_round": 91,
+      "category": "core-feature",
+      "severity": 0.5,
+      "effort": 0.3,
+      "confidence": 0.9,
+      "unlock_factor": 1.4,
+      "title": "3D grid layout resolver + group construction + unit tests",
+      "summary": "Implement three_d_layout(world_size, dp_size, pp_size, tp_size, rank) in training/distributed/parallel.py mirroring tp_dp_layout/pp_dp_layout row-major convention: rank = ((dp_rank*pp_size)+pp_rank)*tp_size + tp_rank, so TP groups are contiguous within each PP stage and PP groups contiguous within each DP. Validate dp*pp*tp == world_size, all >=1, divide evenly. Provide group-construction helpers (pp/tp/dp process groups) and unit tests proving bijection, contiguity, and rejections. Foundational slice for 3D; unlocks stage+engine integration.",
+      "priority_score": 6.3
+    },
+    "TASK-216": {
+      "id": "TASK-216",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T14:49:56+00:00",
+      "updated_at": "2026-08-22T14:49:56+00:00",
+      "touched_round": 91,
+      "category": "core-feature",
+      "severity": 0.5,
+      "effort": 0.7,
+      "confidence": 0.8,
+      "unlock_factor": 1.2,
+      "title": "PP+TP stage composition and engine '3d' branch (no DP)",
+      "summary": "Allow parallel_strategy='3d' with dp_size=1 (pure PP+TP): apply apply_tensor_parallel within each pipeline stage's TP group, wire P2P stage links + TP all-reduce within stage, PP-group loss broadcast, PP-group grad-norm clip. Replace the v1 refusal 'cannot be composed with another parallel_strategy' for the tp+pp combination. Parity probe: 2-stage × 2-way-TP matching serial reference.",
+      "priority_score": 9.0
+    },
+    "TASK-217": {
+      "id": "TASK-217",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T14:50:09+00:00",
+      "updated_at": "2026-08-22T14:50:09+00:00",
+      "touched_round": 91,
+      "category": "core-feature",
+      "severity": 0.6,
+      "effort": 0.9,
+      "confidence": 0.75,
+      "unlock_factor": 1.0,
+      "title": "Full DP+PP+TP 3D engine: data split, DP grad allreduce across 3D grid, parity probe + e2e",
+      "summary": "Complete the '3d' strategy with dp_size>1: engine splits data by DP groups, step boundary allreduce_dp_grads over the strided DP columns of the 3D grid, loss broadcast within PP groups and TP groups consistent per stage. 2x2x2 (8-proc) parity probe + multi-process engine e2e (train/save/resume) matching serial reference. Depends on TASK-215 (grid/groups) and TASK-216 (stage composition).",
+      "priority_score": 4.0
+    },
+    "EV-211": {
+      "id": "EV-211",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T14:50:19+00:00",
+      "updated_at": "2026-08-22T14:50:19+00:00",
+      "touched_round": 91,
+      "source": "parallel.py:217-226 (v1 refusal 'cannot be composed with another parallel_strategy')",
+      "summary": "The v1 wrap_model_for_training refuses PP+TP composition; tp_dp_layout and pp_dp_layout both already exist, proving the row-major grid pattern needed for 3D is established in-repo.",
+      "confidence": 1.0
+    },
+    "EV-212": {
+      "id": "EV-212",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T14:56:20+00:00",
+      "updated_at": "2026-08-22T14:56:20+00:00",
+      "touched_round": 91,
+      "source": "tests/training/distributed/test_tensor_parallel.py::test_three_d_layout_resolver, test_three_d_groups_bijection_and_contiguity",
+      "summary": "3D [DP][PP][TP] grid resolver and group-membership tables verified: row-major rank=((dp*pp)+t)*tp subformula matches manual expectations for 2x2x2, dp=2/pp=1/tp=2, dp=3/pp=2/tp=2 grids; group families prove bijection (one group per family per rank), contiguous TP/PP runs and strided DP columns; invalid grids rejected. both tests pass under pytest; ruff clean; ty clean on source.",
+      "confidence": 1.0
+    },
+    "CHG-226": {
+      "id": "CHG-226",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T14:57:55+00:00",
+      "updated_at": "2026-08-22T14:57:55+00:00",
+      "touched_round": 91,
+      "commit": "aa00427",
+      "title": "3D [DP][PP][TP] grid layout resolver + group membership tables (TASK-215)",
+      "summary": "Adds three_d_layout and three_d_groups to training/distributed/parallel.py, exports them, and adds two unit tests. Foundational slice of the 3D-parallelism milestone."
     }
   },
   "edges": [
@@ -18268,6 +18379,72 @@
       "to": "TASK-214",
       "type": "implements",
       "created_at": "2026-08-22T11:40:41+00:00"
+    },
+    {
+      "from": "TASK-215",
+      "to": "ISS-259",
+      "type": "addresses",
+      "created_at": "2026-08-22T14:50:18+00:00"
+    },
+    {
+      "from": "TASK-216",
+      "to": "ISS-259",
+      "type": "addresses",
+      "created_at": "2026-08-22T14:50:18+00:00"
+    },
+    {
+      "from": "TASK-217",
+      "to": "ISS-259",
+      "type": "addresses",
+      "created_at": "2026-08-22T14:50:18+00:00"
+    },
+    {
+      "from": "TASK-216",
+      "to": "TASK-215",
+      "type": "depends_on",
+      "created_at": "2026-08-22T14:50:18+00:00"
+    },
+    {
+      "from": "TASK-217",
+      "to": "TASK-215",
+      "type": "depends_on",
+      "created_at": "2026-08-22T14:50:18+00:00"
+    },
+    {
+      "from": "TASK-217",
+      "to": "TASK-216",
+      "type": "depends_on",
+      "created_at": "2026-08-22T14:50:18+00:00"
+    },
+    {
+      "from": "DEC-052",
+      "to": "TASK-215",
+      "type": "governs",
+      "created_at": "2026-08-22T14:50:18+00:00"
+    },
+    {
+      "from": "DEC-052",
+      "to": "TASK-216",
+      "type": "governs",
+      "created_at": "2026-08-22T14:50:18+00:00"
+    },
+    {
+      "from": "DEC-052",
+      "to": "TASK-217",
+      "type": "governs",
+      "created_at": "2026-08-22T14:50:19+00:00"
+    },
+    {
+      "from": "CHG-226",
+      "to": "TASK-215",
+      "type": "implements",
+      "created_at": "2026-08-22T14:57:58+00:00"
+    },
+    {
+      "from": "CHG-226",
+      "to": "ISS-259",
+      "type": "resolves",
+      "created_at": "2026-08-22T14:57:58+00:00"
     }
   ]
 }
