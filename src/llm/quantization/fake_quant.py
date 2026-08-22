@@ -63,6 +63,8 @@ class FakeQuantize(nn.Module):
         *,
         per_channel: bool = False,
         channel_dim: int = 0,
+        floor_cap: float | None = None,
+        static_scale: torch.Tensor | None = None,
     ) -> None:
         super().__init__()
         if bits not in (4, 8):
@@ -71,10 +73,19 @@ class FakeQuantize(nn.Module):
         self.qmax = float((1 << (bits - 1)) - 1)
         self.per_channel = per_channel
         self.channel_dim = channel_dim
+        self.floor_cap = floor_cap
+        if static_scale is not None:
+            self.register_buffer("static_scale", static_scale.detach())
+        else:
+            self.static_scale = None
 
     def forward(self, x: torch.Tensor, scale: torch.Tensor | None = None) -> torch.Tensor:
+        if self.floor_cap is not None:
+            x = x.clamp(min=self.floor_cap)
         if scale is None:
-            if self.per_channel:
+            if self.static_scale is not None:
+                scale = _expanded_scale(self.static_scale, self.channel_dim, x)
+            elif self.per_channel:
                 base = x.detach().abs()
                 reduce_dims = tuple(i for i in range(x.dim()) if i != self.channel_dim)
                 amax = base.amax(dim=reduce_dims, keepdim=True)
@@ -105,6 +116,10 @@ class FakeQuantLinear(nn.Module):
         bias: bool = True,
         bits: int = 8,
         quant_activation: bool = False,
+        floor_cap: float | None = None,
+        weight_scale: torch.Tensor | None = None,
+        activation_scale: torch.Tensor | None = None,
+        learnable_scales: bool = False,
     ) -> None:
         super().__init__()
         if bits not in (4, 8):
@@ -113,14 +128,28 @@ class FakeQuantLinear(nn.Module):
         self.out_features = out_features
         self.bits = bits
         self.quant_activation = quant_activation
+        self.floor_cap = floor_cap
+        self.learnable_scales = learnable_scales
         self.weight = nn.Parameter(torch.empty(out_features, in_features))
         if bias:
             self.bias = nn.Parameter(torch.empty(out_features))
         else:
             self.register_parameter("bias", None)
         self.fake_w = FakeQuantize(bits, per_channel=True, channel_dim=0)
-        self.fake_a = FakeQuantize(bits, per_channel=False) if quant_activation else None
+        self.fake_a = FakeQuantize(bits, per_channel=False, floor_cap=floor_cap) if quant_activation else None
+        self._register_static_scale("weight_scale_param", weight_scale, per_channel=True)
+        self._register_static_scale("activation_scale_param", activation_scale, per_channel=False)
         self.reset_parameters()
+
+    def _register_static_scale(self, attr: str, scale: torch.Tensor | None, *, per_channel: bool) -> None:
+        if scale is None:
+            setattr(self, attr, None)
+            return
+        s = scale.detach().float()
+        if self.learnable_scales:
+            self.register_parameter(attr, nn.Parameter(s))
+        else:
+            self.register_buffer(attr, s)
 
     def reset_parameters(self) -> None:
         nn.init.kaiming_uniform_(self.weight, a=5**0.5)
@@ -131,8 +160,8 @@ class FakeQuantLinear(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.fake_a is not None:
-            x = self.fake_a(x)
-        w = self.fake_w(self.weight)
+            x = self.fake_a(x, scale=self.activation_scale_param)
+        w = self.fake_w(self.weight, scale=self.weight_scale_param)
         return functional.linear(x, w, self.bias)
 
 

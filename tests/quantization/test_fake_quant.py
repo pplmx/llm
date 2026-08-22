@@ -91,3 +91,54 @@ def test_fake_quant_roundtrip_error_is_bounded():
     # absmax_block/qmax ~ (10*qmax-ish)/qmax = 10, half-step ~5; assert a
     # tighter empirical bound than random round-trip (signal it's fine).
     assert err < 1.0, f"round-trip error {err} should be small for a 10-range input"
+
+
+def test_fake_quant_linear_uses_static_weight_scale():
+    """TASK-220: a per-channel static (calibration) weight scale is honored."""
+    torch.manual_seed(0)
+    layer = FakeQuantLinear(16, 8, bits=8, quant_activation=False)
+    w = torch.randn(8, 16) * 2
+    qmax = 127.0
+    static = (w.detach().abs().amax(dim=1) / qmax).clamp_min(1e-8)  # per-output-row
+    layer.weight_scale_param = static  # override the (None) static scale
+    with torch.no_grad():
+        layer.weight.copy_(w)
+        layer.bias.zero_()
+    x = torch.randn(3, 16)
+    y = layer(x)
+    expected = functional.linear(
+        x.float(), (w / static.view(-1, 1)).round().clamp(-qmax, qmax) * static.view(-1, 1), None
+    )
+    torch.testing.assert_close(y, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_fake_quant_linear_floor_cap_clamps_activation():
+    """TASK-220: activation floor-cap clamps negatives before quantization."""
+    torch.manual_seed(2)
+    layer_cap = FakeQuantLinear(8, 4, bits=8, quant_activation=True, floor_cap=0.0)
+    layer_none = FakeQuantLinear(8, 4, bits=8, quant_activation=True, floor_cap=None)
+    with torch.no_grad():
+        w = torch.randn(4, 8) * 0.5
+        layer_cap.weight.copy_(w)
+        layer_none.weight.copy_(w)
+        layer_cap.bias.zero_()
+        layer_none.bias.zero_()
+    x = torch.tensor([[2.0, -5.0, 1.0, -0.5, 3.0, -2.0, 0.0, 4.0]])
+    y_cap = layer_cap(x)
+    y_none = layer_none(x)
+    assert not torch.allclose(y_cap, y_none, atol=1e-6), "floor-cap must change the output through clamped negatives"
+
+
+def test_fake_quant_linear_learnable_scale_trains():
+    """TASK-220: a learnable static scale receives a gradient (trainable)."""
+    torch.manual_seed(0)
+    w = torch.ones(2, 4) * 10.0
+    static = w.detach().abs().amax(dim=1) / 127.0  # ~0.0787 per row
+    layer = FakeQuantLinear(4, 2, bits=8, learnable_scales=True, weight_scale=static)
+    with torch.no_grad():
+        layer.weight.copy_(w)
+    x = torch.randn(4, 4)
+    out = layer(x)
+    out.sum().backward()
+    assert layer.weight_scale_param.grad is not None, "learnable scale must get a gradient"
+    assert torch.isfinite(layer.weight_scale_param.grad).all().item()
