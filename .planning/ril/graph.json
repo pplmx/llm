@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 89,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T01:31:33+00:00",
+  "updated_at": "2026-08-22T03:14:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12187,19 +12187,17 @@
     "TASK-210": {
       "id": "TASK-210",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-08-21T19:16:48+00:00",
-      "updated_at": "2026-08-21T19:18:56+00:00",
+      "updated_at": "2026-08-22T03:14:54+00:00",
       "touched_round": 89,
       "category": "core-feature",
       "severity": 0.9,
       "effort": 6,
       "confidence": 0.95,
       "title": "Implement Pipeline Parallelism v1 (parallel_strategy='pp')",
-      "summary": "Per DEC-049: add 'pp' to DistributedConfig.parallel_strategy; new src/llm/training/distributed/pipeline.py (partition_decoder_model -> stage modules split at transformer_blocks, PipelineStage/ScheduleGPipe with LM-shift loss_fn, is_pp, pp gather/scatter state dict, clip_grad_norm_pp); engine: build schedule in _setup_components, PP train/val steps (schedule.step/eval, loss broadcast from last stage, metric divisor=world), step-boundary clip; refusals for non-standard tasks / AMP / compile / TP+PP; parity test (2-proc CPU gloo, bit-exact vs serial) + 2-proc e2e SFT smoke; docs/guides/distributed.md.",
-      "lock_owner": "pp-milestone",
-      "lock_until": "2026-08-21T19:48:56+00:00"
+      "summary": "Per DEC-049: add 'pp' to DistributedConfig.parallel_strategy; new src/llm/training/distributed/pipeline.py (partition_decoder_model -> stage modules split at transformer_blocks, PipelineStage/ScheduleGPipe with LM-shift loss_fn, is_pp, pp gather/scatter state dict, clip_grad_norm_pp); engine: build schedule in _setup_components, PP train/val steps (schedule.step/eval, loss broadcast from last stage, metric divisor=world), step-boundary clip; refusals for non-standard tasks / AMP / compile / TP+PP; parity test (2-proc CPU gloo, bit-exact vs serial) + 2-proc e2e SFT smoke; docs/guides/distributed.md."
     },
     "HYP-14": {
       "id": "HYP-14",
@@ -12283,6 +12281,18 @@
       "title": "Engine e2e: PP trains, saves a global-named checkpoint, resumes and continues in lockstep",
       "summary": "Real TrainingEngine (parallel_strategy='pp', 2 CPU/gloo procs): weights moved, full-state gather bit-identical across ranks after epoch-1 train AND epoch-2 resume-continue, start_epoch=1 sensed, global_step advanced, ranks step in lockstep.",
       "confidence": 1.0
+    },
+    "CHG-220": {
+      "id": "CHG-220",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T02:37:01+00:00",
+      "updated_at": "2026-08-22T02:37:01+00:00",
+      "touched_round": 89,
+      "commit": "0d02b78",
+      "title": "PP v1 milestone - parallel_strategy=pp",
+      "summary": "Implements TASK-210 per DEC-049: pipeline.py, wrap pp branch, engine PP step/val/clip/save-gate, checkpoint collective, tests, docs."
     }
   },
   "edges": [
@@ -18020,6 +18030,12 @@
       "to": "TASK-210",
       "type": "depends_on",
       "created_at": "2026-08-22T01:31:33+00:00"
+    },
+    {
+      "from": "CHG-220",
+      "to": "TASK-210",
+      "type": "implements",
+      "created_at": "2026-08-22T02:54:36+00:00"
     }
   ]
 }
