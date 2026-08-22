@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 92,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-22T16:28:33+00:00",
+  "updated_at": "2026-08-22T16:32:44+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -12766,10 +12766,10 @@
     "ISS-260": {
       "id": "ISS-260",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-22T16:19:43+00:00",
-      "updated_at": "2026-08-22T16:19:43+00:00",
+      "updated_at": "2026-08-22T16:32:44+00:00",
       "touched_round": 92,
       "title": "QAT (Quantization-Aware Training) unimplemented — fake quantization + STE missing (ROADMAP 13.2)",
       "summary": "ROADMAP §13.2 lists QAT (fake quantization + quantized training loop + quant-param search) as unchecked. Only PTQ exists (simple/GPTQ/AWQ/SmoothQuant/FP8). A fake-quant path with a straight-through estimator lets weights train through quantization so the model is robust to deployment in the target format (INT8/FP8).",
@@ -12824,10 +12824,10 @@
     "TASK-220": {
       "id": "TASK-220",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-22T16:20:06+00:00",
-      "updated_at": "2026-08-22T16:20:06+00:00",
+      "updated_at": "2026-08-22T16:32:43+00:00",
       "touched_round": 92,
       "category": "performance",
       "severity": 0.4,
@@ -12885,6 +12885,30 @@
       "commit": "18d16d0",
       "title": "QAT training integration (use_qat + build_model) — completes TASK-219",
       "summary": "apply_fake_quant helper, TrainingConfig qat fields, build_model branch; EV integration tests. TASK-220 (scales) remains."
+    },
+    "EV-222": {
+      "id": "EV-222",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:32:35+00:00",
+      "updated_at": "2026-08-22T16:32:35+00:00",
+      "touched_round": 92,
+      "source": "tests/quantization/test_fake_quant.py::test_fake_quant_linear_uses_static_weight_scale, test_fake_quant_linear_floor_cap_clamps_activation, test_fake_quant_linear_learnable_scale_trains (CPU)",
+      "summary": "FakeQuantize/FakeQuantLinear static (calibration) weight scale honored, activation floor-cap clamps negatives, and learnable scales receive gradients - TASK-220 complete; QAT milestone (TASK-218/219/220) fully closed and verified.",
+      "confidence": 1.0
+    },
+    "CHG-235": {
+      "id": "CHG-235",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-22T16:32:36+00:00",
+      "updated_at": "2026-08-22T16:32:36+00:00",
+      "touched_round": 92,
+      "commit": "86f4840",
+      "title": "QAT static/learnable scales + floor-cap — completes TASK-220 and the QAT milestone",
+      "summary": "FakeQuantize/FakeQuantLinear scale + floor-cap capabilities (EV-222)."
     }
   },
   "edges": [
@@ -18856,6 +18880,12 @@
       "to": "TASK-219",
       "type": "implements",
       "created_at": "2026-08-22T16:28:24+00:00"
+    },
+    {
+      "from": "CHG-235",
+      "to": "TASK-220",
+      "type": "implements",
+      "created_at": "2026-08-22T16:32:36+00:00"
     }
   ]
 }
