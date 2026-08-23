@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 109,
+  "round": 110,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:47:23+00:00",
+  "updated_at": "2026-08-23T06:51:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 108,
+      "touched_round": 109,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -14036,22 +14036,22 @@
     "ISS-278": {
       "id": "ISS-278",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:47:16+00:00",
-      "updated_at": "2026-08-23T06:47:16+00:00",
-      "touched_round": 108,
+      "updated_at": "2026-08-23T06:51:20+00:00",
+      "touched_round": 109,
       "title": "Longformer-style dilated sliding-window attention unimplemented (ROADMAP 15.2)",
       "summary": "15.2 open item: global + dilated sliding window. Next slice: add a dilation knob to the local-window attention mask (attend every dilation-th position within the window) + CPU parity via the sdpa/MHA integration harness."
     },
     "TASK-240": {
       "id": "TASK-240",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:47:20+00:00",
-      "updated_at": "2026-08-23T06:47:20+00:00",
-      "touched_round": 108,
+      "updated_at": "2026-08-23T06:51:20+00:00",
+      "touched_round": 109,
       "category": "core-feature",
       "severity": 0.3,
       "effort": 0.5,
@@ -14059,6 +14059,69 @@
       "unlock_factor": 1.0,
       "title": "Longformer-style dilated sliding-window attention mask (dilation knob) + CPU parity",
       "summary": "Add a dilation knob to the local-window attention-mask machinery (within the window attend every dilation-th position, plus global tokens); CPU parity: dilation=1 == plain window, and fed through the sdpa/MHA harness sparsity reduces attended positions; docs + ROADMAP 15.2 update."
+    },
+    "CHG-253": {
+      "id": "CHG-253",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:51:13+00:00",
+      "updated_at": "2026-08-23T06:51:13+00:00",
+      "touched_round": 109,
+      "commit": "ee22850",
+      "title": "Longformer-style dilated sliding-window attention mask + CPU parity (TASK-240)",
+      "summary": "longformer.py build_longformer_mask (window_size + dilation + global, causal) reusing block_sparse mask_to_additive/coverage_fraction; CPU parity dilation=1+no-global == plain window, dilated subset; verified via sdpa/MHA vs explicit masking; docs + ROADMAP 15.2 checkoff."
+    },
+    "EV-241": {
+      "id": "EV-241",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:51:17+00:00",
+      "updated_at": "2026-08-23T06:51:17+00:00",
+      "touched_round": 109,
+      "source": "tests/core/attn/test_longformer.py (7 tests)",
+      "summary": "arg validation; dilation=1+no-global == plain window parity; global always attended; dilation>1 reduces coverage and is a strict subset; causal blocks future; sdpa/MHA forward == explicit masking, sparse changes output and full-coverage == dense; 7 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-073": {
+      "id": "DEC-073",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:51:26+00:00",
+      "updated_at": "2026-08-23T06:51:26+00:00",
+      "touched_round": 109,
+      "title": "Open BigBird milestone (15.2 final)",
+      "rationale": "Close the last open 15.2 item: BigBird. Its pattern (global + local-window + random key blocks) is exactly what the block-sparse mask builder already supports, so surface it as an explicit BigBird builder wrapping block_sparse with the standard structural constraints, plus a CPU parity + sdpa/MHA integration check. Honors the shared-machinery approach and is CPU-verifiable.",
+      "alternatives_rejected": "Infinite Attention (15.1) is a new recurrence, harder to CPU-verify; DeepSpeed/3D need GPU/multi-node; a new standalone attention would duplicate the shipped block-sparse builder."
+    },
+    "ISS-279": {
+      "id": "ISS-279",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:51:30+00:00",
+      "updated_at": "2026-08-23T06:51:30+00:00",
+      "touched_round": 109,
+      "title": "BigBird attention unimplemented (ROADMAP 15.2)",
+      "summary": "15.2 open item: global + local-window + random block attention. Next slice: explicit build_bigbird_mask wrapping the block-sparse builder (global_blocks + window + random_blocks) + CPU parity / sdpa-MHA integration check."
+    },
+    "TASK-241": {
+      "id": "TASK-241",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:51:34+00:00",
+      "updated_at": "2026-08-23T06:51:34+00:00",
+      "touched_round": 109,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.4,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "BigBird attention: explicit global+window+random mask builder (block-sparse config) + CPU parity (ROADMAP 15.2)",
+      "summary": "Add build_bigbird_mask wrapping the block-sparse builder with BigBird structural constraints (global + local window + seeded random blocks); CPU parity: full coverage == dense and sdpa/MHA integration matches explicit masking; docs + ROADMAP 15.2 checkoff."
     }
   },
   "edges": [
@@ -20600,6 +20663,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:47:23+00:00"
+    },
+    {
+      "from": "CHG-253",
+      "to": "TASK-240",
+      "type": "implements",
+      "created_at": "2026-08-23T06:51:20+00:00"
+    },
+    {
+      "from": "CHG-253",
+      "to": "ISS-278",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:51:20+00:00"
+    },
+    {
+      "from": "DEC-073",
+      "to": "TASK-241",
+      "type": "governs",
+      "created_at": "2026-08-23T06:51:37+00:00"
+    },
+    {
+      "from": "TASK-241",
+      "to": "ISS-279",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:51:38+00:00"
+    },
+    {
+      "from": "ISS-279",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:51:38+00:00"
     }
   ]
 }
