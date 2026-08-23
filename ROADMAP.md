@@ -561,9 +561,9 @@
 - [x] **实现 Soft MoE**（slot 软路由研究切片: 每 slot 沿 token softmax 归一化 `D[e,s,t]` 做 token 加权输入 + 按同一 D 遣回; 结构性 slot 均衡 `Σ_t D==1`、无 hard top-k/不丢 token、全链路可微; `dispatch_weights`/`soft_moe_output`; CPU parity——均衡、输出===逐 slot 加权和参考、可微; 见 [docs/guides/soft_moe.md](docs/guides/soft_moe.md)）
 - [x] **优化 Expert Load Balancing**（SWITCH/ST-MoE 辅助负载均衡损失研究切片: `f_i`=每专家 token 占比, `P_i`=平均派发概率, `L_aux=aux_weight·E·Σ f_i P_i`; 均衡 gate 损失 < 全押一个专家, `f`/`P` 归一到 1、可微、`aux_weight` 线性缩放; 见 [docs/guides/load_balance.md](docs/guides/load_balance.md)）
 - [x] **探索 Dynamic Expert Selection**（置信度驱动自适应专家数研究切片: `top-1(p)>=阈值`→`min_experts`, 否则 `max_experts`; 对 top max 专家排一次名、保留前 k_t 并重归一化; 全链路可微; CPU parity——计数档位、权重和 1、输出===重归一化加权和参考、可微; 见 [docs/guides/dynamic_selection.md](docs/guides/dynamic_selection.md)）
-- [ ] 实现 Soft MoE
-- [ ] 探索 Dynamic Expert Selection
-- [ ] 优化 Expert Load Balancing
+- [x] 实现 Soft MoE
+- [x] 探索 Dynamic Expert Selection
+- [x] 优化 Expert Load Balancing
 
 #### 15.5 高级分布式训练
 
