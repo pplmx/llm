@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 129,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:59:07+00:00",
+  "updated_at": "2026-08-23T13:42:47+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10296,7 +10296,7 @@
       "version": 1,
       "created_at": "2026-08-17T01:17:44+00:00",
       "updated_at": "2026-08-17T01:17:44+00:00",
-      "touched_round": 82,
+      "touched_round": 129,
       "title": "Runtime + model registry (src/llm/runtime: bootstrap, plugins, model_factory, tokenizer_factory)"
     },
     "ISS-211": {
@@ -12373,7 +12373,7 @@
       "version": 1,
       "created_at": "2026-08-22T10:05:50+00:00",
       "updated_at": "2026-08-22T10:05:50+00:00",
-      "touched_round": 90,
+      "touched_round": 129,
       "summary": "llm.training.distributed.pipeline — pipeline-stage partition / ScheduleGPipe driver (PP v1 + PP+DP 2D)"
     },
     "CHG-223": {
@@ -15225,6 +15225,74 @@
       "touched_round": 129,
       "commit": "5e1f297",
       "summary": "Add multimodal/preprocess.py (patchify + ImagePatchPreprocessor), invariant tests, guide; ROADMAP 12.3 done"
+    },
+    "TASK-259": {
+      "id": "TASK-259",
+      "type": "task",
+      "status": "resolved",
+      "version": 5,
+      "created_at": "2026-08-23T11:47:59+00:00",
+      "updated_at": "2026-08-23T13:39:17+00:00",
+      "touched_round": 129,
+      "category": "core-feature",
+      "severity": 0.8,
+      "title": "Vision encoder integration: CLIP/SigLIP-style ViT registered in MODALITY_ENCODER_REGISTRY + raw-image data path (ROADMAP 12.1)"
+    },
+    "DEC-092": {
+      "id": "DEC-092",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T11:49:28+00:00",
+      "updated_at": "2026-08-23T11:49:28+00:00",
+      "touched_round": 129,
+      "title": "ROADMAP 12.1: CLIP/SigLIP-style vision encoder as next milestone",
+      "rationale": "Zero active tasks; ROADMAP P1 priority lists multimodal spike; 12.3 image-to-token preprocessor (TASK-258) just closed, leaving 12.1 (vision encoder CLIP/SigLIP) as the immediate natural next slice. Existing MultimodalModel already fuses [B,N,D] modal_embeds as variable-length prefix, and ModalityFusion handles 3D, so a ViT emitting [B,N+1,D] slots in with no DecoderModel changes. Build a CPU-verifiable ViT registered as 'vit' in MODALITY_ENCODER_REGISTRY + raw-image data path; external pretrained weights (CLIP/SigLIP checkpoints) stay a separate opt-in (no network deps).",
+      "alternatives_rejected": "1) Introduce real torchvision/timm CLIP checkpoint download (requires network+GPU, breaks pure-CPU verification ethos); 2) Wire vision encoder through DecoderModel internals (violates ADR-013 boundary); 3) Skip vision and implement audio (ROADMAP 12.2 is lower priority than 12.1)."
+    },
+    "ISS-297": {
+      "id": "ISS-297",
+      "type": "issue",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-23T11:49:39+00:00",
+      "updated_at": "2026-08-23T11:55:51+00:00",
+      "touched_round": 129,
+      "severity": 0.5,
+      "title": "ROADMAP 12.1 open: no real vision encoder (CLIP/SigLIP) in MODALITY_ENCODER_REGISTRY; only LinearModalityEncoder placeholder"
+    },
+    "COMP-017": {
+      "id": "COMP-017",
+      "type": "component",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-08-23T11:54:07+00:00",
+      "updated_at": "2026-08-23T11:55:14+00:00",
+      "touched_round": 129,
+      "title": "Multimodal subsystem (src/llm/multimodal: encoder registry, data module, fusion model, task, image preprocessor, vision encoder)"
+    },
+    "CHG-272": {
+      "id": "CHG-272",
+      "type": "change",
+      "status": "active",
+      "version": 3,
+      "created_at": "2026-08-23T13:36:15+00:00",
+      "updated_at": "2026-08-23T13:42:47+00:00",
+      "touched_round": 129,
+      "commit": "7b954c4",
+      "title": "VisionTransformerEncoder ('vit') + raw-image MultimodalDataModule path + CPU e2e (ROADMAP 12.1 slice 1)"
+    },
+    "EV-261": {
+      "id": "EV-261",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T13:36:15+00:00",
+      "updated_at": "2026-08-23T13:36:15+00:00",
+      "touched_round": 129,
+      "source": "tests/multimodal/test_vision.py (10 tests pass; parity vs manual reference; loss-drop e2e)",
+      "title": "Vision encoder shapes/parity/gradients/freeze + image data path e2e all pass on CPU",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -22408,6 +22476,48 @@
       "to": "ISS-296",
       "type": "resolves",
       "created_at": "2026-08-23T09:59:07+00:00"
+    },
+    {
+      "from": "TASK-259",
+      "to": "ISS-297",
+      "type": "addresses",
+      "created_at": "2026-08-23T11:51:03+00:00"
+    },
+    {
+      "from": "DEC-092",
+      "to": "TASK-259",
+      "type": "governs",
+      "created_at": "2026-08-23T11:51:03+00:00"
+    },
+    {
+      "from": "ISS-297",
+      "to": "COMP-016",
+      "type": "located_in",
+      "created_at": "2026-08-23T11:54:07+00:00"
+    },
+    {
+      "from": "COMP-016",
+      "to": "COMP-015",
+      "type": "part_of",
+      "created_at": "2026-08-23T11:54:08+00:00"
+    },
+    {
+      "from": "ISS-297",
+      "to": "COMP-017",
+      "type": "located_in",
+      "created_at": "2026-08-23T11:55:14+00:00"
+    },
+    {
+      "from": "CHG-272",
+      "to": "TASK-259",
+      "type": "implements",
+      "created_at": "2026-08-23T13:37:42+00:00"
+    },
+    {
+      "from": "CHG-272",
+      "to": "ISS-297",
+      "type": "resolves",
+      "created_at": "2026-08-23T13:37:42+00:00"
     }
   ]
 }
