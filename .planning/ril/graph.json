@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 125,
+  "round": 126,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:41:03+00:00",
+  "updated_at": "2026-08-23T09:44:56+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7988,7 +7988,7 @@
       "version": 1,
       "created_at": "2026-08-16T01:13:47+00:00",
       "updated_at": "2026-08-16T01:13:47+00:00",
-      "touched_round": 125,
+      "touched_round": 126,
       "title": "Core PEFT families + transformer block (src/llm/core: adalora, prefix_tuning, lora, qlora, ia3, bitfit, pfeiffer_adapter, adapter, transformer_block, mlp)"
     },
     "TASK-111": {
@@ -14965,6 +14965,68 @@
       "touched_round": 125,
       "commit": "2a3e253",
       "summary": "Add core/moe/soft_moe.py (dispatch_weights/soft_moe_output), invariant tests, guide; ROADMAP 15.4 Soft MoE done"
+    },
+    "DEC-088": {
+      "id": "DEC-088",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:44:25+00:00",
+      "updated_at": "2026-08-23T09:44:25+00:00",
+      "touched_round": 126,
+      "title": "Implement auxiliary load-balancing loss for MoE (ROADMAP 15.4)",
+      "rationale": "Token-choice MoeLayer has no balancing mechanism, so a collapsing gate can hoard tokens on a few experts and starve the rest. The standard SWITCH/ST-MoE auxiliary loss (aux_weight*E*sum f_i P_i) is additive, differentiable, and CPU-verifiable: balanced gates give strictly lower loss than imbalanced. Deliver as a self-contained core/moe slice; wiring into MoeLayer's total loss (small aux_weight) is a documented follow-up.",
+      "alternatives_rejected": "Leaving 15.4's Expert Load Balancing item unchecked keeps the MoE stability story incomplete; a full end-to-end train-time integration + tuning of aux_weight is larger and out of scope for the slice; a non-aux (capacity-factor/CAP) approach is heavier and less universally used."
+    },
+    "ISS-293": {
+      "id": "ISS-293",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:44:25+00:00",
+      "updated_at": "2026-08-23T09:44:56+00:00",
+      "touched_round": 126,
+      "title": "MoE routing has no load-balancing mechanism (ROADMAP 15.4)",
+      "summary": "Token-choice MoeLayer routes by top-k softmax with no balance term; a collapsing gate can dead/overload experts. The SWITCH/ST-MoE auxiliary load-balancing loss is unimplemented."
+    },
+    "TASK-255": {
+      "id": "TASK-255",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:44:25+00:00",
+      "updated_at": "2026-08-23T09:44:56+00:00",
+      "touched_round": 126,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.5,
+      "confidence": 0.9,
+      "unlock_factor": 1.0,
+      "title": "Implement CPU-verifiable SWITCH/ST-MoE load-balancing auxiliary loss slice + tests + docs",
+      "summary": "Add core/moe/load_balance.py: routing_fractions (top-1 count fraction), mean_dispatch_probability (mean softmax prob), load_balancing_loss (aux_weight*E*sum f P, validate num_experts/aux_weight); invariants (balanced<imbalanced, f/P sum to 1, differentiable, aux_weight linear); tests + guide + ROADMAP 15.4; MoeLayer wiring is follow-up."
+    },
+    "EV-256": {
+      "id": "EV-256",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:44:51+00:00",
+      "updated_at": "2026-08-23T09:44:51+00:00",
+      "touched_round": 126,
+      "source": "d5c0438 tests/core/moe/test_load_balance.py",
+      "confidence": 1.0,
+      "summary": "Load-balancing slice verified: near-uniform gate loss (1.00) < fully imbalanced all-to-one (3.92), f and P each sum to 1, gradient w.r.t. gate_logits finite, aux_weight scales linearly and 0 is a no-op, negative aux_weight rejected; all 16 MoE routing tests green (expert_choice + soft_moe + load_balance)"
+    },
+    "CHG-268": {
+      "id": "CHG-268",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:44:51+00:00",
+      "updated_at": "2026-08-23T09:44:51+00:00",
+      "touched_round": 126,
+      "commit": "d5c0438",
+      "summary": "Add core/moe/load_balance.py (routing_fractions/mean_dispatch_probability/load_balancing_loss), invariant tests, guide; ROADMAP 15.4 expert load balancing done"
     }
   },
   "edges": [
@@ -22004,6 +22066,42 @@
       "to": "ISS-292",
       "type": "resolves",
       "created_at": "2026-08-23T09:41:03+00:00"
+    },
+    {
+      "from": "TASK-255",
+      "to": "ISS-293",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:44:30+00:00"
+    },
+    {
+      "from": "ISS-293",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:44:30+00:00"
+    },
+    {
+      "from": "DEC-088",
+      "to": "COMP-014",
+      "type": "governs",
+      "created_at": "2026-08-23T09:44:30+00:00"
+    },
+    {
+      "from": "DEC-088",
+      "to": "TASK-255",
+      "type": "governs",
+      "created_at": "2026-08-23T09:44:30+00:00"
+    },
+    {
+      "from": "CHG-268",
+      "to": "TASK-255",
+      "type": "implements",
+      "created_at": "2026-08-23T09:44:56+00:00"
+    },
+    {
+      "from": "CHG-268",
+      "to": "ISS-293",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:44:56+00:00"
     }
   ]
 }
