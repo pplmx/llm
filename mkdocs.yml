@@ -127,6 +127,7 @@ nav:
       - guides/multimodal.md
       - guides/grpo.md
       - guides/rejection_sampling.md
+      - guides/rlaif.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md

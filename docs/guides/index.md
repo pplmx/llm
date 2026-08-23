@@ -26,6 +26,7 @@
     - [多模态扩展](multimodal.md) — `ModalityEncoderRegistry` + `MultimodalDataModule` 契约 spike
     - [GRPO](grpo.md) — 组相对策略优化（`--task grpo`、group advantage + 裁剪 policy loss）
     - [Rejection Sampling](rejection_sampling.md) — best-of-N / top-K 过滤高奖励响应再 SFT
+    - [RLAIF](rlaif.md) — AI/规则 judge 标定偏好 → `--task dpo`
 
 - ⚡ **推理与部署**
 
