@@ -557,7 +557,7 @@
 
 #### 15.4 新型 MoE 架构
 
-- [ ] 研究 Expert Choice Routing
+- [x] **研究 Expert Choice Routing**（负载均衡研究切片: 每专家选它 top-k 个 token, 结构性保证每专家恰 `k` 个、不丢 token; `expert_choice_assignment`/`_weights`/`_output` + softmax-per-expert 权重 + scatter-add 组合; CPU parity——选中===gate top_k、每专家恰 k、组合===加权和参考、可微; 见 [docs/guides/expert_choice.md](docs/guides/expert_choice.md)）
 - [ ] 实现 Soft MoE
 - [ ] 探索 Dynamic Expert Selection
 - [ ] 优化 Expert Load Balancing

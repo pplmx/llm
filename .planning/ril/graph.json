@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 123,
+  "round": 124,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:30:29+00:00",
+  "updated_at": "2026-08-23T09:36:45+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7988,7 +7988,7 @@
       "version": 1,
       "created_at": "2026-08-16T01:13:47+00:00",
       "updated_at": "2026-08-16T01:13:47+00:00",
-      "touched_round": 72,
+      "touched_round": 124,
       "title": "Core PEFT families + transformer block (src/llm/core: adalora, prefix_tuning, lora, qlora, ia3, bitfit, pfeiffer_adapter, adapter, transformer_block, mlp)"
     },
     "TASK-111": {
@@ -14841,6 +14841,68 @@
       "touched_round": 123,
       "commit": 6510698,
       "summary": "Add core/attn/infinite.py (InfiniMemory + retrieval + gated infinite_attention), invariant tests, guide; ROADMAP 15.1 Infinite Attention done"
+    },
+    "DEC-086": {
+      "id": "DEC-086",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:36:13+00:00",
+      "updated_at": "2026-08-23T09:36:13+00:00",
+      "touched_round": 124,
+      "title": "Research Expert Choice Routing (ROADMAP 15.4)",
+      "rationale": "ROADMAP 15.4's first unchecked item. Standard MoE (core/moe/moe.py) is token-choice (each token picks top-k experts via per-token topk); Expert Choice Routing inverts it so each expert picks its top-k tokens, giving structural load balance (exactly k per expert, no dead/overloaded/dropped) and better capacity usage. Deliver a self-contained, CPU-verifiable routing slice; wiring into MoeLayer.forward as an alternate mode + aux loss is a documented follow-up.",
+      "alternatives_rejected": "Leaving 15.4's first box unchecked keeps the MoE story incomplete; a full train-time integration (sparse dispatch + aux balancing loss) is larger and out of scope for the research slice; re-using token-choice only misses the load-balance property the item asks to study."
+    },
+    "ISS-291": {
+      "id": "ISS-291",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:36:13+00:00",
+      "updated_at": "2026-08-23T09:36:45+00:00",
+      "touched_round": 124,
+      "title": "Expert Choice Routing (ROADMAP 15.4) unresearched",
+      "summary": "Only token-choice MoE exists; the load-balanced expert-choice routing variant (the first open 15.4 item) has no slice."
+    },
+    "TASK-253": {
+      "id": "TASK-253",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:36:13+00:00",
+      "updated_at": "2026-08-23T09:36:45+00:00",
+      "touched_round": 124,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.6,
+      "confidence": 0.8,
+      "unlock_factor": 1.0,
+      "title": "Implement CPU-verifiable Expert Choice Routing slice + parity tests + docs",
+      "summary": "Add core/moe/expert_choice.py: expert_choice_assignment (per-expert top-k), expert_choice_weights (per-expert softmax), expert_choice_output (scatter-add combine); invariants (selection==gate top-k, each expert exactly k, combine==weighted-sum reference, gradient flow); tests + guide + ROADMAP 15.4; MoeLayer integration is a documented follow-up."
+    },
+    "EV-254": {
+      "id": "EV-254",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:36:40+00:00",
+      "updated_at": "2026-08-23T09:36:40+00:00",
+      "touched_round": 124,
+      "source": "37a48b4 tests/core/test_moe.py::TestExpertChoiceRouting",
+      "confidence": 1.0,
+      "summary": "Expert Choice Routing slice verified: each expert's selected tokens equal gate top-k per expert (reference match), every expert chooses exactly k tokens (structural load balance, overlap allowed), per-expert weights sum to 1, combined output equals explicit weighted-sum reference, gradient flow finite via x and gate; non-slow core suite green"
+    },
+    "CHG-266": {
+      "id": "CHG-266",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:36:40+00:00",
+      "updated_at": "2026-08-23T09:36:40+00:00",
+      "touched_round": 124,
+      "commit": "37a48b4",
+      "summary": "Add core/moe/expert_choice.py (assignment/weights/output), invariant tests, guide; ROADMAP 15.4 expert-choice done"
     }
   },
   "edges": [
@@ -21808,6 +21870,42 @@
       "to": "ISS-290",
       "type": "resolves",
       "created_at": "2026-08-23T09:30:28+00:00"
+    },
+    {
+      "from": "TASK-253",
+      "to": "ISS-291",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:36:17+00:00"
+    },
+    {
+      "from": "ISS-291",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:36:17+00:00"
+    },
+    {
+      "from": "DEC-086",
+      "to": "COMP-014",
+      "type": "governs",
+      "created_at": "2026-08-23T09:36:17+00:00"
+    },
+    {
+      "from": "DEC-086",
+      "to": "TASK-253",
+      "type": "governs",
+      "created_at": "2026-08-23T09:36:17+00:00"
+    },
+    {
+      "from": "CHG-266",
+      "to": "TASK-253",
+      "type": "implements",
+      "created_at": "2026-08-23T09:36:45+00:00"
+    },
+    {
+      "from": "CHG-266",
+      "to": "ISS-291",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:36:45+00:00"
     }
   ]
 }
