@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 101,
+  "round": 102,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T02:11:38+00:00",
+  "updated_at": "2026-08-23T05:22:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -13481,10 +13481,10 @@
     "ISS-269": {
       "id": "ISS-269",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T02:11:33+00:00",
-      "updated_at": "2026-08-23T02:11:33+00:00",
+      "updated_at": "2026-08-23T05:22:20+00:00",
       "touched_round": 101,
       "title": "RLAIF preference-data generation unimplemented (ROADMAP 11.4)",
       "summary": "No AI-feedback preference labeling. Next slice: a judge that scores/labels which of two responses is preferred + a DPO-on-AI-preferences pipeline, CPU-verifiable."
@@ -13492,10 +13492,10 @@
     "TASK-231": {
       "id": "TASK-231",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T02:11:33+00:00",
-      "updated_at": "2026-08-23T02:11:33+00:00",
+      "updated_at": "2026-08-23T05:22:20+00:00",
       "touched_round": 101,
       "category": "core-feature",
       "severity": 0.3,
@@ -13504,6 +13504,69 @@
       "unlock_factor": 1.1,
       "title": "RLAIF slice 1: AI-preference judge + DPO-on-AI-labels pipeline (CPU)",
       "summary": "Add an AIFeedback judge (rule/scalar) that labels pairwise preferences for synthetic response pairs, a helper emitting DPO-ready (chosen/rejected) pairs, and a CPU e2e showing the DPO policy grows to prefer the AI-judge-preferred responses."
+    },
+    "CHG-245": {
+      "id": "CHG-245",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T05:22:15+00:00",
+      "updated_at": "2026-08-23T05:22:15+00:00",
+      "touched_round": 101,
+      "commit": "e4ebed2",
+      "title": "RLAIF: AI-preference judge + DPO-on-AI-labels (TASK-231)",
+      "summary": "aifeedback.py PreferenceJudge/TargetTokenJudge/prefer_batch; AIFeedbackDataModule emits DPO-ready chosen/rejected; CPU e2e: DPO on judge-labeled pairs shifts preference fraction to judge-chosen; docs/guides/rlaif.md + ROADMAP/nav wiring."
+    },
+    "EV-232": {
+      "id": "EV-232",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T05:22:18+00:00",
+      "updated_at": "2026-08-23T05:22:18+00:00",
+      "touched_round": 101,
+      "source": "tests/training/test_aifeedback.py (6 tests)",
+      "summary": "judge scoring; prefer_batch chosen/rejected ordering + shape guard; AIFeedbackDataModule DPO batch shape/mask; CPU e2e: DPO trained on AI-judge-labeled pairs shifts preference fraction ~0 -> >0.9; 6 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-064": {
+      "id": "DEC-064",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T05:22:39+00:00",
+      "updated_at": "2026-08-23T05:22:39+00:00",
+      "touched_round": 101,
+      "title": "Open DPO-vs-RLHF benchmark milestone",
+      "rationale": "Next milestone = DPO vs RLHF/PPO head-to-head on a shared synthetic preference task (ROADMAP 阶段十一 11.3 '对比 DPO vs RLHF 性能'). Both DPOTask and PPOTask exist; build one CPU harness on a common preference signal (reuse the RLAIF TargetTokenJudge target), run both policies, and compare alignment-effectiveness metrics (preference fraction chosen>rejected and reward trajectory). Closes the last open DPO checklist item and tells us which aligner to prefer in this CPU-verifiable setting.",
+      "alternatives_rejected": "Constitutional AI (11.4) is largely a safety/spec framing on top of RLAIF and less CPU-measurable; PP-v2 / DeepSpeed ZeRO / real vision encoders need GPU/multi-node/external weights absent here; another synthetic RLHF technique would duplicate the existing DPO/PPO/GRPO/rejection-sampling/RLAIF milestones rather than compare them."
+    },
+    "ISS-270": {
+      "id": "ISS-270",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T05:22:42+00:00",
+      "updated_at": "2026-08-23T05:22:42+00:00",
+      "touched_round": 101,
+      "title": "DPO vs RLHF/PPO not yet head-to-head benchmarked (ROADMAP 11.3)",
+      "summary": "11.3 last open item: no shared CPU-verifiable benchmark comparing the existing DPO and PPO (RLHF) paths on the same synthetic preference task. Next slice: common harness + preference-fraction/reward metrics + docs."
+    },
+    "TASK-232": {
+      "id": "TASK-232",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T05:22:46+00:00",
+      "updated_at": "2026-08-23T05:22:46+00:00",
+      "touched_round": 101,
+      "category": "core-feature",
+      "severity": 0.4,
+      "effort": 0.8,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Benchmark DPO vs PPO(RLHF) on a shared synthetic preference task (CPU)",
+      "summary": "Build one CPU harness that runs DPOTask and PPOTask against a common TargetTokenJudge preference signal, reporting preference fraction (chosen-logp > rejected-logp) and reward trajectory for both; add docs/guides comparison + ROADMAP 11.3 checkoff."
     }
   },
   "edges": [
@@ -19781,6 +19844,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T02:11:38+00:00"
+    },
+    {
+      "from": "CHG-245",
+      "to": "TASK-231",
+      "type": "implements",
+      "created_at": "2026-08-23T05:22:51+00:00"
+    },
+    {
+      "from": "CHG-245",
+      "to": "ISS-269",
+      "type": "resolves",
+      "created_at": "2026-08-23T05:22:51+00:00"
+    },
+    {
+      "from": "DEC-064",
+      "to": "TASK-232",
+      "type": "governs",
+      "created_at": "2026-08-23T05:22:51+00:00"
+    },
+    {
+      "from": "TASK-232",
+      "to": "ISS-270",
+      "type": "addresses",
+      "created_at": "2026-08-23T05:22:51+00:00"
+    },
+    {
+      "from": "ISS-270",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T05:22:51+00:00"
     }
   ]
 }
