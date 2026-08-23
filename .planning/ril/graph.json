@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 111,
+  "round": 112,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:54:45+00:00",
+  "updated_at": "2026-08-23T07:00:35+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 110,
+      "touched_round": 111,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -14162,22 +14162,22 @@
     "ISS-280": {
       "id": "ISS-280",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:54:36+00:00",
-      "updated_at": "2026-08-23T06:54:36+00:00",
-      "touched_round": 110,
+      "updated_at": "2026-08-23T07:00:17+00:00",
+      "touched_round": 111,
       "title": "No unified API to select among the shipped sparse/streaming attention masks (block_sparse/streaming/longformer/bigbird)",
       "summary": "Each mask builder is a separate module with its own signature. Next slice: a single build_sparse_attention_mask(kind, ...) dispatcher + validation + per-kind parity tests + docs."
     },
     "TASK-242": {
       "id": "TASK-242",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:54:41+00:00",
-      "updated_at": "2026-08-23T06:54:41+00:00",
-      "touched_round": 110,
+      "updated_at": "2026-08-23T07:00:17+00:00",
+      "touched_round": 111,
       "category": "dx",
       "severity": 0.2,
       "effort": 0.3,
@@ -14185,6 +14185,69 @@
       "unlock_factor": 1.0,
       "title": "Unified sparse-attention dispatcher: build_sparse_attention_mask(kind, ...) + per-kind parity",
       "summary": "Add a single public dispatcher build_sparse_attention_mask(kind, ...) over the four shipped mask builders (block_sparse / streaming / longformer / bigbird), validating unknown kinds; CPU test asserts per-kind delegation and full-coverage == dense parity; docs."
+    },
+    "CHG-255": {
+      "id": "CHG-255",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T07:00:10+00:00",
+      "updated_at": "2026-08-23T07:00:10+00:00",
+      "touched_round": 111,
+      "commit": "b0808f1",
+      "title": "Unified sparse-attention dispatcher build_sparse_attention_mask(kind) + parity (TASK-242)",
+      "summary": "sparse.py build_sparse_attention_mask dispatching to block_sparse/streaming/longformer/bigbird, unknown-kind validation, SUPPORTED_KINDS + re-exports; 14 tests (delegation == direct per kind, validation passthrough, real sdpa == explicit masking per kind); docs/guides/sparse_attention.md."
+    },
+    "EV-243": {
+      "id": "EV-243",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T07:00:13+00:00",
+      "updated_at": "2026-08-23T07:00:13+00:00",
+      "touched_round": 111,
+      "source": "tests/core/attn/test_sparse_dispatcher.py (14 tests)",
+      "summary": "SUPPORTED_KINDS registry; unknown kind ValueError; dispatcher result == direct builder per kind; builder validation passthrough; every kind through real sdpa == explicit masking; 14 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-075": {
+      "id": "DEC-075",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T07:00:23+00:00",
+      "updated_at": "2026-08-23T07:00:23+00:00",
+      "touched_round": 111,
+      "title": "Open model-level sparse-attention wiring milestone",
+      "rationale": "With masks built + proven through real attention + a dispatcher, the remaining gap is exposing them through the model so users can train/infer with e.g. attn_sparse_kind=bigbird. Add a ModelConfig attn_sparse (kind + params) that the decoder/MHA forward uses to build the dispatched mask; CPU-verifiable via MHA/decoder forward parity (full-coverage sparse == dense, genuinely sparse changes output).",
+      "alternatives_rejected": "Infinite Attention (15.1) is a new recurrence, harder to CPU-verify; DeepSpeed/3D need GPU/multi-node; the dispatcher (TASK-242) already gives a single API but is not yet wired into the model."
+    },
+    "ISS-281": {
+      "id": "ISS-281",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T07:00:27+00:00",
+      "updated_at": "2026-08-23T07:00:27+00:00",
+      "touched_round": 111,
+      "title": "Sparse/streaming attention not yet selectable in the model (no ModelConfig attn_sparse; only manually-built masks exist)",
+      "summary": "The four mask builders + dispatcher exist but are not wired into the model config; users cannot train/infer with a sparse scheme by name. Next slice: ModelConfig attn_sparse (kind + params) feeding MHA/decoder forward + CPU parity test."
+    },
+    "TASK-243": {
+      "id": "TASK-243",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T07:00:31+00:00",
+      "updated_at": "2026-08-23T07:00:31+00:00",
+      "touched_round": 111,
+      "category": "core-feature",
+      "severity": 0.4,
+      "effort": 0.8,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Expose sparse/streaming attention as a selectable model scheme (ModelConfig attn_sparse) + CPU forward parity",
+      "summary": "Add a ModelConfig attn_sparse (kind + params) that the decoder/MHA forward uses to build the dispatched sparse/streaming mask; CPU test: genuinely sparse changes MHA/decoder output, full-coverage sparse == dense; docs."
     }
   },
   "edges": [
@@ -20786,6 +20849,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:54:44+00:00"
+    },
+    {
+      "from": "CHG-255",
+      "to": "TASK-242",
+      "type": "implements",
+      "created_at": "2026-08-23T07:00:17+00:00"
+    },
+    {
+      "from": "CHG-255",
+      "to": "ISS-280",
+      "type": "resolves",
+      "created_at": "2026-08-23T07:00:17+00:00"
+    },
+    {
+      "from": "DEC-075",
+      "to": "TASK-243",
+      "type": "governs",
+      "created_at": "2026-08-23T07:00:34+00:00"
+    },
+    {
+      "from": "TASK-243",
+      "to": "ISS-281",
+      "type": "addresses",
+      "created_at": "2026-08-23T07:00:35+00:00"
+    },
+    {
+      "from": "ISS-281",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T07:00:35+00:00"
     }
   ]
 }
