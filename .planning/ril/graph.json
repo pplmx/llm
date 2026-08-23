@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 106,
+  "round": 107,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:30:00+00:00",
+  "updated_at": "2026-08-23T06:38:28+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 105,
+      "touched_round": 106,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13784,11 +13784,11 @@
     "DEC-068": {
       "id": "DEC-068",
       "type": "decision",
-      "status": "active",
-      "version": 1,
+      "status": "superseded",
+      "version": 2,
       "created_at": "2026-08-23T06:29:49+00:00",
-      "updated_at": "2026-08-23T06:29:49+00:00",
-      "touched_round": 105,
+      "updated_at": "2026-08-23T06:34:21+00:00",
+      "touched_round": 106,
       "title": "Pivot to PP v2 microbatch-overlap milestone",
       "rationale": "Alignment section 11 is now complete (SFT/RLHF/DPO/RLAIF/GRPO/rejection-sampling/alignment-comparison/reference-KL/Constitutional-AI). Pivot to roadmap Section 5 (高级分布式训练): PP v2 slice 1 = microbatch scheduling overlap (n_microbatches > 1) on top of the existing PP v1 ScheduleGPipe. CPU-verifiable by asserting microbatched gradients/params match the non-overlapped baseline on a tiny 2-stage model (mirrors PP v1's own CPU equivalence test).",
       "alternatives_rejected": "DeepSpeed ZeRO / full 3D need GPU/multi-node absent here; Section 12 vision encoders need external weights; further alignment milestones would duplicate completed 11.x items."
@@ -13796,22 +13796,22 @@
     "ISS-274": {
       "id": "ISS-274",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:29:53+00:00",
-      "updated_at": "2026-08-23T06:29:53+00:00",
-      "touched_round": 105,
+      "updated_at": "2026-08-23T06:34:18+00:00",
+      "touched_round": 106,
       "title": "PP v2 microbatch overlap unimplemented (ROADMAP Section 5)",
       "summary": "Section 5 open item: PP v2 (pp_size knob + DP, n_microbatches>1 overlap, on-demand stage materialization, AMP/grad-ckpt). Next slice: overlapped microbatch scheduling on PP v1 ScheduleGPipe with a CPU gradient-equivalence test vs the baseline."
     },
     "TASK-236": {
       "id": "TASK-236",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:29:57+00:00",
-      "updated_at": "2026-08-23T06:29:57+00:00",
-      "touched_round": 105,
+      "updated_at": "2026-08-23T06:34:18+00:00",
+      "touched_round": 106,
       "category": "performance",
       "severity": 0.4,
       "effort": 0.8,
@@ -13819,6 +13819,120 @@
       "unlock_factor": 1.0,
       "title": "PP v2 slice 1: microbatch scheduling overlap (n_microbatches>1) with CPU gradient-equivalence test",
       "summary": "Implement overlapped microbatch pipeline scheduling on top of PP v1 ScheduleGPipe; CPU e2e asserts microbatched gradients/parameters match the non-overlapped baseline on a tiny 2-stage model; update docs + ROADMAP Section 5."
+    },
+    "EV-237": {
+      "id": "EV-237",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:34:11+00:00",
+      "updated_at": "2026-08-23T06:34:11+00:00",
+      "touched_round": 106,
+      "source": "src/llm/training/distributed/pipeline.py build_pipeline_model + tests/training/distributed/test_pipeline_parallel.py (test_pp_n_microbatches_grad_parity_two_process_cpu, test_pp_dp_2d_*, test_pp_gradient_checkpointing_parity_*)",
+      "summary": "PP v2 items already implemented and covered by committed CPU grad/param-parity tests: microbatch overlap (n_microbatches>1) = TASK-213, PP+DP 2D (pp_size/pp_rank/pp_group/dp_group + DP grad average) = TASK-211, bf16 AMP and gradient-checkpointing paths present; tests spawn multi-process CPU dist which this sandbox cannot run (socket bind blocked), but code+committed tests confirm TASK-236's deliverable already exists -> resolved without redundant code.",
+      "confidence": 1.0
+    },
+    "DEC-069": {
+      "id": "DEC-069",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:34:18+00:00",
+      "updated_at": "2026-08-23T06:34:18+00:00",
+      "touched_round": 106,
+      "title": "Correct PP v2 course: microbatch overlap already done; pivot to Block Sparse Attention",
+      "rationale": "TASK-236's deliverable (microbatch overlap + CPU grad-equivalence) is already implemented and tested (TASK-211/213; ROADMAP Section 5 line was stale). Resolve it with evidence instead of redundant code. Remaining PP v2 item (on-demand stage materialization) needs GPU/multi-node and cannot be verified in this sandbox. Pivot to a genuinely-open, single-process CPU-verifiable frontier item: Block Sparse Attention (ROADMAP 15.2) — reuses the existing attention-mask machinery, with a block-sparse pattern whose parity/full-coverage case matches dense attention.",
+      "alternatives_rejected": "pushing redundant microbatch-overlap code would duplicate TASK-211/213; on-demand stage materialization cannot be CPU-verified here (dist socket-block); DeepSpeed/3D need GPU/multi-node."
+    },
+    "ISS-275": {
+      "id": "ISS-275",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T06:34:28+00:00",
+      "updated_at": "2026-08-23T06:38:11+00:00",
+      "touched_round": 106,
+      "title": "Block Sparse Attention unimplemented (ROADMAP 15.2)",
+      "summary": "15.2 open item. Next slice: a block-sparse attention mask (global tokens + local window + optional random blocks) built on the existing attention-mask machinery; CPU test proves full-coverage block-sparse matches dense attention and blocked blocks contribute no attention."
+    },
+    "TASK-237": {
+      "id": "TASK-237",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T06:34:32+00:00",
+      "updated_at": "2026-08-23T06:38:11+00:00",
+      "touched_round": 106,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.6,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Block Sparse Attention: block-level sparse attention mask + CPU parity test (ROADMAP 15.2)",
+      "summary": "Add a block-sparse attention-mask builder (global tokens + local window + optional random/block pattern) over the existing attention-mask machinery; CPU e2e: full-coverage block-sparse equals dense attention, and genuinely sparse blocks contribute no attention; docs + ROADMAP 15.2 update."
+    },
+    "CHG-250": {
+      "id": "CHG-250",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:38:04+00:00",
+      "updated_at": "2026-08-23T06:38:04+00:00",
+      "touched_round": 106,
+      "commit": "797bfed",
+      "title": "Block Sparse Attention mask builder + CPU parity test; correct stale ROADMAP Section 5 (TASK-237)",
+      "summary": "block_sparse.py build_block_sparse_mask (window+global+seeded random blocks, causal) + mask_to_additive + coverage_fraction; CPU parity: full window+global coverage == dense causal; ROADMAP 15.2 checkoff + 15.2/5.5 docs correction (PP v2 implemented per TASK-211/213)."
+    },
+    "EV-238": {
+      "id": "EV-238",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:38:08+00:00",
+      "updated_at": "2026-08-23T06:38:08+00:00",
+      "touched_round": 106,
+      "source": "tests/core/attn/test_block_sparse.py (9 tests)",
+      "summary": "arg validation; full-window/full-global coverage == dense causal (parity); non-causal full coverage all-ones; global always attended; blocked blocks -> -inf -> softmax 0; causal masks future; seeded random blocks deterministic; mask_to_additive; 9 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-070": {
+      "id": "DEC-070",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:38:17+00:00",
+      "updated_at": "2026-08-23T06:38:17+00:00",
+      "touched_round": 106,
+      "title": "Open StreamingLLM (attention-sink) milestone",
+      "rationale": "Continue the frontier focus (Section 15) on top of the attention-mask machinery just built for block-sparse: implement StreamingLLM (15.1) as an attention-sink mask — first-k sink positions always attended + a recent rolling window — with a CPU parity invariant (sink+window covering all == dense; sparse case attends only sink+recent position). Distinct from block-sparse (token-level sink, not block-level random), and single-process CPU-verifiable.",
+      "alternatives_rejected": "BigBird / Longformer-style attention largely overlap the block-sparse mask builder already shipped (15.2); DeepSpeed/3D/on-demand PP materialization need GPU/multi-node and cannot be CPU-verified here."
+    },
+    "ISS-276": {
+      "id": "ISS-276",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:38:20+00:00",
+      "updated_at": "2026-08-23T06:38:20+00:00",
+      "touched_round": 106,
+      "title": "StreamingLLM (attention sink) unimplemented (ROADMAP 15.1)",
+      "summary": "15.1 open item: attention-sink streaming — first-k sink positions always attended plus a recent-window; enables stable long-run attention. Next slice: attention-sink mask + CPU parity test."
+    },
+    "TASK-238": {
+      "id": "TASK-238",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:38:24+00:00",
+      "updated_at": "2026-08-23T06:38:24+00:00",
+      "touched_round": 106,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.6,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "StreamingLLM: attention-sink streaming mask (first-k always-attend + rolling window) + CPU parity test",
+      "summary": "Add an attention-sink mask builder over the attention-mask machinery: first-k sink positions always attended + a recent window (causal); CPU e2e: sink+window full-coverage equals dense, and sparse case attends only sink+recent; docs + ROADMAP 15.1 update."
     }
   },
   "edges": [
@@ -20246,6 +20360,60 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:30:00+00:00"
+    },
+    {
+      "from": "DEC-069",
+      "to": "DEC-068",
+      "type": "supersedes",
+      "created_at": "2026-08-23T06:34:21+00:00"
+    },
+    {
+      "from": "DEC-069",
+      "to": "TASK-237",
+      "type": "governs",
+      "created_at": "2026-08-23T06:34:35+00:00"
+    },
+    {
+      "from": "TASK-237",
+      "to": "ISS-275",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:34:35+00:00"
+    },
+    {
+      "from": "ISS-275",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:34:35+00:00"
+    },
+    {
+      "from": "CHG-250",
+      "to": "TASK-237",
+      "type": "implements",
+      "created_at": "2026-08-23T06:38:11+00:00"
+    },
+    {
+      "from": "CHG-250",
+      "to": "ISS-275",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:38:11+00:00"
+    },
+    {
+      "from": "DEC-070",
+      "to": "TASK-238",
+      "type": "governs",
+      "created_at": "2026-08-23T06:38:27+00:00"
+    },
+    {
+      "from": "TASK-238",
+      "to": "ISS-276",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:38:28+00:00"
+    },
+    {
+      "from": "ISS-276",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:38:28+00:00"
     }
   ]
 }
