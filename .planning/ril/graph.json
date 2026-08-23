@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 129,
+  "round": 131,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T13:42:47+00:00",
+  "updated_at": "2026-08-23T17:54:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -15293,6 +15293,96 @@
       "source": "tests/multimodal/test_vision.py (10 tests pass; parity vs manual reference; loss-drop e2e)",
       "title": "Vision encoder shapes/parity/gradients/freeze + image data path e2e all pass on CPU",
       "confidence": 1.0
+    },
+    "ISS-298": {
+      "id": "ISS-298",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T13:45:21+00:00",
+      "updated_at": "2026-08-23T17:40:54+00:00",
+      "touched_round": 129,
+      "severity": 0.7,
+      "title": "PP3D bug: pp_tp.py reads .grad of non-leaf tensor (fin) -> None -> .detach() crash in _send (full-suite GPU/CPU e2e)"
+    },
+    "ISS-299": {
+      "id": "ISS-299",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T13:45:21+00:00",
+      "updated_at": "2026-08-23T17:40:54+00:00",
+      "touched_round": 129,
+      "severity": 0.5,
+      "title": "TorchScript regression: decoder.py inline 'from llm.core.attn.sparse import ...' inside forward breaks scripting (UnsupportedNodeError)"
+    },
+    "ISS-300": {
+      "id": "ISS-300",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T13:45:21+00:00",
+      "updated_at": "2026-08-23T17:40:54+00:00",
+      "touched_round": 129,
+      "severity": 0.6,
+      "title": "GPU-environment: ~10 convergence/roundtrip tests probe model() with CPU loader batches while engine moved model to CUDA (device-mismatch)"
+    },
+    "CHG-273": {
+      "id": "CHG-273",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T17:34:11+00:00",
+      "updated_at": "2026-08-23T17:34:11+00:00",
+      "touched_round": 129,
+      "commit": "ba802f0",
+      "title": "PP3D: reorder _recv to detach().to(device).requires_grad_() so received tensor is a leaf with populated .grad"
+    },
+    "CHG-274": {
+      "id": "CHG-274",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T17:34:11+00:00",
+      "updated_at": "2026-08-23T17:34:11+00:00",
+      "touched_round": 129,
+      "commit": "4d698ac",
+      "title": "GPU-device handling: @torch.jit.unused sparse-mask helper (decoder.py), sdpa attn_mask device normalize, aligner_benchmark probe device"
+    },
+    "CHG-275": {
+      "id": "CHG-275",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T17:34:12+00:00",
+      "updated_at": "2026-08-23T17:34:12+00:00",
+      "touched_round": 129,
+      "commit": "5b20553",
+      "title": "test(gpu-env): move standalone probe tensors to model device across 7 tests"
+    },
+    "EV-262": {
+      "id": "EV-262",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T17:36:16+00:00",
+      "updated_at": "2026-08-23T17:36:16+00:00",
+      "touched_round": 129,
+      "source": "tests/training/distributed/test_pipeline_parallel.py (pp3d 4/8-process e2e pass)",
+      "title": "PP3D non-leaf grad crash reproduced then fixed; both pp3d engine e2e now green",
+      "confidence": 1.0
+    },
+    "EV-263": {
+      "id": "EV-263",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T17:36:16+00:00",
+      "updated_at": "2026-08-23T17:36:16+00:00",
+      "touched_round": 129,
+      "source": "full suite re-verify EXIT=0 (tests/ minus gpu-marked); torchscript export 10 passed 1 xfail",
+      "title": "GPU-environment device fixes verified: full suite green on GPU-available machine",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -22518,6 +22608,30 @@
       "to": "ISS-297",
       "type": "resolves",
       "created_at": "2026-08-23T13:37:42+00:00"
+    },
+    {
+      "from": "CHG-273",
+      "to": "ISS-298",
+      "type": "resolves",
+      "created_at": "2026-08-23T17:40:53+00:00"
+    },
+    {
+      "from": "CHG-274",
+      "to": "ISS-299",
+      "type": "resolves",
+      "created_at": "2026-08-23T17:40:53+00:00"
+    },
+    {
+      "from": "CHG-274",
+      "to": "ISS-300",
+      "type": "resolves",
+      "created_at": "2026-08-23T17:40:53+00:00"
+    },
+    {
+      "from": "CHG-275",
+      "to": "ISS-300",
+      "type": "resolves",
+      "created_at": "2026-08-23T17:40:53+00:00"
     }
   ]
 }
