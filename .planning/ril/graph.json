@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 94,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T01:02:50+00:00",
+  "updated_at": "2026-08-23T01:05:35+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 82,
+      "touched_round": 94,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13032,6 +13032,44 @@
       "source": "tests/training/test_distill_task.py (4 tests)",
       "summary": "'distill' registered; fresh-seeded teacher frozen + student trainable + different init; teacher loaded from checkpoint reproduces saved weights bit-for-bit (torch.equal all params) and is frozen; full CPU e2e: pre-train confident teacher on fixed cyclic corpus, save checkpoint, distill fresh student -> KD loss AND KL-to-teacher both drop >2x (loss 0.49->0.12, KL 0.79->0.13). All 4 pass (ruff clean).",
       "confidence": 1.0
+    },
+    "DEC-056": {
+      "id": "DEC-056",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:05:04+00:00",
+      "updated_at": "2026-08-23T01:05:04+00:00",
+      "touched_round": 94,
+      "rationale": "Next milestone = weight/structure pruning (ROADMAP 13.4 '模型剪枝'), natural continuation of the just-closed compression thread (QAT 13.2 + KD 13.4 done). In-repo, CPU-verifiable, low-risk: sparsify a pretrained checkpoint's nn.Linear weights with a config/CLI + accuracy-gate e2e, mirroring the KD/QAT milestone shape.",
+      "alternatives_rejected": "Multimodal (P2) is larger and needs a new MultimodalDataModule design spike (blocked by ADR boundary, no registry); low-rank decomposition (13.4) overlaps with existing AdaLoRA factorization and is less concrete; DeepSpeed ZeRO / PP-v2 need GPU/multi-node infra not available in this sandbox."
+    },
+    "ISS-262": {
+      "id": "ISS-262",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:05:14+00:00",
+      "updated_at": "2026-08-23T01:05:14+00:00",
+      "touched_round": 94,
+      "title": "Weight pruning unimplemented (ROADMAP 13.4)",
+      "summary": "No way to sparsify a pretrained checkpoint: magnitude/structural pruning of nn.Linear weights + config/CLI + accuracy-gate e2e. Next compression milestone after QAT + KD."
+    },
+    "TASK-224": {
+      "id": "TASK-224",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:05:17+00:00",
+      "updated_at": "2026-08-23T01:05:17+00:00",
+      "touched_round": 94,
+      "category": "core-feature",
+      "severity": 0.4,
+      "effort": 0.6,
+      "confidence": 0.7,
+      "unlock_factor": 1.1,
+      "title": "Pruning milestone slice 1: magnitude pruning of pretrained linear weights",
+      "summary": "Add a pruning pass that sparsifies a pretrained checkpoint (nn.Linear weight_masks / threshold) with config knobs (ratio/type), a CLI or training-adjacent entry, and an e2e showing pruned-inference is valid and sparsity/accuracy are reported."
     }
   },
   "edges": [
@@ -19081,6 +19119,24 @@
       "to": "ISS-261",
       "type": "resolves",
       "created_at": "2026-08-23T01:02:41+00:00"
+    },
+    {
+      "from": "DEC-056",
+      "to": "TASK-224",
+      "type": "governs",
+      "created_at": "2026-08-23T01:05:34+00:00"
+    },
+    {
+      "from": "TASK-224",
+      "to": "ISS-262",
+      "type": "addresses",
+      "created_at": "2026-08-23T01:05:35+00:00"
+    },
+    {
+      "from": "ISS-262",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T01:05:35+00:00"
     }
   ]
 }
