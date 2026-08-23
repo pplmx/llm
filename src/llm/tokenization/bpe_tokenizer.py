@@ -137,8 +137,18 @@ class BPETokenizer:
         "pad_token_id", 0)`` — but the attribute *exists* as None, so the
         default never fires and padding builds ``[None] * n``, crashing
         ``torch.tensor`` in ``batch_generate`` / ``TextDataset`` (RIL
-        ISS-155). Fall back to the UNK token's id (always present: it is
-        the BPE model's ``unk_token``) then the documented ``0``, so the
-        property never returns ``None`` and never collides with content.
+        ISS-155). Fall back to the UNK token's id then the documented ``0``,
+        so the property never returns ``None`` and never collides with
+        content.
+
+        Both lookups use explicit ``is not None`` checks, NOT an ``or``
+        chain: ``[PAD]`` (or ``<unk>``) is legitimately vocab id ``0`` in
+        some tokenizers, and ``0 or ...`` falls through to the WRONG token —
+        padding every sample with the real content token ``<unk>`` instead of
+        ``[PAD]`` (silent data corruption; deep-dive finding).
         """
-        return self.tokenizer.token_to_id("[PAD]") or self.tokenizer.token_to_id(DEFAULT_UNK_TOKEN) or 0
+        pad_id = self.tokenizer.token_to_id("[PAD]")
+        if pad_id is not None:
+            return pad_id
+        unk_id = self.tokenizer.token_to_id(DEFAULT_UNK_TOKEN)
+        return unk_id if unk_id is not None else 0
