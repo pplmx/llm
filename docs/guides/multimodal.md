@@ -77,14 +77,23 @@ engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_mod
 loss = engine._run_epoch(0)               # batch["modal_embeds"]: [B, 17, embed_dim]
 ```
 
-## 未落地（后续切片）
+## 已落地：图像-文本对齐模块 slice 3（ROADMAP 12.1）
 
+- `ContrastiveAligner`（`llm/multimodal/alignment.py`）：CLIP/SigLIP 风格对比对齐
+  头。对图像 token 与文本 token 各做线性投影到共享空间并 L2 归一化,以可学习温度
+  `scale = exp(logit_scale)` 打分 `logits[B,B]`,损失为对称 InfoNCE(或 SigLIP
+  sigmoid 变体 `sigmoid=True`)。图像侧支持 `image_pool='mean'`(所有 token 均值)或
+  `'cls'`(首行 `[CLS]`)。纯 CPU 可验证:随机配对数据上损失从 `log(B)` 收敛,图像→
+  文本 top-1 检索准确率升至 ~1;直接消费 `VisionTransformerEncoder` 输出(`[B,N,D]`)。
 - 视觉塔**在线训练**已落地 slice 2: `MultimodalDataModule(..., train_encoder=True)`
   batch 携带原始图像 `images [B,3,H,W]`,`MultimodalModel`/`MultimodalTask` 在
   forward 内实时编码(视觉塔 → projector → 文本前缀联合训练),梯度可到达视觉塔;
   默认 `train_encoder=False` 保持冻结-预计算路径。
-- 图像-文本对齐模块 / Visual Instruction Tuning（ROADMAP 12.1 后续）——基于本 slice
-  的图像 token 输出即可接入。
+
+## 未落地（后续切片）
+
+- Visual Instruction Tuning（ROADMAP 12.1 后续）——基于本 slice 的图像 token 输出
+  与对齐头即可接入。
 - 音频编码器（Whisper-style，ROADMAP 12.2）与真实多模态数据集接入。
 
 测试见 `tests/multimodal/`（registry + DataModule 契约 + 最小编码器可训练性 +
