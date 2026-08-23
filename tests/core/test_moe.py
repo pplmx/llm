@@ -78,3 +78,92 @@ class TestMoE:
         # Check for NaN or Inf values in the output
         assert not torch.isnan(output_tensor).any(), "Output contains NaN values"
         assert not torch.isinf(output_tensor).any(), "Output contains Inf values"
+
+
+class TestExpertChoiceRouting:
+    """Expert Choice Routing research slice (ROADMAP 15.4)."""
+
+    def test_each_expert_selects_exactly_k_tokens(self):
+        from llm.core.moe.expert_choice import expert_choice_assignment
+
+        torch.manual_seed(0)
+        gate = torch.randn(8, 4)
+        tokens, _ = expert_choice_assignment(gate, k=3)
+        assert tokens.shape == (4, 3)
+        # Load balance by construction: every expert's selection has exactly k
+        # (possibly overlapping) tokens — no expert is starved or overloaded.
+        for e in range(4):
+            assert tokens[e].unique().numel() == 3
+        # A token may legitimately be chosen by >1 expert (or by none).
+        flat = tokens.reshape(-1)
+        assert flat.max().item() < 8
+        assert flat.min().item() >= 0
+
+    def test_assignment_matches_topk_reference(self):
+        from llm.core.moe.expert_choice import expert_choice_assignment
+
+        torch.manual_seed(0)
+        gate = torch.randn(8, 4)
+        tokens, scores = expert_choice_assignment(gate, k=3)
+        ref_scores, ref_tokens = torch.topk(gate.transpose(0, 1), 3, dim=1)
+        assert torch.equal(tokens, ref_tokens)
+        assert torch.allclose(scores, ref_scores, atol=1e-6)
+
+    def test_weights_normalize_per_expert(self):
+        from llm.core.moe.expert_choice import expert_choice_assignment, expert_choice_weights
+
+        torch.manual_seed(1)
+        gate = torch.randn(8, 4)
+        _, scores = expert_choice_assignment(gate, k=3)
+        weights = expert_choice_weights(scores)
+        assert weights.shape == (4, 3)
+        assert torch.allclose(weights.sum(-1), torch.ones(4), atol=1e-5)
+        assert torch.isfinite(weights).all()
+
+    def test_combine_equals_weighted_sum_reference(self):
+        from llm.core.moe.expert_choice import expert_choice_assignment, expert_choice_output, expert_choice_weights
+
+        torch.manual_seed(2)
+        n_tok, n_exp, d, k = 8, 4, 6, 3
+        x = torch.randn(n_tok, d)
+        gate = torch.randn(n_tok, n_exp)
+
+        def expert_fn(sel):
+            return sel * 2.0
+
+        out = expert_choice_output(x, gate, expert_fn, k)
+
+        tokens, scores = expert_choice_assignment(gate, k)
+        weights = expert_choice_weights(scores)
+        ref = torch.zeros_like(x)
+        for ex in range(n_exp):
+            ref = ref.index_add(0, tokens[ex], (x[tokens[ex]] * 2.0) * weights[ex].unsqueeze(-1))
+        assert torch.allclose(out, ref, atol=1e-5)
+
+    def test_gradient_flow_finite(self):
+        from llm.core.moe.expert_choice import expert_choice_output
+
+        torch.manual_seed(3)
+        n_tok, n_exp, d, k = 6, 3, 5, 2
+        x = torch.randn(n_tok, d, requires_grad=True)
+        gate = torch.randn(n_tok, n_exp, requires_grad=True)
+
+        def expert_fn(sel):
+            return sel * 1.5
+
+        out = expert_choice_output(x, gate, expert_fn, k)
+        assert torch.isfinite(out).all()
+        out.sum().backward()
+        assert x.grad is not None
+        assert bool(torch.isfinite(x.grad).all())
+        assert gate.grad is not None
+        assert bool(torch.isfinite(gate.grad).all())
+
+    def test_k_bounds_rejected(self):
+        from llm.core.moe.expert_choice import expert_choice_assignment
+
+        gate = torch.randn(4, 3)
+        with pytest.raises(ValueError, match="k"):
+            expert_choice_assignment(gate, k=0)
+        with pytest.raises(ValueError, match="num_tokens"):
+            expert_choice_assignment(gate, k=5)
