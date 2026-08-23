@@ -155,12 +155,19 @@ def prune_model(model: nn.Module, config: PruningConfig) -> float:
     ]
     if not candidates:
         raise ValueError("prune_model found no nn.Linear layers to prune.")
+    pruned_any = False
     for name, module in candidates:
         if config.target_modules is not None and not any(tok in name for tok in config.target_modules):
             continue
         mask = _compute_mask(module.weight.detach(), config)
         _replace_module(model, name, PrunedLinear.from_linear(module, mask, config.method))
+        pruned_any = True
 
+    if not pruned_any:
+        # Matches decompose_model's fail-loud contract: a target_modules filter
+        # that matches nothing is a user mistake, not a silent no-op (deep-dive
+        # TASK-228).
+        raise ValueError("prune_model: target_modules matched no nn.Linear layers to prune.")
     return compute_sparsity(model)
 
 

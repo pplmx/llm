@@ -55,6 +55,22 @@ def test_multimodal_datamodule_val_dataloader():
     assert "modal_embeds" in batch
 
 
+def test_multimodal_datamodule_val_is_disjoint_from_train():
+    """Regression (TASK-228 deep-dive): validation must NOT reuse the training
+    set (previously val_dataset == train_dataset, making val metrics identical
+    to train)."""
+    config = _config(num_samples=32)
+    module = MultimodalDataModule(config, modality="linear", input_dim=16)
+    module.setup()
+    assert module.train_dataset is not module.val_dataset
+
+    train_modal = module.train_dataset.tensors[2]
+    val_modal = module.val_dataset.tensors[2]
+    # Held-out val samples use fresh random modal features (disjoint from train).
+    for vm in val_modal:
+        assert not (vm.unsqueeze(0) == train_modal).all(dim=1).any()
+
+
 def test_multimodal_datamodule_unknown_modality_raises():
 
     config = _config()

@@ -58,23 +58,30 @@ class MultimodalDataModule(SamplerMapDataModule):
         vocab = self.config.model.vocab_size
         seq_len = self.config.model.max_seq_len
         num = self.config.training.num_samples
+        val_num = max(1, num // 10)
 
         # Fixed seed for reproducible, rank-identical synthetic data (mirrors
         # the SyntheticDataModule RIL ISS-134 pattern — never the global RNG).
         gen = torch.Generator()
         gen.manual_seed(0)
-        rows = [(torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len] + i).fmod(vocab).long() for i in range(num)]
+        # Generate ``num + val_num`` samples so the validation split is DISJOINT
+        # from training (previously val_dataset trained on the training set, which
+        # silently made val metrics equal train metrics — deep-dive TASK-228).
+        rows = [
+            (torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len] + i).fmod(vocab).long()
+            for i in range(num + val_num)
+        ]
         inputs = torch.stack(rows)
         labels = inputs  # next-token self-supervised labels
-        raw_features = torch.randn(num, self.input_dim, generator=gen)
+        raw_features = torch.randn(num + val_num, self.input_dim, generator=gen)
 
         self.encoder = self.build_encoder()
         self.encoder.eval()
         with torch.no_grad():
             modal_embeds = self.encoder(raw_features)
 
-        self.train_dataset = TensorDataset(inputs, labels, modal_embeds)
-        self.val_dataset = self.train_dataset
+        self.train_dataset = TensorDataset(inputs[:num], labels[:num], modal_embeds[:num])
+        self.val_dataset = TensorDataset(inputs[num:], labels[num:], modal_embeds[num:])
 
     def _collate(self, batch) -> dict[str, torch.Tensor]:
         inputs, labels, embeds = zip(*batch, strict=True)

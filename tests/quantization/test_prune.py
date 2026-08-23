@@ -76,6 +76,19 @@ def test_prune_no_linear_raises():
         prune_model(nn.Sequential(nn.ReLU()), PruningConfig(ratio=0.5))
 
 
+def test_prune_unmatched_target_modules_raises_not_silent_noop():
+    """Regression (TASK-228): a target_modules filter that matches nothing must
+    fail loudly instead of silently returning 0% sparsity."""
+    from llm.quantization.prune import PrunedLinear, PruningConfig, prune_model
+
+    model = TwoLinearMLP(hidden=16)
+    with pytest.raises(ValueError, match=r"matched no nn\.Linear"):
+        prune_model(model, PruningConfig(ratio=0.5, target_modules=["does-not-exist"]))
+    # The model is untouched (no silent partial mutation).
+    assert sum(1 for m in model.modules() if isinstance(m, PrunedLinear)) == 0
+    assert sum(1 for m in model.modules() if isinstance(m, nn.Linear)) == 2
+
+
 def test_pruned_forward_is_finite_and_shape_preserving():
     from llm.quantization.prune import PruningConfig, prune_model
 
