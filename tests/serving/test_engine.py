@@ -1289,3 +1289,62 @@ def test_engine_folds_sparse_attention_into_run_attn_mask(device, mock_tokenizer
     # full-coverage scheme reproduces dense exactly.
     assert not torch.allclose(sparse_logits, dense_logits, atol=1e-5)
     assert torch.allclose(full_logits, dense_logits, atol=1e-6)
+
+
+def test_engine_caches_sparse_pattern_mask(device, mock_tokenizer):
+    """RIL TASK-247: the engine builds the sparse pattern mask once and reuses it
+    across steps (cached on scheme + k_len), instead of recomputing a
+    ``[k_len, k_len]`` bool mask on every decode step. Also covers the invalidation
+    rules (scheme change, config resize) and the dense (no-scheme) case."""
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(6)
+    model = DecoderModel(
+        vocab_size=100,
+        hidden_size=24,
+        num_layers=1,
+        num_heads=2,
+        intermediate_size=48,
+        max_seq_len=64,
+        attn_impl="mha",
+        mlp_impl="mlp",
+        embedding_dropout_p=0.0,
+        attn_dropout_p=0.0,
+        mlp_dropout_p=0.0,
+        device=str(device),
+        dtype=torch.float32,
+    )
+    model.attn_sparse = {"kind": "streaming", "num_sink": 2, "window_size": 4, "causal": True}
+    model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        max_seq_len=64,
+        device=str(device),
+    )
+
+    m1 = engine._sparse_pattern_mask(64)
+    m2 = engine._sparse_pattern_mask(64)
+    assert engine._sparse_mask_cache is not None
+    assert m1 is m2, "mask should be cached and reused, not rebuilt"
+    assert m1.shape == (64, 64)
+    # The cached mask lives on the engine device so the per-step causal OR is
+    # device-correct (the mask builders return CPU tensors).
+    assert m1.device == engine.device
+
+    # Scheme change invalidates the cache.
+    model.attn_sparse = {"kind": "streaming", "num_sink": 8, "window_size": 2, "causal": True}
+    m3 = engine._sparse_pattern_mask(64)
+    assert m3 is not m1
+    assert not torch.equal(m1, m3)
+
+    # Key-length (config resize) change invalidates the cache.
+    m4 = engine._sparse_pattern_mask(16)
+    assert m4 is not m3
+    assert m4.shape == (16, 16)
+
+    # Dense model (no scheme) -> no mask.
+    model.attn_sparse = None
+    assert engine._sparse_pattern_mask(64) is None

@@ -280,11 +280,47 @@ class ContinuousBatchingEngine:
         # only guards the Python-side state machine. Future async refactors
         # should release this lock during the inner model forward.
         self._step_lock = threading.Lock()
+        # Cache for the served model's sparse/streaming pattern mask (RIL
+        # TASK-247): built once on first use and reused across decode steps
+        # instead of recomputing a ``[k_len, k_len]`` boolean mask every step.
+        # Immutable for the engine's lifetime, keyed on (scheme, k_len) so a
+        # scheme change or config resize invalidates it.
+        self._sparse_mask_cache: tuple | None = None
         # Optional callback invoked once per ``step()`` with the resulting
         # :class:`StepStats`. The serving tier uses it to publish
         # ``llm_batch_fill_ratio``. Called under ``self._step_lock`` so the
         # callback sees consistent post-step state.
         self._on_step: Callable[[StepStats], None] | None = None
+
+    def _sparse_pattern_mask(self, k_len: int) -> torch.Tensor | None:
+        """Return the served model's sparse pattern mask-out tensor over ``k_len``
+        keys (``True`` = mask out), cached across steps; ``None`` when the model
+        has no ``attn_sparse`` scheme.
+
+        The pattern is folded into the per-step causal ``run_attn_mask`` (RIL
+        TASK-246). It is absolute-position based and constant for the engine's
+        lifetime, so it is built once and cached keyed on (scheme, k_len) — a
+        scheme change or a config resize invalidates the cache (RIL TASK-247).
+        The cached tensor lives on ``self.device`` so the OR with the causal
+        mask is device-correct (the builders return CPU tensors).
+        """
+        spar = getattr(self.model, "attn_sparse", None) if self.model is not None else None
+        if not spar:
+            self._sparse_mask_cache = None
+            return None
+        key = (tuple(sorted(spar.items())), k_len)
+        cached = self._sparse_mask_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        from llm.core.attn.sparse import build_sparse_attention_mask
+
+        _params = dict(spar)
+        _kind = _params.pop("kind")
+        _params.pop("causal", None)  # causality comes from the causal mask
+        _allow = build_sparse_attention_mask(_kind, k_len, causal=False, **_params)
+        mask_out = (~_allow).bool().to(self.device)
+        self._sparse_mask_cache = (key, mask_out)
+        return mask_out
 
     @classmethod
     def from_serving_config(cls, config, model: DecoderModel, tokenizer: BaseTokenizer) -> ContinuousBatchingEngine:
@@ -738,16 +774,7 @@ class ContinuousBatchingEngine:
         # engine always supplies an explicit ``attn_mask``). The pattern is
         # absolute-position based over the full key window; per query row it is
         # indexed by the real position id below and OR-ed with the causal mask.
-        sparse_mask_out = None
-        _spar = getattr(self.model, "attn_sparse", None) if self.model is not None else None
-        if _spar:
-            from llm.core.attn.sparse import build_sparse_attention_mask
-
-            _params = dict(_spar)
-            _kind = _params.pop("kind")
-            _params.pop("causal", None)  # causality comes from the causal mask
-            _allow = build_sparse_attention_mask(_kind, k_len, causal=False, **_params)
-            sparse_mask_out = (~_allow).bool()  # True = mask out (SDPA convention)
+        sparse_mask_out = self._sparse_pattern_mask(k_len)
 
         for i, length in enumerate(seq_input_lengths):
             input_row = torch.tensor(batch_input_ids_list[i], dtype=torch.long, device=self.device)

@@ -93,3 +93,9 @@ key（RIL TASK-246）。CPU parity 验证在
 `tests/serving/test_engine.py::test_engine_folds_sparse_attention_into_run_attn_mask`：
 同权重下稀疏 prefill 改变输出，全 coverage 稀疏与稠密逐位一致，掩码本身也会把
 旧的非 sink/窗口外 key 标为 masked。
+
+服务端性能：该稀疏 pattern 掩码随 engine 生命周期不变，因此只**构建一次并缓存**
+（键控 scheme + `k_len`，scheme 变更或 resize 时失效），不再每个 decode 步重算
+`[k_len, k_len]` 的布尔掩码；且缓存落在 `self.device`，避免 builder 返回 CPU 张量
+与 CUDA 因果掩码 OR 时的设备不匹配（RIL TASK-247）。验证在
+`tests/serving/test_engine.py::test_engine_caches_sparse_pattern_mask`。
