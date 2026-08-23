@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 120,
+  "round": 121,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:09:01+00:00",
+  "updated_at": "2026-08-23T09:19:06+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 120,
+      "touched_round": 121,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -14705,6 +14705,68 @@
       "touched_round": 120,
       "commit": "dd47721",
       "summary": "Validate repetition_penalty>0 and top_k>=1 in sampling helpers; clear ValueErrors; regression tests + ROADMAP"
+    },
+    "DEC-083": {
+      "id": "DEC-083",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:18:38+00:00",
+      "updated_at": "2026-08-23T09:18:38+00:00",
+      "touched_round": 121,
+      "title": "Add greedy speculative-vs-eager parity test for the non-matching-draft path",
+      "rationale": "Deep-dive round verified many correctness-critical cores (penalties, truncation, linear/batch/paged KV cache incl. block boundaries, eval metrics, dedup, speculative greedy parity) and found them sound; the sole coverage gap was that the greedy speculative-vs-eager parity test only covers the degenerate draft==target accept-all case, leaving the rejection/correction path (a non-matching random draft) untested. Codify the verified invariant as a regression test.",
+      "alternatives_rejected": "Adding duplicate KV/eval invariant tests would be redundant (existing suites cover them); fabricating a bug fix where none exists would be dishonest; leaving the correction path untested keeps a regression risk."
+    },
+    "ISS-289": {
+      "id": "ISS-289",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:18:38+00:00",
+      "updated_at": "2026-08-23T09:19:06+00:00",
+      "touched_round": 121,
+      "title": "Greedy speculative rejection/correction path lacks a parity regression test",
+      "summary": "test_speculative_matches_eager_greedy_when_draft_equals_target only exercises accept-all; the rejection/correction fallback (a draft that rarely matches the target's argmax) is correct per live verification but not covered by a test."
+    },
+    "TASK-251": {
+      "id": "TASK-251",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:18:39+00:00",
+      "updated_at": "2026-08-23T09:19:06+00:00",
+      "touched_round": 121,
+      "category": "test-quality",
+      "severity": 0.3,
+      "effort": 0.3,
+      "confidence": 0.9,
+      "unlock_factor": 1.0,
+      "title": "Add random-draft greedy speculative==eager parity regression test",
+      "summary": "Parametrize greedy speculative_generate vs eager_generate with a non-matching random draft across seeds/max tokens to cover the rejection/correction path; CPU test."
+    },
+    "EV-252": {
+      "id": "EV-252",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:19:02+00:00",
+      "updated_at": "2026-08-23T09:19:02+00:00",
+      "touched_round": 121,
+      "source": "d3ba9bd tests/generation/test_speculative.py::test_speculative_greedy_matches_eager_with_nonmatching_draft",
+      "confidence": 1.0,
+      "summary": "Live verification across 3 random draft seeds x 3 max-token counts x 2 prompts: greedy speculative_generate output (prompt+decoded) equals eager_generate exactly even when the random draft rarely matches the target argmax; new parametrized regression test codifies the rejection/correction path; deep-dive also re-verified penalties/truncation/linear+batch+paged KV/eval metrics/dedup clean (no fabricated bug)"
+    },
+    "CHG-264": {
+      "id": "CHG-264",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:19:02+00:00",
+      "updated_at": "2026-08-23T09:19:02+00:00",
+      "touched_round": 121,
+      "commit": "d3ba9bd",
+      "summary": "Add parametrized random-draft greedy speculative==eager parity test covering rejection/correction path"
     }
   },
   "edges": [
@@ -21600,6 +21662,42 @@
       "to": "ISS-288",
       "type": "resolves",
       "created_at": "2026-08-23T09:09:01+00:00"
+    },
+    {
+      "from": "TASK-251",
+      "to": "ISS-289",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:18:42+00:00"
+    },
+    {
+      "from": "ISS-289",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:18:42+00:00"
+    },
+    {
+      "from": "DEC-083",
+      "to": "COMP-012",
+      "type": "governs",
+      "created_at": "2026-08-23T09:18:42+00:00"
+    },
+    {
+      "from": "DEC-083",
+      "to": "TASK-251",
+      "type": "governs",
+      "created_at": "2026-08-23T09:18:42+00:00"
+    },
+    {
+      "from": "CHG-264",
+      "to": "TASK-251",
+      "type": "implements",
+      "created_at": "2026-08-23T09:19:06+00:00"
+    },
+    {
+      "from": "CHG-264",
+      "to": "ISS-289",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:19:06+00:00"
     }
   ]
 }
