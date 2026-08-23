@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 131,
+  "round": 132,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T17:54:54+00:00",
+  "updated_at": "2026-08-23T18:54:47+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -15253,11 +15253,11 @@
     "ISS-297": {
       "id": "ISS-297",
       "type": "issue",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-23T11:49:39+00:00",
-      "updated_at": "2026-08-23T11:55:51+00:00",
-      "touched_round": 129,
+      "updated_at": "2026-08-23T17:59:56+00:00",
+      "touched_round": 131,
       "severity": 0.5,
       "title": "ROADMAP 12.1 open: no real vision encoder (CLIP/SigLIP) in MODALITY_ENCODER_REGISTRY; only LinearModalityEncoder placeholder"
     },
@@ -15301,7 +15301,7 @@
       "version": 2,
       "created_at": "2026-08-23T13:45:21+00:00",
       "updated_at": "2026-08-23T17:40:54+00:00",
-      "touched_round": 129,
+      "touched_round": 132,
       "severity": 0.7,
       "title": "PP3D bug: pp_tp.py reads .grad of non-leaf tensor (fin) -> None -> .detach() crash in _send (full-suite GPU/CPU e2e)"
     },
@@ -15323,7 +15323,7 @@
       "version": 2,
       "created_at": "2026-08-23T13:45:21+00:00",
       "updated_at": "2026-08-23T17:40:54+00:00",
-      "touched_round": 129,
+      "touched_round": 132,
       "severity": 0.6,
       "title": "GPU-environment: ~10 convergence/roundtrip tests probe model() with CPU loader batches while engine moved model to CUDA (device-mismatch)"
     },
@@ -15382,6 +15382,30 @@
       "touched_round": 129,
       "source": "full suite re-verify EXIT=0 (tests/ minus gpu-marked); torchscript export 10 passed 1 xfail",
       "title": "GPU-environment device fixes verified: full suite green on GPU-available machine",
+      "confidence": 1.0
+    },
+    "TASK-260": {
+      "id": "TASK-260",
+      "type": "task",
+      "status": "resolved",
+      "version": 5,
+      "created_at": "2026-08-23T18:08:28+00:00",
+      "updated_at": "2026-08-23T18:53:12+00:00",
+      "touched_round": 132,
+      "category": "core-feature",
+      "severity": 0.75,
+      "title": "Real-CUDA distributed validation: run gpu-marked DDP/TP/TP+DP e2e on the now-free A100 cluster (was CPU/gloo-only)"
+    },
+    "EV-264": {
+      "id": "EV-264",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T18:53:11+00:00",
+      "updated_at": "2026-08-23T18:53:11+00:00",
+      "touched_round": 131,
+      "source": "real A100 runs: test_ddp(2/8), test_tp_checkpoint(2/4 deep, TP+DP 4/6), test_serve_tp_checkpoint+test_tensor_parallel need_gpu (13) — all EXIT=0",
+      "title": "19 real-CUDA distributed e2e all green on 8xA100-80GB; ZERO new failures surfaced",
       "confidence": 1.0
     }
   },
@@ -22632,6 +22656,18 @@
       "to": "ISS-300",
       "type": "resolves",
       "created_at": "2026-08-23T17:40:53+00:00"
+    },
+    {
+      "from": "TASK-260",
+      "to": "ISS-300",
+      "type": "addresses",
+      "created_at": "2026-08-23T18:54:47+00:00"
+    },
+    {
+      "from": "TASK-260",
+      "to": "ISS-298",
+      "type": "addresses",
+      "created_at": "2026-08-23T18:54:47+00:00"
     }
   ]
 }

@@ -121,8 +121,9 @@
 - [x] MoE Expert Parallel — 复制门 + 按 expert 分片, 零命中反向死锁修复 (RIL TASK-207)
 - [x] Pipeline Parallelism v1 — `parallel_strategy=pp`, `ScheduleGPipe` 分阶段前向/反向, stage 划分于 transformer_blocks, 全量 global-name state-dict 收集/散播, PP 组全局梯度裁剪; 与串行 2-stage 逐位一致 (RIL DEC-049/TASK-210)
 - [x] Pipeline Parallelism v2 — PP+DP 2D (`pp_size` + DP 组梯度平均, RIL TASK-211) / microbatch 重叠 (`pp_n_microbatches>1`, RIL TASK-213) / AMP (bf16) 与 gradient checkpointing 支持均已落地; 剩余: stage 按需物化
+- [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'` (RIL TASK-216): `PPTPRuntime` 列内 stage 间 P2P 前向/反向 + TP 列内张量并行, 跨列 DP 梯度平均; 4/8 进程 CPU/gloo 引擎 e2e (RIL round-131 修 PP3D 接收张量非叶子 `.grad` 崩溃)
+- [x] 真实 CUDA 分布式验证 — 8×A100-80GB 上 19 个 gpu-marked e2e 全绿 (RIL TASK-260): DDP 2/8-GPU, TP 2/4-GPU deep, TP+DP 2D 4/6-GPU, serving TP checkpoint, tensor-parallel 数值 parity; 修正 GPU 环境设备不一致 cluster (ISS-298/299/300)
 - [ ] DeepSpeed ZeRO 集成
-- [ ] 3D Parallelism (DP + PP + TP)
 
 ---
 
@@ -578,7 +579,7 @@
 - [x] Pipeline Parallelism — `parallel_strategy='pp'` (RIL DEC-049/TASK-210): 按 `transformer_blocks` 切分 stage (stage 0 = embedding + 首块, 末 stage = final_norm + lm_head), `ScheduleGPipe` 驱动, 纯 pipeline 两进程 CPU/gloo bit-exact parity + 引擎 e2e 训练/保存/恢复; 强制 FP32 + LM-only 拒绝
 - [x] PP + 数据并行 2D — `pp_size < world_size`: 行主序 `[DP][PP]` 网格 (PP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_pp_dp_grads` (AVG) 平均 DP 组梯度, loss 按 PP 组 broadcast (`group_src`); 2x2 网格 bit-parity + 4 进程 CPU/gloo 引擎 e2e 全绿 + 状态字典跨 4 rank 逐位一致 (RIL TASK-211)
 - [ ] 集成 DeepSpeed ZeRO (Stage 2/3)
-- [ ] 3D Parallelism (DP + PP + TP)
+- [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'` (RIL TASK-216)
 
 #### 15.6 文档与社区
 
