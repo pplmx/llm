@@ -49,12 +49,41 @@ batch, _ = module.train_dataloader(rank=0, world_size=1)
 # batch["input_ids"], batch["labels"], batch["modal_embeds"]
 ```
 
+## 已落地：CLIP/SigLIP 风格视觉编码器 slice 1（ROADMAP 12.1）
+
+- `VisionTransformerEncoder`（`llm/multimodal/vision.py`，注册为 `"vit"`）：
+  消费**原始图像** `[B, C, H, W]`（而非预计算特征向量），输出 ViT 布局的
+  image-token embeddings `[B, num_tokens, embed_dim]`。架构（ViT-B 风格、纯 CPU
+  可验证）：`ImagePatchPreprocessor`（12.3 patchify + 线性投影 + 可学习位置编码）→
+  可选可学习 `[CLS]` token（CLIP 式，置 0 位）→ N 个 pre-norm transformer block
+  （LayerNorm → 多头 SDPA → residual → LayerNorm → MLP(GELU, ×mlp_ratio) →
+  residual）→ 最终 LayerNorm（SigLIP/CLIP 式）。
+- `with_cls` 控制是否前置 `[CLS]`（`num_tokens = N` 或 `N+1`）；`freeze_encoder=True`
+  冻结整座塔（CLIP 常见做法）。`MultimodalDataModule(modality="vit", ...)` 生成合成
+  图像，在 setup 时经冻结塔产出 `modal_embeds [B, num_tokens, embed_dim]`（3D，
+  与 linear 路径的 2D `[B, embed_dim]` 不同），直接喂 `MultimodalModel` 的 prefix
+  融合，图像→token→decoder 前缀的完整训练循环在 CPU 上收敛。
+
+```python
+from llm.multimodal import MultimodalDataModule, MultimodalTask
+from llm.training.core.engine import TrainingEngine
+
+module = MultimodalDataModule(config, modality="vit", image_h=64, image_w=64,
+                              patch_size=16, vit_layers=2, vit_heads=4, with_cls=True)
+module.setup()
+assert module.num_modal_tokens == 17      # 16 patches (+ CLS)
+task = MultimodalTask(config, module)
+engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
+loss = engine._run_epoch(0)               # batch["modal_embeds"]: [B, 17, embed_dim]
+```
+
 ## 未落地（后续切片）
 
-- 真实视觉/音频编码器（CLIP/SigLIP 等）——注册即可接入，不改模型核心。
-- 真实视觉/音频编码器 + 图像-文本对齐 / Visual Instruction Tuning（ROADMAP 阶段十二
-  的 12.1/12.2/12.3）：当前模型/任务切片用合成 `linear` 模态验证流程，真实视觉/音频
-  注册即可接入，不改模型核心。
-- 真实多模态数据集接入。
+- 视觉塔**在线训练**（当前 vision-tower 在 setup 冻结、特征预计算；若要在训练中微调
+  视觉编码器，需要改为 batch 携带原始图像、模型 forward 内实时编码）。
+- 图像-文本对齐模块 / Visual Instruction Tuning（ROADMAP 12.1 后续）——基于本 slice
+  的图像 token 输出即可接入。
+- 音频编码器（Whisper-style，ROADMAP 12.2）与真实多模态数据集接入。
 
-测试见 `tests/multimodal/`（registry + DataModule 契约 + 最小编码器可训练性）。
+测试见 `tests/multimodal/`（registry + DataModule 契约 + 最小编码器可训练性 +
+视觉编码器形状/parity/梯度/冻结 + 图像路径 e2e 收敛）。

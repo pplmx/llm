@@ -18,6 +18,7 @@ from llm.multimodal.encoders import (
 )
 from llm.multimodal.model import ModalityFusion, MultimodalModel, build_multimodal_model
 from llm.multimodal.task import MultimodalTask
+from llm.multimodal.vision import VisionTransformerBlock, VisionTransformerEncoder
 from llm.runtime.plugins import load_entry_point_registry
 
 
@@ -38,6 +39,8 @@ __all__ = [
     "MultimodalDataModule",
     "MultimodalModel",
     "MultimodalTask",
+    "VisionTransformerBlock",
+    "VisionTransformerEncoder",
     "build_multimodal_model",
     "ensure_multimodal_encoders_registered",
     "register_encoder",

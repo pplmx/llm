@@ -74,7 +74,12 @@
 > `MultimodalModel`/`--task multimodal` 融合模型与训练流程，
 > 纯 CPU，未硬改 `DecoderModel`；见 [ADR-013](docs/adr/013-multimodal-encoder-contract.md)）
 
-- [ ] 视觉编码器集成 (CLIP/SigLIP)
+- [x] 视觉编码器集成 slice 1 ✅（`VisionTransformerEncoder` 注册为 `"vit"`：消费原始
+  图像 `[B,C,H,W]` → ViT 布局 image-token `[B,N(+1 CLS),embed_dim]`，patchify → 线性
+  投影 + 位置编码 → N 个 pre-norm block（SDPA + MLP）→ 最终 LayerNorm；`with_cls` /
+  `freeze_encoder` 可配；`MultimodalDataModule(modality="vit")` 合成图像 → 冻结塔
+  特征 → prefix 融合 → decoder，CPU e2e 训练收敛；见 [multimodal guide](docs/guides/multimodal.md)）
+- [ ] 视觉塔在线训练（batch 携带原始图像、模型 forward 内实时编码，微调视觉编码器）
 - [ ] 图像-文本对齐模块
 - [ ] Visual Instruction Tuning
 

@@ -44,6 +44,11 @@ def _next_token_accuracy(model, module):
     model.eval()
     loader, _ = module.train_dataloader(rank=0, world_size=1)
     batch = next(iter(loader))
+    # Move the loader batch to the model's device: the engine does this inside
+    # train_step, but this standalone probe doesn't (CPU batch vs CUDA model
+    # would raise on GPU machines).
+    device = next(model.parameters()).device
+    batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
     with torch.no_grad():
         logits = model(batch["input_ids"], batch["modal_embeds"])
         pred = logits.argmax(-1)
