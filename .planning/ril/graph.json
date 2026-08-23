@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 115,
+  "round": 116,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T08:30:03+00:00",
+  "updated_at": "2026-08-23T08:37:50+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 74,
+      "touched_round": 116,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -14349,22 +14349,22 @@
     "ISS-283": {
       "id": "ISS-283",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T08:29:58+00:00",
-      "updated_at": "2026-08-23T08:29:58+00:00",
-      "touched_round": 115,
+      "updated_at": "2026-08-23T08:36:54+00:00",
+      "touched_round": 116,
       "title": "Sparse scheme not correctly applied in incremental decode (mask from current input len, not key history)",
       "summary": "When a sparse/streaming model decodes with a KV cache, forward auto-builds the pattern mask from input length (1 token) instead of the accumulated key-history length, so sink/window cannot constrain the past keys. Prefill works; decode does not."
     },
     "TASK-245": {
       "id": "TASK-245",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T08:29:58+00:00",
-      "updated_at": "2026-08-23T08:29:58+00:00",
-      "touched_round": 115,
+      "updated_at": "2026-08-23T08:36:54+00:00",
+      "touched_round": 116,
       "category": "core-feature",
       "severity": 0.4,
       "effort": 1.2,
@@ -14372,6 +14372,68 @@
       "unlock_factor": 1.0,
       "title": "Build sparse/streaming mask against key-history length in decode + CPU parity",
       "summary": "In DecoderModel.forward, when auto-building from attn_sparse with a KV cache present, build the [Sq,Sk] pattern mask over the effective key history instead of input_ids.shape[1]; CPU test: sparse decode (cache) equals matching positions of full sparse forward, sparse decode != dense decode, full-coverage decode == dense decode; docs."
+    },
+    "EV-246": {
+      "id": "EV-246",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:36:51+00:00",
+      "updated_at": "2026-08-23T08:36:51+00:00",
+      "touched_round": 116,
+      "source": "b8b43e4 tests/core/attn/test_sparse_model_config.py::{test_helper_builds_rectangular_key_history_mask,test_decoder_decode_uses_key_history_mask}",
+      "confidence": 1.0,
+      "summary": "Decoder auto-mask now built over effective key history (cache len + current tokens): decode mask is rectangular [Sq,Sk] (1,17) instead of degenerate [1,1]; e2e KV-cache decode with fixed dense prefill KV: sparse decode differs from dense, full-coverage decode equals dense; full eager decode loop runs end-to-end (prefill+5 decode steps)"
+    },
+    "CHG-258": {
+      "id": "CHG-258",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:36:51+00:00",
+      "updated_at": "2026-08-23T08:36:51+00:00",
+      "touched_round": 116,
+      "commit": "b8b43e4",
+      "summary": "build_config_attention_mask gains key_len and builds [Sq,Sk] pattern over key history; DecoderModel.forward passes cache length; decode key-history parity tests + guide"
+    },
+    "DEC-078": {
+      "id": "DEC-078",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:37:46+00:00",
+      "updated_at": "2026-08-23T08:37:46+00:00",
+      "touched_round": 116,
+      "title": "Honor sparse/streaming scheme in batched/paged serving masks",
+      "rationale": "TASK-245 made the sparse scheme work in the eager linear-KV decode path, but the ContinuousBatchingEngine always passes its own causal run_attn_mask (batch_engine.py _forward_and_sample -> attn_mask=inputs.run_attn_mask), so DecoderModel.forward's attn_sparse auto-build (guarded by attn_mask is None) never runs there -- the batched/paged serving path, the production route for concurrent long-running streams, silently ignores the scheme.",
+      "alternatives_rejected": "Leaving serving dense defeats sparse/streaming attention in deployment; teaching the decoder to overwrite an explicit engine mask breaks paged alignment/page tables; folding the sparse pattern into the engine's run_attn_mask per sequence (sink + window alignment) is the coherent fix."
+    },
+    "ISS-284": {
+      "id": "ISS-284",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:37:47+00:00",
+      "updated_at": "2026-08-23T08:37:47+00:00",
+      "touched_round": 116,
+      "title": "Sparse/streaming scheme bypassed in batched/paged serving",
+      "summary": "ContinuousBatchingEngine always passes a computed run_attn_mask to the model forward, which suppresses DecoderModel's attn_sparse auto-mask, so sparse/streaming attention has no effect in the batched/paged serving path (in contrast to the eager linear-KV path fixed in TASK-245)."
+    },
+    "TASK-246": {
+      "id": "TASK-246",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:37:47+00:00",
+      "updated_at": "2026-08-23T08:37:47+00:00",
+      "touched_round": 116,
+      "category": "core-feature",
+      "severity": 0.4,
+      "effort": 1.5,
+      "confidence": 0.6,
+      "unlock_factor": 1.0,
+      "title": "Apply attn_sparse pattern into ContinuousBatchingEngine/paged run_attn_mask + CPU parity",
+      "summary": "Fold the scheme's sink+window pattern into the batch engine's per-sequence run_attn_mask (and paged path) so sparse attention applies in serving, aligned to page/rank; CPU test: single-sequence engine forward sparse != dense, full-coverage sparse == dense, parity with eager decode; docs."
     }
   },
   "edges": [
@@ -21075,6 +21137,42 @@
       "to": "TASK-245",
       "type": "governs",
       "created_at": "2026-08-23T08:30:03+00:00"
+    },
+    {
+      "from": "CHG-258",
+      "to": "TASK-245",
+      "type": "implements",
+      "created_at": "2026-08-23T08:36:54+00:00"
+    },
+    {
+      "from": "CHG-258",
+      "to": "ISS-283",
+      "type": "resolves",
+      "created_at": "2026-08-23T08:36:54+00:00"
+    },
+    {
+      "from": "TASK-246",
+      "to": "ISS-284",
+      "type": "addresses",
+      "created_at": "2026-08-23T08:37:50+00:00"
+    },
+    {
+      "from": "ISS-284",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-23T08:37:50+00:00"
+    },
+    {
+      "from": "DEC-078",
+      "to": "COMP-004",
+      "type": "governs",
+      "created_at": "2026-08-23T08:37:50+00:00"
+    },
+    {
+      "from": "DEC-078",
+      "to": "TASK-246",
+      "type": "governs",
+      "created_at": "2026-08-23T08:37:50+00:00"
     }
   ]
 }
