@@ -558,6 +558,7 @@
 #### 15.4 新型 MoE 架构
 
 - [x] **研究 Expert Choice Routing**（负载均衡研究切片: 每专家选它 top-k 个 token, 结构性保证每专家恰 `k` 个、不丢 token; `expert_choice_assignment`/`_weights`/`_output` + softmax-per-expert 权重 + scatter-add 组合; CPU parity——选中===gate top_k、每专家恰 k、组合===加权和参考、可微; 见 [docs/guides/expert_choice.md](docs/guides/expert_choice.md)）
+- [x] **实现 Soft MoE**（slot 软路由研究切片: 每 slot 沿 token softmax 归一化 `D[e,s,t]` 做 token 加权输入 + 按同一 D 遣回; 结构性 slot 均衡 `Σ_t D==1`、无 hard top-k/不丢 token、全链路可微; `dispatch_weights`/`soft_moe_output`; CPU parity——均衡、输出===逐 slot 加权和参考、可微; 见 [docs/guides/soft_moe.md](docs/guides/soft_moe.md)）
 - [ ] 实现 Soft MoE
 - [ ] 探索 Dynamic Expert Selection
 - [ ] 优化 Expert Load Balancing

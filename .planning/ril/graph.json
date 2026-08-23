@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 124,
+  "round": 125,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:36:45+00:00",
+  "updated_at": "2026-08-23T09:41:03+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7988,7 +7988,7 @@
       "version": 1,
       "created_at": "2026-08-16T01:13:47+00:00",
       "updated_at": "2026-08-16T01:13:47+00:00",
-      "touched_round": 124,
+      "touched_round": 125,
       "title": "Core PEFT families + transformer block (src/llm/core: adalora, prefix_tuning, lora, qlora, ia3, bitfit, pfeiffer_adapter, adapter, transformer_block, mlp)"
     },
     "TASK-111": {
@@ -14903,6 +14903,68 @@
       "touched_round": 124,
       "commit": "37a48b4",
       "summary": "Add core/moe/expert_choice.py (assignment/weights/output), invariant tests, guide; ROADMAP 15.4 expert-choice done"
+    },
+    "DEC-087": {
+      "id": "DEC-087",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:40:33+00:00",
+      "updated_at": "2026-08-23T09:40:33+00:00",
+      "touched_round": 125,
+      "title": "Implement Soft MoE research slice (ROADMAP 15.4)",
+      "rationale": "Slots-based soft routing is fully deterministic and differentiable (softmax over tokens per slot), avoiding the load-balance discontinuities and token-dropping of discrete top-k, and gives structural slot balance (each slot sums to 1 by construction). CPU-verifiable in a single forward. Deliver a self-contained core/moe slice; MoeLayer integration (learnable slot-logits projection + routing-mode switch) is a documented follow-up.",
+      "alternatives_rejected": "Leaving 15.4's Soft MoE item unchecked keeps the MoE research cluster incomplete; a full train-time MoeLayer integration (learnable slot-logits) is larger and out of scope for the slice; tying dispatch==combine weights is a documented simplification, noted for the follow-up."
+    },
+    "ISS-292": {
+      "id": "ISS-292",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:40:33+00:00",
+      "updated_at": "2026-08-23T09:41:03+00:00",
+      "touched_round": 125,
+      "title": "Soft MoE (ROADMAP 15.4) unimplemented",
+      "summary": "No soft slot-based routing exists; only discrete token-choice (+ expert-choice research slice). 15.4's Soft MoE item is open."
+    },
+    "TASK-254": {
+      "id": "TASK-254",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:40:33+00:00",
+      "updated_at": "2026-08-23T09:41:03+00:00",
+      "touched_round": 125,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.6,
+      "confidence": 0.8,
+      "unlock_factor": 1.0,
+      "title": "Implement CPU-verifiable Soft MoE slot-routing slice + parity tests + docs",
+      "summary": "Add core/moe/soft_moe.py: dispatch_weights (softmax over tokens per (expert,slot)) + soft_moe_output (slot weighted input, expert_fn, dispatch-back via tied D); invariants (each slot sums to 1, output==per-slot weighted-sum reference, gradient flow, extreme single-token limit); tests + guide + ROADMAP 15.4; MoeLayer integration is follow-up."
+    },
+    "EV-255": {
+      "id": "EV-255",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:40:59+00:00",
+      "updated_at": "2026-08-23T09:40:59+00:00",
+      "touched_round": 125,
+      "source": "2a3e253 tests/core/moe/test_soft_moe.py",
+      "confidence": 1.0,
+      "summary": "Soft MoE slice verified: every (expert,slot) dispatch row sums to exactly 1 (structural slot balance), output equals the explicit per-slot weighted-sum reference, gradient flow finite through both x and slot_logits, and in the extreme single-token-limit the slot input collapses to that token (output ~expert(x_t)); 11 MoE routing tests green across expert_choice + soft_moe"
+    },
+    "CHG-267": {
+      "id": "CHG-267",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:40:59+00:00",
+      "updated_at": "2026-08-23T09:40:59+00:00",
+      "touched_round": 125,
+      "commit": "2a3e253",
+      "summary": "Add core/moe/soft_moe.py (dispatch_weights/soft_moe_output), invariant tests, guide; ROADMAP 15.4 Soft MoE done"
     }
   },
   "edges": [
@@ -21906,6 +21968,42 @@
       "to": "ISS-291",
       "type": "resolves",
       "created_at": "2026-08-23T09:36:45+00:00"
+    },
+    {
+      "from": "TASK-254",
+      "to": "ISS-292",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:40:37+00:00"
+    },
+    {
+      "from": "ISS-292",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:40:37+00:00"
+    },
+    {
+      "from": "DEC-087",
+      "to": "COMP-014",
+      "type": "governs",
+      "created_at": "2026-08-23T09:40:37+00:00"
+    },
+    {
+      "from": "DEC-087",
+      "to": "TASK-254",
+      "type": "governs",
+      "created_at": "2026-08-23T09:40:37+00:00"
+    },
+    {
+      "from": "CHG-267",
+      "to": "TASK-254",
+      "type": "implements",
+      "created_at": "2026-08-23T09:41:03+00:00"
+    },
+    {
+      "from": "CHG-267",
+      "to": "ISS-292",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:41:03+00:00"
     }
   ]
 }
