@@ -1,13 +1,32 @@
 """Tests for shared generation sampling helpers."""
 
+import pytest
 import torch
 
-from llm.generation.sampling import apply_repetition_penalty, sample_next_token
+from llm.generation.sampling import apply_repetition_penalty, sample_next_token, sampling_probs
 
 
 def test_greedy_sampling():
     logits = torch.tensor([0.1, 2.0, 0.5])
     assert sample_next_token(logits, temperature=0.0) == 1
+
+
+def test_negative_temperature_rejected():
+    """RIL TASK-249: a negative temperature silently inverts the logits and
+    turns the sampler anti-greedy (draws the lowest-logit token); it must be
+    rejected instead of silently corrupting generation. Sampling at
+    temperature 0 (greedy) remains valid; a positive temperature still works."""
+    logits = torch.tensor([10.0, 0.0, 5.0])
+    with pytest.raises(ValueError, match="temperature"):
+        sample_next_token(logits, temperature=-1.0)
+    with pytest.raises(ValueError, match="temperature"):
+        sampling_probs(logits, temperature=0.0)
+    with pytest.raises(ValueError, match="temperature"):
+        sampling_probs(logits, temperature=-2.0)
+    # Greedy (0) stays supported; a normal sampler still yields the argmax
+    # token as the most probable draw.
+    assert sample_next_token(logits, temperature=0.0) == 0
+    assert int(sampling_probs(logits, temperature=1.0).argmax()) == 0
 
 
 def test_repetition_penalty_changes_logits():

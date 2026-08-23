@@ -255,6 +255,14 @@ def sampling_probs(
         top_p: Nucleus filter; the smallest tokens whose cumulative
             probability exceeds ``top_p`` are masked out.
     """
+    # A non-positive temperature would silently invert the logits (anti-greedy)
+    # or divide by zero. ``temperature == 0`` is the caller's greedy case
+    # (handled in :func:`sample_next_token` before this is reached), so any
+    # value here must be positive — reject instead of emitting a corrupt
+    # distribution (RIL TASK-249).
+    if temperature <= 0:
+        raise ValueError(f"temperature must be > 0, got {temperature!r}")
+
     next_logits = logits / temperature
 
     if top_k is not None:
@@ -285,6 +293,11 @@ def sample_next_token(
     """Sample one token id from 1D logits."""
     if temperature == 0:
         return int(torch.argmax(logits, dim=-1).item())
+    if temperature < 0:
+        # A negative temperature silently inverts the logits, making the
+        # sampler anti-greedy (draw the lowest-logit token) with no error.
+        # Reject it so silent generation corruption is impossible (RIL TASK-249).
+        raise ValueError(f"temperature must be >= 0, got {temperature!r}")
 
     probs = sampling_probs(
         logits,
