@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 96,
+  "round": 97,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T01:25:43+00:00",
+  "updated_at": "2026-08-23T01:34:42+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 96,
+      "touched_round": 97,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13171,10 +13171,10 @@
     "ISS-264": {
       "id": "ISS-264",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:25:39+00:00",
-      "updated_at": "2026-08-23T01:25:39+00:00",
+      "updated_at": "2026-08-23T01:34:20+00:00",
       "touched_round": 96,
       "title": "Multimodal data/encoder layer unimplemented (ROADMAP 阶段十二, P1 spike)",
       "summary": "No MultimodalDataModule / ModalityEncoderRegistry. Required design spike before any real vision-language work; must not hard-patch DecoderModel (ADR boundary)."
@@ -13182,10 +13182,10 @@
     "TASK-226": {
       "id": "TASK-226",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:25:39+00:00",
-      "updated_at": "2026-08-23T01:25:39+00:00",
+      "updated_at": "2026-08-23T01:34:20+00:00",
       "touched_round": 96,
       "category": "core-feature",
       "severity": 0.3,
@@ -13194,6 +13194,68 @@
       "unlock_factor": 1.2,
       "title": "Multimodal spike: ModalityEncoderRegistry + MultimodalDataModule contract (CPU)",
       "summary": "Design & land the data/encoder contract first: a ModalityEncoderRegistry (like PEFT/quantization registries) with a minimal CPU-verifiable encoder + a MultimodalDataModule that pairs text+auxiliary modal samples, + registry/unit tests + a design note. No DecoderModel hard-patching."
+    },
+    "CHG-240": {
+      "id": "CHG-240",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:34:11+00:00",
+      "updated_at": "2026-08-23T01:34:11+00:00",
+      "touched_round": 96,
+      "commit": "4d385bb",
+      "title": "Multimodal spike: modality-encoder registry + MultimodalDataModule contract (TASK-226)",
+      "summary": "llm/multimodal: ModalityEncoder ABC + MODALITY_ENCODER_REGISTRY + @register_encoder (entry-point-extensible) + LinearModalityEncoder (CPU), MultimodalDataModule pairing text+modality into {input_ids,labels,modal_embeds} batches; added llm.multimodal to weights_only safe-globals; ADR-013 design note; 9 tests. No DecoderModel patch (ADR boundary)."
+    },
+    "EV-227": {
+      "id": "EV-227",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:34:14+00:00",
+      "updated_at": "2026-08-23T01:34:14+00:00",
+      "touched_round": 96,
+      "source": "tests/multimodal/test_encoders.py + test_datamodule.py (9 tests)",
+      "summary": "registry contains 'linear'; LinearModalityEncoder projects (N,input_dim)->(N,embed_dim) and takes gradients; abstract base not instantiable; duplicate register raises; MultimodalDataModule produces dict batches with input_ids/labels/modal_embeds shapes and honors requested embed_dim; unknown modality raises. 9 pass; ruff+ty clean; safe-globals walk includes llm.multimodal.",
+      "confidence": 1.0
+    },
+    "DEC-059": {
+      "id": "DEC-059",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:34:30+00:00",
+      "updated_at": "2026-08-23T01:34:30+00:00",
+      "touched_round": 97,
+      "rationale": "Next milestone = multimodal model integration slice: design a ModalFusion/MultimodalModel + a training task that consumes the registry's modal_embeds (now that ADR-013 landed the data/encoder contract). Kept CPU-verifiable (synthetic data + linear encoder) and still does NOT patch DecoderModel (a separate MultimodalModel per ADR boundary).",
+      "alternatives_rejected": "DeepSpeed ZeRO / PP-v2 need GPU/multi-node infra absent here; visual encoder integration (CLIP/SigLIP) needs external weights/GPU and can be later; jumping straight to real datasets without a model-training slice skips the verifiable core."
+    },
+    "ISS-265": {
+      "id": "ISS-265",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:34:37+00:00",
+      "updated_at": "2026-08-23T01:34:37+00:00",
+      "touched_round": 97,
+      "title": "MultimodalModel / modal-fusion training unimplemented (post-spike)",
+      "summary": "No model consumes MultimodalDataModule modal_embeds. Next slice: a separate MultimodalModel that fuses modal embeddings into the LM + a training task; no DecoderModel hard-patching (ADR-013 boundary)."
+    },
+    "TASK-227": {
+      "id": "TASK-227",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:34:37+00:00",
+      "updated_at": "2026-08-23T01:34:37+00:00",
+      "touched_round": 97,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.7,
+      "confidence": 0.7,
+      "unlock_factor": 1.2,
+      "title": "Multimodal slice 2: modal-fusion model + multimodal training task (CPU)",
+      "summary": "Land a standalone MultimodalModel (per ADR-013) that consumes registry modal_embeds (e.g. projects/concats into token-embedding space) + a paired multimodal training task + DataModule wiring, with a CPU e2e showing fused training converges; still no DecoderModel hard-patch."
     }
   },
   "edges": [
@@ -19321,6 +19383,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T01:25:43+00:00"
+    },
+    {
+      "from": "CHG-240",
+      "to": "TASK-226",
+      "type": "implements",
+      "created_at": "2026-08-23T01:34:20+00:00"
+    },
+    {
+      "from": "CHG-240",
+      "to": "ISS-264",
+      "type": "resolves",
+      "created_at": "2026-08-23T01:34:20+00:00"
+    },
+    {
+      "from": "DEC-059",
+      "to": "TASK-227",
+      "type": "governs",
+      "created_at": "2026-08-23T01:34:42+00:00"
+    },
+    {
+      "from": "TASK-227",
+      "to": "ISS-265",
+      "type": "addresses",
+      "created_at": "2026-08-23T01:34:42+00:00"
+    },
+    {
+      "from": "ISS-265",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T01:34:42+00:00"
     }
   ]
 }
