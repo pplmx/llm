@@ -115,7 +115,7 @@
 - [x] TP + 数据并行 2D — `tp_size < world_size` `[DP][TP]` 网格, DP 组间梯度平均 (RIL TASK-202/CHG-203)
 - [x] MoE Expert Parallel — 复制门 + 按 expert 分片, 零命中反向死锁修复 (RIL TASK-207)
 - [x] Pipeline Parallelism v1 — `parallel_strategy=pp`, `ScheduleGPipe` 分阶段前向/反向, stage 划分于 transformer_blocks, 全量 global-name state-dict 收集/散播, PP 组全局梯度裁剪; 与串行 2-stage 逐位一致 (RIL DEC-049/TASK-210)
-- [ ] Pipeline Parallelism v2 — PP+DP 混合 (pp_size 旋钮 + DP 组梯度平均) / microbatch 重叠 (n_microbatches>1) / stage 按需物化 / AMP 与 gradient checkpointing 支持
+- [x] Pipeline Parallelism v2 — PP+DP 2D (`pp_size` + DP 组梯度平均, RIL TASK-211) / microbatch 重叠 (`pp_n_microbatches>1`, RIL TASK-213) / AMP (bf16) 与 gradient checkpointing 支持均已落地; 剩余: stage 按需物化
 - [ ] DeepSpeed ZeRO 集成
 - [ ] 3D Parallelism (DP + PP + TP)
 
@@ -523,7 +523,7 @@
 #### 15.2 Sparse Attention
 
 - [x] 实现 Sliding Window Attention
-- [ ] 实现 Block Sparse Attention
+- [x] **实现 Block Sparse Attention** (块稀疏掩码切片: `build_block_sparse_mask` local window + global + random 块, `mask_to_additive`, CPU parity 不变量——window+global 全覆盖 === 稠密 causal; 见 [docs/guides/block_sparse.md](docs/guides/block_sparse.md))
 - [ ] 研究 Longformer-style Attention
 - [ ] 探索 BigBird Attention
 
