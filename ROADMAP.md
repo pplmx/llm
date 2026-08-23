@@ -86,7 +86,10 @@
 - [x] 图像-文本对齐模块 ✅（`ContrastiveAligner` + `contrastive_loss`,CLIP/SigLIP 风格
   对比对齐:共享投影 + L2 归一化 + 可学习温度,对称 InfoNCE / sigmoid 变体;消费视觉塔
   `[B,N,D]` 与文本 embedding,CPU 上检索准确率升至 ~1;见 [multimodal guide](docs/guides/multimodal.md)）
-- [ ] Visual Instruction Tuning
+- [x] Visual Instruction Tuning ✅（`MultimodalDataModule(..., vit_instruction_len=N)`:
+  `[instruction | response]` 样本,instruction 位置标签 `-100` → shift+CE 只监督
+  response;图像前缀 + instruction 上下文条件化生成,CPU e2e loss 下降 + response
+  准确率 >0.7;可叠加 `train_encoder=True` 变 LLaVA 式联合训练）→ **ROADMAP 12.1 全部完成**
 
 ### 4. 高效微调 ✅
 

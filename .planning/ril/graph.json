@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 134,
+  "round": 135,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T20:42:14+00:00",
+  "updated_at": "2026-08-23T21:22:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -15477,6 +15477,41 @@
       "source": "tests/multimodal/test_alignment.py (6 tests); full suite EXIT=0",
       "title": "Alignment verified: log(B) baseline, InfoNCE + SigLIP converge, i2t retrieval -> ~1 on CPU",
       "confidence": 1.0
+    },
+    "TASK-263": {
+      "id": "TASK-263",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-23T20:51:48+00:00",
+      "updated_at": "2026-08-23T21:22:38+00:00",
+      "touched_round": 134,
+      "category": "core-feature",
+      "severity": 0.7,
+      "title": "Multimodal 12.1 finale: Visual Instruction Tuning — instruction-prefix data with masked response labels (SFT) over the image-prefix fused model, CPU-verifiable e2e"
+    },
+    "CHG-278": {
+      "id": "CHG-278",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T21:20:20+00:00",
+      "updated_at": "2026-08-23T21:20:20+00:00",
+      "touched_round": 134,
+      "commit": "33d6c83",
+      "title": "feat(multimodal): Visual Instruction Tuning — vit_instruction_len masked [instruction|response] SFT (ROADMAP 12.1 finale)"
+    },
+    "EV-267": {
+      "id": "EV-267",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T21:20:20+00:00",
+      "updated_at": "2026-08-23T21:20:20+00:00",
+      "touched_round": 134,
+      "source": "tests/multimodal/test_vision.py (42 multimodal pass); full suite EXIT=0",
+      "title": "VIT verified: prompt labels -100, masked response objective converges, response acc > 0.7 on CPU",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -22750,6 +22785,12 @@
       "to": "TASK-262",
       "type": "implements",
       "created_at": "2026-08-23T20:38:26+00:00"
+    },
+    {
+      "from": "CHG-278",
+      "to": "TASK-263",
+      "type": "implements",
+      "created_at": "2026-08-23T21:21:00+00:00"
     }
   ]
 }
