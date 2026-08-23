@@ -348,7 +348,7 @@
 
 - [x] 实现 DPO 损失函数
 - [x] 支持偏好数据集处理
-- [ ] 对比 DPO vs RLHF 性能
+- [x] **对比 DPO vs RLHF 性能** (`aligner_benchmark.py` 在同一个合成偏好任务上分别跑 `DPOTask` 与 `PPOTask`：DPO 的 `preference_fraction` 0 -> ~1 稳定收敛，PPO 只报告有限 mean-reward 轨迹、小 CPU 预算下波动难收敛——真实对比结论见 [docs/guides/dpo_vs_ppo.md](docs/guides/dpo_vs_ppo.md))
 - [x] **DPO 主路径对齐** (Main Path #2 切片完成: `configs/dpo_local_demo.yaml` 离线 chosen/rejected JSONL 冒烟 + `configs/dpo_ultrafeedback.yaml` 生产 UltraFeedback (256×6, lr=5e-7 比 SFT 小一个量级,
   gradient_checkpointing=true); `TrainingConfig.dpo_beta` 字段 (默认 0.1, gt=0 validator); `TrainingConfig.max_steps` 字段 (默认 0, ge=0 validator); 教程 §3 覆盖 DPO 与 SFT 的关键差异 (2× memory / beta / lr 尺度 / SFT→DPO
   两阶段) + DPO loss 公式; 4 个新 e2e tests 在 `tests/e2e/test_dpo_main_path.py` 覆盖 YAML 良构 + 端到端运行 + 损失有限 + policy/reference 初始权重一致 (DPO log-ratio loss 的结构性前提))
