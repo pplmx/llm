@@ -1,9 +1,10 @@
-"""Multimodal extension — contract-first spike (ROADMAP 阶段十二, RIL TASK-226).
+"""Multimodal extension (ROADMAP 阶段十二, RIL TASK-226/TASK-227).
 
-Establishes the registry + DataModule contract for multimodal data. Real
-vision/audio encoders and any model integration are separate future slices;
-this module only owns the extensible surface (a modality-encoder registry and
-a text+modality ``MultimodalDataModule``). See ``docs/adr/013-multimodal-encoder-contract.md``.
+Layer 1 (TASK-226) lands the registry + DataModule contract; Layer 2
+(TASK-227) adds a standalone :class:`MultimodalModel` that fuses modal
+embeddings into token-embedding space plus a ``multimodal`` training task.
+Nothing here patches :class:`DecoderModel` (see
+``docs/adr/013-multimodal-encoder-contract.md``).
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ from llm.multimodal.encoders import (
     ModalityEncoder,
     register_encoder,
 )
+from llm.multimodal.model import ModalityFusion, MultimodalModel, build_multimodal_model
+from llm.multimodal.task import MultimodalTask
 from llm.runtime.plugins import load_entry_point_registry
 
 
@@ -31,7 +34,11 @@ __all__ = [
     "MODALITY_ENCODER_REGISTRY",
     "LinearModalityEncoder",
     "ModalityEncoder",
+    "ModalityFusion",
     "MultimodalDataModule",
+    "MultimodalModel",
+    "MultimodalTask",
+    "build_multimodal_model",
     "ensure_multimodal_encoders_registered",
     "register_encoder",
 ]

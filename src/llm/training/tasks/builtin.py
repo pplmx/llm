@@ -7,6 +7,8 @@ from llm.data.modules.sft import SFTDataModule
 from llm.data.modules.streaming import StreamingTextDataModule
 from llm.data.modules.synthetic import SyntheticDataModule
 from llm.data.modules.text import TextDataModule
+from llm.multimodal.data import MultimodalDataModule
+from llm.multimodal.task import MultimodalTask
 from llm.training.task_registry import TASK_REGISTRY
 from llm.training.tasks.distill_task import DistillationTask
 from llm.training.tasks.dpo_task import DPOTask
@@ -28,6 +30,9 @@ TASK_REGISTRY.register("sft", SFTTask, SFTDataModule, description="Supervised fi
 TASK_REGISTRY.register("dpo", DPOTask, DPODataModule, description="Direct preference optimization")
 TASK_REGISTRY.register(
     "distill", DistillationTask, TextDataModule, description="Knowledge distillation (student vs frozen teacher)"
+)
+TASK_REGISTRY.register(
+    "multimodal", MultimodalTask, MultimodalDataModule, description="Multimodal LM (modal-fusion prefix conditioning)"
 )
 TASK_REGISTRY.register("reward", RewardTask, RewardDataModule, description="Reward model training")
 TASK_REGISTRY.register("ppo", PPOTask, PromptDataModule, description="PPO RLHF alignment")

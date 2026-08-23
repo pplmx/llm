@@ -33,16 +33,17 @@ llm-train --task <task> [OPTIONS]
 
 ### 任务（`--task`，必填）
 
-| 任务        | 用途                                                    |
-| ----------- | ------------------------------------------------------- |
-| `lm`        | Map-style 语言建模（`TextDataModule`）                  |
-| `stream_lm` | 流式大规模预训练（`StreamingTextDataModule`，主入口）   |
-| `sft`       | 监督微调                                                |
-| `dpo`       | 直接偏好优化                                            |
-| `distill`   | 知识蒸馏（student 蒸馏冻结的 teacher checkpoint）       |
-| `reward`    | Reward model 训练                                       |
-| `ppo`       | PPO RLHF 对齐                                           |
-| `regression`| 合成回归 demo                                           |
+| 任务         | 用途                                                  |
+| ------------ | ----------------------------------------------------- |
+| `lm`         | Map-style 语言建模（`TextDataModule`）                |
+| `stream_lm`  | 流式大规模预训练（`StreamingTextDataModule`，主入口） |
+| `sft`        | 监督微调                                              |
+| `dpo`        | 直接偏好优化                                          |
+| `distill`    | 知识蒸馏（student 蒸馏冻结的 teacher checkpoint）     |
+| `multimodal` | 多模态 LM（模态 prefix 融合到文本）                   |
+| `reward`     | Reward model 训练                                     |
+| `ppo`        | PPO RLHF 对齐                                         |
+| `regression` | 合成回归 demo                                         |
 
 ### 参数
 

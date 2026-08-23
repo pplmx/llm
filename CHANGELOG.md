@@ -14,6 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multimodal slice 2 — modal-fusion model + training task** (ROADMAP 阶段十二 / RIL TASK-227):
+  - `llm/multimodal/model.py`: standalone `MultimodalModel` (wraps a `DecoderModel`
+    without patching it) that prepends the registry-encoded `modal_embeds` as a
+    token-embedding-space prefix, runs the decoder blocks + LM head, and returns
+    text logits; `ModalityFusion` projects modal embeddings to hidden + applies the
+    decoder's `sqrt(hidden)` scale.
+  - `llm/multimodal/task.py`: `MultimodalTask` (registered as `--task multimodal`
+    paired with `MultimodalDataModule`) — standard-loop CE training over
+    `{"input_ids","labels","modal_embeds"}` batches.
+  - CPU e2e: fused modal-conditioned decoder trains (loss drops) with text
+    next-token accuracy improving, all without touching `DecoderModel`.
+  - Docs: multimodal guide (slice 2) + CLI reference row.
+
 - **Multimodal extension — contract-first spike** (ROADMAP 阶段十二 / RIL TASK-226):
   - `llm/multimodal/`: `ModalityEncoder` ABC + `MODALITY_ENCODER_REGISTRY` +
     `@register_encoder` (entry-point-extensible via `llm.modality_encoders`),

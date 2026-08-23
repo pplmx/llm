@@ -17,6 +17,26 @@
   经 registry 编码器产出 `modal_embeds`；batch 契约：
   `{"input_ids": [B,T], "labels": [B,T], "modal_embeds": [B, embed_dim]}`。
 
+## 已落地：模态融合模型 + 训练任务（slice 2）
+
+- `MultimodalModel`（`llm/multimodal/model.py`，独立模型，**不 patch DecoderModel**）：
+  在 token-embedding 空间把 registry 的 `modal_embeds` 作为 prefix 前缀注入：把
+  `modality_fusion(modal_embeds)` 拼到文本 embedding 前，跑 decoder 的 transformer
+  blocks + LM head，返回**文本** logits。推荐 `use_rope=True`（位置在 attention 内注入，
+  不受 `max_seq_len` 的加法位置表限制）。
+- `--task multimodal`（`MultimodalTask` + `MultimodalDataModule`，已注册）：标准训练
+  循环，batch 携带 `modal_embeds`，以 CE 优化文本 next-token。
+
+```python
+from llm.multimodal import MultimodalDataModule, MultimodalTask
+from llm.training.core.engine import TrainingEngine
+
+module = MultimodalDataModule(config, modality="linear", input_dim=16)  # use_rope=True
+task = MultimodalTask(config, module)
+engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
+loss = engine._run_epoch(0)   # 批次含 input_ids / labels / modal_embeds
+```
+
 ```python
 from llm.multimodal import MODALITY_ENCODER_REGISTRY, MultimodalDataModule
 
@@ -32,8 +52,9 @@ batch, _ = module.train_dataloader(rank=0, world_size=1)
 ## 未落地（后续切片）
 
 - 真实视觉/音频编码器（CLIP/SigLIP 等）——注册即可接入，不改模型核心。
-- `MultimodalModel`（模态 tokenizer + 融合层 + 训练任务）：届时单独设计，仍不改
-  `DecoderModel`（除非新 ADR 批准边界变更）。
+- 真实视觉/音频编码器 + 图像-文本对齐 / Visual Instruction Tuning（ROADMAP 阶段十二
+  的 12.1/12.2/12.3）：当前模型/任务切片用合成 `linear` 模态验证流程，真实视觉/音频
+  注册即可接入，不改模型核心。
 - 真实多模态数据集接入。
 
 测试见 `tests/multimodal/`（registry + DataModule 契约 + 最小编码器可训练性）。
