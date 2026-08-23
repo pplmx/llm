@@ -83,7 +83,9 @@
   图像 `[B,3,H,W]`,`MultimodalModel` forward 内 `encoder.encode(images)` 实时编码,
   视觉塔 → projector → 文本前缀**联合训练**,梯度可达视觉塔(CPU e2e 收敛 + 梯度断言);
   默认 `train_encoder=False` 保持冻结-预计算路径)
-- [ ] 图像-文本对齐模块
+- [x] 图像-文本对齐模块 ✅（`ContrastiveAligner` + `contrastive_loss`,CLIP/SigLIP 风格
+  对比对齐:共享投影 + L2 归一化 + 可学习温度,对称 InfoNCE / sigmoid 变体;消费视觉塔
+  `[B,N,D]` 与文本 embedding,CPU 上检索准确率升至 ~1;见 [multimodal guide](docs/guides/multimodal.md)）
 - [ ] Visual Instruction Tuning
 
 ### 4. 高效微调 ✅
