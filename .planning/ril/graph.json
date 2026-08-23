@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 100,
+  "round": 101,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T02:06:05+00:00",
+  "updated_at": "2026-08-23T02:11:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 100,
+      "touched_round": 101,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13419,10 +13419,10 @@
     "ISS-268": {
       "id": "ISS-268",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T02:06:01+00:00",
-      "updated_at": "2026-08-23T02:06:01+00:00",
+      "updated_at": "2026-08-23T02:11:12+00:00",
       "touched_round": 100,
       "title": "Rejection sampling alignment unimplemented (ROADMAP 11.4)",
       "summary": "No rejection-sampling pipeline: sample responses, score with a reward, filter top-K/above-threshold, then fine-tune the policy on the selected responses."
@@ -13430,10 +13430,10 @@
     "TASK-230": {
       "id": "TASK-230",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T02:06:01+00:00",
-      "updated_at": "2026-08-23T02:06:01+00:00",
+      "updated_at": "2026-08-23T02:11:12+00:00",
       "touched_round": 100,
       "category": "core-feature",
       "severity": 0.3,
@@ -13442,6 +13442,68 @@
       "unlock_factor": 1.1,
       "title": "Rejection sampling slice 1: reward-scored generate -> filter top-K -> SFT onboarding (CPU)",
       "summary": "Add a rejection-sampling data helper (sample N responses, score, keep top-K / threshold) + a small SFT-on-selected pipeline, and a CPU e2e showing the kept responses have higher mean reward than the base sample."
+    },
+    "CHG-244": {
+      "id": "CHG-244",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:11:04+00:00",
+      "updated_at": "2026-08-23T02:11:04+00:00",
+      "touched_round": 100,
+      "commit": "32a1df1",
+      "title": "Rejection sampling: select top-K/threshold + SFT-on-selected (TASK-230)",
+      "summary": "rejection_sampling.py select_top_k/select_above_threshold/rejection_sample (mask + kept/base reward stats); RejectionSampleDataModule emits the kept high-reward responses as an SFT set; CPU e2e kept_mean > base and SFT raises kept-response likelihood."
+    },
+    "EV-231": {
+      "id": "EV-231",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:11:06+00:00",
+      "updated_at": "2026-08-23T02:11:06+00:00",
+      "touched_round": 100,
+      "source": "tests/training/test_rejection_sampling.py (7 tests)",
+      "summary": "top-K selects highest scores; k>N clamps; threshold filter; rejection_sample exact-one-mode + 1-D/empty validation; kept_mean_reward > base; CPU e2e: kept responses higher mean reward AND SFT-on-selected raises kept-response sequence likelihood. 7 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-063": {
+      "id": "DEC-063",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:11:26+00:00",
+      "updated_at": "2026-08-23T02:11:26+00:00",
+      "touched_round": 101,
+      "rationale": "Next milestone = RLAIF (RL from AI Feedback, ROADMAP 11.4): generate response pairs and label preferences with an AI/rule-based judge instead of human labels, then train with the EXISTING DPO task on the AI-labeled pairs. CPU-verifiable (rule-based judge + synthetic preferences), reuses DPO infra, complements GRPO/rejection-sampling.",
+      "alternatives_rejected": "Constitutional AI (11.4) is largely a safety/spec framing on top of RLAIF and less CPU-measurable; PP-v2 / ZeRO / vision encoders need GPU/multi-node/external weights absent here."
+    },
+    "ISS-269": {
+      "id": "ISS-269",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:11:33+00:00",
+      "updated_at": "2026-08-23T02:11:33+00:00",
+      "touched_round": 101,
+      "title": "RLAIF preference-data generation unimplemented (ROADMAP 11.4)",
+      "summary": "No AI-feedback preference labeling. Next slice: a judge that scores/labels which of two responses is preferred + a DPO-on-AI-preferences pipeline, CPU-verifiable."
+    },
+    "TASK-231": {
+      "id": "TASK-231",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:11:33+00:00",
+      "updated_at": "2026-08-23T02:11:33+00:00",
+      "touched_round": 101,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.7,
+      "confidence": 0.7,
+      "unlock_factor": 1.1,
+      "title": "RLAIF slice 1: AI-preference judge + DPO-on-AI-labels pipeline (CPU)",
+      "summary": "Add an AIFeedback judge (rule/scalar) that labels pairwise preferences for synthetic response pairs, a helper emitting DPO-ready (chosen/rejected) pairs, and a CPU e2e showing the DPO policy grows to prefer the AI-judge-preferred responses."
     }
   },
   "edges": [
@@ -19689,6 +19751,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T02:06:05+00:00"
+    },
+    {
+      "from": "CHG-244",
+      "to": "TASK-230",
+      "type": "implements",
+      "created_at": "2026-08-23T02:11:12+00:00"
+    },
+    {
+      "from": "CHG-244",
+      "to": "ISS-268",
+      "type": "resolves",
+      "created_at": "2026-08-23T02:11:12+00:00"
+    },
+    {
+      "from": "DEC-063",
+      "to": "TASK-231",
+      "type": "governs",
+      "created_at": "2026-08-23T02:11:37+00:00"
+    },
+    {
+      "from": "TASK-231",
+      "to": "ISS-269",
+      "type": "addresses",
+      "created_at": "2026-08-23T02:11:38+00:00"
+    },
+    {
+      "from": "ISS-269",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T02:11:38+00:00"
     }
   ]
 }
