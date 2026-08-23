@@ -93,6 +93,28 @@ def test_preference_fraction_orders_pairs_by_log_prob():
         preference_fraction(model, torch.zeros(3, 4), torch.zeros(3, 5))
 
 
+def test_reference_kl_tracks_divergence_from_reference():
+    """Unit check of the reward-over-optimization diagnostic: identical
+    policy/reference -> ~0 KL; a diverged policy -> positive KL."""
+    from llm.training.rlhf.aligner_benchmark import _reference_kl
+
+    class _BiasFull(nn.Module):
+        def __init__(self, token: int) -> None:
+            super().__init__()
+            self.token = token
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            batch, seq = x.shape
+            out = torch.zeros(batch, seq, 8)
+            out[..., self.token] = 10.0
+            return out
+
+    seqs = torch.tensor([[1, 2, 3], [4, 5, 6]])
+    reference = _BiasFull(token=5)
+    assert _reference_kl(_BiasFull(token=5), reference, seqs) < 1e-6
+    assert _reference_kl(_BiasFull(token=3), reference, seqs) > 0.05
+
+
 def test_dpo_benchmark_preference_fraction_rises():
     """CPU e2e: on the shared judge-labeled preference set, DPO (off-policy)
     reliably converges — preference fraction 0 -> ~1."""
@@ -179,5 +201,12 @@ def test_compare_dpo_vs_ppo_returns_summary():
         assert out["dpo"]["final_preference_fraction"] > out["dpo"]["preference_fraction_trajectory"][0]
         assert 0.0 <= out["ppo"]["final_mean_reward"] <= 1.0
         assert out["grpo"]["final_group_reward_fraction"] > out["grpo"]["group_reward_fraction_trajectory"][0]
+        # Reference-KL (reward-over-optimization diagnostic) is finite and >= 0
+        # for every aligner (reporting it is the deliverable, not its size).
+        for align in ("dpo", "ppo", "grpo"):
+            kl = out[align]["final_reference_kl"]
+            assert isinstance(kl, float)
+            assert kl >= 0.0
+            assert kl == kl  # no NaN
     finally:
         torch.set_num_threads(prev)

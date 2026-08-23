@@ -82,6 +82,37 @@ def preference_fraction(model: nn.Module, chosen: torch.Tensor, rejected: torch.
     return hits / chosen.size(0)
 
 
+def _snapshot_reference(model: nn.Module) -> nn.Module:
+    """Return a frozen deep-copy of ``model`` (the initial policy)."""
+    import copy
+
+    ref = copy.deepcopy(model)
+    ref.eval()
+    for param in ref.parameters():
+        param.requires_grad_(False)
+    return ref
+
+
+def _reference_kl(policy: nn.Module, reference: nn.Module, sequences: torch.Tensor) -> float:
+    """Mean per-sequence KL of the policy vs a frozen reference over ``seqs``.
+
+    ``sequences`` is ``[B, L]``. KL is summed over every predicted position
+    (the next-token distribution at each prefix) and averaged over the batch —
+    the standard reward-over-optimization / drift diagnostic.
+    """
+    policy.eval()
+    reference.eval()
+    with torch.no_grad():
+        p_logits = policy(sequences)
+        r_logits = reference(sequences)
+    p = functional.softmax(p_logits.float(), dim=-1)
+    r_log = functional.log_softmax(r_logits.float(), dim=-1)
+    p_pos = p[:, :-1]
+    r_pos = r_log[:, :-1]
+    kl = (p_pos * (p_pos.clamp_min(1e-12).log() - r_pos)).sum(-1)  # [B, L-1]
+    return float(kl.sum(-1).mean().item())
+
+
 def _dpo_config(base: Any, target_token: int) -> tuple[Any, Any]:
     from llm.data.modules.aifeedback import AIFeedbackDataModule
     from llm.training.rlhf.aifeedback import TargetTokenJudge
@@ -94,29 +125,38 @@ def _dpo_config(base: Any, target_token: int) -> tuple[Any, Any]:
     return module, task
 
 
-def run_dpo(config: Any, epochs: int, target_token: int = 1) -> dict[str, Any]:
+def run_dpo(
+    config: Any, epochs: int, target_token: int = 1, eval_sequences: torch.Tensor | None = None
+) -> dict[str, Any]:
     """Train DPO on the synthetic judge-labeled pairs; return the trajectory.
 
     Uses :class:`AIFeedbackDataModule` (chosen ends in the target token) +
     the existing ``--task dpo`` loop. Reports the shared preference-fraction
-    trajectory and the DPO loss trajectory.
+    trajectory, the DPO loss trajectory, and the policy's KL from a frozen
+    reference over training (reward-over-optimization diagnostic).
     """
     from llm.training.core.engine import TrainingEngine
 
     module, task = _dpo_config(config, target_token)
     engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
+    reference = _snapshot_reference(engine.model)
+    eval_seqs = eval_sequences if eval_sequences is not None else module.chosen
 
     pref_traj: list[float] = []
     loss_traj: list[float] = []
+    kl_traj: list[float] = []
     for epoch in range(epochs):
         loss = engine._run_epoch(epoch)
         loss_traj.append(float(loss))
         pref_traj.append(preference_fraction(engine.model, module.chosen, module.rejected))
+        kl_traj.append(_reference_kl(engine.model, reference, eval_seqs))
 
     return {
         "preference_fraction_trajectory": pref_traj,
         "final_preference_fraction": pref_traj[-1],
         "dpo_loss_trajectory": loss_traj,
+        "reference_kl_trajectory": kl_traj,
+        "final_reference_kl": kl_traj[-1],
     }
 
 
@@ -131,13 +171,13 @@ def _grpo_group_reward_fraction(model: nn.Module, module: Any) -> float:
     return float((lp.argmax(-1) == 0).float().mean().item())
 
 
-def run_grpo(config: Any, epochs: int) -> dict[str, Any]:
+def run_grpo(config: Any, epochs: int, eval_sequences: torch.Tensor | None = None) -> dict[str, Any]:
     """Run group-relative GRPO on its synthetic group task; return trajectories.
 
     Uses the existing :class:`GRPODataModule` + ``--task grpo`` loop (the group
     whose first response is the all-zero target is rewarded 1.0). Reports the
-    group-reward fraction and GRPO loss trajectories. Returns the policy too so
-    the comparison can evaluate it on the shared preference set.
+    group-reward fraction, GRPO loss, and reference-KL trajectories. Returns the
+    policy too so the comparison can evaluate it on the shared preference set.
     """
     from llm.data.modules.grpo import GRPODataModule
     from llm.training.core.engine import TrainingEngine
@@ -148,29 +188,42 @@ def run_grpo(config: Any, epochs: int) -> dict[str, Any]:
     module.setup()
     task = GRPOTask(config, module)
     engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
+    reference = _snapshot_reference(engine.model)
+    eval_seqs = eval_sequences if eval_sequences is not None else module.response_tokens
 
     group_traj: list[float] = []
     loss_traj: list[float] = []
+    kl_traj: list[float] = []
     for epoch in range(epochs):
         loss = engine._run_epoch(epoch)
         loss_traj.append(float(loss))
         group_traj.append(_grpo_group_reward_fraction(engine.model, module))
+        kl_traj.append(_reference_kl(engine.model, reference, eval_seqs))
 
     return {
         "group_reward_fraction_trajectory": group_traj,
         "final_group_reward_fraction": group_traj[-1],
         "grpo_loss_trajectory": loss_traj,
+        "reference_kl_trajectory": kl_traj,
+        "final_reference_kl": kl_traj[-1],
         "policy": engine.model,
     }
 
 
-def run_ppo(config: Any, steps: int, prompts: list[str], target_token: int = 1) -> dict[str, Any]:
+def run_ppo(
+    config: Any,
+    steps: int,
+    prompts: list[str],
+    target_token: int = 1,
+    eval_sequences: torch.Tensor | None = None,
+) -> dict[str, Any]:
     """Run on-policy PPO with the target-token judge reward.
 
     Builds a :class:`PPOTask` whose reward model is the rule-based
     :class:`TargetTokenReward` (the same judge signal DPO consumes as
     preference pairs), rolls out ``steps`` optimizer updates, and returns the
-    mean-reward trajectory.
+    mean-reward trajectory and (when ``eval_sequences`` is given) the policy's
+    reference-KL after each step.
     """
     import json
     import tempfile
@@ -207,17 +260,25 @@ def run_ppo(config: Any, steps: int, prompts: list[str], target_token: int = 1) 
     # Swap in the rule-based judge reward (the benchmark's shared preference
     # signal) instead of the freshly-initialized learned reward head.
     trainer.reward_model = TargetTokenReward(target_token=target_token)
+    reference = _snapshot_reference(engine.model)
 
     reward_traj: list[float] = []
+    kl_traj: list[float] = []
     for _ in range(max(steps, 1)):
         metrics = trainer.train_step(prompts)
         reward_traj.append(float(metrics.get("reward_mean", 0.0)))
+        if eval_sequences is not None:
+            kl_traj.append(_reference_kl(engine.model, reference, eval_sequences))
 
-    return {
+    result: dict[str, Any] = {
         "mean_reward_trajectory": reward_traj,
         "final_mean_reward": reward_traj[-1],
         "policy": engine.model,
     }
+    if eval_sequences is not None:
+        result["reference_kl_trajectory"] = kl_traj
+        result["final_reference_kl"] = kl_traj[-1]
+    return result
 
 
 def compare_dpo_vs_ppo(
@@ -240,26 +301,32 @@ def compare_dpo_vs_ppo(
     shared = AIFeedbackDataModule(config, judge=TargetTokenJudge(target_token=target_token))
     shared.prepare_data()
     shared.setup()
+    shared_eval = shared.chosen
 
-    dpo_result = run_dpo(config, dpo_epochs, target_token=target_token)
+    dpo_result = run_dpo(config, dpo_epochs, target_token=target_token, eval_sequences=shared_eval)
 
-    ppo = run_ppo(config, ppo_steps, prompts, target_token=target_token)
+    ppo = run_ppo(config, ppo_steps, prompts, target_token=target_token, eval_sequences=shared_eval)
     ppo_policy = ppo.pop("policy")
     ppo_pref = preference_fraction(ppo_policy, shared.chosen, shared.rejected)
     ppo_result = {**ppo, "final_preference_fraction": ppo_pref}
 
-    grpo = run_grpo(config, grpo_epochs)
+    grpo = run_grpo(config, grpo_epochs, eval_sequences=shared_eval)
     grpo_policy = grpo.pop("policy")
     grpo_pref = preference_fraction(grpo_policy, shared.chosen, shared.rejected)
     grpo_result = {**grpo, "final_preference_fraction": grpo_pref}
     grpo_first = float(grpo["group_reward_fraction_trajectory"][0])
     grpo_final = float(grpo["final_group_reward_fraction"])
+    grpo_kl_first = float(grpo["reference_kl_trajectory"][0])
+    grpo_kl_final = float(grpo["final_reference_kl"])
 
     summary = (
         f"DPO pref-fraction {dpo_result['preference_fraction_trajectory'][0]:.2f} -> "
         f"{dpo_result['final_preference_fraction']:.2f} over {dpo_epochs} epochs; "
         f"PPO mean reward {ppo_result['final_mean_reward']:.3f}, "
         f"pref-fraction {ppo_result['final_preference_fraction']:.2f} after {ppo_steps} rollout step(s); "
-        f"GRPO group-reward {grpo_first:.2f} -> {grpo_final:.2f} over {grpo_epochs} epochs."
+        f"GRPO group-reward {grpo_first:.2f} -> {grpo_final:.2f} over {grpo_epochs} epochs; "
+        f"reference-KL DPO {dpo_result['final_reference_kl']:.3f} / "
+        f"PPO {ppo_result['final_reference_kl']:.3f} / "
+        f"GRPO {grpo_kl_first:.3f} -> {grpo_kl_final:.3f}."
     )
     return {"dpo": dpo_result, "ppo": ppo_result, "grpo": grpo_result, "summary": summary}

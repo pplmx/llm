@@ -2,7 +2,7 @@
 
 阶段十一 **11.3「对比 DPO vs RLHF 性能」** 的落地并扩展：一个 CPU 可验证的基准
 harness，在**同一个合成偏好任务**上分别跑既有 **DPO**、**PPO (RLHF)** 与 **GRPO**
-三种对齐方式，报告可比的指标并给出观测结论。基准代码在
+三种对齐方式，报告可比的指标、**参考策略漂移 (reference-KL)** 并给出观测结论。基准代码在
 `llm/training/rlhf/aligner_benchmark.py`。
 
 ## 共享偏好任务
@@ -20,16 +20,21 @@ harness，在**同一个合成偏好任务**上分别跑既有 **DPO**、**PPO (
   "组内最优 response 命中目标"的比例。
 
 **共享指标**：`preference_fraction(policy, chosen, rejected)` —— 策略对 chosen 序列的
-累计 log-prob 大于 rejected 的比例。它在同一份共享 set 上同时评估两个策略，保证可比。
+累计 log-prob 大于 rejected 的比例。它在同一份共享 set 上同时评估三个策略，保证可比。
+
+**泛化 / 过优化诊断**：每个对齐方式还会汇报 `reference_kl_trajectory` —— 当前策略相对
+**冻结的初始策略快照** 的 KL 漂移随训练的变化。这会暴露 reward over-optimization /
+distributional drift：即便 `preference_fraction`（或奖励）在升，KL 爆炸就是"对齐过头、偏离
+基础策略"的早期信号，可用于指导 LR 与 early-stop。
 
 ## 组件（`llm/training/rlhf/aligner_benchmark.py`）
 
 - `TargetTokenReward`：规则 reward——最后一个真实 token 等于目标则 1 否则 0（`(ids, mask) -> [B]`，与 reward-model 调用契约一致）。
 - `preference_fraction(model, chosen, rejected)`：chosen-logp > rejected-logp 的比例。
-- `run_dpo(config, epochs)`：`AIFeedbackDataModule` + `DPOTask` 标准循环，返回偏好比例轨迹 + DPO 损失轨迹。
-- `run_ppo(config, steps, prompts)`：`PPOTask`（reward 为 `TargetTokenReward`）+ 真实 `PPOTrainer` rollout，返回 mean-reward 轨迹。
-- `run_grpo(config, epochs)`：`GRPODataModule` + `GRPOTask`，返回 group-reward fraction 轨迹。
-- `compare_dpo_vs_ppo(config, ...)`：一起跑三者并返回 `{dpo, ppo, grpo, summary}`。
+- `run_dpo(config, epochs)`：`AIFeedbackDataModule` + `DPOTask` 标准循环，返回偏好比例轨迹 + DPO 损失轨迹 + reference-KL 轨迹。
+- `run_ppo(config, steps, prompts)`：`PPOTask`（reward 为 `TargetTokenReward`）+ 真实 `PPOTrainer` rollout，返回 mean-reward 轨迹 + reference-KL 轨迹。
+- `run_grpo(config, epochs)`：`GRPODataModule` + `GRPOTask`，返回 group-reward fraction 轨迹 + reference-KL 轨迹。
+- `compare_dpo_vs_ppo(config, ...)`：一起跑三者、在同一共享 set 上统一评估 `preference_fraction` 与 `reference_kl`，返回 `{dpo, ppo, grpo, summary}`。
 
 ## 用法
 
@@ -62,4 +67,5 @@ print(result["summary"])
 `tests/training/test_aligner_benchmark.py` 覆盖：`TargetTokenReward` 的打分与 mask；
 `preference_fraction` 的排序与形状校验；DPO 基准 e2e（偏好比例 0 -> ~1）；GRPO 基准
 e2e（group-reward fraction 0 -> >0.9）；PPO 基准（真实 `PPOTrainer` 产出有限 reward
-轨迹）；以及 `compare_dpo_vs_ppo` 三方对比返回 summary 的端到端入口。
+轨迹）；`reference_kl` 的一致性单元校验（同策略≈0、漂移>0）；以及 `compare_dpo_vs_ppo`
+三方对比返回 summary 的端到端入口（含各 aligner 的 reference-KL）。
