@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 99,
+  "round": 100,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T01:52:59+00:00",
+  "updated_at": "2026-08-23T02:06:05+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 99,
+      "touched_round": 100,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13357,10 +13357,10 @@
     "ISS-267": {
       "id": "ISS-267",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:52:54+00:00",
-      "updated_at": "2026-08-23T01:52:54+00:00",
+      "updated_at": "2026-08-23T02:05:41+00:00",
       "touched_round": 99,
       "title": "GRPO alignment unimplemented (ROADMAP 阶段十一)",
       "summary": "No group-relative policy optimization. Implementation: --task grpo with group-mean/group-std advantage (z-score), policy-ratio clipped loss, KL to a reference, and a CPU e2e on a synthetic reward."
@@ -13368,10 +13368,10 @@
     "TASK-229": {
       "id": "TASK-229",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:52:54+00:00",
-      "updated_at": "2026-08-23T01:52:54+00:00",
+      "updated_at": "2026-08-23T02:05:41+00:00",
       "touched_round": 99,
       "category": "core-feature",
       "severity": 0.3,
@@ -13380,6 +13380,68 @@
       "unlock_factor": 1.2,
       "title": "GRPO slice 1: group-relative advantage policy loss + --task grpo (CPU)",
       "summary": "Implement GRPOLoss (group z-score advantage + clipped policy-ratio + KL-to-reference), register --task grpo with a reward-scored prompt DataModule, and a CPU e2e showing the policy's group reward improves over training; one reference policy frozen per group."
+    },
+    "CHG-243": {
+      "id": "CHG-243",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:05:34+00:00",
+      "updated_at": "2026-08-23T02:05:34+00:00",
+      "touched_round": 99,
+      "commit": "d69b48e",
+      "title": "GRPO: group-relative advantage policy loss + --task grpo (TASK-229)",
+      "summary": "llm/training/rlhf/grpo.py group z-score advantages + clipped GRPOLoss w/ K3 KL; GRPODataModule (synthetic reward-scored groups, stable single-batch); GRPOTask registered --task grpo (initial-policy snapshot as 'old', frozen reference); TrainingConfig grpo_group_size/clip_eps/kl_beta; CPU e2e group-reward hit-rate 0->1."
+    },
+    "EV-230": {
+      "id": "EV-230",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:05:36+00:00",
+      "updated_at": "2026-08-23T02:05:36+00:00",
+      "touched_round": 99,
+      "source": "tests/training/test_grpo.py (8 tests)",
+      "summary": "group_advantages z-scores zero-mean per group with rewarded response max; GRPOLoss validates clip_eps/kl_beta, zero-KL == -mean(A), ratio clipping bounds negative effects; --task grpo registered + builds GRPOLoss; DataModule batch/group rewards + misaligned batch raises; CPU e2e: rewarded-response group hit-rate rises 0->~1. 8 pass; ruff/ty clean; training fast suite green.",
+      "confidence": 1.0
+    },
+    "DEC-062": {
+      "id": "DEC-062",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:05:54+00:00",
+      "updated_at": "2026-08-23T02:05:54+00:00",
+      "touched_round": 100,
+      "rationale": "Next milestone = Rejection Sampling (ROADMAP 阶段十一 11.4): sample N responses per prompt, keep the top-K / above-threshold by reward, then SFT/fine-tune the policy on the selected high-reward responses. CPU-verifiable with a synthetic reward, complements GRPO, and ships a real data-pipeline + training wiring (a --task or an sft-on-selected set).",
+      "alternatives_rejected": "PP-v2 / DeepSpeed ZeRO / real vision encoders need GPU/multi-node/external weights absent here; RLAIF / Constitutional AI need AI feedback infra / safety framing and are less CPU-measurable; Rejection Sampling is the most concrete, in-repo, CPU-verifiable remaining alignment item."
+    },
+    "ISS-268": {
+      "id": "ISS-268",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:06:01+00:00",
+      "updated_at": "2026-08-23T02:06:01+00:00",
+      "touched_round": 100,
+      "title": "Rejection sampling alignment unimplemented (ROADMAP 11.4)",
+      "summary": "No rejection-sampling pipeline: sample responses, score with a reward, filter top-K/above-threshold, then fine-tune the policy on the selected responses."
+    },
+    "TASK-230": {
+      "id": "TASK-230",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T02:06:01+00:00",
+      "updated_at": "2026-08-23T02:06:01+00:00",
+      "touched_round": 100,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.7,
+      "confidence": 0.7,
+      "unlock_factor": 1.1,
+      "title": "Rejection sampling slice 1: reward-scored generate -> filter top-K -> SFT onboarding (CPU)",
+      "summary": "Add a rejection-sampling data helper (sample N responses, score, keep top-K / threshold) + a small SFT-on-selected pipeline, and a CPU e2e showing the kept responses have higher mean reward than the base sample."
     }
   },
   "edges": [
@@ -19597,6 +19659,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T01:52:59+00:00"
+    },
+    {
+      "from": "CHG-243",
+      "to": "TASK-229",
+      "type": "implements",
+      "created_at": "2026-08-23T02:05:41+00:00"
+    },
+    {
+      "from": "CHG-243",
+      "to": "ISS-267",
+      "type": "resolves",
+      "created_at": "2026-08-23T02:05:41+00:00"
+    },
+    {
+      "from": "DEC-062",
+      "to": "TASK-230",
+      "type": "governs",
+      "created_at": "2026-08-23T02:06:05+00:00"
+    },
+    {
+      "from": "TASK-230",
+      "to": "ISS-268",
+      "type": "addresses",
+      "created_at": "2026-08-23T02:06:05+00:00"
+    },
+    {
+      "from": "ISS-268",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T02:06:05+00:00"
     }
   ]
 }
