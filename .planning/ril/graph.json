@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 94,
+  "round": 95,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T01:05:35+00:00",
+  "updated_at": "2026-08-23T01:18:57+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -1070,7 +1070,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:35:49+00:00",
       "updated_at": "2026-08-10T14:35:49+00:00",
-      "touched_round": 71,
+      "touched_round": 95,
       "title": "quantization module",
       "details": "ptq/gptq/awq/smooth quantize + layers"
     },
@@ -13047,10 +13047,10 @@
     "ISS-262": {
       "id": "ISS-262",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:05:14+00:00",
-      "updated_at": "2026-08-23T01:05:14+00:00",
+      "updated_at": "2026-08-23T01:18:26+00:00",
       "touched_round": 94,
       "title": "Weight pruning unimplemented (ROADMAP 13.4)",
       "summary": "No way to sparsify a pretrained checkpoint: magnitude/structural pruning of nn.Linear weights + config/CLI + accuracy-gate e2e. Next compression milestone after QAT + KD."
@@ -13058,10 +13058,10 @@
     "TASK-224": {
       "id": "TASK-224",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:05:17+00:00",
-      "updated_at": "2026-08-23T01:05:17+00:00",
+      "updated_at": "2026-08-23T01:18:26+00:00",
       "touched_round": 94,
       "category": "core-feature",
       "severity": 0.4,
@@ -13070,6 +13070,68 @@
       "unlock_factor": 1.1,
       "title": "Pruning milestone slice 1: magnitude pruning of pretrained linear weights",
       "summary": "Add a pruning pass that sparsifies a pretrained checkpoint (nn.Linear weight_masks / threshold) with config knobs (ratio/type), a CLI or training-adjacent entry, and an e2e showing pruned-inference is valid and sparsity/accuracy are reported."
+    },
+    "CHG-238": {
+      "id": "CHG-238",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:18:17+00:00",
+      "updated_at": "2026-08-23T01:18:17+00:00",
+      "touched_round": 94,
+      "commit": "43a5354",
+      "title": "Weight pruning: PrunedLinear + llm-prune CLI (TASK-224)",
+      "summary": "llm/quantization/prune.py (PrunedLinear w/ persistent binary weight_mask, PruningConfig ratio/method/target_modules/random_seed, prune_model magnitude|random in-place swap, compute_sparsity); llm-prune CLI registered in pyproject; allowed via weights_only safe-globals so pruned blobs serve unchanged; 14 tests (unit + CLI round-trip through serving loader + light-prune-preserves-accuracy e2e); docs guide + ROADMAP 13.4."
+    },
+    "EV-225": {
+      "id": "EV-225",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:18:21+00:00",
+      "updated_at": "2026-08-23T01:18:21+00:00",
+      "touched_round": 94,
+      "source": "tests/quantization/test_prune.py + tests/cli/test_prune_cli.py (14 tests)",
+      "summary": "prune_model replaces all nn.Linear with PrunedLinear and reports ratio-accurate sparsity; magnitude keeps exactly the largest-|W| entries; target_modules subset; random reproducible with seed; no-Linear raises; pruned forward finite & shape-preserving; DecoderModel e2e: light prune (0.1) preserves cyclic-corpus accuracy, heavy (0.95) degrades it; llm-prune CLI round-trips through the real serving loader (load_training_checkpoint) with finite forward. All 14 pass; ruff+ty clean; full quantization & cli suites green.",
+      "confidence": 1.0
+    },
+    "DEC-057": {
+      "id": "DEC-057",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:18:47+00:00",
+      "updated_at": "2026-08-23T01:18:47+00:00",
+      "touched_round": 95,
+      "rationale": "Next milestone = low-rank decomposition (ROADMAP 13.4 '探索低秩分解'), the final remaining 模型压缩 item after QAT, KD and weight pruning. Natural continuation: factorize each pretrained nn.Linear into two small matrices (SVD/U-V), load-checkpoint -> decompose -> save -> serve, CPU-verifiable, mirrors the pruning/quantization milestone shape.",
+      "alternatives_rejected": "Multimodal (P2) needs a new MultimodalDataModule design spike (ADR boundary, no registry); DeepSpeed ZeRO / PP-v2 need GPU/multi-node infra absent in this sandbox; low-rank is the last in-thread, lowest-risk compression slice."
+    },
+    "ISS-263": {
+      "id": "ISS-263",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:18:53+00:00",
+      "updated_at": "2026-08-23T01:18:53+00:00",
+      "touched_round": 95,
+      "title": "Low-rank decomposition unimplemented (ROADMAP 13.4)",
+      "summary": "No way to factorize a pretrained checkpoint's nn.Linear weights into two low-rank matrices (SVD/U-V) for compression. Final 模型压缩 item after QAT/KD/pruning."
+    },
+    "TASK-225": {
+      "id": "TASK-225",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:18:53+00:00",
+      "updated_at": "2026-08-23T01:18:53+00:00",
+      "touched_round": 95,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.6,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Low-rank milestone slice 1: SVD(U-V) factorization of pretrained linear weights",
+      "summary": "Add a low-rank factorization pass (SVD-based U-V, rank knobs/error cap) with config, llm-decompose CLI or training-adjacent entry, and an e2e showing reconstructed inference is valid and rank/compression ratio + error are reported."
     }
   },
   "edges": [
@@ -19137,6 +19199,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T01:05:35+00:00"
+    },
+    {
+      "from": "CHG-238",
+      "to": "TASK-224",
+      "type": "implements",
+      "created_at": "2026-08-23T01:18:26+00:00"
+    },
+    {
+      "from": "CHG-238",
+      "to": "ISS-262",
+      "type": "resolves",
+      "created_at": "2026-08-23T01:18:26+00:00"
+    },
+    {
+      "from": "DEC-057",
+      "to": "TASK-225",
+      "type": "governs",
+      "created_at": "2026-08-23T01:18:57+00:00"
+    },
+    {
+      "from": "TASK-225",
+      "to": "ISS-263",
+      "type": "addresses",
+      "created_at": "2026-08-23T01:18:57+00:00"
+    },
+    {
+      "from": "ISS-263",
+      "to": "COMP-009",
+      "type": "located_in",
+      "created_at": "2026-08-23T01:18:57+00:00"
     }
   ]
 }
