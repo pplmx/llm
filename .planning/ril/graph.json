@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 95,
+  "round": 96,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T01:18:57+00:00",
+  "updated_at": "2026-08-23T01:25:43+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 94,
+      "touched_round": 96,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13109,10 +13109,10 @@
     "ISS-263": {
       "id": "ISS-263",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:18:53+00:00",
-      "updated_at": "2026-08-23T01:18:53+00:00",
+      "updated_at": "2026-08-23T01:25:17+00:00",
       "touched_round": 95,
       "title": "Low-rank decomposition unimplemented (ROADMAP 13.4)",
       "summary": "No way to factorize a pretrained checkpoint's nn.Linear weights into two low-rank matrices (SVD/U-V) for compression. Final 模型压缩 item after QAT/KD/pruning."
@@ -13120,10 +13120,10 @@
     "TASK-225": {
       "id": "TASK-225",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:18:53+00:00",
-      "updated_at": "2026-08-23T01:18:53+00:00",
+      "updated_at": "2026-08-23T01:25:17+00:00",
       "touched_round": 95,
       "category": "core-feature",
       "severity": 0.3,
@@ -13132,6 +13132,68 @@
       "unlock_factor": 1.0,
       "title": "Low-rank milestone slice 1: SVD(U-V) factorization of pretrained linear weights",
       "summary": "Add a low-rank factorization pass (SVD-based U-V, rank knobs/error cap) with config, llm-decompose CLI or training-adjacent entry, and an e2e showing reconstructed inference is valid and rank/compression ratio + error are reported."
+    },
+    "CHG-239": {
+      "id": "CHG-239",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:25:08+00:00",
+      "updated_at": "2026-08-23T01:25:08+00:00",
+      "touched_round": 95,
+      "commit": "386eca6",
+      "title": "Low-rank decomposition: LowRankLinear + llm-decompose CLI (TASK-225)",
+      "summary": "llm/quantization/lowrank.py (LowRankLinear u/v, LowRankConfig rank XOR rank_ratio, SVD U-V Eckart-Young decompose, compute_compression, relative-error report); llm-decompose CLI registered; allowed via weights_only safe-globals; 14 tests (unit + CLI serving round-trip + full-rank-keeps-accuracy/rank-1-degrades e2e); docs guide + ROADMAP 13.4."
+    },
+    "EV-226": {
+      "id": "EV-226",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:25:12+00:00",
+      "updated_at": "2026-08-23T01:25:12+00:00",
+      "touched_round": 95,
+      "source": "tests/quantization/test_lowrank.py + tests/cli/test_decompose_cli.py (14 tests)",
+      "summary": "decompose replaces all nn.Linear with LowRankLinear; full-rank reconstruction is Frobenius-exact (~0); low rank reports compression >1x; rank_ratio auto sets rank=min(out,in); target_modules subset; forward finite & shape-preserving; DecoderModel e2e: full-rank decomposition keeps cyclic-corpus accuracy while rank-1 collapse degrades it; llm-decompose CLI round-trips through the real serving loader. 14 pass; ruff+ty clean; quantization+cli suites green.",
+      "confidence": 1.0
+    },
+    "DEC-058": {
+      "id": "DEC-058",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:25:32+00:00",
+      "updated_at": "2026-08-23T01:25:32+00:00",
+      "touched_round": 96,
+      "rationale": "Next milestone = multimodal design spike (ROADMAP P1 '多模态 spike', 阶段十二). Compression line (13.x) is now fully closed; multimodal is the P1 next-exploration item and is CPU-verifiable. Scope is a spike: draft MultimodalDataModule + ModalityEncoderRegistry contract + minimal CPU encoder (no image model), WITHOUT hard-coding DecoderModel (ADR boundary '多模态优先设计 MultimodalDataModule，勿硬改 DecoderModel').",
+      "alternatives_rejected": "DeepSpeed ZeRO / PP-v2 need GPU/multi-node infra absent in this CPU sandbox; low-rank (the previous candidate) is now done; a further compression deep-dive at this point returns diminishing returns after closing QAT+KD+pruning+low-rank."
+    },
+    "ISS-264": {
+      "id": "ISS-264",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:25:39+00:00",
+      "updated_at": "2026-08-23T01:25:39+00:00",
+      "touched_round": 96,
+      "title": "Multimodal data/encoder layer unimplemented (ROADMAP 阶段十二, P1 spike)",
+      "summary": "No MultimodalDataModule / ModalityEncoderRegistry. Required design spike before any real vision-language work; must not hard-patch DecoderModel (ADR boundary)."
+    },
+    "TASK-226": {
+      "id": "TASK-226",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:25:39+00:00",
+      "updated_at": "2026-08-23T01:25:39+00:00",
+      "touched_round": 96,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.7,
+      "confidence": 0.7,
+      "unlock_factor": 1.2,
+      "title": "Multimodal spike: ModalityEncoderRegistry + MultimodalDataModule contract (CPU)",
+      "summary": "Design & land the data/encoder contract first: a ModalityEncoderRegistry (like PEFT/quantization registries) with a minimal CPU-verifiable encoder + a MultimodalDataModule that pairs text+auxiliary modal samples, + registry/unit tests + a design note. No DecoderModel hard-patching."
     }
   },
   "edges": [
@@ -19229,6 +19291,36 @@
       "to": "COMP-009",
       "type": "located_in",
       "created_at": "2026-08-23T01:18:57+00:00"
+    },
+    {
+      "from": "CHG-239",
+      "to": "TASK-225",
+      "type": "implements",
+      "created_at": "2026-08-23T01:25:16+00:00"
+    },
+    {
+      "from": "CHG-239",
+      "to": "ISS-263",
+      "type": "resolves",
+      "created_at": "2026-08-23T01:25:17+00:00"
+    },
+    {
+      "from": "DEC-058",
+      "to": "TASK-226",
+      "type": "governs",
+      "created_at": "2026-08-23T01:25:43+00:00"
+    },
+    {
+      "from": "TASK-226",
+      "to": "ISS-264",
+      "type": "addresses",
+      "created_at": "2026-08-23T01:25:43+00:00"
+    },
+    {
+      "from": "ISS-264",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T01:25:43+00:00"
     }
   ]
 }
