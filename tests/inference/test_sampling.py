@@ -29,6 +29,25 @@ def test_negative_temperature_rejected():
     assert int(sampling_probs(logits, temperature=1.0).argmax()) == 0
 
 
+def test_invalid_penalty_and_topk_rejected():
+    """RIL TASK-250: repetition_penalty <= 0 silently corrupts logits (0 divides
+    by zero -> inf, negative flips sign) and top_k <= 0 crashes with a cryptic
+    IndexError; both are now rejected with clear ValueErrors. Legitimate values
+    ((0, 1] repetition, top_k >= 1) still work."""
+    logits = torch.tensor([1.0, 2.0, -1.0])
+    with pytest.raises(ValueError, match="repetition_penalty"):
+        apply_repetition_penalty(logits, [0, 1, 2], repetition_penalty=0.0)
+    with pytest.raises(ValueError, match="repetition_penalty"):
+        apply_repetition_penalty(logits, [0, 1, 2], repetition_penalty=-1.0)
+    with pytest.raises(ValueError, match="top_k"):
+        sampling_probs(torch.tensor([1.0, 2.0, 3.0]), temperature=1.0, top_k=0)
+    with pytest.raises(ValueError, match="top_k"):
+        sampling_probs(torch.tensor([1.0, 2.0, 3.0]), temperature=1.0, top_k=-2)
+    # Valid values still produce finite, non-empty distributions.
+    assert torch.isfinite(apply_repetition_penalty(logits, [0, 1, 2], repetition_penalty=2.0)).all()
+    assert sampling_probs(torch.tensor([1.0, 2.0, 3.0]), temperature=1.0, top_k=2).shape[0] == 3
+
+
 def test_repetition_penalty_changes_logits():
     logits = torch.tensor([1.0, 2.0, 3.0])
     adjusted = apply_repetition_penalty(logits, [1, 2], repetition_penalty=2.0)

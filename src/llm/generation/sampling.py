@@ -25,6 +25,12 @@ def apply_repetition_penalty(
     """
     if repetition_penalty == 1.0 or not token_ids:
         return logits
+    # ``repetition_penalty <= 0`` silently corrupts the distribution: 0 divides
+    # by zero (inf) and a negative value flips each seen score's sign, producing
+    # non-finite or inverted logits. Values in (0, 1) legitimately *encourage*
+    # repetition, so only reject <= 0 (RIL TASK-250).
+    if repetition_penalty <= 0:
+        raise ValueError(f"repetition_penalty must be > 0, got {repetition_penalty!r}")
 
     vocab_size = logits.size(-1)
     valid_ids = [tid for tid in token_ids if 0 <= tid < vocab_size]
@@ -262,6 +268,10 @@ def sampling_probs(
     # distribution (RIL TASK-249).
     if temperature <= 0:
         raise ValueError(f"temperature must be > 0, got {temperature!r}")
+    # ``top_k <= 0`` makes torch.topk's ``k`` out of range and surfaces as a new
+    # cryptic IndexError; reject it with a clear message (RIL TASK-250).
+    if top_k is not None and top_k < 1:
+        raise ValueError(f"top_k must be >= 1 when set, got {top_k!r}")
 
     next_logits = logits / temperature
 

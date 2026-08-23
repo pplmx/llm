@@ -217,6 +217,7 @@
     - [x] **基础实现**: `generation/` 模块 (`eager.py` + `BACKEND_REGISTRY`)
     - [x] **核心功能**: 实现 `Greedy Search`, `KV Cache`, `Top-k/Top-p` 采样
     - [x] **采样健壮性**: `sample_next_token`/`sampling_probs` 拒绝非正 temperature（负值会静默反向采到最低分 token），temperature==0 仍走 greedy
+    - [x] **采样参数校验**: `repetition_penalty<=0`（0→inf、负→翻转）与 `top_k<1`（torch.topk 晦涩崩溃）改为清晰 `ValueError`
 - [x] **模型服务化**:
     - [x] 使用 `FastAPI` 将推理功能封装成一个 REST API 服务
     - [x] 支持流式输出 (Server-Sent Events)
