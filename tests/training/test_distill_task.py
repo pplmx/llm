@@ -94,7 +94,10 @@ def _kl_to_teacher(engine: TrainingEngine, task, temperature: float) -> float:
     engine.model.eval()
     vocab = engine.config.model.vocab_size
     seq_len = engine.config.model.max_seq_len
-    x = torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len].unsqueeze(0)
+    # Probe on the model's own device (engine moved it to CUDA on GPU machines;
+    # this standalone probe feeds raw tensors — device-mismatch without .to()).
+    device = next(engine.model.parameters()).device
+    x = torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len].unsqueeze(0).to(device)
     with torch.no_grad():
         s_logp = torch.log_softmax(engine.model(x) / temperature, dim=-1)
         t_p = torch.softmax(task.teacher(x) / temperature, dim=-1)

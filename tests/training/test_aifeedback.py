@@ -72,6 +72,10 @@ def test_aifeedback_datamodule_yields_dpo_batch():
 
 def _seq_log_probs(model, responses):
     model.eval()
+    # Probe on the model's own device: the engine moved the model to CUDA but
+    # this standalone probe feeds data-module tensors (CPU) directly — a
+    # device-mismatch on GPU machines without the .to().
+    responses = responses.to(next(model.parameters()).device)
     with torch.no_grad():
         logits = model(responses)  # channels-last: [B, L, V]
     lp = functional.log_softmax(logits, -1)

@@ -68,6 +68,9 @@ def test_rejection_sample_reports_kept_over_base_reward():
 
 def _kept_log_likelihood(model, responses):
     model.eval()
+    # Probe on the model's own device (engine moved it to CUDA on GPU machines;
+    # this standalone probe feeds raw tensors — device-mismatch without .to()).
+    responses = responses.to(next(model.parameters()).device)
     with torch.no_grad():
         logits = model(responses)
     lp = functional.log_softmax(logits, -1)

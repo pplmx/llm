@@ -448,6 +448,10 @@ class TestHFLoader:
         # Genuinely sparse scheme survives the roundtrip and still shapes output.
         sparse_scheme = {"kind": "streaming", "num_sink": 2, "window_size": 4, "causal": True}
         src = _build(sparse_scheme)
+        # Probe on the model's own device: src/reloaded live on DEFAULT_DEVICE
+        # (CUDA when available) but the fantasy inputs above are CPU — feed the
+        # model's device instead of hardcoding CPU (GPU-machine device mismatch).
+        inputs = inputs.to(next(src.parameters()).device)
         sparse_out = _forward(src, inputs)
         save_pretrained(src, tmp_path)
         assert json.loads((tmp_path / "config.json").read_text())["attn_sparse"] == sparse_scheme

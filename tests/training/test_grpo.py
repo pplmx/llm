@@ -123,9 +123,13 @@ def test_grpo_datamodule_rejects_bad_batch_group_alignment():
 
 def _group_reward_hits(model, module):
     model.eval()
+    # Probe on the model's own device: the engine moved the model to CUDA but
+    # this standalone probe feeds data-module tensors (CPU) directly — a
+    # device-mismatch on GPU machines without the .to().
+    response_tokens = module.response_tokens.to(next(model.parameters()).device)
     with torch.no_grad():
-        logits = model(module.response_tokens)
-        lp = functional.log_softmax(logits, -1).gather(-1, module.response_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
+        logits = model(response_tokens)
+        lp = functional.log_softmax(logits, -1).gather(-1, response_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
     lp = lp.reshape(-1, module.group_size)
     return (lp.argmax(-1) == 0).float().mean().item()
 

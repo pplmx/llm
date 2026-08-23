@@ -145,7 +145,11 @@ def _tiny_decoder_config():
 def _cyclic_accuracy(model):
     model.eval()
     vocab, seq_len = 32, 24
-    x = torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len].unsqueeze(0)
+    # Probe on the model's own device — the engine moves the model to CUDA when
+    # available but this standalone probe feeds raw tensors (device-mismatch on
+    # GPU machines).
+    device = next(model.parameters()).device
+    x = torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len].unsqueeze(0).to(device)
     with torch.no_grad():
         pred = model(x).argmax(-1)
     target = torch.roll(x, -1, dims=1)
