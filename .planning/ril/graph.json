@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 107,
+  "round": 108,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:38:28+00:00",
+  "updated_at": "2026-08-23T06:42:47+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 106,
+      "touched_round": 107,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13910,22 +13910,22 @@
     "ISS-276": {
       "id": "ISS-276",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:38:20+00:00",
-      "updated_at": "2026-08-23T06:38:20+00:00",
-      "touched_round": 106,
+      "updated_at": "2026-08-23T06:42:30+00:00",
+      "touched_round": 107,
       "title": "StreamingLLM (attention sink) unimplemented (ROADMAP 15.1)",
       "summary": "15.1 open item: attention-sink streaming — first-k sink positions always attended plus a recent-window; enables stable long-run attention. Next slice: attention-sink mask + CPU parity test."
     },
     "TASK-238": {
       "id": "TASK-238",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:38:24+00:00",
-      "updated_at": "2026-08-23T06:38:24+00:00",
-      "touched_round": 106,
+      "updated_at": "2026-08-23T06:42:29+00:00",
+      "touched_round": 107,
       "category": "core-feature",
       "severity": 0.3,
       "effort": 0.6,
@@ -13933,6 +13933,69 @@
       "unlock_factor": 1.0,
       "title": "StreamingLLM: attention-sink streaming mask (first-k always-attend + rolling window) + CPU parity test",
       "summary": "Add an attention-sink mask builder over the attention-mask machinery: first-k sink positions always attended + a recent window (causal); CPU e2e: sink+window full-coverage equals dense, and sparse case attends only sink+recent; docs + ROADMAP 15.1 update."
+    },
+    "CHG-251": {
+      "id": "CHG-251",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:42:23+00:00",
+      "updated_at": "2026-08-23T06:42:23+00:00",
+      "touched_round": 107,
+      "commit": "36d98b0",
+      "title": "StreamingLLM attention-sink mask builder + CPU parity test (TASK-238)",
+      "summary": "streaming_llm.py build_streamingllm_mask (first-k sink + rolling window, causal) reusing block_sparse mask_to_additive/coverage_fraction; CPU parity sink/window-cover-all == dense causal; sparse blocks old non-sink interior (softmax ~0); docs + ROADMAP 15.1 checkoff."
+    },
+    "EV-239": {
+      "id": "EV-239",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:42:26+00:00",
+      "updated_at": "2026-08-23T06:42:26+00:00",
+      "touched_round": 107,
+      "source": "tests/core/attn/test_streaming_llm.py (7 tests)",
+      "summary": "arg validation; sink-cover-all == dense causal parity; window-cover-all == dense causal; sink always attended; old non-sink interior blocked + softmax ~0; causal blocks future even if sink; non-causal symmetric window; 7 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-071": {
+      "id": "DEC-071",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:42:35+00:00",
+      "updated_at": "2026-08-23T06:42:35+00:00",
+      "touched_round": 107,
+      "title": "Open mask-to-forward integration milestone",
+      "rationale": "Connect the shipped block-sparse and StreamingLLM mask builders to the real attention forward: a CPU integration test feeds their additive masks into the existing MHA (torch SDPA path) and asserts the output equals a manually explicitly-masked reference plus full-coverage parity with dense. This closes the mask -> actual-attention loop for 15.1/15.2 (the masks currently exist but are not yet proven to change real forward attention correctly).",
+      "alternatives_rejected": "Infinite Attention (15.1) is a new recurrence, harder to CPU-verify; Longformer/BigBird attention largely covered by the existing block_sparse mask builder; DeepSpeed/3D need GPU/multi-node."
+    },
+    "ISS-277": {
+      "id": "ISS-277",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:42:39+00:00",
+      "updated_at": "2026-08-23T06:42:39+00:00",
+      "touched_round": 107,
+      "title": "Sparse/streaming attention masks not verified end-to-end through the real attention forward (CPU integration gap)",
+      "summary": "block_sparse / streaming_llm mask builders are standalone; no test proves feeding their additive masks into the real MHA forward changes attention correctly. Next slice: MHA forward-parity integration test vs explicit masking."
+    },
+    "TASK-239": {
+      "id": "TASK-239",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:42:43+00:00",
+      "updated_at": "2026-08-23T06:42:43+00:00",
+      "touched_round": 107,
+      "category": "correctness",
+      "severity": 0.3,
+      "effort": 0.5,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Verify block-sparse & StreamingLLM masks end-to-end through MHA forward (CPU parity vs explicit masking)",
+      "summary": "Add a CPU integration test feeding build_block_sparse_mask / build_streamingllm_mask additive masks into the existing MHA forward (torch SDPA): assert forward output equals a manually explicitly-masked reference, and full-coverage parity with dense attention; update docs."
     }
   },
   "edges": [
@@ -20414,6 +20477,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:38:28+00:00"
+    },
+    {
+      "from": "CHG-251",
+      "to": "TASK-238",
+      "type": "implements",
+      "created_at": "2026-08-23T06:42:30+00:00"
+    },
+    {
+      "from": "CHG-251",
+      "to": "ISS-276",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:42:30+00:00"
+    },
+    {
+      "from": "DEC-071",
+      "to": "TASK-239",
+      "type": "governs",
+      "created_at": "2026-08-23T06:42:47+00:00"
+    },
+    {
+      "from": "TASK-239",
+      "to": "ISS-277",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:42:47+00:00"
+    },
+    {
+      "from": "ISS-277",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:42:47+00:00"
     }
   ]
 }
