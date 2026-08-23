@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 102,
+  "round": 103,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T05:22:54+00:00",
+  "updated_at": "2026-08-23T06:11:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 101,
+      "touched_round": 102,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13544,22 +13544,22 @@
     "ISS-270": {
       "id": "ISS-270",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T05:22:42+00:00",
-      "updated_at": "2026-08-23T05:22:42+00:00",
-      "touched_round": 101,
+      "updated_at": "2026-08-23T06:11:22+00:00",
+      "touched_round": 102,
       "title": "DPO vs RLHF/PPO not yet head-to-head benchmarked (ROADMAP 11.3)",
       "summary": "11.3 last open item: no shared CPU-verifiable benchmark comparing the existing DPO and PPO (RLHF) paths on the same synthetic preference task. Next slice: common harness + preference-fraction/reward metrics + docs."
     },
     "TASK-232": {
       "id": "TASK-232",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T05:22:46+00:00",
-      "updated_at": "2026-08-23T05:22:46+00:00",
-      "touched_round": 101,
+      "updated_at": "2026-08-23T06:11:22+00:00",
+      "touched_round": 102,
       "category": "core-feature",
       "severity": 0.4,
       "effort": 0.8,
@@ -13567,6 +13567,69 @@
       "unlock_factor": 1.0,
       "title": "Benchmark DPO vs PPO(RLHF) on a shared synthetic preference task (CPU)",
       "summary": "Build one CPU harness that runs DPOTask and PPOTask against a common TargetTokenJudge preference signal, reporting preference fraction (chosen-logp > rejected-logp) and reward trajectory for both; add docs/guides comparison + ROADMAP 11.3 checkoff."
+    },
+    "CHG-246": {
+      "id": "CHG-246",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:11:16+00:00",
+      "updated_at": "2026-08-23T06:11:16+00:00",
+      "touched_round": 102,
+      "commit": "d68e7df",
+      "title": "DPO-vs-PPO/RLHF benchmark on shared synthetic preference task (TASK-232)",
+      "summary": "aligner_benchmark.py: TargetTokenReward + preference_fraction + run_dpo + run_ppo + compare_dpo_vs_ppo; CPU e2e DPO pref 0->~1, PPO reports finite reward trajectory; docs/guides/dpo_vs_ppo.md + ROADMAP 11.3 checkoff."
+    },
+    "EV-233": {
+      "id": "EV-233",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:11:19+00:00",
+      "updated_at": "2026-08-23T06:11:19+00:00",
+      "touched_round": 102,
+      "source": "tests/training/test_aligner_benchmark.py (5 tests)",
+      "summary": "TargetTokenReward mask/target scoring; preference_fraction ordering + shape guard; DPO e2e pref-fraction 0 -> >0.9 (40 epochs); PPO run reports finite 3-step reward trajectory (real PPOTrainer); compare_dpo_vs_ppo returns summary; 5 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-065": {
+      "id": "DEC-065",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:11:28+00:00",
+      "updated_at": "2026-08-23T06:11:28+00:00",
+      "touched_round": 102,
+      "title": "Open GRPO-comparison extension milestone",
+      "rationale": "With 11.3 DPO-vs-RLHF comparison closed, extend the same aligner_benchmark harness to the group-relative GRPO path: add run_grpo (GRPOTask + GRPODataModule, which already converges on CPU per TASK-229) evaluating preference_fraction on the shared judge set, and widen compare_dpo_vs_ppo into a 3-way DPO/PPO/GRPO report. Closes the remaining 11.3/11.4 comparison thread and reuses proven components.",
+      "alternatives_rejected": "Constitutional AI (11.4) is largely a safety/spec framing less CPU-measurable (DEC-063); PP-v2 / DeepSpeed ZeRO / 3D parallel need GPU/multi-node absent here; a pure quality deep-dive is broad and cannot be fully verified in this environment's session limits."
+    },
+    "ISS-271": {
+      "id": "ISS-271",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:11:31+00:00",
+      "updated_at": "2026-08-23T06:11:31+00:00",
+      "touched_round": 102,
+      "title": "Aligner comparison covers DPO vs PPO only; GRPO not yet included (ROADMAP 11.3/11.4)",
+      "summary": "compare_dpo_vs_ppo omits the group-relative GRPO path. Next slice: add run_grpo to aligner_benchmark, evaluate preference_fraction on the shared judge set, and widen the comparison to a 3-way DPO/PPO/GRPO report + docs."
+    },
+    "TASK-233": {
+      "id": "TASK-233",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:11:35+00:00",
+      "updated_at": "2026-08-23T06:11:35+00:00",
+      "touched_round": 102,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.6,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Extend aligner benchmark to GRPO: run_grpo + 3-way DPO/PPO/GRPO comparison (CPU)",
+      "summary": "Add run_grpo (GRPOTask + GRPODataModule, CPU-convergent per TASK-229) to aligner_benchmark evaluating preference_fraction on the shared judge set; widen compare_dpo_vs_ppo into a 3-way report; update docs/guides/dpo_vs_ppo.md + ROADMAP."
     }
   },
   "edges": [
@@ -19874,6 +19937,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T05:22:51+00:00"
+    },
+    {
+      "from": "CHG-246",
+      "to": "TASK-232",
+      "type": "implements",
+      "created_at": "2026-08-23T06:11:22+00:00"
+    },
+    {
+      "from": "CHG-246",
+      "to": "ISS-270",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:11:22+00:00"
+    },
+    {
+      "from": "DEC-065",
+      "to": "TASK-233",
+      "type": "governs",
+      "created_at": "2026-08-23T06:11:37+00:00"
+    },
+    {
+      "from": "TASK-233",
+      "to": "ISS-271",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:11:37+00:00"
+    },
+    {
+      "from": "ISS-271",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:11:38+00:00"
     }
   ]
 }
