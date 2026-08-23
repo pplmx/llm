@@ -26,6 +26,23 @@ def _resolve_norm_factory(norm_impl: str) -> Callable[..., nn.Module]:
     return NORM_REGISTRY.get(norm_impl)
 
 
+@torch.jit.unused
+def _build_config_attention_mask(model, seq_len: int, key_len: int) -> torch.Tensor | None:
+    """Build the sparse/streaming attention mask for ``model.attn_sparse``.
+
+    The import stays lazy here — a module-level ``from llm.core.attn.sparse``
+    would start ``llm.core.attn`` -> registry -> decoder mid-import and cycle
+    (RIL TASK-245 kept it inline for that reason). ``@torch.jit.unused`` flags
+    the helper so TorchScript skips compiling it instead of rejecting the inline
+    ``from`` import (UnsupportedNodeError, RIL ISS-299); in scripted mode calling
+    into it raises, which is correct since sparse schemes never worked under
+    scripting and the mask should come from the caller instead.
+    """
+    from llm.core.attn.sparse import build_config_attention_mask
+
+    return build_config_attention_mask(model, seq_len, key_len=key_len)
+
+
 class DecoderModel(nn.Module):
     """
     A Transformer-based decoder model.
@@ -240,10 +257,8 @@ class DecoderModel(nn.Module):
         # mask cannot be square here — otherwise sink/window would never
         # constrain the cached past keys (RIL TASK-245).
         if attn_mask is None and self.attn_sparse is not None:
-            from llm.core.attn.sparse import build_config_attention_mask
-
             key_len = start_pos + input_ids.shape[1]
-            attn_mask = build_config_attention_mask(self, input_ids.shape[1], key_len=key_len)
+            attn_mask = _build_config_attention_mask(self, input_ids.shape[1], key_len=key_len)
 
         hidden_states = self.embedding_layer(input_ids, start_pos=start_pos, position_ids=position_ids)
 

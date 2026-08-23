@@ -121,6 +121,12 @@ def sdpa(
             full_mask = window_mask if full_mask is None else (full_mask | window_mask)
 
         if attn_mask is not None:
+            # Normalize to the query device first: sparse/streaming masks are
+            # built CPU-side (decoder.forward / serving), but the causal/window
+            # ``full_mask`` below lives on ``device`` — OR-ing a CPU bool mask
+            # into it raised on GPU machines (RIL ISS-300). No-op when already
+            # on device, so this is cheap on the common path.
+            attn_mask = attn_mask.to(device)
             # attn_mask: True = Mask out
             # We assume attn_mask is broadcastable.
             # If attn_mask is float/int 0/1. we should convert to bool for logical ops if we can,

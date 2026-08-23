@@ -55,9 +55,23 @@ class TargetTokenReward(nn.Module):
         return hit.squeeze(-1)
 
 
+def _probe_device(model: nn.Module) -> torch.device:
+    """Device to feed probe inputs onto: the first parameter's device, or CPU
+    for parameter-less stubs (e.g. benchmark unit-test fakes)."""
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        return torch.device("cpu")
+
+
 def _seq_log_prob(model: nn.Module, ids: torch.Tensor) -> float:
     """Sum of per-token log-probs ``model`` assigns to a ``[L]`` response."""
     model.eval()
+    # Probe on the model's own device: the engine moved it to CUDA when a GPU
+    # is available, but benchmark callers pass raw CPU preference tensors —
+    # without the .to() the logits and the ids gather would mismatch (RIL
+    # ISS-300). No-op when the ids already live on the model's device.
+    ids = ids.to(_probe_device(model))
     with torch.no_grad():
         logits = model(ids.unsqueeze(0))  # [1, L, V]
     lp = functional.log_softmax(logits.float(), dim=-1)
@@ -102,6 +116,9 @@ def _reference_kl(policy: nn.Module, reference: nn.Module, sequences: torch.Tens
     """
     policy.eval()
     reference.eval()
+    # Probe on the policy's own device (engine moved it to CUDA on GPU
+    # machines; benchmark callers pass raw CPU sequences — RIL ISS-300).
+    sequences = sequences.to(_probe_device(policy))
     with torch.no_grad():
         p_logits = policy(sequences)
         r_logits = reference(sequences)
@@ -163,10 +180,13 @@ def run_dpo(
 def _grpo_group_reward_fraction(model: nn.Module, module: Any) -> float:
     """Fraction of GRPO groups whose most-likely response is the rewarded target."""
     model.eval()
+    # Probe on the model's own device (engine moved it to CUDA on GPU
+    # machines; the data-module response tokens are CPU — RIL ISS-300).
+    response_tokens = module.response_tokens.to(_probe_device(model))
     with torch.no_grad():
-        logits = model(module.response_tokens)
+        logits = model(response_tokens)
     lp = functional.log_softmax(logits.float(), dim=-1)
-    lp = lp.gather(-1, module.response_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
+    lp = lp.gather(-1, response_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
     lp = lp.reshape(-1, module.group_size)
     return float((lp.argmax(-1) == 0).float().mean().item())
 
