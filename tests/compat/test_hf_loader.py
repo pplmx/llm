@@ -406,6 +406,73 @@ class TestHFLoader:
         assert "mistral" in archs
         assert "qwen" in archs
 
+    def test_sparse_attention_roundtrip(self, tmp_path):
+        """RIL TASK-244: a model with a sparse/streaming scheme roundtrips
+        through save_pretrained/from_pretrained WITH its scheme. Before the
+        wiring, ``attn_sparse`` was never persisted or mapped, so the reloaded
+        model silently ran dense attention (wrong logits for a sparse scheme)."""
+        import json
+
+        from llm.compat.hf_loader import from_pretrained
+        from llm.compat.hf_publisher import save_pretrained
+        from llm.models.decoder import DecoderModel
+        from tests.support.models import decoder_model_kwargs
+
+        def _build(scheme):
+            model = DecoderModel(
+                **decoder_model_kwargs(
+                    vocab_size=64,
+                    hidden_size=32,
+                    num_layers=2,
+                    num_heads=2,
+                    intermediate_size=64,
+                    max_seq_len=64,
+                    attn_impl="mha",
+                    mlp_impl="mlp",
+                    embedding_dropout_p=0.0,
+                    attn_dropout_p=0.0,
+                    mlp_dropout_p=0.0,
+                    attn_sparse=scheme,
+                )
+            )
+            model.eval()
+            return model
+
+        def _forward(model, inputs):
+            out = model(inputs)
+            return out[0] if isinstance(out, tuple) else out
+
+        torch.manual_seed(11)
+        inputs = torch.randint(1, 30, (2, 16))
+
+        # Genuinely sparse scheme survives the roundtrip and still shapes output.
+        sparse_scheme = {"kind": "streaming", "num_sink": 2, "window_size": 4, "causal": True}
+        src = _build(sparse_scheme)
+        sparse_out = _forward(src, inputs)
+        save_pretrained(src, tmp_path)
+        assert json.loads((tmp_path / "config.json").read_text())["attn_sparse"] == sparse_scheme
+
+        reloaded = from_pretrained(str(tmp_path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+        reloaded.eval()
+        assert reloaded.attn_sparse == sparse_scheme
+        # Same persisted weights + restored scheme -> pre-save forward is
+        # reproduced. If the scheme were dropped, reloaded would run dense and
+        # the outputs would differ.
+        assert torch.allclose(sparse_out, _forward(reloaded, inputs), atol=1e-5)
+
+        # Full-coverage scheme (sink == every position) survives reload too; its
+        # forward is the dense-equivalent so this is the CPU parity roundtrip.
+        full_scheme = {"kind": "streaming", "num_sink": 64, "window_size": 0, "causal": True}
+        full_dir = tmp_path / "full"
+        src_full = _build(full_scheme)
+        full_out = _forward(src_full, inputs)
+        save_pretrained(src_full, full_dir)
+        assert json.loads((full_dir / "config.json").read_text())["attn_sparse"] == full_scheme
+        reloaded_full = from_pretrained(str(full_dir), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+        reloaded_full.eval()
+        assert reloaded_full.attn_sparse == full_scheme
+        assert torch.allclose(full_out, _forward(reloaded_full, inputs), atol=1e-5)
+
     def test_mixtral_is_not_advertised_or_loadable(self, tmp_path):
         """RIL ISS-144: Mixtral (block-sparse MoE) is NOT silently loadable.
         Before the fix ``list_supported_architectures`` advertised it but the

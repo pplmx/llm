@@ -162,6 +162,10 @@ def _load_from_local(
         # Sliding-window attention (Mistral) — threaded from the config's
         # ``sliding_window``; absent/None runs full-context (RIL ISS-242).
         window_size=our_config.get("window_size"),
+        # Sparse/streaming attention scheme — restored from the persisted
+        # ``attn_sparse`` so a sparse model does not silently become dense on
+        # reload (RIL TASK-244). Absent/None means dense attention.
+        attn_sparse=our_config.get("attn_sparse"),
         qkv_bias=our_config.get("qkv_bias", False),
         mlp_bias=our_config.get("mlp_bias", False),
         lm_head_bias=our_config.get("lm_head_bias", False),

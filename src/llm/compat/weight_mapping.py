@@ -514,6 +514,11 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # and defaulted to None (full-context) — wiring it prevents the silent
         # full-context attention past a 4096 window (RIL ISS-242).
         "window_size": hf_config.get("sliding_window"),
+        # Sparse/streaming attention scheme (RIL TASK-244): our own publisher
+        # persists ``attn_sparse`` (kind + params) so a sparse model roundtrips
+        # with its scheme instead of silently rebuilding as dense on load.
+        # External checkpoints carry no such key and default to None (dense).
+        "attn_sparse": hf_config.get("attn_sparse"),
         "rms_norm_eps": hf_config.get("rms_norm_eps", 1e-5),
         "rope_theta": hf_config.get("rope_theta", 10000.0),
         # HF Llama/GPT-style configs carry the MLP activation as

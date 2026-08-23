@@ -70,3 +70,10 @@ logits = model(input_ids)  # 同一前向自动应用 streaming 掩码
 - 显式传入的 `attn_mask` 优先级更高，会覆盖自动构造的稀疏掩码。
 - CPU parity 验证在 `tests/core/attn/test_sparse_model_config.py`：
   genuinely 稀疏会改变 decoder 输出，而全 coverage 稀疏与稠密逐位一致。
+
+持久化与往返：`attn_sparse` 是 model-defining 字段，随 `save_pretrained` 写入
+HF `config.json`，并在 `from_pretrained` 时还原（走
+`weight_mapping.get_config_mapping` → `hf_loader.from_pretrained`），因此稀疏模型
+可以 训练 → 保存 → 重载 → 推理 全链路保留其稀疏方案，不会重载后退化为稠密。
+往返 parity 验证在 `tests/compat/test_hf_loader.py::test_sparse_attention_roundtrip`
+（重载后的 forward 与保存前逐位一致；全 coverage 方案同样保留稠密等价性）。

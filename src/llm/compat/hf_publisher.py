@@ -168,6 +168,15 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     sliding_meta: dict[str, int] = {}
     if window_size is not None:
         sliding_meta["sliding_window"] = int(window_size)
+    # Sparse/streaming attention scheme (RIL TASK-244): a model built with
+    # ``attn_sparse`` is sparse/streaming *by construction*, so without
+    # persisting the scheme a save->load roundtrip silently falls back to
+    # dense attention on reload. Persist the scheme (JSON-safe dict) the same
+    # way window_size/attn_impl are handled; omitted when unset.
+    attn_sparse = getattr(model, "attn_sparse", None)
+    sparse_meta: dict[str, dict] = {}
+    if attn_sparse is not None:
+        sparse_meta["attn_sparse"] = attn_sparse
 
     return {
         "model_type": "llama",
@@ -200,6 +209,7 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
         "qkv_bias": qkv_bias,
         "mlp_bias": mlp_bias,
         "lm_head_bias": lm_head_bias,
+        **sparse_meta,
     }
 
 
