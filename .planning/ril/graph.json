@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 108,
+  "round": 109,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:42:47+00:00",
+  "updated_at": "2026-08-23T06:47:23+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 107,
+      "touched_round": 108,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13973,22 +13973,22 @@
     "ISS-277": {
       "id": "ISS-277",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:42:39+00:00",
-      "updated_at": "2026-08-23T06:42:39+00:00",
-      "touched_round": 107,
+      "updated_at": "2026-08-23T06:47:07+00:00",
+      "touched_round": 108,
       "title": "Sparse/streaming attention masks not verified end-to-end through the real attention forward (CPU integration gap)",
       "summary": "block_sparse / streaming_llm mask builders are standalone; no test proves feeding their additive masks into the real MHA forward changes attention correctly. Next slice: MHA forward-parity integration test vs explicit masking."
     },
     "TASK-239": {
       "id": "TASK-239",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:42:43+00:00",
-      "updated_at": "2026-08-23T06:42:43+00:00",
-      "touched_round": 107,
+      "updated_at": "2026-08-23T06:47:07+00:00",
+      "touched_round": 108,
       "category": "correctness",
       "severity": 0.3,
       "effort": 0.5,
@@ -13996,6 +13996,69 @@
       "unlock_factor": 1.0,
       "title": "Verify block-sparse & StreamingLLM masks end-to-end through MHA forward (CPU parity vs explicit masking)",
       "summary": "Add a CPU integration test feeding build_block_sparse_mask / build_streamingllm_mask additive masks into the existing MHA forward (torch SDPA): assert forward output equals a manually explicitly-masked reference, and full-coverage parity with dense attention; update docs."
+    },
+    "CHG-252": {
+      "id": "CHG-252",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:47:00+00:00",
+      "updated_at": "2026-08-23T06:47:00+00:00",
+      "touched_round": 108,
+      "commit": "c01bbb2",
+      "title": "Verify block-sparse & StreamingLLM masks end-to-end through real attention (TASK-239)",
+      "summary": "test_sparse_attention_integration.py: block-sparse/streaming additive masks fed into repo sdpa backend match explicit manually-masked torch-SDPA reference; full-coverage sparse == dense and genuinely sparse changes MHA.forward output; 4 tests; docs note the integration."
+    },
+    "EV-240": {
+      "id": "EV-240",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:47:04+00:00",
+      "updated_at": "2026-08-23T06:47:04+00:00",
+      "touched_round": 108,
+      "source": "tests/core/attn/test_sparse_attention_integration.py (4 tests)",
+      "summary": "sdpa backend with block-sparse/streaming mask equals explicit manual torch-SDPA masked reference; full-coverage sparse == no-mask/dense; MHA.forward sparse changes output, full-coverage equals dense; 4 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-072": {
+      "id": "DEC-072",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:47:12+00:00",
+      "updated_at": "2026-08-23T06:47:12+00:00",
+      "touched_round": 108,
+      "title": "Open Longformer-style dilated-window milestone",
+      "rationale": "Continue Section 15.2: Longformer-style attention = global tokens + a dilated sliding window. Add a dilation knob to the local-window attention mask (within the window attend every dilation-th position). CPU parity: dilation=1 reproduces a plain window; sparsity verified through the existing sdpa/MHA integration harness. Closes the 15.2 Longformer-style item.",
+      "alternatives_rejected": "BigBird attention already covered by the block-sparse mask builder (global+window+random); Infinite Attention (15.1) is a new recurrence, harder to CPU-verify; DeepSpeed/3D need GPU/multi-node."
+    },
+    "ISS-278": {
+      "id": "ISS-278",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:47:16+00:00",
+      "updated_at": "2026-08-23T06:47:16+00:00",
+      "touched_round": 108,
+      "title": "Longformer-style dilated sliding-window attention unimplemented (ROADMAP 15.2)",
+      "summary": "15.2 open item: global + dilated sliding window. Next slice: add a dilation knob to the local-window attention mask (attend every dilation-th position within the window) + CPU parity via the sdpa/MHA integration harness."
+    },
+    "TASK-240": {
+      "id": "TASK-240",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:47:20+00:00",
+      "updated_at": "2026-08-23T06:47:20+00:00",
+      "touched_round": 108,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.5,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Longformer-style dilated sliding-window attention mask (dilation knob) + CPU parity",
+      "summary": "Add a dilation knob to the local-window attention-mask machinery (within the window attend every dilation-th position, plus global tokens); CPU parity: dilation=1 == plain window, and fed through the sdpa/MHA harness sparsity reduces attended positions; docs + ROADMAP 15.2 update."
     }
   },
   "edges": [
@@ -20507,6 +20570,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:42:47+00:00"
+    },
+    {
+      "from": "CHG-252",
+      "to": "TASK-239",
+      "type": "implements",
+      "created_at": "2026-08-23T06:47:07+00:00"
+    },
+    {
+      "from": "CHG-252",
+      "to": "ISS-277",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:47:08+00:00"
+    },
+    {
+      "from": "DEC-072",
+      "to": "TASK-240",
+      "type": "governs",
+      "created_at": "2026-08-23T06:47:23+00:00"
+    },
+    {
+      "from": "TASK-240",
+      "to": "ISS-278",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:47:23+00:00"
+    },
+    {
+      "from": "ISS-278",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:47:23+00:00"
     }
   ]
 }
