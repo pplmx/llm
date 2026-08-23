@@ -122,6 +122,7 @@ nav:
       - guides/distributed.md
       - guides/finetuning.md
       - guides/distillation.md
+      - guides/pruning.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md

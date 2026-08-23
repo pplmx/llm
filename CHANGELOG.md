@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Weight Pruning** (ROADMAP 13.4 / RIL TASK-224):
+  - `llm/quantization/prune.py`: `PrunedLinear` (persistent binary `weight_mask`),
+    `PruningConfig` (ratio / method / target_modules / random_seed), `prune_model`
+    (magnitude or random policy; mirrors the GPTQ `_replace_module` in-place swap),
+    and `compute_sparsity`.
+  - `llm-prune` CLI (registered in `pyproject.toml`): load a model blob →
+    prune → atomically save; clobbering guard, ratio/method validation, sparsity
+    report. `PrunedLinear` is covered by the `weights_only` safe-globals allowlist,
+    so pruned blobs load and serve through the existing loader unchanged.
+  - Docs: [pruning guide](docs/guides/pruning.md) + CLI reference row + ROADMAP
+    13.4 checked.
+
 - **Knowledge Distillation** (ROADMAP 13.4 / RIL DEC-055):
   - `DistillationLoss` (Hinton temperature-scaled KL: `alpha*CE + (1-alpha)*T^2*KL`)
     in `llm/training/distillation.py`.

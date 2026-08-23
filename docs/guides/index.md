@@ -21,6 +21,7 @@
     - [PEFT 微调](finetuning.md) — LoRA / QLoRA / AdaLoRA / IA³ / BitFit / Adapter / Prefix Tuning
     - [模型量化](quantization.md) — GPTQ / AWQ / SmoothQuant / 混合精度
     - [知识蒸馏](distillation.md) — `--task distill`、teacher-from-checkpoint、温度缩放 KL
+    - [模型剪枝](pruning.md) — `llm-prune`、`PrunedLinear` weight_mask、magnitude/random 策略
 
 - ⚡ **推理与部署**
 
