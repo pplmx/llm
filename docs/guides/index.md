@@ -33,6 +33,7 @@
     - [StreamingLLM](streaming_llm.md) — attention-sink 流式掩码 + CPU parity
     - [Longformer](longformer.md) — dilated 滑窗注意力掩码 + CPU parity
     - [BigBird](big_bird.md) — global+window+random 掩码 + CPU parity
+    - [统一稀疏注意力 API](sparse_attention.md) — `build_sparse_attention_mask(kind)` 派发
 
 - ⚡ **推理与部署**
 

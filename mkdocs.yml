@@ -134,6 +134,7 @@ nav:
       - guides/streaming_llm.md
       - guides/longformer.md
       - guides/big_bird.md
+      - guides/sparse_attention.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md
