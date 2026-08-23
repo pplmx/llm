@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 97,
+  "round": 98,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T01:34:42+00:00",
+  "updated_at": "2026-08-23T01:47:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 71,
+      "touched_round": 98,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -13233,10 +13233,10 @@
     "ISS-265": {
       "id": "ISS-265",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:34:37+00:00",
-      "updated_at": "2026-08-23T01:34:37+00:00",
+      "updated_at": "2026-08-23T01:46:54+00:00",
       "touched_round": 97,
       "title": "MultimodalModel / modal-fusion training unimplemented (post-spike)",
       "summary": "No model consumes MultimodalDataModule modal_embeds. Next slice: a separate MultimodalModel that fuses modal embeddings into the LM + a training task; no DecoderModel hard-patching (ADR-013 boundary)."
@@ -13244,10 +13244,10 @@
     "TASK-227": {
       "id": "TASK-227",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:34:37+00:00",
-      "updated_at": "2026-08-23T01:34:37+00:00",
+      "updated_at": "2026-08-23T01:46:54+00:00",
       "touched_round": 97,
       "category": "core-feature",
       "severity": 0.3,
@@ -13256,6 +13256,68 @@
       "unlock_factor": 1.2,
       "title": "Multimodal slice 2: modal-fusion model + multimodal training task (CPU)",
       "summary": "Land a standalone MultimodalModel (per ADR-013) that consumes registry modal_embeds (e.g. projects/concats into token-embedding space) + a paired multimodal training task + DataModule wiring, with a CPU e2e showing fused training converges; still no DecoderModel hard-patch."
+    },
+    "CHG-241": {
+      "id": "CHG-241",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:46:47+00:00",
+      "updated_at": "2026-08-23T01:46:47+00:00",
+      "touched_round": 97,
+      "commit": "ffcfe64",
+      "title": "Multimodal slice 2: modal-fusion MultimodalModel + --task multimodal (TASK-227)",
+      "summary": "llm/multimodal/model.py ModalityFusion + MultimodalModel (wraps DecoderModel, prepends modal prefix in token-embedding space, returns text logits, no decoder.py patch); task.py MultimodalTask registered --task multimodal with MultimodalDataModule; CPU e2e fused training converges (loss drops, text acc improves)."
+    },
+    "EV-228": {
+      "id": "EV-228",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:46:50+00:00",
+      "updated_at": "2026-08-23T01:46:50+00:00",
+      "touched_round": 97,
+      "source": "tests/multimodal/test_model.py + test_task.py (7 new tests; full multimodal suite 16)",
+      "summary": "fusion projects 2D/3D modal embeddings to (B,M,hidden); MultimodalModel returns text logits of input length with prefix excluded; invalid num_modal_tokens raises; wrapped DecoderModel stays text-only/unpatched; task registered + CE criterion; CPU e2e: fused modal-conditioned decoder loss 3.44->0.22 and text next-token accuracy >0.7 through the real engine. 16 multimodal + 327 quantization/cli/multimodal fast tests green; ruff+ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-060": {
+      "id": "DEC-060",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:47:19+00:00",
+      "updated_at": "2026-08-23T01:47:19+00:00",
+      "touched_round": 98,
+      "rationale": "Next milestone = Repository Intelligence Deep Dive (skill section 8): after 8 feature milestones (QAT/KD/pruning/lowrank/multimodal spike+slice), run a CPU-verifiable quality pass to surface hidden bugs / test gaps / leftover robustness issues (concurrency of the RIL graph, checkpoint edge cases, engine scheduler/step edge cases) and close findings as evidence-driven tasks. Purpose-built for when the active task queue is empty.",
+      "alternatives_rejected": "PP-v2 / DeepSpeed ZeRO / real vision encoders (CLIP/SigLIP) need GPU/multi-node/external weights absent in this CPU sandbox; another feature milestone without a quality checkpoint risks compounding unseen debt."
+    },
+    "ISS-266": {
+      "id": "ISS-266",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:47:26+00:00",
+      "updated_at": "2026-08-23T01:47:26+00:00",
+      "touched_round": 98,
+      "title": "Quality deep-dive backlog (post-feature-milestones)",
+      "summary": "CPU-verifiable audit for hidden bugs / dead code / test gaps / robustness issues after the QAT+KD+pruning+lowrank+multimodal milestone run."
+    },
+    "TASK-228": {
+      "id": "TASK-228",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:47:26+00:00",
+      "updated_at": "2026-08-23T01:47:26+00:00",
+      "touched_round": 98,
+      "category": "correctness",
+      "severity": 0.5,
+      "effort": 0.5,
+      "confidence": 0.7,
+      "unlock_factor": 1.2,
+      "title": "Deep-dive slice 1: audit RIL graph + checkpoint/engine edge cases, file evidence",
+      "summary": "Run ril.py check, then audit concrete CPU-verifiable risk spots (checkpoint incomplete-trio recovery, engine scheduler/step edge cases, leftover dead paths) and either fix or file each as an evidence-backed issue/task (max 3 new tasks this round)."
     }
   },
   "edges": [
@@ -19413,6 +19475,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T01:34:42+00:00"
+    },
+    {
+      "from": "CHG-241",
+      "to": "TASK-227",
+      "type": "implements",
+      "created_at": "2026-08-23T01:46:54+00:00"
+    },
+    {
+      "from": "CHG-241",
+      "to": "ISS-265",
+      "type": "resolves",
+      "created_at": "2026-08-23T01:46:54+00:00"
+    },
+    {
+      "from": "DEC-060",
+      "to": "TASK-228",
+      "type": "governs",
+      "created_at": "2026-08-23T01:47:31+00:00"
+    },
+    {
+      "from": "TASK-228",
+      "to": "ISS-266",
+      "type": "addresses",
+      "created_at": "2026-08-23T01:47:31+00:00"
+    },
+    {
+      "from": "ISS-266",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-08-23T01:47:31+00:00"
     }
   ]
 }
