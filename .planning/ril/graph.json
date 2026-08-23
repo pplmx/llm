@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 132,
+  "round": 133,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T18:54:47+00:00",
+  "updated_at": "2026-08-23T19:48:28+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -15407,6 +15407,41 @@
       "source": "real A100 runs: test_ddp(2/8), test_tp_checkpoint(2/4 deep, TP+DP 4/6), test_serve_tp_checkpoint+test_tensor_parallel need_gpu (13) — all EXIT=0",
       "title": "19 real-CUDA distributed e2e all green on 8xA100-80GB; ZERO new failures surfaced",
       "confidence": 1.0
+    },
+    "TASK-261": {
+      "id": "TASK-261",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-23T19:04:46+00:00",
+      "updated_at": "2026-08-23T19:48:28+00:00",
+      "touched_round": 133,
+      "category": "core-feature",
+      "severity": 0.7,
+      "title": "Multimodal 12.1 slice 2: trainable vision tower — batch carries raw images, MultimodalModel encodes in-forward so vision+projector+LLM are jointly trainable (image-text alignment); frozen precompute path stays default"
+    },
+    "CHG-276": {
+      "id": "CHG-276",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T19:44:50+00:00",
+      "updated_at": "2026-08-23T19:44:50+00:00",
+      "touched_round": 132,
+      "commit": "55a6c54",
+      "title": "feat(multimodal): trainable vision tower (MultimodalDataModule train_encoder, in-forward encoding in MultimodalModel/MultimodalTask)"
+    },
+    "EV-265": {
+      "id": "EV-265",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T19:44:50+00:00",
+      "updated_at": "2026-08-23T19:44:50+00:00",
+      "touched_round": 132,
+      "source": "tests/multimodal/test_vision.py (34 multimodal tests pass; trainable e2e loss drops + grads reach every encoder param); full suite EXIT=0",
+      "title": "Trainable-tower path verified: raw-image batch, joint vision+decoder training converges, tower gradients flow",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -22668,6 +22703,12 @@
       "to": "ISS-298",
       "type": "addresses",
       "created_at": "2026-08-23T18:54:47+00:00"
+    },
+    {
+      "from": "CHG-276",
+      "to": "TASK-261",
+      "type": "implements",
+      "created_at": "2026-08-23T19:46:23+00:00"
     }
   ]
 }

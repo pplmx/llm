@@ -79,7 +79,10 @@
   投影 + 位置编码 → N 个 pre-norm block（SDPA + MLP）→ 最终 LayerNorm；`with_cls` /
   `freeze_encoder` 可配；`MultimodalDataModule(modality="vit")` 合成图像 → 冻结塔
   特征 → prefix 融合 → decoder，CPU e2e 训练收敛；见 [multimodal guide](docs/guides/multimodal.md)）
-- [ ] 视觉塔在线训练（batch 携带原始图像、模型 forward 内实时编码，微调视觉编码器）
+- [x] 视觉塔在线训练 ✅（`MultimodalDataModule(..., train_encoder=True)` batch 携带原始
+  图像 `[B,3,H,W]`,`MultimodalModel` forward 内 `encoder.encode(images)` 实时编码,
+  视觉塔 → projector → 文本前缀**联合训练**,梯度可达视觉塔(CPU e2e 收敛 + 梯度断言);
+  默认 `train_encoder=False` 保持冻结-预计算路径)
 - [ ] 图像-文本对齐模块
 - [ ] Visual Instruction Tuning
 
