@@ -731,6 +731,24 @@ class ContinuousBatchingEngine:
         # row is set after the fill.
         run_attn_mask = torch.ones((batch_size, 1, q_len, k_len), dtype=torch.bool, device=self.device)
 
+        # Sparse/streaming scheme (RIL TASK-246): when the served model carries an
+        # ``attn_sparse`` scheme, fold its sink+window pattern into the mask so the
+        # batched/paged serving path actually constrains keys instead of silently
+        # running dense (the decoder's own auto-mask is bypassed here because the
+        # engine always supplies an explicit ``attn_mask``). The pattern is
+        # absolute-position based over the full key window; per query row it is
+        # indexed by the real position id below and OR-ed with the causal mask.
+        sparse_mask_out = None
+        _spar = getattr(self.model, "attn_sparse", None) if self.model is not None else None
+        if _spar:
+            from llm.core.attn.sparse import build_sparse_attention_mask
+
+            _params = dict(_spar)
+            _kind = _params.pop("kind")
+            _params.pop("causal", None)  # causality comes from the causal mask
+            _allow = build_sparse_attention_mask(_kind, k_len, causal=False, **_params)
+            sparse_mask_out = (~_allow).bool()  # True = mask out (SDPA convention)
+
         for i, length in enumerate(seq_input_lengths):
             input_row = torch.tensor(batch_input_ids_list[i], dtype=torch.long, device=self.device)
             pos_row = torch.tensor(batch_position_ids_list[i], dtype=torch.long, device=self.device)
@@ -742,6 +760,11 @@ class ContinuousBatchingEngine:
             # convention), so each query position s sees keys 0..position[s].
             q_pos_row = padded_position_ids[i, :length].reshape(1, 1, length, 1)
             run_attn_mask[i, :, :length, :] = col_indices > q_pos_row
+            if sparse_mask_out is not None:
+                # Fold the sparse pattern for each query row's real absolute
+                # position (sink + window), on top of the causal mask.
+                pos = padded_position_ids[i, :length].long()
+                run_attn_mask[i, :, :length, :] = run_attn_mask[i, :, :length, :] | sparse_mask_out[pos]
 
         return _StepInputs(
             running_sequences=running_sequences,

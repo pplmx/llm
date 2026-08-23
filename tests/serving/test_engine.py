@@ -1210,3 +1210,82 @@ def test_engine_paged_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device
     )
     with pytest.raises(ValueError, match=r"model's context window"):
         engine.add_request(GenerationRequest(prompt="x" * 40, max_new_tokens=2))
+
+
+def test_engine_folds_sparse_attention_into_run_attn_mask(device, mock_tokenizer):
+    """RIL TASK-246: the batch engine folds a served model's ``attn_sparse``
+    scheme (sink + window) into ``run_attn_mask`` so the batched/paged serving
+    path actually constrains keys instead of silently running dense — the
+    decoder's own auto-mask never runs because the engine always supplies an
+    explicit mask.
+
+    On identical copied weights: a genuinely sparse scheme changes the prefill
+    logits vs dense, while a full-coverage scheme (sink == every key) reproduces
+    the dense logits exactly. Also asserts the mask itself now marks a
+    sparse-off (old non-sink, off-window) key as masked-out under sparse, but
+    not under dense/full-coverage.
+    """
+    from llm.models.decoder import DecoderModel
+
+    base_kwargs = {
+        "vocab_size": 100,
+        "hidden_size": 24,
+        "num_layers": 1,
+        "num_heads": 2,
+        "intermediate_size": 48,
+        "max_seq_len": 64,
+        "attn_impl": "mha",
+        "mlp_impl": "mlp",
+        "embedding_dropout_p": 0.0,
+        "attn_dropout_p": 0.0,
+        "mlp_dropout_p": 0.0,
+        "device": str(device),
+        "dtype": torch.float32,
+    }
+    torch.manual_seed(5)
+    base = DecoderModel(**base_kwargs)
+    base.eval()
+
+    sparse_scheme = {"kind": "streaming", "num_sink": 2, "window_size": 4, "causal": True}
+    full_scheme = {"kind": "streaming", "num_sink": 64, "window_size": 0, "causal": True}
+
+    def _engine_prefill(attn_sparse):
+        model = DecoderModel(**base_kwargs)
+        model.load_state_dict(base.state_dict())
+        model.attn_sparse = attn_sparse
+        model.eval()
+        engine = ContinuousBatchingEngine(
+            model=model,
+            tokenizer=mock_tokenizer,
+            max_batch_size=2,
+            max_seq_len=64,
+            device=str(device),
+        )
+        req = GenerationRequest(prompt="abcdefghijklmnop", max_new_tokens=4)  # 16 tokens
+        req.request_id = f"req-{attn_sparse}"
+        engine.add_request(req)
+        inputs = engine._lock_step_pre()
+        logits, _ = model(
+            input_ids=inputs.padded_input_ids,
+            position_ids=inputs.padded_position_ids,
+            kv_caches=engine.kv_caches,
+            use_cache=True,
+            batch_indices=inputs.batch_indices,
+            attn_mask=inputs.run_attn_mask,
+        )
+        return logits, inputs.run_attn_mask
+
+    dense_logits, dense_mask = _engine_prefill(None)
+    sparse_logits, sparse_mask = _engine_prefill(sparse_scheme)
+    full_logits, full_mask = _engine_prefill(full_scheme)
+
+    # Prefill query at absolute position 10, key at position 5: old, non-sink,
+    # off-window -> masked-out (True) only under the sparse scheme.
+    assert not bool(dense_mask[0, 0, 10, 5].item())
+    assert bool(sparse_mask[0, 0, 10, 5].item())
+    assert not bool(full_mask[0, 0, 10, 5].item())
+
+    # Genuinely sparse changes the prefill logits on identical weights; a
+    # full-coverage scheme reproduces dense exactly.
+    assert not torch.allclose(sparse_logits, dense_logits, atol=1e-5)
+    assert torch.allclose(full_logits, dense_logits, atol=1e-6)

@@ -84,3 +84,12 @@ HF `config.json`，并在 `from_pretrained` 时还原（走
 key，长程流式生成的稀疏方案形同虚设（RIL TASK-245）。eager 生成循环因此能
 端到端工作：稀疏 decode 会改变输出，而全 coverage 稀疏 decode 与稠密 decode
 一致（CPU parity 验证在 `tests/core/attn/test_sparse_model_config.py`。
+
+服务端（batched/paged serving）：`ContinuousBatchingEngine` 总是为每 batch 自己
+构造 `run_attn_mask`，因此 decoder 的自动稀疏掩码不会触发。当被服务的模型带有
+`attn_sparse` 时，engine 会把该方案的 sink+window pattern 按**绝对位置**折进
+`run_attn_mask`（与因果掩码 OR 合并），从而在 batched/paged 服务路径真正约束
+key（RIL TASK-246）。CPU parity 验证在
+`tests/serving/test_engine.py::test_engine_folds_sparse_attention_into_run_attn_mask`：
+同权重下稀疏 prefill 改变输出，全 coverage 稀疏与稠密逐位一致，掩码本身也会把
+旧的非 sink/窗口外 key 标为 masked。
