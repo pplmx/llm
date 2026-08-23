@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 105,
+  "round": 106,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:25:35+00:00",
+  "updated_at": "2026-08-23T06:30:00+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 104,
+      "touched_round": 105,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13733,22 +13733,22 @@
     "ISS-273": {
       "id": "ISS-273",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:25:28+00:00",
-      "updated_at": "2026-08-23T06:25:28+00:00",
-      "touched_round": 104,
+      "updated_at": "2026-08-23T06:29:45+00:00",
+      "touched_round": 105,
       "title": "Constitutional AI (self-critique + revision) unimplemented (ROADMAP 11.4); no CPU-measurable rule-based slice",
       "summary": "11.4 last open item. Next slice: rule-based constitution judge + self-critique -> revision pipeline; CPU e2e measures revised-vs-original rule-compliance."
     },
     "TASK-235": {
       "id": "TASK-235",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:25:32+00:00",
-      "updated_at": "2026-08-23T06:25:32+00:00",
-      "touched_round": 104,
+      "updated_at": "2026-08-23T06:29:44+00:00",
+      "touched_round": 105,
       "category": "core-feature",
       "severity": 0.3,
       "effort": 0.7,
@@ -13756,6 +13756,69 @@
       "unlock_factor": 1.0,
       "title": "Constitutional AI slice: self-critique + revision against a rule-based constitution (CPU)",
       "summary": "Add a rule-based constitution judge scoring responses (e.g., forbidden-token avoidance), a critique+revision helper that rewrites a response to better satisfy the constitution, and a CPU e2e showing revised responses score higher than originals; docs + ROADMAP 11.4 checkoff."
+    },
+    "CHG-249": {
+      "id": "CHG-249",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:29:38+00:00",
+      "updated_at": "2026-08-23T06:29:38+00:00",
+      "touched_round": 105,
+      "commit": "71c29e6",
+      "title": "Constitutional-AI slice: rule-based constitution judge + self-critique→revision (TASK-235)",
+      "summary": "constitutional.py: Principle (ForbiddenToken/EndsWithToken), Constitution judge, critique(), deterministic revise(); CPU e2e revised responses fully comply and score > originals; docs/guides/constitutional.md + ROADMAP 11.4 checkoff + nav."
+    },
+    "EV-236": {
+      "id": "EV-236",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:29:41+00:00",
+      "updated_at": "2026-08-23T06:29:41+00:00",
+      "touched_round": 105,
+      "source": "tests/training/test_constitutional.py (7 tests)",
+      "summary": "forbidden/end-with principle checks; Constitution score+violations; critique text; revise determinism+compliance; e2e revised fully comply (score 1.0) and strictly beat violating originals; 7 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-068": {
+      "id": "DEC-068",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:29:49+00:00",
+      "updated_at": "2026-08-23T06:29:49+00:00",
+      "touched_round": 105,
+      "title": "Pivot to PP v2 microbatch-overlap milestone",
+      "rationale": "Alignment section 11 is now complete (SFT/RLHF/DPO/RLAIF/GRPO/rejection-sampling/alignment-comparison/reference-KL/Constitutional-AI). Pivot to roadmap Section 5 (高级分布式训练): PP v2 slice 1 = microbatch scheduling overlap (n_microbatches > 1) on top of the existing PP v1 ScheduleGPipe. CPU-verifiable by asserting microbatched gradients/params match the non-overlapped baseline on a tiny 2-stage model (mirrors PP v1's own CPU equivalence test).",
+      "alternatives_rejected": "DeepSpeed ZeRO / full 3D need GPU/multi-node absent here; Section 12 vision encoders need external weights; further alignment milestones would duplicate completed 11.x items."
+    },
+    "ISS-274": {
+      "id": "ISS-274",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:29:53+00:00",
+      "updated_at": "2026-08-23T06:29:53+00:00",
+      "touched_round": 105,
+      "title": "PP v2 microbatch overlap unimplemented (ROADMAP Section 5)",
+      "summary": "Section 5 open item: PP v2 (pp_size knob + DP, n_microbatches>1 overlap, on-demand stage materialization, AMP/grad-ckpt). Next slice: overlapped microbatch scheduling on PP v1 ScheduleGPipe with a CPU gradient-equivalence test vs the baseline."
+    },
+    "TASK-236": {
+      "id": "TASK-236",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:29:57+00:00",
+      "updated_at": "2026-08-23T06:29:57+00:00",
+      "touched_round": 105,
+      "category": "performance",
+      "severity": 0.4,
+      "effort": 0.8,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "PP v2 slice 1: microbatch scheduling overlap (n_microbatches>1) with CPU gradient-equivalence test",
+      "summary": "Implement overlapped microbatch pipeline scheduling on top of PP v1 ScheduleGPipe; CPU e2e asserts microbatched gradients/parameters match the non-overlapped baseline on a tiny 2-stage model; update docs + ROADMAP Section 5."
     }
   },
   "edges": [
@@ -20153,6 +20216,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:25:35+00:00"
+    },
+    {
+      "from": "CHG-249",
+      "to": "TASK-235",
+      "type": "implements",
+      "created_at": "2026-08-23T06:29:45+00:00"
+    },
+    {
+      "from": "CHG-249",
+      "to": "ISS-273",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:29:45+00:00"
+    },
+    {
+      "from": "DEC-068",
+      "to": "TASK-236",
+      "type": "governs",
+      "created_at": "2026-08-23T06:30:00+00:00"
+    },
+    {
+      "from": "TASK-236",
+      "to": "ISS-274",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:30:00+00:00"
+    },
+    {
+      "from": "ISS-274",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:30:00+00:00"
     }
   ]
 }
