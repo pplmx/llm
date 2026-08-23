@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 127,
+  "round": 128,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:48:25+00:00",
+  "updated_at": "2026-08-23T09:54:41+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -21,7 +21,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 81,
+      "touched_round": 128,
       "title": "Quantization (src/llm/quantization: GPTQ/AWQ/SmoothQuant/PTQ)"
     },
     "COMP-003": {
@@ -15089,6 +15089,80 @@
       "touched_round": 127,
       "commit": "72eb3ae",
       "summary": "Add core/moe/dynamic_selection.py (top1_confidence/count/output), invariant tests, guide; ROADMAP 15.4 complete"
+    },
+    "DEC-090": {
+      "id": "DEC-090",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:54:08+00:00",
+      "updated_at": "2026-08-23T09:54:08+00:00",
+      "touched_round": 128,
+      "title": "Complete ROADMAP 13.2 QAT items (param-search slice + verify already-done flow)",
+      "rationale": "Deep-dive found the QAT training flow and fake quantization were already implemented (RIL TASK-218/219/DEC-054: TrainingConfig.use_qat + LanguageModelingTask.apply_fake_quant + FakeQuantize/FakeQuantLinear + STE) and green (test_qat_integration::test_qat_engine_trains_with_finite_loss), but ROADMAP 13.2 was never checked off. Mark those two done with evidence, and deliver the genuinely-missing third item 'optimize quantization parameter search' (calibration only returns absmax scales, no reconstruction-error search) as a CPU-verified slice.",
+      "alternatives_rejected": "Re-implementing the already-existing QAT flow would duplicate code; leaving 13.2 unchecked misreports status; skipping param search leaves the last 13.2 item genuinely open."
+    },
+    "ISS-295": {
+      "id": "ISS-295",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:54:08+00:00",
+      "updated_at": "2026-08-23T09:54:41+00:00",
+      "touched_round": 128,
+      "title": "Optimized quantization parameter search missing (ROADMAP 13.2)",
+      "summary": "calibration.py returns absmax-based scales only; there is no reconstruction-error-based search over (bits, granularity) to pick the best quant config for a tensor. Also ROADMAP 13.2's QAT-flow/fake-quant items were implemented but never marked done."
+    },
+    "TASK-257": {
+      "id": "TASK-257",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:54:08+00:00",
+      "updated_at": "2026-08-23T09:54:41+00:00",
+      "touched_round": 128,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.5,
+      "confidence": 0.9,
+      "unlock_factor": 1.0,
+      "title": "Implement CPU-verifiable reconstruction-error quantization param search + tests + docs",
+      "summary": "Add quantization/param_search.py: param_candidates, reconstruction_errors (normalized MSE via real FakeQuantize over bits x granularity), search_quant_params (argmin); invariants (more bits never hurt, per_channel<=per_tensor, best==argmin, matches manual FakeQuantize); tests + guide + ROADMAP 13.2 done; mark already-implemented QAT flow / fake-quant done."
+    },
+    "EV-258": {
+      "id": "EV-258",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:54:14+00:00",
+      "updated_at": "2026-08-23T09:54:14+00:00",
+      "touched_round": 128,
+      "source": "tests/quantization/test_qat_integration.py::test_qat_engine_trains_with_finite_loss",
+      "confidence": 1.0,
+      "summary": "QAT training flow and fake quantization were already implemented and green (RIL TASK-218/219/DEC-054): TrainingConfig.use_qat + LanguageModelingTask.build_model apply_fake_quant, FakeQuantize/FakeQuantLinear + STE, engine smoke trains with finite loss. ROADMAP 13.2 first two items marked done retroactively."
+    },
+    "EV-259": {
+      "id": "EV-259",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:54:37+00:00",
+      "updated_at": "2026-08-23T09:54:37+00:00",
+      "touched_round": 128,
+      "source": "43d0238 tests/quantization/test_param_search.py",
+      "confidence": 1.0,
+      "summary": "Param search verified: 8-bit <= 4-bit error and per-channel <= per-tensor error for both widths, best==argmin over candidates, reported error matches a fresh FakeQuantize round-trip; param_search + qat_integration + fake_quant tests all green; ROADMAP 13.2 now fully [x]"
+    },
+    "CHG-270": {
+      "id": "CHG-270",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:54:37+00:00",
+      "updated_at": "2026-08-23T09:54:37+00:00",
+      "touched_round": 128,
+      "commit": "43d0238",
+      "summary": "Add quantization/param_search.py (param_candidates/reconstruction_errors/search_quant_params), invariant tests, guide; ROADMAP 13.2 QAT complete"
     }
   },
   "edges": [
@@ -22200,6 +22274,42 @@
       "to": "ISS-294",
       "type": "resolves",
       "created_at": "2026-08-23T09:48:25+00:00"
+    },
+    {
+      "from": "TASK-257",
+      "to": "ISS-295",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:54:14+00:00"
+    },
+    {
+      "from": "ISS-295",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:54:14+00:00"
+    },
+    {
+      "from": "DEC-090",
+      "to": "COMP-002",
+      "type": "governs",
+      "created_at": "2026-08-23T09:54:15+00:00"
+    },
+    {
+      "from": "DEC-090",
+      "to": "TASK-257",
+      "type": "governs",
+      "created_at": "2026-08-23T09:54:15+00:00"
+    },
+    {
+      "from": "CHG-270",
+      "to": "TASK-257",
+      "type": "implements",
+      "created_at": "2026-08-23T09:54:41+00:00"
+    },
+    {
+      "from": "CHG-270",
+      "to": "ISS-295",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:54:41+00:00"
     }
   ]
 }

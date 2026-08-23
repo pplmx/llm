@@ -427,9 +427,9 @@
 
 #### 13.2 Quantization-Aware Training (QAT)
 
-- [ ] 实现 QAT 训练流程
-- [ ] 支持 fake quantization
-- [ ] 优化量化参数搜索
+- [x] **实现 QAT 训练流程**（`TrainingConfig.use_qat`/`qat_bits`/`qat_quant_activation`/`qat_target_modules` + `LanguageModelingTask.build_model` 在 `use_qat=True` 时 `apply_fake_quant` 包裹匹配的 `nn.Linear`；engine 冒烟 `test_qat_engine_trains_with_finite_loss` 有限损失）
+- [x] **支持 fake quantization**（动态 scale 对称 fake quantizer `FakeQuantize` + `FakeQuantLinear` + STE `ste_round`，4/8-bit、per-channel/per-tensor；见 `src/llm/quantization/fake_quant.py`）
+- [x] **优化量化参数搜索**（重建误差驱动的参数搜索研究切片 `quantization/param_search.py`: 对 `(bits, granularity)` 用真实 `FakeQuantize` 计算归一化 MSE 并取最小；CPU parity——bit 越多误差不增、per-channel≤per-tensor、best===argmin；见 [docs/guides/quant_param_search.md](docs/guides/quant_param_search.md)）
 
 #### 13.3 高级量化技术
 
