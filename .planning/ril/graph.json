@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 126,
+  "round": 127,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:44:56+00:00",
+  "updated_at": "2026-08-23T09:48:25+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -7988,7 +7988,7 @@
       "version": 1,
       "created_at": "2026-08-16T01:13:47+00:00",
       "updated_at": "2026-08-16T01:13:47+00:00",
-      "touched_round": 126,
+      "touched_round": 127,
       "title": "Core PEFT families + transformer block (src/llm/core: adalora, prefix_tuning, lora, qlora, ia3, bitfit, pfeiffer_adapter, adapter, transformer_block, mlp)"
     },
     "TASK-111": {
@@ -15027,6 +15027,68 @@
       "touched_round": 126,
       "commit": "d5c0438",
       "summary": "Add core/moe/load_balance.py (routing_fractions/mean_dispatch_probability/load_balancing_loss), invariant tests, guide; ROADMAP 15.4 expert load balancing done"
+    },
+    "DEC-089": {
+      "id": "DEC-089",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:47:54+00:00",
+      "updated_at": "2026-08-23T09:47:54+00:00",
+      "touched_round": 127,
+      "title": "Explore Dynamic Expert Selection (ROADMAP 15.4)",
+      "rationale": "The last open 15.4 item. Implement a confidence-driven adaptive per-token expert count: min_experts for confident tokens (top-1 prob >= threshold), max_experts otherwise, ranking the top max experts once and renormalizing the kept set. This saves compute on easy tokens, gives hard tokens more capacity, and is fully differentiable (no argmax in the weight path) and CPU-verifiable. Self-contained research slice; MoeLayer variable-capacity integration is a documented follow-up.",
+      "alternatives_rejected": "Leaving Dynamic Expert Selection unchecked kept 15.4 incomplete; a fully learned continuous budget (learned per-token k via a separate head) is larger and hinges on an architecture decision; skipping confidence-based adaptivity misses the token-economy benefit the item asks to explore."
+    },
+    "ISS-294": {
+      "id": "ISS-294",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:47:55+00:00",
+      "updated_at": "2026-08-23T09:48:25+00:00",
+      "touched_round": 127,
+      "title": "Dynamic Expert Selection (ROADMAP 15.4) unexplored",
+      "summary": "MoE routes every token with a fixed top_k; no per-token adaptive expert count by routing confidence exists. 15.4's Dynamic Expert Selection item is open."
+    },
+    "TASK-256": {
+      "id": "TASK-256",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:47:55+00:00",
+      "updated_at": "2026-08-23T09:48:25+00:00",
+      "touched_round": 127,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.5,
+      "confidence": 0.9,
+      "unlock_factor": 1.0,
+      "title": "Implement CPU-verifiable confidence-driven Dynamic Expert Selection slice + tests + docs",
+      "summary": "Add core/moe/dynamic_selection.py: top1_confidence, dynamic_expert_count (min/max by threshold), dynamic_expert_output (top max ranked once, keep k_t, renormalize, combine); invariants (count tiers, weights sum 1, output==renormalized weighted-sum reference, gradient flow, validate min<=max & threshold); tests + guide + ROADMAP 15.4; MoeLayer wiring is follow-up."
+    },
+    "EV-257": {
+      "id": "EV-257",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:48:21+00:00",
+      "updated_at": "2026-08-23T09:48:21+00:00",
+      "touched_round": 127,
+      "source": "72eb3ae tests/core/moe/test_dynamic_selection.py",
+      "confidence": 1.0,
+      "summary": "Dynamic selection verified: confident token (top-1 0.99) uses min_experts, uncertain (0.25) uses max_experts, counts in [min,max]; per-token weights sum to 1; output equals explicit renormalized weighted-sum reference; confident single-expert token reduces to the expert output (2x); gradient flow finite through x and gate_logits; min<=max and threshold validated; all 22 MoE routing tests green (expert_choice+soft_moe+load_balance+dynamic_selection)"
+    },
+    "CHG-269": {
+      "id": "CHG-269",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:48:21+00:00",
+      "updated_at": "2026-08-23T09:48:21+00:00",
+      "touched_round": 127,
+      "commit": "72eb3ae",
+      "summary": "Add core/moe/dynamic_selection.py (top1_confidence/count/output), invariant tests, guide; ROADMAP 15.4 complete"
     }
   },
   "edges": [
@@ -22102,6 +22164,42 @@
       "to": "ISS-293",
       "type": "resolves",
       "created_at": "2026-08-23T09:44:56+00:00"
+    },
+    {
+      "from": "TASK-256",
+      "to": "ISS-294",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:47:59+00:00"
+    },
+    {
+      "from": "ISS-294",
+      "to": "COMP-014",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:47:59+00:00"
+    },
+    {
+      "from": "DEC-089",
+      "to": "COMP-014",
+      "type": "governs",
+      "created_at": "2026-08-23T09:47:59+00:00"
+    },
+    {
+      "from": "DEC-089",
+      "to": "TASK-256",
+      "type": "governs",
+      "created_at": "2026-08-23T09:47:59+00:00"
+    },
+    {
+      "from": "CHG-269",
+      "to": "TASK-256",
+      "type": "implements",
+      "created_at": "2026-08-23T09:48:25+00:00"
+    },
+    {
+      "from": "CHG-269",
+      "to": "ISS-294",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:48:25+00:00"
     }
   ]
 }
