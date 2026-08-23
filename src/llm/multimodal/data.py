@@ -43,6 +43,11 @@ class MultimodalDataModule(SamplerMapDataModule):
             batch and the model encodes them in-forward (vision tower trainable,
             image-text alignment — ROADMAP 12.1 slice 2); when False (default
             CLIP-style) it precomputes frozen image-token features at setup.
+        vit_instruction_len: when > 0, Visual Instruction Tuning semantics: each
+            sample becomes ``[instruction | response]`` with the instruction
+            tokens labelled ``-100`` so the CE loss only supervises the
+            response, conditioned on the image prefix + instruction context
+            (ROADMAP 12.1 Visual Instruction Tuning).
     """
 
     def __init__(
@@ -58,6 +63,7 @@ class MultimodalDataModule(SamplerMapDataModule):
         vit_heads: int = 4,
         with_cls: bool = True,
         train_encoder: bool = False,
+        vit_instruction_len: int = 0,
     ) -> None:
         super().__init__(config)
         self.modality = modality
@@ -70,6 +76,7 @@ class MultimodalDataModule(SamplerMapDataModule):
         self.vit_heads = int(vit_heads)
         self.with_cls = bool(with_cls)
         self.train_encoder = bool(train_encoder)
+        self.vit_instruction_len = int(vit_instruction_len)
         self.encoder: ModalityEncoder | None = None
         self.num_modal_tokens: int | None = None
 
@@ -114,7 +121,23 @@ class MultimodalDataModule(SamplerMapDataModule):
             for i in range(num + val_num)
         ]
         inputs = torch.stack(rows)
-        labels = inputs  # next-token self-supervised labels
+        if self.vit_instruction_len > 0:
+            # Visual Instruction Tuning: ``[instruction | response]`` with the
+            # instruction positions masked (-100) so the shift-based LM loss in
+            # the multimodal task only supervises the response, conditioned on
+            # the image prefix + instruction context. Response keeps the
+            # per-sample cyclic pattern (deterministic -> learnable), exactly
+            # like the plain self-supervised rows otherwise.
+            inst_len = min(self.vit_instruction_len, seq_len - 1)  # keep >=1 response token
+            inst = torch.randint(1, vocab, (num + val_num, inst_len), generator=gen)
+            resp = inputs[:, : seq_len - inst_len]
+            inputs = torch.cat([inst, resp], dim=1)
+            labels = torch.cat(
+                [torch.full_like(inst, -100), resp],
+                dim=1,
+            )
+        else:
+            labels = inputs  # next-token self-supervised labels
 
         if self.modality == "vit" and self.train_encoder:
             # Trainable-tower path: batch carries RAW images [B, 3, H, W]; the

@@ -190,6 +190,85 @@ def test_datamodule_vit_path_produces_image_token_batch():
     assert torch.isfinite(embeds).all()
 
 
+def test_datamodule_vit_instruction_masks_prompt():
+    """vit_instruction_len>0: batch is [instruction | response] with -100 labels
+    on the instruction prefix, so the shift-based CE only supervises response."""
+    config = _config()
+    module = MultimodalDataModule(
+        config,
+        modality="vit",
+        image_h=64,
+        image_w=64,
+        patch_size=16,
+        vit_layers=2,
+        vit_heads=4,
+        vit_instruction_len=8,
+    )
+    module.prepare_data()
+    module.setup()
+    loader, _ = module.train_dataloader(rank=0, world_size=1)
+    batch = next(iter(loader))
+    assert batch["input_ids"].shape == (8, 24)
+    assert batch["labels"].shape == (8, 24)
+    inst = 8
+    assert (batch["labels"][:, :inst] == -100).all()
+    assert (batch["labels"][:, inst:] != -100).all()
+    assert (batch["input_ids"][:, :inst] >= 1).all()  # instruction tokens
+    assert (batch["input_ids"][:, inst:] >= 0).all()
+
+
+def test_datamodule_vit_instruction_e2e_learns_response():
+    """Visual Instruction Tuning CPU e2e (frozen-tower): the masked response
+    objective learns — loss drops and next-token accuracy on the response
+    region (excluding the -100 prompt) rises, proving VIT-style conditioning."""
+    from llm.multimodal.task import MultimodalTask
+    from llm.training.core.engine import TrainingEngine
+
+    inst = 8
+    prev = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        config = _config(num_samples=32)
+        module = MultimodalDataModule(
+            config,
+            modality="vit",
+            image_h=64,
+            image_w=64,
+            patch_size=16,
+            vit_layers=2,
+            vit_heads=4,
+            with_cls=True,
+            vit_instruction_len=inst,
+        )
+        module.prepare_data()
+        module.setup()
+        task = MultimodalTask(config, module)
+        engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
+
+        losses = [engine._run_epoch(epoch) for epoch in range(20)]
+        assert all(loss == loss for loss in losses)
+        assert losses[-1] < losses[0] * 0.5, f"VIT loss did not drop: {losses[0]:.3f} -> {losses[-1]:.3f}"
+        assert losses[-1] < 1.7
+
+        # Response-region next-token accuracy (instruction positions masked).
+        device = next(engine.model.parameters()).device
+        loader, _ = module.train_dataloader(rank=0, world_size=1)
+        batch = next(iter(loader))
+        batch = {k: v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+        engine.model.eval()
+        with torch.no_grad():
+            logits = engine.model(batch["input_ids"], batch["modal_embeds"])
+        pred = logits.argmax(-1)  # [B, T, V] -> [B, T]
+        shift_pred = pred[:, :-1]
+        shift_lab = batch["labels"][:, 1:]
+        mask = shift_lab != -100
+        assert mask.any()
+        acc = (shift_pred[mask] == shift_lab[mask]).float().mean().item()
+        assert acc > 0.7, f"VIT response accuracy too low: {acc:.3f}"
+    finally:
+        torch.set_num_threads(prev)
+
+
 def test_datamodule_vit_trainable_batch_has_raw_images():
     """train_encoder=True: the batch carries RAW images [B,3,H,W] (not
     precomputed modal_embeds) and the built encoder is NOT frozen."""

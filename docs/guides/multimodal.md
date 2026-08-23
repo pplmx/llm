@@ -90,10 +90,19 @@ loss = engine._run_epoch(0)               # batch["modal_embeds"]: [B, 17, embed
   forward 内实时编码(视觉塔 → projector → 文本前缀联合训练),梯度可到达视觉塔;
   默认 `train_encoder=False` 保持冻结-预计算路径。
 
+## 已落地：Visual Instruction Tuning slice 4（ROADMAP 12.1 收官）
+
+- `MultimodalDataModule(..., vit_instruction_len=N)` 把每个样本组织为
+  `[instruction | response]`:instruction 为随机 token 前缀,response 为确定性
+  cyclic 序列;`labels` 在 instruction 位置为 `-100`(仅监督 response)。复用
+  `MultimodalTask` 的 shift + CE(ignore_index=-100)即得到标准的 SFT-masked-loss:
+  图像前缀 + instruction 上下文共同条件化 response 生成。CPU e2e:loss 下降、
+  response 区域 next-token 准确率 > 0.7。可叠加 `train_encoder=True` 得到完整的
+  LLaVA 式训练(图像塔 + projector + instruction-tuning 联合)。
+
 ## 未落地（后续切片）
 
-- Visual Instruction Tuning（ROADMAP 12.1 后续）——基于本 slice 的图像 token 输出
-  与对齐头即可接入。
+- 音频编码器（Whisper-style，ROADMAP 12.2）与真实多模态数据集接入(DatasetDict 等)。
 - 音频编码器（Whisper-style，ROADMAP 12.2）与真实多模态数据集接入。
 
 测试见 `tests/multimodal/`（registry + DataModule 契约 + 最小编码器可训练性 +
