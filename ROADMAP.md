@@ -530,6 +530,7 @@
 - [x] **稀疏方案可作为模型选项**（`ModelConfig.attn_sparse` 接入 `DecoderModel` forward 自动构造掩码，全 coverage 稀疏 === 稠密 parity；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
 - [x] **稀疏方案的 save/load 持久化**（`attn_sparse` 随 HF 配置往返，经 `hf_publisher`/`get_config_mapping`/`hf_loader`，重载后 forward 逐位一致，避免稀疏模型重载退化为稠密；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
 - [x] **稀疏方案支持 KV-cache 解码**（自动掩码按有效 key 历史长度生成 `[Sq,Sk]`，sink+window 真正约束累积 past keys；eager 长程生成端到端、稀疏 decode ≠ 稠密、全 coverage decode === 稠密；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
+- [x] **稀疏方案支持 batched/paged 服务**（`ContinuousBatchingEngine` 把 sink+window pattern 折进 `run_attn_mask`，生产服务路径不再静默退化为稠密；同权重下稀疏 prefill ≠ 稠密、全 coverage === 稠密；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
 
 #### 15.3 高效微调技术
 

@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 116,
+  "round": 117,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T08:37:50+00:00",
+  "updated_at": "2026-08-23T08:53:13+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -41,7 +41,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 116,
+      "touched_round": 117,
       "title": "Serving (src/llm/serving: FastAPI + continuous batching)"
     },
     "COMP-005": {
@@ -14411,22 +14411,22 @@
     "ISS-284": {
       "id": "ISS-284",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T08:37:47+00:00",
-      "updated_at": "2026-08-23T08:37:47+00:00",
-      "touched_round": 116,
+      "updated_at": "2026-08-23T08:51:48+00:00",
+      "touched_round": 117,
       "title": "Sparse/streaming scheme bypassed in batched/paged serving",
       "summary": "ContinuousBatchingEngine always passes a computed run_attn_mask to the model forward, which suppresses DecoderModel's attn_sparse auto-mask, so sparse/streaming attention has no effect in the batched/paged serving path (in contrast to the eager linear-KV path fixed in TASK-245)."
     },
     "TASK-246": {
       "id": "TASK-246",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T08:37:47+00:00",
-      "updated_at": "2026-08-23T08:37:47+00:00",
-      "touched_round": 116,
+      "updated_at": "2026-08-23T08:51:48+00:00",
+      "touched_round": 117,
       "category": "core-feature",
       "severity": 0.4,
       "effort": 1.5,
@@ -14434,6 +14434,68 @@
       "unlock_factor": 1.0,
       "title": "Apply attn_sparse pattern into ContinuousBatchingEngine/paged run_attn_mask + CPU parity",
       "summary": "Fold the scheme's sink+window pattern into the batch engine's per-sequence run_attn_mask (and paged path) so sparse attention applies in serving, aligned to page/rank; CPU test: single-sequence engine forward sparse != dense, full-coverage sparse == dense, parity with eager decode; docs."
+    },
+    "EV-247": {
+      "id": "EV-247",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:51:45+00:00",
+      "updated_at": "2026-08-23T08:51:45+00:00",
+      "touched_round": 117,
+      "source": "4365531 tests/serving/test_engine.py::test_engine_folds_sparse_attention_into_run_attn_mask",
+      "confidence": 1.0,
+      "summary": "ContinuousBatchingEngine now folds attn_sparse sink+window pattern into run_attn_mask per sequence indexed by real absolute position and OR-ed with causal mask: on identical copied weights, sparse engine prefill logits differ from dense, full-coverage engine prefill equals dense exactly; the run_attn_mask marks an old non-sink/off-window key masked under sparse but not under dense/full; test_engine.py full suite green"
+    },
+    "CHG-259": {
+      "id": "CHG-259",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:51:45+00:00",
+      "updated_at": "2026-08-23T08:51:45+00:00",
+      "touched_round": 117,
+      "commit": 4365531,
+      "summary": "Fold served model attn_sparse into batch engine run_attn_mask (batched+paged paths); parity test + serving docs"
+    },
+    "DEC-079": {
+      "id": "DEC-079",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:53:09+00:00",
+      "updated_at": "2026-08-23T08:53:09+00:00",
+      "touched_round": 117,
+      "title": "Cache the sparse pattern mask in the batch engine",
+      "rationale": "TASK-246 folds attn_sparse into run_attn_mask, but _prepare_step rebuilds the [k_len,k_len] sparse pattern mask (build_sparse_attention_mask over max_seq_len) on every decode step -- for max_seq_len 4096 that is a multi-MB bool-tensor allocation a few times per step, across potentially hundreds of decode steps per sequence. The scheme + max_seq_len are fixed for the engine's lifetime, so the pattern mask can be built once and OR-ed per step.",
+      "alternatives_rejected": "Leaving the per-step rebuild is wasteful but correct; caching in __init__ fails to see a model attn_sparse set after construction, so build lazily on first use and cache keyed on (scheme, k_len); guarding with a memo is the coherent fix."
+    },
+    "ISS-285": {
+      "id": "ISS-285",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:53:09+00:00",
+      "updated_at": "2026-08-23T08:53:09+00:00",
+      "touched_round": 117,
+      "title": "Batch engine rebuilds sparse pattern mask every decode step",
+      "summary": "ContinuousBatchingEngine._prepare_step recomputes build_sparse_attention_mask(kind, max_seq_len) on every step even though the scheme and max_seq_len are constant for the engine's lifetime; unnecessary per-step O(max_seq_len^2) boolean allocations."
+    },
+    "TASK-247": {
+      "id": "TASK-247",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:53:09+00:00",
+      "updated_at": "2026-08-23T08:53:09+00:00",
+      "touched_round": 117,
+      "category": "performance",
+      "severity": 0.3,
+      "effort": 0.5,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Cache sparse pattern mask in ContinuousBatchingEngine (lazy, keyed on scheme+k_len)",
+      "summary": "Build the sparse pattern mask once on first _prepare_step and reuse it across decode steps; invalidate if the served model's attn_sparse changes or k_len/config resizes. CPU test: cached mask equals recomputed mask, engine forward parity unchanged; note perf improvement. Docs."
     }
   },
   "edges": [
@@ -21173,6 +21235,42 @@
       "to": "TASK-246",
       "type": "governs",
       "created_at": "2026-08-23T08:37:50+00:00"
+    },
+    {
+      "from": "CHG-259",
+      "to": "TASK-246",
+      "type": "implements",
+      "created_at": "2026-08-23T08:51:48+00:00"
+    },
+    {
+      "from": "CHG-259",
+      "to": "ISS-284",
+      "type": "resolves",
+      "created_at": "2026-08-23T08:51:48+00:00"
+    },
+    {
+      "from": "TASK-247",
+      "to": "ISS-285",
+      "type": "addresses",
+      "created_at": "2026-08-23T08:53:13+00:00"
+    },
+    {
+      "from": "ISS-285",
+      "to": "COMP-004",
+      "type": "located_in",
+      "created_at": "2026-08-23T08:53:13+00:00"
+    },
+    {
+      "from": "DEC-079",
+      "to": "COMP-004",
+      "type": "governs",
+      "created_at": "2026-08-23T08:53:13+00:00"
+    },
+    {
+      "from": "DEC-079",
+      "to": "TASK-247",
+      "type": "governs",
+      "created_at": "2026-08-23T08:53:13+00:00"
     }
   ]
 }
