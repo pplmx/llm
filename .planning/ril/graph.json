@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 135,
+  "round": 136,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T21:22:38+00:00",
+  "updated_at": "2026-08-23T21:57:49+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -15512,6 +15512,41 @@
       "source": "tests/multimodal/test_vision.py (42 multimodal pass); full suite EXIT=0",
       "title": "VIT verified: prompt labels -100, masked response objective converges, response acc > 0.7 on CPU",
       "confidence": 1.0
+    },
+    "TASK-264": {
+      "id": "TASK-264",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-23T21:26:31+00:00",
+      "updated_at": "2026-08-23T21:57:49+00:00",
+      "touched_round": 135,
+      "category": "core-feature",
+      "severity": 0.6,
+      "title": "Multimodal 12.2 slice 1: Whisper-style audio encoder registered as 'audio' (spectrogram-patch tower, reusing image preprocess + ViT blocks), raw audio-data path through MultimodalDataModule/Model, CPU-verifiable"
+    },
+    "CHG-279": {
+      "id": "CHG-279",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T21:56:55+00:00",
+      "updated_at": "2026-08-23T21:56:55+00:00",
+      "touched_round": 135,
+      "commit": "aed6a17",
+      "title": "feat(multimodal): AudioSpectrogramEncoder 'audio' + raw-spectrogram path; batch key generalized to modal_samples"
+    },
+    "EV-268": {
+      "id": "EV-268",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T21:56:55+00:00",
+      "updated_at": "2026-08-23T21:56:55+00:00",
+      "touched_round": 135,
+      "source": "tests/multimodal/test_audio.py (7 tests); full suite EXIT=0",
+      "title": "Audio encoder verified on CPU: registry, shape/parity, grads to tower, frozen precompute + trainable e2e converge",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -22791,6 +22826,12 @@
       "to": "TASK-263",
       "type": "implements",
       "created_at": "2026-08-23T21:21:00+00:00"
+    },
+    {
+      "from": "CHG-279",
+      "to": "TASK-264",
+      "type": "implements",
+      "created_at": "2026-08-23T21:56:55+00:00"
     }
   ]
 }

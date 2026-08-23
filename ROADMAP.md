@@ -398,14 +398,19 @@
 
 #### 12.1 视觉-语言模型
 
-- [ ] 集成视觉编码器 (CLIP, SigLIP)
-- [ ] 实现图像-文本对齐模块
-- [ ] 支持多模态预训练
-- [ ] 实现 Visual Instruction Tuning
+- [x] 集成视觉编码器（CLIP/SigLIP 风格 `VisionTransformerEncoder`,注册 `"vit"`,
+  RIL TASK-259/CHG-272;含可训练塔 `train_encoder` 与对比对齐 `ContrastiveAligner`,
+  TASK-261/262,见 [multimodal guide](docs/guides/multimodal.md)）
+- [x] 实现图像-文本对齐模块（`ContrastiveAligner` + `contrastive_loss`,InfoNCE/SigLIP,
+  RIL TASK-262/CHG-277）
+- [x] Visual Instruction Tuning（`vit_instruction_len` 掩码 `[instruction|response]`
+  SFT,RIL TASK-263/CHG-278）→ **12.1 完成**
+- [ ] 多模态预训练（真实数据集接入 + 大规模训练管线）
 
 #### 12.2 音频扩展
 
-- [ ] 集成音频编码器 (Whisper-style)
+- [x] 集成音频编码器（Whisper-style `AudioSpectrogramEncoder`,注册 `"audio"`,
+  RIL TASK-264;原始频谱管线 + 可训练塔与 vision 共用 `modal_samples` 键）
 - [ ] 实现语音识别和生成
 - [ ] 支持语音指令微调
 
