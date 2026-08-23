@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 121,
+  "round": 122,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:19:06+00:00",
+  "updated_at": "2026-08-23T09:22:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -14767,6 +14767,18 @@
       "touched_round": 121,
       "commit": "d3ba9bd",
       "summary": "Add parametrized random-draft greedy speculative==eager parity test covering rejection/correction path"
+    },
+    "DEC-084": {
+      "id": "DEC-084",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:22:27+00:00",
+      "updated_at": "2026-08-23T09:22:27+00:00",
+      "touched_round": 122,
+      "title": "Conclude repository deep-dive: loop stop conditions met",
+      "rationale": "Two consecutive deep-dive rounds (rounds 121 and 122) produced no task above the 3.0 priority threshold: deep-dive re-verified penalties, eager truncation, linear/batch/paged KV cache (incl. block boundaries), eval metrics, dedup, speculative greedy parity, full non-default (RMSNorm+post-LN+GQA+RoPE) save/load roundtrip, and the epoch-based LR scheduler wiring -- all sound. Combined with no active tasks >3.0, high-severity issues resolved, VERIFY green, and a consistent graph, the skill's stop conditions (Section 10) are all met. Conclusion: the codebase is comprehensively improved and hardened; continuing to force new milestones would fabricate low-value work, so the autonomous deep-dive properly stops here.",
+      "alternatives_rejected": "Forcing a sub-threshold or synthetic fix milestone just to keep the loop busy violates the anti-fabrication and quality principles; continuing to hunt in already-audited areas has negative marginal value."
     }
   },
   "edges": [
