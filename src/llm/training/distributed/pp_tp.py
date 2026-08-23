@@ -101,10 +101,17 @@ class PPTPRuntime:
         t = buf[0]
         if t is None:
             raise RuntimeError(f"PP+TP rank {self.rank}: received None from stage P2P (src {src})")
-        t = t.detach()
+        # Detach and move to the model device BEFORE marking requires_grad:
+        # ``.to()`` on a requires_grad tensor returns a NON-LEAF copy
+        # (grad_fn=ToCopyBackward) whose ``.grad`` is never populated. When
+        # gloo P2P delivers a CPU tensor and the engine picked CUDA, the copy
+        # diverges from the source and the last stage later reads ``.grad``
+        # as None -> crash (RIL ISS-298). Reordering keeps the received tensor
+        # a true autograd leaf so backward populates its ``.grad``.
+        t = t.detach().to(self.device)
         if require_grad:
             t = t.requires_grad_(True)
-        return t.to(self.device)
+        return t
 
     def _send(self, t: torch.Tensor, dst: int) -> None:
         dist.send_object_list([t.detach()], dst=dst, group=self.group)
