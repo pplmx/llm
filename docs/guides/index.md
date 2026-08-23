@@ -28,6 +28,7 @@
     - [Rejection Sampling](rejection_sampling.md) — best-of-N / top-K 过滤高奖励响应再 SFT
     - [RLAIF](rlaif.md) — AI/规则 judge 标定偏好 → `--task dpo`
     - [对齐方法对比](dpo_vs_ppo.md) — 同一合成偏好任务上的 DPO / PPO(RLHF) / GRPO 三方对比基准
+    - [Constitutional AI](constitutional.md) — 规则 constitution + 自批判→改写切片
 
 - ⚡ **推理与部署**
 

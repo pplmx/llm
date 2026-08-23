@@ -129,6 +129,7 @@ nav:
       - guides/rejection_sampling.md
       - guides/rlaif.md
       - guides/dpo_vs_ppo.md
+      - guides/constitutional.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md
