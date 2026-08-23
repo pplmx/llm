@@ -30,6 +30,7 @@
     - [对齐方法对比](dpo_vs_ppo.md) — 同一合成偏好任务上的 DPO / PPO(RLHF) / GRPO 三方对比基准
     - [Constitutional AI](constitutional.md) — 规则 constitution + 自批判→改写切片
     - [Block Sparse Attention](block_sparse.md) — 块稀疏注意力掩码 + CPU parity
+    - [StreamingLLM](streaming_llm.md) — attention-sink 流式掩码 + CPU parity
 
 - ⚡ **推理与部署**
 

@@ -131,6 +131,7 @@ nav:
       - guides/dpo_vs_ppo.md
       - guides/constitutional.md
       - guides/block_sparse.md
+      - guides/streaming_llm.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md

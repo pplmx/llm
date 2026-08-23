@@ -517,7 +517,7 @@
 
 - [x] 实现 RoPE Scaling (NTK-aware, YaRN)
 - [x] 集成 ALiBi (Attention with Linear Biases)
-- [ ] 探索 StreamingLLM
+- [x] **探索 StreamingLLM** (attention-sink 流式掩码切片: `build_streamingllm_mask` 前 k 恒 attend + 滚动 window, CPU parity——sink/window 全覆盖 === 稠密 causal; 见 [docs/guides/streaming_llm.md](docs/guides/streaming_llm.md))
 - [ ] 研究 Infinite Attention
 
 #### 15.2 Sparse Attention
