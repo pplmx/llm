@@ -398,7 +398,7 @@
 #### 12.3 统一多模态接口
 
 - [ ] 设计通用的多模态数据接口
-- [ ] 实现模态特定的预处理器
+- [x] **实现模态特定的预处理器**（图像→token 预处理器研究切片 `multimodal/preprocess.py`: `patchify` 把 `[B,C,H,W]` 切成 `[B,N,C*p*p]` patch + `ImagePatchPreprocessor`（learned linear 投影 + ViT 式可学习 positional embedding）；CPU parity——patchify===手工切片参考、输出 `[B,N,embed]` 且确定、投影/pos_embed 可微；见 [docs/guides/multimodal_preprocess.md](docs/guides/multimodal_preprocess.md)）
 - [ ] 构建多模态 tokenizer
 
 ---
