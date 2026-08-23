@@ -526,6 +526,9 @@
 - [x] **实现 Block Sparse Attention** (块稀疏掩码切片: `build_block_sparse_mask` local window + global + random 块, `mask_to_additive`, CPU parity 不变量——window+global 全覆盖 === 稠密 causal; 见 [docs/guides/block_sparse.md](docs/guides/block_sparse.md))
 - [x] **研究 Longformer-style Attention** (dilated sliding-window 掩码切片: `build_longformer_mask` dilation 旋钮 + global, `dilation=1`+无 global === 普通滑窗 parity, 稀释掩码是稠密窗口子集; 见 [docs/guides/longformer.md](docs/guides/longformer.md))
 - [x] **探索 BigBird Attention** (global + window + random 块掩码: `build_bigbird_mask` 委托 block-sparse 工具, global 全覆盖 === 稠密 parity, random 种子可复现且加覆盖; 见 [docs/guides/big_bird.md](docs/guides/big_bird.md))
+- [x] **统一稀疏注意力 dispatcher**（`build_sparse_attention_mask(kind, ...)` 按名选择；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
+- [x] **稀疏方案可作为模型选项**（`ModelConfig.attn_sparse` 接入 `DecoderModel` forward 自动构造掩码，全 coverage 稀疏 === 稠密 parity；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
+- [ ] 稀疏方案的 save/load 持久化（`attn_sparse` 随 HF 配置往返，避免稀疏模型重载后静默退化为稠密）
 
 #### 15.3 高效微调技术
 
