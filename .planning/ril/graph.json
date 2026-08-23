@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 122,
+  "round": 123,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:22:31+00:00",
+  "updated_at": "2026-08-23T09:30:29+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 121,
+      "touched_round": 123,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -14779,6 +14779,68 @@
       "title": "Conclude repository deep-dive: loop stop conditions met",
       "rationale": "Two consecutive deep-dive rounds (rounds 121 and 122) produced no task above the 3.0 priority threshold: deep-dive re-verified penalties, eager truncation, linear/batch/paged KV cache (incl. block boundaries), eval metrics, dedup, speculative greedy parity, full non-default (RMSNorm+post-LN+GQA+RoPE) save/load roundtrip, and the epoch-based LR scheduler wiring -- all sound. Combined with no active tasks >3.0, high-severity issues resolved, VERIFY green, and a consistent graph, the skill's stop conditions (Section 10) are all met. Conclusion: the codebase is comprehensively improved and hardened; continuing to force new milestones would fabricate low-value work, so the autonomous deep-dive properly stops here.",
       "alternatives_rejected": "Forcing a sub-threshold or synthetic fix milestone just to keep the loop busy violates the anti-fabrication and quality principles; continuing to hunt in already-audited areas has negative marginal value."
+    },
+    "DEC-085": {
+      "id": "DEC-085",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:29:53+00:00",
+      "updated_at": "2026-08-23T09:29:53+00:00",
+      "touched_round": 123,
+      "title": "Research Infini-Attention compressive memory (ROADMAP 15.1)",
+      "rationale": "ROADMAP 15.1's last unchecked item is 'research Infinite Attention', previously deferred in DEC-075 as hard to CPU-verify. Infini-Attention's compressive memory is a pure matrix state (M [d_k,d_v] + normalizer z) accumulating keys/values through a non-negative feature map, so it IS CPU-verifiable in a single pass: empty memory retrieves 0, gate->dot reproduces dense attention, retrieval equals the linear-attention reference, state size is context-independent, and it is differentiable. Deliver a self-contained core/attn slice (research), leaving live model wiring as a documented follow-up.",
+      "alternatives_rejected": "Leaving 15.1's final box unchecked keeps the long-context story incomplete; forcing it into a live attn_impl without a design (unbounded-context integration) risks architectural churn; a GPU-only recurrence framing was the reason it was deferred, but not required for the memory-slice research."
+    },
+    "ISS-290": {
+      "id": "ISS-290",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:29:53+00:00",
+      "updated_at": "2026-08-23T09:30:29+00:00",
+      "touched_round": 123,
+      "title": "Infinite Attention (ROADMAP 15.1) unresearched",
+      "summary": "No Infini-Attention compressive-memory slice exists; the long-context section's final checkbox is open and DEC-075 had deferred it as hard to CPU-verify."
+    },
+    "TASK-252": {
+      "id": "TASK-252",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:29:53+00:00",
+      "updated_at": "2026-08-23T09:30:29+00:00",
+      "touched_round": 123,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.6,
+      "confidence": 0.8,
+      "unlock_factor": 1.0,
+      "title": "Implement CPU-verifiable Infini-Attention compressive-memory slice + parity tests + docs",
+      "summary": "Add core/attn/infinite.py: InfiniMemory (M+z state, elu+1 feature map), memory_retrieval_attention, infinite_attention with sigmoid(beta) gate; invariant tests (fresh-memory 0, beta->inf == dense, retrieval == linear-attention reference, context-independent state, gradient flow); guide + ROADMAP 15.1 mark done. Model wiring is a documented follow-up."
+    },
+    "EV-253": {
+      "id": "EV-253",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:30:24+00:00",
+      "updated_at": "2026-08-23T09:30:24+00:00",
+      "touched_round": 123,
+      "source": "6510698 tests/core/attn/test_infinite.py",
+      "confidence": 1.0,
+      "summary": "Infini-Attention slice verified: fresh InfiniMemory retrieves exactly 0; infinite_attention(beta->+inf) equals dense causal and dense full attention (correct sdpa shape); memory retrieval equals explicit linear-attention reference (maxdiff 0); state [d_k,d_v] is context-independent (writing more tokens grows no state); long-range recall through memory; gradient flow finite; full core/attn suite green"
+    },
+    "CHG-265": {
+      "id": "CHG-265",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:30:24+00:00",
+      "updated_at": "2026-08-23T09:30:24+00:00",
+      "touched_round": 123,
+      "commit": 6510698,
+      "summary": "Add core/attn/infinite.py (InfiniMemory + retrieval + gated infinite_attention), invariant tests, guide; ROADMAP 15.1 Infinite Attention done"
     }
   },
   "edges": [
@@ -21710,6 +21772,42 @@
       "to": "ISS-289",
       "type": "resolves",
       "created_at": "2026-08-23T09:19:06+00:00"
+    },
+    {
+      "from": "TASK-252",
+      "to": "ISS-290",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:29:58+00:00"
+    },
+    {
+      "from": "ISS-290",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:29:58+00:00"
+    },
+    {
+      "from": "DEC-085",
+      "to": "COMP-012",
+      "type": "governs",
+      "created_at": "2026-08-23T09:29:58+00:00"
+    },
+    {
+      "from": "DEC-085",
+      "to": "TASK-252",
+      "type": "governs",
+      "created_at": "2026-08-23T09:29:58+00:00"
+    },
+    {
+      "from": "CHG-265",
+      "to": "TASK-252",
+      "type": "implements",
+      "created_at": "2026-08-23T09:30:28+00:00"
+    },
+    {
+      "from": "CHG-265",
+      "to": "ISS-290",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:30:28+00:00"
     }
   ]
 }

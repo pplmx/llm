@@ -520,7 +520,7 @@
 - [x] 实现 RoPE Scaling (NTK-aware, YaRN)
 - [x] 集成 ALiBi (Attention with Linear Biases)
 - [x] **探索 StreamingLLM** (attention-sink 流式掩码切片: `build_streamingllm_mask` 前 k 恒 attend + 滚动 window, CPU parity——sink/window 全覆盖 === 稠密 causal; 见 [docs/guides/streaming_llm.md](docs/guides/streaming_llm.md))
-- [ ] 研究 Infinite Attention
+- [x] **研究 Infinite Attention**（压缩记忆研究切片: `InfiniMemory` 状态 `[d_k,d_v]`+`z` 经 `elu+1` 累积过去 KV, 查询检索 `φ(q)ᵀM/φ(q)ᵀz` 即线性注意力加权平均, `sigmoid(β)` 门控与因果点积融合; CPU parity——空记忆检索为 0、`β→+∞`===稠密 causal/full、检索===线性注意力参考、状态与上下文长度无关、可微; 见 [docs/guides/infinite.md](docs/guides/infinite.md)）
 
 #### 15.2 Sparse Attention
 
