@@ -531,6 +531,8 @@
 - [x] **稀疏方案的 save/load 持久化**（`attn_sparse` 随 HF 配置往返，经 `hf_publisher`/`get_config_mapping`/`hf_loader`，重载后 forward 逐位一致，避免稀疏模型重载退化为稠密；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
 - [x] **稀疏方案支持 KV-cache 解码**（自动掩码按有效 key 历史长度生成 `[Sq,Sk]`，sink+window 真正约束累积 past keys；eager 长程生成端到端、稀疏 decode ≠ 稠密、全 coverage decode === 稠密；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
 - [x] **稀疏方案支持 batched/paged 服务**（`ContinuousBatchingEngine` 把 sink+window pattern 折进 `run_attn_mask`，生产服务路径不再静默退化为稠密；同权重下稀疏 prefill ≠ 稠密、全 coverage === 稠密；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
+- [x] **服务端稀疏掩码缓存**（pattern 掩码构建一次并缓存，键控 scheme+k_len，不再每 decode 步重算 `[k_len,k_len]` 布尔掩码，且落在 `self.device` 避免设备不匹配；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
+- [x] **稀疏方案后端兼容性守卫**（`attn_sparse` + `attn_impl=flash_attn` 构造时抛 `NotImplementedError`，避免 flash 忽略掩码导致静默稠密；mha/mla 经 sdpa 正常支持；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
 
 #### 15.3 高效微调技术
 

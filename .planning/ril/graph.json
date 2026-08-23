@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 117,
+  "round": 118,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T08:53:13+00:00",
+  "updated_at": "2026-08-23T09:00:43+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 115,
+      "touched_round": 118,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -14473,22 +14473,22 @@
     "ISS-285": {
       "id": "ISS-285",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T08:53:09+00:00",
-      "updated_at": "2026-08-23T08:53:09+00:00",
-      "touched_round": 117,
+      "updated_at": "2026-08-23T08:56:39+00:00",
+      "touched_round": 118,
       "title": "Batch engine rebuilds sparse pattern mask every decode step",
       "summary": "ContinuousBatchingEngine._prepare_step recomputes build_sparse_attention_mask(kind, max_seq_len) on every step even though the scheme and max_seq_len are constant for the engine's lifetime; unnecessary per-step O(max_seq_len^2) boolean allocations."
     },
     "TASK-247": {
       "id": "TASK-247",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T08:53:09+00:00",
-      "updated_at": "2026-08-23T08:53:09+00:00",
-      "touched_round": 117,
+      "updated_at": "2026-08-23T08:56:39+00:00",
+      "touched_round": 118,
       "category": "performance",
       "severity": 0.3,
       "effort": 0.5,
@@ -14496,6 +14496,91 @@
       "unlock_factor": 1.0,
       "title": "Cache sparse pattern mask in ContinuousBatchingEngine (lazy, keyed on scheme+k_len)",
       "summary": "Build the sparse pattern mask once on first _prepare_step and reuse it across decode steps; invalidate if the served model's attn_sparse changes or k_len/config resizes. CPU test: cached mask equals recomputed mask, engine forward parity unchanged; note perf improvement. Docs."
+    },
+    "EV-248": {
+      "id": "EV-248",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:56:36+00:00",
+      "updated_at": "2026-08-23T08:56:36+00:00",
+      "touched_round": 118,
+      "source": "70e962f tests/serving/test_engine.py::test_engine_caches_sparse_pattern_mask",
+      "confidence": 1.0,
+      "summary": "ContinuousBatchingEngine builds the sparse pattern mask once and reuses it across steps (cached on scheme+k_len): repeated calls return the same tensor object; scheme change / k_len resize invalidate and rebuild; dense model returns None; cached mask lives on engine device fixing a latent CPU-builder vs CUDA causal-mask OR mismatch; full engine suite green"
+    },
+    "CHG-260": {
+      "id": "CHG-260",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:56:36+00:00",
+      "updated_at": "2026-08-23T08:56:36+00:00",
+      "touched_round": 118,
+      "commit": "70e962f",
+      "summary": "Cache sparse pattern mask in ContinuousBatchingEngine keyed on scheme+k_len; move to engine device; cache-behavior test + docs"
+    },
+    "DEC-080": {
+      "id": "DEC-080",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:00:03+00:00",
+      "updated_at": "2026-08-23T09:00:03+00:00",
+      "touched_round": 118,
+      "title": "Refuse sparse/streaming with flash_attn backend (silent-dense guard)",
+      "rationale": "sparse/streaming scheme is honored only by backends that route through the sdpa wrapper (mha, mla). FlashAttention explicitly ignores attn_mask (flash_attn.py forward docstring), so attn_sparse + attn_impl=flash_attn would silently run dense attention while the user believes sparse is active. Refuse loudly at DecoderModel construction, mirroring the existing use_alibi+non-mha NotImplementedError precedent.",
+      "alternatives_rejected": "Silently running dense misrepresents the scheme; adding sparse-mask support to flash would require external-causal/block-graph plumbing not available in this milestone; keeping a warning-only log is too easy to miss vs a hard construction error."
+    },
+    "ISS-286": {
+      "id": "ISS-286",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:00:03+00:00",
+      "updated_at": "2026-08-23T09:00:43+00:00",
+      "touched_round": 118,
+      "title": "Sparse/streaming scheme silently ignored by flash_attn backend",
+      "summary": "DecoderModel builds the dispatched sparse mask and passes it to the block, but the flash_attn backend's forward ignores attn_mask, so a model with attn_sparse + attn_impl=flash_attn silently runs dense attention with no error."
+    },
+    "TASK-248": {
+      "id": "TASK-248",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:00:03+00:00",
+      "updated_at": "2026-08-23T09:00:43+00:00",
+      "touched_round": 118,
+      "category": "correctness",
+      "severity": 0.4,
+      "effort": 0.3,
+      "confidence": 0.9,
+      "unlock_factor": 1.0,
+      "title": "Raise NotImplementedError for attn_sparse + attn_impl=flash_attn (+ CPU test)",
+      "summary": "In DecoderModel.__init__, refuse attn_sparse with attn_impl=flash_attn (mirrors alibi guard) so users cannot silently get dense attention; verify mha/mla still accept sparse; CPU test; docs."
+    },
+    "EV-249": {
+      "id": "EV-249",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:00:40+00:00",
+      "updated_at": "2026-08-23T09:00:40+00:00",
+      "touched_round": 118,
+      "source": "2f4c15d tests/core/attn/test_sparse_model_config.py::test_sparse_scheme_rejects_flash_attn_backend",
+      "confidence": 1.0,
+      "summary": "DecoderModel.__init__ now raises NotImplementedError for attn_sparse + attn_impl=flash_attn before any flash-dependent block build (works without flash installed), so the ineffective scheme can no longer be silently advertised; mha + sparse still constructs fine; ml/mla route through sdpa and consume the mask"
+    },
+    "CHG-261": {
+      "id": "CHG-261",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:00:40+00:00",
+      "updated_at": "2026-08-23T09:00:40+00:00",
+      "touched_round": 118,
+      "commit": "2f4c15d",
+      "summary": "Add flash_attn+attn_sparse NotImplementedError guard in DecoderModel init; regression test; docs+ROADMAP"
     }
   },
   "edges": [
@@ -21271,6 +21356,54 @@
       "to": "TASK-247",
       "type": "governs",
       "created_at": "2026-08-23T08:53:13+00:00"
+    },
+    {
+      "from": "CHG-260",
+      "to": "TASK-247",
+      "type": "implements",
+      "created_at": "2026-08-23T08:56:39+00:00"
+    },
+    {
+      "from": "CHG-260",
+      "to": "ISS-285",
+      "type": "resolves",
+      "created_at": "2026-08-23T08:56:39+00:00"
+    },
+    {
+      "from": "TASK-248",
+      "to": "ISS-286",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:00:11+00:00"
+    },
+    {
+      "from": "ISS-286",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:00:11+00:00"
+    },
+    {
+      "from": "DEC-080",
+      "to": "COMP-012",
+      "type": "governs",
+      "created_at": "2026-08-23T09:00:11+00:00"
+    },
+    {
+      "from": "DEC-080",
+      "to": "TASK-248",
+      "type": "governs",
+      "created_at": "2026-08-23T09:00:11+00:00"
+    },
+    {
+      "from": "CHG-261",
+      "to": "TASK-248",
+      "type": "implements",
+      "created_at": "2026-08-23T09:00:43+00:00"
+    },
+    {
+      "from": "CHG-261",
+      "to": "ISS-286",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:00:43+00:00"
     }
   ]
 }
