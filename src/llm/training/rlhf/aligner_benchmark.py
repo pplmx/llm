@@ -1,6 +1,6 @@
-"""DPO vs PPO/RLHF alignment benchmark on a shared synthetic preference task (TASK-232).
+"""DPO vs PPO/RLHF vs GRPO alignment benchmark on a shared preference task (TASK-233).
 
-A CPU-verifiable harness that runs BOTH aligners against the same synthetic
+A CPU-verifiable harness that runs ALL aligners against the same synthetic
 preference signal — a judge whose "good" response ends in a target token — and
 reports comparable metrics:
 
@@ -9,6 +9,9 @@ reports comparable metrics:
   chosen response ends in the target token and the rejected one does not.
 - **PPO** (on-policy, rollout): mean rollout reward plus the same
   ``preference_fraction`` evaluated on the shared set.
+- **GRPO** (group-relative, fixed synthetic groups): the group-reward fraction
+  (fraction of groups whose most-likely response is the rewarded target) plus
+  the shared ``preference_fraction``.
 
 This is a head-to-head benchmark, not a claim that one aligner is always
 better. On this small CPU setup the off-policy DPO path converges stably
@@ -117,6 +120,50 @@ def run_dpo(config: Any, epochs: int, target_token: int = 1) -> dict[str, Any]:
     }
 
 
+def _grpo_group_reward_fraction(model: nn.Module, module: Any) -> float:
+    """Fraction of GRPO groups whose most-likely response is the rewarded target."""
+    model.eval()
+    with torch.no_grad():
+        logits = model(module.response_tokens)
+    lp = functional.log_softmax(logits.float(), dim=-1)
+    lp = lp.gather(-1, module.response_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
+    lp = lp.reshape(-1, module.group_size)
+    return float((lp.argmax(-1) == 0).float().mean().item())
+
+
+def run_grpo(config: Any, epochs: int) -> dict[str, Any]:
+    """Run group-relative GRPO on its synthetic group task; return trajectories.
+
+    Uses the existing :class:`GRPODataModule` + ``--task grpo`` loop (the group
+    whose first response is the all-zero target is rewarded 1.0). Reports the
+    group-reward fraction and GRPO loss trajectories. Returns the policy too so
+    the comparison can evaluate it on the shared preference set.
+    """
+    from llm.data.modules.grpo import GRPODataModule
+    from llm.training.core.engine import TrainingEngine
+    from llm.training.tasks.grpo_task import GRPOTask
+
+    module = GRPODataModule(config)
+    module.prepare_data()
+    module.setup()
+    task = GRPOTask(config, module)
+    engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
+
+    group_traj: list[float] = []
+    loss_traj: list[float] = []
+    for epoch in range(epochs):
+        loss = engine._run_epoch(epoch)
+        loss_traj.append(float(loss))
+        group_traj.append(_grpo_group_reward_fraction(engine.model, module))
+
+    return {
+        "group_reward_fraction_trajectory": group_traj,
+        "final_group_reward_fraction": group_traj[-1],
+        "grpo_loss_trajectory": loss_traj,
+        "policy": engine.model,
+    }
+
+
 def run_ppo(config: Any, steps: int, prompts: list[str], target_token: int = 1) -> dict[str, Any]:
     """Run on-policy PPO with the target-token judge reward.
 
@@ -174,12 +221,18 @@ def run_ppo(config: Any, steps: int, prompts: list[str], target_token: int = 1) 
 
 
 def compare_dpo_vs_ppo(
-    config: Any, dpo_epochs: int, ppo_steps: int, prompts: list[str], target_token: int = 1
+    config: Any,
+    dpo_epochs: int,
+    ppo_steps: int,
+    prompts: list[str],
+    target_token: int = 0,
+    grpo_epochs: int = 40,
 ) -> dict[str, Any]:
-    """Run both aligners on the shared target-token preference task.
+    """Run DPO, PPO and GRPO on a shared target-token preference task.
 
-    Returns a dict with the DPO result, the PPO result (evaluated on the same
-    shared preference set), and a short human-readable summary.
+    The shared judge target is ``target_token`` (default 0, matching GRPO's
+    built-in group target). Returns a dict with the three aligner results, each
+    evaluated on the same shared preference set, plus a short summary.
     """
     from llm.data.modules.aifeedback import AIFeedbackDataModule
     from llm.training.rlhf.aifeedback import TargetTokenJudge
@@ -195,10 +248,18 @@ def compare_dpo_vs_ppo(
     ppo_pref = preference_fraction(ppo_policy, shared.chosen, shared.rejected)
     ppo_result = {**ppo, "final_preference_fraction": ppo_pref}
 
+    grpo = run_grpo(config, grpo_epochs)
+    grpo_policy = grpo.pop("policy")
+    grpo_pref = preference_fraction(grpo_policy, shared.chosen, shared.rejected)
+    grpo_result = {**grpo, "final_preference_fraction": grpo_pref}
+    grpo_first = float(grpo["group_reward_fraction_trajectory"][0])
+    grpo_final = float(grpo["final_group_reward_fraction"])
+
     summary = (
         f"DPO pref-fraction {dpo_result['preference_fraction_trajectory'][0]:.2f} -> "
         f"{dpo_result['final_preference_fraction']:.2f} over {dpo_epochs} epochs; "
         f"PPO mean reward {ppo_result['final_mean_reward']:.3f}, "
-        f"pref-fraction {ppo_result['final_preference_fraction']:.2f} after {ppo_steps} rollout step(s)."
+        f"pref-fraction {ppo_result['final_preference_fraction']:.2f} after {ppo_steps} rollout step(s); "
+        f"GRPO group-reward {grpo_first:.2f} -> {grpo_final:.2f} over {grpo_epochs} epochs."
     )
-    return {"dpo": dpo_result, "ppo": ppo_result, "summary": summary}
+    return {"dpo": dpo_result, "ppo": ppo_result, "grpo": grpo_result, "summary": summary}

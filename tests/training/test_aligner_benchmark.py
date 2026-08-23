@@ -16,7 +16,13 @@ import torch
 import torch.nn as nn
 
 
-def _config(vocab_size: int = 128, num_samples: int = 32, batch_size: int = 8, lr: float = 1e-3):
+def _config(
+    vocab_size: int = 128,
+    num_samples: int = 32,
+    batch_size: int = 8,
+    lr: float = 1e-3,
+    grpo_group_size: int = 4,
+):
     from llm.training.core.config import (
         Config,
         DistributedConfig,
@@ -27,7 +33,16 @@ def _config(vocab_size: int = 128, num_samples: int = 32, batch_size: int = 8, l
 
     return Config(
         model=ModelConfig(vocab_size=vocab_size, hidden_size=24, num_layers=2, num_heads=2, max_seq_len=24),
-        training=TrainingConfig(batch_size=batch_size, epochs=1, num_samples=num_samples, lr=lr, warmup_epochs=0),
+        training=TrainingConfig(
+            batch_size=batch_size,
+            epochs=1,
+            num_samples=num_samples,
+            lr=lr,
+            warmup_epochs=0,
+            grpo_group_size=grpo_group_size,
+            grpo_clip_eps=0.2,
+            grpo_kl_beta=0.01,
+        ),
         optimization=OptimizationConfig(use_compile=False, use_amp=False, num_workers=0),
         distributed=DistributedConfig(parallel_strategy="ddp"),
     )
@@ -96,6 +111,25 @@ def test_dpo_benchmark_preference_fraction_rises():
         torch.set_num_threads(prev)
 
 
+def test_grpo_benchmark_group_reward_fraction_rises():
+    """CPU e2e: the group-relative GRPO path converges — its group-reward
+    fraction (fraction of groups whose most-likely response is the rewarded
+    target) rises on CPU."""
+    from llm.training.rlhf.aligner_benchmark import run_grpo
+
+    prev = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        result = run_grpo(_config(), epochs=40)
+        traj = result["group_reward_fraction_trajectory"]
+        assert len(traj) == 40
+        assert traj[0] < 0.5, f"expected poor initial group reward, got {traj[0]:.3f}"
+        assert result["final_group_reward_fraction"] > 0.9
+        assert all(loss == loss for loss in result["grpo_loss_trajectory"])  # finite
+    finally:
+        torch.set_num_threads(prev)
+
+
 def test_ppo_benchmark_reports_finite_reward_trajectory():
     """The on-policy PPO leg runs the real PPOTrainer and captures a finite
     mean-reward trajectory.  No convergence asserted (sparse reward + tiny CPU
@@ -132,11 +166,18 @@ def test_compare_dpo_vs_ppo_returns_summary():
     torch.set_num_threads(1)
     try:
         torch.manual_seed(0)
-        out = compare_dpo_vs_ppo(_config(num_samples=16), dpo_epochs=3, ppo_steps=1, prompts=prompts)
-        assert set(out) == {"dpo", "ppo", "summary"}
+        out = compare_dpo_vs_ppo(
+            _config(num_samples=16),
+            dpo_epochs=3,
+            ppo_steps=1,
+            grpo_epochs=20,
+            prompts=prompts,
+        )
+        assert set(out) == {"dpo", "ppo", "grpo", "summary"}
         assert isinstance(out["summary"], str)
         assert out["summary"]
         assert out["dpo"]["final_preference_fraction"] > out["dpo"]["preference_fraction_trajectory"][0]
         assert 0.0 <= out["ppo"]["final_mean_reward"] <= 1.0
+        assert out["grpo"]["final_group_reward_fraction"] > out["grpo"]["group_reward_fraction_trajectory"][0]
     finally:
         torch.set_num_threads(prev)
