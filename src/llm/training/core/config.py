@@ -50,6 +50,13 @@ class ModelConfig(BaseModel):
     rope_theta: float = 10000.0
     use_alibi: bool = False  # ALiBi linear-bias PE (BLOOM-style, mha backend only)
 
+    # Optional sparse / streaming attention scheme (ROADMAP 15.1/15.2, TASK-243).
+    # ``kind`` selects one of the dispatched builders (block_sparse / streaming /
+    # longformer / bigbird); remaining keys are that builder's params. When set a
+    # caller can build the mask via
+    # ``llm.core.attn.sparse.build_config_attention_mask``.
+    attn_sparse: dict[str, Any] | None = Field(None, description="Optional sparse attention scheme config")
+
     @model_validator(mode="after")
     def check_consistency(self) -> ModelConfig:
         if self.intermediate_size is None:
@@ -111,6 +118,16 @@ class ModelConfig(BaseModel):
                 f"ALiBi is wired for 'mha' only in this milestone; switch "
                 f"attn_impl or set model.use_alibi=False."
             )
+        if self.attn_sparse is not None:
+            if not isinstance(self.attn_sparse, dict) or "kind" not in self.attn_sparse:
+                raise ValueError("attn_sparse must be a dict with a 'kind' key")
+            # Lazy import to avoid a config<->attention import cycle.
+            from llm.core.attn.sparse import SUPPORTED_KINDS
+
+            if self.attn_sparse["kind"] not in SUPPORTED_KINDS:
+                raise ValueError(
+                    f"unknown attn_sparse kind '{self.attn_sparse['kind']}'; expected one of {SUPPORTED_KINDS}"
+                )
         return self
 
 

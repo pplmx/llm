@@ -33,3 +33,40 @@ additive = mask_to_additive(mask)  # 0 / -inf，喂给任意 attn backend
 `tests/core/attn/test_sparse_dispatcher.py` 覆盖：`SUPPORTED_KINDS` 注册表；未知 kind
 报错；每个 kind 派发结果 === 直接调用底层 builder；builder 校验透传；以及每个 kind
 经真实 `sdpa` backend 与显式掩码逐位一致。
+
+## 在模型配置中选择稀疏方案（ModelConfig.attn_sparse）
+
+上面的 dispatcher 只负责“按名构建掩码”。要在训练 / 推理里真正把某个稀疏方案作为
+模型选项使用，可以在 `ModelConfig` 上设置 `attn_sparse`（`dict[str, Any] | None`），
+`kind` + 该 builder 的参数一起即可，例如：
+
+```python
+from llm.training.core.config import ModelConfig
+
+cfg = ModelConfig(
+    vocab_size=32000, hidden_size=4096, num_layers=32, num_heads=32, max_seq_len=4096,
+    attn_sparse={"kind": "streaming", "num_sink": 4, "window_size": 512},
+)
+```
+
+`ModelConfig` 会在校验阶段检查 `kind` 是否为 `SUPPORTED_KINDS` 之一、且必须存在。
+`ModelFactory.from_config(cfg)` 会把该配置透传给 `DecoderModel`（保存在
+`model.attn_sparse`）。随后任何一次前向，只要调用方没有显式传 `attn_mask`，
+`DecoderModel.forward` 就会用当前序列长度自动构造派发后的掩码：
+
+```python
+from llm.runtime.model_factory import ModelFactory
+
+model = ModelFactory.from_config(cfg)
+logits = model(input_ids)  # 同一前向自动应用 streaming 掩码
+```
+
+要点：
+
+- `build_config_attention_mask(config, seq_len)` 生成的是**纯 pattern** 掩码
+  （`causal=False`）；因果性由 decoder 自身的前向（`is_causal`）施加。这样
+  全 coverage 稀疏（如 `streaming` 的 `num_sink >= seq_len`）与稠密因果完全一致
+  —— 这是“稀疏是稠密的约束”这一 CPU parity 不变量。
+- 显式传入的 `attn_mask` 优先级更高，会覆盖自动构造的稀疏掩码。
+- CPU parity 验证在 `tests/core/attn/test_sparse_model_config.py`：
+  genuinely 稀疏会改变 decoder 输出，而全 coverage 稀疏与稠密逐位一致。

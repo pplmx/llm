@@ -112,6 +112,7 @@ def decoder_kwargs_from_config(config: ModelConfig, **overrides: Any) -> dict[st
         "use_rope": config.use_rope,
         "rope_theta": config.rope_theta,
         "use_alibi": config.use_alibi,
+        "attn_sparse": config.attn_sparse,
     }
     kwargs.update(overrides)
     return kwargs

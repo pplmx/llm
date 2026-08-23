@@ -69,6 +69,7 @@ class DecoderModel(nn.Module):
         use_rope: bool = False,
         rope_theta: float = 10000.0,
         use_alibi: bool = False,  # ALiBi linear-bias PE (BLOOM-style, mha backend)
+        attn_sparse: dict | None = None,  # sparse/streaming scheme config (dict or None)
     ):
         """
         Initializes the DecoderModel.
@@ -106,6 +107,11 @@ class DecoderModel(nn.Module):
         # loader honors an external checkpoint's ``sliding_window`` instead of
         # running full-context attention past the window (RIL ISS-242).
         self.window_size = window_size
+        # Sparse/streaming attention scheme is model-defining too: when set, the
+        # forward builds the dispatched mask from the current sequence length so
+        # training/inference can select a scheme by name (RIL TASK-243). Stored
+        # as an immutable mapping snapshot.
+        self.attn_sparse = dict(attn_sparse) if attn_sparse else None
         # Bias flags are model-defining too: real Llama/Mistral are bias-free
         # (qkv/mlp/lm_head), while our grown-from-scratch default is biased.
         # Store them so hf_publisher persists the actual values and the loader
@@ -202,6 +208,14 @@ class DecoderModel(nn.Module):
             Logits tensor, or ``(logits, kv_caches)`` when ``use_cache=True``;
             in the paged path the second element is ``None``.
         """
+        # Sparse/streaming scheme selected by name in the model config: build the
+        # dispatched mask from the current sequence length unless the caller
+        # supplied an explicit mask (which always wins).
+        if attn_mask is None and self.attn_sparse is not None:
+            from llm.core.attn.sparse import build_config_attention_mask
+
+            attn_mask = build_config_attention_mask(self, input_ids.shape[1])
+
         if self._gradient_checkpointing and use_cache:
             raise ValueError("Gradient checkpointing is incompatible with use_cache=True. ")
 
