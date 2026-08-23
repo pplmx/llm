@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 118,
+  "round": 119,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:00:43+00:00",
+  "updated_at": "2026-08-23T09:06:14+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 118,
+      "touched_round": 119,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -12202,10 +12202,10 @@
     "HYP-14": {
       "id": "HYP-14",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "stale",
+      "version": 2,
       "created_at": "2026-08-22T01:14:06+00:00",
-      "updated_at": "2026-08-22T01:14:06+00:00",
+      "updated_at": "2026-08-23T09:01:52+00:00",
       "touched_round": 89,
       "confidence": 1.0,
       "title": "PP stage scheduling reproduces serial LM training (loss + grads bit-exact)",
@@ -14581,6 +14581,68 @@
       "touched_round": 118,
       "commit": "2f4c15d",
       "summary": "Add flash_attn+attn_sparse NotImplementedError guard in DecoderModel init; regression test; docs+ROADMAP"
+    },
+    "DEC-081": {
+      "id": "DEC-081",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:05:30+00:00",
+      "updated_at": "2026-08-23T09:05:30+00:00",
+      "touched_round": 119,
+      "title": "Reject non-positive temperature in generation sampling",
+      "rationale": "Deep-dive found sample_next_token/sampling_probs accept negative temperature: logits/temperature with a negative divisor inverts the logits, silently turning the sampler anti-greedy (draws the lowest-logit token) with no error. Reject negative temperature at the sampling choke points instead of silently corrupting generation; temperature==0 stays the greedy path.",
+      "alternatives_rejected": "Silently accepting negative temperature unconditionally corrupts output; fixing it only in one caller leaves the sampling_probs path (used by speculative acceptance scoring) unprotected; a softmax-sign flip hack is more obscure than a clear ValueError."
+    },
+    "ISS-287": {
+      "id": "ISS-287",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:05:30+00:00",
+      "updated_at": "2026-08-23T09:06:14+00:00",
+      "touched_round": 119,
+      "title": "Negative temperature silently inverts sampling (anti-greedy)",
+      "summary": "sampling_probs divides logits by temperature with no guard; a negative temperature flips logit sign so the sampler draws the LOWEST-logit (worst) token silently, and temperature==0 passed directly to sampling_probs divides by zero. sample_next_token only special-cases temperature==0, not negative values."
+    },
+    "TASK-249": {
+      "id": "TASK-249",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:05:30+00:00",
+      "updated_at": "2026-08-23T09:06:14+00:00",
+      "touched_round": 119,
+      "category": "correctness",
+      "severity": 0.4,
+      "effort": 0.3,
+      "confidence": 0.9,
+      "unlock_factor": 1.0,
+      "title": "Validate temperature in sample_next_token/sampling_probs (raise on <=0) + regression tests",
+      "summary": "Raise ValueError for temperature<0 in sample_next_token (keep ==0 greedy) and temperature<=0 in sampling_probs; preserve greedy and positive sampling behavior; add CPU regression tests; docs."
+    },
+    "EV-250": {
+      "id": "EV-250",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:06:10+00:00",
+      "updated_at": "2026-08-23T09:06:10+00:00",
+      "touched_round": 119,
+      "source": "8cf2e3e tests/inference/test_sampling.py::test_negative_temperature_rejected",
+      "confidence": 1.0,
+      "summary": "Live reproduction: sampling_probs with temperature=-1 inverted logits (top prob moved from argmax token 0 to worst token 4), sample_next_token(t=-2) drew lowest-logit token; now ValueError raised for negative temperature in sample_next_token and <=0 in sampling_probs; temperature==0 greedy and positive sampling still pass; eager+speculative suites green"
+    },
+    "CHG-262": {
+      "id": "CHG-262",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:06:10+00:00",
+      "updated_at": "2026-08-23T09:06:10+00:00",
+      "touched_round": 119,
+      "commit": "8cf2e3e",
+      "summary": "Validate temperature in sample_next_token (>=0) and sampling_probs (>0); keep greedy; regression tests + ROADMAP"
     }
   },
   "edges": [
@@ -21404,6 +21466,42 @@
       "to": "ISS-286",
       "type": "resolves",
       "created_at": "2026-08-23T09:00:43+00:00"
+    },
+    {
+      "from": "TASK-249",
+      "to": "ISS-287",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:05:33+00:00"
+    },
+    {
+      "from": "ISS-287",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:05:33+00:00"
+    },
+    {
+      "from": "DEC-081",
+      "to": "COMP-012",
+      "type": "governs",
+      "created_at": "2026-08-23T09:05:33+00:00"
+    },
+    {
+      "from": "DEC-081",
+      "to": "TASK-249",
+      "type": "governs",
+      "created_at": "2026-08-23T09:05:33+00:00"
+    },
+    {
+      "from": "CHG-262",
+      "to": "TASK-249",
+      "type": "implements",
+      "created_at": "2026-08-23T09:06:14+00:00"
+    },
+    {
+      "from": "CHG-262",
+      "to": "ISS-287",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:06:14+00:00"
     }
   ]
 }
