@@ -41,6 +41,7 @@ llm-train --task <task> [OPTIONS]
 | `dpo`        | 直接偏好优化                                          |
 | `distill`    | 知识蒸馏（student 蒸馏冻结的 teacher checkpoint）     |
 | `multimodal` | 多模态 LM（模态 prefix 融合到文本）                   |
+| `grpo`       | GRPO 组相对策略优化（group-relative advantage）       |
 | `reward`     | Reward model 训练                                     |
 | `ppo`        | PPO RLHF 对齐                                         |
 | `regression` | 合成回归 demo                                         |

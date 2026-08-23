@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GRPO (Group Relative Policy Optimization)** (ROADMAP 阶段十一 / RIL TASK-229):
+  - `llm/training/rlhf/grpo.py`: `group_advantages` (per-group z-score) and
+    `GRPOLoss` (clipped importance-weighted surrogate + K3 KL-to-reference).
+  - `--task grpo` (`GRPOTask` + `GRPODataModule`): standard-loop training over
+    reward-scored synthetic groups; config knobs `grpo_group_size` /
+    `grpo_clip_eps` / `grpo_kl_beta`. Initial-policy log-probs are snapshotted as
+    `old`, a frozen reference supplies the KL penalty.
+  - CPU e2e: the rewarded response becomes the group-favored one (group-reward
+    hit-rate 0 -> ~1). Docs: [GRPO guide](docs/guides/grpo.md) + CLI reference row.
+
 - **Multimodal slice 2 — modal-fusion model + training task** (ROADMAP 阶段十二 / RIL TASK-227):
   - `llm/multimodal/model.py`: standalone `MultimodalModel` (wraps a `DecoderModel`
     without patching it) that prepends the registry-encoded `modal_embeds` as a

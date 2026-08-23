@@ -1,6 +1,7 @@
 """Register all built-in training tasks."""
 
 from llm.data.modules.dpo import DPODataModule
+from llm.data.modules.grpo import GRPODataModule
 from llm.data.modules.prompt import PromptDataModule
 from llm.data.modules.reward import RewardDataModule
 from llm.data.modules.sft import SFTDataModule
@@ -12,6 +13,7 @@ from llm.multimodal.task import MultimodalTask
 from llm.training.task_registry import TASK_REGISTRY
 from llm.training.tasks.distill_task import DistillationTask
 from llm.training.tasks.dpo_task import DPOTask
+from llm.training.tasks.grpo_task import GRPOTask
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.ppo_task import PPOTask
 from llm.training.tasks.regression_task import RegressionTask
@@ -30,6 +32,9 @@ TASK_REGISTRY.register("sft", SFTTask, SFTDataModule, description="Supervised fi
 TASK_REGISTRY.register("dpo", DPOTask, DPODataModule, description="Direct preference optimization")
 TASK_REGISTRY.register(
     "distill", DistillationTask, TextDataModule, description="Knowledge distillation (student vs frozen teacher)"
+)
+TASK_REGISTRY.register(
+    "grpo", GRPOTask, GRPODataModule, description="GRPO (group-relative advantage policy optimization)"
 )
 TASK_REGISTRY.register(
     "multimodal", MultimodalTask, MultimodalDataModule, description="Multimodal LM (modal-fusion prefix conditioning)"

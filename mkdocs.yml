@@ -125,6 +125,7 @@ nav:
       - guides/pruning.md
       - guides/lowrank.md
       - guides/multimodal.md
+      - guides/grpo.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md

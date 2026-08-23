@@ -460,6 +460,24 @@ class TrainingConfig(BaseModel):
         ),
     )
 
+    # GRPO (Group Relative Policy Optimization, ROADMAP 阶段十一 / RIL TASK-229).
+    grpo_clip_eps: float = Field(
+        0.2,
+        ge=0,
+        lt=1,
+        description="GRPO policy-ratio clipping range (1-eps, 1+eps).",
+    )
+    grpo_kl_beta: float = Field(
+        0.0,
+        ge=0,
+        description="GRPO K3 KL-to-reference penalty weight (0 disables).",
+    )
+    grpo_group_size: int = Field(
+        4,
+        gt=1,
+        description="Number of GRPO responses sampled per group/prompt.",
+    )
+
     @field_validator("peft_method", mode="after")
     @classmethod
     def _validate_peft_method(cls, value: str | None) -> str | None:

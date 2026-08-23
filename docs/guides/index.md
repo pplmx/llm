@@ -24,6 +24,7 @@
     - [模型剪枝](pruning.md) — `llm-prune`、`PrunedLinear` weight_mask、magnitude/random 策略
     - [低秩分解](lowrank.md) — `llm-decompose`、`LowRankLinear` SVD U-V、rank 旋钮
     - [多模态扩展](multimodal.md) — `ModalityEncoderRegistry` + `MultimodalDataModule` 契约 spike
+    - [GRPO](grpo.md) — 组相对策略优化（`--task grpo`、group advantage + 裁剪 policy loss）
 
 - ⚡ **推理与部署**
 
