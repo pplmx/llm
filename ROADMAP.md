@@ -524,7 +524,7 @@
 
 - [x] 实现 Sliding Window Attention
 - [x] **实现 Block Sparse Attention** (块稀疏掩码切片: `build_block_sparse_mask` local window + global + random 块, `mask_to_additive`, CPU parity 不变量——window+global 全覆盖 === 稠密 causal; 见 [docs/guides/block_sparse.md](docs/guides/block_sparse.md))
-- [ ] 研究 Longformer-style Attention
+- [x] **研究 Longformer-style Attention** (dilated sliding-window 掩码切片: `build_longformer_mask` dilation 旋钮 + global, `dilation=1`+无 global === 普通滑窗 parity, 稀释掩码是稠密窗口子集; 见 [docs/guides/longformer.md](docs/guides/longformer.md))
 - [ ] 探索 BigBird Attention
 
 #### 15.3 高效微调技术

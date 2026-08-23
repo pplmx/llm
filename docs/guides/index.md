@@ -31,6 +31,7 @@
     - [Constitutional AI](constitutional.md) — 规则 constitution + 自批判→改写切片
     - [Block Sparse Attention](block_sparse.md) — 块稀疏注意力掩码 + CPU parity
     - [StreamingLLM](streaming_llm.md) — attention-sink 流式掩码 + CPU parity
+    - [Longformer](longformer.md) — dilated 滑窗注意力掩码 + CPU parity
 
 - ⚡ **推理与部署**
 
