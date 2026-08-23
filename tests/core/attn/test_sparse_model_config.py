@@ -16,6 +16,7 @@ import pytest
 import torch
 
 from llm.core.attn.sparse import build_config_attention_mask
+from llm.models.decoder import DecoderModel
 from llm.runtime.model_factory import ModelFactory
 from llm.training.core.config import ModelConfig
 
@@ -55,6 +56,28 @@ def test_config_validates_attn_sparse_kind():
 def test_helper_returns_none_when_unset():
     assert build_config_attention_mask(_config(), SEQ) is None
     assert build_config_attention_mask(object(), SEQ) is None
+
+
+def test_sparse_scheme_rejects_flash_attn_backend():
+    """RIL TASK-248: the flash_attn backend ignores ``attn_mask``, so a sparse
+    scheme with it would silently run dense attention. The model refuses loudly
+    instead of building a scheme that has no effect. (mha/mla route through the
+    SDPA wrapper and do consume the mask, so they remain supported.)"""
+    # mha + sparse stays supported (goes through sdpa).
+    _decoder(attn_sparse={"kind": "streaming", "num_sink": 2, "window_size": 4})
+    with pytest.raises(NotImplementedError, match="flash_attn"):
+        DecoderModel(
+            vocab_size=32,
+            hidden_size=16,
+            num_layers=2,
+            num_heads=2,
+            max_seq_len=SEQ,
+            attn_impl="flash_attn",
+            attn_sparse={"kind": "streaming", "num_sink": 2, "window_size": 4},
+            embedding_dropout_p=0.0,
+            attn_dropout_p=0.0,
+            mlp_dropout_p=0.0,
+        )
 
 
 def test_helper_returns_mask_out_convention():

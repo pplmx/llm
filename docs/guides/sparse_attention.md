@@ -99,3 +99,9 @@ key（RIL TASK-246）。CPU parity 验证在
 `[k_len, k_len]` 的布尔掩码；且缓存落在 `self.device`，避免 builder 返回 CPU 张量
 与 CUDA 因果掩码 OR 时的设备不匹配（RIL TASK-247）。验证在
 `tests/serving/test_engine.py::test_engine_caches_sparse_pattern_mask`。
+
+后端兼容性：稀疏掩码只有走 sdpa 包装器的 backend（`attn_impl="mha"` / `"mla"`）会真正
+消费；`flash_attn` 后端明确**忽略** `attn_mask`，因此 `ModelConfig.attn_sparse` 配
+`attn_impl="flash_attn"` 会在构造时直接抛 `NotImplementedError`（与 `use_alibi` 对
+非 mha 的处理一致），避免用户以为稀疏生效、实际跑稠密（RIL TASK-248）。验证在
+`tests/core/attn/test_sparse_model_config.py::test_sparse_scheme_rejects_flash_attn_backend`。

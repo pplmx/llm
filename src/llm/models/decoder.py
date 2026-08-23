@@ -86,6 +86,18 @@ class DecoderModel(nn.Module):
                 f"use_alibi=True is only supported with attn_impl='mha', got attn_impl={attn_impl!r}; "
                 "flash_attn/MLA have no additive-bias channel in this milestone"
             )
+        # Sparse/streaming scheme (RIL TASK-248): the pattern mask is consumed only
+        # by backends that route through the sdpa wrapper (mha and mla). The
+        # flash_attn backend explicitly ignores ``attn_mask``, so combining a
+        # sparse scheme with it would silently run dense attention — refuse loudly
+        # instead of advertising a scheme that has no effect.
+        if attn_sparse is not None and attn_impl == "flash_attn":
+            raise NotImplementedError(
+                "attn_sparse is not supported with attn_impl='flash_attn'; flash_attn "
+                "ignores the boolean sparse mask and would silently run dense "
+                "attention. Use attn_impl='mha' or 'mla' (both route through the "
+                "SDPA wrapper that consumes the mask)"
+            )
         factory_kwargs = make_factory_kwargs(device, dtype)
         resolved_norm_factory = _resolve_norm_factory(norm_impl)
         self.hidden_size = hidden_size
