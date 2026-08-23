@@ -58,6 +58,22 @@ class DPODataset(Dataset):
                         if not all(k in item for k in ("prompt", "chosen", "rejected")):
                             logger.warning("Skipping DPO item missing required keys (prompt, chosen, rejected)")
                             continue
+                        # An over-long prompt (already >= max_seq_len) truncates
+                        # the completion ENTIRELY in `_process_sequence`
+                        # (truncation cuts from the end), so the labels become
+                        # all -100 — an EMPTY preference signal that silently
+                        # contributes a constant log(2) to the DPO loss (deep-
+                        # dive finding). Drop the row with a warning instead of
+                        # training on it.
+                        prompt_ids = self.tokenizer.encode(item["prompt"])
+                        if len(prompt_ids) >= self.max_seq_len:
+                            logger.warning(
+                                "Skipping DPO item whose prompt alone reaches max_seq_len=%d: "
+                                "the completion is truncated away entirely and the preference "
+                                "signal is empty.",
+                                self.max_seq_len,
+                            )
+                            continue
                         data.append(item)
         except FileNotFoundError:
             raise FileNotFoundError(f"DPO data file not found: {self.file_path}")

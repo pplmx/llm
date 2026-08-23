@@ -135,6 +135,22 @@ def test_dpo_dataset_padding_small_sequence(tmp_path, tokenizer):
     assert item["chosen_labels"][seq_len:].tolist() == [-100] * (10 - seq_len)
 
 
+def test_dpo_dataset_overlong_prompt_dropped(tmp_path, tokenizer):
+    """A prompt that alone reaches max_seq_len truncates the completion
+    ENTIRELY (all-(-100) labels = an empty preference signal that would
+    silently contribute a constant log(2) to the DPO loss). The row is dropped
+    at load instead of trained on (deep-dive finding)."""
+    long_prompt = "P" * 30  # > max_seq_len=20 tokens
+    file_path = tmp_path / "overlong.jsonl"
+    with file_path.open("w") as f:
+        f.write('{"prompt": "Q1", "chosen": "A1", "rejected": "R1"}\n')
+        f.write(json.dumps({"prompt": long_prompt, "chosen": "Good", "rejected": "Bad"}) + "\n")
+        f.write('{"prompt": "Q2", "chosen": "A2", "rejected": "R2"}\n')
+
+    dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=20)
+    assert len(dataset) == 2, "the over-long-prompt row must be dropped"
+
+
 def test_dpo_dataset_directory_as_file(tmp_path, tokenizer):
     """OSError raised when file path is a directory."""
     with pytest.raises(OSError, match="Error reading DPO file"):
