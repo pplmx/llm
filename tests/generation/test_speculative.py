@@ -87,6 +87,24 @@ def test_speculative_matches_eager_greedy_when_draft_equals_target():
     assert spec_out == eager_out, (eager_out, spec_out)
 
 
+@pytest.mark.parametrize(("draft_seed", "max_tokens"), [(123, 1), (99, 4), (5, 8)])
+def test_speculative_greedy_matches_eager_with_nonmatching_draft(draft_seed, max_tokens):
+    """RIL TASK-251: greedy speculative == greedy eager even when the (random)
+    draft never matches the target's argmax — this forces the rejection /
+    correction path (the existing draft==target test only covers accept-all,
+    so this guards the fallback branch against regressions)."""
+    target = _make_tiny_decoder(seed=42)
+    draft = _make_tiny_decoder(seed=draft_seed)  # different init -> rarely matches
+    tok = StubTokenizer()
+    prompt = "abc def ghi"
+
+    eager_out = eager_generate(target, tok, prompt, max_new_tokens=max_tokens, temperature=0.0, use_cache=False)
+    spec_out = prompt + "".join(
+        speculative_generate(target, draft, tok, prompt, max_new_tokens=max_tokens, gamma=4, temperature=0.0)
+    )
+    assert spec_out == eager_out, (eager_out, spec_out)
+
+
 def test_speculative_masks_undecodable_tail_vocab():
     """RIL ISS-125 on the speculative backend: draft candidates AND the
     target-verified bonus must be bounded to the tokenizer's decodeable
