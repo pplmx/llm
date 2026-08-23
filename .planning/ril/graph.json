@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 119,
+  "round": 120,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T09:06:14+00:00",
+  "updated_at": "2026-08-23T09:09:01+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 119,
+      "touched_round": 120,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -14643,6 +14643,68 @@
       "touched_round": 119,
       "commit": "8cf2e3e",
       "summary": "Validate temperature in sample_next_token (>=0) and sampling_probs (>0); keep greedy; regression tests + ROADMAP"
+    },
+    "DEC-082": {
+      "id": "DEC-082",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:08:27+00:00",
+      "updated_at": "2026-08-23T09:08:27+00:00",
+      "touched_round": 120,
+      "title": "Reject invalid sampling hyperparameters (repetition_penalty<=0, top_k<1)",
+      "rationale": "Deep-dive continuation: apply_repetition_penalty with 0 divides by zero -> inf logits and with a negative value flips seen-score signs, silently corrupting the distribution; sampling_probs with top_k<=0 crashes torch.topk with a cryptic IndexError. Validate both at the sampling choke points so silent corruption and confusing crashes are replaced by clear errors; values in (0,1] for repetition (encourage/neutral) and top_k>=1 are preserved.",
+      "alternatives_rejected": "Fixing only in callers leaves the shared helpers unprotected (speculative + eager both use them); warning logs are too easy to miss vs a hard error; changing repetition in (0,1) semantics would break legitimate anti-repetition tuning."
+    },
+    "ISS-288": {
+      "id": "ISS-288",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:08:27+00:00",
+      "updated_at": "2026-08-23T09:09:01+00:00",
+      "touched_round": 120,
+      "title": "Invalid repetition_penalty/top_k silently corrupt or crash sampling",
+      "summary": "apply_repetition_penalty accepts <=0: 0 -> inf logits (NaN softmax), negative -> flipped sign; sampling_probs accepts top_k<=0 which raises a cryptic IndexError from torch.topk. Neither validates inputs at the shared helpers both eager and speculative call."
+    },
+    "TASK-250": {
+      "id": "TASK-250",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-23T09:08:27+00:00",
+      "updated_at": "2026-08-23T09:09:01+00:00",
+      "touched_round": 120,
+      "category": "correctness",
+      "severity": 0.4,
+      "effort": 0.3,
+      "confidence": 0.9,
+      "unlock_factor": 1.0,
+      "title": "Validate repetition_penalty (>0) and top_k (>=1) in sampling + regression tests",
+      "summary": "Raise ValueError for repetition_penalty<=0 in apply_repetition_penalty and top_k<1 in sampling_probs; preserve (0,1] repetition and top_k>=1; add CPU regression tests; docs."
+    },
+    "EV-251": {
+      "id": "EV-251",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:08:57+00:00",
+      "updated_at": "2026-08-23T09:08:57+00:00",
+      "touched_round": 120,
+      "source": "dd47721 tests/inference/test_sampling.py::test_invalid_penalty_and_topk_rejected",
+      "confidence": 1.0,
+      "summary": "Live reproduction: repetition_penalty=0 produced [inf,inf,-0.0] (non-finite) and top_k=0 raised cryptic IndexError 'index -1 out of bounds for dim 0 size 0'; now clear ValueError for repetition_penalty<=0 and top_k<1; (0,1] repetition and top_k>=1 preserved; eager+speculative suites green"
+    },
+    "CHG-263": {
+      "id": "CHG-263",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T09:08:57+00:00",
+      "updated_at": "2026-08-23T09:08:57+00:00",
+      "touched_round": 120,
+      "commit": "dd47721",
+      "summary": "Validate repetition_penalty>0 and top_k>=1 in sampling helpers; clear ValueErrors; regression tests + ROADMAP"
     }
   },
   "edges": [
@@ -21502,6 +21564,42 @@
       "to": "ISS-287",
       "type": "resolves",
       "created_at": "2026-08-23T09:06:14+00:00"
+    },
+    {
+      "from": "TASK-250",
+      "to": "ISS-288",
+      "type": "addresses",
+      "created_at": "2026-08-23T09:08:32+00:00"
+    },
+    {
+      "from": "ISS-288",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-23T09:08:32+00:00"
+    },
+    {
+      "from": "DEC-082",
+      "to": "COMP-012",
+      "type": "governs",
+      "created_at": "2026-08-23T09:08:32+00:00"
+    },
+    {
+      "from": "DEC-082",
+      "to": "TASK-250",
+      "type": "governs",
+      "created_at": "2026-08-23T09:08:32+00:00"
+    },
+    {
+      "from": "CHG-263",
+      "to": "TASK-250",
+      "type": "implements",
+      "created_at": "2026-08-23T09:09:01+00:00"
+    },
+    {
+      "from": "CHG-263",
+      "to": "ISS-288",
+      "type": "resolves",
+      "created_at": "2026-08-23T09:09:01+00:00"
     }
   ]
 }
