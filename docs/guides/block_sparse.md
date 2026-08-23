@@ -42,3 +42,7 @@ additive = mask_to_additive(mask)   # attn_bias: 0 / -inf
 `tests/core/attn/test_block_sparse.py` 覆盖：参数校验；global/window 全覆盖 === 稠密
 causal 的 parity；非 causal 全覆盖全 1；global 恒被 attend；稀疏块 softmax 权重为 0；
 causal 屏蔽未来；random 块种子确定；`mask_to_additive` 校验。
+
+**端到端验证**：`tests/core/attn/test_sparse_attention_integration.py` 证明这些掩码确实
+作用于**真实注意力计算**——喂进仓库的 `sdpa` backend 与显式手动掩码的注意力逐位一致，
+且走 `MultiHeadAttention.forward` 时稀疏会改变输出、全覆盖与稠密逐位一致。

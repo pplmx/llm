@@ -41,3 +41,7 @@ additive = mask_to_additive(mask)  # attn_bias: 0 / -inf
 `tests/core/attn/test_streaming_llm.py` 覆盖：参数校验；sink/window 全覆盖 === 稠密
 causal 的 parity；sink 恒被 attend；旧的非 sink 中间 token 被屏蔽且 softmax 权重为 0；
 causal 屏蔽未来（即使该位置在 sink 范围内）；random 无关的可复现结构。
+
+**端到端验证**：`tests/core/attn/test_sparse_attention_integration.py` 把流式掩码喂进
+仓库的 `sdpa` backend与 `MultiHeadAttention.forward`，与显式手动掩码的注意力逐位一致、
+全覆盖与稠密逐位一致——掩码对真实注意力计算生效。
