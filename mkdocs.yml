@@ -133,6 +133,7 @@ nav:
       - guides/block_sparse.md
       - guides/streaming_llm.md
       - guides/longformer.md
+      - guides/big_bird.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md
