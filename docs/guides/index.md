@@ -25,6 +25,7 @@
     - [低秩分解](lowrank.md) — `llm-decompose`、`LowRankLinear` SVD U-V、rank 旋钮
     - [多模态扩展](multimodal.md) — `ModalityEncoderRegistry` + `MultimodalDataModule` 契约 spike
     - [GRPO](grpo.md) — 组相对策略优化（`--task grpo`、group advantage + 裁剪 policy loss）
+    - [Rejection Sampling](rejection_sampling.md) — best-of-N / top-K 过滤高奖励响应再 SFT
 
 - ⚡ **推理与部署**
 

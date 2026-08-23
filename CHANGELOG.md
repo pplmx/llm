@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rejection Sampling** (ROADMAP 阶段十一 / RIL TASK-230):
+  - `llm/training/rlhf/rejection_sampling.py`: `select_top_k` /
+    `select_above_threshold` / `rejection_sample` (mask + kept/base reward stats).
+  - `llm/data/modules/rejection_sample.py`: `RejectionSampleDataModule` emits the
+    kept (high-reward) responses as an SFT-style next-token set, SFT-on-selected.
+  - CPU e2e: kept responses' mean reward > base, and SFT raises the model's
+    likelihood of the kept responses. Docs: [guide](docs/guides/rejection_sampling.md).
+
 - **GRPO (Group Relative Policy Optimization)** (ROADMAP 阶段十一 / RIL TASK-229):
   - `llm/training/rlhf/grpo.py`: `group_advantages` (per-group z-score) and
     `GRPOLoss` (clipped importance-weighted surrogate + K3 KL-to-reference).

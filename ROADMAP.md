@@ -358,7 +358,7 @@
 - [ ] 研究并实现 RLAIF (AI Feedback)
 - [x] 实现 GRPO (Group Relative Policy Optimization: `group_advantages` z-score + 裁剪 `GRPOLoss` + `--task grpo`，合成奖励分组 CPU e2e 显示组奖励随训练提升；见 [docs/guides/grpo.md](docs/guides/grpo.md))
 - [ ] 探索 Constitutional AI
-- [ ] 实现 Rejection Sampling
+- [x] 实现 Rejection Sampling (`rejection_sample` top-K/threshold 选择 + `RejectionSampleDataModule` SFT-on-selected，CPU e2e 显示保留集平均奖励高于原始样本且 SFT 后保留响应似然提升；见 [docs/guides/rejection_sampling.md](docs/guides/rejection_sampling.md))
 
 ---
 

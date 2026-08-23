@@ -126,6 +126,7 @@ nav:
       - guides/lowrank.md
       - guides/multimodal.md
       - guides/grpo.md
+      - guides/rejection_sampling.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md
