@@ -77,3 +77,10 @@ HF `config.json`，并在 `from_pretrained` 时还原（走
 可以 训练 → 保存 → 重载 → 推理 全链路保留其稀疏方案，不会重载后退化为稠密。
 往返 parity 验证在 `tests/compat/test_hf_loader.py::test_sparse_attention_roundtrip`
 （重载后的 forward 与保存前逐位一致；全 coverage 方案同样保留稠密等价性）。
+
+解码（KV-cache generation）：`DecoderModel.forward` 自动构造掩码时按**有效 key
+历史长度**（`key_len = cache 长度 + 当前 token`）生成 `[Sq, Sk]` 矩形掩码，而不是
+按 1-token 输入生成退化方形掩码——否则 sink + window 永远无法约束已缓存的过去
+key，长程流式生成的稀疏方案形同虚设（RIL TASK-245）。eager 生成循环因此能
+端到端工作：稀疏 decode 会改变输出，而全 coverage 稀疏 decode 与稠密 decode
+一致（CPU parity 验证在 `tests/core/attn/test_sparse_model_config.py`。

@@ -208,14 +208,6 @@ class DecoderModel(nn.Module):
             Logits tensor, or ``(logits, kv_caches)`` when ``use_cache=True``;
             in the paged path the second element is ``None``.
         """
-        # Sparse/streaming scheme selected by name in the model config: build the
-        # dispatched mask from the current sequence length unless the caller
-        # supplied an explicit mask (which always wins).
-        if attn_mask is None and self.attn_sparse is not None:
-            from llm.core.attn.sparse import build_config_attention_mask
-
-            attn_mask = build_config_attention_mask(self, input_ids.shape[1])
-
         if self._gradient_checkpointing and use_cache:
             raise ValueError("Gradient checkpointing is incompatible with use_cache=True. ")
 
@@ -228,6 +220,18 @@ class DecoderModel(nn.Module):
         start_pos = 0
         if kv_caches is not None and kv_caches[0].seq_len > 0:
             start_pos = kv_caches[0].seq_len
+
+        # Sparse/streaming scheme selected by name in the model config: unless the
+        # caller supplied an explicit mask (which always wins), build the
+        # pattern-only mask over the *key history*. A KV-cache decode step has
+        # ``Sq``=current-token rows but ``Sk``=accumulated-key columns, so the
+        # mask cannot be square here — otherwise sink/window would never
+        # constrain the cached past keys (RIL TASK-245).
+        if attn_mask is None and self.attn_sparse is not None:
+            from llm.core.attn.sparse import build_config_attention_mask
+
+            key_len = start_pos + input_ids.shape[1]
+            attn_mask = build_config_attention_mask(self, input_ids.shape[1], key_len=key_len)
 
         hidden_states = self.embedding_layer(input_ids, start_pos=start_pos, position_ids=position_ids)
 
