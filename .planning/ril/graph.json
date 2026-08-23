@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 114,
+  "round": 115,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T08:22:43+00:00",
+  "updated_at": "2026-08-23T08:30:03+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 71,
+      "touched_round": 115,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -14287,22 +14287,22 @@
     "ISS-282": {
       "id": "ISS-282",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T08:22:40+00:00",
-      "updated_at": "2026-08-23T08:22:40+00:00",
-      "touched_round": 114,
+      "updated_at": "2026-08-23T08:27:49+00:00",
+      "touched_round": 115,
       "title": "Sparse/streaming scheme lost on save/load (attn_sparse not persisted)",
       "summary": "hf_publisher builds the HF config from model-defining flags but omits attn_sparse, so a ModelConfig with a sparse scheme saved then loaded falls back to dense attention. Add persistence + loader roundtrip parity."
     },
     "TASK-244": {
       "id": "TASK-244",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T08:22:40+00:00",
-      "updated_at": "2026-08-23T08:22:40+00:00",
-      "touched_round": 114,
+      "updated_at": "2026-08-23T08:27:49+00:00",
+      "touched_round": 115,
       "category": "core-feature",
       "severity": 0.4,
       "effort": 0.8,
@@ -14310,6 +14310,68 @@
       "unlock_factor": 1.0,
       "title": "Persist attn_sparse in hf_publisher/loader + save-load roundtrip parity",
       "summary": "Extend hf_publisher._build_hf_config to write attn_sparse (kind+params) and the loader to honor it back into DecoderModel; CPU test: sparse config save->load->forward equals pre-save sparse forward; full-coverage parity survives reload; docs."
+    },
+    "EV-245": {
+      "id": "EV-245",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:27:46+00:00",
+      "updated_at": "2026-08-23T08:27:46+00:00",
+      "touched_round": 115,
+      "source": "b32dca2 tests/compat/test_hf_loader.py::test_sparse_attention_roundtrip",
+      "confidence": 1.0,
+      "summary": "attn_sparse persisted into HF config.json by hf_publisher, mapped back by get_config_mapping, restored by hf_loader.from_pretrained: reloaded model's attn_sparse equals pre-save scheme and reloaded forward is bit-identical to pre-save sparse forward; full-coverage scheme keeps dense-equivalent accross reload"
+    },
+    "CHG-257": {
+      "id": "CHG-257",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:27:46+00:00",
+      "updated_at": "2026-08-23T08:27:46+00:00",
+      "touched_round": 115,
+      "commit": "b32dca2",
+      "summary": "Persist attn_sparse (kind+params) in hf_publisher config; map back in get_config_mapping; restore in hf_loader.from_pretrained; roundtrip parity test + guide docs"
+    },
+    "DEC-077": {
+      "id": "DEC-077",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:29:58+00:00",
+      "updated_at": "2026-08-23T08:29:58+00:00",
+      "touched_round": 115,
+      "title": "Apply sparse/streaming scheme during KV-cache decode (key-history mask)",
+      "rationale": "sparse/streaming attention (esp. StreamingLLM) exists to constrain attention over long generated key history, but TASK-244's forward builds the auto mask from input_ids.shape[1]; during incremental decode that is 1, so the mask is [1,1] and cannot express sink+window over the accumulated cache -- the scheme has no correct effect in generation. Build the pattern mask against the effective key-history length (Sk) at decode, not the 1-token input, and CPU-verify.",
+      "alternatives_rejected": "Leaving decode as-is silently means sparse attention only constrains prefill; re-running full-sequence forward on every step defeats the cache and the whole purpose; building the mask per step with no cache misses the KV-cache path used by eager/batched generation."
+    },
+    "ISS-283": {
+      "id": "ISS-283",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:29:58+00:00",
+      "updated_at": "2026-08-23T08:29:58+00:00",
+      "touched_round": 115,
+      "title": "Sparse scheme not correctly applied in incremental decode (mask from current input len, not key history)",
+      "summary": "When a sparse/streaming model decodes with a KV cache, forward auto-builds the pattern mask from input length (1 token) instead of the accumulated key-history length, so sink/window cannot constrain the past keys. Prefill works; decode does not."
+    },
+    "TASK-245": {
+      "id": "TASK-245",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T08:29:58+00:00",
+      "updated_at": "2026-08-23T08:29:58+00:00",
+      "touched_round": 115,
+      "category": "core-feature",
+      "severity": 0.4,
+      "effort": 1.2,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Build sparse/streaming mask against key-history length in decode + CPU parity",
+      "summary": "In DecoderModel.forward, when auto-building from attn_sparse with a KV cache present, build the [Sq,Sk] pattern mask over the effective key history instead of input_ids.shape[1]; CPU test: sparse decode (cache) equals matching positions of full sparse forward, sparse decode != dense decode, full-coverage decode == dense decode; docs."
     }
   },
   "edges": [
@@ -20977,6 +21039,42 @@
       "to": "TASK-244",
       "type": "governs",
       "created_at": "2026-08-23T08:22:43+00:00"
+    },
+    {
+      "from": "CHG-257",
+      "to": "TASK-244",
+      "type": "implements",
+      "created_at": "2026-08-23T08:27:49+00:00"
+    },
+    {
+      "from": "CHG-257",
+      "to": "ISS-282",
+      "type": "resolves",
+      "created_at": "2026-08-23T08:27:49+00:00"
+    },
+    {
+      "from": "TASK-245",
+      "to": "ISS-283",
+      "type": "addresses",
+      "created_at": "2026-08-23T08:30:03+00:00"
+    },
+    {
+      "from": "ISS-283",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-08-23T08:30:03+00:00"
+    },
+    {
+      "from": "DEC-077",
+      "to": "COMP-012",
+      "type": "governs",
+      "created_at": "2026-08-23T08:30:03+00:00"
+    },
+    {
+      "from": "DEC-077",
+      "to": "TASK-245",
+      "type": "governs",
+      "created_at": "2026-08-23T08:30:03+00:00"
     }
   ]
 }

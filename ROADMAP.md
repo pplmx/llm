@@ -528,7 +528,7 @@
 - [x] **探索 BigBird Attention** (global + window + random 块掩码: `build_bigbird_mask` 委托 block-sparse 工具, global 全覆盖 === 稠密 parity, random 种子可复现且加覆盖; 见 [docs/guides/big_bird.md](docs/guides/big_bird.md))
 - [x] **统一稀疏注意力 dispatcher**（`build_sparse_attention_mask(kind, ...)` 按名选择；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
 - [x] **稀疏方案可作为模型选项**（`ModelConfig.attn_sparse` 接入 `DecoderModel` forward 自动构造掩码，全 coverage 稀疏 === 稠密 parity；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
-- [ ] 稀疏方案的 save/load 持久化（`attn_sparse` 随 HF 配置往返，避免稀疏模型重载后静默退化为稠密）
+- [x] **稀疏方案的 save/load 持久化**（`attn_sparse` 随 HF 配置往返，经 `hf_publisher`/`get_config_mapping`/`hf_loader`，重载后 forward 逐位一致，避免稀疏模型重载退化为稠密；见 [docs/guides/sparse_attention.md](docs/guides/sparse_attention.md)）
 
 #### 15.3 高效微调技术
 
