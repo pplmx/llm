@@ -79,8 +79,10 @@ loss = engine._run_epoch(0)               # batch["modal_embeds"]: [B, 17, embed
 
 ## 未落地（后续切片）
 
-- 视觉塔**在线训练**（当前 vision-tower 在 setup 冻结、特征预计算；若要在训练中微调
-  视觉编码器，需要改为 batch 携带原始图像、模型 forward 内实时编码）。
+- 视觉塔**在线训练**已落地 slice 2: `MultimodalDataModule(..., train_encoder=True)`
+  batch 携带原始图像 `images [B,3,H,W]`,`MultimodalModel`/`MultimodalTask` 在
+  forward 内实时编码(视觉塔 → projector → 文本前缀联合训练),梯度可到达视觉塔;
+  默认 `train_encoder=False` 保持冻结-预计算路径。
 - 图像-文本对齐模块 / Visual Instruction Tuning（ROADMAP 12.1 后续）——基于本 slice
   的图像 token 输出即可接入。
 - 音频编码器（Whisper-style，ROADMAP 12.2）与真实多模态数据集接入。

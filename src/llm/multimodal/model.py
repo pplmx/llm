@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
+from llm.multimodal.encoders import ModalityEncoder
 
 
 class ModalityFusion(nn.Module):
@@ -52,23 +53,42 @@ class MultimodalModel(nn.Module):
         num_modal_tokens: number of prefix tokens per sample (default 1).
         modal_dim: dimension of each sample's registry encoder output; by
             default ``decoder.hidden_size`` (the LinearModalityEncoder default).
+        encoder: optional ``ModalityEncoder`` owned by the model so raw
+            modality samples can be encoded **in-forward** (trainable vision
+            tower + image-text alignment, ROADMAP 12.1 slice 2). When None the
+            model consumes precomputed ``modal_embeds`` instead (CLIP-style
+            frozen-tower path, backward compatible).
     """
 
-    def __init__(self, decoder: DecoderModel, num_modal_tokens: int = 1, modal_dim: int | None = None) -> None:
+    def __init__(
+        self,
+        decoder: DecoderModel,
+        num_modal_tokens: int = 1,
+        modal_dim: int | None = None,
+        encoder: ModalityEncoder | None = None,
+    ) -> None:
         super().__init__()
         if num_modal_tokens < 1:
             raise ValueError(f"num_modal_tokens must be >= 1, got {num_modal_tokens}")
         self.decoder = decoder
         self.num_modal_tokens = int(num_modal_tokens)
         self.hidden_size = decoder.hidden_size
+        self.encoder = encoder
         self.fusion = ModalityFusion(modal_dim or self.hidden_size, self.hidden_size)
 
     def forward(
         self,
         input_ids: torch.Tensor,
-        modal_embeds: torch.Tensor,
+        modal_embeds: torch.Tensor | None = None,
+        images: torch.Tensor | None = None,
         attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        if images is not None:
+            if self.encoder is None:
+                raise ValueError("MultimodalModel received images but has no encoder (construct it with one)")
+            modal_embeds = self.encoder.encode(images)  # (B, M, embed_dim)
+        elif modal_embeds is None:
+            raise ValueError("MultimodalModel.forward needs modal_embeds or images")
         text_h = self.decoder.embedding_layer(input_ids)
         modal_h = self.fusion(modal_embeds)  # (B, M, hidden)
         fused = torch.cat([modal_h, text_h], dim=1)  # (B, M+text_len, hidden)

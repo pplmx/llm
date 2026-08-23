@@ -39,6 +39,10 @@ class MultimodalDataModule(SamplerMapDataModule):
         patch_size: vision patch side length (``"vit"`` path).
         vit_layers/vit_heads: vision tower depth / attention heads (``"vit"`` path).
         with_cls: prepend a ``[CLS]`` token in the vision tower (``"vit"`` path).
+        train_encoder: when True the ``"vit"`` path emits **raw images** in the
+            batch and the model encodes them in-forward (vision tower trainable,
+            image-text alignment — ROADMAP 12.1 slice 2); when False (default
+            CLIP-style) it precomputes frozen image-token features at setup.
     """
 
     def __init__(
@@ -53,6 +57,7 @@ class MultimodalDataModule(SamplerMapDataModule):
         vit_layers: int = 4,
         vit_heads: int = 4,
         with_cls: bool = True,
+        train_encoder: bool = False,
     ) -> None:
         super().__init__(config)
         self.modality = modality
@@ -64,6 +69,7 @@ class MultimodalDataModule(SamplerMapDataModule):
         self.vit_layers = int(vit_layers)
         self.vit_heads = int(vit_heads)
         self.with_cls = bool(with_cls)
+        self.train_encoder = bool(train_encoder)
         self.encoder: ModalityEncoder | None = None
         self.num_modal_tokens: int | None = None
 
@@ -77,10 +83,10 @@ class MultimodalDataModule(SamplerMapDataModule):
                 image_h=self.image_h,
                 image_w=self.image_w,
                 with_cls=self.with_cls,
-                # Frozen vision tower (CLIP-style): features are read once at
-                # setup; training the tower itself is a later slice that must
-                # carry raw images through the batch instead.
-                freeze_encoder=True,
+                # Frozen vision tower = CLIP-style precompute path (features
+                # read once at setup); ``train_encoder=True`` swaps to a
+                # trainable tower so the model can jointly align image + text.
+                freeze_encoder=not self.train_encoder,
             )
             self.num_modal_tokens = encoder.num_tokens
             return encoder
@@ -110,21 +116,38 @@ class MultimodalDataModule(SamplerMapDataModule):
         inputs = torch.stack(rows)
         labels = inputs  # next-token self-supervised labels
 
-        self.encoder = self.build_encoder()
-        self.encoder.eval()
-        with torch.no_grad():
-            if self.modality == "vit":
-                # Raw images -> image-token embeddings [B, num_tokens, embed_dim]
-                images = torch.randn(num + val_num, 3, self.image_h, self.image_w, generator=gen)
-                modal_embeds = self.encoder(images)
-            else:
-                raw_features = torch.randn(num + val_num, self.input_dim, generator=gen)
-                modal_embeds = self.encoder(raw_features)
+        if self.modality == "vit" and self.train_encoder:
+            # Trainable-tower path: batch carries RAW images [B, 3, H, W]; the
+            # model encodes them in-forward so gradients flow through the vision
+            # tower (image-text alignment). The encoder is still built (owned by
+            # the model) but nothing is precomputed at setup.
+            self.encoder = self.build_encoder()
+            images = torch.randn(num + val_num, 3, self.image_h, self.image_w, generator=gen)
+            self.train_dataset = TensorDataset(inputs[:num], labels[:num], images[:num])
+            self.val_dataset = TensorDataset(inputs[num:], labels[num:], images[num:])
+        else:
+            self.encoder = self.build_encoder()
+            self.encoder.eval()
+            with torch.no_grad():
+                if self.modality == "vit":
+                    # Raw images -> image-token embeddings [B, num_tokens, embed_dim]
+                    images = torch.randn(num + val_num, 3, self.image_h, self.image_w, generator=gen)
+                    modal_embeds = self.encoder(images)
+                else:
+                    raw_features = torch.randn(num + val_num, self.input_dim, generator=gen)
+                    modal_embeds = self.encoder(raw_features)
 
-        self.train_dataset = TensorDataset(inputs[:num], labels[:num], modal_embeds[:num])
-        self.val_dataset = TensorDataset(inputs[num:], labels[num:], modal_embeds[num:])
+            self.train_dataset = TensorDataset(inputs[:num], labels[:num], modal_embeds[:num])
+            self.val_dataset = TensorDataset(inputs[num:], labels[num:], modal_embeds[num:])
 
     def _collate(self, batch) -> dict[str, torch.Tensor]:
+        if self.modality == "vit" and self.train_encoder:
+            inputs, labels, images = zip(*batch, strict=True)
+            return {
+                "input_ids": torch.stack(inputs),
+                "labels": torch.stack(labels),
+                "images": torch.stack(images),
+            }
         inputs, labels, embeds = zip(*batch, strict=True)
         return {
             "input_ids": torch.stack(inputs),

@@ -190,6 +190,83 @@ def test_datamodule_vit_path_produces_image_token_batch():
     assert torch.isfinite(embeds).all()
 
 
+def test_datamodule_vit_trainable_batch_has_raw_images():
+    """train_encoder=True: the batch carries RAW images [B,3,H,W] (not
+    precomputed modal_embeds) and the built encoder is NOT frozen."""
+    config = _config()
+    module = MultimodalDataModule(
+        config,
+        modality="vit",
+        image_h=64,
+        image_w=64,
+        patch_size=16,
+        vit_layers=2,
+        vit_heads=4,
+        with_cls=True,
+        train_encoder=True,
+    )
+    module.prepare_data()
+    module.setup()
+    assert module.num_modal_tokens is not None
+    # Trainable tower: requires_grad stays on.
+    assert any(p.requires_grad for p in module.encoder.parameters())  # type: ignore[union-attr]
+    loader, _sampler = module.train_dataloader(rank=0, world_size=1)
+    batch = next(iter(loader))
+    assert set(batch) == {"input_ids", "labels", "images"}
+    assert batch["images"].shape == (8, 3, 64, 64)
+    assert torch.isfinite(batch["images"]).all()
+
+
+def test_datamodule_vit_trainable_e2e_trains_vision_tower():
+    """CPU e2e with train_encoder=True: loss drops AND gradients flow through
+    the vision tower (image-text alignment is learnable, not frozen-feature
+    only)."""
+    from llm.multimodal.task import MultimodalTask
+    from llm.training.core.engine import TrainingEngine
+
+    prev = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        config = _config(num_samples=32)
+        module = MultimodalDataModule(
+            config,
+            modality="vit",
+            image_h=64,
+            image_w=64,
+            patch_size=16,
+            vit_layers=2,
+            vit_heads=4,
+            with_cls=True,
+            train_encoder=True,
+        )
+        module.prepare_data()
+        module.setup()
+        task = MultimodalTask(config, module)
+        engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
+        assert engine.model.encoder is not None
+
+        losses = [engine._run_epoch(epoch) for epoch in range(20)]
+        assert all(loss == loss for loss in losses)  # finite
+        assert losses[-1] < losses[0] * 0.5, f"image-fused loss did not drop: {losses[0]:.3f} -> {losses[-1]:.3f}"
+        assert losses[-1] < 1.5
+
+        # Gradient reaches the vision tower: after a probe backward, patch proj
+        # / pos embed / CLS / block weights all carry gradients.
+        device = next(engine.model.parameters()).device
+        loader, _ = module.train_dataloader(rank=0, world_size=1)
+        batch = next(iter(loader))
+        batch = {k: v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+        engine.model.zero_grad(set_to_none=True)
+        engine.model.train()
+        engine.model(batch["input_ids"], images=batch["images"]).float().sum().backward()
+        encoder = engine.model.encoder
+        grads = [(n, p.grad) for n, p in encoder.named_parameters()]
+        assert all(g is not None for _, g in grads), [n for n, g in grads if g is None]
+        assert all(bool(torch.isfinite(g).all()) for _, g in grads)
+    finally:
+        torch.set_num_threads(prev)
+
+
 def test_datamodule_vit_e2e_fused_training_converges():
     """CPU e2e: images -> vision tower -> fused prefix -> decoder; loss drops and
     text next-token accuracy improves, proving the raw-image path is wired through

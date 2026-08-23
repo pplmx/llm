@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
+from llm.multimodal.data import MultimodalDataModule
+from llm.multimodal.encoders import ModalityEncoder
 from llm.multimodal.model import MultimodalModel
 from llm.runtime import ModelFactory
 from llm.training.tasks.lm_task import LanguageModelingTask
@@ -34,7 +36,14 @@ class MultimodalTask(LanguageModelingTask):
 
     def build_model(self) -> nn.Module:
         decoder = cast(DecoderModel, ModelFactory.from_config(self.config.model))
-        return MultimodalModel(decoder, num_modal_tokens=self.num_modal_tokens)
+        # Trainable-tower mode (ROADMAP 12.1 slice 2): the vision encoder is
+        # owned by the model so its parameters train jointly with the decoder;
+        # the default precompute path keeps encoder=None and consumes frozen
+        # ``modal_embeds`` (backward compatible).
+        encoder: ModalityEncoder | None = None
+        if getattr(self.data_module, "train_encoder", False):
+            encoder = cast(MultimodalDataModule, self.data_module).build_encoder()
+        return MultimodalModel(decoder, num_modal_tokens=self.num_modal_tokens, encoder=encoder)
 
     def build_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss(ignore_index=-100)
@@ -42,8 +51,12 @@ class MultimodalTask(LanguageModelingTask):
     def _multimodal_loss(self, batch, model: nn.Module, criterion: nn.Module) -> torch.Tensor:
         input_ids = batch["input_ids"]
         labels = batch["labels"]
-        modal_embeds = batch["modal_embeds"]
-        logits = model(input_ids, modal_embeds)
+        if "images" in batch:
+            # Trainable-tower path: encode raw images inside the model forward
+            # so gradients reach the vision encoder.
+            logits = model(input_ids, images=batch["images"])
+        else:
+            logits = model(input_ids, modal_embeds=batch["modal_embeds"])
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
         if shift_labels.numel() == 0:
