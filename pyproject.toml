@@ -162,6 +162,7 @@ llm-serve = "llm.serving.api:main"
 llm-migrate-ckpt = "llm.cli.migrate_ckpt:app"
 llm-quantize = "llm.cli.quantize:app"
 llm-prune = "llm.cli.prune:app"
+llm-decompose = "llm.cli.decompose:app"
 
 [project.urls]
 Documentation = "https://github.com/pplmx/llm#readme"

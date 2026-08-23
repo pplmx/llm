@@ -446,7 +446,7 @@
 
 - [x] 实现知识蒸馏 (Hinton temperature-scaled KL: `DistillationLoss` + `--task distill`，teacher 从 CheckpointManager checkpoint 加载并冻结；见 [docs/guides/distillation.md](docs/guides/distillation.md))
 - [x] 实现模型剪枝 (`PrunedLinear` weight_mask + `llm-prune` CLI，magnitude/random 策略 + ratio/method 配置旋钮；见 [docs/guides/pruning.md](docs/guides/pruning.md))
-- [ ] 探索低秩分解
+- [x] 探索低秩分解 (`LowRankLinear` SVD U-V 因子化 + `llm-decompose` CLI，rank / rank-ratio 旋钮 + 压缩比 / 重建误差报告；见 [docs/guides/lowrank.md](docs/guides/lowrank.md))
 
 ---
 

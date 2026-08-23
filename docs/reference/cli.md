@@ -15,6 +15,7 @@ tags:
 | `llm-quantize`    | GPTQ 量化                                        |
 | `llm-migrate-ckpt`| 旧版 checkpoint 迁移到 v2 split 布局             |
 | `llm-prune`       | 权重剪枝（稀疏化模型 Linear 权重）               |
+| `llm-decompose`   | 低秩分解（SVD U-V 因子化 Linear 权重）           |
 
 > `scripts/` 下的 demo 脚本（如 `train_simple_decoder.py`）不是注册 CLI，仅作最小演示；生产请走 `llm-train`。
 

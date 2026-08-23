@@ -123,6 +123,7 @@ nav:
       - guides/finetuning.md
       - guides/distillation.md
       - guides/pruning.md
+      - guides/lowrank.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md

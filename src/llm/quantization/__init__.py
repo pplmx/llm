@@ -35,6 +35,12 @@ from llm.quantization.gptq import (
     quantize_model_gptq,
     quantize_model_with_collector,
 )
+from llm.quantization.lowrank import (
+    LowRankConfig,
+    LowRankLinear,
+    compute_compression,
+    decompose_model,
+)
 from llm.quantization.prune import PrunedLinear, PruningConfig, compute_sparsity, prune_model
 
 # Simple PTQ path
@@ -62,6 +68,8 @@ __all__ = [
     "GPTQQuantizedLinear",
     "GPTQQuantizer",
     "LayerQuantPolicy",
+    "LowRankConfig",
+    "LowRankLinear",
     "PrunedLinear",
     "PruningConfig",
     "QuantConfig",
@@ -69,8 +77,10 @@ __all__ = [
     "SmoothQuantConfig",
     "SmoothQuantLinear",
     "SmoothQuantQuantizer",
+    "compute_compression",
     "compute_model_size",
     "compute_sparsity",
+    "decompose_model",
     "prune_model",
     "quantize_linear_layer",
     "quantize_model",

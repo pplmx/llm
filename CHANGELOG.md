@@ -14,6 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Low-Rank Decomposition** (ROADMAP 13.4 / RIL TASK-225):
+  - `llm/quantization/lowrank.py`: `LowRankLinear` (stores `u: out x r`, `v: r x in`;
+    forward `(x @ V^T) @ U^T + b`), `LowRankConfig` (rank XOR rank_ratio,
+    target_modules), `decompose_model` / `decompose_layer` (truncated SVD U-V,
+    Eckart-Young best rank-r approximation), `compute_compression`, relative-error
+    reporting.
+  - `llm-decompose` CLI (registered in `pyproject.toml`): load model blob →
+    decompose → atomically save; reports compression ratio + mean reconstruction
+    error. `LowRankLinear` is covered by the `weights_only` safe-globals allowlist,
+    so decomposed blobs load and serve through the existing loader unchanged.
+  - Docs: [low-rank guide](docs/guides/lowrank.md) + CLI reference row + ROADMAP
+    13.4 checked.
+
 - **Weight Pruning** (ROADMAP 13.4 / RIL TASK-224):
   - `llm/quantization/prune.py`: `PrunedLinear` (persistent binary `weight_mask`),
     `PruningConfig` (ratio / method / target_modules / random_seed), `prune_model`

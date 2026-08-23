@@ -22,6 +22,7 @@
     - [模型量化](quantization.md) — GPTQ / AWQ / SmoothQuant / 混合精度
     - [知识蒸馏](distillation.md) — `--task distill`、teacher-from-checkpoint、温度缩放 KL
     - [模型剪枝](pruning.md) — `llm-prune`、`PrunedLinear` weight_mask、magnitude/random 策略
+    - [低秩分解](lowrank.md) — `llm-decompose`、`LowRankLinear` SVD U-V、rank 旋钮
 
 - ⚡ **推理与部署**
 
