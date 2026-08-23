@@ -69,7 +69,9 @@
 
 ### 3. 多模态扩展 (P2, 阶段十二)
 
-> 前置: `MultimodalDataModule` + `ModalityEncoderRegistry` 设计 spike
+> 前置: `MultimodalDataModule` + `ModalityEncoderRegistry` 设计 spike ✅（已落地契约：
+> `llm/multimodal/` registry + `LinearModalityEncoder` + 合成 `MultimodalDataModule`，
+> 纯 CPU，未硬改 `DecoderModel`；见 [ADR-013](docs/adr/013-multimodal-encoder-contract.md)）
 
 - [ ] 视觉编码器集成 (CLIP/SigLIP)
 - [ ] 图像-文本对齐模块

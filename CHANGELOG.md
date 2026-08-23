@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multimodal extension — contract-first spike** (ROADMAP 阶段十二 / RIL TASK-226):
+  - `llm/multimodal/`: `ModalityEncoder` ABC + `MODALITY_ENCODER_REGISTRY` +
+    `@register_encoder` (entry-point-extensible via `llm.modality_encoders`),
+    minimal CPU-verifiable `LinearModalityEncoder`, and a synthetic
+    `MultimodalDataModule` pairing text + modality features into
+    `{"input_ids", "labels", "modal_embeds"}` batches. No `DecoderModel`
+    hard-patching (ADR boundary); ADR-013 documents the contract.
+  - `llm.multimodal` added to the `weights_only` safe-globals allowlist so
+    encoders can be persisted/loaded later.
+  - Docs: [multimodal guide](docs/guides/multimodal.md) + [ADR-013](docs/adr/013-multimodal-encoder-contract.md).
+
 - **Low-Rank Decomposition** (ROADMAP 13.4 / RIL TASK-225):
   - `llm/quantization/lowrank.py`: `LowRankLinear` (stores `u: out x r`, `v: r x in`;
     forward `(x @ V^T) @ U^T + b`), `LowRankConfig` (rank XOR rank_ratio,

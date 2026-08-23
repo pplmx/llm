@@ -124,6 +124,7 @@ nav:
       - guides/distillation.md
       - guides/pruning.md
       - guides/lowrank.md
+      - guides/multimodal.md
       - guides/inference.md
       - guides/evaluation.md
       - guides/quantization.md

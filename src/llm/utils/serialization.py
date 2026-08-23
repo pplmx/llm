@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _SAFE_GLOBALS_REGISTERED = False
 
 #: Packages whose ``torch.nn.Module`` subclasses are trusted for reconstruction.
-_FRAMEWORK_PACKAGES = ("llm.core", "llm.models", "llm.quantization")
+_FRAMEWORK_PACKAGES = ("llm.core", "llm.models", "llm.quantization", "llm.multimodal")
 
 
 def register_framework_safe_globals() -> None:
