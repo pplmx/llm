@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 98,
+  "round": 99,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T01:47:31+00:00",
+  "updated_at": "2026-08-23T01:52:59+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 97,
+      "touched_round": 99,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13295,10 +13295,10 @@
     "ISS-266": {
       "id": "ISS-266",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:47:26+00:00",
-      "updated_at": "2026-08-23T01:47:26+00:00",
+      "updated_at": "2026-08-23T01:52:38+00:00",
       "touched_round": 98,
       "title": "Quality deep-dive backlog (post-feature-milestones)",
       "summary": "CPU-verifiable audit for hidden bugs / dead code / test gaps / robustness issues after the QAT+KD+pruning+lowrank+multimodal milestone run."
@@ -13306,10 +13306,10 @@
     "TASK-228": {
       "id": "TASK-228",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T01:47:26+00:00",
-      "updated_at": "2026-08-23T01:47:26+00:00",
+      "updated_at": "2026-08-23T01:52:38+00:00",
       "touched_round": 98,
       "category": "correctness",
       "severity": 0.5,
@@ -13318,6 +13318,68 @@
       "unlock_factor": 1.2,
       "title": "Deep-dive slice 1: audit RIL graph + checkpoint/engine edge cases, file evidence",
       "summary": "Run ril.py check, then audit concrete CPU-verifiable risk spots (checkpoint incomplete-trio recovery, engine scheduler/step edge cases, leftover dead paths) and either fix or file each as an evidence-backed issue/task (max 3 new tasks this round)."
+    },
+    "CHG-242": {
+      "id": "CHG-242",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:52:31+00:00",
+      "updated_at": "2026-08-23T01:52:31+00:00",
+      "touched_round": 98,
+      "commit": "85c0a38",
+      "title": "Deep-dive TASK-228: disjoint multimodal val split + fail-loud prune target_modules",
+      "summary": "Fixed MultimodalDataModule to build a disjoint held-out val split (was val_dataset=train_dataset, making val==train metrics); prune_model now raises on target_modules matching nothing (was silent 0% no-op, matching decompose_model contract). Both with regression tests."
+    },
+    "EV-229": {
+      "id": "EV-229",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:52:33+00:00",
+      "updated_at": "2026-08-23T01:52:33+00:00",
+      "touched_round": 98,
+      "source": "tests/multimodal/test_datamodule.py + tests/quantization/test_prune.py (new regression tests)",
+      "summary": "test_multimodal_datamodule_val_is_disjoint_from_train asserts train_dataset is not val_dataset and val modal features don't repeat training rows; test_prune_unmatched_target_modules_raises asserts a non-matching target_modules raises (no silent partial mutation). Full multimodal (17) + prune (9) suites green; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-061": {
+      "id": "DEC-061",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:52:47+00:00",
+      "updated_at": "2026-08-23T01:52:47+00:00",
+      "touched_round": 99,
+      "rationale": "Next milestone = GRPO (Group Relative Policy Optimization, ROADMAP 阶段十一 其它对齐技术): a group-relative advantage alignment objective (Shao et al. 2024) on top of the existing SFT/DPO/PPO/reward lineage. CPU-verifiable with a synthetic reward; a new --task grpo + loss + e2e showing the policy improves on a group reward.",
+      "alternatives_rejected": "PP-v2 / DeepSpeed ZeRO / real vision encoders need GPU/multi-node/external weights absent in this CPU sandbox; another identical deep-dive yields diminishing returns after TASK-228 (2 fixes). GRPO is concrete, in-repo, CPU-verifiable."
+    },
+    "ISS-267": {
+      "id": "ISS-267",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:52:54+00:00",
+      "updated_at": "2026-08-23T01:52:54+00:00",
+      "touched_round": 99,
+      "title": "GRPO alignment unimplemented (ROADMAP 阶段十一)",
+      "summary": "No group-relative policy optimization. Implementation: --task grpo with group-mean/group-std advantage (z-score), policy-ratio clipped loss, KL to a reference, and a CPU e2e on a synthetic reward."
+    },
+    "TASK-229": {
+      "id": "TASK-229",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T01:52:54+00:00",
+      "updated_at": "2026-08-23T01:52:54+00:00",
+      "touched_round": 99,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.7,
+      "confidence": 0.7,
+      "unlock_factor": 1.2,
+      "title": "GRPO slice 1: group-relative advantage policy loss + --task grpo (CPU)",
+      "summary": "Implement GRPOLoss (group z-score advantage + clipped policy-ratio + KL-to-reference), register --task grpo with a reward-scored prompt DataModule, and a CPU e2e showing the policy's group reward improves over training; one reference policy frozen per group."
     }
   },
   "edges": [
@@ -19505,6 +19567,36 @@
       "to": "COMP-008",
       "type": "located_in",
       "created_at": "2026-08-23T01:47:31+00:00"
+    },
+    {
+      "from": "CHG-242",
+      "to": "TASK-228",
+      "type": "implements",
+      "created_at": "2026-08-23T01:52:38+00:00"
+    },
+    {
+      "from": "CHG-242",
+      "to": "ISS-266",
+      "type": "resolves",
+      "created_at": "2026-08-23T01:52:38+00:00"
+    },
+    {
+      "from": "DEC-061",
+      "to": "TASK-229",
+      "type": "governs",
+      "created_at": "2026-08-23T01:52:58+00:00"
+    },
+    {
+      "from": "TASK-229",
+      "to": "ISS-267",
+      "type": "addresses",
+      "created_at": "2026-08-23T01:52:58+00:00"
+    },
+    {
+      "from": "ISS-267",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T01:52:59+00:00"
     }
   ]
 }
