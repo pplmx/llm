@@ -21,6 +21,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 from llm.data.modules.map_base import SamplerMapDataModule
+from llm.multimodal.audio import AudioSpectrogramEncoder
 from llm.multimodal.encoders import MODALITY_ENCODER_REGISTRY, ModalityEncoder
 from llm.multimodal.vision import VisionTransformerEncoder
 
@@ -36,17 +37,20 @@ class MultimodalDataModule(SamplerMapDataModule):
         embed_dim: encoder output dimension (defaults to ``config.model.hidden_size``).
         image_h/image_w: image spatial size (``"vit"`` path; must be divisible by
             ``patch_size``).
-        patch_size: vision patch side length (``"vit"`` path).
-        vit_layers/vit_heads: vision tower depth / attention heads (``"vit"`` path).
-        with_cls: prepend a ``[CLS]`` token in the vision tower (``"vit"`` path).
-        train_encoder: when True the ``"vit"`` path emits **raw images** in the
-            batch and the model encodes them in-forward (vision tower trainable,
-            image-text alignment — ROADMAP 12.1 slice 2); when False (default
-            CLIP-style) it precomputes frozen image-token features at setup.
+        audio_frames/audio_mels: log-mel spectrogram shape (``"audio"`` path;
+            must be divisible by ``patch_size``).
+        patch_size: vision/audio patch side length.
+        vit_layers/vit_heads: tower depth / attention heads (vision/audio paths).
+        with_cls: prepend a ``[CLS]`` token in the vision/audio tower.
+        train_encoder: when True the image paths emit **raw modal samples**
+            (``[B, C, H, W]`` under the ``modal_samples`` batch key) and the
+            model encodes them in-forward (tower trainable — image-text
+            alignment, ROADMAP 12.1 slice 2); when False (default CLIP-style)
+            it precomputes frozen tower features at setup.
         vit_instruction_len: when > 0, Visual Instruction Tuning semantics: each
             sample becomes ``[instruction | response]`` with the instruction
             tokens labelled ``-100`` so the CE loss only supervises the
-            response, conditioned on the image prefix + instruction context
+            response, conditioned on the modal prefix + instruction context
             (ROADMAP 12.1 Visual Instruction Tuning).
     """
 
@@ -58,6 +62,8 @@ class MultimodalDataModule(SamplerMapDataModule):
         embed_dim: int | None = None,
         image_h: int = 64,
         image_w: int = 64,
+        audio_frames: int = 32,
+        audio_mels: int = 64,
         patch_size: int = 16,
         vit_layers: int = 4,
         vit_heads: int = 4,
@@ -71,14 +77,29 @@ class MultimodalDataModule(SamplerMapDataModule):
         self.embed_dim = int(embed_dim or getattr(config.model, "hidden_size", 24))
         self.image_h = int(image_h)
         self.image_w = int(image_w)
+        self.audio_frames = int(audio_frames)
+        self.audio_mels = int(audio_mels)
         self.patch_size = int(patch_size)
         self.vit_layers = int(vit_layers)
         self.vit_heads = int(vit_heads)
         self.with_cls = bool(with_cls)
         self.train_encoder = bool(train_encoder)
         self.vit_instruction_len = int(vit_instruction_len)
+        self._raw_modality = self.modality in ("vit", "audio")
         self.encoder: ModalityEncoder | None = None
         self.num_modal_tokens: int | None = None
+
+    def _make_raw_samples(self, count: int, gen: torch.Generator) -> torch.Tensor | None:
+        """Synthetic raw modal samples (``[B, C, H, W]``-layout) or None.
+
+        ``"vit"`` -> RGB images, ``"audio"`` -> 1-channel log-mel spectrograms,
+        ``"linear"`` -> None (the feature-vector path precomputes embeds).
+        """
+        if self.modality == "vit":
+            return torch.randn(count, 3, self.image_h, self.image_w, generator=gen)
+        if self.modality == "audio":
+            return torch.randn(count, 1, self.audio_frames, self.audio_mels, generator=gen)
+        return None
 
     def build_encoder(self) -> ModalityEncoder:
         if self.modality == "vit":
@@ -90,15 +111,27 @@ class MultimodalDataModule(SamplerMapDataModule):
                 image_h=self.image_h,
                 image_w=self.image_w,
                 with_cls=self.with_cls,
-                # Frozen vision tower = CLIP-style precompute path (features
+                # Frozen tower = CLIP/Whisper-style precompute path (features
                 # read once at setup); ``train_encoder=True`` swaps to a
-                # trainable tower so the model can jointly align image + text.
+                # trainable tower so the model can jointly align modality+text.
                 freeze_encoder=not self.train_encoder,
             )
-            self.num_modal_tokens = encoder.num_tokens
-            return encoder
-        encoder_cls = MODALITY_ENCODER_REGISTRY.get(self.modality)
-        return encoder_cls(self.input_dim, self.embed_dim)
+        elif self.modality == "audio":
+            encoder = AudioSpectrogramEncoder(
+                patch_size=self.patch_size,
+                embed_dim=self.embed_dim,
+                layers=self.vit_layers,
+                num_heads=self.vit_heads,
+                n_frames=self.audio_frames,
+                n_mels=self.audio_mels,
+                with_cls=self.with_cls,
+                freeze_encoder=not self.train_encoder,
+            )
+        else:
+            encoder_cls = MODALITY_ENCODER_REGISTRY.get(self.modality)
+            encoder = encoder_cls(self.input_dim, self.embed_dim)
+        self.num_modal_tokens = encoder.num_tokens if self.modality in ("vit", "audio") else None
+        return encoder
 
     def prepare_data(self) -> None:
         pass
@@ -139,23 +172,23 @@ class MultimodalDataModule(SamplerMapDataModule):
         else:
             labels = inputs  # next-token self-supervised labels
 
-        if self.modality == "vit" and self.train_encoder:
-            # Trainable-tower path: batch carries RAW images [B, 3, H, W]; the
-            # model encodes them in-forward so gradients flow through the vision
-            # tower (image-text alignment). The encoder is still built (owned by
-            # the model) but nothing is precomputed at setup.
+        raw = self._make_raw_samples(num + val_num, gen)
+        if raw is not None and self.train_encoder:
+            # Trainable-tower path: batch carries RAW modal samples under the
+            # ``modal_samples`` key; the model encodes them in-forward so
+            # gradients flow through the tower (image/audio-text alignment).
+            # The encoder is still built (owned by the model) but nothing is
+            # precomputed at setup.
             self.encoder = self.build_encoder()
-            images = torch.randn(num + val_num, 3, self.image_h, self.image_w, generator=gen)
-            self.train_dataset = TensorDataset(inputs[:num], labels[:num], images[:num])
-            self.val_dataset = TensorDataset(inputs[num:], labels[num:], images[num:])
+            self.train_dataset = TensorDataset(inputs[:num], labels[:num], raw[:num])
+            self.val_dataset = TensorDataset(inputs[num:], labels[num:], raw[num:])
         else:
             self.encoder = self.build_encoder()
             self.encoder.eval()
             with torch.no_grad():
-                if self.modality == "vit":
-                    # Raw images -> image-token embeddings [B, num_tokens, embed_dim]
-                    images = torch.randn(num + val_num, 3, self.image_h, self.image_w, generator=gen)
-                    modal_embeds = self.encoder(images)
+                if raw is not None:
+                    # Raw samples -> image/audio-token embeddings [B, num_tokens, embed_dim]
+                    modal_embeds = self.encoder(raw)
                 else:
                     raw_features = torch.randn(num + val_num, self.input_dim, generator=gen)
                     modal_embeds = self.encoder(raw_features)
@@ -164,12 +197,12 @@ class MultimodalDataModule(SamplerMapDataModule):
             self.val_dataset = TensorDataset(inputs[num:], labels[num:], modal_embeds[num:])
 
     def _collate(self, batch) -> dict[str, torch.Tensor]:
-        if self.modality == "vit" and self.train_encoder:
-            inputs, labels, images = zip(*batch, strict=True)
+        if self._raw_modality and self.train_encoder:
+            inputs, labels, modal_samples = zip(*batch, strict=True)
             return {
                 "input_ids": torch.stack(inputs),
                 "labels": torch.stack(labels),
-                "images": torch.stack(images),
+                "modal_samples": torch.stack(modal_samples),
             }
         inputs, labels, embeds = zip(*batch, strict=True)
         return {

@@ -100,9 +100,23 @@ loss = engine._run_epoch(0)               # batch["modal_embeds"]: [B, 17, embed
   response 区域 next-token 准确率 > 0.7。可叠加 `train_encoder=True` 得到完整的
   LLaVA 式训练(图像塔 + projector + instruction-tuning 联合)。
 
+## 已落地：Whisper-style 音频编码器 slice 5（ROADMAP 12.2）
+
+- `AudioSpectrogramEncoder`（`llm/multimodal/audio.py`，注册为 `"audio"`）：消费原始
+  log-mel 频谱 `[B,1,T,F]` → 频谱 patch 化(N 个 time×freq patch)→ 线性投影 + 位置编码
+  → N 个 pre-norm transformer block → 最终 LayerNorm → `[B, N(+1 CLS), embed_dim]`
+  audio-token embeddings。复用图像塔的 preprocess 与 block,纯 CPU 可验证;
+  `with_cls`/`freeze_encoder` 可配。
+- `MultimodalDataModule(modality="audio", audio_frames=, audio_mels=, ...)` 走与
+  `"vit"` 相同的原始样本管线:冻结-预计算路径产出 `modal_embeds [B,N,D]`,
+  `train_encoder=True` 时 batch 携带原始频谱(键 `modal_samples`),模型 forward 内
+  **实时编码**,音频塔可联合训练(CPU e2e loss 下降 + 梯度可达音频塔)。
+- 通用化:可训练塔的原始样本 batch 键统一为 **`modal_samples`**(vision/audio 共用),
+  替代 slice 2 的 `images`。
+
 ## 未落地（后续切片）
 
-- 音频编码器（Whisper-style，ROADMAP 12.2）与真实多模态数据集接入(DatasetDict 等)。
+- 语音识别/生成任务与语音指令微调（ROADMAP 12.2 后续）,真实多模态数据集接入。
 - 音频编码器（Whisper-style，ROADMAP 12.2）与真实多模态数据集接入。
 
 测试见 `tests/multimodal/`（registry + DataModule 契约 + 最小编码器可训练性 +

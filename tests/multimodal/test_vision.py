@@ -269,8 +269,8 @@ def test_datamodule_vit_instruction_e2e_learns_response():
         torch.set_num_threads(prev)
 
 
-def test_datamodule_vit_trainable_batch_has_raw_images():
-    """train_encoder=True: the batch carries RAW images [B,3,H,W] (not
+def test_datamodule_vit_trainable_batch_has_raw_modal_samples():
+    """train_encoder=True: the batch carries RAW modal samples [B,3,H,W] (not
     precomputed modal_embeds) and the built encoder is NOT frozen."""
     config = _config()
     module = MultimodalDataModule(
@@ -291,9 +291,9 @@ def test_datamodule_vit_trainable_batch_has_raw_images():
     assert any(p.requires_grad for p in module.encoder.parameters())  # type: ignore[union-attr]
     loader, _sampler = module.train_dataloader(rank=0, world_size=1)
     batch = next(iter(loader))
-    assert set(batch) == {"input_ids", "labels", "images"}
-    assert batch["images"].shape == (8, 3, 64, 64)
-    assert torch.isfinite(batch["images"]).all()
+    assert set(batch) == {"input_ids", "labels", "modal_samples"}
+    assert batch["modal_samples"].shape == (8, 3, 64, 64)
+    assert torch.isfinite(batch["modal_samples"]).all()
 
 
 def test_datamodule_vit_trainable_e2e_trains_vision_tower():
@@ -337,7 +337,7 @@ def test_datamodule_vit_trainable_e2e_trains_vision_tower():
         batch = {k: v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
         engine.model.zero_grad(set_to_none=True)
         engine.model.train()
-        engine.model(batch["input_ids"], images=batch["images"]).float().sum().backward()
+        engine.model(batch["input_ids"], modal_samples=batch["modal_samples"]).float().sum().backward()
         encoder = engine.model.encoder
         grads = [(n, p.grad) for n, p in encoder.named_parameters()]
         assert all(g is not None for _, g in grads), [n for n, g in grads if g is None]

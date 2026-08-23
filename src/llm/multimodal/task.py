@@ -51,10 +51,10 @@ class MultimodalTask(LanguageModelingTask):
     def _multimodal_loss(self, batch, model: nn.Module, criterion: nn.Module) -> torch.Tensor:
         input_ids = batch["input_ids"]
         labels = batch["labels"]
-        if "images" in batch:
-            # Trainable-tower path: encode raw images inside the model forward
-            # so gradients reach the vision encoder.
-            logits = model(input_ids, images=batch["images"])
+        if "modal_samples" in batch:
+            # Trainable-tower path: encode raw images/audio inside the model
+            # forward so gradients reach the modal encoder.
+            logits = model(input_ids, modal_samples=batch["modal_samples"])
         else:
             logits = model(input_ids, modal_embeds=batch["modal_embeds"])
         shift_logits = logits[..., :-1, :].contiguous()
