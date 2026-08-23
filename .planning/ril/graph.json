@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 103,
+  "round": 104,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:11:38+00:00",
+  "updated_at": "2026-08-23T06:20:13+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 102,
+      "touched_round": 103,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13607,22 +13607,22 @@
     "ISS-271": {
       "id": "ISS-271",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:11:31+00:00",
-      "updated_at": "2026-08-23T06:11:31+00:00",
-      "touched_round": 102,
+      "updated_at": "2026-08-23T06:19:50+00:00",
+      "touched_round": 103,
       "title": "Aligner comparison covers DPO vs PPO only; GRPO not yet included (ROADMAP 11.3/11.4)",
       "summary": "compare_dpo_vs_ppo omits the group-relative GRPO path. Next slice: add run_grpo to aligner_benchmark, evaluate preference_fraction on the shared judge set, and widen the comparison to a 3-way DPO/PPO/GRPO report + docs."
     },
     "TASK-233": {
       "id": "TASK-233",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:11:35+00:00",
-      "updated_at": "2026-08-23T06:11:35+00:00",
-      "touched_round": 102,
+      "updated_at": "2026-08-23T06:19:50+00:00",
+      "touched_round": 103,
       "category": "core-feature",
       "severity": 0.3,
       "effort": 0.6,
@@ -13630,6 +13630,69 @@
       "unlock_factor": 1.0,
       "title": "Extend aligner benchmark to GRPO: run_grpo + 3-way DPO/PPO/GRPO comparison (CPU)",
       "summary": "Add run_grpo (GRPOTask + GRPODataModule, CPU-convergent per TASK-229) to aligner_benchmark evaluating preference_fraction on the shared judge set; widen compare_dpo_vs_ppo into a 3-way report; update docs/guides/dpo_vs_ppo.md + ROADMAP."
+    },
+    "CHG-247": {
+      "id": "CHG-247",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:19:44+00:00",
+      "updated_at": "2026-08-23T06:19:44+00:00",
+      "touched_round": 103,
+      "commit": "f449739",
+      "title": "Extend aligner benchmark to GRPO: 3-way DPO/PPO/GRPO comparison (TASK-233)",
+      "summary": "aligner_benchmark run_grpo (GRPOTask+GRPODataModule, group-reward fraction trajectory); compare_dpo_vs_ppo widened to {dpo,ppo,grpo} on shared target-token judge; CPU e2e DPO pref 0->~1 + GRPO group-reward 0->>0.9 converge, PPO reports finite reward traj; docs updated."
+    },
+    "EV-234": {
+      "id": "EV-234",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:19:47+00:00",
+      "updated_at": "2026-08-23T06:19:47+00:00",
+      "touched_round": 103,
+      "source": "tests/training/test_aligner_benchmark.py (6 tests)",
+      "summary": "TargetTokenReward + preference_fraction units; DPO e2e pref 0->>0.9; GRPO e2e group-reward 0->>0.9; PPO finite 3-step reward traj; 3-way compare returns grpo+dpo+ppo+summary; 6 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-066": {
+      "id": "DEC-066",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:20:03+00:00",
+      "updated_at": "2026-08-23T06:20:03+00:00",
+      "touched_round": 103,
+      "title": "Open reference-KL / reward-over-optimization milestone",
+      "rationale": "Extend the alignment benchmark to also report each aligner's divergence (KL) from a frozen reference policy across training, surfacing reward over-optimization / drift. DPO and GRPO already maintain a frozen reference, so reuse it on CPU; PPO's KL-to-reference is tracked via its trainer. Guides LR scale and early-stop choices in practice, and is CPU-verifiable.",
+      "alternatives_rejected": "Constitutional AI (11.4) still lacks a CPU-measurable rule judge (deferred in DEC-063/065); PP-v2 / DeepSpeed ZeRO / 3D parallel need GPU/multi-node absent here; a PPO-convergence tuning effort is open-ended, not a closed deliverable."
+    },
+    "ISS-272": {
+      "id": "ISS-272",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:20:07+00:00",
+      "updated_at": "2026-08-23T06:20:07+00:00",
+      "touched_round": 103,
+      "title": "Alignment benchmark reports preference/reward but not divergence from a reference policy (reward over-optimization unsurfaced)",
+      "summary": "compare_dpo_vs_ppo reports preference/reward but no reference-KL over training, so reward over-optimization/drift is invisible. Next slice: report each aligner's KL from a frozen reference over training + docs."
+    },
+    "TASK-234": {
+      "id": "TASK-234",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:20:10+00:00",
+      "updated_at": "2026-08-23T06:20:10+00:00",
+      "touched_round": 103,
+      "category": "performance",
+      "severity": 0.3,
+      "effort": 0.6,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Track reference-KL / reward over-optimization in the alignment benchmark (CPU)",
+      "summary": "Extend compare_dpo_vs_ppo to report, for DPO/PPO/GRPO, the policy's KL from a frozen reference over training (DPO and GRPO already keep frozen references; PPO tracks KL-to-reference); update docs to guide LR/early-stop choice."
     }
   },
   "edges": [
@@ -19967,6 +20030,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:11:38+00:00"
+    },
+    {
+      "from": "CHG-247",
+      "to": "TASK-233",
+      "type": "implements",
+      "created_at": "2026-08-23T06:19:50+00:00"
+    },
+    {
+      "from": "CHG-247",
+      "to": "ISS-271",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:19:50+00:00"
+    },
+    {
+      "from": "DEC-066",
+      "to": "TASK-234",
+      "type": "governs",
+      "created_at": "2026-08-23T06:20:13+00:00"
+    },
+    {
+      "from": "TASK-234",
+      "to": "ISS-272",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:20:13+00:00"
+    },
+    {
+      "from": "ISS-272",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:20:13+00:00"
     }
   ]
 }
