@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 110,
+  "round": 111,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:51:38+00:00",
+  "updated_at": "2026-08-23T06:54:45+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 109,
+      "touched_round": 110,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -14099,22 +14099,22 @@
     "ISS-279": {
       "id": "ISS-279",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:51:30+00:00",
-      "updated_at": "2026-08-23T06:51:30+00:00",
-      "touched_round": 109,
+      "updated_at": "2026-08-23T06:54:28+00:00",
+      "touched_round": 110,
       "title": "BigBird attention unimplemented (ROADMAP 15.2)",
       "summary": "15.2 open item: global + local-window + random block attention. Next slice: explicit build_bigbird_mask wrapping the block-sparse builder (global_blocks + window + random_blocks) + CPU parity / sdpa-MHA integration check."
     },
     "TASK-241": {
       "id": "TASK-241",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:51:34+00:00",
-      "updated_at": "2026-08-23T06:51:34+00:00",
-      "touched_round": 109,
+      "updated_at": "2026-08-23T06:54:28+00:00",
+      "touched_round": 110,
       "category": "core-feature",
       "severity": 0.3,
       "effort": 0.4,
@@ -14122,6 +14122,69 @@
       "unlock_factor": 1.0,
       "title": "BigBird attention: explicit global+window+random mask builder (block-sparse config) + CPU parity (ROADMAP 15.2)",
       "summary": "Add build_bigbird_mask wrapping the block-sparse builder with BigBird structural constraints (global + local window + seeded random blocks); CPU parity: full coverage == dense and sdpa/MHA integration matches explicit masking; docs + ROADMAP 15.2 checkoff."
+    },
+    "CHG-254": {
+      "id": "CHG-254",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:54:20+00:00",
+      "updated_at": "2026-08-23T06:54:20+00:00",
+      "touched_round": 110,
+      "commit": "33a5d52",
+      "title": "BigBird attention mask builder (global+window+random) + CPU parity (TASK-241)",
+      "summary": "big_bird.py build_bigbird_mask delegating to block_sparse with BigBird structural args (num_global_blocks + window_blocks + num_random_blocks + seed); CPU parity full-global == dense, random adds coverage seed-deterministic; verified via sdpa/MHA; docs + ROADMAP 15.2 checkoff (section complete)."
+    },
+    "EV-242": {
+      "id": "EV-242",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:54:24+00:00",
+      "updated_at": "2026-08-23T06:54:24+00:00",
+      "touched_round": 110,
+      "source": "tests/core/attn/test_big_bird.py (7 tests)",
+      "summary": "delegates to block_sparse; full-global coverage == dense causal / full; random adds coverage + seed-deterministic; causal blocks future; sdpa/MHA == explicit masking, sparse changes output; 7 pass; ruff/ty clean (15.2 sparse attention complete: sliding/block_sparse/longformer/bigbird).",
+      "confidence": 1.0
+    },
+    "DEC-074": {
+      "id": "DEC-074",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:54:33+00:00",
+      "updated_at": "2026-08-23T06:54:33+00:00",
+      "touched_round": 110,
+      "title": "Open unified sparse-attention dispatcher milestone",
+      "rationale": "With 15.2 complete (four mask builders: block_sparse / streaming / longformer / bigbird), unify them under one public dispatcher build_sparse_attention_mask(kind, ...) with validation and per-kind parity, giving users a single entry point + a documented registry of supported sparse schemes. CPU-verifiable (per-kind delegation + full-coverage == dense).",
+      "alternatives_rejected": "Infinite Attention (15.1) is a new recurrence, harder to CPU-verify; wiring masks into model config (attn_impl) is a larger change best left as a follow-up; DeepSpeed/3D need GPU/multi-node."
+    },
+    "ISS-280": {
+      "id": "ISS-280",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:54:36+00:00",
+      "updated_at": "2026-08-23T06:54:36+00:00",
+      "touched_round": 110,
+      "title": "No unified API to select among the shipped sparse/streaming attention masks (block_sparse/streaming/longformer/bigbird)",
+      "summary": "Each mask builder is a separate module with its own signature. Next slice: a single build_sparse_attention_mask(kind, ...) dispatcher + validation + per-kind parity tests + docs."
+    },
+    "TASK-242": {
+      "id": "TASK-242",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:54:41+00:00",
+      "updated_at": "2026-08-23T06:54:41+00:00",
+      "touched_round": 110,
+      "category": "dx",
+      "severity": 0.2,
+      "effort": 0.3,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Unified sparse-attention dispatcher: build_sparse_attention_mask(kind, ...) + per-kind parity",
+      "summary": "Add a single public dispatcher build_sparse_attention_mask(kind, ...) over the four shipped mask builders (block_sparse / streaming / longformer / bigbird), validating unknown kinds; CPU test asserts per-kind delegation and full-coverage == dense parity; docs."
     }
   },
   "edges": [
@@ -20693,6 +20756,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:51:38+00:00"
+    },
+    {
+      "from": "CHG-254",
+      "to": "TASK-241",
+      "type": "implements",
+      "created_at": "2026-08-23T06:54:28+00:00"
+    },
+    {
+      "from": "CHG-254",
+      "to": "ISS-279",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:54:28+00:00"
+    },
+    {
+      "from": "DEC-074",
+      "to": "TASK-242",
+      "type": "governs",
+      "created_at": "2026-08-23T06:54:44+00:00"
+    },
+    {
+      "from": "TASK-242",
+      "to": "ISS-280",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:54:44+00:00"
+    },
+    {
+      "from": "ISS-280",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:54:44+00:00"
     }
   ]
 }
