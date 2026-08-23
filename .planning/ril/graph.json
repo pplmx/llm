@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 104,
+  "round": 105,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T06:20:13+00:00",
+  "updated_at": "2026-08-23T06:25:35+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 103,
+      "touched_round": 104,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -13670,22 +13670,22 @@
     "ISS-272": {
       "id": "ISS-272",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:20:07+00:00",
-      "updated_at": "2026-08-23T06:20:07+00:00",
-      "touched_round": 103,
+      "updated_at": "2026-08-23T06:25:20+00:00",
+      "touched_round": 104,
       "title": "Alignment benchmark reports preference/reward but not divergence from a reference policy (reward over-optimization unsurfaced)",
       "summary": "compare_dpo_vs_ppo reports preference/reward but no reference-KL over training, so reward over-optimization/drift is invisible. Next slice: report each aligner's KL from a frozen reference over training + docs."
     },
     "TASK-234": {
       "id": "TASK-234",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-08-23T06:20:10+00:00",
-      "updated_at": "2026-08-23T06:20:10+00:00",
-      "touched_round": 103,
+      "updated_at": "2026-08-23T06:25:20+00:00",
+      "touched_round": 104,
       "category": "performance",
       "severity": 0.3,
       "effort": 0.6,
@@ -13693,6 +13693,69 @@
       "unlock_factor": 1.0,
       "title": "Track reference-KL / reward over-optimization in the alignment benchmark (CPU)",
       "summary": "Extend compare_dpo_vs_ppo to report, for DPO/PPO/GRPO, the policy's KL from a frozen reference over training (DPO and GRPO already keep frozen references; PPO tracks KL-to-reference); update docs to guide LR/early-stop choice."
+    },
+    "CHG-248": {
+      "id": "CHG-248",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:25:14+00:00",
+      "updated_at": "2026-08-23T06:25:14+00:00",
+      "touched_round": 104,
+      "commit": "3cd8883",
+      "title": "Track per-aligner reference-KL / reward over-optimization in aligner benchmark (TASK-234)",
+      "summary": "aligner_benchmark _snapshot_reference + _reference_kl; shared eval-sequence set threaded through run_dpo/run_grpo/run_ppo; compare_dpo_vs_ppo reports reference-KL for all three (reward over-optimization/drift); unit: identical ref KL~0, diverged->0; docs updated."
+    },
+    "EV-235": {
+      "id": "EV-235",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:25:17+00:00",
+      "updated_at": "2026-08-23T06:25:17+00:00",
+      "touched_round": 104,
+      "source": "tests/training/test_aligner_benchmark.py (7 tests)",
+      "summary": "_reference_kl unit (identical ref ~0, diverged ->0); DPO/GRPO/PPO runs report finite reference_kl_trajectory; compare_dpo_vs_ppo includes per-aligner final_reference_kl (finite, >=0); 7 pass; ruff/ty clean.",
+      "confidence": 1.0
+    },
+    "DEC-067": {
+      "id": "DEC-067",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:25:25+00:00",
+      "updated_at": "2026-08-23T06:25:25+00:00",
+      "touched_round": 104,
+      "title": "Open Constitutional AI slice milestone",
+      "rationale": "Close the last open alignment item (ROADMAP 11.4 Constitutional AI) with a CPU-measurable slice: a rule-based constitution judge scoring responses (e.g., forbidden-token avoidance), a self-critique -> revision helper that rewrites a response to better satisfy the constitution, and a CPU e2e showing revised responses score higher than originals. This supersedes DEC-063/DEC-065's deferral of Constitutional AI as 'less CPU-measurable' by scoping it to a concrete rule-based judge.",
+      "alternatives_rejected": "PP-v2 / DeepSpeed ZeRO / 3D parallel need GPU/multi-node absent here; aligning-benchmark extensions are complete (DPO/PPO/GRPO + reference-KL); multi-modal vision encoders need external weights."
+    },
+    "ISS-273": {
+      "id": "ISS-273",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:25:28+00:00",
+      "updated_at": "2026-08-23T06:25:28+00:00",
+      "touched_round": 104,
+      "title": "Constitutional AI (self-critique + revision) unimplemented (ROADMAP 11.4); no CPU-measurable rule-based slice",
+      "summary": "11.4 last open item. Next slice: rule-based constitution judge + self-critique -> revision pipeline; CPU e2e measures revised-vs-original rule-compliance."
+    },
+    "TASK-235": {
+      "id": "TASK-235",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-23T06:25:32+00:00",
+      "updated_at": "2026-08-23T06:25:32+00:00",
+      "touched_round": 104,
+      "category": "core-feature",
+      "severity": 0.3,
+      "effort": 0.7,
+      "confidence": 0.7,
+      "unlock_factor": 1.0,
+      "title": "Constitutional AI slice: self-critique + revision against a rule-based constitution (CPU)",
+      "summary": "Add a rule-based constitution judge scoring responses (e.g., forbidden-token avoidance), a critique+revision helper that rewrites a response to better satisfy the constitution, and a CPU e2e showing revised responses score higher than originals; docs + ROADMAP 11.4 checkoff."
     }
   },
   "edges": [
@@ -20060,6 +20123,36 @@
       "to": "COMP-005",
       "type": "located_in",
       "created_at": "2026-08-23T06:20:13+00:00"
+    },
+    {
+      "from": "CHG-248",
+      "to": "TASK-234",
+      "type": "implements",
+      "created_at": "2026-08-23T06:25:20+00:00"
+    },
+    {
+      "from": "CHG-248",
+      "to": "ISS-272",
+      "type": "resolves",
+      "created_at": "2026-08-23T06:25:20+00:00"
+    },
+    {
+      "from": "DEC-067",
+      "to": "TASK-235",
+      "type": "governs",
+      "created_at": "2026-08-23T06:25:34+00:00"
+    },
+    {
+      "from": "TASK-235",
+      "to": "ISS-273",
+      "type": "addresses",
+      "created_at": "2026-08-23T06:25:35+00:00"
+    },
+    {
+      "from": "ISS-273",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-23T06:25:35+00:00"
     }
   ]
 }
