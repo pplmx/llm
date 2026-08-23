@@ -444,7 +444,7 @@
 
 #### 13.4 模型压缩
 
-- [ ] 实现知识蒸馏
+- [x] 实现知识蒸馏 (Hinton temperature-scaled KL: `DistillationLoss` + `--task distill`，teacher 从 CheckpointManager checkpoint 加载并冻结；见 [docs/guides/distillation.md](docs/guides/distillation.md))
 - [ ] 实现模型剪枝
 - [ ] 探索低秩分解
 

@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Knowledge Distillation** (ROADMAP 13.4 / RIL DEC-055):
+  - `DistillationLoss` (Hinton temperature-scaled KL: `alpha*CE + (1-alpha)*T^2*KL`)
+    in `llm/training/distillation.py`.
+  - `--task distill`: `DistillationTask` trains a fresh student against a frozen
+    teacher loaded from a `CheckpointManager` checkpoint (`training.distill_teacher_path`);
+    config fields `distill_temperature` / `distill_alpha`. A fresh-seeded frozen teacher
+    is used only as a dev/testing convenience when no checkpoint is given.
+  - Docs: new [distillation guide](docs/guides/distillation.md) + CLI table entry.
+
 - **MkDocs docs overhaul** (docs):
   - `docs/README.md` is now the site home page (previously excluded from the
     build and missing from the nav) with role-based entry points, an updated

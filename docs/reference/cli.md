@@ -37,6 +37,7 @@ llm-train --task <task> [OPTIONS]
 | `stream_lm` | 流式大规模预训练（`StreamingTextDataModule`，主入口）   |
 | `sft`       | 监督微调                                                |
 | `dpo`       | 直接偏好优化                                            |
+| `distill`   | 知识蒸馏（student 蒸馏冻结的 teacher checkpoint）       |
 | `reward`    | Reward model 训练                                       |
 | `ppo`       | PPO RLHF 对齐                                           |
 | `regression`| 合成回归 demo                                           |

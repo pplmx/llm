@@ -437,6 +437,29 @@ class TrainingConfig(BaseModel):
             raise ValueError(f"qat_bits must be 4 or 8, got {value}")
         return value
 
+    # Knowledge Distillation (ROADMAP 13.4 / RIL DEC-055). Consumed by the
+    # ``distill`` task; controls the Hinton-style KD loss.
+    distill_temperature: float = Field(
+        4.0,
+        gt=0,
+        description="KD softening temperature T (softmax(student/T) vs softmax(teacher/T)).",
+    )
+    distill_alpha: float = Field(
+        0.5,
+        ge=0,
+        le=1,
+        description="KD hard-label CE weight in [0,1]; the KL term contributes (1-alpha).",
+    )
+    distill_teacher_path: str | None = Field(
+        None,
+        description=(
+            "Path to the frozen-teacher checkpoint the ``distill`` task loads "
+            "(a model saved by CheckpointManager with the same architecture as "
+            "``config.model``). When unset, the distill task builds a "
+            "freshly-seeded teacher (dev/test convenience)."
+        ),
+    )
+
     @field_validator("peft_method", mode="after")
     @classmethod
     def _validate_peft_method(cls, value: str | None) -> str | None:
