@@ -114,10 +114,36 @@ loss = engine._run_epoch(0)               # batch["modal_embeds"]: [B, 17, embed
 - 通用化:可训练塔的原始样本 batch 键统一为 **`modal_samples`**(vision/audio 共用),
   替代 slice 2 的 `images`。
 
+## 已落地：语音识别 / 语音指令微调 slice 6（ROADMAP 12.2 收官）
+
+让 audio→text 在 CPU 上**真正可学**（而非模型无视音频、记忆固定文本模式）：
+
+- **转写 ↔ 频谱 codec**（`llm/multimodal/asr.py`）：每个合成样本携带**随机转写文本**，
+  其 token 被确定性编码进频谱——`n_tokens` 个时间槽、每个 token 一个 Gaussian 能量峰，
+  频率 `2 + token % (n_mels-2)`、幅度随 token id 缩放；`spectrogram_to_tokens` 是精确
+  反演（`vocab <= n_mels-1` 时）。样本音频即标签来源,模型必须**读出**音频才能
+  匹配文本(随机转写 → 记忆固定模式不可能)。
+- `MultimodalDataModule(audio_asr=True, asr_vocab=, asr_slot_h=, ...)`：构建 ASR 语料,
+  文本为 `[instruction | transcript]`,instruction 段用 `-100` 掩码(复用
+  `vit_instruction_len` 机制 = 语音指令微调;置 0 则为纯 audio→text 识别);
+  频谱 = 转写文本的确定性编码。要求 `train_encoder=True`(原始音频在 batch)并校验
+  `asr_vocab <= audio_mels-1` 保证 codec 精确可逆。
+- `MultimodalModel.generate()`：音频条件贪心自回归解码,CPU 小序列上(无 KV cache,
+  逐步重嵌入)推理。
+- **CPU e2e 收敛**：小字母表(`asr_vocab=8` → 8 个充分分离的频率峰)下音频塔+解码器
+  学会转写 —— 对**从未训练过**的随机转写频谱贪心解码,held-out 准确率达 ~1.0
+  (chance 1/8);更大容量的重配置(`@pytest.mark.e2e`/`heavy`,`make test-e2e`)同达
+  >0.95。调参注记：`vocab=32` 时合成任务落在记忆-泛化刀口上(容量/样本量/线程数微扰
+  就会翻入记忆盆地),故用 8 字母表把解翻转任务推进泛化盆地。
+
+> ROADMAP 12.2 语音识别 + 语音指令微调两项至此完成;真实语料与大规模管线仍留待
+> "多模态预训练"里程碑。
+
 ## 未落地（后续切片）
 
-- 语音识别/生成任务与语音指令微调（ROADMAP 12.2 后续）,真实多模态数据集接入。
-- 音频编码器（Whisper-style，ROADMAP 12.2）与真实多模态数据集接入。
+- 多模态预训练（真实数据集接入 + 大规模训练管线,ROADMAP 12.2/12.1 交集）。
+- 多模态 tokenizer（ROADMAP 12.3）与 12.3 通用多模态数据接口。
 
 测试见 `tests/multimodal/`（registry + DataModule 契约 + 最小编码器可训练性 +
-视觉编码器形状/parity/梯度/冻结 + 图像路径 e2e 收敛）。
+视觉编码器形状/parity/梯度/冻结 + 图像路径 e2e 收敛 +
+音频路径：codec 精确可逆/确定性/越界校验 + ASR 语料掩码批 + held-out 转写 e2e）。

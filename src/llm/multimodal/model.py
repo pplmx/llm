@@ -102,6 +102,54 @@ class MultimodalModel(nn.Module):
         logits = self.decoder.lm_head(hidden)  # (B, M+text_len, vocab)
         return logits[:, num_prefix:]
 
+    @torch.no_grad()
+    def generate(
+        self,
+        input_ids: torch.Tensor,
+        modal_embeds: torch.Tensor | None = None,
+        modal_samples: torch.Tensor | None = None,
+        max_new_tokens: int = 8,
+    ) -> torch.Tensor:
+        """Greedy autoregressive decode conditioned on a modal prefix.
+
+        Starts from ``input_ids`` (e.g. an ASR instruction prompt) fused after
+        the modal prefix, and appends one argmax token at a time for
+        ``max_new_tokens`` steps. Returns ``[B, P + max_new_tokens]`` (prompt
+        retained). The whole sequence is re-embedded each step (no KV cache),
+        which is fine for the small CPU-verifiable sequences this framework
+        targets.
+        """
+        if modal_embeds is None and modal_samples is None:
+            raise ValueError("MultimodalModel.generate needs modal_embeds or modal_samples")
+        if max_new_tokens < 1:
+            raise ValueError(f"max_new_tokens must be >= 1, got {max_new_tokens}")
+        device = next(self.parameters()).device
+        input_ids = input_ids.to(device)
+        if modal_embeds is None:
+            if modal_samples is None or self.encoder is None:
+                raise ValueError("MultimodalModel.generate needs modal_embeds or a raw modal sample with an encoder")
+            modal_embeds = self.encoder.encode(modal_samples.to(device))
+        if modal_embeds.dim() == 2:
+            modal_embeds = modal_embeds.unsqueeze(1)
+        modal_embeds = modal_embeds.to(device)
+
+        # A zero-length prompt (e.g. pure audio->text ASR with no instruction)
+        # is seeded with a neutral token and that seed is stripped afterwards,
+        # so generation still needs at least one sampled token.
+        empty_prompt = input_ids.shape[-1] == 0
+        if empty_prompt:
+            seed = torch.full((input_ids.shape[0], 1), 1, dtype=torch.long, device=device)
+            fused = seed
+        else:
+            fused = input_ids
+        for _ in range(int(max_new_tokens)):
+            logits = self(fused, modal_embeds=modal_embeds)  # (B, cur_len, V)
+            next_tok = logits[:, -1].argmax(dim=-1, keepdim=True)  # (B, 1)
+            fused = torch.cat([fused, next_tok], dim=1)
+        if empty_prompt:
+            return fused[:, 1:]
+        return fused
+
 
 def build_multimodal_model(decoder: DecoderModel, num_modal_tokens: int = 1, modal_dim: int | None = None):
     return MultimodalModel(decoder, num_modal_tokens=num_modal_tokens, modal_dim=modal_dim)

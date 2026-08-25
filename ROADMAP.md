@@ -411,8 +411,10 @@
 
 - [x] 集成音频编码器（Whisper-style `AudioSpectrogramEncoder`,注册 `"audio"`,
   RIL TASK-264;原始频谱管线 + 可训练塔与 vision 共用 `modal_samples` 键）
-- [ ] 实现语音识别和生成
-- [ ] 支持语音指令微调
+- [x] 实现语音识别和生成（转写↔频谱 codec `multimodal/asr.py` + `MultimodalModel.generate()`
+  音频条件贪心解码 + held-out 转写 e2e ~1.0,RIL TASK-265;见 [multimodal guide](docs/guides/multimodal.md)）
+- [x] 支持语音指令微调（`audio_asr=True` 复用 `vit_instruction_len` 掩码
+  `[instruction | transcript]` SFT,音频决定转写内容,RIL TASK-265）→ **12.2 完成**
 
 #### 12.3 统一多模态接口
 

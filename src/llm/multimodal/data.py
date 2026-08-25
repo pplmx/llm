@@ -21,6 +21,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 from llm.data.modules.map_base import SamplerMapDataModule
+from llm.multimodal.asr import tokens_to_spectrogram
 from llm.multimodal.audio import AudioSpectrogramEncoder
 from llm.multimodal.encoders import MODALITY_ENCODER_REGISTRY, ModalityEncoder
 from llm.multimodal.vision import VisionTransformerEncoder
@@ -52,6 +53,18 @@ class MultimodalDataModule(SamplerMapDataModule):
             tokens labelled ``-100`` so the CE loss only supervises the
             response, conditioned on the modal prefix + instruction context
             (ROADMAP 12.1 Visual Instruction Tuning).
+        audio_asr: when True (requires ``modality="audio"`` and
+            ``train_encoder=True``), build a random-transcript ASR corpus: the
+            text is ``[instruction | transcript]`` and each sample's raw
+            spectrogram **deterministically encodes its transcript** (see
+            :mod:`llm.multimodal.asr`), so audio-to-text recognition is
+            genuinely learnable on CPU rather than pattern memorisation
+            (ROADMAP 12.2 speech recognition + speech instruction tuning).
+        asr_slot_h: frames per transcript token's time slot in the spectrogram
+            (``0`` = auto ``audio_frames // transcript_len``).
+        asr_vocab: token vocabulary for synthetic transcripts (``None`` =
+            ``config.model.vocab_size``; must fit the mel bins for exact
+            codec roundtrip: ``asr_vocab <= audio_mels - 1``).
     """
 
     def __init__(
@@ -70,6 +83,9 @@ class MultimodalDataModule(SamplerMapDataModule):
         with_cls: bool = True,
         train_encoder: bool = False,
         vit_instruction_len: int = 0,
+        audio_asr: bool = False,
+        asr_slot_h: int = 0,
+        asr_vocab: int | None = None,
     ) -> None:
         super().__init__(config)
         self.modality = modality
@@ -85,6 +101,9 @@ class MultimodalDataModule(SamplerMapDataModule):
         self.with_cls = bool(with_cls)
         self.train_encoder = bool(train_encoder)
         self.vit_instruction_len = int(vit_instruction_len)
+        self.audio_asr = bool(audio_asr)
+        self.asr_slot_h = int(asr_slot_h)
+        self.asr_vocab = int(asr_vocab) if asr_vocab is not None else int(getattr(config.model, "vocab_size", 32))
         self._raw_modality = self.modality in ("vit", "audio")
         self.encoder: ModalityEncoder | None = None
         self.num_modal_tokens: int | None = None
@@ -133,6 +152,58 @@ class MultimodalDataModule(SamplerMapDataModule):
         self.num_modal_tokens = encoder.num_tokens if self.modality in ("vit", "audio") else None
         return encoder
 
+    def _build_asr_corpus(self, gen: torch.Generator, vocab: int, seq_len: int, count: int):
+        """Build a random-transcript ASR corpus: text + transcript-encoded audio.
+
+        Returns ``(inputs, labels, raw)`` with ``inputs = [instruction | transcript]``
+        (or just ``transcript`` when ``vit_instruction_len == 0``), the
+        instruction masked with ``-100`` in ``labels``, and ``raw`` the
+        ``[count, 1, T, F]`` spectrogram that deterministically encodes each
+        sample's transcript (so audio-to-text is the only way to predict it).
+        """
+        if self.modality != "audio":
+            raise ValueError(f"audio_asr=True requires modality='audio', got '{self.modality}'")
+        if not self.train_encoder:
+            raise ValueError(
+                "audio_asr=True requires train_encoder=True: the tower must be trainable to "
+                "learn transcript->spectrogram inversion (raw audio stays in the batch)"
+            )
+        if self.asr_vocab > vocab:
+            raise ValueError(f"asr_vocab={self.asr_vocab} exceeds model vocab_size={vocab}")
+        if self.asr_vocab > self.audio_mels - 1:
+            raise ValueError(
+                f"audio_asr: asr_vocab={self.asr_vocab} exceeds n_mels-1={self.audio_mels - 1}; "
+                "the transcript codec would not be exactly invertible"
+            )
+        inst_len = min(self.vit_instruction_len, seq_len - 1)  # keep >= 1 response token
+        resp_len = seq_len - inst_len
+        slot_h = self.asr_slot_h if self.asr_slot_h > 0 else self.audio_frames // resp_len
+        if slot_h * resp_len > self.audio_frames:
+            raise ValueError(
+                f"audio_asr: transcript_len {resp_len} * slot_h {slot_h} > audio_frames {self.audio_frames}"
+            )
+
+        # Random transcripts (uniform) — infinite variety, so the only way to
+        # reconstruct one is to read it out of its spectrogram.
+        transcripts = torch.randint(1, self.asr_vocab, (count, resp_len), generator=gen)
+        if inst_len > 0:
+            # Random masked instruction prompt: the model must ignore it and
+            # transcribe from audio (speech instruction tuning semantics).
+            inst = torch.randint(1, self.asr_vocab, (count, inst_len), generator=gen)
+            inputs = torch.cat([inst, transcripts], dim=1)
+            labels = torch.cat([torch.full_like(inst, -100), transcripts], dim=1)
+        else:
+            inputs = transcripts
+            labels = transcripts  # audio -> text (pure speech recognition)
+        raw = tokens_to_spectrogram(
+            transcripts,
+            n_frames=self.audio_frames,
+            n_mels=self.audio_mels,
+            slot_h=slot_h,
+            vocab_size=self.asr_vocab,
+        )
+        return inputs, labels, raw
+
     def prepare_data(self) -> None:
         pass
 
@@ -146,33 +217,36 @@ class MultimodalDataModule(SamplerMapDataModule):
         # the SyntheticDataModule RIL ISS-134 pattern — never the global RNG).
         gen = torch.Generator()
         gen.manual_seed(0)
-        # Generate ``num + val_num`` samples so the validation split is DISJOINT
-        # from training (previously val_dataset trained on the training set, which
-        # silently made val metrics equal train metrics — deep-dive TASK-228).
-        rows = [
-            (torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len] + i).fmod(vocab).long()
-            for i in range(num + val_num)
-        ]
-        inputs = torch.stack(rows)
-        if self.vit_instruction_len > 0:
-            # Visual Instruction Tuning: ``[instruction | response]`` with the
-            # instruction positions masked (-100) so the shift-based LM loss in
-            # the multimodal task only supervises the response, conditioned on
-            # the image prefix + instruction context. Response keeps the
-            # per-sample cyclic pattern (deterministic -> learnable), exactly
-            # like the plain self-supervised rows otherwise.
-            inst_len = min(self.vit_instruction_len, seq_len - 1)  # keep >=1 response token
-            inst = torch.randint(1, vocab, (num + val_num, inst_len), generator=gen)
-            resp = inputs[:, : seq_len - inst_len]
-            inputs = torch.cat([inst, resp], dim=1)
-            labels = torch.cat(
-                [torch.full_like(inst, -100), resp],
-                dim=1,
-            )
+        if self.audio_asr:
+            inputs, labels, raw = self._build_asr_corpus(gen, vocab, seq_len, num + val_num)
         else:
-            labels = inputs  # next-token self-supervised labels
-
-        raw = self._make_raw_samples(num + val_num, gen)
+            # Generate ``num + val_num`` samples so the validation split is
+            # DISJOINT from training (previously val_dataset trained on the
+            # training set, which silently made val metrics equal train metrics
+            # — deep-dive TASK-228).
+            rows = [
+                (torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len] + i).fmod(vocab).long()
+                for i in range(num + val_num)
+            ]
+            inputs = torch.stack(rows)
+            if self.vit_instruction_len > 0:
+                # Visual Instruction Tuning: ``[instruction | response]`` with
+                # the instruction positions masked (-100) so the shift-based LM
+                # loss only supervises the response, conditioned on the modal
+                # prefix + instruction context. Response keeps the per-sample
+                # cyclic pattern (deterministic -> learnable), exactly like the
+                # plain self-supervised rows otherwise.
+                inst_len = min(self.vit_instruction_len, seq_len - 1)  # keep >=1 response token
+                inst = torch.randint(1, vocab, (num + val_num, inst_len), generator=gen)
+                resp = inputs[:, : seq_len - inst_len]
+                inputs = torch.cat([inst, resp], dim=1)
+                labels = torch.cat(
+                    [torch.full_like(inst, -100), resp],
+                    dim=1,
+                )
+            else:
+                labels = inputs  # next-token self-supervised labels
+            raw = self._make_raw_samples(num + val_num, gen)
         if raw is not None and self.train_encoder:
             # Trainable-tower path: batch carries RAW modal samples under the
             # ``modal_samples`` key; the model encodes them in-forward so

@@ -10,6 +10,7 @@ Nothing here patches :class:`DecoderModel` (see
 from __future__ import annotations
 
 from llm.multimodal.alignment import ContrastiveAligner, contrastive_loss
+from llm.multimodal.asr import spectrogram_to_tokens, tokens_to_spectrogram
 from llm.multimodal.audio import AudioSpectrogramEncoder
 from llm.multimodal.data import MultimodalDataModule
 from llm.multimodal.encoders import (
@@ -49,4 +50,6 @@ __all__ = [
     "contrastive_loss",
     "ensure_multimodal_encoders_registered",
     "register_encoder",
+    "spectrogram_to_tokens",
+    "tokens_to_spectrogram",
 ]
