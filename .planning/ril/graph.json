@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 136,
+  "round": 138,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-23T21:57:49+00:00",
+  "updated_at": "2026-08-25T05:32:29+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -15268,7 +15268,7 @@
       "version": 2,
       "created_at": "2026-08-23T11:54:07+00:00",
       "updated_at": "2026-08-23T11:55:14+00:00",
-      "touched_round": 129,
+      "touched_round": 137,
       "title": "Multimodal subsystem (src/llm/multimodal: encoder registry, data module, fusion model, task, image preprocessor, vision encoder)"
     },
     "CHG-272": {
@@ -15547,6 +15547,80 @@
       "source": "tests/multimodal/test_audio.py (7 tests); full suite EXIT=0",
       "title": "Audio encoder verified on CPU: registry, shape/parity, grads to tower, frozen precompute + trainable e2e converge",
       "confidence": 1.0
+    },
+    "DEC-093": {
+      "id": "DEC-093",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-25T00:00:18+00:00",
+      "updated_at": "2026-08-25T00:00:18+00:00",
+      "touched_round": 137,
+      "title": "Audio-to-text ASR slice approach (ROADMAP 12.2 slice 2)",
+      "rationale": "Reuse the existing masked-instruction SFT machinery (vit_instruction_len) on the audio path; make the synthetic spectrogram deterministically encode each sample's random transcript (frequency-peak time-slot code) so audio→text is genuinely learnable on CPU and distinct from sequence memorization; add a greedy generate() on MultimodalModel to decode audio-conditioned transcripts. This closes ROADMAP 12.2 items 2 (speech recognition) and 3 (speech instruction tuning) as one slice.",
+      "alternatives_rejected": [
+        "Plain cyclic-text labels on random-audio (loss drops but ignores audio - not ASR)",
+        "Real audio datasets (librispeech) - no network/data budget, not CPU-verifiable in this repo",
+        "Whisper conv-stem front end - documented variant, patch stem already the established research-framework equivalent"
+      ]
+    },
+    "ISS-301": {
+      "id": "ISS-301",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-25T00:00:48+00:00",
+      "updated_at": "2026-08-25T05:31:57+00:00",
+      "touched_round": 137,
+      "title": "Multimodal 12.2 slice 2: no audio-to-text (ASR) path — audio samples are random noise carrying no transcript signal, and MultimodalModel has no generate()",
+      "severity": 0.5
+    },
+    "TASK-265": {
+      "id": "TASK-265",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-25T00:01:01+00:00",
+      "updated_at": "2026-08-25T05:31:57+00:00",
+      "touched_round": 137,
+      "category": "core-feature",
+      "severity": 0.5,
+      "effort": "medium",
+      "title": "Multimodal 12.2 slice 2: audio-to-text ASR — transcript-encoded synthetic spectrogram corpus + masked audio instruction SFT + greedy audio-conditioned generate(), CPU-verifiable (closes ROADMAP 12.2 speech recognition + speech instruction tuning)"
+    },
+    "EV-269": {
+      "id": "EV-269",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-25T03:58:16+00:00",
+      "updated_at": "2026-08-25T03:58:16+00:00",
+      "touched_round": 137,
+      "source": "tests/multimodal/test_asr.py",
+      "title": "ASR held-out transcription works end-to-end: vocab-8 corpus trains a trainable audio tower + decoder in ~50s CPU to ~1.0 greedy-decode accuracy on never-trained random transcript spectrograms (chance 1/8); larger heavy/e2e variant reaches >0.95. Discovery: at asr_vocab=32 the synthetic task sits on a memorisation-vs-generalisation knife edge (sample count/capacity/thread/RNG-seed perturbations flip held-out accuracy 1.0<->0.06), solved by a small alphabet (vocab 8, 8 well-separated peaks) that pushes the inversion into the generalising basin",
+      "confidence": 1.0
+    },
+    "CHG-280": {
+      "id": "CHG-280",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-25T05:30:41+00:00",
+      "updated_at": "2026-08-25T05:30:41+00:00",
+      "touched_round": 137,
+      "title": "feat(multimodal): audio-to-text ASR — transcript<->spectrogram codec + audio-conditioned generate() + audio_asr corpus + held-out e2e (vocab-8)",
+      "commit": "74fd865"
+    },
+    "HYP-060": {
+      "id": "HYP-060",
+      "type": "hypothesis",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-25T05:31:18+00:00",
+      "updated_at": "2026-08-25T05:31:18+00:00",
+      "touched_round": 137,
+      "confidence": 0.9,
+      "title": "Synthetic codec ASR sits on a memorisation-vs-generalisation knife edge at larger alphabets (vocab 32): the model overfits the training sample fingerprints instead of learning the inverse code unless sample count/capacity push it over; small alphabets (8 peaks) make the inversion trivially learnable and generalise robustly across seeds/threads/devices"
     }
   },
   "edges": [
@@ -22832,6 +22906,48 @@
       "to": "TASK-264",
       "type": "implements",
       "created_at": "2026-08-23T21:56:55+00:00"
+    },
+    {
+      "from": "TASK-265",
+      "to": "ISS-301",
+      "type": "addresses",
+      "created_at": "2026-08-25T00:01:48+00:00"
+    },
+    {
+      "from": "ISS-301",
+      "to": "COMP-017",
+      "type": "located_in",
+      "created_at": "2026-08-25T00:01:48+00:00"
+    },
+    {
+      "from": "DEC-093",
+      "to": "COMP-017",
+      "type": "governs",
+      "created_at": "2026-08-25T00:01:48+00:00"
+    },
+    {
+      "from": "DEC-093",
+      "to": "TASK-265",
+      "type": "governs",
+      "created_at": "2026-08-25T00:01:48+00:00"
+    },
+    {
+      "from": "CHG-280",
+      "to": "TASK-265",
+      "type": "implements",
+      "created_at": "2026-08-25T05:31:18+00:00"
+    },
+    {
+      "from": "CHG-280",
+      "to": "ISS-301",
+      "type": "resolves",
+      "created_at": "2026-08-25T05:31:18+00:00"
+    },
+    {
+      "from": "EV-269",
+      "to": "HYP-060",
+      "type": "validates",
+      "created_at": "2026-08-25T05:31:57+00:00"
     }
   ]
 }
