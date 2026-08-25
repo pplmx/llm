@@ -11,6 +11,7 @@ import torch.distributed as dist
 from torch import nn
 
 from llm.training.core.config import DistributedConfig
+from llm.training.core.device_select import select_cuda_index
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +86,16 @@ class DistributedManager:
                 timeout=timedelta(seconds=self.config.collective_timeout_seconds),
             )
 
-            # Only set device and CUDA seed if CUDA is available and being used
+            # Only set device and CUDA seed if CUDA is available and being used.
+            # Prefer the GPU with the most free VRAM (shared selection), falling
+            # back to the historical ``device_rank % device_count`` mapping when
+            # no device meets the free-memory floor (DEC-094 / RIL TASK-266).
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
                 device_rank = local_rank if local_rank is not None else global_rank
-                torch.cuda.set_device(device_rank % torch.cuda.device_count())
+                cuda_idx = select_cuda_index(device_rank)
+                if cuda_idx is None:
+                    cuda_idx = device_rank % torch.cuda.device_count()
+                torch.cuda.set_device(cuda_idx)
                 torch.cuda.manual_seed_all(42 + global_rank)
         elif world_size == 1:
             # Single process execution (could be CPU or single GPU without DDP)

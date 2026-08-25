@@ -12,6 +12,7 @@ from llm.data.base import BaseDataModule
 from llm.runtime.checkpoint import collect_extra_state, load_extra_state
 from llm.training.core.callbacks import Callback
 from llm.training.core.config import Config
+from llm.training.core.device_select import MIN_FREE_VRAM_BYTES, _cuda_usable_impl, select_cuda_index
 from llm.training.core.distributed import broadcast_parameters
 from llm.training.core.utils import CheckpointManager, DistributedManager, Logger, PerformanceMonitor
 from llm.training.distributed import (
@@ -31,7 +32,8 @@ from llm.training.distributed import (
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
-_MIN_FREE_VRAM_BYTES = 512 * 1024 * 1024  # 512 MiB headroom for CUDA context + model
+# Backward-compatible alias (previously defined here).
+_MIN_FREE_VRAM_BYTES = MIN_FREE_VRAM_BYTES
 
 
 def _cuda_usable(device_idx: int = 0) -> bool:
@@ -42,18 +44,10 @@ def _cuda_usable(device_idx: int = 0) -> bool:
     a non-zero free-byte count can be misleading: the CUDA driver reserves
     context memory, so a device reporting only a few hundred MiB free will OOM
     on the first real tensor allocation.  This helper rejects such devices by
-    requiring at least ``_MIN_FREE_VRAM_BYTES`` of free VRAM on the specific
+    requiring at least ``MIN_FREE_VRAM_BYTES`` of free VRAM on the specific
     device index that the caller intends to use.
     """
-    if not torch.cuda.is_available():
-        return False
-    if device_idx >= torch.cuda.device_count():
-        return False
-    try:
-        free_bytes, _ = torch.cuda.mem_get_info(device_idx)
-    except RuntimeError, torch.AcceleratorError:
-        return False
-    return free_bytes >= _MIN_FREE_VRAM_BYTES
+    return _cuda_usable_impl(device_idx, min_free_bytes=MIN_FREE_VRAM_BYTES)
 
 
 class TrainingEngine:
@@ -77,8 +71,14 @@ class TrainingEngine:
         self.world_size = world_size
 
         if torch.cuda.is_available() and torch.cuda.device_count() > 0 and self.world_size > 0:
-            cuda_idx = (local_rank if local_rank is not None else rank) % torch.cuda.device_count()
-            # world_size > 0 is a proxy for intending to use GPUs if available
+            # world_size > 0 is a proxy for intending to use GPUs if available.
+            # Prefer the GPU with the most free VRAM (shared selection), falling
+            # back to the historical ``rank % device_count`` mapping when no
+            # device meets the free-memory floor (DEC-094 / RIL TASK-266).
+            local_idx = local_rank if local_rank is not None else rank
+            cuda_idx = select_cuda_index(local_idx)
+            if cuda_idx is None:
+                cuda_idx = local_idx % torch.cuda.device_count()
             if _cuda_usable(cuda_idx):
                 self.device = torch.device(f"cuda:{cuda_idx}")
             else:
