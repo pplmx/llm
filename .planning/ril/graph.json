@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 138,
+  "round": 139,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-25T05:32:29+00:00",
+  "updated_at": "2026-08-25T06:15:32+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 111,
+      "touched_round": 138,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -15621,6 +15621,69 @@
       "touched_round": 137,
       "confidence": 0.9,
       "title": "Synthetic codec ASR sits on a memorisation-vs-generalisation knife edge at larger alphabets (vocab 32): the model overfits the training sample fingerprints instead of learning the inverse code unless sample count/capacity push it over; small alphabets (8 peaks) make the inversion trivially learnable and generalise robustly across seeds/threads/devices"
+    },
+    "DEC-094": {
+      "id": "DEC-094",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-25T05:42:44+00:00",
+      "updated_at": "2026-08-25T05:42:44+00:00",
+      "touched_round": 138,
+      "title": "Runtime/test device selection should prefer the GPU with the most free VRAM instead of always rank%device_count (gpu0 first)",
+      "rationale": "TrainingEngine and the distributed launcher map rank -> (local_rank or rank) % device_count, so rank 0 always lands on cuda:0. On shared/busy multi-GPU hosts (like this box: GPUs 0/1 ~76GB used, GPUs 2-7 ~80GB free) that OOMs runs (TP 2-GPU e2e) even though idle GPUs exist. tests/support/devices.py already selects by remaining VRAM; the runtime layer should match. Map each rank into the usable-GPU list sorted by free VRAM descending (ties -> lower index, reproducing old mapping when equal).",
+      "alternatives_rejected": [
+        "Launcher-only CUDA_VISIBLE_DEVICES-per-worker remap (bigger, changes many test assumptions)",
+        "Random/polling-based allocator (nondeterministic across ranks)",
+        "Keep rank%count and only log warning (does not fix the OOM)"
+      ]
+    },
+    "ISS-302": {
+      "id": "ISS-302",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-25T05:42:44+00:00",
+      "updated_at": "2026-08-25T06:14:44+00:00",
+      "touched_round": 138,
+      "severity": 0.5,
+      "title": "Runtime uses only usable-if-cuda0 device mapping: rank % device_count always starts at gpu0, ignoring more-free GPUs (TP/DDP e2e OOM on contended boxes)"
+    },
+    "TASK-266": {
+      "id": "TASK-266",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-25T05:42:44+00:00",
+      "updated_at": "2026-08-25T06:14:44+00:00",
+      "touched_round": 138,
+      "category": "performance",
+      "severity": 0.5,
+      "effort": "small",
+      "title": "Prefer most-free-VRAM GPU in TrainingEngine + distributed launcher device selection (shared select_cuda_index helper + tests)"
+    },
+    "CHG-281": {
+      "id": "CHG-281",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-25T06:14:43+00:00",
+      "updated_at": "2026-08-25T06:14:43+00:00",
+      "touched_round": 138,
+      "title": "feat(core): most-free-VRAM GPU selection — device_select helper + TrainingEngine/distributed wiring + tests",
+      "commit": "fe3b46c"
+    },
+    "EV-270": {
+      "id": "EV-270",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-25T06:14:44+00:00",
+      "updated_at": "2026-08-25T06:14:44+00:00",
+      "touched_round": 138,
+      "source": "tests/training/core/test_device_select.py + live demo",
+      "title": "141 tests pass across device/engine/launcher/config/DPO/multimodal; TP 2-GPU e2e (OOMing under contention) now passes; contended-scenario demo: OLD rank0->cuda:0 vs NEW rank0->cuda:2 / rank1->cuda:3. ties reproduce rank%count",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -22948,6 +23011,36 @@
       "to": "HYP-060",
       "type": "validates",
       "created_at": "2026-08-25T05:31:57+00:00"
+    },
+    {
+      "from": "TASK-266",
+      "to": "ISS-302",
+      "type": "addresses",
+      "created_at": "2026-08-25T05:43:32+00:00"
+    },
+    {
+      "from": "ISS-302",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-25T05:43:32+00:00"
+    },
+    {
+      "from": "DEC-094",
+      "to": "TASK-266",
+      "type": "governs",
+      "created_at": "2026-08-25T05:43:32+00:00"
+    },
+    {
+      "from": "CHG-281",
+      "to": "TASK-266",
+      "type": "implements",
+      "created_at": "2026-08-25T06:14:44+00:00"
+    },
+    {
+      "from": "CHG-281",
+      "to": "ISS-302",
+      "type": "resolves",
+      "created_at": "2026-08-25T06:14:44+00:00"
     }
   ]
 }
