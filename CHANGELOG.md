@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GGUF Q3_K write path** (RIL TASK-277/ISS-313/DEC-104):
+  `llm/export/gguf/quant.py::quantize_q3_k` packs the 256-wide `block_q3_K`
+  (hmask32+qs64+scales12+d2, 16 groups of 16, value = dl*q with q = ql-(qh<<2),
+  signed 6-bit scales) matching the gguf-py-verified `dequantize_q3_k` exactly,
+  wired into the exporter (`quantize="q3_k"`, file type 11). This completes the
+  K-quant family — **all five** reader-supported K-quants (Q2_K..Q6_K) are now
+  exportable.
+
 - **GGUF Q2_K write path** (RIL TASK-276/ISS-312/DEC-103):
   `llm/export/gguf/quant.py::quantize_q2_k` packs the 256-wide `block_q2_K`
   (scales16+qs64+d2+dmin2, 16 groups of 16, value = dl*q - ml) matching the

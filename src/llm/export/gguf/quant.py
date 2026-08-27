@@ -476,6 +476,81 @@ def quantize_q5_k(data: np.ndarray) -> np.ndarray:
     return np.frombuffer(rec.tobytes(), dtype=np.uint8)
 
 
+def quantize_q3_k(data: np.ndarray) -> np.ndarray:
+    """Quantize float data to Q3_K blocks (256-wide), returning packed bytes.
+
+    Layout (``block_q3_K``, which :func:`dequantize_q3_k` reads):
+    ``hmask(32) + qs(64) + scales(12) + d(2)``. Sixteen 16-element groups each
+    carry a signed int8 scale ``sc`` (packed 6-bit across the 12 ``scales``
+    bytes, centered at 0 in ggml) and ``dl = d*sc``; element ``(g, k)`` decodes
+    as ``dl_g * q`` where ``q = ql - (qh<<2)``, ``ql`` a 2-bit value in ``qs``
+    and ``qh`` the sign-offset bit in ``hmask`` (set when ``q >= 0``). Output is
+    self-consistent with the (gguf-py verified) dequantizer, so llama.cpp can
+    load it (validity contract of DEC-098..103).
+    """
+    x = np.asarray(data, dtype=np.float32).reshape(-1)
+    if x.size % GGML_K_BLOCK_SIZE:
+        raise ValueError(f"Q3_K requires a multiple of {GGML_K_BLOCK_SIZE} elements, got {x.size}")
+    blocks = x.reshape(-1, GGML_K_BLOCK_SIZE)
+    n_blocks = blocks.shape[0]
+    qs = np.zeros((n_blocks, 64), dtype=np.uint8)
+    hmask = np.zeros((n_blocks, 32), dtype=np.uint8)
+    scales = np.zeros((n_blocks, 12), dtype=np.uint8)
+    d = np.zeros(n_blocks, dtype=np.float16)
+
+    for b in range(n_blocks):
+        groups = blocks[b].reshape(16, 16).astype(np.float32)
+        max_abs = groups[np.abs(groups).argmax(axis=1), np.arange(16)]
+        global_max = float(max_abs.max()) if max_abs.size else 0.0
+        dval = global_max / (3.0 * 31.0) if global_max > 0.0 else 0.0
+        d[b] = np.float16(dval)
+        sc = np.ones(16, dtype=np.int8)  # per-group centered scale (-32..31)
+        for g in range(16):
+            gmax = float(abs(max_abs[g]))
+            if dval > 0.0 and gmax > 0.0:
+                sc[g] = np.int8(max(1, min(31, round(gmax / (3.0 * dval)))))
+            dl = dval * int(sc[g])
+            q = np.clip(np.round(groups[g] / dl).astype(np.int32), -4, 3) if dl > 0.0 else np.zeros(16, dtype=np.int32)
+            # q = ql - (qh<<2); qh=0 (hmask bit set=1) when q>=0, else qh=1.
+            ql = np.where(q >= 0, q, q + 4).astype(np.int32)
+            hbit = (q >= 0).astype(np.uint8)
+            byte = (g // 8) * 32 + (g % 2) * 16
+            shift = 2 * ((g % 8) // 2)
+            qs[b, byte : byte + 16] |= np.uint8((ql & 0x03).astype(np.uint8) << shift)
+            hbyte = (g % 2) * 16
+            hbit_shift = g // 2
+            hmask[b, hbyte : hbyte + 16] |= np.uint8(hbit << hbit_shift)
+        raw = ((sc.astype(np.int32) + 32) & 0x3F).astype(np.uint8)  # center offset -> 6-bit
+        scales[b] = _pack_q3_scales(raw)
+
+    rec = np.zeros(n_blocks, dtype=[("hmask", "u1", 32), ("qs", "u1", 64), ("sc", "u1", 12), ("d", "<f2")])
+    rec["hmask"] = hmask
+    rec["qs"] = qs
+    rec["sc"] = scales
+    rec["d"] = d
+    return np.frombuffer(rec.tobytes(), dtype=np.uint8)
+
+
+def _pack_q3_scales(raw: np.ndarray) -> np.ndarray:
+    """Pack 16 six-bit scale bytes into the 12-byte Q3_K ``scales`` region.
+
+    Inverts :func:`dequantize_q3_k`'s unpacking: the first 8 bytes hold the low
+    nibbles (groups 0..7) and high nibbles (groups 8..15); the last 4 bytes hold
+    the remaining two bits of each 4-group block at 2-bit offsets.
+    """
+    lscales = np.zeros(8, dtype=np.uint8)
+    hscales = np.zeros(4, dtype=np.uint8)
+    for g in range(16):
+        low4 = raw[g] & 0x0F
+        high2 = (raw[g] >> 4) & 0x03
+        if g < 8:
+            lscales[g] |= np.uint8(low4)
+        else:
+            lscales[g - 8] |= np.uint8(low4 << 4)
+        hscales[g % 4] |= np.uint8(high2 << (2 * (g // 4)))
+    return np.concatenate([lscales, hscales])
+
+
 # ---------------------------------------------------------------------------
 # Reader-side dequantization (round 75): legacy 32-wide schemes + K-quants.
 # Each function takes a flat uint8 whole-payload byte array and the logical

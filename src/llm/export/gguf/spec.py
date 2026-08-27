@@ -182,6 +182,7 @@ EXPORT_TENSOR_TYPES = frozenset(
         GGMLQuantizationType.F16,
         GGMLQuantizationType.Q4_0,
         GGMLQuantizationType.Q2_K,
+        GGMLQuantizationType.Q3_K,
         GGMLQuantizationType.Q8_0,
         GGMLQuantizationType.Q4_K,
         GGMLQuantizationType.Q5_K,

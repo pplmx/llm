@@ -18,6 +18,7 @@ import numpy as np
 from llm.export.gguf.metadata import encode_metadata
 from llm.export.gguf.quant import (
     quantize_q2_k,
+    quantize_q3_k,
     quantize_q4_0,
     quantize_q4_k,
     quantize_q5_k,
@@ -92,6 +93,8 @@ def _encode_payload(arr: np.ndarray, ttype: GGMLQuantizationType) -> bytes:
         return _interleave_blocks(scales, packed)
     if ttype == GGMLQuantizationType.Q2_K:
         return quantize_q2_k(flat).tobytes()
+    if ttype == GGMLQuantizationType.Q3_K:
+        return quantize_q3_k(flat).tobytes()
     if ttype == GGMLQuantizationType.Q8_0:
         values, scales = quantize_q8_0(flat)
         return _interleave_blocks(scales, values)
@@ -212,6 +215,7 @@ class GGUFWriter:
             )
         if ttype in (
             GGMLQuantizationType.Q2_K,
+            GGMLQuantizationType.Q3_K,
             GGMLQuantizationType.Q4_K,
             GGMLQuantizationType.Q5_K,
             GGMLQuantizationType.Q6_K,

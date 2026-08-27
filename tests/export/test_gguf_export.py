@@ -98,9 +98,9 @@ class TestExportPolicy:
         """A reader-supported-but-not-exportable type must raise GGUFError,
         not crash with a KeyError in the file_type mapping (round-75 review
         HIGH regression)."""
-        # Q4_1 / Q3_K are still reader-only (Q6_K/Q4_K/Q5_K/Q2_K are exportable
+        # Q4_1 / Q5_0 are still reader-only (all five K-quants are exportable
         # since their write-path milestones).
-        for reader_only in (GGMLQuantizationType.Q4_1, GGMLQuantizationType.Q3_K):
+        for reader_only in (GGMLQuantizationType.Q4_1, GGMLQuantizationType.Q5_0):
             with pytest.raises(GGUFError, match="reader-supported but not exportable"):
                 export_to_gguf(small_model, tmp_path / "m.gguf", quantize=reader_only)
 

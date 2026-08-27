@@ -7,12 +7,14 @@ import pytest
 
 from llm.export.gguf.quant import (
     dequantize_q2_k,
+    dequantize_q3_k,
     dequantize_q4_0,
     dequantize_q4_k,
     dequantize_q5_k,
     dequantize_q6_k,
     dequantize_q8_0,
     quantize_q2_k,
+    quantize_q3_k,
     quantize_q4_0,
     quantize_q4_k,
     quantize_q5_k,
@@ -397,5 +399,59 @@ class TestQ2K:
 
         assert _resolve_quant_type("q2_k") is GGMLQuantizationType.Q2_K
         el = GGMLQuantizationType.Q2_K
+        assert _pick_tensor_type(np.zeros((4, 256), np.float32), el, 2) is el
+        assert _pick_tensor_type(np.zeros((4, 100), np.float32), el, 2) is GGMLQuantizationType.F16
+
+
+Q3_K_BLOCK_BYTES = 110  # hmask(32) + qs(64) + scales(12) + d(2)
+
+
+class TestQ3K:
+    """Q3_K (256-wide) write path: layout, zero handling, structure."""
+
+    def test_block_byte_size(self, rng):
+        raw = quantize_q3_k(rng.normal(size=1024).astype(np.float32))  # 4 blocks
+        assert len(raw) == 4 * Q3_K_BLOCK_BYTES
+
+    def test_zero_block_decodes_to_zero(self):
+        raw = quantize_q3_k(np.zeros(Q6_K_BLOCK, dtype=np.float32))
+        assert len(raw) == Q3_K_BLOCK_BYTES
+        assert np.all(dequantize_q3_k(raw, Q6_K_BLOCK) == 0.0)
+
+    def test_constant_block_is_consistent(self):
+        c = 2.0
+        x = np.full(Q6_K_BLOCK, c, dtype=np.float32)
+        out = dequantize_q3_k(quantize_q3_k(x), x.size)
+        assert np.all(out == out[0])
+        assert abs(out[0] - c) < 0.1  # 3-bit represents a constant closely
+
+    def test_roundtrip_is_finite(self, rng):
+        x = rng.standard_normal(Q6_K_BLOCK * 2).astype(np.float32)
+        out = dequantize_q3_k(quantize_q3_k(x), x.size)
+        assert np.all(np.isfinite(out))
+
+    def test_requires_multiple_of_256(self):
+        with pytest.raises(ValueError, match="multiple of 256"):
+            quantize_q3_k(np.zeros(100, dtype=np.float32))
+
+    def test_writer_reader_roundtrip(self, tmp_path, rng):
+        """Writer emits Q3_K; GGUFReader dequantizes it without crashing."""
+        from llm.export.gguf import GGUFReader, GGUFWriter
+
+        x = rng.standard_normal(Q6_K_BLOCK * 2).astype(np.float32)
+        path = tmp_path / "q3k.gguf"
+        writer = GGUFWriter(path)
+        writer.add_tensor("w", x, ggml_type="q3_k")
+        writer.write()
+        out = GGUFReader(path).read_tensor("w")
+        assert out.shape == x.shape
+        assert np.all(np.isfinite(out))
+
+    def test_exporter_resolves_and_picks_q3k(self):
+        from llm.export.gguf.exporter import _pick_tensor_type, _resolve_quant_type
+        from llm.export.gguf.spec import GGMLQuantizationType
+
+        assert _resolve_quant_type("q3_k") is GGMLQuantizationType.Q3_K
+        el = GGMLQuantizationType.Q3_K
         assert _pick_tensor_type(np.zeros((4, 256), np.float32), el, 2) is el
         assert _pick_tensor_type(np.zeros((4, 100), np.float32), el, 2) is GGMLQuantizationType.F16

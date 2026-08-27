@@ -42,6 +42,7 @@ _QUANT_NAME_TO_TYPE = {
     "f16": GGMLQuantizationType.F16,
     "q4_0": GGMLQuantizationType.Q4_0,
     "q2_k": GGMLQuantizationType.Q2_K,
+    "q3_k": GGMLQuantizationType.Q3_K,
     "q8_0": GGMLQuantizationType.Q8_0,
     "q4_k": GGMLQuantizationType.Q4_K,
     "q5_k": GGMLQuantizationType.Q5_K,
@@ -54,6 +55,7 @@ _FILE_TYPE = {
     GGMLQuantizationType.F16: 1,  # MOSTLY_F16
     GGMLQuantizationType.Q4_0: 2,  # MOSTLY_Q4_0
     GGMLQuantizationType.Q2_K: 10,  # MOSTLY_Q2_K
+    GGMLQuantizationType.Q3_K: 11,  # MOSTLY_Q3_K
     GGMLQuantizationType.Q4_K: 3,  # MOSTLY_Q4_K
     GGMLQuantizationType.Q5_K: 6,  # MOSTLY_Q5_K
     GGMLQuantizationType.Q8_0: 7,  # MOSTLY_Q8_0
@@ -144,6 +146,7 @@ def _pick_tensor_type(
         return GGMLQuantizationType.F16
     if quant_type in (
         GGMLQuantizationType.Q2_K,
+        GGMLQuantizationType.Q3_K,
         GGMLQuantizationType.Q4_K,
         GGMLQuantizationType.Q5_K,
         GGMLQuantizationType.Q6_K,
@@ -214,6 +217,7 @@ def export_to_gguf(
             GGMLQuantizationType.Q4_0,
             GGMLQuantizationType.Q8_0,
             GGMLQuantizationType.Q2_K,
+            GGMLQuantizationType.Q3_K,
             GGMLQuantizationType.Q4_K,
             GGMLQuantizationType.Q5_K,
             GGMLQuantizationType.Q6_K,
