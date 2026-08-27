@@ -534,7 +534,7 @@ class DistributedConfig(BaseSettings):
     backend: str = "nccl"
     parallel_strategy: str = Field(
         "ddp",
-        pattern="^(ddp|fsdp|tp|pp|3d)$",
+        pattern="^(ddp|fsdp|tp|pp|3d|zero)$",
         description=(
             "Parallel strategy: 'ddp' (default), 'fsdp', 'tp' (tensor parallelism, "
             "with optional tp_size < world_size for TP+data-parallel 2D), or 'pp' "
@@ -546,7 +546,12 @@ class DistributedConfig(BaseSettings):
             "with a clear error. '3d' (RIL DEC-052/TASK-216) composes pipeline + "
             "tensor parallelism (dp_size data-parallel size, dp=1 for pure PP+TP); "
             "it needs explicit dp_size*pp_size*tp_size == world_size and the "
-            "standard-loop LM contract."
+            "standard-loop LM contract. 'zero' (RIL TASK-269/DEC-097) runs native "
+            "ZeRO Stage-1: each rank holds full parameters/gradients (averaged "
+            "over the world group each step) but partitions optimizer state "
+            "~1/world_size, then all-gathers the updated weights so all ranks "
+            "stay in lockstep. Requires the standard loop; fp16 AMP and "
+            "non-standard-loop tasks are refused in v1."
         ),
     )
     tp_size: int = Field(

@@ -3,6 +3,7 @@
 from llm.training.distributed.parallel import (
     allreduce_3d_dp_grads,
     allreduce_dp_grads,
+    allreduce_zero_grads,
     clip_grad_norm_tp,
     is_fsdp,
     is_pp,
@@ -34,6 +35,7 @@ __all__ = [
     "allreduce_3d_dp_grads",
     "allreduce_dp_grads",
     "allreduce_pp_dp_grads",
+    "allreduce_zero_grads",
     "apply_tensor_parallel",
     "apply_tensor_parallel_stage",
     "build_pipeline_model",

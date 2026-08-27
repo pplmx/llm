@@ -415,6 +415,20 @@ def wrap_model_for_training(
         cast(Any, stage)._pp3d = runtime
         return stage
 
+    if parallel_strategy == "zero":
+        # Native ZeRO Stage-1 (RIL TASK-269/DEC-097): the model stays a plain,
+        # full copy on every rank (no DDP/FSDP/TP/PP wrappers). The engine
+        # averages gradients over the world group at each step and drives a
+        # ZeroOptimizer whose optimizer state is sharded ~1/world_size, then
+        # all-gathers the updated weights. Single-rank ZeRO is the serial model
+        # (a no-op identity, exactly like PP) and cannot compose with another
+        # parallel strategy in v1.
+        if world_size <= 1:
+            return model
+        if is_tp(model) or is_pp(model) or is_pp3d(model) or is_fsdp(model):
+            raise ValueError("parallel_strategy='zero' cannot compose with another parallel strategy in v1")
+        return model
+
     if parallel_strategy != "tp" and (world_size <= 1 or device.type != "cuda"):
         # DDP/FSDP are no-ops for single-rank or CPU-only runs.
         return model
@@ -473,7 +487,9 @@ def wrap_model_for_training(
             cast(Any, model)._tp.dp_group = dp_group
         return model
 
-    raise ValueError(f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp', 'fsdp', 'tp' or 'pp'.")
+    raise ValueError(
+        f"Unknown parallel_strategy '{parallel_strategy}'. Expected 'ddp', 'fsdp', 'tp', 'pp', '3d' or 'zero'."
+    )
 
 
 def _strip_compile_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -822,3 +838,20 @@ def model_state_dict(
         return cast(Any, model)._tp.gather_full_state_dict(model_for_checkpoint_io(model))
     state = fsdp_state if fsdp_state is not None else model_for_checkpoint_io(model).state_dict()
     return _strip_compile_prefix(state)
+
+
+def allreduce_zero_grads(model: nn.Module, group: dist.ProcessGroup | None = None) -> None:
+    """Average every parameter gradient over the ZeRO data-parallel group.
+
+    ZeRO Stage-1 (RIL TASK-269/DEC-097) keeps a plain full model copy on every
+    rank (no DDP wrapper) and averages the locally-summed gradients over the
+    world (DP) group so each rank carries the true full-batch gradient before
+    its sharded optimizer step. This is the classic ZeRO-1 gradient reduction
+    and behaves identically on CPU/gloo and CUDA/NCCL. Must run only at step
+    boundaries, after ``unscale_`` / partial-window re-scaling and before
+    gradient clipping (same gate the TP/PP DP reductions use).
+    """
+    for param in model.parameters():
+        if param.grad is None:
+            continue
+        dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, group=group)

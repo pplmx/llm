@@ -16,6 +16,7 @@ all-gather restores a full, identical weight copy on every rank.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import overload
 
 import torch
 import torch.distributed as dist
@@ -27,7 +28,7 @@ def _owner_of(index: int, world_size: int) -> int:
     return index % world_size
 
 
-class ZeroOptimizer:
+class ZeroOptimizer(Optimizer):
     """Partition optimizer state across data-parallel ranks (ZeRO Stage 1).
 
     Parameters are owned round-robin by flat index: each rank builds its inner
@@ -38,7 +39,9 @@ class ZeroOptimizer:
 
     ``param_groups`` and ``zero_grad`` are delegated to the inner optimizer so
     learning-rate schedulers and the training engine can keep using the same
-    interface.
+    interface. Subclassing :class:`torch.optim.Optimizer` keeps it a drop-in for
+    the training engine's scheduler / AMP scaler / checkpoint paths (mirroring
+    how fairscale's ``ZeroRedundancyOptimizer`` extends ``torch.optim.Optimizer``).
 
     Args:
         build_optimizer: callable ``(owned_params) -> Optimizer`` building the
@@ -75,8 +78,18 @@ class ZeroOptimizer:
         owned = [p for i, p in enumerate(params) if self._owners[i] == rank]
         if not owned:
             raise ValueError(f"rank {rank} owns no parameters (world_size {world_size})")
+        # Initialize the base Optimizer machinery over the owned subset so
+        # isinstance(self, torch.optim.Optimizer) holds (scheduler / scaler /
+        # checkpoint compatibility); then point its groups/state at the inner
+        # sharded optimizer below.
+        Optimizer.__init__(self, owned, {})
         self._opt: Optimizer = build_optimizer(owned)
+        # Present the INNER optimizer's groups/state/defaults as our own so the
+        # scheduler, GradScaler-disabled path, and checkpoint manager operate on
+        # the real sharded optimizer without knowing about the wrapper.
         self.param_groups = self._opt.param_groups
+        self.state = self._opt.state
+        self.defaults = self._opt.defaults
 
     @property
     def optimizer(self) -> Optimizer:
@@ -104,20 +117,20 @@ class ZeroOptimizer:
             "inner": self._opt.state_dict(),
         }
 
-    def load_state_dict(self, state: dict) -> None:
+    def load_state_dict(self, state_dict: dict) -> None:
         """Restore this rank's sharded optimizer state (resume).
 
         Only ``inner`` is applied, into THIS rank's deterministic owned-param
         set; the owner mapping is fixed by round-robin, so the same shard slots
         map onto the same parameters on load as on save.
         """
-        if not state.get("_zero_stage1"):
+        if not state_dict.get("_zero_stage1"):
             raise ValueError("not a ZeroOptimizer state dict (missing '_zero_stage1' marker)")
-        if state.get("rank") != self._rank:
-            raise ValueError(f"state dict is for rank {state.get('rank')}, this rank is {self._rank}")
-        if state.get("world_size") != self._world_size:
-            raise ValueError(f"state dict world_size {state.get('world_size')} != current {self._world_size}")
-        self._opt.load_state_dict(state["inner"])
+        if state_dict.get("rank") != self._rank:
+            raise ValueError(f"state dict is for rank {state_dict.get('rank')}, this rank is {self._rank}")
+        if state_dict.get("world_size") != self._world_size:
+            raise ValueError(f"state dict world_size {state_dict.get('world_size')} != current {self._world_size}")
+        self._opt.load_state_dict(state_dict["inner"])
 
     def zero_grad(self, set_to_none: bool = True) -> None:
         # Zero every parameter's gradient, not just this rank's owned shard:
@@ -132,6 +145,12 @@ class ZeroOptimizer:
             else:
                 param.grad.zero_()
         self._opt.zero_grad(set_to_none=set_to_none)
+
+    @overload
+    def step(self, closure: None = None) -> None: ...
+
+    @overload
+    def step(self, closure: Callable[[], float]) -> float: ...
 
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         result = self._opt.step(closure)

@@ -240,3 +240,78 @@ def test_zero_stage1_checkpoint_roundtrip_two_process_cpu() -> None:
         assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
         for i, (got, want) in enumerate(zip(payload["params"], reference, strict=True)):
             assert torch.equal(got, want), f"rank {rank} param {i} diverged after checkpoint resume"
+
+
+def _engine_zero_worker(rank: int, world_size: int, results: dict) -> None:
+    """Drive the real TrainingEngine with parallel_strategy='zero' (2-rank gloo)."""
+    try:
+        # Force the engine down the CPU path (mirrors the PP engine e2e): a
+        # forked child can inherit a live CUDA context, and gloo only transports
+        # CPU tensors.
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        from llm.training.core.config import (
+            Config,
+            DistributedConfig,
+            ModelConfig,
+            OptimizationConfig,
+            TrainingConfig,
+        )
+        from llm.training.core.engine import TrainingEngine
+        from llm.training.distributed.zero import ZeroOptimizer
+        from llm.training.tasks.lm_task import LanguageModelingTask
+        from tests.support.data import DummyLMDataModule
+
+        config = Config(
+            model=ModelConfig(vocab_size=64, hidden_size=16, num_layers=2, num_heads=2, max_seq_len=32),
+            training=TrainingConfig(batch_size=4, epochs=2, num_samples=32),
+            optimization=OptimizationConfig(use_amp=False, use_compile=False),
+            distributed=DistributedConfig(backend="gloo", parallel_strategy="zero"),
+        )
+        data_module = DummyLMDataModule(config)
+        task = LanguageModelingTask(config, data_module)
+        engine = TrainingEngine(config, task, rank=rank, world_size=world_size, data_module=data_module)
+
+        assert engine.is_training_zero
+        assert isinstance(engine.optimizer, ZeroOptimizer)
+        # round-robin ownership must be non-empty but strictly smaller than the
+        # full set on each rank (a genuine shard); the parent asserts the two
+        # ranks' shards are disjoint and cover every param.
+        total = len(list(engine.model.parameters()))
+        owned = engine.optimizer.owned_count()
+        assert 0 < owned < total
+
+        loss = engine._run_epoch(0)
+        results[rank] = {
+            "loss": float(loss),
+            "params": [p.detach().clone() for p in engine.model.parameters()],
+            "owned": owned,
+            "total": total,
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_zero_stage1_engine_standard_loop_two_process_cpu() -> None:
+    """TrainingEngine parallel_strategy='zero' trains with finite loss and keeps
+    both ranks bit-exact after the gradient-average + sharded-step + all-gather."""
+    out = _run_spawn(_engine_zero_worker, 2)
+    losses: list[float] = []
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert payload["loss"] < float("inf"), f"rank {rank}: loss NaN/inf"
+        losses.append(payload["loss"])
+    assert out[0]["total"] == out[1]["total"]
+    # disjoint round-robin shards cover exactly the full parameter set.
+    assert out[0]["owned"] + out[1]["owned"] == out[0]["total"]
+    # Both ranks trained the same full-batch gradient and all-gathered the
+    # updated weights, so their parameters must be bit-identical.
+    for p0, p1 in zip(out[0]["params"], out[1]["params"], strict=True):
+        assert torch.equal(p0, p1), "zero ranks drifted out of lockstep"

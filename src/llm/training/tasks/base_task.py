@@ -1,5 +1,5 @@
 import abc
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -26,6 +26,21 @@ if TYPE_CHECKING:
 EpochFn = Callable[[int], dict[str, Any] | None]
 
 
+class _ParameterCollection(nn.Module):
+    """Expose an arbitrary parameter list as ``module.parameters()``.
+
+    Lets :meth:`TrainingTask.build_optimizer_for` run the same
+    ``build_optimizer(model)`` implementation over a parameter subset (ZeRO
+    Stage-1 optimizer-state partitioning) without duplicating each task's
+    group/hyperparameter logic.
+    """
+
+    def __init__(self, params: list[torch.nn.Parameter]) -> None:
+        super().__init__()
+        for index, param in enumerate(params):
+            self.register_parameter(f"param_{index}", param)
+
+
 class TrainingTask(abc.ABC, CheckpointContributor):
     """
     An abstract base class for defining a training task.
@@ -36,6 +51,20 @@ class TrainingTask(abc.ABC, CheckpointContributor):
     """
 
     uses_standard_loop: bool = True
+
+    def build_optimizer_for(self, params: Iterable[torch.nn.Parameter]) -> optim.Optimizer:
+        """Build an optimizer over an arbitrary parameter subset (ZeRO Stage-1).
+
+        ZeRO partitions optimizer state across data-parallel ranks, so the
+        engine needs an optimizer built over ONLY the current rank's owned
+        parameters while preserving the task's exact optimizer hyperparameters.
+        The default routes ``params`` through the same :meth:`build_optimizer`
+        implementation by presenting them as a minimal module, so subclasses
+        get an equivalent (per-parameter) optimizer without re-implementing
+        their group/hyperparameter logic. Subclasses that build optimizers from
+        the model object itself (not ``model.parameters()``) should override.
+        """
+        return self.build_optimizer(_ParameterCollection(list(params)))
 
     def __init__(self, config: Config, data_module: BaseDataModule):
         self.config = config

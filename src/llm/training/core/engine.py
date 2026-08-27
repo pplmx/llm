@@ -19,6 +19,7 @@ from llm.training.distributed import (
     allreduce_3d_dp_grads,
     allreduce_dp_grads,
     allreduce_pp_dp_grads,
+    allreduce_zero_grads,
     clip_grad_norm_tp,
     is_fsdp,
     is_pp,
@@ -29,6 +30,7 @@ from llm.training.distributed import (
     tp_dp_layout,
     wrap_model_for_training,
 )
+from llm.training.distributed.zero import ZeroOptimizer
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
@@ -243,8 +245,20 @@ class TrainingEngine:
         self.is_training_3d = self.config.distributed.parallel_strategy == "3d" and self.world_size > 1
         if self.config.distributed.parallel_strategy == "3d" and self.world_size <= 1:
             raise ValueError("parallel_strategy='3d' needs world_size > 1 (a 2-stage x N-TP grid)")
-        if self.config.optimization.use_compile and (self.is_training_tp or self.is_training_pp or self.is_training_3d):
-            strategy = "TP" if self.is_training_tp else ("PP" if self.is_training_pp else "3D")
+        self.is_training_zero = self.config.distributed.parallel_strategy == "zero" and self.world_size > 1
+        if self.config.distributed.parallel_strategy == "zero" and self.world_size <= 1:
+            self.logger.info(
+                "ZeRO Stage-1 on a single rank is a no-op identity (one rank IS the "
+                "whole optimizer); running the standard loop."
+            )
+        if self.config.optimization.use_compile and (
+            self.is_training_tp or self.is_training_pp or self.is_training_3d or self.is_training_zero
+        ):
+            strategy = (
+                "TP"
+                if self.is_training_tp
+                else ("PP" if self.is_training_pp else ("3D" if self.is_training_3d else "ZeRO"))
+            )
             self.logger.info(f"{strategy} v1 skips torch.compile (collective-autograd / P2P schedule); running eager.")
         if (
             self.config.optimization.use_compile
@@ -278,6 +292,11 @@ class TrainingEngine:
         )
 
         self.use_standard_loop = self.task.uses_standard_training_loop()
+        if self.is_training_zero and not self.use_standard_loop:
+            raise ValueError(
+                "parallel_strategy='zero' (ZeRO Stage-1) only supports standard-loop tasks in v1. "
+                f"{type(self.task).__name__} uses a custom training loop."
+            )
         if self.is_training_pp or self.is_training_3d:
             if not self.use_standard_loop:
                 raise ValueError(
@@ -349,7 +368,20 @@ class TrainingEngine:
             raise ValueError("Streaming DataModules require data.steps_per_epoch to be set.")
 
         if self.use_standard_loop:
-            self.optimizer = self.task.build_optimizer(self.model)
+            if self.is_training_zero:
+                # ZeRO Stage-1: each rank builds an optimizer over ONLY its owned
+                # (round-robin) parameter shard, then all-gathers the updated
+                # weights each step. ``build_optimizer_for`` routes the owned
+                # subset through the task's own ``build_optimizer`` so all
+                # hyperparameters/groups are preserved.
+                self.optimizer = ZeroOptimizer(
+                    lambda owned: self.task.build_optimizer_for(owned),
+                    self.model.parameters(),
+                    rank=self.rank,
+                    world_size=self.world_size,
+                )
+            else:
+                self.optimizer = self.task.build_optimizer(self.model)
             self.scheduler = self.task.build_scheduler(self.optimizer)
             self.criterion = self.task.build_criterion().to(self.device)
         else:
@@ -399,6 +431,17 @@ class TrainingEngine:
                 "the pipeline schedule computes AND backprops the loss inside step(), so a GradScaler "
                 "(float16 AMP) cannot scale the loss before the schedule's backward. Use bf16 (no "
                 "loss scaling) or fp32."
+            )
+
+        # ZeRO Stage-1 (RIL TASK-269/DEC-097): fp16 AMP is refused in v1 for
+        # the same reason as PP — the GradScaler step must drive a plain
+        # optimizer whose internals (unscale_/per-param-grad inspection) the
+        # sharded ZeroOptimizer does not yet expose. BF16 (no loss scaling,
+        # scaler disabled) and fp32 are fine.
+        if self.is_training_zero and self.config.optimization.use_amp and self.resolved_amp_dtype == "float16":
+            raise ValueError(
+                "parallel_strategy='zero' with use_amp=True requires bf16 (set amp_dtype='bfloat16') or fp32: "
+                "ZeRO Stage-1 v1 does not integrate with the fp16 GradScaler yet. Use bf16 or set use_amp=False."
             )
 
         # Task-supplied callbacks (e.g. AdaLoRA pruning) are wired last
@@ -812,6 +855,18 @@ class TrainingEngine:
                         self.model,
                         self.config.training.gradient_clip_val,
                         group=clip_group,
+                    )
+                elif self.is_training_zero:
+                    # ZeRO Stage-1 (TASK-269/DEC-097): the model is a plain full
+                    # copy (no DDP), so average the locally-summed gradients over
+                    # the world group to get the true full-batch gradient before
+                    # the sharded optimizer step. Runs only at the step boundary,
+                    # after unscale_ / partial-window re-scaling. Once averaged,
+                    # every rank holds the identical full gradient, so the plain
+                    # global-norm clip applies a consistent factor on all ranks.
+                    allreduce_zero_grads(self.model)
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.config.training.gradient_clip_val
                     )
                 else:
                     grad_norm = torch.nn.utils.clip_grad_norm_(
