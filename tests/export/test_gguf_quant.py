@@ -7,9 +7,11 @@ import pytest
 
 from llm.export.gguf.quant import (
     dequantize_q4_0,
+    dequantize_q4_k,
     dequantize_q6_k,
     dequantize_q8_0,
     quantize_q4_0,
+    quantize_q4_k,
     quantize_q6_k,
     quantize_q8_0,
 )
@@ -220,3 +222,62 @@ class TestQ6K:
         assert out.shape == x.shape
         rel = np.mean(np.abs(out - x)) / (np.mean(np.abs(x)) + 1e-9)
         assert rel < 0.04
+
+
+Q4_K_BLOCK_BYTES = 144  # d(2) + dmin(2) + scales(12) + qs(128)
+
+
+class TestQ4K:
+    """Q4_K (256-wide) write path: layout, zero handling, error bounds."""
+
+    def test_block_byte_size(self, rng):
+        raw = quantize_q4_k(rng.normal(size=1024).astype(np.float32))  # 4 blocks
+        assert len(raw) == 4 * Q4_K_BLOCK_BYTES
+
+    def test_zero_block_decodes_to_zero(self):
+        raw = quantize_q4_k(np.zeros(Q6_K_BLOCK, dtype=np.float32))
+        assert len(raw) == Q4_K_BLOCK_BYTES
+        assert np.all(dequantize_q4_k(raw, Q6_K_BLOCK) == 0.0)
+
+    def test_roundtrip_error_is_bounded(self, rng):
+        x = rng.standard_normal(Q6_K_BLOCK * 3).astype(np.float32) * 2.0
+        out = dequantize_q4_k(quantize_q4_k(x), x.size)
+        rel = np.mean(np.abs(out - x)) / (np.mean(np.abs(x)) + 1e-9)
+        # Q4_K is 4-bit so it is coarser than Q6_K; keep a generous bound that
+        # still catches a wrong layout (which would blow the error up).
+        assert rel < 0.12, f"Q4_K relative error too large: {rel:.4f}"
+
+    def test_centered_data_roundtrip(self, rng):
+        x = rng.standard_normal(Q6_K_BLOCK * 2).astype(np.float32)
+        out = dequantize_q4_k(quantize_q4_k(x), x.size)
+        assert np.all(np.isfinite(out))
+        rel = np.mean(np.abs(out - x)) / (np.mean(np.abs(x)) + 1e-9)
+        assert rel < 0.1
+
+    def test_requires_multiple_of_256(self):
+        with pytest.raises(ValueError, match="multiple of 256"):
+            quantize_q4_k(np.zeros(100, dtype=np.float32))
+
+    def test_writer_reader_roundtrip(self, tmp_path, rng):
+        """Writer emits Q4_K; GGUFReader dequantizes it back close to source."""
+        from llm.export.gguf import GGUFReader, GGUFWriter
+
+        x = rng.standard_normal(Q6_K_BLOCK * 2).astype(np.float32)
+        path = tmp_path / "q4k.gguf"
+        writer = GGUFWriter(path)
+        writer.add_tensor("w", x, ggml_type="q4_k")
+        writer.write()
+        reader = GGUFReader(path)
+        out = reader.read_tensor("w")
+        assert out.shape == x.shape
+        rel = np.mean(np.abs(out - x)) / (np.mean(np.abs(x)) + 1e-9)
+        assert rel < 0.12
+
+    def test_exporter_resolves_and_picks_q4k(self):
+        from llm.export.gguf.exporter import _pick_tensor_type, _resolve_quant_type
+        from llm.export.gguf.spec import GGMLQuantizationType
+
+        assert _resolve_quant_type("q4_k") is GGMLQuantizationType.Q4_K
+        el = GGMLQuantizationType.Q4_K
+        assert _pick_tensor_type(np.zeros((4, 256), np.float32), el, 2) is el
+        assert _pick_tensor_type(np.zeros((4, 100), np.float32), el, 2) is GGMLQuantizationType.F16
