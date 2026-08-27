@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 145,
+  "round": 146,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T15:00:18+00:00",
+  "updated_at": "2026-08-27T15:08:17+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 144,
+      "touched_round": 145,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -16069,6 +16069,72 @@
       "source": "tests/export/test_gguf_quant.py::TestQ4K + tests/export/test_gguf_reader_writer.py (commit a8ac27f)",
       "title": "Q4_K round-trips through the gguf-py-verified dequantize_q4_k: zero block exact, gaussian rel error <12%, scale/min inverse matches _get_scale_min_k4 exactly, writer->GGUFReader e2e ok, exporter resolves q4_k (file type 3). Full export suite 218 passed; ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-309": {
+      "id": "ISS-309",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T15:07:01+00:00",
+      "updated_at": "2026-08-27T15:08:17+00:00",
+      "touched_round": 145,
+      "title": "GGUF Q5_K (llama.cpp 5-bit) is reader-only — no quantize (write) path",
+      "severity": 0.5,
+      "details": "Q6_K + Q4_K write paths landed (TASK-271/272); Q5_K remains reader-only. Q5_K uses block_q5_K: d2+dmin2+scales12+qh32+qs128, 8x32 groups, value = d*sc*q - dmin*m with 5-bit q (low 4 bits in qs, 5th bit in qh byte j bit g). Add quantize_q5_k so export_model(quantize='q5_k') works."
+    },
+    "TASK-273": {
+      "id": "TASK-273",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T15:07:01+00:00",
+      "updated_at": "2026-08-27T15:08:17+00:00",
+      "touched_round": 145,
+      "category": "core-feature",
+      "severity": 0.55,
+      "confidence": 0.5,
+      "effort": 1.2,
+      "unlock_factor": 2.0,
+      "title": "GGUF Q5_K write path: quantizer + get_scale_min_k4 inverse + writer/exporter wiring + tests",
+      "details": "Add quantize_q5_k reusing the Q4_K d/dmin + per-group (sc,m) scheme with a 31-level grid and the 5th-bit packed into qh (byte j bit g), wire Q5_K into EXPORT_TENSOR_TYPES / _QUANT_NAME_TO_TYPE / _FILE_TYPE(6) / _pick_tensor_type and writer encode+shape gate. Verify by round-tripping through the gguf-py-verified dequantize_q5_k and a writer->reader e2e; update the two reader-only tests to Q2_K since Q5_K is now exportable."
+    },
+    "DEC-100": {
+      "id": "DEC-100",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:07:20+00:00",
+      "updated_at": "2026-08-27T15:07:20+00:00",
+      "touched_round": 145,
+      "title": "Quantize Q5_K with the Q4_K d/dmin + per-group (sc,m) scheme on a 31-level grid plus a 5th high bit packed into qh byte j bit g, validated against our gguf-py-verified dequantizer",
+      "rationale": "Continues DEC-098/099 validity contract: llama.cpp needs a VALID block_q5_K its dequantizer reads correctly. Reuses the proven Q4_K get_scale_min_k4 inverse for (sc,m); the only new piece is the 5-bit grid (d = span/(31*63)) and packing the high bit into qh (byte j, bit g) to match dequantize_q5_k. Error <7pct rel for 5-bit (between Q4_K and Q6_K); zero block exact.",
+      "alternatives_rejected": [
+        "Byte-match ggml quantize_row_q5_K_ref exactly (same compatibility as long as the layout is valid)",
+        "Skip Q5_K (it is a common llama.cpp 5-bit quantization, still high value)"
+      ]
+    },
+    "CHG-288": {
+      "id": "CHG-288",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:07:58+00:00",
+      "updated_at": "2026-08-27T15:07:58+00:00",
+      "touched_round": 145,
+      "commit": "bc4cafc",
+      "title": "GGUF Q5_K write path: quantizer + writer/exporter wiring + TestQ5K suite"
+    },
+    "EV-277": {
+      "id": "EV-277",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:07:58+00:00",
+      "updated_at": "2026-08-27T15:07:58+00:00",
+      "touched_round": 145,
+      "source": "tests/export/test_gguf_quant.py::TestQ5K + tests/export/test_gguf_reader_writer.py + test_gguf_export.py (commit bc4cafc)",
+      "title": "Q5_K round-trips through the gguf-py-verified dequantize_q5_k: zero block exact, 5-bit rel error ~4%, writer->GGUFReader e2e ok, exporter resolves q5_k (file type 6). Full export suite 225 passed; ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23600,6 +23666,36 @@
       "to": "TASK-272",
       "type": "implements",
       "created_at": "2026-08-27T15:00:14+00:00"
+    },
+    {
+      "from": "TASK-273",
+      "to": "ISS-309",
+      "type": "addresses",
+      "created_at": "2026-08-27T15:07:20+00:00"
+    },
+    {
+      "from": "ISS-309",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-27T15:07:20+00:00"
+    },
+    {
+      "from": "DEC-100",
+      "to": "TASK-273",
+      "type": "governs",
+      "created_at": "2026-08-27T15:07:20+00:00"
+    },
+    {
+      "from": "CHG-288",
+      "to": "ISS-309",
+      "type": "resolves",
+      "created_at": "2026-08-27T15:07:59+00:00"
+    },
+    {
+      "from": "CHG-288",
+      "to": "TASK-273",
+      "type": "implements",
+      "created_at": "2026-08-27T15:07:59+00:00"
     }
   ]
 }
