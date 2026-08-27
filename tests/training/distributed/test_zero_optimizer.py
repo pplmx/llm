@@ -32,6 +32,8 @@ HID_DIM = 5
 OUT_DIM = 3
 STEPS = 12
 JOIN_TIMEOUT_S = 120
+STEPS_PRE = 5
+STEPS_POST = 7
 
 
 def _free_port() -> int:
@@ -157,3 +159,84 @@ def test_zero_optimizer_single_rank_matches_plain_optimizer() -> None:
     got = [p.detach().clone() for p in model.parameters()]
     for p, want in zip(got, _reference_params(), strict=True):
         assert torch.equal(p, want)
+
+
+def _reference_checkpoint_params() -> list[torch.Tensor]:
+    """Train STEPS_PRE with a full AdamW, dump its state, reset to init, reload,
+    then continue STEPS_POST — the reference for a sharded resume."""
+    torch.manual_seed(SEED)
+    model = _build_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
+    x = _make_data()
+    for _ in range(STEPS_PRE):
+        optimizer.zero_grad()
+        model(x).square().mean().backward()
+        optimizer.step()
+    saved = optimizer.state_dict()
+
+    torch.manual_seed(SEED)
+    reset = _build_model()
+    resumed = torch.optim.AdamW(reset.parameters(), lr=0.01)
+    resumed.load_state_dict(saved)
+    for _ in range(STEPS_POST):
+        resumed.zero_grad()
+        reset(x).square().mean().backward()
+        resumed.step()
+    return [p.detach().clone() for p in reset.parameters()]
+
+
+def _checkpoint_worker(rank: int, world_size: int, results: dict) -> None:
+    try:
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        x = _make_data()
+
+        # Phase 1: train STEPS_PRE with a sharded optimizer, dump its state.
+        model = _build_model()
+        optimizer = ZeroOptimizer(
+            lambda owned: torch.optim.AdamW(owned, lr=0.01),
+            model.parameters(),
+            rank=rank,
+            world_size=world_size,
+        )
+        for _ in range(STEPS_PRE):
+            optimizer.zero_grad()
+            model(x).square().mean().backward()
+            optimizer.step()
+        saved = optimizer.state_dict()
+        assert saved["_zero_stage1"]
+        assert saved["rank"] == rank
+        assert saved["inner"]["state"], "sharded AdamW must have captured nonzero moments"
+
+        # Phase 2: reset to init, reload this rank's shard, continue STEPS_POST.
+        torch.manual_seed(SEED)
+        reset = _build_model()
+        resumed = ZeroOptimizer(
+            lambda owned: torch.optim.AdamW(owned, lr=0.01),
+            reset.parameters(),
+            rank=rank,
+            world_size=world_size,
+        )
+        resumed.load_state_dict(saved)
+        for _ in range(STEPS_POST):
+            resumed.zero_grad()
+            reset(x).square().mean().backward()
+            resumed.step()
+        results[rank] = {"params": [p.detach().clone() for p in reset.parameters()], "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_zero_stage1_checkpoint_roundtrip_two_process_cpu() -> None:
+    """Per-rank sharded optimizer state survives save/reset/load cumulatively."""
+    reference = _reference_checkpoint_params()
+    out = _run_spawn(_checkpoint_worker, 2)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        for i, (got, want) in enumerate(zip(payload["params"], reference, strict=True)):
+            assert torch.equal(got, want), f"rank {rank} param {i} diverged after checkpoint resume"

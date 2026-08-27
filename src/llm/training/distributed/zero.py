@@ -87,6 +87,38 @@ class ZeroOptimizer:
         """Number of parameters this rank owns (its shard width)."""
         return len(self._opt.param_groups[0]["params"]) if self._opt.param_groups else 0
 
+    def state_dict(self) -> dict:
+        """Return this rank's sharded optimizer state for checkpoint / resume.
+
+        The inner optimizer only holds this rank's owned parameters, so its own
+        ``state_dict`` is already the correct per-rank shard (FSDP-sharded
+        style) and needs no collective to serialize. ``global_indices`` records
+        which full-model parameter positions this shard covers so a loader can
+        audit the mapping or rebuild a gathered full state if ever needed.
+        """
+        return {
+            "_zero_stage1": True,
+            "rank": self._rank,
+            "world_size": self._world_size,
+            "global_indices": [i for i, _ in enumerate(self._params) if self._owners[i] == self._rank],
+            "inner": self._opt.state_dict(),
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        """Restore this rank's sharded optimizer state (resume).
+
+        Only ``inner`` is applied, into THIS rank's deterministic owned-param
+        set; the owner mapping is fixed by round-robin, so the same shard slots
+        map onto the same parameters on load as on save.
+        """
+        if not state.get("_zero_stage1"):
+            raise ValueError("not a ZeroOptimizer state dict (missing '_zero_stage1' marker)")
+        if state.get("rank") != self._rank:
+            raise ValueError(f"state dict is for rank {state.get('rank')}, this rank is {self._rank}")
+        if state.get("world_size") != self._world_size:
+            raise ValueError(f"state dict world_size {state.get('world_size')} != current {self._world_size}")
+        self._opt.load_state_dict(state["inner"])
+
     def zero_grad(self, set_to_none: bool = True) -> None:
         # Zero every parameter's gradient, not just this rank's owned shard:
         # the engine / DDP expectation is that a full zero happens each step,
