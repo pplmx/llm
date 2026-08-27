@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 146,
+  "round": 147,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T15:08:17+00:00",
+  "updated_at": "2026-08-27T15:19:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -4218,7 +4218,7 @@
       "version": 1,
       "created_at": "2026-08-13T07:38:08+00:00",
       "updated_at": "2026-08-13T07:38:08+00:00",
-      "touched_round": 114,
+      "touched_round": 146,
       "title": "Export + compat (src/llm/export: onnx, torchscript, gguf; src/llm/compat)"
     },
     "CHG-065": {
@@ -16135,6 +16135,72 @@
       "source": "tests/export/test_gguf_quant.py::TestQ5K + tests/export/test_gguf_reader_writer.py + test_gguf_export.py (commit bc4cafc)",
       "title": "Q5_K round-trips through the gguf-py-verified dequantize_q5_k: zero block exact, 5-bit rel error ~4%, writer->GGUFReader e2e ok, exporter resolves q5_k (file type 6). Full export suite 225 passed; ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-310": {
+      "id": "ISS-310",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T15:17:01+00:00",
+      "updated_at": "2026-08-27T15:19:54+00:00",
+      "touched_round": 146,
+      "title": "GGUFReader loads the whole file with read_bytes — large weight payloads are copied into RAM on load",
+      "severity": 0.55,
+      "details": "GGUFReader.__init__ does path.read_bytes() and keeps the entire file (dominated by weight payloads) resident, so loading a big exported model for serving is memory-inefficient even when most tensors are read lazily. Switch the reader to a read-only mmap so payload pages are page-cached and touched only when a tensor is actually read."
+    },
+    "TASK-274": {
+      "id": "TASK-274",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T15:17:01+00:00",
+      "updated_at": "2026-08-27T15:19:54+00:00",
+      "touched_round": 146,
+      "category": "core-feature",
+      "severity": 0.55,
+      "confidence": 0.5,
+      "effort": 1.2,
+      "unlock_factor": 2.0,
+      "title": "GGUF memory-mapped reading: back GGUFReader with mmap (lazy page-cached weights) + close() + tests",
+      "details": "Replace path.read_bytes() in GGUFReader.__init__ with a read-only mmap (parsing/metadata/read_tensor/read_tensor_raw unchanged because mmap is a bytes-like buffer that yields bytes on slice); add close() (idempotent) and __del__ suppression for hygiene. Add tests proving mmap backing, closability, and that reads still return correct tensors. Document in CHANGELOG."
+    },
+    "DEC-101": {
+      "id": "DEC-101",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:17:12+00:00",
+      "updated_at": "2026-08-27T15:17:12+00:00",
+      "touched_round": 146,
+      "title": "Back GGUFReader with a read-only mmap while keeping parsing and read_tensor intact",
+      "rationale": "mmap objects are bytes-like buffers: slicing yields bytes and struct.unpack_from/len/decode all work, so replacing read_bytes with a read-only mmap preserves the entire parsing and read surface (verified by the full export suite) while making large weight payloads lazily page-cached instead of resident. Empty files fall back to b\"\" so the size/truncation checks still fire cleanly; close() is idempotent and __del__ suppresses errors.",
+      "alternatives_rejected": [
+        "Keep read_bytes (whole-file RAM copy; defeats the point for big models)",
+        "np.memmap per tensor (heavier refactor; a single whole-file mmap is simpler and sufices)"
+      ]
+    },
+    "CHG-289": {
+      "id": "CHG-289",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:19:20+00:00",
+      "updated_at": "2026-08-27T15:19:20+00:00",
+      "touched_round": 146,
+      "commit": "2314e0f",
+      "title": "GGUF memory-mapped reading: mmap-backed GGUFReader + close() + TestReaderMemoryMap"
+    },
+    "EV-278": {
+      "id": "EV-278",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:19:20+00:00",
+      "updated_at": "2026-08-27T15:19:20+00:00",
+      "touched_round": 146,
+      "source": "tests/export/test_gguf_reader_writer.py::TestReaderMemoryMap + full tests/export (commit 2314e0f)",
+      "title": "Reader is mmap-backed; tensors read correctly off the map; close() idempotent; reads after close raise; full export/GGUF suite 227 passed, ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23696,6 +23762,36 @@
       "to": "TASK-273",
       "type": "implements",
       "created_at": "2026-08-27T15:07:59+00:00"
+    },
+    {
+      "from": "TASK-274",
+      "to": "ISS-310",
+      "type": "addresses",
+      "created_at": "2026-08-27T15:17:11+00:00"
+    },
+    {
+      "from": "ISS-310",
+      "to": "COMP-011",
+      "type": "located_in",
+      "created_at": "2026-08-27T15:17:12+00:00"
+    },
+    {
+      "from": "DEC-101",
+      "to": "TASK-274",
+      "type": "governs",
+      "created_at": "2026-08-27T15:17:12+00:00"
+    },
+    {
+      "from": "CHG-289",
+      "to": "ISS-310",
+      "type": "resolves",
+      "created_at": "2026-08-27T15:19:20+00:00"
+    },
+    {
+      "from": "CHG-289",
+      "to": "TASK-274",
+      "type": "implements",
+      "created_at": "2026-08-27T15:19:20+00:00"
     }
   ]
 }
