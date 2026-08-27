@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 149,
+  "round": 150,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T15:56:55+00:00",
+  "updated_at": "2026-08-27T16:14:06+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 148,
+      "touched_round": 149,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -16333,6 +16333,72 @@
       "source": "tests/export/test_gguf_quant.py::TestQ2K + full tests/export (commit d2badd4)",
       "title": "Q2_K round-trips through the gguf-py-verified dequantize_q2_k: exact zero block, no NaN, consistent constant, writer->GGUFReader e2e ok, exporter resolves q2_k (file type 10). Full export suite 234 passed; ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-313": {
+      "id": "ISS-313",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T16:10:55+00:00",
+      "updated_at": "2026-08-27T16:14:06+00:00",
+      "touched_round": 149,
+      "title": "GGUF Q3_K (3-bit) is the last reader-only K-quant — no quantize (write) path",
+      "severity": 0.5,
+      "details": "Q6_K/Q4_K/Q5_K/Q2_K write paths landed; Q3_K remains reader-only, so the K-quant export set is not yet complete. Q3_K uses block_q3_K: hmask(32)+qs(64)+scales(12)+d(2), 16 groups of 16, value = dl*q with q = ql-(qh<<2), signed 6-bit scales. Add quantize_q3_k so every reader-supported K-quant is exportable."
+    },
+    "TASK-277": {
+      "id": "TASK-277",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T16:10:55+00:00",
+      "updated_at": "2026-08-27T16:14:06+00:00",
+      "touched_round": 149,
+      "category": "core-feature",
+      "severity": 0.6,
+      "confidence": 0.5,
+      "effort": 1.3,
+      "unlock_factor": 2.0,
+      "title": "GGUF Q3_K write path: quantizer + writer/exporter wiring + tests (completes the K-quant family)",
+      "details": "Add quantize_q3_k (signed int8 per-16-group scales packed 6-bit across 12 bytes, 2-bit ql in qs + sign-offset bit in hmask, matching dequantize_q3_k exactly), wire Q3_K into EXPORT_TENSOR_TYPES / _QUANT_NAME_TO_TYPE / _FILE_TYPE(11) / _pick_tensor_type and writer encode+shape gate. Verify by round-tripping through the gguf-py-verified dequantize_q3_k and a writer->reader e2e; update the two reader-only tests to legacy Q5_0 since Q3_K is now exportable. Completes all 5 K-quant export paths."
+    },
+    "DEC-104": {
+      "id": "DEC-104",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T16:11:23+00:00",
+      "updated_at": "2026-08-27T16:11:23+00:00",
+      "touched_round": 149,
+      "title": "Quantize Q3_K to match dequantize_q3_k exactly: signed per-16-group scales + hmask sign-offset bits, validated by round-trip",
+      "rationale": "Completes the validity contract (DEC-098..103) for Q3_K: per-16-group centered int8 scale sc (packed 6-bit across 12 bytes), q = ql-(qh<<2) where qh is the hmask sign-offset bit (set when q>=0), 2-bit ql packed at byte=(g//8)*32+(g%2)*16+k shift=2*((g%8)//2), hmask bit g//2 of byte (g%2)*16+k. d = global_max/(3*31). With this, all 5 reader-supported K-quants are exportable. Verified valid layout, exact zero block, constant ~2.0 within 0.1, no NaN.",
+      "alternatives_rejected": [
+        "Byte-match ggml quantize_row_q3_K_ref exactly (same compatibility as long as the layout is valid)",
+        "Leave Q3_K reader-only (completing the whole K-quant family is a clean, deterministic milestone)"
+      ]
+    },
+    "CHG-292": {
+      "id": "CHG-292",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T16:14:02+00:00",
+      "updated_at": "2026-08-27T16:14:02+00:00",
+      "touched_round": 149,
+      "commit": "0e5526d",
+      "title": "GGUF Q3_K write path: quantizer + writer/exporter wiring + TestQ3K suite (completes K-quant family)"
+    },
+    "EV-281": {
+      "id": "EV-281",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T16:14:02+00:00",
+      "updated_at": "2026-08-27T16:14:02+00:00",
+      "touched_round": 149,
+      "source": "tests/export/test_gguf_quant.py::TestQ3K + full tests/export (commit 0e5526d)",
+      "title": "Q3_K round-trips through the gguf-py-verified dequantize_q3_k: exact zero block, constant within 0.1, no NaN, writer->GGUFReader e2e ok, exporter resolves q3_k (file type 11). Full export suite 241 passed; ruff + ty clean. K-quant family complete.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23984,6 +24050,36 @@
       "to": "TASK-276",
       "type": "implements",
       "created_at": "2026-08-27T15:56:26+00:00"
+    },
+    {
+      "from": "TASK-277",
+      "to": "ISS-313",
+      "type": "addresses",
+      "created_at": "2026-08-27T16:11:23+00:00"
+    },
+    {
+      "from": "ISS-313",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-27T16:11:23+00:00"
+    },
+    {
+      "from": "DEC-104",
+      "to": "TASK-277",
+      "type": "governs",
+      "created_at": "2026-08-27T16:11:23+00:00"
+    },
+    {
+      "from": "CHG-292",
+      "to": "ISS-313",
+      "type": "resolves",
+      "created_at": "2026-08-27T16:14:02+00:00"
+    },
+    {
+      "from": "CHG-292",
+      "to": "TASK-277",
+      "type": "implements",
+      "created_at": "2026-08-27T16:14:02+00:00"
     }
   ]
 }
