@@ -1,9 +1,12 @@
 """GGUF reader (GGUF v3 container).
 
-The reader parses the whole file eagerly (v1; no mmap) and exposes the
-header, the typed metadata dict, and per-tensor info plus two accessors:
-raw payload bytes (:meth:`GGUFReader.read_tensor_raw`) and the
-dequantized float32 view (:meth:`GGUFReader.read_tensor`).
+The reader memory-maps the file (:mod:`mmap`) and parses the header, typed
+metadata, and tensor-info lazily, exposing two accessors: raw payload bytes
+(:meth:`GGUFReader.read_tensor_raw`) and the dequantized float32 view
+(:meth:`GGUFReader.read_tensor`). mmap backing means large weight payloads are
+page-cached and only brought resident when a tensor is actually read — a big
+saving for serving a large exported model (the whole file is not copied into
+RAM on load).
 
 Malformed files — wrong magic, unsupported version, truncation,
 out-of-bounds offsets, unknown type codes — raise :class:`GGUFError`
@@ -13,8 +16,11 @@ with a message naming the offending record.
 from __future__ import annotations
 
 import math
+import mmap
 import struct
+from contextlib import suppress
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -65,7 +71,7 @@ _MAX_STRING = 1 << 24
 _MAX_RANK = 64
 
 
-def _read_string_at(data: bytes, pos: int) -> tuple[str, int]:
+def _read_string_at(data: Any, pos: int) -> tuple[str, int]:
     """Read a ``GGUFString`` at ``pos``; returns ``(value, new_pos)``."""
     if pos + 8 > len(data):
         raise GGUFError("truncated GGUF string header")
@@ -91,7 +97,18 @@ class GGUFReader:
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        data = self.path.read_bytes()
+        size = self.path.stat().st_size
+        if size == 0:
+            # ``mmap(fd, 0)`` refuses a zero-length file; fall back to empty
+            # bytes so the size/truncation checks below fire with a clear error.
+            self._mm: mmap.mmap | None = None
+            data: Any = b""
+        else:
+            # Map the whole file read-only. The mmap stays valid after the fd
+            # is closed; payload sections page in lazily on access.
+            with self.path.open("rb") as fh:
+                self._mm = mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ)
+            data = self._mm
         if len(data) < GGUF_HEADER_SIZE:
             raise GGUFError(f"{self.path}: file too small to be GGUF ({len(data)} bytes)")
         magic, version, tensor_count, kv_count = struct.unpack_from("<IIQQ", data, 0)
@@ -167,6 +184,16 @@ class GGUFReader:
                     f"tensor {info.name!r}: data range {info.offset}..{info.offset + info.data_size} "
                     f"exceeds file size {len(data)}"
                 )
+
+    def close(self) -> None:
+        """Release the memory map (safe to call once; idempotent)."""
+        if self._mm is not None:
+            self._mm.close()
+            self._mm = None
+
+    def __del__(self) -> None:
+        with suppress(Exception):
+            self.close()
 
     def _info(self, name: str) -> GGUFTensorInfo:
         try:

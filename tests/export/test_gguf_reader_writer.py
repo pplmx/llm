@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mmap
 import struct
 
 import numpy as np
@@ -415,3 +416,32 @@ class TestCorruptFiles:
         path.write_bytes(_assemble(head, payload=b"\x00" * 34))
         with pytest.raises(GGUFError, match="exceeds file size"):
             GGUFReader(path)
+
+
+class TestReaderMemoryMap:
+    """GGUFReader is memory-mapped so large weight payloads are page-cached."""
+
+    def test_reader_is_mmap_backed_and_closes_idempotently(self, tmp_path):
+        path = tmp_path / "mmap.gguf"
+        writer = GGUFWriter(path)
+        x = np.linspace(-1.0, 1.0, 64, dtype=np.float32)
+        writer.add_metadata("general.name", "mmap")
+        writer.add_tensor("w", x, ggml_type="f16")
+        writer.write()
+
+        reader = GGUFReader(path)
+        assert isinstance(reader._data, mmap.mmap)
+        # tensor reads work off the mapped payload
+        assert np.allclose(reader.read_tensor("w"), x.astype(np.float16))
+        reader.close()
+        reader.close()  # close is idempotent
+
+    def test_read_after_close_raises(self, tmp_path):
+        path = tmp_path / "mmap2.gguf"
+        writer = GGUFWriter(path)
+        writer.add_tensor("w", np.zeros(64, np.float32), ggml_type="f16")
+        writer.write()
+        reader = GGUFReader(path)
+        reader.close()
+        with pytest.raises(ValueError, match="closed"):
+            reader.read_tensor("w")

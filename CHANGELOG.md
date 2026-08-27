@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GGUF memory-mapped reading** (RIL TASK-274/ISS-310): `GGUFReader` now maps
+  the file read-only with `mmap` instead of copying the whole payload into RAM,
+  so large exported models load with lazy, page-cached weights (ideal for
+  serving). Parsing/metadata/`read_tensor`/`read_tensor_raw` are unchanged;
+  added `close()` (idempotent) for explicit resource release.
+
 - **Native ZeRO Stage-1** (ROADMAP 15.5 / RIL TASK-267/268/269):
   - `llm/training/distributed/zero.py`: `ZeroOptimizer` partitions
     optimiser-state across data-parallel ranks (~1/`world_size` per rank,
