@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 147,
+  "round": 148,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T15:19:54+00:00",
+  "updated_at": "2026-08-27T15:40:52+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -21,7 +21,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 128,
+      "touched_round": 147,
       "title": "Quantization (src/llm/quantization: GPTQ/AWQ/SmoothQuant/PTQ)"
     },
     "COMP-003": {
@@ -16201,6 +16201,72 @@
       "source": "tests/export/test_gguf_reader_writer.py::TestReaderMemoryMap + full tests/export (commit 2314e0f)",
       "title": "Reader is mmap-backed; tensors read correctly off the map; close() idempotent; reads after close raise; full export/GGUF suite 227 passed, ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-311": {
+      "id": "ISS-311",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T15:36:29+00:00",
+      "updated_at": "2026-08-27T15:40:52+00:00",
+      "touched_round": 147,
+      "title": "Simple-PTQ only supports symmetric 8-bit — symmetric=False raises despite QuantizedLinear already carrying zero-point plumbing",
+      "severity": 0.5,
+      "details": "QuantizedLinear registers a weight_zero_point buffer and dequantizes as (q - zp)*scale when symmetric=False, but from_linear raised NotImplementedError and never computed the zero point. Implement asymmetric (scale + zero-point) 8-bit weight quantization, per-tensor and per-channel, to accurately represent skewed (all-positive/all-negative) matrices that symmetric wastes half its grid on."
+    },
+    "TASK-275": {
+      "id": "TASK-275",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T15:36:29+00:00",
+      "updated_at": "2026-08-27T15:40:52+00:00",
+      "touched_round": 147,
+      "category": "core-feature",
+      "severity": 0.55,
+      "confidence": 0.5,
+      "effort": 1.0,
+      "unlock_factor": 2.0,
+      "title": "Asymmetric 8-bit simple-PTQ: scale + zero-point in from_linear (per-tensor + per-channel) + tests",
+      "details": "Compute scale=(max-min)/255 and zp=round(-min/scale) in QuantizedLinear.from_linear for symmetric=False; store q-128 in the existing int8 buffer with the offset folded into weight_zero_point so dequant stays (q-zp)*scale; clamp only q to [0,255]. Add per-tensor + per-channel tests proving int8 range validity, that asymmetric beats symmetric on skewed weights, and that forward runs. wire QuantConfig.symmetric docstring + CHANGELOG."
+    },
+    "DEC-102": {
+      "id": "DEC-102",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:36:41+00:00",
+      "updated_at": "2026-08-27T15:36:41+00:00",
+      "touched_round": 147,
+      "title": "Store asymmetric 8-bit as q-128 in the int8 buffer, folding the offset into weight_zero_point so dequant stays (q-zp)*scale",
+      "rationale": "QuantizedLinear already dequantizes (q - zp)*scale and holds an int8 weight buffer. The unsigned [0,255] asymmetric grid is stored as signed q-128 (fits int8) with zero_point shifted to zp-128, so dequantization math is unchanged. zp = round(-min/scale) is left unclamped (may be negative or exceed 255 for skewed rows); only q is clamped to the grid. Verified: per-tensor/per-channel round-trip, int8 range valid, asymmetric strictly beats symmetric on all-positive and all-negative weights; quantization CPU suite green.",
+      "alternatives_rejected": [
+        "Store unsigned uint8 buffer (changes the buffer dtype and _dequantize_weight math, broader churn)",
+        "Reuse GPTQ asymmetric path (heavier; simple-PTQ deserves its own scale+zp)"
+      ]
+    },
+    "CHG-290": {
+      "id": "CHG-290",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:40:48+00:00",
+      "updated_at": "2026-08-27T15:40:48+00:00",
+      "touched_round": 147,
+      "commit": "3bfe0d6",
+      "title": "Asymmetric 8-bit simple-PTQ: scale+zero-point in from_linear (per-tensor + per-channel) + tests"
+    },
+    "EV-279": {
+      "id": "EV-279",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:40:48+00:00",
+      "updated_at": "2026-08-27T15:40:48+00:00",
+      "touched_round": 147,
+      "source": "tests/quantization/test_quantization.py::TestQuantizeModel asymmetric tests + quantization CPU suite (commit 3bfe0d6)",
+      "title": "Asymmetric per-tensor/per-channel round-trip: int8 grid valid, forward runs, asymmetric strictly beats symmetric on skewed all-positive weights; quantization unit + CPU suite green; ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23792,6 +23858,36 @@
       "to": "TASK-274",
       "type": "implements",
       "created_at": "2026-08-27T15:19:20+00:00"
+    },
+    {
+      "from": "TASK-275",
+      "to": "ISS-311",
+      "type": "addresses",
+      "created_at": "2026-08-27T15:36:41+00:00"
+    },
+    {
+      "from": "ISS-311",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-08-27T15:36:41+00:00"
+    },
+    {
+      "from": "DEC-102",
+      "to": "TASK-275",
+      "type": "governs",
+      "created_at": "2026-08-27T15:36:42+00:00"
+    },
+    {
+      "from": "CHG-290",
+      "to": "ISS-311",
+      "type": "resolves",
+      "created_at": "2026-08-27T15:40:48+00:00"
+    },
+    {
+      "from": "CHG-290",
+      "to": "TASK-275",
+      "type": "implements",
+      "created_at": "2026-08-27T15:40:48+00:00"
     }
   ]
 }
