@@ -229,13 +229,15 @@ class TestTensorRoundTrip:
             writer.add_tensor("w", np.zeros(32, dtype=np.int64), ggml_type="f16")
 
     def test_unsupported_type_raises(self):
-        # K-quants / Q4_1 are reader-supported but not exportable (round 75):
-        # the writer must refuse them up front, naming the exportable set.
+        # Q4_1 / Q4_K are reader-supported but not exportable (round 75): the
+        # writer must refuse them up front, naming the exportable set. (Q6_K is
+        # exportable since the Q6_K write-path milestone, so it no longer
+        # belongs here.)
         writer = GGUFWriter("x.gguf")
         with pytest.raises(GGUFError, match="reader-supported but not exportable"):
             writer.add_tensor("w", np.zeros(32, dtype=np.float32), ggml_type="q4_1")
         with pytest.raises(GGUFError, match="reader-supported but not exportable"):
-            writer.add_tensor("w", np.zeros(256, dtype=np.float32), ggml_type="q6_k")
+            writer.add_tensor("w", np.zeros(256, dtype=np.float32), ggml_type="q4_k")
 
     def test_quantized_last_dim_must_be_multiple_of_32(self):
         writer = GGUFWriter("x.gguf")

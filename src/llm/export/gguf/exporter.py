@@ -30,6 +30,7 @@ from llm.export.gguf.spec import (
     EXPORT_TENSOR_TYPES,
     GGMLQuantizationType,
     GGUFError,
+    can_quantize_k_shape,
     can_quantize_shape,
 )
 from llm.export.gguf.writer import GGUFWriter
@@ -41,6 +42,7 @@ _QUANT_NAME_TO_TYPE = {
     "f16": GGMLQuantizationType.F16,
     "q4_0": GGMLQuantizationType.Q4_0,
     "q8_0": GGMLQuantizationType.Q8_0,
+    "q6_k": GGMLQuantizationType.Q6_K,
 }
 
 # llama.cpp ``llama_ftype`` values used in ``general.file_type``.
@@ -49,6 +51,7 @@ _FILE_TYPE = {
     GGMLQuantizationType.F16: 1,  # MOSTLY_F16
     GGMLQuantizationType.Q4_0: 2,  # MOSTLY_Q4_0
     GGMLQuantizationType.Q8_0: 7,  # MOSTLY_Q8_0
+    GGMLQuantizationType.Q6_K: 13,  # MOSTLY_Q6_K
 }
 
 
@@ -133,6 +136,10 @@ def _pick_tensor_type(
         if arr.ndim >= quantize_min_ndim and can_quantize_shape(arr.shape):
             return quant_type
         return GGMLQuantizationType.F16
+    if quant_type == GGMLQuantizationType.Q6_K:
+        if arr.ndim >= quantize_min_ndim and can_quantize_k_shape(arr.shape):
+            return quant_type
+        return GGMLQuantizationType.F16
     return quant_type
 
 
@@ -192,7 +199,11 @@ def export_to_gguf(
             )
         arr = tensor.detach().float().cpu().numpy()
         ttype = _pick_tensor_type(arr, quant_type, quantize_min_ndim)
-        if ttype != quant_type and quant_type in (GGMLQuantizationType.Q4_0, GGMLQuantizationType.Q8_0):
+        if ttype != quant_type and quant_type in (
+            GGMLQuantizationType.Q4_0,
+            GGMLQuantizationType.Q8_0,
+            GGMLQuantizationType.Q6_K,
+        ):
             logger.debug("keeping %s as F16 (shape %s not block-quantizable)", name, tuple(arr.shape))
         writer.add_tensor(name, arr, ggml_type=ttype)
 

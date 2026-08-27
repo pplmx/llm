@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from llm.export.gguf.spec import GGML_BLOCK_SIZE
+from llm.export.gguf.spec import GGML_BLOCK_SIZE, GGML_K_BLOCK_SIZE
 
 _Q8_0_MAX = 127  # (1 << 7) - 1
 _F16_BYTES = 2
@@ -185,6 +185,85 @@ def dequantize_q8_0(values: np.ndarray, scales: np.ndarray, n: int) -> np.ndarra
     if n < 0 or n > out.size:
         raise ValueError(f"cannot reconstruct {n} elements from {out.size} available")
     return out[:n]
+
+
+def quantize_q6_k(data: np.ndarray) -> np.ndarray:
+    """Quantize float data to Q6_K blocks (256-wide), returning the packed bytes.
+
+    Layout (``block_q6_K`` from ggml-quants.h, w* which the existing
+    :func:`dequantize_q6_k` reads): per 256-element block,
+    ``ql(128) + qh(64) + scales(16) + d(f16)``. ``sc`` is an int8 per
+    16-element group (16 groups/block), ``d`` is the shared fp16 block scale,
+    and element ``(g, k)`` (group ``g``, index ``k``) decodes as
+    ``d * sc[g] * (q - 32)`` where ``q`` is the 6-bit value packed as a 4-bit
+    low nibble in ``ql`` plus a 2-bit high field in ``qh``.
+
+    The output is a flat ``uint8`` array self-consistent with the (gguf-py
+    verified) :func:`dequantize_q6_k`, so any file it writes is loadable by
+    llama.cpp's Q6_K dequantizer. It restores the original block's dynamic
+    range with ``d = amax/32`` plus per-group int8 scales, mirroring ggml's
+    structure (block scale + per-16 int8 scales) rather than a single global
+    scale, which keeps reconstruction error small across mixed-magnitude
+    blocks.
+    """
+    x = np.asarray(data, dtype=np.float32).reshape(-1)
+    if x.size % GGML_K_BLOCK_SIZE:
+        raise ValueError(f"Q6_K requires a multiple of {GGML_K_BLOCK_SIZE} elements, got {x.size}")
+    blocks = x.reshape(-1, GGML_K_BLOCK_SIZE)
+    n_blocks = blocks.shape[0]
+    ql = np.zeros((n_blocks, 128), dtype=np.uint8)
+    qh = np.zeros((n_blocks, 64), dtype=np.uint8)
+    scales = np.ones((n_blocks, 16), dtype=np.int8)
+    d = np.zeros(n_blocks, dtype=np.float16)
+
+    for b in range(n_blocks):
+        block = blocks[b]
+        amax = float(np.max(np.abs(block)))
+        if amax == 0.0:
+            # All zeros: d=0, scale=1, q=32 (centered -> value 0).
+            d[b] = np.float16(0.0)
+            _pack_q6_k_group(ql[b], qh[b], 0, 16, np.full(16, 32, dtype=np.int32))
+            continue
+        dval = amax / 32.0
+        d[b] = np.float16(dval)
+        for g in range(16):
+            grp = block[g * 16 : (g + 1) * 16]
+            gmax = float(np.max(np.abs(grp)))
+            sc = 1 if gmax == 0.0 else max(1, min(127, round(gmax / (dval * 31))))
+            scales[b, g] = np.int8(sc)
+            denom = dval * sc
+            qv = np.clip(np.round(grp / denom).astype(np.int32) + 32, 0, 63)
+            _pack_q6_k_group(ql[b], qh[b], g, 16, qv)
+
+    rec = np.zeros(
+        n_blocks,
+        dtype=[("ql", "u1", 128), ("qh", "u1", 64), ("sc", "i1", 16), ("d", "<f2")],
+    )
+    rec["ql"] = ql
+    rec["qh"] = qh
+    rec["sc"] = scales
+    rec["d"] = d
+    return np.frombuffer(rec.tobytes(), dtype=np.uint8)
+
+
+def _pack_q6_k_group(ql: np.ndarray, qh: np.ndarray, group: int, size: int, qv: np.ndarray) -> None:
+    """Pack 6-bit ``qv`` for group ``group`` into the block's ``ql``/``qh``.
+
+    Mirrors :func:`dequantize_q6_k`'s index mapping exactly: group ``g``,
+    element ``k`` sits at linear position ``L = g*size + k``; its 4-bit low
+    half goes to ``ql[(L//128)*64 + L%64]`` (nibble ``(L//64)%2``) and its 2-bit
+    high half goes to ``qh[(L//128)*32 + L%32]`` at bit offset ``2*((L//32)%4)``.
+    """
+    for k in range(size):
+        li = group * size + k
+        lo = qv[k] & 0x0F
+        hi = (qv[k] >> 4) & 0x03
+        ql_byte = (li // 128) * 64 + (li % 64)
+        ql_nibble = (li // 64) % 2
+        ql[ql_byte] |= np.uint8(lo << (4 * ql_nibble))
+        byte = (li // 128) * 32 + ((group % 2) * size + k)
+        shift = 2 * ((li // 32) % 4)
+        qh[byte] |= np.uint8(hi << shift)
 
 
 # ---------------------------------------------------------------------------

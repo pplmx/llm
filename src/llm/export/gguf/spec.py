@@ -182,6 +182,7 @@ EXPORT_TENSOR_TYPES = frozenset(
         GGMLQuantizationType.F16,
         GGMLQuantizationType.Q4_0,
         GGMLQuantizationType.Q8_0,
+        GGMLQuantizationType.Q6_K,
     }
 )
 
@@ -213,6 +214,11 @@ def is_quantized(t: GGMLQuantizationType | int) -> bool:
 def can_quantize_shape(shape: Sequence[int]) -> bool:
     """Return True if a tensor with this shape can be block-quantized (last dim % 32 == 0)."""
     return bool(shape) and shape[-1] % GGML_BLOCK_SIZE == 0
+
+
+def can_quantize_k_shape(shape: Sequence[int]) -> bool:
+    """Return True if a tensor can be K-quantized (last dim % 256 == 0)."""
+    return bool(shape) and shape[-1] % GGML_K_BLOCK_SIZE == 0
 
 
 def parse_ggml_type(name: str) -> GGMLQuantizationType:

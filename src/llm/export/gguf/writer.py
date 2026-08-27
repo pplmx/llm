@@ -16,10 +16,11 @@ from typing import Any
 import numpy as np
 
 from llm.export.gguf.metadata import encode_metadata
-from llm.export.gguf.quant import quantize_q4_0, quantize_q8_0
+from llm.export.gguf.quant import quantize_q4_0, quantize_q6_k, quantize_q8_0
 from llm.export.gguf.spec import (
     EXPORT_TENSOR_TYPES,
     GGML_BLOCK_SIZE,
+    GGML_K_BLOCK_SIZE,
     GGUF_DEFAULT_ALIGNMENT,
     GGUF_HEADER_SIZE,
     GGUF_MAGIC,
@@ -27,6 +28,7 @@ from llm.export.gguf.spec import (
     GGMLQuantizationType,
     GGUFError,
     align_up,
+    can_quantize_k_shape,
     can_quantize_shape,
     parse_ggml_type,
 )
@@ -84,6 +86,8 @@ def _encode_payload(arr: np.ndarray, ttype: GGMLQuantizationType) -> bytes:
     if ttype == GGMLQuantizationType.Q8_0:
         values, scales = quantize_q8_0(flat)
         return _interleave_blocks(scales, values)
+    if ttype == GGMLQuantizationType.Q6_K:
+        return quantize_q6_k(flat).tobytes()
     raise GGUFError(f"unsupported GGML tensor type {ttype.name}")  # pragma: no cover
 
 
@@ -192,6 +196,11 @@ class GGUFWriter:
             raise ValueError(
                 f"tensor {name!r}: {ttype.name} requires the last dimension to be a multiple of "
                 f"{GGML_BLOCK_SIZE} (got shape {shape})"
+            )
+        if ttype == GGMLQuantizationType.Q6_K and not can_quantize_k_shape(shape):
+            raise ValueError(
+                f"tensor {name!r}: {ttype.name} requires the last dimension to be a multiple of "
+                f"{GGML_K_BLOCK_SIZE} (got shape {shape})"
             )
         payload = _encode_payload(arr, ttype)
         self._tensors.append((name, ttype, shape, payload))

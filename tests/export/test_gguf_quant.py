@@ -7,8 +7,10 @@ import pytest
 
 from llm.export.gguf.quant import (
     dequantize_q4_0,
+    dequantize_q6_k,
     dequantize_q8_0,
     quantize_q4_0,
+    quantize_q6_k,
     quantize_q8_0,
 )
 
@@ -143,3 +145,78 @@ class TestQ80:
     def test_scale_count_mismatch_raises(self):
         with pytest.raises(ValueError, match="expected 2 Q8_0 scales"):
             dequantize_q8_0(np.zeros(64, dtype=np.int8), np.array([1.0]), 64)
+
+
+Q6_K_BLOCK_BYTES = 210  # ql(128) + qh(64) + scales(16) + d(2)
+Q6_K_BLOCK = 256
+
+
+class TestQ6K:
+    """Q6_K (256-wide) write path: layout, zero handling, error bounds."""
+
+    def test_block_byte_size(self, rng):
+        raw = quantize_q6_k(rng.normal(size=1024).astype(np.float32))  # 4 blocks
+        assert len(raw) == 4 * Q6_K_BLOCK_BYTES
+
+    def test_zero_block_decodes_to_zero(self):
+        raw = quantize_q6_k(np.zeros(Q6_K_BLOCK, dtype=np.float32))
+        assert len(raw) == Q6_K_BLOCK_BYTES
+        out = dequantize_q6_k(raw, Q6_K_BLOCK)
+        assert np.all(out == 0.0)
+
+    def test_constant_block_reconstructs_consistently(self):
+        c = 3.5
+        x = np.full(Q6_K_BLOCK, c, dtype=np.float32)
+        out = dequantize_q6_k(quantize_q6_k(x), x.size)
+        # every element shares the same (d, sc, q), so reconstruction is a
+        # single consistent value with small relative error (6-bit grid).
+        assert np.all(out == out[0])
+        assert abs(out[0] - c) / abs(c) < 0.05
+
+    def test_roundtrip_error_is_bounded(self, rng):
+        x = rng.standard_normal(Q6_K_BLOCK * 3).astype(np.float32) * 2.0
+        out = dequantize_q6_k(quantize_q6_k(x), x.size)
+        rel = np.mean(np.abs(out - x)) / (np.mean(np.abs(x)) + 1e-9)
+        assert rel < 0.04, f"Q6_K relative error too large: {rel:.4f}"
+
+    def test_mixed_magnitude_blocks_roundtrip(self, rng):
+        x = np.concatenate(
+            [
+                rng.standard_normal(Q6_K_BLOCK) * 100.0,
+                rng.standard_normal(Q6_K_BLOCK) * 0.001,
+                rng.standard_normal(Q6_K_BLOCK) * 5.0,
+            ]
+        ).astype(np.float32)
+        out = dequantize_q6_k(quantize_q6_k(x), x.size)
+        assert np.all(np.isfinite(out))
+        rel = np.mean(np.abs(out - x)) / (np.mean(np.abs(x)) + 1e-12)
+        assert rel < 0.5
+
+    def test_requires_multiple_of_256(self):
+        with pytest.raises(ValueError, match="multiple of 256"):
+            quantize_q6_k(np.zeros(100, dtype=np.float32))
+
+    def test_exporter_resolves_and_picks_q6k(self):
+        from llm.export.gguf.exporter import _pick_tensor_type, _resolve_quant_type
+        from llm.export.gguf.spec import GGMLQuantizationType
+
+        assert _resolve_quant_type("q6_k") is GGMLQuantizationType.Q6_K
+        el = GGMLQuantizationType.Q6_K
+        assert _pick_tensor_type(np.zeros((4, 256), np.float32), el, 2) is el
+        # last dim not a multiple of 256 -> falls back to F16.
+        assert _pick_tensor_type(np.zeros((4, 100), np.float32), el, 2) is GGMLQuantizationType.F16
+
+    def test_writer_reader_roundtrip(self, tmp_path, rng):
+        """Writer emits Q6_K; GGUFReader dequantizes it back close to source."""
+        from llm.export.gguf import GGUFReader, GGUFWriter
+
+        x = rng.standard_normal(Q6_K_BLOCK * 2).astype(np.float32)
+        path = tmp_path / "q6k.gguf"
+        writer = GGUFWriter(path)
+        writer.add_tensor("w", x, ggml_type="q6_k")
+        writer.write()
+        reader = GGUFReader(path)
+        out = reader.read_tensor("w")
+        assert out.shape == x.shape
+        rel = np.mean(np.abs(out - x)) / (np.mean(np.abs(x)) + 1e-9)
+        assert rel < 0.04
