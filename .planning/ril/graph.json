@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 139,
+  "round": 140,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-25T06:15:32+00:00",
+  "updated_at": "2026-08-27T13:43:36+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 138,
+      "touched_round": 139,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -15684,6 +15684,73 @@
       "source": "tests/training/core/test_device_select.py + live demo",
       "title": "141 tests pass across device/engine/launcher/config/DPO/multimodal; TP 2-GPU e2e (OOMing under contention) now passes; contended-scenario demo: OLD rank0->cuda:0 vs NEW rank0->cuda:2 / rank1->cuda:3. ties reproduce rank%count",
       "confidence": 1.0
+    },
+    "ISS-303": {
+      "id": "ISS-303",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T13:17:39+00:00",
+      "updated_at": "2026-08-27T13:43:29+00:00",
+      "touched_round": 139,
+      "title": "DeepSpeed ZeRO (ROADMAP 15.5, P2): no optimizer-state / gradient sharding — the last unchecked distributed-training item",
+      "severity": 0.55,
+      "details": "ROADMAP.md 高级分布式训练 (section 5 / 15.5) lists `[ ] DeepSpeed ZeRO 集成` as the sole remaining unchecked distributed item after FSDP/TP/PP/3D + real-CUDA validation (TASK-260). No `deepspeed` dependency in pyproject.toml; the repo builds every distributed strategy natively on torch.distributed. This milestone adds optimizer-state partitioning (ZeRO Stage 1/2) to shrink per-rank optimizer memory and enable larger models."
+    },
+    "TASK-267": {
+      "id": "TASK-267",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T13:17:54+00:00",
+      "updated_at": "2026-08-27T13:43:32+00:00",
+      "touched_round": 139,
+      "category": "core-feature",
+      "severity": 0.6,
+      "confidence": 0.5,
+      "effort": 1.0,
+      "unlock_factor": 2.0,
+      "title": "Native ZeRO Stage-1 core: partition optimizer state across DP ranks + all-gather updated params (ROADMAP 15.5 first slice)",
+      "details": "Self-contained, dependency-free `ZeroOptimizer` in src/llm/training/distributed/zero.py: whole-parameter round-robin ownership, per-rank inner optimizer built over ONLY owned params (sharding optimizer-state memory ~1/world_size), step applies owner updates then all-gathers the full updated param set so every rank converges to identical weights. Gradients assumed averaged (DDP), the same ZeRO assumption as upstream. Verified with a CPU/gloo world_size=2 parity test (no GPU needed), matching the repo's TP/PP verification convention. Engine/CLI/config wiring + real-CUDA validation are follow-ups."
+    },
+    "DEC-095": {
+      "id": "DEC-095",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T13:18:28+00:00",
+      "updated_at": "2026-08-27T13:18:28+00:00",
+      "touched_round": 139,
+      "title": "Select DeepSpeed ZeRO (ROADMAP 15.5) as the next milestone; deliver as a native, staged ZeRO Stage-1 slice",
+      "rationale": "ROADMAP's only remaining unchecked distributed item is DeepSpeed ZeRO 集成 (P2, section 15.5). The repo implements FSDP/TP/PP/MoE/3D natively on torch.distributed with no external deepspeed dependency, and the graph is fully resolved (0 active tasks, round 139, consistent). Landing ZeRO as a small, CPU/gloo-verifiable first slice (whole-param optimizer-state partition + all-gather) fits the repo's verification convention (TP/PP parity), keeps the commit bounded, and defers engine/CLI/GPU validation to follow-ups.",
+      "alternatives_rejected": [
+        "Pull external deepspeed dep and wire DeepSpeed zero_1/2 in engine (adds heavy optional dependency, contradicts native-implementation philosophy, needs GPU + network)",
+        "Re-open abandoned correctness items ISS-153 (tokenizer <PAD>), ISS-160 (Post-LN) — code matches its documented post-norm intent, deliberately abandoned, low value",
+        "Queue PPT 2024 Unsloth/dynamic-batch spike"
+      ]
+    },
+    "CHG-282": {
+      "id": "CHG-282",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T13:43:26+00:00",
+      "updated_at": "2026-08-27T13:43:26+00:00",
+      "touched_round": 139,
+      "commit": "a0254b1",
+      "title": "Native ZeRO Stage-1 optimizer-state partitioning: ZeroOptimizer + CPU/gloo parity test (ROADMAP 15.5 first slice)"
+    },
+    "EV-271": {
+      "id": "EV-271",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T13:43:26+00:00",
+      "updated_at": "2026-08-27T13:43:26+00:00",
+      "touched_round": 139,
+      "source": "tests/training/distributed/test_zero_optimizer.py::test_zero_stage1_parity_two_process_cpu + test_zero_optimizer_single_rank_matches_plain_optimizer (commit a0254b1)",
+      "title": "World-size-2 gloo: sharded per-owner AdamW + all-gather reproduces a full AdamW bit-exactly (torch.equal over all params, STEPS=12); single-rank == plain AdamW. ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23041,6 +23108,36 @@
       "to": "ISS-302",
       "type": "resolves",
       "created_at": "2026-08-25T06:14:44+00:00"
+    },
+    {
+      "from": "TASK-267",
+      "to": "ISS-303",
+      "type": "addresses",
+      "created_at": "2026-08-27T13:18:21+00:00"
+    },
+    {
+      "from": "ISS-303",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-27T13:18:22+00:00"
+    },
+    {
+      "from": "DEC-095",
+      "to": "TASK-267",
+      "type": "governs",
+      "created_at": "2026-08-27T13:18:30+00:00"
+    },
+    {
+      "from": "CHG-282",
+      "to": "ISS-303",
+      "type": "resolves",
+      "created_at": "2026-08-27T13:43:28+00:00"
+    },
+    {
+      "from": "CHG-282",
+      "to": "TASK-267",
+      "type": "implements",
+      "created_at": "2026-08-27T13:43:28+00:00"
     }
   ]
 }
