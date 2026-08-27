@@ -14,6 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native ZeRO Stage-1** (ROADMAP 15.5 / RIL TASK-267/268/269):
+  - `llm/training/distributed/zero.py`: `ZeroOptimizer` partitions
+    optimiser-state across data-parallel ranks (~1/`world_size` per rank,
+    round-robin by flat index), all-gathers the full updated weights each step,
+    and exposes `state_dict()`/`load_state_dict()` as a per-rank shard
+    (FSDP-sharded style) for checkpoint/resume. It is a `torch.optim.Optimizer`
+    subclass, so it works with schedulers / the (disabled) GradScaler path.
+  - `TrainingTask.build_optimizer_for(params)` builds an optimizer over an
+    arbitrary parameter subset through each task's own `build_optimizer`.
+  - New `parallel_strategy="zero"` (engine standard loop): the engine averages
+    the world-group gradients at step boundaries (classic ZeRO-1 reduction, no
+    DDP wrapper — identical CPU/gloo and CUDA semantics), builds a per-rank
+    `ZeroOptimizer`, and uses the sharded state for checkpointing. v1 refuses
+    custom-loop tasks and fp16 AMP (bf16/fp32 OK). Verified with a 2-rank
+    CPU/gloo engine e2e (finite loss, disjoint shards, bit-exact lockstep).
+    Docs: [distributed guide](docs/guides/distributed.md).
+
 - **Rejection Sampling** (ROADMAP 阶段十一 / RIL TASK-230):
   - `llm/training/rlhf/rejection_sampling.py`: `select_top_k` /
     `select_above_threshold` / `rejection_sample` (mask + kept/base reward stats).

@@ -131,7 +131,7 @@
 - [x] Pipeline Parallelism v2 — PP+DP 2D (`pp_size` + DP 组梯度平均, RIL TASK-211) / microbatch 重叠 (`pp_n_microbatches>1`, RIL TASK-213) / AMP (bf16) 与 gradient checkpointing 支持均已落地; 剩余: stage 按需物化
 - [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'` (RIL TASK-216): `PPTPRuntime` 列内 stage 间 P2P 前向/反向 + TP 列内张量并行, 跨列 DP 梯度平均; 4/8 进程 CPU/gloo 引擎 e2e (RIL round-131 修 PP3D 接收张量非叶子 `.grad` 崩溃)
 - [x] 真实 CUDA 分布式验证 — 8×A100-80GB 上 19 个 gpu-marked e2e 全绿 (RIL TASK-260): DDP 2/8-GPU, TP 2/4-GPU deep, TP+DP 2D 4/6-GPU, serving TP checkpoint, tensor-parallel 数值 parity; 修正 GPU 环境设备不一致 cluster (ISS-298/299/300)
-- [ ] DeepSpeed ZeRO 集成
+- [x] DeepSpeed ZeRO 集成（原生 ZeRO Stage-1 以 `parallel_strategy='zero'` 落地：`ZeroOptimizer` 优化器状态分片 + 按 rank 分片 checkpoint + 引擎标准循环集成与 CPU/gloo 双 rank e2e；非外部 DeepSpeed 依赖；真实 CUDA 多卡验证顺延，见 RIL TASK-269/DEC-097）
 
 ---
 

@@ -13,7 +13,9 @@ supports: **DDP** (data-parallel, the default), **FSDP**
 **Tensor Parallelism** (`parallel_strategy="tp"`, optionally
 combined with a data-parallel dimension — see the TP section) and
 **Pipeline Parallelism** (`parallel_strategy="pp"` — different layers
-on different devices, see the PP section).
+on different devices, see the PP section), plus native **ZeRO Stage-1**
+(`parallel_strategy="zero"` — data parallel with optimiser-state sharding,
+see the ZeRO section).
 
 Both strategies are exposed through a single entry point —
 `llm.training.distributed.wrap_model_for_training` — so the trainer
@@ -32,6 +34,20 @@ If your model fits on one GPU, **use DDP** — FSDP adds
 communication overhead even when sharding isn't needed. Pick
 FSDP when you're hitting OOM with `batch_size=1` and the model
 parameters are the bottleneck, not the activations.
+
+**ZeRO Stage-1** (`parallel_strategy="zero"`, RIL TASK-269) sits between
+the two: like DDP, every rank keeps the full model and gradients; like FSDP,
+it shards the **optimiser state** across ranks (~1/`world_size` per rank) and
+all-gathers the updated weights each step. It is the right pick when the
+bottleneck is optimiser-state memory (e.g. big LR/Adam moments) but you still
+need every rank to hold a full parameter copy — the classic "DDP but with a
+sharded optimiser" workload.
+
+> **Status (v1):** native ZeRO Stage-1 is integrated into the standard
+> language-modelling loop and verified with a 2-rank CPU/gloo e2e. It is not
+> yet validated on real GPUs, only supports standard-loop tasks, and refuses
+> fp16 AMP (`bf16`/`fp32` are fine). ZeRO Stage-2/3 (gradient / parameter
+> sharding) remain future work.
 
 ## DDP quick start
 
@@ -168,6 +184,52 @@ writing the per-rank files.
   / loss as usual.
 - **Activation checkpointing** is orthogonal but complementary
   — combine both for the largest memory savings.
+
+## ZeRO Stage-1 quick start
+
+Enable it with a single config field — `parallel_strategy: zero`:
+
+```yaml
+# configs/zero-pretrain.yaml
+distributed:
+  parallel_strategy: zero
+  backend: nccl        # gloo also works (e.g. for CPU/gloo e2e tests)
+```
+
+```bash
+uv run llm-train --task stream_lm --config-path configs/zero-pretrain.yaml
+```
+
+ZeRO Stage-1 is **not** layered on DDP: it is its own strategy. Every rank
+holds a plain, full model copy; the engine averages the locally-summed
+gradients over the world group at each step boundary (the classic ZeRO-1
+reduction), and each rank's `ZeroOptimizer` holds only its round-robin subset
+of the optimiser state, then all-gathers the updated weights so all ranks stay
+bit-identical.
+
+### How it works
+
+- **Optimiser-state sharding.** Parameters are owned round-robin by flat index;
+  each rank's inner optimizer is built (via `TrainingTask.build_optimizer_for`)
+  over only its owned parameters, so Adam's moments etc. live on one rank each —
+  per-rank optimiser-state memory ≈ 1/`world_size`.
+- **Gradient averaging.** `allreduce_zero_grads` averages every gradient over
+  the world group at step boundaries. This is done by the engine (not a DDP
+  wrapper), so the semantics are identical on CPU/gloo and CUDA/NCCL.
+- **Weight synchronisation.** After each step the updated parameters are
+  all-gathered from their owners, so all ranks converge to identical weights.
+- **Checkpointing.** `ZeroOptimizer.state_dict()`/`load_state_dict()` serialize
+  each rank's shard (FSDP-sharded style); ranks save and resume their own slice.
+
+### Current limits (v1)
+
+- **Standard loop only** — custom-loop tasks (e.g. PPO) are refused.
+- **fp16 AMP refused** — use `bf16` or `use_amp=False`. (The fp16 `GradScaler`
+  must drive a plain optimizer whose unscale_/per-param-grad internals the
+  sharded wrapper does not expose yet.)
+- **Not validated on real GPUs** — the 2-rank CPU/gloo e2e proves the wiring
+  and cross-rank lockstep; a real-CUDA (NCCL) validation pass is the next step.
+- **Stage-2/3 not implemented** — gradient/parameter sharding are future work.
 
 ## Tensor Parallelism quick start
 
@@ -444,5 +506,8 @@ uv run llm-train --task stream_lm --config-path configs/ddp.yaml
 
 - [Deep dive into DDP](../development/deep-dive-ddp.md)
 - [Training flow guide](../development/training-flow.md)
+- `ZeroOptimizer`（原生 ZeRO Stage-1 核心 + 按 rank 分片 checkpoint）见
+  `src/llm/training/distributed/zero.py`，多 rank 验证见
+  `tests/training/distributed/test_zero_optimizer.py`。
 - FSDP 的接线记录（config + state-dict helpers）见 `CHANGELOG.md`
   （Tier 3 #29）。
