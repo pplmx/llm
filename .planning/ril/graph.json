@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 141,
+  "round": 142,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T13:50:20+00:00",
+  "updated_at": "2026-08-27T14:22:28+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 140,
+      "touched_round": 141,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -15817,6 +15817,73 @@
       "source": "tests/training/distributed/test_zero_optimizer.py::test_zero_stage1_checkpoint_roundtrip_two_process_cpu (commit 5f552be)",
       "title": "CPU/gloo world_size=2: dump sharded state after STEPS_PRE, reset to init, load each rank's shard, continue STEPS_POST -> bit-exact parity with a full AdamW saved/reset/reloaded identically. ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-305": {
+      "id": "ISS-305",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T14:20:19+00:00",
+      "updated_at": "2026-08-27T14:22:27+00:00",
+      "touched_round": 141,
+      "title": "ZeRO engine integration: native ZeRO Stage-1 is not yet wired into the standard training loop",
+      "severity": 0.6,
+      "details": "ZeroOptimizer (TASK-267) + per-rank sharded checkpoint (TASK-268) exist as modules, but there is no parallel_strategy that routes the engine's standard language-modeling loop through them: build the per-rank sharded optimizer, average gradients over the world group each step (the classic ZeRO-1 reduction, no DDP wrapper so CPU/gloo==CUDA semantics), drive scheduler/checkpoint, and keep ranks in lockstep via the update all-gather. Without it ZeRO cannot train through llm-train."
+    },
+    "TASK-269": {
+      "id": "TASK-269",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T14:20:20+00:00",
+      "updated_at": "2026-08-27T14:22:28+00:00",
+      "touched_round": 141,
+      "category": "core-feature",
+      "severity": 0.65,
+      "confidence": 0.5,
+      "effort": 1.5,
+      "unlock_factor": 2.0,
+      "title": "Integrate native ZeRO Stage-1 as parallel_strategy='zero' in the engine standard loop",
+      "details": "Add 'zero' to DistributedConfig; wrap_model_for_training returns a plain full copy (no DDP/FSDP/TP/PP) with composition guards; engine: is_training_zero, build a ZeroOptimizer per rank via the new task.build_optimizer_for seam, allreduce_zero_grads at step boundary, plain global-norm clip, refuse fp16 AMP + non-standard-loop tasks for v1, use ZeroOptimizer's sharded state_dict for checkpoint. Verify with a 2-rank CPU/gloo engine e2e (finite loss, disjoint sharding, bit-exact cross-rank lockstep) plus the existing parity/checkpoint suites."
+    },
+    "DEC-097": {
+      "id": "DEC-097",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:20:47+00:00",
+      "updated_at": "2026-08-27T14:20:47+00:00",
+      "touched_round": 141,
+      "title": "Deliver native ZeRO Stage-1 as its own parallel_strategy='zero' (no DDP wrapper), averaging gradients in the engine",
+      "rationale": "Layering ZeRO on DDP would make gradient averaging differ between CPU/gloo (DDP is a CPU no-op) and CUDA/NCCL (DDP averages), which cannot be verified on CPU alone and risks a silent double/under-average. Making 'zero' its own strategy keeps a plain full model copy on every rank and has the ENGINE allreduce the locally-summed gradients over the world group at each step (the classic ZeRO-1 reduction), so semantics are identical on CPU and CUDA and are testable with a gloo e2e. Standard loop only; fp16 AMP refused for v1 (the GradScaler must drive a plain optimizer whose unscale_/per-param-grad internals the wrapper does not yet expose) — bf16/fp32 fine. Real-CUDA validation remains a follow-up.",
+      "alternatives_rejected": [
+        "Layer ZeroOptimizer on DDP (CPU/CUDA gradient-averaging divergence, not verifiable here)",
+        "Extend every task.build_optimizer signature (reshapes per-task optimizer construction; the _ParameterCollection seam through build_optimizer_for reuses the existing logic instead)",
+        "Full engine+CLI+multi-GPU in one slice (too large to verify on CPU)"
+      ]
+    },
+    "CHG-284": {
+      "id": "CHG-284",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:22:22+00:00",
+      "updated_at": "2026-08-27T14:22:22+00:00",
+      "touched_round": 141,
+      "commit": "44b2cc1",
+      "title": "Engine integration: parallel_strategy='zero' (ZeroOptimizer as torch.optim.Optimizer + build_optimizer_for seam + engine grad-average/step/checkpoint wiring)"
+    },
+    "EV-273": {
+      "id": "EV-273",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:22:22+00:00",
+      "updated_at": "2026-08-27T14:22:22+00:00",
+      "touched_round": 141,
+      "source": "tests/training/distributed/test_zero_optimizer.py::test_zero_stage1_engine_standard_loop_two_process_cpu + test_zero_stage1_parity_two_process_cpu + test_zero_stage1_checkpoint_roundtrip_two_process_cpu (commit 44b2cc1)",
+      "title": "2-rank CPU/gloo: engine 'zero' trains with finite loss, disjoint round-robin shards cover all params, and both ranks end bit-identical after grad-average + sharded step + all-gather; parity + checkpoint suites still green. ruff + ty clean; config/engine/parallel suites green.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23234,6 +23301,36 @@
       "to": "TASK-268",
       "type": "implements",
       "created_at": "2026-08-27T13:50:06+00:00"
+    },
+    {
+      "from": "TASK-269",
+      "to": "ISS-305",
+      "type": "addresses",
+      "created_at": "2026-08-27T14:20:47+00:00"
+    },
+    {
+      "from": "ISS-305",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-27T14:20:47+00:00"
+    },
+    {
+      "from": "DEC-097",
+      "to": "TASK-269",
+      "type": "governs",
+      "created_at": "2026-08-27T14:20:55+00:00"
+    },
+    {
+      "from": "CHG-284",
+      "to": "ISS-305",
+      "type": "resolves",
+      "created_at": "2026-08-27T14:22:22+00:00"
+    },
+    {
+      "from": "CHG-284",
+      "to": "TASK-269",
+      "type": "implements",
+      "created_at": "2026-08-27T14:22:22+00:00"
     }
   ]
 }
