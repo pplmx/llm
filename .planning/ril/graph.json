@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 144,
+  "round": 145,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T14:49:37+00:00",
+  "updated_at": "2026-08-27T15:00:18+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 143,
+      "touched_round": 144,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -16002,6 +16002,73 @@
       "source": "tests/export/test_gguf_quant.py::TestQ6K (roundtrip, writer->reader) + tests/export/test_gguf_reader_writer.py (commit 90c3922)",
       "title": "Q6_K round-trips through the gguf-py-verified dequantize_q6_k: zero block -> exact 0, constant -> consistent, gaussian rel err <4%, writer->GGUFReader e2e ok, exporter resolves 'q6_k' (file type 13). Full export suite 210 passed; ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-308": {
+      "id": "ISS-308",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T14:58:49+00:00",
+      "updated_at": "2026-08-27T15:00:18+00:00",
+      "touched_round": 144,
+      "title": "GGUF Q4_K (llama.cpp's default export type) is reader-only — no quantize (write) path",
+      "severity": 0.6,
+      "details": "Q6_K write path landed (TASK-271) but Q4_K remains reader-only, so export_model still can't emit the single most-used llama.cpp type. Q4_K uses block_q4_K: d(2)+dmin(2)+scales(12)+qs(128), 8x32 groups, value = d*sc*q - dmin*m with (sc,m) unpacked via get_scale_min_k4. Add quantize_q4_k so export_model(quantize='q4_k') works."
+    },
+    "TASK-272": {
+      "id": "TASK-272",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T14:58:49+00:00",
+      "updated_at": "2026-08-27T15:00:18+00:00",
+      "touched_round": 144,
+      "category": "core-feature",
+      "severity": 0.6,
+      "confidence": 0.5,
+      "effort": 1.2,
+      "unlock_factor": 2.0,
+      "title": "GGUF Q4_K write path: quantizer + get_scale_min_k4 inverse + writer/exporter wiring + tests",
+      "details": "Add quantize_q4_k (d=block range base, dmin=block min-offset base, per-group 6-bit sc and m encoded by inverting _get_scale_min_k4, 4-bit qs packing), wire Q4_K into EXPORT_TENSOR_TYPES / _QUANT_NAME_TO_TYPE / _FILE_TYPE(3) / _pick_tensor_type and writer encode+shape gate. Verify by round-tripping through the gguf-py-verified dequantize_q4_k (incl. scale/min inverse exact check) and a writer->reader e2e; update the reader/writer unsupported-type test (Q4_K is now exportable)."
+    },
+    "DEC-099": {
+      "id": "DEC-099",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:59:32+00:00",
+      "updated_at": "2026-08-27T14:59:32+00:00",
+      "touched_round": 144,
+      "title": "Quantize Q4_K with block d/dmin bases + per-group 6-bit sc/m encoded by inverting get_scale_min_k4, validated against our gguf-py-verified dequantizer",
+      "rationale": "Follows DEC-098 validity contract: llama.cpp needs a VALID block_q4_K its dequantizer reads correctly, not byte-identity with ggml. d = block-range base, dmin = min-offset base, per-group 6-bit sc/m stored by inverting the verified _get_scale_min_k4 (exact round-trip in tests); 4-bit qs packing matches dequantize_q4_k nibble map. Error <12pct rel for 4-bit; zero block exact.",
+      "alternatives_rejected": [
+        "Byte-match ggml quantize_row_q4_K_ref exactly (same compatibility as long as layout valid)",
+        "Fold Q4_K into Q6_K slice (scale/min layout differs; land+verify separately)",
+        "Skip q4_k (it is the dominant llama.cpp type, highest value of remaining K-quants)"
+      ]
+    },
+    "CHG-287": {
+      "id": "CHG-287",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:00:14+00:00",
+      "updated_at": "2026-08-27T15:00:14+00:00",
+      "touched_round": 144,
+      "commit": "a8ac27f",
+      "title": "GGUF Q4_K write path: quantizer + get_scale_min_k4 inverse + writer/exporter wiring + TestQ4K suite"
+    },
+    "EV-276": {
+      "id": "EV-276",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:00:14+00:00",
+      "updated_at": "2026-08-27T15:00:14+00:00",
+      "touched_round": 144,
+      "source": "tests/export/test_gguf_quant.py::TestQ4K + tests/export/test_gguf_reader_writer.py (commit a8ac27f)",
+      "title": "Q4_K round-trips through the gguf-py-verified dequantize_q4_k: zero block exact, gaussian rel error <12%, scale/min inverse matches _get_scale_min_k4 exactly, writer->GGUFReader e2e ok, exporter resolves q4_k (file type 3). Full export suite 218 passed; ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23503,6 +23570,36 @@
       "to": "TASK-271",
       "type": "implements",
       "created_at": "2026-08-27T14:49:33+00:00"
+    },
+    {
+      "from": "TASK-272",
+      "to": "ISS-308",
+      "type": "addresses",
+      "created_at": "2026-08-27T14:59:19+00:00"
+    },
+    {
+      "from": "ISS-308",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-27T14:59:19+00:00"
+    },
+    {
+      "from": "DEC-099",
+      "to": "TASK-272",
+      "type": "governs",
+      "created_at": "2026-08-27T14:59:34+00:00"
+    },
+    {
+      "from": "CHG-287",
+      "to": "ISS-308",
+      "type": "resolves",
+      "created_at": "2026-08-27T15:00:14+00:00"
+    },
+    {
+      "from": "CHG-287",
+      "to": "TASK-272",
+      "type": "implements",
+      "created_at": "2026-08-27T15:00:14+00:00"
     }
   ]
 }
