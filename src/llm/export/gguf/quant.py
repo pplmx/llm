@@ -344,6 +344,73 @@ def _encode_scale_min_q4k(scales: np.ndarray, sc: np.ndarray, m: np.ndarray) -> 
     scales[:] = np.concatenate([d12.astype(np.uint8), m12.astype(np.uint8), md.astype(np.uint8)])
 
 
+def quantize_q2_k(data: np.ndarray) -> np.ndarray:
+    """Quantize float data to Q2_K blocks (256-wide), returning packed bytes.
+
+    Layout (``block_q2_K``, which :func:`dequantize_q2_k` reads):
+    ``scales(16) + qs(64) + d(2) + dmin(2)``. Sixteen 16-element groups each
+    carry ``dl = d*(scales&0xF)`` and ``ml = dmin*(scales>>4)``; element
+    ``(g, k)`` decodes as ``dl_g * q - ml_g`` with ``q`` a 2-bit value packed
+    4-per-byte in ``qs``. Output is self-consistent with the (gguf-py
+    verified) dequantizer so llama.cpp can load it (validity contract of
+    DEC-098/099/100).
+    """
+    x = np.asarray(data, dtype=np.float32).reshape(-1)
+    if x.size % GGML_K_BLOCK_SIZE:
+        raise ValueError(f"Q2_K requires a multiple of {GGML_K_BLOCK_SIZE} elements, got {x.size}")
+    blocks = x.reshape(-1, GGML_K_BLOCK_SIZE)
+    n_blocks = blocks.shape[0]
+    qs = np.zeros((n_blocks, 64), dtype=np.uint8)
+    scales = np.zeros((n_blocks, 16), dtype=np.uint8)
+    d = np.zeros(n_blocks, dtype=np.float16)
+    dmin = np.zeros(n_blocks, dtype=np.float16)
+
+    for b in range(n_blocks):
+        groups = blocks[b].reshape(16, 16).astype(np.float32)
+        mins = groups.min(axis=1)
+        maxs = groups.max(axis=1)
+        spans = maxs - mins
+        max_span = float(spans.max()) if spans.size else 0.0
+        max_negmin = float(np.maximum(-mins, 0.0).max()) if mins.size else 0.0
+        # low nibble drives dl (up to 15 * d), so d = span/(3*15); high nibble
+        # drives ml (up to 15 * dmin), so dmin = max_negmin/15.
+        dval = max_span / (3.0 * 15.0) if max_span > 0.0 else 0.0
+        dminval = max_negmin / 15.0 if max_negmin > 0.0 else 0.0
+        d[b] = np.float16(dval)
+        dmin[b] = np.float16(dminval)
+
+        for g in range(16):
+            gmin = float(mins[g])
+            gspan = float(spans[g])
+            n_dl = 1
+            if dval > 0.0 and gspan > 0.0:
+                n_dl = int(np.clip(round(gspan / (3.0 * dval)), 1, 15))
+            n_ml = 0
+            if dminval > 0.0:
+                n_ml = int(np.clip(round(-gmin / dminval), 0, 15))
+            scales[b, g] = np.uint8((n_ml << 4) | n_dl)
+            dl = dval * n_dl
+            ml = dminval * n_ml
+            if dl > 0.0:
+                q = np.clip(np.round((groups[g] + ml) / dl).astype(np.int32), 0, 3)
+            else:
+                q = np.zeros(16, dtype=np.int32)
+            # pack 2-bit q into qs: byte=(g//8)*32 + (g%2)*16 + k, shift=2*((g%8)//2)
+            byte = (g // 8) * 32 + (g % 2) * 16
+            shift = 2 * ((g % 8) // 2)
+            qs[b, byte : byte + 16] |= np.uint8(((q & 0x03).astype(np.uint8)) << shift)
+
+    rec = np.zeros(
+        n_blocks,
+        dtype=[("sc", "u1", 16), ("qs", "u1", 64), ("d", "<f2"), ("dmin", "<f2")],
+    )
+    rec["sc"] = scales
+    rec["qs"] = qs
+    rec["d"] = d
+    rec["dmin"] = dmin
+    return np.frombuffer(rec.tobytes(), dtype=np.uint8)
+
+
 def quantize_q5_k(data: np.ndarray) -> np.ndarray:
     """Quantize float data to Q5_K blocks (256-wide), returning the packed bytes.
 

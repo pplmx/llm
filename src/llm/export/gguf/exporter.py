@@ -41,6 +41,7 @@ _QUANT_NAME_TO_TYPE = {
     "f32": GGMLQuantizationType.F32,
     "f16": GGMLQuantizationType.F16,
     "q4_0": GGMLQuantizationType.Q4_0,
+    "q2_k": GGMLQuantizationType.Q2_K,
     "q8_0": GGMLQuantizationType.Q8_0,
     "q4_k": GGMLQuantizationType.Q4_K,
     "q5_k": GGMLQuantizationType.Q5_K,
@@ -52,6 +53,7 @@ _FILE_TYPE = {
     GGMLQuantizationType.F32: 0,  # ALL_F32
     GGMLQuantizationType.F16: 1,  # MOSTLY_F16
     GGMLQuantizationType.Q4_0: 2,  # MOSTLY_Q4_0
+    GGMLQuantizationType.Q2_K: 10,  # MOSTLY_Q2_K
     GGMLQuantizationType.Q4_K: 3,  # MOSTLY_Q4_K
     GGMLQuantizationType.Q5_K: 6,  # MOSTLY_Q5_K
     GGMLQuantizationType.Q8_0: 7,  # MOSTLY_Q8_0
@@ -140,7 +142,12 @@ def _pick_tensor_type(
         if arr.ndim >= quantize_min_ndim and can_quantize_shape(arr.shape):
             return quant_type
         return GGMLQuantizationType.F16
-    if quant_type in (GGMLQuantizationType.Q4_K, GGMLQuantizationType.Q5_K, GGMLQuantizationType.Q6_K):
+    if quant_type in (
+        GGMLQuantizationType.Q2_K,
+        GGMLQuantizationType.Q4_K,
+        GGMLQuantizationType.Q5_K,
+        GGMLQuantizationType.Q6_K,
+    ):
         if arr.ndim >= quantize_min_ndim and can_quantize_k_shape(arr.shape):
             return quant_type
         return GGMLQuantizationType.F16
@@ -206,6 +213,7 @@ def export_to_gguf(
         if ttype != quant_type and quant_type in (
             GGMLQuantizationType.Q4_0,
             GGMLQuantizationType.Q8_0,
+            GGMLQuantizationType.Q2_K,
             GGMLQuantizationType.Q4_K,
             GGMLQuantizationType.Q5_K,
             GGMLQuantizationType.Q6_K,

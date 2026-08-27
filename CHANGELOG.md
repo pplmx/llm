@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GGUF Q2_K write path** (RIL TASK-276/ISS-312/DEC-103):
+  `llm/export/gguf/quant.py::quantize_q2_k` packs the 256-wide `block_q2_K`
+  (scales16+qs64+d2+dmin2, 16 groups of 16, value = dl*q - ml) matching the
+  gguf-py-verified `dequantize_q2_k` exactly, wired into the exporter
+  (`quantize="q2_k"`, file type 10). This completes every common llama.cpp
+  K-quant export path.
+
 - **Asymmetric simple-PTQ** (RIL TASK-275/ISS-311/DEC-102):
   `llm/quantization/ptq.py::QuantizedLinear.from_linear` now supports
   `QuantConfig(symmetric=False)` — 8-bit scale + zero-point weight
