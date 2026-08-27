@@ -26,9 +26,11 @@ from llm.training.distributed.pipeline import (
 )
 from llm.training.distributed.pp_tp import PPTPRuntime
 from llm.training.distributed.tensor_parallel import apply_tensor_parallel, apply_tensor_parallel_stage
+from llm.training.distributed.zero import ZeroOptimizer
 
 __all__ = [
     "PPTPRuntime",
+    "ZeroOptimizer",
     "allreduce_3d_dp_grads",
     "allreduce_dp_grads",
     "allreduce_pp_dp_grads",
