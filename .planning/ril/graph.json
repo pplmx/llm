@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 142,
+  "round": 143,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T14:22:28+00:00",
+  "updated_at": "2026-08-27T14:27:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 141,
+      "touched_round": 142,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -15884,6 +15884,57 @@
       "source": "tests/training/distributed/test_zero_optimizer.py::test_zero_stage1_engine_standard_loop_two_process_cpu + test_zero_stage1_parity_two_process_cpu + test_zero_stage1_checkpoint_roundtrip_two_process_cpu (commit 44b2cc1)",
       "title": "2-rank CPU/gloo: engine 'zero' trains with finite loss, disjoint round-robin shards cover all params, and both ranks end bit-identical after grad-average + sharded step + all-gather; parity + checkpoint suites still green. ruff + ty clean; config/engine/parallel suites green.",
       "confidence": 1.0
+    },
+    "ISS-306": {
+      "id": "ISS-306",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T14:27:24+00:00",
+      "updated_at": "2026-08-27T14:27:54+00:00",
+      "touched_round": 142,
+      "title": "ZeRO productization gap: no guide / ROADMAP / CHANGELOG documenting parallel_strategy='zero'",
+      "severity": 0.4,
+      "details": "The native ZeRO Stage-1 engine integration (TASK-269) is functional and verified but undocumented: users cannot discover/launch parallel_strategy='zero' from docs, ROADMAP 15.5 'DeepSpeed ZeRO' was unchecked, and CHANGELOG had no entry. Productization requires docs (distributed guide), ROADMAP status, and CHANGELOG entry."
+    },
+    "TASK-270": {
+      "id": "TASK-270",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T14:27:24+00:00",
+      "updated_at": "2026-08-27T14:27:54+00:00",
+      "touched_round": 142,
+      "category": "docs",
+      "severity": 0.4,
+      "confidence": 0.6,
+      "effort": 0.5,
+      "unlock_factor": 1.5,
+      "title": "ZeRO Stage-1 productization: distributed-guide section + ROADMAP 15.5 status + CHANGELOG entry",
+      "details": "Add a parallel_strategy='zero' quick-start section to docs/guides/distributed.md (semantics, how-it-works, v1 limits), mark ROADMAP 15.5 DeepSpeed ZeRO (Stage-1 engine integration) done while leaving Stage-2/3 open, and add a CHANGELOG Added entry. Verify with the repo markdown linter (rumdl) and the priority_score/task wiring in the RIL graph."
+    },
+    "CHG-285": {
+      "id": "CHG-285",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:27:50+00:00",
+      "updated_at": "2026-08-27T14:27:50+00:00",
+      "touched_round": 142,
+      "commit": "262bdf2",
+      "title": "ZeRO Stage-1 productization docs: distributed-guide section + ROADMAP 15.5 status + CHANGELOG entry"
+    },
+    "EV-274": {
+      "id": "EV-274",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:27:50+00:00",
+      "updated_at": "2026-08-27T14:27:50+00:00",
+      "touched_round": 142,
+      "source": "docs/guides/distributed.md + ROADMAP.md + CHANGELOG.md (commit 262bdf2)",
+      "title": "rumdl markdown lint clean; 'zero' quick-start section + v1 limits documented; ROADMAP 15.5 Stage-1 marked done (Stage-2/3 open); CHANGELOG Added entry added.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23331,6 +23382,30 @@
       "to": "TASK-269",
       "type": "implements",
       "created_at": "2026-08-27T14:22:22+00:00"
+    },
+    {
+      "from": "TASK-270",
+      "to": "ISS-306",
+      "type": "addresses",
+      "created_at": "2026-08-27T14:27:27+00:00"
+    },
+    {
+      "from": "ISS-306",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-27T14:27:27+00:00"
+    },
+    {
+      "from": "CHG-285",
+      "to": "ISS-306",
+      "type": "resolves",
+      "created_at": "2026-08-27T14:27:50+00:00"
+    },
+    {
+      "from": "CHG-285",
+      "to": "TASK-270",
+      "type": "implements",
+      "created_at": "2026-08-27T14:27:51+00:00"
     }
   ]
 }
