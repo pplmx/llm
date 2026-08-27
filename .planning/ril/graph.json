@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 148,
+  "round": 149,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T15:40:52+00:00",
+  "updated_at": "2026-08-27T15:56:55+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 145,
+      "touched_round": 148,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -16267,6 +16267,72 @@
       "source": "tests/quantization/test_quantization.py::TestQuantizeModel asymmetric tests + quantization CPU suite (commit 3bfe0d6)",
       "title": "Asymmetric per-tensor/per-channel round-trip: int8 grid valid, forward runs, asymmetric strictly beats symmetric on skewed all-positive weights; quantization unit + CPU suite green; ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-312": {
+      "id": "ISS-312",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T15:54:14+00:00",
+      "updated_at": "2026-08-27T15:56:55+00:00",
+      "touched_round": 148,
+      "title": "GGUF Q2_K (2-bit) is reader-only — no quantize (write) path",
+      "severity": 0.5,
+      "details": "Q6_K/Q4_K/Q5_K write paths landed; Q2_K remains reader-only. Q2_K uses block_q2_K: scales(16)+qs(64)+d(2)+dmin(2), 16 groups of 16, value = dl*q - ml with 2-bit q. Add quantize_q2_k so export_model(quantize='q2_k') works and all common llama.cpp K-quants are exportable."
+    },
+    "TASK-276": {
+      "id": "TASK-276",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T15:54:14+00:00",
+      "updated_at": "2026-08-27T15:56:55+00:00",
+      "touched_round": 148,
+      "category": "core-feature",
+      "severity": 0.55,
+      "confidence": 0.5,
+      "effort": 1.2,
+      "unlock_factor": 2.0,
+      "title": "GGUF Q2_K write path: quantizer + writer/exporter wiring + tests",
+      "details": "Add quantize_q2_k (dl=d*(scales&0xF), ml=dmin*(scales>>4) per 16-group, 2-bit q packed 4-per-byte matching dequantize_q2_k), wire Q2_K into EXPORT_TENSOR_TYPES / _QUANT_NAME_TO_TYPE / _FILE_TYPE(10) / _pick_tensor_type and writer encode+shape gate. Verify by round-tripping through the gguf-py-verified dequantize_q2_k and a writer->reader e2e; update the two reader-only tests to Q3_K since Q2_K is now exportable."
+    },
+    "DEC-103": {
+      "id": "DEC-103",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:54:40+00:00",
+      "updated_at": "2026-08-27T15:54:40+00:00",
+      "touched_round": 148,
+      "title": "Quantize Q2_K to match dequantize_q2_k exactly (d/dmin bases + per-16-group dl/ml nibbles), validated by round-trip",
+      "rationale": "Continues DEC-098/099/100 validity contract: llama.cpp needs a VALID block_q2_K its dequantizer reads. Per-16-group dl=d*(scales&0xF) and ml=dmin*(scales>>4) with d=span/(3*15), dmin=max_negmin/15; 2-bit q packed 4-per-byte at byte=(g//8)*32+(g%2)*16+k, shift=2*((g%8)//2). Verified valid layout, exact zero block, consistent constant, no NaN. Documented 2-bit limitation: the offset only covers negative mins, so all-positive constant blocks collapse toward 0.",
+      "alternatives_rejected": [
+        "Byte-match ggml quantize_row_q2_K_ref exactly (same compatibility as long as the layout is valid)",
+        "Skip Q2_K (completing the K-quant family makes every reader-supported type exportable; Q3_K remains the last reader-only K-quant)"
+      ]
+    },
+    "CHG-291": {
+      "id": "CHG-291",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:56:26+00:00",
+      "updated_at": "2026-08-27T15:56:26+00:00",
+      "touched_round": 148,
+      "commit": "d2badd4",
+      "title": "GGUF Q2_K write path: quantizer + writer/exporter wiring + TestQ2K suite"
+    },
+    "EV-280": {
+      "id": "EV-280",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T15:56:26+00:00",
+      "updated_at": "2026-08-27T15:56:26+00:00",
+      "touched_round": 148,
+      "source": "tests/export/test_gguf_quant.py::TestQ2K + full tests/export (commit d2badd4)",
+      "title": "Q2_K round-trips through the gguf-py-verified dequantize_q2_k: exact zero block, no NaN, consistent constant, writer->GGUFReader e2e ok, exporter resolves q2_k (file type 10). Full export suite 234 passed; ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23888,6 +23954,36 @@
       "to": "TASK-275",
       "type": "implements",
       "created_at": "2026-08-27T15:40:48+00:00"
+    },
+    {
+      "from": "TASK-276",
+      "to": "ISS-312",
+      "type": "addresses",
+      "created_at": "2026-08-27T15:54:39+00:00"
+    },
+    {
+      "from": "ISS-312",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-27T15:54:40+00:00"
+    },
+    {
+      "from": "DEC-103",
+      "to": "TASK-276",
+      "type": "governs",
+      "created_at": "2026-08-27T15:54:40+00:00"
+    },
+    {
+      "from": "CHG-291",
+      "to": "ISS-312",
+      "type": "resolves",
+      "created_at": "2026-08-27T15:56:26+00:00"
+    },
+    {
+      "from": "CHG-291",
+      "to": "TASK-276",
+      "type": "implements",
+      "created_at": "2026-08-27T15:56:26+00:00"
     }
   ]
 }
