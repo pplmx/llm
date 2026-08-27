@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 140,
+  "round": 141,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T13:43:36+00:00",
+  "updated_at": "2026-08-27T13:50:20+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 139,
+      "touched_round": 140,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -15751,6 +15751,72 @@
       "source": "tests/training/distributed/test_zero_optimizer.py::test_zero_stage1_parity_two_process_cpu + test_zero_optimizer_single_rank_matches_plain_optimizer (commit a0254b1)",
       "title": "World-size-2 gloo: sharded per-owner AdamW + all-gather reproduces a full AdamW bit-exactly (torch.equal over all params, STEPS=12); single-rank == plain AdamW. ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-304": {
+      "id": "ISS-304",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T13:47:35+00:00",
+      "updated_at": "2026-08-27T13:50:09+00:00",
+      "touched_round": 140,
+      "title": "ZeRO engine-integration readiness: ZeroOptimizer lacks per-rank optimizer-state checkpoint / resume support",
+      "severity": 0.55,
+      "details": "The training engine's resume path saves/loads the optimizer's state_dict (engine.load_checkpoint(model, optimizer, scheduler, scaler,...)). For parallel_strategy='zero' (DDP + ZeRO Stage-1) each rank holds a sharded inner optimizer, so a faithful resume needs each rank to dump/restore ONLY its own shard (FSDP-sharded-style), and a load that maps inner parameter indices back onto this rank's deterministic owned set. Without it the engine cannot resume a sharded run."
+    },
+    "TASK-268": {
+      "id": "TASK-268",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T13:47:35+00:00",
+      "updated_at": "2026-08-27T13:50:20+00:00",
+      "touched_round": 141,
+      "category": "core-feature",
+      "severity": 0.55,
+      "confidence": 0.5,
+      "effort": 1.0,
+      "unlock_factor": 2.0,
+      "title": "Checkpointable ZeroOptimizer: per-rank sharded state_dict/load_state_dict + CPU/gloo round-trip parity",
+      "details": "Add state_dict()/load_state_dict() to ZeroOptimizer that serialize this rank's sharded inner optimizer state and restore it onto the same deterministic owned-param set; prove resume via a CPU/gloo world_size=2 test: train STEPS1, dump both ranks' states, reset to init, load, continue STEPS2, and assert bit-parity with a full-AdamW reference restarted identically. Prerequisite for standard-loop engine integration (AMP, scheduler groups, and real-CUDA validation remain follow-ups)."
+    },
+    "DEC-096": {
+      "id": "DEC-096",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T13:47:43+00:00",
+      "updated_at": "2026-08-27T13:47:43+00:00",
+      "touched_round": 140,
+      "title": "Checkpoint ZeroOptimizer as per-rank sharded optimizer state (FSDP-sharded-style), not a gathered full state",
+      "rationale": "Each rank's inner optimizer already holds only its owned params, so its own state_dict is the natural per-rank shard. Serializing that keeps the shard size ~1/world_size on disk and avoids an all-gather on save; loading maps back by the deterministic round-robin ownership. This is the same strategy FSDP uses for sharded checkpoint I/O and is the minimal contract the engine's resume path needs. Engine wiring, AMP interaction, scheduler group semantics, and real-CUDA validation are explicitly deferred.",
+      "alternatives_rejected": [
+        "Gather full optimizer state on rank 0 at save (defeats the shard-size goal, needs a collective, only rank-0 writes)",
+        "Defer checkpointing to after engine integration (resume is a hard prerequisite of the engine path, so better land the primitive first with a parity proof)"
+      ]
+    },
+    "CHG-283": {
+      "id": "CHG-283",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T13:50:06+00:00",
+      "updated_at": "2026-08-27T13:50:06+00:00",
+      "touched_round": 140,
+      "commit": "5f552be",
+      "title": "Per-rank sharded optimizer-state checkpoint for ZeroOptimizer (engine-integration prerequisite)"
+    },
+    "EV-272": {
+      "id": "EV-272",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T13:50:06+00:00",
+      "updated_at": "2026-08-27T13:50:06+00:00",
+      "touched_round": 140,
+      "source": "tests/training/distributed/test_zero_optimizer.py::test_zero_stage1_checkpoint_roundtrip_two_process_cpu (commit 5f552be)",
+      "title": "CPU/gloo world_size=2: dump sharded state after STEPS_PRE, reset to init, load each rank's shard, continue STEPS_POST -> bit-exact parity with a full AdamW saved/reset/reloaded identically. ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23138,6 +23204,36 @@
       "to": "TASK-267",
       "type": "implements",
       "created_at": "2026-08-27T13:43:28+00:00"
+    },
+    {
+      "from": "TASK-268",
+      "to": "ISS-304",
+      "type": "addresses",
+      "created_at": "2026-08-27T13:47:42+00:00"
+    },
+    {
+      "from": "ISS-304",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-27T13:47:43+00:00"
+    },
+    {
+      "from": "DEC-096",
+      "to": "TASK-268",
+      "type": "governs",
+      "created_at": "2026-08-27T13:47:45+00:00"
+    },
+    {
+      "from": "CHG-283",
+      "to": "ISS-304",
+      "type": "resolves",
+      "created_at": "2026-08-27T13:50:06+00:00"
+    },
+    {
+      "from": "CHG-283",
+      "to": "TASK-268",
+      "type": "implements",
+      "created_at": "2026-08-27T13:50:06+00:00"
     }
   ]
 }
