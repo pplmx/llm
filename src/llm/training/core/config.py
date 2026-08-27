@@ -177,6 +177,35 @@ class TrainingConfig(BaseModel):
         ),
     )
 
+    # SimPO (Meng et al. 2024) knobs — opt-in via the ``simpo`` task. The
+    # reference-free implicit reward is ``beta * mean_logp``; ``gamma`` is the
+    # target preferred-vs-rejected reward margin; ``simpo_lambda`` weights the
+    # chosen-response SFT regularizer. Safe to leave unset for non-SimPO runs.
+    simpo_beta: float = Field(
+        2.0,
+        gt=0,
+        description=(
+            "SimPO reward scale on the length-normalized mean log-prob "
+            "(larger = stronger gradient on the preference margin). Standard "
+            "literature value: 2.0."
+        ),
+    )
+    simpo_gamma: float = Field(
+        0.0,
+        description=(
+            "SimPO target reward margin gamma between the preferred and "
+            "rejected responses. Tune upward to enforce a minimum separation."
+        ),
+    )
+    simpo_lambda: float = Field(
+        1.0,
+        ge=0,
+        description=(
+            "SimPO weight on the chosen-response SFT regularizer "
+            "(-lambda * beta * mean_logp chosen). 0 disables the SFT term."
+        ),
+    )
+
     # AdaLoRA (T3 #40-#42). Defaults preserve current behavior — the
     # callback is only registered when ``use_adalora=True``. Mirrors
     # the layer-side AdaLoRALinear defaults (init_rank=12, alpha=32,

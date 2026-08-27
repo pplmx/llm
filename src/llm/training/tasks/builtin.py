@@ -19,6 +19,7 @@ from llm.training.tasks.ppo_task import PPOTask
 from llm.training.tasks.regression_task import RegressionTask
 from llm.training.tasks.reward_task import RewardTask
 from llm.training.tasks.sft_task import SFTTask
+from llm.training.tasks.simpo_task import SimPOTask
 
 TASK_REGISTRY.register("regression", RegressionTask, SyntheticDataModule, description="Synthetic regression demo")
 TASK_REGISTRY.register("lm", LanguageModelingTask, TextDataModule, description="Map-style language modeling")
@@ -30,6 +31,7 @@ TASK_REGISTRY.register(
 )
 TASK_REGISTRY.register("sft", SFTTask, SFTDataModule, description="Supervised fine-tuning")
 TASK_REGISTRY.register("dpo", DPOTask, DPODataModule, description="Direct preference optimization")
+TASK_REGISTRY.register("simpo", SimPOTask, DPODataModule, description="SimPO (reference-free preference optimization)")
 TASK_REGISTRY.register(
     "distill", DistillationTask, TextDataModule, description="Knowledge distillation (student vs frozen teacher)"
 )

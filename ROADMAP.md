@@ -375,6 +375,7 @@
 - [x] 实现 GRPO (Group Relative Policy Optimization: `group_advantages` z-score + 裁剪 `GRPOLoss` + `--task grpo`，合成奖励分组 CPU e2e 显示组奖励随训练提升；见 [docs/guides/grpo.md](docs/guides/grpo.md))
 - [x] **探索 Constitutional AI** (规则式 constitution judge + 自批判→改写循环的 CPU 切片：`ForbiddenToken`/`EndsWithToken` 原则 + `critique`/`revise`，e2e 显示改写版全合规且分数严格上升；见 [docs/guides/constitutional.md](docs/guides/constitutional.md))
 - [x] 实现 Rejection Sampling (`rejection_sample` top-K/threshold 选择 + `RejectionSampleDataModule` SFT-on-selected，CPU e2e 显示保留集平均奖励高于原始样本且 SFT 后保留响应似然提升；见 [docs/guides/rejection_sampling.md](docs/guides/rejection_sampling.md))
+- [x] **实现 SimPO** (reference-free、长度归一化偏好优化: `--task simpo`，`simpo_beta`/`simpo_gamma`/`simpo_lambda`，复用 `DPODataModule`；CPU 单元/方向性/引擎 e2e 验证选择更受偏好项；见 RIL TASK-278/ISS-314/DEC-105)
 
 ---
 

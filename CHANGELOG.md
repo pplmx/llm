@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SimPO alignment** (ROADMAP 11.4 / RIL TASK-278/ISS-314/DEC-105):
+  `llm/training/tasks/simpo_task.py` -- reference-free, length-normalized
+  preference optimization (`--task simpo`, Meng et al. 2024). Implicit reward
+  = `beta * mean log p(y)`; loss = `-log sigma(beta*(mean_logp_w - mean_logp_l) - gamma)`
+  plus a chosen-response SFT regularizer (`lambda`). No frozen reference model
+  (avoids DPO's divergence / checkpoint-restore complexity); reuses
+  `DPODataModule` and the standard loop. Config knobs `simpo_beta` /
+  `simpo_gamma` / `simpo_lambda`. Verified reference-free, finite+backprop,
+  directional (chosen preferred on a fixed batch) and an engine e2e.
+
 - **GGUF Q3_K write path** (RIL TASK-277/ISS-313/DEC-104):
   `llm/export/gguf/quant.py::quantize_q3_k` packs the 256-wide `block_q3_K`
   (hmask32+qs64+scales12+d2, 16 groups of 16, value = dl*q with q = ql-(qh<<2),
