@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 143,
+  "round": 144,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T14:27:54+00:00",
+  "updated_at": "2026-08-27T14:49:37+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 72,
+      "touched_round": 143,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -15935,6 +15935,73 @@
       "source": "docs/guides/distributed.md + ROADMAP.md + CHANGELOG.md (commit 262bdf2)",
       "title": "rumdl markdown lint clean; 'zero' quick-start section + v1 limits documented; ROADMAP 15.5 Stage-1 marked done (Stage-2/3 open); CHANGELOG Added entry added.",
       "confidence": 1.0
+    },
+    "ISS-307": {
+      "id": "ISS-307",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T14:48:55+00:00",
+      "updated_at": "2026-08-27T14:49:37+00:00",
+      "touched_round": 143,
+      "title": "GGUF exporter only writes Q4_0/Q8_0 — llama.cpp's default K-quant types (Q6_K) can't be exported",
+      "severity": 0.6,
+      "details": "The GGUF reader already dequantizes the full K-quant family (Q2_K..Q6_K, round 75), but export only emits F32/F16/Q4_0/Q8_0. llama.cpp defaults to Q4_K/Q6_K/Q8_0, so GGUF files exported from this repo are larger than necessary and don't match what users actually serve. Add the Q6_K write (quantize) path so export_model(quantize='q6_k') produces valid, loadable files."
+    },
+    "TASK-271": {
+      "id": "TASK-271",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T14:48:55+00:00",
+      "updated_at": "2026-08-27T14:49:37+00:00",
+      "touched_round": 143,
+      "category": "core-feature",
+      "severity": 0.6,
+      "confidence": 0.5,
+      "effort": 1.5,
+      "unlock_factor": 2.0,
+      "title": "GGUF Q6_K write path: quantizer + writer/exporter wiring + round-trip tests",
+      "details": "Add quantize_q6_k (256-wide block_q6_K layout: ql128+qh64+scales16+d2) to gguf/quant.py, wire Q6_K into EXPORT_TENSOR_TYPES / can_quantize_k_shape / _QUANT_NAME_TO_TYPE / _FILE_TYPE(13) / _pick_tensor_type and the writer _encode_payload + shape gate. Verify by round-tripping through the existing (gguf-py byte-verified) dequantize_q6_k and GGUFReader, plus a writer->reader e2e; update the reader/writer test that flagged Q6_K as write-unsupported."
+    },
+    "DEC-098": {
+      "id": "DEC-098",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:49:05+00:00",
+      "updated_at": "2026-08-27T14:49:05+00:00",
+      "touched_round": 143,
+      "title": "Quantize Q6_K with a block-scale + per-16-int8 grid validated against our own (gguf-py-verified) dequantizer, not byte-matched to ggml's exact quantizer",
+      "rationale": "llama.cpp compatibility only requires a VALID block_q6_K layout that its dequantizer reads correctly; it does not require byte-identity with ggml's specific quantizer. So d=max_abs/32 + per-16-group int8 scales (ggml's structure) is enough, and correctness is proven by round-tripping through dequantize_q6_k (already verified byte-for-byte against gguf-py) with bounded error (zero block->0, constant->consistent, gaussian rel err <4%). Provides export_model(quantize='q6_k').",
+      "alternatives_rejected": [
+        "Byte-match ggml quantize_row_q6_K_ref exactly (needs the C reference at hand; higher risk for no extra compatibility value)",
+        "Implement all 5 K-quants at once (too large for one verified slice; Q4_K/Q5_K/Q2_K/Q3_K can follow the same pattern)",
+        "Kernel-level INT8 GEMM instead (CPU/GPU-bound; out of the quantization-depth scope)"
+      ]
+    },
+    "CHG-286": {
+      "id": "CHG-286",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:49:33+00:00",
+      "updated_at": "2026-08-27T14:49:33+00:00",
+      "touched_round": 143,
+      "commit": "90c3922",
+      "title": "GGUF Q6_K write path: quantizer + writer/exporter wiring + TestQ6K suite"
+    },
+    "EV-275": {
+      "id": "EV-275",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T14:49:33+00:00",
+      "updated_at": "2026-08-27T14:49:33+00:00",
+      "touched_round": 143,
+      "source": "tests/export/test_gguf_quant.py::TestQ6K (roundtrip, writer->reader) + tests/export/test_gguf_reader_writer.py (commit 90c3922)",
+      "title": "Q6_K round-trips through the gguf-py-verified dequantize_q6_k: zero block -> exact 0, constant -> consistent, gaussian rel err <4%, writer->GGUFReader e2e ok, exporter resolves 'q6_k' (file type 13). Full export suite 210 passed; ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -23406,6 +23473,36 @@
       "to": "TASK-270",
       "type": "implements",
       "created_at": "2026-08-27T14:27:51+00:00"
+    },
+    {
+      "from": "TASK-271",
+      "to": "ISS-307",
+      "type": "addresses",
+      "created_at": "2026-08-27T14:49:05+00:00"
+    },
+    {
+      "from": "ISS-307",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-08-27T14:49:05+00:00"
+    },
+    {
+      "from": "DEC-098",
+      "to": "TASK-271",
+      "type": "governs",
+      "created_at": "2026-08-27T14:49:05+00:00"
+    },
+    {
+      "from": "CHG-286",
+      "to": "ISS-307",
+      "type": "resolves",
+      "created_at": "2026-08-27T14:49:33+00:00"
+    },
+    {
+      "from": "CHG-286",
+      "to": "TASK-271",
+      "type": "implements",
+      "created_at": "2026-08-27T14:49:33+00:00"
     }
   ]
 }
