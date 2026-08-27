@@ -344,6 +344,71 @@ def _encode_scale_min_q4k(scales: np.ndarray, sc: np.ndarray, m: np.ndarray) -> 
     scales[:] = np.concatenate([d12.astype(np.uint8), m12.astype(np.uint8), md.astype(np.uint8)])
 
 
+def quantize_q5_k(data: np.ndarray) -> np.ndarray:
+    """Quantize float data to Q5_K blocks (256-wide), returning the packed bytes.
+
+    Layout (``block_q5_K``, which :func:`dequantize_q5_k` reads):
+    ``d(2) + dmin(2) + scales(12) + qh(32) + qs(128)``. Same 8x32 group
+    structure and get_scale_min_k4 (sc, m) as Q4_K, but each value is 5-bit:
+    its low 4 bits live in ``qs`` (Q4_K nibble map) and its 5th bit in ``qh``
+    byte ``j`` bit ``g``. Value = ``d*sc*q - dmin*m``, q in 0..31.
+    """
+    x = np.asarray(data, dtype=np.float32).reshape(-1)
+    if x.size % GGML_K_BLOCK_SIZE:
+        raise ValueError(f"Q5_K requires a multiple of {GGML_K_BLOCK_SIZE} elements, got {x.size}")
+    blocks = x.reshape(-1, GGML_K_BLOCK_SIZE)
+    n_blocks = blocks.shape[0]
+    qs = np.zeros((n_blocks, 128), dtype=np.uint8)
+    qh = np.zeros((n_blocks, 32), dtype=np.uint8)
+    scales = np.zeros((n_blocks, 12), dtype=np.uint8)
+    d = np.zeros(n_blocks, dtype=np.float16)
+    dmin = np.zeros(n_blocks, dtype=np.float16)
+
+    for b in range(n_blocks):
+        groups = blocks[b].reshape(8, 32).astype(np.float32)
+        mins = groups.min(axis=1)
+        maxs = groups.max(axis=1)
+        spans = maxs - mins
+        max_span = float(spans.max()) if spans.size else 0.0
+        max_negmin = float(np.maximum(-mins, 0.0).max()) if mins.size else 0.0
+        dval = max_span / (31.0 * 63.0) if max_span > 0.0 else 0.0
+        dminval = max_negmin / 63.0 if max_negmin > 0.0 else 0.0
+        d[b] = np.float16(dval)
+        dmin[b] = np.float16(dminval)
+
+        sc = np.ones(8, dtype=np.int32)
+        m = np.zeros(8, dtype=np.int32)
+        for g in range(8):
+            gspan = float(spans[g])
+            if dval > 0.0 and gspan > 0.0:
+                sc[g] = int(np.clip(round(gspan / (31.0 * dval)), 1, 63))
+            if dminval > 0.0:
+                m[g] = int(np.clip(round(-float(mins[g]) / dminval), 0, 63))
+            denom = dval * sc[g]
+            off = dminval * m[g]
+            if denom > 0.0:
+                q = np.clip(np.round((groups[g] + off) / denom).astype(np.int32), 0, 31)
+            else:
+                q = np.zeros(32, dtype=np.int32)
+            base = (g // 2) * 32
+            shift = (g % 2) * 4
+            qs[b, base : base + 32] |= np.uint8(((q & 0x0F).astype(np.uint8)) << shift)
+            # 5th bit of element (g, j) -> qh byte j bit g.
+            qh[b] |= np.uint8(((q >> 4) & 0x01).astype(np.uint8) << g)
+        _encode_scale_min_q4k(scales[b], sc, m)
+
+    rec = np.zeros(
+        n_blocks,
+        dtype=[("d", "<f2"), ("dmin", "<f2"), ("sc", "u1", 12), ("qh", "u1", 32), ("qs", "u1", 128)],
+    )
+    rec["d"] = d
+    rec["dmin"] = dmin
+    rec["sc"] = scales
+    rec["qh"] = qh
+    rec["qs"] = qs
+    return np.frombuffer(rec.tobytes(), dtype=np.uint8)
+
+
 # ---------------------------------------------------------------------------
 # Reader-side dequantization (round 75): legacy 32-wide schemes + K-quants.
 # Each function takes a flat uint8 whole-payload byte array and the logical
