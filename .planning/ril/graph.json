@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 150,
+  "round": 151,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T16:14:06+00:00",
+  "updated_at": "2026-08-27T16:34:34+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 142,
+      "touched_round": 150,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -16399,6 +16399,73 @@
       "source": "tests/export/test_gguf_quant.py::TestQ3K + full tests/export (commit 0e5526d)",
       "title": "Q3_K round-trips through the gguf-py-verified dequantize_q3_k: exact zero block, constant within 0.1, no NaN, writer->GGUFReader e2e ok, exporter resolves q3_k (file type 11). Full export suite 241 passed; ruff + ty clean. K-quant family complete.",
       "confidence": 1.0
+    },
+    "ISS-314": {
+      "id": "ISS-314",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-08-27T16:32:27+00:00",
+      "updated_at": "2026-08-27T16:34:33+00:00",
+      "touched_round": 150,
+      "title": "Alignment suite lacks SimPO (reference-free, length-normalized preference optimization)",
+      "severity": 0.5,
+      "details": "The alignment suite has DPO/GRPO/RLAIF/Constitutional/Rejection-Sampling, but not SimPO (Meng et al. 2024): a reference-free preference loss (implicit reward = beta * mean logp, logistic margin minus gamma, plus a chosen SFT term) that avoids DPO's frozen-reference divergence/checkpoint complexity. Add a '--task simpo' so users can run it with the existing preference pairwise data."
+    },
+    "TASK-278": {
+      "id": "TASK-278",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-08-27T16:32:27+00:00",
+      "updated_at": "2026-08-27T16:34:33+00:00",
+      "touched_round": 150,
+      "category": "core-feature",
+      "severity": 0.6,
+      "confidence": 0.5,
+      "effort": 1.3,
+      "unlock_factor": 2.0,
+      "title": "SimPO alignment task: reference-free loss + TASK_REGISTRY wiring + config knobs + unit/directional/e2e tests",
+      "details": "Add SimPOTask(LanguageModelingTask): reference-free train_step computing L = -log sigma(beta*(mean logp_w - mean logp_l) - gamma) - lambda*mean logp_w, reusing DPODataModule (same chosen/rejected keys) and the standard loop; register as 'simpo'; add simpo_beta/gamma/lambda TrainingConfig fields; unit tests (reference-free, finite+backprop, directional chosen-preferred on a fixed batch) + a Preference e2e that runs the engine."
+    },
+    "DEC-105": {
+      "id": "DEC-105",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T16:32:36+00:00",
+      "updated_at": "2026-08-27T16:32:36+00:00",
+      "touched_round": 150,
+      "title": "Implement SimPO reference-free (no frozen reference), reusing DPODataModule and the standard loop",
+      "rationale": "SimPO replaces DPO KL-to-reference with a length-normalized reference-free implicit reward (beta*mean logp) and a logistic margin (minus gamma) plus a chosen SFT regularizer (lambda). This avoids the reference model entirely, eliminating DPOTask build_model deep-copy + checkpoint-RESTORE round-60 complexity. It reuses the existing preference pairwise data (DPODataModule chosen/rejected keys) and the standard engine loop with only a train/val_step override. Direction is verified by a fixed-batch unit test (reward_acc -> 1) and an engine e2e.",
+      "alternatives_rejected": [
+        "Implement KTO (needs a reference policy for the KL term; heavier)",
+        "Implement ORPO (odds-ratio formulation, more intricate than SimPO and depends on exact log-odds math)",
+        "Extend DPO (a separate reference-free method is cleaner and its own task)"
+      ]
+    },
+    "CHG-293": {
+      "id": "CHG-293",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T16:34:29+00:00",
+      "updated_at": "2026-08-27T16:34:29+00:00",
+      "touched_round": 150,
+      "commit": "a918f87",
+      "title": "SimPO alignment task: reference-free preference optimization + wiring + tests"
+    },
+    "EV-282": {
+      "id": "EV-282",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-08-27T16:34:29+00:00",
+      "updated_at": "2026-08-27T16:34:29+00:00",
+      "touched_round": 150,
+      "source": "tests/training/tasks/test_simpo_task.py + tests/e2e/test_simpo.py (commit a918f87)",
+      "title": "SimPO is reference-free, loss finite + backprops, and on a fixed preference batch it drives reward_acc -> 1 (chosen preferred); engine --task simpo e2e runs to completion. ruff + ty clean.",
+      "confidence": 1.0
     }
   },
   "edges": [
@@ -24080,6 +24147,36 @@
       "to": "TASK-277",
       "type": "implements",
       "created_at": "2026-08-27T16:14:02+00:00"
+    },
+    {
+      "from": "TASK-278",
+      "to": "ISS-314",
+      "type": "addresses",
+      "created_at": "2026-08-27T16:32:36+00:00"
+    },
+    {
+      "from": "ISS-314",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-08-27T16:32:36+00:00"
+    },
+    {
+      "from": "DEC-105",
+      "to": "TASK-278",
+      "type": "governs",
+      "created_at": "2026-08-27T16:32:37+00:00"
+    },
+    {
+      "from": "CHG-293",
+      "to": "ISS-314",
+      "type": "resolves",
+      "created_at": "2026-08-27T16:34:29+00:00"
+    },
+    {
+      "from": "CHG-293",
+      "to": "TASK-278",
+      "type": "implements",
+      "created_at": "2026-08-27T16:34:29+00:00"
     }
   ]
 }
