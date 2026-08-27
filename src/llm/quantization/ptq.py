@@ -2,6 +2,11 @@
 Post-Training Quantization (PTQ).
 
 Provides utilities for quantizing models after training.
+Supports symmetric (scale-only) and asymmetric (scale + zero-point) 8-bit
+weight quantization, per-tensor or per-channel. The asymmetric path stores
+``q - 128`` in the int8 buffer and folds the offset into ``weight_zero_point``
+so dequantization stays ``(q - zp) * scale``; it is exact on the grid and beats
+symmetric on skewed (all-positive / all-negative) weight distributions.
 """
 
 import logging
@@ -19,7 +24,7 @@ class QuantConfig:
     """Configuration for quantization."""
 
     bits: int = 8
-    symmetric: bool = True
+    symmetric: bool = True  # False = asymmetric (scale + zero-point) 8-bit
     per_channel: bool = False
     dynamic: bool = False  # Dynamic vs static quantization
 
@@ -129,17 +134,6 @@ class QuantizedLinear(nn.Module):
             Quantized layer.
         """
         config = config or QuantConfig()
-        if not config.symmetric:
-            # The simple-PTQ path only implements symmetric quantization:
-            # the zero-point buffer exists but is never computed, so
-            # ``symmetric=False`` silently behaved like symmetric (a no-op
-            # with a misleading error profile on skewed weights). Fail fast
-            # instead, mirroring ``GPTQQuantizedLinear``'s handling of
-            # ``sym=False``.
-            raise NotImplementedError(
-                "Asymmetric simple-PTQ is not implemented. Use symmetric=True "
-                "or the GPTQ path (llm.quantization.gptq) for asymmetric quantization."
-            )
         if config.bits != 8:
             # The simple-PTQ layer stores weights in an int8 buffer. A
             # ``bits=4`` config quantized to a 4-bit *range* but persisted
@@ -163,7 +157,36 @@ class QuantizedLinear(nn.Module):
         # Quantize weights
         weight = linear.weight.data
 
-        if config.per_channel:
+        if not config.symmetric:
+            # Asymmetric 8-bit weight quantization (scale + zero-point).
+            # The 8-bit unsigned grid is [0, 255]; we store ``q - 128`` in the
+            # int8 buffer and fold the offset into ``weight_zero_point`` so
+            # dequantization still reads ``(q - zp) * scale`` (QuantizedLinear
+            # already subtracts the zero point before scaling).
+            if quant_linear.weight_zero_point is None:
+                raise ValueError("asymmetric layer must have a zero-point buffer")
+            qmax = (1 << config.bits) - 1  # 255
+            if config.per_channel:
+                wmin = weight.min(dim=1)[0]
+                wmax = weight.max(dim=1)[0]
+                scale_t = ((wmax - wmin) / qmax).clamp(min=1e-8)
+                # ``zp = round(-min/scale)`` may be negative (all-positive rows)
+                # or exceed qmax (all-negative rows); only ``q`` is clamped to
+                # the 8-bit grid. The offset is folded into the int8 storage.
+                zp = torch.round(-wmin / scale_t)
+                quant_linear.weight_scale.copy_(scale_t)
+                quant_linear.weight_zero_point.copy_(zp - 128.0)
+                q = ((weight / scale_t.view(-1, 1)).round() + zp.view(-1, 1)).clamp(0, qmax)
+            else:
+                wmin = weight.min()
+                wmax = weight.max()
+                scale_v = max(((wmax - wmin) / qmax).item(), 1e-8)
+                zp = 0 if scale_v == 1e-8 else round(-wmin.item() / scale_v)
+                quant_linear.weight_scale.fill_(scale_v)
+                quant_linear.weight_zero_point.fill_(float(zp - 128))
+                q = ((weight / scale_v).round() + zp).clamp(0, qmax)
+            weight_quantized = (q - 128.0).to(torch.int8)
+        elif config.per_channel:
             # Per-channel quantization: a per-row scale vector.
             if scale is None:
                 abs_max = weight.abs().max(dim=1)[0]

@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Asymmetric simple-PTQ** (RIL TASK-275/ISS-311/DEC-102):
+  `llm/quantization/ptq.py::QuantizedLinear.from_linear` now supports
+  `QuantConfig(symmetric=False)` — 8-bit scale + zero-point weight
+  quantization, per-tensor and per-channel. The unsigned grid is stored as
+  `q - 128` in the int8 buffer with the offset folded into `weight_zero_point`
+  (dequant stays `(q - zp)*scale`). Accurately represents skewed weight
+  distributions (asymmetric strictly beats symmetric on all-positive /
+  all-negative rows).
+
 - **GGUF memory-mapped reading** (RIL TASK-274/ISS-310): `GGUFReader` now maps
   the file read-only with `mmap` instead of copying the whole payload into RAM,
   so large exported models load with lazy, page-cached weights (ideal for

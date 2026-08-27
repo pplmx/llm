@@ -356,12 +356,36 @@ class TestQuantizeModel:
         info_8 = compute_model_size(quant_8)
         assert info_8["total_params"] == true_params
 
-    def test_from_linear_rejects_asymmetric(self):
-        """Asymmetric simple-PTQ was a silent no-op (zero point never
-        computed); it must fail fast instead, mirroring GPTQQuantizedLinear."""
-        linear = torch.nn.Linear(4, 4)
-        with pytest.raises(NotImplementedError, match="Asymmetric"):
-            QuantizedLinear.from_linear(linear, QuantConfig(bits=8, symmetric=False))
+    def test_from_linear_asymmetric_per_tensor(self):
+        """Asymmetric simple-PTQ (scale + zero point) reconstructs skewed
+        (all-positive) weights better than symmetric, with a valid int8 grid."""
+        torch.manual_seed(0)
+        weight = torch.rand(4, 16) * 5.0 + 0.5  # all-positive, skewed
+        linear = torch.nn.Linear(16, 4)
+        linear.weight.data = weight
+        q = QuantizedLinear.from_linear(linear, QuantConfig(bits=8, symmetric=False))
+        assert q.weight_zero_point is not None
+        # int8 grid stays in range after the -128 offset
+        assert int(q.weight_quantized.min()) >= -128
+        assert int(q.weight_quantized.max()) <= 127
+        asym_err = (q._dequantize_weight() - weight).abs().mean().item()
+        sym = QuantizedLinear.from_linear(linear, QuantConfig(bits=8, symmetric=True))
+        sym_err = (sym._dequantize_weight() - weight).abs().mean().item()
+        assert asym_err < sym_err
+
+    def test_from_linear_asymmetric_per_channel(self):
+        torch.manual_seed(1)
+        weight = torch.rand(4, 16) * 6.0 + 1.0
+        linear = torch.nn.Linear(16, 4)
+        linear.weight.data = weight
+        q = QuantizedLinear.from_linear(linear, QuantConfig(bits=8, symmetric=False, per_channel=True))
+        assert q.weight_zero_point is not None
+        assert q.weight_zero_point.shape == (4,)
+        q.forward(torch.randn(3, 16))  # forward runs
+        rel = (q._dequantize_weight() - weight).abs().mean().item() / weight.abs().mean().item()
+        sym = QuantizedLinear.from_linear(linear, QuantConfig(bits=8, symmetric=True, per_channel=True))
+        rel_sym = (sym._dequantize_weight() - weight).abs().mean().item() / weight.abs().mean().item()
+        assert rel < rel_sym
 
     def test_from_linear_rejects_4bit_no_packing(self):
         """Regression (RIL ISS-197): simple-PTQ ``bits=4`` silently stored
