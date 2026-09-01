@@ -61,10 +61,13 @@ class DistillationTask(LanguageModelingTask):
         """Load the frozen teacher — from ``distill_teacher_path`` when set,
         else from a fresh fixed seed (dev/test convenience only)."""
         path = getattr(self.config.training, "distill_teacher_path", None)
-        teacher = ModelFactory.from_config(self.config.model)
         if path is None:
+            # Convenience/dev teacher: a distinct construction seed so the
+            # frozen teacher and the fresh student start from different
+            # weights (a frozen clone would make KL == 0 trivially).
             torch.manual_seed(_TEACHER_SEED)
             return ModelFactory.from_config(self.config.model)
+        teacher = ModelFactory.from_config(self.config.model)
         payload = load_checkpoint_payload(path)
         if payload is None or "model_state" not in payload:
             raise ValueError(
