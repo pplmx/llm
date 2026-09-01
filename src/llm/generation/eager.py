@@ -442,6 +442,7 @@ def batch_generate(
         for i in range(batch_size):
             running = prompt_texts[i]
             p_len = len(prompt_texts[i])
+            generated_part = ""
             # Walk generated tokens one by one, checking for suffix stop
             # after each decode (mirrors stream_generate incremental logic).
             gen_start = len(encoded_prompts[i])

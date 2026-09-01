@@ -524,6 +524,36 @@ def test_normalize_stop_all_empty_strings():
 # ---------------------------------------------------------------------------
 
 
+def test_batch_generate_zero_new_tokens_with_stop(tiny_model, device):  # noqa: ARG001
+    """batch_generate with max_new_tokens=0 + stop echoes prompts instead of crashing.
+
+    The stop-decode loop walks only *generated* tokens, so a zero-token budget
+    leaves nothing to iterate and ``generated_part`` must default to "" (the
+    prompt text only) — matching ``stream_generate``. Previously this path
+    raised ``UnboundLocalError`` (RIL round-154 finding).
+    """
+    from llm.generation.eager import batch_generate
+
+    class _EchoTokenizer:
+        pad_token_id: int = 0
+
+        def encode(self, text: str) -> list[int]:
+            return [1]
+
+        def decode(self, ids: list[int]) -> str:
+            return "A"
+
+    result = batch_generate(
+        model=tiny_model,
+        tokenizer=_EchoTokenizer(),
+        prompts=["x"],
+        max_new_tokens=0,
+        temperature=0.0,
+        stop="XY",
+    )
+    assert result == ["A"], f"Expected prompt-only echo, got {result}"
+
+
 def test_batch_generate_empty_prompts():
     """batch_generate with empty prompts list returns empty list."""
     from llm.generation.eager import batch_generate

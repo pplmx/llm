@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 154,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-01T16:05:21+00:00",
+  "updated_at": "2026-09-01T16:20:56+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 152,
+      "touched_round": 154,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -16590,6 +16590,31 @@
       "touched_round": 153,
       "commit": "2681c88",
       "title": "Document SimPO guide + register in index and mkdocs nav"
+    },
+    "ISS-317": {
+      "id": "ISS-317",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T16:20:17+00:00",
+      "updated_at": "2026-09-01T16:20:17+00:00",
+      "touched_round": 154,
+      "title": "batch_generate(max_new_tokens=0, stop=...) raises UnboundLocalError",
+      "description": "batch_generate's stop-decode loop walks only *generated* tokens; with max_new_tokens=0 (legal: _reject_impossible_context only rejects >= max_seq_len) there are none, so generated_part is never assigned and results.append(prompt + generated_part) raises UnboundLocalError. stream_generate handles the same input gracefully (empty chunks -> prompt-only). Serving can't reach it (GenerationConfig.max_new_tokens ge=1) but direct library callers can. Fix: default generated_part=''.",
+      "severity": "low"
+    },
+    "TASK-284": {
+      "id": "TASK-284",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T16:20:17+00:00",
+      "updated_at": "2026-09-01T16:20:17+00:00",
+      "touched_round": 154,
+      "category": "stability",
+      "severity": 0.35,
+      "title": "batch_generate: default generated_part to avoid UnboundLocalError on zero-token budget",
+      "description": "Initialize generated_part='' in batch_generate's stop path so max_new_tokens=0 echoes prompts instead of crashing; add regression test mirroring the stream_generate contract."
     }
   },
   "edges": [
@@ -24373,6 +24398,18 @@
       "to": "TASK-283",
       "type": "implements",
       "created_at": "2026-09-01T16:05:21+00:00"
+    },
+    {
+      "from": "ISS-317",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-09-01T16:20:56+00:00"
+    },
+    {
+      "from": "TASK-284",
+      "to": "ISS-317",
+      "type": "addresses",
+      "created_at": "2026-09-01T16:20:56+00:00"
     }
   ]
 }
