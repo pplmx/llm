@@ -62,6 +62,11 @@ class RotaryPositionEmbedding(nn.Module):
 
         # Precompute cos and sin for efficiency
         self._seq_len_cached = 0
+        # For ``scaling_type="dynamic"`` the table is a function of the length
+        # it was built for (scale = seq_len / max_seq_len), so the monotonic
+        # ``_seq_len_cached`` alone cannot invalidate it — remember the exact
+        # length that drove the last build (RIL dynamic-scaling cache bug).
+        self._built_seq_len = 0
         self._cos_cached: torch.Tensor | None = None
         self._sin_cached: torch.Tensor | None = None
 
@@ -83,9 +88,22 @@ class RotaryPositionEmbedding(nn.Module):
         return inv_freq
 
     def _update_cos_sin_cache(self, seq_len: int, device: torch.device, dtype: torch.dtype) -> None:
-        """Update cached cos/sin values if sequence length changed."""
-        if seq_len > self._seq_len_cached or self._cos_cached is None:
+        """Update cached cos/sin values if sequence length changed.
+
+        The cache must grow when ``seq_len`` exceeds it (existing behavior).
+        Dynamic scaling additionally REBUILDS when the length that drives the
+        scale (``seq_len``) changes at all — a ``seq_len`` that merely shrank
+        would otherwise reuse the table built for a longer input, applying the
+        long input's scale to the short one (e.g. a fresh KV-cache prompt on a
+        module that just decoded a long sequence: positions 0..63 would get
+        the ``scale != 1`` frequencies computed for the earlier 256-token run).
+        """
+        needs_rebuild = seq_len > self._seq_len_cached or self._cos_cached is None
+        if self.scaling_type == "dynamic":
+            needs_rebuild = needs_rebuild or seq_len != self._built_seq_len
+        if needs_rebuild:
             self._seq_len_cached = max(seq_len, self.max_seq_len)
+            self._built_seq_len = seq_len
 
             # Position indices
             t = torch.arange(self._seq_len_cached, device=device, dtype=self.inv_freq.dtype)

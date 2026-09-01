@@ -213,6 +213,34 @@ class TestRotaryPositionEmbedding:
         q_dyn_short, _k_dyn_short = rope_dyn_short(q_short, k_short)
         assert torch.allclose(q_no_short, q_dyn_short)
 
+    def test_dynamic_scaling_cache_rebuilt_on_descending_length(self, device):
+        """A dynamic-scaling RoPE must rebuild its table when the length that
+        drives the scale changes — not only when it grows.
+
+        Regression: ``_update_cos_sin_cache`` never shrank (``_seq_len_cached``
+        was monotonic), so after a 128-token forward a later 32-token forward
+        on the SAME module reused the 128-token (scale=2) table and produced a
+        different embedding than a fresh module — silently corrupting any short
+        sequence run after a long one (e.g. a new KV-cache prompt on a serving
+        module that just decoded a long generation).
+        """
+        rope = RotaryPositionEmbedding(dim=64, max_seq_len=64, scaling_type="dynamic", device=device)
+
+        # Long forward first — builds the table at scale = 128 / 64 = 2.
+        q_long = torch.randn(2, 4, 128, 64, device=device)
+        k_long = torch.randn(2, 4, 128, 64, device=device)
+        rope(q_long, k_long)
+
+        # Same instance, short sequence — must NOT reuse the longer scale.
+        q_short = torch.randn(2, 4, 32, 64, device=device)
+        k_short = torch.randn(2, 4, 32, 64, device=device)
+        q_out, k_out = rope(q_short, k_short)
+
+        fresh = RotaryPositionEmbedding(dim=64, max_seq_len=64, scaling_type="dynamic", device=device)
+        q_fresh, k_fresh = fresh(q_short, k_short)
+        assert torch.allclose(q_out, q_fresh)
+        assert torch.allclose(k_out, k_fresh)
+
     def test_extra_repr_no_scaling(self):
         """Test extra_repr representation without scaling."""
         rope = RotaryPositionEmbedding(dim=64)

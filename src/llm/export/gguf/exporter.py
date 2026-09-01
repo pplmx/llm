@@ -70,17 +70,23 @@ _BLOCK_QUANT_TYPES = frozenset(
     }
 )
 
-# llama.cpp ``llama_ftype`` values used in ``general.file_type``.
+# llama.cpp ``llama_ftype`` values used in ``general.file_type``. These are
+# the caller-facing quant labels every external GGUF tool reads without
+# decoding tensors, so they must match llama.cpp's enum exactly. The K-quants
+# use the ``*_M`` (mixed) variants — ``llama.cpp::llama_ftype`` maps
+# ``q4_K -> MOSTLY_Q4_K_M (15)``, ``q5_K -> MOSTLY_Q5_K_M (17)``,
+# ``q6_K -> MOSTLY_Q6_K (18)``; 3/6/13 would mislabel Q4_K as ``Q4_1``,
+# Q5_K as ``Q5_0`` and Q6_K as ``Q3_K_L`` (external metadata regression).
 _FILE_TYPE = {
     GGMLQuantizationType.F32: 0,  # ALL_F32
     GGMLQuantizationType.F16: 1,  # MOSTLY_F16
     GGMLQuantizationType.Q4_0: 2,  # MOSTLY_Q4_0
     GGMLQuantizationType.Q2_K: 10,  # MOSTLY_Q2_K
-    GGMLQuantizationType.Q3_K: 11,  # MOSTLY_Q3_K
-    GGMLQuantizationType.Q4_K: 3,  # MOSTLY_Q4_K
-    GGMLQuantizationType.Q5_K: 6,  # MOSTLY_Q5_K
+    GGMLQuantizationType.Q3_K: 11,  # MOSTLY_Q3_K_S
+    GGMLQuantizationType.Q4_K: 15,  # MOSTLY_Q4_K_M
+    GGMLQuantizationType.Q5_K: 17,  # MOSTLY_Q5_K_M
     GGMLQuantizationType.Q8_0: 7,  # MOSTLY_Q8_0
-    GGMLQuantizationType.Q6_K: 13,  # MOSTLY_Q6_K
+    GGMLQuantizationType.Q6_K: 18,  # MOSTLY_Q6_K
 }
 
 

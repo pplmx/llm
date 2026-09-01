@@ -48,6 +48,48 @@ def test_invalid_penalty_and_topk_rejected():
     assert sampling_probs(torch.tensor([1.0, 2.0, 3.0]), temperature=1.0, top_k=2).shape[0] == 3
 
 
+def test_sampling_probs_batched_topk_topp_per_row():
+    """``sampling_probs`` must apply top-k/top-p filtering PER ROW on batched
+    ``[gamma, vocab]`` logits (the speculative backend passes one row per draft
+    position).
+
+    Regression: the old masking was written for 1D only — ``values[-1]``
+    picked one row's top-k threshold (broadcast crash for ``k != vocab``) and
+    ``sorted_indices_to_remove[1:]`` shifted along the ROW axis (IndexError
+    for ``top_p``), silently disabling the filter for a single row. The
+    speculative acceptance score is then computed against the unfiltered
+    distribution — the exact divergence ``test_speculative_top_k_acceptance_uses_filtered_distributions``
+    guards against.
+    """
+    gamma, vocab = 3, 8
+    # Tie-free rows (distinct peak / second per row) so the top-2 threshold is
+    # unambiguous — with tied logits equal to the threshold, top-k keeps every
+    # tie (correct semantics), which would make this test vacuous.
+    logits = torch.full((gamma, vocab), 0.0)
+    for row in range(gamma):
+        logits[row, row + 1] = 5.0  # rows peak at different vocab ids
+        logits[row, 6] = 3.0  # unambiguous second-largest
+
+    probs_topk = sampling_probs(logits, temperature=1.0, top_k=2)
+    # Per-row nonzero count == top_k for every row.
+    assert (probs_topk > 0).sum(dim=-1).tolist() == [2, 2, 2]
+    # mask must be row-local: row r's survivors include its own peak.
+    for row in range(gamma):
+        assert probs_topk[row, row + 1] > 0
+
+    probs_topp = sampling_probs(logits + 0.1, temperature=1.0, top_p=0.5)
+    assert torch.allclose(probs_topp.sum(dim=-1), torch.ones(gamma), atol=1e-6)
+    # top_p=0.5 must actually shrink each row (not silently return the full softmax).
+    full = torch.softmax(logits + 0.1, dim=-1)
+    assert not torch.allclose(probs_topp, full)
+    # And a 1D input still produces the identical distribution as a 1-row batch.
+    one_row = logits[0] + 0.1
+    assert torch.allclose(
+        sampling_probs(one_row, temperature=1.0, top_p=0.5),
+        sampling_probs(one_row.unsqueeze(0), temperature=1.0, top_p=0.5).squeeze(0),
+    )
+
+
 def test_repetition_penalty_changes_logits():
     logits = torch.tensor([1.0, 2.0, 3.0])
     adjusted = apply_repetition_penalty(logits, [1, 2], repetition_penalty=2.0)

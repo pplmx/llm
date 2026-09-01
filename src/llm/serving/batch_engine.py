@@ -19,6 +19,7 @@ from llm.generation.sampling import (
     apply_presence_penalty,
     apply_repetition_penalty,
     mask_undecodable_logits,
+    normalize_eos_ids,
     sample_next_token,
 )
 from llm.models.decoder import DecoderModel
@@ -470,13 +471,16 @@ class ContinuousBatchingEngine:
         chunks: list[str] = []
         stop_hit = False
 
-        eos_id = getattr(self.tokenizer, "eos_token_id", None)
+        # Normalize to a tuple — HF tokenizers can expose ``eos_token_id`` as a
+        # list, and an int-vs-list equality never fires (RIL list-eos
+        # regression): the drain would emit the EOS token's text.
+        eos_ids = normalize_eos_ids(getattr(self.tokenizer, "eos_token_id", None))
         for token_id in new_token_ids:
             # The EOS token ends generation; never emit its decoded text
             # (parity with the eager/speculative backends — RIL ISS-96/98).
             # ``_lock_step_post`` already appended it and marked the sequence
             # FINISHED, so the drain here simply stops short of the EOS.
-            if eos_id is not None and token_id == eos_id:
+            if eos_ids and token_id in eos_ids:
                 break
             text_chunk = self.tokenizer.decode([token_id])
             if stops and text_chunk:

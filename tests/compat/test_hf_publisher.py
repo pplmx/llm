@@ -112,6 +112,39 @@ def test_save_pretrained_config_builds_for_quantized_model_no_crash():
 # --- Reverse mapping (unit) ----------------------------------------------
 
 
+def test_reverse_mapping_qwen_keeps_combined_qkv():
+    """``convert_our_weights`` with ``architecture='qwen'`` must NOT split qkv.
+
+    Qwen's HF side is a single combined ``c_attn`` projection, but the
+    split-first-pass in ``convert_our_weights`` was written for Llama's
+    separate ``q_proj``/``k_proj``/``v_proj`` — it emitted Llama-style
+    ``model.layers.*.q_proj`` keys that are absent from the Qwen reverse
+    mapping, so the combined attention weight was never written and a
+    qwen save -> load roundtrip silently dropped attention to random init.
+    """
+    qkv = torch.zeros(48, 16)  # 4 heads * 4 head_dim + 2 * (4 * 4)
+    our_sd = {
+        "embedding_layer.token_embeddings.weight": torch.zeros(8, 16),
+        "final_norm.weight": torch.ones(16),
+        "lm_head.weight": torch.zeros(8, 16),
+        "transformer_blocks.0.self_attn.qkv_proj.weight": qkv,
+        "transformer_blocks.0.self_attn.qkv_proj.bias": torch.zeros(48),
+        "transformer_blocks.0.self_attn.out_proj.weight": torch.zeros(16, 16),
+        "transformer_blocks.0.mlp.fc1.weight": torch.zeros(32, 16),
+        "transformer_blocks.0.mlp.gate_proj.weight": torch.zeros(32, 16),
+        "transformer_blocks.0.mlp.fc2.weight": torch.zeros(16, 32),
+        "transformer_blocks.0.norm1.weight": torch.ones(16),
+        "transformer_blocks.0.norm2.weight": torch.ones(16),
+    }
+    out = convert_our_weights(our_sd, architecture="qwen", num_layers=1, num_heads=4, head_dim=4)
+    # The combined projection is renamed whole into Qwen's ``c_attn``...
+    assert "transformer.h.0.attn.c_attn.weight" in out
+    assert torch.equal(out["transformer.h.0.attn.c_attn.weight"], qkv)
+    # ...and no Llama-style split keys leak in.
+    assert not any(k.endswith("self_attn.q_proj.weight") for k in out)
+    assert not any("model.layers." in k for k in out)
+
+
 def test_reverse_mapping_roundtrip():
     """``convert_our_weights`` inverts ``convert_hf_weights`` for Llama.
 

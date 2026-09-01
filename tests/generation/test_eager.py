@@ -738,6 +738,36 @@ def test_stream_generate_halts_on_eos_and_excludes_it(tiny_model):
     assert "".join(chunks) == "bb"
 
 
+def test_stream_generate_halts_on_list_eos_token_id(tiny_model):
+    """A tokenizer whose ``eos_token_id`` is a LIST (HF can expose it as a
+    sequence) must still halt on any member id.
+
+    Regression: the backends compared ``token_id == eos_id``, and an int is
+    never equal to a list — generation ran to ``max_new_tokens`` with the EOS
+    token (and any post-EOS junk) in the output. Same shape ``_normalize_eos_ids``
+    guards in the RLHF trainer (RIL ISS-116/334).
+    """
+    tok = _make_eos_tokenizer(eos_id=[5, 6])  # id 5 ('f') and 6 ('g') both EOS
+    call = {"n": 0}
+
+    def fake_sample(logits, **kw):  # noqa: ARG001
+        call["n"] += 1
+        return 1 if call["n"] <= 2 else 5  # 'b','b' then EOS(5)
+
+    with patch("llm.generation.eager.sample_next_token", side_effect=fake_sample):
+        chunks = list(
+            stream_generate(
+                model=tiny_model,
+                tokenizer=tok([1]),
+                prompt="p",
+                max_new_tokens=5,
+                temperature=0.0,
+            )
+        )
+
+    assert "".join(chunks) == "bb"
+
+
 def test_stream_generate_eos_flushes_stop_buffer(tiny_model):
     """EOS arriving while stop-prefix text is still buffered must flush that
     text (mirrors the loop-end flush) then halt."""

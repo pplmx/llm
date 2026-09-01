@@ -9,6 +9,7 @@ from llm.generation.sampling import (
     apply_presence_penalty,
     apply_repetition_penalty,
     mask_undecodable_logits,
+    normalize_eos_ids,
     sample_next_token,
 )
 from llm.models.decoder import DecoderModel
@@ -148,7 +149,9 @@ def stream_generate(
     stops = _normalize_stop(stop)
     max_stop_len = max((len(s) for s in stops), default=0) if stops else 0
     buffer = ""
-    eos_id = getattr(tokenizer, "eos_token_id", None)
+    # Normalize to a tuple — HF tokenizers can expose ``eos_token_id`` as a
+    # list, and an int-vs-list equality never fires (RIL list-eos regression).
+    eos_ids = normalize_eos_ids(getattr(tokenizer, "eos_token_id", None))
 
     for _ in range(max_new_tokens):
         if repetition_penalty != 1.0:
@@ -171,7 +174,7 @@ def stream_generate(
         # speculative backend's halting and standard LLM serving semantics);
         # without this the eager loop kept decoding through max_new_tokens
         # past EOS, emitting junk.
-        if eos_id is not None and token_id == eos_id:
+        if eos_ids and token_id in eos_ids:
             if stops and buffer:
                 yield buffer
             return
@@ -420,12 +423,12 @@ def batch_generate(
     # omit the EOS token and any junk generated after it (a sequence that
     # already finished keeps occupying its batch slot, but its tail is cut
     # here). Matches stream_generate / the speculative backend.
-    eos_id = getattr(tokenizer, "eos_token_id", None)
-    if eos_id is not None:
+    eos_ids = normalize_eos_ids(getattr(tokenizer, "eos_token_id", None))
+    if eos_ids:
         for i in range(batch_size):
             gen_start = len(encoded_prompts[i])
             for j in range(gen_start, len(generated_ids[i])):
-                if generated_ids[i][j] == eos_id:
+                if generated_ids[i][j] in eos_ids:
                     del generated_ids[i][j:]
                     break
 

@@ -368,12 +368,20 @@ def convert_our_weights(
     converted = {}
     unmapped = []
 
-    # First pass: split combined qkv_proj into q_proj/k_proj/v_proj if
-    # the model uses a combined projection (the current MHA impl does).
+    # First pass: split combined qkv_proj into q_proj/k_proj/v_proj ONLY when
+    # the target architecture's reverse mapping actually expects split
+    # projections (Llama/Mistral: ``q_proj``/``k_proj``/``v_proj``). Qwen's HF
+    # side is a single combined ``c_attn`` projection, so ``qkv_proj`` must be
+    # RENAMED whole — splitting would emit Llama-style ``model.layers.*.q_proj``
+    # keys that are absent from the Qwen reverse mapping and the combined weight
+    # would never be written, silently dropping attention on a roundtrip.
     qkv_keys = [
         k for k in our_state_dict if k.endswith(".self_attn.qkv_proj.weight") or k.endswith(".self_attn.qkv_proj.bias")
     ]
-    if qkv_keys and num_heads is not None:
+    split_qkv = bool(
+        qkv_keys and num_heads is not None and any(k.endswith(".self_attn.q_proj.weight") for k in reverse_mapping)
+    )
+    if split_qkv:
         n_q = num_heads
         n_kv = num_kv_heads if num_kv_heads is not None else num_heads
         # head_dim must be supplied; defaulting here would silently
@@ -408,8 +416,8 @@ def convert_our_weights(
 
     # Second pass: rename everything else via the reverse mapping.
     for our_name, tensor in our_state_dict.items():
-        if our_name in qkv_keys:
-            continue  # already handled above
+        if our_name in qkv_keys and split_qkv:
+            continue  # already handled above (split path)
         if our_name in reverse_mapping:
             converted[reverse_mapping[our_name]] = tensor
         else:

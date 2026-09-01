@@ -9,6 +9,25 @@ from typing import Any
 import torch
 
 
+def normalize_eos_ids(
+    eos_token_id: int | list[int] | tuple[int, ...] | None,
+) -> tuple[int, ...]:
+    """Return the tokenizer's EOS id(s) as a plain tuple of ints.
+
+    HF tokenizers can expose ``eos_token_id`` as a list/sequence; a raw
+    ``token_id == eos_id`` int-vs-list comparison silently never matches, so
+    every generation backend would run to ``max_new_tokens`` with post-EOS
+    junk folded into the output (the same shape the RLHF trainer guards with
+    ``_normalize_eos_ids`` — RIL ISS-116/334). ``None`` becomes ``()`` (no
+    EOS halting, e.g. the serving fallback character tokenizer).
+    """
+    if eos_token_id is None:
+        return ()
+    if isinstance(eos_token_id, (list, tuple)):
+        return tuple(int(e) for e in eos_token_id)
+    return (int(eos_token_id),)
+
+
 def apply_repetition_penalty(
     logits: torch.Tensor,
     token_ids: list[int],
@@ -253,7 +272,10 @@ def sampling_probs(
     eager backend's output (RIL ISS-99).
 
     Args:
-        logits: 1D ``[vocab_size]`` logits. Not mutated.
+        logits: Batched logits of shape ``[..., vocab_size]`` (typically 1D
+            ``[vocab_size]`` or the speculative backend's per-draft-position
+            ``[gamma, vocab_size]``). Top-k/top-p filtering is applied
+            **per row** along the last dim. Not mutated.
         temperature: Sampling temperature. Must be non-zero — the
             caller handles the ``temperature == 0`` (greedy) case via
             ``argmax``.
@@ -277,18 +299,31 @@ def sampling_probs(
 
     if top_k is not None:
         vocab_size = next_logits.size(-1)
-        values, _ = torch.topk(next_logits, min(top_k, vocab_size))
+        values, _ = torch.topk(next_logits, min(top_k, vocab_size), dim=-1)
         next_logits = next_logits.clone()
-        next_logits[next_logits < values[-1]] = -torch.inf
+        # ``values[..., -1:]`` is the per-row top-k threshold: ``[:, -1]``
+        # would pick only the LAST row's threshold and blow the broadcast.
+        next_logits[next_logits < values[..., -1:]] = -torch.inf
 
     if top_p is not None and 0.0 < top_p < 1.0:
         sorted_logits, sorted_indices = torch.sort(next_logits, descending=True)
         cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
         sorted_indices_to_remove = cumulative_probs > top_p
-        sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].clone()
-        sorted_indices_to_remove[0] = False
+        # The right-shift ("keep the first token above threshold") and the
+        # first-position keep must run along the LAST dim, or a batched input
+        # masks the wrong axis (row 0 of every gamma row instead of the first
+        # vocab position).
+        sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+        sorted_indices_to_remove[..., 0] = False
+        # Scatter the sort-space mask back to ORIGINAL positions so the
+        # ``-inf`` lands on the right vocab ids of each row. The naive
+        # ``next_logits[sorted_indices[sorted_indices_to_remove]]`` only
+        # works on 1D logits — for ``[gamma, vocab]`` the flattened index
+        # list indexes the gamma axis and goes out of bounds.
+        remove_mask = torch.zeros_like(next_logits, dtype=torch.bool)
+        remove_mask.scatter_(-1, sorted_indices, sorted_indices_to_remove)
         next_logits = next_logits.clone()
-        next_logits[sorted_indices[sorted_indices_to_remove]] = -float("inf")
+        next_logits[remove_mask] = -float("inf")
 
     return torch.softmax(next_logits, dim=-1)
 

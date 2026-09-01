@@ -50,6 +50,31 @@ class TestExportPolicy:
         reader = GGUFReader(path)
         assert {info.ggml_type for info in reader.tensors.values()} == {GGMLQuantizationType.F16}
 
+    @pytest.mark.parametrize(
+        ("quant", "expected_ftype"),
+        [
+            ("f32", 0),  # ALL_F32
+            ("f16", 1),  # MOSTLY_F16
+            ("q4_0", 2),  # MOSTLY_Q4_0
+            ("q8_0", 7),  # MOSTLY_Q8_0
+            ("q2_k", 10),  # MOSTLY_Q2_K
+            ("q3_k", 11),  # MOSTLY_Q3_K_S
+            ("q4_k", 15),  # MOSTLY_Q4_K_M — regression: was 3 (Q4_1)
+            ("q5_k", 17),  # MOSTLY_Q5_K_M — regression: was 6 (Q5_0)
+            ("q6_k", 18),  # MOSTLY_Q6_K — regression: was 13 (Q3_K_L)
+        ],
+    )
+    def test_metadata_file_type_matches_llama_cpp_ftype(self, small_model, tmp_path, quant, expected_ftype):
+        """``general.file_type`` must advertise the llama.cpp ``llama_ftype``
+        enum value for the emitted quant. ``general.file_type`` is how external
+        GGUF tooling names a file's quantization without decoding tensors, so
+        a Q4_K export advertising 3 (Q4_1) / Q5_K as 6 (Q5_0) / Q6_K as 13
+        (Q3_K_L) mislabels interoperable artifacts (external-metadata
+        regression)."""
+        path = export_to_gguf(small_model, tmp_path / "m.gguf", quantize=quant)
+        metadata = GGUFReader(path).metadata
+        assert metadata["general.file_type"] == expected_ftype
+
     def test_f32_export(self, small_model, tmp_path):
         export_to_gguf(small_model, tmp_path / "m.gguf", quantize="f32")
         reader = GGUFReader(tmp_path / "m.gguf")

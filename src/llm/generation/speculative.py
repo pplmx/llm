@@ -32,6 +32,7 @@ from llm.generation.sampling import (
     apply_presence_penalty,
     apply_repetition_penalty,
     mask_undecodable_logits,
+    normalize_eos_ids,
     sample_next_token,
     sampling_probs,
 )
@@ -344,7 +345,9 @@ def speculative_generate(
         prompt_ids = prompt_ids[-keep:]
 
     generated_ids: list[int] = list(prompt_ids)
-    eos_id = getattr(tokenizer, "eos_token_id", None)
+    # Normalize to a tuple — HF tokenizers can expose ``eos_token_id`` as a
+    # list, and an int-vs-list equality never fires (RIL list-eos regression).
+    eos_ids = normalize_eos_ids(getattr(tokenizer, "eos_token_id", None))
 
     # Stop-sequence tracking via a small suffix buffer (same strategy
     # as stream_generate: keep at most ``max_stop_len`` chars un-yielded
@@ -385,7 +388,7 @@ def speculative_generate(
             )
             draft_tokens.append(tok)
             draft_ids.append(tok)
-            if eos_id is not None and tok == eos_id:
+            if eos_ids and tok in eos_ids:
                 break
 
         # 2. Verify against the target.
@@ -411,7 +414,7 @@ def speculative_generate(
         # stops on EOS without emitting the EOS token's decoded text.
         for i in range(accept_count):
             tok = draft_tokens[i]
-            if eos_id is not None and tok == eos_id:
+            if eos_ids and tok in eos_ids:
                 if stops and buffer:
                     yield buffer
                 return
@@ -438,7 +441,7 @@ def speculative_generate(
 
         # Append the bonus or correction token (one per round).
         if bonus is not None:
-            if eos_id is not None and bonus == eos_id:
+            if eos_ids and bonus in eos_ids:
                 if stops and buffer:
                     yield buffer
                 return
