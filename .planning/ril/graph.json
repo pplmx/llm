@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 158,
+  "round": 160,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-01T17:09:23+00:00",
+  "updated_at": "2026-09-01T23:43:09+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -10004,11 +10004,11 @@
     "HYP-056": {
       "id": "HYP-056",
       "type": "hypothesis",
-      "status": "stale",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T14:34:18+00:00",
-      "updated_at": "2026-08-19T12:56:48+00:00",
-      "touched_round": 69,
+      "updated_at": "2026-09-01T23:42:30+00:00",
+      "touched_round": 159,
       "confidence": 0.9,
       "title": "Default simple tokenizer cannot encode real text (ISS-196 root cause)",
       "body": "Default corpus of just markers produced a marker-only vocab."
@@ -10016,11 +10016,11 @@
     "HYP-057": {
       "id": "HYP-057",
       "type": "hypothesis",
-      "status": "stale",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T14:34:18+00:00",
-      "updated_at": "2026-08-19T12:56:48+00:00",
-      "touched_round": 69,
+      "updated_at": "2026-09-01T23:42:30+00:00",
+      "touched_round": 159,
       "confidence": 0.9,
       "title": "LMTask eval vocab never matches model vocab (ISS-195 root cause)",
       "body": "Corpus-derived char tokenizer always wins."
@@ -10028,11 +10028,11 @@
     "HYP-058": {
       "id": "HYP-058",
       "type": "hypothesis",
-      "status": "stale",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T14:34:18+00:00",
-      "updated_at": "2026-08-19T12:56:48+00:00",
-      "touched_round": 69,
+      "updated_at": "2026-09-01T23:42:30+00:00",
+      "touched_round": 159,
       "confidence": 0.9,
       "title": "save_pretrained dtype sniff assumed dense lm_head.weight (ISS-198)",
       "body": "Quantized layers lack .weight."
@@ -10040,11 +10040,11 @@
     "HYP-059": {
       "id": "HYP-059",
       "type": "hypothesis",
-      "status": "stale",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-16T14:34:18+00:00",
-      "updated_at": "2026-08-19T12:56:48+00:00",
-      "touched_round": 69,
+      "updated_at": "2026-09-01T23:42:31+00:00",
+      "touched_round": 159,
       "confidence": 0.9,
       "title": "stream world-size guard order-dependent on _world_size (ISS-204)",
       "body": "Early load skips the check."
@@ -12202,11 +12202,11 @@
     "HYP-14": {
       "id": "HYP-14",
       "type": "hypothesis",
-      "status": "stale",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-22T01:14:06+00:00",
-      "updated_at": "2026-08-23T09:01:52+00:00",
-      "touched_round": 89,
+      "updated_at": "2026-09-01T23:42:31+00:00",
+      "touched_round": 159,
       "confidence": 1.0,
       "title": "PP stage scheduling reproduces serial LM training (loss + grads bit-exact)",
       "summary": "1 stage per rank over transformer_blocks plus torch.distributed.pipelining.ScheduleGPipe (n_microbatches=1) reproduces the serial LMTask forward/backward: same loss to the bit and every owned stage gradient bit-exact vs a single-rank reference (validated on 2 CPU/gloo ranks)."
@@ -15614,11 +15614,11 @@
     "HYP-060": {
       "id": "HYP-060",
       "type": "hypothesis",
-      "status": "stale",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-08-25T05:31:18+00:00",
-      "updated_at": "2026-09-01T15:36:25+00:00",
-      "touched_round": 137,
+      "updated_at": "2026-09-01T23:42:31+00:00",
+      "touched_round": 159,
       "confidence": 0.9,
       "title": "Synthetic codec ASR sits on a memorisation-vs-generalisation knife edge at larger alphabets (vocab 32): the model overfits the training sample fingerprints instead of learning the inverse code unless sample count/capacity push it over; small alphabets (8 peaks) make the inversion trivially learnable and generalise robustly across seeds/threads/devices"
     },
@@ -16698,6 +16698,42 @@
       "touched_round": 157,
       "commit": "ad987fa",
       "title": "Distill teacher single construction"
+    },
+    "ISS-318": {
+      "id": "ISS-318",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-01T23:26:04+00:00",
+      "updated_at": "2026-09-01T23:40:26+00:00",
+      "touched_round": 159,
+      "title": "Export docs still claim GGUF export limited to F32/F16/Q4_0/Q8_0 and mmap reader as future work",
+      "body": "docs/guides/export.md (table row + v1-限制 note) and docs/api/export.md claim GGUF export is v1 = F32/F16/Q4_0/Q8_0 only, and list K-quant export + mmap reading as 后续规划. Exporter has shipped Q2_K..Q6_K write paths (TASK-271..273/276/277) and the reader memory-maps (TASK-274); exporter.py module docstring carries the same stale v1 policy. Misleads users into believing K-quant export is unavailable.",
+      "severity": "low",
+      "category": "docs"
+    },
+    "TASK-288": {
+      "id": "TASK-288",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-01T23:26:32+00:00",
+      "updated_at": "2026-09-01T23:40:26+00:00",
+      "touched_round": 159,
+      "category": "docs",
+      "title": "Fix stale GGUF export docs: list K-quant export + mmap reader as shipped",
+      "body": "Update docs/guides/export.md (table row, export bullet list, v1-限制 note), docs/api/export.md row, docs/reference/architecture.md gguf module line, and exporter.py module docstring to reflect the shipped Q2_K..Q6_K export paths and memory-mapped reader. Keep remaining gaps (IQ*/Q8_1, tokenizer metadata) accurately scoped."
+    },
+    "CHG-301": {
+      "id": "CHG-301",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T23:39:46+00:00",
+      "updated_at": "2026-09-01T23:39:46+00:00",
+      "touched_round": 159,
+      "commit": "1742ffd",
+      "title": "Correct GGUF export docs: shipped K-quant export + mmap reader (ISS-318)"
     }
   },
   "edges": [
@@ -24523,6 +24559,24 @@
       "to": "TASK-287",
       "type": "implements",
       "created_at": "2026-09-01T17:09:22+00:00"
+    },
+    {
+      "from": "TASK-288",
+      "to": "ISS-318",
+      "type": "addresses",
+      "created_at": "2026-09-01T23:26:32+00:00"
+    },
+    {
+      "from": "CHG-301",
+      "to": "ISS-318",
+      "type": "resolves",
+      "created_at": "2026-09-01T23:40:26+00:00"
+    },
+    {
+      "from": "CHG-301",
+      "to": "TASK-288",
+      "type": "implements",
+      "created_at": "2026-09-01T23:40:26+00:00"
     }
   ]
 }
