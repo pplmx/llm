@@ -148,6 +148,22 @@ def test_dpo_ref_model_synced_from_loaded_checkpoint(tiny_config, tmp_path):
         )
 
 
+def test_dpo_batch_logps_shape_guard_raises(tiny_config):
+    """The shared _get_batch_logps raises a clear error on logits/labels seq-len mismatch.
+
+    The guard lives on LanguageModelingTask (shared by DPO and SimPO since the
+    round-153 dedup); a mismatched batch would otherwise gather garbage windows
+    with an opaque downstream error.
+    """
+    import pytest
+
+    task = DPOTask(tiny_config, data_module=None)
+    logits = torch.zeros(2, 4, tiny_config.model.vocab_size)  # seq_len 4
+    labels = torch.full((2, 5), -100)  # seq_len 5 — mismatched
+    with pytest.raises(ValueError, match="Logits seq_len 4 != Labels seq_len 5"):
+        task._get_batch_logps(logits, labels)
+
+
 def test_dpo_task_train_step(tiny_config):
     task = DPOTask(tiny_config, data_module=None)
     model = task.build_model()
