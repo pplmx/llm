@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 152,
+  "round": 153,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-01T15:11:40+00:00",
+  "updated_at": "2026-09-01T15:37:05+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -15614,10 +15614,10 @@
     "HYP-060": {
       "id": "HYP-060",
       "type": "hypothesis",
-      "status": "active",
-      "version": 1,
+      "status": "stale",
+      "version": 2,
       "created_at": "2026-08-25T05:31:18+00:00",
-      "updated_at": "2026-08-25T05:31:18+00:00",
+      "updated_at": "2026-09-01T15:36:25+00:00",
       "touched_round": 137,
       "confidence": 0.9,
       "title": "Synthetic codec ASR sits on a memorisation-vs-generalisation knife edge at larger alphabets (vocab 32): the model overfits the training sample fingerprints instead of learning the inverse code unless sample count/capacity push it over; small alphabets (8 peaks) make the inversion trivially learnable and generalise robustly across seeds/threads/devices"
@@ -16470,10 +16470,10 @@
     "ISS-315": {
       "id": "ISS-315",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-01T14:47:30+00:00",
-      "updated_at": "2026-09-01T14:47:30+00:00",
+      "updated_at": "2026-09-01T15:36:06+00:00",
       "touched_round": 152,
       "title": "Stale prompt-echo test red since EOS-halt: _MultiCharTokenizer eos_token_id=99 clashes with random-model argmax",
       "description": "tests/generation/test_stop_sequences.py::test_generate_returns_prompt_plus_generated has failed since commit 8648134 (eager EOS-halting). The test helper _MultiCharTokenizer carries an incidental eos_token_id=99; with prompt_ids=[2] the seeded random tiny model's greedy argmax at step 2 is exactly token 99, so stream_generate (correctly) halts early -> 'xa' not 'xabcd'. Root cause: the prompt-echo tests were coupled to the model never predicting the EOS id, not to any eager bug. EOS-halting itself is covered in tests/generation/test_eager.py. Impact: fast suite red since 2026-08-14; several commit messages claimed 'full suite green' while this test was failing (verification gap).",
@@ -16482,38 +16482,38 @@
     "TASK-279": {
       "id": "TASK-279",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-09-01T14:48:23+00:00",
-      "updated_at": "2026-09-01T14:48:23+00:00",
-      "touched_round": 152,
+      "updated_at": "2026-09-01T15:37:05+00:00",
+      "touched_round": 153,
       "category": "test-quality",
       "title": "Decouple stop-sequences prompt-echo tests from incidental EOS id",
       "description": "Remove eos_token_id=99 (set to None) on the _MultiCharTokenizer base in tests/generation/test_stop_sequences.py so prompt-echo/stop tests never halt spuriously when the random tiny model's argmax == EOS id. EOS-halting contract stays covered by tests/generation/test_eager.py.",
-      "severity": "high"
+      "severity": 0.9
     },
     "TASK-280": {
       "id": "TASK-280",
       "type": "task",
-      "status": "active",
-      "version": 3,
+      "status": "resolved",
+      "version": 5,
       "created_at": "2026-09-01T14:48:23+00:00",
-      "updated_at": "2026-09-01T14:50:12+00:00",
-      "touched_round": 152,
+      "updated_at": "2026-09-01T15:37:05+00:00",
+      "touched_round": 153,
       "category": "maintainability",
       "title": "Close test-verification gap that let a red fast-suite test ship for 18 rounds",
       "description": "ISS-315 was red since 2026-08-14 yet round commit messages repeatedly claimed 'full suite green'. Run the fast suite gate (pytest with not-heavy-and-not-e2e markers) over the whole tests/ tree and confirm no other silent failures; ensure the verification command genuinely exercises tests/generation/test_stop_sequences.py.",
-      "severity": "medium",
+      "severity": 0.6,
       "lock_owner": "round-152",
       "lock_until": "2026-09-01T15:20:12+00:00"
     },
     "ISS-316": {
       "id": "ISS-316",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-01T15:10:13+00:00",
-      "updated_at": "2026-09-01T15:10:13+00:00",
+      "updated_at": "2026-09-01T15:36:06+00:00",
       "touched_round": 152,
       "title": "simpo_lambda config description misstates the SFT term by a beta factor",
       "description": "TrainingConfig.simpo_lambda.description read '(-lambda * beta * mean_logp chosen)' but SimPO (Meng et al. 2024) applies beta only to the preference-margin term; the implemented SFT regularizer is -lambda * mean_logp (simpo_task.py: loss_sft = -mean_chosen.mean(); loss = loss_rl + lmbda * loss_sft). Doc vs implementation mismatch misleads users tuning simpo_lambda about the gradient scale.",
@@ -16522,15 +16522,26 @@
     "TASK-281": {
       "id": "TASK-281",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-09-01T15:11:00+00:00",
-      "updated_at": "2026-09-01T15:11:00+00:00",
-      "touched_round": 152,
+      "updated_at": "2026-09-01T15:37:05+00:00",
+      "touched_round": 153,
       "category": "docs",
       "title": "Fix simpo_lambda docstring; dedupe _get_batch_logps across preference tasks",
       "description": "Correct TrainingConfig.simpo_lambda.description to '-lambda * mean_logp chosen' (no beta factor, matching the paper + simpo_task.py). Optionally extract the duplicated _get_batch_logps (dpo_task.py, simpo_task.py) into a shared helper under lm_task.py.",
-      "severity": "low"
+      "severity": 0.3
+    },
+    "CHG-294": {
+      "id": "CHG-294",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T15:35:28+00:00",
+      "updated_at": "2026-09-01T15:35:28+00:00",
+      "touched_round": 152,
+      "commit": "9c887fb",
+      "title": "Decouple gen/device tests from incidental EOS + real CUDA state; fix simpo_lambda docstring"
     }
   },
   "edges": [
@@ -24272,6 +24283,36 @@
       "to": "ISS-316",
       "type": "addresses",
       "created_at": "2026-09-01T15:11:40+00:00"
+    },
+    {
+      "from": "CHG-294",
+      "to": "ISS-315",
+      "type": "resolves",
+      "created_at": "2026-09-01T15:35:47+00:00"
+    },
+    {
+      "from": "CHG-294",
+      "to": "ISS-316",
+      "type": "resolves",
+      "created_at": "2026-09-01T15:35:47+00:00"
+    },
+    {
+      "from": "CHG-294",
+      "to": "TASK-279",
+      "type": "implements",
+      "created_at": "2026-09-01T15:35:47+00:00"
+    },
+    {
+      "from": "CHG-294",
+      "to": "TASK-280",
+      "type": "implements",
+      "created_at": "2026-09-01T15:35:47+00:00"
+    },
+    {
+      "from": "CHG-294",
+      "to": "TASK-281",
+      "type": "implements",
+      "created_at": "2026-09-01T15:35:47+00:00"
     }
   ]
 }
