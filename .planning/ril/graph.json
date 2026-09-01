@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 156,
+  "round": 157,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-01T16:42:15+00:00",
+  "updated_at": "2026-09-01T16:55:45+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -16650,6 +16650,30 @@
       "touched_round": 155,
       "commit": "c618e61",
       "title": "Sync CLI reference + FAQ task lists"
+    },
+    "TASK-286": {
+      "id": "TASK-286",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-01T16:53:51+00:00",
+      "updated_at": "2026-09-01T16:55:45+00:00",
+      "touched_round": 156,
+      "category": "test-quality",
+      "severity": 0.35,
+      "title": "Unit-test the shared _get_batch_logps shape guard",
+      "description": "The round-153 dedup moved _get_batch_logps (with its DPO-origin shape-mismatch ValueError) into LanguageModelingTask, so SimPO now inherits the guard too — but no unit test exercised the error branch. Add one calling the guard directly with a mismatched logits/labels seq-len."
+    },
+    "CHG-299": {
+      "id": "CHG-299",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T16:55:45+00:00",
+      "updated_at": "2026-09-01T16:55:45+00:00",
+      "touched_round": 156,
+      "commit": "d6aec97",
+      "title": "Test the shared _get_batch_logps shape guard"
     }
   },
   "edges": [
@@ -24463,6 +24487,12 @@
       "to": "TASK-285",
       "type": "implements",
       "created_at": "2026-09-01T16:42:15+00:00"
+    },
+    {
+      "from": "CHG-299",
+      "to": "TASK-286",
+      "type": "implements",
+      "created_at": "2026-09-01T16:55:45+00:00"
     }
   ]
 }
