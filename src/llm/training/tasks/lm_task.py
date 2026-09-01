@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as functional
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
@@ -263,6 +264,38 @@ class LanguageModelingTask(TrainingTask):
         # -100 so the model is never rewarded for predicting pad (== EOS for
         # an HF tokenizer) at pad slots, and val PPL is not inflated.
         return nn.CrossEntropyLoss(ignore_index=-100)
+
+    def _get_batch_logps(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        average_log_prob: bool = False,
+    ) -> torch.Tensor:
+        """Mean-or-sum log-probability of the labels under the model's logits.
+
+        Shared by the preference tasks (DPO, SimPO): gathering the label
+        log-probs from the next-token log-softmax, masked to the non-``-100``
+        label positions. ``average_log_prob`` normalises the sum by the number
+        of unmasked tokens (SimPO's length-normalised implicit reward) instead
+        of returning the raw sum.
+        """
+        if logits.shape[1] != labels.shape[1]:
+            raise ValueError(f"Logits seq_len {logits.shape[1]} != Labels seq_len {labels.shape[1]}")
+
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+
+        log_probs = functional.log_softmax(shift_logits, dim=-1)
+        mask = (shift_labels != -100).float()
+        temp_labels = shift_labels.clone()
+        temp_labels[temp_labels == -100] = 0
+        selected_log_probs = torch.gather(log_probs, dim=-1, index=temp_labels.unsqueeze(-1)).squeeze(-1)
+        selected_log_probs = selected_log_probs * mask
+        sum_log_probs = selected_log_probs.sum(dim=1)
+        if average_log_prob:
+            divisor = mask.sum(dim=1)
+            return sum_log_probs / (divisor + 1e-8)
+        return sum_log_probs
 
     def train_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
         # Batch is expected to be (input_ids, labels) or dict

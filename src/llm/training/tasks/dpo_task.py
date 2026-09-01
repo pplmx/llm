@@ -93,43 +93,6 @@ class DPOTask(LanguageModelingTask):
             return
         self.ref_model.load_state_dict(model.state_dict())
 
-    def _get_batch_logps(
-        self,
-        logits: torch.Tensor,
-        labels: torch.Tensor,
-        average_log_prob: bool = False,
-    ) -> torch.Tensor:
-        """
-        Compute log probability of the labels given the logits.
-        """
-        if logits.shape[1] != labels.shape[1]:
-            raise ValueError(f"Logits seq_len {logits.shape[1]} != Labels seq_len {labels.shape[1]}")
-
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-
-        # Compute log_softmax
-        log_probs = functional.log_softmax(shift_logits, dim=-1)
-
-        # Gather log probs of the labels
-        # Create mask where labels != -100
-        mask = (shift_labels != -100).float()
-
-        temp_labels = shift_labels.clone()
-        temp_labels[temp_labels == -100] = 0
-        selected_log_probs = torch.gather(log_probs, dim=-1, index=temp_labels.unsqueeze(-1)).squeeze(-1)
-
-        selected_log_probs = selected_log_probs * mask
-
-        # Sum over sequence
-        sum_log_probs = selected_log_probs.sum(dim=1)
-
-        if average_log_prob:
-            divisor = mask.sum(dim=1)
-            return sum_log_probs / (divisor + 1e-8)
-
-        return sum_log_probs
-
     def train_step(self, batch: dict[str, Any], model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
         chosen_input_ids = batch["chosen_input_ids"]
         chosen_labels = batch["chosen_labels"]

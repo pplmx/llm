@@ -38,28 +38,6 @@ class SimPOTask(LanguageModelingTask):
         self.gamma = getattr(config.training, "simpo_gamma", 0.0)
         self.lmbda = getattr(config.training, "simpo_lambda", 1.0)
 
-    def _get_batch_logps(
-        self,
-        logits: torch.Tensor,
-        labels: torch.Tensor,
-        average_log_prob: bool = False,
-    ) -> torch.Tensor:
-        """Mean-or-sum log-probability of the labels under the model's logits."""
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-
-        log_probs = functional.log_softmax(shift_logits, dim=-1)
-        mask = (shift_labels != -100).float()
-        temp_labels = shift_labels.clone()
-        temp_labels[temp_labels == -100] = 0
-        selected_log_probs = torch.gather(log_probs, dim=-1, index=temp_labels.unsqueeze(-1)).squeeze(-1)
-        selected_log_probs = selected_log_probs * mask
-        sum_log_probs = selected_log_probs.sum(dim=1)
-        if average_log_prob:
-            divisor = mask.sum(dim=1)
-            return sum_log_probs / (divisor + 1e-8)
-        return sum_log_probs
-
     def train_step(self, batch: dict[str, Any], model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
         chosen_input_ids = batch["chosen_input_ids"]
         chosen_labels = batch["chosen_labels"]
