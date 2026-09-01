@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 157,
+  "round": 158,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-01T16:55:45+00:00",
+  "updated_at": "2026-09-01T17:09:23+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -16674,6 +16674,30 @@
       "touched_round": 156,
       "commit": "d6aec97",
       "title": "Test the shared _get_batch_logps shape guard"
+    },
+    "TASK-287": {
+      "id": "TASK-287",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-01T17:08:29+00:00",
+      "updated_at": "2026-09-01T17:09:22+00:00",
+      "touched_round": 157,
+      "category": "dx",
+      "severity": 0.2,
+      "title": "Distill: avoid double teacher construction on the fresh-seed dev path",
+      "description": "distill_task._build_teacher built a full ModelFactory.from_config model first and discarded it whenever distill_teacher_path is None (the dev/test convenience path), then built a second. For real model sizes this is a wasted full construction at startup. Build only in the checkpoint-loading branch."
+    },
+    "CHG-300": {
+      "id": "CHG-300",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T17:09:22+00:00",
+      "updated_at": "2026-09-01T17:09:22+00:00",
+      "touched_round": 157,
+      "commit": "ad987fa",
+      "title": "Distill teacher single construction"
     }
   },
   "edges": [
@@ -24493,6 +24517,12 @@
       "to": "TASK-286",
       "type": "implements",
       "created_at": "2026-09-01T16:55:45+00:00"
+    },
+    {
+      "from": "CHG-300",
+      "to": "TASK-287",
+      "type": "implements",
+      "created_at": "2026-09-01T17:09:22+00:00"
     }
   ]
 }
