@@ -51,7 +51,7 @@ make init
 
 - **`stream_lm`**: 流式大规模预训练（主入口，配合 `SOURCE_REGISTRY` 预设）
 - **`lm`**: Map-style 语言建模
-- **`sft`** / **`dpo`** / **`reward`** / **`ppo`**: 对齐流程
+- **`sft`** / **`dpo`** / **`simpo`** / **`grpo`** / **`reward`** / **`ppo`**: 对齐流程
 - **`regression`**: 合成回归 demo
 
 示例：

@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 155,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-01T16:23:39+00:00",
+  "updated_at": "2026-09-01T16:38:49+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -16626,6 +16626,19 @@
       "touched_round": 154,
       "commit": "3a0b70f",
       "title": "batch_generate zero-token stop path defaults generated_part"
+    },
+    "TASK-285": {
+      "id": "TASK-285",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T16:38:49+00:00",
+      "updated_at": "2026-09-01T16:38:49+00:00",
+      "touched_round": 155,
+      "category": "docs",
+      "severity": 0.3,
+      "title": "Sync CLI reference + FAQ task lists with TASK_REGISTRY (add simpo/grpo)",
+      "description": "docs/reference/cli.md 的 --task 表格缺 simpo（TASK_REGISTRY 已有），docs/faq.md 的'应该用哪个任务'缺 simpo/grpo。作为对齐流程文档补齐，避免用户从文档看不到新任务。链接 docs/guides/simpo.md。"
     }
   },
   "edges": [
