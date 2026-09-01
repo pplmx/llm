@@ -44,22 +44,26 @@ def test_sort_filters_below_floor_and_inaccessible():
 def test_select_rank_mapping_fattest_first():
     """rank 0 -> most free, rank 1 -> second most, rank 2 -> least (ascending index)."""
     fn = _fake_free({0: 2 * MIN, 1: 5 * MIN, 2: 9 * MIN})
-    assert ds.select_cuda_index(0, free_bytes_fn=fn) == 2
-    assert ds.select_cuda_index(1, free_bytes_fn=fn) == 1
-    assert ds.select_cuda_index(2, free_bytes_fn=fn) == 0
+    # n_devices=3 pins the simulated inventory so these "pure selection
+    # logic" tests stay CUDA-independent (a CPU-only box has no visible
+    # devices, and select_cuda_index without n_devices probes the real
+    # torch.cuda state to size the inventory).
+    assert ds.select_cuda_index(0, n_devices=3, free_bytes_fn=fn) == 2
+    assert ds.select_cuda_index(1, n_devices=3, free_bytes_fn=fn) == 1
+    assert ds.select_cuda_index(2, n_devices=3, free_bytes_fn=fn) == 0
 
 
 def test_select_round_robins_over_usable_gpus():
     """A rank beyond the usable count wraps around (matching old modulo behaviour)."""
     fn = _fake_free({0: 9 * MIN, 1: 5 * MIN, 2: MIN - 1})  # only 0 and 1 usable
-    assert ds.select_cuda_index(0, free_bytes_fn=fn) == 0
-    assert ds.select_cuda_index(1, free_bytes_fn=fn) == 1
-    assert ds.select_cuda_index(2, free_bytes_fn=fn) == 0
+    assert ds.select_cuda_index(0, n_devices=3, free_bytes_fn=fn) == 0
+    assert ds.select_cuda_index(1, n_devices=3, free_bytes_fn=fn) == 1
+    assert ds.select_cuda_index(2, n_devices=3, free_bytes_fn=fn) == 0
 
 
 def test_select_returns_none_when_all_below_floor():
     fn = _fake_free({0: MIN - 1, 1: 0})
-    assert ds.select_cuda_index(0, free_bytes_fn=fn) is None
+    assert ds.select_cuda_index(0, n_devices=2, free_bytes_fn=fn) is None
 
 
 def test_select_respects_explicit_device_count():

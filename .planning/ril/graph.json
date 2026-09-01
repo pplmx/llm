@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 151,
+  "round": 152,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-08-27T16:34:34+00:00",
+  "updated_at": "2026-09-01T15:11:40+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 150,
+      "touched_round": 152,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -5758,7 +5758,7 @@
       "version": 1,
       "created_at": "2026-08-14T15:25:12+00:00",
       "updated_at": "2026-08-14T15:25:12+00:00",
-      "touched_round": 123,
+      "touched_round": 152,
       "title": "Generation + attention core (src/llm/generation: eager/speculative/sampling; src/llm/core/attn: mha/sdpa)"
     },
     "ISS-99": {
@@ -16466,6 +16466,71 @@
       "source": "tests/training/tasks/test_simpo_task.py + tests/e2e/test_simpo.py (commit a918f87)",
       "title": "SimPO is reference-free, loss finite + backprops, and on a fixed preference batch it drives reward_acc -> 1 (chosen preferred); engine --task simpo e2e runs to completion. ruff + ty clean.",
       "confidence": 1.0
+    },
+    "ISS-315": {
+      "id": "ISS-315",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T14:47:30+00:00",
+      "updated_at": "2026-09-01T14:47:30+00:00",
+      "touched_round": 152,
+      "title": "Stale prompt-echo test red since EOS-halt: _MultiCharTokenizer eos_token_id=99 clashes with random-model argmax",
+      "description": "tests/generation/test_stop_sequences.py::test_generate_returns_prompt_plus_generated has failed since commit 8648134 (eager EOS-halting). The test helper _MultiCharTokenizer carries an incidental eos_token_id=99; with prompt_ids=[2] the seeded random tiny model's greedy argmax at step 2 is exactly token 99, so stream_generate (correctly) halts early -> 'xa' not 'xabcd'. Root cause: the prompt-echo tests were coupled to the model never predicting the EOS id, not to any eager bug. EOS-halting itself is covered in tests/generation/test_eager.py. Impact: fast suite red since 2026-08-14; several commit messages claimed 'full suite green' while this test was failing (verification gap).",
+      "severity": "high"
+    },
+    "TASK-279": {
+      "id": "TASK-279",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T14:48:23+00:00",
+      "updated_at": "2026-09-01T14:48:23+00:00",
+      "touched_round": 152,
+      "category": "test-quality",
+      "title": "Decouple stop-sequences prompt-echo tests from incidental EOS id",
+      "description": "Remove eos_token_id=99 (set to None) on the _MultiCharTokenizer base in tests/generation/test_stop_sequences.py so prompt-echo/stop tests never halt spuriously when the random tiny model's argmax == EOS id. EOS-halting contract stays covered by tests/generation/test_eager.py.",
+      "severity": "high"
+    },
+    "TASK-280": {
+      "id": "TASK-280",
+      "type": "task",
+      "status": "active",
+      "version": 3,
+      "created_at": "2026-09-01T14:48:23+00:00",
+      "updated_at": "2026-09-01T14:50:12+00:00",
+      "touched_round": 152,
+      "category": "maintainability",
+      "title": "Close test-verification gap that let a red fast-suite test ship for 18 rounds",
+      "description": "ISS-315 was red since 2026-08-14 yet round commit messages repeatedly claimed 'full suite green'. Run the fast suite gate (pytest with not-heavy-and-not-e2e markers) over the whole tests/ tree and confirm no other silent failures; ensure the verification command genuinely exercises tests/generation/test_stop_sequences.py.",
+      "severity": "medium",
+      "lock_owner": "round-152",
+      "lock_until": "2026-09-01T15:20:12+00:00"
+    },
+    "ISS-316": {
+      "id": "ISS-316",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T15:10:13+00:00",
+      "updated_at": "2026-09-01T15:10:13+00:00",
+      "touched_round": 152,
+      "title": "simpo_lambda config description misstates the SFT term by a beta factor",
+      "description": "TrainingConfig.simpo_lambda.description read '(-lambda * beta * mean_logp chosen)' but SimPO (Meng et al. 2024) applies beta only to the preference-margin term; the implemented SFT regularizer is -lambda * mean_logp (simpo_task.py: loss_sft = -mean_chosen.mean(); loss = loss_rl + lmbda * loss_sft). Doc vs implementation mismatch misleads users tuning simpo_lambda about the gradient scale.",
+      "severity": "low"
+    },
+    "TASK-281": {
+      "id": "TASK-281",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T15:11:00+00:00",
+      "updated_at": "2026-09-01T15:11:00+00:00",
+      "touched_round": 152,
+      "category": "docs",
+      "title": "Fix simpo_lambda docstring; dedupe _get_batch_logps across preference tasks",
+      "description": "Correct TrainingConfig.simpo_lambda.description to '-lambda * mean_logp chosen' (no beta factor, matching the paper + simpo_task.py). Optionally extract the duplicated _get_batch_logps (dpo_task.py, simpo_task.py) into a shared helper under lm_task.py.",
+      "severity": "low"
     }
   },
   "edges": [
@@ -24177,6 +24242,36 @@
       "to": "TASK-278",
       "type": "implements",
       "created_at": "2026-08-27T16:34:29+00:00"
+    },
+    {
+      "from": "ISS-316",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-09-01T15:11:00+00:00"
+    },
+    {
+      "from": "ISS-315",
+      "to": "COMP-012",
+      "type": "located_in",
+      "created_at": "2026-09-01T15:11:39+00:00"
+    },
+    {
+      "from": "TASK-279",
+      "to": "ISS-315",
+      "type": "addresses",
+      "created_at": "2026-09-01T15:11:39+00:00"
+    },
+    {
+      "from": "TASK-280",
+      "to": "ISS-315",
+      "type": "addresses",
+      "created_at": "2026-09-01T15:11:39+00:00"
+    },
+    {
+      "from": "TASK-281",
+      "to": "ISS-316",
+      "type": "addresses",
+      "created_at": "2026-09-01T15:11:40+00:00"
     }
   ]
 }

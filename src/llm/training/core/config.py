@@ -202,7 +202,9 @@ class TrainingConfig(BaseModel):
         ge=0,
         description=(
             "SimPO weight on the chosen-response SFT regularizer "
-            "(-lambda * beta * mean_logp chosen). 0 disables the SFT term."
+            "(-lambda * mean_logp chosen; the paper applies beta only to the "
+            "preference-margin term, so simpo_lambda scales this term without "
+            "a beta factor). 0 disables the SFT term."
         ),
     )
 

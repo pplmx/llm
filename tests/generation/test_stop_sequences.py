@@ -46,7 +46,14 @@ class _MultiCharTokenizer:
     """
 
     pad_token_id: int = 0
-    eos_token_id: int = 99
+    # No EOS token: these tests verify stop-sequence / prompt-echo behaviour,
+    # and an incidental EOS id makes generation halt whenever the (random)
+    # tiny model's greedy argmax happens to land on it — e.g. token 99 at
+    # step 2 for prompt_ids=[2], which kept breaking
+    # ``test_generate_returns_prompt_plus_generated`` since EOS-halting was
+    # wired into the eager loop (8648134). EOS-halting is covered by its own
+    # suite (tests/generation/test_eager.py).
+    eos_token_id: int | None = None
 
     def __init__(self, prompt_ids: list[int] | None = None) -> None:
         self._prompt_ids = prompt_ids or [1]

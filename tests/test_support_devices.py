@@ -60,7 +60,17 @@ def test_cached_device_lists_match_dynamic_inventory():
     mutate.  A phantom entry (e.g. a stale index after a renumber) is a real
     defect we must catch.
     """
-    visible = {f"cuda:{index}" for index in range(torch.cuda.device_count())}
+    # "Visible" mirrors the helpers' own semantics: CUDA only when
+    # torch reports it available (a box where device_count() > 0 but
+    # is_available() is False — e.g. a container with a half-initialised
+    # driver — must be treated as GPU-less), and the documented CPU
+    # fallback otherwise. Using device_count() alone would call a fresh
+    # CUDA device "visible" while all_devices() falls back to CPU, making
+    # this invariant fail spuriously on broken-CUDA or pure-CPU boxes.
+    visible = {f"cuda:{index}" for index in range(torch.cuda.device_count())} if torch.cuda.is_available() else set()
+    if not visible:
+        visible = {"cpu"}
+
     assert set(devices.ALL_GPU_DEVICES) <= visible
     # ALL_DEVICES is exactly ALL_GPU_DEVICES, or the documented CPU fallback.
     if devices.ALL_GPU_DEVICES:
