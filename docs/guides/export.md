@@ -15,12 +15,12 @@ tags:
 
 ## 格式总览
 
-| 格式        | 典型用途                            | 量化选项                | 状态                   |
-| ----------- | ----------------------------------- | ----------------------- | ---------------------- |
-| ONNX        | 跨运行时推理（onnxruntime 等）      | -                       | 参考实现，API 稳定     |
-| TorchScript | PyTorch C++ / 服务端部署            | -                       | trace 路径可用         |
-| GGUF        | llama.cpp 等 GGML 系运行时          | F16 / F32 / Q4_0 / Q8_0 | v1（ADR-011）          |
-| 自定义      | 通过 `llm.export_backends` 插件注册 | 由后端决定              | `EXPORT_REGISTRY` 机制 |
+| 格式        | 典型用途                            | 量化选项                             | 状态                   |
+| ----------- | ----------------------------------- | ------------------------------------ | ---------------------- |
+| ONNX        | 跨运行时推理（onnxruntime 等）      | -                                    | 参考实现，API 稳定     |
+| TorchScript | PyTorch C++ / 服务端部署            | -                                    | trace 路径可用         |
+| GGUF        | llama.cpp 等 GGML 系运行时          | F16 / F32 / Q4_0 / Q8_0 / Q2_K..Q6_K | v1（ADR-011）          |
+| 自定义      | 通过 `llm.export_backends` 插件注册 | 由后端决定                           | `EXPORT_REGISTRY` 机制 |
 
 ## 统一入口：`export_model`
 
@@ -36,7 +36,7 @@ export_model("onnx", model, "model.onnx")
 # TorchScript（默认 trace 模式）
 export_model("torchscript", model, "model.pt", method="trace")
 
-# GGUF（默认 F16；可选 q4_0 / q8_0 块量化）
+# GGUF（默认 F16；可选 q4_0 / q8_0 / q2_k..q6_k 块量化）
 export_model("gguf", model, "model.gguf", quantize="q4_0")
 ```
 
@@ -45,8 +45,10 @@ export_model("gguf", model, "model.gguf", quantize="q4_0")
 GGUF 导出（`llm.export.gguf`）不依赖 torch 之外的重型依赖，核心格式层是
 torch-free 的。支持：
 
-- 张量类型：F32 / F16 原样导出，Q4_0 / Q8_0 按 32 元素块量化
-  （与 ggml 参考实现字节兼容）；
+- 张量类型：F32 / F16 原样导出；Q4_0 / Q8_0 按 32 元素块量化；
+  K-quant 家族 Q2_K / Q3_K / Q4_K / Q5_K / Q6_K 按 256 元素块量化
+  （均与 ggml 参考实现字节兼容）。块量化要求最后一维是块大小的倍数
+  （32 或 256），不满足的张量自动降级为 F16 导出；
 - 标准 `general.*` 元数据，可用 `metadata=` 覆盖；
 - 非浮点张量会被显式拒绝；导出采用原子写入（临时文件 + rename）。
 
@@ -79,10 +81,10 @@ from llm.export import load_gguf_model
 imported = load_gguf_model("llama-2-7b.Q4_K_M.gguf")  # 真实 K-quant 文件
 ```
 
-> v1 限制：K-quant / Q4_1 等类型反量化（导入）已支持，但**导出**仍限
-> F32 / F16 / Q4_0 / Q8_0（llama.cpp 等工具的 K-quant 量化器更完整，建议
-> 由它们产 K-quant 文件）；IQ* / Q8_1 类型、mmap 读取、tokenizer 元数据是
-> 后续规划。
+> v1 限制：K-quant **导出**已支持（`quantize="q2_k".."q6_k"`，256 元素块），
+> 与 llama.cpp 的 K-quant 量级一致；读取端对 K-quant / legacy 类型的反量化
+> 与 `gguf-py` 逐位一致，且读取器内存映射文件（mmap，惰性分页载入）。仍待
+> 补充的是 IQ* / Q8_1 类型与 tokenizer 元数据。
 
 ## TorchScript：trace 优先
 

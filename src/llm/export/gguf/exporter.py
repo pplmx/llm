@@ -8,6 +8,9 @@ policy:
 - ``quantize="q4_0"`` / ``"q8_0"`` block-quantizes tensors with at
   least two dimensions whose last dimension is a multiple of 32 and
   keeps the remaining tensors F16;
+- ``quantize="q2_k"`` .. ``"q6_k"`` block-quantizes tensors (256-wide
+  K-quant super-blocks) whose last dimension is a multiple of 256,
+  keeping the remaining tensors F16 (rounds 147-151);
 - metadata carries the standard ``general.*`` keys; user metadata wins
   over defaults.
 
@@ -75,10 +78,11 @@ def _resolve_quant_type(quantize: str | GGMLQuantizationType | None) -> GGMLQuan
                 f"quantize must be one of {sorted(_QUANT_NAME_TO_TYPE)} or a GGMLQuantizationType, got {quantize!r}"
             )
         ttype = _QUANT_NAME_TO_TYPE[key]
-    # The reader supports the K-quant / legacy types too, but export only
-    # emits F32/F16/Q4_0/Q8_0 — refuse the reader-only types (which also have
-    # no ``general.file_type`` mapping) rather than crashing with a KeyError
-    # later (round-75 review HIGH).
+    # The reader understands more types than the writer can produce (legacy
+    # Q4_1/Q5_0/Q5_1 and IQ*). Refuse those reader-only types — they have no
+    # ``general.file_type`` mapping — rather than crashing with a KeyError
+    # later (round-75 review HIGH). The K-quant family is exportable and stays
+    # in ``EXPORT_TENSOR_TYPES`` (rounds 147-151).
     if ttype not in EXPORT_TENSOR_TYPES:
         raise GGUFError(
             f"{ttype.name} is reader-supported but not exportable; "

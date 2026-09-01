@@ -6,12 +6,12 @@ group.
 
 ## Overview
 
-| Format      | Status                                                     |
-| ----------- | ---------------------------------------------------------- |
-| ONNX        | Reference implementation, stable API                       |
-| TorchScript | Entry-point registered                                     |
-| GGUF        | Entry-point registered (v1: F16/F32/Q4_0/Q8_0, ADR-011)    |
-| Custom      | Via `EXPORT_REGISTRY` plugin points                        |
+| Format      | Status                                                             |
+| ----------- | ------------------------------------------------------------------ |
+| ONNX        | Reference implementation, stable API                               |
+| TorchScript | Entry-point registered                                             |
+| GGUF        | Entry-point registered (v1: F16/F32/Q4_0/Q8_0/Q2_K..Q6_K, ADR-011) |
+| Custom      | Via `EXPORT_REGISTRY` plugin points                                |
 
 ## Export Registry
 

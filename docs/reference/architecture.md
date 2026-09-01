@@ -75,7 +75,7 @@ src/llm/
 │   ├── registry.py        # EXPORT_REGISTRY + export_model dispatch
 │   ├── onnx.py            # ONNX reference implementation (stable API)
 │   ├── torchscript.py     # TorchScript target (entry-point registered)
-│   ├── gguf/              # GGUF v3 container + Q4_0/Q8_0 (entry-point registered, ADR-011)
+│   ├── gguf/              # GGUF v3 container + Q4_0/Q8_0/K-quants, mmap reader (ADR-011)
 │   └── _wrapper.py        # Shared ExportCacheWrapper for trace backends
 ├── evaluation/            # Offline evaluation
 │   ├── runner.py          # EvaluationRunner (unified entry)
