@@ -27,6 +27,7 @@
     - [GRPO](grpo.md) — 组相对策略优化（`--task grpo`、group advantage + 裁剪 policy loss）
     - [Rejection Sampling](rejection_sampling.md) — best-of-N / top-K 过滤高奖励响应再 SFT
     - [RLAIF](rlaif.md) — AI/规则 judge 标定偏好 → `--task dpo`
+    - [SimPO](simpo.md) — 无参考奖励偏好优化（`--task simpo`、长度归一化隐式奖励）
     - [对齐方法对比](dpo_vs_ppo.md) — 同一合成偏好任务上的 DPO / PPO(RLHF) / GRPO 三方对比基准
     - [Constitutional AI](constitutional.md) — 规则 constitution + 自批判→改写切片
     - [Block Sparse Attention](block_sparse.md) — 块稀疏注意力掩码 + CPU parity
