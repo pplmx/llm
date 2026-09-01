@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 153,
+  "round": 154,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-01T15:37:05+00:00",
+  "updated_at": "2026-09-01T16:05:21+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -16542,6 +16542,54 @@
       "touched_round": 152,
       "commit": "9c887fb",
       "title": "Decouple gen/device tests from incidental EOS + real CUDA state; fix simpo_lambda docstring"
+    },
+    "TASK-282": {
+      "id": "TASK-282",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-01T15:46:52+00:00",
+      "updated_at": "2026-09-01T16:04:24+00:00",
+      "touched_round": 153,
+      "category": "maintainability",
+      "severity": 0.4,
+      "title": "Dedupe _get_batch_logps into LanguageModelingTask",
+      "description": "dpo_task.py and simpo_task.py each carried a near-identical _get_batch_logps (shift+gather+mask on -100 labels); DPO added a seq-len shape check, SimPO added average_log_prob. Extract into LanguageModelingTask (lm_task.py) so both inherit the same code and the shape guard applies to SimPO too."
+    },
+    "TASK-283": {
+      "id": "TASK-283",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-01T15:59:37+00:00",
+      "updated_at": "2026-09-01T16:04:24+00:00",
+      "touched_round": 153,
+      "category": "docs",
+      "severity": 0.5,
+      "title": "Document SimPO (task + config knobs + YAML usage + comparison table)",
+      "description": "docs/guides/simpo.md new guide + docs/guides/index.md + mkdocs.yml nav. SimPO was the 11.4 alignment milestone but had no docs entry while DPO/PPO/GRPO/RLAIF all have guides."
+    },
+    "CHG-295": {
+      "id": "CHG-295",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T16:04:24+00:00",
+      "updated_at": "2026-09-01T16:04:24+00:00",
+      "touched_round": 153,
+      "commit": "ec1cbbe",
+      "title": "Dedupe _get_batch_logps into LanguageModelingTask"
+    },
+    "CHG-296": {
+      "id": "CHG-296",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-01T16:05:21+00:00",
+      "updated_at": "2026-09-01T16:05:21+00:00",
+      "touched_round": 153,
+      "commit": "2681c88",
+      "title": "Document SimPO guide + register in index and mkdocs nav"
     }
   },
   "edges": [
@@ -24313,6 +24361,18 @@
       "to": "TASK-281",
       "type": "implements",
       "created_at": "2026-09-01T15:35:47+00:00"
+    },
+    {
+      "from": "CHG-295",
+      "to": "TASK-282",
+      "type": "implements",
+      "created_at": "2026-09-01T16:04:24+00:00"
+    },
+    {
+      "from": "CHG-296",
+      "to": "TASK-283",
+      "type": "implements",
+      "created_at": "2026-09-01T16:05:21+00:00"
     }
   ]
 }
