@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 160,
+  "round": 161,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-01T23:43:09+00:00",
+  "updated_at": "2026-09-02T00:07:13+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -16734,6 +16734,42 @@
       "touched_round": 159,
       "commit": "1742ffd",
       "title": "Correct GGUF export docs: shipped K-quant export + mmap reader (ISS-318)"
+    },
+    "ISS-319": {
+      "id": "ISS-319",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-01T23:59:49+00:00",
+      "updated_at": "2026-09-02T00:07:12+00:00",
+      "touched_round": 160,
+      "title": "Inference guide + flash_attn docstring still claim sliding window unsupported on flash backend",
+      "body": "docs/guides/inference.md table row 'Sliding window | mha: Supported | flash_attn: Not supported yet (flash_attn_varlen_func future work)' and the flash_attn.py forward docstring both say sliding-window needs flash_attn_varlen_func (future). Since ISS-242 (round 89) DecoderModel threads window_size and the flash backend forwards it via flash_attn_func(window_size=...) — supported on installed flash-attn 2.8.3 for dense inputs. Only the sliding-window + padding-mask combination still needs varlen.",
+      "severity": "low",
+      "category": "docs"
+    },
+    "TASK-289": {
+      "id": "TASK-289",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-02T00:00:31+00:00",
+      "updated_at": "2026-09-02T00:07:12+00:00",
+      "touched_round": 160,
+      "category": "docs",
+      "title": "Correct sliding-window docs: flash backend supports window_size on dense inputs",
+      "body": "Update docs/guides/inference.md flash-column sliding-window row and the flash_attn.py forward docstring note: sliding window IS supported on flash_attn via window_size (ISS-242 wiring, flash-attn>=2.3); the still-future piece is sliding window + padding mask (needs flash_attn_varlen_func)."
+    },
+    "CHG-302": {
+      "id": "CHG-302",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-09-02T00:05:04+00:00",
+      "updated_at": "2026-09-02T00:07:12+00:00",
+      "touched_round": 160,
+      "commit": "4be72a5",
+      "title": "Correct sliding-window docs: flash supports window_size on dense inputs (ISS-319)"
     }
   },
   "edges": [
@@ -24577,6 +24613,24 @@
       "to": "TASK-288",
       "type": "implements",
       "created_at": "2026-09-01T23:40:26+00:00"
+    },
+    {
+      "from": "TASK-289",
+      "to": "ISS-319",
+      "type": "addresses",
+      "created_at": "2026-09-02T00:00:48+00:00"
+    },
+    {
+      "from": "CHG-302",
+      "to": "ISS-319",
+      "type": "resolves",
+      "created_at": "2026-09-02T00:07:12+00:00"
+    },
+    {
+      "from": "CHG-302",
+      "to": "TASK-289",
+      "type": "implements",
+      "created_at": "2026-09-02T00:07:12+00:00"
     }
   ]
 }
