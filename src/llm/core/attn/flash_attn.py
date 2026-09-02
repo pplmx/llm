@@ -229,8 +229,11 @@ class FlashAttention(nn.Module):
             ``attn_mask`` is **ignored** — ``flash_attn_func`` does not
             accept arbitrary masks. For non-causal masking or padded
             sequences use ``is_causal=False`` and pre-pad, or fall back
-            to ``attn_impl="mha"``. Sliding-window / padded-mask
-            support requires ``flash_attn_varlen_func`` (future work).
+            to ``attn_impl="mha"``. Sliding-window on dense inputs is
+            **supported** via ``window_size=`` (threaded by the decoder,
+            RIL ISS-242); the still-future piece is combining a sliding
+            window with a **padding** mask — that needs
+            ``flash_attn_varlen_func`` (variable-length batches).
             ``paged_kv_cache`` is also rejected on this path — flash-attn
             does not expose a paged-attn kernel; use ``attn_impl="mha"``
             when serving with paged KV.

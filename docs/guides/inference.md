@@ -471,13 +471,13 @@ the install command. CPU-only hosts should keep the default
 
 ### Trade-offs vs. `mha`
 
-| Aspect            | `mha` (default)                                    | `flash_attn`                                                                  |
-| ----------------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Backend           | `torch.nn.functional.scaled_dot_product_attention` | `flash_attn.flash_attn_func`                                                  |
-| Custom attn_mask  | Supported                                          | **Not supported** — falls back via the engine layer if you need padding masks |
-| Sliding window    | Supported (PyTorch SDPA)                           | Not supported yet (`flash_attn_varlen_func` is a future-work path)            |
-| Hardware          | CPU + CUDA + MPS                                   | CUDA only                                                                     |
-| Long-context perf | O(S²) memory peaks                                 | Streaming softmax, O(S) memory                                                |
+| Aspect            | `mha` (default)                                    | `flash_attn`                                                                                    |
+| ----------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Backend           | `torch.nn.functional.scaled_dot_product_attention` | `flash_attn.flash_attn_func`                                                                    |
+| Custom attn_mask  | Supported                                          | **Not supported** — falls back via the engine layer if you need padding masks                   |
+| Sliding window    | Supported (PyTorch SDPA)                           | Supported via `window_size=` on dense seqs; + padding mask still needs `flash_attn_varlen_func` |
+| Hardware          | CPU + CUDA + MPS                                   | CUDA only                                                                                       |
+| Long-context perf | O(S²) memory peaks                                 | Streaming softmax, O(S) memory                                                                  |
 
 For training or long-context decode on supported hardware, prefer
 `flash_attn`. For variable-length sequences with padding masks, stick
