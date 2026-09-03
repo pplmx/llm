@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 161,
+  "round": 162,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-02T00:07:13+00:00",
+  "updated_at": "2026-09-03T15:07:52+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -16770,6 +16770,191 @@
       "touched_round": 160,
       "commit": "4be72a5",
       "title": "Correct sliding-window docs: flash supports window_size on dense inputs (ISS-319)"
+    },
+    "TASK-290": {
+      "id": "TASK-290",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-03T11:48:40+00:00",
+      "updated_at": "2026-09-03T14:00:52+00:00",
+      "touched_round": 161,
+      "title": "Index 8 missing research-slice guides in docs/guides/index.md",
+      "summary": "guides/index.md omits 8 shipped research-slice guides: MoE routing (load_balance, expert_choice, soft_moe, dynamic_selection), attention (infinite), multimodal_preprocess, quant_param_search. Each backed by a real module (core/moe/*, core/attn/infinite.py, multimodal/preprocess.py, quantization). Docs discoverability/usability gap.",
+      "category": "docs",
+      "severity": 0.3,
+      "effort": 1,
+      "lock_owner": "round161",
+      "lock_until": "2026-09-03T12:20:40+00:00"
+    },
+    "ISS-320": {
+      "id": "ISS-320",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T13:56:53+00:00",
+      "updated_at": "2026-09-03T14:00:21+00:00",
+      "touched_round": 161,
+      "title": "Config.from_yaml silently falls back to default Config when the YAML path is missing",
+      "summary": "train.py:126 passes the user's --config-path to Config.from_yaml; a missing file returned cls() silently. The distributed guide's --config-path configs/fsdp-pretrain.yaml (etc.) therefore silently ran plain DDP. CONFIRMED at config.py:900-903. ServingConfig.from_yaml keeps silent-default by design (tested contract).",
+      "severity": 0.4
+    },
+    "ISS-321": {
+      "id": "ISS-321",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T13:56:53+00:00",
+      "updated_at": "2026-09-03T14:00:21+00:00",
+      "touched_round": 161,
+      "title": "distributed guide references 5 config files that do not exist (ddp/fsdp-pretrain/zero-pretrain/tp-pretrain/pp-pretrain.yaml)",
+      "summary": "docs/guides/distributed.md quick starts reference configs/ddp.yaml (L61,69,78,83,480), fsdp-pretrain.yaml (L96,108), zero-pretrain.yaml (L193,200), tp-pretrain.yaml (L245), pp-pretrain.yaml (L307); none existed, and a missing --config-path silently ran defaults. 5 files created to make the documented commands executable.",
+      "severity": 0.45
+    },
+    "ISS-322": {
+      "id": "ISS-322",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T13:57:41+00:00",
+      "updated_at": "2026-09-03T14:00:22+00:00",
+      "touched_round": 161,
+      "title": "test_launch device-select assertions depend on live GPU free-VRAM state",
+      "summary": "setup() -> select_cuda_index reads REAL torch.cuda.mem_get_info; tests mock device_count=8 / is_available but not free VRAM, so on a shared box the fattest-GPU ordering breaks the expected set_device(rank) assertions (seen: expected set_device(3), actual set_device(4)). Hardware-dependent flake introduced by the round-138 most-free-VRAM device select. Fixed by pinning _free_bytes in the two tests.",
+      "severity": 0.35
+    },
+    "ISS-323": {
+      "id": "ISS-323",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T13:57:41+00:00",
+      "updated_at": "2026-09-03T14:00:22+00:00",
+      "touched_round": 161,
+      "title": "serving auth-policy docs list a nonexistent /chat/completions route and omit /batch_generate + /metrics",
+      "summary": "inference.md:342-344 named /chat/completions (no /v1) as key-gated though only /v1/chat/completions exists; omitted /batch_generate and /metrics (both Depends(get_api_key)). tutorials/03-inference.md:306-313 presented /metrics as an open Prometheus endpoint. Fixed both.",
+      "severity": 0.4
+    },
+    "ISS-324": {
+      "id": "ISS-324",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T13:57:42+00:00",
+      "updated_at": "2026-09-03T14:00:22+00:00",
+      "touched_round": 161,
+      "title": "CLI reference drifts: llm-quantize fp8 undocumented, LLM_SERVING_MAX_REQUEST_BYTES missing, no llm-prune/llm-decompose sections, LLM_SERVING_ATTN_IMPL range omits flash_attn",
+      "summary": "reference/cli.md documented only the gptq subcommand (code also ships fp8), env table missed max_request_bytes, no sections for prune/decompose, ATTN_IMPL range omitted flash_attn; api/cli.md rendered nothing for the empty llm.cli package. Fixed all + api/cli.md now covers prune/decompose.",
+      "severity": 0.3
+    },
+    "ISS-325": {
+      "id": "ISS-325",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T13:57:42+00:00",
+      "updated_at": "2026-09-03T14:00:22+00:00",
+      "touched_round": 161,
+      "title": "inference guide examples do not run and a spec-dec greedy claim overstates guarantees",
+      "summary": "KV-cache DecoderModel example passed a python list + ignored the (logits, caches) tuple; continuous-batching example used a tokenizer that cannot encode its prompts (Hello/World); server_config table listed a speculative generation_backend serving cannot reach; greedy spec-dec section claimed greedy forces draft/target argmaxes to agree (it only makes acceptance a deterministic argmax equality). All fixed.",
+      "severity": 0.35
+    },
+    "TASK-291": {
+      "id": "TASK-291",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T13:58:28+00:00",
+      "updated_at": "2026-09-03T14:00:21+00:00",
+      "touched_round": 161,
+      "category": "correctness",
+      "severity": 0.4,
+      "effort": 1,
+      "title": "Fail fast on an explicit-but-missing --config-path (Config.from_yaml raises FileNotFoundError)"
+    },
+    "TASK-292": {
+      "id": "TASK-292",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-03T13:58:28+00:00",
+      "updated_at": "2026-09-03T14:11:51+00:00",
+      "touched_round": 161,
+      "category": "docs",
+      "severity": 0.35,
+      "effort": 2,
+      "title": "Align serving/CLI/inference/distributed docs with shipped behavior (drift sweep)",
+      "summary": "created 7 configs referenced by docs (ddp/fsdp-pretrain/zero-pretrain/tp-pretrain/pp-pretrain + moe-demo from guide-extending + c4-pretrain from data.md); corrected serving auth policy (inference.md: nonexistent /chat/completions removed, /batch_generate + /metrics added, /health public); tutorials 5.1 /metrics now documents key guard; CLI reference: fp8 subcommand, LLM_SERVING_MAX_REQUEST_BYTES, prune/decompose sections, ATTN_IMPL range adds flash_attn, fixed-port note; inference guide: KV-cache example (tensor + tuple unpack), tokenizer corpus covers prompts, greedy spec-dec claim corrected, server_config generation_backend no longer lists speculative; api/cli.md covers prune/decompose; guides index lists all 26 guides"
+    },
+    "TASK-293": {
+      "id": "TASK-293",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T13:58:28+00:00",
+      "updated_at": "2026-09-03T14:00:21+00:00",
+      "touched_round": 161,
+      "category": "test-quality",
+      "severity": 0.3,
+      "effort": 1,
+      "title": "Make test_launch device-select tests deterministic independent of live GPU free-VRAM"
+    },
+    "DEC-106": {
+      "id": "DEC-106",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-03T13:59:53+00:00",
+      "updated_at": "2026-09-03T13:59:53+00:00",
+      "touched_round": 161,
+      "title": "Config.from_yaml fails fast on a missing path (training side)",
+      "rationale": "The training CLI passes an explicit --config-path; a missing file is always a user error. The old silent-default caused the distributed guide's documented commands to silently run plain DDP (the actual failure mode). Fail-fast with a clear FileNotFoundError gives the user the exact fix. ServingConfig.from_yaml deliberately KEEPS silent-default (llm-serve treats an absent config as all-defaults; pinned by test_missing_file_returns_defaults), so the two entry points keep distinct, documented contracts.",
+      "alternatives_rejected": "Keep silent default (rejected: hides typos and the distributed-guide footgun); return a (Config, ok) tuple (rejected: churns every caller for an edge case)"
+    },
+    "ISS-326": {
+      "id": "ISS-326",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T14:02:18+00:00",
+      "updated_at": "2026-09-03T14:02:18+00:00",
+      "touched_round": 161,
+      "title": "guides/index.md omits 8 shipped research-slice guides",
+      "summary": "8 real guides (MoE routing: expert_choice/load_balance/soft_moe/dynamic_selection; attention: infinite; multimodal_preprocess; quant_param_search) each backed by shipped modules were absent from the guides index — discoverability gap on the docs hub page. Index now lists all 26 guide files.",
+      "severity": 0.3
+    },
+    "CHG-303": {
+      "id": "CHG-303",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-03T15:05:40+00:00",
+      "updated_at": "2026-09-03T15:05:40+00:00",
+      "touched_round": 161,
+      "commit": "6148a90",
+      "summary": "Config.from_yaml raises FileNotFoundError on a missing path; fail-fast for the training CLI (DEC-106)"
+    },
+    "CHG-304": {
+      "id": "CHG-304",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-03T15:05:40+00:00",
+      "updated_at": "2026-09-03T15:05:40+00:00",
+      "touched_round": 161,
+      "commit": "4cc7771",
+      "summary": "test_launch device-select tests deterministic via _free_bytes pin (TASK-293/ISS-322)"
+    },
+    "CHG-305": {
+      "id": "CHG-305",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-03T15:05:41+00:00",
+      "updated_at": "2026-09-03T15:05:41+00:00",
+      "touched_round": 161,
+      "commit": "086182e",
+      "summary": "docs drift sweep: 7 config files + serving auth + CLI reference + inference examples + guides index (TASK-290/292)"
     }
   },
   "edges": [
@@ -24631,6 +24816,120 @@
       "to": "TASK-289",
       "type": "implements",
       "created_at": "2026-09-02T00:07:12+00:00"
+    },
+    {
+      "from": "TASK-291",
+      "to": "ISS-320",
+      "type": "addresses",
+      "created_at": "2026-09-03T13:58:56+00:00"
+    },
+    {
+      "from": "TASK-292",
+      "to": "ISS-321",
+      "type": "addresses",
+      "created_at": "2026-09-03T13:58:56+00:00"
+    },
+    {
+      "from": "TASK-292",
+      "to": "ISS-323",
+      "type": "addresses",
+      "created_at": "2026-09-03T13:58:56+00:00"
+    },
+    {
+      "from": "TASK-292",
+      "to": "ISS-324",
+      "type": "addresses",
+      "created_at": "2026-09-03T13:58:56+00:00"
+    },
+    {
+      "from": "TASK-292",
+      "to": "ISS-325",
+      "type": "addresses",
+      "created_at": "2026-09-03T13:58:56+00:00"
+    },
+    {
+      "from": "TASK-293",
+      "to": "ISS-322",
+      "type": "addresses",
+      "created_at": "2026-09-03T13:58:56+00:00"
+    },
+    {
+      "from": "DEC-106",
+      "to": "TASK-291",
+      "type": "governs",
+      "created_at": "2026-09-03T14:00:21+00:00"
+    },
+    {
+      "from": "TASK-290",
+      "to": "ISS-326",
+      "type": "addresses",
+      "created_at": "2026-09-03T14:02:18+00:00"
+    },
+    {
+      "from": "CHG-303",
+      "to": "TASK-291",
+      "type": "implements",
+      "created_at": "2026-09-03T15:06:44+00:00"
+    },
+    {
+      "from": "CHG-303",
+      "to": "ISS-320",
+      "type": "resolves",
+      "created_at": "2026-09-03T15:06:44+00:00"
+    },
+    {
+      "from": "CHG-304",
+      "to": "TASK-293",
+      "type": "implements",
+      "created_at": "2026-09-03T15:06:44+00:00"
+    },
+    {
+      "from": "CHG-304",
+      "to": "ISS-322",
+      "type": "resolves",
+      "created_at": "2026-09-03T15:06:45+00:00"
+    },
+    {
+      "from": "CHG-305",
+      "to": "TASK-292",
+      "type": "implements",
+      "created_at": "2026-09-03T15:06:45+00:00"
+    },
+    {
+      "from": "CHG-305",
+      "to": "ISS-321",
+      "type": "resolves",
+      "created_at": "2026-09-03T15:06:45+00:00"
+    },
+    {
+      "from": "CHG-305",
+      "to": "ISS-323",
+      "type": "resolves",
+      "created_at": "2026-09-03T15:06:45+00:00"
+    },
+    {
+      "from": "CHG-305",
+      "to": "ISS-324",
+      "type": "resolves",
+      "created_at": "2026-09-03T15:06:45+00:00"
+    },
+    {
+      "from": "CHG-305",
+      "to": "ISS-325",
+      "type": "resolves",
+      "created_at": "2026-09-03T15:06:45+00:00"
+    },
+    {
+      "from": "CHG-305",
+      "to": "TASK-290",
+      "type": "implements",
+      "created_at": "2026-09-03T15:06:45+00:00"
+    },
+    {
+      "from": "CHG-305",
+      "to": "ISS-326",
+      "type": "resolves",
+      "created_at": "2026-09-03T15:06:45+00:00"
     }
   ]
 }
