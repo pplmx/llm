@@ -146,10 +146,12 @@ class ServingConfig(BaseSettings):
     def from_yaml(cls, path: str | Path) -> ServingConfig:
         """Load configuration from a YAML file.
 
-        Mirrors :meth:`llm.training.core.config.Config.from_yaml` — keeps the
-        training-side and serving-side config loading surfaces symmetric so
-        users can pick whichever input style fits their workflow (YAML files
-        vs. environment variables).
+        Shaped after :meth:`llm.training.core.config.Config.from_yaml`, with
+        one deliberate divergence (RIL DEC-106): a missing file returns the
+        default :class:`ServingConfig` (``llm-serve`` treats an absent config
+        as "all defaults"), whereas the training side **raises
+        FileNotFoundError** on a missing ``--config-path`` (an explicit path
+        is always a user error there). Both behaviours are pinned by tests.
 
         The YAML keys are the unprefixed field names (``api_key``,
         ``model_path``, ``peft_method``, ...). The same config can be set
@@ -157,7 +159,8 @@ class ServingConfig(BaseSettings):
         ``LLM_SERVING_PEFT_METHOD``, ...).
 
         Returns:
-            A :class:`ServingConfig` instance built from the YAML content.
+            A :class:`ServingConfig` instance built from the YAML content —
+            or the default config when the path does not exist.
             Validators (``_validate_peft_method``, cross-field consistency)
             run on construction, so unknown PEFT methods and
             inconsistent ``peft_*`` combinations fail loud at load time.
