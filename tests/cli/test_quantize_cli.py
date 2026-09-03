@@ -286,10 +286,17 @@ def test_resolve_target_modules_multiple_with_whitespace():
 
 
 def test_resolve_target_modules_empty_string():
-    """Empty string → empty list (not None)."""
+    """Empty / whitespace-only input → None (no filter = all nn.Linear layers).
+
+    The old ``[]`` (empty list) made the CLI echo ``all`` in the summary while
+    actually matching ZERO layers — ``quantize_model_gptq`` then failed with
+    an exit-2 runtime error. ``None`` keeps the summary and the behaviour in
+    agreement.
+    """
     from llm.cli.quantize import _resolve_target_modules
 
-    assert _resolve_target_modules("") == []
+    assert _resolve_target_modules("") is None
+    assert _resolve_target_modules("  , , ") is None
 
 
 # ---------------------------------------------------------------------------
@@ -424,12 +431,13 @@ def test_load_calibration_batches_list_of_tensors(tmp_path: Path):
     assert result[1].shape == (1, 2)
 
 
-def test_load_calibration_batches_unknown_shape_passthrough(tmp_path: Path):
-    """A non-list / non-tensor .pt payload is passed through unwrapped.
+def test_load_calibration_batches_rejects_unknown_shape(tmp_path: Path):
+    """A calibration payload that is neither a tensor nor a list of tensors is
+    rejected at load time with a clear error.
 
-    The docstring says "Unknown shape — let downstream fail with a clearer
-    error"; we verify the passthrough contract (returns the loaded object
-    unchanged) so a future refactor can't silently drop or wrap it.
+    The old passthrough handed a dict straight to the quantizer, which
+    iterated the dict *keys* and failed downstream with a confusing deep
+    error during Hessian capture.
     """
     import torch
 
@@ -438,8 +446,98 @@ def test_load_calibration_batches_unknown_shape_passthrough(tmp_path: Path):
     calib = tmp_path / "calib.pt"
     torch.save({"unexpected": "dict"}, calib)
 
-    result = _load_calibration_batches(None, calib, None)
-    assert result == {"unexpected": "dict"}
+    with pytest.raises(RuntimeError, match="tensor"):
+        _load_calibration_batches(None, calib, None)
+
+
+def test_load_calibration_batches_rejects_non_tensor_list(tmp_path: Path):
+    """A list with non-tensor entries is rejected at load time too."""
+    import torch
+
+    from llm.cli.quantize import _load_calibration_batches
+
+    calib = tmp_path / "calib.pt"
+    torch.save([torch.tensor([[1, 2]]), "oops"], calib)
+
+    with pytest.raises(RuntimeError, match="non-tensor"):
+        _load_calibration_batches(None, calib, None)
+
+
+def test_cli_asym_rejected_as_argument_error(runner: CliRunner, tmp_path: Path):
+    """``--asym`` is not implemented anywhere in GPTQ — it must be rejected at
+    argument validation (exit 1) with a clear message, not sail through the
+    checks and fail as an exit-2 ``quantization failed`` deep in the Hessian
+    loop."""
+    import torch
+
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+    calib = tmp_path / "calib.pt"
+    torch.save(torch.tensor([[1, 2, 3]], dtype=torch.float32), calib)
+
+    result = runner.invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--calib-data-tokens",
+            str(calib),
+            "--asym",
+        ],
+    )
+    assert result.exit_code == 1, f"got {result.exit_code}: {result.stdout!r} {result.stderr!r}"
+    combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+    assert "asymmetric" in combined.lower()
+    # Must be an argument-validation SystemExit, not a raw exception.
+    assert isinstance(result.exception, SystemExit), f"raw exception escaped: {result.exception!r}"
+
+
+def test_fp8_default_activation_is_dynamic_and_needs_no_calib(runner: CliRunner, tmp_path: Path):
+    """Regression: ``static`` being the default made the simplest documented
+    ``llm-quantize fp8 --model ... --output ...`` call exit 1 demanding
+    calibration. The default must be ``dynamic`` (per-forward scaling, no
+    calibration)."""
+    import torch
+
+    model_path = tmp_path / "model.pt"
+    # A loadable-but-not-a-model payload: proves validation + load succeeded
+    # and the failure came from the later quantization stage, not the calib gate.
+    torch.save({"not_a_model": 1}, model_path)
+
+    result = runner.invoke(
+        app,
+        ["fp8", "--model", str(model_path), "--output", str(tmp_path / "out.pt")],
+    )
+    assert result.exit_code == 2, f"got {result.exit_code}: {result.stdout!r} {result.stderr!r}"
+    combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+    assert "must supply calibration" not in combined
+
+
+def test_fp8_static_without_calib_exits_1_with_hint(runner: CliRunner, tmp_path: Path):
+    """``--activation static`` with no calibration source keeps a clean exit-1
+    error, and the message points at the escape hatch (``--activation
+    dynamic``)."""
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+
+    result = runner.invoke(
+        app,
+        [
+            "fp8",
+            "--model",
+            str(model_path),
+            "--output",
+            str(tmp_path / "out.pt"),
+            "--activation",
+            "static",
+        ],
+    )
+    assert result.exit_code == 1
+    combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+    assert "--activation dynamic" in combined
 
 
 def test_load_calibration_tokens_refuses_malicious_pickle(tmp_path: Path):

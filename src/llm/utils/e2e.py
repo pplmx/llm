@@ -87,6 +87,8 @@ def train_model(
     model.train()
     losses = []
     num_batches = (input_ids.size(0) + batch_size - 1) // batch_size
+    if num_batches == 0:
+        raise ValueError("input_ids is empty; nothing to train on (0 batches).")
 
     for _ in range(epochs):
         epoch_loss = 0.0
@@ -138,6 +140,8 @@ def evaluate_model(
             total_loss += loss.item()
             num_batches += 1
 
+    if num_batches == 0:
+        raise ValueError("input_ids is empty; nothing to evaluate (0 batches).")
     avg_loss = total_loss / num_batches
     perplexity = math.exp(avg_loss) if avg_loss < 20 else float("inf")
     return avg_loss, perplexity
@@ -178,6 +182,14 @@ def run_e2e_pipeline(
     Returns:
         E2EResult with all metrics
     """
+    # The validation split is ``num_samples // 5``; fewer than 5 samples
+    # truncates it to zero, and `train_model`/`evaluate_model` would then die
+    # on a 0-batch divide. Fail fast at the boundary with the reason (RIL ISS-331).
+    if config.num_samples < 5:
+        raise ValueError(
+            f"E2EConfig.num_samples must be >= 5 so the validation split "
+            f"(num_samples // 5) is non-empty; got {config.num_samples}."
+        )
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

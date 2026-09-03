@@ -273,7 +273,7 @@ llm-quantize fp8 \
     --output PATH                # 量化模型输出路径 \
     --weight-dtype e4m3|e5m2     # E4M3FN（默认）/ E5M2（更大指数范围）\
     --per-channel/--per-tensor   # 默认 per-channel（按输出行缩放）\
-    --activation static|dynamic  # static 需校准；dynamic 逐 forward 计算，无需校准 \
+    --activation static|dynamic  # dynamic 逐 forward 计算，无需校准（默认）；static 需校准 \
     [--calib-data PATH]          # 原始文本（每行一个样本）— static 专用，需配 --tokenizer \
     [--calib-data-tokens PATH]   # 预分词 .pt 文件 — static 专用，与 --calib-data 互斥 \
     [--tokenizer PATH]           # HF tokenizer 目录；static 且用 --calib-data 时需要 \
@@ -283,7 +283,8 @@ llm-quantize fp8 \
 校验规则（非法即退出码 1）：
 
 - `--weight-dtype` 必须为 `e4m3` 或 `e5m2`
-- `--activation` 必须为 `static` 或 `dynamic`
+- `--activation` 必须为 `static` 或 `dynamic`；**默认是 `dynamic`**（无需任何校准数据，
+  量化开箱即用），`static` 需显式提供校准
 - static 激活必须提供 `--calib-data` / `--calib-data-tokens` 二选一（`--calib-data`
   需搭配 `--tokenizer`）；dynamic 激活下出现任何校准参数会被**拒绝**而不是静默忽略
 

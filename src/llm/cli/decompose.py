@@ -61,9 +61,16 @@ def _atomic_save_blob(module, output: Path) -> None:
 
 
 def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
+    """Parse the comma-separated ``--target-modules`` flag into a list.
+
+    Empty / whitespace-only input normalizes to ``None`` ("all") so the CLI
+    summary echoes ``all`` only when every nn.Linear is actually targeted. The
+    old ``[]`` filtered to ZERO layers and then failed at runtime (RIL ISS-330).
+    """
     if target_modules is None:
         return None
-    return [tok.strip() for tok in target_modules.split(",") if tok.strip()]
+    parsed = [tok.strip() for tok in target_modules.split(",") if tok.strip()]
+    return parsed or None
 
 
 @app.command()

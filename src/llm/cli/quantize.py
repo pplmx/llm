@@ -161,6 +161,7 @@ def _validate_quant_params(
     group_size: int,
     percdamp: float,
     blocksize: int,
+    sym: bool = True,
 ) -> None:
     """Reject CLI-level quantization param violations.
 
@@ -168,6 +169,12 @@ def _validate_quant_params(
     CLI-friendly error message (not a deep dataclass stack frame). The
     config itself re-validates at construction as a defense-in-depth.
     """
+    if not sym:
+        # Asymmetric GPTQ is unimplemented end-to-end (the quantizer raises
+        # NotImplementedError mid-loop). Reject it here as an argument error
+        # (exit 1) instead of letting it surface as an exit-2 "quantization
+        # failed" deep in the Hessian loop (RIL ISS-330).
+        _die("--asym asymmetric GPTQ is not yet implemented; use symmetric quantization (default) or drop --asym.")
     if bits not in (4, 8):
         _die(f"--bits must be 4 or 8 (GPTQ supports these two widths); got {bits}.")
     if group_size != -1 and group_size <= 0:
@@ -214,7 +221,6 @@ def _load_calibration_batches(
 
     # calib_data_tokens path
     typer.echo(f"Loading pre-tokenized calibration from {calib_data_tokens}...")
-    # ``weights_only=False`` — calibration .pt files are user-supplied
     # Calibration files are a tensor or a list of tensors — plain payloads
     # that ``weights_only=True`` loads fine. Loading with the old
     # ``weights_only=False`` executed arbitrary ``__reduce__`` code from a
@@ -223,13 +229,25 @@ def _load_calibration_batches(
     if calib_data_tokens is None:
         raise RuntimeError("pre-tokenized calibration path is required")
     loaded = torch.load(calib_data_tokens, map_location="cpu", weights_only=True)
-    if isinstance(loaded, list):
-        return loaded
     if isinstance(loaded, torch.Tensor):
         # Single tensor → wrap in list so the iterable contract is uniform.
         return [loaded]
-    # Unknown shape — let downstream fail with a clearer error.
-    return loaded
+    if isinstance(loaded, list):
+        if all(isinstance(t, torch.Tensor) for t in loaded):
+            return loaded
+        bad = next((t for t in loaded if not isinstance(t, torch.Tensor)), None)
+        raise RuntimeError(
+            f"{calib_data_tokens} contains a non-tensor entry "
+            f"({type(bad).__name__}); expected a single tensor or a list of "
+            "tensors (one per calibration sample)."
+        )
+    # Anything else (dict, tuple, scalar) would make the quantizer iterate
+    # dict keys / fail deep inside Hessian capture — reject it at load time
+    # with a clear message instead (RIL ISS-330).
+    raise RuntimeError(
+        f"{calib_data_tokens} has an unexpected payload ({type(loaded).__name__}); "
+        "expected a single tensor or a list of tensors (one per calibration sample)."
+    )
 
 
 def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
@@ -241,7 +259,12 @@ def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
     """
     if target_modules is None:
         return None
-    return [m.strip() for m in target_modules.split(",") if m.strip()]
+    parsed = [m.strip() for m in target_modules.split(",") if m.strip()]
+    # Empty / whitespace-only input → None ("all"), so the CLI summary echoes
+    # ``all`` only when the algorithm actually quantizes every nn.Linear
+    # layer. The old ``[]`` filtered to ZERO layers and then failed at runtime
+    # with "target_modules matched no nn.Linear" (RIL ISS-330).
+    return parsed or None
 
 
 @app.command()
@@ -309,7 +332,7 @@ def gptq(
 ) -> None:
     """Quantize a model with GPTQ (Frantar 2022, arXiv:2210.17323)."""
     # --- 1. Argument validation (fail fast, exit 1) ---------------------
-    _validate_quant_params(bits, group_size, percdamp, blocksize)
+    _validate_quant_params(bits, group_size, percdamp, blocksize, sym=sym)
     _validate_calib_inputs(calib_data, calib_data_tokens, tokenizer)
     _validate_model_path(model)
     _reject_clobbering_input(output, model)
@@ -399,9 +422,9 @@ def fp8(
         help="Per-output-row (default) vs per-tensor weight scaling.",
     ),
     activation: str = typer.Option(
-        "static",
+        "dynamic",
         "--activation",
-        help="Activation scaling: 'static' (from calibration, default) or 'dynamic' (per forward).",
+        help="Activation scaling: 'dynamic' (per forward; default, no calibration needed) or 'static' (from calibration).",
     ),
     calib_data: Path | None = typer.Option(
         None,
@@ -437,6 +460,16 @@ def fp8(
         _die(f"--activation must be 'static' or 'dynamic'; got {activation}.")
 
     if activation == "static":
+        if calib_data is None and calib_data_tokens is None:
+            # Static is opt-in now (dynamic is the default), so when the user
+            # asks for it without data the message should name the only thing
+            # they need to add (a calib source) AND the escape hatch (RIL
+            # ISS-330): ``--activation dynamic`` needs no calibration at all.
+            _die(
+                "activation='static' requires calibration data via --calib-data/"
+                "--calib-data-tokens; use --activation dynamic to quantize "
+                "without calibration."
+            )
         _validate_calib_inputs(calib_data, calib_data_tokens, tokenizer)
     elif calib_data is not None or calib_data_tokens is not None or tokenizer is not None:
         # Calibration is ignored under dynamic activation — refuse rather than
