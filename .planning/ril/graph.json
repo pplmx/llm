@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 162,
+  "round": 163,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-03T15:07:52+00:00",
+  "updated_at": "2026-09-03T17:48:57+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -16955,6 +16955,69 @@
       "touched_round": 161,
       "commit": "086182e",
       "summary": "docs drift sweep: 7 config files + serving auth + CLI reference + inference examples + guides index (TASK-290/292)"
+    },
+    "ISS-327": {
+      "id": "ISS-327",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T17:41:52+00:00",
+      "updated_at": "2026-09-03T17:44:57+00:00",
+      "touched_round": 162,
+      "title": "finetuning guide PEFT examples crash (wrong modules/params: num_heads, adalora, pfeiffer, prefix, llm.peft, save/load method_name)",
+      "summary": "Verified against src: DecoderModel(...num_layers=12) missing required num_heads; apply_adalora(rank/init_warmup/final_warmup/delta_t/reg_value) -> init_rank/orth_reg_weight only; from llm.core.adalora import AdaLoRACallback does not exist (AdaLoRAPruningCallback at llm.training.core.callbacks); apply_adapter/apply_pfeiffer_adapter have no dropout; llm.core.pfeiffer module is pfeiffer_adapter; llm.core.prefix module is prefix_tuning (prefix_len/reparam_hidden); from llm.peft import ... -> llm.core.peft, get_peft_method does not exist; save_peft/load_peft require method_name positional arg. YAML peft_kwargs used typed-field names (ia3_init_scale/bitfit_target_modules/adapter_target_modules/prefix_target_modules) or nonexistent kwargs. All 7 findings verified & fixed.",
+      "severity": 0.5
+    },
+    "ISS-328": {
+      "id": "ISS-328",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T17:41:53+00:00",
+      "updated_at": "2026-09-03T17:44:57+00:00",
+      "touched_round": 162,
+      "title": "getting-started/streaming/multimodal/evaluation guide drift (encode().unsqueeze, model.generate, max_seq_len default, apply_to_config import, train_dataloader tuple, KVCache claim)",
+      "summary": "getting-started: tokenizer.encode returns list (no .unsqueeze) + DecoderModel has no .generate (use llm.generation.generate); streaming.md max_seq_len default 2048 -> 512, apply_to_config not imported; multimodal.md train_dataloader returns (DataLoader, sampler) not a sample dict; evaluation.md wrongly claims LlamaLmEvalLM is KVCache-backed (it decodes use_cache=False) and says ~250 lines (actually 442). All verified & fixed.",
+      "severity": 0.35
+    },
+    "TASK-294": {
+      "id": "TASK-294",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T17:43:41+00:00",
+      "updated_at": "2026-09-03T17:44:57+00:00",
+      "touched_round": 162,
+      "category": "docs",
+      "severity": 0.5,
+      "effort": 2,
+      "title": "Fix finetuning guide PEFT examples to match real API surfaces",
+      "summary": "findings 1-7 verified; all corrected (DecoderModel num_heads, AdaLoRA params, AdaLoRAPruningCallback, adapter/pfeiffer/prefix modules+params, llm.core.peft + save/load method_name, envelope-based method check, YAML peft_kwargs, Python API example)"
+    },
+    "TASK-295": {
+      "id": "TASK-295",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T17:43:41+00:00",
+      "updated_at": "2026-09-03T17:44:57+00:00",
+      "touched_round": 162,
+      "category": "docs",
+      "severity": 0.35,
+      "effort": 1,
+      "title": "Fix getting-started/streaming/multimodal/evaluation guide drift",
+      "summary": "findings 8-14 verified; all corrected"
+    },
+    "CHG-306": {
+      "id": "CHG-306",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-03T17:48:57+00:00",
+      "updated_at": "2026-09-03T17:48:57+00:00",
+      "touched_round": 162,
+      "commit": "300ef67",
+      "summary": "finetuning/streaming/multimodal/evaluation/getting-started example fixes (ISS-327/328)"
     }
   },
   "edges": [
@@ -24930,6 +24993,42 @@
       "to": "ISS-326",
       "type": "resolves",
       "created_at": "2026-09-03T15:06:45+00:00"
+    },
+    {
+      "from": "TASK-294",
+      "to": "ISS-327",
+      "type": "addresses",
+      "created_at": "2026-09-03T17:44:57+00:00"
+    },
+    {
+      "from": "TASK-295",
+      "to": "ISS-328",
+      "type": "addresses",
+      "created_at": "2026-09-03T17:44:57+00:00"
+    },
+    {
+      "from": "CHG-306",
+      "to": "TASK-294",
+      "type": "implements",
+      "created_at": "2026-09-03T17:48:57+00:00"
+    },
+    {
+      "from": "CHG-306",
+      "to": "ISS-327",
+      "type": "resolves",
+      "created_at": "2026-09-03T17:48:57+00:00"
+    },
+    {
+      "from": "CHG-306",
+      "to": "TASK-295",
+      "type": "implements",
+      "created_at": "2026-09-03T17:48:57+00:00"
+    },
+    {
+      "from": "CHG-306",
+      "to": "ISS-328",
+      "type": "resolves",
+      "created_at": "2026-09-03T17:48:57+00:00"
     }
   ]
 }
