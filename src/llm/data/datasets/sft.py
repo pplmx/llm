@@ -126,10 +126,13 @@ class SFTDataset(Dataset):
         # Create labels: mask prompt, keep response
         labels = [self.ignore_index] * len(prompt_ids) + response_ids
 
-        # Truncate if too long
+        # Truncate if too long — from the FRONT so the supervised response
+        # survives. ``input_ids[:max_seq_len]`` kept the full prompt and
+        # chopped the completion tail, discarding the only supervised signal
+        # (prompt tokens are masked) (RIL ISS-332).
         if len(input_ids) > self.max_seq_len:
-            input_ids = input_ids[: self.max_seq_len]
-            labels = labels[: self.max_seq_len]
+            input_ids = input_ids[-self.max_seq_len :]
+            labels = labels[-self.max_seq_len :]
 
         # Pad if too short
         pad_len = self.max_seq_len - len(input_ids)

@@ -93,10 +93,13 @@ class DPODataset(Dataset):
         input_ids = prompt_ids + completion_ids
         labels = [self.ignore_index] * len(prompt_ids) + completion_ids
 
-        # Truncate
+        # Truncate — from the FRONT so the completion (the supervised / scored
+        # part) survives. ``input_ids[:max_seq_len]`` kept the prompt and
+        # chopped the completion tail, where chosen/rejected usually diverge
+        # (RIL ISS-332).
         if len(input_ids) > self.max_seq_len:
-            input_ids = input_ids[: self.max_seq_len]
-            labels = labels[: self.max_seq_len]
+            input_ids = input_ids[-self.max_seq_len :]
+            labels = labels[-self.max_seq_len :]
 
         # Pad
         pad_len = self.max_seq_len - len(input_ids)

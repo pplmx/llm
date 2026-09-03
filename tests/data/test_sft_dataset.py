@@ -76,8 +76,16 @@ def test_sft_dataset(tmp_path):
     assert torch.all(labels[valid_len:] == -100)
 
 
-def test_sft_dataset_truncation(tmp_path):
-    data = [{"instruction": "A" * 100, "output": "B" * 100}]
+def test_sft_dataset_truncation_keeps_response_tail(tmp_path):
+    """Truncation drops the PROMPT PREFIX, never the supervised response tail.
+
+    Regression (RIL ISS-332): the old ``input_ids[:max_seq_len]`` kept the
+    whole prompt and chopped the response end — the only supervised signal,
+    since prompt tokens are label-masked. With a pair whose prompt alone
+    exceeds the window, the KEPT tokens must be the response end with live
+    labels, not an all-masked row.
+    """
+    data = [{"instruction": "A" * 100, "input": "", "output": "B" * 100}]
     file_path = tmp_path / "trunc.jsonl"
     with file_path.open("w") as f:
         f.write(json.dumps(data[0]) + "\n")
@@ -91,16 +99,20 @@ def test_sft_dataset_truncation(tmp_path):
     assert item["input_ids"].shape == (10,)
     assert item["labels"].shape == (10,)
 
-    # Should be truncated.
-    # Since prompt is huge ("Before..." + "A"*100), prompt itself will likely fill max_len
-    # So labels should be all -100 (if prompt fills everything)
-    # Let's verify prompt length roughly.
-    prompt, _ = dataset.alpaca_template(data[0])
-    # prompt is long
-    assert len(tokenizer.encode(prompt)) > 10
+    # The kept 10 tokens are the END of prompt+response (the "B" response tail).
+    prompt, response = dataset.alpaca_template(data[0])
+    prompt_ids = tokenizer.encode(prompt)
+    response_ids = tokenizer.encode(response)
+    combined = prompt_ids + response_ids
+    expected_input = combined[-10:]
+    expected_labels = ([-100] * len(prompt_ids) + response_ids)[-10:]
 
-    # So all 10 tokens are prompt tokens -> all masked
-    assert torch.all(item["labels"] == -100)
+    assert item["input_ids"].tolist() == expected_input
+    assert item["labels"].tolist() == expected_labels
+    # The supervised payload survived — not an all-masked row.
+    assert not torch.all(item["labels"] == -100)
+    # Nothing was padded (truncation fills the window), so the mask is all 1s.
+    assert item["attention_mask"].tolist() == [1] * 10
 
 
 def test_sft_dataset_rejects_nonpositive_max_seq_len(tmp_path):

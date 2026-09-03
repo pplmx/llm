@@ -113,6 +113,32 @@ def test_dpo_dataset_truncation(tmp_path, tokenizer):
     assert item["rejected_labels"].shape[0] == 5
 
 
+def test_dpo_dataset_truncation_keeps_completion_tail(tmp_path, tokenizer):
+    """Truncation drops the PROMPT PREFIX, preserving the supervised
+    completion (RIL ISS-332).
+
+    The old ``[:max_seq_len]`` cut the completion tail — where chosen/rejected
+    usually diverge — so the preference signal was truncated away. The kept
+    tokens must be the END of prompt+completion with live labels.
+    """
+    file_path = tmp_path / "truncate.jsonl"
+    with file_path.open("w") as f:
+        f.write(json.dumps({"prompt": "P:", "chosen": "R" * 60, "rejected": "Short"}) + "\n")
+
+    dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=5)
+    item = dataset[0]
+
+    prompt_ids = tokenizer.encode("P:")
+    chosen_ids = tokenizer.encode("R" * 60)
+    combined = prompt_ids + chosen_ids
+    masked = [-100] * len(prompt_ids) + chosen_ids
+
+    assert item["chosen_input_ids"].tolist() == combined[-5:]
+    assert item["chosen_labels"].tolist() == masked[-5:]
+    # The preference signal survived — not a fully-masked row.
+    assert not torch.all(item["chosen_labels"] == -100)
+
+
 def test_dpo_dataset_padding_small_sequence(tmp_path, tokenizer):
     """Short sequences are padded to max_seq_len."""
     file_path = tmp_path / "padding.jsonl"

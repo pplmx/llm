@@ -80,6 +80,37 @@ def test_reward_data_module_explicit_val_file(tmp_path):
     assert data_module.val_dataset.data[0]["prompt"] == "Q2"
 
 
+def test_reward_dataset_truncation_keeps_response_tail(tmp_path):
+    """Truncation drops the PROMPT PREFIX, preserving the response END — the
+    position the reward model actually scores (RIL ISS-332).
+
+    The old ``[:max_seq_len]`` kept the prompt and chopped the response tail,
+    so the scored last non-pad token was an arbitrary mid-response token.
+    """
+    import json
+    from string import printable
+
+    from llm.data.datasets.reward import RewardDataset
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([printable])
+    fp = tmp_path / "long.jsonl"
+    fp.write_text(
+        json.dumps({"prompt": "P:", "chosen": "R" * 80, "rejected": "Bad"}) + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=6)
+    item = dataset[0]
+
+    prompt_ids = tok.encode("P:")
+    chosen_ids = tok.encode("R" * 80)
+    combined = prompt_ids + chosen_ids
+    assert item["chosen_input_ids"].tolist() == combined[-6:]
+    # The response end survived — the whole window is real tokens, mask all 1s.
+    assert item["chosen_attention_mask"].tolist() == [1] * 6
+
+
 def test_reward_dataset_rejects_nonpositive_max_seq_len(tmp_path):
     """RIL ISS-199: a non-positive ``max_seq_len`` fails fast instead of
     silently producing misaligned attention_mask/input_ids."""

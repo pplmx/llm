@@ -74,9 +74,12 @@ class RewardDataset(Dataset):
         full_text = prompt + response
         input_ids = self.tokenizer.encode(full_text)
 
-        # Truncate
+        # Truncate — from the FRONT so the response end stays in the window.
+        # The reward model scores the last non-pad token, so
+        # ``[:max_seq_len]`` made it score an arbitrary mid-response token
+        # whenever prompt+response overflowed (RIL ISS-332).
         if len(input_ids) > self.max_seq_len:
-            input_ids = input_ids[: self.max_seq_len]
+            input_ids = input_ids[-self.max_seq_len :]
 
         # Create attention mask before padding
         seq_len = len(input_ids)
