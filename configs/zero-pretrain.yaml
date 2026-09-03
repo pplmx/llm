@@ -1,0 +1,11 @@
+# ZeRO Stage-1 example — mirrors docs/guides/distributed.md
+# "ZeRO Stage-1 quick start".
+# Usage: uv run llm-train --task stream_lm --config-path configs/zero-pretrain.yaml
+#
+# Native ZeRO Stage-1 (RIL DEC-097): full param/grad copies per rank (averaged
+# over the world group each step) with round-robin optimized-state sharding.
+# Not layered on DDP — it is its own parallel_strategy.
+
+distributed:
+  parallel_strategy: zero
+  backend: nccl        # gloo also works (e.g. for CPU/gloo e2e tests)

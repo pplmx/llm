@@ -1,15 +1,21 @@
 # `llm.cli` — CLI Tools
 
-Command-line utilities for checkpoint migration and model quantization.
+Command-line utilities registered under `pyproject.toml` `[project.scripts]`
+(`llm-train` lives in `llm.training.train`; the `llm-serve` entry point
+lives in `llm.serving.api`). Each module below is a thin Typer app.
 
-## Migration CLI
+## Checkpoint migration
 
 ::: llm.cli.migrate_ckpt
 
-## Quantization CLI
+## Quantization
 
 ::: llm.cli.quantize
 
-## CLI Utilities
+## Pruning
 
-::: llm.cli
+::: llm.cli.prune
+
+## Low-rank decomposition
+
+::: llm.cli.decompose

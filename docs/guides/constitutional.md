@@ -21,7 +21,10 @@ Constitutional AI（Bai et al. 2022）用一种 **constitution（原则集）** 
 
 ```python
 from llm.training.rlhf.constitutional import (
-    Constitution, ForbiddenToken, EndsWithToken, constitutional_loop,
+    Constitution,
+    ForbiddenToken,
+    EndsWithToken,
+    constitutional_loop,
 )
 
 constitution = Constitution([ForbiddenToken({7}), EndsWithToken(1)])

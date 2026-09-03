@@ -1,0 +1,12 @@
+# DDP (data-parallel) example — mirrors docs/guides/distributed.md quick start.
+# Usage: uv run llm-train --task stream_lm --config-path configs/ddp.yaml
+#
+# `gpus_per_node` defaults to torch.cuda.device_count() when omitted; the
+# explicit 2 here is an example — set it to match your GPU count (or omit to
+# use every visible GPU). Multi-node runs leave it unset and pass
+# GPUS_PER_NODE via environment instead.
+
+distributed:
+  gpus_per_node: 2        # defaults to torch.cuda.device_count()
+  parallel_strategy: ddp  # default; shown for clarity
+  backend: nccl

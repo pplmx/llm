@@ -27,7 +27,7 @@ from llm.quantization.lowrank import LowRankConfig, decompose_model, compute_com
 
 stats = decompose_model(model, LowRankConfig(rank=8))
 print(stats["compression_ratio"])  # 报告压缩比
-print(stats["relative_error"])     # 报告平均 F 范数重建误差
+print(stats["relative_error"])  # 报告平均 F 范数重建误差
 ```
 
 ## 测试

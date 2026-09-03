@@ -34,14 +34,14 @@ from llm.training.core.engine import TrainingEngine
 module = MultimodalDataModule(config, modality="linear", input_dim=16)  # use_rope=True
 task = MultimodalTask(config, module)
 engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
-loss = engine._run_epoch(0)   # 批次含 input_ids / labels / modal_embeds
+loss = engine._run_epoch(0)  # 批次含 input_ids / labels / modal_embeds
 ```
 
 ```python
 from llm.multimodal import MODALITY_ENCODER_REGISTRY, MultimodalDataModule
 
 enc = MODALITY_ENCODER_REGISTRY.get("linear")(input_dim=16, embed_dim=24)
-embeds = enc(feature)                      # [N, 24]
+embeds = enc(feature)  # [N, 24]
 
 module = MultimodalDataModule(config, modality="linear", input_dim=16)
 module.setup()
@@ -68,13 +68,14 @@ batch, _ = module.train_dataloader(rank=0, world_size=1)
 from llm.multimodal import MultimodalDataModule, MultimodalTask
 from llm.training.core.engine import TrainingEngine
 
-module = MultimodalDataModule(config, modality="vit", image_h=64, image_w=64,
-                              patch_size=16, vit_layers=2, vit_heads=4, with_cls=True)
+module = MultimodalDataModule(
+    config, modality="vit", image_h=64, image_w=64, patch_size=16, vit_layers=2, vit_heads=4, with_cls=True
+)
 module.setup()
-assert module.num_modal_tokens == 17      # 16 patches (+ CLS)
+assert module.num_modal_tokens == 17  # 16 patches (+ CLS)
 task = MultimodalTask(config, module)
 engine = TrainingEngine(config=config, task=task, rank=0, world_size=1, data_module=module)
-loss = engine._run_epoch(0)               # batch["modal_embeds"]: [B, 17, embed_dim]
+loss = engine._run_epoch(0)  # batch["modal_embeds"]: [B, 17, embed_dim]
 ```
 
 ## 已落地：图像-文本对齐模块 slice 3（ROADMAP 12.1）

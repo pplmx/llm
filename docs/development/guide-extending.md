@@ -98,8 +98,10 @@ from llm.training.core.callbacks import (
     TensorBoardLogger,
 )
 
+
 class WelcomeMessage(Callback):  # 上一步定义的子类
     ...
+
 
 def train_worker(rank, world_size, config, task_name):
     # ...
@@ -107,7 +109,7 @@ def train_worker(rank, world_size, config, task_name):
         MetricsLogger(),
         TensorBoardLogger(log_dir=config.logging.log_dir),
         LRSchedulerCallback(),
-        WelcomeMessage(),          # <-- 新回调
+        WelcomeMessage(),  # <-- 新回调
     ]
     engine = TrainingEngine(
         config,

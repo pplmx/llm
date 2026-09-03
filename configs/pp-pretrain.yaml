@@ -1,0 +1,13 @@
+# Pipeline Parallelism example — mirrors docs/guides/distributed.md (RIL DEC-049).
+# Usage: uv run llm-train --task stream_lm --config-path configs/pp-pretrain.yaml
+#
+# pp_size=0 (default) = pure PP using the whole world; a pp_size < world_size
+# enables PP + data-parallel 2D (see DistributedConfig.pp_size). PP only
+# supports the standard LM loop: non-standard-loop tasks, AMP, torch.compile
+# and TP+FSDP composition are refused with a clear error.
+#
+# World grid: one stage per rank, transformers_blocks split across stages.
+
+distributed:
+  parallel_strategy: pp
+  backend: nccl

@@ -1,0 +1,18 @@
+# C4-pretrain demo — mirrors docs/guides/data.md (load config, then apply the
+# C4_PRESET on top; the preset overwrites the four HF dataset fields).
+#
+# Usage:
+#   from llm.data.presets import C4_PRESET, apply_to_config
+#   from llm.training.core.config import Config
+#   cfg = Config.from_yaml("configs/c4-pretrain.yaml")
+#   apply_to_config(cfg.data, C4_PRESET)
+
+data:
+  data_source: hf            # overwritten by the preset below
+  dataset_name: ""           # filled in by the preset
+  max_seq_len: 2048
+  tokenizer_type: hf
+  tokenizer_path: gpt2
+
+training:
+  batch_size: 16

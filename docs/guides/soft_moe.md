@@ -25,10 +25,10 @@ slot-logits 投影，可作后续）。
 from llm.core.moe.soft_moe import dispatch_weights, soft_moe_output
 
 E, S, T, d = 4, 2, 8, 8
-slot_logits = torch.randn(E * S, T)          # 每 (expert, slot) 一行、每 token 一列
+slot_logits = torch.randn(E * S, T)  # 每 (expert, slot) 一行、每 token 一列
 x = torch.randn(T, d)
 
-D = dispatch_weights(slot_logits, E, S)      # [E, S, T]，每 slot 沿 token softmax
+D = dispatch_weights(slot_logits, E, S)  # [E, S, T]，每 slot 沿 token softmax
 y = soft_moe_output(x, lambda s: s, slot_logits, E, S)  # [T, d]
 ```
 

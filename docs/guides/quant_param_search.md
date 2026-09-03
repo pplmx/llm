@@ -14,8 +14,8 @@
 from llm.quantization.param_search import search_quant_params, reconstruction_errors
 
 w = torch.randn(8, 64).abs() * torch.tensor([0.1, 1.0, 5.0, 0.5, 2.0, 10.0, 0.3, 1.0])[:, None]
-best, best_mse, all_errs = search_quant_params(w)          # e.g. (8, 'per_channel')
-errs = reconstruction_errors(w)                            # 全部候选的归一化 MSE
+best, best_mse, all_errs = search_quant_params(w)  # e.g. (8, 'per_channel')
+errs = reconstruction_errors(w)  # 全部候选的归一化 MSE
 ```
 
 `param_candidates()` 给出 `(bits, granularity)` 候选空间（默认 4/8 × per_tensor/

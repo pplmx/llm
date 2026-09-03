@@ -34,7 +34,7 @@ global / random 块）。代码在 `llm/core/attn/block_sparse.py`。
 from llm.core.attn.block_sparse import build_block_sparse_mask, mask_to_additive
 
 mask = build_block_sparse_mask(seq_len=64, block_size=8, window_blocks=2, global_blocks=1, random_blocks=1)
-additive = mask_to_additive(mask)   # attn_bias: 0 / -inf
+additive = mask_to_additive(mask)  # attn_bias: 0 / -inf
 ```
 
 ## 测试

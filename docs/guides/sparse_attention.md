@@ -21,8 +21,12 @@
 from llm.core.attn.sparse import build_sparse_attention_mask, mask_to_additive
 
 mask = build_sparse_attention_mask(
-    "bigbird", seq_len=64, block_size=8,
-    num_global_blocks=2, window_blocks=1, num_random_blocks=3,
+    "bigbird",
+    seq_len=64,
+    block_size=8,
+    num_global_blocks=2,
+    window_blocks=1,
+    num_random_blocks=3,
     causal=True,
 )
 additive = mask_to_additive(mask)  # 0 / -inf，喂给任意 attn backend
@@ -44,7 +48,11 @@ additive = mask_to_additive(mask)  # 0 / -inf，喂给任意 attn backend
 from llm.training.core.config import ModelConfig
 
 cfg = ModelConfig(
-    vocab_size=32000, hidden_size=4096, num_layers=32, num_heads=32, max_seq_len=4096,
+    vocab_size=32000,
+    hidden_size=4096,
+    num_layers=32,
+    num_heads=32,
+    max_seq_len=4096,
     attn_sparse={"kind": "streaming", "num_sink": 4, "window_size": 512},
 )
 ```

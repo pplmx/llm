@@ -1,0 +1,11 @@
+# Tensor Parallelism example — mirrors docs/guides/distributed.md.
+# Usage: uv run llm-train --task stream_lm --config-path configs/tp-pretrain.yaml
+#
+# tp_size=0 (default) = pure TP using the whole world; a tp_size < world_size
+# enables TP + data-parallel 2D (see DistributedConfig.tp_size). Every
+# partitioned axis (num_heads / num_kv_heads / vocab / intermediate width)
+# must divide evenly by tp_size.
+
+distributed:
+  parallel_strategy: tp
+  backend: nccl

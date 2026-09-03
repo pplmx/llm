@@ -14,8 +14,8 @@ Expert Choice Routing*, 2022）反过来——**每个专家**从整批里选它
 ```python
 from llm.core.moe.expert_choice import expert_choice_assignment, expert_choice_output
 
-gate = torch.randn(8, 4)            # [num_tokens, num_experts]
-tokens, scores = expert_choice_assignment(gate, k=3)   # [E,k] 每专家选 top-k 个 token
+gate = torch.randn(8, 4)  # [num_tokens, num_experts]
+tokens, scores = expert_choice_assignment(gate, k=3)  # [E,k] 每专家选 top-k 个 token
 
 out = expert_choice_output(x, gate, lambda sel: sel * 2.0, k=3)  # [T, d]
 ```

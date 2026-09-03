@@ -1,0 +1,13 @@
+# FSDP (Fully-Sharded Data Parallel) example — mirrors
+# docs/guides/distributed.md "FSDP quick start".
+# Usage: uv run llm-train --task stream_lm --config-path configs/fsdp-pretrain.yaml
+#
+# Switches the whole run to FSDP via a single field; the knobs below are the
+# documented defaults (conservative and safe to leave alone).
+
+distributed:
+  parallel_strategy: fsdp
+  # Optional FSDP knobs (defaults shown):
+  fsdp_mixed_precision: bf16
+  fsdp_auto_wrap_min_params: 10000000
+  fsdp_cpu_offload: false

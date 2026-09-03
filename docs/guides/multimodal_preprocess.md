@@ -9,10 +9,10 @@
 ```python
 from llm.multimodal.preprocess import patchify, ImagePatchPreprocessor
 
-img = torch.randn(2, 3, 32, 32)              # [B, C, H, W]
-patches = patchify(img, patch_size=16)       # [B, N, C*p*p]  (N = (H/p)(W/p))
+img = torch.randn(2, 3, 32, 32)  # [B, C, H, W]
+patches = patchify(img, patch_size=16)  # [B, N, C*p*p]  (N = (H/p)(W/p))
 pp = ImagePatchPreprocessor(in_channels=3, patch_size=16, embed_dim=8, image_h=32, image_w=32)
-tokens = pp(img)                             # [B, N, embed] 图像 token 嵌入
+tokens = pp(img)  # [B, N, embed] 图像 token 嵌入
 ```
 
 `patchify` 用 `unfold` 把图像切成方 patch；`ImagePatchPreprocessor` 把每个 patch

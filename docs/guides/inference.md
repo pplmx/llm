@@ -80,14 +80,15 @@ caches = KVCache.from_model_config(
 )
 
 # Generation loop
-input_ids = tokenizer.encode("Hello, world!")
+input_ids = torch.tensor(tokenizer.encode("Hello, world!"), dtype=torch.long).unsqueeze(0)  # [1, S]
 
 for _ in range(max_new_tokens):
-    # Forward with cache (caches updated in-place)
-    logits = model(input_ids, kv_caches=caches, use_cache=True)
+    # Forward with cache — caches update in-place, and forward returns
+    # ``(logits, kv_caches)`` when ``use_cache=True``; unpack both.
+    logits, caches = model(input_ids, kv_caches=caches, use_cache=True)
 
-    # Get next token
-    next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+    # Get next token: [0, -1, :] = batch 0, last position
+    next_token = logits[0, -1, :].argmax(dim=-1).unsqueeze(0)  # [1, 1]
     input_ids = next_token  # Only pass new token for next step
 
 # Reset for new sequence
@@ -122,7 +123,7 @@ model = DecoderModel(
     num_heads=8,
     max_seq_len=512,
 )
-tokenizer = SimpleCharacterTokenizer(["a", "b", "c"])
+tokenizer = SimpleCharacterTokenizer(["H", "e", "l", "o", "W", "r", "d"])  # cover "Hello" / "World"
 
 # Create engine (model and tokenizer required upfront)
 engine = ContinuousBatchingEngine(
@@ -287,18 +288,18 @@ Example (CPU dummy model, no API key):
 
 Fields:
 
-| Field                    | Notes                                                                        |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| `model_class`            | `type(model).__name__` — `DecoderModel` for built-in, custom for third-party |
-| `param_count_total`      | every parameter (trainable + frozen)                                         |
-| `param_count_trainable`  | `requires_grad=True` only — useful sanity check that PEFT froze the base     |
-| `dtype` / `device`       | from the first parameter; `"unknown"` if the model has none                  |
-| `max_seq_len`            | from `ServingConfig.max_seq_len`                                             |
-| `attn_impl` / `mlp_impl` | registry keys (`mha` / `mlp` for built-ins; custom values for plugins)       |
-| `generation_backend`     | `eager` / `batched` / `speculative` — which backend loop is in use           |
-| `enable_prefix_cache`    | bool                                                                         |
-| `use_paged_attention`    | bool                                                                         |
-| `api_key_set`            | bool ONLY — the key value itself is never logged                             |
+| Field                    | Notes                                                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model_class`            | `type(model).__name__` — `DecoderModel` for built-in, custom for third-party                                                                |
+| `param_count_total`      | every parameter (trainable + frozen)                                                                                                        |
+| `param_count_trainable`  | `requires_grad=True` only — useful sanity check that PEFT froze the base                                                                    |
+| `dtype` / `device`       | from the first parameter; `"unknown"` if the model has none                                                                                 |
+| `max_seq_len`            | from `ServingConfig.max_seq_len`                                                                                                            |
+| `attn_impl` / `mlp_impl` | registry keys (`mha` / `mlp` for built-ins; custom values for plugins)                                                                      |
+| `generation_backend`     | `eager` / `batched` — which backend loop is in use（`speculative` 是 Python API 专用后端，需要 target + draft 双模型，不能经 serving 配置） |
+| `enable_prefix_cache`    | bool                                                                                                                                        |
+| `use_paged_attention`    | bool                                                                                                                                        |
+| `api_key_set`            | bool ONLY — the key value itself is never logged                                                                                            |
 
 Operators normally grep for this line:
 
@@ -339,10 +340,11 @@ LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
 uv run llm-serve
 ```
 
-When `api_key` is set, all `/generate`, `/chat/completions`,
-`/v1/chat/completions` requests require a matching `Authorization:
-Bearer <key>` header or `X-API-Key: <key>` header. Requests without a
-valid key receive `403 Unauthorized`.
+When `api_key` is set, all `/generate`, `/batch_generate`,
+`/v1/chat/completions`, and `/metrics` requests require a matching
+`Authorization: Bearer <key>` header or `X-API-Key: <key>` header.
+Requests without a valid key receive `403 Unauthorized`. `/health` is
+the only route that stays public.
 
 # Re-extract from a saved log file
 
@@ -610,9 +612,13 @@ Speculative decoding is **distribution-preserving**: sampling from
 `SpeculativeDecodingBackend` with the same `temperature` / `top_k` /
 `top_p` as the eager backend produces text from the same
 distribution as the target model alone. Greedy
-(`temperature=0.0`) makes the draft's argmax match the target's
-argmax on every accepted position, so all `gamma` tokens are
-accepted and one bonus is appended per round.
+(`temperature=0.0`) turns the acceptance test into plain argmax
+equality — a draft token is accepted iff its argmax equals the
+target's argmax at that position, and the correction on a mismatch is
+the target's own argmax. A well-aligned draft therefore wins `gamma`
+tokens plus one bonus per round; a misaligned draft is still cut at
+the first mismatch (see "acceptance rate collapses" in the table
+above) — greedy never *forces* the two argmaxes to agree.
 
 ### Limitations
 

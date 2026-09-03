@@ -21,8 +21,8 @@ L_aux = aux_weight · E · Σ_i f_i · P_i
 ```python
 from llm.core.moe.load_balance import load_balancing_loss, routing_fractions, mean_dispatch_probability
 
-gate = torch.randn(64, 4)               # [T, E] gate logits
-fracs = routing_fractions(gate, 4)      # f: 每专家 token 占比
+gate = torch.randn(64, 4)  # [T, E] gate logits
+fracs = routing_fractions(gate, 4)  # f: 每专家 token 占比
 probs = mean_dispatch_probability(gate, 4)  # P: 每专家平均派发概率
 loss = load_balancing_loss(gate, 4, aux_weight=0.01)  # 标量，可加进总损失
 ```

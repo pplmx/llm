@@ -29,8 +29,7 @@ ROADMAP 阶段十五 15.2 的最后一项：这个 pattern 正是此前 block-sp
 from llm.core.attn.big_bird import build_bigbird_mask
 from llm.core.attn.block_sparse import mask_to_additive
 
-mask = build_bigbird_mask(seq_len=64, block_size=8, num_global_blocks=2,
-                          window_blocks=1, num_random_blocks=3)
+mask = build_bigbird_mask(seq_len=64, block_size=8, num_global_blocks=2, window_blocks=1, num_random_blocks=3)
 additive = mask_to_additive(mask)  # attn_bias: 0 / -inf
 ```
 

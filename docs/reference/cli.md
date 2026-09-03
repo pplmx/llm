@@ -8,14 +8,14 @@ tags:
 
 所有注册命令行工具的完整参数列表（`pyproject.toml` `[project.scripts]` 注册）：
 
-| 命令              | 用途                                             |
-| ----------------- | ------------------------------------------------ |
-| `llm-train`       | 训练（预训练 / SFT / DPO / reward / PPO / demo） |
-| `llm-serve`       | OpenAI 兼容推理服务                              |
-| `llm-quantize`    | GPTQ 量化                                        |
-| `llm-migrate-ckpt`| 旧版 checkpoint 迁移到 v2 split 布局             |
-| `llm-prune`       | 权重剪枝（稀疏化模型 Linear 权重）               |
-| `llm-decompose`   | 低秩分解（SVD U-V 因子化 Linear 权重）           |
+| 命令               | 用途                                             |
+| ------------------ | ------------------------------------------------ |
+| `llm-train`        | 训练（预训练 / SFT / DPO / reward / PPO / demo） |
+| `llm-serve`        | OpenAI 兼容推理服务                              |
+| `llm-quantize`     | GPTQ / FP8 量化                                  |
+| `llm-migrate-ckpt` | 旧版 checkpoint 迁移到 v2 split 布局             |
+| `llm-prune`        | 权重剪枝（稀疏化模型 Linear 权重）               |
+| `llm-decompose`    | 低秩分解（SVD U-V 因子化 Linear 权重）           |
 
 > `scripts/` 下的 demo 脚本（如 `train_simple_decoder.py`）不是注册 CLI，仅作最小演示；生产请走 `llm-train`。
 
@@ -91,23 +91,24 @@ uv run llm-train --task sft --config-path configs/sft_alpaca.yaml \
 ### 用法
 
 ```bash
-llm-serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量
+llm-serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（监听端口固定 8000）
 ```
 
 ### 环境变量配置
 
 #### 模型与推理
 
-| 变量                                  | 默认值 | 说明                                                                                                                       |
-| ------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `LLM_SERVING_MODEL_PATH`              | None   | 训练 checkpoint：v2 三件套的 stem（或 `.safetensors` 路径），也接受旧式单文件 `.pt`；None = dummy 模型                     |
-| `LLM_SERVING_TOKENIZER_PATH`          | None   | tokenizer pickle 或 HF repo id                                                                                             |
-| `LLM_SERVING_TOKENIZER_TYPE`          | simple | `simple` / `hf`                                                                                                            |
-| `LLM_SERVING_DEVICE`                  | auto   | 推理设备                                                                                                                   |
-| `LLM_SERVING_GENERATION_BACKEND`      | eager  | `eager` / `batched`（speculative 需要 target + draft 双模型，走 Python API，见 [Inference Guide](../guides/inference.md)） |
-| `LLM_SERVING_COMPILE_MODEL`           | false  | 启动时 torch.compile                                                                                                       |
-| `LLM_SERVING_MAX_CONCURRENT_REQUESTS` | 4      | 并发请求上限（semaphore）                                                                                                  |
-| `LLM_SERVING_REQUEST_TIMEOUT`         | 60.0   | 单请求超时（秒）                                                                                                           |
+| 变量                                  | 默认值   | 说明                                                                                                                       |
+| ------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_SERVING_MODEL_PATH`              | None     | 训练 checkpoint：v2 三件套的 stem（或 `.safetensors` 路径），也接受旧式单文件 `.pt`；None = dummy 模型                     |
+| `LLM_SERVING_TOKENIZER_PATH`          | None     | tokenizer pickle 或 HF repo id                                                                                             |
+| `LLM_SERVING_TOKENIZER_TYPE`          | simple   | `simple` / `hf`                                                                                                            |
+| `LLM_SERVING_DEVICE`                  | auto     | 推理设备                                                                                                                   |
+| `LLM_SERVING_GENERATION_BACKEND`      | eager    | `eager` / `batched`（speculative 需要 target + draft 双模型，走 Python API，见 [Inference Guide](../guides/inference.md)） |
+| `LLM_SERVING_COMPILE_MODEL`           | false    | 启动时 torch.compile                                                                                                       |
+| `LLM_SERVING_MAX_CONCURRENT_REQUESTS` | 4        | 并发请求上限（semaphore）                                                                                                  |
+| `LLM_SERVING_MAX_REQUEST_BYTES`       | 16777216 | 请求体大小上限（字节）；超限在模型执行前直接返回 `413`（RIL ISS-171）                                                      |
+| `LLM_SERVING_REQUEST_TIMEOUT`         | 60.0     | 单请求超时（秒）                                                                                                           |
 
 #### 安全与可观测
 
@@ -146,17 +147,17 @@ llm-serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量
 
 #### dummy 模型架构（`model_path` 为空时使用；加载 checkpoint 后以 checkpoint 的 `model_config` 为准）
 
-| 变量                       | 默认值 | 说明                       |
-| -------------------------- | ------ | -------------------------- |
-| `LLM_SERVING_HIDDEN_SIZE`  | 64     | 隐藏层维度                 |
-| `LLM_SERVING_NUM_LAYERS`   | 2      | Transformer 层数           |
-| `LLM_SERVING_NUM_HEADS`    | 4      | 注意力头数                 |
-| `LLM_SERVING_MAX_SEQ_LEN`  | 128    | 最大序列长度               |
-| `LLM_SERVING_NUM_KV_HEADS` | None   | GQA KV 头数                |
-| `LLM_SERVING_NUM_EXPERTS`  | 0      | MoE 专家数（0 = 关闭）     |
-| `LLM_SERVING_TOP_K`        | 0      | MoE top-k                  |
-| `LLM_SERVING_ATTN_IMPL`    | mha    | 注意力实现（mha/mla）      |
-| `LLM_SERVING_MLP_IMPL`     | mlp    | MLP 实现（mlp/moe/swiglu） |
+| 变量                       | 默认值 | 说明                                                                               |
+| -------------------------- | ------ | ---------------------------------------------------------------------------------- |
+| `LLM_SERVING_HIDDEN_SIZE`  | 64     | 隐藏层维度                                                                         |
+| `LLM_SERVING_NUM_LAYERS`   | 2      | Transformer 层数                                                                   |
+| `LLM_SERVING_NUM_HEADS`    | 4      | 注意力头数                                                                         |
+| `LLM_SERVING_MAX_SEQ_LEN`  | 128    | 最大序列长度                                                                       |
+| `LLM_SERVING_NUM_KV_HEADS` | None   | GQA KV 头数                                                                        |
+| `LLM_SERVING_NUM_EXPERTS`  | 0      | MoE 专家数（0 = 关闭）                                                             |
+| `LLM_SERVING_TOP_K`        | 0      | MoE top-k                                                                          |
+| `LLM_SERVING_ATTN_IMPL`    | mha    | 注意力实现（mha/mla/flash_attn；`flash_attn` 需安装 flash-attn，且本后端支持滑窗） |
+| `LLM_SERVING_MLP_IMPL`     | mlp    | MLP 实现（mlp/moe/swiglu）                                                         |
 
 ### 示例
 
@@ -186,7 +187,8 @@ uv run llm-serve
 
 ## llm-quantize
 
-模型量化 CLI，目前支持 `gptq` 子命令（Frantar 2022 Hessian-aware 4/8-bit PTQ）。
+模型量化 CLI，支持 `gptq`（Frantar 2022 Hessian-aware 4/8-bit PTQ）与 `fp8`
+（E4M3/E5M2 float8 权重 + 激活缩放，模拟 fp8 matmul）两个子命令。
 方法选型、Python API 与质量验证见[模型量化指南](../guides/quantization.md)。
 
 ### 用法
@@ -260,6 +262,71 @@ llm-quantize gptq \
 所有量化算法参数（Hessian 阻尼、列块大小、act-order 等）直接映射到 `GPTQConfig`
 的字段 — Python 端的 `GPTQConfig.__post_init__` 校验仍会执行，作为 defense-in-depth
 兜底。CLI 端提前校验只为给用户一个清晰的一行错误信息，而不是堆栈帧。
+
+### llm-quantize fp8
+
+FP8 子命令：真实 float8 权重（1 字节/权重），fp32 模拟 fp8 matmul。
+
+```bash
+llm-quantize fp8 \
+    --model PATH                 # torch.save blob（含 DecoderModel）\
+    --output PATH                # 量化模型输出路径 \
+    --weight-dtype e4m3|e5m2     # E4M3FN（默认）/ E5M2（更大指数范围）\
+    --per-channel/--per-tensor   # 默认 per-channel（按输出行缩放）\
+    --activation static|dynamic  # static 需校准；dynamic 逐 forward 计算，无需校准 \
+    [--calib-data PATH]          # 原始文本（每行一个样本）— static 专用，需配 --tokenizer \
+    [--calib-data-tokens PATH]   # 预分词 .pt 文件 — static 专用，与 --calib-data 互斥 \
+    [--tokenizer PATH]           # HF tokenizer 目录；static 且用 --calib-data 时需要 \
+    [--target-modules m1,m2,...] # 默认所有 nn.Linear
+```
+
+校验规则（非法即退出码 1）：
+
+- `--weight-dtype` 必须为 `e4m3` 或 `e5m2`
+- `--activation` 必须为 `static` 或 `dynamic`
+- static 激活必须提供 `--calib-data` / `--calib-data-tokens` 二选一（`--calib-data`
+  需搭配 `--tokenizer`）；dynamic 激活下出现任何校准参数会被**拒绝**而不是静默忽略
+
+`llm-quantize fp8` 是 `llm.quantization.fp8.quantize_model_fp8` 的薄包装，FP8
+策略（per-layer 权重/激活 dtype）见[混合精度量化指南](../guides/quantization.md)。
+
+---
+
+## llm-prune
+
+把预训练模型的 Linear 权重按比例置零并保存新 blob（结构化稀疏 / 剪枝示意项）。
+机制与策略细节见[模型剪枝指南](../guides/pruning.md)。
+
+```bash
+llm-prune \
+    --model PATH           # torch.save blob（含 DecoderModel）\
+    --output PATH          # 剪枝后模型输出路径 \
+    --ratio F              # 每个 Linear 置零比例（0 < F < 1，默认 0.5）\
+    --method magnitude|random  # 默认 magnitude（保留 |W| 大的项）\
+    [--target-modules s1,s2,...]  # 按名字子串剪枝；默认所有 Linear \
+    [--seed N]             # random 方法可复现种子
+```
+
+校验规则（非法即退出码 1）：`--ratio` 必须在 (0,1)；`--method` 必须为
+`magnitude` / `random`；`--model` 必须存在。
+
+---
+
+## llm-decompose
+
+把预训练模型的 Linear 权重做低秩因子分解（SVD U·V）并保存新 blob。
+机制与 rank 选择见[低秩分解指南](../guides/lowrank.md)。
+
+```bash
+llm-decompose \
+    --model PATH           # torch.save blob（含 DecoderModel）\
+    --output PATH          # 低秩模型输出路径 \
+    --rank N | --rank-ratio F  # 必须二选一；N 为显式 rank，F 自动 rank = F * min(out, in) \
+    [--target-modules s1,s2,...]  # 默认所有 Linear
+```
+
+校验规则（非法即退出码 1）：`--rank` 与 `--rank-ratio` 必须恰好提供其一；
+`--rank` 必须 > 0；`--rank-ratio` 必须在 (0,1]；`--model` 必须存在。
 
 ---
 

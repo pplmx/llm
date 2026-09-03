@@ -1,0 +1,14 @@
+# MoE demo — mirrors docs/development/guide-extending.md "食谱 4".
+# Usage: uv run llm-train --task stream_lm --config-path configs/moe-demo.yaml
+#
+# Enable MoE in the model with mlp_impl: moe + num_experts + top_k;
+# TransformerBlock instantiates the MoE layer instead of the standard MLP.
+
+model:
+  hidden_size: 512
+  num_layers: 2
+  num_heads: 8
+  max_seq_len: 512
+  mlp_impl: moe      # Enable MoE
+  num_experts: 8      # 专家总数
+  top_k: 2            # 每个 token 激活的专家数量

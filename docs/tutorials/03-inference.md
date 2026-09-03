@@ -303,7 +303,9 @@ LangChain / LlamaIndex / vLLM 客户端同样适用（任何走 OpenAI HTTP 协�
 
 ### 5.1 Prometheus 抓取
 
-`/metrics` 是标准 Prometheus 暴露端点。在 `prometheus.yml` 加：
+`/metrics` 是标准 Prometheus 暴露端点，**但和推理路由一样受 `llm-serve` 的
+API key 保护**（设置了 `LLM_SERVING_API_KEY` 时，未携带 key 的抓取会得到
+`403 Unauthorized`）。在 `prometheus.yml` 里给抓取任务配上 key 头：
 
 ```yaml
 scrape_configs:
@@ -311,6 +313,11 @@ scrape_configs:
     scrape_interval: 15s
     static_configs:
       - targets: ['llm-serve:8000']
+    # /metrics is guarded by the same API key as the inference routes
+    # (Authorization: Bearer <key> or X-API-Key: <key> both work).
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/llm-serve.key
 ```
 
 ### 5.2 常用 PromQL 查询

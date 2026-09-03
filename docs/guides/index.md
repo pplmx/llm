@@ -20,10 +20,16 @@
 
     - [PEFT 微调](finetuning.md) — LoRA / QLoRA / AdaLoRA / IA³ / BitFit / Adapter / Prefix Tuning
     - [模型量化](quantization.md) — GPTQ / AWQ / SmoothQuant / 混合精度
+    - [量化参数搜索](quant_param_search.md) — 枚举 (bits, granularity) 最小化重建 MSE
     - [知识蒸馏](distillation.md) — `--task distill`、teacher-from-checkpoint、温度缩放 KL
     - [模型剪枝](pruning.md) — `llm-prune`、`PrunedLinear` weight_mask、magnitude/random 策略
     - [低秩分解](lowrank.md) — `llm-decompose`、`LowRankLinear` SVD U-V、rank 旋钮
     - [多模态扩展](multimodal.md) — `ModalityEncoderRegistry` + `MultimodalDataModule` 契约 spike
+    - [图像→Token 预处理器](multimodal_preprocess.md) — ViT 风格 patchify、图像编码链路
+    - [混合专家 (MoE)](expert_choice.md) — Expert Choice Routing（专家选 token、结构性负载均衡）
+    - [Aux 负载均衡损失](load_balance.md) — Switch / ST-MoE 辅助均衡、防 gate 塌缩与 dead 专家
+    - [Soft MoE](soft_moe.md) — slot 软分配、可微路由替代硬 top-k
+    - [动态专家选择](dynamic_selection.md) — 按路由置信度逐 token 调节专家数
     - [GRPO](grpo.md) — 组相对策略优化（`--task grpo`、group advantage + 裁剪 policy loss）
     - [Rejection Sampling](rejection_sampling.md) — best-of-N / top-K 过滤高奖励响应再 SFT
     - [RLAIF](rlaif.md) — AI/规则 judge 标定偏好 → `--task dpo`
@@ -34,6 +40,7 @@
     - [StreamingLLM](streaming_llm.md) — attention-sink 流式掩码 + CPU parity
     - [Longformer](longformer.md) — dilated 滑窗注意力掩码 + CPU parity
     - [BigBird](big_bird.md) — global+window+random 掩码 + CPU parity
+    - [Infinite Attention](infinite.md) — Infini-Attention 压缩记忆（非负特征映射 + 状态累积）
     - [统一稀疏注意力 API](sparse_attention.md) — `build_sparse_attention_mask(kind)` 派发
 
 - ⚡ **推理与部署**

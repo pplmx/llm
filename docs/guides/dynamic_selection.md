@@ -22,7 +22,7 @@ k_t  = min_experts  当 top-1(p) >= high_conf_threshold   # 自信->少
 ```python
 from llm.core.moe.dynamic_selection import dynamic_expert_count, dynamic_expert_output
 
-gate = torch.randn(8, 4)               # [T, E] gate logits
+gate = torch.randn(8, 4)  # [T, E] gate logits
 kt = dynamic_expert_count(gate, min_experts=1, max_experts=3, high_conf_threshold=0.7)  # [T]
 out = dynamic_expert_output(x, gate, lambda s: s * 2.0, min_experts=1, max_experts=3, high_conf_threshold=0.7)
 ```
