@@ -46,6 +46,12 @@ def test_setup_inits_group_with_global_rank_and_device_with_local_rank():
         patch("llm.training.core.distributed.torch.cuda.manual_seed_all"),
         patch("llm.training.core.distributed.torch.cuda.is_available", return_value=True),
         patch("llm.training.core.distributed.torch.cuda.device_count", return_value=8),
+        # ``select_cuda_index`` reads free VRAM to prefer the fattest GPU
+        # (round-138 device select). Simulate "all devices equally free" so
+        # the mapping collapses to the historical ``rank % device_count``
+        # identity — otherwise the expectation depends on this host's live
+        # GPU utilisation (RIL TASK-293/ISS-322).
+        patch("llm.training.core.device_select._free_bytes", return_value=10 * 1024**3),
         patch("llm.training.core.distributed.torch.manual_seed"),
     ):
         config = DistributedConfig(num_nodes=2, gpus_per_node=4, node_rank=1)
@@ -70,6 +76,10 @@ def test_setup_defaults_local_rank_to_global_rank():
         patch("llm.training.core.distributed.torch.cuda.manual_seed_all"),
         patch("llm.training.core.distributed.torch.cuda.is_available", return_value=True),
         patch("llm.training.core.distributed.torch.cuda.device_count", return_value=8),
+        # See the sibling test: pin free-VRAM readings so device selection is
+        # deterministic (equal free -> historical rank mapping), independent
+        # of this host's live GPU utilisation.
+        patch("llm.training.core.device_select._free_bytes", return_value=10 * 1024**3),
         patch("llm.training.core.distributed.torch.manual_seed"),
     ):
         config = DistributedConfig(num_nodes=1, gpus_per_node=8, node_rank=0)
