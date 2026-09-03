@@ -124,7 +124,7 @@ Internally `LlamaLmEvalLM` batches requests the way lm_eval expects:
 - for `generate_until`, decodes greedily and stops at any of the
   `until` token sequences.
 
-The wrapper is intentionally small (~250 lines) so the contract is
+The wrapper is intentionally compact (~440 lines) so the contract is
 obvious — `HFLM` would pull in HF-only kwargs (`prefix_token`,
 `backend`) that don't apply here.
 
@@ -271,8 +271,9 @@ lm = LlamaLmEvalLM(model, tokenizer, batch_size=2, device="cpu")
 
 ## Related
 
-- [Inference optimization guide](inference.md) — for the
-  `KVCache`-backed generation pipeline used by `LlamaLmEvalLM`.
+- [Inference optimization guide](inference.md) — the KVCache / paged /
+  batched pipelines there serve the serving tier; `LlamaLmEvalLM` in this
+  offline harness decodes greedily token-by-token (`use_cache=False`).
 - [Training flow guide](../development/training-flow.md) — for
   in-training perplexity tracking and metrics callbacks (different
   from this offline benchmark harness).

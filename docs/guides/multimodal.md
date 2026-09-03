@@ -45,7 +45,8 @@ embeds = enc(feature)  # [N, 24]
 
 module = MultimodalDataModule(config, modality="linear", input_dim=16)
 module.setup()
-batch, _ = module.train_dataloader(rank=0, world_size=1)
+loader, _ = module.train_dataloader(rank=0, world_size=1)
+batch = next(iter(loader))  # one training batch
 # batch["input_ids"], batch["labels"], batch["modal_embeds"]
 ```
 

@@ -36,8 +36,8 @@ LoRA adds trainable low-rank matrices to frozen linear layers, reducing trainabl
 from llm.models import DecoderModel
 from llm.core.lora import apply_lora, get_lora_parameters, merge_lora
 
-# 1. Create/load model
-model = DecoderModel(vocab_size=32000, hidden_size=768, num_layers=12)
+# 1. Create/load model (num_heads is required on DecoderModel)
+model = DecoderModel(vocab_size=32000, hidden_size=768, num_layers=12, num_heads=8)
 
 # 2. Apply LoRA
 apply_lora(
@@ -129,30 +129,35 @@ from llm.core.adalora import apply_adalora
 
 apply_adalora(
     model,
-    rank=16,  # Initial rank (will be pruned adaptively)
+    init_rank=16,  # Initial rank (will be pruned adaptively)
     alpha=32.0,  # Scaling factor
     target_modules=["qkv_proj", "out_proj"],
-    init_warmup=100,  # Steps before pruning begins
-    final_warmup=500,  # Steps to reach final budget
-    delta_t=10,  # Frequency of importance evaluation
-    reg_value=0.1,  # Orthogonal regularization coefficient
+    orth_reg_weight=0.1,  # Orthogonal regularization coefficient
 )
 
-# Use with the AdaLoRA pruning callback during training
-from llm.core.adalora import AdaLoRACallback
+# Use with the AdaLoRA pruning callback during training. The pruning schedule
+# (warm-up, target rank, prune cadence) is configured on the callback, not on
+# apply_adalora.
+from llm.training.core.callbacks import AdaLoRAPruningCallback
 
-callback = AdaLoRACallback(model)
+callback = AdaLoRAPruningCallback(
+    use_adalora=True,
+    adalora_init_rank=16,
+    adalora_target_rank=6,
+    adalora_prune_every=50,
+)
 # Pass callback to your training loop; it prunes ranks adaptively
 ```
 
 ### Configuration Tips
 
-| Parameter     | Recommendation                                     |
-| ------------- | -------------------------------------------------- |
-| `rank`        | Start higher than target (e.g., 16-32)             |
-| `init_warmup` | 1-5% of total steps for burn-in                    |
-| `alpha`       | 2x initial rank                                    |
-| `reg_value`   | 0.05-0.2; higher = stronger orthogonal constraint  |
+| Parameter            | Recommendation                                     |
+| -------------------- | -------------------------------------------------- |
+| `init_rank`          | Start higher than target (e.g., 16-32)             |
+| `adalora_tfinal`     | 1-5% of total steps for burn-in (None = end)       |
+| `alpha`              | 2x initial rank                                    |
+| `orth_reg_weight`    | 0.05-0.2; higher = stronger orthogonal constraint  |
+| `adalora_target_rank`| Final rank budget after pruning                    |
 
 ---
 
@@ -244,7 +249,6 @@ apply_adapter(
     model,
     bottleneck_dim=128,  # Bottleneck size (< hidden_dim)
     target_modules=["qkv_proj", "out_proj", "mlp"],
-    dropout=0.1,
 )
 ```
 
@@ -254,7 +258,6 @@ apply_adapter(
 | --------------- | --------------------------------------------------- |
 | `bottleneck_dim`| 64-256; trade-off between params and capacity       |
 | `target_modules`| Attention + MLP layers for full Houlsby formulation |
-| `dropout`       | 0.05-0.2 for regularization                         |
 
 ---
 
@@ -271,12 +274,11 @@ The Pfeiffer adapter is a lightweight variant of the Houlsby adapter that target
 ### Basic Usage
 
 ```python
-from llm.core.pfeiffer import apply_pfeiffer_adapter
+from llm.core.pfeiffer_adapter import apply_pfeiffer_adapter
 
 apply_pfeiffer_adapter(
     model,
     bottleneck_dim=64,  # Smaller bottleneck than Houlsby
-    dropout=0.1,
 )
 ```
 
@@ -285,7 +287,6 @@ apply_pfeiffer_adapter(
 | Parameter        | Recommendation                                       |
 | ---------------- | ---------------------------------------------------- |
 | `bottleneck_dim` | 32-128; smaller than Houlsby due to lighter need     |
-| `dropout`        | 0.05-0.15                                            |
 | Use case         | When ~half the parameters of full Adapter is desired |
 
 ---
@@ -304,13 +305,13 @@ Prefix Tuning learns a set of virtual prefix tokens that are prepended to the ke
 ### Basic Usage
 
 ```python
-from llm.core.prefix import apply_prefix_tuning
+from llm.core.prefix_tuning import apply_prefix_tuning
 
 apply_prefix_tuning(
     model,
-    prefix_length=20,  # Number of virtual prefix tokens
+    prefix_len=20,  # Number of virtual prefix tokens
     target_modules=["qkv_proj"],  # Typically only attention projections
-    reparam=32,  # Reparameterization hidden size (MLP bottleneck)
+    reparam_hidden=32,  # Reparameterization (MLP bottleneck) hidden size
 )
 ```
 
@@ -318,9 +319,9 @@ apply_prefix_tuning(
 
 | Parameter        | Recommendation                                           |
 | ---------------- | -------------------------------------------------------- |
-| `prefix_length`  | 10-30 for most tasks; 50+ for complex instruction tuning |
+| `prefix_len`     | 10-30 for most tasks; 50+ for complex instruction tuning |
 | `target_modules` | Typically `qkv_proj` or equivalent attention modules     |
-| `reparam`        | 16-64; larger = more capacity, more params               |
+| `reparam_hidden` | 16-64; larger = more capacity, more params               |
 
 ---
 
@@ -344,32 +345,31 @@ training:
 ### Method-Specific Examples
 
 ```yaml
-# AdaLoRA
+# AdaLoRA — prune schedule (warm-up / target rank / cadence) is configured
+# on AdaLoRAPruningCallback, not here; peft_kwargs are forwarded verbatim
+# to apply_adalora.
 training:
   peft_method: adalora
   peft_kwargs:
-    rank: 16
+    init_rank: 16
     alpha: 32.0
     target_modules: ["qkv_proj", "out_proj"]
-    init_warmup: 100
-    final_warmup: 500
-    delta_t: 10
-    reg_value: 0.1
+    orth_reg_weight: 0.1
   peft_save_path: checkpoints/adalora_adapter.bin
 
 # IA3
 training:
   peft_method: ia3
   peft_kwargs:
-    ia3_init_scale: 1.0
-    ia3_target_modules: ["qkv_proj", "out_proj", "mlp"]
+    init_scale: 1.0
+    target_modules: ["qkv_proj", "out_proj", "mlp"]
   peft_save_path: checkpoints/ia3_adapter.bin
 
 # BitFit
 training:
   peft_method: bitfit
   peft_kwargs:
-    bitfit_target_modules: ["qkv_proj", "out_proj", "mlp"]
+    target_modules: ["qkv_proj", "out_proj", "mlp"]
   peft_save_path: checkpoints/bitfit_adapter.bin
 
 # Houlsby Adapter
@@ -377,8 +377,7 @@ training:
   peft_method: adapter
   peft_kwargs:
     bottleneck_dim: 128
-    dropout: 0.1
-    adapter_target_modules: ["qkv_proj", "out_proj", "mlp"]
+    target_modules: ["qkv_proj", "out_proj", "mlp"]
   peft_save_path: checkpoints/adapter.bin
 
 # Pfeiffer Adapter
@@ -386,15 +385,14 @@ training:
   peft_method: pfeiffer_adapter
   peft_kwargs:
     bottleneck_dim: 64
-    dropout: 0.1
   peft_save_path: checkpoints/pfeiffer_adapter.bin
 
 # Prefix Tuning
 training:
   peft_method: prefix_tuning
   peft_kwargs:
-    prefix_length: 20
-    prefix_target_modules: ["qkv_proj"]
+    prefix_len: 20
+    target_modules: ["qkv_proj"]
   peft_save_path: checkpoints/prefix_tuning.bin
 ```
 
@@ -405,12 +403,14 @@ All methods are also accessible programmatically through the registry:
 ```python
 from llm.core.peft import PEFT_REGISTRY, apply_peft
 
-# Option 1: Use the apply_peft convenience function
-apply_peft(model, "adalora", rank=16, alpha=32.0)
+# Option 1: Use the apply_peft convenience function.
+# kwargs are forwarded VERBATIM to the method's apply_* — use the real
+# parameter names (e.g. apply_adalora's init_rank, not "rank").
+apply_peft(model, "adalora", init_rank=16, alpha=32.0)
 
 # Option 2: Look up a method and call apply directly
-method_cls = PEFT_REGISTRY["adalora"]
-method_cls.apply(model, rank=16, alpha=32.0)
+method = PEFT_REGISTRY.get("adalora")
+method.apply(model, init_rank=16, alpha=32.0)
 ```
 
 The `PEFT_REGISTRY` maps method names to their corresponding `PEFTMethod` dataclass instances, each exposing a consistent `apply()` interface. Methods are registered from the built-in implementations and can be extended via third-party plugins through the `llm.peft_methods` setuptools entry-point group.
@@ -471,15 +471,15 @@ The callback produces a sidecar file containing only the adapter weights, typica
 ### Manual Save and Load
 
 ```python
-from llm.peft import save_peft, load_peft
+from llm.core.peft import save_peft, load_peft
 
-# Save adapter weights
-save_peft(model, "checkpoints/my_adapter.bin")
+# Save adapter weights — method_name is required (recorded in the envelope)
+save_peft(model, "checkpoints/my_adapter.bin", "lora", rank=8, alpha=16.0)
 
-# Load adapter weights
+# Load adapter weights — method_name must match the checkpoint's recorded one
 # If the model doesn't already have the PEFT method applied,
 # load_peft auto-applies it using the saved peft_kwargs
-load_peft(model, "checkpoints/my_adapter.bin")
+load_peft(model, "checkpoints/my_adapter.bin", "lora")
 ```
 
 ### Checkpoint Format
@@ -503,12 +503,13 @@ The `format_version` field enables forward and backward compatibility across fra
 
 ### Cross-Method Compatibility
 
-Adapter checkpoints are specific to the method they were saved with. Loading an IA3 checkpoint onto a LoRA-wrapped model will raise an error. Verify method match:
+Adapter checkpoints are specific to the method they were saved with. Loading an IA3 checkpoint onto a LoRA-wrapped model raises a clear mismatch error, and the saved envelope records which method produced it:
 
 ```python
-from llm.peft import get_peft_method
+import torch
 
-method = get_peft_method(model)  # Returns "lora", "adalora", etc.
+payload = torch.load("checkpoints/my_adapter.bin", map_location="cpu", weights_only=True)
+print(payload["method_name"])  # e.g. "lora" — must match the load_peft arg
 ```
 
 ### File Size Comparison
@@ -579,7 +580,7 @@ apply_lora(model, rank=16, alpha=32)
 apply_lora(model, rank=8, alpha=16, dropout=0.1)
 
 # Adaptive rank (AdaLoRA) - start higher, let pruning decide
-apply_adalora(model, rank=16, alpha=32, init_warmup=100, final_warmup=500)
+apply_adalora(model, init_rank=16, alpha=32, orth_reg_weight=0.1)
 
 # Lightweight multi-task (IA3)
 apply_ia3(model, init_scale=1.0)
@@ -588,28 +589,28 @@ apply_ia3(model, init_scale=1.0)
 apply_bitfit(model)
 
 # Bottleneck adapter (Houlsby)
-apply_adapter(model, bottleneck_dim=128, dropout=0.1)
+apply_adapter(model, bottleneck_dim=128)
 
 # FFN-only adapter (Pfeiffer)
-apply_pfeiffer_adapter(model, bottleneck_dim=64, dropout=0.1)
+apply_pfeiffer_adapter(model, bottleneck_dim=64)
 
 # Prefix tuning for instruction conditioning
-apply_prefix_tuning(model, prefix_length=20, reparam=32)
+apply_prefix_tuning(model, prefix_len=20, reparam_hidden=32)
 ```
 
 ### 4. Saving and Loading
 
 ```python
-# Save only adapter weights (small file)
+# Save only adapter weights (small file) — method_name is required
 from llm.core.peft import save_peft
 
-save_peft(model, "peft_adapter.bin")
+save_peft(model, "peft_adapter.bin", "lora", rank=8, alpha=16)
 
 # Load: if the model doesn't have the PEFT method yet,
 # load_peft auto-applies it using the saved peft_kwargs
 from llm.core.peft import load_peft
 
-load_peft(model, "peft_adapter.bin")
+load_peft(model, "peft_adapter.bin", "lora")
 ```
 
 ---

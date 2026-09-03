@@ -121,14 +121,13 @@ ckpt = load_checkpoint_payload("checkpoints/latest")
 model.load_state_dict(ckpt["model_state"])
 model.eval()
 
-# 生成文本
+# 生成文本（generation 走 llm.generation 的 generate 入口，DecoderModel 本身没有 .generate）
+from llm.generation import generate
+
 tokenizer = SimpleCharacterTokenizer(corpus=["hello world"])
+output = generate(model, tokenizer, "hello", max_new_tokens=20)
 
-input_ids = tokenizer.encode("hello").unsqueeze(0)
-with torch.no_grad():
-    output = model.generate(input_ids, max_new_tokens=20)
-
-print(tokenizer.decode(output[0]))
+print(output)
 ```
 
 ---

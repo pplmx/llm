@@ -56,7 +56,7 @@ For small datasets that fit in memory, use the standard `lm` task with
 | `dataset_config`    | str  | `None`     | HF dataset config/subset                                     |
 | `dataset_split`     | str  | `"train"`  | HF dataset split                                             |
 | `text_column`       | str  | `"text"`   | Text field name in dataset rows                              |
-| `max_seq_len`       | int  | 2048       | Maximum sequence length                                      |
+| `max_seq_len`       | int  | 512        | Maximum sequence length                                      |
 | `steps_per_epoch`   | int  | —          | Number of optimizer steps per epoch (required for streaming) |
 | `seen_hashes_path`  | str  | `None`     | Path for dedup hash persistence                              |
 | `write_seen_hashes` | bool | `false`    | Append new hashes to `seen_hashes_path`                      |
@@ -80,17 +80,17 @@ The framework ships with presets for common pretraining datasets. These
 are defined in `src/llm/data/presets.py` and can be applied programmatically:
 
 ```python
-from llm.data.presets import C4_PRESET, THEPILE_PRESET, REDPAJAMA_PRESETS
+from llm.data.presets import C4_PRESET, THEPILE_PRESET, REDPAJAMA_PRESETS, apply_to_config
 from llm.training.core.config import DataConfig
 
 # Apply C4 preset
-cfg = DataConfig(data_source="hf", max_seq_len=2048)
+cfg = DataConfig(data_source="hf", max_seq_len=512)
 apply_to_config(cfg, C4_PRESET)
 # cfg.dataset_name == "allenai/c4"
 # cfg.dataset_config == "en"
 
 # Apply RedPajama subset
-cfg = DataConfig(data_source="hf", max_seq_len=2048)
+cfg = DataConfig(data_source="hf", max_seq_len=512)
 apply_to_config(cfg, REDPAJAMA_PRESETS["redpajama/arxiv"])
 # cfg.dataset_name == "togethercomputer/RedPajama-Data-1T"
 # cfg.dataset_config == "arxiv"
