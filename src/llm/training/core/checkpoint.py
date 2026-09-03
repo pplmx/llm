@@ -584,7 +584,15 @@ def convert_legacy_checkpoint_to_split(
     # path runs on user-supplied files, and a framework legacy dict is a plain
     # tensors+primitives payload — arbitrary-pickle loading here would be an
     # RCE on `llm-migrate-ckpt attacker.pt`.
-    payload = torch.load(legacy_path, map_location="cpu", weights_only=True)
+    try:
+        payload = torch.load(legacy_path, map_location="cpu", weights_only=True)
+    except (pickle.UnpicklingError, EOFError, RuntimeError, OSError) as exc:
+        # A corrupt file (garbage bytes, truncated zip archive) or a bare
+        # ``torch.save(model)`` blob raises UnpicklingError/RuntimeError here —
+        # BEFORE the dict validation below. Map it to CheckpointMigrationError so
+        # the CLI surfaces the documented clean one-line exit-1 error instead of
+        # a raw traceback (RIL ISS-329).
+        raise CheckpointMigrationError(f"{legacy_path} could not be loaded as a torch checkpoint: {exc}") from exc
 
     # Validate the payload is a v0.0.5 training dict BEFORE indexing it. A
     # `.pt` file that loads but is not a training checkpoint — e.g. a bare

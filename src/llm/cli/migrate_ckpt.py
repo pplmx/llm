@@ -31,6 +31,7 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import pickle
 import sys
 from pathlib import Path
 
@@ -82,8 +83,16 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
     # Legacy side: load the .pt directly (bypassing the helper).
     # ``weights_only=True`` (RIL ISS-170): both sides are framework-authored
     # tensors+primitives payloads; arbitrary-pickle loading an untrusted file
-    # here would be an RCE on `llm-migrate-ckpt`.
-    legacy_payload = torch.load(legacy, map_location="cpu", weights_only=True)
+    # here would be an RCE on `llm-migrate-ckpt`. A corrupt blob / bare
+    # ``torch.save(model)`` raises UnpicklingError/RuntimeError before any
+    # comparison — surface it as a clean verification failure, not a raw
+    # traceback (RIL ISS-329).
+    try:
+        legacy_payload = torch.load(legacy, map_location="cpu", weights_only=True)
+    except (pickle.UnpicklingError, EOFError, RuntimeError, OSError) as exc:
+        return False, f"legacy checkpoint could not be loaded: {exc}"
+    if not isinstance(legacy_payload, dict) or "model_state" not in legacy_payload:
+        return False, "legacy checkpoint has no 'model_state'; nothing to verify"
 
     # New side: read each sidecar explicitly.
     from safetensors.torch import load_file
@@ -92,11 +101,21 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
         new_model_state = load_file(str(sidecars["weights"]))
     except (OSError, ValueError, RuntimeError) as exc:
         return False, f"new safetensors sidecar failed to load: {exc}"
-    new_meta = json.loads(sidecars["meta"].read_text())
-    new_extra = torch.load(sidecars["extra_state"], map_location="cpu", weights_only=True)
+    try:
+        new_meta_text = sidecars["meta"].read_text()
+    except OSError as exc:
+        return False, f"new meta.json could not be read: {exc}"
+    try:
+        new_meta = json.loads(new_meta_text)
+    except json.JSONDecodeError as exc:
+        return False, f"new meta.json could not be parsed: {exc}"
+    try:
+        new_extra = torch.load(sidecars["extra_state"], map_location="cpu", weights_only=True)
+    except (pickle.UnpicklingError, EOFError, RuntimeError, OSError) as exc:
+        return False, f"extra_state sidecar could not be loaded: {exc}"
 
     # model_state: compare tensors element-wise.
-    legacy_model_state = legacy_payload.get("model_state", {})
+    legacy_model_state = legacy_payload["model_state"]
     for key, legacy_tensor in legacy_model_state.items():
         if key not in new_model_state:
             return False, f"model_state key missing in new layout: {key!r}"

@@ -173,6 +173,24 @@ class TestConvertLegacyCheckpointToSplit:
             assert target.exists()
             assert not tmp.exists(), f"stale .tmp file remains: {tmp}"
 
+    def test_corrupt_legacy_raises_migration_error(self, tmp_path: Path):
+        """A ``.pt`` that cannot be unpickled (garbage bytes / truncated zip
+        archive) must map to ``CheckpointMigrationError``, not leak a raw
+        ``pickle.UnpicklingError``/``RuntimeError`` out of the helper."""
+        corrupt = tmp_path / "corrupt.pt"
+        corrupt.write_bytes(b"\x80\x04\x95not-a-real-pickle!!!")
+        with pytest.raises(CheckpointMigrationError, match="could not be loaded"):
+            convert_legacy_checkpoint_to_split(corrupt)
+
+    def test_bare_model_blob_raises_migration_error(self, tmp_path: Path):
+        """A ``torch.save(model)`` module blob is rejected by ``weights_only``
+        (arbitrary class in the pickle) and must surface as
+        ``CheckpointMigrationError`` rather than a raw ``UnpicklingError``."""
+        model_blob = tmp_path / "module.pt"
+        torch.save(torch.nn.Linear(4, 4), model_blob)
+        with pytest.raises(CheckpointMigrationError, match="could not be loaded"):
+            convert_legacy_checkpoint_to_split(model_blob)
+
 
 # ---------------------------------------------------------------------------
 # CLI surface (Typer CliRunner)
@@ -325,3 +343,59 @@ class TestMigrateCkptCli:
 
         with pytest.raises(CheckpointMigrationError, match="training checkpoint"):
             convert_legacy_checkpoint_to_split(bad_blob)
+
+    def test_corrupt_legacy_exits_1_cleanly(self, cli_runner: CliRunner, tmp_path: Path):
+        """A ``.pt`` that ``torch.load(weights_only=True)`` cannot read (garbage
+        bytes / truncated archive) must exit 1 with a one-line message — not a
+        raw ``pickle.UnpicklingError``/``RuntimeError`` traceback."""
+        corrupt = tmp_path / "corrupt.pt"
+        corrupt.write_bytes(b"\x80\x04\x95not-a-real-pickle!!!")
+
+        result = cli_runner.invoke(app, [str(corrupt)])
+        assert result.exit_code == 1, f"expected exit 1, got {result.exit_code}: {result.stdout!r}"
+        assert isinstance(result.exception, SystemExit), f"raw exception escaped the CLI: {result.exception!r}"
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "could not be loaded" in combined
+
+    def test_verify_corrupt_legacy_exits_2_cleanly(self, cli_runner: CliRunner, legacy_checkpoint: Path):
+        """``--verify`` against an existing trio whose legacy blob is now
+        corrupt must exit 2 with a clean message (re-run of the post-conversion
+        check) instead of a raw traceback."""
+        convert_legacy_checkpoint_to_split(legacy_checkpoint)
+        legacy_checkpoint.write_bytes(b"\x80\x04\x95not-a-real-pickle!!!")
+
+        result = cli_runner.invoke(app, [str(legacy_checkpoint), "--verify"])
+        assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}: {result.stdout!r}"
+        assert isinstance(result.exception, SystemExit), f"raw exception escaped the CLI: {result.exception!r}"
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "verification failed" in combined
+        assert "could not be loaded" in combined
+
+    def test_verify_corrupt_meta_exits_2_cleanly(self, cli_runner: CliRunner, legacy_checkpoint: Path):
+        """A truncated/unparseable ``.meta.json`` sidecar must exit 2 with a
+        clean message, not raise ``json.JSONDecodeError``."""
+        convert_legacy_checkpoint_to_split(legacy_checkpoint)
+        stem = legacy_checkpoint.with_suffix("")
+        meta_path = Path(str(stem) + META_SUFFIX)
+        meta_path.write_text("{ not valid json !!!")
+
+        result = cli_runner.invoke(app, [str(legacy_checkpoint), "--verify"])
+        assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}: {result.stdout!r}"
+        assert isinstance(result.exception, SystemExit), f"raw exception escaped the CLI: {result.exception!r}"
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "verification failed" in combined
+
+    def test_verify_missing_model_state_exits_2(self, cli_runner: CliRunner, legacy_checkpoint: Path):
+        """Regression (RIL ISS-329): ``--verify`` used ``.get("model_state", {})``
+        so a legacy blob with NO model_state made the comparison loop a no-op
+        and verification passed vacuously. It must fail loudly (exit 2)."""
+        convert_legacy_checkpoint_to_split(legacy_checkpoint)
+        # Replace the legacy blob with one that is a valid checkpoint dict but
+        # is missing model_state entirely.
+        torch.save({"epoch": 7, "loss": 0.42, "model_config": {}}, legacy_checkpoint)
+
+        result = cli_runner.invoke(app, [str(legacy_checkpoint), "--verify"])
+        assert result.exit_code == 2, f"vacuous pass? got {result.exit_code}: {result.stdout!r}"
+        assert isinstance(result.exception, SystemExit), f"raw exception escaped the CLI: {result.exception!r}"
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "model_state" in combined.lower()
