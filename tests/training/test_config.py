@@ -144,6 +144,13 @@ class TestConfig:
         # Check other default values are preserved
         assert loaded_config.distributed.master_addr == config.distributed.master_addr
 
+    def test_config_from_yaml_missing_path_raises(self, tmp_path):
+        """An explicitly-passed --config-path that doesn't exist is a user
+        error, not a silent fall-back to defaults (RIL TASK-291/ISS-320)."""
+        missing = tmp_path / "no-such-config.yaml"
+        with pytest.raises(FileNotFoundError, match="config file not found"):
+            Config.from_yaml(missing)
+
     def test_model_config_registry_params(self):
         # Test default values
         config = ModelConfig()

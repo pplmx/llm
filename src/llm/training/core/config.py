@@ -898,10 +898,28 @@ class Config(BaseSettings):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> Config:
-        """Load configuration from YAML file"""
+        """Load configuration from YAML file.
+
+        Unlike :meth:`llm.serving.config.ServingConfig.from_yaml` (which
+        deliberately returns defaults for a missing file — the serving
+        entry point treats an absent config as "all defaults"), the
+        training CLI passes an explicit ``--config-path``, so a path that
+        does not exist is always a user error: previously the method
+        silently returned a default :class:`Config`, which silently
+        disabled whatever the user asked for (e.g. running the distributed
+        guide's ``--config-path configs/fsdp-pretrain.yaml`` actually fell
+        back to plain DDP). Fail fast instead (RIL TASK-291/ISS-320).
+
+        Raises:
+            FileNotFoundError: if the config file does not exist.
+        """
         path = Path(path)
         if not path.exists():
-            return cls()
+            raise FileNotFoundError(
+                f"config file not found: {path!s}. Check the --config-path value "
+                "(`uv run llm-train --help`) — a missing path cannot silently "
+                "fall back to defaults."
+            )
         with path.open(encoding="utf-8") as f:
             config_dict = yaml.safe_load(f) or {}
         return cls.model_validate(config_dict)
