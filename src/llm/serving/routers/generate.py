@@ -479,5 +479,12 @@ async def batch_generate_text(
     for text in stripped:
         metrics.observe_tokens(endpoint="batch_generate", token_count=_token_count(text))
     return BatchGenerationResponse(
-        results=[GenerationResponse(generated_text=text, token_count=len(text)) for text in stripped]
+        results=[
+            # True tokenizer count, matching the metric above and the sibling
+            # /generate route (RIL ISS-344): len(text) is a char-count proxy
+            # that over-counts for HF/BPE tokenizers, breaking client
+            # token-usage accounting.
+            GenerationResponse(generated_text=text, token_count=_token_count(text))
+            for text in stripped
+        ]
     )

@@ -220,3 +220,33 @@ def test_eager_backend_batch_generate_forwards_stop(tiny_model, device, stub_tok
         config=config,
     )
     assert len(outputs) == 2
+
+
+# ---------------------------------------------------------------------------
+# /batch_generate — response token_count is tokenizer tokens, not characters
+# ---------------------------------------------------------------------------
+
+
+def test_batch_generate_response_token_count_is_tokens_not_chars(client_with_mock):
+    """Regression (RIL ISS-344): the /batch_generate response's ``token_count``
+    must report the tokenizer's token count, not ``len(text)`` — the pre-fix
+    code used a char-count proxy that over-counts for HF/BPE tokenizers and
+    disagreed with the same route's metric and the sibling /generate route
+    (the ISS-225 fix removed that proxy from /generate but missed this field).
+    """
+    client, mock = client_with_mock
+
+    class _ThreeTokenTokenizer:  # one token per 3-token list regardless of length
+        def encode(self, text):
+            return [0, 1, 2]
+
+    mock.tokenizer = _ThreeTokenTokenizer()
+    # Outputs deliberately NOT prefixed by the prompts so the route's echo-strip
+    # leaves the full text (otherwise token_count would be computed on a slice).
+    mock.batch_generate.return_value = ["hello", "world-wide-wild"]
+
+    response = client.post("/batch_generate", json={"prompts": ["x", "y"]}, headers={"X-API-Key": "test-key"})
+    assert response.status_code == 200
+    rows = response.json()["results"]
+    # 3 tokens each, NOT len("hello") == 5 / len("world-wide-wild") == 17.
+    assert [row["token_count"] for row in rows] == [3, 3]
