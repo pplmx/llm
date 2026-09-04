@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 166,
+  "round": 167,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-04T05:46:45+00:00",
+  "updated_at": "2026-09-04T09:02:38+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 164,
+      "touched_round": 166,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 164,
+      "touched_round": 166,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -17363,6 +17363,74 @@
       "title": "TASK-303 dead-code triage: delete llm.exceptions (misleading unwired taxonomy; domain exceptions exist per-area) + RolloutBatch.old_values (never read, plain-MSE critic); keep constitutional.py as documented standalone slice (revision-as-RL-data deferred)",
       "rationale": "library-internal code never raises/catches llm.exceptions subclasses; RolloutBatch.old_values filled-then-never-read across src; constitutional.py is a deliberate CPU-measurable rule core with a dedicated guide (docs/guides/constitutional.md) and roadmap-deferred trainer wiring",
       "alternatives_rejected": "keep llm.exceptions as documented public API (misleading: userland except would never match); wire llm.exceptions into internal raises (broad refactor, low value); implement a clipped value objective to justify old_values (not implemented, MSE is standard here)"
+    },
+    "ISS-339": {
+      "id": "ISS-339",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T06:17:52+00:00",
+      "updated_at": "2026-09-04T08:33:05+00:00",
+      "touched_round": 166,
+      "severity": 0.5,
+      "title": "SFTTask re-implements LanguageModelingTask.train_step/validation_step with divergence: (1) threads batch attention_mask into model(input_ids, attn_mask=...) — flash_attn backend ignores it (decoder.py:108) and PP _pp_extract_inputs silently drops it (engine.py:577 only checks input_ids/labels keys), so serial-SDPA SFT != serial-flash SFT != PP SFT; (2) lacks parent numel()==0 guard — length-<=1 row -> NaN -> silent 0.0 loss return instead of parent's ValueError; (3) build_criterion is a copy"
+    },
+    "TASK-304": {
+      "id": "TASK-304",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T06:18:16+00:00",
+      "updated_at": "2026-09-04T08:33:05+00:00",
+      "touched_round": 166,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Collapse SFTTask onto LanguageModelingTask: delete its train_step/validation_step/build_criterion overrides (parent already handles dict batches) so SFT behaves identically under SDPA/flash/PP and inherits the empty-seq guard; add SFT-vs-LM parity test + empty-seq guard test"
+    },
+    "CHG-317": {
+      "id": "CHG-317",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T08:33:05+00:00",
+      "updated_at": "2026-09-04T08:33:05+00:00",
+      "touched_round": 166,
+      "commit": "2dcccff",
+      "title": "Collapse SFTTask onto LanguageModelingTask (drop backend/strategy-divergent attn_mask threading, inherit empty-seq guard) + alias-contract tests"
+    },
+    "ISS-340": {
+      "id": "ISS-340",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T08:34:26+00:00",
+      "updated_at": "2026-09-04T09:01:59+00:00",
+      "touched_round": 166,
+      "severity": 0.5,
+      "title": "TP+DP 2D e2e (tests/e2e/test_tp_dp_2d_engine.py) post-training hang flake: flash_attn/moe workers finish engine.run (logged 'Training completed') then a rank dies mid-collective and the survivors block ~forever because the test spawn workers init_process_group with NO timeout (library path uses collective_timeout_seconds); parent only kills at the blind 480s ENGINE_2D_JOIN_TIMEOUT_S. Fails under box flakiness on HEAD and with unrelated changes (control runs) — environmental, not a code regression, but wastes 8+ min per occurrence and masks real failures"
+    },
+    "TASK-305": {
+      "id": "TASK-305",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T08:34:26+00:00",
+      "updated_at": "2026-09-04T09:01:59+00:00",
+      "touched_round": 166,
+      "category": "stability",
+      "severity": 0.5,
+      "title": "Bound the 2D/pure-TP test workers' process groups with a per-collective timeout (mirror DistributedConfig.collective_timeout_seconds; 60s) so a dead sibling surfaces as a fast torch.distributed TimeoutError with the real rank error instead of a blind 480s parent-join timeout; parent reports alive/reported ranks on timeout"
+    },
+    "CHG-318": {
+      "id": "CHG-318",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T09:01:59+00:00",
+      "updated_at": "2026-09-04T09:01:59+00:00",
+      "touched_round": 166,
+      "commit": "2d709b6",
+      "title": "Bound 2D/pure-TP spawn process-groups (60s per-collective) + parent alive-ranks diagnosis on join timeout"
     }
   },
   "edges": [
@@ -25602,6 +25670,60 @@
       "to": "ISS-338",
       "type": "resolves",
       "created_at": "2026-09-04T05:46:36+00:00"
+    },
+    {
+      "from": "ISS-339",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-09-04T06:18:36+00:00"
+    },
+    {
+      "from": "TASK-304",
+      "to": "ISS-339",
+      "type": "addresses",
+      "created_at": "2026-09-04T06:18:36+00:00"
+    },
+    {
+      "from": "CHG-317",
+      "to": "TASK-304",
+      "type": "implements",
+      "created_at": "2026-09-04T08:33:05+00:00"
+    },
+    {
+      "from": "CHG-317",
+      "to": "ISS-339",
+      "type": "resolves",
+      "created_at": "2026-09-04T08:33:05+00:00"
+    },
+    {
+      "from": "ISS-340",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-09-04T08:34:48+00:00"
+    },
+    {
+      "from": "TASK-305",
+      "to": "ISS-340",
+      "type": "addresses",
+      "created_at": "2026-09-04T08:34:48+00:00"
+    },
+    {
+      "from": "ISS-340",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-09-04T08:34:48+00:00"
+    },
+    {
+      "from": "CHG-318",
+      "to": "TASK-305",
+      "type": "implements",
+      "created_at": "2026-09-04T09:01:59+00:00"
+    },
+    {
+      "from": "CHG-318",
+      "to": "ISS-340",
+      "type": "resolves",
+      "created_at": "2026-09-04T09:01:59+00:00"
     }
   ]
 }
