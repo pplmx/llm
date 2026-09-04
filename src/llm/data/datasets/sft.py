@@ -85,6 +85,21 @@ class SFTDataset(Dataset):
                         # context instead.
                         logger.warning("Skipping SFT row that is not a JSON object: %r", item)
                         continue
+                    # RIL ISS-345: a response that ALONE reaches max_seq_len
+                    # means front-truncation drops the ENTIRE prompt (zero -100
+                    # context tokens survive), so the row would train as an
+                    # unconditioned response continuation. Drop it with a
+                    # warning instead of silently corrupting the signal.
+                    # (One template+encode per row here is amortized against the
+                    # per-epoch re-encode in ``__getitem__``.)
+                    _prompt_text, _response_text = self.template_fn(item)
+                    if len(self.tokenizer.encode(_response_text)) >= self.max_seq_len:
+                        logger.warning(
+                            "Skipping SFT row whose response alone reaches max_seq_len=%d: "
+                            "no prompt context could survive truncation (RIL ISS-345).",
+                            self.max_seq_len,
+                        )
+                        continue
                     data.append(item)
         except FileNotFoundError:
             raise FileNotFoundError(f"SFT data file not found: {self.file_path}")

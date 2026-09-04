@@ -85,7 +85,10 @@ def test_reward_dataset_truncation_keeps_response_tail(tmp_path):
     position the reward model actually scores (RIL ISS-332).
 
     The old ``[:max_seq_len]`` kept the prompt and chopped the response tail,
-    so the scored last non-pad token was an arbitrary mid-response token.
+    so the scored last non-pad token was an arbitrary mid-response token. The
+    completion stays SHORTER than the window (so a prompt context token
+    survives); a completion that ALONE reaches max_seq_len is dropped
+    (RIL ISS-345) rather than scored with zero conditioning context.
     """
     import json
     from string import printable
@@ -96,19 +99,50 @@ def test_reward_dataset_truncation_keeps_response_tail(tmp_path):
     tok = SimpleCharacterTokenizer([printable])
     fp = tmp_path / "long.jsonl"
     fp.write_text(
-        json.dumps({"prompt": "P:", "chosen": "R" * 80, "rejected": "Bad"}) + "\n",
+        json.dumps({"prompt": "P:", "chosen": "R" * 4, "rejected": "Bad"}) + "\n",
         encoding="utf-8",
     )
 
-    dataset = RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=6)
+    dataset = RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=5)
     item = dataset[0]
 
     prompt_ids = tok.encode("P:")
-    chosen_ids = tok.encode("R" * 80)
+    chosen_ids = tok.encode("R" * 4)
     combined = prompt_ids + chosen_ids
-    assert item["chosen_input_ids"].tolist() == combined[-6:]
+    assert item["chosen_input_ids"].tolist() == combined[-5:]
     # The response end survived — the whole window is real tokens, mask all 1s.
-    assert item["chosen_attention_mask"].tolist() == [1] * 6
+    assert item["chosen_attention_mask"].tolist() == [1] * 5
+
+
+def test_reward_dataset_drops_pair_when_completion_over_window(tmp_path, caplog):
+    """Regression (RIL ISS-345): a pair whose completion ALONE reaches
+    max_seq_len is dropped as a unit — front-truncation would otherwise wipe
+    the prompt context and, when only one side overflows, chosen vs rejected
+    would be scored with different conditioning context."""
+    import json
+    from string import printable
+
+    from llm.data.datasets.reward import RewardDataset
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([printable])
+    fp = tmp_path / "overwindow.jsonl"
+    fp.write_text(
+        json.dumps({"prompt": "P:", "chosen": "R" * 60, "rejected": "S"})
+        + "\n"
+        + json.dumps({"prompt": "Q:", "chosen": "Good", "rejected": "B" * 60})
+        + "\n"
+        + json.dumps({"prompt": "Z:", "chosen": "Good", "rejected": "Bad"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with caplog.at_level("WARNING", logger="llm.data.datasets.reward"):
+        dataset = RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=20)
+
+    assert len(dataset) == 1, "over-window pairs must be dropped as a unit (ISS-345)"
+    assert dataset.data[0]["prompt"] == "Z:"
+    assert any("completion alone" in message for message in caplog.messages)
 
 
 def test_reward_dataset_rejects_nonpositive_max_seq_len(tmp_path):

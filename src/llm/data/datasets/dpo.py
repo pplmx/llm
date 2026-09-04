@@ -91,6 +91,25 @@ class DPODataset(Dataset):
                                 self.max_seq_len,
                             )
                             continue
+                        # RIL ISS-345: a completion that ALONE reaches
+                        # max_seq_len means front-truncation drops the ENTIRE
+                        # prompt (zero -100 context tokens survive) — the
+                        # response would be scored with no conditioning, and as
+                        # soon as only ONE side of the pair overflows, chosen
+                        # and rejected log-probs are computed with different
+                        # context (a corrupted, imbalanced preference signal).
+                        # Drop the WHOLE pair so the kept data stays symmetric.
+                        chosen_ids = self.tokenizer.encode(item["chosen"])
+                        rejected_ids = self.tokenizer.encode(item["rejected"])
+                        if len(chosen_ids) >= self.max_seq_len or len(rejected_ids) >= self.max_seq_len:
+                            logger.warning(
+                                "Skipping DPO item whose chosen/rejected completion alone "
+                                "reaches max_seq_len=%d: no prompt context could survive "
+                                "truncation, so the preference pair would be trained "
+                                "unconditioned/asymmetrically (RIL ISS-345).",
+                                self.max_seq_len,
+                            )
+                            continue
                         data.append(item)
         except FileNotFoundError:
             raise FileNotFoundError(f"DPO data file not found: {self.file_path}")

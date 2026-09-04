@@ -94,12 +94,12 @@ def test_dpo_dataset_json_decode_error(tmp_path, tokenizer):
 
 
 def test_dpo_dataset_truncation(tmp_path, tokenizer):
-    """Sequences exceeding max_seq_len are truncated."""
+    """Sequences exceeding max_seq_len are truncated (completion SHORTER than
+    the window so a prompt context survives; a completion that alone reaches
+    max_seq_len is dropped — see test_dpo_dataset_drops_pair_when_completion_over_window)."""
     file_path = tmp_path / "truncate.jsonl"
     with file_path.open("w") as f:
-        f.write(
-            '{"prompt": "P:", "chosen": "This is a very long chosen response that exceeds the max length", "rejected": "Short"}'
-        )
+        f.write('{"prompt": "P:", "chosen": "RRRR", "rejected": "S"}')
 
     # max_seq_len=5 forces truncation for the long chosen text
     dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=5)
@@ -119,24 +119,53 @@ def test_dpo_dataset_truncation_keeps_completion_tail(tmp_path, tokenizer):
 
     The old ``[:max_seq_len]`` cut the completion tail — where chosen/rejected
     usually diverge — so the preference signal was truncated away. The kept
-    tokens must be the END of prompt+completion with live labels.
+    tokens must be the END of prompt+completion with live labels. The
+    completion stays SHORTER than the window (so at least one prompt context
+    token survives); a completion that ALONE reaches max_seq_len is dropped
+    (RIL ISS-345) rather than kept with zero conditioning context.
     """
     file_path = tmp_path / "truncate.jsonl"
     with file_path.open("w") as f:
-        f.write(json.dumps({"prompt": "P:", "chosen": "R" * 60, "rejected": "Short"}) + "\n")
+        f.write(json.dumps({"prompt": "P:", "chosen": "R" * 4, "rejected": "S"}) + "\n")
 
     dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=5)
     item = dataset[0]
 
     prompt_ids = tokenizer.encode("P:")
-    chosen_ids = tokenizer.encode("R" * 60)
+    chosen_ids = tokenizer.encode("R" * 4)
     combined = prompt_ids + chosen_ids
     masked = [-100] * len(prompt_ids) + chosen_ids
 
     assert item["chosen_input_ids"].tolist() == combined[-5:]
     assert item["chosen_labels"].tolist() == masked[-5:]
-    # The preference signal survived — not a fully-masked row.
+    # The preference signal survived — not a fully-masked row (one prompt
+    # context token remains [-100], four live completion tokens).
     assert not torch.all(item["chosen_labels"] == -100)
+    assert -100 in item["chosen_labels"].tolist()
+
+
+def test_dpo_dataset_drops_pair_when_completion_over_window(tmp_path, tokenizer, caplog):
+    """Regression (RIL ISS-345): a pair whose completion ALONE reaches
+    max_seq_len is dropped as a unit, not silently kept.
+
+    Front-truncation on such a row removes the ENTIRE prompt (zero -100 context
+    tokens), and if only ONE side overflows, chosen vs rejected log-probs are
+    computed with different conditioning context — a corrupted, imbalanced
+    preference signal. The whole pair must be skipped at load with a warning.
+    """
+    file_path = tmp_path / "overwindow.jsonl"
+    with file_path.open("w") as f:
+        f.write(json.dumps({"prompt": "P:", "chosen": "R" * 60, "rejected": "S"}) + "\n")
+        f.write(json.dumps({"prompt": "Q:", "chosen": "Good", "rejected": "B" * 60}) + "\n")
+        f.write(json.dumps({"prompt": "Z:", "chosen": "Good", "rejected": "Bad"}) + "\n")
+
+    with caplog.at_level("WARNING", logger="llm.data.datasets.dpo"):
+        dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=20)
+
+    # Only the healthy pair survives; both over-window pairs are dropped even
+    # when a single side overflows (pair symmetry, RIL ISS-345).
+    assert len(dataset) == 1
+    assert any("completion alone" in message for message in caplog.messages)
 
 
 def test_dpo_dataset_padding_small_sequence(tmp_path, tokenizer):

@@ -83,9 +83,12 @@ def test_sft_dataset_truncation_keeps_response_tail(tmp_path):
     whole prompt and chopped the response end — the only supervised signal,
     since prompt tokens are label-masked. With a pair whose prompt alone
     exceeds the window, the KEPT tokens must be the response end with live
-    labels, not an all-masked row.
+    labels, not an all-masked row. The response stays SHORTER than the window
+    (so a prompt context token survives); a response that ALONE reaches
+    max_seq_len is dropped (RIL ISS-345) rather than kept with zero
+    conditioning context.
     """
-    data = [{"instruction": "A" * 100, "input": "", "output": "B" * 100}]
+    data = [{"instruction": "A" * 100, "input": "", "output": "B" * 2}]
     file_path = tmp_path / "trunc.jsonl"
     with file_path.open("w") as f:
         f.write(json.dumps(data[0]) + "\n")
@@ -111,8 +114,33 @@ def test_sft_dataset_truncation_keeps_response_tail(tmp_path):
     assert item["labels"].tolist() == expected_labels
     # The supervised payload survived — not an all-masked row.
     assert not torch.all(item["labels"] == -100)
+    assert -100 in item["labels"].tolist()
     # Nothing was padded (truncation fills the window), so the mask is all 1s.
     assert item["attention_mask"].tolist() == [1] * 10
+
+
+def test_sft_dataset_drops_response_over_window(tmp_path, caplog):
+    """Regression (RIL ISS-345): a response that ALONE reaches max_seq_len is
+    dropped, not silently kept as an unconditioned response-continuation.
+
+    Front-truncation on such a row removes the ENTIRE prompt (zero -100 context
+    tokens survive), so the model would be trained to continue a response with
+    no instruction conditioning. The row must be skipped at load with a warning
+    instead of corrupting the training signal.
+    """
+    from string import printable
+
+    data = [{"instruction": "A", "input": "", "output": "B" * 100}]
+    file_path = tmp_path / "overwindow.jsonl"
+    with file_path.open("w") as f:
+        f.write(json.dumps(data[0]) + "\n")
+
+    tokenizer = SimpleCharacterTokenizer([printable])
+    with caplog.at_level("WARNING", logger="llm.data.datasets.sft"):
+        dataset = SFTDataset(file_path, tokenizer, max_seq_len=10)
+
+    assert len(dataset) == 0, "response alone >= max_seq_len must be dropped (ISS-345)"
+    assert any("ISS-345" in message or "response alone reaches" in message for message in caplog.messages)
 
 
 def test_sft_dataset_rejects_nonpositive_max_seq_len(tmp_path):

@@ -75,6 +75,23 @@ class RewardDataset(Dataset):
                                     "Skipping Reward item with an empty chosen/rejected completion: nothing to score."
                                 )
                                 continue
+                            # RIL ISS-345: a completion that ALONE reaches
+                            # max_seq_len means front-truncation drops the
+                            # ENTIRE prompt — the reward model would then score
+                            # an un-conditioned mid-response token, and as soon
+                            # as only ONE side of the pair overflows the chosen
+                            # vs rejected scores come from different context.
+                            # Drop the WHOLE pair so kept data stays symmetric.
+                            chosen_ids = self.tokenizer.encode(item["chosen"])
+                            rejected_ids = self.tokenizer.encode(item["rejected"])
+                            if len(chosen_ids) >= self.max_seq_len or len(rejected_ids) >= self.max_seq_len:
+                                logger.warning(
+                                    "Skipping Reward item whose chosen/rejected completion alone reaches "
+                                    "max_seq_len=%d: no prompt context could survive truncation, so the "
+                                    "pair would be scored unconditioned/asymmetrically (RIL ISS-345).",
+                                    self.max_seq_len,
+                                )
+                                continue
                             data.append(item)
         except json.JSONDecodeError as e:
             # RIL ISS-201: SFT/DPO already wrap a malformed line in an
