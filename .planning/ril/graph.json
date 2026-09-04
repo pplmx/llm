@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 164,
+  "round": 166,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-04T03:42:47+00:00",
+  "updated_at": "2026-09-04T05:46:45+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -17218,44 +17218,44 @@
     "ISS-335": {
       "id": "ISS-335",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-04T01:35:16+00:00",
-      "updated_at": "2026-09-04T01:35:16+00:00",
-      "touched_round": 164,
+      "updated_at": "2026-09-04T05:31:42+00:00",
+      "touched_round": 165,
       "title": "CLI exit-code docs drift: typer exits 2 for missing-required-arg, but quantize/prune/decompose docstrings document 1=validation; --seed silently ignored for --method magnitude",
       "severity": 0.3
     },
     "ISS-336": {
       "id": "ISS-336",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-04T01:35:16+00:00",
-      "updated_at": "2026-09-04T01:35:16+00:00",
-      "touched_round": 164,
+      "updated_at": "2026-09-04T05:32:49+00:00",
+      "touched_round": 165,
       "title": "RLHF data: rejection_sample/synthetic build zero-length epochs when nothing kept; SFTDataset assumes every JSONL row is a dict (scalar rows crash with AttributeError); DPO/reward don't drop empty completions",
       "severity": 0.4
     },
     "ISS-337": {
       "id": "ISS-337",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-04T01:35:16+00:00",
-      "updated_at": "2026-09-04T01:35:16+00:00",
-      "touched_round": 164,
+      "updated_at": "2026-09-04T05:32:49+00:00",
+      "touched_round": 165,
       "title": "Synthetic RLHF modules write judge target tokens with no vocab bounds check (out-of-range target_token -> IndexError deep in forward); hardcoded padding_value=0 disagrees with tokenizer.pad_token_id",
       "severity": 0.3
     },
     "ISS-338": {
       "id": "ISS-338",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-04T01:35:16+00:00",
-      "updated_at": "2026-09-04T01:35:16+00:00",
-      "touched_round": 164,
+      "updated_at": "2026-09-04T05:45:53+00:00",
+      "touched_round": 165,
       "title": "Dead/unwired code: llm.exceptions subclasses unused in src (tests only), constitutional.py has zero consumers, RolloutBatch.old_values filled but never read",
       "severity": 0.3
     },
@@ -17280,6 +17280,89 @@
       "touched_round": 164,
       "commit": "6faac76",
       "title": "fix two fast-suite test regressions (fp8 static default test + allowlist-order-dependent bare-model test)"
+    },
+    "TASK-301": {
+      "id": "TASK-301",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-04T03:52:16+00:00",
+      "updated_at": "2026-09-04T05:31:42+00:00",
+      "touched_round": 165,
+      "title": "RLHF/data hardening: guard empty-kept epochs (rejection_sample/synthetic), drop empty completions (DPO/reward), reject non-dict SFT rows, validate judge target-token bounds, align padding_value with tokenizer.pad_token_id",
+      "category": "stability",
+      "severity": 0.5,
+      "lock_owner": "llm-47",
+      "lock_until": "2026-09-04T04:54:41+00:00"
+    },
+    "TASK-302": {
+      "id": "TASK-302",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T03:52:16+00:00",
+      "updated_at": "2026-09-04T05:31:42+00:00",
+      "touched_round": 165,
+      "title": "CLI polish: warn when --seed is supplied with prune --method magnitude; align documented exit codes with what typer actually returns",
+      "category": "dx",
+      "severity": 0.3
+    },
+    "TASK-303": {
+      "id": "TASK-303",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T03:52:16+00:00",
+      "updated_at": "2026-09-04T05:45:53+00:00",
+      "touched_round": 165,
+      "title": "Dead-code triage: wire or document llm.exceptions, constitutional.py, RolloutBatch.old_values",
+      "category": "maintainability",
+      "severity": 0.3
+    },
+    "CHG-314": {
+      "id": "CHG-314",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T05:01:47+00:00",
+      "updated_at": "2026-09-04T05:01:47+00:00",
+      "touched_round": 165,
+      "commit": "b675acf",
+      "title": "RLHF/data hardening (empty-keep guards, empty-completion drops, judge bounds, tokenizer-aware padding)"
+    },
+    "CHG-315": {
+      "id": "CHG-315",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T05:29:19+00:00",
+      "updated_at": "2026-09-04T05:29:19+00:00",
+      "touched_round": 165,
+      "commit": "d19bcbf",
+      "title": "CLI polish: exit-code docstring notes + prune --seed warning"
+    },
+    "CHG-316": {
+      "id": "CHG-316",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T05:45:39+00:00",
+      "updated_at": "2026-09-04T05:45:39+00:00",
+      "touched_round": 165,
+      "commit": "02f2d1f",
+      "title": "Dead-code triage: remove llm.exceptions + RolloutBatch.old_values, document constitutional.py as unwired public slice"
+    },
+    "DEC-107": {
+      "id": "DEC-107",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T05:45:39+00:00",
+      "updated_at": "2026-09-04T05:45:39+00:00",
+      "touched_round": 165,
+      "title": "TASK-303 dead-code triage: delete llm.exceptions (misleading unwired taxonomy; domain exceptions exist per-area) + RolloutBatch.old_values (never read, plain-MSE critic); keep constitutional.py as documented standalone slice (revision-as-RL-data deferred)",
+      "rationale": "library-internal code never raises/catches llm.exceptions subclasses; RolloutBatch.old_values filled-then-never-read across src; constitutional.py is a deliberate CPU-measurable rule core with a dedicated guide (docs/guides/constitutional.md) and roadmap-deferred trainer wiring",
+      "alternatives_rejected": "keep llm.exceptions as documented public API (misleading: userland except would never match); wire llm.exceptions into internal raises (broad refactor, low value); implement a clipped value objective to justify old_values (not implemented, MSE is standard here)"
     }
   },
   "edges": [
@@ -25447,6 +25530,78 @@
       "to": "ISS-330",
       "type": "resolves",
       "created_at": "2026-09-04T03:34:27+00:00"
+    },
+    {
+      "from": "TASK-301",
+      "to": "ISS-336",
+      "type": "addresses",
+      "created_at": "2026-09-04T03:54:40+00:00"
+    },
+    {
+      "from": "TASK-301",
+      "to": "ISS-337",
+      "type": "addresses",
+      "created_at": "2026-09-04T03:54:40+00:00"
+    },
+    {
+      "from": "TASK-302",
+      "to": "ISS-335",
+      "type": "addresses",
+      "created_at": "2026-09-04T03:54:41+00:00"
+    },
+    {
+      "from": "TASK-303",
+      "to": "ISS-338",
+      "type": "addresses",
+      "created_at": "2026-09-04T03:54:41+00:00"
+    },
+    {
+      "from": "CHG-314",
+      "to": "TASK-301",
+      "type": "implements",
+      "created_at": "2026-09-04T05:01:47+00:00"
+    },
+    {
+      "from": "CHG-314",
+      "to": "ISS-336",
+      "type": "resolves",
+      "created_at": "2026-09-04T05:01:47+00:00"
+    },
+    {
+      "from": "CHG-314",
+      "to": "ISS-337",
+      "type": "resolves",
+      "created_at": "2026-09-04T05:01:48+00:00"
+    },
+    {
+      "from": "CHG-315",
+      "to": "TASK-302",
+      "type": "implements",
+      "created_at": "2026-09-04T05:31:07+00:00"
+    },
+    {
+      "from": "CHG-315",
+      "to": "ISS-335",
+      "type": "resolves",
+      "created_at": "2026-09-04T05:31:07+00:00"
+    },
+    {
+      "from": "DEC-107",
+      "to": "TASK-303",
+      "type": "governs",
+      "created_at": "2026-09-04T05:45:53+00:00"
+    },
+    {
+      "from": "CHG-316",
+      "to": "TASK-303",
+      "type": "implements",
+      "created_at": "2026-09-04T05:46:36+00:00"
+    },
+    {
+      "from": "CHG-316",
+      "to": "ISS-338",
+      "type": "resolves",
+      "created_at": "2026-09-04T05:46:36+00:00"
     }
   ]
 }
