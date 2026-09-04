@@ -309,7 +309,9 @@ llm-prune \
 ```
 
 校验规则（非法即退出码 1）：`--ratio` 必须在 (0,1)；`--method` 必须为
-`magnitude` / `random`；`--model` 必须存在。
+`magnitude` / `random`；`--model` 必须存在。注意 `--seed` 只作用于
+`random` 方法：与 `magnitude` 连用时会被忽略，CLI 会打印警告以免误导
+用户以为剪枝可复现。
 
 ---
 

@@ -74,6 +74,33 @@ def test_cli_refuses_clobber(runner: CliRunner, tmp_path: Path):
     assert "must not be the same file" in strip_ansi(result.output + (result.stderr or ""))
 
 
+def test_cli_warns_when_seed_ignored_for_magnitude(runner: CliRunner, tmp_path: Path):
+    """RIL ISS-335: a --seed passed with --method magnitude does nothing; the
+    CLI must surface that instead of silently pretending the run is
+    reproducible."""
+    model = _tiny_decoder(tmp_path / "m.pt")
+    out = tmp_path / "pruned.pt"
+    result = runner.invoke(app, ["--model", str(model), "--output", str(out), "--method", "magnitude", "--seed", "5"])
+    assert result.exit_code == 0, result.output
+    assert "ignored with --method magnitude" in strip_ansi(result.stderr or "")
+
+
+def test_cli_no_seed_warning_for_random_or_without_seed(runner: CliRunner, tmp_path: Path):
+    model = _tiny_decoder(tmp_path / "m.pt")
+    # random consumes the seed -> no warning
+    out_random = tmp_path / "r.pt"
+    result = runner.invoke(
+        app, ["--model", str(model), "--output", str(out_random), "--method", "random", "--seed", "7"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "ignored with --method magnitude" not in strip_ansi(result.stderr or "")
+    # magnitude without a seed -> no warning either
+    out_plain = tmp_path / "p.pt"
+    result = runner.invoke(app, ["--model", str(model), "--output", str(out_plain)])
+    assert result.exit_code == 0, result.output
+    assert "ignored with --method magnitude" not in strip_ansi(result.stderr or "")
+
+
 def test_cli_end_to_end_prunes_and_round_trips(runner: CliRunner, tmp_path: Path):
     model_path = _tiny_decoder(tmp_path / "m.pt")
     out_path = tmp_path / "pruned.pt"

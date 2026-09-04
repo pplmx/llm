@@ -10,6 +10,10 @@ Exit codes:
     0 — success (sparsity reported)
     1 — argument validation failed (bad ratio / method / clobbered output)
     2 — runtime failure (model load, pruning, save)
+    (Note: typer itself exits 2 — the same as a runtime failure — for
+    argparse-level usage errors like a missing required --model/--output,
+    so a bare mis-typed invocation is not distinguishable from an in-run
+    crash by exit code alone; the stderr message differs.)
 """
 
 from __future__ import annotations
@@ -100,6 +104,14 @@ def prune(
     """Prune a pretrained model's linear weights and save a new blob."""
     _validate_ratio(ratio)
     _validate_method(method)
+    if method == "magnitude" and seed is not None:
+        # Only "random" pruning consumes the seed (RIL ISS-335); passing one
+        # with magnitude silently does nothing — surface it so the user isn't
+        # misled into thinking the run is reproducible.
+        typer.echo(
+            f"Warning: --seed {seed} is ignored with --method magnitude (only 'random' pruning uses the seed).",
+            err=True,
+        )
     _validate_model_path(model)
     _reject_clobbering_input(output, model)
 

@@ -11,6 +11,10 @@ Exit codes:
     0 — success
     1 — argument validation failed (bad/conflicting rank, clobbered output)
     2 — runtime failure (model load, decomposition, save)
+    (Note: typer itself exits 2 — the same as a runtime failure — for
+    argparse-level usage errors like a missing required --model/--output,
+    so a bare mis-typed invocation is not distinguishable from an in-run
+    crash by exit code alone; the stderr message differs.)
 """
 
 from __future__ import annotations

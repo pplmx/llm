@@ -29,6 +29,10 @@ Exit codes:
     0 — quantization succeeded
     1 — argument validation failed (bad bits, missing tokenizer, etc.)
     2 — runtime failure (model load, tokenization, etc.)
+    (Note: typer itself exits 2 — the same as a runtime failure — for
+    argparse-level usage errors like a missing required --model/--output,
+    so a bare mis-typed invocation is not distinguishable from an in-run
+    crash by exit code alone; the stderr message differs.)
 """
 
 from __future__ import annotations
