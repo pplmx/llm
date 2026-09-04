@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 169,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-04T12:17:31+00:00",
+  "updated_at": "2026-09-04T13:00:13+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -871,7 +871,7 @@
       "version": 1,
       "created_at": "2026-08-10T13:37:15+00:00",
       "updated_at": "2026-08-10T13:37:15+00:00",
-      "touched_round": 168,
+      "touched_round": 169,
       "title": "serving routers (generate/chat)",
       "details": "FastAPI routers wiring generation backend to REST/SSE"
     },
@@ -17607,6 +17607,30 @@
       "touched_round": 169,
       "title": "Drop overwindow-completion rows in SFT/DPO/Reward datasets",
       "commit": "be573ec"
+    },
+    "ISS-346": {
+      "id": "ISS-346",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-09-04T13:00:13+00:00",
+      "updated_at": "2026-09-04T13:00:13+00:00",
+      "touched_round": 169,
+      "title": "Streaming pre-validation ignores engine KV window (prompt+max_new_tokens overflows in-band)",
+      "severity": "medium",
+      "description": "_validate_generation_bounds only checked max_new_tokens >= model.max_seq_len. A batched engine's effective window (engine.max_seq_len, LLM_SERVING_MAX_SEQ_LEN) can be smaller than model.max_seq_len, so a request whose prompt already eats most of it passes pre-validation and ContinuousBatchingEngine.add_request raises ValueError INSIDE the started SSE - in-band Error chunk in a 200 stream (ISS-149 class). Fixed in a87495e: now rejects len(prompt)+max_new_tokens > min(model.max_seq_len, engine.max_seq_len) as a 400 pre-SSE.",
+      "confidence": 0.85
+    },
+    "CHG-324": {
+      "id": "CHG-324",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T13:00:13+00:00",
+      "updated_at": "2026-09-04T13:00:13+00:00",
+      "touched_round": 169,
+      "title": "Prompt-length-aware streaming pre-validation",
+      "commit": "a87495e"
     }
   },
   "edges": [
@@ -25996,6 +26020,18 @@
       "to": "ISS-345",
       "type": "resolves",
       "created_at": "2026-09-04T12:17:31+00:00"
+    },
+    {
+      "from": "CHG-324",
+      "to": "ISS-346",
+      "type": "resolves",
+      "created_at": "2026-09-04T13:00:13+00:00"
+    },
+    {
+      "from": "ISS-346",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-09-04T13:00:13+00:00"
     }
   ]
 }
