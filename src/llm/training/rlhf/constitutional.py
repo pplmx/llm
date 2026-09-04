@@ -15,6 +15,12 @@ judge):
 The CPU e2e shows revised responses satisfy a higher fraction of the
 constitution than the originals — reproducing the "critique -> revise ->
 improved compliance" signal in a small, reproducible setting.
+
+This module is a self-contained **public slice** (guide:
+``docs/guides/constitutional.md``): it is consumed standalone via
+``constitutional_loop``, with no trainer wiring. Mounting it as an RL
+objective (constitutional RL — use the revision as reward training data) is
+deferred; see the guide's "后续可以挂载的层" note.
 """
 
 from __future__ import annotations
