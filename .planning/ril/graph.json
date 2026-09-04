@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 167,
+  "round": 169,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-04T09:02:38+00:00",
+  "updated_at": "2026-09-04T11:46:18+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 164,
+      "touched_round": 168,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 166,
+      "touched_round": 168,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -871,7 +871,7 @@
       "version": 1,
       "created_at": "2026-08-10T13:37:15+00:00",
       "updated_at": "2026-08-10T13:37:15+00:00",
-      "touched_round": 61,
+      "touched_round": 168,
       "title": "serving routers (generate/chat)",
       "details": "FastAPI routers wiring generation backend to REST/SSE"
     },
@@ -15268,7 +15268,7 @@
       "version": 2,
       "created_at": "2026-08-23T11:54:07+00:00",
       "updated_at": "2026-08-23T11:55:14+00:00",
-      "touched_round": 137,
+      "touched_round": 168,
       "title": "Multimodal subsystem (src/llm/multimodal: encoder registry, data module, fusion model, task, image preprocessor, vision encoder)"
     },
     "CHG-272": {
@@ -17431,6 +17431,171 @@
       "touched_round": 166,
       "commit": "2d709b6",
       "title": "Bound 2D/pure-TP spawn process-groups (60s per-collective) + parent alive-ranks diagnosis on join timeout"
+    },
+    "ISS-341": {
+      "id": "ISS-341",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T10:35:24+00:00",
+      "updated_at": "2026-09-04T11:34:24+00:00",
+      "touched_round": 168,
+      "title": "r166 SFT alias left stale PP-rejection docs and zero SFT+PP coverage",
+      "severity": "medium",
+      "description": "After r166 collapsed SFTTask onto LanguageModelingTask (pure alias), SFT inherits supports_pipeline_parallel()=True and no longer threads attention_mask. Yet docs/guides/distributed.md:374 and src/llm/training/tasks/base_task.py:82 still claim SFT passes an attention_mask into the model and is rejected at PP setup — both now false, misleading users and future task authors. Also no test exercises the SFT alias under parallel_strategy='pp' (test_pp_engine.py only uses LanguageModelingTask), so the r166 claim 'SFT behaves identically under PP' is unverified."
+    },
+    "TASK-306": {
+      "id": "TASK-306",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-04T10:36:02+00:00",
+      "updated_at": "2026-09-04T11:34:25+00:00",
+      "touched_round": 168,
+      "title": "Fix stale SFT-PP claims + add SFT-under-PP e2e test",
+      "category": "test-quality",
+      "severity": 0.4,
+      "confidence": 0.9,
+      "effort": 1.5,
+      "description": "(1) Reword docs/guides/distributed.md:374 and base_task.py:82 so SFT is no longer cited as a PP-incompatible task threading attention_mask (r166 made it a pure LMTask alias); use regression/distill as the opting-out examples. (2) Add an SFTTask-under-pp e2e case (parametrize test_pp_engine.py's worker with the SFT alias, or a focused sibling test) proving the alias trains under parallel_strategy='pp' on CPU/gloo. Addresses ISS-341."
+    },
+    "ISS-342": {
+      "id": "ISS-342",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T10:55:19+00:00",
+      "updated_at": "2026-09-04T11:09:06+00:00",
+      "touched_round": 168,
+      "title": "Multimodal val_dataloader serves the TRAINING split, not the disjoint val_dataset",
+      "severity": "high",
+      "description": "MultimodalDataModule.val_dataloader (src/llm/multimodal/data.py:296-302) guards on self.train_dataset and builds the sampler+loader over self.train_dataset, never self.val_dataset — the base SamplerMapDataModule.val_dataloader correctly uses val_dataset. setup() (lines 257-258/270-271) builds a DISJOINT held-out split (inputs[num:]) with a TASK-228 comment about val quality, but every validation epoch scores the TRAINING split -> val_loss/val_ppl == noise identical to train; checkpoint selection, EarlyStopping and reported val metrics are corrupted. test_multimodal_datamodule_val_is_disjoint_from_train only asserts dataset-object identity, never the loader contents. Silent correctness bug.",
+      "confidence": 1.0
+    },
+    "ISS-343": {
+      "id": "ISS-343",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T10:55:53+00:00",
+      "updated_at": "2026-09-04T11:19:06+00:00",
+      "touched_round": 168,
+      "title": "NaN training loss silently reported as 0.0 / ppl 1.0",
+      "severity": "medium",
+      "description": "LMTask.train_step (src/llm/training/tasks/lm_task.py:321-322): when criterion returns NaN, returns torch.tensor(0.0, requires_grad=True) and metrics {loss: 0.0, ppl: 1.0} with NO logging. A diverged step becomes a 'perfect' step: the backward is a no-op (tensor not attached to the graph -> zero grads), the run logs a perfect loss/ppl, checkpoints keep moving, and the run is reported as converged. Silent error misreporting — the 'never silently swallow errors' rule. No test covers the NaN branch.",
+      "confidence": 1.0
+    },
+    "ISS-344": {
+      "id": "ISS-344",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T10:55:53+00:00",
+      "updated_at": "2026-09-04T11:42:31+00:00",
+      "touched_round": 168,
+      "title": "batch_generate response token_count is character count, metrics report token count",
+      "severity": "medium",
+      "description": "src/llm/serving/routers/generate.py:482 BatchGenerationResponse(token_count=len(text)) — a character count, while (a) the same route's metric at :480 uses _token_count(text) and (b) the sibling /generate route :341 uses _token_count. ISS-225 removed the char-count proxy from /generate but missed the batch response field. For BPE/HF tokenizers one token spans multiple chars, so the JSON response field disagrees with llm_tokens_generated_total and /generate, breaking client token-usage accounting.",
+      "confidence": 0.8
+    },
+    "ISS-345": {
+      "id": "ISS-345",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T10:56:27+00:00",
+      "updated_at": "2026-09-04T10:56:27+00:00",
+      "touched_round": 168,
+      "title": "SFT/DPO front-truncation silently drops the WHOLE prompt when a completion alone exceeds max_seq_len",
+      "severity": "medium",
+      "description": "After ISS-332 made truncation keep the tail (input_ids[-max:]), a sample whose COMPLETION alone exceeds max_seq_len keeps only completion[J:] — the entire prompt is dropped and labels contain no -100 (no instruction context to condition on). DPO is worse: chosen(row with 300-token completion) is truncated to no-prompt while rejected(row of the same pair with 30-token completion) keeps the full prompt, so _get_batch_logps compares logp(chosen | no prompt) vs logp(rejected | full prompt) on the same pair — an imbalanced/corrupted preference signal. The _load_data guard only filters rows where the PROMPT alone hits the limit, not where the completion blows it out. No error, no drop, silent corruption.",
+      "confidence": 0.85
+    },
+    "TASK-307": {
+      "id": "TASK-307",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-04T10:56:58+00:00",
+      "updated_at": "2026-09-04T11:09:06+00:00",
+      "touched_round": 168,
+      "title": "Fix multimodal val_dataloader to serve the disjoint val_dataset",
+      "category": "correctness",
+      "severity": 0.7,
+      "confidence": 1.0,
+      "effort": 1.0,
+      "description": "src/llm/multimodal/data.py val_dataloader must guard on self.val_dataset (return None,None when absent like the base) and build the sampler+loader over self.val_dataset, not self.train_dataset. Update the disjointness test to assert the LOADER's rows come from the held-out split (e.g. compare sample ids / count or content against the train split) rather than only object identity. Addresses ISS-342."
+    },
+    "TASK-308": {
+      "id": "TASK-308",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-04T10:57:29+00:00",
+      "updated_at": "2026-09-04T11:19:06+00:00",
+      "touched_round": 168,
+      "title": "Make NaN-loss reporting loud instead of silently claiming 0.0/ppl 1.0",
+      "category": "correctness",
+      "severity": 0.45,
+      "confidence": 1.0,
+      "effort": 1.0,
+      "description": "LMTask.train_step NaN branch (lm_task.py:321-322) should log a loud warning (step/grad/NaN provenance) so a diverged step is surfaced, while keeping the 0.0 requires_grad fallback that lets training continue. Add a focused test asserting the warning fires and the branch still returns the 0.0 tensor + metrics dict. Do NOT silently claim loss 0.0/ppl 1.0 as if the step succeeded. Addresses ISS-343."
+    },
+    "DEC-108": {
+      "id": "DEC-108",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T10:58:51+00:00",
+      "updated_at": "2026-09-04T10:58:51+00:00",
+      "touched_round": 168,
+      "title": "Round 168 deep-dive triage: 3-agent batch + own SFT-PP finding",
+      "rationale": "Three parallel Explore agents swept serving/generation, export/quant, and multimodal/eval; plus own SFT-PP docs/tests finding (ISS-341). Comma-style  clauses reported as fatal SyntaxErrors by the serving AND export agents are REFUTED: this repo runs Python 3.14 (uv venv), which legalizes comma-separated except types without parens (see memory py314-except-comma-syntax; same false positive previously misled a gen-agent). Selected for THIS round: TASK-307 multimodal val= train data (ISS-342, HIGH, silent), TASK-308 NaN-loss loud reporting (ISS-343, verified), TASK-306 stale SFT-PP docs + missing SFT+PP test (ISS-341). Deferred to backlog issues: ISS-344 batch_generate token_count chars-vs-tokens, ISS-345 SFT/DPO overwindow truncation dropping the prompt / DPO asymmetry. Lower-signal agent edges (lm_eval ctx_len miscount, multimodal attn_mask vs fused seq, empty-prompt seed id 1, num_modal_tokens dead knob, K-quant F16 silent degrade, gptq guard gap, GGUF no-fsync, prune tie ratio, streaming pre-validation gap/500-vs-503, _emit_tokens lock race) not re-verified this round — revisit in a later round only if a task forms.",
+      "alternatives_rejected": "Assuming comma-except clauses are SyntaxErrors (refuted by py314); routing all 20+ agent claims into the graph unverified (budget: 3 new tasks/round, verified findings only)."
+    },
+    "CHG-319": {
+      "id": "CHG-319",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T11:08:44+00:00",
+      "updated_at": "2026-09-04T11:08:44+00:00",
+      "touched_round": 168,
+      "title": "Multimodal val_dataloader serves disjoint val_dataset",
+      "commit": "38e58f2"
+    },
+    "CHG-320": {
+      "id": "CHG-320",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T11:19:06+00:00",
+      "updated_at": "2026-09-04T11:19:06+00:00",
+      "touched_round": 168,
+      "title": "Loud NaN-loss reporting in LMTask.train_step",
+      "commit": "97b976a"
+    },
+    "CHG-321": {
+      "id": "CHG-321",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T11:34:24+00:00",
+      "updated_at": "2026-09-04T11:34:24+00:00",
+      "touched_round": 168,
+      "title": "SFT-PP docs correction + SFT-under-PP e2e test",
+      "commit": "b884717"
+    },
+    "CHG-322": {
+      "id": "CHG-322",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T11:42:31+00:00",
+      "updated_at": "2026-09-04T11:42:31+00:00",
+      "touched_round": 168,
+      "title": "batch_generate token_count uses tokenizer tokens",
+      "commit": "0baffa8"
     }
   },
   "edges": [
@@ -25724,6 +25889,96 @@
       "to": "ISS-340",
       "type": "resolves",
       "created_at": "2026-09-04T09:01:59+00:00"
+    },
+    {
+      "from": "TASK-306",
+      "to": "ISS-341",
+      "type": "addresses",
+      "created_at": "2026-09-04T10:57:53+00:00"
+    },
+    {
+      "from": "TASK-307",
+      "to": "ISS-342",
+      "type": "addresses",
+      "created_at": "2026-09-04T10:57:53+00:00"
+    },
+    {
+      "from": "TASK-308",
+      "to": "ISS-343",
+      "type": "addresses",
+      "created_at": "2026-09-04T10:57:53+00:00"
+    },
+    {
+      "from": "ISS-342",
+      "to": "COMP-017",
+      "type": "located_in",
+      "created_at": "2026-09-04T11:01:36+00:00"
+    },
+    {
+      "from": "ISS-343",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-09-04T11:01:36+00:00"
+    },
+    {
+      "from": "ISS-341",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-09-04T11:01:37+00:00"
+    },
+    {
+      "from": "ISS-344",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-09-04T11:01:37+00:00"
+    },
+    {
+      "from": "ISS-345",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-09-04T11:01:37+00:00"
+    },
+    {
+      "from": "CHG-319",
+      "to": "ISS-342",
+      "type": "resolves",
+      "created_at": "2026-09-04T11:08:45+00:00"
+    },
+    {
+      "from": "CHG-319",
+      "to": "TASK-307",
+      "type": "implements",
+      "created_at": "2026-09-04T11:08:45+00:00"
+    },
+    {
+      "from": "CHG-320",
+      "to": "ISS-343",
+      "type": "resolves",
+      "created_at": "2026-09-04T11:19:06+00:00"
+    },
+    {
+      "from": "CHG-320",
+      "to": "TASK-308",
+      "type": "implements",
+      "created_at": "2026-09-04T11:19:06+00:00"
+    },
+    {
+      "from": "CHG-321",
+      "to": "ISS-341",
+      "type": "resolves",
+      "created_at": "2026-09-04T11:34:24+00:00"
+    },
+    {
+      "from": "CHG-321",
+      "to": "TASK-306",
+      "type": "implements",
+      "created_at": "2026-09-04T11:34:24+00:00"
+    },
+    {
+      "from": "CHG-322",
+      "to": "ISS-344",
+      "type": "resolves",
+      "created_at": "2026-09-04T11:42:31+00:00"
     }
   ]
 }
