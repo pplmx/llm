@@ -191,6 +191,16 @@ class TestConvertLegacyCheckpointToSplit:
         with pytest.raises(CheckpointMigrationError, match="could not be loaded"):
             convert_legacy_checkpoint_to_split(model_blob)
 
+    def test_missing_safetensors_raises_migration_error(self, legacy_checkpoint: Path, monkeypatch):
+        """Without the optional ``safetensors`` package the conversion must
+        raise ``CheckpointMigrationError`` (the one-line exit-1 contract), not
+        a raw ``ImportError`` from deep inside the save helper."""
+        import llm.training.core.checkpoint as checkpoint_mod
+
+        monkeypatch.setattr(checkpoint_mod, "_safetensors_available", lambda: False)
+        with pytest.raises(CheckpointMigrationError, match="safetensors"):
+            convert_legacy_checkpoint_to_split(legacy_checkpoint)
+
 
 # ---------------------------------------------------------------------------
 # CLI surface (Typer CliRunner)

@@ -566,6 +566,15 @@ def convert_legacy_checkpoint_to_split(
         legacy_path = legacy_path.with_suffix(LEGACY_SUFFIX)
     if not legacy_path.exists():
         raise CheckpointMigrationError(f"Legacy checkpoint not found: {legacy_path}")
+    if not _safetensors_available():
+        # The new layout's weights sidecar is safetensors; converting without
+        # the package raises a raw ImportError from deep inside
+        # ``_save_weights_safetensors``. Gate up front with the documented
+        # error so the CLI stays on its one-line exit-1 contract (RIL ISS-329).
+        raise CheckpointMigrationError(
+            f"Converting {legacy_path} requires the 'safetensors' package. "
+            "Install with `uv sync --extra compat` or `pip install llm[compat]`."
+        )
 
     stem = legacy_path.with_suffix("")
     safetensors_path = stem.with_name(stem.name + SAFETENSORS_SUFFIX)
