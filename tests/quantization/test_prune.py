@@ -48,6 +48,46 @@ def test_prune_model_replaces_linears_and_reports_sparsity():
     assert kept_mags.min() >= dropped_mags.max()
 
 
+def test_magnitude_prune_with_ties_achieves_exact_ratio():
+    """Regression (RIL TASK-309): an ``abs >= threshold`` mask keeps EVERY
+    boundary tie, so a weight whose zero-mass exceeds the drop quota prunes
+    NOTHING (e.g. a 20%-nonzero layer at ratio 0.5 achieved 0.0 sparsity —
+    silent wrong result on already-pruned / dead-channel weights). The
+    topk-index mask prunes exactly ``(1 - ratio)`` regardless of ties.
+    """
+    from llm.quantization.prune import PruningConfig, compute_sparsity, prune_model
+
+    model = TwoLinearMLP(hidden=16)
+    # 80% of every Linear's entries are exactly 0.0 -> the keep boundary
+    # lands on a huge tied mass (0.0), the regime that used to no-op.
+    with torch.no_grad():
+        for lin in (model.fc1, model.fc2):
+            w = lin.weight
+            keep_idx = torch.randperm(w.numel())[: round(0.2 * w.numel())]
+            flat = torch.zeros(w.numel())
+            flat[keep_idx] = 1.0
+            w.copy_(flat.view_as(w))
+
+    sparsity = prune_model(model, PruningConfig(ratio=0.5))
+    assert sparsity == pytest.approx(0.5, abs=1e-6)
+    assert compute_sparsity(model) == pytest.approx(0.5, abs=1e-6)
+    for lin in (model.fc1, model.fc2):
+        assert lin.weight_mask.float().mean().item() == pytest.approx(0.5, abs=1e-6)
+
+
+def test_magnitude_mask_all_zero_weight_still_reaches_target():
+    """A fully-dead (all-zero) linear still prunes to the target fraction.
+
+    ``round((1 - ratio) * 100)`` is integral for these ratios, so each mask
+    keeps exactly the requested fraction of a 100-entry all-zero weight.
+    """
+    from llm.quantization.prune import _magnitude_mask
+
+    for ratio in (0.1, 0.5, 0.9):
+        mask = _magnitude_mask(torch.zeros(100), ratio)
+        assert mask.float().mean().item() == pytest.approx(1.0 - ratio, abs=1e-6)
+
+
 def test_prune_model_respects_target_modules():
     from llm.quantization.prune import PrunedLinear, PruningConfig, prune_model
 

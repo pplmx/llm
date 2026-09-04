@@ -107,12 +107,23 @@ class PrunedLinear(nn.Module):
 
 
 def _magnitude_mask(weight: torch.Tensor, ratio: float) -> torch.Tensor:
-    """Keep the largest-|W| (1 - ratio) fraction; 1.0 = keep, 0.0 = drop."""
+    """Keep exactly the largest-|W| ``(1 - ratio)`` fraction; 1.0 = keep.
+
+    ``torch.topk`` picks entries BY INDEX, so boundary ties (many entries
+    sharing the keep-threshold magnitude — common in sparse/already-pruned
+    weights or dead channels, where a large zero-mass sits exactly on the
+    boundary) resolve deterministically instead of all surviving. A
+    ``abs >= threshold`` style keeps EVERY boundary tie, so a weight whose
+    zero-mass exceeds the drop quota prunes NOTHING (achieved sparsity drifts
+    silently toward 0) — RIL TASK-309.
+    """
     flat = weight.detach().abs().reshape(-1)
     keep = round((1.0 - ratio) * flat.numel())
     keep = max(1, min(keep, flat.numel()))
-    threshold = torch.topk(flat, keep).values[-1]
-    return (weight.abs() >= threshold).to(weight.dtype)
+    _, indices = torch.topk(flat, keep)
+    mask = torch.zeros_like(flat)
+    mask[indices] = 1.0
+    return mask.view_as(weight).to(weight.dtype)
 
 
 def _random_mask(weight: torch.Tensor, ratio: float, seed: int | None) -> torch.Tensor:
