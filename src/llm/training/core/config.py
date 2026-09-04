@@ -860,6 +860,28 @@ class PPOConfig(BaseModel):
     use_ref_model: bool = True
     ref_model_update_freq: int = 0
 
+    @model_validator(mode="after")
+    def _reject_unimplemented_knobs(self) -> PPOConfig:
+        """Reject non-default values of knobs the trainer never reads.
+
+        ``rollout_batch_size`` and ``ref_model_update_freq`` are declared for
+        API stability but have no implementation in PPOTrainer — setting them
+        silently does nothing, which is a configuration footgun (RIL ISS-334).
+        """
+        if self.rollout_batch_size != 16:
+            raise ValueError(
+                "PPOConfig.rollout_batch_size is not implemented — the rollout "
+                "batch is whatever the dataloader yields. Remove the override "
+                "or keep the default 16."
+            )
+        if self.ref_model_update_freq != 0:
+            raise ValueError(
+                "PPOConfig.ref_model_update_freq is not implemented — the frozen "
+                "KL reference is never re-synced to the policy. Remove the "
+                "override or keep the default 0."
+            )
+        return self
+
 
 class RLHFSettings(BaseModel):
     """RLHF-specific paths and options."""

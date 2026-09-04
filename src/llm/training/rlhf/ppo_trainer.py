@@ -22,6 +22,21 @@ from llm.training.rlhf.value_model import ValueModel
 logger = logging.getLogger(__name__)
 
 
+def _normalize_eos_ids(eos_token_id: int | list[int] | tuple[int, ...] | None) -> tuple[int, ...]:
+    """Return the tokenizer's EOS id(s) as a plain tuple of ints.
+
+    HF tokenizers can expose ``eos_token_id`` as a list/sequence; a raw
+    ``next_token.item() == eos_id`` int-vs-list comparison silently never
+    matches, so every rollout runs to ``response_max_len`` with post-EOS junk
+    folded into the training signal (RIL ISS-116/334).
+    """
+    if eos_token_id is None:
+        return ()
+    if isinstance(eos_token_id, (list, tuple)):
+        return tuple(int(t) for t in eos_token_id)
+    return (int(eos_token_id),)
+
+
 class PPOTrainer:
     """
     Proximal Policy Optimization trainer for RLHfunctional.
@@ -83,6 +98,15 @@ class PPOTrainer:
         if self.ref_model is not None:
             self.ref_model.to(self.device)
             self.ref_model.eval()
+            # RIL ISS-334 (mirrors the critic's ISS-173 handling): the frozen
+            # reference is reconstructed from the policy (which the engine
+            # broadcasts before prepare_training), but broadcast it explicitly
+            # too — if the copy ran before a rank-0 sync, multi-GPU ranks
+            # would diverge in the KL-penalty target and the averaged gradients
+            # would fit no single reference.
+            from llm.training.core.distributed import broadcast_parameters
+
+            broadcast_parameters(self.ref_model)
         if self.value_model is not None:
             self.value_model.to(self.device)
             # RIL ISS-173: the critic deep-copies the policy (which the engine
@@ -349,6 +373,8 @@ class PPOTrainer:
         # ran to ``response_max_len`` with post-EOS junk folded into the
         # training signal (RIL ISS-116).
         eos_id = getattr(self.tokenizer, "eos_token_id", None)
+        # Normalize list-valued tokenizers so EOS termination works (RIL ISS-334).
+        eos_ids = _normalize_eos_ids(eos_id)
 
         all_prompt_ids = []
         all_response_ids = []
@@ -374,7 +400,26 @@ class PPOTrainer:
 
                 input_ids = prompt_ids.unsqueeze(0)  # [1, prompt_len]
 
-                for _ in range(self.config.response_max_len):
+                # Cap the response budget to the model's positional context.
+                # Without this, a prompt longer than ``max_seq_len -
+                # response_max_len`` drives the embedding past the positional
+                # table: learned PE raises IndexError, sinusoidal silently
+                # truncates the position slice and corrupts hidden states
+                # (RIL ISS-334). ``budget`` is the number of response tokens.
+                budget = self.config.response_max_len
+                model_max_seq_len = getattr(self.policy, "max_seq_len", None)
+                if model_max_seq_len is not None:
+                    capacity = int(model_max_seq_len) - int(prompt_ids.numel())
+                    if capacity <= 0:
+                        raise ValueError(
+                            f"prompt of {prompt_ids.numel()} tokens already reaches the "
+                            f"model's max_seq_len={model_max_seq_len}; there is no room "
+                            f"to generate a response. Shorten the prompt or raise "
+                            f"max_seq_len."
+                        )
+                    budget = min(budget, capacity)
+
+                for _ in range(budget):
                     logits = self.policy(input_ids)  # [1, seq_len, vocab_size]
                     next_token_logits = logits[0, -1, :]  # [vocab_size]
 
@@ -425,7 +470,7 @@ class PPOTrainer:
                     # episode genuinely terminal — anything else is a
                     # truncation whose last state must be bootstrapped (RIL
                     # ISS-178).
-                    if eos_id is not None and next_token.item() == eos_id:
+                    if eos_ids and next_token.item() in eos_ids:
                         truncated = False
                         break
 

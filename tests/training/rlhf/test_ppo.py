@@ -33,6 +33,20 @@ class TestPPOConfig:
         assert config.ppo_epochs == 2
         assert config.mini_batch_size == 32
 
+    def test_rejects_unimplemented_rollout_batch_size(self):
+        """``rollout_batch_size`` is declared but never read by the trainer —
+        a non-default value silently does nothing. Fail fast instead (RIL
+        ISS-334)."""
+        with pytest.raises(ValueError, match="rollout_batch_size"):
+            PPOConfig(rollout_batch_size=32)
+
+    def test_rejects_unimplemented_ref_model_update_freq(self):
+        """``ref_model_update_freq`` implies the frozen reference re-syncs to
+        the policy, which is never implemented — a non-default value silently
+        does nothing. Fail fast instead (RIL ISS-334)."""
+        with pytest.raises(ValueError, match="ref_model_update_freq"):
+            PPOConfig(ref_model_update_freq=100)
+
 
 class TestRolloutBuffer:
     """Tests for RolloutBuffer."""
@@ -502,6 +516,87 @@ class TestPPOTrainer:
             _, response_ids, _, truncated = trainer.generate_responses(["Hello"])
 
         assert len(response_ids[0]) == 1, f"rollout should stop at EOS (1 token), got {len(response_ids[0])}"
+        assert truncated == [False], "an EOS-terminated episode is NOT truncated"
+
+    def test_generate_responses_caps_at_model_context(self, tiny_setup):
+        """PPO rollout must not generate past the model's positional table: a
+        prompt near ``max_seq_len`` yields at most the remaining context budget
+        of response tokens, even when ``response_max_len`` is larger (RIL
+        ISS-334)."""
+        from unittest.mock import patch
+
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        # tiny_model has max_seq_len=16; use a 14-token prompt and ask for
+        # response_max_len=10 — only 2 tokens of response can fit.
+        tokenizer.encode = lambda text: list(range(14))
+        config.response_max_len = 10
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        with patch("torch.multinomial", return_value=torch.tensor([5], device=DEFAULT_DEVICE)):
+            _, response_ids, _, truncated = trainer.generate_responses(["Hello"])
+
+        assert len(response_ids[0]) == 2, (
+            f"response must be capped to the 2 remaining context tokens, got {len(response_ids[0])}"
+        )
+        assert truncated == [True], "context-capped rollout is a truncation (not EOS)"
+
+    def test_generate_responses_rejects_overlong_prompt(self, tiny_setup):
+        """A prompt that already reaches ``max_seq_len`` must fail fast with a
+        clear error — the old code kept generating and either raised IndexError
+        from the learned positional embedding or silently mis-truncated the
+        sinusoidal position cache (RIL ISS-334)."""
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        tokenizer.encode = lambda text: list(range(16))  # 16 == tiny model context
+        config.response_max_len = 5
+        config.top_k = 1
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        with pytest.raises(ValueError, match="max_seq_len"):
+            trainer.generate_responses(["Hello"])
+
+    def test_generate_responses_stops_at_list_valued_eos(self, tiny_setup):
+        """Some HF tokenizers expose ``eos_token_id`` as a list/sequence. The
+        old ``next_token.item() == eos_id`` int-vs-list comparison silently
+        never matched, so every rollout ran to ``response_max_len`` (RIL
+        ISS-116/334). A list-valued EOS must still stop generation."""
+        from unittest.mock import patch
+
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        tokenizer.eos_token_id = [4, 5]  # list-valued, like some HF tokenizers
+        tokenizer.encode = lambda text: [1, 2, 3]
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        with patch("torch.multinomial", return_value=torch.tensor([5], device=DEFAULT_DEVICE)):
+            _, response_ids, _, truncated = trainer.generate_responses(["Hello"])
+
+        assert len(response_ids[0]) == 1, f"rollout must stop at a list-valued EOS, got {len(response_ids[0])}"
         assert truncated == [False], "an EOS-terminated episode is NOT truncated"
 
     def test_generate_responses_reports_max_len_truncation(self, tiny_setup):
