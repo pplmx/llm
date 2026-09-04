@@ -18,7 +18,7 @@ Subcommand surface (matches
         --tokenizer PATH             # HF tokenizer dir; required with --calib-data \\
         --bits {4,8}                 # default 4 \\
         --group-size N|-1            # default 128; -1 = per-channel \\
-        [--sym|--asym]               # default sym (4-bit packing assumes sym) \\
+        [--sym|--asym]               # default sym (--asym rejected: not implemented) \\
         [--act-order|--no-act-order] # default off \\
         --percdamp F                 # default 0.01 \\
         --blocksize N                # default 128 \\

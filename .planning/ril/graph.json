@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 163,
+  "round": 164,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-03T17:48:57+00:00",
+  "updated_at": "2026-09-04T02:15:19+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -11,7 +11,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 76,
+      "touched_round": 164,
       "title": "Streaming data pipeline (src/llm/data: sources, datasets/streaming, stream_state)"
     },
     "COMP-002": {
@@ -51,7 +51,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 152,
+      "touched_round": 164,
       "title": "Training engine (src/llm/training: engine, tasks, callbacks)"
     },
     "COMP-006": {
@@ -977,7 +977,7 @@
       "version": 1,
       "created_at": "2026-08-10T14:03:08+00:00",
       "updated_at": "2026-08-10T14:03:08+00:00",
-      "touched_round": 98,
+      "touched_round": 164,
       "title": "training checkpoint + migrate CLI",
       "details": "CheckpointManager, legacy->v2 migration, llm-migrate-ckpt CLI"
     },
@@ -17018,6 +17018,257 @@
       "touched_round": 162,
       "commit": "300ef67",
       "summary": "finetuning/streaming/multimodal/evaluation/getting-started example fixes (ISS-327/328)"
+    },
+    "ISS-329": {
+      "id": "ISS-329",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-03T22:54:52+00:00",
+      "updated_at": "2026-09-03T23:07:07+00:00",
+      "touched_round": 164,
+      "title": "llm-migrate-ckpt leaks raw tracebacks on corrupt/unloadable .pt; --verify vacuous-pass when legacy model_state missing",
+      "severity": "high"
+    },
+    "TASK-296": {
+      "id": "TASK-296",
+      "type": "task",
+      "status": "resolved",
+      "version": 5,
+      "created_at": "2026-09-03T22:55:11+00:00",
+      "updated_at": "2026-09-04T00:59:22+00:00",
+      "touched_round": 164,
+      "title": "Harden llm-migrate-ckpt error paths: clean exit-1/2 for corrupt .pt, bare model blob, truncated meta.json, unreadable extra_state; fix vacuous --verify on missing model_state",
+      "category": "correctness",
+      "severity": 0.8,
+      "priority_score": 6.5
+    },
+    "CHG-307": {
+      "id": "CHG-307",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-03T23:06:17+00:00",
+      "updated_at": "2026-09-03T23:06:17+00:00",
+      "touched_round": 164,
+      "commit": "d4c0db4",
+      "title": "migrate_ckpt: map corrupt/JSON/extra_state load errors to clean exit-1/2; guard vacuous --verify"
+    },
+    "EV-283": {
+      "id": "EV-283",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-03T23:06:17+00:00",
+      "updated_at": "2026-09-03T23:06:17+00:00",
+      "touched_round": 164,
+      "source": "tests/training/test_migrate_ckpt.py (6 new regression tests + full file green)",
+      "title": "migrate_ckpt hardening verified: 31 tests pass; ruff/ty/doctests/commitizen gates green",
+      "confidence": 1.0
+    },
+    "TASK-297": {
+      "id": "TASK-297",
+      "type": "task",
+      "status": "active",
+      "version": 3,
+      "created_at": "2026-09-03T23:28:36+00:00",
+      "updated_at": "2026-09-04T00:59:22+00:00",
+      "touched_round": 164,
+      "title": "Fix quantize/prune/decompose CLI validation+defaults and e2e-utils empty-input guards",
+      "category": "correctness",
+      "severity": 0.8,
+      "lock_owner": "llm-47",
+      "lock_until": "2026-09-03T23:33:58+00:00"
+    },
+    "ISS-330": {
+      "id": "ISS-330",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-09-03T23:28:36+00:00",
+      "updated_at": "2026-09-03T23:28:36+00:00",
+      "touched_round": 164,
+      "title": "Quantize CLI UX: fp8 static default broke out-of-box, --asym not rejected at validation, calib dict payload passed through, empty --target-modules echoed as all but matched zero layers",
+      "severity": "medium"
+    },
+    "ISS-331": {
+      "id": "ISS-331",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-09-03T23:28:36+00:00",
+      "updated_at": "2026-09-03T23:28:36+00:00",
+      "touched_round": 164,
+      "title": "llm.utils.e2e helpers raise bare ZeroDivisionError on 0-batch inputs; run_e2e_pipeline allows empty validation split (num_samples<5)",
+      "severity": "medium"
+    },
+    "CHG-308": {
+      "id": "CHG-308",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-03T23:28:36+00:00",
+      "updated_at": "2026-09-03T23:28:36+00:00",
+      "touched_round": 164,
+      "commit": "bcb0625",
+      "title": "quantize/prune/decompose CLI UX validation + e2e-utils empty-input guards; docs sync"
+    },
+    "TASK-298": {
+      "id": "TASK-298",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T00:54:28+00:00",
+      "updated_at": "2026-09-04T00:59:22+00:00",
+      "touched_round": 164,
+      "title": "Fix GRPO objective correctness cluster: shifted next-token log-probs, policy-synced KL reference + resume persistence, single-process guard, init-neutral demo target",
+      "category": "correctness",
+      "severity": 0.8
+    },
+    "ISS-332": {
+      "id": "ISS-332",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-09-04T00:54:28+00:00",
+      "updated_at": "2026-09-04T00:54:28+00:00",
+      "touched_round": 164,
+      "title": "GRPO uses unshifted self-copy log-probs; KL reference is a random network; group batching broken under world_size>1; all-zeros demo target saturates under the correct metric",
+      "severity": "high"
+    },
+    "CHG-309": {
+      "id": "CHG-309",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T00:54:28+00:00",
+      "updated_at": "2026-09-04T00:54:28+00:00",
+      "touched_round": 164,
+      "commit": "88cdb65",
+      "title": "GRPO objective correction cluster (shift, ref sync+persist, world-size guard, demo target redesign)"
+    },
+    "TASK-299": {
+      "id": "TASK-299",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T00:55:48+00:00",
+      "updated_at": "2026-09-04T00:59:23+00:00",
+      "touched_round": 164,
+      "title": "Truncate SFT/DPO/Reward sequences from the FRONT, preserving the supervised response tail",
+      "category": "correctness",
+      "severity": 0.8
+    },
+    "ISS-333": {
+      "id": "ISS-333",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-09-04T00:55:48+00:00",
+      "updated_at": "2026-09-04T00:55:48+00:00",
+      "touched_round": 164,
+      "title": "SFT/DPO/Reward end-truncation discarded the supervised response (and the reward model's scored token)",
+      "severity": "high"
+    },
+    "CHG-310": {
+      "id": "CHG-310",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T00:55:48+00:00",
+      "updated_at": "2026-09-04T00:55:48+00:00",
+      "touched_round": 164,
+      "commit": "e727640",
+      "title": "truncate SFT/DPO/Reward from the front; response tail preserved"
+    },
+    "TASK-300": {
+      "id": "TASK-300",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-09-04T01:30:24+00:00",
+      "updated_at": "2026-09-04T01:30:24+00:00",
+      "touched_round": 164,
+      "title": "PPO rollout context guard + list-valued EOS + ref broadcast + dead-knob fail-fast",
+      "category": "correctness",
+      "severity": 0.7
+    },
+    "ISS-334": {
+      "id": "ISS-334",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-09-04T01:30:24+00:00",
+      "updated_at": "2026-09-04T01:30:24+00:00",
+      "touched_round": 164,
+      "title": "PPO rollout can overrun the model positional table; list-valued eos_token_id never matches; frozen KL ref not broadcast; rollout_batch_size/ref_model_update_freq silently no-op",
+      "severity": 0.7
+    },
+    "CHG-311": {
+      "id": "CHG-311",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T01:30:24+00:00",
+      "updated_at": "2026-09-04T01:30:24+00:00",
+      "touched_round": 164,
+      "commit": "7f1942c",
+      "title": "PPO rollout context guard, list-EOS, ref broadcast, dead-knob validation"
+    },
+    "ISS-335": {
+      "id": "ISS-335",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T01:35:16+00:00",
+      "updated_at": "2026-09-04T01:35:16+00:00",
+      "touched_round": 164,
+      "title": "CLI exit-code docs drift: typer exits 2 for missing-required-arg, but quantize/prune/decompose docstrings document 1=validation; --seed silently ignored for --method magnitude",
+      "severity": 0.3
+    },
+    "ISS-336": {
+      "id": "ISS-336",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T01:35:16+00:00",
+      "updated_at": "2026-09-04T01:35:16+00:00",
+      "touched_round": 164,
+      "title": "RLHF data: rejection_sample/synthetic build zero-length epochs when nothing kept; SFTDataset assumes every JSONL row is a dict (scalar rows crash with AttributeError); DPO/reward don't drop empty completions",
+      "severity": 0.4
+    },
+    "ISS-337": {
+      "id": "ISS-337",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T01:35:16+00:00",
+      "updated_at": "2026-09-04T01:35:16+00:00",
+      "touched_round": 164,
+      "title": "Synthetic RLHF modules write judge target tokens with no vocab bounds check (out-of-range target_token -> IndexError deep in forward); hardcoded padding_value=0 disagrees with tokenizer.pad_token_id",
+      "severity": 0.3
+    },
+    "ISS-338": {
+      "id": "ISS-338",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T01:35:16+00:00",
+      "updated_at": "2026-09-04T01:35:16+00:00",
+      "touched_round": 164,
+      "title": "Dead/unwired code: llm.exceptions subclasses unused in src (tests only), constitutional.py has zero consumers, RolloutBatch.old_values filled but never read",
+      "severity": 0.3
+    },
+    "CHG-312": {
+      "id": "CHG-312",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T02:12:04+00:00",
+      "updated_at": "2026-09-04T02:12:04+00:00",
+      "touched_round": 164,
+      "commit": "e4c2e33",
+      "title": "safetensors-missing gate on convert_legacy_checkpoint_to_split"
     }
   },
   "edges": [
@@ -25029,6 +25280,150 @@
       "to": "ISS-328",
       "type": "resolves",
       "created_at": "2026-09-03T17:48:57+00:00"
+    },
+    {
+      "from": "TASK-296",
+      "to": "ISS-329",
+      "type": "addresses",
+      "created_at": "2026-09-03T22:57:47+00:00"
+    },
+    {
+      "from": "ISS-329",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-09-03T22:57:47+00:00"
+    },
+    {
+      "from": "CHG-307",
+      "to": "TASK-296",
+      "type": "implements",
+      "created_at": "2026-09-03T23:06:33+00:00"
+    },
+    {
+      "from": "CHG-307",
+      "to": "ISS-329",
+      "type": "resolves",
+      "created_at": "2026-09-03T23:06:33+00:00"
+    },
+    {
+      "from": "CHG-308",
+      "to": "TASK-297",
+      "type": "implements",
+      "created_at": "2026-09-03T23:28:57+00:00"
+    },
+    {
+      "from": "CHG-308",
+      "to": "ISS-330",
+      "type": "resolves",
+      "created_at": "2026-09-03T23:28:57+00:00"
+    },
+    {
+      "from": "CHG-308",
+      "to": "ISS-331",
+      "type": "resolves",
+      "created_at": "2026-09-03T23:28:58+00:00"
+    },
+    {
+      "from": "TASK-297",
+      "to": "ISS-330",
+      "type": "addresses",
+      "created_at": "2026-09-03T23:28:58+00:00"
+    },
+    {
+      "from": "TASK-297",
+      "to": "ISS-331",
+      "type": "addresses",
+      "created_at": "2026-09-03T23:28:58+00:00"
+    },
+    {
+      "from": "CHG-309",
+      "to": "TASK-298",
+      "type": "implements",
+      "created_at": "2026-09-04T00:55:48+00:00"
+    },
+    {
+      "from": "CHG-309",
+      "to": "ISS-332",
+      "type": "resolves",
+      "created_at": "2026-09-04T00:55:48+00:00"
+    },
+    {
+      "from": "TASK-298",
+      "to": "ISS-332",
+      "type": "addresses",
+      "created_at": "2026-09-04T00:55:48+00:00"
+    },
+    {
+      "from": "CHG-310",
+      "to": "TASK-299",
+      "type": "implements",
+      "created_at": "2026-09-04T00:57:07+00:00"
+    },
+    {
+      "from": "CHG-310",
+      "to": "ISS-333",
+      "type": "resolves",
+      "created_at": "2026-09-04T00:57:07+00:00"
+    },
+    {
+      "from": "TASK-299",
+      "to": "ISS-333",
+      "type": "addresses",
+      "created_at": "2026-09-04T00:57:07+00:00"
+    },
+    {
+      "from": "CHG-311",
+      "to": "TASK-300",
+      "type": "implements",
+      "created_at": "2026-09-04T01:32:05+00:00"
+    },
+    {
+      "from": "CHG-311",
+      "to": "ISS-334",
+      "type": "resolves",
+      "created_at": "2026-09-04T01:32:05+00:00"
+    },
+    {
+      "from": "TASK-300",
+      "to": "ISS-334",
+      "type": "addresses",
+      "created_at": "2026-09-04T01:32:05+00:00"
+    },
+    {
+      "from": "CHG-312",
+      "to": "TASK-296",
+      "type": "implements",
+      "created_at": "2026-09-04T02:12:04+00:00"
+    },
+    {
+      "from": "CHG-312",
+      "to": "ISS-329",
+      "type": "resolves",
+      "created_at": "2026-09-04T02:12:04+00:00"
+    },
+    {
+      "from": "ISS-335",
+      "to": "COMP-008",
+      "type": "located_in",
+      "created_at": "2026-09-04T02:15:19+00:00"
+    },
+    {
+      "from": "ISS-336",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-09-04T02:15:19+00:00"
+    },
+    {
+      "from": "ISS-337",
+      "to": "COMP-001",
+      "type": "located_in",
+      "created_at": "2026-09-04T02:15:19+00:00"
+    },
+    {
+      "from": "ISS-338",
+      "to": "COMP-005",
+      "type": "located_in",
+      "created_at": "2026-09-04T02:15:19+00:00"
     }
   ]
 }
