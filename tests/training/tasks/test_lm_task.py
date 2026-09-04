@@ -1,5 +1,6 @@
 import pytest
 import torch
+import torch.nn as nn
 
 from llm.data.modules.synthetic import SyntheticDataModule
 from llm.training.core.config import Config, ModelConfig, TrainingConfig
@@ -112,3 +113,35 @@ def test_lm_task_validation(mock_config):
 
     assert "val_loss" in metrics
     assert "val_ppl" in metrics
+
+
+@pytest.mark.quick
+def test_lm_task_nan_loss_is_surfaced_loudly(caplog, mock_config):
+    """Regression (RIL ISS-343): a NaN step must be surfaced with a warning,
+    not silently reported as a perfect loss 0.0 / ppl 1.0 as if the model
+    trained."""
+
+    class _NaNModel(nn.Module):
+        def forward(self, input_ids):
+            return torch.full((*input_ids.shape, 8), float("nan"))
+
+    class _NanCriterion(nn.Module):
+        def forward(self, logits, targets):
+            return torch.tensor(float("nan"), requires_grad=True)
+
+    data_module = SyntheticDataModule(mock_config)
+    task = LanguageModelingTask(mock_config, data_module)
+
+    batch = (
+        torch.randint(0, 128, (2, 8)),  # seq_len >= 2 so the shift guard passes
+        torch.randint(0, 128, (2, 8)),
+    )
+
+    with caplog.at_level("WARNING", logger="llm.training.tasks.lm_task"):
+        loss, metrics = task.train_step(batch, _NaNModel(), _NanCriterion())
+
+    # The 0.0 ``requires_grad`` fallback keeps training alive...
+    assert loss.item() == 0.0
+    assert metrics == {"loss": 0.0, "ppl": 1.0}
+    # ...but the divergence must be visible in the logs, not swallowed.
+    assert any("NaN" in message for message in caplog.messages), "NaN loss branch must emit a warning (RIL ISS-343)"

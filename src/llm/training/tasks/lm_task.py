@@ -1,3 +1,5 @@
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
@@ -14,6 +16,8 @@ from llm.quantization.fake_quant import apply_fake_quant
 from llm.runtime import ModelFactory
 from llm.training.core.callbacks import AdaLoRAPruningCallback
 from llm.training.tasks.base_task import TrainingTask
+
+logger = logging.getLogger(__name__)
 
 
 class LanguageModelingTask(TrainingTask):
@@ -319,6 +323,17 @@ class LanguageModelingTask(TrainingTask):
         loss = criterion(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
         if torch.isnan(loss):
+            # A diverged step is a signal, not a "perfect" step (RIL ISS-343):
+            # complain loudly instead of silently logging loss 0.0 / ppl 1.0 as
+            # if the model trained. The returned 0.0 ``requires_grad`` tensor is
+            # decoupled from the model graph, so this step's backward/optimizer
+            # become a no-op — the run survives transient overflows but MUST be
+            # visible in the logs (lr / dtype / data divergence).
+            logger.warning(
+                "NaN training loss detected — criterion returned NaN. Reporting "
+                "loss 0.0 / ppl 1.0 so the run continues, but this batch was NOT "
+                "learned; check learning rate, dtype, and data for divergence."
+            )
             return torch.tensor(0.0, device=loss.device, requires_grad=True), {"loss": 0.0, "ppl": 1.0}
 
         metrics = {
