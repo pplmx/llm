@@ -78,11 +78,14 @@ class TrainingTask(abc.ABC, CheckpointContributor):
 
         Pipeline parallelism (RIL DEC-049 / TASK-210) drives the model through
         a stage schedule whose loss is exactly ``model(input_ids)`` + LM-shift
-        + cross-entropy, computed on the last stage. Tasks whose
-        ``train_step`` deviates — SFT passes an ``attention_mask`` into the
-        model (which the pipeline's no-mask stage forward would silently
-        drop), regression is not next-token loss — must opt out so the
-        engine refuses PP loudly instead of training on the wrong loss.
+        + cross-entropy, computed on the last stage. The LMTask family
+        (including the ``SFTTask`` alias — RIL ISS-339 collapsed it onto
+        LanguageModelingTask, so it no longer threads the batch
+        ``attention_mask``) already matches this contract. Tasks whose
+        ``train_step`` deviates — ``regression`` is not next-token loss —
+        or whose data module yields batches the stage forward cannot consume
+        must opt out so the engine refuses PP loudly instead of training on
+        the wrong loss.
         """
         return False
 

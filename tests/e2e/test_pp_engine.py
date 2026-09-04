@@ -45,9 +45,35 @@ from llm.training.core.config import (
 from llm.training.core.engine import TrainingEngine
 from llm.training.distributed import model_state_dict
 from llm.training.tasks.lm_task import LanguageModelingTask
+from llm.training.tasks.sft_task import SFTTask
 from tests.support.data import DummyLMDataModule
 
 PP_ENGINE_JOIN_TIMEOUT_S = 300
+
+
+def _dict_collate(batch: list) -> dict:
+    """Collate TensorDataset rows into an SFT-style dict batch.
+
+    Carries the extra ``attention_mask`` key SFTDataModule emits — the PP stage
+    forward must DROP it without changing the loss (RIL ISS-339 / TASK-304).
+    """
+    input_ids, labels = zip(*batch, strict=True)
+    input_ids = torch.stack(input_ids)
+    labels = torch.stack(labels)
+    return {
+        "input_ids": input_ids,
+        "labels": labels,
+        "attention_mask": torch.ones_like(input_ids),
+    }
+
+
+class _SFTDictDataModule(DummyLMDataModule):
+    """DummyLMDataModule that collates SFT-style dict batches with a mask key."""
+
+    def train_dataloader(self, rank, world_size, device=None):
+        loader, sampler = super().train_dataloader(rank, world_size, device)
+        loader.collate_fn = _dict_collate
+        return loader, sampler
 
 
 def _free_port() -> int:
@@ -131,6 +157,8 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         pp_size = ctx.get("pp_size")
         pp_n_microbatches = ctx.get("pp_n_microbatches")
         amp_bf16 = ctx.get("amp_bf16", False)
+        task_cls = ctx.get("task_cls") or LanguageModelingTask
+        data_cls = _SFTDictDataModule if ctx.get("dict_batch") else DummyLMDataModule
 
         # ---- Epoch 1: train from scratch, save checkpoint ----
         config1 = _build_config(
@@ -141,10 +169,10 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
             pp_n_microbatches=pp_n_microbatches,
             amp_bf16=amp_bf16,
         )
-        data_module = DummyLMDataModule(config1)
+        data_module = data_cls(config1)
         data_module.prepare_data()
         data_module.setup()
-        task = LanguageModelingTask(config1, data_module)
+        task = task_cls(config1, data_module)
         engine = TrainingEngine(config=config1, task=task, rank=rank, world_size=world_size, data_module=data_module)
 
         before = model_state_dict(engine.model)
@@ -183,8 +211,8 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
             pp_n_microbatches=pp_n_microbatches,
             amp_bf16=amp_bf16,
         )
-        data_module2 = DummyLMDataModule(config2)
-        task2 = LanguageModelingTask(config2, data_module2)
+        data_module2 = data_cls(config2)
+        task2 = task_cls(config2, data_module2)
         engine2 = TrainingEngine(config=config2, task=task2, rank=rank, world_size=world_size, data_module=data_module2)
         # The resumed engine must sense it starts at epoch index 1.
         assert engine2.start_epoch == 1, f"rank {rank}: resume did not sense start_epoch=1"
@@ -222,6 +250,8 @@ def _run_pp_engine_e2e(
     pp_size: int | None = None,
     pp_n_microbatches: int | None = None,
     amp_bf16: bool = False,
+    task_cls: type | None = None,
+    dict_batch: bool = False,
 ) -> None:
     port = _free_port()
     os.environ["MASTER_ADDR"] = "127.0.0.1"
@@ -248,6 +278,8 @@ def _run_pp_engine_e2e(
                     "pp_size": pp_size,
                     "pp_n_microbatches": pp_n_microbatches,
                     "amp_bf16": amp_bf16,
+                    "task_cls": task_cls,
+                    "dict_batch": dict_batch,
                 },
                 results,
             ),
@@ -321,3 +353,18 @@ def test_pp_bf16_amp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None
     optimizer moments.
     """
     _run_pp_engine_e2e(tmp_path, 2, amp_bf16=True)
+
+
+def test_pp_engine_sft_alias_trains_and_resumes_two_process_cpu(tmp_path) -> None:
+    """SFT alias under pipeline parallelism (RIL TASK-304 / ISS-339 overlap).
+
+    ``SFTTask`` is a pure alias of ``LanguageModelingTask``, so it MUST run
+    under ``parallel_strategy='pp'`` exactly like the parent. It also collates
+    SFT-style dict batches carrying the extra ``attention_mask`` key, which the
+    PP stage forward must drop without changing the loss (previously SFT's own
+    train_step threaded that mask into the model, a mask flash_attn ignored and
+    the PP scheduler dropped — behaviour differed by backend/strategy). Train /
+    save / resume must keep both ranks' dicts bit-identical and restore the
+    per-stage optimizer moments, same as the LM case.
+    """
+    _run_pp_engine_e2e(tmp_path, 2, task_cls=SFTTask, dict_batch=True)

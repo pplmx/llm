@@ -371,9 +371,11 @@ wrap time).
 PP refuses loudly rather than silently training the wrong loss:
 
 - **Standard-loop LM tasks only** — the task must advertise
-  `supports_pipeline_parallel()` (the `LMTask` family). SFT passes an
-  `attention_mask` into the model that the stage forward would drop; PPO / DPO
-  / reward use custom loops — all rejected at setup.
+  `supports_pipeline_parallel()` (the `LMTask` family, including the `SFT` /
+  `sft` alias — since RIL TASK-304 `SFTTask` is a pure alias of
+  LanguageModelingTask and, like the parent, does not thread an
+  `attention_mask` into the model). Custom-loop tasks (PPO / DPO / reward)
+  and other opted-out tasks (distill / regression) are rejected at setup.
 - **AMP must be bf16** (`use_amp=True` needs `amp_dtype='bfloat16'`; float16 is
   refused, RIL TASK-214): the schedule computes AND backprops the loss inside
   `step()`, so a GradScaler (float16 AMP) cannot scale the loss before the
