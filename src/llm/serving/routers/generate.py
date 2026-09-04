@@ -221,8 +221,8 @@ def _validate_prompt_encodable(prompt: str) -> None:
         ) from exc
 
 
-def _validate_generation_bounds(max_new_tokens: int) -> None:
-    """Raise a 400 ``APIError`` when ``max_new_tokens`` cannot fit context.
+def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
+    """Raise a 400 ``APIError`` when prompt + ``max_new_tokens`` cannot fit.
 
     Mirrors the ``ServingGenerationService._generation_config`` guard
     (``max_new_tokens >= model.max_seq_len`` leaves the prompt no room). On
@@ -230,6 +230,15 @@ def _validate_generation_bounds(max_new_tokens: int) -> None:
     like encodability — otherwise a request that the service rejects
     surfaces as a 200 stream containing ``Error: ValueError`` (RIL ISS-149)
     instead of the 400 its non-streaming twin returns.
+
+    Also checks ``len(prompt) + max_new_tokens`` against the EFFECTIVE KV
+    window (RIL ISS-346): a batched engine's ``max_seq_len`` (e.g.
+    ``LLM_SERVING_MAX_SEQ_LEN``) can be SMALLER than ``model.max_seq_len``.
+    A prompt that already eats most of that window passes the
+    ``max_new_tokens``-only check, then ``ContinuousBatchingEngine.add_request``
+    raises ``ValueError`` INSIDE the already-started SSE — an in-band
+    ``Error:`` chunk, exactly the ISS-149 class this validation exists to
+    prevent.
     """
     service = _require_generation_service()
     model_max_seq = getattr(service.model, "max_seq_len", None)
@@ -241,6 +250,26 @@ def _validate_generation_bounds(max_new_tokens: int) -> None:
             "to fit in the context window.",
         )
 
+    engine_max = getattr(getattr(service, "engine", None), "max_seq_len", None)
+    budget_vals = [bound for bound in (model_max_seq, engine_max) if isinstance(bound, int)]
+    if not budget_vals:
+        return
+    budget = min(budget_vals)
+    try:
+        prompt_len = len(service.tokenizer.encode(prompt))
+    except KeyError, ValueError, TypeError:
+        # Unencodable prompts fail the dedicated check in
+        # ``_validate_prompt_encodable``; skip the budget check rather than
+        # duplicate-crash here.
+        return
+    if prompt_len + max_new_tokens > budget:
+        raise APIError(
+            ErrorCode.INVALID_REQUEST,
+            f"prompt ({prompt_len} tokens) + max_new_tokens ({max_new_tokens}) "
+            f"would exceed the context window ({budget}); shorten the prompt "
+            "or lower max_new_tokens.",
+        )
+
 
 def _validate_stream_request(prompt: str, max_new_tokens: int) -> None:
     """Run all client-caused pre-stream validations (encodability + bounds).
@@ -250,7 +279,7 @@ def _validate_stream_request(prompt: str, max_new_tokens: int) -> None:
     ISS-149), never an ``Error: ...`` chunk inside a 200 stream.
     """
     _validate_prompt_encodable(prompt)
-    _validate_generation_bounds(max_new_tokens)
+    _validate_generation_bounds(prompt, max_new_tokens)
 
 
 def _sync_generate(prompt: str, **kwargs) -> str:

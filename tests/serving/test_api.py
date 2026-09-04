@@ -735,3 +735,47 @@ def test_auth_enforcement(monkeypatch):
     finally:
         # 恢复配置
         config.api_key = original_key
+
+
+def test_stream_prevalidation_checks_prompt_plus_engine_budget(monkeypatch):
+    """Regression (RIL ISS-346): streaming pre-validation must reject
+    ``len(prompt) + max_new_tokens > min(model.max_seq_len, engine.max_seq_len)``
+    BEFORE the SSE starts, not just ``max_new_tokens >= model.max_seq_len``.
+
+    A batched engine's KV window (``LLM_SERVING_MAX_SEQ_LEN``) can be smaller
+    than ``model.max_seq_len``. A prompt that already eats most of that window
+    passes the old token-count-only check, then
+    ``ContinuousBatchingEngine.add_request`` raises ``ValueError`` inside the
+    already-started SSE — an in-band ``Error:`` chunk in a 200 stream (the
+    ISS-149 class this pre-validation exists to prevent). The non-streaming
+    twin returns a clean 400 for the same request.
+    """
+    import llm.serving.routers.generate as gen
+
+    class _FakeEngine:
+        max_seq_len = 4  # KV window smaller than the model's 16
+
+    class _FakeModel:
+        max_seq_len = 16
+
+    class _FakeService:
+        model = _FakeModel()
+        engine = _FakeEngine()
+        tokenizer = StubTokenizer()  # 1 char -> 1 token
+
+    monkeypatch.setattr(gen, "_require_generation_service", lambda: _FakeService())
+
+    # 3 prompt tokens + 2 new tokens = 5 > budget 4 -> 400 pre-SSE.
+    with pytest.raises(gen.APIError) as excinfo:
+        gen._validate_generation_bounds("xyz", 2)
+    assert excinfo.value.code == gen.ErrorCode.INVALID_REQUEST.value
+    assert excinfo.value.status_code == 400
+    assert "context window" in str(excinfo.value)
+
+    # Fits: 3 prompt tokens + 1 new token = 4 <= budget 4 -> no raise.
+    # (StubTokenizer.encode returns a fixed 3-token list regardless of text.)
+    gen._validate_generation_bounds("xy", 1)
+
+    # The model-level guard is unchanged: max_new_tokens >= model.max_seq_len.
+    with pytest.raises(gen.APIError):
+        gen._validate_generation_bounds("xy", 16)
