@@ -27,6 +27,7 @@ import math
 import os
 import socket
 import time
+from datetime import timedelta
 from string import printable
 from typing import Any
 
@@ -57,6 +58,10 @@ ENGINE_2D_MIN_FREE_BYTES = 1 * 1024**3
 # (observed 6-GPU engine e2e and 4-GPU wrap timing out at 180-240s under load,
 # both passing instantly in isolation). A true deadlock still trips these.
 ENGINE_2D_JOIN_TIMEOUT_S = 480
+# Bounded per-collective timeout for the spawn workers' process groups (see
+# the init_process_group call sites). Mirrors DistributedConfig's
+# collective_timeout_seconds for the harness's hand-rolled PGs (RIL TASK-305).
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=60)
 
 
 def _free_port() -> int:
@@ -152,7 +157,21 @@ class _CaptureEpochLoss(Callback):
 def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx: dict, results) -> None:
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(
+            backend="nccl",
+            rank=rank,
+            world_size=world_size,
+            # Bound every collective (RIL TASK-305): the library path uses
+            # DistributedConfig.collective_timeout_seconds, but these test
+            # spawn workers call init_process_group directly — an unbounded
+            # PG left survivors blocking ~forever on the next collective when
+            # a sibling rank died mid-training under box flakiness (observed
+            # as a blind 480s parent-join timeout AFTER training completed).
+            # 60s is far beyond these tiny models' microsecond collectives but
+            # turns a dead-sibling stall into a fast torch.distributed
+            # TimeoutError with a real message.
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         torch.cuda.set_device(device_index)
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
 
@@ -261,10 +280,20 @@ def _run_engine_2d(
     while True:
         remaining = end_at - time.monotonic()
         if remaining <= 0:
+            alive = [i for i, process in enumerate(context.processes) if process.is_alive()]
             for process in context.processes:
                 if process.is_alive():
                     process.kill()
-            raise TimeoutError(f"TP+DP 2D engine e2e spawn exceeded {ENGINE_2D_JOIN_TIMEOUT_S}s")
+            # Diagnose the stall instead of reporting a blind timeout: the
+            # observed failure (RIL TASK-305) was all ranks finishing
+            # training, then one dying mid-collective and the survivors
+            # blocking until this join fired. Knowing WHO is alive and WHO
+            # produced results pinpoints the dead rank.
+            reported = [i for i in range(world_size) if i in results]
+            raise TimeoutError(
+                f"TP+DP 2D engine e2e spawn exceeded {ENGINE_2D_JOIN_TIMEOUT_S}s; "
+                f"ranks still alive at timeout: {alive}; ranks with results: {reported}"
+            )
         if context.join(timeout=remaining):
             break
     for rank in range(world_size):
@@ -323,7 +352,7 @@ def test_engine_tp_dp_2d_wide_grid_six_gpu(tmp_path):
 def _pure_tp_metric_worker(rank: int, world_size: int, ctx: dict, results) -> None:
     """Pure TP (tp_size == world_size == 2) on CPU/gloo: report the epoch loss."""
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         torch.manual_seed(42 + rank)
 
         config = _build_config(ctx, backend="gloo", parallel_strategy="tp", tp_size=world_size)
@@ -400,10 +429,14 @@ def test_pure_tp_reports_true_metric_loss_not_divided_by_world(tmp_path):
     while True:
         remaining = end_at - time.monotonic()
         if remaining <= 0:
+            alive = [i for i, process in enumerate(context.processes) if process.is_alive()]
             for process in context.processes:
                 if process.is_alive():
                     process.kill()
-            raise TimeoutError("pure-TP loss spawn exceeded timeout")
+            raise TimeoutError(
+                f"pure-TP loss spawn exceeded timeout; ranks alive: {alive}; "
+                f"ranks with results: {[i for i in range(2) if i in results]}"
+            )
         if context.join(timeout=remaining):
             break
     for rank in range(2):
