@@ -129,14 +129,20 @@ def _group_reward_hits(model, module):
     response_tokens = module.response_tokens.to(next(model.parameters()).device)
     with torch.no_grad():
         logits = model(response_tokens)
-        lp = functional.log_softmax(logits, -1).gather(-1, response_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
+        # Shifted next-token factorization, matching GRPOTask._per_token_log_probs
+        # (RIL ISS-333): logits[t] predicts response_tokens[t+1].
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_tokens = response_tokens[..., 1:].contiguous()
+        lp = functional.log_softmax(shift_logits, -1).gather(-1, shift_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
     lp = lp.reshape(-1, module.group_size)
     return (lp.argmax(-1) == 0).float().mean().item()
 
 
 def test_grpo_engine_improves_group_reward():
     """CPU e2e: GRPO raises the fraction of groups that favor the rewarded
-    response (0 -> ~1), proving the group-relative objective works end-to-end."""
+    response (→ ~1), proving the group-relative objective works end-to-end.
+    (The PRE-training fraction is a coin flip on a 2-group demo, so only the
+    convergence is asserted.)"""
     from llm.data.modules.grpo import GRPODataModule
     from llm.training.core.engine import TrainingEngine
     from llm.training.tasks.grpo_task import GRPOTask
@@ -157,7 +163,13 @@ def test_grpo_engine_improves_group_reward():
 
         assert all(loss == loss for loss in losses)  # finite
         assert losses[-1] < losses[0], f"GRPO loss did not decrease: {losses[0]:.3f} -> {losses[-1]:.3f}"
-        assert before < 0.5, f"expected poor initial group reward, got {before:.3f}"
-        assert after > 0.9, f"GRPO did not improve group reward: {before:.3f} -> {after:.3f}"
+        # The PRE-training group reward on a 2-group demo is a coin flip (each
+        # group picks its argmax at chance, ~1/group_size) — NOT
+        # deterministically "poor". The old `before < 0.5` asserted a premise
+        # that only held under the unshifted metric (RIL ISS-333). The real
+        # invariants: loss decreases and the group reward CONVERGES to the
+        # rewarded (fixed-random) target.
+        assert after > 0.9, f"GRPO did not converge group reward: {before:.3f} -> {after:.3f}"
+        assert after >= before
     finally:
         torch.set_num_threads(prev)

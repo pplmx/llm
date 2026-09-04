@@ -185,8 +185,13 @@ def _grpo_group_reward_fraction(model: nn.Module, module: Any) -> float:
     response_tokens = module.response_tokens.to(_probe_device(model))
     with torch.no_grad():
         logits = model(response_tokens)
-    lp = functional.log_softmax(logits.float(), dim=-1)
-    lp = lp.gather(-1, response_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
+    # Shifted next-token factorization, matching GRPOTask._per_token_log_probs
+    # (RIL ISS-333): logits[t] predicts response_tokens[t+1]. The unshifted
+    # gather over-estimated by letting the model copy input tokens.
+    shift_logits = logits[..., :-1, :].contiguous().float()
+    shift_tokens = response_tokens[..., 1:].contiguous()
+    lp = functional.log_softmax(shift_logits, dim=-1)
+    lp = lp.gather(-1, shift_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
     lp = lp.reshape(-1, module.group_size)
     return float((lp.argmax(-1) == 0).float().mean().item())
 
@@ -211,9 +216,15 @@ def run_grpo(config: Any, epochs: int, eval_sequences: torch.Tensor | None = Non
     reference = _snapshot_reference(engine.model)
     eval_seqs = eval_sequences if eval_sequences is not None else module.response_tokens
 
+    # The PRE-training fraction (before any epoch): a random policy has no
+    # affinity for the cyclic target, so this starts near chance. The
+    # trajectory itself is sampled AFTER each epoch — with the learnable
+    # cyclic target the reward already saturates by epoch 1, so only the
+    # pre-training value (and the final value) carry signal (RIL ISS-333).
     group_traj: list[float] = []
     loss_traj: list[float] = []
     kl_traj: list[float] = []
+    initial_group_fraction = _grpo_group_reward_fraction(engine.model, module)
     for epoch in range(epochs):
         loss = engine._run_epoch(epoch)
         loss_traj.append(float(loss))
@@ -221,6 +232,7 @@ def run_grpo(config: Any, epochs: int, eval_sequences: torch.Tensor | None = Non
         kl_traj.append(_reference_kl(engine.model, reference, eval_seqs))
 
     return {
+        "initial_group_reward_fraction": initial_group_fraction,
         "group_reward_fraction_trajectory": group_traj,
         "final_group_reward_fraction": group_traj[-1],
         "grpo_loss_trajectory": loss_traj,
