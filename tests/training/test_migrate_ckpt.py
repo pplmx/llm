@@ -183,12 +183,19 @@ class TestConvertLegacyCheckpointToSplit:
             convert_legacy_checkpoint_to_split(corrupt)
 
     def test_bare_model_blob_raises_migration_error(self, tmp_path: Path):
-        """A ``torch.save(model)`` module blob is rejected by ``weights_only``
-        (arbitrary class in the pickle) and must surface as
-        ``CheckpointMigrationError`` rather than a raw ``UnpicklingError``."""
+        """A ``torch.save(model)`` module blob must surface as
+        ``CheckpointMigrationError``, never a raw ``UnpicklingError``.
+
+        Which message depends on the process state: before
+        :func:`register_framework_safe_globals` runs, ``weights_only=True``
+        rejects the module class with "could not be loaded"; after it, the
+        blob unpickles and the dict-validation reports "missing 'model_state'"
+        (rounded up to the checkpoint-format error). Both are the documented
+        clean failure — only the raw-traceback escape is forbidden.
+        """
         model_blob = tmp_path / "module.pt"
         torch.save(torch.nn.Linear(4, 4), model_blob)
-        with pytest.raises(CheckpointMigrationError, match="could not be loaded"):
+        with pytest.raises(CheckpointMigrationError, match=r"could not be loaded|training checkpoint"):
             convert_legacy_checkpoint_to_split(model_blob)
 
     def test_missing_safetensors_raises_migration_error(self, legacy_checkpoint: Path, monkeypatch):

@@ -232,13 +232,20 @@ def test_cli_fp8_dynamic_needs_no_calib_and_saves(runner, tmp_path: Path):
 
 
 def test_cli_fp8_static_requires_calib_source(runner, tmp_path: Path):
+    """``--activation static`` needs a calibration source — exit 1 with a hint
+    naming the dynamic escape hatch. (The default is now ``dynamic``, so the
+    bare command needs no calibration; RIL ISS-330.)"""
     from llm.cli.quantize import app
 
     model = tmp_path / "m.pt"
     _save_tiny_model(model)
-    result = runner.invoke(app, ["fp8", "--model", str(model), "--output", str(tmp_path / "o.pt")])
+    result = runner.invoke(
+        app,
+        ["fp8", "--model", str(model), "--output", str(tmp_path / "o.pt"), "--activation", "static"],
+    )
     assert result.exit_code == 1
     assert "calibration" in result.stderr
+    assert "--activation dynamic" in result.stderr
 
 
 # ---------------------------------------------------------------------------
