@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 169,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-04T11:46:18+00:00",
+  "updated_at": "2026-09-04T12:17:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -17501,11 +17501,11 @@
     "ISS-345": {
       "id": "ISS-345",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-04T10:56:27+00:00",
-      "updated_at": "2026-09-04T10:56:27+00:00",
-      "touched_round": 168,
+      "updated_at": "2026-09-04T12:17:31+00:00",
+      "touched_round": 169,
       "title": "SFT/DPO front-truncation silently drops the WHOLE prompt when a completion alone exceeds max_seq_len",
       "severity": "medium",
       "description": "After ISS-332 made truncation keep the tail (input_ids[-max:]), a sample whose COMPLETION alone exceeds max_seq_len keeps only completion[J:] — the entire prompt is dropped and labels contain no -100 (no instruction context to condition on). DPO is worse: chosen(row with 300-token completion) is truncated to no-prompt while rejected(row of the same pair with 30-token completion) keeps the full prompt, so _get_batch_logps compares logp(chosen | no prompt) vs logp(rejected | full prompt) on the same pair — an imbalanced/corrupted preference signal. The _load_data guard only filters rows where the PROMPT alone hits the limit, not where the completion blows it out. No error, no drop, silent corruption.",
@@ -17596,6 +17596,17 @@
       "touched_round": 168,
       "title": "batch_generate token_count uses tokenizer tokens",
       "commit": "0baffa8"
+    },
+    "CHG-323": {
+      "id": "CHG-323",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T12:17:31+00:00",
+      "updated_at": "2026-09-04T12:17:31+00:00",
+      "touched_round": 169,
+      "title": "Drop overwindow-completion rows in SFT/DPO/Reward datasets",
+      "commit": "be573ec"
     }
   },
   "edges": [
@@ -25979,6 +25990,12 @@
       "to": "ISS-344",
       "type": "resolves",
       "created_at": "2026-09-04T11:42:31+00:00"
+    },
+    {
+      "from": "CHG-323",
+      "to": "ISS-345",
+      "type": "resolves",
+      "created_at": "2026-09-04T12:17:31+00:00"
     }
   ]
 }
