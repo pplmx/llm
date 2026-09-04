@@ -71,6 +71,33 @@ def test_multimodal_datamodule_val_is_disjoint_from_train():
         assert not (vm.unsqueeze(0) == train_modal).all(dim=1).any()
 
 
+def test_multimodal_datamodule_val_loader_is_disjoint_from_train():
+    """Regression (RIL ISS-342): the VALIDATION LOADER must iterate the
+    disjoint held-out split.
+
+    ``val_dataloader`` previously copied the train path and served
+    ``self.train_dataset`` (the base class correctly uses ``val_dataset``), so
+    every validation epoch silently scored the training split and
+    val_loss/val_ppl equalled train — corrupting checkpoint selection and
+    EarlyStopping. Asserting dataset-object identity alone could not catch it;
+    this checks the loader's emitted rows against the train split.
+    """
+    config = _config(num_samples=32)
+    module = MultimodalDataModule(config, modality="linear", input_dim=16)
+    module.setup()
+    val_loader, _sampler = module.val_dataloader(rank=0, world_size=1)
+    assert val_loader is not None
+    batch = next(iter(val_loader))
+    assert batch["modal_embeds"].shape[0] > 0
+
+    train_modal = module.train_dataset.tensors[2]
+    for vm in batch["modal_embeds"]:
+        assert not (vm.unsqueeze(0) == train_modal).all(dim=1).any(), (
+            "validation loader emitted a TRAINING sample — val_dataloader must "
+            "serve the disjoint val_dataset, not train_dataset (RIL ISS-342)"
+        )
+
+
 def test_multimodal_datamodule_unknown_modality_raises():
 
     config = _config()

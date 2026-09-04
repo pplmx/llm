@@ -294,9 +294,14 @@ class MultimodalDataModule(SamplerMapDataModule):
         return self.build_dataloader(self.train_dataset, sampler, collate_fn=self._collate), sampler
 
     def val_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader | None, DistributedSampler | None]:
-        if self.train_dataset is None:
+        # Must serve the disjoint ``val_dataset`` split, not ``train_dataset``
+        # (RIL ISS-342): the base ``SamplerMapDataModule.val_dataloader`` does,
+        # but a copy of the train path here silently made every validation epoch
+        # score the TRAINING split — val_loss/val_ppl equalled train and
+        # checkpoint selection / EarlyStopping were meaningless.
+        if self.val_dataset is None:
             return None, None
         sampler = DistributedSampler(
-            self.train_dataset, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False
+            self.val_dataset, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False
         )
-        return self.build_dataloader(self.train_dataset, sampler, collate_fn=self._collate), sampler
+        return self.build_dataloader(self.val_dataset, sampler, collate_fn=self._collate), sampler
