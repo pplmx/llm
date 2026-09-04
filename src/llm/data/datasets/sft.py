@@ -30,7 +30,7 @@ class SFTDataset(Dataset):
         tokenizer: BaseTokenizer,
         max_seq_len: int = 1024,
         template_fn: Callable[[dict[str, Any]], tuple[str, str]] | None = None,
-        padding_value: int = 0,
+        padding_value: int | None = None,
         ignore_index: int = -100,
     ):
         """
@@ -40,7 +40,10 @@ class SFTDataset(Dataset):
             max_seq_len: Max sequence length.
             template_fn: Function to convert data item to (prompt, response) tuple.
                          If None, defaults to Alpaca style.
-            padding_value: Token ID for padding input_ids.
+            padding_value: Token ID for padding input_ids. ``None`` (default)
+                resolves to ``tokenizer.pad_token_id`` when the tokenizer has
+                one, else ``0`` — hardcoding ``0`` pads with an arbitrary id
+                for tokenizers whose real pad id differs (RIL ISS-337).
             ignore_index: Label value for masked tokens (padding/prompt).
         """
         if max_seq_len <= 0:
@@ -53,7 +56,11 @@ class SFTDataset(Dataset):
         self.file_path = Path(file_path)
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
-        self.padding_value = padding_value
+        if padding_value is None:
+            tokenizer_pad = getattr(self.tokenizer, "pad_token_id", None)
+            self.padding_value = tokenizer_pad if tokenizer_pad is not None else 0
+        else:
+            self.padding_value = padding_value
         self.ignore_index = ignore_index
 
         self.template_fn = template_fn or self.alpaca_template
@@ -67,7 +74,18 @@ class SFTDataset(Dataset):
         data: list[dict[str, Any]] = []
         try:
             with self.file_path.open(encoding="utf-8") as f:
-                data.extend(json.loads(line) for line in f if line.strip())
+                for line in f:
+                    if not line.strip():
+                        continue
+                    item = json.loads(line)
+                    if not isinstance(item, dict):
+                        # A scalar JSON row (bare string/number) would reach
+                        # ``alpaca_template``/``item.get`` and die with a raw
+                        # AttributeError mid-setup (RIL ISS-336). Skip it with
+                        # context instead.
+                        logger.warning("Skipping SFT row that is not a JSON object: %r", item)
+                        continue
+                    data.append(item)
         except FileNotFoundError:
             raise FileNotFoundError(f"SFT data file not found: {self.file_path}")
         except json.JSONDecodeError as e:

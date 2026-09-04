@@ -63,6 +63,17 @@ class RejectionSampleDataModule(SamplerMapDataModule):
                 raise ValueError("RejectionSampleDataModule mode='threshold' requires threshold")
             mask, stats = rejection_sample(rewards, threshold=threshold_value)
         kept = responses[mask]
+        if kept.shape[0] == 0:
+            # An all-zero-kept TensorDataset yields an epoch with zero batches —
+            # the engine then reads a meaningless 0.0 loss / divides by zero
+            # batches (ISS-200 class). Nothing clearing the filter means the
+            # config cannot demonstrate the pipeline: fail at setup, loudly.
+            raise ValueError(
+                f"RejectionSampleDataModule kept ZERO of {batch} responses "
+                f"(mode={self.mode!r}, k={self.k}, threshold={self.threshold}). "
+                f"No sample cleared the filter — raise k / lower the threshold, "
+                f"or check that the reward function produces positive examples."
+            )
         self.response_tokens = responses
         self.rewards = rewards
         self.kept_mask = mask

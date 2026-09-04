@@ -11,6 +11,13 @@ class SyntheticDataModule(SamplerMapDataModule):
         pass
 
     def setup(self, stage: str | None = None):
+        num_samples = int(self.config.training.num_samples)
+        if num_samples < 1:
+            # A 0-sample config produces a 0-length train set → an epoch with
+            # zero batches → the engine's per-epoch averaging divides by zero
+            # (ISS-200 class). Fail fast at the boundary instead.
+            raise ValueError(f"SyntheticDataModule requires training.num_samples >= 1, got {num_samples}.")
+
         # Draw all synthetic data from a DEDICATED fixed-seed generator, NOT
         # the global torch RNG. The distributed layer seeds the global RNG
         # per-rank (``torch.manual_seed(42 + rank)``), so a plain
@@ -24,14 +31,14 @@ class SyntheticDataModule(SamplerMapDataModule):
         generator = torch.Generator()
         generator.manual_seed(0)
         train_x = torch.randn(
-            self.config.training.num_samples,
+            num_samples,
             self.config.model.hidden_size,
             generator=generator,
         )
         train_y = train_x + 0.1 * torch.randn_like(train_x, generator=generator)
         self.train_dataset = TensorDataset(train_x, train_y)
 
-        val_num_samples = max(1, self.config.training.num_samples // 10)
+        val_num_samples = max(1, num_samples // 10)
         val_x = torch.randn(
             val_num_samples,
             self.config.model.hidden_size,

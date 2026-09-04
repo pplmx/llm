@@ -130,3 +130,19 @@ def test_sft_dataset_rejects_nonpositive_max_seq_len(tmp_path):
         SFTDataset(file_path=fp, tokenizer=tok, max_seq_len=0)
     with pytest.raises(ValueError, match="max_seq_len"):
         SFTDataset(file_path=fp, tokenizer=tok, max_seq_len=-1)
+
+
+def test_sft_dataset_skips_non_dict_rows(tmp_path):
+    """A scalar JSON row (bare string/number) would crash in
+    ``alpaca_template``/``item.get`` with a raw AttributeError mid-setup; it
+    must be skipped with context instead (RIL ISS-336)."""
+    from string import printable
+
+    from llm.data.datasets.sft import SFTDataset
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    fp = tmp_path / "mixed.jsonl"
+    fp.write_text('"not a dict"\n{"instruction":"Hi","input":"","output":"Hello"}\n', encoding="utf-8")
+
+    dataset = SFTDataset(file_path=fp, tokenizer=SimpleCharacterTokenizer([printable]), max_seq_len=32)
+    assert len(dataset) == 1, "the non-dict row must be skipped"

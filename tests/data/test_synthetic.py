@@ -59,3 +59,13 @@ def test_synthetic_data_deterministic_across_runs():
         assert torch.equal(a.train_dataset[i][0], b.train_dataset[i][0])
     for i in range(len(a.val_dataset)):
         assert torch.equal(a.val_dataset[i][0], b.val_dataset[i][0])
+
+
+def test_synthetic_data_module_rejects_zero_samples():
+    """A ``num_samples=0`` config would build a 0-length train set → an empty
+    epoch → the engine's per-epoch average divides by zero (RIL ISS-336)."""
+    import pytest
+
+    module = SyntheticDataModule(_synthetic_config(num_samples=0))
+    with pytest.raises(ValueError, match="num_samples"):
+        module.setup()

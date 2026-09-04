@@ -34,7 +34,7 @@ class RewardDataset(Dataset):
         file_path: str | Path,
         tokenizer: BaseTokenizer,
         max_seq_len: int = 1024,
-        padding_value: int = 0,
+        padding_value: int | None = None,
     ):
         if max_seq_len <= 0:
             # RIL ISS-199: mirrors the SFTDataset guard — a non-positive
@@ -44,7 +44,14 @@ class RewardDataset(Dataset):
         self.file_path = Path(file_path)
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
-        self.padding_value = padding_value
+        # ``None`` → tokenizer.pad_token_id (fallback 0), matching the text
+        # datasets — hardcoding 0 pads with an arbitrary id for tokenizers
+        # whose real pad id differs (RIL ISS-337).
+        if padding_value is None:
+            tokenizer_pad = getattr(self.tokenizer, "pad_token_id", None)
+            self.padding_value = tokenizer_pad if tokenizer_pad is not None else 0
+        else:
+            self.padding_value = padding_value
 
         self.data = self._load_data()
 
@@ -59,6 +66,15 @@ class RewardDataset(Dataset):
                     if line.strip():
                         item = json.loads(line)
                         if all(k in item for k in ("prompt", "chosen", "rejected")):
+                            if not item["chosen"] or not item["rejected"]:
+                                # An empty completion makes the reward model score
+                                # the prompt itself (or a fully-masked row), not
+                                # the response end it is supposed to score —
+                                # silently wrong training signal (RIL ISS-336).
+                                logger.warning(
+                                    "Skipping Reward item with an empty chosen/rejected completion: nothing to score."
+                                )
+                                continue
                             data.append(item)
         except json.JSONDecodeError as e:
             # RIL ISS-201: SFT/DPO already wrap a malformed line in an

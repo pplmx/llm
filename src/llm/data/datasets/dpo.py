@@ -28,7 +28,7 @@ class DPODataset(Dataset):
         file_path: str | Path,
         tokenizer: BaseTokenizer,
         max_seq_len: int = 1024,
-        padding_value: int = 0,
+        padding_value: int | None = None,
         ignore_index: int = -100,
     ):
         if max_seq_len <= 0:
@@ -39,7 +39,14 @@ class DPODataset(Dataset):
         self.file_path = Path(file_path)
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
-        self.padding_value = padding_value
+        # ``None`` → tokenizer.pad_token_id (fallback 0), matching the text
+        # datasets — hardcoding 0 pads with an arbitrary id for tokenizers
+        # whose real pad id differs (RIL ISS-337).
+        if padding_value is None:
+            tokenizer_pad = getattr(self.tokenizer, "pad_token_id", None)
+            self.padding_value = tokenizer_pad if tokenizer_pad is not None else 0
+        else:
+            self.padding_value = padding_value
         self.ignore_index = ignore_index
 
         self.data = self._load_data()
@@ -57,6 +64,16 @@ class DPODataset(Dataset):
                         # Minimal validation: skip entries missing required keys
                         if not all(k in item for k in ("prompt", "chosen", "rejected")):
                             logger.warning("Skipping DPO item missing required keys (prompt, chosen, rejected)")
+                            continue
+                        # An empty completion yields all-(-100) labels — both
+                        # log-probs come out 0 and the pair contributes a
+                        # constant log(2) to the DPO loss, silently diluting
+                        # every gradient step (RIL ISS-336).
+                        if not item["chosen"] or not item["rejected"]:
+                            logger.warning(
+                                "Skipping DPO item with an empty chosen/rejected completion: "
+                                "there is no preference signal to train on."
+                            )
                             continue
                         # An over-long prompt (already >= max_seq_len) truncates
                         # the completion ENTIRELY in `_process_sequence`

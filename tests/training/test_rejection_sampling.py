@@ -118,3 +118,15 @@ def test_rejection_sample_datamodule_rejects_bad_mode():
 
     with pytest.raises(ValueError, match="mode must be"):
         RejectionSampleDataModule(_config(), mode="med-sam")
+
+
+def test_rejection_sample_datamodule_refuses_empty_keep():
+    """When no response clears the filter, the kept TensorDataset would be
+    length 0 → an empty epoch → the engine averages over zero batches. The
+    module must fail at setup with a clear error (RIL ISS-336)."""
+    from llm.data.modules.rejection_sample import RejectionSampleDataModule
+
+    config = _config(num_samples=8)
+    module = RejectionSampleDataModule(config, mode="threshold", threshold=2.0)  # rewards are 0/1
+    with pytest.raises(ValueError, match="kept ZERO"):
+        module.setup()

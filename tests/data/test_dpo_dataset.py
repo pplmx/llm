@@ -155,10 +155,26 @@ def test_dpo_dataset_padding_small_sequence(tmp_path, tokenizer):
     prompt_ids = tokenizer.encode("X")
     chosen_ids = tokenizer.encode("Y")
     seq_len = len(prompt_ids) + len(chosen_ids)
-    # The padding_value is 0, so last tokens should be 0
-    assert item["chosen_input_ids"][seq_len:].tolist() == [0] * (10 - seq_len)
+    # Padding uses the tokenizer's real pad id (RIL ISS-337): the old hardcoded
+    # ``padding_value=0`` padded with an arbitrary id here (pad_token_id=100).
+    pad_id = tokenizer.pad_token_id
+    assert item["chosen_input_ids"][seq_len:].tolist() == [pad_id] * (10 - seq_len)
     # Padding labels should be -100
     assert item["chosen_labels"][seq_len:].tolist() == [-100] * (10 - seq_len)
+
+
+def test_dpo_dataset_empty_completion_dropped(tmp_path, tokenizer):
+    """An empty chosen/rejected completion yields all-(-100) labels (constant
+    log(2) in the DPO loss) — the row must be dropped at load (RIL ISS-336)."""
+    file_path = tmp_path / "empty_completion.jsonl"
+    with file_path.open("w") as f:
+        f.write('{"prompt": "Q", "chosen": "", "rejected": "Bad"}\n')
+        f.write('{"prompt": "Q2", "chosen": "Good", "rejected": ""}\n')
+        f.write('{"prompt": "Q3", "chosen": "Good", "rejected": "Bad"}\n')
+
+    dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=20)
+    assert len(dataset) == 1, "rows with an empty completion must be dropped"
+    assert dataset.data[0]["prompt"] == "Q3"
 
 
 def test_dpo_dataset_overlong_prompt_dropped(tmp_path, tokenizer):

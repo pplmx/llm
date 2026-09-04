@@ -141,3 +141,24 @@ def test_reward_dataset_json_decode_error(tmp_path):
     fp.write_text("not valid json\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Invalid JSON"):
         RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=20)
+
+
+def test_reward_dataset_drops_empty_completion(tmp_path):
+    """An empty chosen/rejected completion makes the reward model score the
+    prompt itself (or a fully-masked row) instead of the response end — the
+    row must be dropped at load (RIL ISS-336)."""
+    from string import printable
+
+    from llm.data.datasets.reward import RewardDataset
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([printable])
+    fp = tmp_path / "empty.jsonl"
+    fp.write_text(
+        '{"prompt":"Q","chosen":"","rejected":"Bad"}\n{"prompt":"Q2","chosen":"Good","rejected":"Bad"}\n',
+        encoding="utf-8",
+    )
+
+    dataset = RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=20)
+    assert len(dataset) == 1
+    assert dataset.data[0]["prompt"] == "Q2"

@@ -22,7 +22,19 @@ class AIFeedbackDataModule(SamplerMapDataModule):
 
     def __init__(self, config: Any, judge: PreferenceJudge | None = None) -> None:
         super().__init__(config)
-        self.judge = judge or TargetTokenJudge(target_token=0)
+        judge = judge or TargetTokenJudge(target_token=0)
+        if not isinstance(judge, TargetTokenJudge):
+            # The module's contract is "each pair's good response ends in the
+            # judge's target token" (see docstring). A generic PreferenceJudge
+            # can tie every row — prefer_batch resolves ties toward 'a', so the
+            # "chosen"/"rejected" split silently degenerates (RIL ISS-337).
+            raise TypeError(
+                "AIFeedbackDataModule requires a TargetTokenJudge (got "
+                f"{type(judge).__name__}): the synthetic pairs are built on a "
+                "deterministic end-token signal that only TargetTokenJudge can "
+                "guarantee is separable."
+            )
+        self.judge = judge
 
     def prepare_data(self) -> None:
         pass
@@ -31,9 +43,18 @@ class AIFeedbackDataModule(SamplerMapDataModule):
         batch = int(self.config.training.num_samples)
         seq_len = int(self.config.model.max_seq_len)
         vocab = int(self.config.model.vocab_size)
-        target = self.judge.target_token if isinstance(self.judge, TargetTokenJudge) else 0
+        target = self.judge.target_token
         if vocab < 2:
             raise ValueError("AIFeedbackDataModule requires vocab_size >= 2")
+        if not 0 <= target < vocab:
+            # An out-of-range target is written straight into the last
+            # position; the embedding would raise IndexError deep in the
+            # forward pass (RIL ISS-337). Validate here, loudly.
+            raise ValueError(
+                f"TargetTokenJudge.target_token={target} is out of range for "
+                f"vocab_size={vocab}; the last position would embed an invalid "
+                f"token id and crash the forward pass."
+            )
 
         gen = torch.Generator()
         gen.manual_seed(0)

@@ -115,3 +115,32 @@ def test_aifeedback_dpo_prefers_judge_chosen():
         assert after > 0.9, f"DPO did not learn to prefer judge-chosen: {before:.3f} -> {after:.3f}"
     finally:
         torch.set_num_threads(prev)
+
+
+def test_aifeedback_datamodule_rejects_out_of_range_target():
+    """An out-of-range ``TargetTokenJudge.target_token`` writes an invalid id
+    into the last position → IndexError deep in the forward. Must fail at setup
+    (RIL ISS-337)."""
+    from llm.data.modules.aifeedback import AIFeedbackDataModule
+    from llm.training.rlhf.aifeedback import TargetTokenJudge
+
+    config = _config()  # vocab_size=32
+    module = AIFeedbackDataModule(config, judge=TargetTokenJudge(target_token=999))
+    with pytest.raises(ValueError, match="out of range"):
+        module.setup()
+
+
+def test_aifeedback_datamodule_requires_target_token_judge():
+    """A generic judge can tie every row (ties resolve to 'a'), silently
+    defeating the module's separable-pairs contract — refuse at construction
+    (RIL ISS-337)."""
+    from llm.data.modules.aifeedback import AIFeedbackDataModule
+    from llm.training.rlhf.aifeedback import PreferenceJudge
+
+    class _AlwaysLow(PreferenceJudge):
+        def score_batch(self, responses):
+            return torch.zeros(responses.shape[0])
+
+    config = _config()  # vocab_size=32
+    with pytest.raises(TypeError, match="TargetTokenJudge"):
+        AIFeedbackDataModule(config, judge=_AlwaysLow())
