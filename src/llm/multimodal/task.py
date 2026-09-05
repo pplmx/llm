@@ -25,10 +25,6 @@ class MultimodalTask(LanguageModelingTask):
     merged modal+text sequence.
     """
 
-    def __init__(self, config, data_module) -> None:
-        super().__init__(config, data_module)
-        self.num_modal_tokens = int(getattr(config.model, "multimodal_modal_tokens", 1))
-
     def supports_pipeline_parallel(self) -> bool:
         # train_step feeds both input_ids and modal_embeds; the pipeline stage
         # contract is a single-model loss, so PP must be refused.
@@ -43,7 +39,11 @@ class MultimodalTask(LanguageModelingTask):
         encoder: ModalityEncoder | None = None
         if getattr(self.data_module, "train_encoder", False):
             encoder = cast(MultimodalDataModule, self.data_module).build_encoder()
-        return MultimodalModel(decoder, num_modal_tokens=self.num_modal_tokens, encoder=encoder)
+        # The modal prefix width is an encoder property (``encoder.num_tokens``
+        # from the input geometry), not a config choice; the old
+        # ``model.multimodal_modal_tokens`` knob was stored but never read by
+        # forward/generate (RIL TASK-311/ISS-349) and is removed.
+        return MultimodalModel(decoder, encoder=encoder)
 
     def build_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss(ignore_index=-100)

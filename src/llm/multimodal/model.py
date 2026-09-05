@@ -50,7 +50,6 @@ class MultimodalModel(nn.Module):
 
     Args:
         decoder: a ``DecoderModel`` (untouched).
-        num_modal_tokens: number of prefix tokens per sample (default 1).
         modal_dim: dimension of each sample's registry encoder output; by
             default ``decoder.hidden_size`` (the LinearModalityEncoder default).
         encoder: optional ``ModalityEncoder`` owned by the model so raw
@@ -58,20 +57,21 @@ class MultimodalModel(nn.Module):
             audio tower, image-text alignment, ROADMAP 12.1/12.2). When None
             the model consumes precomputed ``modal_embeds`` instead (CLIP-style
             frozen-tower path, backward compatible).
+
+    The modal prefix width is the *encoder's* ``num_tokens`` (intrinsic to the
+    input geometry), not a constructor choice: the old ``num_modal_tokens``
+    param was stored and never read by forward/generate (RIL TASK-311/ISS-349)
+    and is removed.
     """
 
     def __init__(
         self,
         decoder: DecoderModel,
-        num_modal_tokens: int = 1,
         modal_dim: int | None = None,
         encoder: ModalityEncoder | None = None,
     ) -> None:
         super().__init__()
-        if num_modal_tokens < 1:
-            raise ValueError(f"num_modal_tokens must be >= 1, got {num_modal_tokens}")
         self.decoder = decoder
-        self.num_modal_tokens = int(num_modal_tokens)
         self.hidden_size = decoder.hidden_size
         self.encoder = encoder
         self.fusion = ModalityFusion(modal_dim or self.hidden_size, self.hidden_size)
@@ -151,5 +151,5 @@ class MultimodalModel(nn.Module):
         return fused
 
 
-def build_multimodal_model(decoder: DecoderModel, num_modal_tokens: int = 1, modal_dim: int | None = None):
-    return MultimodalModel(decoder, num_modal_tokens=num_modal_tokens, modal_dim=modal_dim)
+def build_multimodal_model(decoder: DecoderModel, modal_dim: int | None = None):
+    return MultimodalModel(decoder, modal_dim=modal_dim)
