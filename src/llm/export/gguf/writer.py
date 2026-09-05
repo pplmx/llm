@@ -42,6 +42,33 @@ from llm.export.gguf.spec import (
 )
 
 
+def _atomic_write_bytes(path: Path, payload: bytes) -> None:
+    """Write ``payload`` to ``path`` atomically via temp + fsync + rename.
+
+    Fsync is performed BEFORE the rename so a power-loss/crash right after
+    ``write()`` returns can never leave the final name pointing at an
+    un-flushed or partial inode (RIL ISS-352). Mirrors the checkpoint
+    manager's ``_fsync_file``/``_atomic_write_bytes`` pattern (RIL ISS-127);
+    the old code renamed with no fsync at all. Best-effort on filesystems
+    that reject fsync of the directory.
+    """
+    import contextlib
+    import os
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(payload)
+    with tmp.open("rb") as f, contextlib.suppress(OSError):
+        os.fsync(f.fileno())
+    with contextlib.suppress(OSError):
+        dir_fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    tmp.replace(path)
+
+
 def _as_float32_array(data: Any) -> np.ndarray:
     """Coerce ``data`` (numpy array or torch tensor) to a contiguous float32 array.
 
@@ -257,8 +284,5 @@ class GGUFWriter:
             buf.write(payload)
             buf.write(b"\x00" * (align_up(len(payload), self.alignment) - len(payload)))
 
-        self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.output_path.with_name(self.output_path.name + ".tmp")
-        tmp_path.write_bytes(buf.getvalue())
-        tmp_path.replace(self.output_path)
+        _atomic_write_bytes(self.output_path, buf.getvalue())
         return self.output_path

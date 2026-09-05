@@ -215,3 +215,23 @@ def test_bad_config_json_is_refused(tmp_path):
 
     with pytest.raises(GGUFError, match="invalid 'general\\.llm_model_config'"):
         load_gguf_model(path)
+
+
+def test_writer_fsyncs_before_rename(tmp_path, monkeypatch):
+    """Regression (RIL TASK-314/ISS-352): ``write()`` must fsync the temp
+    bytes (and best-effort the directory) before the rename, so a crash right
+    after ``write()`` returns can never leave the final name pointing at an
+    un-flushed or partial inode. The old code renamed with no fsync at all —
+    this test fails when ``os.fsync`` is never called."""
+    import os
+
+    fsync_calls: list = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(os, "fsync", lambda fd: (fsync_calls.append(fd), real_fsync(fd))[1])
+
+    writer = GGUFWriter(tmp_path / "out.gguf")
+    writer.add_tensor("some.weight", np.ones((4, 4), dtype=np.float32), ggml_type="f32")
+    path = writer.write()
+
+    assert path.exists()
+    assert len(fsync_calls) >= 2, "expected fsync on the temp file AND its directory"
