@@ -19,9 +19,12 @@ Encoding (a frequency-peak time-slot code):
    band sees the peak.
 
 The code is a bijection when the vocab fits the usable freq bins
-(``vocab_size <= n_mels - 1``): :func:`spectrogram_to_tokens` recovers the
-exact transcript by slot-energy argmax over frequency. The DataModule
-(MultimodalDataModule with ``audio_asr=True``) validates that bound.
+(``vocab_size <= n_mels - 2``): :func:`spectrogram_to_tokens` recovers the
+exact transcript by slot-energy argmax over frequency (``freq - 2``). The
+DataModule (MultimodalDataModule with ``audio_asr=True``) validates that
+bound. (RIL TASK-310: ``n_mels - 1`` is deliberately rejected — the top token
+``n_mels - 2`` would land on bin 2 and decode as ``0``, silently corrupting
+that label.)
 """
 
 from __future__ import annotations
@@ -97,7 +100,7 @@ def tokens_to_spectrogram(
 
 
 def spectrogram_to_tokens(spec: Tensor, *, n_tokens: int, slot_h: int, n_mels: int) -> Tensor:
-    """Inverse of :func:`tokens_to_spectrogram` for vocab ``<= n_mels - 1``.
+    """Inverse of :func:`tokens_to_spectrogram` for vocab ``<= n_mels - 2``.
 
     Per time-slot, averages energy over the slot's frames and takes the argmax
     frequency bin; since the code maps each token bijectively to ``2 + ...``,

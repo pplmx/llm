@@ -53,6 +53,39 @@ def test_codec_shape_deterministic_and_finite():
     assert bool((spec <= 1.0).all())
 
 
+def test_codec_roundtrip_exact_at_boundary_vocab():
+    """Max exactly-invertible vocab is ``n_mels - 2`` (RIL TASK-310).
+
+    Token ``t`` encodes to freq bin ``2 + (t % (n_mels - 2))``. For a
+    permitted vocab the top valid token is ``vocab - 1``. At ``vocab ==
+    n_mels - 1`` that top token is ``n_mels - 2``, which lands on bin 2 and
+    decodes back to id ``0`` — a silent label corruption the old bound
+    allowed. Here the max SAFE vocab (``n_mels - 2``) round-trips every valid
+    token, including the top one ``n_mels - 3``.
+    """
+    torch.manual_seed(3)
+    mels, slot_h, frames = 32, 8, 64
+    vocab = mels - 2  # 30: the exact-inversion boundary
+    tokens = torch.randint(1, vocab, (4, 6))  # ids in [1, vocab-1] = [1, 29]
+    tokens[0, 0] = vocab - 1  # force the top valid token id 29 into the batch
+    spec = tokens_to_spectrogram(tokens, n_frames=frames, n_mels=mels, slot_h=slot_h, vocab_size=vocab)
+    decoded = spectrogram_to_tokens(spec, n_tokens=tokens.shape[-1], slot_h=slot_h, n_mels=mels)
+    assert torch.equal(decoded, tokens)
+
+
+def test_codec_boundary_vocab_roundtrip_is_corrupted():
+    """The old permitted ``vocab == n_mels - 1`` breaks the roundtrip: the top
+    valid token ``n_mels - 2`` lands on freq bin 2 and decodes as id ``0``.
+    Pins the exact failure the DataModule bound now rejects (RIL TASK-310)."""
+    mels, slot_h, frames = 32, 8, 64
+    vocab = mels - 1  # 31 — previously allowed, silently corrupt
+    t = torch.tensor([[mels - 2]])  # top valid token, decodes to 0
+    spec = tokens_to_spectrogram(t, n_frames=frames, n_mels=mels, slot_h=slot_h, vocab_size=vocab)
+    decoded = spectrogram_to_tokens(spec, n_tokens=1, slot_h=slot_h, n_mels=mels)
+    assert not torch.equal(decoded, t)
+    assert int(decoded[0, 0]) == 0
+
+
 def test_codec_distinct_transcripts_produce_distinct_spectrograms():
     torch.manual_seed(2)
     a = torch.randint(1, 32, (1, 8))
@@ -145,13 +178,13 @@ def test_datamodule_asr_requires_trainable_encoder():
 
 
 def test_datamodule_asr_validates_vocab_fits_mel_bins():
-    """asr_vocab > n_mels - 1 would lose the exact codec roundtrip -> fail fast."""
+    """asr_vocab >= n_mels - 1 would lose the exact codec roundtrip -> fail fast."""
     config = _config()
     module = MultimodalDataModule(
         config,
         modality="audio",
         audio_frames=64,
-        audio_mels=32,  # only 30 usable freq bins
+        audio_mels=32,  # only 30 usable freq bins (n_mels - 2)
         patch_size=8,
         vit_layers=2,
         vit_heads=4,
@@ -162,6 +195,44 @@ def test_datamodule_asr_validates_vocab_fits_mel_bins():
     module.prepare_data()
     with pytest.raises(ValueError, match=r"asr_vocab|freq"):
         module.setup()
+
+
+def test_datamodule_asr_rejects_boundary_vocab():
+    """Regression (RIL TASK-310): ``asr_vocab == n_mels - 1`` used to PASS
+    validation yet silently corrupt the codec (token ``n_mels - 2`` round-trips
+    to 0). Now rejected; ``n_mels - 2`` (the exact-inversion max) passes."""
+    config = _config()
+    boundary = MultimodalDataModule(
+        config,
+        modality="audio",
+        audio_frames=64,
+        audio_mels=32,
+        patch_size=8,
+        vit_layers=2,
+        vit_heads=4,
+        train_encoder=True,
+        audio_asr=True,
+        asr_vocab=31,  # n_mels - 1 == old silent-corruption boundary
+    )
+    boundary.prepare_data()
+    with pytest.raises(ValueError, match=r"asr_vocab|n_mels"):
+        boundary.setup()
+
+    # The max SAFE vocab (n_mels - 2) is accepted and round-trips exactly.
+    module = MultimodalDataModule(
+        config,
+        modality="audio",
+        audio_frames=64,
+        audio_mels=32,
+        patch_size=8,
+        vit_layers=2,
+        vit_heads=4,
+        train_encoder=True,
+        audio_asr=True,
+        asr_vocab=30,
+    )
+    module.prepare_data()
+    module.setup()
 
 
 # ---------------------------------------------------------------------------

@@ -170,9 +170,17 @@ class MultimodalDataModule(SamplerMapDataModule):
             )
         if self.asr_vocab > vocab:
             raise ValueError(f"asr_vocab={self.asr_vocab} exceeds model vocab_size={vocab}")
-        if self.asr_vocab > self.audio_mels - 1:
+        # The codec maps token ``t`` to freq bin ``2 + (t % (n_mels - 2))``
+        # (RIL TASK-310): the top valid token is ``n_mels - 2``, which lands on
+        # bin 2 — but ``spectrogram_to_tokens`` recovers id ``freq - 2`` == 0,
+        # NOT ``n_mels - 2``. So the exact-inversion bound is ``asr_vocab <=
+        # n_mels - 2``; permitting ``n_mels - 1`` silently corrupted the label
+        # for token id ``n_mels - 2`` (transcript said one id, the audio says
+        # another).
+        if self.asr_vocab >= self.audio_mels - 1:
             raise ValueError(
-                f"audio_asr: asr_vocab={self.asr_vocab} exceeds n_mels-1={self.audio_mels - 1}; "
+                f"audio_asr: asr_vocab={self.asr_vocab} must be < n_mels-1={self.audio_mels - 1} "
+                f"(max exactly-invertible vocab is n_mels-2={self.audio_mels - 2}); "
                 "the transcript codec would not be exactly invertible"
             )
         inst_len = min(self.vit_instruction_len, seq_len - 1)  # keep >= 1 response token
