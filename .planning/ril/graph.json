@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 169,
+  "round": 170,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-04T13:00:13+00:00",
+  "updated_at": "2026-09-05T07:13:10+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -21,7 +21,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 147,
+      "touched_round": 170,
       "title": "Quantization (src/llm/quantization: GPTQ/AWQ/SmoothQuant/PTQ)"
     },
     "COMP-003": {
@@ -31,7 +31,7 @@
       "version": 1,
       "created_at": "2026-08-05T14:13:49+00:00",
       "updated_at": "2026-08-05T14:13:49+00:00",
-      "touched_round": 149,
+      "touched_round": 170,
       "title": "GGUF export (src/llm/export/gguf)"
     },
     "COMP-004": {
@@ -15268,7 +15268,7 @@
       "version": 2,
       "created_at": "2026-08-23T11:54:07+00:00",
       "updated_at": "2026-08-23T11:55:14+00:00",
-      "touched_round": 168,
+      "touched_round": 170,
       "title": "Multimodal subsystem (src/llm/multimodal: encoder registry, data module, fusion model, task, image preprocessor, vision encoder)"
     },
     "CHG-272": {
@@ -17631,6 +17631,202 @@
       "touched_round": 169,
       "title": "Prompt-length-aware streaming pre-validation",
       "commit": "a87495e"
+    },
+    "TASK-309": {
+      "id": "TASK-309",
+      "type": "task",
+      "status": "resolved",
+      "version": 5,
+      "created_at": "2026-09-04T23:23:33+00:00",
+      "updated_at": "2026-09-04T23:45:20+00:00",
+      "touched_round": 170,
+      "category": "correctness",
+      "severity": 0.8,
+      "title": "magnitude prune mask keeps ALL boundary ties -> achieved sparsity collapses to 0 for weights with a large zero-mass (pre-pruned/dead channels)",
+      "description": "_magnitude_mask uses abs>=threshold, so any weight whose magnitude-ties at the keep-boundary dominate (e.g. 80% zeros) keeps far more than (1-ratio) of entries; repro: 20%-nonzero weight at ratio 0.5 achieves 0.0 sparsity (RIL DEC-108 'prune tie ratio' edge, now confirmed). Fix with exact topk-index mask + regression test.",
+      "confidence": 1.0,
+      "effort": 1
+    },
+    "ISS-347": {
+      "id": "ISS-347",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-04T23:38:08+00:00",
+      "updated_at": "2026-09-04T23:42:53+00:00",
+      "touched_round": 170,
+      "severity": 0.8,
+      "title": "magnitude prune applied to tied/sparse weights silently no-ops (achieved sparsity collapses toward 0)",
+      "description": "_magnitude_mask keeps every entry with abs >= topk threshold, so all boundary-magnitude ties survive: a layer that is 20% nonzero reaches ratio 0.5 achieves 0.0 sparsity, previously-pruned weights re-prune to nothing. DEC-108 'prune tie ratio' edge, now reproduced (was 'lower-signal, revisit'). High because it silently produces a very different model than requested with zero warning."
+    },
+    "CHG-325": {
+      "id": "CHG-325",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-04T23:42:05+00:00",
+      "updated_at": "2026-09-04T23:42:05+00:00",
+      "touched_round": 170,
+      "commit": "43c918f",
+      "title": "magnitude prune mask keeps exactly top-k by index (RIL TASK-309/ISS-347)"
+    },
+    "ISS-348": {
+      "id": "ISS-348",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-05T00:00:53+00:00",
+      "updated_at": "2026-09-05T00:03:20+00:00",
+      "touched_round": 170,
+      "severity": 0.85,
+      "title": "ASR codec off-by-one: permitted asr_vocab == n_mels-1 silently corrupts transcript labels",
+      "description": "tokens_to_spectrogram maps token t to freq bin 2 + (t % (n_mels-2)); decode recovers id = freq-2. The max token t=n_mels-2 (valid at the permitted vocab n_mels-1) lands on bin 2 and decodes as 0 != t. DataModule bound allowed asr_vocab <= n_mels-1, so config at the boundary silently trained CE against audio that contradicts the label. Reproduced: n_mels=64, vocab=63, token 62 -> roundtrip 0; agent ran 500 batches, 529/529 token-62 labels misdecode. Safe bound is asr_vocab <= n_mels-2 (docstring+validation were both off by one)."
+    },
+    "TASK-310": {
+      "id": "TASK-310",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-05T00:01:42+00:00",
+      "updated_at": "2026-09-05T00:03:20+00:00",
+      "touched_round": 170,
+      "category": "correctness",
+      "severity": 0.85,
+      "confidence": 1.0,
+      "effort": 1,
+      "title": "Tighten ASR codec vocab bound to n_mels-2, fix docstrings, add boundary regression tests",
+      "description": "Fix data.py bound (asr_vocab >= n_mels-1 -> reject), correct asr.py docstrings (<= n_mels-2), add codec + datamodule boundary regression tests (RIL ISS-348)."
+    },
+    "CHG-326": {
+      "id": "CHG-326",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T00:02:50+00:00",
+      "updated_at": "2026-09-05T00:02:50+00:00",
+      "touched_round": 170,
+      "commit": "27522b4",
+      "title": "ASR codec bound tightened to n_mels-2 (RIL TASK-310/ISS-348)"
+    },
+    "ISS-349": {
+      "id": "ISS-349",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-05T05:54:06+00:00",
+      "updated_at": "2026-09-05T05:57:25+00:00",
+      "touched_round": 170,
+      "severity": 0.4,
+      "title": "multimodal_modal_tokens config knob is dead: stored but never read by forward/generate",
+      "description": "task.py read config.model.multimodal_modal_tokens and passed it to MultimodalModel which stored num_modal_tokens; forward derives prefix width from modal_h.size(1) (encoder.num_tokens) so the knob never takes effect (1 vs 9 bit-identical; only ValueError at 0). DX trap: users set it expecting control over visual-token count. Removed entirely."
+    },
+    "TASK-311": {
+      "id": "TASK-311",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-05T05:54:07+00:00",
+      "updated_at": "2026-09-05T05:57:25+00:00",
+      "touched_round": 170,
+      "category": "maintainability",
+      "severity": 0.4,
+      "confidence": 1.0,
+      "effort": 1,
+      "title": "Remove dead multimodal_modal_tokens knob + num_modal_tokens constructor param",
+      "description": "Delete the config knob read in task.py and the never-read MultimodalModel.num_modal_tokens param; prefix width is encoder-driven; update tests (RIL ISS-349)."
+    },
+    "CHG-327": {
+      "id": "CHG-327",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T05:57:24+00:00",
+      "updated_at": "2026-09-05T05:57:24+00:00",
+      "touched_round": 170,
+      "commit": "8c3efdd",
+      "title": "Remove dead multimodal_modal_tokens knob (RIL TASK-311/ISS-349)"
+    },
+    "DEC-109": {
+      "id": "DEC-109",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T06:03:21+00:00",
+      "updated_at": "2026-09-05T06:03:21+00:00",
+      "touched_round": 170,
+      "rationale": "Round 170 deep-dive: zero active tasks -> 3-agent sweep + own verification. EXECUTED (all verified with RED-checked regression tests): TASK-309/ISS-347 magnitude-prune tie drift (abs>=threshold kept all boundary ties -> achieved sparsity 0.0 on 20%-nonzero/prev-pruned weights; exact topk-index mask now keeps exactly (1-ratio); repro confirmed, CHG-325/43c918f), TASK-310/ISS-348 ASR codec off-by-one (asr_vocab==n_mels-1 permitted a config where top token n_mels-2 encodes bin 2 and decodes to 0 — silent label corruption; bound tightened to <=n_mels-2, docstrings fixed, CHG-326/27522b4), TASK-311/ISS-349 multimodal_modal_tokens dead knob removed (stored never read, 1-vs-9 bit-identical; CHG-327/8c3efdd). REFUTED this round: lm_eval ctx_len miscount (already handled by ISS-050-era comments), ISS-346 BOS-boundary concern (router and batch_engine use identical len(encode)+max_new accounting, no BOS added). The multimodal agent (resumed from r168) also reported PLAUSIBLE embed-dim mismatch (task.py modal_dim default vs datamodule embed_dim) — loud RuntimeError, no shipped config triggers; deferred. export/quant and serving agents still sweeping; their findings land as issues next round.",
+      "alternatives_rejected": "Prioritising the dead-knob removal over the export/serving agents' (unreported) findings; widening scope to the PLAUSIBLE embed-dim mismatch (no config triggers, loud failure)."
+    },
+    "ISS-350": {
+      "id": "ISS-350",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T07:10:54+00:00",
+      "updated_at": "2026-09-05T07:10:54+00:00",
+      "touched_round": 170,
+      "severity": 0.8,
+      "title": "Q3_K GGUF writer per-group scale from TRANSPOSED argmax index -> 72-83% reconstruction error",
+      "description": "quant.py:503 groups[np.abs(groups).argmax(axis=1), np.arange(16)] returns per-COLUMN maxima but the loop consumes per-ROW/group maxima for sc[g] (per-group scale). global_max/d unaffected (max of any axis is the global max), only per-group scales wrong. Measured: rel max error 0.83 vs 0.11 with one-line fix; Q4_0 sibling (quant.py:95) uses the correct order. No error-bounded roundtrip test exists (only finite/constant tests - constants dodge it)."
+    },
+    "ISS-351": {
+      "id": "ISS-351",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T07:10:55+00:00",
+      "updated_at": "2026-09-05T07:10:55+00:00",
+      "touched_round": 170,
+      "severity": 0.7,
+      "title": "FP8 static activation scale taken from LAST calibration batch only (dead running-max branch)",
+      "description": "fp8.py:146-149 captured[name] starts zeros(1) (numel==1) so first hook sets amax (0-dim, numel==1) and the else torch.maximum branch is unreachable - every batch overwrites instead of a running max. Static-activation FP8 with >1 calibration batch of differing magnitude stores the last (possibly tiny) batch max; larger activations later saturate silently. Verified 2-batch: scale 4.6e-6 (last tiny) vs expected global max."
+    },
+    "ISS-352": {
+      "id": "ISS-352",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T07:10:55+00:00",
+      "updated_at": "2026-09-05T07:10:55+00:00",
+      "touched_round": 170,
+      "severity": 0.5,
+      "title": "GGUF writer never fsyncs (temp or dir) before rename -> torn-write risk",
+      "description": "writer.py:260-263 write_bytes(tmp) + tmp.replace() with no fsync, unlike _atomic_save_quantized (cli/quantize.py) and the checkpoint manager which fsync tmp + dir. On power-loss/kernel crash the dir entry can point at an un-flushed inode; write() returns success for a torn .gguf."
+    },
+    "ISS-353": {
+      "id": "ISS-353",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T07:10:55+00:00",
+      "updated_at": "2026-09-05T07:10:55+00:00",
+      "touched_round": 170,
+      "severity": 0.4,
+      "title": "GGUF quantization silently falls back to F16 (debug log only) while file_type advertises requested quant",
+      "description": "exporter.py fallback returns F16 for tensors whose last dim isnt a multiple of 32 (F/Q4_0/Q8_0) or 256 (K-quants); logged at logger.debug only and general.file_type still says MOSTLY_Q4_0 etc. Users comparing file_type vs actual sizes misread precision. Documented partly by design but the signal is silent."
+    },
+    "ISS-354": {
+      "id": "ISS-354",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T07:10:55+00:00",
+      "updated_at": "2026-09-05T07:10:55+00:00",
+      "touched_round": 170,
+      "severity": 0.5,
+      "title": "Multimodal fusion ignores datamodule embed_dim (modal_dim defaults to hidden_size)",
+      "description": "task.py builds MultimodalModel(modal_dim=None -> decoder.hidden_size) ignoring MultimodalDataModule.embed_dim; a datamodule with embed_dim != hidden_size (as test_datamodule exercises with 17) hits nn.Linear(hidden,hidden) -> loud RuntimeError. PLAUSIBLE: no shipped config triggers; loud not silent."
+    },
+    "DEC-110": {
+      "id": "DEC-110",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T07:13:10+00:00",
+      "updated_at": "2026-09-05T07:13:10+00:00",
+      "touched_round": 170,
+      "rationale": "Export/quant agent (af7fa25, result delivered at session start) CONFIRMED 4 findings on HEAD, all verified by re-reading the code here: ISS-350 Q3_K transposed argmax (per-group scales wrong -> 72-83% error, silent, untested), ISS-351 FP8 static activation scale = last calibration batch only (dead running-max branch), ISS-352 GGUF writer no fsync (torn-write), ISS-353 GGUF silent F16 fallback while file_type advertises requested quant. Multimodal agent's embed-dim mismatch logged as ISS-354 (PLAUSIBLE, loud-only). Round-170 3-task budget was used (TASK-309/310/311), so these are logged as ACTIVE ISSUES with severity and located_in; they become tasks (TASK-312+ pick priority order: ISS-350 then ISS-351) in round 171.",
+      "alternatives_rejected": "Dropping the agent findings as stale/lower-signal (they are CONFIRMED with measured evidence); exceeding the 3-task/round deep-dive budget by fixing Q3_K in round 170 (cap exists to keep scope converged)."
     }
   },
   "edges": [
@@ -26032,6 +26228,108 @@
       "to": "COMP-007",
       "type": "located_in",
       "created_at": "2026-09-04T13:00:13+00:00"
+    },
+    {
+      "from": "TASK-309",
+      "to": "ISS-347",
+      "type": "addresses",
+      "created_at": "2026-09-04T23:39:12+00:00"
+    },
+    {
+      "from": "ISS-347",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-09-04T23:39:13+00:00"
+    },
+    {
+      "from": "CHG-325",
+      "to": "ISS-347",
+      "type": "resolves",
+      "created_at": "2026-09-04T23:42:53+00:00"
+    },
+    {
+      "from": "CHG-325",
+      "to": "TASK-309",
+      "type": "implements",
+      "created_at": "2026-09-04T23:42:53+00:00"
+    },
+    {
+      "from": "TASK-310",
+      "to": "ISS-348",
+      "type": "addresses",
+      "created_at": "2026-09-05T00:02:00+00:00"
+    },
+    {
+      "from": "ISS-348",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-09-05T00:02:00+00:00"
+    },
+    {
+      "from": "CHG-326",
+      "to": "ISS-348",
+      "type": "resolves",
+      "created_at": "2026-09-05T00:02:50+00:00"
+    },
+    {
+      "from": "CHG-326",
+      "to": "TASK-310",
+      "type": "implements",
+      "created_at": "2026-09-05T00:02:50+00:00"
+    },
+    {
+      "from": "TASK-311",
+      "to": "ISS-349",
+      "type": "addresses",
+      "created_at": "2026-09-05T05:55:08+00:00"
+    },
+    {
+      "from": "ISS-349",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-09-05T05:55:08+00:00"
+    },
+    {
+      "from": "CHG-327",
+      "to": "ISS-349",
+      "type": "resolves",
+      "created_at": "2026-09-05T05:57:24+00:00"
+    },
+    {
+      "from": "CHG-327",
+      "to": "TASK-311",
+      "type": "implements",
+      "created_at": "2026-09-05T05:57:24+00:00"
+    },
+    {
+      "from": "ISS-350",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-09-05T07:10:55+00:00"
+    },
+    {
+      "from": "ISS-351",
+      "to": "COMP-002",
+      "type": "located_in",
+      "created_at": "2026-09-05T07:10:55+00:00"
+    },
+    {
+      "from": "ISS-352",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-09-05T07:10:55+00:00"
+    },
+    {
+      "from": "ISS-353",
+      "to": "COMP-003",
+      "type": "located_in",
+      "created_at": "2026-09-05T07:10:55+00:00"
+    },
+    {
+      "from": "ISS-354",
+      "to": "COMP-017",
+      "type": "located_in",
+      "created_at": "2026-09-05T07:10:55+00:00"
     }
   ]
 }
