@@ -500,7 +500,14 @@ def quantize_q3_k(data: np.ndarray) -> np.ndarray:
 
     for b in range(n_blocks):
         groups = blocks[b].reshape(16, 16).astype(np.float32)
-        max_abs = groups[np.abs(groups).argmax(axis=1), np.arange(16)]
+        # Per-GROUP (row-wise) signed extreme: the element of each row g with
+        # the largest |value| (argmax returns the first occurrence, mirroring
+        # the ggml tie rule used by Q4_0). The old transposed index order —
+        # ``groups[argmax(axis=1), arange(16)]`` — picked the per-COLUMN
+        # extreme for each group instead, so every ``sc[g]`` was derived from
+        # a DIFFERENT group's data (RIL TASK-312/ISS-350); ``global_max`` was
+        # unaffected (any axis max is the global max), hiding the error.
+        max_abs = groups[np.arange(16), np.abs(groups).argmax(axis=1)]
         global_max = float(max_abs.max()) if max_abs.size else 0.0
         dval = global_max / (3.0 * 31.0) if global_max > 0.0 else 0.0
         d[b] = np.float16(dval)

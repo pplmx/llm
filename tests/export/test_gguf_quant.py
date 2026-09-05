@@ -430,6 +430,22 @@ class TestQ3K:
         out = dequantize_q3_k(quantize_q3_k(x), x.size)
         assert np.all(np.isfinite(out))
 
+    def test_roundtrip_error_is_bounded(self, rng):
+        """Regression (RIL TASK-312/ISS-350): each group's scale must come from
+        that GROUP's own max-magnitude element. The old ``groups[argmax(axis=1),
+        np.arange(16)]`` transposed the index order and used the per-COLUMN
+        extreme for every group, so scale factors were swapped across groups —
+        dequant error ballooned (measured rel max error 0.83 vs 0.11 fixed).
+        Amplified deliberately: rows of geometrically increasing magnitude, so
+        a wrong (column-derived) scale crushes small groups toward 0."""
+        cs = 1.5 ** np.arange(16)  # row magnitudes 1 .. ~438
+        x = np.tile(cs.reshape(16, 1), (1, 16)).astype(np.float32).ravel()
+        out = dequantize_q3_k(quantize_q3_k(x), x.size)
+        rel_max_err = float(np.max(np.abs(out - x))) / float(np.max(np.abs(x)))
+        # Correct per-group scales recover a geometric ramp to ~3-bit precision
+        # (rel error ~0.05); the transposed-index bug pushes it above 0.5.
+        assert rel_max_err < 0.25, f"rel max error {rel_max_err:.3f} too high"
+
     def test_requires_multiple_of_256(self):
         with pytest.raises(ValueError, match="multiple of 256"):
             quantize_q3_k(np.zeros(100, dtype=np.float32))
