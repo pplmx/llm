@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 170,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-05T08:38:16+00:00",
+  "updated_at": "2026-09-05T09:18:12+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -17796,10 +17796,10 @@
     "ISS-353": {
       "id": "ISS-353",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-05T07:10:55+00:00",
-      "updated_at": "2026-09-05T07:10:55+00:00",
+      "updated_at": "2026-09-05T09:18:12+00:00",
       "touched_round": 170,
       "severity": 0.4,
       "title": "GGUF quantization silently falls back to F16 (debug log only) while file_type advertises requested quant",
@@ -17943,6 +17943,32 @@
       "touched_round": 170,
       "commit": "5d78ba6",
       "title": "serving pre-validation engine-window dead-read + eager skip-(RIL TASK-315/ISS-355)"
+    },
+    "TASK-316": {
+      "id": "TASK-316",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-05T09:18:11+00:00",
+      "updated_at": "2026-09-05T09:18:12+00:00",
+      "touched_round": 170,
+      "category": "dx",
+      "severity": 0.4,
+      "confidence": 1.0,
+      "effort": 1,
+      "title": "Surface GGUF quant->F16 fallback as a warning, not silent debug",
+      "description": "exporter only logged debug when a rank-eligible tensor fell back to F16 while general.file_type advertised the requested quant. Add one export-level summary warning naming degraded tensors; biases (1D) not flagged. Regression: hidden_size=30 Q4_0 warns, all-quantizable fixture does not (RIL ISS-353)."
+    },
+    "CHG-332": {
+      "id": "CHG-332",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T09:18:12+00:00",
+      "updated_at": "2026-09-05T09:18:12+00:00",
+      "touched_round": 170,
+      "commit": "85a88ca",
+      "title": "GGUF F16-fallback summary warning (RIL TASK-316/ISS-353)"
     }
   },
   "edges": [
@@ -26524,6 +26550,24 @@
       "to": "TASK-315",
       "type": "implements",
       "created_at": "2026-09-05T08:38:15+00:00"
+    },
+    {
+      "from": "TASK-316",
+      "to": "ISS-353",
+      "type": "addresses",
+      "created_at": "2026-09-05T09:18:11+00:00"
+    },
+    {
+      "from": "CHG-332",
+      "to": "ISS-353",
+      "type": "resolves",
+      "created_at": "2026-09-05T09:18:12+00:00"
+    },
+    {
+      "from": "CHG-332",
+      "to": "TASK-316",
+      "type": "implements",
+      "created_at": "2026-09-05T09:18:12+00:00"
     }
   ]
 }
