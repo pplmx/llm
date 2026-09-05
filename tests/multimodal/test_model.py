@@ -59,6 +59,35 @@ def test_multimodal_model_prefix_width_is_encoder_driven():
         MultimodalModel(decoder, num_modal_tokens=1)
 
 
+def test_multimodal_model_attn_mask_2d_bool_honored():
+    """Regression (RIL TASK-318): ``MultimodalModel.forward`` accepts an
+    ``attn_mask`` and threads it into the decoder blocks, but a natural
+    ``[B, fused_len]`` bool mask crashed both sdpa paths (fast: no
+    unsqueeze; complex: OR against the rank-2 causal mask). The mask must
+    be honored: masking everything except the first position forces the
+    decoder to attend only the modal prefix (positions 0..M-1), which must
+    change the text logits vs the unmasked (every-position visible) run."""
+    from llm.multimodal.model import MultimodalModel
+
+    decoder = _decoder(use_rope=True)
+    model = MultimodalModel(decoder, modal_dim=16)
+    input_ids = torch.randint(0, 32, (2, 8))
+    modal_embeds = torch.randn(2, 2, 16)  # 2 modal prefix tokens
+    fused_len = input_ids.size(1) + modal_embeds.size(1)  # 10
+
+    with torch.no_grad():
+        full = model(input_ids, modal_embeds)
+
+        # Keep only position 0 (first modal prefix token), mask the rest.
+        mask = torch.zeros(2, fused_len, dtype=torch.bool)
+        mask[:, 1:] = True  # True = mask out
+        masked = model(input_ids, modal_embeds, attn_mask=mask)
+
+    assert full.shape == (2, 8, 32)
+    assert masked.shape == (2, 8, 32)
+    assert not torch.allclose(full, masked), "attn_mask had no effect"
+
+
 def test_multimodal_model_does_not_patch_decoder():
     """The wrapped DecoderModel stays text-only and patched-free."""
     from llm.multimodal.model import MultimodalModel

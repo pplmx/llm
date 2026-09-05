@@ -168,6 +168,47 @@ def test_sdpa_long_01_mask_matches_additive_reference(sample_qkv_tensors):
     assert not torch.allclose(out, out_no_mask)
 
 
+def test_sdpa_bool_2d_complex_path_broadcasts(sample_qkv_tensors):
+    """Regression (RIL TASK-318): on the complex path (causal/window + mask)
+    a 2-D bool mask crashed with "size of tensor a (S) must match size of
+    tensor b (B)" — the rank-2 causal pattern was OR-ed against a caller mask
+    whose leading axis is either the *batch* (``[B, S]`` per-sample padding
+    mask, e.g. ``MultimodalModel.forward(attn_mask=...)``) or *Sq* (a
+    square ``[Sq, Sk]`` sparse/streaming attention plane). Both must merge to
+    ``[B, 1, Sq, Sk]``.
+    """
+    import torch.nn.functional as functional
+
+    q, k, v = sample_qkv_tensors
+    batch_size, _num_heads, seq_len, _ = q.shape
+
+    # (a) [B, S] per-sample mask (True = mask out = pad), last columns.
+    mask = torch.zeros(batch_size, seq_len, dtype=torch.bool)
+    mask[0, seq_len - 2 :] = True
+    mask[1, seq_len - 1] = True
+
+    causal_keep = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool), 1)
+    causal_add = causal_keep.to(q.dtype).masked_fill(causal_keep, float("-inf"))
+    pad4 = mask.unsqueeze(1).unsqueeze(2)
+    pad_add = pad4.to(q.dtype).masked_fill(pad4, float("-inf"))
+    add = causal_add.expand(batch_size, 1, seq_len, seq_len) + pad_add
+
+    ref = functional.scaled_dot_product_attention(q, k, v, attn_mask=add, is_causal=False)
+    out = sdpa(q, k, v, attn_mask=mask, is_causal=True)
+    assert torch.allclose(out, ref, atol=1e-5)
+
+    # (b) [Sq, Sk] shared attention plane (sparse/streaming), applied to all
+    # batches: with the causal pattern it must equal the per-pattern reference.
+    plane = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool), 1)
+    plane_add = plane.to(q.dtype).masked_fill(plane, float("-inf"))
+    ref_plane = functional.scaled_dot_product_attention(q, k, v, attn_mask=plane_add, is_causal=False)
+    out_plane = sdpa(q, k, v, attn_mask=plane, is_causal=True)
+    assert torch.allclose(out_plane, ref_plane, atol=1e-5)
+
+    # The mask is actually doing something vs plain causal.
+    assert not torch.allclose(out, sdpa(q, k, v, is_causal=True))
+
+
 def test_sdpa_float_2d_fast_path_broadcasts(sample_qkv_tensors):
     """A ``[B, S]`` float mask (reward_task / reward tests pass float32
     attention_mask) on the no-causal fast path must be broadcast to a key

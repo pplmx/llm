@@ -120,6 +120,19 @@ def sdpa(
             window_mask = torch.abs(row_idx - col_idx) > window_size
             full_mask = window_mask if full_mask is None else (full_mask | window_mask)
 
+        # Normalize the causal/window pattern to broadcast rank-4
+        # ``[1, 1, Sq, Sk]`` before merging the caller's ``attn_mask``. Torch
+        # left-pads a smaller-rank operand, so OR-ing the raw rank-2 ``[Sq,Sk]``
+        # pattern against a caller mask with a leading **batch** axis (``[B,S]``
+        # / ``[B,1,S]`` / ``[B,1,1,S]``) collided the pattern's first axis with
+        # the batch when B == Sq — "size of tensor a (S) must match size of
+        # tensor b (B)" — and a 2-D bool mask could not carry a batch at all
+        # (RIL TASK-318). With the pattern already rank-4, the batch axis
+        # broadcasts against the leading ``1`` and every mask convention merges
+        # to ``[B, 1, Sq, Sk]``.
+        if full_mask is not None and full_mask.ndim == 2:
+            full_mask = full_mask.unsqueeze(0).unsqueeze(0)
+
         if attn_mask is not None:
             # Normalize to the query device first: sparse/streaming masks are
             # built CPU-side (decoder.forward / serving), but the causal/window
@@ -134,7 +147,23 @@ def sdpa(
             # If it's float additive (-inf), this merging logic is trickier.
             # Assuming bool mask for complex merging.
             if attn_mask.dtype == torch.bool:
-                full_mask = attn_mask if full_mask is None else (full_mask | attn_mask)
+                # ``full_mask`` is now rank-4 ``[1, 1, Sq, Sk]``, but a raw
+                # rank-2 bool mask is ambiguous: a ``[Sq, Sk]`` attention-plane
+                # mask (the sparse/streaming masks produced by
+                # ``build_config_attention_mask``, shared across the batch) ORs
+                # straight against the pattern, while a ``[B, S]`` per-sample
+                # padding mask needs an explicit batch axis — torch left-pads a
+                # 2-D ``(B, S)`` to ``(1, 1, B, S)``, colliding its second axis
+                # with the pattern's query axis (RIL TASK-318).
+                bool_mask = attn_mask
+                if bool_mask.ndim == 2:
+                    is_attention_plane = query.dim() == 4 and bool_mask.shape == (
+                        query.size(-2),
+                        key.size(-2),
+                    )
+                    if not is_attention_plane:
+                        bool_mask = bool_mask.unsqueeze(1).unsqueeze(1)
+                full_mask = bool_mask if full_mask is None else (full_mask | bool_mask)
             elif attn_mask.dtype.is_floating_point:
                 # Float additive mask (0 = keep, -inf = mask out, Torch SDPA
                 # convention). It cannot be merged with the boolean
@@ -166,10 +195,13 @@ def sdpa(
                 # 0 = pad). 1 is *keep*, so the mask-out predicate here is
                 # ``== 0`` — NOT ``to(bool)`` (which would flip padding to
                 # keep and *real* tokens to mask out). The data pipeline
-                # emits ``[B, S]``; expand to ``[B, 1, S]`` so it broadcasts
-                # against the ``[Sq, Sk]`` causal/window ``full_mask``.
+                # emits ``[B, S]``; expand to the canonical ``[B, 1, 1, S]``
+                # layout so it ORs against the rank-4 ``full_mask`` without
+                # leaving the batch axis in the head position (RIL TASK-318).
                 mask_out = attn_mask == 0
                 if mask_out.ndim == 2:
+                    mask_out = mask_out.unsqueeze(1).unsqueeze(1)
+                elif mask_out.ndim == 3:
                     mask_out = mask_out.unsqueeze(1)
                 full_mask = mask_out if full_mask is None else (full_mask | mask_out)
 
@@ -212,6 +244,13 @@ def sdpa(
         # My convention: True = Mask Out
         # Torch convention: True = Keep
         if attn_mask.dtype == torch.bool:
+            # 2-D bool is torch's native attention-plane layout ``[Sq, Sk]``
+            # (shared across the batch) — pass through untouched; a per-sample
+            # ``[B, S]`` padding mask has no 2-D form here and must be passed
+            # as ``[B, 1, 1, S]`` (or an int/float dtype, expanded below). The
+            # complex-path bool branch (above) is the one that must expose a
+            # batch axis, because there the caller's mask is merged with the
+            # rank-4 causal/window pattern (RIL TASK-318).
             torch_attn_mask = ~attn_mask
         elif attn_mask.dtype.is_floating_point:
             # Float additive mask (0 = keep, -inf = mask out): pass through
