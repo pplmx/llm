@@ -11,6 +11,11 @@ policy:
 - ``quantize="q2_k"`` .. ``"q6_k"`` block-quantizes tensors (256-wide
   K-quant super-blocks) whose last dimension is a multiple of 256,
   keeping the remaining tensors F16 (rounds 147-151);
+- when a requested block-quant policy silently falls back to F16 for a
+  rank-eligible tensor (last dim not a multiple of 32/256 — a real
+  footgun, e.g. ``hidden_size``/vocab not multiple of 32), a summary
+  warning is emitted; 1-D biases staying F16 is convention and not
+  warned (RIL TASK-316/ISS-353);
 - metadata carries the standard ``general.*`` keys; user metadata wins
   over defaults.
 
@@ -51,6 +56,19 @@ _QUANT_NAME_TO_TYPE = {
     "q5_k": GGMLQuantizationType.Q5_K,
     "q6_k": GGMLQuantizationType.Q6_K,
 }
+
+# Block-quant policies whose per-tensor fallback to F16 is worth surfacing.
+_BLOCK_QUANT_TYPES = frozenset(
+    {
+        GGMLQuantizationType.Q4_0,
+        GGMLQuantizationType.Q8_0,
+        GGMLQuantizationType.Q2_K,
+        GGMLQuantizationType.Q3_K,
+        GGMLQuantizationType.Q4_K,
+        GGMLQuantizationType.Q5_K,
+        GGMLQuantizationType.Q6_K,
+    }
+)
 
 # llama.cpp ``llama_ftype`` values used in ``general.file_type``.
 _FILE_TYPE = {
@@ -210,6 +228,8 @@ def export_to_gguf(
     for key, value in _default_metadata(model, model_name, quant_type, metadata, model_config).items():
         writer.add_metadata(key, value)
 
+    degraded: list[tuple[str, tuple[int, ...]]] = []
+
     for name, tensor in model.state_dict().items():
         if not tensor.is_floating_point():
             raise NotImplementedError(
@@ -217,17 +237,25 @@ def export_to_gguf(
             )
         arr = tensor.detach().float().cpu().numpy()
         ttype = _pick_tensor_type(arr, quant_type, quantize_min_ndim)
-        if ttype != quant_type and quant_type in (
-            GGMLQuantizationType.Q4_0,
-            GGMLQuantizationType.Q8_0,
-            GGMLQuantizationType.Q2_K,
-            GGMLQuantizationType.Q3_K,
-            GGMLQuantizationType.Q4_K,
-            GGMLQuantizationType.Q5_K,
-            GGMLQuantizationType.Q6_K,
-        ):
-            logger.debug("keeping %s as F16 (shape %s not block-quantizable)", name, tuple(arr.shape))
+        # A requested block-quant policy silently falling back to F16 for a
+        # rank-eligible tensor (last dim not a multiple of 32/256) is a real
+        # footgun — the export looks Q4_0 while a weight stays F16. Surface it
+        # as ONE summary warning; 1-D biases staying F16 is convention and not
+        # flagged (RIL TASK-316/ISS-353).
+        if ttype != quant_type and quant_type in _BLOCK_QUANT_TYPES and arr.ndim >= quantize_min_ndim:
+            degraded.append((name, tuple(arr.shape)))
         writer.add_tensor(name, arr, ggml_type=ttype)
+
+    if degraded:
+        samples = ", ".join(f"{n}{s}" for n, s in degraded[:8])
+        logger.warning(
+            "GGUF export: %d tensor(s)%s kept as F16 — shape not block-quantizable "
+            "under requested %s, so per-tensor precision differs from general.file_type: %s",
+            len(degraded),
+            " (showing first 8)" if len(degraded) > 8 else "",
+            quant_type.name,
+            samples,
+        )
 
     return writer.write()
 

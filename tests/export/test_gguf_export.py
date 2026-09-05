@@ -113,6 +113,32 @@ class TestExportPolicy:
         path = export_to_gguf(small_model, tmp_path / "nested" / "dir" / "m.gguf")
         assert path.exists()
 
+    def test_non_block_quantizable_shape_warns(self, small_model, tmp_path, caplog):
+        """Regression (RIL TASK-316/ISS-353): a requested Q4_0 export whose 2-D
+        tensor's last dim is NOT a multiple of 32 silently downgraded that
+        tensor to F16 (debug log only) while ``general.file_type`` advertised
+        MOSTLY_Q4_0 — a caller comparing file_type vs sizes misreads precision.
+        Now surfaced as a summary warning. A fully block-quantizable model (the
+        ``small_model`` fixture) warns for nothing."""
+        import logging
+
+        from llm.models.decoder import DecoderModel
+
+        # hidden_size=30 -> every 2-D weight's last dim 30 (not % 32).
+        model = DecoderModel(vocab_size=128, hidden_size=30, num_layers=1, num_heads=2, max_seq_len=16)
+        with caplog.at_level(logging.WARNING, logger="llm.export.gguf.exporter"):
+            export_to_gguf(model, tmp_path / "off.gguf", quantize="q4_0")
+        warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("kept as F16" in m and "block-quantizable" in m for m in warnings), warnings
+
+        # The all-quantizable fixture: 2-D weights quantize, only 1-D biases
+        # stay F16 (convention) -> no degrade warning (RIL TASK-316).
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="llm.export.gguf.exporter"):
+            export_to_gguf(small_model, tmp_path / "ok.gguf", quantize="q4_0")
+        warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+        assert not any("kept as F16" in m for m in warnings), warnings
+
 
 class TestModelRoundTrip:
     """Tensors written by the exporter read back with matching names/shapes/values."""
