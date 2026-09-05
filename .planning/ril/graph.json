@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 170,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-05T07:13:10+00:00",
+  "updated_at": "2026-09-05T08:38:16+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -871,7 +871,7 @@
       "version": 1,
       "created_at": "2026-08-10T13:37:15+00:00",
       "updated_at": "2026-08-10T13:37:15+00:00",
-      "touched_round": 169,
+      "touched_round": 170,
       "title": "serving routers (generate/chat)",
       "details": "FastAPI routers wiring generation backend to REST/SSE"
     },
@@ -17760,10 +17760,10 @@
     "ISS-350": {
       "id": "ISS-350",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-05T07:10:54+00:00",
-      "updated_at": "2026-09-05T07:10:54+00:00",
+      "updated_at": "2026-09-05T07:35:18+00:00",
       "touched_round": 170,
       "severity": 0.8,
       "title": "Q3_K GGUF writer per-group scale from TRANSPOSED argmax index -> 72-83% reconstruction error",
@@ -17772,10 +17772,10 @@
     "ISS-351": {
       "id": "ISS-351",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-05T07:10:55+00:00",
-      "updated_at": "2026-09-05T07:10:55+00:00",
+      "updated_at": "2026-09-05T07:57:40+00:00",
       "touched_round": 170,
       "severity": 0.7,
       "title": "FP8 static activation scale taken from LAST calibration batch only (dead running-max branch)",
@@ -17784,10 +17784,10 @@
     "ISS-352": {
       "id": "ISS-352",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-05T07:10:55+00:00",
-      "updated_at": "2026-09-05T07:10:55+00:00",
+      "updated_at": "2026-09-05T08:16:10+00:00",
       "touched_round": 170,
       "severity": 0.5,
       "title": "GGUF writer never fsyncs (temp or dir) before rename -> torn-write risk",
@@ -17827,6 +17827,122 @@
       "touched_round": 170,
       "rationale": "Export/quant agent (af7fa25, result delivered at session start) CONFIRMED 4 findings on HEAD, all verified by re-reading the code here: ISS-350 Q3_K transposed argmax (per-group scales wrong -> 72-83% error, silent, untested), ISS-351 FP8 static activation scale = last calibration batch only (dead running-max branch), ISS-352 GGUF writer no fsync (torn-write), ISS-353 GGUF silent F16 fallback while file_type advertises requested quant. Multimodal agent's embed-dim mismatch logged as ISS-354 (PLAUSIBLE, loud-only). Round-170 3-task budget was used (TASK-309/310/311), so these are logged as ACTIVE ISSUES with severity and located_in; they become tasks (TASK-312+ pick priority order: ISS-350 then ISS-351) in round 171.",
       "alternatives_rejected": "Dropping the agent findings as stale/lower-signal (they are CONFIRMED with measured evidence); exceeding the 3-task/round deep-dive budget by fixing Q3_K in round 170 (cap exists to keep scope converged)."
+    },
+    "TASK-312": {
+      "id": "TASK-312",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-05T07:16:30+00:00",
+      "updated_at": "2026-09-05T07:35:18+00:00",
+      "touched_round": 170,
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "effort": 1,
+      "title": "Q3_K writer: compute per-group maxima by ROW not transposed COLUMN argmax",
+      "description": "quant.py:503 'groups[np.abs(groups).argmax(axis=1), np.arange(16)]' gives per-column maxima; the per-group scale sc[g] must use the g-th ROW/group max (np.abs(groups).max(axis=1)). Fix + error-bounded roundtrip regression test (Q4_0 sibling pattern) that FAILS pre-fix (RIL ISS-350)."
+    },
+    "CHG-328": {
+      "id": "CHG-328",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T07:35:17+00:00",
+      "updated_at": "2026-09-05T07:35:17+00:00",
+      "touched_round": 170,
+      "commit": "cc202f4",
+      "title": "Q3_K writer per-group scale index-order fix (RIL TASK-312/ISS-350)"
+    },
+    "TASK-313": {
+      "id": "TASK-313",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-05T07:57:39+00:00",
+      "updated_at": "2026-09-05T08:00:03+00:00",
+      "touched_round": 170,
+      "category": "correctness",
+      "severity": 0.7,
+      "confidence": 1.0,
+      "effort": 1,
+      "title": "FP8 static activation scale must take a running max over calibration batches, not just the last",
+      "description": "fp8.py capture hook's numel()==1 sentinel never flips (0-dim scalar also numel 1) so every batch overwrote; activation_scale silently = last batch's max. Fix with explicit seeded set + regression test both batch orders (RIL ISS-351)."
+    },
+    "CHG-329": {
+      "id": "CHG-329",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T07:57:40+00:00",
+      "updated_at": "2026-09-05T07:57:40+00:00",
+      "touched_round": 170,
+      "commit": "6b799af",
+      "title": "FP8 static activation scale running-max fix (RIL TASK-313 priority_score=7.0/ISS-351)"
+    },
+    "TASK-314": {
+      "id": "TASK-314",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-05T08:16:09+00:00",
+      "updated_at": "2026-09-05T08:16:10+00:00",
+      "touched_round": 170,
+      "category": "stability",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 1,
+      "title": "GGUF writer must fsync temp + dir before rename",
+      "description": "write() renamed a .tmp with no fsync -> torn-export risk on crash. Add checkpoint-style atomic write (fsync file + dir before rename) + behavioral regression (RIL ISS-352)."
+    },
+    "CHG-330": {
+      "id": "CHG-330",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T08:16:09+00:00",
+      "updated_at": "2026-09-05T08:16:09+00:00",
+      "touched_round": 170,
+      "commit": "10ddd93",
+      "title": "GGUF writer fsync fix (RIL TASK-314/ISS-352)"
+    },
+    "ISS-355": {
+      "id": "ISS-355",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-05T08:38:14+00:00",
+      "updated_at": "2026-09-05T08:38:16+00:00",
+      "touched_round": 170,
+      "severity": 0.8,
+      "title": "ISS-346's streaming engine-window pre-check is DEAD (service.engine never set) + 400/200 eager divergence",
+      "description": "generate.py read engine_max from service.engine but ServingGenerationService has no engine field (it lives on backend.engine) -> guard never fired on the batched backend (over-window still streams an in-band error, 200 vs non-stream 400), AND on the default eager backend the same guard 400s streams for over-window prompts that non-stream truncates+serves (200). Serving-agent CONFIRMED, reproduced end-to-end; regression test faked service.engine, masking the dead read."
+    },
+    "TASK-315": {
+      "id": "TASK-315",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-05T08:38:15+00:00",
+      "updated_at": "2026-09-05T08:38:16+00:00",
+      "touched_round": 170,
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "effort": 1,
+      "title": "Read engine window from service.backend.engine and skip budget when engine-less (eager)",
+      "description": "generate.py _validate_generation_bounds: engine_max from service.backend.engine.max_seq_len; return early (no budget 400) when the backend has no engine so eager truncation semantics match non-stream. Regression tests use the real service shape (RIL ISS-355)."
+    },
+    "CHG-331": {
+      "id": "CHG-331",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T08:38:15+00:00",
+      "updated_at": "2026-09-05T08:38:15+00:00",
+      "touched_round": 170,
+      "commit": "5d78ba6",
+      "title": "serving pre-validation engine-window dead-read + eager skip-(RIL TASK-315/ISS-355)"
     }
   },
   "edges": [
@@ -26330,6 +26446,84 @@
       "to": "COMP-017",
       "type": "located_in",
       "created_at": "2026-09-05T07:10:55+00:00"
+    },
+    {
+      "from": "TASK-312",
+      "to": "ISS-350",
+      "type": "addresses",
+      "created_at": "2026-09-05T07:16:30+00:00"
+    },
+    {
+      "from": "CHG-328",
+      "to": "ISS-350",
+      "type": "resolves",
+      "created_at": "2026-09-05T07:35:17+00:00"
+    },
+    {
+      "from": "CHG-328",
+      "to": "TASK-312",
+      "type": "implements",
+      "created_at": "2026-09-05T07:35:18+00:00"
+    },
+    {
+      "from": "CHG-329",
+      "to": "ISS-351",
+      "type": "resolves",
+      "created_at": "2026-09-05T07:57:40+00:00"
+    },
+    {
+      "from": "TASK-313",
+      "to": "ISS-351",
+      "type": "addresses",
+      "created_at": "2026-09-05T08:00:03+00:00"
+    },
+    {
+      "from": "CHG-329",
+      "to": "TASK-313",
+      "type": "implements",
+      "created_at": "2026-09-05T08:00:03+00:00"
+    },
+    {
+      "from": "TASK-314",
+      "to": "ISS-352",
+      "type": "addresses",
+      "created_at": "2026-09-05T08:16:09+00:00"
+    },
+    {
+      "from": "CHG-330",
+      "to": "ISS-352",
+      "type": "resolves",
+      "created_at": "2026-09-05T08:16:09+00:00"
+    },
+    {
+      "from": "CHG-330",
+      "to": "TASK-314",
+      "type": "implements",
+      "created_at": "2026-09-05T08:16:09+00:00"
+    },
+    {
+      "from": "ISS-355",
+      "to": "COMP-007",
+      "type": "located_in",
+      "created_at": "2026-09-05T08:38:15+00:00"
+    },
+    {
+      "from": "TASK-315",
+      "to": "ISS-355",
+      "type": "addresses",
+      "created_at": "2026-09-05T08:38:15+00:00"
+    },
+    {
+      "from": "CHG-331",
+      "to": "ISS-355",
+      "type": "resolves",
+      "created_at": "2026-09-05T08:38:15+00:00"
+    },
+    {
+      "from": "CHG-331",
+      "to": "TASK-315",
+      "type": "implements",
+      "created_at": "2026-09-05T08:38:15+00:00"
     }
   ]
 }
