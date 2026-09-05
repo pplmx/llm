@@ -138,6 +138,33 @@ def test_quantize_model_fp8_logits_correlate_with_fp32_baseline():
     assert _cosine(q.float(), ref.float()) > 0.99, (q.float() - ref.float()).abs().max().item()
 
 
+def test_fp8_static_scale_is_global_max_across_calib_batches():
+    """Regression (RIL TASK-313/ISS-351): static-activation capture seeds from
+    the first calibration batch and must keep a RUNNING MAX over the rest. The
+    old ``numel() == 1`` sentinel never flips (a 0-dim scalar also has
+    ``numel() == 1``) so every batch OVERWROTE the captured max — the stored
+    ``activation_scale`` silently came from the LAST batch only, letting any
+    larger activation saturate the fp8 range afterwards."""
+    model = nn.Sequential(nn.Linear(12, 8)).eval()
+    big = torch.full((2, 12), 1000.0)
+    small = torch.full((2, 12), 0.001)
+    # Big first, tiny second: a last-batch-only capture yields ~1e-6; the
+    # running max must keep the big batch's scale.
+    quantized = quantize_model_fp8(model, iter([big, small]), Fp8Config(activation="static"))
+    linear = quantized[0]
+    assert isinstance(linear, Fp8QuantizedLinear)
+    assert linear.activation_scale is not None
+    expected = 1000.0 / FP8_MAX["e4m3"]
+    assert linear.activation_scale.item() == pytest.approx(expected, rel=1e-3)
+
+    # And the reverse order: the max must STILL win (tiny batch seeds first).
+    model2 = nn.Sequential(nn.Linear(12, 8)).eval()
+    quantized2 = quantize_model_fp8(model2, iter([small, big]), Fp8Config(activation="static"))
+    linear2 = quantized2[0]
+    assert linear2.activation_scale is not None
+    assert linear2.activation_scale.item() == pytest.approx(expected, rel=1e-3)
+
+
 def test_quantize_model_fp8_static_requires_calibration():
     with pytest.raises(ValueError, match="calib_iter"):
         quantize_model_fp8(_tiny_model(), None, Fp8Config(activation="static"))

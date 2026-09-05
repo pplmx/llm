@@ -137,14 +137,23 @@ def quantize_model_fp8(
         if not batches:
             raise ValueError("calib_iter is empty; need at least 1 batch for activation statistics.")
         captured: dict[str, torch.Tensor] = {n: torch.zeros(1) for n in static_names}
+        seeded: set[str] = set()  # which captures a batch has already seeded
         hooks = []
 
         def make_hook(name: str):
             def hook(_m, inputs, _output):
                 x = inputs[0].detach().float()
                 amax = x.abs().max()
-                if captured[name].numel() == 1:
+                if name not in seeded:
+                    # First batch SEEDS the capture; later batches take a
+                    # RUNNING MAX. An ``numel() == 1`` sentinel cannot tell
+                    # "unset" from a 0-dim scalar (both have numel() == 1), so
+                    # the old branch re-seeded on EVERY batch and the scale
+                    # silently came from the LAST calibration batch —
+                    # larger activations later saturated the fp8 range
+                    # (RIL TASK-313/ISS-351).
                     captured[name] = amax
+                    seeded.add(name)
                 else:
                     captured[name] = torch.maximum(captured[name], amax)
 
