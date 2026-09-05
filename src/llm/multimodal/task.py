@@ -43,7 +43,15 @@ class MultimodalTask(LanguageModelingTask):
         # from the input geometry), not a config choice; the old
         # ``model.multimodal_modal_tokens`` knob was stored but never read by
         # forward/generate (RIL TASK-311/ISS-349) and is removed.
-        return MultimodalModel(decoder, encoder=encoder)
+        # The fusion projection dim must match the datamodule's encoder output
+        # (``embed_dim``), which is NOT necessarily decoder.hidden_size — a
+        # mismatched ``modal_dim`` only explodes at the first train step (RIL
+        # TASK-317/ISS-354).
+        return MultimodalModel(
+            decoder,
+            modal_dim=getattr(self.data_module, "embed_dim", None),
+            encoder=encoder,
+        )
 
     def build_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss(ignore_index=-100)

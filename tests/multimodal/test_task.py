@@ -40,6 +40,45 @@ def test_multimodal_task_builds_fusion_model_and_ce_criterion():
     assert isinstance(task.build_criterion(), torch.nn.CrossEntropyLoss)
 
 
+def test_multimodal_task_build_model_threads_datamodule_embed_dim():
+    """Regression (RIL ISS-354): build_model() must thread the datamodule's
+    embed_dim into the fusion projection. It previously defaulted modal_dim to
+    decoder.hidden_size, so a datamodule with embed_dim != hidden_size crashes
+    with a cryptic nn.Linear mismatch at forward time (loud, but only at the
+    first train step)."""
+    from llm.multimodal.task import MultimodalTask
+
+    config = _config()  # hidden_size=24
+    module = MultimodalDataModule(config, modality="linear", input_dim=8, embed_dim=17)
+    task = MultimodalTask(config, module)
+    model = task.build_model()
+    assert isinstance(model, MultimodalModel)
+    assert model.fusion.modal_dim == 17
+
+    # A real forward on a 17-dim modal batch works end to end.
+    batch = {"input_ids": torch.randint(0, 32, (2, 6)), "modal_embeds": torch.randn(2, 17)}
+    logits = model(batch["input_ids"], batch["modal_embeds"])
+    assert logits.shape == (2, 6, 32)
+
+
+def test_multimodal_model_encoder_embed_dim_is_source_of_truth():
+    """In-forward (trainable-tower) encoders declare their own embed_dim; the
+    fusion projection must adopt it, and an explicit modal_dim that contradicts
+    the encoder must fail loudly instead of silently misprojecting."""
+    import pytest
+
+    from llm.multimodal.encoders import LinearModalityEncoder
+    from llm.runtime import ModelFactory
+
+    decoder = ModelFactory.from_config(_config().model)
+    encoder = LinearModalityEncoder(input_dim=4, embed_dim=17)
+    model = MultimodalModel(decoder, encoder=encoder)
+    assert model.fusion.modal_dim == 17
+
+    with pytest.raises(ValueError, match="embed_dim"):
+        MultimodalModel(decoder, modal_dim=24, encoder=encoder)
+
+
 def _next_token_accuracy(model, module):
     model.eval()
     loader, _ = module.train_dataloader(rank=0, world_size=1)

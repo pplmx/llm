@@ -40,6 +40,12 @@ class ModalityFusion(nn.Module):
         self.proj = nn.Linear(self.modal_dim, self.hidden_size)
 
     def forward(self, modal_embeds: torch.Tensor) -> torch.Tensor:
+        if modal_embeds.shape[-1] != self.modal_dim:
+            raise ValueError(
+                f"modal_embeds last dim {modal_embeds.shape[-1]} != fusion modal_dim "
+                f"{self.modal_dim}; the encoder's output embed_dim must match the "
+                "fusion projection (RIL ISS-354)"
+            )
         if modal_embeds.dim() == 2:
             modal_embeds = modal_embeds.unsqueeze(1)  # (B, 1, modal_dim)
         return self.proj(modal_embeds) * math.sqrt(self.hidden_size)
@@ -74,6 +80,20 @@ class MultimodalModel(nn.Module):
         self.decoder = decoder
         self.hidden_size = decoder.hidden_size
         self.encoder = encoder
+        if encoder is not None:
+            # The in-forward encoder's output dimension is the source of truth
+            # for the fusion projection: its embeds are fed straight into
+            # ``ModalityFusion``, so an explicit ``modal_dim`` that contradicts
+            # it is a misconfiguration that would only explode per-batch (RIL
+            # TASK-317/ISS-354).
+            enc_dim = int(getattr(encoder, "embed_dim", self.hidden_size))
+            if modal_dim is not None and modal_dim != enc_dim:
+                raise ValueError(
+                    f"MultimodalModel modal_dim={modal_dim} conflicts with "
+                    f"encoder.embed_dim={enc_dim}; the encoder's output dimension "
+                    "is the source of truth"
+                )
+            modal_dim = enc_dim
         self.fusion = ModalityFusion(modal_dim or self.hidden_size, self.hidden_size)
 
     def forward(
