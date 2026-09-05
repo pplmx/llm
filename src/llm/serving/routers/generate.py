@@ -250,11 +250,21 @@ def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
             "to fit in the context window.",
         )
 
-    engine_max = getattr(getattr(service, "engine", None), "max_seq_len", None)
-    budget_vals = [bound for bound in (model_max_seq, engine_max) if isinstance(bound, int)]
-    if not budget_vals:
+    # The engine lives on the BACKEND (``BatchedGenerationBackend.engine`` /
+    # ``SpeculativeDecodingBackend.engine``), not on the service itself — the
+    # original ``service.engine`` read was always None, so this window check
+    # never fired (RIL TASK-315/ISS-355). An engine REFUSES over-window
+    # requests (``add_request`` raises ValueError INSIDE the started SSE), so
+    # those must still be pre-rejected as 400. An engine-less backend (eager)
+    # TRUNCATES over-window prompts and serves them — exactly what the
+    # non-streaming path does — so the budget check is skipped there to keep
+    # stream and non-stream consistent for the same payload.
+    backend = getattr(service, "backend", None)
+    engine_max = getattr(getattr(backend, "engine", None), "max_seq_len", None)
+    if not isinstance(engine_max, int):
         return
-    budget = min(budget_vals)
+    budget_vals = [bound for bound in (model_max_seq, engine_max) if isinstance(bound, int)]
+    budget = min(budget_vals) if budget_vals else engine_max
     try:
         prompt_len = len(service.tokenizer.encode(prompt))
     except KeyError, ValueError, TypeError:

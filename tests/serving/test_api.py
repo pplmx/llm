@@ -758,9 +758,15 @@ def test_stream_prevalidation_checks_prompt_plus_engine_budget(monkeypatch):
     class _FakeModel:
         max_seq_len = 16
 
-    class _FakeService:
-        model = _FakeModel()
+    class _FakeBackend:
         engine = _FakeEngine()
+
+    class _FakeService:
+        # Shape mirrors ServingGenerationService: the engine lives on
+        # ``backend.engine`` (an earlier ``service.engine`` fake masked the
+        # dead-read SSR — RIL TASK-315/ISS-355).
+        model = _FakeModel()
+        backend = _FakeBackend()
         tokenizer = StubTokenizer()  # 1 char -> 1 token
 
     monkeypatch.setattr(gen, "_require_generation_service", lambda: _FakeService())
@@ -779,3 +785,30 @@ def test_stream_prevalidation_checks_prompt_plus_engine_budget(monkeypatch):
     # The model-level guard is unchanged: max_new_tokens >= model.max_seq_len.
     with pytest.raises(gen.APIError):
         gen._validate_generation_bounds("xy", 16)
+
+
+def test_stream_prevalidation_skips_budget_for_engineless_backend(monkeypatch):
+    """Regression (RIL TASK-315/ISS-355): an engine-less backend (the default
+    ``EagerGenerationBackend``) TRUNCATES over-window prompts and serves them
+    — matching its non-streaming twin — so pre-validation must NOT 400 a
+    stream whose ``len(prompt) + max_new_tokens`` exceeds the model window
+    there (the ISS-346 budget check used to fire on EVERY backend, flipping
+    the same payload between stream=400 and non-stream=200)."""
+    import llm.serving.routers.generate as gen
+
+    class _FakeModel:
+        max_seq_len = 16
+
+    class _FakeService:
+        model = _FakeModel()
+        backend = object()  # no ``engine`` attribute -> engine-less (eager)
+        tokenizer = StubTokenizer()  # 1 char -> 1 token, fixed 3-token encode
+
+    monkeypatch.setattr(gen, "_require_generation_service", lambda: _FakeService())
+
+    # 14 chars -> 3 tokens (StubTokenizer.encode fixed length) + 14 new tokens
+    # = 17 > model window 16: still no raise, because eager truncates.
+    gen._validate_generation_bounds("x" * 14, 14)
+    # The model-level guard (max_new_tokens >= model.max_seq_len) still fires.
+    with pytest.raises(gen.APIError):
+        gen._validate_generation_bounds("x" * 14, 16)
