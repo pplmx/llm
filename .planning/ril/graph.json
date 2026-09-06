@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 176,
+  "round": 177,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T09:59:46+00:00",
+  "updated_at": "2026-09-06T10:15:18+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18496,6 +18496,43 @@
       "commit": "08d5f6c",
       "title": "move gradient_accumulation_steps to live optimization.* in 3 shipped configs",
       "detail": "Moved key under optimization.* in dpo_ultrafeedback/sft_alpaca/example.yaml + new TestShippedConfigsNoDeadKeys guard (parse → intended effective batch+LR) in test_config.py. Own r175-family systematic sweep."
+    },
+    "ISS-365": {
+      "id": "ISS-365",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T10:14:57+00:00",
+      "updated_at": "2026-09-06T10:15:18+00:00",
+      "touched_round": 176,
+      "title": "data_source hardcoded pattern blocks custom llm.data_sources plugins",
+      "detail": "DataConfig.data_source was '^(local|hf|dedup_local|dedup_hf)$' so ANY third-party source name (e.g. s3 per streaming.md recipe) was rejected at parse time — the advertised entry-point plugin mechanism was unreachable from YAML. Fixed: lazy SOURCE_REGISTRY-membership validator (9484e54).",
+      "severity": 0.7,
+      "source": "r177 docs+config dead-key sweep"
+    },
+    "CHG-349": {
+      "id": "CHG-349",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T10:14:58+00:00",
+      "updated_at": "2026-09-06T10:14:58+00:00",
+      "touched_round": 176,
+      "commit": 9.484e+57,
+      "title": "registry-aware data_source validation",
+      "detail": "Dropped the hardcoded pattern; built-ins fast-path, non-built-ins checked against SOURCE_REGISTRY (unknown → 'unknown data_source ... known sources'). Tests: builtins/unknown/plugin-name."
+    },
+    "CHG-350": {
+      "id": "CHG-350",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T10:14:58+00:00",
+      "updated_at": "2026-09-06T10:14:58+00:00",
+      "touched_round": 176,
+      "commit": "486edad",
+      "title": "distillation training.task + streaming s3 recipe docs fixes",
+      "detail": "Removed dead training.task (CLI-only); rewrote s3 custom-source recipe to encode endpoint in dataset_path (extra=ignore gotcha documented)."
     }
   },
   "edges": [
@@ -27293,6 +27330,18 @@
       "to": "ISS-364",
       "type": "resolves",
       "created_at": "2026-09-06T09:59:46+00:00"
+    },
+    {
+      "from": "CHG-349",
+      "to": "ISS-365",
+      "type": "resolves",
+      "created_at": "2026-09-06T10:15:18+00:00"
+    },
+    {
+      "from": "CHG-350",
+      "to": "ISS-365",
+      "type": "resolves",
+      "created_at": "2026-09-06T10:15:18+00:00"
     }
   ]
 }
