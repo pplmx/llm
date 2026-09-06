@@ -31,34 +31,45 @@ def test_hf_source_fingerprint():
     assert fp["dataset_name"] == "wikitext"
 
 
-def test_hf_iter_texts_uses_skip(monkeypatch):
+def test_hf_iter_texts_skip_counts_survivors_not_raw_rows(monkeypatch):
+    """Regression (deep-dive agent finding): ``HFStreamTextSource.iter_texts(skip)``
+    used to delegate ``skip`` to ``datasets.StreamingIterableDataset.skip()``,
+    which fast-forwards RAW rows *before* the empty/missing-row filter. But
+    ``StreamingTextDataset``'s resume cursor (``state.line_index``) counts
+    **survivors** (rows that actually yielded text). With any blank or missing
+    ``text_column`` row, resuming at ``skip=survivors_consumed`` started too
+    late in raw space and re-emitted the already-consumed tail — silent
+    training-data duplication on resume. ``skip`` must count survivors,
+    matching :class:`LocalLineTextSource`."""
     import sys
     from types import ModuleType
 
     from llm.data.sources import HFStreamTextSource
 
     class FakeDataset:
-        def __init__(self):
-            self.skip_n = 0
-
-        def skip(self, n: int):
-            self.skip_n = n
+        # Emulates HF streaming: skip() fast-forwards RAW rows (the historical
+        # buggy path); the contract under test must never call it.
+        def skip(self, n: int):  # pragma: no cover - unused after the fix
             return self
 
         def __iter__(self):
-            yield {"text": "a"}
-            yield {"text": "b"}
-
-    fake_dataset = FakeDataset()
+            yield {"text": "zero"}
+            yield {"text": ""}  # blank -> filtered out
+            yield {"text": "two"}
+            yield {"text": None}  # missing text -> filtered out
+            yield {"text": "four"}
+            yield {"text": "five"}
 
     fake_datasets = ModuleType("datasets")
-    fake_datasets.load_dataset = lambda *args, **kwargs: fake_dataset
+    fake_datasets.load_dataset = lambda *args, **kwargs: FakeDataset()
     monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
 
     source = HFStreamTextSource("demo", text_column="text")
-    list(source.iter_texts(skip=1))
+    assert list(source.iter_texts()) == ["zero", "two", "four", "five"]  # 4 survivors
 
-    assert fake_dataset.skip_n == 1
+    # Resumed after consuming 3 survivors -> must continue from "five", NOT
+    # re-emit the already-consumed "four" (old raw-skip path did exactly that).
+    assert list(source.iter_texts(skip=3)) == ["five"]
 
 
 def test_validate_source_fingerprint_mismatch():

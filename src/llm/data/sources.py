@@ -99,13 +99,24 @@ class HFStreamTextSource(TextSource):
             split=self.split,
             streaming=True,
         )
-        if skip > 0:
-            dataset = dataset.skip(skip)
-
+        # ``skip`` counts **survivors** (rows that carry non-empty text), the
+        # same contract as :class:`LocalLineTextSource` and the
+        # ``StreamingTextDataset`` resume cursor (``state.line_index``).
+        # Delegating to ``dataset.skip(n)`` would fast-forward RAW rows *before*
+        # the empty/missing-row filter, so any blank row made a mid-stream
+        # resume start too late in raw space and re-emit the already-consumed
+        # tail — silent training-data duplication on resume (deep-dive agent
+        # finding). Walking from the raw head mirrors the local-source pattern
+        # and stays lazy (HF streaming does not materialize anything).
+        skipped = 0
         for row in dataset:
             text = row.get(self.text_column)
-            if isinstance(text, str) and text.strip():
-                yield text.strip()
+            if not (isinstance(text, str) and text.strip()):
+                continue
+            if skipped < skip:
+                skipped += 1
+                continue
+            yield text.strip()
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
