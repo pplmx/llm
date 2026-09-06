@@ -25,6 +25,7 @@ class TestServingConfigDefaults:
         assert cfg.api_key is None
         assert cfg.log_level == "INFO"
         assert cfg.host == "127.0.0.1"
+        assert cfg.port == 8000
         assert cfg.generation_backend == "eager"
         assert cfg.compile_model is False
         assert cfg.max_concurrent_requests == 4
@@ -61,6 +62,12 @@ class TestServingConfigFromYaml:
         assert cfg.tokenizer_type == "hf"
         assert cfg.device == "cpu"
         assert cfg.host == "0.0.0.0"  # noqa: S104
+
+    def test_loads_custom_port(self, tmp_path: Path):
+        yml = tmp_path / "serve.yaml"
+        yml.write_text(yaml.dump({"host": "127.0.0.1", "port": 9000}))
+        cfg = ServingConfig.from_yaml(yml)
+        assert cfg.port == 9000
 
     def test_loads_peft_fields(self, tmp_path: Path):
         yml = tmp_path / "serve.yaml"
@@ -198,3 +205,27 @@ class TestServingConfigNumericBounds:
         cfg = ServingConfig(max_concurrent_requests=1, request_timeout=0.1, block_size=1, max_blocks=1, max_prefixes=1)
         assert cfg.max_concurrent_requests == 1
         assert cfg.block_size == 1
+
+    def test_port_must_be_in_valid_range(self):
+        with pytest.raises(ValidationError):
+            ServingConfig(port=0)
+        with pytest.raises(ValidationError):
+            ServingConfig(port=65536)
+
+
+class TestServingCliPort:
+    def test_cli_main_forwards_config_port(self, monkeypatch):
+        """RIL TASK-326: ``llm-serve`` must bind the operator's configured
+        port, not a hardcoded 8000 (ServingConfig.port -> uvicorn.run)."""
+        from llm.serving import cli
+
+        captured: dict = {}
+
+        def fake_run(*_args, **kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr("uvicorn.run", fake_run, raising=False)
+
+        cli.main(ServingConfig(host="127.0.0.1", port=9000))
+
+        assert captured.get("port") == 9000, "uvicorn.run must receive ServingConfig.port"

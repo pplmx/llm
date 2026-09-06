@@ -44,7 +44,7 @@ def main(config: ServingConfig | None = None) -> None:
     # Imported lazily so ``main`` is cheap to import (e.g. for `--help`).
     import uvicorn
 
-    uvicorn.run("llm.serving.api:app", host=config.host, port=8000, reload=reload)
+    uvicorn.run("llm.serving.api:app", host=config.host, port=config.port, reload=reload)
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ uv run llm-serve
  "use_paged_attention": false, "api_key_set": false}
 ```
 
-服务监听 `http://127.0.0.1:8000`。
+服务监听 `http://127.0.0.1:8000`。默认端口可用 `ServingConfig.port` 覆盖（YAML 写 `port: 9000`，或环境变量 `LLM_SERVING_PORT=9000`）——`llm-serve` 会绑定这个端口而不是硬编码的 8000。
 
 ### 1.2 用 curl 探活
 

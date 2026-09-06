@@ -21,6 +21,12 @@ class ServingConfig(BaseSettings):
     api_key: str | None = None  # If set, requires this key for access
     log_level: str = "INFO"
     host: str = "127.0.0.1"  # Set LLM_SERVING_HOST=0.0.0.0 for container bind-all
+    port: int = Field(
+        8000,
+        ge=1,
+        le=65535,
+        description="TCP port to bind the HTTP server (RIL TASK-326)",
+    )  # Set LLM_SERVING_PORT=9000 to override the llm-serve default
 
     # Generation
     generation_backend: str = "eager"  # eager | batched
