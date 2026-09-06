@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 173,
+  "round": 174,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T06:06:53+00:00",
+  "updated_at": "2026-09-06T08:59:23+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18373,11 +18373,11 @@
     "TASK-328": {
       "id": "TASK-328",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-09-06T06:04:31+00:00",
-      "updated_at": "2026-09-06T06:04:31+00:00",
-      "touched_round": 172,
+      "updated_at": "2026-09-06T08:59:23+00:00",
+      "touched_round": 174,
       "category": "performance",
       "severity": 0.4,
       "confidence": 0.9,
@@ -18388,17 +18388,39 @@
     "TASK-329": {
       "id": "TASK-329",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-09-06T06:04:31+00:00",
-      "updated_at": "2026-09-06T06:04:31+00:00",
-      "touched_round": 172,
+      "updated_at": "2026-09-06T08:23:57+00:00",
+      "touched_round": 173,
       "category": "core-feature",
       "severity": 0.4,
       "confidence": 0.9,
       "effort": 8,
       "title": "Wire training-period evaluation into llm-train (instantiate EvaluationCallback)",
       "summary": "EvaluationCallback + engine.log_metrics/loss exist but nothing instantiates them (r173 TASK-325 verified: EvaluationCallback never constructed in src/). Feature: build an EvaluationRunner + EvaluationCallback in the train path (per-N-step eval on val), replacing the deleted dead EvalConfig shell, so eval_interval/eval_batch_size/metrics have a real consumer."
+    },
+    "CHG-344": {
+      "id": "CHG-344",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T08:23:57+00:00",
+      "updated_at": "2026-09-06T08:23:57+00:00",
+      "touched_round": 173,
+      "commit": "310e36e",
+      "summary": "feat(training): periodic in-training LM eval wired via build_periodic_eval_callback (eval_interval>0 + data.eval_dataset_path fallback; refuses tp/fsdp/pp/3d); EvaluationCallback rank/mode guards; LMTask+runner device-alignment fixes; docs; 11 tests incl. GPU e2e"
+    },
+    "CHG-345": {
+      "id": "CHG-345",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T08:57:55+00:00",
+      "updated_at": "2026-09-06T08:57:55+00:00",
+      "touched_round": 173,
+      "commit": "e387f95",
+      "summary": "feat(serving): compile_model wired to torch.compile (CUDA-only, dynamic=True, quantized-blob skip by class name, target-device keyed); CPU skip-warn test + GPU KV-cache decode e2e; docs updated"
     }
   },
   "edges": [
@@ -27166,6 +27188,18 @@
       "to": "ISS-360",
       "type": "resolves",
       "created_at": "2026-09-06T06:06:02+00:00"
+    },
+    {
+      "from": "CHG-344",
+      "to": "TASK-329",
+      "type": "implements",
+      "created_at": "2026-09-06T08:23:57+00:00"
+    },
+    {
+      "from": "CHG-345",
+      "to": "TASK-328",
+      "type": "implements",
+      "created_at": "2026-09-06T08:58:35+00:00"
     }
   ]
 }
