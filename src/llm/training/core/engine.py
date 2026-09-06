@@ -1041,16 +1041,19 @@ class TrainingEngine:
                 raise RuntimeError("standard-loop components are required")
             for epoch in range(self.start_epoch, self.config.training.epochs):
                 self._run_callbacks("on_epoch_start", epoch=epoch)
+                # A stop requested during ``on_epoch_start`` means "skip this
+                # epoch entirely": break before any training runs (the previous
+                # epoch was committed at the bottom of its iteration).
+                if self.should_stop_training:
+                    if self.rank == 0:
+                        self.logger.info(f"Training stopped early at epoch {epoch + 1} by EarlyStopping callback.")
+                    break
+
                 epoch_start_time = time.time()
                 avg_loss = self._run_epoch(epoch)
                 val_loss = None
                 if self.config.training.run_validation:
                     val_loss = self._run_validation_epoch(epoch)
-
-                if self.should_stop_training:  # Check early stopping flag
-                    if self.rank == 0:
-                        self.logger.info(f"Training stopped early at epoch {epoch + 1} by EarlyStopping callback.")
-                    break  # Break the training loop
 
                 if self.scheduler:
                     # ReduceLROnPlateau needs the metric, others don't
@@ -1117,6 +1120,18 @@ class TrainingEngine:
                 if val_loss is not None:
                     logs["val_loss"] = val_loss
                 self._run_callbacks("on_epoch_end", epoch=epoch, logs=logs)
+
+                # Re-check the stop flag AFTER the epoch's scheduler step,
+                # checkpoint save and epoch-end callbacks (RIL TASK-321):
+                # EarlyStopping fires in ``on_epoch_end`` (it was only
+                # examined at the next loop top, spawning a full extra epoch),
+                # and a stop set during ``on_validation_end`` / a step must
+                # still commit the current epoch (the old mid-loop check ran
+                # before scheduler/save and silently dropped its checkpoint).
+                if self.should_stop_training:
+                    if self.rank == 0:
+                        self.logger.info(f"Training stopped early after epoch {epoch + 1} by EarlyStopping callback.")
+                    break
 
                 # Check max_steps AFTER checkpoint save + epoch-end callbacks
                 # so the checkpoint for the current epoch is persisted even

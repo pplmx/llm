@@ -327,3 +327,104 @@ def test_engine_finite_steps_still_fire_optimizer_hook(mock_config):
 
     assert engine.global_step == 4, f"healthy run should take 4 steps, got {engine.global_step}"
     assert spy.calls == 4, f"healthy run should fire hook 4 times, got {spy.calls}"
+
+
+class _EarlyStopProbeTask(LanguageModelingTask):
+    """Deterministic probe: constant train loss 1.0; validation loss strictly
+    increases every batch so EarlyStopping(patience=0) fires after epoch 1."""
+
+    def __init__(self, config, dm):
+        super().__init__(config, dm)
+        self._val_calls = 0
+
+    def train_step(self, batch, model, criterion):
+        return torch.tensor(1.0, requires_grad=True), {"loss": 1.0}
+
+    def validation_step(self, batch, model, criterion):
+        self._val_calls += 1
+        val = float(self._val_calls)
+        return torch.tensor(val), {"val_loss": val}
+
+
+@pytest.mark.heavy
+def test_engine_early_stop_does_not_train_extra_epoch(mock_config, tmp_path):
+    """Regression (RIL TASK-321, finding 1): EarlyStopping fires in
+    ``on_epoch_end``, but the engine examined ``should_stop_training`` only at
+    the NEXT loop top — after a FULL extra epoch (train + validation +
+    scheduler step) had already run. Patience exhaustion at epoch 1 must stop
+    the loop right there: 2 epochs x 5 batches = 10 steps, not 15."""
+    from llm.training.core.callbacks import EarlyStopping
+    from llm.training.core.engine import TrainingEngine
+
+    mock_config.training.epochs = 5
+    mock_config.training.run_validation = True
+    mock_config.optimization.use_compile = False
+    mock_config.optimization.gradient_accumulation_steps = 1
+    mock_config.checkpoint.save_interval = 1
+    mock_config.checkpoint.checkpoint_dir = str(tmp_path / "ckpt")
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = _EarlyStopProbeTask(mock_config, dm)
+    early_stop = EarlyStopping(monitor="val_loss", patience=0, mode="min")
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm, callbacks=[early_stop])
+
+    from torch.utils.data import DataLoader, TensorDataset
+
+    ids = torch.randint(0, mock_config.model.vocab_size, (10, 8), dtype=torch.long)
+    loader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=2)  # 5 batches/epoch
+    engine.is_streaming = False
+    engine.dataloader = loader
+    engine.val_dataloader = loader
+    engine.val_sampler = None
+
+    engine.run()
+
+    assert engine.global_step == 10, f"EarlyStopping ran an extra epoch: {engine.global_step} steps, expected 10"
+
+
+@pytest.mark.heavy
+def test_engine_stop_during_validation_commits_epoch_checkpoint(tmp_path, mock_config):
+    """Regression (RIL TASK-321, finding 2): a ``should_stop_training`` set
+    during ``on_validation_end`` was checked mid-loop BEFORE
+    ``scheduler.step()`` and ``save_checkpoint``, so the stopping epoch's
+    weights (often the best) were never persisted and the scheduler skipped
+    its step. The epoch must be committed first, then the loop breaks."""
+    from llm.training.core.callbacks import Callback
+    from llm.training.core.engine import TrainingEngine
+
+    class _StopInValidation(Callback):
+        def __init__(self):
+            self.fired = False
+
+        def on_validation_end(self, epoch, logs=None):
+            self.engine.should_stop_training = True
+            self.fired = True
+
+    mock_config.training.epochs = 5
+    mock_config.training.run_validation = True
+    mock_config.optimization.use_compile = False
+    mock_config.optimization.gradient_accumulation_steps = 1
+    mock_config.checkpoint.save_interval = 1
+    mock_config.checkpoint.checkpoint_dir = str(tmp_path / "ckpt")
+
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = _EarlyStopProbeTask(mock_config, dm)
+    stop = _StopInValidation()
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm, callbacks=[stop])
+
+    from torch.utils.data import DataLoader, TensorDataset
+
+    ids = torch.randint(0, mock_config.model.vocab_size, (10, 8), dtype=torch.long)
+    loader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=2)  # 5 batches/epoch
+    engine.is_streaming = False
+    engine.dataloader = loader
+    engine.val_dataloader = loader
+    engine.val_sampler = None
+
+    engine.run()
+
+    assert stop.fired, "stop callback never fired"
+    assert engine.global_step == 5, f"epoch 0 should be the only trained epoch, got {engine.global_step} steps"
+    assert len(engine.checkpoint_manager.checkpoints_saved) >= 1, "stopping epoch checkpoint was silently dropped"
