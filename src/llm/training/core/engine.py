@@ -189,6 +189,24 @@ class TrainingEngine:
             total, trainable = count_parameters(model)  # Use the utility function
             self.logger.info(f"🏗️  Model: {total:,} total params, {trainable:,} trainable")
 
+        # Gradient checkpointing (r175 docs sweep HIGH): the key was shipped in
+        # every sample config but mapped to NO field, so pydantic silently
+        # dropped it and users got full-activation memory usage while believing
+        # they had enabled checkpointing. Apply NOW — before broadcast/compile/
+        # wrap — so PP stage replication (pipeline.py propagates the source
+        # model's flag) and DDP/FSDP wrappers all observe the enabled setting.
+        if self.config.optimization.gradient_checkpointing:
+            enable_gc = getattr(model, "enable_gradient_checkpointing", None)
+            if callable(enable_gc):
+                enable_gc()
+                self.logger.info("🧠 Gradient checkpointing enabled (optimization.gradient_checkpointing)")
+            else:
+                self.logger.warning(
+                    "optimization.gradient_checkpointing=True but the model (%s) has no "
+                    "enable_gradient_checkpointing(); the key is ignored for this task.",
+                    type(model).__name__,
+                )
+
         # DDP requires every rank to start from *identical* parameters.  Our
         # DistributedManager.setup seeds rank R's RNG with ``42 + R`` (so data
         # ordering differs per rank), which means a freshly built model also

@@ -77,6 +77,41 @@ def test_engine_stops_at_max_steps(mock_config):
     assert engine.global_step == 3
 
 
+def test_optimization_gradient_checkpointing_field_parses():
+    """The key shipped in every sample config must map to a real field.
+
+    r175 docs sweep HIGH: ``optimization.gradient_checkpointing`` appeared in
+    streaming_c4.yaml / dpo_ultrafeedback.yaml / both tutorials, but no field
+    existed — pydantic ``extra="ignore"`` dropped it silently, so "enabling"
+    it did nothing and users kept full-activation memory usage.
+    """
+    opt = OptimizationConfig()
+    assert opt.gradient_checkpointing is False
+    assert OptimizationConfig(gradient_checkpointing=True).gradient_checkpointing is True
+
+
+@pytest.mark.heavy
+def test_engine_applies_gradient_checkpointing_flag(mock_config):
+    """The engine must enable DecoderModel checkpointing from the config key."""
+    mock_config.optimization.gradient_checkpointing = True
+    mock_config.optimization.use_compile = False  # isolate the flag application
+    mock_config.training.run_validation = False
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = LanguageModelingTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+
+    from torch.utils.data import DataLoader, TensorDataset
+
+    ids = torch.randint(0, mock_config.model.vocab_size, (8, 16), dtype=torch.long)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=2)
+
+    engine.run()
+
+    assert engine.model.gradient_checkpointing is True
+
+
 @pytest.mark.heavy
 def test_engine_restores_global_step_on_resume(tmp_path, mock_config):
     """Regression (RIL round-47): ``global_step`` must survive a resume.

@@ -774,6 +774,14 @@ class OptimizationConfig(BaseModel):
     )
     use_amp: bool = True
     amp_dtype: str = Field("auto", pattern="^(auto|float16|bfloat16)$")
+    gradient_checkpointing: bool = False
+    # The shipped configs (streaming_c4.yaml, dpo_ultrafeedback.yaml) always
+    # carried ``optimization.gradient_checkpointing``, but until this field
+    # existed pydantic's ``extra="ignore"`` silently dropped the key — users
+    # "enabled" it and got full-activation memory usage (r175 docs sweep HIGH).
+    # The engine applies it to the DecoderModel (and PP stage replication)
+    # in ``_setup_components``; it must stay an *optimization* knob (not a
+    # ``model.*`` field) because it is never persisted into the checkpoint.
     num_workers: int = Field(4, ge=0)
     pin_memory: bool = True
     prefetch_factor: int = 2
