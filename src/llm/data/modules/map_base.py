@@ -54,6 +54,21 @@ class SamplerMapDataModule(MapDataModule):
             shuffle=True,
             drop_last=True,
         )
+        # RIL TASK-323: with ``drop_last=True`` torch gives EVERY rank a
+        # zero-sample sampler whenever world_size > len(dataset) (its dropped
+        # per-replica count is ceil((len - replicas) / replicas) == 0). The
+        # engine would then train whole epochs on nothing and silently score
+        # them 0.0 — save_best/EarlyStopping read that as a perfect loss.
+        # Fail loudly at loader construction instead of training on nothing.
+        if not isinstance(self.train_dataset, Sized):
+            raise TypeError("train dataset must be sized")
+        if len(train_sampler) == 0:
+            raise ValueError(
+                f"train dataset has {len(self.train_dataset)} samples, which is "
+                f"too small for world_size={world_size} with DistributedSampler "
+                "drop_last — every rank is left with 0 samples (empty epoch). "
+                "Use fewer GPUs or a larger train split."
+            )
         return self.build_dataloader(self.train_dataset, train_sampler), train_sampler
 
     def val_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader | None, DistributedSampler | None]:

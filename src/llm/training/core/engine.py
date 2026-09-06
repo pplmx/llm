@@ -927,8 +927,18 @@ class TrainingEngine:
                 self._log_batch_stats(epoch, batch_idx, num_batches, metrics)
             self._run_callbacks("on_batch_end", epoch=epoch, batch_idx=batch_idx)
 
+        # RIL TASK-323: an empty training epoch must never silently return
+        # 0.0 — save_best/EarlyStopping/ReduceLROnPlateau would treat that as
+        # a perfect loss and persist a garbage checkpoint. A zero-batch epoch
+        # (drop_last on a tiny multi-GPU corpus, or a custom loader that
+        # yields nothing) is always a configuration error: fail loudly.
         if batch_count == 0:
-            return 0.0
+            raise RuntimeError(
+                "training epoch produced 0 batches: the dataloader is empty "
+                "(e.g. DistributedSampler drop_last left every rank with no "
+                "samples on a corpus smaller than the replica count). Refusing "
+                "to treat an empty epoch as a 0.0 loss."
+            )
 
         loss_tensor = torch.tensor(epoch_loss / batch_count, device=self.device)
         global_avg_loss = self._reduce_metric(loss_tensor).item()

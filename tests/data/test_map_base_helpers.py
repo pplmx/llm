@@ -90,6 +90,42 @@ def test_setup_tokenized_file_dataset_raises_when_val_path_missing(tmp_path):
         module.setup()
 
 
+def test_train_dataloader_raises_when_drop_last_empties_every_rank():
+    """RIL TASK-323: ``DistributedSampler(drop_last=True)`` gives EVERY rank a
+    zero-sample sampler when world_size > len(train_dataset) — the engine then
+    trains whole epochs on nothing and silently scores them 0.0, which
+    save_best / EarlyStopping / ReduceLROnPlateau read as a perfect loss. The
+    datamodule must fail loudly at loader construction instead.
+    """
+    import torch
+    from torch.utils.data import TensorDataset
+
+    from llm.data.modules.map_base import SamplerMapDataModule
+    from llm.training.core.config import Config
+
+    class _TestModule(SamplerMapDataModule):
+        def prepare_data(self) -> None:
+            return None
+
+        def setup(self, stage: str | None = None) -> None:
+            return None
+
+    module = _TestModule(Config())
+    module.config.optimization.num_workers = 0
+    module.config.optimization.persistent_workers = False
+
+    # 1 sample on a 4-replica sampler (drop_last=True) -> 0 samples/rank.
+    module.train_dataset = TensorDataset(torch.arange(1))
+    with pytest.raises(ValueError, match="too small for world_size"):
+        module.train_dataloader(rank=0, world_size=4)
+
+    # A dataset large enough for the replica count still builds a real loader.
+    module.train_dataset = TensorDataset(torch.arange(8))
+    loader, sampler = module.train_dataloader(rank=0, world_size=2)
+    assert sampler is not None
+    assert len(loader) > 0, "well-sized corpus must yield a non-empty loader"
+
+
 def test_split_train_val_identical_across_ranks():
     """All DDP ranks must derive the same 90/10 partition (RIL ISS-087).
 

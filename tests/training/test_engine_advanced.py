@@ -185,6 +185,32 @@ def test_engine_validation_empty_dataloader_skips(mock_config):
     assert result is None
 
 
+def test_engine_training_empty_dataloader_raises(mock_config):
+    """RIL TASK-323: an empty training epoch must raise loudly instead of
+    returning a silent 0.0 that save_best / EarlyStopping / ReduceLROnPlateau
+    would treat as a perfect loss (drop_last on a multi-GPU run with a corpus
+    smaller than the replica count)."""
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from llm.training.core.engine import TrainingEngine
+
+    mock_config.optimization.use_compile = False  # isolate the guard; skip the compile cost
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = LanguageModelingTask(mock_config, dm)
+    engine = TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(
+        TensorDataset(torch.empty(0, 2, dtype=torch.long), torch.empty(0, 2, dtype=torch.long))
+    )
+    engine.val_dataloader = None
+
+    with pytest.raises(RuntimeError, match="0 batches"):
+        engine._run_epoch(0)
+
+
 def test_engine_log_metrics_logs_at_rank_zero(mock_config, caplog):
     """EvaluationCallback calls engine.log_metrics on its eval interval; the
     method must exist and log at rank 0 (regression: it only existed in a
