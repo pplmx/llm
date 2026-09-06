@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 178,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T13:02:55+00:00",
+  "updated_at": "2026-09-06T15:33:04+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18632,6 +18632,116 @@
       "touched_round": 178,
       "commit": "c7ed5e3",
       "summary": "fix(examples): repair moe_vs_mlp_demo.py (swiglu→silu+use_glu; single-output MoE + real gate routing stats), correct _learning code_structure_map swiglu claim, add examples smoke tests (subprocess run of 4 CPU examples, exit-0 + no-traceback, RED-checked)"
+    },
+    "ISS-369": {
+      "id": "ISS-369",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:21:36+00:00",
+      "updated_at": "2026-09-06T15:33:03+00:00",
+      "touched_round": 178,
+      "severity": 0.9,
+      "confidence": 1.0,
+      "summary": "sampling_probs top_k/top_p masking is 1D-only but speculative.py feeds it 2D [gamma,vocab] logits (draft acceptance) — top_k>1 crashes (broadcast), top_p crashes (IndexError: shifts row axis), gamma=1 silently returns the UNFILTERED softmax (top_p disabled), resurrecting the ISS-99 acceptance-vs-eager divergence. Verified: RuntimeError/IndexError/unfiltered on concrete 2D inputs."
+    },
+    "ISS-370": {
+      "id": "ISS-370",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:21:36+00:00",
+      "updated_at": "2026-09-06T15:33:04+00:00",
+      "touched_round": 178,
+      "severity": 0.7,
+      "confidence": 1.0,
+      "summary": "Generation backends compare token_id == eos_token_id with a raw getattr; HF tokenizers can expose eos_token_id as a list/sequence (the RLHF trainer already normalizes this shape) — an int==list never equals, so eager/speculative/batch_engine run to max_new_tokens with EOS+junk in output. Verified live."
+    },
+    "ISS-371": {
+      "id": "ISS-371",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:21:36+00:00",
+      "updated_at": "2026-09-06T15:33:04+00:00",
+      "touched_round": 178,
+      "severity": 0.6,
+      "confidence": 1.0,
+      "summary": "RoPE dynamic-scaling cos/sin cache only rebuilds when seq_len GREW (monotonic _seq_len_cached), but the table is a function of the current length (scale=seq_len/max_seq_len) — a shorter later forward (e.g. fresh KV-cache prompt after a long decode) reuses the longer scale. Verified empirically: same-instance short forward differs from a fresh module by up to 6.9 on q/k."
+    },
+    "ISS-372": {
+      "id": "ISS-372",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:21:36+00:00",
+      "updated_at": "2026-09-06T15:33:04+00:00",
+      "touched_round": 178,
+      "severity": 0.6,
+      "confidence": 1.0,
+      "summary": "GGUF general.file_type advertises wrong llama.cpp ftypes for K-quants: Q4_K->3 (=MOSTLY_Q4_1), Q5_K->6 (=MOSTLY_Q5_0), Q6_K->13 (=MOSTLY_Q3_K_L); correct are 15/17/18. general.file_type is how external GGUF tools name quantization without decoding tensors — Q4_K files get branded Q4_1 etc. In-repo never reads the field (loader uses llm_model_config)."
+    },
+    "ISS-373": {
+      "id": "ISS-373",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:21:36+00:00",
+      "updated_at": "2026-09-06T15:33:04+00:00",
+      "touched_round": 178,
+      "severity": 0.55,
+      "confidence": 1.0,
+      "summary": "convert_our_weights(architecture='qwen') splits the combined qkv_proj into Llama-style model.layers.*.q_proj/q_proj/v_proj keys — absent from the Qwen reverse map, so the combined transformer.h.N.attn.c_attn weight is never emitted (drops attention on any qwen roundtrip). Latent today (save_pretrained hardcodes llama) but the function is exported and its 'inverse of convert_hf_weights' contract is broken for qwen. Verified on a qwen-shaped state dict."
+    },
+    "TASK-332": {
+      "id": "TASK-332",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:23:25+00:00",
+      "updated_at": "2026-09-06T15:33:04+00:00",
+      "touched_round": 178,
+      "category": "correctness",
+      "severity": 0.9,
+      "confidence": 1.0,
+      "summary": "Fix generation sampling: make sampling_probs top_k/top_p per-row (values[...,-1:] + scatter mask) so speculative 2D [gamma,vocab] works (ISS-369); normalize eos_token_id to a tuple (normalize_eos_ids) in eager/speculative/batch_engine so list-valued HF eos halts (ISS-370). RED-checked regression tests for both."
+    },
+    "TASK-333": {
+      "id": "TASK-333",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:23:25+00:00",
+      "updated_at": "2026-09-06T15:33:04+00:00",
+      "touched_round": 178,
+      "category": "correctness",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "summary": "Fix RoPE dynamic-scaling cache invalidation: track _built_seq_len and rebuild whenever the scale-driving length changes (not only when it grows), so shorter inputs after a long one get the correct unscaled table (ISS-371). Regression test reusing one instance across descending lengths."
+    },
+    "TASK-334": {
+      "id": "TASK-334",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:23:25+00:00",
+      "updated_at": "2026-09-06T15:33:04+00:00",
+      "touched_round": 178,
+      "category": "correctness",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "summary": "Fix export/compat external metadata: GGUF _FILE_TYPE K-quant ftype map to llama.cpp enum (Q4_K->15, Q5_K->17, Q6_K->18) + parametrized ftype test (ISS-372); guard convert_our_weights qkv split on whether the target reverse-map exposes split q/k/v so qwen emits combined c_attn (ISS-373). Regression tests for both."
+    },
+    "CHG-354": {
+      "id": "CHG-354",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T15:32:09+00:00",
+      "updated_at": "2026-09-06T15:32:09+00:00",
+      "touched_round": 178,
+      "commit": "430a8b7",
+      "summary": "fix(generation,export,compat): deep-dive round — 5 correctness fixes: sampling_probs per-row 2D top_k/top_p, normalize_eos_ids for list HF eos across eager/speculative/batch_engine, RoPE dynamic cache rebuild on descending length, GGUF K-quant ftype enum (15/17/18), convert_our_weights qwen combined-c_attn. RED-checked regression tests."
     }
   },
   "edges": [
@@ -27483,6 +27593,84 @@
       "to": "TASK-331",
       "type": "implements",
       "created_at": "2026-09-06T13:01:33+00:00"
+    },
+    {
+      "from": "TASK-332",
+      "to": "ISS-369",
+      "type": "addresses",
+      "created_at": "2026-09-06T15:25:27+00:00"
+    },
+    {
+      "from": "TASK-332",
+      "to": "ISS-370",
+      "type": "addresses",
+      "created_at": "2026-09-06T15:25:27+00:00"
+    },
+    {
+      "from": "TASK-333",
+      "to": "ISS-371",
+      "type": "addresses",
+      "created_at": "2026-09-06T15:25:28+00:00"
+    },
+    {
+      "from": "TASK-334",
+      "to": "ISS-372",
+      "type": "addresses",
+      "created_at": "2026-09-06T15:25:28+00:00"
+    },
+    {
+      "from": "TASK-334",
+      "to": "ISS-373",
+      "type": "addresses",
+      "created_at": "2026-09-06T15:25:28+00:00"
+    },
+    {
+      "from": "CHG-354",
+      "to": "ISS-369",
+      "type": "resolves",
+      "created_at": "2026-09-06T15:32:09+00:00"
+    },
+    {
+      "from": "CHG-354",
+      "to": "ISS-370",
+      "type": "resolves",
+      "created_at": "2026-09-06T15:32:09+00:00"
+    },
+    {
+      "from": "CHG-354",
+      "to": "ISS-371",
+      "type": "resolves",
+      "created_at": "2026-09-06T15:32:09+00:00"
+    },
+    {
+      "from": "CHG-354",
+      "to": "ISS-372",
+      "type": "resolves",
+      "created_at": "2026-09-06T15:32:10+00:00"
+    },
+    {
+      "from": "CHG-354",
+      "to": "ISS-373",
+      "type": "resolves",
+      "created_at": "2026-09-06T15:32:10+00:00"
+    },
+    {
+      "from": "CHG-354",
+      "to": "TASK-332",
+      "type": "implements",
+      "created_at": "2026-09-06T15:32:10+00:00"
+    },
+    {
+      "from": "CHG-354",
+      "to": "TASK-333",
+      "type": "implements",
+      "created_at": "2026-09-06T15:32:10+00:00"
+    },
+    {
+      "from": "CHG-354",
+      "to": "TASK-334",
+      "type": "implements",
+      "created_at": "2026-09-06T15:32:10+00:00"
     }
   ]
 }
