@@ -81,11 +81,18 @@ for preset in list_presets():
 ```python
 from llm.data.presets import resolve_preset
 
-# All of these resolve to the same RedPajama Wikipedia preset:
+# Both of these resolve to the same RedPajama Wikipedia preset:
 resolve_preset("redpajama/wikipedia")
 resolve_preset("redpajama:wikipedia")  # shorthand with ":"
-resolve_preset("togethercomputer/RedPajama-Data-1T")  # full dataset id
 ```
+
+Each RedPajama subset (`arxiv`, `wikipedia`, `c4`, …) is its own preset,
+and all of them share the *same* HuggingFace dataset id
+`togethercomputer/RedPajama-Data-1T`. Because the presets are registered
+per-subset, the bare full-id form `resolve_preset("togethercomputer/"
+"RedPajama-Data-1T")` resolves to whatever subset was registered first
+— today `redpajama/arxiv`, not `wikipedia`. **Use the explicit
+`redpajama/<subset>` form when you need a specific subset.**
 
 Unknown names raise `KeyError` with the available list so the error
 message alone is enough to self-correct.

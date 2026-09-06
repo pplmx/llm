@@ -51,8 +51,8 @@ For small datasets that fit in memory, use the standard `lm` task with
 | Field               | Type | Default    | Description                                                  |
 | ------------------- | ---- | ---------- | ------------------------------------------------------------ |
 | `data_source`       | str  | `"local"`  | Source type: `local`, `hf`, `dedup_local`, `dedup_hf`        |
-| `dataset_path`      | str  | `""`       | Local file path (required for `local`/`dedup_local`)         |
-| `dataset_name`      | str  | `""`       | HF dataset identifier (required for `hf`/`dedup_hf`)         |
+| `dataset_path`      | str  | `None`     | Local file path (required for `local`/`dedup_local`)         |
+| `dataset_name`      | str  | `None`     | HF dataset identifier (required for `hf`/`dedup_hf`)         |
 | `dataset_config`    | str  | `None`     | HF dataset config/subset                                     |
 | `dataset_split`     | str  | `"train"`  | HF dataset split                                             |
 | `text_column`       | str  | `"text"`   | Text field name in dataset rows                              |

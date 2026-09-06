@@ -415,8 +415,8 @@ DPO 最容易 OOM（policy + reference）。优先级：
 ```yaml
 training:
   batch_size: 2             # 减小
-  gradient_accumulation_steps: 8  # 补有效 batch
 optimization:
+  gradient_accumulation_steps: 8  # 补有效 batch
   gradient_checkpointing: true   # 优先开
   use_amp: true                 # bf16/fp16
 data:
