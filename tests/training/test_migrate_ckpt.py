@@ -257,6 +257,44 @@ class TestMigrateCkptCli:
         assert result.exit_code == 0, result.stderr
         assert "verification passed" in strip_ansi(result.stdout)
 
+    def test_verify_passes_when_legacy_missing_epoch_and_best_loss(self, cli_runner: CliRunner, tmp_path: Path):
+        """Regression (deep-dive agent finding): ``--verify`` compared the new
+        trio against the legacy blob with a *raw* ``.get()``, but conversion
+        writes the same fields with defaults (``epoch=0``, ``best_loss=inf``).
+        A legacy checkpoint missing ``epoch``/``best_loss`` (hand-assembled or
+        third-party, both valid per the converter's own defaults) therefore
+        round-trips perfectly yet ``--verify`` reported a spurious mismatch and
+        exited 2."""
+        legacy = tmp_path / "minimal.pt"
+        torch.save(
+            {
+                "model_state": {"weight": torch.arange(6, dtype=torch.float32).reshape(2, 3)},
+                "loss": 0.5,
+                "model_config": {},
+            },
+            legacy,
+        )
+
+        # Conversion alone succeeds with the same defaults.
+        convert_legacy_checkpoint_to_split(legacy)
+        result = cli_runner.invoke(app, [str(legacy), "--verify"])
+        assert result.exit_code == 0, f"expected exit 0, got {result.exit_code}: {result.stderr!r}"
+        combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
+        assert "verification passed" in combined
+
+        # --in-place --verify must now delete the legacy instead of dying 2.
+        legacy2 = tmp_path / "minimal2.pt"
+        torch.save(
+            {
+                "model_state": {"weight": torch.arange(6, dtype=torch.float32).reshape(2, 3)},
+                "loss": 0.5,
+            },
+            legacy2,
+        )
+        result2 = cli_runner.invoke(app, [str(legacy2), "--in-place", "--verify"])
+        assert result2.exit_code == 0, f"expected exit 0, got {result2.exit_code}: {result2.stderr!r}"
+        assert not legacy2.exists(), "legacy must be deleted after a passing --in-place --verify"
+
     def test_in_place_with_verify_deletes_only_after_passing(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         """``--in-place --verify`` must run the round-trip check against the
         still-present legacy blob before deleting it (regression for ISS-017):

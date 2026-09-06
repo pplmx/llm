@@ -141,8 +141,15 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
     # directly from meta.json (NOT via load_checkpoint_payload, which
     # would fall through to the legacy .pt and report the wrong
     # values).
+    # Read the legacy side with the SAME defaults the converter writes
+    # (``checkpoint.py``: epoch=0, best_loss=inf): a legacy blob missing a
+    # field round-trips cleanly, but a raw ``.get()`` returned None there and
+    # ``None != 0`` reported a spurious 'epoch mismatch' / exit 2 on a
+    # conversion that was actually perfect (deep-dive finding). ``json``
+    # round-trips ``inf`` as ``Infinity``/``inf``.
+    legacy_defaults = {"epoch": 0, "loss": None, "best_loss": float("inf")}
     for field in ("epoch", "loss", "best_loss"):
-        legacy_val = legacy_payload.get(field)
+        legacy_val = legacy_payload.get(field, legacy_defaults[field])
         new_val = new_meta.get(field)
         if legacy_val != new_val:
             return False, f"{field!r} mismatch: legacy={legacy_val!r} vs new={new_val!r}"
