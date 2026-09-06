@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 178,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T16:21:01+00:00",
+  "updated_at": "2026-09-06T16:51:11+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18838,6 +18838,42 @@
       "touched_round": 178,
       "commit": "86d797c",
       "summary": "fix(cli,serving): from_serving_config rejects hf-with-no-path (raise like from_data_config); llm-quantize rejects --output existing-directory with a clear usage error. RED-checked tests."
+    },
+    "ISS-378": {
+      "id": "ISS-378",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T16:48:57+00:00",
+      "updated_at": "2026-09-06T16:51:10+00:00",
+      "touched_round": 178,
+      "severity": 0.5,
+      "confidence": 1.0,
+      "summary": "Streaming routes (/generate?stream + /v1/chat stream) count token_count+=1 per received CHUNK, but with stop sequences the backend drains several tokens through its stop buffer as ONE multi-token chunk — usage metrics undercount and chat finish_reason resolves stop-vs-length wrong (1>=max_tokens false). Verified live: stream_generate(max_new_tokens=3, stop=ZZZ) yields one 'abc' chunk."
+    },
+    "TASK-337": {
+      "id": "TASK-337",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T16:48:57+00:00",
+      "updated_at": "2026-09-06T16:51:11+00:00",
+      "touched_round": 178,
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "summary": "Fix streaming token accounting: routers count _token_count(chunk) (re-encode, matching the non-streaming path) instead of +=1 per chunk; chat.py finish_reason then resolves correctly with stops (ISS-378). RED-checked metrics regression test."
+    },
+    "CHG-357": {
+      "id": "CHG-357",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T16:51:10+00:00",
+      "updated_at": "2026-09-06T16:51:10+00:00",
+      "touched_round": 178,
+      "commit": "cffdc7c",
+      "summary": "fix(serving): streaming routes count _token_count(chunk) instead of +=1 per chunk — stop-buffered multi-token chunks no longer undercount usage or misreport chat finish_reason (length-vs-stop). RED-checked metrics regression test."
     }
   },
   "edges": [
@@ -27827,6 +27863,24 @@
       "to": "TASK-336",
       "type": "implements",
       "created_at": "2026-09-06T16:21:00+00:00"
+    },
+    {
+      "from": "TASK-337",
+      "to": "ISS-378",
+      "type": "addresses",
+      "created_at": "2026-09-06T16:48:58+00:00"
+    },
+    {
+      "from": "CHG-357",
+      "to": "ISS-378",
+      "type": "resolves",
+      "created_at": "2026-09-06T16:51:10+00:00"
+    },
+    {
+      "from": "CHG-357",
+      "to": "TASK-337",
+      "type": "implements",
+      "created_at": "2026-09-06T16:51:10+00:00"
     }
   ]
 }
