@@ -74,6 +74,46 @@ def test_checkpoint_rotation(checkpoint_manager):
     assert not (ckpt_dir / "epoch_1.extra_state.pt").exists()
 
 
+def test_rotation_prunes_prior_runs_epochs_on_resume(tmp_path):
+    """RIL TASK-322: ``keep_last_n`` must bound the epoch snapshots on DISK,
+    not just the current process's in-memory list.
+
+    A fresh CheckpointManager (a resumed run) starts with an empty
+    ``checkpoints_saved`` list, so it only ever prunes the epochs IT writes —
+    prior runs' ``epoch_N`` trios were left to accumulate forever. Retention
+    must consider everything already on disk.
+    """
+    from llm.training.core.utils import CheckpointManager, Logger, LoggingConfig
+
+    config = CheckpointConfig(
+        checkpoint_dir=str(tmp_path / "checkpoints"),
+        save_interval=1,
+        keep_last_n=2,
+        save_best=False,
+    )
+    logger = Logger(rank=0, config=LoggingConfig(log_level="DEBUG"))
+    model = DummyState()
+
+    def _epoch_stems():
+        return {p.name.split(".")[0] for p in (tmp_path / "checkpoints").iterdir() if p.name.startswith("epoch_")}
+
+    # Run 1: three snapshots; keep_last_n=2 leaves epoch_2 + epoch_3 on disk.
+    CheckpointManager(config, rank=0, logger=logger).save_checkpoint(0, model, None, None, None, loss=1.0)
+    CheckpointManager(config, rank=0, logger=logger).save_checkpoint(1, model, None, None, None, loss=1.0)
+    CheckpointManager(config, rank=0, logger=logger).save_checkpoint(2, model, None, None, None, loss=1.0)
+
+    # "Run 2": a RESUME is a fresh process — a new manager, empty in-memory
+    # list, continuing the epoch counter. One more snapshot must push the
+    # total back down to keep_last_n=2, deleting run 1's stale trios.
+    mgr2 = CheckpointManager(config, rank=0, logger=logger)
+    assert len(mgr2.checkpoints_saved) == 0, "resumed manager must not inherit run 1's in-memory list"
+    mgr2.save_checkpoint(3, model, None, None, None, loss=1.0)
+
+    stems = _epoch_stems()
+    assert len(stems) <= 2, f"resumed run left {len(stems)} epoch trios on disk (keep_last_n=2): {sorted(stems)}"
+    assert "epoch_4" in stems, "newest epoch snapshot must survive retention"
+
+
 def test_load_checkpoint_saves_extra_state(checkpoint_manager):
     model = DummyState()
     optimizer = DummyState()

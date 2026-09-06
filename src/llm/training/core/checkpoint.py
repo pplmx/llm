@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import pickle
+import re
 import uuid
 import warnings
 from pathlib import Path
@@ -65,6 +66,12 @@ EXTRA_STATE_SUFFIX = ".extra_state.pt"
 #: Legacy single-file extension (v0.0.5 and earlier). Detected and
 #: loaded by :func:`_load_legacy_checkpoint`.
 LEGACY_SUFFIX = ".pt"
+
+#: Matches a periodic epoch snapshot file (e.g. ``epoch_12.safetensors``,
+#: ``epoch_12.meta.json``, ``epoch_12.extra_state.pt`` or the legacy
+#: ``epoch_12.pt``). Used by :func:`_cleanup_old_checkpoints` to discover
+#: every epoch snapshot on disk across resumed runs (RIL TASK-322).
+_EPOCH_FILE_RE = re.compile(r"^epoch_(\d+)\.(safetensors|meta\.json|extra_state\.pt|pt)$")
 
 
 def _safetensors_available() -> bool:
@@ -660,6 +667,25 @@ def convert_legacy_checkpoint_to_split(
     }
 
 
+def _discover_epoch_snapshots(checkpoint_dir: Path) -> dict[int, Path]:
+    """Map every ``epoch_<N>`` snapshot on disk to one of its files.
+
+    Retention must span resumes: the in-memory list of a fresh (resumed)
+    process is empty, so only a directory scan can see prior runs' periodic
+    snapshots (RIL TASK-322). Returns ``{epoch_number: any sidecar path}``
+    so callers can stat mtime and reconstruct the full trio's stem.
+    """
+    found: dict[int, Path] = {}
+    if not checkpoint_dir.exists():
+        return found
+    for path in checkpoint_dir.iterdir():
+        m = _EPOCH_FILE_RE.match(path.name)
+        if m is not None:
+            epoch_no = int(m.group(1))
+            found.setdefault(epoch_no, path)
+    return found
+
+
 class CheckpointManager:
     """Save/load checkpoints with retention and atomic-write semantics.
 
@@ -855,28 +881,32 @@ class CheckpointManager:
             dist.barrier()
 
     def _cleanup_old_checkpoints(self):
-        while len(self.checkpoints_saved) > self.config.keep_last_n:
-            oldest_pt = self.checkpoints_saved.pop(0)
-            # The list tracks the legacy .pt paths for backward
-            # compat, but on disk we have the split layout — clean up
-            # all three sidecars at the same stem.
-            stem = oldest_pt.with_suffix("")
-            for suffix in (SAFETENSORS_SUFFIX, META_SUFFIX, EXTRA_STATE_SUFFIX):
-                target = stem.with_name(stem.name + suffix)
-                if target.exists():
-                    try:
-                        target.unlink()
-                        self.logger.debug(f"Removed old checkpoint sidecar: {target}")
-                    except OSError as e:
-                        self.logger.warning(f"Could not remove {target}: {e}")
-            # Best-effort: also remove the legacy .pt if it happens to
-            # exist (older runs that wrote the legacy format here).
-            if oldest_pt.exists():
+        # ``checkpoints_saved`` only records THIS process's writes; a resumed
+        # run starts with it empty, so basing retention on the list alone left
+        # prior runs' ``epoch_N`` trios to pile up on disk forever (RIL
+        # TASK-322). Prune from what is actually on disk: keep the newest
+        # ``keep_last_n`` epoch snapshots by save time (mtime; epoch number
+        # breaks same-second ties). The in-memory list is kept coherent as the
+        # current run's record (engine tests/introspection read it).
+        keep = self.config.keep_last_n
+        by_epoch = _discover_epoch_snapshots(Path(self.config.checkpoint_dir))
+        ordered = sorted(by_epoch.items(), key=lambda kv: (-kv[1].stat().st_mtime, -kv[0]))
+        for epoch_no, _ in ordered[keep:]:
+            self._remove_epoch_snapshot(epoch_no)
+        while len(self.checkpoints_saved) > keep:
+            self.checkpoints_saved.pop(0)
+
+    def _remove_epoch_snapshot(self, epoch_no: int) -> None:
+        """Remove every sidecar of the ``epoch_<N>`` snapshot best-effort."""
+        stem = Path(self.config.checkpoint_dir) / f"epoch_{epoch_no}"
+        for suffix in (SAFETENSORS_SUFFIX, META_SUFFIX, EXTRA_STATE_SUFFIX, LEGACY_SUFFIX):
+            target = stem.with_name(stem.name + suffix)
+            if target.exists():
                 try:
-                    oldest_pt.unlink()
-                    self.logger.debug(f"Removed old checkpoint: {oldest_pt}")
+                    target.unlink()
+                    self.logger.debug(f"Removed old checkpoint sidecar: {target}")
                 except OSError as e:
-                    self.logger.warning(f"Could not remove {oldest_pt}: {e}")
+                    self.logger.warning(f"Could not remove {target}: {e}")
 
     # ---- load side --------------------------------------------------------
 
