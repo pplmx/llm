@@ -161,6 +161,34 @@ class TrainingConfig(BaseModel):
             "shouldn't run forever even if num_samples is large."
         ),
     )
+    # Periodic in-training evaluation (RIL TASK-329): a lightweight LM eval
+    # (perplexity/accuracy over a text corpus) fires every ``eval_interval``
+    # optimizer steps. 0 = disabled (the default). Guarded by
+    # ``build_periodic_eval_callback``: refuses collective-forward parallel
+    # strategies (tp/fsdp/pp/3d) where a rank-0-only forward would hang.
+    eval_interval: int = Field(
+        0,
+        ge=0,
+        description=(
+            "Run a periodic LM evaluation every N optimizer steps during "
+            "training. 0 = disabled. The eval corpus resolves "
+            "data.eval_dataset_path -> data.val_dataset_path -> "
+            "data.dataset_path."
+        ),
+    )
+    eval_metric_names: list[str] | None = Field(
+        None,
+        description=(
+            "Metric NAMES for the periodic eval (resolved via "
+            "llm.evaluation.metrics.METRIC_REGISTRY). None uses the "
+            "runner's task default."
+        ),
+    )
+    eval_max_seq_len: int | None = Field(
+        None,
+        gt=0,
+        description=("Context window the periodic eval corpus is truncated to. Defaults to the model's max_seq_len."),
+    )
 
     # DPO beta (KL constraint strength) — opt-in via the DPO task.
     # ``DPOTask.build_model`` reads this via ``getattr`` with a default
@@ -780,6 +808,7 @@ class DataConfig(BaseModel):
     tokenizer_path: str | None = None  # Path to file (simple) or repo_id/path (hf)
     dataset_path: str | None = None
     val_dataset_path: str | None = None  # Optional explicit validation file
+    eval_dataset_path: str | None = None  # Explicit periodic-eval corpus (RIL TASK-329)
     dataset_name: str | None = None  # HuggingFace dataset id when data_source='hf'
     dataset_config: str | None = None
     dataset_split: str = "train"

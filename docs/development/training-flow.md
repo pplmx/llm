@@ -50,6 +50,33 @@
 
 ---
 
+## 训练中的周期性评估 (RIL TASK-329)
+
+除每个 epoch 结束时的 `_run_validation_epoch()` 外，框架还支持**训练中按步（per-N-step）的轻量 LM 评估**：每隔
+`training.eval_interval` 个 optimizer step，用 `LMTask` 在指定语料上计算 perplexity/accuracy 等指标（走
+`llm.evaluation` 的 metric registry），并通过 `engine.log_metrics` 在 rank 0 打印出来。
+
+用法：
+
+```yaml
+training:
+  eval_interval: 500        # 每 500 步跑一次评估；0（默认）= 关闭
+  eval_metric_names: ~      # 如 ["perplexity", "accuracy"]；None = task 默认
+  eval_max_seq_len: ~       # 评估语料的截断窗口；None = 模型 max_seq_len
+data:
+  eval_dataset_path: eval.txt   # 显式评估语料；缺省回退到 val_dataset_path → dataset_path
+```
+
+约束（在构建回调时 fail-fast）：
+
+- **要求**：`eval_interval > 0` 时必须能解析出一个文本语料（`data.eval_dataset_path` / `val_dataset_path` / `dataset_path`），否则启动即报错。
+- **并行策略**：`tp` / `fsdp` / `pp` / `3d` 的模型 forward 是 collective 或 stage-scheduled，rank-0 单侧评估会挂起 —— 这些策略下设置 `eval_interval > 0` 会被拒绝；`ddp` / `zero` 及单进程（`world_size=1`）安全，评估只在 rank 0 跑。
+
+实现：`llm.training.core.periodic_eval.build_periodic_eval_callback` 组装 `LMTask(EvaluationRunner(EvaluationCallback))`，`train_worker`
+在 `training.eval_interval > 0` 时自动挂到 engine 的 callbacks 上。评估模型的输入与参考标签会自动对齐到模型所在 device（GPU 训练时不再因 CPU 输入报 device mismatch）。
+
+---
+
 ## 深入了解
 
 为了更清晰地理解特定部分的交互逻辑, 请参阅以下详细文档:

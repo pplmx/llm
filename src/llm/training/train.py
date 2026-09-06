@@ -13,6 +13,7 @@ from llm.runtime.plugins import load_entry_point_hooks
 from llm.training.core.callbacks import Callback, LRSchedulerCallback, MetricsLogger, TensorBoardLogger
 from llm.training.core.config import Config
 from llm.training.core.engine import TrainingEngine
+from llm.training.core.periodic_eval import build_periodic_eval_callback
 from llm.training.core.utils import DistributedManager
 from llm.training.task_registry import TASK_REGISTRY
 from llm.training.tasks import builtin as _task_registry  # noqa: F401 — register built-in tasks
@@ -77,6 +78,17 @@ def train_worker(
             TensorBoardLogger(log_dir=config.logging.log_dir),
             LRSchedulerCallback(),
         ]
+        # Optional periodic LM evaluation (RIL TASK-329): guarded inside the
+        # builder against collective-forward parallel strategies + missing
+        # eval corpus; returns None when training.eval_interval == 0.
+        periodic_eval = build_periodic_eval_callback(
+            config,
+            model_max_seq_len=config.model.max_seq_len,
+            tokenizer=getattr(data_module, "tokenizer", None),
+            world_size=world_size,
+        )
+        if periodic_eval is not None:
+            callbacks.append(periodic_eval)
 
         engine = TrainingEngine(
             config,

@@ -365,10 +365,28 @@ class EvaluationCallback(Callback):
         metrics: dict[str, Any],
         logs: dict[str, Any] | None = None,
     ):
-        """Run evaluation every N steps."""
-        if (batch_idx + 1) % self.eval_interval == 0:
-            results = self.eval_runner.run(self.engine.model)
-            self.engine.log_metrics(results)
+        """Run evaluation every N steps, on rank 0 only.
+
+        Collective-forward strategies (tp/fsdp/pp/3d) are refused at
+        construction by ``build_periodic_eval_callback``; for ddp/zero and
+        single-process runs the forward is local, so only rank 0 needs to run.
+        The model is toggled to eval mode around the run and restored
+        afterwards so the training loop's batch-norm/dropout state is not
+        disturbed (RIL TASK-329).
+        """
+        if getattr(self.engine, "rank", 0) != 0:
+            return
+        if (batch_idx + 1) % self.eval_interval != 0:
+            return
+        model = self.engine.model
+        was_training = model.training
+        model.eval()
+        try:
+            results = self.eval_runner.run(model)
+        finally:
+            if was_training:
+                model.train()
+        self.engine.log_metrics(results)
 
 
 class LRSchedulerCallback(Callback):

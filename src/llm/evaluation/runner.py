@@ -45,6 +45,25 @@ def _to_serializable(obj: Any) -> Any:
     return obj
 
 
+def _align_reference_device(predictions: Any, references: Any) -> Any:
+    """Move ``references`` onto the ``predictions`` device.
+
+    A model evaluated where it lives (CUDA) yields CUDA predictions while
+    ``prepare_data`` returns CPU tensors; feeding CPU references straight to
+    ``nll_loss`` then raises a device mismatch (RIL TASK-329's periodic
+    training eval hit exactly this). Non-tensor references (e.g. strings for
+    generation metrics) pass through unchanged.
+    """
+    if not isinstance(predictions, torch.Tensor):
+        return references
+    device = predictions.device
+    if isinstance(references, torch.Tensor):
+        return references.to(device)
+    if isinstance(references, list):
+        return [r.to(device) if isinstance(r, torch.Tensor) else r for r in references]
+    return references
+
+
 class EvaluationRunner:
     """Run evaluation tasks and persist reports.
 
@@ -80,6 +99,7 @@ class EvaluationRunner:
         """Run evaluation with raw (non-tensor) predictions and references."""
         inputs, references = self.task.prepare_data(split)
         predictions = self.task.predict(model, inputs)
+        references = _align_reference_device(predictions, references)
 
         results = {"num_samples": len(inputs)}
         results.update(self._collect_metrics(predictions, references))
@@ -98,7 +118,7 @@ class EvaluationRunner:
             # layer sees a zero-size batch and reports ``inf`` rather than
             # crashing on ``torch.stack([])``.
             refs = torch.empty(0, dtype=torch.long)
-        return self._collect_metrics(predictions, refs)
+        return self._collect_metrics(predictions, _align_reference_device(predictions, refs))
 
     def save_report(self, results: dict, output_format: str = "json"):
         """Persist ``results`` to ``output_dir/eval_report.<ext>``.

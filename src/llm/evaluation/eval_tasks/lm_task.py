@@ -94,6 +94,16 @@ class LMTask(BaseTask):
             inputs = [x[:global_max_len] for x in inputs]
         pad_id = self.pad_token_id if self.pad_token_id is not None else 0
 
+        # Evaluate on the SAME device the model lives on — the periodic
+        # training eval (RIL TASK-329) runs a GPU-trained model, so CPU inputs
+        # would otherwise raise a device mismatch (index_select found index on
+        # cpu vs params on cuda) instead of evaluating. Defensive for mocks
+        # (no ``parameters()``/``device``) that fall back to CPU.
+        if hasattr(model, "parameters"):
+            device = next((p.device for p in model.parameters()), torch.device("cpu"))
+        else:
+            device = getattr(model, "device", torch.device("cpu"))
+
         for i in range(0, len(inputs), self.batch_size):
             batch = inputs[i : i + self.batch_size]
             lengths = [len(x) for x in batch]
@@ -108,7 +118,7 @@ class LMTask(BaseTask):
                     )
                     for x in batch
                 ]
-            )
+            ).to(device)
 
             # Padding mask (True = mask out, the ``sdpa`` wrapper's
             # convention). Only built when the tokenizer has a dedicated
