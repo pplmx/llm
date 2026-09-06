@@ -109,12 +109,27 @@ class TextDataset(Dataset):
             # (the demo tokenizer) still encodes multi-line files.
             if not self.skip_undecodable:
                 raise
+            # Whole-file encoding emits a newline token at every line boundary
+            # when the vocab contains ``\n`` (the demo printable corpus does:
+            # ``'\n'`` is a real token). The per-line fallback must re-insert
+            # it between encodable lines, otherwise any single un-encodable row
+            # (one CJK/emoji char) silently stripped EVERY newline from the
+            # whole stream — a 99%-ASCII file trained newline-less while the
+            # same file minus the bad row kept newlines (deep-dive finding).
+            # Newline-less vocabs keep the historical per-line behaviour.
+            try:
+                newline_ids = self.tokenizer.encode("\n")
+            except _UNDECODABLE_ERRORS:
+                newline_ids = []
             all_token_ids = []
             skipped = 0
             warned = False
             for line in text_content.splitlines():
                 try:
-                    all_token_ids.extend(self.tokenizer.encode(line))
+                    line_ids = self.tokenizer.encode(line)
+                    if newline_ids:
+                        line_ids = line_ids + newline_ids
+                    all_token_ids.extend(line_ids)
                 except _UNDECODABLE_ERRORS as exc:
                     skipped += 1
                     if not warned:

@@ -275,6 +275,33 @@ def test_text_dataset_skips_undecodable_rows(tmp_path, sample_text_tokenizer):
     assert len(dataset) > 0  # built from the two encodable rows
 
 
+def test_text_dataset_undecodable_fallback_keeps_newline_tokens(tmp_path):
+    """Regression (deep-dive finding): when ANY row forces the whole-file->
+    per-line fallback, the fallback stripped EVERY newline token (splitlines
+    drops them), so a file that is 99% ASCII + one non-ASCII row trained on a
+    newline-less stream while the same file minus the bad row kept newlines —
+    an invisible data-distribution change. Encodable rows must keep the
+    inter-line newline tokens the whole-file path produces for vocabs that
+    can encode ``\\n`` (the demo printable corpus does: ``\\n`` is a real
+    token). Newline-less vocabs keep the historical per-line behaviour."""
+    import string
+
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([string.printable])
+    newline_id = tok.encode("\n")
+    assert len(newline_id) == 1, "printable character tokenizer must have one newline token"
+
+    file_path = tmp_path / "nl.txt"
+    # Emoji row (U+1F600) is outside string.printable -> whole-file encode fails
+    # -> fallback; the two ASCII rows must keep their inter-line newline token.
+    file_path.write_text("alpha beta\n\U0001f600 gamma\nomega\n", encoding="utf-8")
+
+    dataset = TextDataset(file_path=str(file_path), tokenizer=tok, max_seq_len=64)
+    stream = [token for seq in dataset.sequences for token in seq]
+    assert newline_id[0] in stream, "fallback stripped newline tokens from encodable rows"
+
+
 def test_text_dataset_undecodable_fails_loud_when_not_skipping(tmp_path, sample_text_tokenizer):
     file_path = tmp_path / "mixed.txt"
     file_path.write_text("apple banana cherry\nétrès café\nfig grape\n", encoding="utf-8")
