@@ -53,7 +53,6 @@ training:
   epochs: 3
   batch_size: 16
   learning_rate: 2.0e-5   # typical SFT lr for transformer fine-tunes
-  gradient_accumulation_steps: 4   # effective batch = 64
   num_samples: 100000
   warmup_epochs: 1         # ~SFT-warmup-equivalent in steps
   max_steps: 10000
@@ -68,6 +67,7 @@ optimization:
   use_amp: true            # bf16 on modern GPUs
   use_compile: true
   gradient_checkpointing: false
+  gradient_accumulation_steps: 4   # effective batch = 64 (batch_size 16 x 4)
 
 distributed:
   backend: nccl            # CUDA cluster

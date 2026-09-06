@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 174,
+  "round": 175,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T08:59:23+00:00",
+  "updated_at": "2026-09-06T09:46:22+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18421,6 +18421,56 @@
       "touched_round": 173,
       "commit": "e387f95",
       "summary": "feat(serving): compile_model wired to torch.compile (CUDA-only, dynamic=True, quantized-blob skip by class name, target-device keyed); CPU skip-warn test + GPU KV-cache decode e2e; docs updated"
+    },
+    "ISS-362": {
+      "id": "ISS-362",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T09:45:50+00:00",
+      "updated_at": "2026-09-06T09:46:22+00:00",
+      "touched_round": 175,
+      "title": "optimization.gradient_checkpointing is a dead config key",
+      "detail": "Shipped in streaming_c4.yaml + dpo_ultrafeedback.yaml + both tutorials but mapped to NO config field; pydantic extra=ignore silently dropped it, so enabling it did nothing (full-activation memory). Fixed by r175 change: new OptimizationConfig field + engine applies enable_gradient_checkpointing before wrap.",
+      "severity": 0.9,
+      "source": "docs sweep r175 (docs-training-verify HIGH)"
+    },
+    "ISS-363": {
+      "id": "ISS-363",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T09:45:50+00:00",
+      "updated_at": "2026-09-06T09:46:22+00:00",
+      "touched_round": 175,
+      "title": "docs drift: gradient_accumulation_steps + resolve_preset + streaming defaults",
+      "detail": "(1) 02-finetuning.md CUDA-OOM block put gradient_accumulation_steps under training.* (real key is optimization.*) — silently ignored; (2) data.md claimed resolve_preset(togethercomputer/RedPajama-Data-1T) resolves to the Wikipedia preset, actually first-registered redpajama/arxiv; (3) streaming.md documented dataset_path/dataset_name default '' but code default None.",
+      "severity": 0.4,
+      "source": "docs sweep r175 (docs-training-verify LOW/HIGH)"
+    },
+    "CHG-346": {
+      "id": "CHG-346",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T09:46:05+00:00",
+      "updated_at": "2026-09-06T09:46:05+00:00",
+      "touched_round": 175,
+      "commit": "ee36ba8",
+      "title": "wire optimization.gradient_checkpointing config→model",
+      "detail": "New OptimizationConfig.gradient_checkpointing field + TrainingEngine._setup_components applies enable_gradient_checkpointing right after model build (before broadcast/compile/wrap so DDP/FSDP/PP-stage propagation observe it). RED-checked: config parse test, engine-applies test, real stream_lm smoke 'Gradient checkpointing enabled' + exit 0."
+    },
+    "CHG-347": {
+      "id": "CHG-347",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T09:46:05+00:00",
+      "updated_at": "2026-09-06T09:46:05+00:00",
+      "touched_round": 175,
+      "commit": "e81940e",
+      "title": "docs drift fixes from r175 sweep",
+      "detail": "02-finetuning.md gradient_accumulation_steps moved under optimization.*; data.md documents RedPajama full-id → arxiv ambiguity + pinned form; streaming.md defaults corrected to None."
     }
   },
   "edges": [
@@ -27200,6 +27250,18 @@
       "to": "TASK-328",
       "type": "implements",
       "created_at": "2026-09-06T08:58:35+00:00"
+    },
+    {
+      "from": "CHG-346",
+      "to": "ISS-362",
+      "type": "resolves",
+      "created_at": "2026-09-06T09:46:22+00:00"
+    },
+    {
+      "from": "CHG-347",
+      "to": "ISS-363",
+      "type": "resolves",
+      "created_at": "2026-09-06T09:46:22+00:00"
     }
   ]
 }

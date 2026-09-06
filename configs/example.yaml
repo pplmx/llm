@@ -13,7 +13,6 @@ training:
   epochs: 5
   batch_size: 32
   lr: 0.001
-  gradient_accumulation_steps: 1
   max_steps: 1000
 
 data:
@@ -26,6 +25,7 @@ optimization:
   use_amp: false         # CPU-safe; set true on CUDA
   use_compile: false
   gradient_checkpointing: false
+  gradient_accumulation_steps: 1
 
 checkpoint:
   checkpoint_dir: checkpoints

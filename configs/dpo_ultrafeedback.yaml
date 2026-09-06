@@ -50,7 +50,6 @@ training:
   epochs: 2
   batch_size: 4            # DPO doubles memory — small batch
   learning_rate: 5.0e-7   # typical DPO lr (much smaller than SFT)
-  gradient_accumulation_steps: 8   # effective batch = 32
   num_samples: 100000
   warmup_epochs: 1
   max_steps: 5000
@@ -66,6 +65,7 @@ optimization:
   use_amp: true
   use_compile: true
   gradient_checkpointing: true     # DPO is memory-hungry
+  gradient_accumulation_steps: 8   # effective batch = 32 (batch_size 4 x 8)
 
 distributed:
   backend: nccl

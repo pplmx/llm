@@ -1,3 +1,5 @@
+from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -225,3 +227,30 @@ class TestConfig:
         """RoPE is a first-class option for MHA."""
         config = ModelConfig(attn_impl="mha", use_rope=True, use_kv_cache=True)
         assert config.use_rope is True
+
+
+@pytest.mark.quick
+class TestShippedConfigsNoDeadKeys:
+    """r176 guard: shipped configs must never carry a key pydantic silently
+    drops (``extra='ignore'``). The r175/r176 sweeps found
+    ``training.gradient_accumulation_steps`` (the real key lives under
+    ``optimization.*``) in dpo_ultrafeedback.yaml / sft_alpaca.yaml /
+    example.yaml — users following those configs got the DEFAULT accumulation,
+    not the documented effective batch. Encode the intended effective batch
+    here so this class of silently-ignored knob can't ship again.
+    """
+
+    REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+    # config -> (intended optimization.gradient_accumulation_steps, intended training.lr)
+    CONFIGS: ClassVar[dict[str, tuple[int, float]]] = {
+        "configs/dpo_ultrafeedback.yaml": (8, 5.0e-7),
+        "configs/sft_alpaca.yaml": (4, 2.0e-5),
+        "configs/example.yaml": (1, 0.001),
+    }
+
+    def test_shipped_configs_apply_intended_gradient_accumulation(self):
+        for rel, (want_steps, want_lr) in self.CONFIGS.items():
+            cfg = Config.from_yaml(self.REPO_ROOT / rel)
+            assert cfg.optimization.gradient_accumulation_steps == want_steps, rel
+            assert cfg.training.lr == want_lr, rel
