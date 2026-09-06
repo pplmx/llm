@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 177,
+  "round": 178,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T10:51:54+00:00",
+  "updated_at": "2026-09-06T13:02:55+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18583,6 +18583,55 @@
       "commit": "0646889",
       "title": "distributed.md 6-finding doc fix",
       "detail": "Corrected sharded-resume/manager, DDP bucket-view, FSDP fp16 (x3), DPO setup-rejection, ZeRO persistence, 3d follow-up claims."
+    },
+    "ISS-368": {
+      "id": "ISS-368",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T12:18:51+00:00",
+      "updated_at": "2026-09-06T13:02:54+00:00",
+      "touched_round": 178,
+      "summary": "examples/moe_vs_mlp_demo.py is a BROKEN shipped example: (1) activation='swiglu' crashes — get_activation_layer supports only gelu/relu/silu/swish/glu/leaky_relu; SwiGLU needs activation='silu' + use_glu=True; (2) output_moe, load = moe(x) unpacks MoE.forward's single output tensor (batch,seq,hidden) along dim 0, so 'Expert load' printed a random output slice — MoE has no load return. CI only py_compiles examples, so both sailed through.",
+      "severity": 0.8,
+      "confidence": 1.0
+    },
+    "TASK-330": {
+      "id": "TASK-330",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T12:20:29+00:00",
+      "updated_at": "2026-09-06T13:02:54+00:00",
+      "touched_round": 178,
+      "category": "test-quality",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "summary": "Add examples smoke tests: CI only py_compiles examples/*.py — a runtime crash idiom (ISS-368) went unnoticed. Shell out to sys.executable per runnable CPU example (inference/kv_cache/moe/qlora), assert exit 0 + no traceback."
+    },
+    "TASK-331": {
+      "id": "TASK-331",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T12:22:35+00:00",
+      "updated_at": "2026-09-06T13:02:55+00:00",
+      "touched_round": 178,
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "summary": "Fix examples/moe_vs_mlp_demo.py (ISS-368): use activation='silu' + use_glu=True for SwiGLU (framework idiom, matches tests/core/test_mlp.py); fix output_moe, load = moe(x) to a single output + compute REAL expert-load routing stats from moe.gate topk. Also correct _learning/02_guides/code_structure_map.md which documented the bogus activation='swiglu' idiom."
+    },
+    "CHG-353": {
+      "id": "CHG-353",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T12:59:44+00:00",
+      "updated_at": "2026-09-06T12:59:44+00:00",
+      "touched_round": 178,
+      "commit": "c7ed5e3",
+      "summary": "fix(examples): repair moe_vs_mlp_demo.py (swiglu→silu+use_glu; single-output MoE + real gate routing stats), correct _learning code_structure_map swiglu claim, add examples smoke tests (subprocess run of 4 CPU examples, exit-0 + no-traceback, RED-checked)"
     }
   },
   "edges": [
@@ -27404,6 +27453,36 @@
       "to": "ISS-367",
       "type": "resolves",
       "created_at": "2026-09-06T10:51:54+00:00"
+    },
+    {
+      "from": "TASK-331",
+      "to": "ISS-368",
+      "type": "addresses",
+      "created_at": "2026-09-06T12:24:31+00:00"
+    },
+    {
+      "from": "TASK-330",
+      "to": "ISS-368",
+      "type": "addresses",
+      "created_at": "2026-09-06T12:24:31+00:00"
+    },
+    {
+      "from": "CHG-353",
+      "to": "ISS-368",
+      "type": "resolves",
+      "created_at": "2026-09-06T13:01:32+00:00"
+    },
+    {
+      "from": "CHG-353",
+      "to": "TASK-330",
+      "type": "implements",
+      "created_at": "2026-09-06T13:01:33+00:00"
+    },
+    {
+      "from": "CHG-353",
+      "to": "TASK-331",
+      "type": "implements",
+      "created_at": "2026-09-06T13:01:33+00:00"
     }
   ]
 }
