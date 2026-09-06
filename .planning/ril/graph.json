@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 177,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T10:15:18+00:00",
+  "updated_at": "2026-09-06T10:42:22+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18533,6 +18533,31 @@
       "commit": "486edad",
       "title": "distillation training.task + streaming s3 recipe docs fixes",
       "detail": "Removed dead training.task (CLI-only); rewrote s3 custom-source recipe to encode endpoint in dataset_path (extra=ignore gotcha documented)."
+    },
+    "ISS-366": {
+      "id": "ISS-366",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T10:41:53+00:00",
+      "updated_at": "2026-09-06T10:42:22+00:00",
+      "touched_round": 177,
+      "title": "quantization docs: simple-PTQ INT8/4 claim + quantized-model GGUF-export claims",
+      "detail": "(a) simple PTQ supports INT8 only (from_linear raises NotImplementedError for bits!=8, ISS-197 — 4-bit grid stored as int8 with no saving); (b) GPTQQuantizedLinear is a plain nn.Module (not a DecoderModel subclass) and GGUF export rejects packed int8/4-bit buffers (float-only guard) — quantized models export via ONNX/TorchScript trace only.",
+      "severity": 0.55,
+      "source": "r178 docs-semantic sweep #2 (export+quantize)"
+    },
+    "CHG-351": {
+      "id": "CHG-351",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T10:41:53+00:00",
+      "updated_at": "2026-09-06T10:41:53+00:00",
+      "touched_round": 177,
+      "commit": "568b9d8",
+      "title": "doc fixes: simple-PTQ INT8-only + traced-export-only for quantized models",
+      "detail": "quantization.md table cell INT8/4→INT8 (4-bit → GPTQ/AWQ); export.md bullet qualified (trace OK, GGUF float-only)."
     }
   },
   "edges": [
@@ -27342,6 +27367,12 @@
       "to": "ISS-365",
       "type": "resolves",
       "created_at": "2026-09-06T10:15:18+00:00"
+    },
+    {
+      "from": "CHG-351",
+      "to": "ISS-366",
+      "type": "resolves",
+      "created_at": "2026-09-06T10:42:22+00:00"
     }
   ]
 }
