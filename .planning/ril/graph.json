@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 175,
+  "round": 176,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T09:46:22+00:00",
+  "updated_at": "2026-09-06T09:59:46+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18471,6 +18471,31 @@
       "commit": "e81940e",
       "title": "docs drift fixes from r175 sweep",
       "detail": "02-finetuning.md gradient_accumulation_steps moved under optimization.*; data.md documents RedPajama full-id → arxiv ambiguity + pinned form; streaming.md defaults corrected to None."
+    },
+    "ISS-364": {
+      "id": "ISS-364",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T09:59:29+00:00",
+      "updated_at": "2026-09-06T09:59:46+00:00",
+      "touched_round": 175,
+      "title": "shipped configs carry dead training.gradient_accumulation_steps",
+      "detail": "Alias-aware scan of every key in configs/*.yaml vs pydantic schema found training.gradient_accumulation_steps present-but-ignored in dpo_ultrafeedback.yaml (8), sft_alpaca.yaml (4), example.yaml (1) — real field is optimization.gradient_accumulation_steps. Followers silently got accumulate=1. (training.learning_rate confirmed FALSE positive via AliasChoices lr/learning_rate.)",
+      "severity": 0.75,
+      "source": "r176 alias-aware dead-key scan"
+    },
+    "CHG-348": {
+      "id": "CHG-348",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T09:59:29+00:00",
+      "updated_at": "2026-09-06T09:59:29+00:00",
+      "touched_round": 175,
+      "commit": "08d5f6c",
+      "title": "move gradient_accumulation_steps to live optimization.* in 3 shipped configs",
+      "detail": "Moved key under optimization.* in dpo_ultrafeedback/sft_alpaca/example.yaml + new TestShippedConfigsNoDeadKeys guard (parse → intended effective batch+LR) in test_config.py. Own r175-family systematic sweep."
     }
   },
   "edges": [
@@ -27262,6 +27287,12 @@
       "to": "ISS-363",
       "type": "resolves",
       "created_at": "2026-09-06T09:46:22+00:00"
+    },
+    {
+      "from": "CHG-348",
+      "to": "ISS-364",
+      "type": "resolves",
+      "created_at": "2026-09-06T09:59:46+00:00"
     }
   ]
 }
