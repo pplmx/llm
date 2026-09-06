@@ -199,21 +199,9 @@ def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
     partial config — better than silently serving the un-adapted base
     model.
     """
-    # RIL TASK-325: ``compile_model`` is advertised for acceleration but the
-    # serving runtime never compiles the model (the only torch.compile lives
-    # in the training engine). Never silently ignore a user who asked for it —
-    # fail loudly at startup so the false promise is visible, not deferred to
-    # a latent-perf surprise.
-    if config.compile_model:
-        logger.warning(
-            "ServingConfig.compile_model=True is a no-op: the serving runtime "
-            "does not torch.compile the model yet (torch.compile only exists in "
-            "the training engine). Remove the flag or open a feature request "
-            "for serving-side compilation."
-        )
-
     if not config.model_path:
-        return _create_dummy_model_and_tokenizer(config)
+        model, tokenizer = _create_dummy_model_and_tokenizer(config)
+        return _compile_if_requested(model, config), tokenizer
 
     checkpoint = load_training_checkpoint(config.model_path)
     if checkpoint.model_obj is not None:
@@ -233,7 +221,50 @@ def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
 
     _apply_peft_if_configured(model, config)
 
-    return model, tokenizer
+    return _compile_if_requested(model, config), tokenizer
+
+
+def _serving_target_device(device: str) -> torch.device:
+    """Resolve the serving target device (mirrors generation_service)."""
+    if device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(device)
+
+
+def _compile_if_requested(model: DecoderModel, config: ServingConfig) -> Any:
+    """torch.compile the served model when ``compile_model=True`` (RIL TASK-328).
+
+    Only effective on CUDA (a CPU compile is a slowdown for a tiny model, not
+    an acceleration), and only for plain ``DecoderModel`` instances — the
+    quantized-blob path carries custom packed linear kernels that are not
+    compiled (detected so it is skipped with a warning). ``dynamic=True`` keeps
+    variable prompt/decode lengths from recompiling per shape. The returned
+    ``OptimizedModule`` is lazy (it compiles on first forward) and proxies
+    attribute access to the wrapped model, so ``transformer_blocks`` /
+    ``parameters()`` / ``to()`` consumers (generation_service, batch_engine,
+    KV-cache creation) keep working — and the service moving the model to CUDA
+    after the loader still results in a CUDA compile.
+    """
+    if not config.compile_model:
+        return model
+    target = _serving_target_device(config.device)
+    if target.type != "cuda":
+        logger.warning(
+            "compile_model=True has no effect on CPU serving (torch.compile on "
+            "CPU is a slowdown for a tiny model); skipping. Serve on CUDA for "
+            "the acceleration."
+        )
+        return model
+    # Quantized blobs carry custom packed linear kernels; torch.compile of
+    # those is unsupported/untested. Detect by class name to avoid importing
+    # the quantization module into the loader (kept decoupled).
+    if any(module.__class__.__name__ == "GPTQQuantizedLinear" for module in model.modules()):
+        logger.warning(
+            "compile_model=True is skipped for a quantized-model blob; its custom packed kernels are not compiled."
+        )
+        return model
+    logger.info("Compiling served model with torch.compile (dynamic=True)...")
+    return torch.compile(model, dynamic=True)
 
 
 def _apply_peft_if_configured(model: DecoderModel, config: ServingConfig) -> None:

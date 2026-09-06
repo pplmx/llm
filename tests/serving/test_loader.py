@@ -234,18 +234,60 @@ def test_dummy_fallback_without_checkpoint():
     assert model.lm_head.out_features == tokenizer.vocab_size
 
 
-def test_compile_model_true_warns_loudly(caplog):
-    """RIL TASK-325: ``ServingConfig.compile_model`` is a no-op in the serving
-    runtime (no torch.compile path) — setting it must produce a loud startup
-    warning instead of being silently ignored. Docs once advertised it as a
-    latency knob that never actually compiled."""
+def test_compile_model_skipped_on_cpu_with_warning(caplog):
+    """RIL TASK-328: ``compile_model`` is now wired in the loader — on a CPU
+    target it must warn loudly and return the UNCOMPILED model (torch.compile
+    on CPU is a slowdown for a tiny model, so silently doing nothing would
+    repeat the round-173 no-op bug; an actual CPU compile is pointless)."""
     import logging
 
-    config = ServingConfig(compile_model=True)
+    config = ServingConfig(compile_model=True, device="cpu")
     with caplog.at_level(logging.WARNING, logger="llm.serving.loader"):
-        load_model_and_tokenizer(config)
+        model, _tokenizer = load_model_and_tokenizer(config)
     assert "compile_model" in caplog.text
-    assert "no-op" in caplog.text
+    assert "CPU" in caplog.text
+    assert getattr(model, "_orig_mod", None) is None, "CPU target must not torch.compile"
+
+
+@pytest.mark.gpu
+def test_compile_model_compiles_and_decodes_on_cuda():
+    """RIL TASK-328: on a CUDA target, ``compile_model=True`` wraps the served
+    model in torch.compile, and a KV-cache decode loop through the compiled
+    model produces a valid token each step (exercises the in-place KV-cache
+    path that is the risky part of compiling generation)."""
+    from llm.serving.loader import load_model_and_tokenizer
+
+    if not torch.cuda.is_available():
+        pytest.skip("需要 GPU")
+
+    from llm.core.kv_cache import create_decoder_kv_caches
+
+    config = ServingConfig(compile_model=True)  # device='auto' -> cuda
+    model, tokenizer = load_model_and_tokenizer(config)
+
+    orig_mod = getattr(model, "_orig_mod", None)
+    assert orig_mod is not None, "CUDA target must wrap the model in torch.compile"
+    from llm.models.decoder import DecoderModel
+
+    assert isinstance(orig_mod, DecoderModel)
+
+    model = model.to("cuda")
+    model.eval()
+    prompts = torch.tensor([tokenizer.encode("hello world")], device="cuda")
+    kv_caches = create_decoder_kv_caches(model, batch_size=1)
+
+    with torch.no_grad():
+        logits, kv_caches = model(prompts, kv_caches=kv_caches, use_cache=True)
+        next_id = int(logits[0, -1].argmax(-1).item())
+        for _ in range(4):
+            logits, kv_caches = model(
+                torch.tensor([[next_id]], device="cuda"),
+                kv_caches=kv_caches,
+                use_cache=True,
+            )
+            next_id = int(logits[0, -1].argmax(-1).item())
+
+    assert 0 <= next_id < tokenizer.vocab_size, "compiled decode must emit a valid token id"
 
 
 def test_dummy_fallback_tokenizer_has_eos_and_bos():

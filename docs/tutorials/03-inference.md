@@ -378,7 +378,7 @@ torch.cuda.OutOfMemoryError: CUDA out of memory.
 
 1. **缩 `max_concurrent_requests`**：semaphore 上限降低，引擎并发压力减小
 2. **开 paged attention**：`LLM_SERVING_USE_PAGED_ATTENTION=true` —— block allocator 把 KV cache 切成小块（见 ADR-004）
-3. **换 eager / 调并发**：`compile_model` 目前是 no-op（serving 运行时尚未接入 torch.compile，设置它只会触发启动警告）——低延迟请直接用 `generation_backend=eager`
+3. **换 eager / 调并发**：`compile_model=true` 只对 CUDA 上的普通 checkpoint 生效（quantized blob 会跳过并警告）；CPU 服务设它只会触发跳过警告
 4. **用更小的 base 模型 / 量化 checkpoint**
 5. **CPU 跑**：`LLM_SERVING_DEVICE=cpu` —— 仅限冒烟测试，生产不可用
 
@@ -468,7 +468,7 @@ LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm-serve
 
 | 场景                               | 推荐配置                                                                                                              |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **低延迟 / 单请求**                | `generation_backend=eager`，`max_concurrent_requests=1`（`compile_model` 暂为 no-op）                                 |
+| **低延迟 / 单请求**                | `generation_backend=eager`，`max_concurrent_requests=1`，`compile_model=true`（CUDA 生效）                            |
 | **高吞吐 / 多并发**                | `generation_backend=batched`，`use_paged_attention=true`，`max_concurrent_requests=16`                                |
 | **长 system prompt 的多轮 chat**   | `enable_prefix_cache=true`，`max_prefixes=32`（摊销 system prompt）                                                   |
 | **极限吞吐 / 不需要 swap adapter** | `peft_merge=true`                                                                                                     |

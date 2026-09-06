@@ -36,10 +36,9 @@ class ServingConfig(BaseSettings):
     # non-positive timeout makes every request time out instantly, and
     # ``max_blocks``/``block_size``/``max_prefixes`` feed directly into
     # block arithmetic that divides by ``block_size``.
-    # RIL TASK-325: kept for config compat (docs once advertised it) but the
-    # serving runtime has no torch.compile path — setting it True triggers a
-    # loud startup warning in ``load_model_and_tokenizer`` instead of a silent
-    # no-op. Reserved for a future serving-side compile feature.
+    # torch.compile the served model for acceleration (RIL TASK-328). Wired in
+    # ``load_model_and_tokenizer``: effective on CUDA for plain DecoderModel
+    # checkpoints (skipped with a warning for quantized blobs / CPU serving).
     compile_model: bool = False
     max_concurrent_requests: int = Field(4, ge=1, description="Max concurrent inference requests")
     max_request_bytes: int = Field(
