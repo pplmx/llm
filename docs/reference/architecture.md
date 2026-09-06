@@ -79,7 +79,9 @@ src/llm/
 │   └── _wrapper.py        # Shared ExportCacheWrapper for trace backends
 ├── evaluation/            # Offline evaluation
 │   ├── runner.py          # EvaluationRunner (unified entry)
-│   └── eval_tasks/        # Per-task evaluators (lm)
+│   ├── eval_tasks/        # Per-task evaluators (lm)
+│   ├── harness/           # lm-evaluation-harness: EvalPreset presets, LlamaLmEvalLM, LmEvalAdapter
+│   └── metrics/           # METRIC_REGISTRY: accuracy / perplexity / generation metrics
 ├── training/              # Training infrastructure
 │   ├── core/              # Engine, callbacks, config
 │   ├── task_registry.py   # TaskRegistry (task + data_module factory)

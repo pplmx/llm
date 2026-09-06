@@ -466,15 +466,15 @@ LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm-serve
 
 ### 7.2 性能开关（按场景）
 
-| 场景                               | 推荐配置                                                                                                              |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **低延迟 / 单请求**                | `generation_backend=eager`，`max_concurrent_requests=1`，`compile_model=true`（CUDA 生效）                            |
-| **高吞吐 / 多并发**                | `generation_backend=batched`，`use_paged_attention=true`，`max_concurrent_requests=16`                                |
-| **长 system prompt 的多轮 chat**   | `enable_prefix_cache=true`，`max_prefixes=32`（摊销 system prompt）                                                   |
-| **极限吞吐 / 不需要 swap adapter** | `peft_merge=true`                                                                                                     |
-| **多卡 / 多模型**                  | 每个 GPU 起一个 `llm-serve` 实例，前面挂 nginx / Envoy                                                                |
-| **量化模型部署**                   | `LLM_SERVING_MODEL_PATH=<量化后ckpt路径>`，注意量化后模型是 int4/int8 权重                                            |
-| **推测解码**                       | `generation_backend=speculative` + draft model 配置（已实现，见 [Inference Guide §推测解码](../guides/inference.md)） |
+| 场景                               | 推荐配置                                                                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **低延迟 / 单请求**                | `generation_backend=eager`，`max_concurrent_requests=1`，`compile_model=true`（CUDA 生效）                                                 |
+| **高吞吐 / 多并发**                | `generation_backend=batched`，`use_paged_attention=true`，`max_concurrent_requests=16`                                                     |
+| **长 system prompt 的多轮 chat**   | `enable_prefix_cache=true`，`max_prefixes=32`（摊销 system prompt）                                                                        |
+| **极限吞吐 / 不需要 swap adapter** | `peft_merge=true`                                                                                                                          |
+| **多卡 / 多模型**                  | 每个 GPU 起一个 `llm-serve` 实例，前面挂 nginx / Envoy                                                                                     |
+| **量化模型部署**                   | `LLM_SERVING_MODEL_PATH=<量化后ckpt路径>`，注意量化后模型是 int4/int8 权重                                                                 |
+| **推测解码（Python API 专用）**    | 需要 target + draft 双模型，经 `build_speculative_backend` 构造 —— **不能经 serving 配置**（见 [Inference Guide](../guides/inference.md)） |
 
 ### 7.3 Docker
 
