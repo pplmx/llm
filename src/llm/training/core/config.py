@@ -811,7 +811,7 @@ class LoggingConfig(BaseModel):
 class DataConfig(BaseModel):
     """Data configuration"""
 
-    data_source: str = Field("local", pattern="^(local|hf|dedup_local|dedup_hf)$")
+    data_source: str = Field("local")
     tokenizer_type: str = Field("simple", pattern="^(simple|hf)$")
     tokenizer_path: str | None = None  # Path to file (simple) or repo_id/path (hf)
     dataset_path: str | None = None
@@ -870,6 +870,27 @@ class DataConfig(BaseModel):
             "hashlib.new works ('sha256', 'sha1', 'md5', 'blake2b', ...)."
         ),
     )
+
+    @field_validator("data_source")
+    @classmethod
+    def _validate_data_source_registered(cls, value: str) -> str:
+        """Fail fast on unknown sources without blocking third-party ones.
+
+        The built-in names skip the data layer entirely; anything else must be
+        a name that ``SOURCE_REGISTRY`` (including ``llm.data_sources`` entry
+        points) will resolve. The old hardcoded ``"^(local|hf|dedup_local|"
+        "dedup_hf)$"`` pattern silently made the documented custom-source
+        recipe impossible — a plugin name like ``s3`` was rejected at parse
+        time (r177: streaming.md custom-source recipe was triply broken).
+        """
+        if value in {"local", "hf", "dedup_local", "dedup_hf"}:
+            return value
+        from llm.data.sources import SOURCE_REGISTRY, ensure_sources_registered
+
+        ensure_sources_registered()
+        if value not in SOURCE_REGISTRY:
+            raise ValueError(f"unknown data_source {value!r}; known sources: {SOURCE_REGISTRY.names()}")
+        return value
 
 
 class PPOConfig(BaseModel):

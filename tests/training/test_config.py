@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from llm.training.core.config import (
     CheckpointConfig,
     Config,
+    DataConfig,
     DistributedConfig,
     ModelConfig,
     OptimizationConfig,
@@ -254,3 +255,30 @@ class TestShippedConfigsNoDeadKeys:
             cfg = Config.from_yaml(self.REPO_ROOT / rel)
             assert cfg.optimization.gradient_accumulation_steps == want_steps, rel
             assert cfg.training.lr == want_lr, rel
+
+
+class TestDataSourceCustomSources:
+    """r177: DataConfig's old hardcoded ``^(local|hf|dedup_local|dedup_hf)$``
+    pattern rejected every third-party ``llm.data_sources`` plugin name at
+    parse time, making the documented custom-source recipe (streaming.md)
+    impossible. A name SOURCE_REGISTRY resolves must validate; unknown names
+    still fail fast with the available list.
+    """
+
+    def test_builtin_sources_parse(self):
+        for name in ("local", "hf", "dedup_local", "dedup_hf"):
+            assert DataConfig(data_source=name).data_source == name
+
+    def test_unknown_source_fails_fast(self):
+        with pytest.raises(ValueError, match="unknown data_source"):
+            DataConfig(data_source="bogus_source")
+
+    def test_plugin_registered_name_is_accepted(self):
+        from llm.data.sources import SOURCE_REGISTRY, ensure_sources_registered
+
+        ensure_sources_registered()
+        # replace() is idempotent, so repeat runs / collocated tests are fine.
+        SOURCE_REGISTRY.replace("s3_test_plugin", lambda cfg: None)
+
+        cfg = DataConfig(data_source="s3_test_plugin")
+        assert cfg.data_source == "s3_test_plugin"
