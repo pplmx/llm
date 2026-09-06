@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 178,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T15:58:09+00:00",
+  "updated_at": "2026-09-06T16:21:01+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18790,6 +18790,54 @@
       "touched_round": 178,
       "commit": "0c2f836",
       "summary": "fix(training): EvaluationCallback cadence on engine.global_step + once-per-step guard (grad-accum eval fires every eval_interval optimizer steps, not per microbatch); DistillationLoss KL-arrow docstrings corrected to KL(teacher||student). RED-checked cadence regression test."
+    },
+    "ISS-376": {
+      "id": "ISS-376",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T16:17:12+00:00",
+      "updated_at": "2026-09-06T16:21:01+00:00",
+      "touched_round": 178,
+      "severity": 0.4,
+      "confidence": 1.0,
+      "summary": "ServingConfig tokenizer_type='hf' with no tokenizer_path (and no model_path) silently serves a printable-corpus SimpleCharacterTokenizer — the user asked for an HF tokenizer; the train-side from_data_config raises for the same combination. Real text decodes to garbage only after startup."
+    },
+    "ISS-377": {
+      "id": "ISS-377",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T16:17:13+00:00",
+      "updated_at": "2026-09-06T16:21:01+00:00",
+      "touched_round": 178,
+      "severity": 0.35,
+      "confidence": 1.0,
+      "summary": "llm-quantize --output <existing-directory> fails with a raw IsADirectoryError (exit 2) whose message names the .tmp sibling written by the atomic-save helper, not the path the user typed — a usage error surfacing as a runtime failure."
+    },
+    "TASK-336": {
+      "id": "TASK-336",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T16:17:55+00:00",
+      "updated_at": "2026-09-06T16:21:01+00:00",
+      "touched_round": 178,
+      "category": "docs",
+      "severity": 0.4,
+      "confidence": 1.0,
+      "summary": "CLI/serving polish: reject tokenizer_type='hf' with no path in from_serving_config (raise like from_data_config) (ISS-376); reject --output existing-directory in llm-quantize arg validation with a clear message (ISS-377). Regression tests for both."
+    },
+    "CHG-356": {
+      "id": "CHG-356",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T16:21:00+00:00",
+      "updated_at": "2026-09-06T16:21:00+00:00",
+      "touched_round": 178,
+      "commit": "86d797c",
+      "summary": "fix(cli,serving): from_serving_config rejects hf-with-no-path (raise like from_data_config); llm-quantize rejects --output existing-directory with a clear usage error. RED-checked tests."
     }
   },
   "edges": [
@@ -27749,6 +27797,36 @@
       "to": "TASK-335",
       "type": "implements",
       "created_at": "2026-09-06T15:58:08+00:00"
+    },
+    {
+      "from": "TASK-336",
+      "to": "ISS-376",
+      "type": "addresses",
+      "created_at": "2026-09-06T16:17:55+00:00"
+    },
+    {
+      "from": "TASK-336",
+      "to": "ISS-377",
+      "type": "addresses",
+      "created_at": "2026-09-06T16:17:55+00:00"
+    },
+    {
+      "from": "CHG-356",
+      "to": "ISS-376",
+      "type": "resolves",
+      "created_at": "2026-09-06T16:21:00+00:00"
+    },
+    {
+      "from": "CHG-356",
+      "to": "ISS-377",
+      "type": "resolves",
+      "created_at": "2026-09-06T16:21:00+00:00"
+    },
+    {
+      "from": "CHG-356",
+      "to": "TASK-336",
+      "type": "implements",
+      "created_at": "2026-09-06T16:21:00+00:00"
     }
   ]
 }
