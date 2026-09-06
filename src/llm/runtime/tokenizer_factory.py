@@ -120,9 +120,14 @@ class TokenizerFactory:
 
     @staticmethod
     def from_printable_corpus() -> SimpleCharacterTokenizer:
-        import string
-
-        return SimpleCharacterTokenizer([string.printable])
+        # Printable corpus PLUS the PAD/EOS/BOS markers (RIL TASK-327): a
+        # plain printable-only tokenizer has ``eos_token_id None``, and every
+        # generation backend silently treats a ``None`` EOS as "never stop" —
+        # serving's dummy-model fallback (the only production consumer) ran
+        # every request to ``max_new_tokens``. ``DEFAULT_SIMPLE_CORPUS`` is the
+        # same printable set plus the three declared specials, so this matches
+        # the training default (ISS-152 already fixed the train/eval side).
+        return SimpleCharacterTokenizer(DEFAULT_SIMPLE_CORPUS)
 
     @staticmethod
     def from_default_test_corpus() -> SimpleCharacterTokenizer:

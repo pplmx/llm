@@ -232,3 +232,19 @@ def test_dummy_fallback_without_checkpoint():
     config = ServingConfig()
     model, tokenizer = load_model_and_tokenizer(config)
     assert model.lm_head.out_features == tokenizer.vocab_size
+
+
+def test_dummy_fallback_tokenizer_has_eos_and_bos():
+    """RIL TASK-327: the default serving tokenizer must declare EOS/BOS so
+    dummy-model generation can stop.
+
+    The fallback used to be built from ``string.printable`` alone, leaving
+    ``eos_token_id``/``bos_token_id`` as ``None``; every generation backend
+    treats a ``None`` EOS as "never stop", so demo requests always ran to
+    ``max_new_tokens`` (the ISS-152 fix had only covered train/eval).
+    """
+    config = ServingConfig()
+    model, tokenizer = load_model_and_tokenizer(config)
+    assert model.lm_head.out_features == tokenizer.vocab_size
+    assert tokenizer.eos_token_id is not None, "serving default tokenizer must expose an EOS id so generation can stop"
+    assert tokenizer.bos_token_id is not None
