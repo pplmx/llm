@@ -146,6 +146,12 @@ def _reject_clobbering_input(output: Path, model: Path) -> None:
             "writing would destroy the source checkpoint. Choose a different "
             "output path."
         )
+    # An existing directory as --output is a usage error, not a runtime one:
+    # the atomic-save helper writes a sibling ``<name>.tmp`` then renames it
+    # onto ``output``, surfacing as a raw ``IsADirectoryError`` whose message
+    # names the .tmp file, not the path the user typed (RIL CLI polish).
+    if output.exists() and output.is_dir():
+        _die(f"--output ({output}) is an existing directory; must be a file path.")
 
 
 def _validate_model_path(model: Path) -> None:

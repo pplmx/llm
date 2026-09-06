@@ -113,6 +113,13 @@ class TokenizerFactory:
             _register_tokenizer_safe_globals()
             return torch.load(path, map_location="cpu", weights_only=True)
 
+        # ``tokenizer_type="hf"`` with no path must fail loud, exactly like
+        # ``from_data_config`` — falling through to the printable-corpus char
+        # tokenizer here would silently serve with a vocab that cannot encode
+        # real text, surfacing as decode garbage only after startup.
+        if getattr(config, "tokenizer_type", None) == "hf":
+            raise ValueError("tokenizer_path must be specified for HF tokenizer.")
+
         if getattr(config, "model_path", None):
             raise ValueError("tokenizer_path is required when model_path is set for serving")
 

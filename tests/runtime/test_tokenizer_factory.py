@@ -95,6 +95,17 @@ def test_from_serving_config_requires_tokenizer_with_model(tmp_path):
         TokenizerFactory.from_serving_config(config)
 
 
+def test_from_serving_config_hf_requires_path():
+    """``tokenizer_type="hf"`` with no path must FAIL LOUD, not silently
+    serve with the printable-corpus character tokenizer (which cannot encode
+    real text — decode garbage only after startup). Mirrors
+    ``from_data_config`` which raises for the same combination."""
+    config = ServingConfig(tokenizer_type="hf", tokenizer_path=None)
+
+    with pytest.raises(ValueError, match="tokenizer_path"):
+        TokenizerFactory.from_serving_config(config)
+
+
 def test_from_serving_config_default_simple():
     config = ServingConfig()
     tokenizer = TokenizerFactory.from_serving_config(config)

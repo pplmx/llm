@@ -395,6 +395,39 @@ def test_cli_model_path_directory_errors(runner, tmp_path):
     assert "not a regular file" in stderr.lower() or "not a file" in stderr.lower()
 
 
+def test_cli_output_directory_errors(runner, tmp_path):
+    """--output pointing at an existing DIRECTORY → clear usage error.
+
+    Regression: the atomic-save helper writes ``<name>.tmp`` then renames it
+    onto the target, so a directory target surfaced as a raw
+    ``IsADirectoryError`` whose message named the .tmp sibling — exit 2, no
+    hint about the real path. Rejected up front now.
+    """
+    import torch
+
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+    calib = tmp_path / "calib.pt"
+    torch.save(torch.tensor([[1, 2, 3, 4]]), calib)
+    out_dir = tmp_path / "outdir"
+    out_dir.mkdir()
+    result = runner.invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(out_dir),
+            "--calib-data-tokens",
+            str(calib),
+        ],
+    )
+    assert result.exit_code != 0
+    stderr = strip_ansi(result.stderr or "")
+    assert "is an existing directory" in stderr.lower(), stderr
+
+
 # ---------------------------------------------------------------------------
 # _load_calibration_batches: calib_data_tokens shape-handling branches
 # ---------------------------------------------------------------------------
