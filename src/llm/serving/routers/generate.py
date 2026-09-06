@@ -437,7 +437,14 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                             t.set_status(504)
                             yield "Error: stream timed out (no tokens for the request_timeout window)"
                             break
-                        token_count += 1
+                        # Count the DECODED TOKENS in this chunk, not the chunk
+                        # itself: with ``stop`` sequences the backend drains
+                        # several tokens through its stop buffer as ONE
+                        # multi-token chunk, so ``+= 1`` undercounted and
+                        # ``finish_reason`` (length-vs-stop) resolved wrong.
+                        # Re-encoding matches the non-streaming route's
+                        # ``_token_count(completion)`` (RIL ISS-225 direction).
+                        token_count += _token_count(chunk)
                         yield chunk
             if not timed_out:
                 t.set_status(200)

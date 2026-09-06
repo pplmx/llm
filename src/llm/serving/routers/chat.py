@@ -285,7 +285,10 @@ async def _chat_stream_generator(
                             # (RIL round-73 FINDING 7 / ISS-227).
                             metrics.observe_tokens(endpoint="chat_completions", token_count=token_count)
                             return
-                        token_count += 1
+                        # Count the decoded tokens, not the SSE chunk — with
+                        # ``stop`` sequences the backend yields several tokens
+                        # through its stop buffer as one multi-token chunk.
+                        token_count += _token_count(token)
 
                         chunk = ChatCompletionChunk(
                             id=completion_id,

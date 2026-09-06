@@ -168,3 +168,49 @@ def _histogram_count_and_sum(hist: Histogram, **labels: str) -> tuple[int, float
             elif sample.name.endswith("_sum"):
                 total = float(sample.value)
     return count, total
+
+
+def test_generate_stream_counts_decoded_tokens_not_chunks(monkeypatch):
+    """A multi-token chunk (the stop-buffer drains several tokens as ONE
+    chunk) must count every DECODED token, not 1 per chunk.
+
+    Regression: ``/generate?stream=true`` did ``token_count += 1`` per
+    received chunk, but with ``stop`` sequences ``stream_generate`` yields
+    several tokens through its stop buffer as a single chunk — the usage
+    metric undercounted and the chat route's ``finish_reason``
+    (``"length" if token_count >= max_tokens``) mis-reported stop-vs-length.
+    """
+    import asyncio
+    from types import SimpleNamespace
+
+    import llm.serving.routers.generate as gen
+    from llm.serving.schemas import GenerationRequest
+
+    m = _fresh()
+    monkeypatch.setattr(gen, "metrics", m)
+    monkeypatch.setattr(gen, "config", SimpleNamespace(request_timeout=10.0))
+    monkeypatch.setattr(gen, "inference_semaphore", None)  # -> _null_cm()
+    # Char-level serving tokenizer: 1 id per char, so _token_count("abc") == 3.
+    monkeypatch.setattr(
+        gen,
+        "generation_service",
+        SimpleNamespace(tokenizer=SimpleNamespace(encode=lambda t: [7] * len(t))),
+    )
+
+    # The backend drains 3 tokens ('a','b','c') through the stop buffer and
+    # yields them as one chunk.
+    def _stop_buffered_backend(**_kw):
+        yield "abc"
+
+    monkeypatch.setattr(gen, "_sync_stream_generate", _stop_buffered_backend)
+
+    async def _collect(agen):
+        return [c async for c in agen]
+
+    collected = asyncio.run(
+        _collect(gen._stream_generator(GenerationRequest(prompt="p", max_new_tokens=3, stop="ZZZ")))
+    )
+
+    assert "".join(collected) == "abc"
+    counter_value = m.tokens_generated_total.labels(endpoint="generate")._value.get()
+    assert counter_value == 3, f"expected 3 decoded tokens in one chunk, observed {counter_value}"
