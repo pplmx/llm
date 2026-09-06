@@ -126,7 +126,12 @@ export_model("my-backend", model, "model.bin", option="value")
 
 ## 与量化、发布的衔接
 
-- 量化后的模型（`GPTQQuantizedLinear` 等）是 `DecoderModel` 子类，可直接导出；
+- 量化后的模型（顶层仍是 `DecoderModel`，权重重置为
+  `GPTQQuantizedLinear` / `AWQQuantizedLinear` / `SmoothQuantLinear` 子层）可经
+  **ONNX / TorchScript** trace 导出——trace 会捕获量化层在内存中的解量化计算。
+  但 **GGUF** 导出只接受浮点张量，packed 的 INT8/4-bit 权重 buffer 会被拒绝
+  （`NotImplementedError: GGUF exporter v1 only supports floating-point tensors`）；
+  若目标是 GGUF，请用浮点（fp16/fp32）权重，或在导出前反量化/合并；
 - 导出前请先用 [量化指南](quantization.md) 或直接 fp16 权重，按目标运行时
   的支持范围选择格式；
 - 如需发布到 HuggingFace Hub，用 `llm.compat.hf_publisher.push_to_hub`，
