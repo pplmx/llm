@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 172,
+  "round": 173,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T03:10:29+00:00",
+  "updated_at": "2026-09-06T06:06:53+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18112,11 +18112,11 @@
     "TASK-322": {
       "id": "TASK-322",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-06T00:42:29+00:00",
-      "updated_at": "2026-09-06T00:42:29+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T04:50:25+00:00",
+      "touched_round": 172,
       "category": "stability",
       "severity": 0.5,
       "title": "CheckpointManager keep_last_n is per-process; stale epoch sidecars never pruned across resume",
@@ -18125,11 +18125,11 @@
     "TASK-323": {
       "id": "TASK-323",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-09-06T00:42:29+00:00",
-      "updated_at": "2026-09-06T00:42:29+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T04:22:39+00:00",
+      "touched_round": 172,
       "category": "correctness",
       "severity": 0.6,
       "title": "DistributedSampler drop_last underflow silently trains 0 batches (train path unguarded)",
@@ -18151,11 +18151,11 @@
     "TASK-325": {
       "id": "TASK-325",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 4,
       "created_at": "2026-09-06T00:42:29+00:00",
-      "updated_at": "2026-09-06T00:42:29+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T06:03:08+00:00",
+      "touched_round": 172,
       "category": "maintainability",
       "severity": 0.4,
       "title": "Dead config surface: ServingConfig.compile_model + EvalConfig + use_kv_cache + padding_value",
@@ -18164,11 +18164,11 @@
     "TASK-326": {
       "id": "TASK-326",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-06T00:42:29+00:00",
-      "updated_at": "2026-09-06T00:42:29+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T05:35:14+00:00",
+      "touched_round": 172,
       "category": "dx",
       "severity": 0.4,
       "title": "llm-serve hardcodes port 8000; ServingConfig has no port knob",
@@ -18177,11 +18177,11 @@
     "TASK-327": {
       "id": "TASK-327",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-06T00:42:29+00:00",
-      "updated_at": "2026-09-06T00:42:29+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T05:15:23+00:00",
+      "touched_round": 172,
       "category": "correctness",
       "severity": 0.3,
       "title": "Serving default tokenizer has no EOS/BOS -> dummy-model generation never stops",
@@ -18247,11 +18247,11 @@
     "ISS-357": {
       "id": "ISS-357",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-06T02:46:55+00:00",
-      "updated_at": "2026-09-06T02:46:55+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T04:50:25+00:00",
+      "touched_round": 172,
       "severity": 0.5,
       "title": "CheckpointManager keep_last_n retention is per-process (stale epoch sidecars on resume)",
       "summary": "checkpoints_saved is an in-memory list built only from current-process writes (checkpoint.py:677/847); a resumed run starts empty so _cleanup_old_checkpoints never prunes prior runs' epoch_N trios -> checkpoints/ grows unbounded under keep_last_n with periodic restarts."
@@ -18259,11 +18259,11 @@
     "ISS-358": {
       "id": "ISS-358",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-06T02:46:55+00:00",
-      "updated_at": "2026-09-06T02:46:55+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T04:22:39+00:00",
+      "touched_round": 172,
       "severity": 0.6,
       "title": "DistributedSampler drop_last underflow: empty train epoch returns silent 0.0",
       "summary": "map_base.py:50-56 always builds DistributedSampler(drop_last=True) with no guard when world_size > len(train); engine.py:930-931 returns 0.0 silently (val path warns, train does not). A 1-sample corpus on 2+ GPUs -> zero-batch epochs, save_best/EarlyStopping act on a never-trained model."
@@ -18271,11 +18271,11 @@
     "ISS-359": {
       "id": "ISS-359",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-06T02:46:55+00:00",
-      "updated_at": "2026-09-06T02:46:55+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T06:03:08+00:00",
+      "touched_round": 172,
       "severity": 0.4,
       "title": "Dead config surface: compile_model / EvalConfig / use_kv_cache / padding_value",
       "summary": "ServingConfig.compile_model never read (no torch.compile in serving); EvalConfig never instantiated (train.py wires no EvaluationCallback); ModelConfig.use_kv_cache only validator+compat; StreamingTextDataset.padding_value stored never read. Wire, remove, or warn loudly."
@@ -18283,11 +18283,11 @@
     "ISS-360": {
       "id": "ISS-360",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-06T02:46:55+00:00",
-      "updated_at": "2026-09-06T02:46:55+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T06:06:02+00:00",
+      "touched_round": 172,
       "severity": 0.4,
       "title": "llm-serve hardcodes port 8000 with no config knob",
       "summary": "serving/cli.py:47 uvicorn.run(..., port=8000); ServingConfig has host but no port -> cannot bind an alternate port via env/yaml/flag."
@@ -18295,14 +18295,110 @@
     "ISS-361": {
       "id": "ISS-361",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-06T02:46:56+00:00",
-      "updated_at": "2026-09-06T02:46:56+00:00",
-      "touched_round": 171,
+      "updated_at": "2026-09-06T05:15:23+00:00",
+      "touched_round": 172,
       "severity": 0.3,
       "title": "Serving default tokenizer lacks EOS/BOS (dummy-model generation never stops)",
       "summary": "from_printable_corpus builds SimpleCharacterTokenizer without <EOS>/<BOS> (eos=None); serving fallback loader.py:288 uses it; eager/batch_engine treat None as never-stop -> demo generate runs to max_new_tokens. ISS-152 covered train/eval only."
+    },
+    "CHG-339": {
+      "id": "CHG-339",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T04:21:54+00:00",
+      "updated_at": "2026-09-06T04:21:54+00:00",
+      "touched_round": 172,
+      "commit": "1e89fb2",
+      "summary": "fix(data): guard DistributedSampler drop_last underflow (empty epoch) at datamodule + engine; +2 RED-checked regression tests"
+    },
+    "CHG-340": {
+      "id": "CHG-340",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T04:50:02+00:00",
+      "updated_at": "2026-09-06T04:50:02+00:00",
+      "touched_round": 172,
+      "commit": 6615132,
+      "summary": "fix(checkpoint): keep_last_n retention spans resumed runs via disk scan (mtime-newest-first, epoch tiebreak); +1 RED-checked regression test"
+    },
+    "CHG-341": {
+      "id": "CHG-341",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T05:14:39+00:00",
+      "updated_at": "2026-09-06T05:14:39+00:00",
+      "touched_round": 172,
+      "commit": "d9f3fae",
+      "summary": "fix(serving): from_printable_corpus now declares PAD/EOS/BOS (DEFAULT_SIMPLE_CORPUS) so serving dummy-model generation can stop on EOS; +1 RED-checked regression test"
+    },
+    "CHG-342": {
+      "id": "CHG-342",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T05:34:41+00:00",
+      "updated_at": "2026-09-06T05:34:41+00:00",
+      "touched_round": 172,
+      "commit": "b6b0179",
+      "summary": "feat(serving): ServingConfig.port knob (default 8000, LLM_SERVING_PORT/yaml) forwarded to uvicorn.run; +3 config tests + CLI forward test + docs note"
+    },
+    "CHG-343": {
+      "id": "CHG-343",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T06:02:45+00:00",
+      "updated_at": "2026-09-06T06:02:45+00:00",
+      "touched_round": 172,
+      "commit": "622ef7f",
+      "summary": "refactor(eval/serving): dead-config consolidation (compile_model loud-warns, EvalConfig removed + resolve_metrics tests relocated, streaming padding_value dropped, use_kv_cache documented); +1 warning test"
+    },
+    "DEC-111": {
+      "id": "DEC-111",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T06:04:00+00:00",
+      "updated_at": "2026-09-06T06:04:00+00:00",
+      "touched_round": 172,
+      "rationale": "TASK-325 dead-config triage (r173, all empirically verified by grep): (1) ServingConfig.compile_model never read by the runtime (torch.compile only exists in the training engine, src/llm/training/core/engine.py:275) and docs advertised it as a latency knob -> warn LOUDLY at load when True (no silent false promise), leave field for config compat; (2) EvalConfig(eval_interval/eval_batch_size/metrics) was never instantiated in production (only tests), a shell around the metric-name list EvaluationRunner already consumes via metric_names -> DELETE class + test file, relocate the 2 live resolve_metrics regression tests (ISS-251); (3) StreamingTextDataset.padding_value stored but never read, nothing passes it (streaming emits fixed-length truncated windows, never pads) -> remove dead param/attr; (4) ModelConfig.use_kv_cache KEPT: its only role is the capability fail-fast gate (config.py validator rejects KV-incompatible attn_impls); serving generation always enables KV caching independently (eager passes use_cache=True, batched always-on), so it is not a generation toggle and removing it would entangle checkpoint-compat (allowlist) + the capability registry for no gain",
+      "alternatives_rejected": "wire serving torch.compile now (real feature but high risk across eager/batched/paged + GPU verification, not a 0.60 maintainability fix -> recorded as follow-up task); remove use_kv_cache (risks resume compat + loses the capability fail-fast gate); keep EvalConfig (dead shell adds nothing; the runner takes metric_names directly)"
+    },
+    "TASK-328": {
+      "id": "TASK-328",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T06:04:31+00:00",
+      "updated_at": "2026-09-06T06:04:31+00:00",
+      "touched_round": 172,
+      "category": "performance",
+      "severity": 0.4,
+      "confidence": 0.9,
+      "effort": 8,
+      "title": "Wire torch.compile into the serving runtime (honor ServingConfig.compile_model)",
+      "summary": "ServingConfig.compile_model is a verified no-op (r173 TASK-325): docs once advertised it for latency but no serving code compiles. Feature: torch.compile the loaded/dummy DecoderModel when compile_model=True (model_compile only in training today), verify eager + batched + paged backends on GPU (dynamic shapes, KV-cache interplay); first-token warmup caveat. Replaces the r173 loud-warning no-op."
+    },
+    "TASK-329": {
+      "id": "TASK-329",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T06:04:31+00:00",
+      "updated_at": "2026-09-06T06:04:31+00:00",
+      "touched_round": 172,
+      "category": "core-feature",
+      "severity": 0.4,
+      "confidence": 0.9,
+      "effort": 8,
+      "title": "Wire training-period evaluation into llm-train (instantiate EvaluationCallback)",
+      "summary": "EvaluationCallback + engine.log_metrics/loss exist but nothing instantiates them (r173 TASK-325 verified: EvaluationCallback never constructed in src/). Feature: build an EvaluationRunner + EvaluationCallback in the train path (per-N-step eval on val), replacing the deleted dead EvalConfig shell, so eval_interval/eval_batch_size/metrics have a real consumer."
     }
   },
   "edges": [
@@ -26998,6 +27094,78 @@
       "to": "ISS-361",
       "type": "addresses",
       "created_at": "2026-09-06T02:55:47+00:00"
+    },
+    {
+      "from": "CHG-339",
+      "to": "TASK-323",
+      "type": "implements",
+      "created_at": "2026-09-06T04:22:38+00:00"
+    },
+    {
+      "from": "CHG-339",
+      "to": "ISS-358",
+      "type": "resolves",
+      "created_at": "2026-09-06T04:22:38+00:00"
+    },
+    {
+      "from": "CHG-340",
+      "to": "TASK-322",
+      "type": "implements",
+      "created_at": "2026-09-06T04:50:25+00:00"
+    },
+    {
+      "from": "CHG-340",
+      "to": "ISS-357",
+      "type": "resolves",
+      "created_at": "2026-09-06T04:50:25+00:00"
+    },
+    {
+      "from": "CHG-341",
+      "to": "TASK-327",
+      "type": "implements",
+      "created_at": "2026-09-06T05:15:23+00:00"
+    },
+    {
+      "from": "CHG-341",
+      "to": "ISS-361",
+      "type": "resolves",
+      "created_at": "2026-09-06T05:15:23+00:00"
+    },
+    {
+      "from": "CHG-342",
+      "to": "TASK-326",
+      "type": "implements",
+      "created_at": "2026-09-06T05:35:14+00:00"
+    },
+    {
+      "from": "CHG-343",
+      "to": "TASK-325",
+      "type": "implements",
+      "created_at": "2026-09-06T06:03:07+00:00"
+    },
+    {
+      "from": "CHG-343",
+      "to": "ISS-359",
+      "type": "resolves",
+      "created_at": "2026-09-06T06:03:07+00:00"
+    },
+    {
+      "from": "DEC-111",
+      "to": "TASK-328",
+      "type": "governs",
+      "created_at": "2026-09-06T06:04:55+00:00"
+    },
+    {
+      "from": "DEC-111",
+      "to": "TASK-329",
+      "type": "governs",
+      "created_at": "2026-09-06T06:04:55+00:00"
+    },
+    {
+      "from": "CHG-342",
+      "to": "ISS-360",
+      "type": "resolves",
+      "created_at": "2026-09-06T06:06:02+00:00"
     }
   ]
 }
