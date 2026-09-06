@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 178,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T15:33:04+00:00",
+  "updated_at": "2026-09-06T15:58:09+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18742,6 +18742,54 @@
       "touched_round": 178,
       "commit": "430a8b7",
       "summary": "fix(generation,export,compat): deep-dive round — 5 correctness fixes: sampling_probs per-row 2D top_k/top_p, normalize_eos_ids for list HF eos across eager/speculative/batch_engine, RoPE dynamic cache rebuild on descending length, GGUF K-quant ftype enum (15/17/18), convert_our_weights qwen combined-c_attn. RED-checked regression tests."
+    },
+    "ISS-374": {
+      "id": "ISS-374",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:55:08+00:00",
+      "updated_at": "2026-09-06T15:58:09+00:00",
+      "touched_round": 178,
+      "severity": 0.5,
+      "confidence": 1.0,
+      "summary": "EvaluationCallback eval cadence gated on the dataloader batch_idx, not engine.global_step — with gradient_accumulation_steps>1 evals rescaled by accum_steps, fired BETWEEN optimizer steps, and reset every epoch/resume; on_train_step_end fires every microbatch so the naive counter gate would also double-fire per window. Documented contract is 'every eval_interval optimizer steps' (matches TensorBoard/LR/AdaLoRA which all use global_step)."
+    },
+    "ISS-375": {
+      "id": "ISS-375",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:55:08+00:00",
+      "updated_at": "2026-09-06T15:58:09+00:00",
+      "touched_round": 178,
+      "severity": 0.4,
+      "confidence": 1.0,
+      "summary": "DistillationLoss docstrings write KL(softmax(student/T) || softmax(teacher/T)) but the code computes torch kl_div(input=log student, target=teacher probs) = sum p_teacher*log(p_teacher/p_student) = KL(teacher || student) — the canonical Hinton KD form. The reverse-arrow formula misdescribes the computed quantity to readers (a test pinning the analytic value would force them to agree)."
+    },
+    "TASK-335": {
+      "id": "TASK-335",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T15:55:44+00:00",
+      "updated_at": "2026-09-06T15:58:09+00:00",
+      "touched_round": 178,
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "summary": "Fix EvaluationCallback cadence to engine.global_step with a once-per-step guard (_last_eval_step) so grad-accumulation runs eval exactly every eval_interval optimizer steps (ISS-374); correct DistillationLoss KL-arrow docstrings to the computed KL(teacher||student) (ISS-375). Regression test emulating the engine's boundary ordering for accum=3/eval=5."
+    },
+    "CHG-355": {
+      "id": "CHG-355",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T15:58:08+00:00",
+      "updated_at": "2026-09-06T15:58:08+00:00",
+      "touched_round": 178,
+      "commit": "0c2f836",
+      "summary": "fix(training): EvaluationCallback cadence on engine.global_step + once-per-step guard (grad-accum eval fires every eval_interval optimizer steps, not per microbatch); DistillationLoss KL-arrow docstrings corrected to KL(teacher||student). RED-checked cadence regression test."
     }
   },
   "edges": [
@@ -27671,6 +27719,36 @@
       "to": "TASK-334",
       "type": "implements",
       "created_at": "2026-09-06T15:32:10+00:00"
+    },
+    {
+      "from": "TASK-335",
+      "to": "ISS-374",
+      "type": "addresses",
+      "created_at": "2026-09-06T15:55:44+00:00"
+    },
+    {
+      "from": "TASK-335",
+      "to": "ISS-375",
+      "type": "addresses",
+      "created_at": "2026-09-06T15:55:44+00:00"
+    },
+    {
+      "from": "CHG-355",
+      "to": "ISS-374",
+      "type": "resolves",
+      "created_at": "2026-09-06T15:58:08+00:00"
+    },
+    {
+      "from": "CHG-355",
+      "to": "ISS-375",
+      "type": "resolves",
+      "created_at": "2026-09-06T15:58:08+00:00"
+    },
+    {
+      "from": "CHG-355",
+      "to": "TASK-335",
+      "type": "implements",
+      "created_at": "2026-09-06T15:58:08+00:00"
     }
   ]
 }
