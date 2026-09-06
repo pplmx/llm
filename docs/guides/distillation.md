@@ -29,12 +29,14 @@ teacher 用任何 `lm` 系列任务训练后由 `CheckpointManager` 保存即可
 
 ```yaml
 training:
-  task: distill
   distill_teacher_path: /path/to/teacher/ckpt   # CheckpointManager 保存的 stem（如 .../best）
   distill_temperature: 4.0
   distill_alpha: 0.5
   lr: 1e-3
 ```
+
+任务名通过 CLI 的 `--task distill` 选择（`training.task` 不是有效配置字段——带上去会被
+pydantic 静默忽略，与本文件下方命令行里的 `--task` 重复）。
 
 然后：
 

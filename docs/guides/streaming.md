@@ -251,12 +251,24 @@ class S3TextSource(TextSource):
             if text:
                 yield text
 
+    @classmethod
+    def from_s3_path(cls, dataset_path: str):
+        """Parse an ``s3://bucket/key`` dataset_path into bucket + key."""
+        rest = dataset_path
+        if rest.startswith("s3://"):
+            rest = rest[len("s3://"):]
+        bucket, _, key = rest.partition("/")
+        return cls(bucket, key)
+
     def source_fingerprint(self):
         return {"type": "s3", "bucket": self.bucket, "key": self.key}
 
 
-# Register it
-SOURCE_REGISTRY.register("s3", lambda cfg: S3TextSource(cfg.dataset_bucket, cfg.dataset_key))
+# Register it. NOTE: the factory receives the already-parsed DataConfig, and
+# DataConfig ignores unknown YAML keys (pydantic extra='ignore') — so a custom
+# source cannot read arbitrary extra keys like `dataset_bucket`. Encode your
+# params in an existing field (here `dataset_path` as an s3:// URL).
+SOURCE_REGISTRY.register("s3", lambda cfg: S3TextSource.from_s3_path(cfg.dataset_path))
 ```
 
 Then use it in YAML:
@@ -264,8 +276,7 @@ Then use it in YAML:
 ```yaml
 data:
   data_source: s3
-  dataset_bucket: my-pretraining-bucket
-  dataset_key: c4-en-2024-01.txt
+  dataset_path: s3://my-pretraining-bucket/c4-en-2024-01.txt
 ```
 
 ## E2E Example: Full Streaming Workflow
