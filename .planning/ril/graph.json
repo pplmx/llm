@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 170,
+  "round": 172,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-05T09:18:12+00:00",
+  "updated_at": "2026-09-06T03:10:29+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -17808,10 +17808,10 @@
     "ISS-354": {
       "id": "ISS-354",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-05T07:10:55+00:00",
-      "updated_at": "2026-09-05T07:10:55+00:00",
+      "updated_at": "2026-09-05T16:59:37+00:00",
       "touched_round": 170,
       "severity": 0.5,
       "title": "Multimodal fusion ignores datamodule embed_dim (modal_dim defaults to hidden_size)",
@@ -17969,6 +17969,340 @@
       "touched_round": 170,
       "commit": "85a88ca",
       "title": "GGUF F16-fallback summary warning (RIL TASK-316/ISS-353)"
+    },
+    "TASK-317": {
+      "id": "TASK-317",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-05T16:35:26+00:00",
+      "updated_at": "2026-09-05T17:06:20+00:00",
+      "touched_round": 170,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "Thread datamodule embed_dim into MultimodalModel fusion (build_model modal_dim)",
+      "summary": "MultimodalTask.build_model passes no modal_dim -> ModalityFusion defaults to decoder.hidden_size; a datamodule with embed_dim != hidden_size (e.g. test_datamodule 17 vs 24) hits nn.Linear mismatch. Thread data_module.embed_dim; make encoder.embed_dim the source of truth in MultimodalModel; add fail-fast dim guard in ModalityFusion.forward"
+    },
+    "CHG-333": {
+      "id": "CHG-333",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T16:57:31+00:00",
+      "updated_at": "2026-09-05T16:57:31+00:00",
+      "touched_round": 170,
+      "title": "Thread datamodule embed_dim into MultimodalModel fusion",
+      "summary": "MultimodalTask.build_model passes data_module.embed_dim as modal_dim; MultimodalModel derives modal_dim from in-forward encoder.embed_dim (raise on conflict); ModalityFusion.forward fail-fast dim guard",
+      "commit": "20071f2"
+    },
+    "EV-284": {
+      "id": "EV-284",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T16:58:27+00:00",
+      "updated_at": "2026-09-05T16:58:27+00:00",
+      "touched_round": 170,
+      "title": "Regression: embed_dim 17 datamodule builds fusion.modal_dim 17 + forward works",
+      "summary": "tests/multimodal/test_task.py::test_multimodal_task_build_model_threads_datamodule_embed_dim + test_multimodal_model_encoder_embed_dim_is_source_of_truth (RED 24 vs 17 pre-fix, GREEN post-fix); full tests/multimodal suite green",
+      "source": "tests/multimodal/test_task.py",
+      "confidence": 1.0
+    },
+    "HYP-061": {
+      "id": "HYP-061",
+      "type": "hypothesis",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-05T17:02:53+00:00",
+      "updated_at": "2026-09-05T17:04:06+00:00",
+      "touched_round": 170,
+      "confidence": 1.0,
+      "title": "MultimodalTask ignores datamodule embed_dim -> fusion modal_dim defaults to hidden_size",
+      "summary": "build_model() calls MultimodalModel(decoder, encoder=encoder) with no modal_dim, so ModalityFusion uses decoder.hidden_size even when the datamodule's encoder outputs embed_dim != hidden_size; any such config crashes with nn.Linear mismatch at the first train step. Was PLAUSIBLE (no shipped config triggers), now CONFIRMED by regression RED test."
+    },
+    "TASK-318": {
+      "id": "TASK-318",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-09-05T18:38:21+00:00",
+      "updated_at": "2026-09-05T21:04:45+00:00",
+      "touched_round": 171,
+      "category": "correctness",
+      "severity": 0.6,
+      "title": "sdpa 2D bool attn_mask crashes both paths (MultimodalModel attn_mask unusable)",
+      "summary": "sdpa() bool branch: fast path (line ~214) passes ~mask without 2D->4D unsqueeze (int/float branches do); complex path (line ~136) ORs [B,S] bool vs rank-2 [Sq,Sk] causal -> broadcast error 'a(7) vs b(2)'. Any [B,S] bool mask (e.g. MultimodalModel.forward attn_mask=[B,T]) crashes; int LongTensor masks (DPO/SFT/Reward) work so this hid. Fix: expand bool 2D like sibling branches."
+    },
+    "CHG-334": {
+      "id": "CHG-334",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-09-05T21:03:07+00:00",
+      "updated_at": "2026-09-05T21:27:09+00:00",
+      "touched_round": 171,
+      "title": "sdpa 2D bool mask complex-path merge fixed to [B,1,Sq,Sk]",
+      "summary": "Normalize causal/window pattern to [1,1,Sq,Sk]; expand 2D per-sample bool/int masks to [B,1,1,S]; preserve 2D [Sq,Sk] attention planes (sparse); fast path untouched. Fixes MultimodalModel.forward(attn_mask=[B,S]) + latent int B==S collision.",
+      "commit": "a027643"
+    },
+    "EV-285": {
+      "id": "EV-285",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-05T21:03:30+00:00",
+      "updated_at": "2026-09-05T21:03:30+00:00",
+      "touched_round": 171,
+      "title": "Regression: [B,S] + [Sq,Sk] bool masks merge correctly on complex path",
+      "summary": "tests/core/attn/test_sdpa.py::test_sdpa_bool_2d_complex_path_broadcasts + tests/multimodal/test_model.py::test_multimodal_model_attn_mask_2d_bool_honored (RED crashed pre-fix on both; GREEN post-fix); tests/core+models+evaluation+serving+generation+training gate green",
+      "source": "tests/core/attn/test_sdpa.py",
+      "confidence": 1.0
+    },
+    "ISS-356": {
+      "id": "ISS-356",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-09-05T21:04:06+00:00",
+      "updated_at": "2026-09-05T21:04:06+00:00",
+      "touched_round": 171,
+      "severity": 0.6,
+      "title": "sdpa complex path crashes on 2D bool attn_mask (woven batch/query axes)",
+      "summary": "Msg: sdpa complex path ORs caller mask against rank-2 causal/window; 2D bool [B,S] / [Sq,Sk] splits ambiguous under torch left-padding -> broadcast crash for B==Sq; MultimodalModel.forward(attn_mask=) unusable. Self-found deep-dive (probe), fixed in bcaadf2."
+    },
+    "TASK-319": {
+      "id": "TASK-319",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T00:40:58+00:00",
+      "updated_at": "2026-09-06T02:42:39+00:00",
+      "touched_round": 171,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "llm-migrate-ckpt --verify false-fails on legacy missing epoch/best_loss",
+      "summary": "verify reads legacy with raw .get() (None) but convert writes defaults epoch=0/best_loss=inf -> 'epoch mismatch: legacy=None vs new=0', exit 2 on perfect round-trip. Fix: read legacy with convert's defaults."
+    },
+    "TASK-320": {
+      "id": "TASK-320",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T00:40:58+00:00",
+      "updated_at": "2026-09-06T02:42:39+00:00",
+      "touched_round": 171,
+      "category": "correctness",
+      "severity": 0.7,
+      "title": "HFStreamTextSource resume skip counts raw rows vs survivor cursor -> silent duplication",
+      "summary": "iter_texts(skip) delegated to dataset.skip(n) = RAW rows before empty-row filter; StreamingTextDataset.resume cursor counts SURVIVORS -> empty rows make resumed pass re-emit consumed tail. Fix: survivor-space skip like LocalLineTextSource."
+    },
+    "TASK-321": {
+      "id": "TASK-321",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T00:42:29+00:00",
+      "updated_at": "2026-09-06T02:42:39+00:00",
+      "touched_round": 171,
+      "category": "correctness",
+      "severity": 0.6,
+      "title": "EarlyStopping fires one epoch late + stop drops final epoch checkpoint",
+      "summary": "engine.py:1050 checks should_stop at loop top; EarlyStopping sets it at on_epoch_end (engine:1119) after -> patience+1 epochs train. A stop set during on_validation_end breaks BEFORE save_checkpoint(1103) -> best-epoch weights never persisted. Fix: re-check after callbacks/save."
+    },
+    "TASK-322": {
+      "id": "TASK-322",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T00:42:29+00:00",
+      "updated_at": "2026-09-06T00:42:29+00:00",
+      "touched_round": 171,
+      "category": "stability",
+      "severity": 0.5,
+      "title": "CheckpointManager keep_last_n is per-process; stale epoch sidecars never pruned across resume",
+      "summary": "checkpoints_saved in-memory list only from current process writes (checkpoint.py:677/847/857-879); resumed run starts empty -> keep_last_n never deletes prior runs' epoch_N trios -> dirs grow without bound."
+    },
+    "TASK-323": {
+      "id": "TASK-323",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T00:42:29+00:00",
+      "updated_at": "2026-09-06T00:42:29+00:00",
+      "touched_round": 171,
+      "category": "correctness",
+      "severity": 0.6,
+      "title": "DistributedSampler drop_last underflow silently trains 0 batches (train path unguarded)",
+      "summary": "map_base.py:50-56 builds sampler drop_last=True with no guard when world_size > len; engine:930-931 returns 0.0 silently; val path warns but train does not. 1-sample corpus on 2+ GPU -> empty epoch scored as 0. Fix: guard/warn like val."
+    },
+    "TASK-324": {
+      "id": "TASK-324",
+      "type": "task",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-06T00:42:29+00:00",
+      "updated_at": "2026-09-06T02:42:39+00:00",
+      "touched_round": 171,
+      "category": "correctness",
+      "severity": 0.5,
+      "title": "TextDataset whole-file->per-line fallback strips ALL newline tokens on any un-encodable row",
+      "summary": "text.py:100 whole-file keeps \\n ids; any single un-encodable char -> fallback re-encodes splitlines() without newlines (115-117) -> entire stream loses \\n token (id 1) even for encodable rows. Data-distribution change invisible in loss."
+    },
+    "TASK-325": {
+      "id": "TASK-325",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T00:42:29+00:00",
+      "updated_at": "2026-09-06T00:42:29+00:00",
+      "touched_round": 171,
+      "category": "maintainability",
+      "severity": 0.4,
+      "title": "Dead config surface: ServingConfig.compile_model + EvalConfig + use_kv_cache + padding_value",
+      "summary": "ServingConfig.compile_model advertised for acceleration never read (runtime has no torch.compile); EvalConfig(eval_interval/eval_batch_size/metrics) never instantiated/wired (train.py builds no EvaluationCallback); ModelConfig.use_kv_cache only a validator+compat field (not forwarded by decoder_kwargs_from_config); StreamingTextDataset.padding_value stored never read. Consolidate: wire, remove, or warn loudly."
+    },
+    "TASK-326": {
+      "id": "TASK-326",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T00:42:29+00:00",
+      "updated_at": "2026-09-06T00:42:29+00:00",
+      "touched_round": 171,
+      "category": "dx",
+      "severity": 0.4,
+      "title": "llm-serve hardcodes port 8000; ServingConfig has no port knob",
+      "summary": "serving/cli.py:47 uvicorn.run(..., port=8000); config has host but no port -> operator cannot bind 9000 via env/yaml/flag; only workaround edits package source."
+    },
+    "TASK-327": {
+      "id": "TASK-327",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T00:42:29+00:00",
+      "updated_at": "2026-09-06T00:42:29+00:00",
+      "touched_round": 171,
+      "category": "correctness",
+      "severity": 0.3,
+      "title": "Serving default tokenizer has no EOS/BOS -> dummy-model generation never stops",
+      "summary": "from_printable_corpus builds SimpleCharacterTokenizer(pad=100,eos=None,bos=None); serving fallback loader.py:288 uses it; eager/batch_engine treat eos None as never-stop -> demo generate runs to max_new_tokens. ISS-152 covered train/eval only."
+    },
+    "CHG-335": {
+      "id": "CHG-335",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:33:44+00:00",
+      "updated_at": "2026-09-06T02:33:44+00:00",
+      "touched_round": 171,
+      "title": "migrate-ckpt --verify applies converter defaults to legacy fields",
+      "commit": "dee6334"
+    },
+    "CHG-336": {
+      "id": "CHG-336",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:33:44+00:00",
+      "updated_at": "2026-09-06T02:33:44+00:00",
+      "touched_round": 171,
+      "title": "HF streaming resume skip counts survivors not raw rows",
+      "commit": "6e2ded5"
+    },
+    "CHG-337": {
+      "id": "CHG-337",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:33:44+00:00",
+      "updated_at": "2026-09-06T02:33:44+00:00",
+      "touched_round": 171,
+      "title": "Engine commits stopping epoch + no extra epoch after EarlyStopping",
+      "commit": "29aaa21"
+    },
+    "CHG-338": {
+      "id": "CHG-338",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:33:44+00:00",
+      "updated_at": "2026-09-06T02:33:44+00:00",
+      "touched_round": 171,
+      "title": "TextDataset fallback restores inter-line newline tokens",
+      "commit": "2a2fffb"
+    },
+    "EV-286": {
+      "id": "EV-286",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:36:09+00:00",
+      "updated_at": "2026-09-06T02:36:09+00:00",
+      "touched_round": 171,
+      "title": "migrate_ckpt + HF-skip + EarlyStop + TextDataset regressions RED->GREEN",
+      "summary": "tests/training/test_migrate_ckpt.py::test_verify_passes_when_legacy_missing_epoch_and_best_loss; tests/data/test_sources.py::test_hf_iter_texts_skip_counts_survivors_not_raw_rows; tests/training/test_engine_advanced.py::test_engine_early_stop_does_not_train_extra_epoch + test_engine_stop_during_validation_commits_epoch_checkpoint; tests/data/test_text_dataset.py::test_text_dataset_undecodable_fallback_keeps_newline_tokens. All RED pre-fix, GREEN post-fix; tests/training + tests/data full suites green.",
+      "source": "tests/training,tests/data",
+      "confidence": 1.0
+    },
+    "ISS-357": {
+      "id": "ISS-357",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:46:55+00:00",
+      "updated_at": "2026-09-06T02:46:55+00:00",
+      "touched_round": 171,
+      "severity": 0.5,
+      "title": "CheckpointManager keep_last_n retention is per-process (stale epoch sidecars on resume)",
+      "summary": "checkpoints_saved is an in-memory list built only from current-process writes (checkpoint.py:677/847); a resumed run starts empty so _cleanup_old_checkpoints never prunes prior runs' epoch_N trios -> checkpoints/ grows unbounded under keep_last_n with periodic restarts."
+    },
+    "ISS-358": {
+      "id": "ISS-358",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:46:55+00:00",
+      "updated_at": "2026-09-06T02:46:55+00:00",
+      "touched_round": 171,
+      "severity": 0.6,
+      "title": "DistributedSampler drop_last underflow: empty train epoch returns silent 0.0",
+      "summary": "map_base.py:50-56 always builds DistributedSampler(drop_last=True) with no guard when world_size > len(train); engine.py:930-931 returns 0.0 silently (val path warns, train does not). A 1-sample corpus on 2+ GPUs -> zero-batch epochs, save_best/EarlyStopping act on a never-trained model."
+    },
+    "ISS-359": {
+      "id": "ISS-359",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:46:55+00:00",
+      "updated_at": "2026-09-06T02:46:55+00:00",
+      "touched_round": 171,
+      "severity": 0.4,
+      "title": "Dead config surface: compile_model / EvalConfig / use_kv_cache / padding_value",
+      "summary": "ServingConfig.compile_model never read (no torch.compile in serving); EvalConfig never instantiated (train.py wires no EvaluationCallback); ModelConfig.use_kv_cache only validator+compat; StreamingTextDataset.padding_value stored never read. Wire, remove, or warn loudly."
+    },
+    "ISS-360": {
+      "id": "ISS-360",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:46:55+00:00",
+      "updated_at": "2026-09-06T02:46:55+00:00",
+      "touched_round": 171,
+      "severity": 0.4,
+      "title": "llm-serve hardcodes port 8000 with no config knob",
+      "summary": "serving/cli.py:47 uvicorn.run(..., port=8000); ServingConfig has host but no port -> cannot bind an alternate port via env/yaml/flag."
+    },
+    "ISS-361": {
+      "id": "ISS-361",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-06T02:46:56+00:00",
+      "updated_at": "2026-09-06T02:46:56+00:00",
+      "touched_round": 171,
+      "severity": 0.3,
+      "title": "Serving default tokenizer lacks EOS/BOS (dummy-model generation never stops)",
+      "summary": "from_printable_corpus builds SimpleCharacterTokenizer without <EOS>/<BOS> (eos=None); serving fallback loader.py:288 uses it; eager/batch_engine treat None as never-stop -> demo generate runs to max_new_tokens. ISS-152 covered train/eval only."
     }
   },
   "edges": [
@@ -26568,6 +26902,102 @@
       "to": "TASK-316",
       "type": "implements",
       "created_at": "2026-09-05T09:18:12+00:00"
+    },
+    {
+      "from": "TASK-317",
+      "to": "ISS-354",
+      "type": "addresses",
+      "created_at": "2026-09-05T16:37:12+00:00"
+    },
+    {
+      "from": "CHG-333",
+      "to": "ISS-354",
+      "type": "resolves",
+      "created_at": "2026-09-05T16:59:36+00:00"
+    },
+    {
+      "from": "CHG-333",
+      "to": "TASK-317",
+      "type": "implements",
+      "created_at": "2026-09-05T16:59:36+00:00"
+    },
+    {
+      "from": "EV-284",
+      "to": "HYP-061",
+      "type": "validates",
+      "created_at": "2026-09-05T17:04:06+00:00"
+    },
+    {
+      "from": "CHG-334",
+      "to": "TASK-318",
+      "type": "implements",
+      "created_at": "2026-09-05T21:04:06+00:00"
+    },
+    {
+      "from": "CHG-334",
+      "to": "ISS-356",
+      "type": "resolves",
+      "created_at": "2026-09-05T21:04:44+00:00"
+    },
+    {
+      "from": "TASK-318",
+      "to": "ISS-356",
+      "type": "addresses",
+      "created_at": "2026-09-05T21:04:44+00:00"
+    },
+    {
+      "from": "CHG-335",
+      "to": "TASK-319",
+      "type": "implements",
+      "created_at": "2026-09-06T02:36:09+00:00"
+    },
+    {
+      "from": "CHG-336",
+      "to": "TASK-320",
+      "type": "implements",
+      "created_at": "2026-09-06T02:36:09+00:00"
+    },
+    {
+      "from": "CHG-337",
+      "to": "TASK-321",
+      "type": "implements",
+      "created_at": "2026-09-06T02:36:09+00:00"
+    },
+    {
+      "from": "CHG-338",
+      "to": "TASK-324",
+      "type": "implements",
+      "created_at": "2026-09-06T02:42:38+00:00"
+    },
+    {
+      "from": "TASK-322",
+      "to": "ISS-357",
+      "type": "addresses",
+      "created_at": "2026-09-06T02:55:47+00:00"
+    },
+    {
+      "from": "TASK-323",
+      "to": "ISS-358",
+      "type": "addresses",
+      "created_at": "2026-09-06T02:55:47+00:00"
+    },
+    {
+      "from": "TASK-325",
+      "to": "ISS-359",
+      "type": "addresses",
+      "created_at": "2026-09-06T02:55:47+00:00"
+    },
+    {
+      "from": "TASK-326",
+      "to": "ISS-360",
+      "type": "addresses",
+      "created_at": "2026-09-06T02:55:47+00:00"
+    },
+    {
+      "from": "TASK-327",
+      "to": "ISS-361",
+      "type": "addresses",
+      "created_at": "2026-09-06T02:55:47+00:00"
     }
   ]
 }
