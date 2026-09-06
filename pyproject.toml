@@ -84,7 +84,7 @@ security = [
 # (``uv sync --extra <name>``) and pip (``pip install llm[<name>]``).
 eval = [
     "lm_eval>=0.4.12",
-    "nltk>=3.10.0",  # bumped: PYSEC-2026-2078 fix in 3.10.0 (transitive via sacrebleu)
+    "nltk>=3.10.3",  # bumped: PYSEC-2026-2078 fix in 3.10.0 (transitive via sacrebleu)
     "rouge-score>=0.1.2",
     "sacrebleu>=2.6.0",
     "scikit-learn>=1.9.0",
