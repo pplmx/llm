@@ -187,8 +187,28 @@ def test_save_report_creates_parent_dirs(tmp_path: Path):
 
 
 # --------------------------------------------------------------------------- #
-# metric_names config resolution (ISS-251 — EvalConfig.metrics was dead)
+# metric_names config resolution (ISS-251 — metric-name resolution was dead
+# config; the dead EvalConfig shell was removed in RIL TASK-325, the registry
+# and resolve_metrics machinery that replaced it are what these pin down)
 # --------------------------------------------------------------------------- #
+
+
+def test_resolve_metrics_names_all_registered():
+    """Registered metric NAMES resolve to real instances; defaults present."""
+    from llm.evaluation.metrics import METRIC_REGISTRY, resolve_metrics
+
+    resolved = {metric.name for metric in resolve_metrics(["perplexity", "accuracy"])}
+    assert {"perplexity", "accuracy"} <= resolved
+    for name in ("perplexity", "accuracy", "f1", "rouge", "bleu", "chrf"):
+        assert name in METRIC_REGISTRY
+
+
+def test_resolve_metrics_unknown_name_raises_not_silent():
+    """A typo'd metric name fails loudly instead of silently running nothing."""
+    from llm.evaluation.metrics import resolve_metrics
+
+    with pytest.raises(ValueError, match="unknown metric"):
+        resolve_metrics(["not_a_real_metric"])
 
 
 def test_runner_metric_names_override_task_metrics(tmp_path: Path):

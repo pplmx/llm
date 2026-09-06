@@ -234,6 +234,20 @@ def test_dummy_fallback_without_checkpoint():
     assert model.lm_head.out_features == tokenizer.vocab_size
 
 
+def test_compile_model_true_warns_loudly(caplog):
+    """RIL TASK-325: ``ServingConfig.compile_model`` is a no-op in the serving
+    runtime (no torch.compile path) — setting it must produce a loud startup
+    warning instead of being silently ignored. Docs once advertised it as a
+    latency knob that never actually compiled."""
+    import logging
+
+    config = ServingConfig(compile_model=True)
+    with caplog.at_level(logging.WARNING, logger="llm.serving.loader"):
+        load_model_and_tokenizer(config)
+    assert "compile_model" in caplog.text
+    assert "no-op" in caplog.text
+
+
 def test_dummy_fallback_tokenizer_has_eos_and_bos():
     """RIL TASK-327: the default serving tokenizer must declare EOS/BOS so
     dummy-model generation can stop.

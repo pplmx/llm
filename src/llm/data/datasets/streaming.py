@@ -36,17 +36,17 @@ class StreamingTextDataset(IterableDataset):
         rank: int = 0,
         world_size: int = 1,
         overlap: int = 0,
-        padding_value: int | None = None,
         stream_data_state: StreamDataState | None = None,
         skip_undecodable: bool = True,
     ):
+        # No ``padding_value``: streaming emits fixed-length windows (truncated,
+        # never padded), so a padding knob here was dead state (RIL TASK-325).
         self.text_source = text_source
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
         self.rank = rank
         self.world_size = world_size
         self.overlap = overlap
-        self.padding_value = padding_value if padding_value is not None else getattr(tokenizer, "pad_token_id", 0)
         self.stream_data_state = stream_data_state or StreamDataState()
         self.skip_undecodable = skip_undecodable
         # Count of rows skipped for being un-encodable; the first one logs a

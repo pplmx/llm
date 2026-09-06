@@ -2,7 +2,7 @@
 
 Metric classes may be instantiated directly with their constructor kwargs;
 exposing them here also guarantees the side-effect module imports. To select
-metrics BY NAME from configuration (``EvalConfig.metrics`` / RIL ISS-251)
+metrics BY NAME from a configuration list (``metric_names`` / RIL ISS-251)
 use :func:`resolve_metrics`, which builds instances from
 :data:`METRIC_REGISTRY` and raises on an unknown name instead of silently
 running nothing.
@@ -45,7 +45,7 @@ def resolve_metrics(names: list[str]) -> list[BaseMetric]:
 
     Raises:
         ValueError: naming a metric that is not registered (a loud fail —
-            a typo'd ``EvalConfig.metrics`` must not silently run nothing,
+            a typo'd ``metric_names`` must not silently run nothing,
             RIL ISS-251).
     """
     resolved: list[BaseMetric] = []

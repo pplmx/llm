@@ -199,6 +199,19 @@ def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
     partial config — better than silently serving the un-adapted base
     model.
     """
+    # RIL TASK-325: ``compile_model`` is advertised for acceleration but the
+    # serving runtime never compiles the model (the only torch.compile lives
+    # in the training engine). Never silently ignore a user who asked for it —
+    # fail loudly at startup so the false promise is visible, not deferred to
+    # a latent-perf surprise.
+    if config.compile_model:
+        logger.warning(
+            "ServingConfig.compile_model=True is a no-op: the serving runtime "
+            "does not torch.compile the model yet (torch.compile only exists in "
+            "the training engine). Remove the flag or open a feature request "
+            "for serving-side compilation."
+        )
+
     if not config.model_path:
         return _create_dummy_model_and_tokenizer(config)
 

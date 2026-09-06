@@ -53,9 +53,9 @@ class EvaluationRunner:
             instances with task-specific constructor kwargs).
         output_dir: Where reports are written.
         metric_names: Optional metric NAMES resolved via
-            :func:`llm.evaluation.metrics.resolve_metrics` (so
-            ``EvalConfig.metrics`` takes effect — RIL ISS-251). When ``None``
-            or empty, the runner falls back to ``task.metrics``.
+            :func:`llm.evaluation.metrics.resolve_metrics` (RIL ISS-251).
+            When ``None`` or empty, the runner falls back to
+            ``task.metrics``.
     """
 
     def __init__(self, task: BaseTask, output_dir: str = "results", metric_names: list[str] | None = None):

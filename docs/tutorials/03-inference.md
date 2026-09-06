@@ -155,7 +155,7 @@ uv run llm-serve
 | **模型 checkpoint**     | `model_path`, `tokenizer_path`, `tokenizer_type`                                                                         | `model_path=None` → dummy 模型（smoke test）               |
 | **架构（dummy 用）**    | `hidden_size`, `num_layers`, `num_heads`, `max_seq_len`, `num_kv_heads`, `num_experts`, `top_k`, `attn_impl`, `mlp_impl` | 加载 checkpoint 时被覆盖                                   |
 | **安全**                | `host`, `api_key`, `log_level`                                                                                           | 公开主机守卫：`api_key=None` + `host` 非回环 → 启动失败    |
-| **生成**                | `generation_backend` (`eager` / `batched`), `compile_model`                                                              | `batched` = `ContinuousBatchingEngine`（高并发推荐）       |
+| **生成**                | `generation_backend` (`eager` / `batched`)                                                                               | `batched` = `ContinuousBatchingEngine`（高并发推荐）       |
 | **并发**                | `max_concurrent_requests`, `request_timeout`                                                                             | semaphore 上限 + 单请求超时                                |
 | **KV cache**            | `use_paged_attention`, `max_blocks`, `block_size`, `enable_prefix_cache`, `max_prefixes`                                 | paged attention 节省显存 / prefix cache 摊销 system prompt |
 | **Chat template**       | `chat_message_template`, `chat_generation_prefix`                                                                        | OpenAI `/v1/chat/completions` 的消息渲染模板               |
@@ -378,7 +378,7 @@ torch.cuda.OutOfMemoryError: CUDA out of memory.
 
 1. **缩 `max_concurrent_requests`**：semaphore 上限降低，引擎并发压力减小
 2. **开 paged attention**：`LLM_SERVING_USE_PAGED_ATTENTION=true` —— block allocator 把 KV cache 切成小块（见 ADR-004）
-3. **关 `compile_model`**：torch.compile 在首次推理时分配 graph memory
+3. **换 eager / 调并发**：`compile_model` 目前是 no-op（serving 运行时尚未接入 torch.compile，设置它只会触发启动警告）——低延迟请直接用 `generation_backend=eager`
 4. **用更小的 base 模型 / 量化 checkpoint**
 5. **CPU 跑**：`LLM_SERVING_DEVICE=cpu` —— 仅限冒烟测试，生产不可用
 
@@ -468,7 +468,7 @@ LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm-serve
 
 | 场景                               | 推荐配置                                                                                                              |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **低延迟 / 单请求**                | `generation_backend=eager`，`compile_model=true`，`max_concurrent_requests=1`                                         |
+| **低延迟 / 单请求**                | `generation_backend=eager`，`max_concurrent_requests=1`（`compile_model` 暂为 no-op）                                 |
 | **高吞吐 / 多并发**                | `generation_backend=batched`，`use_paged_attention=true`，`max_concurrent_requests=16`                                |
 | **长 system prompt 的多轮 chat**   | `enable_prefix_cache=true`，`max_prefixes=32`（摊销 system prompt）                                                   |
 | **极限吞吐 / 不需要 swap adapter** | `peft_merge=true`                                                                                                     |
