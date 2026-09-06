@@ -356,6 +356,11 @@ class EvaluationCallback(Callback):
         super().__init__()
         self.eval_runner = eval_runner
         self.eval_interval = eval_interval
+        # The optimizer step whose eval already ran — under gradient
+        # accumulation ``on_train_step_end`` fires every MICRO batch while
+        # ``global_step`` only advances at boundaries, so the same step would
+        # otherwise re-trigger eval once per micro batch.
+        self._last_eval_step = 0
 
     def on_train_step_end(
         self,
@@ -365,7 +370,7 @@ class EvaluationCallback(Callback):
         metrics: dict[str, Any],
         logs: dict[str, Any] | None = None,
     ):
-        """Run evaluation every N steps, on rank 0 only.
+        """Run evaluation every N optimizer steps, on rank 0 only.
 
         Collective-forward strategies (tp/fsdp/pp/3d) are refused at
         construction by ``build_periodic_eval_callback``; for ddp/zero and
@@ -373,11 +378,24 @@ class EvaluationCallback(Callback):
         The model is toggled to eval mode around the run and restored
         afterwards so the training loop's batch-norm/dropout state is not
         disturbed (RIL TASK-329).
+
+        Cadence is keyed on ``engine.global_step`` (the optimizer-step counter)
+        — gating on the dataloader ``batch_idx`` instead rescaled the interval
+        by ``gradient_accumulation_steps`` and reset every epoch/resume, so
+        evals landed between optimizer steps. Matches TensorBoardLogger /
+        LRSchedulerCallback / AdaLoRA pruning, all of which use
+        ``engine.global_step`` for the same reason.
         """
         if getattr(self.engine, "rank", 0) != 0:
             return
-        if (batch_idx + 1) % self.eval_interval != 0:
+        global_step = getattr(self.engine, "global_step", 0)
+        if global_step < 1 or global_step % self.eval_interval != 0:
             return
+        if global_step == self._last_eval_step:
+            # Same optimizer step as the last eval — a non-boundary microbatch
+            # under gradient accumulation. Run exactly once per step.
+            return
+        self._last_eval_step = global_step
         model = self.engine.model
         was_training = model.training
         model.eval()

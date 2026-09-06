@@ -129,6 +129,7 @@ def test_callback_runs_only_on_rank_zero_and_restores_train_mode():
 
     class _StubEngine:
         rank = 0
+        global_step = 0
 
     engine = _StubEngine()
     engine.model = model
@@ -138,8 +139,10 @@ def test_callback_runs_only_on_rank_zero_and_restores_train_mode():
     cb.set_engine(engine)
 
     assert model.training is True, "stub starts in train mode"
+    engine.global_step = 1
     cb.on_train_step_end(epoch=0, batch_idx=0, loss=torch.tensor(1.0), metrics={})
     assert runner.calls == 0, "non-interval steps must not trigger eval"
+    engine.global_step = 2
     cb.on_train_step_end(epoch=0, batch_idx=1, loss=torch.tensor(1.0), metrics={})
     assert runner.calls == 1, "eval must fire on the interval step"
     assert model.training is True, "callback must restore train mode after eval"
@@ -156,6 +159,59 @@ def test_callback_runs_only_on_rank_zero_and_restores_train_mode():
     cb2.on_train_step_end(epoch=0, batch_idx=0, loss=torch.tensor(1.0), metrics={})
     assert runner.calls == 1, "rank>0 must not run periodic eval"
     assert len(recorder.logged) == 1, "rank>0 must not log metrics"
+
+
+def test_callback_cadence_is_optimizer_steps_not_batch_index():
+    """With ``gradient_accumulation_steps > 1`` the eval cadence must follow
+    optimizer steps (``engine.global_step``), not the dataloader batch index.
+
+    Regression: the callback gated on ``batch_idx``, so under accumulation the
+    interval rescaled by ``accum_steps`` and evals landed BETWEEN optimizer
+    steps (also reset every epoch/resume). This test replays the engine's exact
+    boundary ordering (``global_step += 1`` on the boundary batch BEFORE
+    ``on_train_step_end``) for accum=3, eval_interval=5.
+    """
+
+    class _StubModel2:
+        training = True
+
+        def train(self, mode: bool = True):
+            self.training = mode
+            return self
+
+        def eval(self):
+            self.training = False
+            return self
+
+    runner = _FakeRunner()
+    recorder = _Recorder()
+    model = _StubModel2()
+
+    class _Engine:
+        rank = 0
+        global_step = 0
+
+    engine = _Engine()
+    engine.model = model
+    engine.log_metrics = recorder.log_metrics
+    cb = EvaluationCallback(runner, eval_interval=5)
+    cb.set_engine(engine)
+
+    accum_steps, total_batches = 3, 3 * 25  # 25 optimizer steps
+    eval_batch_windows: set[int] = set()
+    for batch_idx in range(total_batches):
+        is_boundary = (batch_idx + 1) % accum_steps == 0
+        if is_boundary:
+            engine.global_step += 1  # engine.run() ordering: step THEN callbacks
+        cb.on_train_step_end(epoch=0, batch_idx=batch_idx, loss=torch.tensor(1.0), metrics={})
+        if engine.global_step and engine.global_step % 5 == 0:
+            # The window of micro-batches sharing this optimizer step. The
+            # callback must fire ONCE per distinct step, not once per micro.
+            eval_batch_windows.add(engine.global_step)
+    # Every 5th optimizer step (5, 10, 15, 20, 25) evaluates exactly once —
+    # steps at non-boundary micro-batches must NOT double-fire.
+    assert eval_batch_windows == {5, 10, 15, 20, 25}
+    assert runner.calls == len(eval_batch_windows), "eval_runner.run must fire once per optimizer step"
 
 
 def test_engine_runs_periodic_eval_end_to_end(tmp_path):

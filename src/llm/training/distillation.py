@@ -5,11 +5,16 @@ softening both output distributions with a temperature ``T`` and adding a
 KL term to the hard-label cross-entropy:
 
     loss = alpha * CE(student, y)
-         + (1 - alpha) * T^2 * KL(softmax(student / T) || softmax(teacher / T))
+         + (1 - alpha) * T^2 * KL(softmax(teacher / T) || softmax(student / T))
 
-The ``T^2`` factor keeps the two terms on the same scale (the KL of soft
-distributions is ~ T^-2). Only the student's parameters receive gradients —
-the teacher logits are always detached.
+The arrow follows the code: Torch's ``kl_div(input=log_softmax(student/T),
+target=softmax(teacher/T))`` computes ``target * (log(target) - input)`` =
+``sum p_teacher * log(p_teacher / p_student)``, i.e. the canonical Hinton
+KD form ``KL(teacher || student)`` (the earlier arrow was reversed and
+misdescribed the computed quantity). The ``T^2`` factor keeps the two terms
+on the same scale (the KL of soft distributions is ~ T^-2). Only the
+student's parameters receive gradients — the teacher logits are always
+detached.
 """
 
 from __future__ import annotations
