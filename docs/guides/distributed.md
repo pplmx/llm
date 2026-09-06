@@ -114,11 +114,11 @@ All three knobs live on `DistributedConfig` and are documented in
 the config help string. The defaults are conservative and safe to
 leave alone:
 
-| Knob                        | Default      | What it does                                                                                                                                                              |
-| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fsdp_mixed_precision`      | `"bf16"`     | Parameter / gradient / buffer dtype. `"bf16"` is recommended on modern GPUs. `"fp16"` needs a loss scaler. `"fp32"` skips mixed precision entirely.                       |
-| `fsdp_auto_wrap_min_params` | `10_000_000` | Size-based auto-wrap threshold. Modules with at least this many parameters get their own FSDP unit. Set to `0` to disable auto-wrap and wrap the whole model as one unit. |
-| `fsdp_cpu_offload`          | `false`      | Offload params to CPU when idle. Trades throughput for memory — only useful when the model is too big to fit even after BF16 sharding.                                    |
+| Knob                        | Default      | What it does                                                                                                                                                                                                             |
+| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `fsdp_mixed_precision`      | `"bf16"`     | Parameter / gradient / buffer dtype. `"bf16"` is recommended on modern GPUs. `"fp16"` is rejected (an FP16 shard needs a loss scaler the framework doesn't wire — RIL ISS-188). `"fp32"` skips mixed precision entirely. |
+| `fsdp_auto_wrap_min_params` | `10_000_000` | Size-based auto-wrap threshold. Modules with at least this many parameters get their own FSDP unit. Set to `0` to disable auto-wrap and wrap the whole model as one unit.                                                |
+| `fsdp_cpu_offload`          | `false`      | Offload params to CPU when idle. Trades throughput for memory — only useful when the model is too big to fit even after BF16 sharding.                                                                                   |
 
 ### Auto-wrap policy in detail
 
@@ -167,9 +167,11 @@ load_model_state_dict(model, sd, state_dict_type="full")
 ```
 
 For large-scale resume, prefer `"sharded"` to avoid the rank-0
-memory spike. The checkpoint manager in
-`src/llm/training/core/checkpoint.py` is responsible for
-writing the per-rank files.
+memory spike. The `model_state_dict` / `load_model_state_dict`
+helpers accept `state_dict_type="sharded"` for the full/merge
+collectives; note that `CheckpointManager.save_checkpoint` itself
+writes the FULL state dict from rank 0 — it does not write
+per-rank shard files.
 
 ### FSDP gotchas
 
@@ -218,8 +220,10 @@ bit-identical.
   wrapper), so the semantics are identical on CPU/gloo and CUDA/NCCL.
 - **Weight synchronisation.** After each step the updated parameters are
   all-gathered from their owners, so all ranks converge to identical weights.
-- **Checkpointing.** `ZeroOptimizer.state_dict()`/`load_state_dict()` serialize
-  each rank's shard (FSDP-sharded style); ranks save and resume their own slice.
+- **Checkpointing.** `ZeroOptimizer.state_dict()`/`load_state_dict()` do
+  serialize per-rank shards (FSDP-sharded style) at the API level, but the
+  engine's save gate persists only the **rank-0** shard today (ZeRO is not in
+  the collective-save list), so multi-rank ZeRO resume is not yet wired.
 
 ### Current limits (v1)
 
@@ -374,8 +378,10 @@ PP refuses loudly rather than silently training the wrong loss:
   `supports_pipeline_parallel()` (the `LMTask` family, including the `SFT` /
   `sft` alias — since RIL TASK-304 `SFTTask` is a pure alias of
   LanguageModelingTask and, like the parent, does not thread an
-  `attention_mask` into the model). Custom-loop tasks (PPO / DPO / reward)
-  and other opted-out tasks (distill / regression) are rejected at setup.
+  `attention_mask` into the model). Custom-loop tasks (PPO / reward) and
+  other opted-out tasks (distill / regression) are rejected at setup. `DPOTask`
+  inherits the standard loop from `LanguageModelingTask`, so it passes setup and
+  only fails at run time when the pipeline stage forward receives its batch dict.
 - **AMP must be bf16** (`use_amp=True` needs `amp_dtype='bfloat16'`; float16 is
   refused, RIL TASK-214): the schedule computes AND backprops the loss inside
   `step()`, so a GradScaler (float16 AMP) cannot scale the loss before the
@@ -383,7 +389,8 @@ PP refuses loudly rather than silently training the wrong loss:
   forward/backward inside bf16 autocast.
 - **No `torch.compile`** (the schedule drives the stages with silent P2P
   send/recv ops a compile graph must not capture) and no TP/FSDP composition
-  (3D parallel is a follow-up).
+  under `parallel_strategy: 'pp'` — use the dedicated
+  `parallel_strategy: '3d'` (DP+PP+TP grid) for 3D combinations.
 
 The 2-stage numeric parity vs a single-rank serial run (loss to 10 digits,
 every owned stage gradient bit-exact) is a CI-enforced test on CPU + gloo with
@@ -427,7 +434,7 @@ all.
 | `tp_size`                   | `0` (= world)     | TP size for `"tp"`; `< world_size` enables TP+DP 2D     |
 | `pp_size`                   | `0` (= world)     | PP size for `"pp"`; `< world_size` enables PP+DP 2D     |
 | `pp_n_microbatches`         | `1`               | Pipeline microbatch count (overlap + memory) for `"pp"` |
-| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` / `"fp16"`                          |
+| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` (fp16 rejected, RIL ISS-188)        |
 | `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold                          |
 | `fsdp_cpu_offload`          | `false`           | Offload params to CPU when idle                         |
 
@@ -462,9 +469,11 @@ overridden with the `LLM_DISTRIBUTED__<FIELD>` env-var convention (e.g.
 - **Communication optimisation** — set
   `NCCL_NET_GDR_LEVEL=2` on hardware that supports GPUDirect
   RDMA; set `NCCL_IB_DISABLE=1` if InfiniBand is misbehaving.
-- **DDP gradient sync** — `gradient_as_bucket_view=True` (set
-  in the trainer) reduces memory by avoiding intermediate
-  copies.
+- **DDP gradient sync** — `DistributedDataParallel` is built
+  today with just `device_ids` + `find_unused_parameters`;
+  `gradient_as_bucket_view=True` (which avoids intermediate
+  gradient copies) is a possible memory tweak but is not
+  currently enabled.
 - **FSDP backoff** — `fsdp_forward_prefetch` /
   `backward_prefetch` aren't exposed as config yet; the default
   is fine for most workloads.
@@ -494,9 +503,10 @@ uv run llm-train --task stream_lm --config-path configs/ddp.yaml
 - For DDP: reduce batch size, enable gradient accumulation,
   enable mixed precision.
 - For FSDP: increase `fsdp_auto_wrap_min_params` (more
-  aggressive sharding), enable `fsdp_cpu_offload`, or move to
-  `fsdp_mixed_precision="fp16"` if you're on a hardware
-  generation where BF16 isn't supported.
+  aggressive sharding), enable `fsdp_cpu_offload`, or —
+  if your hardware lacks bf16 — fall back to
+  `fsdp_mixed_precision="fp32"` (fp16 is rejected: an FP16 shard
+  needs a loss scaler the framework doesn't wire, RIL ISS-188).
 
 **Q: Training is slow.**
 
