@@ -33,10 +33,14 @@ def main():
     x = torch.randn(batch_size, seq_len, hidden_size)
 
     # 1. Standard MLP (SwiGLU)
+    # ``get_activation_layer`` has no ``"swiglu"`` name — a SwiGLU MLP is the
+    # silu activation gated by ``use_glu=True`` (the same idiom tests/core/
+    # test_mlp.py uses and the ADR-002 formula ``SwiGLU = Swish(xW) ⊗ xV``).
     print("\n1. Standard MLP (SwiGLU):")
     mlp = MLP(
         hidden_size=hidden_size,
-        activation="swiglu",
+        activation="silu",
+        use_glu=True,
         device=x.device,
         dtype=x.dtype,
     )
@@ -62,9 +66,16 @@ def main():
     print(f"   Parameter increase: {total_moe / total_mlp:.1f}x")
 
     with torch.no_grad():
-        output_moe, load = moe(x)
+        output_moe = moe(x)
+        # ``MoE.forward`` returns ONLY the weighted output
+        # (batch, seq, hidden) — it has no separate load return. To report
+        # real routing statistics, re-run the gate over the flattened tokens
+        # and count how many top-k selections each expert received.
+        num_tokens = x.numel() // hidden_size
+        gate_logits = moe.gate(x.view(num_tokens, hidden_size))
+        expert_load = gate_logits.topk(2, dim=-1).indices.flatten().bincount(minlength=moe.num_experts)
     print(f"   Output shape: {output_moe.shape}")
-    print(f"   Expert load: {load}")
+    print(f"   Expert load (top-{moe.top_k} selections per token): {expert_load.tolist()}")
 
     # 3. Summary
     print("\n" + "=" * 60)

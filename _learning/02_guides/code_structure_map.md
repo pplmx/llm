@@ -37,4 +37,4 @@
   A: 在 `src/llm/core/attn/mha.py` 中。注意看 `num_kv_heads` 参数，当它小于 `num_heads` 时就是 GQA。
 
 - **Q: SwiGLU 激活函数在哪里？**
-  A: 在 `src/llm/core/mlp.py` 的 `MLP` 类中，通过 `activation="swiglu"` 启用。
+  A: 在 `src/llm/core/mlp.py` 的 `MLP` 类中，通过 `activation="silu"` 配合 `use_glu=True` 启用（`get_activation_layer` 支持的名字只有 `gelu/relu/silu/swish/glu/leaky_relu`，没有 `"swiglu"`）。
