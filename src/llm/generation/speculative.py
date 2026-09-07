@@ -340,7 +340,24 @@ def speculative_generate(
     # while the eager backend served the same input fine (it truncates).
     max_seq_len = getattr(target, "max_seq_len", None)
     _reject_impossible_context(max_seq_len, max_new_tokens)
+    if getattr(draft, "max_seq_len", None) is not None and max_seq_len is not None and draft.max_seq_len < max_seq_len:
+        # A draft with a shorter context window than the target crashes
+        # MID-ROUND once the rebuilt context exceeds the draft's
+        # positional-encoding table (opaque ``IndexError: index out of
+        # range in self``), unlike the eager backend which truncates up
+        # front (RIL ISS-388). Fail fast with the fix spelled out.
+        raise ValueError(
+            f"draft.max_seq_len ({draft.max_seq_len}) must be >= target.max_seq_len "
+            f"({max_seq_len}); speculative decoding rebuilds the full context "
+            "for the draft each round and cannot serve a shorter-context draft."
+        )
     prompt_ids = tokenizer.encode(prompt)
+    if not prompt_ids:
+        # Mirror the eager backend's round-71 empty-prompt fix (RIL ISS-387):
+        # an empty prompt decodes to zero tokens, and the very first scoring
+        # slice ``target_logits[0, context_len - 1 : ...]`` with ``[-1:]`` on
+        # a 0-length row raises an opaque IndexError. Reject it explicitly.
+        raise ValueError("prompt must decode to at least one token (got an empty token sequence)")
     if max_seq_len is not None and len(prompt_ids) + max_new_tokens > max_seq_len:
         keep = max(1, max_seq_len - max_new_tokens)
         prompt_ids = prompt_ids[-keep:]

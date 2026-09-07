@@ -1294,3 +1294,22 @@ def test_batch_generate_left_pad_attention_mask(mask_recording_model):
         assert mask[0, 0, 0, 3:].tolist() == [False] * (k_len - 3)
         # Longest row has no padding in any forward.
         assert mask[1, 0, 0].tolist() == [False] * k_len
+
+
+def test_reject_negative_max_new_tokens_batch_generate(tiny_model):
+    """``batch_generate`` must reject a negative ``max_new_tokens`` up front
+    (RIL ISS-389) instead of dying with an opaque ``zeros()`` RuntimeError
+    deep in the decode loop."""
+    from llm.generation.eager import _reject_impossible_context
+
+    with pytest.raises(ValueError, match=">= 0"):
+        batch_generate(tiny_model, _CharTokenizer(), ["hello"], max_new_tokens=-1)
+    with pytest.raises(ValueError, match=">= 0"):
+        _reject_impossible_context(max_seq_len=None, max_new_tokens=-5)
+
+
+def test_reject_negative_max_new_tokens_generate(tiny_model):
+    """``generate`` must reject a negative ``max_new_tokens`` (RIL ISS-389) —
+    it previously returned the bare prompt without generating anything."""
+    with pytest.raises(ValueError, match=">= 0"):
+        generate(tiny_model, _CharTokenizer(), "hello", max_new_tokens=-1)

@@ -53,6 +53,12 @@ def _reject_impossible_context(max_seq_len: int | None, max_new_tokens: int) -> 
     opaque cache-overflow error. Mirror the serving tier's up-front
     ``ValueError`` so library callers fail fast with a clear message.
     """
+    if max_new_tokens < 0:
+        # RIL ISS-389: ``batch_generate`` accepted a negative budget and died
+        # with an opaque ``zeros()`` RuntimeError; ``generate`` silently
+        # returned the bare prompt. Reject it explicitly, like the serving
+        # tier, so library callers fail fast instead of guessing.
+        raise ValueError(f"max_new_tokens must be >= 0, got {max_new_tokens!r}")
     if max_seq_len is not None and max_new_tokens >= max_seq_len:
         raise ValueError(
             f"max_new_tokens ({max_new_tokens}) must be less than the model's "

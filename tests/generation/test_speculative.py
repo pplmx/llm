@@ -253,6 +253,74 @@ def test_speculative_rejects_impossible_context_budget():
         )
 
 
+def test_speculative_empty_prompt_rejected():
+    """An empty prompt (encode -> []) must raise a clear ValueError, not an
+    opaque IndexError from the first scoring slice with a 0-length context
+    (RIL ISS-387; eager fixed this at round-71)."""
+    target = _make_tiny_decoder(seed=0)
+    draft = _make_tiny_decoder(seed=0)
+
+    class _EmptyTokenizer(StubTokenizer):
+        """encode('') -> [] exactly (StubTokenizer's ``token_ids or [...]``
+        treats an empty list as falsy and falls back to [1, 2, 3])."""
+
+        def encode(self, text: str) -> list[int]:
+            return []
+
+    tok = _EmptyTokenizer()
+    with pytest.raises(ValueError, match="empty token sequence"):
+        list(
+            speculative_generate(
+                target,
+                draft,
+                tok,
+                "",  # encodes to [] once token_ids are []
+                max_new_tokens=4,
+                gamma=2,
+                temperature=0.0,
+            )
+        )
+
+
+def test_speculative_rejects_shorter_context_draft():
+    """A draft with a shorter ``max_seq_len`` than the target must fail fast
+    (RIL ISS-388), not crash mid-round with an opaque positional-encoding
+    IndexError once the rebuilt context overflows the draft's table."""
+    from tests.support.models import decoder_model_kwargs
+
+    def _mk(max_seq_len: int, seed: int = 0):
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(seed)
+        kw = decoder_model_kwargs(
+            vocab_size=32,
+            hidden_size=32,
+            num_layers=1,
+            num_heads=4,
+            intermediate_size=64,
+            max_seq_len=max_seq_len,
+            attn_impl="mha",
+            mlp_impl="mlp",
+        )
+        return DecoderModel(**kw)
+
+    target = _mk(max_seq_len=16)
+    draft = _mk(max_seq_len=8)  # shorter context than the target
+    tok = StubTokenizer(token_ids=[1, 2, 3, 4, 5])
+    with pytest.raises(ValueError, match=r"draft\.max_seq_len"):
+        list(
+            speculative_generate(
+                target,
+                draft,
+                tok,
+                "abcde",
+                max_new_tokens=4,
+                gamma=2,
+                temperature=0.0,
+            )
+        )
+
+
 class _OrdTokenizer:
     """One token per character, ids ``[1, 2, ...]`` (mirrors StubTokenizer ids
     but with real per-char lengths so prompts can genuinely overflow)."""
