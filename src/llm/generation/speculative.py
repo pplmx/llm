@@ -66,6 +66,7 @@ def _verify_speculative_tokens(
     logit_bias: dict[int, float] | None = None,
     tokenizer_vocab_size: int | None = None,
     pad_token_id: int | None = None,
+    eos_token_id: int | list[int] | None = None,
 ) -> tuple[int, int | None]:
     """Score ``draft_tokens`` with the target and return (accept_count, bonus).
 
@@ -151,7 +152,7 @@ def _verify_speculative_tokens(
     # correlates PAD and the draft/acceptance path spews '<PAD>' into the
     # generated text, breaking the "matches the eager output distribution"
     # guarantee.
-    _mask_pad_logits(relevant, pad_token_id)
+    _mask_pad_logits(relevant, pad_token_id, eos_token_id)
 
     # Row ``i`` uses the context plus the first ``i`` draft tokens as
     # its penalty history; the bonus row (``gamma``) uses everything.
@@ -187,7 +188,7 @@ def _verify_speculative_tokens(
             draft_logits = draft_out[0] if isinstance(draft_out, tuple) else draft_out
         draft_relevant = draft_logits[0, context_len - 1 : context_len + gamma, :]
         mask_undecodable_logits(draft_relevant, tokenizer_vocab_size)
-        _mask_pad_logits(draft_relevant, pad_token_id)
+        _mask_pad_logits(draft_relevant, pad_token_id, eos_token_id)
         draft_penalized = torch.stack(
             [_apply_penalties(draft_relevant[i], full_ids[: context_len + i]) for i in range(gamma)]
         )
@@ -371,7 +372,11 @@ def speculative_generate(
             mask_undecodable_logits(next_logits, getattr(tokenizer, "vocab_size", None))
             # Mask the PAD sentinel so the draft never proposes it as a
             # candidate (round-71 speculative fix; eager masks every step).
-            _mask_pad_logits(next_logits, getattr(tokenizer, "pad_token_id", None))
+            _mask_pad_logits(
+                next_logits,
+                getattr(tokenizer, "pad_token_id", None),
+                getattr(tokenizer, "eos_token_id", None),
+            )
             if repetition_penalty != 1.0:
                 next_logits = apply_repetition_penalty(next_logits, draft_ids, repetition_penalty)
             if frequency_penalty != 0.0:
@@ -406,6 +411,7 @@ def speculative_generate(
             logit_bias=logit_bias,
             tokenizer_vocab_size=getattr(tokenizer, "vocab_size", None),
             pad_token_id=getattr(tokenizer, "pad_token_id", None),
+            eos_token_id=getattr(tokenizer, "eos_token_id", None),
         )
 
         # 3. Emit accepted tokens + bonus (or correction). The EOS token is

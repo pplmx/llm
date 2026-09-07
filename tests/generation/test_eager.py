@@ -151,6 +151,31 @@ def test_mask_pad_logits_2d_masks_pad():
     assert torch.all(logits[:, 5] == float("-inf"))
 
 
+def test_mask_pad_logits_skips_when_pad_equals_eos():
+    """``pad_token_id == eos_token_id`` (GPT-2/Qwen2.5 HF tokenizers, and the
+    ``HFTokenizer`` pad fallback) must NOT be masked — masking it sets the EOS
+    logit to ``-inf`` at every decode step, so EOS can never be sampled and
+    generation runs to ``max_new_tokens`` (RIL ISS-379)."""
+    logits = torch.zeros(12)
+    _mask_pad_logits(logits, pad_token_id=5, eos_token_id=5)
+    assert logits[5].item() != float("-inf")
+    # distinct ids still mask the pad
+    logits2 = torch.zeros(12)
+    _mask_pad_logits(logits2, pad_token_id=5, eos_token_id=9)
+    assert logits2[5].item() == float("-inf")
+
+
+def test_mask_pad_logits_skips_when_pad_in_eos_list():
+    """Same skip when the tokenizer exposes ``eos_token_id`` as a LIST that
+    happens to contain the pad id (HF can return a sequence)."""
+    logits = torch.zeros(12)
+    _mask_pad_logits(logits, pad_token_id=5, eos_token_id=[5, 6])
+    assert logits[5].item() != float("-inf")
+    logits2 = torch.zeros(4, 12)
+    _mask_pad_logits(logits2, pad_token_id=7, eos_token_id=[5, 7])
+    assert torch.all(logits2[:, 7] != float("-inf"))
+
+
 # ---------------------------------------------------------------------------
 # _normalize_stop
 # ---------------------------------------------------------------------------
@@ -736,6 +761,39 @@ def test_stream_generate_halts_on_eos_and_excludes_it(tiny_model):
         )
 
     assert "".join(chunks) == "bb"
+
+
+def test_stream_generate_keeps_eos_emittable_when_pad_equals_eos(tiny_model):
+    """pad==eos (GPT-2/Qwen2.5-style) must keep the shared logit reachable:
+    the per-step pad mask must not ``-inf`` the EOS id, or generation can
+    never halt on EOS and every request runs to ``max_new_tokens`` (RIL
+    ISS-379).``"""
+
+    # tokenizer with pad == eos == 5 ('f')
+    class _PadEqEos(_CharTokenizer):
+        pad_token_id = 5
+        eos_token_id = 5
+
+    captured = {}
+
+    def fake_sample(logits, **kw):  # noqa: ARG001
+        captured.setdefault("masked", []).append(logits.clone())
+        return 1  # 'b' — keep decoding so we observe several steps
+
+    with patch("llm.generation.eager.sample_next_token", side_effect=fake_sample):
+        list(
+            stream_generate(
+                model=tiny_model,
+                tokenizer=_PadEqEos([1]),
+                prompt="p",
+                max_new_tokens=4,
+                temperature=0.0,
+            )
+        )
+
+    assert captured["masked"], "sampler was never called"
+    for masked in captured["masked"]:
+        assert masked[5].item() != float("-inf"), "EOS id was masked by the pad mask"
 
 
 def test_stream_generate_halts_on_list_eos_token_id(tiny_model):

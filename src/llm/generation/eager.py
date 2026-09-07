@@ -16,9 +16,24 @@ from llm.models.decoder import DecoderModel
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 
 
-def _mask_pad_logits(logits: torch.Tensor, pad_token_id: int | None) -> None:
-    """Mask PAD token logits when the id is within model vocabulary bounds."""
+def _mask_pad_logits(
+    logits: torch.Tensor,
+    pad_token_id: int | None,
+    eos_token_id: int | list[int] | None = None,
+) -> None:
+    """Mask PAD token logits when the id is within model vocabulary bounds.
+
+    Skips when ``pad_token_id`` coincides with an EOS id: many HF tokenizers
+    ship ``pad_token == eos_token`` (GPT-2, Qwen/Qwen2.5) or reach that state
+    through the ``HFTokenizer`` fallback, and masking the shared id sets
+    ``logits[eos] = -inf`` at every decode step — EOS can then never be
+    sampled, so the halt branches below never fire and generation runs to
+    ``max_new_tokens`` (RIL ISS-379).
+    """
     if pad_token_id is None:
+        return
+    eos_ids = normalize_eos_ids(eos_token_id)
+    if eos_ids and pad_token_id in eos_ids:
         return
     vocab_size = logits.size(-1)
     if 0 <= pad_token_id < vocab_size:
@@ -129,7 +144,11 @@ def stream_generate(
         logits = model(input_tensor, use_cache=False)
         next_token_logits = logits[0, -1, :]
 
-    _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+    _mask_pad_logits(
+        next_token_logits,
+        getattr(tokenizer, "pad_token_id", None),
+        getattr(tokenizer, "eos_token_id", None),
+    )
     mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     generated_ids = input_ids.copy()
@@ -211,7 +230,11 @@ def stream_generate(
             logits = model(full_input, use_cache=False)
             next_token_logits = logits[0, -1, :]
 
-        _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+        _mask_pad_logits(
+            next_token_logits,
+            getattr(tokenizer, "pad_token_id", None),
+            getattr(tokenizer, "eos_token_id", None),
+        )
         mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     # Flush any remaining buffered text after the loop ends (e.g. when
@@ -378,7 +401,11 @@ def batch_generate(
     )
     next_token_logits = logits[:, -1, :]  # [B, vocab_size]
 
-    _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+    _mask_pad_logits(
+        next_token_logits,
+        getattr(tokenizer, "pad_token_id", None),
+        getattr(tokenizer, "eos_token_id", None),
+    )
     mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     for step in range(max_new_tokens):
@@ -416,7 +443,11 @@ def batch_generate(
         )
         next_token_logits = logits[:, -1, :]
 
-        _mask_pad_logits(next_token_logits, getattr(tokenizer, "pad_token_id", None))
+        _mask_pad_logits(
+            next_token_logits,
+            getattr(tokenizer, "pad_token_id", None),
+            getattr(tokenizer, "eos_token_id", None),
+        )
         mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     # Truncate each sequence at its first EOS so both decode paths below

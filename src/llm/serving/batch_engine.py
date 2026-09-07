@@ -839,11 +839,17 @@ class ContinuousBatchingEngine:
                 seq_logits = logits[i, length - 1, :]
                 # The pad token must never be emitted (the eager backend
                 # masks it the same way); without this the engine can
-                # sample pad and diverge from eager.
+                # sample pad and diverge from eager. But when pad == eos
+                # (GPT-2/Qwen2.5 HF tokenizers, or the HFTokenizer
+                # fallback), masking the shared id would suppress the EOS
+                # halt signal and every request would run to
+                # max_new_tokens (RIL ISS-379).
                 pad_id = getattr(self.tokenizer, "pad_token_id", None)
                 if pad_id is not None and 0 <= pad_id < seq_logits.size(-1):
-                    seq_logits = seq_logits.clone()
-                    seq_logits[pad_id] = float("-inf")
+                    eos_ids = normalize_eos_ids(getattr(self.tokenizer, "eos_token_id", None))
+                    if not (eos_ids and pad_id in eos_ids):
+                        seq_logits = seq_logits.clone()
+                        seq_logits[pad_id] = float("-inf")
                 # Sample only tokenizer-decodable ids: a padded-vocab or
                 # BPE/HF model served with a smaller-vocab tokenizer would
                 # otherwise sample a tail id and crash in ``_emit_tokens`` at
@@ -927,6 +933,9 @@ class ContinuousBatchingEngine:
                 self._release_request_slots(seq.request_id, inputs.batch_slots_list[i])
             raise result.forward_failed
 
+        # Normalized EOS ids for the finish check below (see the comment at
+        # the comparison site for the list-eos regression).
+        eos_ids = normalize_eos_ids(getattr(self.tokenizer, "eos_token_id", None))
         for i, seq in enumerate(inputs.running_sequences):
             token_id = result.next_token_ids[i]
             seq.append_token_id(token_id)
@@ -958,7 +967,11 @@ class ContinuousBatchingEngine:
                 self.paged_kv_cache.add_prefix(slot, seq.input_ids, self.paged_kv_cache.get_block_table(slot))
 
             if (
-                (hasattr(self.tokenizer, "eos_token_id") and token_id == self.tokenizer.eos_token_id)
+                # Normalize to a tuple — HF tokenizers can expose
+                # ``eos_token_id`` as a list, and an int-vs-list equality
+                # never fires (RIL list-eos regression; the drain above was
+                # fixed the same way, this comparison was missed).
+                (eos_ids is not None and token_id in eos_ids)
                 or len(seq.generated_ids) >= seq.max_new_tokens
                 or seq.total_len >= self.max_seq_len
             ):
