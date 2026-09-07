@@ -69,6 +69,17 @@ def test_chrf_no_overlap():
     assert result["chrf"] < 30.0
 
 
+@pytest.mark.parametrize(("metric_cls", "key"), [(BleuMetric, "bleu"), (ChrFMetric, "chrf")])
+def test_generation_metric_empty_references_returns_zero(metric_cls, key):
+    """Empty references with non-empty predictions must return the same 0.0
+    empty contract as empty predictions (RIL ISS-395) — sacrebleu raises a
+    raw IndexError on an empty reference corpus, so the metric must
+    short-circuit before calling it."""
+    metric = metric_cls()
+    result = metric.compute(["the cat sat on the mat"], [])
+    assert result[key] == 0.0
+
+
 # --------------------------------------------------------------------------- #
 # Soft-dependency contract for RougeMetric
 #

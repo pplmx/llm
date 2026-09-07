@@ -230,3 +230,25 @@ def test_runner_unknown_metric_name_raises(tmp_path: Path):
     """An unresolvable metric name is loud, not silently ignored (ISS-251)."""
     with pytest.raises(ValueError, match="unknown metric"):
         EvaluationRunner(_StubTask(), output_dir=str(tmp_path), metric_names=["nope"])
+
+
+def test_evaluate_accepts_string_references(tmp_path: Path):
+    """``evaluate`` must not raise an opaque TypeError coercing STRING
+    references/predictions with ``as_tensor`` (RIL ISS-396) — generation
+    tasks yield text. Non-numeric references pass through unchanged (like
+    ``run``), numeric ones still get tensor coercion."""
+    runner = EvaluationRunner(_StubTask(), output_dir=str(tmp_path))
+    results = runner.evaluate(model=None)
+    assert results["dummy_score"] == 0.42
+
+
+def test_evaluate_returns_num_samples_like_run(tmp_path: Path):
+    """``evaluate`` must return the same result shape as ``run`` (RIL
+    ISS-396) — both carry ``num_samples``; the old ``evaluate`` dropped it,
+    so callers that switch paths get different-shaped reports."""
+    runner = EvaluationRunner(_StubTask(), output_dir=str(tmp_path))
+    run_results = runner.run(model=None)
+    eval_results = runner.evaluate(model=None)
+    assert "num_samples" in eval_results, "evaluate must report num_samples like run"
+    assert set(run_results) == {"num_samples", "dummy_score"}
+    assert set(eval_results) == {"num_samples", "dummy_score"}

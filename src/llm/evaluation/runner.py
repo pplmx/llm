@@ -45,6 +45,26 @@ def _to_serializable(obj: Any) -> Any:
     return obj
 
 
+def _as_token_tensor(value: Any) -> Any:
+    """Coerce a token row to a ``long`` tensor, passing text through.
+
+    ``evaluate`` promises tensor inputs, so numeric rows (int lists,
+    tensors) are coerced like before; a STRING row (generation task
+    references) is left as-is — ``as_tensor(str, dtype=torch.long)`` raises
+    an opaque ``TypeError`` the ``run`` path never hit (RIL ISS-396).
+    """
+    if isinstance(value, torch.Tensor):
+        return value
+    if isinstance(value, str):
+        return value
+    try:
+        return torch.as_tensor(value, dtype=torch.long)
+    except TypeError, ValueError:
+        # Uncoercible rows (e.g. ragged nested lists) stay raw; the metric
+        # layer either consumes them or raises its own clearer error.
+        return value
+
+
 def _align_reference_device(predictions: Any, references: Any) -> Any:
     """Move ``references`` onto the ``predictions`` device.
 
@@ -106,19 +126,38 @@ class EvaluationRunner:
         return results
 
     def evaluate(self, model, split: str = "val") -> dict:
-        """Evaluate on a split, coercing tensor inputs when needed."""
+        """Evaluate on a split, coercing tensor inputs when needed.
+
+        Mirrors :meth:`run`'s result shape (both report ``num_samples``) and
+        accepts BOTH numeric (tensor-coercible) and string references: an
+        ``as_tensor(..., dtype=torch.long)`` coercion of a generation task's
+        text rows raised an opaque ``TypeError`` while :meth:`run` served
+        the same task fine (RIL ISS-396). Non-numeric rows pass through
+        unchanged; numeric ones still reach the metrics as tensors —
+        PerplexityMetric stacks lists of tensors, so the two-row stack form
+        is preserved.
+        """
         inputs, references = self.task.prepare_data(split)
-        tensor_inputs = [torch.as_tensor(x, dtype=torch.long) for x in inputs]
+        tensor_inputs = [_as_token_tensor(x) for x in inputs]
         predictions = self.task.predict(model, tensor_inputs)
 
         if references:
-            refs = torch.stack([torch.as_tensor(x, dtype=torch.long) for x in references])
+            # ``run`` passes raw (possibly string) references straight to the
+            # metrics; ``evaluate``'s docs promise tensor inputs, so coerce
+            # what is coercible and leave text rows alone (generation
+            # metrics consume them as-is). All-tensor references stack to
+            # the (batch, seq) tensor the perplexity path expects.
+            coerced = [_as_token_tensor(x) for x in references]
+            refs = torch.stack(coerced) if coerced and all(isinstance(r, torch.Tensor) for r in coerced) else coerced
         else:
             # Empty eval set: mirror the empty prediction so the metric
             # layer sees a zero-size batch and reports ``inf`` rather than
             # crashing on ``torch.stack([])``.
             refs = torch.empty(0, dtype=torch.long)
-        return self._collect_metrics(predictions, _align_reference_device(predictions, refs))
+
+        results = {"num_samples": len(inputs)}
+        results.update(self._collect_metrics(predictions, _align_reference_device(predictions, refs)))
+        return results
 
     def save_report(self, results: dict, output_format: str = "json"):
         """Persist ``results`` to ``output_dir/eval_report.<ext>``.

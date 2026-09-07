@@ -80,10 +80,11 @@ class BleuMetric(BaseMetric):
 
     def compute(self, predictions: list, references: list) -> dict:
         # Empty inputs — nothing to score, and we shouldn't require the
-        # optional dependency just to short-circuit (sacrebleu raises on an
-        # empty corpus). Matches the ``0.0`` convention of
-        # :class:`AccuracyMetric` / :class:`F1Metric`.
-        if not predictions:
+        # optional dependency just to short-circuit. sacrebleu raises a raw
+        # IndexError on an EMPTY reference corpus (not just an empty
+        # predictions list — RIL ISS-395), so guard both sides. Matches the
+        # ``0.0`` convention of :class:`AccuracyMetric` / :class:`F1Metric`.
+        if not predictions or not references:
             return {"bleu": 0.0}
 
         try:
@@ -112,10 +113,11 @@ class ChrFMetric(BaseMetric):
 
     def compute(self, predictions: list, references: list) -> dict:
         # Empty inputs — nothing to score, and we shouldn't require the
-        # optional dependency just to short-circuit (sacrebleu raises on an
-        # empty corpus). Matches the ``0.0`` convention of
-        # :class:`AccuracyMetric` / :class:`F1Metric`.
-        if not predictions:
+        # optional dependency just to short-circuit. sacrebleu raises a raw
+        # IndexError on an EMPTY reference corpus (not just an empty
+        # predictions list — RIL ISS-395), so guard both sides. Matches the
+        # ``0.0`` convention of :class:`AccuracyMetric` / :class:`F1Metric`.
+        if not predictions or not references:
             return {"chrf": 0.0}
 
         try:
