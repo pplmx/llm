@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 180,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-07T15:05:01+00:00",
+  "updated_at": "2026-09-07T15:32:16+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19526,6 +19526,32 @@
       "touched_round": 180,
       "commit": "e1fcbfb",
       "summary": "fix(generation): thread use_cache through eager batch_generate + backend (ISS-392)"
+    },
+    "ISS-400": {
+      "id": "ISS-400",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T15:31:41+00:00",
+      "updated_at": "2026-09-07T15:31:41+00:00",
+      "touched_round": 180,
+      "severity": 0.2,
+      "confidence": 1.0,
+      "summary": "[environmental] test_pp3d_engine_dp2_full_3d_train_eight_process_cpu fails with native c10::Error in pos_embedding on this box — reproduces identically on baseline 3d5c3f4 (pre-r180); GPUs at 98% util with ~78GB used by other processes. NOT caused by r180 changes; documented per known TP/DP/3D spawn contention flake."
+    },
+    "TASK-355": {
+      "id": "TASK-355",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T15:32:16+00:00",
+      "updated_at": "2026-09-07T15:32:16+00:00",
+      "touched_round": 180,
+      "category": "test-quality",
+      "severity": 0.2,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "Verify test_pp3d_engine_dp2_full_3d_train_eight_process_cpu on a quiet machine (no other GPU consumers) to confirm the contended-box c10::Error is pure environment (ISS-400); if it still fails on free GPUs, investigate as a real PP/3D bug."
     }
   },
   "edges": [
@@ -28893,6 +28919,12 @@
       "to": "ISS-392",
       "type": "resolves",
       "created_at": "2026-09-07T15:04:30+00:00"
+    },
+    {
+      "from": "TASK-355",
+      "to": "ISS-400",
+      "type": "addresses",
+      "created_at": "2026-09-07T15:32:16+00:00"
     }
   ]
 }
