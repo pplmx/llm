@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 180,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-07T11:42:25+00:00",
+  "updated_at": "2026-09-07T11:56:05+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19231,6 +19231,202 @@
       "touched_round": 180,
       "commit": 7410700.0,
       "summary": "fix(core/attn): MLA causal latent attention must not auto-causal over latent axis (ISS-380, TASK-339). SDPA auto-causal keyed off latent query axis capped keys at num_latents; latent queries now attend to full row, attn_mask still restricts."
+    },
+    "TASK-341": {
+      "id": "TASK-341",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:54:14+00:00",
+      "updated_at": "2026-09-07T11:54:14+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.7,
+      "confidence": 1.0,
+      "effort": 2,
+      "summary": "RMSNorm fp16/bf16 mean-square overflows in host dtype (ISS-384): pow(2) of any activation >~256 becomes inf in fp16 (max 65504), mean-square -> inf, and the layer's output collapses to all-zeros (verified). Compute mean-square in fp32 and cast back for rms, like standard RMSNorm impls."
+    },
+    "TASK-342": {
+      "id": "TASK-342",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:54:15+00:00",
+      "updated_at": "2026-09-07T11:54:15+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.7,
+      "confidence": 1.0,
+      "effort": 2,
+      "summary": "Fp8QuantizedLinear with bias resolves output dtype from the fp32 bias (ISS-383, verified: fp16 model -> fp32 layer output into an fp16 graph). quantize_fp8_linear adopts the bias into an fp32 param; forward's dtype = bias.dtype. Fix: resolve dtype from the dequantized weight / input (sibling GPTQ/AWQ/Smooth adopt .to(weight.dtype))."
+    },
+    "TASK-343": {
+      "id": "TASK-343",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:54:15+00:00",
+      "updated_at": "2026-09-07T11:54:15+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 2,
+      "summary": "PerplexityMetric: registry instance gets ignore_index=None (metrics/__init__ comment claims -100) so an all-ignored corpus returns NaN not the documented inf (ISS-385, verified); references narrower than predictions crash with raw batch-mismatch ValueError (ISS-386, verified). Fix registry default to -100 and clamp labels when references are narrower than predictions."
+    },
+    "TASK-344": {
+      "id": "TASK-344",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:54:42+00:00",
+      "updated_at": "2026-09-07T11:54:42+00:00",
+      "touched_round": 180,
+      "category": "stability",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "SpeculativeDecodingBackend(predict) lacks the eager empty-prompt guard (ISS-387): encode('') == [] yields an opaque IndexError from target_logits[0, -1:gamma, :]. Also never validates draft.max_seq_len >= target.max_seq_len, so a shorter-context draft crashes mid-round with positional-encoding ValueError instead of failing fast (ISS-388). Add both guards like the eager path."
+    },
+    "TASK-345": {
+      "id": "TASK-345",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:54:42+00:00",
+      "updated_at": "2026-09-07T11:54:42+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.45,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "eager.batch_generate accepts negative max_new_tokens (opaque zeros() RuntimeError) while generate() silently returns the prompt (ISS-389). Validate max_new_tokens >= 0 up front, consistent with the serving tier, on both paths."
+    },
+    "TASK-346": {
+      "id": "TASK-346",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:54:42+00:00",
+      "updated_at": "2026-09-07T11:54:42+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.4,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "sampling_probs silently ignores out-of-range top_p (<=0 or >=1) instead of rejecting like temperature/top_k (ISS-390); apply_repetition_penalty bypasses the <=0 ValueError when token_ids is empty because the guard sits after the early return (ISS-391). Validate top_p range and move the repetition-penalty guard before the empty early-return."
+    },
+    "TASK-347": {
+      "id": "TASK-347",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:55:05+00:00",
+      "updated_at": "2026-09-07T11:55:05+00:00",
+      "touched_round": 180,
+      "category": "maintainability",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 2,
+      "summary": "GenerationConfig.use_cache is ignored on the eager batch_generate path and the batched/speculative backends (ISS-392) — identical config behaves differently than stream/generate. Thread use_cache through batch_generate and speculative so the knob is honored uniformly."
+    },
+    "TASK-348": {
+      "id": "TASK-348",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:55:05+00:00",
+      "updated_at": "2026-09-07T11:55:05+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "BPE tokenizer pad_token_id falls back to the <unk> id when no [PAD] token (ISS-393): consumers masking pad logits also mask unk, so OOV tokens can never be generated. Undocumented surprise — make the fallback explicit/documented or avoid aliasing unk as pad."
+    },
+    "TASK-349": {
+      "id": "TASK-349",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:55:05+00:00",
+      "updated_at": "2026-09-07T11:55:05+00:00",
+      "touched_round": 180,
+      "category": "docs",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "streaming reset() logs the cumulative skipped-rows counter as 'this pass' (ISS-394) — never zeroed across corpus cycles, so pass-level data-quality accounting is misleading. Zero the counter at the start of each pass (reset) and log it truly per-pass."
+    },
+    "TASK-350": {
+      "id": "TASK-350",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:55:23+00:00",
+      "updated_at": "2026-09-07T11:55:23+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "generation metrics (Bleu/ChrF) raise a raw sacrebleu IndexError on empty references (ISS-395) while claiming a 0.0 empty contract — only predictions are guarded. Guard empty references on both metrics."
+    },
+    "TASK-351": {
+      "id": "TASK-351",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:55:23+00:00",
+      "updated_at": "2026-09-07T11:55:23+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "EvaluationRunner.evaluate() raises opaque TypeError on str references (as_tensor) and returns a different result shape than run() (ISS-396, no num_samples). Align evaluate() with run()'s contract: coerce/handle non-numeric references and normalize result shape/naming."
+    },
+    "TASK-352": {
+      "id": "TASK-352",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:55:23+00:00",
+      "updated_at": "2026-09-07T11:55:23+00:00",
+      "touched_round": 180,
+      "category": "stability",
+      "severity": 0.3,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "LMTask(predict) validates nothing at construction (ISS-397): batch_size=0 dies with an obscure range() error, negative silently behaves like 1. Validate batch_size >= 1 up front."
+    },
+    "TASK-353": {
+      "id": "TASK-353",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:55:47+00:00",
+      "updated_at": "2026-09-07T11:55:47+00:00",
+      "touched_round": 180,
+      "category": "stability",
+      "severity": 0.25,
+      "confidence": 1.0,
+      "effort": 3,
+      "summary": "EvaluationCallback._last_eval_step is not persisted across resume (ISS-398): a resumed run re-evaluates the checkpoint's step once (harmless extra eval, but violates the periodic-eval cadence). Persist _last_eval_step in the checkpoint alongside the optimizer state."
+    },
+    "TASK-354": {
+      "id": "TASK-354",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:55:47+00:00",
+      "updated_at": "2026-09-07T11:55:47+00:00",
+      "touched_round": 180,
+      "category": "maintainability",
+      "severity": 0.25,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "sampling.py uses the PEP-758 comma-form except (TypeError, ValueError) at line 213 (ISS-399) — valid only on py>=3.14. Normalize to parenthesized form for portability."
     }
   },
   "edges": [
@@ -28310,6 +28506,108 @@
       "to": "ISS-380",
       "type": "resolves",
       "created_at": "2026-09-07T11:42:02+00:00"
+    },
+    {
+      "from": "TASK-341",
+      "to": "ISS-384",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:03+00:00"
+    },
+    {
+      "from": "TASK-342",
+      "to": "ISS-383",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-343",
+      "to": "ISS-385",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-343",
+      "to": "ISS-386",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-344",
+      "to": "ISS-387",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-344",
+      "to": "ISS-388",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-345",
+      "to": "ISS-389",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-346",
+      "to": "ISS-390",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-346",
+      "to": "ISS-391",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-347",
+      "to": "ISS-392",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:04+00:00"
+    },
+    {
+      "from": "TASK-348",
+      "to": "ISS-393",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:05+00:00"
+    },
+    {
+      "from": "TASK-349",
+      "to": "ISS-394",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:05+00:00"
+    },
+    {
+      "from": "TASK-350",
+      "to": "ISS-395",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:05+00:00"
+    },
+    {
+      "from": "TASK-351",
+      "to": "ISS-396",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:05+00:00"
+    },
+    {
+      "from": "TASK-352",
+      "to": "ISS-397",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:05+00:00"
+    },
+    {
+      "from": "TASK-353",
+      "to": "ISS-398",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:05+00:00"
+    },
+    {
+      "from": "TASK-354",
+      "to": "ISS-399",
+      "type": "addresses",
+      "created_at": "2026-09-07T11:56:05+00:00"
     }
   ]
 }
