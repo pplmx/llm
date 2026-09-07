@@ -150,5 +150,20 @@ class BPETokenizer:
         pad_id = self.tokenizer.token_to_id("[PAD]")
         if pad_id is not None:
             return pad_id
-        unk_id = self.tokenizer.token_to_id(DEFAULT_UNK_TOKEN)
+        unk_id = self.unk_token_id
+        # RIL ISS-393: falling back to the UNK id aliases pad == unk. Make the
+        # aliasing explicit (see :attr:`unk_token_id`) so consumers masking
+        # pad logits do not silently also suppress OOV/UNK tokens.
         return unk_id if unk_id is not None else 0
+
+    @property
+    def unk_token_id(self) -> int | None:
+        """The UNK token's id, or ``None`` when the vocab has no ``<unk>``.
+
+        Useful for detecting the RIL ISS-393 aliasing: when ``[PAD]`` is
+        absent from the vocab, :attr:`pad_token_id` falls back to this id
+        (then ``0``), so a consumer masking pad logits would also suppress
+        UNK/OOV tokens. Callers that must let the model emit OOV tokens can
+        compare ``pad_token_id == unk_token_id`` and skip the pad mask.
+        """
+        return self.tokenizer.token_to_id(DEFAULT_UNK_TOKEN)

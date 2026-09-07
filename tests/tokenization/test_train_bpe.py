@@ -147,14 +147,27 @@ def test_bpe_pad_token_id_zero_is_not_unk():
     assert bpe.pad_token_id == 0, "pad_token_id must be the real [PAD] id 0, not the <unk> fallback"
 
     # Absent [PAD] falls back to the <unk> id (at a NONZERO position here so
-    # the fallback is observable, not confused with the default 0).
+    # the fallback is observable, not confused with the default 0). The
+    # aliasing pad == unk must be detectable via ``unk_token_id`` so a
+    # consumer masking pad logits can choose to skip it (RIL ISS-393).
     unk_only = _bpe({"a": 0, "<unk>": 1, "b": 2})
     assert unk_only.tokenizer.token_to_id("[PAD]") is None
     assert unk_only.pad_token_id == 1
+    assert unk_only.unk_token_id == 1, "unk introspection must expose the id pad falls back to"
+    assert unk_only.pad_token_id == unk_only.unk_token_id, "ISS-393 aliasing must be observable"
 
-    # Neither [PAD] nor <unk> present: fall back to the documented 0.
+    # With a real [PAD], pad and unk are distinct (no aliasing): masking pad
+    # logits must NOT suppress unk.
+    with_pad = _bpe({"[PAD]": 0, "<unk>": 1, "a": 2})
+    assert with_pad.pad_token_id == 0
+    assert with_pad.unk_token_id == 1
+    assert with_pad.pad_token_id != with_pad.unk_token_id
+
+    # Neither [PAD] nor <unk> present: fall back to the documented 0; the
+    # unk introspection reports None (nothing aliased).
     no_pad_no_unk = _bpe({"a": 0, "b": 1})
     assert no_pad_no_unk.pad_token_id == 0
+    assert no_pad_no_unk.unk_token_id is None
 
 
 def test_train_bpe_skips_missing_files(tmp_path):
