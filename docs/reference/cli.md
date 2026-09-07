@@ -91,7 +91,7 @@ uv run llm-train --task sft --config-path configs/sft_alpaca.yaml \
 ### 用法
 
 ```bash
-llm-serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（监听端口固定 8000）
+llm-serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（默认监听 8000，可用 LLM_SERVING_PORT 覆盖）
 ```
 
 ### 环境变量配置
@@ -100,6 +100,7 @@ llm-serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（�
 
 | 变量                                  | 默认值   | 说明                                                                                                                       |
 | ------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_SERVING_PORT`                    | `8000`   | 监听端口（RIL TASK-326）；`LLM_SERVING_PORT=9000` 覆盖默认的 8000                                                          |
 | `LLM_SERVING_MODEL_PATH`              | None     | 训练 checkpoint：v2 三件套的 stem（或 `.safetensors` 路径），也接受旧式单文件 `.pt`；None = dummy 模型                     |
 | `LLM_SERVING_TOKENIZER_PATH`          | None     | tokenizer pickle 或 HF repo id                                                                                             |
 | `LLM_SERVING_TOKENIZER_TYPE`          | simple   | `simple` / `hf`                                                                                                            |
