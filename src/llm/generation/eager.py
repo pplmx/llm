@@ -298,6 +298,7 @@ def batch_generate(
     frequency_penalty: float = 0.0,
     presence_penalty: float = 0.0,
     logit_bias: dict[int, float] | None = None,
+    use_cache: bool = True,
     stop: str | list[str] | None = None,
 ) -> list[str]:
     """
@@ -321,6 +322,11 @@ def batch_generate(
         logit_bias: OpenAI-compatible additive per-token biases
             (``{token_id: bias}`` added to the affected logits
             before sampling). ``None`` is a no-op.
+        use_cache: Whether to use the KV cache across decode steps. The
+            eager batch path used to hardcode ``True`` while
+            ``stream_generate`` honored the knob — an identical
+            ``GenerationConfig`` behaved differently by backend (RIL
+            ISS-392). ``False`` rebuilds the full context each step.
         stop: OpenAI-compat stop sequence(s). Generation for each
             sequence halts the moment the generated text (post-prompt)
             contains any stop string; the stop string itself is NOT
@@ -398,13 +404,21 @@ def batch_generate(
     # actual prefill input.
     generated_ids: list[list[int]] = [ids.copy() for ids in encoded_prompts]
 
-    kv_caches = create_decoder_kv_caches(model, batch_size=batch_size)
-    logits, kv_caches = model(
-        input_tensor,
-        kv_caches=kv_caches,
-        use_cache=True,
-        attn_mask=pad_mask[..., :max_prompt_len],
-    )
+    kv_caches = create_decoder_kv_caches(model, batch_size=batch_size) if use_cache else None
+    if use_cache:
+        logits, kv_caches = model(
+            input_tensor,
+            kv_caches=kv_caches,
+            use_cache=True,
+            attn_mask=pad_mask[..., :max_prompt_len],
+        )
+    else:
+        logits = model(
+            input_tensor,
+            kv_caches=None,
+            use_cache=False,
+            attn_mask=pad_mask[..., :max_prompt_len],
+        )
     next_token_logits = logits[:, -1, :]  # [B, vocab_size]
 
     _mask_pad_logits(
@@ -441,13 +455,38 @@ def batch_generate(
 
         # Decode key length grows by one per step (the cache already holds
         # ``max_prompt_len + step`` keys after the prefill, plus the new one).
-        logits, kv_caches = model(
-            next_tokens,
-            kv_caches=kv_caches,
-            use_cache=True,
-            attn_mask=pad_mask[..., : max_prompt_len + step + 1],
-        )
-        next_token_logits = logits[:, -1, :]
+        if use_cache:
+            logits, kv_caches = model(
+                next_tokens,
+                kv_caches=kv_caches,
+                use_cache=True,
+                attn_mask=pad_mask[..., : max_prompt_len + step + 1],
+            )
+            next_token_logits = logits[:, -1, :]
+        else:
+            # Without cache, rebuild the FULL per-row context each step so
+            # the no-cache batch path matches
+            # ``stream_generate(use_cache=False)`` (RIL ISS-392). The rows
+            # must be reconstructed exactly as the prefill saw them —
+            # left-pads + prompt + generated tokens — so the same
+            # ``pad_mask`` still aligns (the left-pad columns are masked;
+            # generated columns never are).
+            # Every row's real length at decode step ``t`` is exactly
+            # ``max_prompt_len + t + 1`` (left-pads + prompt + generated),
+            # so rows rebuild WITHOUT right-padding — a trailing pad tail
+            # would leak unmasked pad keys the cached path never attends to.
+            pad_lens = [max_prompt_len - len(ids) for ids in encoded_prompts]
+            rows = [
+                torch.as_tensor([pad_id] * pad_lens[i] + generated_ids[i], dtype=torch.long) for i in range(batch_size)
+            ]
+            full_batch = torch.stack(rows).to(device)
+            logits = model(
+                full_batch,
+                kv_caches=None,
+                use_cache=False,
+                attn_mask=pad_mask[..., : max_prompt_len + step + 1],
+            )
+            next_token_logits = logits[:, -1, :]  # last column = the real end for every row
 
         _mask_pad_logits(
             next_token_logits,

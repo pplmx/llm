@@ -1313,3 +1313,20 @@ def test_reject_negative_max_new_tokens_generate(tiny_model):
     it previously returned the bare prompt without generating anything."""
     with pytest.raises(ValueError, match=">= 0"):
         generate(tiny_model, _CharTokenizer(), "hello", max_new_tokens=-1)
+
+
+def test_batch_generate_use_cache_false(tiny_model):
+    """``batch_generate`` must honor ``use_cache=False`` (RIL ISS-392) — the
+    knob was hardcoded to ``use_cache=True`` on the batched path while
+    ``stream_generate`` honored it, so an identical ``GenerationConfig``
+    behaved differently by backend. The no-cache path rebuilds the full
+    context each decode step."""
+    tok = _make_stop_tokenizer(["a", "b"])
+    out_cache = batch_generate(tiny_model, tok(), ["p", "q"], max_new_tokens=2, temperature=0.0, use_cache=True)
+    out_nocache = batch_generate(tiny_model, tok(), ["p", "q"], max_new_tokens=2, temperature=0.0, use_cache=False)
+    assert out_nocache == out_cache, (
+        f"use_cache=False must produce the same greedy output; {out_nocache} vs {out_cache}"
+    )
+    # The stop tokenizer decodes one char per call, so each row is a single
+    # (shared) character — but the key parity assertion is cache == no-cache.
+    assert all(len(s) == 1 for s in out_nocache)
