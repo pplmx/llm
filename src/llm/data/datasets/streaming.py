@@ -101,6 +101,12 @@ class StreamingTextDataset(IterableDataset):
                 self._skipped_undecodable,
                 type(self.tokenizer).__name__,
             )
+        # Zero the counter (and the first-warn flag) so the NEXT pass's
+        # "could not encode this pass" summary reflects THAT pass, not the
+        # lifetime total — the counter used to accumulate across corpus
+        # cycles and every reset after the first over-reported (RIL ISS-394).
+        self._skipped_undecodable = 0
+        self._warned_undecodable = False
         self.stream_data_state.reset()
         reset_cross_run = getattr(self.text_source, "reset_cross_run_seen", None)
         if reset_cross_run is not None:

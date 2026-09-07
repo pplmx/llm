@@ -38,6 +38,12 @@ class LMTask(BaseTask):
                 real tokenizer was scored with mismatched ids). Defaults to a
                 corpus-derived simple tokenizer for backward compatibility.
         """
+        if batch_size < 1:
+            # ``range(0, len(x), 0)`` raises a cryptic "range() arg 3 must
+            # not be zero" and a negative batch silently behaves like 1 —
+            # neither is a usable config. Fail fast at construction (RIL
+            # ISS-397).
+            raise ValueError(f"batch_size must be >= 1, got {batch_size!r}")
         self.dataset_path = dataset_path
         self.batch_size = batch_size
         self.max_seq_len = max_seq_len or 128

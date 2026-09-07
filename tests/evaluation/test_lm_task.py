@@ -365,3 +365,16 @@ def test_lm_task_tokenizer_defaults_to_corpus_derived(tmp_path):
     assert isinstance(task.tokenizer, SimpleCharacterTokenizer)
     # Corpus-derived vocab covers the corpus characters.
     assert task.tokenizer.encode("h")[0] is not None  # encodes without KeyError
+
+
+def test_lm_task_rejects_zero_or_negative_batch_size(tmp_path):
+    """``LMTask(batch_size=0)`` must fail fast at construction (RIL ISS-397):
+    ``range(0, len, 0)`` raises a cryptic ValueError and a negative batch
+    silently behaves like 1. Validate ``batch_size >= 1`` up front."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world\n", encoding="utf-8")
+    from llm.evaluation.eval_tasks.lm_task import LMTask
+
+    for bad in (0, -1, -5):
+        with pytest.raises(ValueError, match="batch_size"):
+            LMTask(dataset_path=str(corpus), batch_size=bad)

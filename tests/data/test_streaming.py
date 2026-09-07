@@ -249,3 +249,64 @@ def test_streaming_undecodable_rows_fail_loud_when_not_skipping(tmp_path, sample
     )
     with pytest.raises(KeyError, match="not found in tokenizer vocabulary"):
         list(dataset)
+
+
+def test_streaming_skipped_counter_resets_across_passes(tmp_path, sample_text_tokenizer, caplog):
+    """``reset()``'s "could not encode this pass" log must describe a SINGLE
+    pass, not the cumulative lifetime count (RIL ISS-394): the counter was
+    never zeroed, so pass 2 reported pass1+pass2 skipped rows as "this
+    pass". Iterate, reset, iterating again with another undecodable row
+    must log the pass-local count."""
+    import logging
+
+    text_file = tmp_path / "corpus.txt"
+    # Two undecodable rows in pass 1; one more in pass 2.
+    text_file.write_text("apple banana\nétrès café\ngrape fig\nétrès café\n", encoding="utf-8")
+    source = LocalLineTextSource(text_file)
+    dataset = StreamingTextDataset(
+        text_source=source,
+        tokenizer=sample_text_tokenizer,
+        max_seq_len=8,
+        rank=0,
+        world_size=1,
+    )
+    with caplog.at_level(logging.WARNING, logger="llm.data.datasets.streaming"):
+        list(dataset)  # pass 1: 2 skipped rows
+        dataset.reset()  # logs the pass-1 summary
+        list(dataset)  # pass 2: 1 skipped row (same corpus)
+        dataset.reset()  # must log pass-2's 1 row, not 1+2=3
+    messages = [r.message for r in caplog.records if "could not encode this pass" in r.message]
+    assert len(messages) == 2, f"expected one summary per pass, got {len(messages)}"
+    assert "Skipped 3 row(s)" not in messages[1], (
+        f"pass-2 summary must not accumulate across passes; got {messages[1]!r}"
+    )
+
+
+def test_streaming_skipped_counter_resets_per_reset(tmp_path, sample_text_tokenizer, caplog):
+    """The "could not encode this pass" summary must reset per reset() (RIL
+    ISS-394). The counter was never zeroed, so reset() #2 reported the
+    LIFETIME total (pass1+pass2) as "this pass". With two passes each
+    skipping one row, the second summary must say 1, not 2."""
+    import logging
+
+    text_file = tmp_path / "corpus.txt"
+    # Only 'étrès café' has non-ASCII chars -> 1 undecodable row per pass.
+    text_file.write_text("apple banana\nétrès café\nfig grape\n", encoding="utf-8")
+    source = LocalLineTextSource(text_file)
+    dataset = StreamingTextDataset(
+        text_source=source,
+        tokenizer=sample_text_tokenizer,
+        max_seq_len=8,
+        rank=0,
+        world_size=1,
+    )
+    with caplog.at_level(logging.WARNING, logger="llm.data.datasets.streaming"):
+        list(dataset)
+        dataset.reset()  # summary #1: "Skipped 1 ... this pass"
+        list(dataset)
+        dataset.reset()  # summary #2: must be "Skipped 1" again, not 2
+    summaries = [r.message for r in caplog.records if "could not encode this pass" in r.message]
+    assert len(summaries) == 2, f"expected 2 pass summaries, got {summaries}"
+    assert "Skipped 1 row(s)" in summaries[-1], (
+        f"reset() must zero the counter between passes; last summary was {summaries[-1]!r}"
+    )
