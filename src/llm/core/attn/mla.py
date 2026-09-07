@@ -41,6 +41,13 @@ class MultiLatentAttention(nn.Module):
         eps: Epsilon value for Layer Normalization. Defaults to 1e-5.
         norm_first: Whether to use Layer Normalization before attention. Defaults to True.
         is_causal: Whether to use causal attention. Defaults to False.
+            Honored as "attend to the full current row of keys": the
+            latent query axis is a fixed learned pool, NOT the sequence
+            positions, so a torch auto-causal mask over it would cap key
+            visibility at ``num_latents`` and silently drop every later
+            token (RIL ISS-380). Causal MLA therefore attends to the
+            whole row's keys, and any ``attn_mask`` restricts which keys
+            are visible.
         device: Device for the model.
         dtype: Data type for the model parameters.
 
@@ -212,14 +219,29 @@ class MultiLatentAttention(nn.Module):
             view = flat[torch.arange(flat.shape[0], device=flat.device), last_real]  # [B, S_k]
             attn_mask = view.unsqueeze(1).unsqueeze(1).expand(-1, 1, self.num_latents, -1)
 
-        # Compute attention with conditional dropout during training
+        # Compute attention with conditional dropout during training.
+        #
+        # ``is_causal`` is deliberately NOT forwarded to SDPA. Torch's
+        # auto-causal mask keys off the QUERY axis, which here is the fixed
+        # ``num_latents`` latent pool — not the sequence positions — so
+        # latent row ``l`` would attend only to key columns ``0..l``. With
+        # ``is_causal=True`` (the decoder default) any sequence longer than
+        # ``num_latents`` then has every key at position >= num_latents
+        # invisible to the attention sublayer: the whole model silently
+        # ignored the later half of its context (verified: perturbing
+        # ``x[..., num_latents:]`` changed the attention output by 0.0).
+        # The placeholders's documented semantic is that the latent queries
+        # "attend to the full ``input_kv_proj(x)``"; when a mask is present
+        # it is already collapsed above to the current-position window and
+        # broadcast over the latents, so the mask does the only visibility
+        # restriction the architecture can express (RIL ISS-380).
         latent_output = sdpa(
             query=latent_q,
             key=k,
             value=v,
             attn_mask=attn_mask,
             dropout_p=self.dropout_p if self.training else 0.0,
-            is_causal=is_causal,
+            is_causal=False,
             scale=self.scale,
         )  # [batch_size, num_heads, num_latents, head_dim]
 

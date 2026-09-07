@@ -97,6 +97,59 @@ def test_mla_causal(mla, input_tensor):
 
 
 @pytest.mark.slow
+def test_mla_causal_sees_tokens_beyond_num_latents():
+    """Causal MLA must not silently drop keys past ``num_latents`` (RIL
+    ISS-380). The old code let SDPA build an auto-causal mask over the
+    latent QUERY axis, so latent row ``l`` attended only keys ``0..l`` and
+    any sequence longer than ``num_latents`` had its later tokens invisible
+    to the attention sublayer — perturbing them changed the output by 0.0.
+    Causal MLA now attends to the full row, so a tail perturbation must
+    move the output."""
+    # ``include_norm_residual=False`` isolates the raw attention output —
+    # the residual stream would carry the perturbation through ``x + attn``
+    # and mask whether the attention sublayer itself saw the tail tokens.
+    mla = MultiLatentAttention(
+        hidden_size=64, num_heads=8, num_latents=16, is_causal=True, include_norm_residual=False
+    ).to(DEFAULT_DEVICE)
+    mla.eval()
+    seq_len = 40  # > num_latents
+    x = torch.randn(2, seq_len, 64, device=DEFAULT_DEVICE)
+    x_pert = x.clone()
+    x_pert[..., 16:, :] += 10.0  # perturb everything past num_latents
+    with torch.no_grad():
+        base = mla(x)
+        pert = mla(x_pert)
+    diff = (base - pert).abs().max().item()
+    assert diff > 1e-3, (
+        "causal MLA ignored tokens past num_latents: perturbing x[..., num_latents:] "
+        f"changed the attention output by only {diff:.1e}"
+    )
+
+
+@pytest.mark.slow
+def test_mla_causal_matches_full_attention_maskless():
+    """Mask-less causal MLA is defined as full-row attention (RIL ISS-380):
+    the latent query axis is a fixed learned pool, not the sequence
+    positions, so ``is_causal`` cannot express per-position causality and
+    must not change the result when no mask restricts visibility."""
+    mla = MultiLatentAttention(hidden_size=64, num_heads=8, num_latents=16, is_causal=True).to(DEFAULT_DEVICE)
+    mla.eval()
+    x = torch.randn(2, 40, 64, device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        out_causal = mla(x)
+    mla.is_causal = False
+    with torch.no_grad():
+        out_full = mla(x)
+    torch.testing.assert_close(
+        out_causal,
+        out_full,
+        atol=1e-5,
+        rtol=1e-5,
+        msg="causal MLA must equal full attention when no mask is present",
+    )
+
+
+@pytest.mark.slow
 def test_mla_different_num_latents():
     """Test MLA with different number of latents."""
     num_latents_list = [8, 16, 32]
