@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 178,
+  "round": 180,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-06T16:51:11+00:00",
+  "updated_at": "2026-09-07T11:42:25+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18874,6 +18874,363 @@
       "touched_round": 178,
       "commit": "cffdc7c",
       "summary": "fix(serving): streaming routes count _token_count(chunk) instead of +=1 per chunk — stop-buffered multi-token chunks no longer undercount usage or misreport chat finish_reason (length-vs-stop). RED-checked metrics regression test."
+    },
+    "ISS-379": {
+      "id": "ISS-379",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-07T03:59:07+00:00",
+      "updated_at": "2026-09-07T11:42:25+00:00",
+      "touched_round": 180,
+      "summary": "pad_token_id == eos_token_id masks EOS every decode step — generation/serve can never stop on EOS for GPT-2/Qwen2.5-style HF tokenizers (HFTokenizer fallback and native pad==eos)",
+      "severity": "high",
+      "confidence": 1.0
+    },
+    "ISS-380": {
+      "id": "ISS-380",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-07T03:59:07+00:00",
+      "updated_at": "2026-09-07T11:42:25+00:00",
+      "touched_round": 180,
+      "summary": "MLA causal latent-attention: SDPA auto-causal over the latent axis caps key visibility at num_latents — seq_len > num_latents tokens are silently invisible to the attention sublayer (verified 0.0 output diff)",
+      "severity": "high",
+      "confidence": 1.0
+    },
+    "ISS-381": {
+      "id": "ISS-381",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-07T03:59:07+00:00",
+      "updated_at": "2026-09-07T11:42:25+00:00",
+      "touched_round": 180,
+      "summary": "DPO/Reward/Prompt datasets crash on valid-JSON non-dict rows (int/str) with raw TypeError/AttributeError; no isinstance(item, dict) guard unlike SFT ISS-336",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "ISS-382": {
+      "id": "ISS-382",
+      "type": "issue",
+      "status": "resolved",
+      "version": 2,
+      "created_at": "2026-09-07T03:59:07+00:00",
+      "updated_at": "2026-09-07T11:42:25+00:00",
+      "touched_round": 180,
+      "summary": "DPO/Reward pair-asymmetric front truncation: chosen/rejected truncated independently, so a length mismatch scores them under different prompt context (ISS-345 guards only the completion-alone-overflow case)",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "TASK-338": {
+      "id": "TASK-338",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-07T03:59:48+00:00",
+      "updated_at": "2026-09-07T11:42:24+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "effort": 1,
+      "summary": "Skip pad-logit masking when pad_token_id collides with an eos id across eager/speculative/batch_engine (pad==eos must keep EOS emittable so generation can halt); also normalize batch_engine's raw token_id==eos_token_id (line 961) to tuple membership like drain (ISS-379)"
+    },
+    "TASK-339": {
+      "id": "TASK-339",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-07T03:59:48+00:00",
+      "updated_at": "2026-09-07T11:42:25+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "effort": 2,
+      "summary": "Fix MLA causal latent attention to not apply SDPA auto-causal over the latent axis (caps at num_latents, silently drops later tokens): latent queries attend to the full current row per module docstring; update docstring + regression test (ISS-380)"
+    },
+    "TASK-340": {
+      "id": "TASK-340",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-07T03:59:48+00:00",
+      "updated_at": "2026-09-07T11:42:25+00:00",
+      "touched_round": 180,
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 2,
+      "summary": "DPO/Reward/Prompt dataset integrity: add isinstance(item, dict) guard (mirror SFT ISS-336) + pair-shared front-trim so chosen/rejected are always truncated by the same amount (ISS-381, ISS-382)"
+    },
+    "COMP-018": {
+      "id": "COMP-018",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T04:00:35+00:00",
+      "updated_at": "2026-09-07T04:00:35+00:00",
+      "touched_round": 180,
+      "summary": "llm.generation.sampling / eager / serving.batch_engine — tokenizer id handling"
+    },
+    "COMP-019": {
+      "id": "COMP-019",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T04:00:35+00:00",
+      "updated_at": "2026-09-07T04:00:35+00:00",
+      "touched_round": 180,
+      "summary": "llm.core.attn.mla — placeholder MultiLatentAttention"
+    },
+    "COMP-020": {
+      "id": "COMP-020",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T04:00:35+00:00",
+      "updated_at": "2026-09-07T04:00:35+00:00",
+      "touched_round": 180,
+      "summary": "llm.data.datasets — DPO/Reward/Prompt JSONL datasets"
+    },
+    "ISS-383": {
+      "id": "ISS-383",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:23+00:00",
+      "updated_at": "2026-09-07T05:38:23+00:00",
+      "touched_round": 180,
+      "summary": "FP8: Fp8QuantizedLinear with a bias resolves dtype from the fp32 bias — quantize_model_fp8 drops the .to(weight.dtype) adoption sibling quantizers (GPTQ/AWQ/Smooth) perform (ISS-191 pattern), so biased FP8 layers emit fp32 into an fp16 graph",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "ISS-384": {
+      "id": "ISS-384",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "RMSNorm computes mean-square in host dtype (fp16/bf16) with no fp32 accumulation — activations past ~256 overflow to inf and the normalized layer collapses to 0",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "ISS-385": {
+      "id": "ISS-385",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "PerplexityMetric registry-instanced with ignore_index=None (metrics/__init__ comment claims -100) — an all-ignored corpus yields NaN instead of the documented inf, polluting JSON reports",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "ISS-386": {
+      "id": "ISS-386",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "PerplexityMetric crashes on references narrower than predictions (raw batch-mismatch ValueError) — only the predictions-narrower direction is clamped (ISS-192)",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "ISS-387": {
+      "id": "ISS-387",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "SpeculativeDecodingBackend lacks the eager empty-prompt guard — encode('') == [] yields an opaque IndexError from target_logits[0, -1:gamma, :]",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "ISS-388": {
+      "id": "ISS-388",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "Speculative backend never validates draft.max_seq_len >= target.max_seq_len — a shorter-context draft crashes mid-round with a positional-encoding ValueError instead of failing fast",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "ISS-389": {
+      "id": "ISS-389",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "eager.batch_generate accepts negative max_new_tokens (opaque zeros() RuntimeError) while generate() silently returns the prompt — neither validates >= 0 like the serving tier",
+      "severity": "medium",
+      "confidence": 1.0
+    },
+    "ISS-390": {
+      "id": "ISS-390",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "library sampling_probs silently ignores out-of-range top_p (<=0 or >=1) instead of rejecting like temperature/top_k — top_p=0 (the greedy analog) draws non-deterministically",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-391": {
+      "id": "ISS-391",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "apply_repetition_penalty bypasses the <=0 ValueError when token_ids is empty (guard sits after the early-return) — direct-API inconsistency only",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-392": {
+      "id": "ISS-392",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T05:38:24+00:00",
+      "touched_round": 180,
+      "summary": "GenerationConfig.use_cache ignored on the eager batch_generate path (no param) and the batched/speculative backends — identical config behaves differently than stream/generate",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-393": {
+      "id": "ISS-393",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T05:38:25+00:00",
+      "touched_round": 180,
+      "summary": "BPE tokenizer pad_token_id falls back to the <unk> id when no [PAD] — consumers masking pad logits also mask unk, so OOV tokens can never be generated (undocumented)",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-394": {
+      "id": "ISS-394",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T05:38:25+00:00",
+      "touched_round": 180,
+      "summary": "streaming reset() logs the cumulative skipped-rows counter as 'this pass' (never zeroed across corpus cycles) — misleading data-quality accounting",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-395": {
+      "id": "ISS-395",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T05:38:25+00:00",
+      "touched_round": 180,
+      "summary": "generation metrics (Bleu/ChrF) raise a raw sacrebleu IndexError on empty references while claiming a 0.0 empty contract — only predictions are guarded",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-396": {
+      "id": "ISS-396",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T05:38:25+00:00",
+      "touched_round": 180,
+      "summary": "EvaluationRunner.evaluate() raises an opaque TypeError on str references (as_tensor) and returns a different result shape than run() (no num_samples)",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-397": {
+      "id": "ISS-397",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T05:38:25+00:00",
+      "touched_round": 180,
+      "summary": "LMTask(predict) validates nothing at construction — batch_size=0 dies with an obscure range() error; negative silently behaves like 1",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-398": {
+      "id": "ISS-398",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T05:38:25+00:00",
+      "touched_round": 180,
+      "summary": "EvaluationCallback._last_eval_step is not persisted across resume — a resumed run re-evaluates the checkpoint's step once (harmless extra eval)",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "ISS-399": {
+      "id": "ISS-399",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T05:38:25+00:00",
+      "touched_round": 180,
+      "summary": "sampling.py:213 uses the PEP-758 comma-form except (TypeError, ValueError) — valid only on py>=3.14; normalize to parenthesized form for portability",
+      "severity": "low",
+      "confidence": 1.0
+    },
+    "CHG-358": {
+      "id": "CHG-358",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:41:33+00:00",
+      "updated_at": "2026-09-07T11:41:33+00:00",
+      "touched_round": 180,
+      "commit": 8587942,
+      "summary": "fix(data): DPO/Reward/Prompt non-dict rows + pair-shared truncation (ISS-381/382, TASK-340). isinstance(item, dict) guards mirror SFT ISS-336; pair-shared front-trim keeps chosen/rejected under identical prompt suffix."
+    },
+    "CHG-359": {
+      "id": "CHG-359",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:41:33+00:00",
+      "updated_at": "2026-09-07T11:41:33+00:00",
+      "touched_round": 180,
+      "commit": "09cbb96",
+      "summary": "fix(generation,serving): pad==eos keeps EOS emittable + list-eos finish check (ISS-379, TASK-338). Skip pad-logit masking when pad collides with eos across eager/speculative/batch_engine; normalize eos finish check to tuple membership."
+    },
+    "CHG-360": {
+      "id": "CHG-360",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T11:41:33+00:00",
+      "updated_at": "2026-09-07T11:41:33+00:00",
+      "touched_round": 180,
+      "commit": 7410700.0,
+      "summary": "fix(core/attn): MLA causal latent attention must not auto-causal over latent axis (ISS-380, TASK-339). SDPA auto-causal keyed off latent query axis capped keys at num_latents; latent queries now attend to full row, attn_mask still restricts."
     }
   },
   "edges": [
@@ -27881,6 +28238,78 @@
       "to": "TASK-337",
       "type": "implements",
       "created_at": "2026-09-06T16:51:10+00:00"
+    },
+    {
+      "from": "TASK-338",
+      "to": "ISS-379",
+      "type": "addresses",
+      "created_at": "2026-09-07T04:00:34+00:00"
+    },
+    {
+      "from": "TASK-339",
+      "to": "ISS-380",
+      "type": "addresses",
+      "created_at": "2026-09-07T04:00:35+00:00"
+    },
+    {
+      "from": "TASK-340",
+      "to": "ISS-381",
+      "type": "addresses",
+      "created_at": "2026-09-07T04:00:35+00:00"
+    },
+    {
+      "from": "TASK-340",
+      "to": "ISS-382",
+      "type": "addresses",
+      "created_at": "2026-09-07T04:00:35+00:00"
+    },
+    {
+      "from": "ISS-379",
+      "to": "COMP-018",
+      "type": "located_in",
+      "created_at": "2026-09-07T04:00:35+00:00"
+    },
+    {
+      "from": "CHG-358",
+      "to": "TASK-340",
+      "type": "implements",
+      "created_at": "2026-09-07T11:42:02+00:00"
+    },
+    {
+      "from": "CHG-358",
+      "to": "ISS-381",
+      "type": "resolves",
+      "created_at": "2026-09-07T11:42:02+00:00"
+    },
+    {
+      "from": "CHG-358",
+      "to": "ISS-382",
+      "type": "resolves",
+      "created_at": "2026-09-07T11:42:02+00:00"
+    },
+    {
+      "from": "CHG-359",
+      "to": "TASK-338",
+      "type": "implements",
+      "created_at": "2026-09-07T11:42:02+00:00"
+    },
+    {
+      "from": "CHG-359",
+      "to": "ISS-379",
+      "type": "resolves",
+      "created_at": "2026-09-07T11:42:02+00:00"
+    },
+    {
+      "from": "CHG-360",
+      "to": "TASK-339",
+      "type": "implements",
+      "created_at": "2026-09-07T11:42:02+00:00"
+    },
+    {
+      "from": "CHG-360",
+      "to": "ISS-380",
+      "type": "resolves",
+      "created_at": "2026-09-07T11:42:02+00:00"
     }
   ]
 }
