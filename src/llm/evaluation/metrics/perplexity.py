@@ -9,15 +9,19 @@ class PerplexityMetric(BaseMetric):
 
     name = "perplexity"
 
-    def __init__(self, ignore_index: int | None = None) -> None:
+    def __init__(self, ignore_index: int | None = -100) -> None:
         """Create the metric.
 
         Args:
             ignore_index: Token id to exclude from the loss (typically
-                the tokenizer's ``pad_token_id``). When set, positions
+                the tokenizer's ``pad_token_id`` or the LM ``-100``
+                label mask used by ``TextDataset``). When set, positions
                 whose label equals ``ignore_index`` are skipped so padded
-                sequences are scored only over real tokens. ``None``
-                (the default) scores every position.
+                sequences are scored only over real tokens. Defaults to
+                ``-100`` so the metric-name registry (which instantiates
+                with no args) matches the documented contract in
+                ``metrics/__init__.py`` and an all-ignored corpus yields
+                the documented ``inf`` rather than NaN (RIL ISS-385).
         """
         self.ignore_index = ignore_index
 
@@ -66,7 +70,15 @@ class PerplexityMetric(BaseMetric):
 
         _batch, _seq_len, vocab_size = predictions.shape
 
-        logits = predictions[:, :-1, :].contiguous().view(-1, vocab_size)
+        # RIL ISS-192 + ISS-386: score exactly ``label_width`` positions,
+        # start-aligned on BOTH sides. The old ``predictions[:, :-1]`` kept
+        # every prediction row (untouched when predictions were WIDER than
+        # the references) while the labels were clipped to ``label_width`` —
+        # so narrower references raised a raw cross_entropy batch-mismatch
+        # ValueError. Clipping the logits to the same window handles both
+        # directions uniformly.
+        label_width = max(min(references.shape[1] - 1, _seq_len - 1), 0)
+        logits = predictions[:, :label_width, :].contiguous().view(-1, vocab_size)
 
         # RIL ISS-192: ``LMTask.predict`` clamps inputs to the model's
         # context window (``min(max_seq_len, model.max_seq_len)``) while the
@@ -75,8 +87,8 @@ class PerplexityMetric(BaseMetric):
         # references, so the naive ``references[:, 1:]`` yields more label
         # positions than logits rows and ``cross_entropy`` raises a shape
         # error mid-evaluation. Slice the labels to the prediction horizon;
-        # the truncated tail was never scored anyway.
-        label_width = min(references.shape[1] - 1, _seq_len - 1)
+        # the truncated tail was never scored anyway (implies ISS-386's
+        # uniform windowing above).
         labels = references[:, 1 : 1 + label_width].contiguous().view(-1)
 
         if logits.shape[0] == 0 or labels.numel() == 0:

@@ -106,7 +106,14 @@ class Fp8QuantizedLinear(nn.Module):
         return x_scaled.to(fp8_dtype).to(x.dtype) * scale
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        dtype = self.bias.dtype if self.bias is not None else x.dtype
+        # RIL ISS-383: resolve the output dtype from the INPUT (the graph's
+        # dtype), not the bias. The bias is stored fp32 (via
+        # ``quantize_fp8_linear``'s `bias.data.copy_`), so ``bias.dtype``
+        # leaked fp32 activations into an fp16 graph whenever the layer had
+        # a bias. Sibling quantizers (GPTQ/AWQ/Smooth) adopt
+        # ``.to(weight.dtype)``; here the graph dtype *is* the input dtype,
+        # and the fp32 internal compute is cast back to it on exit.
+        dtype = x.dtype
         x_q = self._quantize_activations(x.to(torch.float32))
         w_fp32 = self._dequantize_weights()
         out = nn.functional.linear(

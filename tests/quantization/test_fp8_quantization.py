@@ -55,6 +55,36 @@ def test_fp8_layer_forward_is_close_to_fp32_reference():
     assert rel < 0.05, rel
 
 
+def test_fp8_biased_layer_preserves_graph_dtype():
+    """A biased FP8 layer must emit the surrounding graph's dtype, not the
+    bias's (RIL ISS-383). ``Fp8QuantizedLinear`` stores an fp32 bias
+    parameter, and ``forward`` resolved the output dtype from the bias
+    (``dtype = self.bias.dtype``), so quantizing an fp16 model produced
+    fp32 activations that flowed into an fp16 graph — a dtype break that
+    sibling quantizers (GPTQ/AWQ/Smooth) never exhibit (they adopt
+    ``.to(weight.dtype)``)."""
+    layer = nn.Linear(16, 8, bias=True).half()  # fp16 model + fp16 bias
+    q = quantize_fp8_linear(layer, activation_scale=torch.tensor(1.0))
+    x = torch.randn(4, 16, dtype=torch.float16)
+    with torch.no_grad():
+        out = q(x)
+    assert out.dtype == torch.float16, (
+        f"biased FP8 layer emitted {out.dtype} into an fp16 graph (fp32 bias leaked through dtype resolution)"
+    )
+
+
+def test_fp8_unbiased_layer_preserves_graph_dtype():
+    """Bias-less FP8 layers already resolve output dtype from the input; keep
+    that contract pinned (RIL ISS-383 guard)."""
+    layer = nn.Linear(16, 8, bias=False)  # no bias (PyTorch's default has one!)
+    q = quantize_fp8_linear(layer, activation_scale=torch.tensor(1.0))
+    assert q.bias is None
+    x = torch.randn(4, 16, dtype=torch.float16)
+    with torch.no_grad():
+        out = q(x)
+    assert out.dtype == torch.float16
+
+
 def test_fp8_e5m2_variant_roundtrips():
     layer = nn.Linear(8, 4)
     q = quantize_fp8_linear(layer, dtype_name="e5m2", activation_scale=torch.tensor(1.0))

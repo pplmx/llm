@@ -73,7 +73,13 @@ class RMSNorm(nn.Module):
 
         # 计算均方值 (不减去均值的方差)
         # mean(x^2)
-        mean_square = torch.mean(hidden_states.pow(2), dim=dims_to_normalize, keepdim=True)
+        # RIL ISS-384: ``x.pow(2)`` in host dtype overflows past |x| > ~256 for
+        # fp16 (max 65504) and ~3.4e38/bf16 is even lower in practice, turning
+        # the mean-square inf and collapsing the layer to all-zeros. Accumulate
+        # in fp32 (standard RMSNorm practice) and keep the RMS in fp32: the
+        # subsequent ``hidden_states / rms`` division upcasts the numerator,
+        # so fp32 RMS is both correct and free.
+        mean_square = torch.mean(hidden_states.float().pow(2), dim=dims_to_normalize, keepdim=True)
 
         # 计算 RMS: sqrt(mean(x^2) + eps)
         rms = torch.sqrt(mean_square + self.eps)
