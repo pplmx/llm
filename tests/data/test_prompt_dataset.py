@@ -62,6 +62,22 @@ class TestPromptDataset:
         assert ds[0] == {"prompt": "first"}
         assert ds[1] == {"prompt": "second"}
 
+    def test_skips_non_dict_scalar_rows(self, tmp_path):
+        """A scalar JSON row (bare int/string) must be skipped, not crash with
+        a raw AttributeError on ``item.get`` (RIL ISS-381)."""
+        data_path = tmp_path / "prompts.jsonl"
+        with data_path.open("w", encoding="utf-8") as f:
+            for line in [
+                '{"prompt": "first"}',
+                "42",
+                '"just a bare string"',
+                '{"instruction": "second"}',
+            ]:
+                f.write(line + "\n")
+        ds = PromptDataset(data_path)
+        assert len(ds) == 2
+        assert ds[0] == {"prompt": "first"}
+
     def test_skips_lines_without_recognized_key(self, tmp_path):
         data_path = tmp_path / "prompts.jsonl"
         _write_jsonl(data_path, [{"other": "no prompt"}])

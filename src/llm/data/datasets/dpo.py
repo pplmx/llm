@@ -61,6 +61,14 @@ class DPODataset(Dataset):
                 for line in f:
                     if line.strip():
                         item = json.loads(line)
+                        # A scalar JSON row (bare string/number) would reach
+                        # ``k in item`` / ``item["chosen"]`` below and die with
+                        # a raw TypeError/AttributeError mid-setup (RIL
+                        # ISS-381; SFT fixed the same class at ISS-336). Skip
+                        # it with context instead.
+                        if not isinstance(item, dict):
+                            logger.warning("Skipping DPO row that is not a JSON object: %r", item)
+                            continue
                         # Minimal validation: skip entries missing required keys
                         if not all(k in item for k in ("prompt", "chosen", "rejected")):
                             logger.warning("Skipping DPO item missing required keys (prompt, chosen, rejected)")
@@ -121,13 +129,29 @@ class DPODataset(Dataset):
         logger.info(f"Loaded {len(data)} preference pairs from {self.file_path}")
         return data
 
-    def _process_sequence(self, prompt: str, completion: str) -> dict[str, torch.Tensor]:
-        """Tokenize and mask a single sequence (prompt + completion)."""
-        prompt_ids = self.tokenizer.encode(prompt)
-        completion_ids = self.tokenizer.encode(completion)
+    def _process_sequence(
+        self, prompt_ids: list[int], completion_ids: list[int], front_trim: int = 0
+    ) -> dict[str, torch.Tensor]:
+        """Tokenize and mask a single sequence (prompt + completion).
 
+        Args:
+            prompt_ids: Pre-tokenized prompt (encoded once per pair in
+                ``__getitem__`` so chosen and rejected share the same
+                conditioning and the pair-level trim is computed from one
+                encode).
+            completion_ids: Pre-tokenized completion.
+            front_trim: Pair-shared number of leading tokens to drop. Both
+                sides of the pair drop the SAME amount, so chosen and
+                rejected are always scored under the same prompt suffix —
+                independent per-side truncation sent the shorter side to a
+                longer prompt context (RIL ISS-382).
+        """
         input_ids = prompt_ids + completion_ids
         labels = [self.ignore_index] * len(prompt_ids) + completion_ids
+
+        if front_trim > 0 and len(input_ids) - front_trim > 0:
+            input_ids = input_ids[front_trim:]
+            labels = labels[front_trim:]
 
         # Truncate — from the FRONT so the completion (the supervised / scored
         # part) survives. ``input_ids[:max_seq_len]`` kept the prompt and
@@ -162,8 +186,23 @@ class DPODataset(Dataset):
         # We might need to format prompt if it's not pre-formatted.
         # Assuming data is pre-processed or simple text for now.
 
-        chosen_data = self._process_sequence(prompt, chosen)
-        rejected_data = self._process_sequence(prompt, rejected)
+        # Encode once per pair and derive a PAIR-level front trim from the
+        # LONGER side's overflow. Trimming both sides by the same leading
+        # token count keeps their conditioning context identical — the old
+        # per-side ``input_ids[-max_seq_len:]`` sent chosen (longer) to a
+        # truncated prompt suffix while rejected (shorter) kept the full
+        # prompt, scoring the pair under different contexts (RIL ISS-382).
+        # The ISS-345 load guard already dropped pairs where a *completion
+        # alone* reaches max_seq_len, so ``front_trim`` never exceeds the
+        # prompt length here.
+        prompt_ids = self.tokenizer.encode(prompt)
+        chosen_ids = self.tokenizer.encode(chosen)
+        rejected_ids = self.tokenizer.encode(rejected)
+        overflow = max(len(prompt_ids) + len(chosen_ids), len(prompt_ids) + len(rejected_ids)) - self.max_seq_len
+        front_trim = max(overflow, 0)
+
+        chosen_data = self._process_sequence(prompt_ids, chosen_ids, front_trim)
+        rejected_data = self._process_sequence(prompt_ids, rejected_ids, front_trim)
 
         return {
             "chosen_input_ids": chosen_data["input_ids"],

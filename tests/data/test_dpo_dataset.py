@@ -144,6 +144,60 @@ def test_dpo_dataset_truncation_keeps_completion_tail(tmp_path, tokenizer):
     assert -100 in item["chosen_labels"].tolist()
 
 
+def test_dpo_dataset_skips_non_dict_rows(tmp_path, tokenizer):
+    """A scalar JSON row (bare int/string) must be skipped, not crash dataset
+    construction with a raw TypeError/AttributeError (RIL ISS-381; SFT fixed
+    the same class at ISS-336)."""
+    file_path = tmp_path / "non_dict.jsonl"
+    with file_path.open("w") as f:
+        f.write('{"prompt": "Q:", "chosen": "Good", "rejected": "Bad"}\n')
+        f.write("42\n")
+        f.write('"just a bare string"\n')
+        f.write('{"prompt": "Q2", "chosen": "Fine", "rejected": "Poor"}\n')
+
+    dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=20)
+    assert len(dataset) == 2
+    assert dataset.data[0]["prompt"] == "Q:"
+    assert dataset.data[1]["prompt"] == "Q2"
+
+
+def test_dpo_dataset_pair_shared_truncation(tmp_path, tokenizer):
+    """Chosen and rejected must be conditioned on the SAME prompt suffix (RIL
+    ISS-382). The old per-side ``input_ids[-max_seq_len:]`` truncated the
+    longer side independently, so when chosen overflowed but rejected did
+    not, chosen was scored under a truncated prompt while rejected kept the
+    full one — a corrupted, imbalanced preference signal.
+
+    Layout: prompt "PQR:" + chosen "AAAA" = 8 > max_seq_len=6;
+    prompt + rejected "B" = 5 <= 6. Pair overflow = 2 -> both sides drop
+    their first 2 leading tokens (the prompt prefix "PQ"), leaving both
+    conditioned on the identical suffix "R:".
+    """
+    file_path = tmp_path / "asym.jsonl"
+    with file_path.open("w") as f:
+        f.write(json.dumps({"prompt": "PQR:", "chosen": "AAAA", "rejected": "B"}) + "\n")
+
+    dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=6)
+    item = dataset[0]
+
+    prompt_ids = tokenizer.encode("PQR:")
+    survived = prompt_ids[2:]  # "R:"
+    chosen_ids = tokenizer.encode("AAAA")
+    rejected_ids = tokenizer.encode("B")
+
+    # chosen: survived suffix + completion, exactly fills the window
+    assert item["chosen_input_ids"].tolist() == survived + chosen_ids
+    # rejected: SAME survived suffix + completion, then padded
+    expected_rejected = survived + rejected_ids + [tokenizer.pad_token_id] * 3
+    assert item["rejected_input_ids"].tolist() == expected_rejected
+
+    # Symmetry: both sides expose the identical survived-prompt tokens
+    assert item["chosen_input_ids"][: len(survived)].tolist() == survived
+    assert item["rejected_input_ids"][: len(survived)].tolist() == survived
+    # and neither side still conditions on the full "PQR:" prefix
+    assert item["rejected_input_ids"][0] != prompt_ids[0]  # 'P' dropped
+
+
 def test_dpo_dataset_drops_pair_when_completion_over_window(tmp_path, tokenizer, caplog):
     """Regression (RIL ISS-345): a pair whose completion ALONE reaches
     max_seq_len is dropped as a unit, not silently kept.

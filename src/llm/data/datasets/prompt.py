@@ -23,6 +23,11 @@ class PromptDataset(Dataset):
                     if not line.strip():
                         continue
                     item = json.loads(line)
+                    if not isinstance(item, dict):
+                        # A scalar JSON row (bare string/number) would reach
+                        # ``item.get`` and die with a raw AttributeError
+                        # mid-setup (RIL ISS-381). Skip it with context.
+                        continue
                     prompt = item.get("prompt") or item.get("instruction") or item.get("text")
                     if prompt:
                         self.prompts.append(str(prompt))

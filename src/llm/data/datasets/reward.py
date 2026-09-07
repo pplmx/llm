@@ -65,6 +65,13 @@ class RewardDataset(Dataset):
                 for line in f:
                     if line.strip():
                         item = json.loads(line)
+                        # A scalar JSON row (bare string/number) would reach
+                        # ``k in item`` and die with a raw TypeError
+                        # mid-setup (RIL ISS-381; SFT fixed the same class at
+                        # ISS-336). Skip it with context instead.
+                        if not isinstance(item, dict):
+                            logger.warning("Skipping Reward row that is not a JSON object: %r", item)
+                            continue
                         if all(k in item for k in ("prompt", "chosen", "rejected")):
                             if not item["chosen"] or not item["rejected"]:
                                 # An empty completion makes the reward model score
@@ -102,10 +109,20 @@ class RewardDataset(Dataset):
         logger.info(f"Loaded {len(data)} preference pairs from {self.file_path}")
         return data
 
-    def _tokenize_sequence(self, prompt: str, response: str) -> dict[str, torch.Tensor]:
-        """Tokenize prompt + response as a single sequence."""
-        full_text = prompt + response
-        input_ids = self.tokenizer.encode(full_text)
+    def _tokenize_sequence(self, input_ids: list[int], front_trim: int = 0) -> dict[str, torch.Tensor]:
+        """Pad/normalize one pre-tokenized ``prompt + response`` sequence.
+
+        Args:
+            input_ids: The full ``encode(prompt + response)`` token list
+                (encoded once per pair in ``__getitem__`` so chosen and
+                rejected are tokenized identically and the pair-level trim
+                avoids a second encode).
+            front_trim: Pair-shared number of leading tokens to drop. Both
+                sides drop the SAME amount so the reward model always scores
+                the response under the same prompt suffix (RIL ISS-382).
+        """
+        if front_trim > 0 and len(input_ids) - front_trim > 0:
+            input_ids = input_ids[front_trim:]
 
         # Truncate — from the FRONT so the response end stays in the window.
         # The reward model scores the last non-pad token, so
@@ -139,8 +156,21 @@ class RewardDataset(Dataset):
         chosen = item["chosen"]
         rejected = item["rejected"]
 
-        chosen_data = self._tokenize_sequence(prompt, chosen)
-        rejected_data = self._tokenize_sequence(prompt, rejected)
+        # Encode ``prompt + response`` ONCE per side and derive a PAIR-level
+        # front trim from the longer side's overflow, so chosen and rejected
+        # are always conditioned on the same prompt suffix (RIL ISS-382; the
+        # old per-side ``[-max_seq_len:]`` sent the shorter side to a longer
+        # prompt context). The ISS-345 load guard already dropped pairs where
+        # a *completion alone* reaches max_seq_len, so ``front_trim`` never
+        # exceeds the prompt length here.
+        chosen_ids = self.tokenizer.encode(prompt + chosen)
+        rejected_ids = self.tokenizer.encode(prompt + rejected)
+        front_trim = max(len(chosen_ids), len(rejected_ids)) - self.max_seq_len
+        if front_trim < 0:
+            front_trim = 0
+
+        chosen_data = self._tokenize_sequence(chosen_ids, front_trim)
+        rejected_data = self._tokenize_sequence(rejected_ids, front_trim)
 
         return {
             "chosen_input_ids": chosen_data["input_ids"],

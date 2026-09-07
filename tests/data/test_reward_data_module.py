@@ -145,6 +145,63 @@ def test_reward_dataset_drops_pair_when_completion_over_window(tmp_path, caplog)
     assert any("completion alone" in message for message in caplog.messages)
 
 
+def test_reward_dataset_skips_non_dict_rows(tmp_path):
+    """A scalar JSON row (bare int/string) must be skipped, not crash dataset
+    construction with a raw TypeError (RIL ISS-381)."""
+    from string import printable
+
+    from llm.data.datasets.reward import RewardDataset
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([printable])
+    fp = tmp_path / "non_dict.jsonl"
+    fp.write_text(
+        '{"prompt": "Q:", "chosen": "Good", "rejected": "Bad"}\n'
+        "42\n"
+        '"just a bare string"\n'
+        '{"prompt": "Q2", "chosen": "Fine", "rejected": "Poor"}\n',
+        encoding="utf-8",
+    )
+
+    dataset = RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=20)
+    assert len(dataset) == 2
+    assert dataset.data[0]["prompt"] == "Q:"
+    assert dataset.data[1]["prompt"] == "Q2"
+
+
+def test_reward_dataset_pair_shared_truncation(tmp_path):
+    """Chosen and rejected must be scored under the SAME prompt suffix (RIL
+    ISS-382): per-side ``[-max_seq_len:]`` sent the longer side to a truncated
+    prompt while the shorter kept the full one, so a length mismatch scored
+    the pair under different conditioning. Layout mirrors the DPO test:
+    prompt "PQR:" + "AAAA" = 8 > 6, prompt + "B" = 5 <= 6; pair overflow 2 ->
+    both sides drop the first 2 tokens and keep the identical "R:" suffix."""
+    import json
+    from string import printable
+
+    from llm.data.datasets.reward import RewardDataset
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([printable])
+    fp = tmp_path / "asym.jsonl"
+    fp.write_text(json.dumps({"prompt": "PQR:", "chosen": "AAAA", "rejected": "B"}) + "\n", encoding="utf-8")
+
+    dataset = RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=6)
+    item = dataset[0]
+
+    survived = tok.encode("R:")
+    chosen_ids = tok.encode("AAAA")
+    rejected_ids = tok.encode("B")
+
+    assert item["chosen_input_ids"].tolist() == survived + chosen_ids
+    expected_rejected = survived + rejected_ids + [tok.pad_token_id] * 3
+    assert item["rejected_input_ids"].tolist() == expected_rejected
+    # identical survived-prompt suffix on both sides, and the "P" prefix is gone
+    assert item["chosen_input_ids"][:2].tolist() == survived
+    assert item["rejected_input_ids"][:2].tolist() == survived
+    assert item["rejected_input_ids"][0] != tok.encode("PQR:")[0]
+
+
 def test_reward_dataset_rejects_nonpositive_max_seq_len(tmp_path):
     """RIL ISS-199: a non-positive ``max_seq_len`` fails fast instead of
     silently producing misaligned attention_mask/input_ids."""
