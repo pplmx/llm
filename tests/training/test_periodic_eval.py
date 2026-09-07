@@ -276,3 +276,46 @@ def test_engine_runs_periodic_eval_end_to_end(tmp_path):
 
     assert any("Evaluation metrics" in msg for msg in emitted), "periodic eval results must be logged during training"
     assert any("perplexity" in msg for msg in emitted), "the eval must report its metric values"
+
+
+def test_callback_persists_last_eval_step_across_resume():
+    """``EvaluationCallback`` must persist ``_last_eval_step`` in checkpoint
+    state so a resumed run does NOT re-evaluate the checkpoint's step (RIL
+    ISS-398). Without it a resume ran the eval once more at the same step —
+    harmless but violating the "fire once per optimizer step" cadence."""
+
+    class _StubModel:
+        training = True
+
+        def train(self, mode: bool = True):
+            self.training = mode
+            return self
+
+        def eval(self):
+            self.training = False
+            return self
+
+    runner = _FakeRunner()
+    cb = EvaluationCallback(runner, eval_interval=5)
+    cb._last_eval_step = 35  # simulate evals already run through step 35
+    state = cb.get_checkpoint_state()
+    assert state is not None
+    assert "periodic_eval" in state
+    assert state["periodic_eval"]["last_eval_step"] == 35
+
+    # A fresh callback (as on resume) loads the state and refuses to re-run
+    # the saved step.
+    cb2 = EvaluationCallback(_FakeRunner(), eval_interval=5)
+    cb2.load_checkpoint_state(state)
+    assert cb2._last_eval_step == 35
+
+    class _StubEngine:
+        rank = 0
+        global_step = 35
+
+    engine = _StubEngine()
+    engine.model = _StubModel()
+    engine.log_metrics = _Recorder().log_metrics
+    cb2.set_engine(engine)
+    cb2.on_train_step_end(epoch=0, batch_idx=34, loss=torch.tensor(1.0), metrics={})
+    assert runner.calls == 0, "resume must not re-evaluate the checkpoint's step"

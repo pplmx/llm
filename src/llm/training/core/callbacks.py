@@ -362,6 +362,25 @@ class EvaluationCallback(Callback):
         # otherwise re-trigger eval once per micro batch.
         self._last_eval_step = 0
 
+    def get_checkpoint_state(self) -> dict[str, Any] | None:
+        """Persist the last-evaluated optimizer step across a resume.
+
+        Without this a resumed run re-evaluates the checkpoint's step once
+        (the ``_last_eval_step == global_step`` guard starts at 0 on resume,
+        so the first boundary step fires an extra eval that already ran
+        before the checkpoint). Periodicity is preserved on resume (RIL
+        ISS-398)."""
+        return {"periodic_eval": {"last_eval_step": self._last_eval_step}}
+
+    def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
+        """Restore the last-evaluated step from a resumed checkpoint."""
+        if not state:
+            return
+        stored = state.get("periodic_eval")
+        if stored is None:
+            return
+        self._last_eval_step = int(stored.get("last_eval_step", self._last_eval_step))
+
     def on_train_step_end(
         self,
         epoch: int,
