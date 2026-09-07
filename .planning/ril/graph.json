@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 180,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-07T13:09:50+00:00",
+  "updated_at": "2026-09-07T15:05:01+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19106,10 +19106,10 @@
     "ISS-392": {
       "id": "ISS-392",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T15:05:01+00:00",
       "touched_round": 180,
       "summary": "GenerationConfig.use_cache ignored on the eager batch_generate path (no param) and the batched/speculative backends — identical config behaves differently than stream/generate",
       "severity": "low",
@@ -19130,10 +19130,10 @@
     "ISS-394": {
       "id": "ISS-394",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:25+00:00",
-      "updated_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T15:05:01+00:00",
       "touched_round": 180,
       "summary": "streaming reset() logs the cumulative skipped-rows counter as 'this pass' (never zeroed across corpus cycles) — misleading data-quality accounting",
       "severity": "low",
@@ -19166,10 +19166,10 @@
     "ISS-397": {
       "id": "ISS-397",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:25+00:00",
-      "updated_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T15:05:01+00:00",
       "touched_round": 180,
       "summary": "LMTask(predict) validates nothing at construction — batch_size=0 dies with an obscure range() error; negative silently behaves like 1",
       "severity": "low",
@@ -19178,10 +19178,10 @@
     "ISS-398": {
       "id": "ISS-398",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:25+00:00",
-      "updated_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T15:05:01+00:00",
       "touched_round": 180,
       "summary": "EvaluationCallback._last_eval_step is not persisted across resume — a resumed run re-evaluates the checkpoint's step once (harmless extra eval)",
       "severity": "low",
@@ -19190,10 +19190,10 @@
     "ISS-399": {
       "id": "ISS-399",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:25+00:00",
-      "updated_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T14:03:07+00:00",
       "touched_round": 180,
       "summary": "sampling.py:213 uses the PEP-758 comma-form except (TypeError, ValueError) — valid only on py>=3.14; normalize to parenthesized form for portability",
       "severity": "low",
@@ -19319,10 +19319,10 @@
     "TASK-347": {
       "id": "TASK-347",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:55:05+00:00",
-      "updated_at": "2026-09-07T11:55:05+00:00",
+      "updated_at": "2026-09-07T15:05:01+00:00",
       "touched_round": 180,
       "category": "maintainability",
       "severity": 0.3,
@@ -19347,10 +19347,10 @@
     "TASK-349": {
       "id": "TASK-349",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:55:05+00:00",
-      "updated_at": "2026-09-07T11:55:05+00:00",
+      "updated_at": "2026-09-07T15:05:01+00:00",
       "touched_round": 180,
       "category": "docs",
       "severity": 0.3,
@@ -19389,10 +19389,10 @@
     "TASK-352": {
       "id": "TASK-352",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:55:23+00:00",
-      "updated_at": "2026-09-07T11:55:23+00:00",
+      "updated_at": "2026-09-07T15:05:01+00:00",
       "touched_round": 180,
       "category": "stability",
       "severity": 0.3,
@@ -19403,10 +19403,10 @@
     "TASK-353": {
       "id": "TASK-353",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:55:47+00:00",
-      "updated_at": "2026-09-07T11:55:47+00:00",
+      "updated_at": "2026-09-07T15:05:01+00:00",
       "touched_round": 180,
       "category": "stability",
       "severity": 0.25,
@@ -19417,10 +19417,10 @@
     "TASK-354": {
       "id": "TASK-354",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:55:47+00:00",
-      "updated_at": "2026-09-07T11:55:47+00:00",
+      "updated_at": "2026-09-07T14:03:07+00:00",
       "touched_round": 180,
       "category": "maintainability",
       "severity": 0.25,
@@ -19482,6 +19482,50 @@
       "touched_round": 180,
       "commit": "636e3b7",
       "summary": "fix(eval): generation metrics empty-refs guard + evaluate/run result parity (ISS-395/396)"
+    },
+    "DEC-112": {
+      "id": "DEC-112",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T14:01:50+00:00",
+      "updated_at": "2026-09-07T14:01:50+00:00",
+      "touched_round": 180,
+      "rationale": "comma-form except is canonical for this repo: ruff.toml sets target-version=py314 (PEP-758) so the FORMATTER itself rewrites parenthesized except to comma-form (verified: ruff format reverts the parens); requires-python=>=3.14 makes it valid on every supported interpreter; style is deliberately documented in the py314-except-comma-syntax memory. No portability risk exists within the project's support matrix.",
+      "alternatives_rejected": "normalize to parenthesized form — rejected because the repo's own ruff formatter (py314 target) reverts it, so the change would be fought by CI formatting and churn 13 files for a non-existent portability risk on a py>=3.14-only project."
+    },
+    "CHG-366": {
+      "id": "CHG-366",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T15:03:56+00:00",
+      "updated_at": "2026-09-07T15:03:56+00:00",
+      "touched_round": 180,
+      "commit": "a4094a6",
+      "summary": "fix(eval,data): LMTask batch_size guard (ISS-397) + streaming pass-local skip counter reset (ISS-394)"
+    },
+    "CHG-367": {
+      "id": "CHG-367",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T15:03:56+00:00",
+      "updated_at": "2026-09-07T15:03:56+00:00",
+      "touched_round": 180,
+      "commit": "f863107",
+      "summary": "fix(training): persist periodic-eval last step across resume via checkpoint extra_state (ISS-398)"
+    },
+    "CHG-368": {
+      "id": "CHG-368",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T15:03:56+00:00",
+      "updated_at": "2026-09-07T15:03:56+00:00",
+      "touched_round": 180,
+      "commit": "e1fcbfb",
+      "summary": "fix(generation): thread use_cache through eager batch_generate + backend (ISS-392)"
     }
   },
   "edges": [
@@ -28789,6 +28833,66 @@
       "to": "ISS-396",
       "type": "resolves",
       "created_at": "2026-09-07T13:08:52+00:00"
+    },
+    {
+      "from": "DEC-112",
+      "to": "TASK-354",
+      "type": "governs",
+      "created_at": "2026-09-07T14:03:07+00:00"
+    },
+    {
+      "from": "DEC-112",
+      "to": "COMP-018",
+      "type": "governs",
+      "created_at": "2026-09-07T14:03:07+00:00"
+    },
+    {
+      "from": "CHG-366",
+      "to": "TASK-349",
+      "type": "implements",
+      "created_at": "2026-09-07T15:04:29+00:00"
+    },
+    {
+      "from": "CHG-366",
+      "to": "TASK-352",
+      "type": "implements",
+      "created_at": "2026-09-07T15:04:29+00:00"
+    },
+    {
+      "from": "CHG-366",
+      "to": "ISS-394",
+      "type": "resolves",
+      "created_at": "2026-09-07T15:04:29+00:00"
+    },
+    {
+      "from": "CHG-366",
+      "to": "ISS-397",
+      "type": "resolves",
+      "created_at": "2026-09-07T15:04:29+00:00"
+    },
+    {
+      "from": "CHG-367",
+      "to": "TASK-353",
+      "type": "implements",
+      "created_at": "2026-09-07T15:04:29+00:00"
+    },
+    {
+      "from": "CHG-367",
+      "to": "ISS-398",
+      "type": "resolves",
+      "created_at": "2026-09-07T15:04:29+00:00"
+    },
+    {
+      "from": "CHG-368",
+      "to": "TASK-347",
+      "type": "implements",
+      "created_at": "2026-09-07T15:04:29+00:00"
+    },
+    {
+      "from": "CHG-368",
+      "to": "ISS-392",
+      "type": "resolves",
+      "created_at": "2026-09-07T15:04:30+00:00"
     }
   ]
 }
