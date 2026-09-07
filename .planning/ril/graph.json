@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 180,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-07T11:56:05+00:00",
+  "updated_at": "2026-09-07T13:09:50+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18998,10 +18998,10 @@
     "ISS-383": {
       "id": "ISS-383",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:23+00:00",
-      "updated_at": "2026-09-07T05:38:23+00:00",
+      "updated_at": "2026-09-07T13:09:49+00:00",
       "touched_round": 180,
       "summary": "FP8: Fp8QuantizedLinear with a bias resolves dtype from the fp32 bias — quantize_model_fp8 drops the .to(weight.dtype) adoption sibling quantizers (GPTQ/AWQ/Smooth) perform (ISS-191 pattern), so biased FP8 layers emit fp32 into an fp16 graph",
       "severity": "medium",
@@ -19010,10 +19010,10 @@
     "ISS-384": {
       "id": "ISS-384",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T13:09:49+00:00",
       "touched_round": 180,
       "summary": "RMSNorm computes mean-square in host dtype (fp16/bf16) with no fp32 accumulation — activations past ~256 overflow to inf and the normalized layer collapses to 0",
       "severity": "medium",
@@ -19022,10 +19022,10 @@
     "ISS-385": {
       "id": "ISS-385",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T13:09:49+00:00",
       "touched_round": 180,
       "summary": "PerplexityMetric registry-instanced with ignore_index=None (metrics/__init__ comment claims -100) — an all-ignored corpus yields NaN instead of the documented inf, polluting JSON reports",
       "severity": "medium",
@@ -19034,10 +19034,10 @@
     "ISS-386": {
       "id": "ISS-386",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T13:09:49+00:00",
       "touched_round": 180,
       "summary": "PerplexityMetric crashes on references narrower than predictions (raw batch-mismatch ValueError) — only the predictions-narrower direction is clamped (ISS-192)",
       "severity": "medium",
@@ -19046,10 +19046,10 @@
     "ISS-387": {
       "id": "ISS-387",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T13:09:49+00:00",
       "touched_round": 180,
       "summary": "SpeculativeDecodingBackend lacks the eager empty-prompt guard — encode('') == [] yields an opaque IndexError from target_logits[0, -1:gamma, :]",
       "severity": "medium",
@@ -19058,10 +19058,10 @@
     "ISS-388": {
       "id": "ISS-388",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T13:09:49+00:00",
       "touched_round": 180,
       "summary": "Speculative backend never validates draft.max_seq_len >= target.max_seq_len — a shorter-context draft crashes mid-round with a positional-encoding ValueError instead of failing fast",
       "severity": "medium",
@@ -19070,10 +19070,10 @@
     "ISS-389": {
       "id": "ISS-389",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T13:09:49+00:00",
       "touched_round": 180,
       "summary": "eager.batch_generate accepts negative max_new_tokens (opaque zeros() RuntimeError) while generate() silently returns the prompt — neither validates >= 0 like the serving tier",
       "severity": "medium",
@@ -19082,10 +19082,10 @@
     "ISS-390": {
       "id": "ISS-390",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T13:09:49+00:00",
       "touched_round": 180,
       "summary": "library sampling_probs silently ignores out-of-range top_p (<=0 or >=1) instead of rejecting like temperature/top_k — top_p=0 (the greedy analog) draws non-deterministically",
       "severity": "low",
@@ -19094,10 +19094,10 @@
     "ISS-391": {
       "id": "ISS-391",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:24+00:00",
-      "updated_at": "2026-09-07T05:38:24+00:00",
+      "updated_at": "2026-09-07T13:09:50+00:00",
       "touched_round": 180,
       "summary": "apply_repetition_penalty bypasses the <=0 ValueError when token_ids is empty (guard sits after the early-return) — direct-API inconsistency only",
       "severity": "low",
@@ -19118,10 +19118,10 @@
     "ISS-393": {
       "id": "ISS-393",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:25+00:00",
-      "updated_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T13:09:50+00:00",
       "touched_round": 180,
       "summary": "BPE tokenizer pad_token_id falls back to the <unk> id when no [PAD] — consumers masking pad logits also mask unk, so OOV tokens can never be generated (undocumented)",
       "severity": "low",
@@ -19142,10 +19142,10 @@
     "ISS-395": {
       "id": "ISS-395",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:25+00:00",
-      "updated_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T13:09:50+00:00",
       "touched_round": 180,
       "summary": "generation metrics (Bleu/ChrF) raise a raw sacrebleu IndexError on empty references while claiming a 0.0 empty contract — only predictions are guarded",
       "severity": "low",
@@ -19154,10 +19154,10 @@
     "ISS-396": {
       "id": "ISS-396",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T05:38:25+00:00",
-      "updated_at": "2026-09-07T05:38:25+00:00",
+      "updated_at": "2026-09-07T13:09:50+00:00",
       "touched_round": 180,
       "summary": "EvaluationRunner.evaluate() raises an opaque TypeError on str references (as_tensor) and returns a different result shape than run() (no num_samples)",
       "severity": "low",
@@ -19235,10 +19235,10 @@
     "TASK-341": {
       "id": "TASK-341",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:54:14+00:00",
-      "updated_at": "2026-09-07T11:54:14+00:00",
+      "updated_at": "2026-09-07T13:09:24+00:00",
       "touched_round": 180,
       "category": "correctness",
       "severity": 0.7,
@@ -19249,10 +19249,10 @@
     "TASK-342": {
       "id": "TASK-342",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:54:15+00:00",
-      "updated_at": "2026-09-07T11:54:15+00:00",
+      "updated_at": "2026-09-07T13:09:24+00:00",
       "touched_round": 180,
       "category": "correctness",
       "severity": 0.7,
@@ -19263,10 +19263,10 @@
     "TASK-343": {
       "id": "TASK-343",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:54:15+00:00",
-      "updated_at": "2026-09-07T11:54:15+00:00",
+      "updated_at": "2026-09-07T13:09:24+00:00",
       "touched_round": 180,
       "category": "correctness",
       "severity": 0.5,
@@ -19277,10 +19277,10 @@
     "TASK-344": {
       "id": "TASK-344",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:54:42+00:00",
-      "updated_at": "2026-09-07T11:54:42+00:00",
+      "updated_at": "2026-09-07T13:09:24+00:00",
       "touched_round": 180,
       "category": "stability",
       "severity": 0.5,
@@ -19291,10 +19291,10 @@
     "TASK-345": {
       "id": "TASK-345",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:54:42+00:00",
-      "updated_at": "2026-09-07T11:54:42+00:00",
+      "updated_at": "2026-09-07T13:09:24+00:00",
       "touched_round": 180,
       "category": "correctness",
       "severity": 0.45,
@@ -19305,10 +19305,10 @@
     "TASK-346": {
       "id": "TASK-346",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:54:42+00:00",
-      "updated_at": "2026-09-07T11:54:42+00:00",
+      "updated_at": "2026-09-07T13:09:24+00:00",
       "touched_round": 180,
       "category": "correctness",
       "severity": 0.4,
@@ -19333,10 +19333,10 @@
     "TASK-348": {
       "id": "TASK-348",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:55:05+00:00",
-      "updated_at": "2026-09-07T11:55:05+00:00",
+      "updated_at": "2026-09-07T13:09:25+00:00",
       "touched_round": 180,
       "category": "correctness",
       "severity": 0.3,
@@ -19361,10 +19361,10 @@
     "TASK-350": {
       "id": "TASK-350",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:55:23+00:00",
-      "updated_at": "2026-09-07T11:55:23+00:00",
+      "updated_at": "2026-09-07T13:09:25+00:00",
       "touched_round": 180,
       "category": "correctness",
       "severity": 0.3,
@@ -19375,10 +19375,10 @@
     "TASK-351": {
       "id": "TASK-351",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T11:55:23+00:00",
-      "updated_at": "2026-09-07T11:55:23+00:00",
+      "updated_at": "2026-09-07T13:09:25+00:00",
       "touched_round": 180,
       "category": "correctness",
       "severity": 0.3,
@@ -19427,6 +19427,61 @@
       "confidence": 1.0,
       "effort": 1,
       "summary": "sampling.py uses the PEP-758 comma-form except (TypeError, ValueError) at line 213 (ISS-399) — valid only on py>=3.14. Normalize to parenthesized form for portability."
+    },
+    "CHG-361": {
+      "id": "CHG-361",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T13:07:03+00:00",
+      "updated_at": "2026-09-07T13:07:03+00:00",
+      "touched_round": 180,
+      "commit": "eca728c",
+      "summary": "fix(core,quant,eval): RMSNorm fp32 accumulation (ISS-384), FP8 bias dtype (ISS-383), PerplexityMetric registry default + narrow-refs (ISS-385/386)"
+    },
+    "CHG-362": {
+      "id": "CHG-362",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T13:07:03+00:00",
+      "updated_at": "2026-09-07T13:07:03+00:00",
+      "touched_round": 180,
+      "commit": "21a3cd8",
+      "summary": "fix(generation): speculative empty-prompt + draft-context guards (ISS-387/388), negative budget rejection (ISS-389)"
+    },
+    "CHG-363": {
+      "id": "CHG-363",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T13:07:03+00:00",
+      "updated_at": "2026-09-07T13:07:03+00:00",
+      "touched_round": 180,
+      "commit": "fcb7fc2",
+      "summary": "fix(generation): sampling_probs top_p range + repetition-penalty guard order (ISS-390/391)"
+    },
+    "CHG-364": {
+      "id": "CHG-364",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T13:07:04+00:00",
+      "updated_at": "2026-09-07T13:07:04+00:00",
+      "touched_round": 180,
+      "commit": "f4c6e28",
+      "summary": "fix(tokenization): BPE pad->unk aliasing introspection via unk_token_id (ISS-393)"
+    },
+    "CHG-365": {
+      "id": "CHG-365",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-07T13:07:04+00:00",
+      "updated_at": "2026-09-07T13:07:04+00:00",
+      "touched_round": 180,
+      "commit": "636e3b7",
+      "summary": "fix(eval): generation metrics empty-refs guard + evaluate/run result parity (ISS-395/396)"
     }
   },
   "edges": [
@@ -28608,6 +28663,132 @@
       "to": "ISS-399",
       "type": "addresses",
       "created_at": "2026-09-07T11:56:05+00:00"
+    },
+    {
+      "from": "CHG-361",
+      "to": "TASK-341",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:18+00:00"
+    },
+    {
+      "from": "CHG-361",
+      "to": "TASK-342",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:18+00:00"
+    },
+    {
+      "from": "CHG-361",
+      "to": "TASK-343",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:18+00:00"
+    },
+    {
+      "from": "CHG-361",
+      "to": "ISS-384",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:18+00:00"
+    },
+    {
+      "from": "CHG-361",
+      "to": "ISS-383",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:19+00:00"
+    },
+    {
+      "from": "CHG-361",
+      "to": "ISS-385",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:19+00:00"
+    },
+    {
+      "from": "CHG-361",
+      "to": "ISS-386",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:19+00:00"
+    },
+    {
+      "from": "CHG-362",
+      "to": "TASK-344",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:24+00:00"
+    },
+    {
+      "from": "CHG-362",
+      "to": "TASK-345",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:24+00:00"
+    },
+    {
+      "from": "CHG-362",
+      "to": "ISS-387",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:24+00:00"
+    },
+    {
+      "from": "CHG-362",
+      "to": "ISS-388",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:25+00:00"
+    },
+    {
+      "from": "CHG-362",
+      "to": "ISS-389",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:25+00:00"
+    },
+    {
+      "from": "CHG-363",
+      "to": "TASK-346",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:25+00:00"
+    },
+    {
+      "from": "CHG-363",
+      "to": "ISS-390",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:25+00:00"
+    },
+    {
+      "from": "CHG-363",
+      "to": "ISS-391",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:25+00:00"
+    },
+    {
+      "from": "CHG-364",
+      "to": "TASK-348",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:51+00:00"
+    },
+    {
+      "from": "CHG-364",
+      "to": "ISS-393",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:51+00:00"
+    },
+    {
+      "from": "CHG-365",
+      "to": "TASK-350",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:51+00:00"
+    },
+    {
+      "from": "CHG-365",
+      "to": "TASK-351",
+      "type": "implements",
+      "created_at": "2026-09-07T13:08:52+00:00"
+    },
+    {
+      "from": "CHG-365",
+      "to": "ISS-395",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:52+00:00"
+    },
+    {
+      "from": "CHG-365",
+      "to": "ISS-396",
+      "type": "resolves",
+      "created_at": "2026-09-07T13:08:52+00:00"
     }
   ]
 }
