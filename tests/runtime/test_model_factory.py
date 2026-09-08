@@ -166,3 +166,41 @@ def test_bootstrap_falls_back_to_code_builtins_when_entry_points_empty(monkeypat
 
     model = ModelFactory.build("decoder", vocab_size=16, hidden_size=8, num_layers=1, num_heads=2, max_seq_len=8)
     assert model is not None
+
+
+def test_from_config_shapes_kwargs_to_registered_builder(monkeypatch, tiny_config):
+    """RIL ISS-415: a third-party decoder-family builder (the llm.models
+    entry-point extension point) receives the FULL decoder kwargs — not the
+    4 MLP fields the old ``else`` branch passed, which produced a TypeError
+    or a silently-broken model. The regression_mlp outlier still gets MLP
+    kwargs (its signature has no decoder fields)."""
+    import torch.nn as nn
+
+    import llm.runtime.model_factory as mf
+    from llm.runtime.registry import Registry
+
+    class _FakeModel(nn.Module):
+        pass
+
+    captured: dict[str, object] = {}
+
+    def _build_my_decoder(*, vocab_size, num_layers, num_heads, hidden_size, **_kw):
+        captured.update(vocab_size=vocab_size, num_layers=num_layers, num_heads=num_heads, hidden_size=hidden_size)
+        return _FakeModel()
+
+    fresh = Registry("Model-test")
+    fresh.register("my_decoder", _build_my_decoder)
+    fresh.register("regression_mlp", mf.build_regression_mlp)
+    monkeypatch.setattr(mf, "MODEL_REGISTRY", fresh)
+
+    ModelFactory.from_config(tiny_config.model, model_type="my_decoder")
+    assert captured["vocab_size"] == tiny_config.model.vocab_size
+    assert captured["num_layers"] == tiny_config.model.num_layers
+    assert captured["num_heads"] == tiny_config.model.num_heads
+    assert captured["hidden_size"] == tiny_config.model.hidden_size
+
+    # The regression_mlp demo builder (no decoder-shaped params) keeps MLP kwargs.
+    from llm.core.mlp import MLP
+
+    model = ModelFactory.from_config(tiny_config.model, model_type="regression_mlp")
+    assert isinstance(model, MLP)

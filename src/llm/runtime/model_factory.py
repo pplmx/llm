@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -121,18 +122,35 @@ def decoder_kwargs_from_config(config: ModelConfig, **overrides: Any) -> dict[st
 class ModelFactory:
     """Resolve registered model builders from typed or raw configuration."""
 
+    #: Parameter names that mark a builder as decoder-shaped (the model-family
+    #: extension point). Such builders must receive the full decoder kwargs,
+    #: not the 4 MLP fields.
+    _DECODER_SHAPE_ARGS = ("vocab_size", "num_layers", "num_heads")
+
     @staticmethod
     def from_config(config: ModelConfig, *, model_type: str = "decoder", **overrides: Any) -> nn.Module:
         if model_type == "decoder":
             kwargs = decoder_kwargs_from_config(config, **overrides)
         else:
-            kwargs = {
-                "hidden_size": config.hidden_size,
-                "intermediate_size": config.intermediate_size,
-                "dropout_p": config.dropout,
-                "use_glu": config.use_glu,
-            }
-            kwargs.update(overrides)
+            # Shape the kwargs to the REGISTERED BUILDER's signature, not to a
+            # hardcoded MLP shape: every non-decoder builder used to receive
+            # only {hidden_size, intermediate_size, dropout_p, use_glu}, so a
+            # third-party decoder-family plugin (MODEL_REGISTRY is the
+            # llm.models entry-point extension point) got a confusing TypeError
+            # or — with a ``**kwargs`` catch-all — a silently-broken model
+            # built from the wrong fields (RIL ISS-415).
+            builder = MODEL_REGISTRY.get(model_type)
+            params = inspect.signature(builder).parameters
+            if all(arg in params for arg in ModelFactory._DECODER_SHAPE_ARGS):
+                kwargs = decoder_kwargs_from_config(config, **overrides)
+            else:
+                kwargs = {
+                    "hidden_size": config.hidden_size,
+                    "intermediate_size": config.intermediate_size,
+                    "dropout_p": config.dropout,
+                    "use_glu": config.use_glu,
+                }
+                kwargs.update(overrides)
         return ModelFactory.build(model_type, **kwargs)
 
     @staticmethod
