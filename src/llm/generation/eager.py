@@ -428,8 +428,22 @@ def batch_generate(
     )
     mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
+    # Normalized EOS ids (once): a finished row stops being sampled below, and
+    # the whole loop halts as soon as every row has emitted EOS — the previous
+    # code decoded every row through ALL ``max_new_tokens`` steps and only cut
+    # the post-EOS tail afterwards, doing up to ``max_new_tokens`` x the
+    # necessary forward work when rows finish early (RIL ISS-409).
+    eos_ids = normalize_eos_ids(getattr(tokenizer, "eos_token_id", None))
+    finished: list[bool] = [False] * batch_size
+    n_finished = 0
+
     for step in range(max_new_tokens):
         for i in range(batch_size):
+            if finished[i]:
+                # Already emitted EOS — stop sampling this row. It still
+                # occupies its batch slot (it is re-forwarded below) so the
+                # batched KV path stays aligned, but it adds no more tokens.
+                continue
             row_logits = next_token_logits[i]
             if repetition_penalty != 1.0:
                 row_logits = apply_repetition_penalty(row_logits, generated_ids[i], repetition_penalty)
@@ -446,6 +460,13 @@ def batch_generate(
                 top_p=top_p,
             )
             generated_ids[i].append(token_id)
+            if eos_ids and token_id in eos_ids:
+                finished[i] = True
+                n_finished += 1
+
+        if n_finished == batch_size:
+            # Every row hit EOS — nothing left to decode.
+            break
 
         next_tokens = torch.tensor(
             [[generated_ids[i][-1]] for i in range(batch_size)],

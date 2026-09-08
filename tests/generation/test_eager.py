@@ -873,6 +873,40 @@ def test_batch_generate_halts_on_eos_and_excludes_it(tiny_model):
     assert result == ["bbb"]  # prompt 'b' + 'bb'; EOS 'f' + later junk excluded
 
 
+def test_batch_generate_halts_loop_when_all_rows_eos(tiny_model):
+    """RIL ISS-409: the decode loop halts the moment every row has emitted
+    EOS. Previously each row decoded through all ``max_new_tokens`` steps —
+    up to ``max_new_tokens`` x the necessary forward work — and the post-EOS
+    junk was only cut AFTER the loop."""
+    tok = _make_eos_tokenizer(eos_id=5)
+    fwd = {"n": 0}
+    real_fwd = tiny_model.forward
+
+    def _counting_forward(*args, **kwargs):
+        fwd["n"] += 1
+        return real_fwd(*args, **kwargs)
+
+    with (
+        patch("llm.generation.eager.sample_next_token", side_effect=lambda logits, **kw: 5),
+        patch.object(tiny_model, "forward", side_effect=_counting_forward),
+    ):
+        results = batch_generate(
+            model=tiny_model,
+            tokenizer=tok([1]),
+            prompts=["p", "q"],
+            max_new_tokens=8,
+            temperature=0.0,
+        )
+
+    # Only the PREFILL forward ran: both rows emitted EOS on the very first
+    # sample, so the loop broke before any decode forward (the old code ran
+    # 1 + 8 forwards for the same input).
+    assert fwd["n"] == 1, f"decode loop should halt immediately, ran {fwd['n']} forwards"
+    # Each output is just the prompt text ('b' = id 1): the single EOS token
+    # is excluded from output, and nothing was generated after it.
+    assert results == ["b", "b"]
+
+
 def test_generate_with_use_cache_false(tiny_model):
     """``generate`` works with ``use_cache=False``."""
     tok = _make_stop_tokenizer(["a", "b"])
