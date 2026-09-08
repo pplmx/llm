@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 181,
+  "round": 182,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-08T14:42:25+00:00",
+  "updated_at": "2026-09-08T15:13:50+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19637,7 +19637,7 @@
       "version": 1,
       "created_at": "2026-09-08T12:54:22+00:00",
       "updated_at": "2026-09-08T12:54:22+00:00",
-      "touched_round": 181,
+      "touched_round": 182,
       "summary": "Eager serving silently truncates over-window prompts (keep=max(1,max_seq_len-max_new_tokens)) -> near-full-context prompt collapses to 1 token, generates garbage with 200 success; batched engine 400s the same payload. Behavior differs by generation_backend.",
       "severity": 0.6
     },
@@ -19681,7 +19681,7 @@
       "version": 1,
       "created_at": "2026-09-08T12:55:17+00:00",
       "updated_at": "2026-09-08T12:55:17+00:00",
-      "touched_round": 181,
+      "touched_round": 182,
       "summary": "temperature bound inconsistent: /generate (GenerationRequest) has no upper bound (schema le absent) vs /v1/chat le=2.0; top-level sampling accepts any temp>0. Degenerate temps (1e9 ~ uniform) silently accepted via /generate only.",
       "severity": 0.3
     },
@@ -19750,7 +19750,7 @@
       "version": 1,
       "created_at": "2026-09-08T12:58:39+00:00",
       "updated_at": "2026-09-08T12:58:39+00:00",
-      "touched_round": 181,
+      "touched_round": 182,
       "summary": "llm.serving.routers + schemas — OpenAI-compatible HTTP surface"
     },
     "COMP-023": {
@@ -19812,6 +19812,141 @@
       "updated_at": "2026-09-08T14:41:51+00:00",
       "touched_round": 181,
       "commit": "fb9e2ae"
+    },
+    "ISS-413": {
+      "id": "ISS-413",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:50:06+00:00",
+      "updated_at": "2026-09-08T14:50:06+00:00",
+      "touched_round": 181,
+      "summary": "tokenizer.pt round-trip silently broken for real HF tokenizers: allowlist covers HFTokenizer class but PreTrainedTokenizerFast embeds tokenizers.TokenizerFast/BPE rust objects whose tokenizers.* globals aren't allowlisted -> weights_only UnpicklingError, indistinguishable from malicious-pickle rejection. Minimal fix: loud error suggesting tokenizer_type='hf' + repo id, or add tokenizers module; + round-trip test.",
+      "severity": 0.6
+    },
+    "ISS-414": {
+      "id": "ISS-414",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:50:06+00:00",
+      "updated_at": "2026-09-08T14:50:06+00:00",
+      "touched_round": 181,
+      "summary": "hf_loader unconsumed guard (any raw HF key absent from expanded mapping) rejects harmless benign buffers: LLaMA-1/Mistral dumps ship rotary_emb.inv_freq (non-persistent in our rope), lm_head.bias variants, extra safetensors metadata. missing/unexpected guard downstream already catches real drops; this earlier guard is redundant-strict. Fix: only raise for unmapped keys that remain unexpected after load_state_dict, or warn for benign buffers.",
+      "severity": 0.6
+    },
+    "ISS-415": {
+      "id": "ISS-415",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:50:06+00:00",
+      "updated_at": "2026-09-08T14:50:06+00:00",
+      "touched_round": 181,
+      "summary": "ModelFactory.from_config() else-branch passes MLP-shaped kwargs (hidden_size/intermediate_size/dropout_p/use_glu) to ANY non-'decoder' builder — a plugin registered my_decoder expecting decoder kwargs gets TypeError or a silently-broken model. Fix: route registry decoder-like builders through decoder_kwargs_from_config or expose kwargs-shape contract.",
+      "severity": 0.5
+    },
+    "ISS-416": {
+      "id": "ISS-416",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:50:06+00:00",
+      "updated_at": "2026-09-08T14:50:06+00:00",
+      "touched_round": 181,
+      "summary": "serving legacy (config-less) checkpoints: _build_decoder hardcodes use_glu=False/intermediate_size=None and never passes use_rope/norm_first/norm_impl/qkv_bias/mlp_bias/lm_head_bias; load_state_dict(strict=False) + warning-only -> GLU weights missing = random-init with warning; RoPE silently serves as non-RoPE. Promote weight-key misses to a loud error like hf_loader.",
+      "severity": 0.5
+    },
+    "ISS-417": {
+      "id": "ISS-417",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:51:52+00:00",
+      "updated_at": "2026-09-08T14:51:52+00:00",
+      "touched_round": 181,
+      "summary": "get_weight_mapping silently falls back to LLAMA_MAPPING for any unknown architecture; convert_hf/gguf/our_weights call it without mixtral/unknown guard -> future/pluggable callers silently mis-map MoE/expert tensors (ISS-144 class). Fix: raise KeyError for known-but-unsupported names, assert in convert_*.",
+      "severity": 0.5
+    },
+    "ISS-418": {
+      "id": "ISS-418",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:51:52+00:00",
+      "updated_at": "2026-09-08T14:51:52+00:00",
+      "touched_round": 181,
+      "summary": "bootstrap ensure_builtins_registered permanently locks in empty MODEL_REGISTRY with no diagnostic: entry points missing (source-tree import, stale venv) -> _builtins_registered True forever, every from_config fails 'decoder not found'. Fix: code-level fallback registration of build_decoder/build_regression_mlp or descriptive error.",
+      "severity": 0.5
+    },
+    "ISS-419": {
+      "id": "ISS-419",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:51:52+00:00",
+      "updated_at": "2026-09-08T14:51:52+00:00",
+      "touched_round": 181,
+      "summary": "hf_publisher push_to_hub leaks temp staging dirs (mkdtemp never cleaned, unbounded disk in long-running containers) and save_pretrained non-atomic (config.json then safetensors -> crash leaves stale weights + fresh config silently mismatched). Fix: TemporaryDirectory context + write safetensors before config/atomic rename.",
+      "severity": 0.4
+    },
+    "ISS-420": {
+      "id": "ISS-420",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:51:53+00:00",
+      "updated_at": "2026-09-08T14:51:53+00:00",
+      "touched_round": 181,
+      "summary": "tokenizer_factory edge cases: default_corpus=[] falsy -> replaced by printable corpus (use `default_corpus is None` discriminator); from_dataset_text slurps whole file + raw UnicodeDecodeError; from_serving_config returns torch.load result with no isinstance tokenizer check -> confusing AttributeError at request time.",
+      "severity": 0.3
+    },
+    "COMP-026": {
+      "id": "COMP-026",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:53:51+00:00",
+      "updated_at": "2026-09-08T14:53:51+00:00",
+      "touched_round": 181,
+      "summary": "llm.runtime — bootstrap/registry/plugins/model_factory/tokenizer_factory/checkpoint"
+    },
+    "COMP-027": {
+      "id": "COMP-027",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:53:51+00:00",
+      "updated_at": "2026-09-08T14:53:51+00:00",
+      "touched_round": 181,
+      "summary": "llm.compat — hf_loader/hf_publisher/weight_mapping (HF/GGUF interop)"
+    },
+    "TASK-359": {
+      "id": "TASK-359",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-09-08T14:57:26+00:00",
+      "updated_at": "2026-09-08T14:59:50+00:00",
+      "touched_round": 182,
+      "category": "correctness",
+      "summary": "Serving validation surface (ISS-408/412): eager over-window prompts must be a 400 pre-check (like the batched engine) instead of silent tail-truncation to ~1-token garbage; and /generate temperature needs the same upper bound as /v1/chat (le=2.0) with a documented effective range. Add cross-backend e2e tests.",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "effort": 2,
+      "lock_owner": "llm-bb-r182",
+      "lock_until": "2026-09-08T15:29:50+00:00"
+    },
+    "DEC-113": {
+      "id": "DEC-113",
+      "type": "decision",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T15:13:25+00:00",
+      "updated_at": "2026-09-08T15:13:25+00:00",
+      "touched_round": 182,
+      "rationale": "The serving pre-validation used to SKIP the context-window budget check for engine-less backends (pinned by the ISS-355 regression test) because EagerGenerationBackend tail-truncated over-window prompts. But that silent truncation degrades to a ~1-token prompt (garbage output) as max_new_tokens approaches max_seq_len, and it diverged from the batched engine's clean 400 for the identical payload. DEC-113: every backend (batched AND eager, stream AND non-stream) now rejects len(prompt)+max_new_tokens > window with the same 400; eager clients must shorten the prompt or chunk, matching the framework's own reference (batched) backend. Supersedes the ISS-355/TASK-315 'skip for engineless' behavior.",
+      "alternatives_rejected": "Keep silent tail-truncation but return the effective context length used (misleads clients into thinking the full prompt was attended; does not fix the keep=1 garbage). Only 400 when max_new_tokens >= window fraction (arbitrary threshold, opaque). Always-400 is uniform, self-documenting and matches the batched reference."
     }
   },
   "edges": [
@@ -29335,6 +29470,72 @@
       "to": "ISS-411",
       "type": "resolves",
       "created_at": "2026-09-08T14:42:24+00:00"
+    },
+    {
+      "from": "ISS-413",
+      "to": "COMP-026",
+      "type": "located_in",
+      "created_at": "2026-09-08T14:54:46+00:00"
+    },
+    {
+      "from": "ISS-414",
+      "to": "COMP-027",
+      "type": "located_in",
+      "created_at": "2026-09-08T14:54:47+00:00"
+    },
+    {
+      "from": "ISS-415",
+      "to": "COMP-026",
+      "type": "located_in",
+      "created_at": "2026-09-08T14:54:47+00:00"
+    },
+    {
+      "from": "ISS-416",
+      "to": "COMP-022",
+      "type": "located_in",
+      "created_at": "2026-09-08T14:54:47+00:00"
+    },
+    {
+      "from": "ISS-417",
+      "to": "COMP-027",
+      "type": "located_in",
+      "created_at": "2026-09-08T14:54:47+00:00"
+    },
+    {
+      "from": "ISS-418",
+      "to": "COMP-026",
+      "type": "located_in",
+      "created_at": "2026-09-08T14:54:47+00:00"
+    },
+    {
+      "from": "ISS-419",
+      "to": "COMP-027",
+      "type": "located_in",
+      "created_at": "2026-09-08T14:54:47+00:00"
+    },
+    {
+      "from": "ISS-420",
+      "to": "COMP-026",
+      "type": "located_in",
+      "created_at": "2026-09-08T14:54:47+00:00"
+    },
+    {
+      "from": "TASK-359",
+      "to": "ISS-408",
+      "type": "addresses",
+      "created_at": "2026-09-08T14:58:43+00:00"
+    },
+    {
+      "from": "TASK-359",
+      "to": "ISS-412",
+      "type": "addresses",
+      "created_at": "2026-09-08T14:58:43+00:00"
+    },
+    {
+      "from": "DEC-113",
+      "to": "COMP-022",
+      "type": "governs",
+      "created_at": "2026-09-08T15:13:50+00:00"
     }
   ]
 }

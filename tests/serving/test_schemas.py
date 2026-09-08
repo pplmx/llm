@@ -65,6 +65,25 @@ def test_top_p_accepts_openai_default_one():
     assert req2.top_p == 1.0
 
 
+# --- temperature upper bound (RIL ISS-412): /generate matches /v1/chat ------
+
+
+def test_generation_request_temperature_upper_bound_2():
+    """``temperature`` is capped at 2.0 on /generate exactly like
+    /v1/chat/completions — a degenerate 1e9 previously slipped an
+    all-but-uniform distribution through /generate while /v1/chat 422'd
+    (RIL ISS-412)."""
+    assert GenerationRequest(prompt="hi", temperature=2.0).temperature == 2.0
+    with pytest.raises(ValidationError):
+        GenerationRequest(prompt="hi", temperature=2.5)
+
+
+def test_batch_generation_request_temperature_upper_bound_2():
+    assert BatchGenerationRequest(prompts=["hi"], temperature=2.0).temperature == 2.0
+    with pytest.raises(ValidationError):
+        BatchGenerationRequest(prompts=["hi"], temperature=3.0)
+
+
 # --- Request-input bounds (RIL ISS-171): schema-level 422 fast-fail caps ---
 
 

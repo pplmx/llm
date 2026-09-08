@@ -787,13 +787,15 @@ def test_stream_prevalidation_checks_prompt_plus_engine_budget(monkeypatch):
         gen._validate_generation_bounds("xy", 16)
 
 
-def test_stream_prevalidation_skips_budget_for_engineless_backend(monkeypatch):
-    """Regression (RIL TASK-315/ISS-355): an engine-less backend (the default
-    ``EagerGenerationBackend``) TRUNCATES over-window prompts and serves them
-    — matching its non-streaming twin — so pre-validation must NOT 400 a
-    stream whose ``len(prompt) + max_new_tokens`` exceeds the model window
-    there (the ISS-346 budget check used to fire on EVERY backend, flipping
-    the same payload between stream=400 and non-stream=200)."""
+def test_prevalidation_rejects_engineless_over_window_like_engine(monkeypatch):
+    """Regression (RIL TASK-315/ISS-355, superseded by RIL DEC-113/ISS-408):
+    the eager (engine-less) backend used to SILENTLY tail-truncate over-window
+    prompts — degrading to a ~1-token prompt (garbage output) once
+    ``max_new_tokens`` approaches the window — and the validation used to
+    skip the budget check to keep that silent truncation. Every backend (batched
+    AND eager, stream AND non-stream) now rejects ``len(prompt) +
+    max_new_tokens > window`` with the same 400, so the identical payload
+    behaves uniformly regardless of ``generation_backend``."""
     import llm.serving.routers.generate as gen
 
     class _FakeModel:
@@ -806,9 +808,31 @@ def test_stream_prevalidation_skips_budget_for_engineless_backend(monkeypatch):
 
     monkeypatch.setattr(gen, "_require_generation_service", lambda: _FakeService())
 
-    # 14 chars -> 3 tokens (StubTokenizer.encode fixed length) + 14 new tokens
-    # = 17 > model window 16: still no raise, because eager truncates.
-    gen._validate_generation_bounds("x" * 14, 14)
+    # 3 tokens (StubTokenizer.encode fixed length) + 14 new tokens = 17 >
+    # model window 16: now a 400 even for the engine-less backend.
+    with pytest.raises(gen.APIError) as excinfo:
+        gen._validate_generation_bounds("x" * 14, 14)
+    assert excinfo.value.status_code == 400
+    assert "context window" in str(excinfo.value)
+
+    # Fits (3 + 12 = 15 <= 16): no raise.
+    gen._validate_generation_bounds("x" * 12, 12)
+
     # The model-level guard (max_new_tokens >= model.max_seq_len) still fires.
     with pytest.raises(gen.APIError):
         gen._validate_generation_bounds("x" * 14, 16)
+
+
+def test_nonstream_engineless_over_window_is_400(client):
+    """The non-streaming route applies the same budget pre-check as streaming
+    (RIL ISS-408/DEC-113): an over-window prompt against the default eager
+    backend is a clean 400, not a silent tail-truncated 200."""
+    # StubTokenizer.encode -> fixed 3 tokens; 3 + 14 = 17 > model window 16.
+    resp = client.post("/generate", json={"prompt": "hello world", "max_new_tokens": 14})
+    assert resp.status_code == 400, resp.text
+    assert "context window" in resp.text
+
+    # A within-window request still succeeds on the eager backend.
+    fine = client.post("/generate", json={"prompt": "hello", "max_new_tokens": 4})
+    assert fine.status_code == 200, fine.text
+    assert "generated_text" in fine.json()

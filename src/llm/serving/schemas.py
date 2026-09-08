@@ -105,7 +105,12 @@ class GenerationRequest(BaseModel):
         ),
     )
     max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum number of tokens to generate.")
-    temperature: float = Field(1.0, ge=0.0, description="Controls randomness. 0 for Greedy Search.")
+    temperature: float = Field(
+        1.0,
+        ge=0.0,
+        le=2.0,
+        description="Controls randomness. 0 for Greedy Search. Capped at 2.0 like /v1/chat/completions (RIL ISS-412).",
+    )
     top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter. None to disable.")
     top_p: float | None = Field(
         None,
@@ -165,7 +170,12 @@ class BatchGenerationRequest(BaseModel):
         return v
 
     max_new_tokens: int = Field(50, ge=1, le=4096, description="Maximum tokens to generate per prompt.")
-    temperature: float = Field(1.0, ge=0.0, description="Sampling temperature. 0 for greedy.")
+    temperature: float = Field(
+        1.0,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature. 0 for greedy. Capped at 2.0 like /generate (RIL ISS-412).",
+    )
     top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter.")
     top_p: float | None = Field(
         None, gt=0.0, le=1.0, description="Nucleus sampling parameter. 1.0 means no truncation."

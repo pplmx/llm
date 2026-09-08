@@ -256,15 +256,22 @@ def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
     # never fired (RIL TASK-315/ISS-355). An engine REFUSES over-window
     # requests (``add_request`` raises ValueError INSIDE the started SSE), so
     # those must still be pre-rejected as 400. An engine-less backend (eager)
-    # TRUNCATES over-window prompts and serves them — exactly what the
-    # non-streaming path does — so the budget check is skipped there to keep
-    # stream and non-stream consistent for the same payload.
+    # used to SILENTLY tail-truncate over-window prompts — degrading to a
+    # ~1-token prompt (and hence garbage output) when ``max_new_tokens``
+    # approaches ``max_seq_len``, and diverging from the batched engine's
+    # clean 400 for the identical payload (RIL ISS-408 / DEC-113). The check
+    # now fires for EVERY backend: the budget is the effective model window
+    # (``model.max_seq_len``), tightened by the engine's KV window when one
+    # exists. Both stream and non-stream reject the same payload the same way.
     backend = getattr(service, "backend", None)
     engine_max = getattr(getattr(backend, "engine", None), "max_seq_len", None)
-    if not isinstance(engine_max, int):
-        return
     budget_vals = [bound for bound in (model_max_seq, engine_max) if isinstance(bound, int)]
-    budget = min(budget_vals) if budget_vals else engine_max
+    if not budget_vals:
+        # No model window surfaced (model without ``max_seq_len``) — nothing
+        # to budget against; the ``max_new_tokens``-only guard above already
+        # ran.
+        return
+    budget = min(budget_vals)
     try:
         prompt_len = len(service.tokenizer.encode(prompt))
     except KeyError, ValueError, TypeError:
@@ -320,6 +327,12 @@ async def generate_text(
         # "Error: ..." chunk inside a 200 stream (RIL ISS-113, ISS-149).
         _validate_stream_request(request.prompt, request.max_new_tokens)
         return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
+
+    # Non-streaming twin of the same pre-check: an over-window prompt must be
+    # a clean 400 on every backend (eager previously tail-truncated silently
+    # — RIL ISS-408/DEC-113), matching the streaming route and the batched
+    # engine rather than producing garbage output.
+    _validate_generation_bounds(request.prompt, request.max_new_tokens)
 
     timer = metrics.request_timer(endpoint="generate")
     with timer as t:
