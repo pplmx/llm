@@ -137,3 +137,32 @@ def test_bootstrap_cold_start_race_is_serialized():
     # And the bootstrapped state is intact / usable.
     assert "decoder" in MODEL_REGISTRY.names()
     assert boot._builtins_registered is True
+
+
+def test_bootstrap_falls_back_to_code_builtins_when_entry_points_empty(monkeypatch):
+    """If ``llm.models`` entry-point discovery resolves to an EMPTY registry
+    (source-tree use without ``pip install -e .``, stale venv, subprocess
+    with a different sys.path), the code-level builtins must still register —
+    an empty registry used to be pinned as ``_builtins_registered=True`` and
+    every ``ModelFactory.from_config`` failed with no hint (RIL ISS-418)."""
+    import llm.runtime.bootstrap as boot
+    from llm.runtime.registry import Registry
+
+    def _noop_entry_points(_group, _registry):
+        return None
+
+    fresh = Registry("Model-test")
+    monkeypatch.setattr(boot, "MODEL_REGISTRY", fresh)
+    monkeypatch.setattr(boot, "load_entry_point_registry", _noop_entry_points)
+    monkeypatch.setattr(boot, "_builtins_registered", False)
+    monkeypatch.setattr(boot, "_registration_lock", __import__("threading").Lock())
+
+    ensure_builtins_registered()
+
+    assert "decoder" in fresh.names()
+    assert "regression_mlp" in fresh.names()
+    # The builtins actually build.
+    from llm.runtime.model_factory import ModelFactory
+
+    model = ModelFactory.build("decoder", vocab_size=16, hidden_size=8, num_layers=1, num_heads=2, max_seq_len=8)
+    assert model is not None

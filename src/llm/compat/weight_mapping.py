@@ -204,6 +204,12 @@ def detect_architecture(config: dict[str, Any]) -> str:
         return "unknown"
 
 
+#: Architectures ``detect_architecture`` recognizes are known NOT to map
+#: cleanly through Llama naming rules (MoE / expert tensors). These must be
+#: rejected, not silently converted with garbage names.
+_KNOWN_UNSUPPORTED = {"mixtral", "unknown"}
+
+
 def get_weight_mapping(architecture: str) -> dict[str, str]:
     """
     Get weight name mapping for an architecture.
@@ -213,7 +219,22 @@ def get_weight_mapping(architecture: str) -> dict[str, str]:
 
     Returns:
         Dictionary mapping HF names to our names.
+
+    Raises:
+        KeyError: if ``architecture`` is a known-but-unsupported family
+            (``mixtral``/``unknown`` sentinels from ``detect_architecture``)
+            that MUST not be converted with Llama naming rules — the
+            ``hf_loader`` guards these, but ``convert_hf_weights`` /
+            ``convert_gguf_weights`` / ``convert_our_weights`` call this
+            directly and used to silently fall back to Llama rules, mis-mapping
+            every MoE/expert tensor (RIL ISS-417 / ISS-144 class).
     """
+    if architecture in _KNOWN_UNSUPPORTED:
+        raise KeyError(
+            f"no weight mapping for architecture {architecture!r}: Llama naming rules do "
+            "not generalize to it (MoE/expert tensors would be mis-mapped). Add an "
+            "ARCHITECTURE_MAPPINGS entry or reject the checkpoint before conversion."
+        )
     return ARCHITECTURE_MAPPINGS.get(architecture, LLAMA_MAPPING)
 
 

@@ -48,6 +48,19 @@ class TestWeightMapping:
         assert "model.layers.2.attn.weight" in expanded
         assert "model.norm.weight" in expanded
 
+    def test_get_weight_mapping_rejects_known_unsupported(self):
+        """``mixtral``/``unknown`` must raise KeyError instead of silently
+        falling back to Llama naming rules (which mis-map every MoE/expert
+        tensor) when a caller invokes the converter directly — the hf_loader
+        guards these first, but the raw convert_* functions shared this
+        silent-fallback footgun (RIL ISS-417)."""
+        import pytest
+
+        with pytest.raises(KeyError, match="mixtral"):
+            get_weight_mapping("mixtral")
+        with pytest.raises(KeyError, match="unknown"):
+            get_weight_mapping("unknown")
+
     def test_detect_architecture_llama(self):
         """Test architecture detection for Llama."""
         config = {"model_type": "llama"}

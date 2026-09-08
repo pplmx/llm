@@ -255,14 +255,10 @@ def save_pretrained(model: DecoderModel, save_directory: str | Path) -> Path:
     save_directory = Path(save_directory)
     save_directory.mkdir(parents=True, exist_ok=True)
 
-    # 1. Write config.json (Llama-style).
-    hf_config = _build_hf_config(model)
-    config_path = save_directory / "config.json"
-    with config_path.open("w", encoding="utf-8") as f:
-        json.dump(hf_config, f, indent=2)
-    logger.info(f"Wrote HF config to {config_path}")
-
-    # 2. Convert + write state_dict.
+    # 1. Write safetensors FIRST: a crash between the two writes then leaves
+    # a MISSING config.json (loud failure on load) instead of a fresh config
+    # paired with a stale/missing weights file — the silent shape/arch
+    # mismatch class. config.json goes last (RIL ISS-419).
     num_layers = len(model.transformer_blocks)
     attn0 = model.transformer_blocks[0].self_attn
     if not isinstance(attn0, _SizedAttention):
@@ -281,6 +277,13 @@ def save_pretrained(model: DecoderModel, save_directory: str | Path) -> Path:
     weights_path = save_directory / "model.safetensors"
     save_file(contiguous, str(weights_path))
     logger.info(f"Wrote {len(contiguous)} tensors to {weights_path}")
+
+    # 2. Write config.json (Llama-style) LAST.
+    hf_config = _build_hf_config(model)
+    config_path = save_directory / "config.json"
+    with config_path.open("w", encoding="utf-8") as f:
+        json.dump(hf_config, f, indent=2)
+    logger.info(f"Wrote HF config to {config_path}")
 
     return save_directory
 
@@ -334,7 +337,21 @@ def push_to_hub(
     from huggingface_hub import HfApi
 
     if save_directory is None:
-        save_directory = Path(tempfile.mkdtemp(prefix="llm-push-"))
+        # Context-managed staging dir so a push cleans up after itself —
+        # ``mkdir_temporary`` staging leaked one full model directory under
+        # the system temp path per call (unbounded disk growth in long-running
+        # containers / CI sweeps, since the repo is ``exist_ok=True`` by
+        # default; RIL ISS-419).
+        with tempfile.TemporaryDirectory(prefix="llm-push-") as _staging:
+            return push_to_hub(
+                model,
+                repo_id,
+                token=token,
+                private=private,
+                commit_message=commit_message,
+                exist_ok=exist_ok,
+                save_directory=_staging,
+            )
     save_directory = Path(save_directory)
 
     save_pretrained(model, save_directory)
