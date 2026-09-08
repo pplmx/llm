@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 180,
+  "round": 181,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-07T15:32:16+00:00",
+  "updated_at": "2026-09-08T13:02:31+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -18972,7 +18972,7 @@
       "version": 1,
       "created_at": "2026-09-07T04:00:35+00:00",
       "updated_at": "2026-09-07T04:00:35+00:00",
-      "touched_round": 180,
+      "touched_round": 181,
       "summary": "llm.generation.sampling / eager / serving.batch_engine — tokenizer id handling"
     },
     "COMP-019": {
@@ -19552,6 +19552,232 @@
       "confidence": 1.0,
       "effort": 1,
       "summary": "Verify test_pp3d_engine_dp2_full_3d_train_eight_process_cpu on a quiet machine (no other GPU consumers) to confirm the contended-box c10::Error is pure environment (ISS-400); if it still fails on free GPUs, investigate as a real PP/3D bug."
+    },
+    "ISS-401": {
+      "id": "ISS-401",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:52:16+00:00",
+      "updated_at": "2026-09-08T12:52:16+00:00",
+      "touched_round": 181,
+      "summary": "top_p=1.0 accepted by serving schemas (le=1.0, 'no truncation, OpenAI default') but rejected by sampling_probs (<1.0, RIL ISS-390). OpenAI clients default to top_p=1.0 -> 400 non-stream / in-band stream error. Tests pin BOTH sides. Fix: top_p>=1.0 = skip nucleus filter; reject only top_p<=0.",
+      "severity": 0.8
+    },
+    "ISS-402": {
+      "id": "ISS-402",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:53:07+00:00",
+      "updated_at": "2026-09-08T12:53:07+00:00",
+      "touched_round": 181,
+      "summary": "Custom-loop tasks (PPO/RLHF, engine.optimizer=None) crash on first callback: LRSchedulerCallback.on_train_step_end/on_epoch_end raise RuntimeError('optimizer is not available') unconditionally (callbacks.py:442/464). llm-train --task ppo always registers LRSchedulerCallback -> deterministic crash on batch 1.",
+      "severity": 0.8
+    },
+    "ISS-403": {
+      "id": "ISS-403",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:53:08+00:00",
+      "updated_at": "2026-09-08T12:53:08+00:00",
+      "touched_round": 181,
+      "summary": "3d (PP+TP) checkpoint save/load broken: stage tagged _tp+_pp3d but NOT _pp, so checkpoint.py collective/optimizer-gather gates (is_pp) miss it -> save persists ONLY stage-0 weights, stages>=1 optimizer moments lost; resume dispatches to _tp.scatter_load against local key namespace that collides across all stages -> silently loads stage-0 weights into every stage (TASK-216 delta).",
+      "severity": 0.9
+    },
+    "ISS-404": {
+      "id": "ISS-404",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:53:08+00:00",
+      "updated_at": "2026-09-08T12:53:08+00:00",
+      "touched_round": 181,
+      "summary": "3d logged training/val metrics deflated: engine._metric_reduce_divisor=world_size, but with dp_size=1 pp_group None broadcast loss over WORLD -> every rank holds identical value, then /world_size underreports (ISS-252 fixed pure TP but not 3d).",
+      "severity": 0.5
+    },
+    "ISS-405": {
+      "id": "ISS-405",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:53:39+00:00",
+      "updated_at": "2026-09-08T12:53:39+00:00",
+      "touched_round": 181,
+      "summary": "batch_engine: one per-row sampling/validation failure kills the WHOLE shared step — broad except BaseException -> _lock_step_post marks ALL sequences FINISHED + frees their slots + re-raises; one client's 4xx-class param error preempts every concurrent healthy request (503/stream error + partial output loss).",
+      "severity": 0.7
+    },
+    "ISS-406": {
+      "id": "ISS-406",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:53:39+00:00",
+      "updated_at": "2026-09-08T12:53:39+00:00",
+      "touched_round": 181,
+      "summary": "Non-streaming serving request timeout orphans the generation: asyncio.timeout cancels the await but not the ThreadPoolExecutor thread; orphaned full stream_request keeps holding a batched-engine KV slot and burning GPU (streaming path closes the sync iterator correctly; non-stream routes don't).",
+      "severity": 0.6
+    },
+    "ISS-407": {
+      "id": "ISS-407",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:53:39+00:00",
+      "updated_at": "2026-09-08T12:53:39+00:00",
+      "touched_round": 181,
+      "summary": "Scheduler queue-full (max_waiting) surfaced as misleading errors: streaming -> in-band 200 'Error: stream failed'; non-stream -> 503 'Model unavailable during generation'. Should be retryable 503/429 with honest 'queue full' message.",
+      "severity": 0.5
+    },
+    "ISS-408": {
+      "id": "ISS-408",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:54:22+00:00",
+      "updated_at": "2026-09-08T12:54:22+00:00",
+      "touched_round": 181,
+      "summary": "Eager serving silently truncates over-window prompts (keep=max(1,max_seq_len-max_new_tokens)) -> near-full-context prompt collapses to 1 token, generates garbage with 200 success; batched engine 400s the same payload. Behavior differs by generation_backend.",
+      "severity": 0.6
+    },
+    "ISS-409": {
+      "id": "ISS-409",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:54:22+00:00",
+      "updated_at": "2026-09-08T12:54:22+00:00",
+      "touched_round": 181,
+      "summary": "batch_generate runs EOS-terminated rows through all max_new_tokens steps (no per-row halt; EOS only cut after loop) -> wasted decode up to max_new_tokens x, and post-EOS junk tokens pollute repetition/frequency/presence penalty history.",
+      "severity": 0.5
+    },
+    "ISS-410": {
+      "id": "ISS-410",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:54:22+00:00",
+      "updated_at": "2026-09-08T12:54:22+00:00",
+      "touched_round": 181,
+      "summary": "TensorBoardLogger log_dir doubled: train.py passes TensorBoardLogger(log_dir=config.logging.log_dir) then on_train_start appends config.logging.log_dir again -> writer lands at logs/logs (default).",
+      "severity": 0.5
+    },
+    "ISS-411": {
+      "id": "ISS-411",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:55:16+00:00",
+      "updated_at": "2026-09-08T12:55:16+00:00",
+      "touched_round": 181,
+      "summary": "CLI --compile/--amp typer defaults (True) unconditionally overwrite YAML config: llm-train --task lm --config-path cfg.yaml with use_compile=False/use_amp=False in YAML gets silently flipped to True unless --no-* passed.",
+      "severity": 0.5
+    },
+    "ISS-412": {
+      "id": "ISS-412",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:55:17+00:00",
+      "updated_at": "2026-09-08T12:55:17+00:00",
+      "touched_round": 181,
+      "summary": "temperature bound inconsistent: /generate (GenerationRequest) has no upper bound (schema le absent) vs /v1/chat le=2.0; top-level sampling accepts any temp>0. Degenerate temps (1e9 ~ uniform) silently accepted via /generate only.",
+      "severity": 0.3
+    },
+    "TASK-356": {
+      "id": "TASK-356",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-09-08T12:56:37+00:00",
+      "updated_at": "2026-09-08T13:02:31+00:00",
+      "touched_round": 181,
+      "category": "correctness",
+      "summary": "Align top_p>=1.0 as 'no nucleus filtering' end-to-end: sampling_probs accepts top_p>=1.0 (skip filter, OpenAI semantics), serving schemas stay le=1.0, reject only top_p<=0; update pinning test (sampling_validation) + add cross-layer serving tests (stream + non-stream top_p=1.0). Also validate sampling params at add_request/stream-validation in batch_engine so per-row sampling errors can't kill a shared step.",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "effort": 2,
+      "lock_owner": "llm-bb-r181",
+      "lock_until": "2026-09-08T13:32:31+00:00"
+    },
+    "TASK-357": {
+      "id": "TASK-357",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:56:37+00:00",
+      "updated_at": "2026-09-08T12:56:37+00:00",
+      "touched_round": 181,
+      "category": "stability",
+      "summary": "Custom-loop (PPO/RLHF) callbacks must not crash when engine.optimizer is None: LRSchedulerCallback.on_train_step_end/on_epoch_end no-op (return) instead of raising when optimizer is None; TensorBoardLogger equivalents. Add regression test driving PPOTask through the standard callback set.",
+      "severity": 0.8,
+      "confidence": 1.0,
+      "effort": 2
+    },
+    "TASK-358": {
+      "id": "TASK-358",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:56:37+00:00",
+      "updated_at": "2026-09-08T12:56:37+00:00",
+      "touched_round": 181,
+      "category": "maintainability",
+      "summary": "DX fixes: (a) TensorBoardLogger stop doubling log_dir (logs/logs) — drop the config.logging.log_dir re-append in on_train_start; (b) CLI --compile/--amp must be config-authoritative (Optional[bool] None=keep-config instead of True-default unconditional overwrite). Tests for both.",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 2
+    },
+    "COMP-021": {
+      "id": "COMP-021",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:58:38+00:00",
+      "updated_at": "2026-09-08T12:58:38+00:00",
+      "touched_round": 181,
+      "summary": "llm.generation.sampling — sampling_probs nucleus/top_k/temperature/penalties core"
+    },
+    "COMP-022": {
+      "id": "COMP-022",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:58:39+00:00",
+      "updated_at": "2026-09-08T12:58:39+00:00",
+      "touched_round": 181,
+      "summary": "llm.serving.routers + schemas — OpenAI-compatible HTTP surface"
+    },
+    "COMP-023": {
+      "id": "COMP-023",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:58:39+00:00",
+      "updated_at": "2026-09-08T12:58:39+00:00",
+      "touched_round": 181,
+      "summary": "llm.training.core.callbacks — observers (LRScheduler, TensorBoard, EarlyStopping, periodic eval)"
+    },
+    "COMP-024": {
+      "id": "COMP-024",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:58:39+00:00",
+      "updated_at": "2026-09-08T12:58:39+00:00",
+      "touched_round": 181,
+      "summary": "llm.training distributed — parallel.py/pp_tp/tensor_parallel checkpoint collectives"
+    },
+    "COMP-025": {
+      "id": "COMP-025",
+      "type": "component",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T12:58:39+00:00",
+      "updated_at": "2026-09-08T12:58:39+00:00",
+      "touched_round": 181,
+      "summary": "llm.training.train CLI + config — typer entrypoint"
     }
   },
   "edges": [
@@ -28925,6 +29151,108 @@
       "to": "ISS-400",
       "type": "addresses",
       "created_at": "2026-09-07T15:32:16+00:00"
+    },
+    {
+      "from": "ISS-401",
+      "to": "COMP-021",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:09+00:00"
+    },
+    {
+      "from": "ISS-401",
+      "to": "COMP-022",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:09+00:00"
+    },
+    {
+      "from": "ISS-402",
+      "to": "COMP-023",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:09+00:00"
+    },
+    {
+      "from": "ISS-403",
+      "to": "COMP-024",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:09+00:00"
+    },
+    {
+      "from": "ISS-404",
+      "to": "COMP-024",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:09+00:00"
+    },
+    {
+      "from": "ISS-405",
+      "to": "COMP-022",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:09+00:00"
+    },
+    {
+      "from": "ISS-406",
+      "to": "COMP-022",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:09+00:00"
+    },
+    {
+      "from": "ISS-407",
+      "to": "COMP-022",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "ISS-408",
+      "to": "COMP-022",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "ISS-409",
+      "to": "COMP-018",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "ISS-410",
+      "to": "COMP-023",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "ISS-411",
+      "to": "COMP-025",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "ISS-412",
+      "to": "COMP-021",
+      "type": "located_in",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "TASK-356",
+      "to": "ISS-401",
+      "type": "addresses",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "TASK-357",
+      "to": "ISS-402",
+      "type": "addresses",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "TASK-358",
+      "to": "ISS-410",
+      "type": "addresses",
+      "created_at": "2026-09-08T13:02:10+00:00"
+    },
+    {
+      "from": "TASK-358",
+      "to": "ISS-411",
+      "type": "addresses",
+      "created_at": "2026-09-08T13:02:11+00:00"
     }
   ]
 }

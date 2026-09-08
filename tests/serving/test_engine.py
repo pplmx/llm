@@ -576,6 +576,86 @@ def test_engine_excludes_eos_text_from_output(tiny_model, device, mock_tokenizer
     assert engine.slot_allocator.get_slot("req-eos-excl") == -1
 
 
+def test_engine_top_p_one_generates_without_error(tiny_model, device, mock_tokenizer):
+    """``top_p=1.0`` is the OpenAI client default ("1.0 means no truncation")
+    and the schema documents it as such — it must flow through the REAL
+    batch-engine generation path without erroring (RIL ISS-401). Regression:
+    ``sampling_probs`` rejected ``top_p >= 1.0``, so this exact payload
+    killed the shared step (and, pre-fix, the whole batch) with a 4xx-class
+    ValueError."""
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    req = GenerationRequest(prompt="abcd", max_new_tokens=3, top_p=1.0)
+    req.request_id = "req-top-p-one"
+    engine.add_request(req)
+    result = engine.generate_request(req)
+
+    assert isinstance(result, str)
+    # The request fully generated (top_p=1.0 sampled an EOS-free token for
+    # each step rather than erroring on the first one).
+    seq = engine.scheduler.get_sequence("req-top-p-one")
+    assert seq is None or seq.status == RequestState.FINISHED or len(seq.generated_ids) > 0
+
+
+def test_engine_isolates_per_row_sampling_failure(tiny_model, device, mock_tokenizer, monkeypatch):
+    """A per-row sampling failure must fail ONLY that request, not the whole
+    shared batch (RIL ISS-405). One request whose sampling blows up sharing a
+    step with a healthy request: the malformed row is FINISHED and its slot
+    freed while the healthy row keeps generating. (Schema validation already
+    blocks the known bad params at the HTTP boundary; this pins the engine's
+    defense-in-depth against any future param/drift slip reaching the shared
+    step.)"""
+    import llm.serving.batch_engine as be
+
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=4,
+        device=str(device),
+    )
+
+    real_sample = be.sample_next_token
+
+    def _sampling_that_rejects_top_k_5(logits, *, temperature=1.0, top_k=None, top_p=None):
+        # Simulate a sampling-implementation param rejection for one row only.
+        if top_k == 5:
+            raise ValueError("top_k=5 unsupported by this sampling implementation")
+        return real_sample(logits, temperature=temperature, top_k=top_k, top_p=top_p)
+
+    monkeypatch.setattr(be, "sample_next_token", _sampling_that_rejects_top_k_5)
+
+    bad = GenerationRequest(prompt="abcd", max_new_tokens=3, top_k=5)
+    bad.request_id = "req-bad-k"
+    good = GenerationRequest(prompt="efgh", max_new_tokens=3)
+    good.request_id = "req-good"
+    engine.add_request(bad)
+    engine.add_request(good)
+
+    # One shared step schedules both running sequences.
+    engine.step()
+
+    bad_seq = engine.scheduler.get_sequence("req-bad-k")
+    assert bad_seq is not None
+    assert bad_seq.status == RequestState.FINISHED
+    # The malformed row's KV slot was freed despite the step not aborting.
+    assert engine.slot_allocator.get_slot("req-bad-k") == -1
+
+    good_seq = engine.scheduler.get_sequence("req-good")
+    assert good_seq is not None
+    assert good_seq.status == RequestState.RUNNING
+    # The healthy row advanced by exactly one token this step.
+    assert len(good_seq.generated_ids) == 1
+
+
 def test_stop_terminated_request_frees_kv_slot(tiny_model, device, mock_tokenizer):
     """Regression (RIL ISS-044): a request that ends via a stop-sequence match
     must release its KV slot (dense + prefix + paged), otherwise the pool

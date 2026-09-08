@@ -3,6 +3,7 @@ from __future__ import annotations
 import array
 import asyncio
 import hashlib
+import logging
 import threading
 import uuid
 from collections import OrderedDict
@@ -36,6 +37,8 @@ class _CacheSizedAttention(Protocol):
     num_kv_heads: int
     head_dim: int
 
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
@@ -87,6 +90,12 @@ class _StepResult:
     inputs: _StepInputs
     next_token_ids: list[int] = field(default_factory=list)
     forward_failed: BaseException | None = None
+    #: Indices (into ``inputs.running_sequences``) whose per-row sampling /
+    #: penalty step failed (a row-local validation or undecodable-token
+    #: error). Those rows are FINISHED + slot-released by post-compute while
+    #: the healthy rows continue — a single malformed request must not
+    #: preempt every concurrent one on the shared step (RIL ISS-405).
+    failed_rows: list[int] = field(default_factory=list)
 
 
 class SlotPrefixCache:
@@ -832,9 +841,15 @@ class ContinuousBatchingEngine:
                 batch_indices=inputs.batch_indices,
                 attn_mask=inputs.run_attn_mask,
             )
+        except BaseException as exc:  # noqa: BLE001 - propagate via result
+            # A model-forward failure (OOM, kernel error, unloaded engine) is
+            # shared by every row in the batch and must abort the whole step.
+            return _StepResult(inputs=inputs, forward_failed=exc)
 
-            next_token_ids: list[int] = []
-            for i, length in enumerate(inputs.seq_input_lengths):
+        next_token_ids: list[int] = []
+        failed_rows: list[int] = []
+        for i, length in enumerate(inputs.seq_input_lengths):
+            try:
                 seq = inputs.running_sequences[i]
                 seq_logits = logits[i, length - 1, :]
                 # The pad token must never be emitted (the eager backend
@@ -873,10 +888,35 @@ class ContinuousBatchingEngine:
                         top_p=seq.top_p,
                     )
                 )
-        except BaseException as exc:  # noqa: BLE001 - propagate via result
-            return _StepResult(inputs=inputs, forward_failed=exc)
+            except (ValueError, KeyError, IndexError) as exc:
+                # A PER-ROW sampling / penalty failure (a bad sampling param
+                # that slipped past schema validation, an undecodable token,
+                # an out-of-range pad id — row-local conditions that would
+                # deterministically fail this request no matter how often it
+                # is retried). Fail ONLY this row: mark it FINISHED + release
+                # its slot in post-compute so the shared step keeps serving
+                # the other concurrent requests (RIL ISS-405). The row is
+                # logged loud so operators see the 4xx-class cause; it is NOT
+                # a model-forward failure shared by the whole batch.
+                logger.error(
+                    "batched engine: row %d (request %s) sampling failed: %s: %s",
+                    i,
+                    getattr(inputs.running_sequences[i], "request_id", "?"),
+                    type(exc).__name__,
+                    exc,
+                )
+                failed_rows.append(i)
+                next_token_ids.append(-1)  # placeholder; never appended below
+        if failed_rows and len(failed_rows) == len(next_token_ids):
+            # Every row in the batch failed — roll it up into a forward
+            # failure so the engine-level livelock guard (RIL ISS-051) marks
+            # the whole batch FINISHED instead of re-scheduling it forever.
+            return _StepResult(
+                inputs=inputs,
+                forward_failed=RuntimeError(f"all {len(failed_rows)} batched rows failed to sample a token"),
+            )
 
-        return _StepResult(inputs=inputs, next_token_ids=next_token_ids)
+        return _StepResult(inputs=inputs, next_token_ids=next_token_ids, failed_rows=failed_rows)
 
     def _release_request_slots(self, request_id: str, slot: int) -> None:
         """Return a request's KV slot, prefix-cache entry and paged blocks.
@@ -936,7 +976,16 @@ class ContinuousBatchingEngine:
         # Normalized EOS ids for the finish check below (see the comment at
         # the comparison site for the list-eos regression).
         eos_ids = normalize_eos_ids(getattr(self.tokenizer, "eos_token_id", None))
+        failed = set(result.failed_rows)
         for i, seq in enumerate(inputs.running_sequences):
+            if i in failed:
+                # Per-row sampling failure (RIL ISS-405): fail ONLY this
+                # request — release its slot and mark it FINISHED so the next
+                # ``schedule()`` drops it, mirroring the forward-failure
+                # handling above without touching the healthy rows.
+                seq.status = RequestState.FINISHED
+                self._release_request_slots(seq.request_id, inputs.batch_slots_list[i])
+                continue
             token_id = result.next_token_ids[i]
             seq.append_token_id(token_id)
 

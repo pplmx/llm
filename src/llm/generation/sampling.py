@@ -284,7 +284,10 @@ def sampling_probs(
             ``argmax``.
         top_k: Top-k filter; only the ``top_k`` largest logits survive.
         top_p: Nucleus filter; the smallest tokens whose cumulative
-            probability exceeds ``top_p`` are masked out.
+            probability exceeds ``top_p`` are masked out. ``top_p >= 1.0``
+            (and ``None``) disable the filter — they draw from the full
+            distribution, matching OpenAI's "1.0 means no truncation" default
+            (RIL ISS-401).
     """
     # A non-positive temperature would silently invert the logits (anti-greedy)
     # or divide by zero. ``temperature == 0`` is the caller's greedy case
@@ -297,13 +300,15 @@ def sampling_probs(
     # cryptic IndexError; reject it with a clear message (RIL TASK-250).
     if top_k is not None and top_k < 1:
         raise ValueError(f"top_k must be >= 1 when set, got {top_k!r}")
-    # ``top_p <= 0`` or ``>= 1`` is silently ignored by the nucleus filter
-    # below (its ``0.0 < top_p < 1.0`` guard just skips the filter), drawing
-    # from the FULL distribution instead of the requested conservative one —
-    # and ``top_p=0`` (the greedy analog) draws non-deterministically. Reject
-    # out-of-range like temperature/top_k (RIL ISS-390).
-    if top_p is not None and not (0.0 < top_p < 1.0):
-        raise ValueError(f"top_p must be in (0, 1) when set, got {top_p!r}")
+    # ``top_p <= 0`` is the only invalid value: ``top_p=0`` (the greedy
+    # analog) would draw non-deterministically because the nucleus filter's
+    # ``0.0 < top_p < 1.0`` guard would silently skip it and draw from the
+    # full distribution. ``top_p >= 1.0`` is EXPLICITLY valid (OpenAI client
+    # default; the serving schemas document it as "no truncation") and is a
+    # no-op for the filter, so only the degenerate non-positive range is
+    # rejected (RIL ISS-390/ISS-401).
+    if top_p is not None and top_p <= 0:
+        raise ValueError(f"top_p must be > 0 when set (1.0 or None disables nucleus filtering), got {top_p!r}")
 
     next_logits = logits / temperature
 

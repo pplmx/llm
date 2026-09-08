@@ -9,6 +9,10 @@ Covers two round-180 deep-dive findings on :mod:`llm.generation.sampling`:
   when ``token_ids`` was empty, because the guard sat after the empty
   early-return — a direct-API inconsistency (the generator paths always
   pass a non-empty history).
+- ISS-401: the served OpenAI surface accepts ``top_p=1.0`` ("1.0 means no
+  truncation", the OpenAI client default) but the ``>= 1.0`` rejection made
+  every such request error. ``top_p >= 1.0`` now means "no nucleus
+  filtering" (a no-op, like ``None``); only ``top_p <= 0`` is rejected.
 """
 
 import pytest
@@ -16,14 +20,15 @@ import torch
 
 from llm.generation.sampling import apply_repetition_penalty, sampling_probs
 
-# --- ISS-390: top_p range validation in sampling_probs --------------------
+# --- ISS-390 / ISS-401: top_p range validation in sampling_probs -----------
 
 
-@pytest.mark.parametrize("bad_top_p", [0.0, -0.5, 1.0, 1.5])
-def test_sampling_probs_rejects_out_of_range_top_p(bad_top_p):
-    """``sampling_probs`` must reject ``top_p`` outside (0, 1) like it rejects
-    bad ``temperature`` / ``top_k`` (RIL ISS-390) instead of silently
-    skipping the nucleus filter and drawing from the full distribution."""
+@pytest.mark.parametrize("bad_top_p", [0.0, -0.5])
+def test_sampling_probs_rejects_nonpositive_top_p(bad_top_p):
+    """``sampling_probs`` must reject ``top_p <= 0`` like it rejects bad
+    ``temperature`` / ``top_k`` (RIL ISS-390) instead of silently skipping
+    the nucleus filter and drawing from the full distribution — ``top_p=0``
+    (the greedy analog) would draw non-deterministically."""
     with pytest.raises(ValueError, match="top_p"):
         sampling_probs(torch.zeros(8), top_p=bad_top_p)
 
@@ -33,6 +38,16 @@ def test_sampling_probs_accepts_valid_top_p_range_edges():
     probs = sampling_probs(torch.zeros(8), top_p=0.98)
     assert probs.shape == (8,)
     assert torch.isclose(probs.sum(), torch.ones(()), atol=1e-6)
+
+
+@pytest.mark.parametrize("top_p", [1.0, 1.5])
+def test_sampling_probs_top_p_one_or_above_is_noop(top_p):
+    """``top_p >= 1.0`` must NOT raise: it is the OpenAI client default and
+    the serving schema's documented "1.0 means no truncation" (RIL ISS-401).
+    It behaves exactly like ``top_p=None`` — the filter is skipped, so the
+    returned distribution is the full softmax."""
+    base = sampling_probs(torch.zeros(8), top_p=None)
+    assert torch.equal(sampling_probs(torch.zeros(8), top_p=top_p), base)
 
 
 # --- ISS-391: repetition penalty guard order -------------------------------
