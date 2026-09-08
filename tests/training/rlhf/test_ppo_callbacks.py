@@ -174,6 +174,72 @@ def test_ppo_fires_on_epoch_end(tmp_path, tiny_model, monkeypatch):
 
 
 @pytest.mark.quick
+def test_ppo_standard_observers_do_not_crash(tmp_path, tiny_model, monkeypatch):
+    """Custom-loop tasks (PPO/RLHF) expose no engine-owned optimizer, so the
+    standard observer callbacks must NOT raise (RIL ISS-402). Regression: the
+    ``llm-train --task ppo`` callback list always registers
+    ``LRSchedulerCallback`` + ``TensorBoardLogger``, and both raised
+    ``RuntimeError('optimizer is not available')`` on the first step/epoch —
+    a deterministic crash."""
+    tb = pytest.importorskip("torch.utils.tensorboard")  # optional dep
+    _ = tb
+    from llm.training.core.callbacks import LRSchedulerCallback, TensorBoardLogger
+
+    prompt_file = tmp_path / "prompts.jsonl"
+    _write_prompts(prompt_file, ["Hello", "Hi there", "Test prompt"])
+    tokenizer = CharBoundTokenizer()
+
+    config = Config()
+    config.data.dataset_path = str(prompt_file)
+    config.training.batch_size = 2
+    config.training.epochs = 1
+    config.optimization.num_workers = 0
+    config.optimization.use_compile = False
+    config.ppo.ppo_epochs = 1
+    config.ppo.response_max_len = 2
+    config.ppo.mini_batch_size = 1
+    data_module = PromptDataModule(config)
+    data_module.prepare_data()
+    data_module.setup()
+
+    task = PPOTask(config, data_module)
+
+    from copy import deepcopy
+
+    reward_base = deepcopy(tiny_model)
+
+    def fake_build_model(self):
+        if not hasattr(self, "_policy_built"):
+            self._policy_built = True
+            return tiny_model
+        return reward_base
+
+    monkeypatch.setattr(PPOTask, "build_model", fake_build_model)
+    monkeypatch.setattr(PPOTask, "_load_tokenizer", lambda self: tokenizer)
+
+    log_base = tmp_path / "tb"
+    sched_cb = LRSchedulerCallback()
+    tb_cb = TensorBoardLogger(log_dir=str(log_base))
+
+    engine = TrainingEngine(
+        config=config,
+        task=task,
+        rank=0,
+        world_size=1,
+        data_module=data_module,
+        callbacks=[sched_cb, tb_cb],
+    )
+
+    # The whole PPO run (steps + epoch end) must complete without the
+    # observer raising; the epoch-end LR scalar is skipped because the
+    # custom loop owns its optimizers.
+    engine.run()
+
+    assert tb_cb.writer is not None, "TensorBoard writer should have been opened"
+    tb_cb.writer.close()
+
+
+@pytest.mark.quick
 def test_ppo_honors_should_stop_training(tmp_path, tiny_model, monkeypatch):
     """A callback that sets ``engine.should_stop_training`` must halt the
     RLHF loop after the current epoch."""

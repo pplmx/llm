@@ -315,15 +315,18 @@ class TensorBoardLogger(Callback):
             for key, value in logs.items():
                 if isinstance(value, int | float):
                     self.writer.add_scalar(f"Epoch/{key}", value, epoch)
-            # Log learning rate
+            # Log learning rate when the engine owns an optimizer/scheduler.
+            # Custom-loop tasks (PPO/RLHF) keep their optimizers inside the
+            # trainer, so neither is set here — skip the LR scalar instead of
+            # raising (RIL ISS-402; the engine validates the standard-loop
+            # contract at setup, so a missing optimizer is only legal for
+            # custom loops).
             if self.engine.scheduler:
                 lr = self.engine.scheduler.get_last_lr()[0]
-            else:
-                optimizer = self.engine.optimizer
-                if optimizer is None:
-                    raise RuntimeError("optimizer is not available")
-                lr = optimizer.param_groups[0]["lr"]
-            self.writer.add_scalar("Epoch/LearningRate", lr, epoch)
+                self.writer.add_scalar("Epoch/LearningRate", lr, epoch)
+            elif self.engine.optimizer is not None:
+                lr = self.engine.optimizer.param_groups[0]["lr"]
+                self.writer.add_scalar("Epoch/LearningRate", lr, epoch)
 
     def on_train_step_end(
         self,
@@ -441,7 +444,11 @@ class LRSchedulerCallback(Callback):
     ):
         optimizer = self.engine.optimizer
         if optimizer is None:
-            raise RuntimeError("optimizer is not available")
+            # Custom-loop tasks (PPO/RLHF) own their optimizers inside the
+            # trainer, so ``engine.optimizer`` is deliberately unset — there
+            # is nothing to observe here (RIL ISS-402). Not an error: the
+            # engine validates the standard-loop contract at setup.
+            return
         if self.engine.rank == 0:
             current_lr = optimizer.param_groups[0]["lr"]
             # Engine's own step counter — safe for streaming dataloaders
@@ -462,7 +469,9 @@ class LRSchedulerCallback(Callback):
     def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None):
         optimizer = self.engine.optimizer
         if optimizer is None:
-            raise RuntimeError("optimizer is not available")
+            # Custom-loop tasks (PPO/RLHF) — no engine-owned optimizer to
+            # observe (RIL ISS-402); skip quietly like on_train_step_end.
+            return
         if self.engine.rank == 0:
             current_lr = optimizer.param_groups[0]["lr"]
             self.engine.logger.info(f"Epoch {epoch + 1} End LR: {current_lr:.6f}")
