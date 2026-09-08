@@ -192,3 +192,54 @@ def test_tokenizer_roundtrip_still_works_weights_only(tmp_path):
 
     loaded = TokenizerFactory.from_data_config(config.data)
     assert loaded.encode("<PAD>") == tokenizer.encode("<PAD>")
+
+
+def test_from_data_config_honors_empty_default_corpus():
+    """An EXPLICIT ``default_corpus=[]`` must not be silently replaced by the
+    printable default corpus (RIL ISS-420): the ``or`` fallback used to swap
+    any falsy list, so a caller asking for an empty corpus got the printable
+    one instead."""
+    from llm.runtime.tokenizer_factory import TokenizerFactory
+
+    class _Cfg:
+        tokenizer_type = "simple"
+        tokenizer_path = None
+
+    tok = TokenizerFactory.from_data_config(_Cfg(), default_corpus=[])
+    # Only the specials are registered (vocab_size 1) and printable chars are
+    # NOT encodable — proving the printable corpus was not substituted.
+    assert tok.vocab_size == 1
+    with pytest.raises(KeyError):
+        tok.encode("A")
+
+
+def test_from_serving_config_rejects_non_tokenizer_pickle(tmp_path):
+    """A ``tokenizer_path`` pointing at a model/state-dict blob must fail loud
+    with a clear message instead of surfacing as a confusing
+    ``AttributeError: 'dict' object has no attribute 'encode'`` at the first
+    request (RIL ISS-420)."""
+    import torch
+
+    from llm.runtime.tokenizer_factory import TokenizerFactory
+
+    path = tmp_path / "model.pt"
+    torch.save({"state_dict": {}}, path)
+
+    class _Cfg:
+        tokenizer_type = "simple"
+        tokenizer_path = str(path)
+
+    with pytest.raises(ValueError, match="not a tokenizer"):
+        TokenizerFactory.from_serving_config(_Cfg())
+
+
+def test_from_dataset_text_non_utf8_raises_clear_error(tmp_path):
+    """``from_dataset_text`` must report a non-UTF-8 file with a clear,
+    actionable error instead of a raw ``UnicodeDecodeError`` (RIL ISS-420)."""
+    from llm.runtime.tokenizer_factory import TokenizerFactory
+
+    path = tmp_path / "corpus.txt"
+    path.write_bytes(b"\xff\xfe\x00garbage in latin-1")
+
+    with pytest.raises(ValueError, match="not valid UTF-8"):
+        TokenizerFactory.from_dataset_text(path)

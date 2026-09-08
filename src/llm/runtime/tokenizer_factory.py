@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -64,6 +65,49 @@ def _register_tokenizer_safe_globals() -> None:
     _SAFE_GLOBALS_REGISTERED = True
 
 
+def _load_tokenizer_pt(path: Path) -> Any:
+    """``torch.load`` a tokenizer pickle under ``weights_only=True`` with an
+    actionable failure message.
+
+    Any pickle whose embedded globals fall outside the safe-globals allowlist
+    — a genuinely malicious payload, OR a real HF ``PreTrainedTokenizerFast``
+    whose pickle state carries ``tokenizers``/``sentencepiece`` rust objects
+    the allowlist cannot enumerate (RIL ISS-413) — raises ``UnpicklingError``
+    from torch's weights-only unpickler. Both cases must fail loud with a
+    remediation hint; the HF case is user error (an HF tokenizer should be
+    configured as ``tokenizer_type='hf'`` with a repo id/directory, not saved
+    to a ``.pt``).
+    """
+    try:
+        return torch.load(path, map_location="cpu", weights_only=True)
+    except (pickle.PickleError, RuntimeError, EOFError, AttributeError) as exc:
+        raise pickle.UnpicklingError(
+            f"cannot load tokenizer pickle {path} under weights_only=True: {exc}. "
+            "If this is a HuggingFace tokenizer, use tokenizer_type='hf' with the "
+            "repo id (or local directory) instead of a .pt file."
+        ) from exc
+
+
+def _ensure_tokenizer_obj(loaded: Any, path: str) -> BaseTokenizer:
+    """Type-check a loaded tokenizer pickle, failing loud on a wrong file.
+
+    A ``tokenizer_path`` that actually points at a model blob (state dict /
+    full-checkpoint dict) loads cleanly under ``weights_only=True`` but is not
+    a tokenizer — the mistake only surfaces later as a confusing
+    ``AttributeError: 'dict' object has no attribute 'encode'`` at the first
+    request. Catch it here (RIL ISS-420).
+    """
+    # ``BaseTokenizer`` is a plain (non runtime-checkable) Protocol, so a
+    # structural check on the contract methods is the safe test here.
+    if callable(getattr(loaded, "encode", None)) and callable(getattr(loaded, "decode", None)):
+        return cast(BaseTokenizer, loaded)
+    raise ValueError(
+        f"Tokenizer file {path!r} loaded as {type(loaded).__name__}, not a tokenizer. "
+        "Point tokenizer_path at a tokenizer .pt (produced by "
+        "torch.save(SimpleCharacterTokenizer(...))) or an HF directory."
+    )
+
+
 class TokenizerConfig(Protocol):
     tokenizer_type: str
     tokenizer_path: str | None
@@ -96,11 +140,14 @@ class TokenizerFactory:
                 # mismatch is invisible until serve-time decode errors.
                 raise FileNotFoundError(f"Tokenizer file not found: {path}")
             _register_tokenizer_safe_globals()
-            loaded = torch.load(path, map_location="cpu", weights_only=True)
-            return cast(BaseTokenizer, loaded)
+            return _ensure_tokenizer_obj(_load_tokenizer_pt(path), str(path))
 
-        corpus = default_corpus or DEFAULT_SIMPLE_CORPUS
-        return cast(BaseTokenizer, SimpleCharacterTokenizer(corpus))
+        if default_corpus is None:
+            # ``or``-fallback would silently REPLACE an explicitly-passed
+            # empty corpus with the printable default — honou the parameter,
+            # only ``None`` selects the default (RIL ISS-420).
+            default_corpus = DEFAULT_SIMPLE_CORPUS
+        return cast(BaseTokenizer, SimpleCharacterTokenizer(default_corpus))
 
     @staticmethod
     def from_serving_config(config: Any) -> Any:
@@ -111,7 +158,7 @@ class TokenizerFactory:
             if not path.exists():
                 raise FileNotFoundError(f"Tokenizer file not found: {path}")
             _register_tokenizer_safe_globals()
-            return torch.load(path, map_location="cpu", weights_only=True)
+            return _ensure_tokenizer_obj(_load_tokenizer_pt(path), str(path))
 
         # ``tokenizer_type="hf"`` with no path must fail loud, exactly like
         # ``from_data_config`` — falling through to the printable-corpus char
@@ -149,7 +196,14 @@ class TokenizerFactory:
     @staticmethod
     def from_dataset_text(dataset_path: str | Path) -> SimpleCharacterTokenizer:
         """Build a character tokenizer from the unique characters in a text file."""
-        text = Path(dataset_path).read_text()
+        try:
+            text = Path(dataset_path).read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"{dataset_path} is not valid UTF-8 ({exc}); from_dataset_text builds "
+                "a character tokenizer from decoded text — decode the file with your "
+                "own step first (RIL ISS-420)."
+            ) from exc
         chars = sorted(set(text))
         corpus = ["<PAD>", "<EOS>", "<BOS>", *chars]
         return SimpleCharacterTokenizer(corpus)
