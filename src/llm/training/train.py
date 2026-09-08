@@ -126,8 +126,12 @@ def main(
     lr: float | None = typer.Option(None, help="Override learning rate"),
     num_samples: int | None = typer.Option(None, help="Override number of synthetic samples"),
     steps_per_epoch: int | None = typer.Option(None, help="Override streaming steps per epoch"),
-    compile: bool = typer.Option(True, help="Enable torch.compile"),
-    amp: bool = typer.Option(True, help="Enable AMP"),
+    # ``None`` = keep the YAML config's value; only an explicit
+    # ``--compile/--no-compile`` (or ``--amp/--no-amp``) overrides it. A
+    # ``True`` default would UNCONDITIONALLY re-enable compile/AMP on every
+    # run whose YAML deliberately disabled them (RIL ISS-411).
+    compile: bool | None = typer.Option(None, help="Enable torch.compile (--compile / --no-compile)."),
+    amp: bool | None = typer.Option(None, help="Enable AMP (--amp / --no-amp)."),
 ):
     """
     Modular PyTorch DDP Training Framework.
@@ -148,8 +152,10 @@ def main(
     if steps_per_epoch is not None:
         config.data.steps_per_epoch = steps_per_epoch
 
-    config.optimization.use_compile = compile
-    config.optimization.use_amp = amp
+    if compile is not None:
+        config.optimization.use_compile = compile
+    if amp is not None:
+        config.optimization.use_amp = amp
 
     torch.backends.cudnn.benchmark = True
     torch.set_float32_matmul_precision("high")

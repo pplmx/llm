@@ -287,7 +287,12 @@ class TensorBoardLogger(Callback):
 
     def on_train_start(self, logs: dict[str, Any] | None = None):
         if self.engine.rank == 0:
-            log_path = Path(self.log_dir) / self.engine.config.logging.log_dir  # Use config's log_dir
+            # ``self.log_dir`` is the FULL destination: the caller (train.py)
+            # already passes ``config.logging.log_dir``. Appending
+            # ``config.logging.log_dir`` again doubled the path component
+            # (``logs/logs``) and the writer landed in the wrong tree
+            # (RIL ISS-410).
+            log_path = Path(self.log_dir)
             self.writer = self._make_writer(log_path)
             self.engine.logger.info(f"TensorBoard: Logging to {log_path}")
 

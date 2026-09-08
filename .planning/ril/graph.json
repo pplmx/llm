@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 181,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-08T13:02:31+00:00",
+  "updated_at": "2026-09-08T14:12:05+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19556,10 +19556,10 @@
     "ISS-401": {
       "id": "ISS-401",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-09-08T12:52:16+00:00",
-      "updated_at": "2026-09-08T12:52:16+00:00",
+      "updated_at": "2026-09-08T13:49:09+00:00",
       "touched_round": 181,
       "summary": "top_p=1.0 accepted by serving schemas (le=1.0, 'no truncation, OpenAI default') but rejected by sampling_probs (<1.0, RIL ISS-390). OpenAI clients default to top_p=1.0 -> 400 non-stream / in-band stream error. Tests pin BOTH sides. Fix: top_p>=1.0 = skip nucleus filter; reject only top_p<=0.",
       "severity": 0.8
@@ -19567,10 +19567,10 @@
     "ISS-402": {
       "id": "ISS-402",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T12:53:07+00:00",
-      "updated_at": "2026-09-08T12:53:07+00:00",
+      "updated_at": "2026-09-08T14:10:37+00:00",
       "touched_round": 181,
       "summary": "Custom-loop tasks (PPO/RLHF, engine.optimizer=None) crash on first callback: LRSchedulerCallback.on_train_step_end/on_epoch_end raise RuntimeError('optimizer is not available') unconditionally (callbacks.py:442/464). llm-train --task ppo always registers LRSchedulerCallback -> deterministic crash on batch 1.",
       "severity": 0.8
@@ -19600,10 +19600,10 @@
     "ISS-405": {
       "id": "ISS-405",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-09-08T12:53:39+00:00",
-      "updated_at": "2026-09-08T12:53:39+00:00",
+      "updated_at": "2026-09-08T13:49:09+00:00",
       "touched_round": 181,
       "summary": "batch_engine: one per-row sampling/validation failure kills the WHOLE shared step — broad except BaseException -> _lock_step_post marks ALL sequences FINISHED + frees their slots + re-raises; one client's 4xx-class param error preempts every concurrent healthy request (503/stream error + partial output loss).",
       "severity": 0.7
@@ -19688,10 +19688,10 @@
     "TASK-356": {
       "id": "TASK-356",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-09-08T12:56:37+00:00",
-      "updated_at": "2026-09-08T13:02:31+00:00",
+      "updated_at": "2026-09-08T13:49:09+00:00",
       "touched_round": 181,
       "category": "correctness",
       "summary": "Align top_p>=1.0 as 'no nucleus filtering' end-to-end: sampling_probs accepts top_p>=1.0 (skip filter, OpenAI semantics), serving schemas stay le=1.0, reject only top_p<=0; update pinning test (sampling_validation) + add cross-layer serving tests (stream + non-stream top_p=1.0). Also validate sampling params at add_request/stream-validation in batch_engine so per-row sampling errors can't kill a shared step.",
@@ -19704,30 +19704,34 @@
     "TASK-357": {
       "id": "TASK-357",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-09-08T12:56:37+00:00",
-      "updated_at": "2026-09-08T12:56:37+00:00",
+      "updated_at": "2026-09-08T14:10:36+00:00",
       "touched_round": 181,
       "category": "stability",
       "summary": "Custom-loop (PPO/RLHF) callbacks must not crash when engine.optimizer is None: LRSchedulerCallback.on_train_step_end/on_epoch_end no-op (return) instead of raising when optimizer is None; TensorBoardLogger equivalents. Add regression test driving PPOTask through the standard callback set.",
       "severity": 0.8,
       "confidence": 1.0,
-      "effort": 2
+      "effort": 2,
+      "lock_owner": "llm-bb-r181",
+      "lock_until": "2026-09-08T14:19:53+00:00"
     },
     "TASK-358": {
       "id": "TASK-358",
       "type": "task",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-09-08T12:56:37+00:00",
-      "updated_at": "2026-09-08T12:56:37+00:00",
+      "updated_at": "2026-09-08T14:12:05+00:00",
       "touched_round": 181,
       "category": "maintainability",
       "summary": "DX fixes: (a) TensorBoardLogger stop doubling log_dir (logs/logs) — drop the config.logging.log_dir re-append in on_train_start; (b) CLI --compile/--amp must be config-authoritative (Optional[bool] None=keep-config instead of True-default unconditional overwrite). Tests for both.",
       "severity": 0.5,
       "confidence": 1.0,
-      "effort": 2
+      "effort": 2,
+      "lock_owner": "llm-bb-r181",
+      "lock_until": "2026-09-08T14:42:05+00:00"
     },
     "COMP-021": {
       "id": "COMP-021",
@@ -19778,6 +19782,26 @@
       "updated_at": "2026-09-08T12:58:39+00:00",
       "touched_round": 181,
       "summary": "llm.training.train CLI + config — typer entrypoint"
+    },
+    "CHG-369": {
+      "id": "CHG-369",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T13:42:17+00:00",
+      "updated_at": "2026-09-08T13:42:17+00:00",
+      "touched_round": 181,
+      "commit": "0a28fe8"
+    },
+    "CHG-370": {
+      "id": "CHG-370",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T14:08:30+00:00",
+      "updated_at": "2026-09-08T14:08:30+00:00",
+      "touched_round": 181,
+      "commit": "5f6257e"
     }
   },
   "edges": [
@@ -29253,6 +29277,36 @@
       "to": "ISS-411",
       "type": "addresses",
       "created_at": "2026-09-08T13:02:11+00:00"
+    },
+    {
+      "from": "CHG-369",
+      "to": "TASK-356",
+      "type": "implements",
+      "created_at": "2026-09-08T13:43:03+00:00"
+    },
+    {
+      "from": "CHG-369",
+      "to": "ISS-401",
+      "type": "resolves",
+      "created_at": "2026-09-08T13:43:03+00:00"
+    },
+    {
+      "from": "CHG-369",
+      "to": "ISS-405",
+      "type": "resolves",
+      "created_at": "2026-09-08T13:43:03+00:00"
+    },
+    {
+      "from": "CHG-370",
+      "to": "TASK-357",
+      "type": "implements",
+      "created_at": "2026-09-08T14:09:10+00:00"
+    },
+    {
+      "from": "CHG-370",
+      "to": "ISS-402",
+      "type": "resolves",
+      "created_at": "2026-09-08T14:09:10+00:00"
     }
   ]
 }

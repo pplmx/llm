@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock
 
-from llm.training.core.callbacks import EarlyStopping
+import pytest
+
+from llm.training.core.callbacks import EarlyStopping, LRSchedulerCallback, TensorBoardLogger
 
 
 def test_early_stopping_min_mode():
@@ -93,3 +95,51 @@ def test_early_stopping_restores_patience_on_resume():
     fresh.on_epoch_end(2, {"val_loss": 1.2})
     assert engine.should_stop_training
     assert fresh.stopped_epoch == 2
+
+
+def test_tensorboard_logger_log_dir_not_doubled(tmp_path):
+    """Regression (RIL ISS-410): ``on_train_start`` must log to EXACTLY the
+    configured ``log_dir``. It used to append ``config.logging.log_dir`` a
+    second time, so the writer landed at ``logs/logs`` (train.py already
+    passes ``config.logging.log_dir`` as the constructor arg)."""
+    pytest.importorskip("torch.utils.tensorboard")
+    from pathlib import Path
+
+    log_dir = tmp_path / "my-logs"
+    cb = TensorBoardLogger(log_dir=str(log_dir))
+    engine = MagicMock()
+    engine.rank = 0
+    # The engine's OWN logging.log_dir (e.g. the "logs" default) must NOT be
+    # re-appended under the configured destination.
+    engine.config.logging.log_dir = "logs"
+    cb.set_engine(engine)
+    cb.on_train_start()
+    try:
+        assert Path(cb.writer.log_dir) == log_dir, (
+            f"writer must land exactly on {log_dir}, doubled to {cb.writer.log_dir}"
+        )
+    finally:
+        cb.writer.close()
+
+
+def test_lr_callback_without_engine_optimizer_noops():
+    """Custom-loop tasks (PPO/RLHF) expose no engine-owned optimizer; the LR
+    observers must skip quietly instead of raising (RIL ISS-402)."""
+    engine = MagicMock()
+    engine.rank = 0
+    engine.optimizer = None
+    engine.scheduler = None
+    engine.config.logging.log_interval = 1
+    engine.global_step = 1
+    engine.logger = MagicMock()
+
+    cb = LRSchedulerCallback()
+    cb.set_engine(engine)
+    # Neither raises despite engine.optimizer being None.
+    cb.on_train_step_end(0, 0, MagicMock(), {})
+    cb.on_epoch_end(0)
+
+    tb_cb = TensorBoardLogger(log_dir="unused")
+    tb_cb.set_engine(engine)
+    # No writer was ever opened and no engine optimizer exists — must no-op.
+    tb_cb.on_epoch_end(0, {"avg_loss": 1.0})
