@@ -836,3 +836,42 @@ def test_nonstream_engineless_over_window_is_400(client):
     fine = client.post("/generate", json={"prompt": "hello", "max_new_tokens": 4})
     assert fine.status_code == 200, fine.text
     assert "generated_text" in fine.json()
+
+
+def test_queue_full_precheck_is_honest_queue_full_503(monkeypatch):
+    """RIL ISS-407: a full waiting queue is rejected with a retryable
+    ``queue_full`` 503 — NOT the misleading 'Model unavailable' the generic
+    ``RuntimeError`` catch produced — and it fires before the SSE/threadpool
+    work starts."""
+    import llm.serving.routers.generate as gen
+    from llm.serving.scheduler import Scheduler
+    from llm.serving.schemas import RequestState, Sequence
+
+    class _FakeModel:
+        max_seq_len = 64
+
+    class _FakeEngine:
+        def __init__(self):
+            self.scheduler = Scheduler(max_batch_size=2, max_waiting=1)
+            self.scheduler.add_sequence(
+                Sequence(request_id="r1", prompt="p", input_ids=[1], status=RequestState.WAITING, max_new_tokens=2)
+            )
+
+    class _FakeBackend:
+        engine = _FakeEngine()
+
+    class _FakeService:
+        model = _FakeModel()
+        backend = _FakeBackend()
+        tokenizer = StubTokenizer()
+
+    monkeypatch.setattr(gen, "_require_generation_service", lambda: _FakeService())
+
+    with pytest.raises(gen.APIError) as excinfo:
+        gen._validate_queue_has_capacity()
+    assert excinfo.value.code == gen.ErrorCode.QUEUE_FULL.value
+    assert excinfo.value.status_code == 503
+    assert "queue is full" in excinfo.value.message
+    assert excinfo.value.code != gen.ErrorCode.MODEL_UNAVAILABLE.value, (
+        "queue-full must not be mislabelled as 'model unavailable'"
+    )

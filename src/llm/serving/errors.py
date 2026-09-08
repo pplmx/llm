@@ -37,6 +37,7 @@ class ErrorCode(StrEnum):
     INVALID_REQUEST = "invalid_request"
     UNAUTHORIZED = "unauthorized"
     TIMEOUT = "timeout"
+    QUEUE_FULL = "queue_full"
     MODEL_UNAVAILABLE = "model_unavailable"
     INTERNAL = "internal"
 
@@ -47,6 +48,7 @@ _CODE_TO_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
     ErrorCode.UNAUTHORIZED: 403,
     ErrorCode.TIMEOUT: 504,
+    ErrorCode.QUEUE_FULL: 503,  # retryable — same HTTP status as model_unavailable
     ErrorCode.MODEL_UNAVAILABLE: 503,
     ErrorCode.INTERNAL: 500,
 }

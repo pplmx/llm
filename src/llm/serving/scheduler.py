@@ -5,6 +5,16 @@ from threading import Lock
 from llm.serving.schemas import RequestState, Sequence
 
 
+class QueueFullError(RuntimeError):
+    """Raised when the waiting queue is at ``max_waiting`` capacity.
+
+    Typed so the serving routers can map it to an honest retryable 503
+    (``ErrorCode.QUEUE_FULL``) instead of the generic ``RuntimeError`` →
+    "Model unavailable" catch-all, which misdiagnosed the backpressure
+    condition (RIL ISS-407).
+    """
+
+
 class Scheduler:
     """Simple FCFS scheduler for continuous batching with backpressure.
 
@@ -38,6 +48,16 @@ class Scheduler:
         with self._lock:
             return len(self.waiting) > 0 or len(self.running) > 0
 
+    def is_full(self) -> bool:
+        """True when the waiting queue is at ``max_waiting`` capacity.
+
+        Used by the serving routers to pre-empt a request (honest ``503
+        queue_full``) before it reaches ``add_sequence``'s raise, and so the
+        stream route can reject BEFORE the SSE starts (RIL ISS-407).
+        """
+        with self._lock:
+            return len(self.waiting) >= self.max_waiting
+
     def add_sequence(self, seq: Sequence):
         """Add a new sequence to the waiting queue.
 
@@ -46,7 +66,7 @@ class Scheduler:
         """
         with self._lock:
             if len(self.waiting) >= self.max_waiting:
-                raise RuntimeError(
+                raise QueueFullError(
                     f"Waiting queue full ({len(self.waiting)}/{self.max_waiting}); retry later or increase max_waiting."
                 )
             self.waiting.append(seq)
@@ -79,7 +99,7 @@ class Scheduler:
                         continue  # same logical request re-added — permit
                     return False
             if len(self.waiting) >= self.max_waiting:
-                raise RuntimeError(
+                raise QueueFullError(
                     f"Waiting queue full ({len(self.waiting)}/{self.max_waiting}); retry later or increase max_waiting."
                 )
             self.waiting.append(seq)

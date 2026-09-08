@@ -26,6 +26,7 @@ from llm.serving.routers.generate import (
     _token_count,
     _validate_stream_request,
 )
+from llm.serving.scheduler import QueueFullError
 from llm.serving.schemas import (
     ChatCompletionChoice,
     ChatCompletionChoiceMessage,
@@ -134,6 +135,12 @@ async def chat_completions(
         except TimeoutError as exc:
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc
+        except QueueFullError as exc:
+            # MUST precede the generic ``RuntimeError`` catch (QueueFullError
+            # subclasses it): backpressure is a retryable condition, not a
+            # model failure (RIL ISS-407).
+            t.set_status(503)
+            raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
         except RuntimeError as exc:
             # Do NOT echo the backend exception text back to the client (RIL
             # ISS-168): it can contain filesystem paths / framework internals.

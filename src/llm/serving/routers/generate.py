@@ -17,6 +17,7 @@ from llm.serving.auth import get_api_key
 from llm.serving.config import ServingConfig
 from llm.serving.errors import APIError, ErrorCode
 from llm.serving.metrics import METRICS, ServingMetrics
+from llm.serving.scheduler import QueueFullError, Scheduler
 from llm.serving.schemas import (
     BatchGenerationRequest,
     BatchGenerationResponse,
@@ -288,6 +289,27 @@ def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
         )
 
 
+def _validate_queue_has_capacity() -> None:
+    """Reject before the SSE/threadpool when the batched engine's waiting
+    queue is full — an honest retryable 503 (``ErrorCode.QUEUE_FULL``) instead
+    of surfacing the queue-full condition as a misleading ``RuntimeError`` →
+    "Model unavailable" (non-stream) or an in-band ``Error: stream failed``
+    chunk (stream, RIL ISS-407). Best-effort: the queue can still fill between
+    this check and the actual enqueue; the ``QueueFullError`` handlers below
+    cover that race.
+    """
+    service = _require_generation_service()
+    scheduler = getattr(getattr(getattr(service, "backend", None), "engine", None), "scheduler", None)
+    if not isinstance(scheduler, Scheduler):
+        return  # engine-less (eager) backend has no finite queue
+    if scheduler.is_full():
+        raise APIError(
+            ErrorCode.QUEUE_FULL,
+            f"server waiting queue is full ({scheduler.max_waiting}); retry later",
+            status_code=503,
+        )
+
+
 def _validate_stream_request(prompt: str, max_new_tokens: int) -> None:
     """Run all client-caused pre-stream validations (encodability + bounds).
 
@@ -297,6 +319,7 @@ def _validate_stream_request(prompt: str, max_new_tokens: int) -> None:
     """
     _validate_prompt_encodable(prompt)
     _validate_generation_bounds(prompt, max_new_tokens)
+    _validate_queue_has_capacity()
 
 
 def _sync_generate(prompt: str, **kwargs) -> str:
@@ -328,11 +351,13 @@ async def generate_text(
         _validate_stream_request(request.prompt, request.max_new_tokens)
         return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
 
-    # Non-streaming twin of the same pre-check: an over-window prompt must be
+    # Non-streaming twin of the same pre-checks: an over-window prompt must be
     # a clean 400 on every backend (eager previously tail-truncated silently
     # — RIL ISS-408/DEC-113), matching the streaming route and the batched
-    # engine rather than producing garbage output.
+    # engine rather than producing garbage output; a full waiting queue must
+    # be an honest retryable 503 (RIL ISS-407).
     _validate_generation_bounds(request.prompt, request.max_new_tokens)
+    _validate_queue_has_capacity()
 
     timer = metrics.request_timer(endpoint="generate")
     with timer as t:
@@ -362,6 +387,13 @@ async def generate_text(
         except TimeoutError as exc:
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc
+        except QueueFullError as exc:
+            # MUST precede the generic ``RuntimeError`` catch (QueueFullError
+            # subclasses it): backpressure is a retryable condition, not a
+            # model failure (RIL ISS-407) — the generic block would map it to
+            # a misleading "Model unavailable during generation".
+            t.set_status(503)
+            raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
         except RuntimeError as exc:
             # Do NOT echo the backend exception text back to the client (RIL
             # ISS-168): it can contain filesystem paths / framework internals
@@ -505,6 +537,13 @@ async def batch_generate_text(
         except TimeoutError as exc:
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc
+        except QueueFullError as exc:
+            # MUST precede the generic ``RuntimeError`` catch (QueueFullError
+            # subclasses it): backpressure is a retryable condition, not a
+            # model failure (RIL ISS-407) — the generic block would map it to
+            # a misleading "Model unavailable during generation".
+            t.set_status(503)
+            raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
         except RuntimeError as exc:
             # Do NOT echo the backend exception text back to the client (RIL
             # ISS-168): it can contain filesystem paths / framework internals
