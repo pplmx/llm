@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-08T17:09:39+00:00",
+  "updated_at": "2026-09-08T17:12:00+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19611,10 +19611,10 @@
     "ISS-406": {
       "id": "ISS-406",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T12:53:39+00:00",
-      "updated_at": "2026-09-08T12:53:39+00:00",
+      "updated_at": "2026-09-08T17:12:00+00:00",
       "touched_round": 183,
       "summary": "Non-streaming serving request timeout orphans the generation: asyncio.timeout cancels the await but not the ThreadPoolExecutor thread; orphaned full stream_request keeps holding a batched-engine KV slot and burning GPU (streaming path closes the sync iterator correctly; non-stream routes don't).",
       "severity": 0.6
@@ -20091,10 +20091,10 @@
     "TASK-365": {
       "id": "TASK-365",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-09-08T17:09:38+00:00",
-      "updated_at": "2026-09-08T17:09:39+00:00",
+      "updated_at": "2026-09-08T17:12:00+00:00",
       "touched_round": 183,
       "category": "stability",
       "summary": "Non-streaming engine-backed /generate driven through the reapable stream generator: a request timeout closes stream_request (finally reaps the KV slot) instead of orphaning the threadpool generate_request which held the slot and burned forward passes after the client left. Eager path unchanged; isinstance(ContinuousBatchingEngine) gate keeps test mocks on the eager path.",
@@ -20103,6 +20103,16 @@
       "effort": 3,
       "lock_owner": "llm-bb-r183",
       "lock_until": "2026-09-08T17:39:39+00:00"
+    },
+    "CHG-378": {
+      "id": "CHG-378",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T17:12:00+00:00",
+      "updated_at": "2026-09-08T17:12:00+00:00",
+      "touched_round": 183,
+      "commit": "d566dfc"
     }
   },
   "edges": [
@@ -29824,6 +29834,18 @@
       "to": "ISS-406",
       "type": "addresses",
       "created_at": "2026-09-08T17:09:39+00:00"
+    },
+    {
+      "from": "CHG-378",
+      "to": "TASK-365",
+      "type": "implements",
+      "created_at": "2026-09-08T17:12:00+00:00"
+    },
+    {
+      "from": "CHG-378",
+      "to": "ISS-406",
+      "type": "resolves",
+      "created_at": "2026-09-08T17:12:00+00:00"
     }
   ]
 }
