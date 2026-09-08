@@ -344,3 +344,73 @@ def test_generate_stream_timeout_records_504_status(monkeypatch):
     two, _ = _histogram_count_and_sum(met.request_duration_seconds, endpoint="generate", status="200")
     assert four == 1, f"timed-out stream must be recorded as 504, got 504-count={four}"
     assert two == 0, f"timed-out stream must not be recorded as 200, got 200-count={two}"
+
+
+@pytest.mark.quick
+def test_generate_nonstream_timeout_releases_engine_slot(tiny_model, device, stub_tokenizer, monkeypatch):
+    """RIL ISS-406: a ``request_timeout`` on the NON-streaming engine-backed
+    /generate must close the abandoned ``stream_request`` so its ``finally``
+    reaps the KV slot promptly — the old path ran ``generate_request`` in a
+    threadpool that could not be interrupted, orphaning the full generation
+    (and its slot) until natural completion, burning forward passes after the
+    client had already left."""
+    import asyncio
+    import time
+
+    from llm.generation.backends import BatchedGenerationBackend
+    from llm.serving.generation_service import ServingGenerationService
+
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=stub_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    real_step = engine.step
+
+    def slow_step():
+        time.sleep(0.4)  # every step is slow → the 0.15s deadline fires mid-step
+        return real_step()
+
+    engine.step = slow_step  # type: ignore[method-assign]
+
+    service = ServingGenerationService(
+        model=tiny_model,
+        tokenizer=stub_tokenizer,
+        backend=BatchedGenerationBackend(engine),
+        device=device,
+    )
+    monkeypatch.setattr(generate_module, "config", ServingConfig(request_timeout=0.15))
+    monkeypatch.setattr(generate_module, "_require_generation_service", lambda: service)
+    monkeypatch.setattr(generate_module, "inference_semaphore", None)
+
+    req = GenerationRequest(prompt="abcd", max_new_tokens=12)
+    req.request_id = "nonstream-timeout-slot"
+
+    def fake_sync_stream(**_kw):
+        return engine.stream_request(req)
+
+    monkeypatch.setattr(generate_module, "_sync_stream_generate", fake_sync_stream)
+
+    from llm.serving.errors import APIError, ErrorCode
+
+    async def _call_route():
+        return await generate_module.generate_text(
+            request=req,
+            config_=generate_module.config,
+            _api_key="test-key",
+        )
+
+    with pytest.raises(APIError) as excinfo:
+        asyncio.run(_call_route())
+    assert excinfo.value.code == ErrorCode.TIMEOUT.value
+
+    # The abandoned non-stream generation must release the engine slot promptly
+    # (the reap runs from the worker-thread done-callback, not asyncgen GC).
+    deadline = time.monotonic() + 5.0
+    while engine.slot_allocator.get_slot("nonstream-timeout-slot") >= 0 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    slot = engine.slot_allocator.get_slot("nonstream-timeout-slot")
+    assert slot == -1, f"KV slot must be freed after non-stream timeout, still = {slot}"

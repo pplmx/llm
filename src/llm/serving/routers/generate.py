@@ -14,6 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from llm.serving.auth import get_api_key
+from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
 from llm.serving.errors import APIError, ErrorCode
 from llm.serving.metrics import METRICS, ServingMetrics
@@ -365,25 +366,56 @@ async def generate_text(
             async with asyncio.timeout(config_.request_timeout):
                 async with inference_semaphore or _null_cm():
                     with metrics.track_inflight():
-                        generated_text = await run_in_threadpool(
-                            _sync_generate,
-                            prompt=request.prompt,
-                            # Thread the client's request_id to the engine so
-                            # batched/continuous-batching duplicate-request-id
-                            # protection (RIL ISS-123/F3) works from the HTTP
-                            # path — it was previously dropped at every layer
-                            # (round-73 FINDING 3 / ISS-224).
-                            request_id=request.request_id,
-                            max_new_tokens=request.max_new_tokens,
-                            temperature=request.temperature,
-                            top_k=request.top_k,
-                            top_p=request.top_p,
-                            repetition_penalty=request.repetition_penalty,
-                            frequency_penalty=request.frequency_penalty,
-                            presence_penalty=request.presence_penalty,
-                            logit_bias=request.logit_bias,
-                            stop=request.stop,
-                        )
+                        # Thread the client's request_id to the engine so
+                        # batched/continuous-batching duplicate-request-id
+                        # protection (RIL ISS-123/F3) works from the HTTP path
+                        # — it was previously dropped at every layer (round-73
+                        # FINDING 3 / ISS-224).
+                        gen_kwargs = {
+                            "request_id": request.request_id,
+                            "max_new_tokens": request.max_new_tokens,
+                            "temperature": request.temperature,
+                            "top_k": request.top_k,
+                            "top_p": request.top_p,
+                            "repetition_penalty": request.repetition_penalty,
+                            "frequency_penalty": request.frequency_penalty,
+                            "presence_penalty": request.presence_penalty,
+                            "logit_bias": request.logit_bias,
+                            "stop": request.stop,
+                        }
+                        service = _require_generation_service()
+                        engine = getattr(getattr(service, "backend", None), "engine", None)
+                        if not isinstance(engine, ContinuousBatchingEngine):
+                            # Eager backend (or a test-service mock without a
+                            # real engine): no engine slot to leak, keep the
+                            # synchronous generate.
+                            generated_text = await run_in_threadpool(
+                                _sync_generate, prompt=request.prompt, **gen_kwargs
+                            )
+                        else:
+                            # Engine-backed: drive the REAPABLE stream generator.
+                            # ``run_in_threadpool(_sync_generate)`` could not be
+                            # interrupted on timeout, so a 504 left the abandoned
+                            # ``generate_request`` running in the threadpool —
+                            # holding its KV slot and burning forward passes long
+                            # after the client left (RIL ISS-406). ``_drive_sync_iterator``
+                            # closes the underlying ``stream_request`` generator the
+                            # moment the consumer is cancelled, and its ``finally``
+                            # reaps the slot promptly.
+                            # ``engine.stream_request`` yields only the completion;
+                            # restore ``generate_request``'s shape so the shared
+                            # prompt-echo strip below stays correct. NOTE: this
+                            # must stay an async comprehension — a plain
+                            # ``list(_drive_sync_iterator(...))`` would let a
+                            # timeout cancel the OUTER await without triggering
+                            # the iterator's abandon-close reap.
+                            chunks: list[str] = [
+                                chunk
+                                async for chunk in _drive_sync_iterator(
+                                    _sync_stream_generate(prompt=request.prompt, **gen_kwargs)
+                                )
+                            ]
+                            generated_text = request.prompt + "".join(chunks)
         except TimeoutError as exc:
             t.set_status(504)
             raise APIError(ErrorCode.TIMEOUT, "Request timeout") from exc

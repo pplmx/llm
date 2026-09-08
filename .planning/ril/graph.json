@@ -1,8 +1,8 @@
 {
   "ril_version": 1,
-  "round": 182,
+  "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-08T15:13:50+00:00",
+  "updated_at": "2026-09-08T17:09:39+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19615,28 +19615,28 @@
       "version": 1,
       "created_at": "2026-09-08T12:53:39+00:00",
       "updated_at": "2026-09-08T12:53:39+00:00",
-      "touched_round": 181,
+      "touched_round": 183,
       "summary": "Non-streaming serving request timeout orphans the generation: asyncio.timeout cancels the await but not the ThreadPoolExecutor thread; orphaned full stream_request keeps holding a batched-engine KV slot and burning GPU (streaming path closes the sync iterator correctly; non-stream routes don't).",
       "severity": 0.6
     },
     "ISS-407": {
       "id": "ISS-407",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T12:53:39+00:00",
-      "updated_at": "2026-09-08T12:53:39+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-09-08T16:27:52+00:00",
+      "touched_round": 183,
       "summary": "Scheduler queue-full (max_waiting) surfaced as misleading errors: streaming -> in-band 200 'Error: stream failed'; non-stream -> 503 'Model unavailable during generation'. Should be retryable 503/429 with honest 'queue full' message.",
       "severity": 0.5
     },
     "ISS-408": {
       "id": "ISS-408",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T12:54:22+00:00",
-      "updated_at": "2026-09-08T12:54:22+00:00",
+      "updated_at": "2026-09-08T15:15:25+00:00",
       "touched_round": 182,
       "summary": "Eager serving silently truncates over-window prompts (keep=max(1,max_seq_len-max_new_tokens)) -> near-full-context prompt collapses to 1 token, generates garbage with 200 success; batched engine 400s the same payload. Behavior differs by generation_backend.",
       "severity": 0.6
@@ -19644,11 +19644,11 @@
     "ISS-409": {
       "id": "ISS-409",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T12:54:22+00:00",
-      "updated_at": "2026-09-08T12:54:22+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-09-08T15:27:26+00:00",
+      "touched_round": 182,
       "summary": "batch_generate runs EOS-terminated rows through all max_new_tokens steps (no per-row halt; EOS only cut after loop) -> wasted decode up to max_new_tokens x, and post-EOS junk tokens pollute repetition/frequency/presence penalty history.",
       "severity": 0.5
     },
@@ -19677,10 +19677,10 @@
     "ISS-412": {
       "id": "ISS-412",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T12:55:17+00:00",
-      "updated_at": "2026-09-08T12:55:17+00:00",
+      "updated_at": "2026-09-08T15:15:25+00:00",
       "touched_round": 182,
       "summary": "temperature bound inconsistent: /generate (GenerationRequest) has no upper bound (schema le absent) vs /v1/chat le=2.0; top-level sampling accepts any temp>0. Degenerate temps (1e9 ~ uniform) silently accepted via /generate only.",
       "severity": 0.3
@@ -19816,11 +19816,11 @@
     "ISS-413": {
       "id": "ISS-413",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T14:50:06+00:00",
-      "updated_at": "2026-09-08T14:50:06+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-09-08T15:43:55+00:00",
+      "touched_round": 182,
       "summary": "tokenizer.pt round-trip silently broken for real HF tokenizers: allowlist covers HFTokenizer class but PreTrainedTokenizerFast embeds tokenizers.TokenizerFast/BPE rust objects whose tokenizers.* globals aren't allowlisted -> weights_only UnpicklingError, indistinguishable from malicious-pickle rejection. Minimal fix: loud error suggesting tokenizer_type='hf' + repo id, or add tokenizers module; + round-trip test.",
       "severity": 0.6
     },
@@ -19838,11 +19838,11 @@
     "ISS-415": {
       "id": "ISS-415",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T14:50:06+00:00",
-      "updated_at": "2026-09-08T14:50:06+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-09-08T16:40:23+00:00",
+      "touched_round": 183,
       "summary": "ModelFactory.from_config() else-branch passes MLP-shaped kwargs (hidden_size/intermediate_size/dropout_p/use_glu) to ANY non-'decoder' builder — a plugin registered my_decoder expecting decoder kwargs gets TypeError or a silently-broken model. Fix: route registry decoder-like builders through decoder_kwargs_from_config or expose kwargs-shape contract.",
       "severity": 0.5
     },
@@ -19860,44 +19860,44 @@
     "ISS-417": {
       "id": "ISS-417",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T14:51:52+00:00",
-      "updated_at": "2026-09-08T14:51:52+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-09-08T16:00:19+00:00",
+      "touched_round": 183,
       "summary": "get_weight_mapping silently falls back to LLAMA_MAPPING for any unknown architecture; convert_hf/gguf/our_weights call it without mixtral/unknown guard -> future/pluggable callers silently mis-map MoE/expert tensors (ISS-144 class). Fix: raise KeyError for known-but-unsupported names, assert in convert_*.",
       "severity": 0.5
     },
     "ISS-418": {
       "id": "ISS-418",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T14:51:52+00:00",
-      "updated_at": "2026-09-08T14:51:52+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-09-08T16:00:19+00:00",
+      "touched_round": 183,
       "summary": "bootstrap ensure_builtins_registered permanently locks in empty MODEL_REGISTRY with no diagnostic: entry points missing (source-tree import, stale venv) -> _builtins_registered True forever, every from_config fails 'decoder not found'. Fix: code-level fallback registration of build_decoder/build_regression_mlp or descriptive error.",
       "severity": 0.5
     },
     "ISS-419": {
       "id": "ISS-419",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T14:51:52+00:00",
-      "updated_at": "2026-09-08T14:51:52+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-09-08T16:00:20+00:00",
+      "touched_round": 183,
       "summary": "hf_publisher push_to_hub leaks temp staging dirs (mkdtemp never cleaned, unbounded disk in long-running containers) and save_pretrained non-atomic (config.json then safetensors -> crash leaves stale weights + fresh config silently mismatched). Fix: TemporaryDirectory context + write safetensors before config/atomic rename.",
       "severity": 0.4
     },
     "ISS-420": {
       "id": "ISS-420",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T14:51:53+00:00",
-      "updated_at": "2026-09-08T14:51:53+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-09-08T15:43:55+00:00",
+      "touched_round": 182,
       "summary": "tokenizer_factory edge cases: default_corpus=[] falsy -> replaced by printable corpus (use `default_corpus is None` discriminator); from_dataset_text slurps whole file + raw UnicodeDecodeError; from_serving_config returns torch.load result with no isinstance tokenizer check -> confusing AttributeError at request time.",
       "severity": 0.3
     },
@@ -19924,10 +19924,10 @@
     "TASK-359": {
       "id": "TASK-359",
       "type": "task",
-      "status": "active",
-      "version": 2,
+      "status": "resolved",
+      "version": 3,
       "created_at": "2026-09-08T14:57:26+00:00",
-      "updated_at": "2026-09-08T14:59:50+00:00",
+      "updated_at": "2026-09-08T15:15:24+00:00",
       "touched_round": 182,
       "category": "correctness",
       "summary": "Serving validation surface (ISS-408/412): eager over-window prompts must be a 400 pre-check (like the batched engine) instead of silent tail-truncation to ~1-token garbage; and /generate temperature needs the same upper bound as /v1/chat (le=2.0) with a documented effective range. Add cross-backend e2e tests.",
@@ -19947,6 +19947,162 @@
       "touched_round": 182,
       "rationale": "The serving pre-validation used to SKIP the context-window budget check for engine-less backends (pinned by the ISS-355 regression test) because EagerGenerationBackend tail-truncated over-window prompts. But that silent truncation degrades to a ~1-token prompt (garbage output) as max_new_tokens approaches max_seq_len, and it diverged from the batched engine's clean 400 for the identical payload. DEC-113: every backend (batched AND eager, stream AND non-stream) now rejects len(prompt)+max_new_tokens > window with the same 400; eager clients must shorten the prompt or chunk, matching the framework's own reference (batched) backend. Supersedes the ISS-355/TASK-315 'skip for engineless' behavior.",
       "alternatives_rejected": "Keep silent tail-truncation but return the effective context length used (misleads clients into thinking the full prompt was attended; does not fix the keep=1 garbage). Only 400 when max_new_tokens >= window fraction (arbitrary threshold, opaque). Always-400 is uniform, self-documenting and matches the batched reference."
+    },
+    "CHG-372": {
+      "id": "CHG-372",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T15:14:55+00:00",
+      "updated_at": "2026-09-08T15:14:55+00:00",
+      "touched_round": 182,
+      "commit": "195d864"
+    },
+    "TASK-360": {
+      "id": "TASK-360",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-08T15:26:51+00:00",
+      "updated_at": "2026-09-08T15:27:26+00:00",
+      "touched_round": 182,
+      "category": "performance",
+      "summary": "batch_generate no longer decodes EOS-finished rows through all max_new_tokens steps — per-row finished flag halts sampling and breaks the loop when all rows EOS, eliminating up to max_new_tokens x wasted forwards + post-EOS penalty-history pollution; keep slot alignment for the batched KV/cache path.",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 2,
+      "lock_owner": "llm-bb-r182",
+      "lock_until": "2026-09-08T15:56:51+00:00"
+    },
+    "CHG-373": {
+      "id": "CHG-373",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T15:27:26+00:00",
+      "updated_at": "2026-09-08T15:27:26+00:00",
+      "touched_round": 182,
+      "commit": "e7bc4ff"
+    },
+    "TASK-361": {
+      "id": "TASK-361",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-08T15:42:13+00:00",
+      "updated_at": "2026-09-08T15:43:55+00:00",
+      "touched_round": 182,
+      "category": "maintainability",
+      "summary": "TokenizerFactory DX hardening (ISS-420/ISS-413): honor empty default_corpus (is None discriminator); clear error for model-blob-in-tokenizer_path (encode/decode structural check); clear non-UTF-8 message in from_dataset_text; actionable weights_only hint (tokenizer_type='hf' + repo id) when a .pt embeds non-allowlisted globals (real HF tokenizers).",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 2,
+      "lock_owner": "llm-bb-r182",
+      "lock_until": "2026-09-08T16:12:14+00:00"
+    },
+    "CHG-374": {
+      "id": "CHG-374",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T15:43:54+00:00",
+      "updated_at": "2026-09-08T15:43:54+00:00",
+      "touched_round": 182,
+      "commit": "a6ceddc"
+    },
+    "TASK-362": {
+      "id": "TASK-362",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-08T15:44:50+00:00",
+      "updated_at": "2026-09-08T16:00:19+00:00",
+      "touched_round": 183,
+      "category": "maintainability",
+      "summary": "Model-registry/compat fail-loud hardening: (a) get_weight_mapping raises KeyError for known-but-unsupported archs (mixtral/unknown) instead of silently falling back to Llama rules in convert_hf/gguf/our_weights; (b) bootstrap registers build_decoder/build_regression_mlp fallbacks when llm.models entry points resolve to an empty registry (descriptive error naming the entry-point group); (c) hf_publisher push_to_hub uses TemporaryDirectory + writes safetensors before config.json (atomic-ish) — no temp-dir leak.",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 3,
+      "lock_owner": "llm-bb-r183",
+      "lock_until": "2026-09-08T16:15:23+00:00"
+    },
+    "CHG-375": {
+      "id": "CHG-375",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T16:00:18+00:00",
+      "updated_at": "2026-09-08T16:00:18+00:00",
+      "touched_round": 183,
+      "commit": "dc99108"
+    },
+    "TASK-363": {
+      "id": "TASK-363",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-08T16:26:05+00:00",
+      "updated_at": "2026-09-08T16:27:51+00:00",
+      "touched_round": 183,
+      "category": "dx",
+      "summary": "Scheduler backpressure surfaced honestly: typed QueueFullError + ErrorCode.QUEUE_FULL (503) distinguished from 'Model unavailable'; pre-check rejects a full waiting queue BEFORE the SSE/threadpool in both /generate and /v1/chat (stream via _validate_stream_request, non-stream via _validate_queue_has_capacity) with a race-coverage QueueFullError catch; eager engine-less path untouched.",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 2,
+      "lock_owner": "llm-bb-r183",
+      "lock_until": "2026-09-08T16:57:03+00:00"
+    },
+    "CHG-376": {
+      "id": "CHG-376",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T16:27:51+00:00",
+      "updated_at": "2026-09-08T16:27:51+00:00",
+      "touched_round": 183,
+      "commit": "1855aa3"
+    },
+    "TASK-364": {
+      "id": "TASK-364",
+      "type": "task",
+      "status": "resolved",
+      "version": 3,
+      "created_at": "2026-09-08T16:38:57+00:00",
+      "updated_at": "2026-09-08T16:40:22+00:00",
+      "touched_round": 183,
+      "category": "correctness",
+      "summary": "ModelFactory.from_config shapes builder kwargs to the REGISTERED builder's signature: decoder-shaped builders (vocab_size/num_layers/num_heads params — the llm.models plugin extension point) get full decoder_kwargs_from_config instead of the 4 MLP fields that caused a TypeError or a silently-broken model; MLP-shaped builders (build_regression_mlp) keep MLP kwargs.",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 2,
+      "lock_owner": "llm-bb-r183",
+      "lock_until": "2026-09-08T17:08:57+00:00"
+    },
+    "CHG-377": {
+      "id": "CHG-377",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-09-08T16:40:22+00:00",
+      "updated_at": "2026-09-08T16:40:22+00:00",
+      "touched_round": 183,
+      "commit": "9c4ac77"
+    },
+    "TASK-365": {
+      "id": "TASK-365",
+      "type": "task",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-09-08T17:09:38+00:00",
+      "updated_at": "2026-09-08T17:09:39+00:00",
+      "touched_round": 183,
+      "category": "stability",
+      "summary": "Non-streaming engine-backed /generate driven through the reapable stream generator: a request timeout closes stream_request (finally reaps the KV slot) instead of orphaning the threadpool generate_request which held the slot and burned forward passes after the client left. Eager path unchanged; isinstance(ContinuousBatchingEngine) gate keeps test mocks on the eager path.",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "effort": 3,
+      "lock_owner": "llm-bb-r183",
+      "lock_until": "2026-09-08T17:39:39+00:00"
     }
   },
   "edges": [
@@ -29536,6 +29692,138 @@
       "to": "COMP-022",
       "type": "governs",
       "created_at": "2026-09-08T15:13:50+00:00"
+    },
+    {
+      "from": "CHG-372",
+      "to": "TASK-359",
+      "type": "implements",
+      "created_at": "2026-09-08T15:15:24+00:00"
+    },
+    {
+      "from": "CHG-372",
+      "to": "ISS-408",
+      "type": "resolves",
+      "created_at": "2026-09-08T15:15:24+00:00"
+    },
+    {
+      "from": "CHG-372",
+      "to": "ISS-412",
+      "type": "resolves",
+      "created_at": "2026-09-08T15:15:24+00:00"
+    },
+    {
+      "from": "TASK-360",
+      "to": "ISS-409",
+      "type": "addresses",
+      "created_at": "2026-09-08T15:26:51+00:00"
+    },
+    {
+      "from": "CHG-373",
+      "to": "TASK-360",
+      "type": "implements",
+      "created_at": "2026-09-08T15:27:26+00:00"
+    },
+    {
+      "from": "CHG-373",
+      "to": "ISS-409",
+      "type": "resolves",
+      "created_at": "2026-09-08T15:27:26+00:00"
+    },
+    {
+      "from": "TASK-361",
+      "to": "ISS-420",
+      "type": "addresses",
+      "created_at": "2026-09-08T15:42:13+00:00"
+    },
+    {
+      "from": "TASK-361",
+      "to": "ISS-413",
+      "type": "addresses",
+      "created_at": "2026-09-08T15:42:13+00:00"
+    },
+    {
+      "from": "CHG-374",
+      "to": "TASK-361",
+      "type": "implements",
+      "created_at": "2026-09-08T15:43:54+00:00"
+    },
+    {
+      "from": "CHG-374",
+      "to": "ISS-420",
+      "type": "resolves",
+      "created_at": "2026-09-08T15:43:54+00:00"
+    },
+    {
+      "from": "CHG-374",
+      "to": "ISS-413",
+      "type": "resolves",
+      "created_at": "2026-09-08T15:43:54+00:00"
+    },
+    {
+      "from": "CHG-375",
+      "to": "TASK-362",
+      "type": "implements",
+      "created_at": "2026-09-08T16:00:18+00:00"
+    },
+    {
+      "from": "CHG-375",
+      "to": "ISS-417",
+      "type": "resolves",
+      "created_at": "2026-09-08T16:00:18+00:00"
+    },
+    {
+      "from": "CHG-375",
+      "to": "ISS-418",
+      "type": "resolves",
+      "created_at": "2026-09-08T16:00:19+00:00"
+    },
+    {
+      "from": "CHG-375",
+      "to": "ISS-419",
+      "type": "resolves",
+      "created_at": "2026-09-08T16:00:19+00:00"
+    },
+    {
+      "from": "TASK-363",
+      "to": "ISS-407",
+      "type": "addresses",
+      "created_at": "2026-09-08T16:27:03+00:00"
+    },
+    {
+      "from": "CHG-376",
+      "to": "TASK-363",
+      "type": "implements",
+      "created_at": "2026-09-08T16:27:51+00:00"
+    },
+    {
+      "from": "CHG-376",
+      "to": "ISS-407",
+      "type": "resolves",
+      "created_at": "2026-09-08T16:27:51+00:00"
+    },
+    {
+      "from": "TASK-364",
+      "to": "ISS-415",
+      "type": "addresses",
+      "created_at": "2026-09-08T16:38:57+00:00"
+    },
+    {
+      "from": "CHG-377",
+      "to": "TASK-364",
+      "type": "implements",
+      "created_at": "2026-09-08T16:40:22+00:00"
+    },
+    {
+      "from": "CHG-377",
+      "to": "ISS-415",
+      "type": "resolves",
+      "created_at": "2026-09-08T16:40:22+00:00"
+    },
+    {
+      "from": "TASK-365",
+      "to": "ISS-406",
+      "type": "addresses",
+      "created_at": "2026-09-08T17:09:39+00:00"
     }
   ]
 }
