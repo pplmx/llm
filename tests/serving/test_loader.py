@@ -304,3 +304,100 @@ def test_dummy_fallback_tokenizer_has_eos_and_bos():
     assert model.lm_head.out_features == tokenizer.vocab_size
     assert tokenizer.eos_token_id is not None, "serving default tokenizer must expose an EOS id so generation can stop"
     assert tokenizer.bos_token_id is not None
+
+
+def test_config_less_glu_checkpoint_preserved():
+    """RIL ISS-416: a config-less legacy checkpoint built with a GLU + RMSNorm
+    + learned-PE model must load BIT-IDENTICAL (every tensor preserved).
+
+    Before the fix ``_build_decoder`` hardcoded ``use_glu=False`` /
+    ``intermediate_size=None`` and dropped the bias/norm flags, so a GLU
+    checkpoint's ``gate_proj`` weights were silenced at random init with only
+    a warning — serving a functionally different network."""
+    from llm.models.decoder import DecoderModel
+    from llm.serving.loader import _build_decoder
+
+    torch.manual_seed(3)
+    src = DecoderModel(
+        vocab_size=64,
+        hidden_size=64,
+        num_layers=2,
+        num_heads=4,
+        intermediate_size=256,
+        max_seq_len=128,
+        attn_impl="mha",
+        mlp_impl="mlp",
+        use_glu=True,
+        use_rope=True,
+        norm_first=True,
+        norm_impl="rms_norm",
+        qkv_bias=False,
+        mlp_bias=False,
+        lm_head_bias=False,
+        pos_encoding_learned=True,
+    ).eval()
+    sd = src.state_dict()
+    assert any("gate_proj" in k for k in sd), "precondition: model must be GLU"
+    model = _build_decoder(serving_config=ServingConfig(), model_config=None, state_dict=sd)
+    after = model.state_dict()
+    # The whole checkpoint must be preserved (same keys, bit-identical values).
+    mism = [k for k in sd if k not in after or not torch.equal(after[k], sd[k])]
+    assert not mism, f"config-less GLU checkpoint lost {len(mism)} tensor(s): {mism[:5]}"
+
+
+def test_config_less_mismatched_architecture_raises():
+    """RIL ISS-416: a config-less checkpoint whose weights do NOT cover the
+    serving model must FAIL LOUDLY (like hf_loader), never serve random-init
+    weights behind a warning-only missing-keys notice."""
+    from llm.models.decoder import DecoderModel
+    from llm.serving.loader import _build_decoder
+
+    torch.manual_seed(5)
+    src = DecoderModel(
+        vocab_size=64,
+        hidden_size=64,
+        num_layers=2,
+        num_heads=4,
+        intermediate_size=256,
+        max_seq_len=128,
+        attn_impl="mha",
+        mlp_impl="mlp",
+        use_glu=False,
+    ).eval()
+    # ServingConfig hidden=128 does not match the checkpoint's 64 -> shape
+    # mismatch / uncovered params: must raise, not warning-only.
+    with pytest.raises((ValueError, RuntimeError)):
+        _build_decoder(serving_config=ServingConfig(hidden_size=128), model_config=None, state_dict=src.state_dict())
+
+
+def test_infer_legacy_architecture_recovers_glu_rmsnorm():
+    """RIL ISS-416: the config-less architecture inference must recover GLU /
+    intermediate width / RMSNorm / bias flags from the state-dict key naming."""
+    from llm.models.decoder import DecoderModel
+    from llm.serving.loader import infer_legacy_architecture
+
+    torch.manual_seed(7)
+    m = DecoderModel(
+        vocab_size=64,
+        hidden_size=64,
+        num_layers=2,
+        num_heads=4,
+        intermediate_size=256,
+        max_seq_len=128,
+        attn_impl="mha",
+        mlp_impl="mlp",
+        use_glu=True,
+        norm_impl="rms_norm",
+        qkv_bias=False,
+        mlp_bias=False,
+        lm_head_bias=False,
+        pos_encoding_learned=True,
+    ).eval()
+    arch = infer_legacy_architecture(m.state_dict())
+    assert arch["use_glu"] is True
+    assert arch["intermediate_size"] == 256
+    assert arch["norm_impl"] == "rms_norm"
+    assert arch["qkv_bias"] is False
+    assert arch["mlp_bias"] is False
+    assert arch["lm_head_bias"] is False
+    assert arch["pos_encoding_learned"] is True

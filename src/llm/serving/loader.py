@@ -134,6 +134,46 @@ def infer_num_layers(state_dict: dict[str, torch.Tensor]) -> int | None:
     return max(indices) + 1 if indices else None
 
 
+def infer_legacy_architecture(state_dict: dict[str, torch.Tensor]) -> dict[str, Any]:
+    """Recover architecture flags a checkpoint carries in its own key naming.
+
+    A config-less legacy checkpoint has no ``model_config`` sidecar, so we
+    must read the architecture back from the state-dict key pattern (RIL
+    ISS-416). Without this, ``_build_decoder`` hardcoded ``use_glu=False`` and
+    dropped every other flag, so a GLU checkpoint's ``gate_proj`` weights were
+    silenced at random init with only a warning, and RMS-norm / bias-bearing
+    models served with the wrong norm.
+
+    Returns only the flags that are **decidable** from the state-dict keys
+    (``use_glu`` / ``intermediate_size`` / ``norm_impl`` / ``qkv_bias`` /
+    ``mlp_bias`` / ``lm_head_bias``). ``use_rope`` / ``norm_first`` are not
+    observable from weight keys (RoPE tables and the norm-first ordering are
+    neither tensors nor names), so they are intentionally left out — the
+    caller falls back to ``ServingConfig`` / ``ModelConfig`` defaults for
+    those and a loud residual-miss check below catches a mismatch.
+    """
+    out: dict[str, Any] = {}
+    layer0 = "transformer_blocks.0.mlp."
+    out["use_glu"] = f"{layer0}gate_proj.weight" in state_dict
+    fc1 = state_dict.get(f"{layer0}fc1.weight")
+    if fc1 is not None:
+        # Our MLP: fc1 goes hidden->intermediate (GLU also adds a parallel
+        # gate_proj of the same width). Either way the intermediate width is
+        # fc1's output dimension.
+        out["intermediate_size"] = int(fc1.shape[0])
+    # RMSNorm has no bias key; LayerNorm does. Decidable from a norm weight.
+    if "transformer_blocks.0.norm1.bias" in state_dict:
+        out["norm_impl"] = "layer_norm"
+    elif "transformer_blocks.0.norm1.weight" in state_dict:
+        out["norm_impl"] = "rms_norm"
+    out["qkv_bias"] = "transformer_blocks.0.self_attn.qkv_proj.bias" in state_dict
+    out["mlp_bias"] = f"{layer0}fc1.bias" in state_dict
+    out["lm_head_bias"] = "lm_head.bias" in state_dict
+    # Learned positional encoding is decidable from its persisted buffer.
+    out["pos_encoding_learned"] = "embedding_layer.positional_encoding.pos_embedding.weight" in state_dict
+    return out
+
+
 def _build_decoder(
     *,
     serving_config: ServingConfig,
@@ -146,9 +186,12 @@ def _build_decoder(
     else:
         vocab_size = infer_vocab_size(state_dict)
         num_layers = infer_num_layers(state_dict) or serving_config.num_layers
+        arch = infer_legacy_architecture(state_dict)
         logger.warning(
-            "Checkpoint has no model_config; using ServingConfig architecture with inferred vocab_size=%s",
+            "Checkpoint has no model_config; using ServingConfig architecture with inferred "
+            "vocab_size=%s and inferred flags %s",
             vocab_size,
+            {k: v for k, v in arch.items() if k != "intermediate_size"},
         )
         model = ModelFactory.build(
             "decoder",
@@ -162,8 +205,13 @@ def _build_decoder(
             mlp_impl=serving_config.mlp_impl,
             num_experts=serving_config.num_experts,
             top_k=serving_config.top_k,
-            use_glu=False,
-            intermediate_size=None,
+            use_glu=arch.get("use_glu", False),
+            intermediate_size=arch.get("intermediate_size"),
+            norm_impl=arch.get("norm_impl", "layer_norm"),
+            qkv_bias=arch.get("qkv_bias", True),
+            mlp_bias=arch.get("mlp_bias", True),
+            lm_head_bias=arch.get("lm_head_bias", True),
+            pos_encoding_learned=arch.get("pos_encoding_learned", False),
             embedding_dropout_p=0.0,
             attn_dropout_p=0.0,
             mlp_dropout_p=0.0,
@@ -174,8 +222,20 @@ def _build_decoder(
 
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     if missing:
-        logger.warning("Missing keys when loading checkpoint: %s", missing[:5])
+        # Loud, like the hf_loader (RIL ISS-244 / ISS-416): a config-less
+        # checkpoint whose tensors do NOT cover the built model leaves the
+        # uncovered params at RANDOM init — serving garbage with a warning is
+        # a silent misconfiguration (e.g. a GLU checkpoint served as a non-GLU
+        # model used to drop every gate_proj and random-init the MLP).
+        raise ValueError(
+            f"Checkpoint is missing {len(missing)} model key(s) (first: {sorted(missing)[:5]}); "
+            "the config-less checkpoint's weights do not cover the architecture described by "
+            "the ServingConfig. Refusing to serve random-init weights — set hidden_size/"
+            "num_layers/num_heads (and PEFT) to match the checkpoint."
+        )
     if unexpected:
+        # Not a coverage problem (the model loads fully); just note dropped
+        # extra tensors (e.g. benign buffers) as hf_loader does for known ones.
         logger.warning("Unexpected keys when loading checkpoint: %s", unexpected[:5])
     return model
 
