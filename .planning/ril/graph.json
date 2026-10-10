@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T17:11:25+00:00",
+  "updated_at": "2026-10-10T18:02:05+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20237,6 +20237,40 @@
       "category": "maintainability",
       "priority": 2.5,
       "summary": "Attribute ISS-421 (moe 4-GPU TP-DP e2e NCCL deadlock) on bare-metal; gloo+isolated pass so likely box flake, rule in/out NCCL-only MoE-EP collective divergence"
+    },
+    "ISS-422": {
+      "id": "ISS-422",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-10-10T18:01:57+00:00",
+      "updated_at": "2026-10-10T18:01:57+00:00",
+      "touched_round": 183,
+      "severity": 0.5,
+      "summary": "FP8 static-activation calibration: dead-layer guard dead — static target whose hook never fired silently quantized with ~1e-8 garbage scale (bleaches activations ~1e10); fixed to raise loudly (quantization/FP8)"
+    },
+    "TASK-370": {
+      "id": "TASK-370",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-10-10T18:01:57+00:00",
+      "updated_at": "2026-10-10T18:01:57+00:00",
+      "touched_round": 183,
+      "category": "correctness",
+      "priority": 3.5,
+      "summary": "FP8 static calib dead-layer guard fires (fixed b0e1da8)"
+    },
+    "CHG-383": {
+      "id": "CHG-383",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-10-10T18:02:01+00:00",
+      "updated_at": "2026-10-10T18:02:01+00:00",
+      "touched_round": 183,
+      "commit": "b0e1da8",
+      "summary": "ISS-422: FP8 static calib dead-layer guard now fires (fired-set tracking + loud raise); 2 regression tests"
     }
   },
   "edges": [
@@ -30042,6 +30076,24 @@
       "to": "ISS-421",
       "type": "addresses",
       "created_at": "2026-10-10T17:11:25+00:00"
+    },
+    {
+      "from": "CHG-383",
+      "to": "ISS-422",
+      "type": "resolves",
+      "created_at": "2026-10-10T18:02:04+00:00"
+    },
+    {
+      "from": "CHG-383",
+      "to": "TASK-370",
+      "type": "implements",
+      "created_at": "2026-10-10T18:02:04+00:00"
+    },
+    {
+      "from": "TASK-370",
+      "to": "ISS-422",
+      "type": "addresses",
+      "created_at": "2026-10-10T18:02:05+00:00"
     }
   ]
 }
