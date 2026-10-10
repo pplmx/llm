@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T14:27:35+00:00",
+  "updated_at": "2026-10-10T14:44:32+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20133,11 +20133,11 @@
       "id": "CHG-379",
       "type": "change",
       "status": "active",
-      "version": 2,
+      "version": 3,
       "created_at": "2026-10-10T14:16:56+00:00",
-      "updated_at": "2026-10-10T14:27:35+00:00",
+      "updated_at": "2026-10-10T14:44:32+00:00",
       "touched_round": 183,
-      "commit": "0dfe727",
+      "commit": 6088000000.0,
       "summary": "ISS-414: hf_loader unconsumed guard tolerates benign non-persistent RoPE inv_freq buffer; foreign keys still fail loudly"
     }
   },
