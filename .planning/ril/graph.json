@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T16:14:37+00:00",
+  "updated_at": "2026-10-10T16:14:54+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20208,11 +20208,11 @@
       "id": "CHG-382",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-10-10T16:14:29+00:00",
-      "updated_at": "2026-10-10T16:14:29+00:00",
+      "updated_at": "2026-10-10T16:14:54+00:00",
       "touched_round": 183,
-      "commit": "pending",
+      "commit": "82f9c0f",
       "summary": "ISS-400/TASK-355: verified 8-proc 3d engine test passes on idle box (all 8 GPUs free); confirms env-flake not regression"
     }
   },
