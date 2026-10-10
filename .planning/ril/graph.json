@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T16:00:44+00:00",
+  "updated_at": "2026-10-10T16:14:37+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19530,11 +19530,11 @@
     "ISS-400": {
       "id": "ISS-400",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T15:31:41+00:00",
-      "updated_at": "2026-09-07T15:31:41+00:00",
-      "touched_round": 180,
+      "updated_at": "2026-10-10T16:14:33+00:00",
+      "touched_round": 183,
       "severity": 0.2,
       "confidence": 1.0,
       "summary": "[environmental] test_pp3d_engine_dp2_full_3d_train_eight_process_cpu fails with native c10::Error in pos_embedding on this box — reproduces identically on baseline 3d5c3f4 (pre-r180); GPUs at 98% util with ~78GB used by other processes. NOT caused by r180 changes; documented per known TP/DP/3D spawn contention flake."
@@ -19542,11 +19542,11 @@
     "TASK-355": {
       "id": "TASK-355",
       "type": "task",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-07T15:32:16+00:00",
-      "updated_at": "2026-09-07T15:32:16+00:00",
-      "touched_round": 180,
+      "updated_at": "2026-10-10T16:14:34+00:00",
+      "touched_round": 183,
       "category": "test-quality",
       "severity": 0.2,
       "confidence": 1.0,
@@ -20203,6 +20203,17 @@
       "touched_round": 183,
       "commit": "a05e28c",
       "summary": "ISS-416: serving config-less loader infers arch from state-dict keys (GLU/intermediate/norm/bias/learned-PE) + promotes residual missing keys to loud error"
+    },
+    "CHG-382": {
+      "id": "CHG-382",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-10-10T16:14:29+00:00",
+      "updated_at": "2026-10-10T16:14:29+00:00",
+      "touched_round": 183,
+      "commit": "pending",
+      "summary": "ISS-400/TASK-355: verified 8-proc 3d engine test passes on idle box (all 8 GPUs free); confirms env-flake not regression"
     }
   },
   "edges": [
@@ -29990,6 +30001,18 @@
       "to": "TASK-368",
       "type": "implements",
       "created_at": "2026-10-10T15:59:29+00:00"
+    },
+    {
+      "from": "CHG-382",
+      "to": "TASK-355",
+      "type": "implements",
+      "created_at": "2026-10-10T16:14:33+00:00"
+    },
+    {
+      "from": "CHG-382",
+      "to": "ISS-400",
+      "type": "resolves",
+      "created_at": "2026-10-10T16:14:37+00:00"
     }
   ]
 }
