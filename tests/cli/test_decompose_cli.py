@@ -96,3 +96,25 @@ def test_cli_end_to_end_decomposes_and_round_trips(runner: CliRunner, tmp_path: 
     with torch.no_grad():
         served = checkpoint.model_obj(torch.randint(0, 32, (2, 8)))
     assert torch.isfinite(served).all()
+
+
+def test_decompose_cli_module_entry_help_prints_usage():
+    """``python -m llm.cli.decompose --help`` must route through the Typer app.
+
+    The module had no ``__main__`` guard, so ``python -m`` silently no-op'd
+    (exit 0, empty output) while ``llm-decompose`` worked — an unreachable
+    module entry was a silent dead path.
+    """
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "llm.cli.decompose", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert "--model" in out
+    assert "--output" in out

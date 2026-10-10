@@ -133,3 +133,7 @@ def decompose(
     typer.echo(f"Compression ratio: {stats['compression_ratio']:.3f}x")
     typer.echo(f"Mean reconstruction error: {stats['relative_error']:.4f}")
     typer.echo(f"Layers decomposed: {len(stats['layers'])}")
+
+
+if __name__ == "__main__":
+    app()

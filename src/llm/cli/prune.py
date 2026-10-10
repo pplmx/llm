@@ -149,3 +149,7 @@ def prune(
 
     typer.echo(f"Pruned model saved to {output}")
     typer.echo(f"Achieved sparsity: {sparsity:.2%}")
+
+
+if __name__ == "__main__":
+    app()

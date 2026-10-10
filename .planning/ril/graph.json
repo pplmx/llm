@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T23:08:43+00:00",
+  "updated_at": "2026-10-10T23:11:36+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20362,6 +20362,18 @@
       "touched_round": 183,
       "summary": "Route serving cli.__main__ through Typer app",
       "commit": "2c77799"
+    },
+    "ISS-426": {
+      "id": "ISS-426",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-10-10T23:11:36+00:00",
+      "updated_at": "2026-10-10T23:11:36+00:00",
+      "touched_round": 183,
+      "title": "prune/decompose module entries python -m silently no-op",
+      "component": "cli",
+      "severity": "low"
     }
   },
   "edges": [
