@@ -18,10 +18,36 @@ from __future__ import annotations
 import logging
 import os
 
+import typer
+
 from llm.serving.auth import assert_safe_bind
 from llm.serving.config import ServingConfig
 
 logger = logging.getLogger(__name__)
+
+
+# ``llm-serve`` is a Typer command so ``--help`` works like ``llm-train``
+# (RIL: the script used to point at the bare :func:`main`, which ignores
+# argv — ``llm-serve --help`` silently launched uvicorn and held a CUDA
+# device). The flags default to ``None`` so the full ``ServingConfig`` /
+# ``LLM_SERVING_*`` env resolution in :func:`main` still applies when the
+# user does not override a specific value.
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def serve(
+    host: str | None = typer.Option(None, "--host", help="Bind host (default: LLM_SERVING_HOST / ServingConfig.host)."),
+    port: int | None = typer.Option(None, "--port", help="Bind port (default: LLM_SERVING_PORT / ServingConfig.port)."),
+    config_path: str | None = typer.Option(None, "--config", help="Path to a serving YAML config."),
+) -> None:
+    """Start the llm-serve OpenAI-compatible inference server."""
+    cfg = ServingConfig() if config_path is None else ServingConfig.from_yaml(config_path)
+    if host is not None:
+        cfg.host = host
+    if port is not None:
+        cfg.port = port
+    main(cfg)
 
 
 def main(config: ServingConfig | None = None) -> None:

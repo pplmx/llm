@@ -229,3 +229,46 @@ class TestServingCliPort:
         cli.main(ServingConfig(host="127.0.0.1", port=9000))
 
         assert captured.get("port") == 9000, "uvicorn.run must receive ServingConfig.port"
+
+
+class TestServingCliHelp:
+    def test_serve_help_prints_usage_without_launching_server(self, monkeypatch):
+        """``llm-serve --help`` must print usage, not silently boot uvicorn.
+
+        The script used to point at the bare ``api.main`` (no argv parsing),
+        so ``llm-serve --help`` launched a real uvicorn server holding a CUDA
+        device. It now points at a Typer app (``llm.serving.cli:app``); help
+        must print the options and exit 0 with uvicorn never invoked.
+        """
+        from typer.testing import CliRunner
+
+        from llm.serving import cli
+
+        launched = {"n": 0}
+
+        def fake_run(*_args, **_kwargs):
+            launched["n"] += 1
+
+        monkeypatch.setattr("uvicorn.run", fake_run, raising=False)
+
+        result = CliRunner().invoke(cli.app, ["--help"])
+
+        assert result.exit_code == 0
+        assert "--host" in result.output
+        assert "--port" in result.output
+        assert launched["n"] == 0, "llm-serve --help must not launch uvicorn"
+
+    def test_serve_invokes_main_without_help(self, monkeypatch):
+        """Without ``--help`` the command still runs the real server path
+        (ServingConfig -> assert_safe_bind -> uvicorn.run)."""
+        from typer.testing import CliRunner
+
+        from llm.serving import cli
+
+        launched = {}
+        monkeypatch.setattr("uvicorn.run", lambda *a, **k: launched.update(k), raising=False)
+        # A loopback host + no api_key is safe.
+        monkeypatch.setenv("LLM_SERVING_HOST", "127.0.0.1")
+        result = CliRunner().invoke(cli.app, ["--host", "127.0.0.1", "--port", "8123"])
+        assert result.exit_code == 0
+        assert launched.get("port") == 8123

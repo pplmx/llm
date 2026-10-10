@@ -158,7 +158,7 @@ gguf = "llm.export.gguf.exporter:build_gguf_exporter"
 
 [project.scripts]
 llm-train = "llm.training.train:app"
-llm-serve = "llm.serving.api:main"
+llm-serve = "llm.serving.cli:app"
 llm-migrate-ckpt = "llm.cli.migrate_ckpt:app"
 llm-quantize = "llm.cli.quantize:app"
 llm-prune = "llm.cli.prune:app"
