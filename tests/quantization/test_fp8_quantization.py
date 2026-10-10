@@ -200,6 +200,67 @@ def test_quantize_model_fp8_static_requires_calibration():
         quantize_model_fp8(_tiny_model(), None, Fp8Config(activation="static"))
 
 
+class _DeadBranchMLP(nn.Module):
+    """Two Linear branches, only one reached by ``forward`` — lets a static
+    calibration leave one declared target's hook never fired, reproducing the
+    RIL latency that used to silently quantize the dead layer with a garbage
+    scale."""
+
+    def __init__(self, hidden: int = 16):
+        super().__init__()
+        self.reached = nn.Linear(hidden, hidden)
+        self.dead = nn.Linear(hidden, hidden)
+
+    def forward(self, x):
+        # ``self.dead`` is never used, so its forward hook never fires.
+        return self.reached(x)
+
+
+def test_quantize_model_fp8_static_dead_layer_raises_not_garbage():
+    """RIL: a static-activation target whose forward hook NEVER fires during
+    calibration must fail LOUDLY, not silently quantize with a near-zero
+    activation scale.
+
+    ``quantize_model_fp8`` pre-seeds ``captured[static_name]`` with a zero
+    sentinel (torch.zeros(1)) so "I have no scale for this layer" was
+    previously tested via ``name not in act_scale`` — which can NEVER hold for
+    a pre-seeded static name. The old guard was therefore dead: a layer the
+    calibration forward never reached kept its zero sentinel and quantized
+    with ``act_scale ≈ clamp(0)/fmax ≈ 1e-8``, blowing activations up by
+    ~1e10 on dequant.
+    """
+    torch.manual_seed(1)
+    model = _DeadBranchMLP().eval()
+    calib = iter([torch.randn(4, 16) for _ in range(2)])
+    with pytest.raises(RuntimeError, match="never fired"):
+        quantize_model_fp8(
+            model,
+            calib,
+            Fp8Config(activation="static"),
+            target_modules=["reached", "dead"],
+        )
+
+
+def test_quantize_model_fp8_static_reached_layer_still_quantizes():
+    """The reached branch of the same shape still quantizes correctly when the
+    dead branch is excluded — the fired-tracking must not reject a layer whose
+    hook DID fire."""
+    torch.manual_seed(1)
+    model = _DeadBranchMLP().eval()
+    quantized = quantize_model_fp8(
+        model,
+        iter([torch.randn(4, 16) for _ in range(2)]),
+        Fp8Config(activation="static"),
+        target_modules=["reached"],
+    )
+    reached = quantized.reached
+    assert isinstance(reached, Fp8QuantizedLinear)
+    assert reached.activation_scale is not None
+    assert reached.activation_scale.item() > 0
+    # Dead branch left untouched (not in target set).
+    assert isinstance(quantized.dead, nn.Linear)
+
+
 def test_quantize_model_fp8_dynamic_needs_no_calibration():
     model = _tiny_model().eval()
     quantized = quantize_model_fp8(model, None, Fp8Config(activation="dynamic"))

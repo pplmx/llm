@@ -138,12 +138,14 @@ def quantize_model_fp8(
             raise ValueError("calib_iter is empty; need at least 1 batch for activation statistics.")
         captured: dict[str, torch.Tensor] = {n: torch.zeros(1) for n in static_names}
         seeded: set[str] = set()  # which captures a batch has already seeded
+        fired: set[str] = set()  # which static-target hooks actually fired at all
         hooks = []
 
         def make_hook(name: str):
             def hook(_m, inputs, _output):
                 x = inputs[0].detach().float()
                 amax = x.abs().max()
+                fired.add(name)
                 if name not in seeded:
                     # First batch SEEDS the capture; later batches take a
                     # RUNNING MAX. An ``numel() == 1`` sentinel cannot tell
@@ -185,7 +187,16 @@ def quantize_model_fp8(
     replaced = 0
     for name, layer in targets:
         eff = effective_configs.get(name, config)
-        if eff.activation == "static" and name not in act_scale:
+        if eff.activation == "static" and name in static_names and name not in fired:
+            # ``captured`` pre-seeds every static name with a zero sentinel
+            # (see the seeding note above), so ``name not in act_scale`` can
+            # NEVER hold — the old guard was dead and a static layer whose
+            # forward hook never fired silently quantized with a scale of
+            # ``clamp(0)/fmax ≈ 1e-8/fmax``, bleaching activations by ~1e10 on
+            # dequant (RIL TASK-313 / ISS-351-class). If the calibration
+            # forward never reached this static layer, refuse loudly (same
+            # contract as the GPTQ uniform-fallback's error) instead of
+            # serving a garbage scale.
             raise RuntimeError(
                 f"static activation calibration produced no scale for target layer {name} "
                 "(its forward hook never fired) — use activation='dynamic' or fix the model forward."
