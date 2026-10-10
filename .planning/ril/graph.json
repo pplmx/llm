@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T15:45:59+00:00",
+  "updated_at": "2026-10-10T15:59:50+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19849,11 +19849,11 @@
     "ISS-416": {
       "id": "ISS-416",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T14:50:06+00:00",
-      "updated_at": "2026-09-08T14:50:06+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-10-10T15:59:29+00:00",
+      "touched_round": 183,
       "summary": "serving legacy (config-less) checkpoints: _build_decoder hardcodes use_glu=False/intermediate_size=None and never passes use_rope/norm_first/norm_impl/qkv_bias/mlp_bias/lm_head_bias; load_state_dict(strict=False) + warning-only -> GLU weights missing = random-init with warning; RoPE silently serves as non-RoPE. Promote weight-key misses to a loud error like hf_loader.",
       "severity": 0.5
     },
@@ -20177,6 +20177,32 @@
       "confidence": 1.0,
       "source": "runtime-probe(4 rank dp1 + 8 rank dp2, engine._reduce_metric)",
       "summary": "Proved 3d metric reduction is CORRECT (ISS-404 is a non-bug): _reduce_metric does all_reduce(SUM) then /divisor. dp=1: every rank broadcasts identical L -> SUM(world L)/world = L (real_reduce 4.364 == raw local avg). dp=2 (8 rank, 2 columns): SUM(4*L0+4*L1)/8 = mean(L0,L1)==4.3204 == mean of the two distinct column losses. divisor=world_size recovers the true per-shard loss; the pure-TP deflation that motivated ISS-252 (divisor=1) does not apply to 3d because 3d explicitly broadcasts loss to every rank."
+    },
+    "TASK-368": {
+      "id": "TASK-368",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-10-10T15:50:09+00:00",
+      "updated_at": "2026-10-10T15:59:30+00:00",
+      "touched_round": 183,
+      "category": "correctness",
+      "severity": 0.5,
+      "confidence": 1.0,
+      "effort": 2,
+      "unlock_factor": 1,
+      "summary": "Fix serving legacy (config-less) checkpoint loading: _build_decoder hardcodes use_glu=False/intermediate_size=None and drops use_rope/norm_first/norm_impl/qkv_bias/mlp_bias/lm_head_bias, so GLU gate_proj weights are silently dropped (random-init, warning-only) and RoPE serves as non-RoPE. Infer arch flags from our state-dict key naming + promote residual missing weight keys to a loud error like hf_loader (ISS-416)"
+    },
+    "CHG-381": {
+      "id": "CHG-381",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-10-10T15:59:24+00:00",
+      "updated_at": "2026-10-10T15:59:50+00:00",
+      "touched_round": 183,
+      "commit": "a05e28c",
+      "summary": "ISS-416: serving config-less loader infers arch from state-dict keys (GLU/intermediate/norm/bias/learned-PE) + promotes residual missing keys to loud error"
     }
   },
   "edges": [
@@ -29946,6 +29972,24 @@
       "to": "TASK-367",
       "type": "implements",
       "created_at": "2026-10-10T15:29:11+00:00"
+    },
+    {
+      "from": "TASK-368",
+      "to": "ISS-416",
+      "type": "addresses",
+      "created_at": "2026-10-10T15:51:03+00:00"
+    },
+    {
+      "from": "CHG-381",
+      "to": "ISS-416",
+      "type": "resolves",
+      "created_at": "2026-10-10T15:59:29+00:00"
+    },
+    {
+      "from": "CHG-381",
+      "to": "TASK-368",
+      "type": "implements",
+      "created_at": "2026-10-10T15:59:29+00:00"
     }
   ]
 }
