@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T16:14:54+00:00",
+  "updated_at": "2026-10-10T17:11:25+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20214,6 +20214,29 @@
       "touched_round": 183,
       "commit": "82f9c0f",
       "summary": "ISS-400/TASK-355: verified 8-proc 3d engine test passes on idle box (all 8 GPUs free); confirms env-flake not regression"
+    },
+    "ISS-421": {
+      "id": "ISS-421",
+      "type": "issue",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-10-10T17:10:53+00:00",
+      "updated_at": "2026-10-10T17:10:53+00:00",
+      "touched_round": 183,
+      "severity": 0.4,
+      "summary": "[environmental/unattributed] moe 4-GPU TP-DP e2e intermittently deadlocks in NCCL ALLGATHER on virtualized host; gloo+isolated pass, diverging rank varies; needs bare-metal attribution (gh#72)"
+    },
+    "TASK-369": {
+      "id": "TASK-369",
+      "type": "task",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-10-10T17:11:23+00:00",
+      "updated_at": "2026-10-10T17:11:23+00:00",
+      "touched_round": 183,
+      "category": "maintainability",
+      "priority": 2.5,
+      "summary": "Attribute ISS-421 (moe 4-GPU TP-DP e2e NCCL deadlock) on bare-metal; gloo+isolated pass so likely box flake, rule in/out NCCL-only MoE-EP collective divergence"
     }
   },
   "edges": [
@@ -30013,6 +30036,12 @@
       "to": "ISS-400",
       "type": "resolves",
       "created_at": "2026-10-10T16:14:37+00:00"
+    },
+    {
+      "from": "TASK-369",
+      "to": "ISS-421",
+      "type": "addresses",
+      "created_at": "2026-10-10T17:11:25+00:00"
     }
   ]
 }
