@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T18:09:15+00:00",
+  "updated_at": "2026-10-10T18:39:16+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20305,6 +20305,40 @@
       "touched_round": 183,
       "commit": "c0d6b43",
       "summary": "ISS-423: RLHF/AI-feedback DataModules get TASK-323 empty-train-sampler guard (shared helper + 3 overrides); 2 regression tests"
+    },
+    "ISS-424": {
+      "id": "ISS-424",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-10-10T18:39:10+00:00",
+      "updated_at": "2026-10-10T18:39:10+00:00",
+      "touched_round": 183,
+      "severity": 0.7,
+      "summary": "llm-serve --help silently booted a uvicorn server holding a CUDA device (script pointed at bare api:main with no argv parsing); now a Typer app that prints usage and exits 0"
+    },
+    "TASK-372": {
+      "id": "TASK-372",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-10-10T18:39:10+00:00",
+      "updated_at": "2026-10-10T18:39:10+00:00",
+      "touched_round": 183,
+      "category": "dx",
+      "priority": 3.0,
+      "summary": "llm-serve CLI honors --help (fixed cd17373)"
+    },
+    "CHG-385": {
+      "id": "CHG-385",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-10-10T18:39:11+00:00",
+      "updated_at": "2026-10-10T18:39:11+00:00",
+      "touched_round": 183,
+      "commit": "cd17373",
+      "summary": "ISS-424: llm-serve Typer app for --host/--port/--config; --help no longer boots uvicorn on CUDA; backward-compat maintained"
     }
   },
   "edges": [
@@ -30146,6 +30180,24 @@
       "to": "ISS-423",
       "type": "addresses",
       "created_at": "2026-10-10T18:09:15+00:00"
+    },
+    {
+      "from": "CHG-385",
+      "to": "ISS-424",
+      "type": "resolves",
+      "created_at": "2026-10-10T18:39:16+00:00"
+    },
+    {
+      "from": "CHG-385",
+      "to": "TASK-372",
+      "type": "implements",
+      "created_at": "2026-10-10T18:39:16+00:00"
+    },
+    {
+      "from": "TASK-372",
+      "to": "ISS-424",
+      "type": "addresses",
+      "created_at": "2026-10-10T18:39:16+00:00"
     }
   ]
 }
