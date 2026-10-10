@@ -130,3 +130,26 @@ def test_rejection_sample_datamodule_refuses_empty_keep():
     module = RejectionSampleDataModule(config, mode="threshold", threshold=2.0)  # rewards are 0/1
     with pytest.raises(ValueError, match="kept ZERO"):
         module.setup()
+
+
+def test_rejection_sample_dataloader_never_empty_under_large_world_size():
+    """ISS-423 family: RejectionSampleDataModule uses drop_last=False, so a
+    run with world_size > len(train_dataset) still yields a non-empty epoch.
+
+    The prompt/aifeedback/grpo modules use drop_last=True and thus carry the
+    loud empty-sampler guard; rejection_sample is safe *by construction*
+    (drop_last=False, DistributedSampler pads), so it correctly has no guard.
+    This pins that invariant — a future 'simplification' to drop_last=True
+    would silently reintroduce the ISS-423 empty-epoch zero-loss hazard.
+    """
+    from llm.data.modules.rejection_sample import RejectionSampleDataModule
+
+    config = _config(num_samples=8)
+    module = RejectionSampleDataModule(config, mode="threshold", threshold=0.0)  # keep all
+    module.prepare_data()
+    module.setup()
+    assert module.train_dataset is not None
+    loader, _ = module.train_dataloader(rank=0, world_size=16)  # 16 > 8 rows
+    batch = next(iter(loader))
+    # drop_last=False pads so this rank still gets a batch of rows.
+    assert batch["input_ids"].shape[0] >= 1
