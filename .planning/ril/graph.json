@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T15:29:16+00:00",
+  "updated_at": "2026-10-10T15:29:51+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20159,11 +20159,11 @@
       "id": "CHG-380",
       "type": "change",
       "status": "active",
-      "version": 1,
+      "version": 2,
       "created_at": "2026-10-10T15:29:07+00:00",
-      "updated_at": "2026-10-10T15:29:07+00:00",
+      "updated_at": "2026-10-10T15:29:51+00:00",
       "touched_round": 183,
-      "commit": "pending",
+      "commit": "2f3bf69",
       "summary": "ISS-403: 3d (PP+TP) checkpoint save/load fixed - remap _tp maps to stage namespace + PPTPRuntime full_state_dict/scatter_load global-named gather + checkpoint is_pp3d gates"
     }
   },
