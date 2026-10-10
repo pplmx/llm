@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T18:39:16+00:00",
+  "updated_at": "2026-10-10T23:08:27+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20339,6 +20339,18 @@
       "touched_round": 183,
       "commit": "cd17373",
       "summary": "ISS-424: llm-serve Typer app for --host/--port/--config; --help no longer boots uvicorn on CUDA; backward-compat maintained"
+    },
+    "ISS-425": {
+      "id": "ISS-425",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-10-10T23:08:27+00:00",
+      "updated_at": "2026-10-10T23:08:27+00:00",
+      "touched_round": 183,
+      "title": "llm-server module entry python -m still boots uvicorn on --help",
+      "component": "serving-cli",
+      "severity": "medium"
     }
   },
   "edges": [

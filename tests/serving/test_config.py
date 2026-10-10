@@ -272,3 +272,29 @@ class TestServingCliHelp:
         result = CliRunner().invoke(cli.app, ["--host", "127.0.0.1", "--port", "8123"])
         assert result.exit_code == 0
         assert launched.get("port") == 8123
+
+    def test_module_entry_help_prints_usage_without_launching_server(self):
+        """``python -m llm.serving.cli --help`` must route through the Typer
+        app, not the bare :func:`cli.main`, so it prints usage and exits 0
+        instead of silently booting uvicorn on a CUDA device.
+
+        The ``llm-serve`` script entry point was fixed (Typer app), but the
+        ``__main__`` guard previously still called the argv-ignoring
+        ``main()`` — the same bug surfaced again via ``python -m``.
+        """
+        import subprocess
+        import sys
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "llm.serving.cli", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 0, out
+        assert "--host" in out
+        assert "--port" in out
+        # The module must not fall through to the server boot path.
+        assert "uvicorn" not in out
+        assert "Running on" not in out

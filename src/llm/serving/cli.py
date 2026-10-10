@@ -74,4 +74,4 @@ def main(config: ServingConfig | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    app()
