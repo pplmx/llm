@@ -113,6 +113,25 @@ def test_grpo_datamodule_batch_and_group_rewards():
     assert batch["rewards"].reshape(2, 4).sum(dim=-1).tolist() == [1.0, 1.0]
 
 
+def test_grpo_datamodule_rejects_distributed_world_size():
+    """RIL ISS-333: GRPO only composes with world_size=1.
+
+    A ``DistributedSampler(shuffle=False)`` hands each rank the interleaved
+    indices (``rank, rank+ws, ...``), so a multi-rank slice is not a set of
+    whole groups — ``group_advantages`` would silently mix responses from
+    different prompts. ``train_dataloader`` must reject world_size > 1 loudly.
+    """
+    from llm.data.modules.grpo import GRPODataModule
+
+    config = _config()
+    module = GRPODataModule(config)
+    module.prepare_data()
+    module.setup()
+    assert module.train_dataset is not None
+    with pytest.raises(ValueError, match="world_size=1"):
+        module.train_dataloader(rank=0, world_size=2)
+
+
 def test_grpo_datamodule_rejects_bad_batch_group_alignment():
     from llm.data.modules.grpo import GRPODataModule
 
