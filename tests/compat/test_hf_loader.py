@@ -370,6 +370,48 @@ class TestHFLoader:
         with pytest.raises(ValueError, match="does not cover"):
             from_pretrained(str(path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
 
+    def test_benign_nonpersistent_buffer_is_tolerated(self, tmp_path):
+        """RIL ISS-414: real Llama/Mistral checkpoints ship the RoPE inverse-
+        frequency buffer (``rotary_emb.inv_freq``, an HF-persisted non-
+        persistent buffer). Our model recomputes it at construction, so a
+        checkpoint carrying it loads the SAME network (all real tensors intact,
+        forward output bit-identical) — before the fix the unconsumed-key guard
+        refused the dump outright. Also asserts the benign buffer is NOT
+        absorbed as a model parameter (it must be recomputed, not loaded)."""
+        from safetensors.torch import save_file
+
+        from llm.compat.hf_loader import from_pretrained
+
+        # Baseline load (clean checkpoint) -> reference forward output.
+        clean_from_pretrained, clean_path = self._make_saved_checkpoint(tmp_path)
+        torch.manual_seed(7)
+        inputs = torch.randint(1, 63, (2, 16), device=str(DEFAULT_DEVICE))
+        clean = clean_from_pretrained(str(clean_path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+        clean.eval()
+
+        def _forward(m):
+            out = m(inputs)
+            return out[0] if isinstance(out, tuple) else out
+
+        reference = _forward(clean)
+
+        # Mutate a COPY of the artifact to carry the benign RoPE buffer (the
+        # real-dump situation); keep every real tensor exactly as saved.
+        _, path = self._make_saved_checkpoint(tmp_path)
+        weights_path = path / "model.safetensors"
+        state_dict = dict(torch.load(str(weights_path)))
+        state_dict["model.layers.0.self_attn.rotary_emb.inv_freq"] = torch.randn(16)
+        save_file(state_dict, str(weights_path))
+
+        loaded = from_pretrained(str(path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
+        loaded.eval()
+
+        # 1) The benign buffer is recomputed, not loaded as a parameter.
+        state = loaded.state_dict()
+        assert not any("inv_freq" in k for k in state), "benign buffer must not enter the model state"
+        # 2) All real weights survived identically -> forward is bit-identical.
+        assert torch.equal(_forward(loaded), reference), "benign buffer must not perturb real weights"
+
     def test_windowed_model_roundtrip(self, tmp_path):
         """RIL ISS-242: a model with sliding-window attention roundtrips
         through save_pretrained/from_pretrained WITH its window — before the

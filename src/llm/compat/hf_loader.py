@@ -25,6 +25,16 @@ from llm.runtime import ModelFactory
 
 logger = logging.getLogger(__name__)
 
+# RIL ISS-414: Hf checkpoints ship benign non-persistent buffers we recompute
+# at construction instead of loading. Keys ending in any of these suffixes are
+# tolerated (warned about, not rejected) by the unconsumed-key guard.
+_BENIGN_NONPERSISTENT_BUFFER_SUFFIXES = (
+    # RoPE inverse frequencies — HF (Llama/Mistral) persists the buffer, but
+    # our ``RoPE`` registers it ``persistent=False`` and recomputes it from
+    # ``rope_theta`` at construction.
+    ".self_attn.rotary_emb.inv_freq",
+)
+
 
 @runtime_checkable
 class _SizedAttention(Protocol):
@@ -193,16 +203,35 @@ def _load_from_local(
     # (but config-declared-supported) checkpoint used to load into a model
     # whose un-mapped weights stayed at RANDOM init with warnings only. The
     # GGUF loader already raises on the same condition.
+    #
+    # RIL ISS-414: not every unmapped key is a genuine foreign weight. Real
+    # Llama/Mistral checkpoints ship benign **non-persistent** buffers that we
+    # recompute at construction rather than load:
+    #   * ``*.self_attn.rotary_emb.inv_freq`` — HF persists the RoPE inverse
+    #     frequency buffer, but our ``RoPE`` registers it with
+    #     ``persistent=False`` and recomputes it from ``rope_theta`` at
+    #     construction. Rejecting it would refuse to load every real
+    #     Llama/Mistral dump. Tolerate (and note) these instead of failing.
+    # Everything else is still treated as a real drop and raises below.
     mapped_hf = expand_layer_mapping(get_weight_mapping(architecture), our_config["num_layers"])
     unconsumed = [
         hf_name
         for hf_name in state_dict
         if hf_name not in mapped_hf and hf_name.replace(".bias", ".weight") not in mapped_hf
     ]
-    if unconsumed:
+    benign_unconsumed = [k for k in unconsumed if k.endswith(_BENIGN_NONPERSISTENT_BUFFER_SUFFIXES)]
+    foreign_unconsumed = [k for k in unconsumed if k not in benign_unconsumed]
+    if benign_unconsumed:
+        logger.warning(
+            "ignoring %d benign non-persistent buffer(s) not needed by this model "
+            "(recomputed at construction; first: %s)",
+            len(benign_unconsumed),
+            sorted(benign_unconsumed)[:3],
+        )
+    if foreign_unconsumed:
         raise ValueError(
-            f"checkpoint has {len(unconsumed)} weight(s) the {architecture!r} mapping does not cover "
-            f"(first: {sorted(unconsumed)[:5]}); refusing to silently drop them at random init"
+            f"checkpoint has {len(foreign_unconsumed)} weight(s) the {architecture!r} mapping does not cover "
+            f"(first: {sorted(foreign_unconsumed)[:5]}); refusing to silently drop them at random init"
         )
 
     # Concatenate HF's separate q/k/v projections into our combined

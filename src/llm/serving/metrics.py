@@ -34,7 +34,7 @@ called from the ``on_step`` hook passed to
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from types import TracebackType
 from typing import Protocol
@@ -181,7 +181,7 @@ class ServingMetrics:
         self.kv_cache_hit_ratio.set(ratio)
 
     @contextmanager
-    def track_inflight(self) -> Iterator[None]:
+    def track_inflight(self) -> Generator[None]:
         """Context manager that inc/dec ``llm_inflight_requests``.
 
         Use to wrap the section of a request that holds an inference

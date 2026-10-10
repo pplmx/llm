@@ -247,6 +247,6 @@ register_exception_handlers(app, logger=logger)
 if __name__ == "__main__":
     # Lazy import so `python -m llm.serving.api` works without
     # pre-loading uvicorn at import time.
-    from llm.serving.cli import main
+    from llm.serving.cli import main as cli_main
 
-    main()
+    cli_main()

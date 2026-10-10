@@ -103,8 +103,10 @@ class PerplexityMetric(BaseMetric):
             # to JSON ``null`` and poison the report (RIL ISS-055).
             return {"perplexity": float("inf")}
 
-        kwargs = {"ignore_index": self.ignore_index} if self.ignore_index is not None else {}
-        loss = functional.cross_entropy(logits, labels, reduction="mean", **kwargs)
+        if self.ignore_index is not None:
+            loss = functional.cross_entropy(logits, labels, reduction="mean", ignore_index=self.ignore_index)
+        else:
+            loss = functional.cross_entropy(logits, labels, reduction="mean")
         perplexity = torch.exp(loss).item()
 
         return {"perplexity": perplexity}
