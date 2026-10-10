@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T15:29:51+00:00",
+  "updated_at": "2026-10-10T15:45:59+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19589,11 +19589,11 @@
     "ISS-404": {
       "id": "ISS-404",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "abandoned",
+      "version": 2,
       "created_at": "2026-09-08T12:53:08+00:00",
-      "updated_at": "2026-09-08T12:53:08+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-10-10T15:45:59+00:00",
+      "touched_round": 183,
       "summary": "3d logged training/val metrics deflated: engine._metric_reduce_divisor=world_size, but with dp_size=1 pp_group None broadcast loss over WORLD -> every rank holds identical value, then /world_size underreports (ISS-252 fixed pure TP but not 3d).",
       "severity": 0.5
     },
@@ -20165,6 +20165,18 @@
       "touched_round": 183,
       "commit": "2f3bf69",
       "summary": "ISS-403: 3d (PP+TP) checkpoint save/load fixed - remap _tp maps to stage namespace + PPTPRuntime full_state_dict/scatter_load global-named gather + checkpoint is_pp3d gates"
+    },
+    "EV-287": {
+      "id": "EV-287",
+      "type": "evidence",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-10-10T15:45:54+00:00",
+      "updated_at": "2026-10-10T15:45:54+00:00",
+      "touched_round": 183,
+      "confidence": 1.0,
+      "source": "runtime-probe(4 rank dp1 + 8 rank dp2, engine._reduce_metric)",
+      "summary": "Proved 3d metric reduction is CORRECT (ISS-404 is a non-bug): _reduce_metric does all_reduce(SUM) then /divisor. dp=1: every rank broadcasts identical L -> SUM(world L)/world = L (real_reduce 4.364 == raw local avg). dp=2 (8 rank, 2 columns): SUM(4*L0+4*L1)/8 = mean(L0,L1)==4.3204 == mean of the two distinct column losses. divisor=world_size recovers the true per-shard loss; the pure-TP deflation that motivated ISS-252 (divisor=1) does not apply to 3d because 3d explicitly broadcasts loss to every rank."
     }
   },
   "edges": [
