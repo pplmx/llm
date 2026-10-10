@@ -114,6 +114,7 @@ class GRPODataModule(SamplerMapDataModule):
         sampler = DistributedSampler(
             self.train_dataset, num_replicas=world_size, rank=rank, shuffle=False, drop_last=True
         )
+        self._guard_nonempty_train_sampler(sampler, world_size)
         return self.build_dataloader(self.train_dataset, sampler, collate_fn=self._collate), sampler
 
     def val_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader | None, DistributedSampler | None]:

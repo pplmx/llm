@@ -144,3 +144,21 @@ def test_aifeedback_datamodule_requires_target_token_judge():
     config = _config()  # vocab_size=32
     with pytest.raises(TypeError, match="TargetTokenJudge"):
         AIFeedbackDataModule(config, judge=_AlwaysLow())
+
+
+def test_aifeedback_empty_train_sampler_raises():
+    """RIL TASK-323: AIFeedbackDataModule overrides train_dataloader with
+    drop_last=True and must carry the same loud empty-epoch guard as the base
+    SamplerMapDataModule — a world_size > len(train_dataset) run must not
+    silently train on nothing."""
+    from torch.utils.data import DistributedSampler
+
+    from llm.data.modules.aifeedback import AIFeedbackDataModule
+
+    module = AIFeedbackDataModule(_config(num_samples=2, batch_size=2))
+    module.prepare_data()
+    module.setup()
+    sampler = DistributedSampler(module.train_dataset, num_replicas=16, rank=0, drop_last=True)
+    assert len(sampler) == 0, "precondition: 2-row / 16-rank drop_last split is empty"
+    with pytest.raises(ValueError, match="too small for world_size"):
+        module.train_dataloader(rank=0, world_size=16)

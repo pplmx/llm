@@ -37,6 +37,7 @@ class PromptDataModule(SamplerMapDataModule):
         sampler = DistributedSampler(
             self.train_dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=True
         )
+        self._guard_nonempty_train_sampler(sampler, world_size)
         loader = self.build_dataloader(self.train_dataset, sampler, collate_fn=collate_prompts)
         return loader, sampler
 

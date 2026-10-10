@@ -43,6 +43,31 @@ class SamplerMapDataModule(MapDataModule):
             kwargs["collate_fn"] = collate_fn
         return DataLoader(dataset, **kwargs)
 
+    def _guard_nonempty_train_sampler(self, train_sampler: DistributedSampler, world_size: int) -> None:
+        """Fail loudly when a ``drop_last=True`` train sampler is empty.
+
+        With ``drop_last=True`` torch gives EVERY rank a zero-sample sampler
+        whenever ``world_size > len(dataset)`` (its dropped per-replica count
+        is ``ceil((len - replicas) / replicas) == 0``). The engine would then
+        train whole epochs on nothing and silently score them 0.0 —
+        ``save_best``/``EarlyStopping`` read that as a perfect loss. Fail at
+        loader construction instead of training on nothing (RIL TASK-323).
+
+        Shared by every DataModule that builds a ``drop_last=True`` train
+        sampler (the base ``train_dataloader`` plus the RLHF / AI-feedback
+        overrides that re-declare one), so the guard cannot silently lapse in
+        one variant.
+        """
+        if not isinstance(self.train_dataset, Sized):
+            raise TypeError("train dataset must be sized")
+        if len(train_sampler) == 0:
+            raise ValueError(
+                f"train dataset has {len(self.train_dataset)} samples, which is "
+                f"too small for world_size={world_size} with DistributedSampler "
+                "drop_last — every rank is left with 0 samples (empty epoch). "
+                "Use fewer GPUs or a larger train split."
+            )
+
     def train_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader, DistributedSampler | None]:
         if self.train_dataset is None:
             raise ValueError("Train dataset not initialized.")
@@ -54,21 +79,7 @@ class SamplerMapDataModule(MapDataModule):
             shuffle=True,
             drop_last=True,
         )
-        # RIL TASK-323: with ``drop_last=True`` torch gives EVERY rank a
-        # zero-sample sampler whenever world_size > len(dataset) (its dropped
-        # per-replica count is ceil((len - replicas) / replicas) == 0). The
-        # engine would then train whole epochs on nothing and silently score
-        # them 0.0 — save_best/EarlyStopping read that as a perfect loss.
-        # Fail loudly at loader construction instead of training on nothing.
-        if not isinstance(self.train_dataset, Sized):
-            raise TypeError("train dataset must be sized")
-        if len(train_sampler) == 0:
-            raise ValueError(
-                f"train dataset has {len(self.train_dataset)} samples, which is "
-                f"too small for world_size={world_size} with DistributedSampler "
-                "drop_last — every rank is left with 0 samples (empty epoch). "
-                "Use fewer GPUs or a larger train split."
-            )
+        self._guard_nonempty_train_sampler(train_sampler, world_size)
         return self.build_dataloader(self.train_dataset, train_sampler), train_sampler
 
     def val_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader | None, DistributedSampler | None]:

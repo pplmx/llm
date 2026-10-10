@@ -121,3 +121,21 @@ def test_prompt_module_val_dataloader_returns_loader(tmp_path):
     loader, sampler = module.val_dataloader(rank=0, world_size=1)
     assert loader is not None
     assert sampler is not None
+
+
+def test_prompt_module_empty_train_sampler_raises(tmp_path):
+    """RIL TASK-323: a world_size > len(train_dataset) run with drop_last=True
+    gives EVERY rank a zero-sample sampler, so the engine would silently train
+    whole epochs on nothing and score them 0.0. PromptDataModule overrides
+    train_dataloader and must carry the same loud guard as SamplerMapDataModule
+    (it used to drop it), not silently return an empty loader."""
+    # 2 prompts; with world_size=8 (``drop_last``) torch yields 0 samples/rank.
+    data_file = _write_prompts(tmp_path, ["Hello", "World"])
+    module = PromptDataModule(_make_config(DataConfig(dataset_path=data_file)))
+    module.setup()
+    from torch.utils.data import DistributedSampler
+
+    sampler = DistributedSampler(module.train_dataset, num_replicas=8, rank=0, drop_last=True)
+    assert len(sampler) == 0, "precondition: drop_last over a 2-row/8-rank split is empty"
+    with pytest.raises(ValueError, match="too small for world_size"):
+        module.train_dataloader(rank=0, world_size=8)
