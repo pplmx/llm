@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-09-08T17:12:00+00:00",
+  "updated_at": "2026-10-10T14:27:35+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19827,11 +19827,11 @@
     "ISS-414": {
       "id": "ISS-414",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T14:50:06+00:00",
-      "updated_at": "2026-09-08T14:50:06+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-10-10T14:16:59+00:00",
+      "touched_round": 183,
       "summary": "hf_loader unconsumed guard (any raw HF key absent from expanded mapping) rejects harmless benign buffers: LLaMA-1/Mistral dumps ship rotary_emb.inv_freq (non-persistent in our rope), lm_head.bias variants, extra safetensors metadata. missing/unexpected guard downstream already catches real drops; this earlier guard is redundant-strict. Fix: only raise for unmapped keys that remain unexpected after load_state_dict, or warn for benign buffers.",
       "severity": 0.6
     },
@@ -20113,6 +20113,32 @@
       "updated_at": "2026-09-08T17:12:00+00:00",
       "touched_round": 183,
       "commit": "d566dfc"
+    },
+    "TASK-366": {
+      "id": "TASK-366",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-10-10T14:14:14+00:00",
+      "updated_at": "2026-10-10T14:17:05+00:00",
+      "touched_round": 183,
+      "category": "correctness",
+      "severity": 0.6,
+      "confidence": 1.0,
+      "effort": 1,
+      "unlock_factor": 1,
+      "summary": "hf_loader unconsumed guard rejects benign non-persistent RoPE buffers (rotary_emb.inv_freq) that real Llama/Mistral checkpoints ship; tolerate them with a warning while still failing loudly on genuinely foreign unmapped keys (ISS-414)"
+    },
+    "CHG-379": {
+      "id": "CHG-379",
+      "type": "change",
+      "status": "active",
+      "version": 2,
+      "created_at": "2026-10-10T14:16:56+00:00",
+      "updated_at": "2026-10-10T14:27:35+00:00",
+      "touched_round": 183,
+      "commit": "0dfe727",
+      "summary": "ISS-414: hf_loader unconsumed guard tolerates benign non-persistent RoPE inv_freq buffer; foreign keys still fail loudly"
     }
   },
   "edges": [
@@ -29846,6 +29872,24 @@
       "to": "ISS-406",
       "type": "resolves",
       "created_at": "2026-09-08T17:12:00+00:00"
+    },
+    {
+      "from": "TASK-366",
+      "to": "ISS-414",
+      "type": "addresses",
+      "created_at": "2026-10-10T14:14:16+00:00"
+    },
+    {
+      "from": "CHG-379",
+      "to": "ISS-414",
+      "type": "resolves",
+      "created_at": "2026-10-10T14:16:59+00:00"
+    },
+    {
+      "from": "CHG-379",
+      "to": "TASK-366",
+      "type": "implements",
+      "created_at": "2026-10-10T14:16:59+00:00"
     }
   ]
 }

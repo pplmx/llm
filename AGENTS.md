@@ -96,6 +96,8 @@ uv run llm-serve
 - `default-groups = ["test"]` → 普通 `uv sync` 含 pytest
 - 改依赖后：`uv lock` + 提交 `uv.lock`
 - CI / Docker：`uv sync --frozen`；Docker builder 排除 test/docs/streaming group
+- **一律用 `uv run`（或 `uv run python`）执行 Python / 脚本**，不用系统裸 `python3`：本仓库 `requires-python = ">=3.14"`，系统 `python3` 常是 3.12，两者语法语义不同。
+- **Python 3.14（PEP 758）：`except A, B:`（不带括号）是合法且推荐的写法**。`ruff format` 会把 `except (A, B):` 规范化为不带括号形式，这是正确行为——不要把它当成「损坏的 ruff」或「Python 2 残留语法」去改回去。注意：在 3.12 及更早这是语法错误，所以只用 3.14（`uv run`）验证。
 
 ## 测试约定
 
