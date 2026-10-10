@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T14:44:32+00:00",
+  "updated_at": "2026-10-10T15:29:16+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -19578,11 +19578,11 @@
     "ISS-403": {
       "id": "ISS-403",
       "type": "issue",
-      "status": "active",
-      "version": 1,
+      "status": "resolved",
+      "version": 2,
       "created_at": "2026-09-08T12:53:08+00:00",
-      "updated_at": "2026-09-08T12:53:08+00:00",
-      "touched_round": 181,
+      "updated_at": "2026-10-10T15:29:12+00:00",
+      "touched_round": 183,
       "summary": "3d (PP+TP) checkpoint save/load broken: stage tagged _tp+_pp3d but NOT _pp, so checkpoint.py collective/optimizer-gather gates (is_pp) miss it -> save persists ONLY stage-0 weights, stages>=1 optimizer moments lost; resume dispatches to _tp.scatter_load against local key namespace that collides across all stages -> silently loads stage-0 weights into every stage (TASK-216 delta).",
       "severity": 0.9
     },
@@ -20139,6 +20139,32 @@
       "touched_round": 183,
       "commit": 6088000000.0,
       "summary": "ISS-414: hf_loader unconsumed guard tolerates benign non-persistent RoPE inv_freq buffer; foreign keys still fail loudly"
+    },
+    "TASK-367": {
+      "id": "TASK-367",
+      "type": "task",
+      "status": "resolved",
+      "version": 4,
+      "created_at": "2026-10-10T15:01:38+00:00",
+      "updated_at": "2026-10-10T15:29:16+00:00",
+      "touched_round": 183,
+      "category": "correctness",
+      "severity": 0.9,
+      "confidence": 1.0,
+      "effort": 4,
+      "unlock_factor": 2,
+      "summary": "Fix 3d (PP+TP) checkpoint save/load: stage is _pp3d+_tp but not _pp so model_state_dict/load_model_state_dict + checkpoint optimizer gates take the TP-local branch, persisting only stage-local shards and colliding names across stages; also _tp partition is keyed by shell namespace (transformer_blocks.N.*) while stage.state_dict uses blocks.N.* so the stage TP gather never aligns. Need global-named full gather (TP-within-stage then PP-across-stage) + scatter (ISS-403)"
+    },
+    "CHG-380": {
+      "id": "CHG-380",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-10-10T15:29:07+00:00",
+      "updated_at": "2026-10-10T15:29:07+00:00",
+      "touched_round": 183,
+      "commit": "pending",
+      "summary": "ISS-403: 3d (PP+TP) checkpoint save/load fixed - remap _tp maps to stage namespace + PPTPRuntime full_state_dict/scatter_load global-named gather + checkpoint is_pp3d gates"
     }
   },
   "edges": [
@@ -29890,6 +29916,24 @@
       "to": "TASK-366",
       "type": "implements",
       "created_at": "2026-10-10T14:16:59+00:00"
+    },
+    {
+      "from": "TASK-367",
+      "to": "ISS-403",
+      "type": "addresses",
+      "created_at": "2026-10-10T15:01:41+00:00"
+    },
+    {
+      "from": "CHG-380",
+      "to": "ISS-403",
+      "type": "resolves",
+      "created_at": "2026-10-10T15:29:11+00:00"
+    },
+    {
+      "from": "CHG-380",
+      "to": "TASK-367",
+      "type": "implements",
+      "created_at": "2026-10-10T15:29:11+00:00"
     }
   ]
 }

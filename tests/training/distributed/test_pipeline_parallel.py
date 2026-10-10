@@ -1110,3 +1110,139 @@ def test_pp3d_engine_dp2_full_3d_train_eight_process_cpu() -> None:
         assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
         assert payload["is_pp3d"], f"rank {rank}: model not PP+TP"
         assert payload["loss"] < float("inf"), f"rank {rank}: loss is NaN/inf"
+
+
+def _pp3d_checkpoint_worker(rank: int, world_size: int, ctx: dict, results: dict) -> None:
+    """Full 4-rank (dp=1 x pp=2 x tp=2) 3d TrainingEngine checkpoint round-trip.
+
+    RIL ISS-403 regression: a 3d stage is ``_pp3d``+``_tp`` but NOT ``_pp``, so
+    before the fix model_state_dict/load_model_state_dict + the checkpoint
+    optimizer gates took the TP-local branch — save persisted only stage-0
+    weights and resume scattered against a colliding local namespace. Must
+    now: save a GLOBAL full model + per-stage optimizer moments, and resume
+    each stage's own weights + moments in lockstep.
+    """
+    try:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        dist.init_process_group(
+            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+        )
+        from llm.training.core.checkpoint import load_checkpoint_payload
+        from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
+        from llm.training.core.engine import TrainingEngine
+        from llm.training.distributed import model_state_dict
+        from llm.training.tasks.lm_task import LanguageModelingTask
+        from tests.support.data import DummyLMDataModule
+
+        ckpt_dir = ctx["checkpoint_dir"]
+
+        def _cfg(resume):
+            c = Config(
+                model=ModelConfig(vocab_size=64, hidden_size=16, num_layers=4, num_heads=2, max_seq_len=32),
+                training=TrainingConfig(batch_size=2, epochs=2 if resume is not None else 1, num_samples=16, lr=2e-2),
+                optimization=OptimizationConfig(use_compile=False, use_amp=False),
+                distributed=DistributedConfig(backend="gloo", parallel_strategy="3d", dp_size=1, pp_size=2, tp_size=2),
+            )
+            c.checkpoint.save_interval = 1
+            c.checkpoint.checkpoint_dir = ckpt_dir
+            if resume is not None:
+                c.checkpoint.resume_from_checkpoint = resume
+            return c
+
+        # ---- Epoch 1: train from scratch, save ----
+        cfg1 = _cfg(None)
+        dm = DummyLMDataModule(cfg1)
+        task = LanguageModelingTask(cfg1, dm)
+        engine = TrainingEngine(config=cfg1, task=task, rank=rank, world_size=world_size, data_module=dm)
+        full_before = model_state_dict(engine.model)
+        engine.run()
+        steps1 = engine.global_step
+        full1 = model_state_dict(engine.model)
+        # Global full dict covers ALL blocks (not just this stage's shard).
+        assert any("transformer_blocks.3." in k for k in full1), f"rank {rank}: full dict missing later blocks"
+        moved = [k for k in full_before if full_before[k].ne(full1[k]).any()]
+        assert moved, f"rank {rank}: 3d training moved no weights"
+        assert steps1 > 0
+
+        # Checkpoint must carry THIS rank's optimizer moments, keyed by global rank.
+        from pathlib import Path
+
+        ckpt_path = str(Path(ckpt_dir) / "epoch_1.pt")
+        payload = load_checkpoint_payload(ckpt_path)
+        assert isinstance(payload["optimizer_state"], dict), "3d checkpoint must persist optimizer_state"
+        stage_states = payload["optimizer_state"].get("__pp_stage_states__")
+        assert isinstance(stage_states, dict), "3d checkpoint must persist per-stage optimizer states (TASK-212)"
+        assert str(rank) in stage_states, f"rank {rank}: own stage optimizer state missing"
+        from llm.training.distributed.parallel import is_pp3d
+
+        assert is_pp3d(engine.model)
+
+        # ---- Epoch 2: resume and continue ----
+        cfg2 = _cfg(ckpt_path)
+        dm2 = DummyLMDataModule(cfg2)
+        task2 = LanguageModelingTask(cfg2, dm2)
+        engine2 = TrainingEngine(config=cfg2, task=task2, rank=rank, world_size=world_size, data_module=dm2)
+        assert engine2.start_epoch == 1, f"rank {rank}: resume did not sense start_epoch=1"
+        engine2.run()
+        assert engine2.global_step > steps1, f"rank {rank}: resume did not advance global_step"
+        full2 = model_state_dict(engine2.model)
+        # Resumed run trained further on top of resumed weights -> differs from
+        # the epoch-1 end state (proves weights were actually restored, not
+        # freshly initialised), and all ranks stay in lockstep.
+        assert any(full1[k].ne(full2[k]).any() for k in full2), f"rank {rank}: resume did not move weights"
+        assert is_pp3d(engine2.model)
+        results[rank] = {"success": True, "steps1": steps1, "steps2": engine2.global_step, "moved": len(moved)}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"success": False, "error": traceback.format_exc()}
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+@pytest.mark.quick
+def test_pp3d_checkpoint_roundtrip_four_process_cpu(tmp_path) -> None:
+    """3d (pp=2 x tp=2) engine save + resume: global full dict + per-stage
+    optimizer moments, not stage-0-only weights (RIL ISS-403)."""
+    ckpt_dir = str(tmp_path / "pp3d_checkpoints")
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(_free_port())
+    manager = mp.Manager()
+    results: dict = manager.dict()
+    saved_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    try:
+        ctx = mp.spawn(
+            _pp3d_checkpoint_worker,
+            args=(4, {"checkpoint_dir": ckpt_dir}, results),
+            nprocs=4,
+            join=False,
+            start_method="spawn",
+        )
+    finally:
+        if saved_visible is None:
+            os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = saved_visible
+
+    end_at = time.monotonic() + PP_JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in ctx.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"pp3d checkpoint e2e exceeded {PP_JOIN_TIMEOUT_S}s")
+        if ctx.join(timeout=remaining):
+            break
+    out = {r: dict(results[r]) for r in range(4)}
+    for rank, payload in out.items():
+        assert payload["success"], f"rank {rank} failed: {payload.get('error')}"
+    steps1 = {out[r]["steps1"] for r in out}
+    steps2 = {out[r]["steps2"] for r in out}
+    assert len(steps1) == 1, f"ranks must step in lockstep (epoch 1): {steps1}"
+    assert len(steps2) == 1, f"ranks must step in lockstep (epoch 2): {steps2}"
+    assert out[0]["moved"] > 0
+    assert out[0]["steps2"] > out[0]["steps1"]

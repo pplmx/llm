@@ -996,7 +996,50 @@ def apply_tensor_parallel_stage(
     st: Any = stage
     tp_state = getattr(shell, "_tp", None)
     if tp_state is not None:
+        # The monolithic ``_TPState`` map keys come from the SHELL's
+        # ``named_modules()`` which names blocks ``transformer_blocks.N.*``,
+        # but the ``_PipelineStage``'s own ``state_dict()`` names them
+        # ``blocks.N.*``. RIL ISS-403: without remapping, the TP checkpoint
+        # gather/scatter helpers look up ``partition``/``full_index`` with the
+        # stage's ``blocks.*`` keys, find nothing (treated as replicated), and
+        # silently persist only this rank's SHARDED stage weights — no global
+        # gather ever happens, and every stage collides on the same local
+        # ``blocks.*`` namespace. Rewrite the key maps onto the stage's own
+        # namespace so ``model_state_dict``/``load_model_state_dict`` resolve.
+        _remap_tp_state_into_stage_namespace(tp_state)
         st._tp = tp_state
     if getattr(st, "lm_head", None) is not None:
         st.lm_head = cast(Any, shell).lm_head
     return stage
+
+
+def _remap_tp_state_into_stage_namespace(tp_state: Any) -> None:
+    """Rewrite a ``_TPState`` key map from the shell's ``transformer_blocks.``
+    namespace to the ``_PipelineStage``'s ``blocks.`` namespace.
+
+    ``_TPState`` partitions / full-indexes / expert-shards / gate-params are all
+    keyed by module-name prefixes built from the shell. A ``_PipelineStage``
+    stores its block slice under ``blocks``, so the only differing prefix is
+    ``transformer_blocks.`` -> ``blocks.``; embedding / final-norm / lm_head
+    keys are identical between shell and stage. Applied in place after the
+    monolithic TP transform runs on the stage shell.
+    """
+    for map_attr in ("partition", "full_index"):
+        src = getattr(tp_state, map_attr, None)
+        if not src:
+            continue
+        dst: dict[Any, Any] = {}
+        for key, value in src.items():
+            dst[_tp_key_to_stage(key)] = value
+        setattr(tp_state, map_attr, dst)
+    for attr in ("expert_shards", "gate_params"):
+        src = getattr(tp_state, attr, None)
+        if src:
+            setattr(tp_state, attr, {_tp_key_to_stage(k): v for k, v in src.items()})
+
+
+def _tp_key_to_stage(key: str) -> str:
+    """Swap a shell-namespace TP key prefix onto the stage namespace."""
+    if key.startswith("transformer_blocks."):
+        return "blocks." + key[len("transformer_blocks.") :]
+    return key

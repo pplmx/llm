@@ -60,6 +60,7 @@ class PPTPRuntime:
         dp_rank: int = 0,
         pp_group: dist.ProcessGroup | None = None,
         dp_group: dist.ProcessGroup | None = None,
+        local_to_global: dict[str, str] | None = None,
     ) -> None:
         if pp_size < 2:
             raise ValueError("PP+TP needs pp_size >= 2")
@@ -80,6 +81,12 @@ class PPTPRuntime:
         self.data_world = dp_size
         self.stage = stage
         self.device = device
+        # Stage-local checkpoint key -> GLOBAL model key. Mirrors the ``_pp``
+        # runtime's ``local_to_global`` so the 3d stage exposes the same
+        # checkpoint boundary (RIL ISS-403). Built by the wrap site from
+        # ``partition_decoder_model`` boundaries; absent (defensive) disables
+        # the global-named collect and falls back to the plain local gather.
+        self.local_to_global = local_to_global or {}
         # Stage-to-stage P2P uses the WORLD group with GLOBAL rank partners so
         # the (+/- tp) routing is unambiguous even when columns are disjoint; a
         # column never spuriously talks to its neighbour because prev/next are
@@ -189,3 +196,62 @@ class PPTPRuntime:
         src = (self.pp_size - 1) * self.tp_size
         dist.broadcast(t, group_src=src, group=group)
         return t
+
+    # --- checkpoint boundary (RIL ISS-403) -------------------------------.
+
+    def _column_group(self) -> Any:
+        """The column's process group (all stages of THIS pipeline) for the
+        cross-stage checkpoint collect; the world group under dp_size==1."""
+        return self.pp_group if self.pp_group is not None else dist.group.WORLD
+
+    def full_state_dict(self) -> dict[str, torch.Tensor]:
+        """Gather the FULL global-named model state dict across every pipeline
+        stage of this column (each stage's TP shards reconstructed first).
+
+        Mirrors ``_PPRuntime.full_state_dict`` for the composed PP+TP stage
+        (RIL ISS-403): a 3d stage owns a TP-sharded slice of the model, so a
+        correct checkpoint must (1) TP-gather this stage's shards back to the
+        full stage slice, (2) remap stage-local names onto GLOBAL model names,
+        (3) collect every stage's slice across the column, and (4) merge the
+        union — a collective every column member must enter. Only ``tp_rank
+        0`` of each stage contributes (the TP members hold identical full
+        stage weights; a full merge would collide, exactly the bug that used
+        to persist stage-0's local shard everywhere).
+        """
+        if not self.local_to_global:
+            raise RuntimeError(
+                "3d checkpoint: PPTPRuntime has no local_to_global map (built by the "
+                "scene wrap site); cannot produce a global-named full state dict."
+            )
+        # 1) TP-gather this stage's shards -> full stage weights, stage-local names.
+        tp = cast(Any, self.stage)._tp
+        full_stage = tp.gather_full_state_dict(self.stage)
+        # 2) stage-local -> global names.
+        mine = {self.local_to_global[k]: v for k, v in full_stage.items()}
+        # 3) across-stage collect: only tp_rank 0 contributes (duplicates would collide).
+        group = self._column_group()
+        gathered: list[dict[str, Any]] = [{} for _ in range(dist.get_world_size(group))]
+        dist.all_gather_object(gathered, mine if self.tp_rank == 0 else {}, group=group)
+        merged: dict[str, torch.Tensor] = {}
+        for d in gathered:
+            for name, value in d.items():
+                if name in merged:
+                    raise RuntimeError(f"3d stage overlap: global name {name!r} produced by more than one rank")
+                merged[name] = value
+        return merged
+
+    def scatter_load(self, state_dict: dict[str, torch.Tensor]) -> None:
+        """Load the global-named full state dict, keeping only this stage's
+        slice and TP-scattering it onto this stage (RIL ISS-403).
+
+        Inverse of :meth:`full_state_dict`: map global names back to this
+        stage's local keys via ``local_to_global``, then let ``_TPState``
+        slice each sharded tensor down to this rank's TP shard in place.
+        """
+        if not self.local_to_global:
+            raise RuntimeError(
+                "3d checkpoint: PPTPRuntime has no local_to_global map (built by the "
+                "scene wrap site); cannot scatter a global-named state dict."
+            )
+        local_full = {local: state_dict[global_name] for local, global_name in self.local_to_global.items()}
+        cast(Any, self.stage)._tp.scatter_load_state_dict(self.stage, local_full)

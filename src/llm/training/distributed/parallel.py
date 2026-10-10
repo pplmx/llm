@@ -401,6 +401,17 @@ def wrap_model_for_training(
         stages = partition_decoder_model(cast(Any, model), ppr)
         stage = stages[pp_rank].to(device)
         apply_tensor_parallel_stage(stage, model=cast(Any, model), process_group=stage_tp_group)
+        # RIL ISS-403: expose the stage's checkpoint boundary like ``_pp`` so
+        # ``model_state_dict``/``load_model_state_dict`` produce a GLOBAL full
+        # model dict (across every pipeline stage) instead of the stage-local
+        # ``blocks.*`` shard. ``_build_name_maps`` maps stage keys
+        # ``blocks.N.*`` + embedding/final-norm/lm-head onto the source model's
+        # global names from this stage's block offset.
+        from llm.training.distributed.pipeline import _build_name_maps
+
+        num_layers = len(cast(Any, model).transformer_blocks)
+        boundaries = [num_layers * s // ppr for s in range(ppr + 1)]
+        local_to_global = _build_name_maps(stage, boundaries[pp_rank])
         runtime = PPTPRuntime(
             rank=rank,
             pp_size=ppr,
@@ -411,6 +422,7 @@ def wrap_model_for_training(
             dp_rank=dp_rank,
             pp_group=pp_group,
             dp_group=dp_group,
+            local_to_global=local_to_global,
         )
         cast(Any, stage)._pp3d = runtime
         return stage
@@ -573,6 +585,16 @@ def load_model_state_dict(
             single-rank save/load, ``"sharded"`` for memory-bounded
             multi-rank save/load. Ignored for DDP / bare models.
     """
+    if is_pp3d(model):
+        # Composed PP+TP stage (RIL ISS-403): the checkpoint carries the full
+        # global-named model dict (all stages); scatter this stage's slice
+        # back onto its TP shards. Must come BEFORE is_pp/is_tp — a 3d stage
+        # is tagged ``_pp3d`` AND ``_tp`` but not ``_pp``, so without this it
+        # would fall into the ``is_tp`` branch and scatter against the local
+        # key namespace that collides across every stage (stage-0 weights
+        # silently loaded everywhere).
+        cast(Any, model)._pp3d.scatter_load(_strip_compile_prefix(state_dict))
+        return
     if is_pp(model):
         # A pipeline stage owns a DISJOINT slice of the full model; the
         # checkpoint carries global model names, so each rank scatters its
@@ -825,6 +847,14 @@ def model_state_dict(
     # like a bare compiled module, and a checkpoint missing the strip cannot
     # be resumed (load always normalizes, and FSDP expects ``_orig_mod.*``)
     # nor transferred to ``llm-serve`` (round-76 deep-dive D1).
+    if is_pp3d(model):
+        # Composed PP+TP stage (RIL ISS-403): gather the FULL global-named
+        # model dict across every stage (TP-shards reconstructed per stage
+        # first). Must come BEFORE is_pp/is_tp — a 3d stage is tagged
+        # ``_pp3d`` AND ``_tp``, so without this it would fall into the
+        # ``is_tp`` branch and persist only a stage-local ``blocks.*`` shard
+        # that collides across stages (stage-0 weights for every stage).
+        return cast(Any, model)._pp3d.full_state_dict()
     if is_pp(model):
         # Cross-stage all-gather: EVERY rank must enter it (mirrors the TP /
         # FSDP rule — RIL ISS-186) so rank 0's save does not block. Each rank

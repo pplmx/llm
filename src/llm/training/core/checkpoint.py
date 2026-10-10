@@ -45,7 +45,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 
 from llm.training.core.config import CheckpointConfig
-from llm.training.distributed import is_fsdp, is_pp, is_tp, load_model_state_dict, model_state_dict
+from llm.training.distributed import is_fsdp, is_pp, is_pp3d, is_tp, load_model_state_dict, model_state_dict
 
 logger = logging.getLogger(__name__)
 
@@ -779,7 +779,7 @@ class CheckpointManager:
         extra_state: dict | None = None,
         model_config: dict | None = None,
     ):
-        collective = is_fsdp(model) or is_tp(model) or is_pp(model)
+        collective = is_fsdp(model) or is_tp(model) or is_pp(model) or is_pp3d(model)
         # PP stages own DISJOINT parameter slices, so each rank's optimizer
         # state only covers its own stage (RIL TASK-212). Rank 0's state dict
         # alone cannot replay the other stages' moments at resume, so gather
@@ -790,7 +790,7 @@ class CheckpointManager:
         # the other groups from rank 0's file. Every rank must enter it (it is
         # a collective) even though non-zero ranks discard the result.
         pp_optimizer_state: dict[str, Any] | None = None
-        if collective and is_pp(model) and optimizer is not None and dist.is_initialized():
+        if collective and (is_pp(model) or is_pp3d(model)) and optimizer is not None and dist.is_initialized():
             mine = {str(dist.get_rank()): optimizer.state_dict()}
             gathered: list[dict[str, Any]] = [{} for _ in range(dist.get_world_size())]
             dist.all_gather_object(gathered, mine)
@@ -992,7 +992,11 @@ class CheckpointManager:
         # Advance the ordering so the no-op note is unambiguous: PP matters
         # for the optimizer branch but is_pp is already imported at module top.
         try:
-            if is_pp(model) and optimizer is not None and payload.get("optimizer_state") is not None:
+            if (
+                (is_pp(model) or is_pp3d(model))
+                and optimizer is not None
+                and payload.get("optimizer_state") is not None
+            ):
                 opt_blob = payload["optimizer_state"]
                 if isinstance(opt_blob, dict) and "__pp_stage_states__" in opt_blob:
                     # TASK-212: per-stage optimizer states persisted by GLOBAL
