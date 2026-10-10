@@ -298,3 +298,28 @@ class TestServingCliHelp:
         # The module must not fall through to the server boot path.
         assert "uvicorn" not in out
         assert "Running on" not in out
+
+    def test_api_module_entry_help_prints_usage_without_launching_server(self):
+        """``python -m llm.serving.api --help`` must route through the Typer
+        app, not the argv-ignoring :func:`cli.main`, so it prints usage and
+        exits 0 instead of booting uvicorn on a CUDA device.
+
+        ``api.py``'s ``__main__`` guard previously called the alias to
+        :func:`cli.main` — the third instance of the ISS-424/425 bug shape.
+        A bare ``python -m llm.serving.api`` (no ``--help``) must still boot.
+        """
+        import subprocess
+        import sys
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "llm.serving.api", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 0, out
+        assert "--host" in out
+        assert "--port" in out
+        assert "uvicorn" not in out
+        assert "Starting up" not in out
