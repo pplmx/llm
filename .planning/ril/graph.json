@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T18:02:05+00:00",
+  "updated_at": "2026-10-10T18:09:15+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -20271,6 +20271,40 @@
       "touched_round": 183,
       "commit": "b0e1da8",
       "summary": "ISS-422: FP8 static calib dead-layer guard now fires (fired-set tracking + loud raise); 2 regression tests"
+    },
+    "ISS-423": {
+      "id": "ISS-423",
+      "type": "issue",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-10-10T18:09:10+00:00",
+      "updated_at": "2026-10-10T18:09:10+00:00",
+      "touched_round": 183,
+      "severity": 0.5,
+      "summary": "PromptDataModule/AIFeedbackDataModule override train_dataloader with drop_last=True, silently dropping the TASK-323 empty-train-sampler guard — too-small dataset + world_size>len trains on nothing at 0.0 loss; guard restored via shared helper"
+    },
+    "TASK-371": {
+      "id": "TASK-371",
+      "type": "task",
+      "status": "resolved",
+      "version": 1,
+      "created_at": "2026-10-10T18:09:10+00:00",
+      "updated_at": "2026-10-10T18:09:10+00:00",
+      "touched_round": 183,
+      "category": "correctness",
+      "priority": 3.5,
+      "summary": "RLHF/AI-feedback DataModules empty-train-sampler guard restored (fixed c0d6b43)"
+    },
+    "CHG-384": {
+      "id": "CHG-384",
+      "type": "change",
+      "status": "active",
+      "version": 1,
+      "created_at": "2026-10-10T18:09:15+00:00",
+      "updated_at": "2026-10-10T18:09:15+00:00",
+      "touched_round": 183,
+      "commit": "c0d6b43",
+      "summary": "ISS-423: RLHF/AI-feedback DataModules get TASK-323 empty-train-sampler guard (shared helper + 3 overrides); 2 regression tests"
     }
   },
   "edges": [
@@ -30094,6 +30128,24 @@
       "to": "ISS-422",
       "type": "addresses",
       "created_at": "2026-10-10T18:02:05+00:00"
+    },
+    {
+      "from": "CHG-384",
+      "to": "ISS-423",
+      "type": "resolves",
+      "created_at": "2026-10-10T18:09:15+00:00"
+    },
+    {
+      "from": "CHG-384",
+      "to": "TASK-371",
+      "type": "implements",
+      "created_at": "2026-10-10T18:09:15+00:00"
+    },
+    {
+      "from": "TASK-371",
+      "to": "ISS-423",
+      "type": "addresses",
+      "created_at": "2026-10-10T18:09:15+00:00"
     }
   ]
 }
