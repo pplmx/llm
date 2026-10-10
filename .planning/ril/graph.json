@@ -2,7 +2,7 @@
   "ril_version": 1,
   "round": 183,
   "created_at": "2026-08-05T14:11:27+00:00",
-  "updated_at": "2026-10-10T23:31:07+00:00",
+  "updated_at": "2026-10-10T23:32:08+00:00",
   "nodes": {
     "COMP-001": {
       "id": "COMP-001",
@@ -17120,7 +17120,7 @@
       "version": 2,
       "created_at": "2026-09-04T00:54:28+00:00",
       "updated_at": "2026-09-04T00:59:22+00:00",
-      "touched_round": 164,
+      "touched_round": 183,
       "title": "Fix GRPO objective correctness cluster: shifted next-token log-probs, policy-synced KL reference + resume persistence, single-process guard, init-neutral demo target",
       "category": "correctness",
       "severity": 0.8
@@ -30296,6 +30296,12 @@
       "to": "ISS-427",
       "type": "resolves",
       "created_at": "2026-10-10T23:19:59+00:00"
+    },
+    {
+      "from": "CHG-389",
+      "to": "TASK-298",
+      "type": "implements",
+      "created_at": "2026-10-10T23:32:08+00:00"
     }
   ]
 }
