@@ -275,7 +275,7 @@
 - [x] **开发者文档**:
     - [ ] 完善代码内文档 (docstrings)
     - [x] 使用 `MkDocs` 生成文档网站 (Material 主题 + GitHub Pages)
-- [ ] **用户文档**: 编写详细的用户指南和教程
+- [x] **用户文档**: 3 个主路径教程 (`docs/tutorials/01-pretraining.md` / `02-finetuning.md` / `03-inference.md`) + 32 个主题指南 (`docs/guides/`), 全部接入 MkDocs 导航
 - [x] **示例**: 提供 `Jupyter Notebook` 示例, 展示框架的核心功能 (`notebooks/quick_start.ipynb`)
 
 ---
