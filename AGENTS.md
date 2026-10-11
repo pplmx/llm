@@ -124,6 +124,11 @@ Markers（`pyproject.toml`）：`quick` · `slow` · `heavy` · `e2e` · `gpu` �
 - 注释 / 日志：**英文**；与用户交流：**中文**
 - 遵循 [Conventional Commits](https://www.conventionalcommits.org/)
 - Commit 工作流：`commit_message.txt` → `git commit -F` → 删除
+- **Commit 粒度（最小完备）**：
+  - 每个 commit 对应一个逻辑上完整、独立的变更（代码 + 其配套测试同仓）
+  - 多个**非常小**且各自最小完备的改动，可以合并进**同一个 commit**；不必为每个小改动单独开 commit
+  - 不要为了拆而拆：宁可合并同类小改动，也不要产生一堆碎片 commit
+- Commit message：**bullet 式**（body 一个要点一行）、条理清晰、**不冗余赘述**；只写人类作者的意图与变更，不写过程废话
 - **仅在用户明确要求时 commit**；禁止 `--no-verify`、force push `main`
 - **禁止 `Co-Authored-By` AI 代理署名**（如 `Co-Authored-By: Claude <noreply@anthropic.com>`）；commit message 中不要追加 AI 身份行，commit body 应当只描述人类作者的意图与变更
 - Bug 修复：评估是否补回归测试（测行为，非测实现细节）

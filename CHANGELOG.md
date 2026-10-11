@@ -9,10 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- Flash Attention 2 integration
-- Paged Attention full model forward path (sidecar exists; see ADR-004)
+- (None pending from the previously-listed items — both are now implemented and
+  covered by the entries below and their regression suites.)
 
 ### Added
+
+- **Flash Attention & Paged Attention full-path integration confirmed**
+  (previously listed under "Planned", now shipped): the `llm.core.attn.flash_attn`
+  backend (``attn_impl="flash_attn"``) and the paged-attention full model forward
+  path (``llm.core.paged_attention`` ``PagedKVCache`` + ``paged_attention_forward``,
+  ADR-004) are wired through the decoder forward, serving continuous batching /
+  prefix cache, and training; both carry dedicated test suites
+  (``tests/core/test_flash_prefix.py``, paged-attention/prefix-cache serving and
+  KV-cache invariants tests). The stale "Planned" entries previously left these
+  listed as future work.
 
 - **SimPO alignment** (ROADMAP 11.4 / RIL TASK-278/ISS-314/DEC-105):
   `llm/training/tasks/simpo_task.py` -- reference-free, length-normalized
@@ -253,6 +263,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Dependency CVE bumps — `tornado` + `urllib3`** (follow-on to the alert backlog
+  below): `pip-audit` surfaced 9 new CVEs in two transitive deps — `tornado 6.5.7`
+  (PYSEC-2026-3928 + GHSA-chx6-46f5-w4vp / GHSA-c2m8-h5v5-343r / GHSA-3hv7-mjh2-fv65 /
+  GHSA-wwv5-g3v4-889x / GHSA-8423-8fgw-73vq) and `urllib3 2.7.0` (PYSEC-2026-4175/4176/
+  4177). Added explicit floor pins — `urllib3>=2.8.0` in `[project].dependencies` (already
+  a transitive of base `fastapi[standard]` via requests/sentry-sdk, so this only constrains
+  it) and `tornado>=6.5.9` in the `test` group (pulled there via ipykernel) — then
+  re-locked surgically (`uv.lock` 34-line diff, mirror-preserving): `tornado 6.5.7 → 6.5.10`,
+  `urllib3 2.7.0 → 2.8.0`. `pip-audit` now reports **0 known vulnerabilities**;
+  `uv lock --check` clean; all key imports (fastapi/requests/torch/transformers/urllib3/
+  tornado) and representative generation + GRPO tests pass on the bumped env.
+
 - **Dependency CVE bumps** (P0 hygiene): closes the GitHub Dependabot alert backlog — `pip-audit` now reports **0 known vulnerabilities** (was 30 across 8 packages, of which 26 were actionable). Bumped direct deps: `torch>=2.12.0` → `torch>=2.13.0` (fixes PYSEC-2025-194, no breaking changes for our usage — torch.compile / DDP / AMP paths verified against the existing test suite). Bumped transitive deps via explicit pins: `pillow>=12.3.0` (18 CVEs — PYSEC-2026-2253/4/5/6/7 + -3451/2/3 + CVE-2026-54058/59197/59198/59200/59204), `setuptools>=83.0.0` (PYSEC-2026-3447), `pydantic-settings>=2.14.2` (GHSA-4xgf-cpjx-pc3j), `onnx>=1.22.0` (PYSEC-2026-2689), `starlette>=1.3.1` (PYSEC-2026-248/249), `nltk>=3.10.0` (PYSEC-2026-2078 — fixes via sacrebleu transitively). The pins live in their natural groups: `pillow` + `huggingface_hub` in `compat` (the HF pub/load path is the actual consumer), `nltk` in `eval` (sacrebleu pulls it), `setuptools` in `dev` (build-time only), `torch` + `pydantic-settings` + `starlette` in `[project]` (fastapi pulls starlette + pydantic-settings). Verified via `uv tool run pip-audit` (clean) and the full non-GPU test suite (`1397 passed, 20 skipped, 1 xfailed`). CUDA-only paths OOM in this environment (pre-existing — unrelated to the bumps); the GPU tests are gated by `not gpu and not multi_gpu` markers and run cleanly on a host with sufficient VRAM.
 
 ### Added
@@ -261,7 +283,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`llm-serve` CLI now honors `--help`** (correctness, serving): the `llm-serve` script was registered to the bare `llm.serving.api:main` (a function with no argv parsing), so `llm-serve --help` silently **ignored** the flag and launched a real uvicorn server — holding a CUDA device and starting the model — instead of printing usage. It now points at a Typer app (`llm.serving.cli:app`) exposing `--host`/`--port`/`--config` options; `--help` prints usage and exits 0 without launching (verified: no uvicorn/CUDA startup). Backward-compat preserved: `cli.main(config=...)` / `api.main()` keep their signatures (tests that build a config and forward it still work), all flags default to `None` so the full `ServingConfig`/`LLM_SERVING_*` env resolution still applies unless overridden.
+- **ALiBi extra-head slopes now match the canonical reference** (correctness, core): `get_alibi_slopes` computed the additional slopes for non-power-of-2 head counts with **odd-only** exponents (`extra_base^1, extra_base^3, ...`), diverging from every authoritative ALiBi reference (paper appendix / official repo and HF BLOOM `_get_alibi_slopes`), which use **consecutive** exponents `extra_base^1 .. extra_base^num_remaining`. Non-power-of-2 head counts (6/10/12/20/24/40/48/56/80/96...) got steeper linear biases than ALiBi specifies (e.g. for 12 heads, extra head 2 got `0.707^3` ≈ 0.354 instead of the canonical `0.707^2` = 0.5), shifting each head's effective context window. Now aligned to canonical: verified `get_alibi_slopes` matches `_get_alibi_slopes` for all head counts 1–32 + a wide set, and a regression test pins the values for 6/10/12/20/24/40/56/80 so the odd scheme cannot silently return.
+
+- **`llm-serve` CLI now honors `--help`** (correctness, serving): the `llm-serve` script was registered to the bare `llm.serving.api:main` (a function with no argv parsing), so `llm-serve --help` silently **ignored** the flag and launched a real uvicorn server — holding a CUDA device and starting the model — instead of printing usage. It now points at a Typer app (`llm.serving.cli:app`) exposing `--host`/`--port`/`--config` options; `--help` prints usage and exits 0 without launching (verified: no uvicorn/CUDA startup). Backward-compat preserved: `cli.main(config=...)` / `api.main()` keep their signatures (tests that build a config and forward it still work), all flags default to `None` so the full `ServingConfig`/`LLM_SERVING_*` env resolution still applies…
 - **RLHF / AI-feedback DataModules: empty-train-sampler guard restored** (correctness, data): `SamplerMapDataModule.train_dataloader` gained a loud guard in RIL TASK-323 for the `drop_last=True` + `world_size > len(dataset)` case (every rank gets a zero-sample sampler, so the engine silently trains whole epochs on nothing and scores 0.0, which `save_best`/`EarlyStopping` read as perfect). But `PromptDataModule` (PPO), `AIFeedbackDataModule` (DPO), and `GRPODataModule` **override** `train_dataloader` with their own `drop_last=True` sampler, silently dropping that guard — so a too-small dataset under those modules trained on nothing instead of failing loudly. Extracted the guard into a shared `_guard_nonempty_train_sampler` and wired it into the base + all three overrides (GRPO is single-process so world_size is always 1, but the guard is harmless there for consistency). Probe confirmed the overrides returned `sampler_len=0` before the fix; now they raise `ValueError`.
 - **FP8 static-activation calibration: dead-layer guard now fires** (correctness, quantization): `quantize_model_fp8(..., Fp8Config(activation="static"))` pre-seeds `captured[static_name]` with a zero sentinel, so the old "no scale for this layer" check (`name not in act_scale`) could NEVER hold for a pre-seeded static name — the guard was dead. A static target whose forward hook never fired during calibration (e.g. an unreachable branch of the model) silently quantized with `act_scale ≈ clamp(0)/fmax ≈ 1e-8`, which bleaches activations by ~1e10 on dequant and emits garbage logits. The hook now records which target layers actually fired, and a static layer that never fired raises loudly (same contract as the GPTQ uniform-fallback's error): "static activation calibration produced no scale ... use activation='dynamic' or fix the model forward." GPTQ already handled this case (ISS-136); FP8 did not.
 - **`httpx2` transitive/vendor CVE bump** (security, `dev` group): locked `httpx2` was `2.9.1`, vulnerable to **CVE-2026-84382** (streaming-response decompression amplification, unbounded peak memory; fixed 2.12.0), **CVE-2026-84379/84380** (multipart CRLF injection / body-derived Content-Length; fixed 2.11.0), and **CVE-2026-84378** (SSE parser rescans; fixed 2.10.0). Bumped `dev` to `httpx2>=2.12.0` and re-locked, resolving to `httpx2 2.13.1` (with `httpcore2 2.9.1→2.13.1`); serving HTTP suite (72 tests) passes on the new client. Renovate PR #67 was NOT adopted — it also regenerates the whole lock against `pypi.org` (1932-line rewrite discarding the `mirrors.tuna` index).
@@ -272,6 +296,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ty` type-check cleanups** (maintainability): three pre-existing diagnostics that had accumulated since the last green `ty` run are fixed — `PerplexityMetric.compute` now passes `ignore_index` as a named arg instead of through a `**kwargs` dict (typing narrowing was lost); `api.py` aliases `cli.main` as `cli_main` so the module-level `main` isn't shadowed by the lazy import; and `LLMMetrics.track_inflight` uses `Generator` instead of the deprecated `Iterator` return annotation under `@contextmanager`.
 - **hf_loader tolerates benign non-persistent buffers** (RIL ISS-414): `from_pretrained` no longer refuses real Llama/Mistral checkpoints that ship the RoPE inverse-frequency buffer (`*.self_attn.rotary_emb.inv_freq`). HF persists this buffer, but our `RoPE` registers it `persistent=False` and recomputes it from `rope_theta` at construction, so it is not a model weight — the unconsumed-key guard now warns about such benign buffers instead of rejecting the whole dump. Genuinely foreign unmapped weights still fail loudly (unchanged, RIL ISS-244/ISS-169).
 - **KV-cache prefill perf gate is now GPU-only** (CI hygiene): `tests/core/test_kv_cache_invariants.py::TestPrefillPerformance::test_prefill_faster_than_naive_loop` asserted a 2× speedup over a Python-loop reference path, but on CPU the optimized advanced-indexing path measures ~0.68× — i.e. *slower* — because the per-call tensor-construction overhead dominates when there is no kernel-launch cost to amortize. The 5× / 2× target only materializes on GPU, where the kernel-fusion + memory-coalescing wins from advanced indexing outweigh the index-build cost (this was an old docstring lie — the class comment claimed "calibrated for CPU" when it actually required GPU). The test is now gated by `@pytest.mark.skipif(not torch.cuda.is_available(), reason="prefill perf gate requires GPU")` and the docstring is corrected to reflect the GPU calibration. CPU CI hosts skip cleanly (5 passed, 1 skipped on this machine); GPU CI runners still execute the gate. This unblocks the `build-and-test` matrix job (it was the single failing test in the broader suite — `1460 passed, 0 failed, 29 skipped, 1 xfailed` after the fix, vs `1460 passed, 1 failed` before).
+
+### Performance
+
+- **Fused OpenAI logit-stage penalty pipeline** (generation hot path): new
+  `llm.generation.sampling.apply_penalties` applies the repetition / frequency /
+  presence penalties and logit-bias in a single pass — one `[vocab]` clone and
+  one id/penalty tensor build instead of up to four clones and up to six
+  Python→tensor rebuilds (each a device sync) per decode step. Bit-identical
+  to chaining the four individual helpers (3,000 randomized-equivalence trials,
+  verified empty/duplicate/out-of-vocab histories and int/str bias keys). All
+  decode loops now call it once per token: `eager.stream_generate`,
+  `eager.batch_generate`, the continuous-batching `batch_engine`, and both
+  `speculative` paths. The four individual helpers remain public API, unchanged
+  and independently tested.
+
+- **Scheduler duplicate-check no longer materializes combined lists**
+  (serving, minor): `Scheduler.add_sequence_if_not_conflicting` now iterates
+  `running` then `waiting` under the lock instead of building
+  `list(self.running) + list(self.waiting)` on every enqueue.
+
+- **Vectorized GAE advantage computation** (PPO/RLHF training): new
+  `llm.training.rlhf.rollout_buffer._gae_advantages` replaces the per-response
+  Python loop in `RolloutBuffer.compute_advantages` (which issued L scalar
+  `.item()` device-syncs per sample) with an O(L) vectorized closed form
+  (`A_t = gamma*lambda`-decayed reverse cumulative sum). Numerics preserved: the
+  reduction runs in float64 to avoid float32 overflow for small
+  `gamma*gae_lambda`, keeps the sparse terminal-reward + ISS-178 truncated-
+  episode `V(s_L)` bootstrap exactly, and falls back to the stable forward scan
+  for pathological near-zero decay. Bit-equal to the loop across 4,000
+  randomized configs (worst abs diff ~1e-6); new regression test pins the
+  decayed (γ,λ<1) recurrence against an independent reverse scan.
+
+- **Vectorized AWQ per-channel scale search** (quantization calibration): the
+  inner candidate sweep of `awq._search_scale` now evaluates all `n_grid`
+  power-of-two scale candidates for a channel in one batched pass instead of a
+  per-candidate Python loop with a `.item()` reduction — on GPU this removes up
+  to 20x kernel launches / device-syncs per channel of the greedy
+  coordinate-descent. Per-candidate reconstruction error is computed element-
+  wise on the same `[out_f, gs]` slice in the same summation order, so the
+  selected (argmin) scale is bit-identical to the sequential sweep (verified
+  `torch.equal` across 40 randomized grouped + per-channel configs). Memory is
+  bounded by chunking the grid (per-channel mode drops to chunk=1, the original
+  footprint). Existing AWQ property tests (salient-channel protection,
+  never-worse, packing round-trip) all stay green.
+
+- **`sampling_probs` no longer over-allocates** (generation hot path):
+  `sampling_probs` was cloning the full `[..., vocab]` tensor again before
+  each in-place top-k / top-p mask, even though `next_logits = logits/temp` was
+  already a fresh tensor owned by the function. Both redundant `.clone()`s
+  (two full-vocab allocations per call across generation / serving / the
+  speculative backend) are removed; the caller's `logits` is still never
+  mutated and the output is bit-identical to before (verified across 3,000
+  randomized 1-D / 2-D / 3-D configs).
 
 ### Changed
 
