@@ -128,10 +128,12 @@ def test_fsdp_over_compile_roundtrip_plain_keys():
         dist.destroy_process_group()
 
 
+@pytest.mark.need_gpu(2)
 def test_gpus_per_node_env_var_parses():
     """``GPUS_PER_NODE=2`` (and the nested config env spelling) must scale the
     job without crashing: the before-validator previously compared the raw env
-    string to an int (round-76 deep-dive D3)."""
+    string to an int (round-76 deep-dive D3). Requires >=2 usable GPUs because
+    DistributedConfig validates requested <= available."""
     with patch.dict("os.environ", {"GPUS_PER_NODE": "2"}, clear=False):
         cfg = DistributedConfig()
     assert cfg.gpus_per_node == 2

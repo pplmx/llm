@@ -83,14 +83,52 @@ jobs:
             -   name: Install just (command runner)
                 uses: taiki-e/install-action@just
 
-            -   name: Run Full Tests with Coverage
-                run: just test-cov
+            -   name: Run Core CPU Tests with Coverage
+                # Per-push gate: the fast CPU-clean core suite (excludes
+                # GPU/heavy/e2e). GPU tests auto-skip on this GPU-less runner
+                # (tests/conftest.py); the deep full-suite + coverage gate runs
+                # nightly via the `test-full` job.
+                run: just test-cov-fast
 
             -   name: Upload coverage report as artifact
                 if: always() # Ensure it runs even if tests fail, to upload partial coverage
                 uses: actions/upload-artifact@v7
                 with:
                     name: coverage-report-${{ matrix.os }} # Make artifact name unique per OS
+                    path: |
+                        coverage.xml
+
+    test-full:
+        # Deep gate: the FULL suite (all markers incl. heavy/e2e) + coverage.
+        # Heavy/e2e are too slow for the per-push `build-and-test` core gate, so
+        # this runs on the weekly schedule + manual dispatch, not on every push.
+        # GPU tests auto-skip on this GPU-less runner (tests/conftest.py).
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Checkout repository
+                uses: actions/checkout@v6
+
+            -   name: Set up UV Environment
+                uses: astral-sh/setup-uv@v8.2.0
+
+            -   name: Verify lockfile is up to date
+                run: uv lock --check
+
+            -   name: Synchronize Dependencies
+                run: uv sync --frozen
+
+            -   name: Install just (command runner)
+                uses: taiki-e/install-action@just
+
+            -   name: Run Full Tests with Coverage
+                run: just test-cov
+
+            -   name: Upload coverage report as artifact
+                if: always()
+                uses: actions/upload-artifact@v7
+                with:
+                    name: coverage-report-full
                     path: |
                         coverage.xml
                         htmlcov/

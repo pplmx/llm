@@ -92,7 +92,14 @@ def test_sdpa_float_additive_mask_not_dropped_on_complex_path(sample_qkv_tensors
     add[..., -1] = float("-inf")
 
     # Reference: torch.native merges the additive mask with causal itself.
-    ref_causal = functional.scaled_dot_product_attention(q, k, v, attn_mask=add, is_causal=True)
+    # Materialize that combination by hand (mirrors the window+float case
+    # below): torch's CUDA build rejects ``attn_mask=...`` together with
+    # ``is_causal=True`` ("Explicit attn_mask should not be set when
+    # is_causal=True"), so pass ``is_causal=False`` with the summed mask.
+    causal = torch.triu(torch.full((seq_len, seq_len), float("-inf"), dtype=torch.float32), diagonal=1)
+    ref_causal = functional.scaled_dot_product_attention(
+        q, k, v, attn_mask=(add + causal.view(1, 1, seq_len, seq_len)), is_causal=False
+    )
     out_causal = sdpa(q, k, v, attn_mask=add, is_causal=True)
     assert torch.allclose(out_causal, ref_causal, atol=1e-5)
 

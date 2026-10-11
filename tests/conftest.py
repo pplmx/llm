@@ -37,6 +37,21 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "full_cluster: tests that require 8 GPUs")
 
 
+@pytest.fixture(autouse=True)
+def _force_wide_terminal(monkeypatch):
+    """Never truncate rich/typer ``--help`` output by ambient terminal width.
+
+    Rich/typer render help at the detected terminal width; on a non-tty or CI
+    runner the width can be narrow, truncating each option to a couple of chars
+    so the option *names* (``--model``, ``--host``, …) vanish from the output.
+    Many CLI tests assert on those names, so force a wide width for every test.
+    ``monkeypatch`` sets ``os.environ`` (restored per-test), which in-process
+    CliRunner renders and ``subprocess.run`` (env=None) both read.
+    """
+    monkeypatch.setenv("COLUMNS", "120")
+    monkeypatch.setenv("LINES", "40")
+
+
 def pytest_collection_modifyitems(config, items):
     """Automatically skip tests based on GPU availability.
 
@@ -48,14 +63,25 @@ def pytest_collection_modifyitems(config, items):
     _ = config  # config is required by pytest but we only need gpu_count
 
     for item in items:
-        # Check for need_gpu marker — auto-skip if insufficient GPUs
+        # Every GPU-requiring marker auto-skips when there aren't enough
+        # usable GPUs (count via cuda_device_count — visible AND enough VRAM).
+        # This is the single consistent home for GPU handling, so a CPU-only
+        # host (CI or a developer laptop) reliably skips these instead of
+        # failing or hanging.
+        #
+        # need_gpu(n): explicit required count
         need_gpu_marker = item.get_closest_marker("need_gpu")
         if need_gpu_marker:
             required_gpus = need_gpu_marker.args[0] if need_gpu_marker.args else 1
             if gpu_count < required_gpus:
                 item.add_marker(pytest.mark.skip(f"需要 {required_gpus} GPU, 当前 {gpu_count}"))
-
-        # Check for full_cluster marker (requires 8 GPUs)
+        # gpu: requires >= 1 usable GPU
+        elif item.get_closest_marker("gpu") and gpu_count < 1:
+            item.add_marker(pytest.mark.skip("需要至少 1 个 GPU, 当前 0"))
+        # multi_gpu: requires >= 2 usable GPUs
+        elif item.get_closest_marker("multi_gpu") and gpu_count < 2:
+            item.add_marker(pytest.mark.skip(f"需要至少 2 个 GPU, 当前 {gpu_count}"))
+        # full_cluster: requires 8 GPUs (not mutually exclusive with need_gpu)
         if item.get_closest_marker("full_cluster") and gpu_count < 8:
             item.add_marker(pytest.mark.skip(f"需要 8 GPU, 当前 {gpu_count}"))
 

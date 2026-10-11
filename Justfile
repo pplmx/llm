@@ -31,27 +31,44 @@ test:
 test-doc:
     uv run --frozen pytest --doctest-modules src/llm/
 
-# Test fast (exclude heavy and e2e, for daily development)
+# Test fast: the CPU-clean daily gate.
+# Excludes heavy, e2e AND every GPU-requiring marker, so it runs unchanged on
+# CPU-only hosts (CI / laptops). GPU tests belong to `test` (full) / `test-gpu`.
 test-fast:
-    uv run --frozen pytest -m "not heavy and not e2e"
+    uv run --frozen pytest -m "not heavy and not e2e and not gpu and not multi_gpu and not full_cluster and not need_gpu"
 
-# Parallel test — one worker per GPU (min 1), heavy+e2e excluded.
+# Parallel test — one worker per GPU (min 1), GPU/heavy/e2e excluded (CPU-clean).
 # Each worker pins to a distinct GPU via PYTEST_XDIST_WORKER env.
 test-parallel:
     #!/usr/bin/env bash
     set -euo pipefail
     N="$(uv run --frozen python -c 'import torch; print(max(min(torch.cuda.device_count(), 32), 1))' 2>/dev/null)"
     echo ">>> $N workers across $N GPU(s)"
-    uv run --frozen pytest -n "$N" -m "not heavy and not e2e"
+    uv run --frozen pytest -n "$N" -m "not heavy and not e2e and not gpu and not multi_gpu and not full_cluster and not need_gpu"
 
 # Test quick only
 test-quick:
     uv run --frozen pytest -m quick
 
+# GPU-only: for GPU-capable hosts / self-hosted GPU runners. Tests also
+# auto-skip individually when too few usable GPUs (tests/conftest.py).
+test-gpu:
+    uv run --frozen pytest -m "gpu or multi_gpu or need_gpu or full_cluster"
+
+# Heavy resource tests only (slow, memory/CPU-intensive; separate job).
+test-heavy:
+    uv run --frozen pytest -m heavy
+
 # Test with coverage and allure reports (for CI).
 # ``--cov-fail-under`` enforces the bar from CI (see pyproject [tool.coverage.report]).
 test-cov:
     uv run --frozen pytest --cov=llm --cov-fail-under=77 --cov-report=term-missing --cov-report=html --cov-report=lcov --cov-report=xml --alluredir=allure-results
+
+# Core CPU suite + coverage — the per-push CI gate.
+# Excludes GPU/heavy/e2e (CPU-clean); the coverage bar is calibrated to THIS
+# suite (lower than the full-suite `test-cov` bar, which adds heavy/e2e paths).
+test-cov-fast:
+    uv run --frozen pytest -m "not heavy and not e2e and not gpu and not multi_gpu and not full_cluster and not need_gpu" --cov=llm --cov-fail-under=77 --cov-report=term-missing --cov-report=xml
 
 # Test e2e only
 test-e2e:
