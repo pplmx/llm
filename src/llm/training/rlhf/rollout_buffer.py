@@ -46,6 +46,82 @@ class RolloutBatch:
     returns: torch.Tensor  # [batch_size, max_response_len]
 
 
+def _gae_advantages(
+    values: torch.Tensor,
+    reward: torch.Tensor,
+    *,
+    terminal_value: torch.Tensor | None,
+    gamma: float,
+    gae_lambda: float,
+) -> torch.Tensor:
+    """Vectorized GAE for one sparse-reward response.
+
+    For a response of length ``L`` the per-token advantage is the first-order
+    recurrence ``A_t = delta_t + c * A_{t+1}`` with ``c = gamma * gae_lambda``,
+    ``A_L = 0`` and
+
+    .. math::
+
+        \\delta_t = r_t + \\gamma V_{t+1} - V_t
+
+    where the sparse reward ``r_t`` is non-zero only at the last response token
+    (``r_L = reward``) and ``V_L`` is the terminal bootstrap (``terminal_value``
+    for a truncated episode, else ``0`` at EOS). Expanding the recurrence gives
+    the closed form ``A_t = sum_{k=0}^{L-1-t} c^k * delta_{t+k}``, evaluated in
+    O(L) vectorized torch (no Python loop, no per-element device syncs) via the
+    identity ``A_{L-1-i} = c^i * S[i]`` with
+    ``S[i] = cumsum_{m=0..i}( rev_delta[m] / c^m )``.
+
+    ``values`` is detached: the GAE signal must never backprop through the
+    critic's value estimate (the original Python loop's ``.item()`` reads made
+    this implicit).
+    """
+    values = values.detach()
+    device = values.device
+    dtype = values.dtype
+    n = values.shape[0]
+    if n == 0:
+        return torch.zeros(0, device=device, dtype=dtype)
+
+    # Sparse reward: only the last response token carries the terminal reward.
+    r_t = torch.zeros(n, device=device, dtype=dtype)
+    r_t[-1] = reward.reshape(())
+    next_value_last = (
+        terminal_value.reshape(()).to(device=device, dtype=dtype)
+        if terminal_value is not None
+        else torch.zeros((), device=device, dtype=dtype)
+    )
+
+    next_values = torch.zeros_like(values)
+    next_values[:-1] = values[1:]
+    next_values[-1] = next_value_last
+
+    delta = r_t + gamma * next_values - values
+    c = gamma * gae_lambda
+    if c == 0:
+        # No advantage accumulation (gamma==0 or gae_lambda==0): A_t = delta_t.
+        return delta
+
+    arange = torch.arange(n, device=device)
+    # The closed form A_{n-1-i} = c^i * cumsum(rev_delta/c^m) divides by c^m,
+    # which overflows float32 for small c (e.g. tiny gae_lambda). Upcast the
+    # reduction to float64, which covers every realistic config with a huge
+    # margin, then cast back to the values' dtype.
+    c_power = torch.pow(torch.full((n,), c, device=device, dtype=torch.float64), arange)
+    buf = torch.cumsum(torch.flip(delta, dims=[0]).to(torch.float64) / c_power, dim=0) * c_power
+    advantages = torch.flip(buf, dims=[0]).to(dtype=dtype)
+
+    if not torch.isfinite(advantages).all():
+        # Pathological config (|c| so close to 0 that 1/c^n exceeds float64's
+        # range): fall back to the stable forward scan so the result is exact
+        # for ANY input, matching the original loop.
+        acc = torch.zeros((), device=device, dtype=dtype)
+        for t in range(n - 1, -1, -1):
+            acc = delta[t] + c * acc
+            advantages[t] = acc
+    return advantages
+
+
 class RolloutBuffer:
     """
     Buffer to store and manage rollout experiences for PPO.
@@ -114,35 +190,26 @@ class RolloutBuffer:
             reward = sample.rewards.item()
 
             if sample.values is not None:
-                # Full GAE with sparse terminal reward
+                # Full GAE with sparse terminal reward.
                 values = sample.values
-                advantages = torch.zeros(response_len, device=values.device, dtype=values.dtype)
-                last_gae = 0.0
-
-                for t in reversed(range(response_len)):
-                    if t == response_len - 1:
-                        reward_t = reward
-                        # RIL ISS-178: the episode's last state is terminal
-                        # ONLY when the response ended at EOS — then nothing
-                        # follows and next_value is 0. A response truncated
-                        # by ``response_max_len`` is NOT finished: the policy
-                        # would keep generating, so the last state must be
-                        # bootstrapped from the critic's value V(s_L) at the
-                        # post-response state (decayed by ``gamma`` like any
-                        # bootstrap). Hardcoding 0 modeled both cases
-                        # identically and systematically deflated the
-                        # final-token advantages of every truncated rollout.
-                        if sample.truncated and sample.terminal_value is not None:
-                            next_value = sample.terminal_value.item()
-                        else:
-                            next_value = 0.0
-                    else:
-                        next_value = values[t + 1].item()
-                        reward_t = 0.0
-
-                    delta = reward_t + self.gamma * next_value - values[t].item()
-                    last_gae = delta + self.gamma * self.gae_lambda * last_gae
-                    advantages[t] = last_gae
+                response_len = len(sample.response_ids)
+                # RIL ISS-178: the episode's last state is terminal ONLY when
+                # the response ended at EOS — then nothing follows and
+                # next_value is 0. A response truncated by
+                # ``response_max_len`` is NOT finished: the policy would keep
+                # generating, so the last state must be bootstrapped from the
+                # critic's value V(s_L) at the post-response state (decayed by
+                # ``gamma`` like any bootstrap). Hardcoding 0 modeled both
+                # cases identically and systematically deflated the final-token
+                # advantages of every truncated rollout.
+                terminal = sample.terminal_value if sample.truncated else None
+                advantages = _gae_advantages(
+                    values,
+                    sample.rewards,
+                    terminal_value=terminal,
+                    gamma=self.gamma,
+                    gae_lambda=self.gae_lambda,
+                )
                 # Raw returns (advantage + value estimate) — the critic's
                 # regression target. These must be computed from the raw
                 # advantage, *before* normalization, so the value function

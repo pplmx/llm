@@ -181,6 +181,102 @@ class TestRolloutBuffer:
         expected = torch.tensor([0.5, 0.7])
         assert torch.allclose(sample.advantages, expected, atol=1e-5)
 
+    def test_gae_decayed_reference_scan(self):
+        """The vectorized GAE must reproduce the classic decayed recurrence
+        ``A_t = delta_t + gamma*lambda*A_{t+1}`` for ``gamma, lambda < 1``.
+
+        The other GAE tests only pin ``gamma=lambda=1.0``, which collapses the
+        decay to a plain return; this pins the decayed path (``gae_lambda < 1``)
+        against an independent reverse scan so a rewrite of the closed-form
+        reduction cannot silently drift the discounted-advantage signal."""
+        buffer = RolloutBuffer(gae_lambda=0.95, gamma=0.99, normalize_advantages=False)
+        values = torch.tensor([0.5, 0.3, -0.1, 0.2])
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3, 4]),
+            response_ids=torch.tensor([5, 6, 7, 8]),
+            rewards=torch.tensor(1.5),
+            old_log_probs=torch.zeros(4),
+            values=values,
+            truncated=False,
+        )
+        buffer.compute_advantages()
+
+        vals_list = values.tolist()
+        gm, lam = 0.99, 0.95
+        c = gm * lam
+        last = 0.0
+        expected = [0.0] * len(vals_list)
+        for t in range(len(vals_list) - 1, -1, -1):
+            if t == len(vals_list) - 1:
+                r, nv = 1.5, 0.0  # EOS terminal: next_value = 0
+            else:
+                r, nv = 0.0, vals_list[t + 1]
+            delta = r + gm * nv - vals_list[t]
+            last = delta + c * last
+            expected[t] = last
+
+        assert torch.allclose(buffer.samples[0].advantages, torch.tensor(expected), atol=1e-5)
+
+    def test_gae_advantages_fp16_dtype_preserved(self):
+        """``_gae_advantages`` must keep the values' dtype (fp16 in) and stay
+        finite — a rewrite that upcasts the output would silently change the
+        critic/advantage dtype the PPO update consumes."""
+        from llm.training.rlhf.rollout_buffer import _gae_advantages
+
+        values = torch.randn(30, dtype=torch.float16)
+        out = _gae_advantages(
+            values,
+            torch.tensor([2.0], dtype=torch.float16),
+            terminal_value=None,
+            gamma=0.99,
+            gae_lambda=0.95,
+        )
+        assert out.dtype == torch.float16
+        assert torch.isfinite(out.float()).all()
+
+    def test_gae_advantages_zero_accumulation(self):
+        """``gamma * gae_lambda == 0`` short-circuits to ``A_t = delta_t`` (no
+        advantage accumulation): ``delta = r_t + gamma*V_{t+1} - V_t`` with the
+        sparse terminal reward on the last token."""
+        from llm.training.rlhf.rollout_buffer import _gae_advantages
+
+        values = torch.tensor([0.5, 0.3, -0.2])
+        # gamma=0 kills the decay AND the bootstrap term; only the sparse
+        # reward remains in the last-token delta.
+        out = _gae_advantages(
+            values,
+            torch.tensor([1.0]),
+            terminal_value=None,
+            gamma=0.0,
+            gae_lambda=0.95,
+        )
+        # delta = r_t + 0 - V_t: all tokens -V_t except the last +1.0 - V_last.
+        expected = torch.tensor([-0.5, -0.3, 1.0 - (-0.2)])
+        assert torch.allclose(out, expected, atol=1e-6)
+
+    def test_gae_advantages_pathological_small_decay_falls_back(self):
+        """A `gamma*gae_lambda` so small that ``1/c^n`` exceeds float64 must
+        fall back to the stable forward scan and stay finite + correct — the
+        closed-form upcast can't represent it (the original loop handled it)."""
+        from llm.training.rlhf.rollout_buffer import _gae_advantages
+
+        values = torch.randn(20)
+        reward = torch.tensor([3.0])
+        # c = 1e-50 -> 1/c^20 = 1e1000 overflows float64 -> must fall back.
+        out = _gae_advantages(
+            values,
+            reward,
+            terminal_value=None,
+            gamma=1.0,
+            gae_lambda=1e-50,
+        )
+        assert torch.isfinite(out).all()
+        # With c = 1e-50 every c^k (k>=1) term vanishes in float64, so
+        # A_t = delta_t = r_t + gamma*V_{t+1} - V_t exactly.
+        vals = values.tolist()
+        ref = [vals[t + 1] - vals[t] for t in range(len(vals) - 1)] + [3.0 - vals[-1]]
+        assert torch.allclose(out, torch.tensor(ref), atol=1e-4)
+
     def test_returns_are_raw_when_advantages_normalized(self):
         """Returns must stay on the raw (unnormalized) return scale.
 
