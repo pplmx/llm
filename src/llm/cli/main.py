@@ -18,10 +18,12 @@ Usage::
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
+from llm.cli import migrate_ckpt
 from llm.cli.decompose import app as decompose_app
-from llm.cli.migrate_ckpt import app as migrate_app
 from llm.cli.prune import app as prune_app
 from llm.cli.quantize import app as quantize_app
 from llm.serving.cli import app as serve_app
@@ -39,7 +41,21 @@ app.add_typer(serve_app, name="serve", help="Start the OpenAI-compatible inferen
 app.add_typer(quantize_app, name="quantize", help="Post-training quantization (GPTQ / FP8).")
 app.add_typer(prune_app, name="prune", help="Weight-prune a model checkpoint.")
 app.add_typer(decompose_app, name="decompose", help="Low-rank (SVD U-V) factorize a model.")
-app.add_typer(migrate_app, name="migrate-ckpt", help="Convert legacy v0.0.5 checkpoints to the v2 layout.")
+
+
+# ``migrate-ckpt`` takes a POSITIONAL path argument, which cannot live on a
+# typer group callback (the positional collides with subcommand dispatch), so
+# it is registered as a plain root command that delegates to the module's ``main``.
+@app.command("migrate-ckpt", help="Convert legacy v0.0.5 checkpoints to the v2 layout.")
+def migrate_ckpt_cmd(
+    path: Path = typer.Argument(..., help="Path to the legacy `.pt` checkpoint or its stem."),
+    in_place: bool = typer.Option(False, "--in-place", help="Delete the legacy `.pt` after conversion."),
+    verify: bool = typer.Option(False, "--verify", help="Round-trip check the new layout; exit 2 on mismatch."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the plan and write nothing."),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace an existing split-layout trio."),
+) -> None:
+    """Convert a legacy v0.0.5 ``.pt`` checkpoint to the v2 split layout."""
+    migrate_ckpt.main(path=path, in_place=in_place, verify=verify, dry_run=dry_run, overwrite=overwrite)
 
 
 if __name__ == "__main__":

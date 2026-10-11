@@ -47,7 +47,6 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
     add_completion=False,
-    invoke_without_command=True,
     help=(
         "Convert a legacy v0.0.5 single-file .pt training checkpoint to "
         "the v2 split layout (model.safetensors + meta.json + extra_state.pt)."
@@ -168,7 +167,7 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
     return True, ""
 
 
-@app.callback()
+@app.command()
 def main(
     path: Path = typer.Argument(
         ...,
