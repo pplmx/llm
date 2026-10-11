@@ -41,7 +41,7 @@ pydantic 静默忽略，与本文件下方命令行里的 `--task` 重复）。
 然后：
 
 ```bash
-uv run llm-train --task distill --config-path configs/your_distill.yaml
+uv run llm train --task distill --config-path configs/your_distill.yaml
 ```
 
 ## 端到端步骤

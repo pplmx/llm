@@ -15,7 +15,7 @@
 2. **4-bit 真打包** — 2 weights/byte int8 storage，不做"假装 4-bit"（int8 槽位只 mask）
 3. **双重 calibration 入口** — standalone (`Iterator[Tensor]`) + 复用现有 `CalibrationDataCollector`
 4. **配置错误 fail-fast** — `GPTQConfig.__post_init__` 拒绝非法组合，不延迟到 forward 才炸
-5. **CLI 平行 `llm-migrate-ckpt`** — 用户可直接 `llm-quantize gptq ...`，不写 Python
+5. **CLI 平行 `llm migrate-ckpt`** — 用户可直接 `llm quantize gptq ...`，不写 Python
 
 ## 现有能力（不动的部分）
 
@@ -34,7 +34,7 @@ src/llm/quantization/
 └── _gptq_layer.py          ← 新增 (GPTQQuantizedLinear 存储 + packed 4-bit)
 
 src/llm/cli/
-└── quantize.py             ← 新增 (llm-quantize gptq subcommand)
+└── quantize.py             ← 新增 (llm quantize gptq subcommand)
 
 tests/quantization/
 ├── test_quantization.py    ← 不动
@@ -146,7 +146,7 @@ def quantize_model_with_collector(
 ### CLI
 
 ```
-llm-quantize gptq --model PATH --output PATH \
+llm quantize gptq --model PATH --output PATH \
     --calib-data PATH --bits 4 --group-size 128 \
     [--act-order] [--sym] [--percdamp 0.01] [--blocksize 128] \
     [--target-modules q_proj,k_proj,v_proj,o_proj]
@@ -290,7 +290,7 @@ llm-quantize gptq --model PATH --output PATH \
 - [ ] `tests/cli/test_quantize_cli.py` 通过
 - [ ] 现有 `tests/quantization/test_quantization.py` 零修改通过（回归保护）
 - [ ] `make test` 全绿
-- [ ] CLI `llm-quantize gptq --help` 输出正确
+- [ ] CLI `llm quantize gptq --help` 输出正确
 - [ ] `docs/adr/007-gptq-integration.md` 提交
 - [ ] `CHANGELOG.md` `[Unreleased]` Added 段更新
 - [ ] `ROADMAP.md` 阶段十三 §13.3 第一个 checkbox 勾选

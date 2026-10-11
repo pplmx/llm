@@ -80,7 +80,7 @@ def assert_safe_bind(
     """Fail-closed guard: refuse to serve anonymously on a non-loopback bind.
 
     The single home for the check every entry point validates — the
-    ``llm-serve`` CLI (:func:`llm.serving.cli.main`), the FastAPI lifespan
+    ``llm serve`` CLI (:func:`llm.serving.cli.main`), the FastAPI lifespan
     that the Docker image's direct ``uvicorn llm.serving.api:app`` launch
     runs, etc. Because all of them now read the SAME ``host`` the server
     actually binds (``LLM_SERVING_HOST`` / ``ServingConfig.host``), a

@@ -30,7 +30,7 @@ v1 semantics — replicated data, no data-parallel dimension:
 
 Checkpoints: ``model_state_dict`` on a TP model gathers every rank's shard
 into a **full** plain state dict (mirroring FSDP ``FULL_STATE_DICT``) so the
-checkpoint manager and ``llm-serve`` need no changes; ``load_model_state_dict``
+checkpoint manager and ``llm serve`` need no changes; ``load_model_state_dict``
 slices a full state dict back into each rank's shards in place (default
 ``assign=False`` keeps parameter object identity, so a live optimizer stays
 valid).

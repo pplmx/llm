@@ -51,7 +51,7 @@ sharded optimiser" workload.
 
 ## DDP quick start
 
-`llm-train` reads `distributed` from the YAML config and spawns one
+`llm train` reads `distributed` from the YAML config and spawns one
 worker per GPU internally (`torch.multiprocessing.spawn`) — there is
 **no `torchrun` step**.
 
@@ -66,7 +66,7 @@ distributed:
 ```
 
 ```bash
-uv run llm-train --task stream_lm --config-path configs/ddp.yaml
+uv run llm train --task stream_lm --config-path configs/ddp.yaml
 ```
 
 Multi-node:
@@ -75,12 +75,12 @@ Multi-node:
 # Node 0 (master)
 MASTER_ADDR=192.168.1.1 MASTER_PORT=12355 \
 NUM_NODES=2 NODE_RANK=0 GPUS_PER_NODE=4 \
-uv run llm-train --task stream_lm --config-path configs/ddp.yaml
+uv run llm train --task stream_lm --config-path configs/ddp.yaml
 
 # Node 1
 MASTER_ADDR=192.168.1.1 MASTER_PORT=12355 \
 NUM_NODES=2 NODE_RANK=1 GPUS_PER_NODE=4 \
-uv run llm-train --task stream_lm --config-path configs/ddp.yaml
+uv run llm train --task stream_lm --config-path configs/ddp.yaml
 ```
 
 The multi-node env vars are read by `DistributedConfig` at startup; the
@@ -102,10 +102,10 @@ distributed:
   fsdp_cpu_offload: false
 ```
 
-Launch the same way as DDP — `llm-train` spawns the FSDP workers:
+Launch the same way as DDP — `llm train` spawns the FSDP workers:
 
 ```bash
-uv run llm-train --task stream_lm --config-path configs/fsdp-pretrain.yaml
+uv run llm train --task stream_lm --config-path configs/fsdp-pretrain.yaml
 ```
 
 ### FSDP configuration knobs
@@ -199,7 +199,7 @@ distributed:
 ```
 
 ```bash
-uv run llm-train --task stream_lm --config-path configs/zero-pretrain.yaml
+uv run llm train --task stream_lm --config-path configs/zero-pretrain.yaml
 ```
 
 ZeRO Stage-1 is **not** layered on DDP: it is its own strategy. Every rank
@@ -280,7 +280,7 @@ distributed:
   full-batch gradient — plus the intra-group reduce the tensor
   parallelism already does.
 - Checkpoints are the *full* model state dict (gathered) on rank 0,
-  identical to a plain single-GPU checkpoint — `llm-serve` and resume
+  identical to a plain single-GPU checkpoint — `llm serve` and resume
   need no special handling.
 
 Requirements and constraints (all fail loudly, not silently wrong):
@@ -292,7 +292,7 @@ Requirements and constraints (all fail loudly, not silently wrong):
 - TP supports the `mha`, `flash_attn` and `mla` attention backends and,
   since TASK-207, MoE via expert parallelism (the gate stays replicated and
   the experts are split across ranks by expert index; the full state dict is
-  rebuilt rank-major on save so `llm-serve` / resume need no special
+  rebuilt rank-major on save so `llm serve` / resume need no special
   handling). `sdpa` is a *functional*, not a registered `attn_impl` — every
   supported backend runs its attention through it, so TP covers the sdpa
   kernel transitively. ALiBi and serving are out of scope (rejected at wrap
@@ -329,7 +329,7 @@ pipeline). The engine wires the standard-loop PP step, the PP-group-aware
 global gradient-norm clip (each rank holds a disjoint stage, so the full-model
 norm is summed over the pipeline group), and the full model state dict on rank
 0 (gathered stage-by-stage under the original model's parameter names), so
-checkpoints, `llm-serve` and resume are unchanged.
+checkpoints, `llm serve` and resume are unchanged.
 
 ### PP + data-parallel 2D
 
@@ -354,7 +354,7 @@ distributed:
   the true full-batch gradient.
 - Checkpoints are the *full* model state dict (gathered stage-by-stage per
   pipeline group) on rank 0, identical to a plain single-GPU checkpoint —
-  `llm-serve` and resume need no special handling.
+  `llm serve` and resume need no special handling.
 
 `world_size` must divide evenly by `pp_size` (a non-divisor is rejected at
 wrap time).
@@ -448,7 +448,7 @@ all.
 
 ### Launching multi-node runs
 
-`llm-train` does not use `torchrun`; distributed parameters come from
+`llm train` does not use `torchrun`; distributed parameters come from
 `DistributedConfig` (YAML or env vars). The env vars that matter are:
 
 | Variable       | Description                      | Default     |
@@ -488,7 +488,7 @@ For NCCL debugging:
 
 ```bash
 export NCCL_DEBUG=INFO
-uv run llm-train --task stream_lm --config-path configs/ddp.yaml
+uv run llm train --task stream_lm --config-path configs/ddp.yaml
 ```
 
 ## Troubleshooting

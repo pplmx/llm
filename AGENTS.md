@@ -21,7 +21,7 @@
 
 - C4 / Pile / RedPajama **preset**（复用 `SOURCE_REGISTRY` + `HFStreamTextSource`）
 - 数据 dedup / 过滤（`TextSource` 装饰器或 pipeline）
-- 主路径文档与 e2e（`llm-train --task stream_lm`，非仅 `scripts/`）
+- 主路径文档与 e2e（`llm train --task stream_lm`，非仅 `scripts/`）
 
 完整 backlog 见 [ROADMAP.md § 下一步探索方向](ROADMAP.md#下一步探索方向-).
 
@@ -59,7 +59,7 @@
 | 新注意力/MLP/Norm | `core/` + `@register_*` in `core/registry.py` |
 | 新推理 backend | `generation/` + `BACKEND_REGISTRY` + entry point |
 | 新评估指标/任务 | `evaluation/metrics/` / `evaluation/eval_tasks/` |
-| 新 CLI 能力 | 优先扩 `llm-train` / `llm-serve`，脚本仅作 demo |
+| 新 CLI 能力 | 优先扩 `llm train` / `llm serve`，脚本仅作 demo |
 
 ### 内置训练 task
 
@@ -71,8 +71,8 @@
 | `regression` | 合成回归 demo |
 
 ```bash
-uv run llm-train --task stream_lm --help
-uv run llm-serve
+uv run llm train --task stream_lm --help
+uv run llm serve
 ```
 
 ## 常用命令

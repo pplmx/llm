@@ -8,7 +8,7 @@ Usage:
 
 The script:
   1. loads a trained ``DecoderModel`` checkpoint (v2 stem / v2 sidecar /
-     legacy ``.pt`` / bare quantized blob — same loader as ``llm-serve``);
+     legacy ``.pt`` / bare quantized blob — same loader as ``llm serve``);
   2. evaluates perplexity on ``wikitext-2`` (test split);
   3. GPTQ-quantizes (4-bit, group_size=128) with calibration sampled from
      ``wikitext-2`` (train split);
@@ -93,7 +93,7 @@ def _evaluate_ppl(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True, help="Checkpoint path (servable by llm-serve).")
+    parser.add_argument("--model", required=True, help="Checkpoint path (servable by llm serve).")
     parser.add_argument("--tokenizer-path", required=True, help="Serialized tokenizer file.")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seq-len", type=int, default=256)

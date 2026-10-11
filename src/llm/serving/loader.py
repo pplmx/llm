@@ -26,7 +26,7 @@ def _strip_compile_prefix(state_dict: dict[str, torch.Tensor]) -> dict[str, torc
     """Normalize torch.compile state-dict keys to the plain module namespace.
 
     Checkpoints saved before the save-side fix may carry ``_orig_mod.``
-    prefixes (``torch.compile`` renames every key). ``llm-serve`` builds a
+    prefixes (``torch.compile`` renames every key). ``llm serve`` builds a
     plain ``DecoderModel``, so the prefix must be stripped before
     ``load_state_dict`` or every weight is silently dropped.
     """
@@ -54,17 +54,17 @@ def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
     ``<stem>.meta.json`` + ``<stem>.extra_state.pt``, the modern
     ``CheckpointManager`` format) and the legacy v0.0.5 single-file
     ``.pt`` blob, plus the bare ``nn.Module`` pickle emitted by
-    ``llm-quantize`` (a quantized model with ``GPTQQuantizedLinear`` /
+    ``llm quantize`` (a quantized model with ``GPTQQuantizedLinear`` /
     ``AWQQuantizedLinear`` / ``SmoothQuantLinear`` submodules whose
     per-layer quantization parameters live on the module instances).
     ``path`` may be a stem, any of the three v2 sidecar paths, or a
     legacy ``.pt`` path.
     """
     ckpt_path = Path(path)
-    # A bare-module blob (e.g. ``llm-quantize --output model.pt``) is not a
+    # A bare-module blob (e.g. ``llm quantize --output model.pt``) is not a
     # checkpoint dict: detect it before the layout resolution below so it is
     # not routed through the legacy path (which would emit a misleading
-    # "run llm-migrate-ckpt" DeprecationWarning for a quantized artifact).
+    # "run llm migrate-ckpt" DeprecationWarning for a quantized artifact).
     #
     # Security (RIL ISS-170): the probe loads with ``weights_only=True`` so an
     # untrusted ``.pt`` cannot execute arbitrary ``__reduce__`` code at serve
@@ -265,7 +265,7 @@ def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
 
     checkpoint = load_training_checkpoint(config.model_path)
     if checkpoint.model_obj is not None:
-        # Quantized-model blob produced by ``llm-quantize``: the module is
+        # Quantized-model blob produced by ``llm quantize``: the module is
         # self-contained (packed weights, scales, per-layer quantization
         # params), so skip ModelFactory reconstruction entirely.
         model = checkpoint.model_obj

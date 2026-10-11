@@ -8,7 +8,7 @@ so ``U @ V`` best-approximates ``W`` in Frobenius norm (Eckart-Young).
 
 As with :mod:`llm.quantization.prune`, the resulting model keeps its
 architecture and dtype and runs on any device; the layer's forward is
-``y = (x @ V^T) @ U^T + b``. ``llm-decompose`` wraps this pass and the
+``y = (x @ V^T) @ U^T + b``. ``llm decompose`` wraps this pass and the
 ``LowRankLinear`` class is covered by the ``weights_only`` safe-globals
 allowlist (``llm.quantization``).
 """

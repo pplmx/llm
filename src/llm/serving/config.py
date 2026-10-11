@@ -26,7 +26,7 @@ class ServingConfig(BaseSettings):
         ge=1,
         le=65535,
         description="TCP port to bind the HTTP server (RIL TASK-326)",
-    )  # Set LLM_SERVING_PORT=9000 to override the llm-serve default
+    )  # Set LLM_SERVING_PORT=9000 to override the llm serve default
 
     # Generation
     generation_backend: str = "eager"  # eager | batched
@@ -157,7 +157,7 @@ class ServingConfig(BaseSettings):
 
         Shaped after :meth:`llm.training.core.config.Config.from_yaml`, with
         one deliberate divergence (RIL DEC-106): a missing file returns the
-        default :class:`ServingConfig` (``llm-serve`` treats an absent config
+        default :class:`ServingConfig` (``llm serve`` treats an absent config
         as "all defaults"), whereas the training side **raises
         FileNotFoundError** on a missing ``--config-path`` (an explicit path
         is always a user error there). Both behaviours are pinned by tests.

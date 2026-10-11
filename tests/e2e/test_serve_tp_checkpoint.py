@@ -1,9 +1,9 @@
-"""llm-serve serves a TP-trained checkpoint end-to-end (RIL TASK-208).
+"""llm serve serves a TP-trained checkpoint end-to-end (RIL TASK-208).
 
 TASK-204 leg 3 closes the last gap in the TP story: the loader-level proof
 (``test_tp_checkpoint_roundtrip``) showed the on-disk full state dict and the
 embedded ``model_config`` round-trip at load time, but nobody had booted the
-real ``llm-serve`` FastAPI app against a checkpoint produced by an actual
+real ``llm serve`` FastAPI app against a checkpoint produced by an actual
 Tensor-Parallel training run and issued a live request.
 
 This test runs the real training loop on 2 GPUs (pure TP, ``tp_size=2``) —
@@ -227,7 +227,7 @@ def _run_train(tmp_path: Path) -> None:
 @pytest.mark.slow
 @pytest.mark.e2e
 def test_serve_tp_trained_checkpoint_two_gpu(tmp_path):
-    """`llm-serve` boots from and serves a real TP-trained checkpoint end-to-end.
+    """`llm serve` boots from and serves a real TP-trained checkpoint end-to-end.
 
     The engine's on-disk ``latest`` checkpoint (full gathered state dict +
     embedded ``model_config``) must drive the real FastAPI app: health is up,

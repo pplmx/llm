@@ -1,7 +1,7 @@
 # `llm.serving` — FastAPI Application
 
 REST + OpenAI-compatible chat-completions API. Boot the server with
-`uv run llm-serve` or `uv run uvicorn llm.serving.api:app`.
+`uv run llm serve` or `uv run uvicorn llm.serving.api:app`.
 
 ## Application Factory
 

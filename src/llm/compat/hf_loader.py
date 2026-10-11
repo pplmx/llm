@@ -115,7 +115,7 @@ def _load_from_local(
             "Mixtral (block-sparse MoE) is not supported by from_pretrained: the "
             "weight mapping is dense-only and would silently discard every "
             "expert/router tensor. Use a dense architecture (llama, mistral, "
-            "qwen) or load the model via llm-train with an explicit MoE config."
+            "qwen) or load the model via llm train with an explicit MoE config."
         )
 
     # Unknown model_type (gpt2, gemma, baichuan, ...): the mapping has no rules

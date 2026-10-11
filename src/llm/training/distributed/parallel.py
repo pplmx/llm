@@ -522,7 +522,7 @@ def _strip_compile_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
 
     ``torch.compile(model).state_dict()`` prefixes every key with
     ``_orig_mod.``.  Checkpoints must store plain keys (portable across
-    compiled / non-compiled loads and consumable by ``llm-serve``); this
+    compiled / non-compiled loads and consumable by ``llm serve``); this
     helper also makes legacy checkpoints that accidentally stored the
     prefixed form loadable.
     """
@@ -853,13 +853,13 @@ def model_state_dict(
         with FullyShardedDataParallel.state_dict_type(model, sdt, cfg):
             fsdp_state = model.state_dict()
     # ``torch.compile`` wraps the module as ``_orig_mod`` and prefixes its
-    # state-dict keys; unwrap so checkpoints are portable (llm-serve loads
+    # state-dict keys; unwrap so checkpoints are portable (llm serve loads
     # plain module keys and has no torch.compile graph).  Applies to the FSDP
     # FULL_STATE_DICT too: the engine compiles the model *before* wrapping it
     # in FSDP, so an FSDP full-state dict carries ``_orig_mod.*`` keys just
     # like a bare compiled module, and a checkpoint missing the strip cannot
     # be resumed (load always normalizes, and FSDP expects ``_orig_mod.*``)
-    # nor transferred to ``llm-serve`` (round-76 deep-dive D1).
+    # nor transferred to ``llm serve`` (round-76 deep-dive D1).
     if is_pp3d(model):
         # Composed PP+TP stage (RIL ISS-403): gather the FULL global-named
         # model dict across every stage (TP-shards reconstructed per stage

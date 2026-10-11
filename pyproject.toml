@@ -159,12 +159,7 @@ gguf = "llm.export.gguf.exporter:build_gguf_exporter"
 [project.entry-points."llm.peft_methods"]
 
 [project.scripts]
-llm-train = "llm.training.train:app"
-llm-serve = "llm.serving.cli:app"
-llm-migrate-ckpt = "llm.cli.migrate_ckpt:app"
-llm-quantize = "llm.cli.quantize:app"
-llm-prune = "llm.cli.prune:app"
-llm-decompose = "llm.cli.decompose:app"
+llm = "llm.cli.main:app"
 
 [project.urls]
 Documentation = "https://github.com/pplmx/llm#readme"

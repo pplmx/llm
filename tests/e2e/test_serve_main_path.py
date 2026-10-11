@@ -1,7 +1,7 @@
 """E2E tests for the serving main path (Main Path #3 docs/e2e alignment).
 
 Mirrors :mod:`tests.e2e.test_stream_lm_main_path` and
-:mod:`tests.e2e.test_sft_main_path` for the ``llm-serve`` main path —
+:mod:`tests.e2e.test_sft_main_path` for the ``llm serve`` main path —
 the same tutorial-alignment pattern applied to inference serving.
 
 Covers:
@@ -13,7 +13,7 @@ Covers:
 - The :class:`ServingConfig` produced by the YAML loader exposes the
   right fields the tutorial calls out (``api_key`` placeholder,
   ``model_path``, ``peft_*``).
-- The ``llm-serve`` FastAPI app boots and serves the OpenAI-compatible
+- The ``llm serve`` FastAPI app boots and serves the OpenAI-compatible
   ``/v1/chat/completions`` endpoint end-to-end via :class:`TestClient`.
 - ``/generate`` (non-streaming) and ``/generate`` (streaming) both
   round-trip a real request.
@@ -173,7 +173,7 @@ class TestServePresetConfigs:
 
 
 # ---------------------------------------------------------------------------
-# 2. llm-serve boots + serves the OpenAI-compatible chat completions
+# 2. llm serve boots + serves the OpenAI-compatible chat completions
 # ---------------------------------------------------------------------------
 
 
@@ -302,7 +302,7 @@ class TestLLMServeSecurity:
     """The serving tier's auth + safety rails must be enforced end-to-end."""
 
     def test_public_host_guard_refuses_start_without_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``llm-serve`` refuses to start on 0.0.0.0 without an api_key.
+        """``llm serve`` refuses to start on 0.0.0.0 without an api_key.
 
         T2 #7 hardening: failing loud at startup is better than
         silently accepting anonymous traffic on a public interface.

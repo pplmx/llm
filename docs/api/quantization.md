@@ -1,7 +1,7 @@
 # `llm.quantization` — Model Quantization
 
 Post-training quantization (PTQ), GPTQ, and AWQ support for reducing
-model size and inference latency. The CLI entry point is `llm-quantize`.
+model size and inference latency. The CLI entry point is `llm quantize`.
 
 ## Overview
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Example: Using OpenAI SDK with llm-serve.
+"""Example: Using OpenAI SDK with llm serve.
 
 Prerequisites:
     1. Install openai: pip install openai
-    2. Start the server: llm-serve
+    2. Start the server: llm serve
 """
 
 try:
@@ -12,7 +12,7 @@ except ImportError:
     print("Please install openai: pip install openai")
     exit(1)
 
-# Connect to local llm-serve
+# Connect to local llm serve
 client = OpenAI(
     base_url="http://localhost:8000/v1",
     api_key="test",  # Any string works if auth is disabled

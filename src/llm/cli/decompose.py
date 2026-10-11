@@ -1,7 +1,7 @@
-"""``llm-decompose`` — low-rank (SVD U-V) factorize a pretrained model.
+"""``llm decompose`` — low-rank (SVD U-V) factorize a pretrained model.
 
 Thin wrapper over :func:`llm.quantization.lowrank.decompose_model` (the sibling
-of ``llm-prune`` in the compression family). Loads a bare ``torch.save`` model
+of ``llm prune`` in the compression family). Loads a bare ``torch.save`` model
 blob, factorizes each ``nn.Linear`` weight into ``u @ v`` at the requested rank,
 and writes a new blob atomically, reporting rank / compression ratio / Frobenius
 reconstruction error.
@@ -28,6 +28,7 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
     add_completion=False,
+    invoke_without_command=True,
     help="Low-rank (SVD U-V) factorize the linear weights of a model checkpoint.",
 )
 
@@ -77,7 +78,7 @@ def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
     return parsed or None
 
 
-@app.command()
+@app.callback()
 def decompose(
     model: Path = typer.Option(..., "--model", help="Path to model blob (.pt torch.save of a DecoderModel)."),
     output: Path = typer.Option(..., "--output", help="Output path for the low-rank model blob."),

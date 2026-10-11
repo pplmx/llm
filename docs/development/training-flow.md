@@ -7,8 +7,8 @@
 整个训练过程可以分为以下几个主要阶段:
 
 1. **启动入口 (`train.py`)**
-    - 用户在命令行执行 `uv run llm-train --task <task_name> [other_args]`。
-      入口是 `src/llm/training/train.py` 中注册的 typer 应用；推荐直接用 `llm-train` CLI。
+    - 用户在命令行执行 `uv run llm train --task <task_name> [other_args]`。
+      入口是 `src/llm/training/train.py` 中注册的 typer 应用；推荐直接用 `llm train` CLI。
     - Python 解释器执行 `train.py` 中的 `main()` 函数.
 
 2. **主进程初始化 (`main` 函数)**

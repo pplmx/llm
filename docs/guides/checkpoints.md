@@ -35,11 +35,11 @@ checkpoints/
 
 - 权重用 safetensors：optimizer 状态损坏不会挡住模型权重读取；`*.safetensors` 可直接用于 HF 发布、评估、从预训练 base 起步。
 - 元数据是 JSON：`cat latest.meta.json | jq`。
-- 旧版 v0.0.5 单文件 `.pt` 仍可加载（自动检测 + `DeprecationWarning`），可用 `llm-migrate-ckpt` 迁移。
+- 旧版 v0.0.5 单文件 `.pt` 仍可加载（自动检测 + `DeprecationWarning`），可用 `llm migrate-ckpt` 迁移。
 
 ## 训练中自动保存
 
-`llm-train` 通过 YAML 的 `checkpoint:` 段控制（**没有 CLI 参数**）：
+`llm train` 通过 YAML 的 `checkpoint:` 段控制（**没有 CLI 参数**）：
 
 ```yaml
 checkpoint:
@@ -63,10 +63,10 @@ checkpoint:
 
 ```bash
 # 第一次跑（生成 checkpoints/epoch_2.* 三件套）
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
 
 # 续训：把 resume_from_checkpoint 指向上次的 stem，重跑同一命令
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
 ```
 
 `CheckpointManager.load_checkpoint` 恢复 model / optimizer / scheduler / scaler / `extra_state`。
@@ -89,21 +89,21 @@ print(ckpt["epoch"], ckpt["loss"], ckpt["extra_state"])
 
 ```bash
 # 预览将做什么
-llm-migrate-ckpt checkpoints/epoch_5 --dry-run
+llm migrate-ckpt checkpoints/epoch_5 --dry-run
 
 # 转换 + round-trip 校验 + 删除旧文件
-llm-migrate-ckpt checkpoints/epoch_5 --verify --in-place
+llm migrate-ckpt checkpoints/epoch_5 --verify --in-place
 ```
 
-参数与退出码见 [CLI 参考 · llm-migrate-ckpt](../reference/cli.md#llm-migrate-ckpt)。
+参数与退出码见 [CLI 参考 · llm migrate-ckpt](../reference/cli.md#llm migrate-ckpt)。
 
 ## 服务化加载
 
-`llm-serve` 的 `LLM_SERVING_MODEL_PATH` 直接指向 checkpoint stem：
+`llm serve` 的 `LLM_SERVING_MODEL_PATH` 直接指向 checkpoint stem：
 
 ```bash
 LLM_SERVING_MODEL_PATH=checkpoints/epoch_5 \
-uv run llm-serve
+uv run llm serve
 ```
 
 v2 split 三件套与旧式 `.pt` 都支持；详见 [推理教程](../tutorials/03-inference.md)。
@@ -120,7 +120,7 @@ v2 split 三件套与旧式 `.pt` 都支持；详见 [推理教程](../tutorials
 
 **Q: Checkpoint 损坏？**
 
-- 检查三件套是否齐全（缺一即视为该 checkpoint 不存在）；`llm-migrate-ckpt --verify` 可做新旧布局 round-trip 校验。
+- 检查三件套是否齐全（缺一即视为该 checkpoint 不存在）；`llm migrate-ckpt --verify` 可做新旧布局 round-trip 校验。
 
 **Q: 模型不匹配？**
 

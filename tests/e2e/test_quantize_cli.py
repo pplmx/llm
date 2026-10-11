@@ -1,4 +1,4 @@
-"""End-to-end smoke test for the ``llm-quantize gptq`` CLI.
+"""End-to-end smoke test for the ``llm quantize gptq`` CLI.
 
 This complements :mod:`tests.cli.test_quantize_cli` (which exercises
 the validation paths via ``CliRunner`` without touching
@@ -6,7 +6,7 @@ the validation paths via ``CliRunner`` without touching
 
 1. Save a tiny ``nn.Linear``-only model to disk via ``torch.save``.
 2. Save pre-tokenized calibration batches to a ``.pt`` file.
-3. Invoke ``llm-quantize gptq --flags`` via ``CliRunner`` (the same
+3. Invoke ``llm quantize gptq --flags`` via ``CliRunner`` (the same
    invocation shape ``pyproject.toml`` ``[project.scripts]`` uses).
 4. Verify the output file exists, is a ``torch.save`` blob, and
    contains ``GPTQQuantizedLinear`` modules (i.e. the CLI ran the
@@ -62,7 +62,7 @@ def runner() -> CliRunner:
 def _allowlist_test_model() -> None:
     """Register the test-local ``_TwoLayerMLP`` as a trusted pickle class.
 
-    ``llm-quantize`` loads model blobs with ``weights_only=True`` plus the
+    ``llm quantize`` loads model blobs with ``weights_only=True`` plus the
     framework allowlist (RIL ISS-211), refusing anything outside it. This
     test model is a plain ``nn.Module`` defined in this test module, so it is
     registered up front — exactly what a user with a custom non-framework

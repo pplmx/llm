@@ -152,22 +152,22 @@ tags:
 
 ## 命令行参数
 
-- **问题: 运行 `llm-train` 时提示 `unrecognized arguments` / `No such option`**
-    - **解决方案:** `llm-train` 只暴露少量**扁平**覆盖参数：`--task`（必填）、
+- **问题: 运行 `llm train` 时提示 `unrecognized arguments` / `No such option`**
+    - **解决方案:** `llm train` 只暴露少量**扁平**覆盖参数：`--task`（必填）、
       `--config-path`、`--epochs`、`--batch-size`、`--lr`、`--num-samples`、
       `--steps-per-epoch`、`--compile` / `--no-compile`、`--amp` / `--no-amp`。
       **模型结构、数据、分布式、checkpoint 等配置一律走 YAML**，没有
       `--model-*` / `--training-*` 之类的嵌套参数。
     - **布尔参数格式**: 布尔参数不带值。默认 `True` 的用 `--no-<name>` 关闭
       （如 `--no-compile`）；默认 `False` 的用 `--<name>` 打开。
-    - **查看帮助**: 运行 `uv run llm-train --help` 查看全部参数；完整说明见
-      [CLI 命令参考](reference/cli.md#llm-train)。
+    - **查看帮助**: 运行 `uv run llm train --help` 查看全部参数；完整说明见
+      [CLI 命令参考](reference/cli.md#llm train)。
 
 ---
 
 ## Serving 推理服务
 
-**问题: llm-serve 启动失败，报 "Refusing to start: ... api_key is not set"**
+**问题: llm serve 启动失败，报 "Refusing to start: ... api_key is not set"**
 
 - **解决方案:** 这是公开主机守卫机制。当绑定 0.0.0.0 时必须设置 API key。本地开发使用 `LLM_SERVING_HOST=127.0.0.1` 或设置 `LLM_SERVING_API_KEY`。
 

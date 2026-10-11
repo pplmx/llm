@@ -1,7 +1,7 @@
-"""``llm-prune`` — weight-prune a pretrained model checkpoint.
+"""``llm prune`` — weight-prune a pretrained model checkpoint.
 
 Thin wrapper over :func:`llm.quantization.prune.prune_model` (the sibling of the
-``llm-quantize`` CLI). Loads a bare ``torch.save`` model blob (a ``DecoderModel``,
+``llm quantize`` CLI). Loads a bare ``torch.save`` model blob (a ``DecoderModel``,
 plain or already quantized), zeroes a fraction of each ``nn.Linear``'s weights via
 a persistent ``weight_mask``, and writes a new pruned blob atomically.
 
@@ -27,6 +27,7 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
     add_completion=False,
+    invoke_without_command=True,
     help="Prune (sparsify) the linear weights of a model checkpoint.",
 )
 
@@ -90,7 +91,7 @@ def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
     return parsed or None
 
 
-@app.command()
+@app.callback()
 def prune(
     model: Path = typer.Option(..., "--model", help="Path to model blob (.pt torch.save of a DecoderModel)."),
     output: Path = typer.Option(..., "--output", help="Output path for the pruned model blob."),

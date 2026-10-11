@@ -215,7 +215,7 @@ class TestServingConfigNumericBounds:
 
 class TestServingCliPort:
     def test_cli_main_forwards_config_port(self, monkeypatch):
-        """RIL TASK-326: ``llm-serve`` must bind the operator's configured
+        """RIL TASK-326: ``llm serve`` must bind the operator's configured
         port, not a hardcoded 8000 (ServingConfig.port -> uvicorn.run)."""
         from llm.serving import cli
 
@@ -233,10 +233,10 @@ class TestServingCliPort:
 
 class TestServingCliHelp:
     def test_serve_help_prints_usage_without_launching_server(self, monkeypatch):
-        """``llm-serve --help`` must print usage, not silently boot uvicorn.
+        """``llm serve --help`` must print usage, not silently boot uvicorn.
 
         The script used to point at the bare ``api.main`` (no argv parsing),
-        so ``llm-serve --help`` launched a real uvicorn server holding a CUDA
+        so ``llm serve --help`` launched a real uvicorn server holding a CUDA
         device. It now points at a Typer app (``llm.serving.cli:app``); help
         must print the options and exit 0 with uvicorn never invoked.
         """
@@ -256,7 +256,7 @@ class TestServingCliHelp:
         assert result.exit_code == 0
         assert "--host" in result.output
         assert "--port" in result.output
-        assert launched["n"] == 0, "llm-serve --help must not launch uvicorn"
+        assert launched["n"] == 0, "llm serve --help must not launch uvicorn"
 
     def test_serve_invokes_main_without_help(self, monkeypatch):
         """Without ``--help`` the command still runs the real server path
@@ -278,7 +278,7 @@ class TestServingCliHelp:
         app, not the bare :func:`cli.main`, so it prints usage and exits 0
         instead of silently booting uvicorn on a CUDA device.
 
-        The ``llm-serve`` script entry point was fixed (Typer app), but the
+        The ``llm serve`` script entry point was fixed (Typer app), but the
         ``__main__`` guard previously still called the argv-ignoring
         ``main()`` — the same bug surfaced again via ``python -m``.
         """

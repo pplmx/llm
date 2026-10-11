@@ -47,7 +47,7 @@ just init
 
 ### Q: 我应该使用哪个任务？
 
-`llm-train` 的任务名通过 `--task` 传入（必填），内置任务如下：
+`llm train` 的任务名通过 `--task` 传入（必填），内置任务如下：
 
 - **`stream_lm`**: 流式大规模预训练（主入口，配合 `SOURCE_REGISTRY` 预设）
 - **`lm`**: Map-style 语言建模
@@ -58,18 +58,18 @@ just init
 
 ```bash
 # 流式预训练（本地冒烟，CPU 可跑）
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml
 
 # SFT + LoRA（PEFT 走 YAML 的 training 段，不是 CLI 参数）
-uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
+uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 ```
 
 > [!NOTE]
-> 全部任务清单见 [CLI 命令参考](reference/cli.md#llm-train)。
+> 全部任务清单见 [CLI 命令参考](reference/cli.md#llm train)。
 
 ### Q: 如何启用分布式训练？
 
-`llm-train` 根据 `distributed` 配置自动用 `torch.multiprocessing.spawn` 拉起
+`llm train` 根据 `distributed` 配置自动用 `torch.multiprocessing.spawn` 拉起
 多进程，不需要手动 `torchrun`。在 YAML 里设置每节点 GPU 数即可：
 
 ```yaml
@@ -82,7 +82,7 @@ distributed:
 ```
 
 ```bash
-uv run llm-train --task stream_lm --config-path config.yaml
+uv run llm train --task stream_lm --config-path config.yaml
 ```
 
 多节点时通过环境变量 `MASTER_ADDR` / `MASTER_PORT` / `NUM_NODES` /
@@ -200,7 +200,7 @@ A: 流式预训练使用 StreamingTextDataModule 和 HFStreamTextSource 直接�
 
 ### Q: 如何使用流式预训练？
 
-A: 使用 `uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml`。详情见预训练教程。
+A: 使用 `uv run llm train --task stream_lm --config-path configs/streaming_c4.yaml`。详情见预训练教程。
 
 ### Q: 流式训练的 checkpoint 如何恢复？
 
@@ -218,7 +218,7 @@ A: 支持 GPTQ（Hessian-aware 4/8-bit）、AWQ（激活感知）、SmoothQuant�
 
 ### Q: 如何量化一个训练好的模型？
 
-A: 使用 `llm-quantize gptq --model ckpt.pt --output ckpt-int4.pt --calib-data texts.txt --tokenizer gpt2 --bits 4`。
+A: 使用 `llm quantize gptq --model ckpt.pt --output ckpt-int4.pt --calib-data texts.txt --tokenizer gpt2 --bits 4`。
 
 ---
 
@@ -319,7 +319,7 @@ load_peft(model, "adapter.bin")
 
 ### Q: PEFT adapter 如何挂载到推理服务？
 
-A: 通过环境变量：`LLM_SERVING_PEFT_METHOD=lora LLM_SERVING_PEFT_ADAPTER_PATH=./adapter.bin` 即可在 llm-serve 启动时自动加载 adapter。
+A: 通过环境变量：`LLM_SERVING_PEFT_METHOD=lora LLM_SERVING_PEFT_ADAPTER_PATH=./adapter.bin` 即可在 llm serve 启动时自动加载 adapter。
 
 ---
 

@@ -1,4 +1,4 @@
-"""``llm-quantize`` CLI — currently supports the ``gptq`` subcommand.
+"""``llm quantize`` CLI — currently supports the ``gptq`` subcommand.
 
 This CLI closes the gap between the Python API
 (:func:`llm.quantization.gptq.quantize_model_gptq`) and the command line.
@@ -10,7 +10,7 @@ accumulation.
 Subcommand surface (matches
 ``docs/superpowers/plans/2026-07-22-gptq-integration.md`` § Task 10):
 
-    llm-quantize gptq \\
+    llm quantize gptq \\
         --model PATH                 # torch.save blob with a DecoderModel \\
         --output PATH                # where to write the quantized model \\
         --calib-data PATH            # raw text (one sample per line) — needs --tokenizer \\
@@ -59,10 +59,10 @@ def _root_callback() -> None:
 
     Without a callback, typer's behaviour depends on the number of
     commands: a single ``@app.command()`` makes the function the only
-    top-level command, and ``llm-quantize gptq --flags`` complains
+    top-level command, and ``llm quantize gptq --flags`` complains
     about an extra argument. Adding an empty callback switches the app
-    to "multi-command" mode so ``llm-quantize gptq --flags`` works as
-    expected. ``llm-quantize --flags`` (no subcommand) prints help.
+    to "multi-command" mode so ``llm quantize gptq --flags`` works as
+    expected. ``llm quantize --flags`` (no subcommand) prints help.
     """
 
 
@@ -547,7 +547,7 @@ def fp8(
 
 
 def main() -> None:
-    """Entry point for ``llm-quantize = llm.cli.quantize:main`` in pyproject.toml."""
+    """Entry point for ``llm quantize = llm.cli.quantize:main`` in pyproject.toml."""
     app()
 
 

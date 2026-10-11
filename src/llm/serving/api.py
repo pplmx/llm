@@ -102,7 +102,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     # Refuse to serve anonymous inference on a non-loopback interface, with
     # no api_key configured.  This guard must live in the *lifespan* (which
     # every entrypoint runs — uvicorn, the Docker CMD that launches
-    # ``llm.serving.api:app`` directly, and the ``llm-serve`` CLI) rather
+    # ``llm.serving.api:app`` directly, and the ``llm serve`` CLI) rather
     # than only in ``cli.main``: a Docker/uvicorn launch that skipped the CLI
     # used to bind 0.0.0.0 with ``api_key=None`` and serve /generate fully
     # anonymously by default.

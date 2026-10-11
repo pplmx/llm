@@ -1,4 +1,4 @@
-"""Tests for ``llm-migrate-ckpt`` — convert legacy v0.0.5 ``.pt`` to v2 split layout.
+"""Tests for ``llm migrate-ckpt`` — convert legacy v0.0.5 ``.pt`` to v2 split layout.
 
 The CLI is a thin wrapper around
 :func:`llm.training.core.checkpoint.convert_legacy_checkpoint_to_split`,
@@ -215,7 +215,7 @@ class TestConvertLegacyCheckpointToSplit:
 
 
 class TestMigrateCkptCli:
-    """The ``llm-migrate-ckpt`` CLI surface."""
+    """The ``llm migrate-ckpt`` CLI surface."""
 
     def test_help_exits_zero(self, cli_runner: CliRunner):
         result = cli_runner.invoke(app, ["--help"])
@@ -376,7 +376,7 @@ class TestMigrateCkptCli:
     def test_non_training_blob_exits_1_cleanly(self, cli_runner: CliRunner, tmp_path: Path):
         """Regression (RIL ISS-162): a ``.pt`` blob that is NOT a v0.0.5
         training dict (e.g. a bare ``torch.save`` of a model object from
-        ``llm-quantize``) raises ``TypeError``/``KeyError`` deep inside
+        ``llm quantize``) raises ``TypeError``/``KeyError`` deep inside
         ``convert_legacy_checkpoint_to_split``. The CLI must surface it as
         the documented clean one-line error (exit 1), not let the raw
         exception escape and print a traceback."""

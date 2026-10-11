@@ -19,7 +19,7 @@ KL-to-reference 惩罚去优化策略。它是 ROADMAP 阶段十一「其他对�
 `--task grpo`（`GRPOTask` + `GRPODataModule`，标准训练循环）：
 
 ```bash
-uv run llm-train --task grpo --config-path your_grpo.yaml
+uv run llm train --task grpo --config-path your_grpo.yaml
 ```
 
 训练配置（`TrainingConfig`）相关字段：

@@ -21,7 +21,7 @@ from llm.training.tasks import builtin as _task_registry  # noqa: F401 — regis
 load_entry_point_hooks("llm.tasks")
 
 # --- Typer App ---
-app = typer.Typer(pretty_exceptions_show_locals=False)
+app = typer.Typer(pretty_exceptions_show_locals=False, invoke_without_command=True)
 
 
 def configure_logging(log_level: str = "INFO"):
@@ -113,7 +113,7 @@ def train_worker(
         distributed_manager.cleanup()
 
 
-@app.command()
+@app.callback()
 def main(
     task: str = typer.Option(
         ...,

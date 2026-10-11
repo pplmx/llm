@@ -24,7 +24,7 @@ Work bottom-up; each layer strips one variable:
 | Sampling math only | unit-run helpers in `src/llm/generation/sampling.py` (`apply_frequency_penalty`, `apply_presence_penalty`, `apply_logit_bias`, top-k/top-p)                                 |
 | Backend, no HTTP   | instantiate a backend via `create_backend(name, engine=...)` (`src/llm/generation/registry.py`: `eager` / `batched` / `speculative`) and call `generate(...)` from a script |
 | Model + KV cache   | `DecoderModel.forward(..., use_cache=True, kv_cache=...)` or `PagedKVCache` directly (see `tests/models/`, `tests/core/`)                                                   |
-| Full serving       | `uv run llm-serve` (FastAPI, OpenAI-compatible); exercise via `curl` / `tests/serving/` clients                                                                             |
+| Full serving       | `uv run llm serve` (FastAPI, OpenAI-compatible); exercise via `curl` / `tests/serving/` clients                                                                             |
 
 Logging: Python `logging` (the server logs model version + config on startup,
 audit ticket #12). Raise level before starting:
@@ -32,7 +32,7 @@ audit ticket #12). Raise level before starting:
 ```bash
 uv run python -X dev -c "import logging; logging.basicConfig(level=logging.DEBUG); ..."
 # or for serving:
-PYTHONUNBUFFERED=1 uv run llm-serve  # check startup config log lines first
+PYTHONUNBUFFERED=1 uv run llm serve  # check startup config log lines first
 ```
 
 ## 2. Symptom → component map
@@ -46,7 +46,7 @@ PYTHONUNBUFFERED=1 uv run llm-serve  # check startup config log lines first
 | Paged-attention wrong results                | ADR-004 path: `PagedKVCache` block tables, prefix caching; see ticket #30                                                            |
 | Serving hang / stuck request                 | `serving/batch_engine.py` continuous-batching loop + its threading lock (ticket #14); check for un-awaited futures / missing wakeups |
 | HTTP 4xx/5xx shape issues                    | structured API error envelope (ticket #15), request schema validators in `serving/` routers                                          |
-| Quantized model misbehaves                   | `llm-quantize` output + `quantization/` loaders; GPTQ packing scale fix history (commit d20fe87), checkpoint key formats (494ee10)   |
+| Quantized model misbehaves                   | `llm quantize` output + `quantization/` loaders; GPTQ packing scale fix history (commit d20fe87), checkpoint key formats (494ee10)   |
 
 ## 3. Isolate
 

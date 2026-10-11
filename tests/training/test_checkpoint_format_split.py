@@ -210,7 +210,7 @@ class TestLoadSplitFormat:
         """RIL ISS-205: a legacy ``.pt`` frozen at a pre-migration epoch must
         NOT shadow a newer split trio at the same stem.
 
-        ``llm-migrate-ckpt`` keeps the legacy file by default
+        ``llm migrate-ckpt`` keeps the legacy file by default
         (``in_place=False``), and ``CheckpointManager.save_checkpoint`` only
         ever rewrites the split sidecars — so after migrate+train, a resume
         that prefers the legacy ``.pt`` silently discards every post-migration
@@ -298,7 +298,7 @@ class TestLegacyCheckpointLoad:
         # The DeprecationWarning fires once.
         deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
         assert len(deprecations) == 1
-        assert "llm-migrate-ckpt" in str(deprecations[0].message)
+        assert "llm migrate-ckpt" in str(deprecations[0].message)
 
         # Payload is the unified dict, with format_version absent (legacy).
         assert payload is not None

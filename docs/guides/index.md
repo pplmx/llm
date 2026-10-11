@@ -22,8 +22,8 @@
     - [模型量化](quantization.md) — GPTQ / AWQ / SmoothQuant / 混合精度
     - [量化参数搜索](quant_param_search.md) — 枚举 (bits, granularity) 最小化重建 MSE
     - [知识蒸馏](distillation.md) — `--task distill`、teacher-from-checkpoint、温度缩放 KL
-    - [模型剪枝](pruning.md) — `llm-prune`、`PrunedLinear` weight_mask、magnitude/random 策略
-    - [低秩分解](lowrank.md) — `llm-decompose`、`LowRankLinear` SVD U-V、rank 旋钮
+    - [模型剪枝](pruning.md) — `llm prune`、`PrunedLinear` weight_mask、magnitude/random 策略
+    - [低秩分解](lowrank.md) — `llm decompose`、`LowRankLinear` SVD U-V、rank 旋钮
     - [多模态扩展](multimodal.md) — `ModalityEncoderRegistry` + `MultimodalDataModule` 契约 spike
     - [图像→Token 预处理器](multimodal_preprocess.md) — ViT 风格 patchify、图像编码链路
     - [混合专家 (MoE)](expert_choice.md) — Expert Choice Routing（专家选 token、结构性负载均衡）
@@ -59,6 +59,6 @@
 | ------------------------------------------------ | ---------------------------- |
 | [预训练教程](../tutorials/01-pretraining.md)     | 从零训练一个小型语言模型     |
 | [微调教程](../tutorials/02-finetuning.md)        | SFT / DPO + LoRA/QLoRA 实操  |
-| [推理教程](../tutorials/03-inference.md)         | `llm-serve` 部署与 API 调用  |
+| [推理教程](../tutorials/03-inference.md)         | `llm serve` 部署与 API 调用  |
 | [系统架构](../reference/architecture.md)         | 分层设计、Registry 机制      |
-| [CLI 命令参考](../reference/cli.md)              | `llm-train` / `llm-serve` 等 |
+| [CLI 命令参考](../reference/cli.md)              | `llm train` / `llm serve` 等 |

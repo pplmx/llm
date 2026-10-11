@@ -18,8 +18,8 @@
 - safetensors 权重加载/保存 + HuggingFace Hub 发布 (`compat/hf_loader` / `hf_publisher`)
 - 8 种 PEFT 方法全支持 (LoRA/QLoRA/AdaLoRA/Prefix Tuning/IA³/BitFit/Adapter/Pfeiffer) + `PEFT_REGISTRY` + 服务化集成
 - 完整模型导出 (ONNX + TorchScript + Export Registry)
-- Checkpoint 格式统一 (ADR-006 + `llm-migrate-ckpt` CLI)
-- GPTQ 量化 + 混合精度量化 (CLI `llm-quantize`)
+- Checkpoint 格式统一 (ADR-006 + `llm migrate-ckpt` CLI)
+- GPTQ 量化 + 混合精度量化 (CLI `llm quantize`)
 - Paged Attention 全链路 + Prefix Caching + Continuous Batching
 - 性能优化: `torch.compile`, KV Cache 优化, Gradient Checkpointing
 
@@ -52,7 +52,7 @@
 - [x] 流式 checkpoint resume (`CheckpointContributor` + `stream_data_state`)
 - [x] C4 / The Pile / RedPajama 预设配置 (CLI/YAML 模板, 复用 `SOURCE_REGISTRY`)
 - [x] 数据质量过滤和去重工具 (`DedupTextSource` 包装层, 跨 run 持久化, T3 #39)
-- [x] 主路径预训练教程与 e2e (Main Path #1 切片: `configs/streaming_local_demo.yaml` + `configs/streaming_c4.yaml` + 教程重写 + 6 e2e tests, 对齐 `llm-train stream_lm`)
+- [x] 主路径预训练教程与 e2e (Main Path #1 切片: `configs/streaming_local_demo.yaml` + `configs/streaming_c4.yaml` + 教程重写 + 6 e2e tests, 对齐 `llm train stream_lm`)
 - [x] 数据版本控制 (DVC, P0 预训练 productization 最后一项: `src/llm/data/dvc.py` 懒加载 helper + `dvc.yaml` 模板 + `.dvcignore` + 23 unit tests, 配合 `source_fingerprint()` 计算 stable hash, 可选 `[dvc]` 依赖组, 无 dvc 时优雅降级)
 
 ### 2. 生态系统集成 ✅
@@ -62,7 +62,7 @@
 - [x] ONNX 导出
 - [x] OpenAI 兼容 Serving API (LangChain/LlamaIndex 可直接对接 HTTP)
 - [x] safetensors **保存** (`compat/hf_publisher.save_pretrained`, shipped in #25)
-- [x] checkpoint 格式统一 (P1, v2 split layout: `model.safetensors` + `meta.json` + `extra_state.pt`, 保留 backward-compat loader, ADR-006 + `llm-migrate-ckpt` CLI 收尾)
+- [x] checkpoint 格式统一 (P1, v2 split layout: `model.safetensors` + `meta.json` + `extra_state.pt`, 保留 backward-compat loader, ADR-006 + `llm migrate-ckpt` CLI 收尾)
 - [x] TorchScript 导出 (可扩 `export/` 模块, Tier 3 #33)
 - [x] Export registry (与 `BACKEND_REGISTRY` 对称, Tier 3 #32, 见 ADR-005)
 - [x] 发布预训练模型到 HuggingFace Hub (`compat/hf_publisher.push_to_hub`, shipped in #25)
@@ -118,7 +118,7 @@
   []` 预期改为 `not any(isinstance(c, AdaLoRAPruningCallback))`, 原意图 (registry path 不自动连 AdaLoRA pruning) 保留)
 - [x] **PEFT serving integration** (T2 PEFT #49 切片完成: `ServingConfig` 新增四个 PEFT 字段 `peft_method` / `peft_kwargs` / `peft_adapter_path` / `peft_merge`, Pydantic validator 拒绝未知方法名 + 跨字段一致性 (无 method 不能设
   adapter_path/kwargs; bitfit/qlora/prefix_tuning 不允许 merge); 新 `src/llm/serving/peft_adapter.py` 暴露 `load_peft_into_model` / `merge_peft_into_model` 两个 helper (thin wrappers over registry);
-  `load_model_and_tokenizer` 在 base ckpt 后应用 PEFT — 训练 → 推理闭环打通, 用户训完直接 `llm-serve` + env var 即可用 adapter 服务化, 无需手动 wrap + load_peft; 28 unit tests + e2e tests 覆盖 LoRA / IA³ / BitFit / Adapter /
+  `load_model_and_tokenizer` 在 base ckpt 后应用 PEFT — 训练 → 推理闭环打通, 用户训完直接 `llm serve` + env var 即可用 adapter 服务化, 无需手动 wrap + load_peft; 28 unit tests + e2e tests 覆盖 LoRA / IA³ / BitFit / Adapter /
   Pfeiffer 全 8 方法 round-trip + merge + 跨字段校验 + base-only 回归保护 + "训练→保存→服务" 端到端)
 
 ### 5. 高级分布式训练 🔄
@@ -242,7 +242,7 @@
     - [x] 实现优先级调度 (`PriorityScheduler`)
 - [x] **推理主路径对齐** (Main Path #3 切片完成: `configs/serve_local_demo.yaml` 冒烟 (回环 host + dummy 模型 + 无 auth, CPU 几秒可起) + `configs/serve_pretrained.yaml` 生产预设 (256×6 checkpoint + HF tokenizer + LoRA adapter
   sidecar + paged attention + prefix cache + torch.compile + batched backend + api_key 公开主机守卫); `ServingConfig.from_yaml()` 类方法 (与 `Config.from_yaml()` 对称 —— env vars 与 YAML 两种风格等价); 教程
-  `docs/tutorials/03-inference.md` 重写对齐 `llm-serve` 主路径 — 30 秒上手 (无 checkpoint 冒烟) + YAML/env vars 配置风格 + OpenAI 兼容 `/v1/chat/completions` + `/generate` 流式 + `/metrics` 域内指标 (tokens / batch fill / KV
+  `docs/tutorials/03-inference.md` 重写对齐 `llm serve` 主路径 — 30 秒上手 (无 checkpoint 冒烟) + YAML/env vars 配置风格 + OpenAI 兼容 `/v1/chat/completions` + `/generate` 流式 + `/metrics` 域内指标 (tokens / batch fill / KV
   cache hit / inflight) + 训练→服务 PEFT 闭环 (T2 PEFT #47-#49 一条龙) + 认证安全 (HMAC-SHA256 timing-safe + 公开主机守卫 T2 #7) + 结构化 JSON 日志 + Prometheus PromQL 查询样例 + 故障排除 (CUDA OOM / PEFT 加载失败 / 公开主机无 key / 请求超时 /
   batch fill 不变化) + 生产化 (性能开关按场景 / Docker / 客户端集成); 14 个新 e2e tests 在 `tests/e2e/test_serve_main_path.py` 覆盖 YAML 良构 + 端到端启动 + OpenAI chat completions round-trip + generate round-trip + generate 流式 +
   /metrics 域内指标 + invalid request 结构化错误 + 公开主机守卫拒绝无 key 启动 + 回环 host 无 key 成功启动 + X-API-Key / Bearer / 无 key / 错 key 四种认证路径 + LoRA train→save→serve→forward-不同于-base 端到端 (PEFT 闭环 headline 测试))
@@ -350,7 +350,7 @@
 - [x] 支持多种指令格式 (Alpaca, ShareGPT, etc.)
 - [x] 实现高效的 padding 和 masking 策略
 - [x] **SFT 主路径对齐** (Main Path #2 切片完成: `configs/sft_local_demo.yaml` 离线 Alpaca JSONL 冒烟 (CPU 几秒) + `configs/sft_alpaca.yaml` 生产 Alpaca (256×6, GPT-2 BPE, AMP, lr=2e-5); 教程
-  `docs/tutorials/02-finetuning.md` 重写对齐 `llm-train sft` 主路径 — Alpaca JSONL 三段式 (instruction/input/output) + Alpaca template + prompt-mask-only-on-response 损失 + PEFT (`peft_method` + `peft_save_path`)
+  `docs/tutorials/02-finetuning.md` 重写对齐 `llm train sft` 主路径 — Alpaca JSONL 三段式 (instruction/input/output) + Alpaca template + prompt-mask-only-on-response 损失 + PEFT (`peft_method` + `peft_save_path`)
   通过 T2 PEFT #47-#49 服务化一条龙; 6 个新 e2e tests 在 `tests/e2e/test_sft_main_path.py` 覆盖 YAML 良构 + 端到端运行 + 损失有限 + checkpoint 保存 + PEFT adapter sidecar 保存)
 
 #### 11.2 RLHF (Reinforcement Learning from Human Feedback)
@@ -473,8 +473,8 @@
 #### 13.4 模型压缩
 
 - [x] 实现知识蒸馏 (Hinton temperature-scaled KL: `DistillationLoss` + `--task distill`，teacher 从 CheckpointManager checkpoint 加载并冻结；见 [docs/guides/distillation.md](docs/guides/distillation.md))
-- [x] 实现模型剪枝 (`PrunedLinear` weight_mask + `llm-prune` CLI，magnitude/random 策略 + ratio/method 配置旋钮；见 [docs/guides/pruning.md](docs/guides/pruning.md))
-- [x] 探索低秩分解 (`LowRankLinear` SVD U-V 因子化 + `llm-decompose` CLI，rank / rank-ratio 旋钮 + 压缩比 / 重建误差报告；见 [docs/guides/lowrank.md](docs/guides/lowrank.md))
+- [x] 实现模型剪枝 (`PrunedLinear` weight_mask + `llm prune` CLI，magnitude/random 策略 + ratio/method 配置旋钮；见 [docs/guides/pruning.md](docs/guides/pruning.md))
+- [x] 探索低秩分解 (`LowRankLinear` SVD U-V 因子化 + `llm decompose` CLI，rank / rank-ratio 旋钮 + 压缩比 / 重建误差报告；见 [docs/guides/lowrank.md](docs/guides/lowrank.md))
 
 ---
 

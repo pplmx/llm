@@ -59,7 +59,7 @@ def test_model_state_dict_strips_torch_compile_prefix():
     """``model_state_dict`` must store plain keys for compiled models.
 
     ``torch.compile`` renames every key to ``_orig_mod.*``; checkpoints
-    stored that way cannot be loaded by ``llm-serve`` (plain ``DecoderModel``,
+    stored that way cannot be loaded by ``llm serve`` (plain ``DecoderModel``,
     no compile graph), silently dropping every weight.
     """
     from llm.training.distributed import model_state_dict
@@ -93,7 +93,7 @@ def test_fsdp_over_compile_roundtrip_plain_keys():
 
     The engine compiles the model *before* wrapping it in FSDP, so an FSDP
     FULL_STATE_DICT names its keys ``_orig_mod.*``.  Save must strip that
-    prefix (plain keys, portable to ``llm-serve`` / DDP), and load must re-add
+    prefix (plain keys, portable to ``llm serve`` / DDP), and load must re-add
     it for a compiled-FSDP model (round-76 deep-dive D1 — previously the
     default fsdp job could not resume its own checkpoint).
     """

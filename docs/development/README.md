@@ -48,5 +48,5 @@
 3. **运行训练**: 在命令行中执行以下命令:
 
     ```bash
-    uv run llm-train --task <your_task_name>
+    uv run llm train --task <your_task_name>
     ```

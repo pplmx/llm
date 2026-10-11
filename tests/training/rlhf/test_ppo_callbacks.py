@@ -177,7 +177,7 @@ def test_ppo_fires_on_epoch_end(tmp_path, tiny_model, monkeypatch):
 def test_ppo_standard_observers_do_not_crash(tmp_path, tiny_model, monkeypatch):
     """Custom-loop tasks (PPO/RLHF) expose no engine-owned optimizer, so the
     standard observer callbacks must NOT raise (RIL ISS-402). Regression: the
-    ``llm-train --task ppo`` callback list always registers
+    ``llm train --task ppo`` callback list always registers
     ``LRSchedulerCallback`` + ``TensorBoardLogger``, and both raised
     ``RuntimeError('optimizer is not available')`` on the first step/epoch —
     a deterministic crash."""

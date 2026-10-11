@@ -1,4 +1,4 @@
-"""``llm-migrate-ckpt`` — convert legacy v0.0.5 ``.pt`` checkpoints to v2.
+"""``llm migrate-ckpt`` — convert legacy v0.0.5 ``.pt`` checkpoints to v2.
 
 This CLI closes the gap introduced by the v2 split-layout format
 (ADR-006, commit ``4b9cf68``). Training checkpoints in v0.0.5 and
@@ -14,12 +14,12 @@ silence the warning permanently.
 
 Usage:
 
-    llm-migrate-ckpt path/to/latest.pt              # convert (keep legacy)
-    llm-migrate-ckpt path/to/latest                  # looks for latest.pt
-    llm-migrate-ckpt path/to/latest.pt --in-place    # delete legacy after success
-    llm-migrate-ckpt path/to/latest.pt --verify      # round-trip check (load new, compare)
-    llm-migrate-ckpt path/to/latest.pt --dry-run     # print plan, write nothing
-    llm-migrate-ckpt path/to/latest.pt --overwrite   # replace an existing split layout
+    llm migrate-ckpt path/to/latest.pt              # convert (keep legacy)
+    llm migrate-ckpt path/to/latest                  # looks for latest.pt
+    llm migrate-ckpt path/to/latest.pt --in-place    # delete legacy after success
+    llm migrate-ckpt path/to/latest.pt --verify      # round-trip check (load new, compare)
+    llm migrate-ckpt path/to/latest.pt --dry-run     # print plan, write nothing
+    llm migrate-ckpt path/to/latest.pt --overwrite   # replace an existing split layout
 
 Exit codes:
 
@@ -47,6 +47,7 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
     add_completion=False,
+    invoke_without_command=True,
     help=(
         "Convert a legacy v0.0.5 single-file .pt training checkpoint to "
         "the v2 split layout (model.safetensors + meta.json + extra_state.pt)."
@@ -83,7 +84,7 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
     # Legacy side: load the .pt directly (bypassing the helper).
     # ``weights_only=True`` (RIL ISS-170): both sides are framework-authored
     # tensors+primitives payloads; arbitrary-pickle loading an untrusted file
-    # here would be an RCE on `llm-migrate-ckpt`. A corrupt blob / bare
+    # here would be an RCE on `llm migrate-ckpt`. A corrupt blob / bare
     # ``torch.save(model)`` raises UnpicklingError/RuntimeError before any
     # comparison — surface it as a clean verification failure, not a raw
     # traceback (RIL ISS-329).
@@ -167,7 +168,7 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
     return True, ""
 
 
-@app.command()
+@app.callback()
 def main(
     path: Path = typer.Argument(
         ...,

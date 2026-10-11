@@ -1,4 +1,4 @@
-"""End-to-end: ``llm-quantize`` output is directly servable.
+"""End-to-end: ``llm quantize`` output is directly servable.
 
 Closes the quantization closed loop: a model quantized with the GPTQ CLI
 (a bare ``torch.save`` module blob) must be loadable by the serving loader

@@ -1272,7 +1272,7 @@ def test_tp_moe_state_dict_roundtrip_cpu():
 
     Each rank holds a DISJOINT expert subset and a replicated full gate; the
     gathered full dict must equal the reference bit-for-bit (this is what
-    ``llm-serve`` / resume rely on) and loading it back must leave the TP
+    ``llm serve`` / resume rely on) and loading it back must leave the TP
     forward unchanged (TASK-207).
     """
     _setup_tp_env()

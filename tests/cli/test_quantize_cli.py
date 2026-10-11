@@ -1,4 +1,4 @@
-"""Tests for ``llm-quantize`` CLI — currently ``gptq`` subcommand.
+"""Tests for ``llm quantize`` CLI — currently ``gptq`` subcommand.
 
 The CLI is a thin wrapper around
 :func:`llm.quantization.gptq.quantize_model_gptq`, plus mutually-exclusive
@@ -40,7 +40,7 @@ def runner() -> CliRunner:
 
 
 def test_cli_help(runner: CliRunner):
-    """`llm-quantize gptq --help` exits 0 and lists expected flags."""
+    """`llm quantize gptq --help` exits 0 and lists expected flags."""
     result = runner.invoke(app, ["gptq", "--help"])
     assert result.exit_code == 0, result.output
     out = strip_ansi(result.output)
@@ -51,7 +51,7 @@ def test_cli_help(runner: CliRunner):
 
 
 def test_cli_root_help_lists_gptq_subcommand(runner: CliRunner):
-    """`llm-quantize --help` mentions the `gptq` subcommand."""
+    """`llm quantize --help` mentions the `gptq` subcommand."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0, result.output
     assert "gptq" in strip_ansi(result.output)
@@ -530,7 +530,7 @@ def test_cli_asym_rejected_as_argument_error(runner: CliRunner, tmp_path: Path):
 
 def test_fp8_default_activation_is_dynamic_and_needs_no_calib(runner: CliRunner, tmp_path: Path):
     """Regression: ``static`` being the default made the simplest documented
-    ``llm-quantize fp8 --model ... --output ...`` call exit 1 demanding
+    ``llm quantize fp8 --model ... --output ...`` call exit 1 demanding
     calibration. The default must be ``dynamic`` (per-forward scaling, no
     calibration)."""
     import torch

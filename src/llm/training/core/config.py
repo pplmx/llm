@@ -997,7 +997,7 @@ class Config(BaseSettings):
         if not path.exists():
             raise FileNotFoundError(
                 f"config file not found: {path!s}. Check the --config-path value "
-                "(`uv run llm-train --help`) — a missing path cannot silently "
+                "(`uv run llm train --help`) — a missing path cannot silently "
                 "fall back to defaults."
             )
         with path.open(encoding="utf-8") as f:

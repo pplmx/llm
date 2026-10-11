@@ -1,4 +1,4 @@
-"""llm-train CLI flag-contract tests (RIL ISS-411).
+"""llm train CLI flag-contract tests (RIL ISS-411).
 
 ``--compile`` / ``--amp`` must be *overrides*: when the flag is omitted the
 YAML config stays authoritative. A ``True`` typer default previously

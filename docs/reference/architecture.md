@@ -191,7 +191,7 @@ All configuration is managed via Pydantic models in `src/llm/training/core/confi
   （如 `LLM_DISTRIBUTED__GPUS_PER_NODE=4`）；`DistributedConfig` /
   `ServingConfig` 额外读取各自的短名环境变量（`MASTER_ADDR` / `GPUS_PER_NODE` /
   `LLM_SERVING_*`）。
-- **CLI Integration**: `llm-train` 暴露少量扁平覆盖参数（`--epochs`、`--lr` 等），
+- **CLI Integration**: `llm train` 暴露少量扁平覆盖参数（`--epochs`、`--lr` 等），
   模型 / 数据 / 优化器细节统一走 YAML。
 
 ### Config Structure
@@ -366,12 +366,12 @@ graph LR
 ```mermaid
 sequenceDiagram
     participant User
-    participant CLI as llm-train
+    participant CLI as llm train
     participant Engine as TrainingEngine
     participant DDP as DistributedDataParallel
     participant Model as DecoderModel
 
-    User->>CLI: llm-train --task lm
+    User->>CLI: llm train --task lm
     CLI->>Engine: Initialize with Config
     Engine->>DDP: Wrap Model
 
@@ -398,13 +398,13 @@ HuggingFace or local files:
 ```mermaid
 sequenceDiagram
     participant User
-    participant CLI as llm-train
+    participant CLI as llm train
     participant DM as StreamingTextDataModule
     participant Source as TextSource
     participant Dataset as StreamingTextDataset
     participant Tokenizer as Tokenizer
 
-    User->>CLI: llm-train --task stream_lm
+    User->>CLI: llm train --task stream_lm
     CLI->>DM: setup()
     DM->>Source: build_text_source(config)
     Source->>Source: HFStreamTextSource or LocalLineTextSource

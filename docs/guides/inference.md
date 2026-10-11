@@ -305,7 +305,7 @@ Operators normally grep for this line:
 
 ```bash
 # Tail server logs and pull only the startup config line
-uv run llm-serve 2>&1 | tee /tmp/llm-serve.log | grep '"event": "server_config"'
+uv run llm serve 2>&1 | tee /tmp/llm serve.log | grep '"event": "server_config"'
 
 ## Server Binding & Authentication Policy
 
@@ -332,12 +332,12 @@ Two options, both required:
 
 ```bash
 # Option A: keep loopback (default, safe for local development)
-LLM_SERVING_HOST=127.0.0.1 uv run llm-serve
+LLM_SERVING_HOST=127.0.0.1 uv run llm serve
 
 # Option B: bind to all interfaces + set an API key (containerized deployment)
 LLM_SERVING_HOST=0.0.0.0 \
 LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
-uv run llm-serve
+uv run llm serve
 ```
 
 When `api_key` is set, all `/generate`, `/batch_generate`,
@@ -348,7 +348,7 @@ the only route that stays public.
 
 # Re-extract from a saved log file
 
-grep '"event": "server_config"' /var/log/llm-serve.log | tail -1 | jq .
+grep '"event": "server_config"' /var/log/llm serve.log | tail -1 | jq .
 
 ```text
 

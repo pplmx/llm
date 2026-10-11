@@ -5,13 +5,13 @@ description: >
   framework): TrainingTask subclass + paired DataModule + TASK_REGISTRY
   registration + optional streaming TextSource. Use when the user wants a new
   training objective, a new DataModule, a new streaming data source, or asks
-  "how do I add a task for llm-train --task" (新训练任务 / 新数据模块 /
+  "how do I add a task for llm train --task" (新训练任务 / 新数据模块 /
   新流式数据源).
 ---
 
 # Add a Training Task
 
-`llm-train --task <name>` dispatches through `TASK_REGISTRY`
+`llm train --task <name>` dispatches through `TASK_REGISTRY`
 (`src/llm/training/task_registry.py`), which binds a `TrainingTask` subclass
 to its `BaseDataModule` factory as a frozen `TaskSpec`. Built-ins live in
 `src/llm/training/tasks/builtin.py`: `regression`, `lm`, `stream_lm`, `sft`,
@@ -71,7 +71,7 @@ to its `BaseDataModule` factory as a frozen `TaskSpec`. Built-ins live in
 6. **Tests** (see `write-test` skill): `tests/training/` for the task
    (forward/backward step, checkpoint round-trip when the task carries extra
    state), `tests/data/` for the DataModule/source. Add at least one e2e test
-   exercising `llm-train --task <name>` end-to-end on tiny fixtures.
+   exercising `llm train --task <name>` end-to-end on tiny fixtures.
 
 ## Pitfalls
 

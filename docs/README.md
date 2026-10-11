@@ -62,7 +62,7 @@ Registry + entry points，模型、数据源、后端、PEFT 均可扩展。
 - [快速开始](getting-started.md) — 5 分钟跑通第一个训练
 - [预训练教程](tutorials/01-pretraining.md) — 流式大规模预训练全流程
 - [微调教程](tutorials/02-finetuning.md) — SFT / DPO + LoRA/QLoRA
-- [推理教程](tutorials/03-inference.md) — `llm-serve` 部署与 OpenAI SDK 集成
+- [推理教程](tutorials/03-inference.md) — `llm serve` 部署与 OpenAI SDK 集成
 
 ### 🚀 训练与数据
 
@@ -89,7 +89,7 @@ Registry + entry points，模型、数据源、后端、PEFT 均可扩展。
 | 文档                                           | 说明                          |
 | ---------------------------------------------- | ----------------------------- |
 | [系统架构](reference/architecture.md)          | 分层设计、Registry 机制       |
-| [CLI 命令](reference/cli.md)                   | `llm-train` / `llm-serve` 等  |
+| [CLI 命令](reference/cli.md)                   | `llm train` / `llm serve` 等  |
 | [API Reference](api/index.md)                  | 按子包组织的自动生成 API 文档 |
 | [架构决策 (ADR)](adr/README.md)                | 已锁定的架构决策与理由        |
 | [开发指南](development/README.md)              | 组件、扩展、DDP 深入          |
@@ -124,13 +124,13 @@ docs/
 just init
 
 # 流式预训练（本地冒烟，CPU 可跑）
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml
 
 # 启动 OpenAI 兼容推理服务
-uv run llm-serve
+uv run llm serve
 
 # GPTQ 量化
-uv run llm-quantize gptq --model ckpt.pt --output ckpt-int4.pt \
+uv run llm quantize gptq --model ckpt.pt --output ckpt-int4.pt \
     --calib-data texts.txt --tokenizer gpt2 --bits 4
 
 # 质量门槛

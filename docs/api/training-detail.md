@@ -123,7 +123,7 @@ Defined in `src/llm/training/rlhf/`:
 The training CLI (`llm.training.train`) provides:
 
 ```bash
-llm-train --task <task_name> \
+llm train --task <task_name> \
   --config-path <config.yaml> \
   --epochs <N> \
   --batch-size <N> \
@@ -132,7 +132,7 @@ llm-train --task <task_name> \
 
 Available tasks are dynamically registered via `TASK_REGISTRY`
 (`src/llm/training/tasks/builtin.py`); the `--task` choices in
-`llm-train --help` are the registered names.
+`llm train --help` are the registered names.
 
 CLI 覆盖只支持 `--epochs` / `--batch-size` / `--lr` / `--num-samples` /
 `--steps-per-epoch` / `--compile` / `--amp`；resume / PEFT / checkpoint
@@ -142,7 +142,7 @@ CLI 覆盖只支持 `--epochs` / `--batch-size` / `--lr` / `--num-samples` /
 
 ```mermaid
 sequenceDiagram
-    participant CLI as llm-train
+    participant CLI as llm train
     participant Engine as TrainingEngine
     participant Task as TrainingTask
     participant Model as DecoderModel

@@ -10,25 +10,25 @@ tags:
 
 | 命令               | 用途                                             |
 | ------------------ | ------------------------------------------------ |
-| `llm-train`        | 训练（预训练 / SFT / DPO / reward / PPO / demo） |
-| `llm-serve`        | OpenAI 兼容推理服务                              |
-| `llm-quantize`     | GPTQ / FP8 量化                                  |
-| `llm-migrate-ckpt` | 旧版 checkpoint 迁移到 v2 split 布局             |
-| `llm-prune`        | 权重剪枝（稀疏化模型 Linear 权重）               |
-| `llm-decompose`    | 低秩分解（SVD U-V 因子化 Linear 权重）           |
+| `llm train`        | 训练（预训练 / SFT / DPO / reward / PPO / demo） |
+| `llm serve`        | OpenAI 兼容推理服务                              |
+| `llm quantize`     | GPTQ / FP8 量化                                  |
+| `llm migrate-ckpt` | 旧版 checkpoint 迁移到 v2 split 布局             |
+| `llm prune`        | 权重剪枝（稀疏化模型 Linear 权重）               |
+| `llm decompose`    | 低秩分解（SVD U-V 因子化 Linear 权重）           |
 
-> `scripts/` 下的 demo 脚本（如 `train_simple_decoder.py`）不是注册 CLI，仅作最小演示；生产请走 `llm-train`。
+> `scripts/` 下的 demo 脚本（如 `train_simple_decoder.py`）不是注册 CLI，仅作最小演示；生产请走 `llm train`。
 
 ---
 
-## llm-train
+## llm train
 
 统一训练 CLI（入口 `llm.training.train:app`）。**注意：任务名通过 `--task` 传入，不是子命令。**
 
 ### 用法
 
 ```bash
-llm-train --task <task> [OPTIONS]
+llm train --task <task> [OPTIONS]
 ```
 
 ### 任务（`--task`，必填）
@@ -67,16 +67,16 @@ llm-train --task <task> [OPTIONS]
 
 ```bash
 # 流式预训练（本地冒烟，CPU 可跑）
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml
 
 # 流式预训练（C4，生产规模）
-uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_c4.yaml
 
 # SFT + LoRA：PEFT 走 YAML（training 段），不是 CLI 参数
-uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
+uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 
 # CLI 覆盖实验参数
-uv run llm-train --task sft --config-path configs/sft_alpaca.yaml \
+uv run llm train --task sft --config-path configs/sft_alpaca.yaml \
   --epochs 3 \
   --batch-size 16 \
   --lr 2e-5
@@ -84,14 +84,14 @@ uv run llm-train --task sft --config-path configs/sft_alpaca.yaml \
 
 ---
 
-## llm-serve
+## llm serve
 
 推理服务 CLI（入口 `llm.serving.api:main`），启动 OpenAI 兼容 HTTP API。**只读环境变量，没有 `--config` 参数。**
 
 ### 用法
 
 ```bash
-llm-serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（默认监听 8000，可用 LLM_SERVING_PORT 覆盖）
+llm serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（默认监听 8000，可用 LLM_SERVING_PORT 覆盖）
 ```
 
 ### 环境变量配置
@@ -164,29 +164,29 @@ llm-serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（�
 
 ```bash
 # 基础服务（dummy 模型，smoke test）
-uv run llm-serve
+uv run llm serve
 
 # 带 checkpoint 和 HF tokenizer
 LLM_SERVING_MODEL_PATH=checkpoints/epoch_5 \
 LLM_SERVING_TOKENIZER_PATH=gpt2 \
 LLM_SERVING_TOKENIZER_TYPE=hf \
-uv run llm-serve
+uv run llm serve
 
 # 生产部署（Paged Attention + API key）
 LLM_SERVING_HOST=0.0.0.0 \
 LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
 LLM_SERVING_USE_PAGED_ATTENTION=true \
 LLM_SERVING_GENERATION_BACKEND=batched \
-uv run llm-serve
+uv run llm serve
 ```
 
 ### 公开主机守卫
 
-绑定非回环地址（`0.0.0.0`、公网 IP 等）且未配置 `LLM_SERVING_API_KEY` 时，`llm-serve` **拒绝启动**（fail-closed），避免匿名暴露推理端点。
+绑定非回环地址（`0.0.0.0`、公网 IP 等）且未配置 `LLM_SERVING_API_KEY` 时，`llm serve` **拒绝启动**（fail-closed），避免匿名暴露推理端点。
 
 ---
 
-## llm-quantize
+## llm quantize
 
 模型量化 CLI，支持 `gptq`（Frantar 2022 Hessian-aware 4/8-bit PTQ）与 `fp8`
 （E4M3/E5M2 float8 权重 + 激活缩放，模拟 fp8 matmul）两个子命令。
@@ -195,7 +195,7 @@ uv run llm-serve
 ### 用法
 
 ```bash
-llm-quantize gptq \
+llm quantize gptq \
     --model PATH                 # torch.save blob（含 DecoderModel）\
     --output PATH                # 量化模型输出路径 \
     --calib-data PATH            # 原始文本（每行一个样本）— 需搭配 --tokenizer \
@@ -232,7 +232,7 @@ llm-quantize gptq \
 
 ```bash
 # 用 HF tokenizer 分词原始文本
-llm-quantize gptq \
+llm quantize gptq \
     --model ckpt.pt \
     --output ckpt-int4.pt \
     --calib-data calibration_texts.txt \
@@ -242,14 +242,14 @@ llm-quantize gptq \
     --act-order
 
 # 用预分词 .pt 文件（无需 --tokenizer）
-llm-quantize gptq \
+llm quantize gptq \
     --model ckpt.pt \
     --output ckpt-int8.pt \
     --calib-data-tokens calib_tokens.pt \
     --bits 8
 
 # 只量化指定层，其余保持 fp32
-llm-quantize gptq \
+llm quantize gptq \
     --model ckpt.pt \
     --output ckpt-mixed.pt \
     --calib-data-tokens calib_tokens.pt \
@@ -259,17 +259,17 @@ llm-quantize gptq \
 
 ### 与 Python API 的关系
 
-`llm-quantize gptq` 是 `llm.quantization.gptq.quantize_model_gptq` 的薄包装。
+`llm quantize gptq` 是 `llm.quantization.gptq.quantize_model_gptq` 的薄包装。
 所有量化算法参数（Hessian 阻尼、列块大小、act-order 等）直接映射到 `GPTQConfig`
 的字段 — Python 端的 `GPTQConfig.__post_init__` 校验仍会执行，作为 defense-in-depth
 兜底。CLI 端提前校验只为给用户一个清晰的一行错误信息，而不是堆栈帧。
 
-### llm-quantize fp8
+### llm quantize fp8
 
 FP8 子命令：真实 float8 权重（1 字节/权重），fp32 模拟 fp8 matmul。
 
 ```bash
-llm-quantize fp8 \
+llm quantize fp8 \
     --model PATH                 # torch.save blob（含 DecoderModel）\
     --output PATH                # 量化模型输出路径 \
     --weight-dtype e4m3|e5m2     # E4M3FN（默认）/ E5M2（更大指数范围）\
@@ -289,18 +289,18 @@ llm-quantize fp8 \
 - static 激活必须提供 `--calib-data` / `--calib-data-tokens` 二选一（`--calib-data`
   需搭配 `--tokenizer`）；dynamic 激活下出现任何校准参数会被**拒绝**而不是静默忽略
 
-`llm-quantize fp8` 是 `llm.quantization.fp8.quantize_model_fp8` 的薄包装，FP8
+`llm quantize fp8` 是 `llm.quantization.fp8.quantize_model_fp8` 的薄包装，FP8
 策略（per-layer 权重/激活 dtype）见[混合精度量化指南](../guides/quantization.md)。
 
 ---
 
-## llm-prune
+## llm prune
 
 把预训练模型的 Linear 权重按比例置零并保存新 blob（结构化稀疏 / 剪枝示意项）。
 机制与策略细节见[模型剪枝指南](../guides/pruning.md)。
 
 ```bash
-llm-prune \
+llm prune \
     --model PATH           # torch.save blob（含 DecoderModel）\
     --output PATH          # 剪枝后模型输出路径 \
     --ratio F              # 每个 Linear 置零比例（0 < F < 1，默认 0.5）\
@@ -316,13 +316,13 @@ llm-prune \
 
 ---
 
-## llm-decompose
+## llm decompose
 
 把预训练模型的 Linear 权重做低秩因子分解（SVD U·V）并保存新 blob。
 机制与 rank 选择见[低秩分解指南](../guides/lowrank.md)。
 
 ```bash
-llm-decompose \
+llm decompose \
     --model PATH           # torch.save blob（含 DecoderModel）\
     --output PATH          # 低秩模型输出路径 \
     --rank N | --rank-ratio F  # 必须二选一；N 为显式 rank，F 自动 rank = F * min(out, in) \
@@ -334,7 +334,7 @@ llm-decompose \
 
 ---
 
-## llm-migrate-ckpt
+## llm migrate-ckpt
 
 将 v0.0.5 及更早的旧式单文件 `.pt` checkpoint 转换为 v2 split 三件套
 （`<stem>.safetensors` + `<stem>.meta.json` + `<stem>.extra_state.pt`）。
@@ -343,7 +343,7 @@ llm-decompose \
 ### 用法
 
 ```bash
-llm-migrate-ckpt [OPTIONS] {path}
+llm migrate-ckpt [OPTIONS] {path}
 ```
 
 `path` 可以是 `<name>.pt` 或 stem `<name>`（自动补 `.pt`）。
@@ -361,13 +361,13 @@ llm-migrate-ckpt [OPTIONS] {path}
 
 ```bash
 # 基本转换（保留旧 .pt）
-llm-migrate-ckpt checkpoints/epoch_5.pt
+llm migrate-ckpt checkpoints/epoch_5.pt
 
 # 转换 + 校验 + 删除旧文件
-llm-migrate-ckpt checkpoints/epoch_5 --verify --in-place
+llm migrate-ckpt checkpoints/epoch_5 --verify --in-place
 
 # 只预览会做什么
-llm-migrate-ckpt checkpoints/epoch_5 --dry-run
+llm migrate-ckpt checkpoints/epoch_5 --dry-run
 ```
 
 ---

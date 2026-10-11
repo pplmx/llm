@@ -287,7 +287,7 @@ mkdir -p data
 python -c "print('\n'.join(f'sample line {i}' for i in range(500)))" > data/demo.txt
 
 # 2. Train for 1 epoch (smoke test)
-uv run llm-train --task stream_lm \
+uv run llm train --task stream_lm \
   --config-path configs/streaming_local_demo.yaml \
   --epochs 1 --steps-per-epoch 5
 
@@ -297,13 +297,13 @@ uv run llm-train --task stream_lm \
 #      checkpoint:
 #        checkpoint_dir: checkpoints/demo
 #        resume_from_checkpoint: checkpoints/demo/latest
-uv run llm-train --task stream_lm \
+uv run llm train --task stream_lm \
   --config-path configs/streaming_local_demo.yaml \
   --epochs 1 --steps-per-epoch 5
 
 # 4. Scale to production with C4
 #    max_steps 也是 YAML（training.max_steps），无 CLI 参数。
-uv run llm-train --task stream_lm \
+uv run llm train --task stream_lm \
   --config-path configs/streaming_c4.yaml \
   --epochs 1
 ```

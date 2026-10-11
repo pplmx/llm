@@ -45,7 +45,7 @@
     - **HuggingFace Integration**: Direct support for HF Tokenizers (GPT-2, Llama, etc.).
     - Modular `DataModule` design for text datasets.
     - Legacy Character-level tokenizer for simple experiments.
-- **CLI Tools**: `llm-train`, `llm-serve`, `llm-quantize`, `llm-prune`, `llm-decompose`, `llm-migrate-ckpt` commands for easy usage.
+- **CLI Tools**: `llm train`, `llm serve`, `llm quantize`, `llm prune`, `llm decompose`, `llm migrate-ckpt` commands for easy usage.
 
 ## Quick Start
 
@@ -57,15 +57,15 @@ To get a model training quickly, install the framework and run the CLI:
     uv tool install git+https://github.com/pplmx/llm.git
     ```
 
-   This provides the `llm-train`, `llm-serve`, `llm-quantize`, `llm-prune`,
-   `llm-decompose`, and `llm-migrate-ckpt` commands. (See
+   This provides the `llm train`, `llm serve`, `llm quantize`, `llm prune`,
+   `llm decompose`, and `llm migrate-ckpt` commands. (See
    [Installation](#installation) for the library form and the developer
    workflow.)
 
 2. **Run a Training Example**: Execute the main training script with a language modeling task.
 
     ```bash
-    llm-train --task lm --epochs 1 --batch-size 32
+    llm train --task lm --epochs 1 --batch-size 32
     ```
 
    This command will train a language model for 1 epoch with a batch size of 32.
@@ -73,7 +73,7 @@ To get a model training quickly, install the framework and run the CLI:
 3. **Start Inference Server** (optional):
 
     ```bash
-    llm-serve
+    llm serve
     ```
 
    The server will be available at `http://localhost:8000` with OpenAI-compatible API.
@@ -81,7 +81,7 @@ To get a model training quickly, install the framework and run the CLI:
 4. **Quantize a Model with GPTQ** (optional):
 
     ```bash
-    llm-quantize gptq \
+    llm quantize gptq \
         --model ckpt.pt \
         --output ckpt-int4.pt \
         --calib-data texts.txt \
@@ -114,9 +114,9 @@ Use `llm` as a **library** dependency of your own project:
 uv add git+https://github.com/pplmx/llm.git
 ```
 
-Or install it as a **command-line tool** — this provides the `llm-train`,
-`llm-serve`, `llm-quantize`, `llm-prune`, `llm-decompose`, and
-`llm-migrate-ckpt` commands:
+Or install it as a **command-line tool** — this provides the `llm train`,
+`llm serve`, `llm quantize`, `llm prune`, `llm decompose`, and
+`llm migrate-ckpt` commands:
 
 ```bash
 uv tool install git+https://github.com/pplmx/llm.git

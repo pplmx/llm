@@ -7,10 +7,10 @@ tags:
 # 模型量化指南
 
 本文介绍框架内置的后训练量化（PTQ）方法——GPTQ、AWQ、SmoothQuant 和简单 PTQ——
-以及如何用 `llm-quantize` CLI 或 Python API 对训练好的模型做压缩。
+以及如何用 `llm quantize` CLI 或 Python API 对训练好的模型做压缩。
 
 > 对应 API 文档见 [llm.quantization](../api/quantization.md)，CLI 参数速查见
-> [CLI 命令参考](../reference/cli.md#llm-quantize)。
+> [CLI 命令参考](../reference/cli.md#llm quantize)。
 
 ## 方法总览
 
@@ -28,8 +28,8 @@ tags:
   `SmoothQuantLinear`），正向传播在内存中解量化，数学上等价于原始层。
 - 所有方法都拒绝重复量化已量化层，并在模型不含 `nn.Linear`、`target_modules`
   无匹配、校准数据为空时给出明确错误。
-- 量化后的模型仍是 `DecoderModel`，可直接被 `llm-serve` 的 loader 加载
-  （`llm-serve` 自动识别量化 blob）。
+- 量化后的模型仍是 `DecoderModel`，可直接被 `llm serve` 的 loader 加载
+  （`llm serve` 自动识别量化 blob）。
 
 ## 何时选择哪种方法
 
@@ -45,7 +45,7 @@ tags:
 
 ```bash
 # 原始文本校准（需要 HF tokenizer）
-uv run llm-quantize gptq \
+uv run llm quantize gptq \
     --model checkpoints/epoch_5.pt \
     --output checkpoints/epoch_5-int4.pt \
     --calib-data calibration.txt \
@@ -55,7 +55,7 @@ uv run llm-quantize gptq \
     --act-order
 
 # 预分词校准（无需 --tokenizer）
-uv run llm-quantize gptq \
+uv run llm quantize gptq \
     --model checkpoints/epoch_5.pt \
     --output checkpoints/epoch_5-int8.pt \
     --calib-data-tokens calib_tokens.pt \
@@ -64,7 +64,7 @@ uv run llm-quantize gptq \
 
 退出码约定：`0` 成功；`1` 参数校验失败（`--bits` 非法、缺 `--tokenizer`、
 `--model` 不存在等）；`2` 运行期失败（`torch.load` / 分词 / 量化内核 / 保存）。
-完整参数表与校验规则见 [CLI 命令参考](../reference/cli.md#llm-quantize)。
+完整参数表与校验规则见 [CLI 命令参考](../reference/cli.md#llm quantize)。
 
 ## 用 Python API 量化
 
@@ -143,20 +143,20 @@ uv run python scripts/quantize_eval.py \
 
 ## 量化模型的服务部署
 
-`llm-serve` 的 loader 能直接识别 `llm-quantize` 输出的量化 blob
+`llm serve` 的 loader 能直接识别 `llm quantize` 输出的量化 blob
 （self-contained，打包权重 + scale + 每层量化参数），无需重建模型结构：
 
 ```bash
 LLM_SERVING_MODEL_PATH=checkpoints/epoch_5-int4.pt \
 LLM_SERVING_TOKENIZER_TYPE=hf \
 LLM_SERVING_TOKENIZER_PATH=gpt2 \
-uv run llm-serve
+uv run llm serve
 ```
 
 ## 进一步阅读
 
 - API：`llm.quantization`（[quantization.md](../api/quantization.md)）
-- CLI 参数：[llm-quantize](../reference/cli.md#llm-quantize)
+- CLI 参数：[llm quantize](../reference/cli.md#llm quantize)
 - 架构决策：[ADR-007 GPTQ](../adr/007-gptq-integration.md)、
   [ADR-008 混合精度](../adr/008-mixed-precision-quantization.md)、
   [ADR-009 AWQ](../adr/009-awq-integration.md)、

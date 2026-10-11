@@ -60,17 +60,17 @@ deep learning models train" > data/demo.txt
 
 ## 3. 训练模型
 
-主流路径：`llm-train` CLI（推荐生产使用），跑仓库自带的流式预训练冒烟配置：
+主流路径：`llm train` CLI（推荐生产使用），跑仓库自带的流式预训练冒烟配置：
 
 ```bash
 # 流式预训练（CPU 几秒完成，走 streaming → forward → backward → checkpoint 全链路）
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml
 ```
 
 命令行覆盖 YAML 字段（实验 sweep 常用）：
 
 ```bash
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml \
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml \
     --epochs 3 \
     --steps-per-epoch 20 \
     --batch-size 8 \
@@ -93,7 +93,7 @@ uv run scripts/train_simple_decoder.py --file-path data/demo.txt
 
 ```bash
 # 启动推理服务（推荐）
-uv run llm-serve
+uv run llm serve
 
 # 然后通过 OpenAI 兼容 API 调用
 curl http://127.0.0.1:8000/v1/chat/completions \
@@ -150,7 +150,7 @@ print(output)
 **Q: GPU 不可用怎么办？**
 
 ```bash
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml
 # （demo 配置默认 CPU 可跑；AMP / NCCL 需要 GPU）
 ```
 
@@ -159,10 +159,10 @@ uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yam
 
 **Q: 训练中断如何恢复？**
 
-在 YAML 的 `checkpoint` 段设置 resume 路径（`llm-train` 没有 resume 的 CLI 参数）：
+在 YAML 的 `checkpoint` 段设置 resume 路径（`llm train` 没有 resume 的 CLI 参数）：
 
 ```bash
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml
 # checkpoint:
 #   resume_from_checkpoint: checkpoints/latest
 ```

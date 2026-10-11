@@ -1,4 +1,4 @@
-# Remove `reload=True` from `llm-serve` entry (Finding O)
+# Remove `reload=True` from `llm serve` entry (Finding O)
 
 ## Source
 docs/audits/2026-07-12-technical-due-diligence.md §Finding O (LOW)

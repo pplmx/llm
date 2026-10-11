@@ -1,7 +1,7 @@
 # `llm.cli` — CLI Tools
 
 Command-line utilities registered under `pyproject.toml` `[project.scripts]`
-(`llm-train` lives in `llm.training.train`; the `llm-serve` entry point
+(`llm train` lives in `llm.training.train`; the `llm serve` entry point
 lives in `llm.serving.api`). Each module below is a thin Typer app.
 
 ## Checkpoint migration

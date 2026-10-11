@@ -56,7 +56,7 @@ class RegressionTask(TrainingTask):
 ```
 
 现在, 在 YAML 中配置 `training.scheduler_type: exponential` 即可使用新的调度器
-（`llm-train` 没有 `--scheduler-type` 之类的嵌套 CLI 参数，模型/优化器细节统一走 YAML）。
+（`llm train` 没有 `--scheduler-type` 之类的嵌套 CLI 参数，模型/优化器细节统一走 YAML）。
 
 ---
 
@@ -210,9 +210,9 @@ TASK_REGISTRY.register(
 ```
 
 第三方包也可以不改仓库代码，通过 `pyproject.toml` 的 `llm.tasks` entry-point
-组注册（`llm-train` 启动时会 `load_entry_point_hooks("llm.tasks")`）。
+组注册（`llm train` 启动时会 `load_entry_point_hooks("llm.tasks")`）。
 
-现在, 您可以通过运行 `uv run llm-train --task classification` 来启动您的新任务.
+现在, 您可以通过运行 `uv run llm train --task classification` 来启动您的新任务.
 
 ---
 
@@ -240,8 +240,8 @@ model:
 当您运行训练时, `TrainingEngine` 会根据 `Config` 中的设置, 在 `TransformerBlock` 中自动实例化 MoE 层而不是标准 MLP.
 
 ```bash
-uv run llm-train --task stream_lm --config-path configs/moe-demo.yaml
+uv run llm train --task stream_lm --config-path configs/moe-demo.yaml
 ```
 
 通过这种方式，您可以轻松地在模型中启用和配置 MoE 功能，而无需修改核心模型代码。
-`llm-train` 没有 `--model-*` 嵌套参数，模型结构一律通过 YAML 的 `model:` 段配置。
+`llm train` 没有 `--model-*` 嵌套参数，模型结构一律通过 YAML 的 `model:` 段配置。

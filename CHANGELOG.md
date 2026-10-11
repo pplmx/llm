@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     coverage, previously the 6 h full suite); added a scheduled `test-full` job
     running `just test-cov` (full suite + coverage) on the weekly schedule.
   - New design doc [`docs/development/test-architecture.md`](docs/development/test-architecture.md).
+- **Unified `llm` CLI (breaking)**: the six flat `llm-train` / `llm-serve` /
+  `llm-quantize` / `llm-prune` / `llm-decompose` / `llm-migrate-ckpt` console
+  scripts are replaced by a single `llm` command whose subcommands carry each
+  tool's options: `llm train`, `llm serve`, `llm quantize [gptq|fp8]`, `llm
+  prune`, `llm decompose`, `llm migrate-ckpt`. New `llm.cli.main` root app
+  composes them (leaf commands use a group callback + `invoke_without_command`,
+  `quantize` stays a real subcommand group); `python -m llm` also works. All
+  docs / README / user-facing advice strings updated to the new names.
 
 ### Added
 

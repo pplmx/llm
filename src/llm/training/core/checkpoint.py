@@ -23,7 +23,7 @@ The :class:`CheckpointManager` API is unchanged: callers still call
 difference is the file layout on disk. The legacy single-file
 ``<name>.pt`` layout from v0.0.5 and earlier is auto-detected and
 loaded by :meth:`load_checkpoint` — a ``DeprecationWarning`` fires
-once per load, recommending ``llm-migrate-ckpt <path>`` (a future
+once per load, recommending ``llm migrate-ckpt <path>`` (a future
 CLI helper) for in-place conversion.
 """
 
@@ -310,7 +310,7 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
             f"Checkpoint {stem_dir} is incomplete: present sidecars "
             f"{[p.name for p in present]}, missing {missing}. The save was "
             "interrupted mid-write; point resume_from_checkpoint at a previous "
-            "intact epoch checkpoint (or run llm-migrate-ckpt on the legacy "
+            "intact epoch checkpoint (or run llm migrate-ckpt on the legacy "
             ".pt if one exists at this stem)."
         )
 
@@ -431,7 +431,7 @@ def _load_legacy_checkpoint(legacy_path: Path) -> dict[str, Any] | None:
         return None
     warnings.warn(
         f"Loading legacy checkpoint format from {legacy_path}. "
-        "This format is deprecated; run `llm-migrate-ckpt <path>` to convert "
+        "This format is deprecated; run `llm migrate-ckpt <path>` to convert "
         "to the v2 split layout (model.safetensors + meta.json + extra_state.pt).",
         DeprecationWarning,
         stacklevel=3,
@@ -469,7 +469,7 @@ def load_checkpoint_payload(path: str | Path) -> dict[str, Any] | None:
 
     # The split layout is authoritative whenever ANY split sidecar exists.
     # ``CheckpointManager.save_checkpoint`` writes only the split trio, and
-    # ``llm-migrate-ckpt`` keeps the legacy ``.pt`` by default
+    # ``llm migrate-ckpt`` keeps the legacy ``.pt`` by default
     # (``in_place=False``) — so a coexisting legacy file is a FROZEN
     # pre-migration snapshot that would silently stale-resume every
     # post-migration epoch (RIL ISS-205). Legacy is the fallback only when
@@ -599,7 +599,7 @@ def convert_legacy_checkpoint_to_split(
     # Load the legacy blob. ``weights_only=True`` (RIL ISS-170): the migration
     # path runs on user-supplied files, and a framework legacy dict is a plain
     # tensors+primitives payload — arbitrary-pickle loading here would be an
-    # RCE on `llm-migrate-ckpt attacker.pt`.
+    # RCE on `llm migrate-ckpt attacker.pt`.
     try:
         payload = torch.load(legacy_path, map_location="cpu", weights_only=True)
     except (pickle.UnpicklingError, EOFError, RuntimeError, OSError) as exc:
@@ -612,7 +612,7 @@ def convert_legacy_checkpoint_to_split(
 
     # Validate the payload is a v0.0.5 training dict BEFORE indexing it. A
     # `.pt` file that loads but is not a training checkpoint — e.g. a bare
-    # ``torch.save(model)`` blob from ``llm-quantize``, or any module /
+    # ``torch.save(model)`` blob from ``llm quantize``, or any module /
     # non-dict pickle — raises TypeError/KeyError on ``payload["model_state"]``
     # below. The CLI only catches CheckpointMigrationError, so the raw
     # exception would have escaped as a traceback instead of the documented

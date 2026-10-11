@@ -6,13 +6,13 @@ SVD（Eckart-Young）得到该秩下的最优 F 范数近似。它是 ROADMAP 13
 的实现，与 QAT / 知识蒸馏 / 模型剪枝共同组成压缩系列。
 
 分解后模型结构与 dtype 完全一致，前向等价于 `(x @ V^T) @ U^T + b`，可在任意设备
-运行。`llm-decompose` 包装该流程；`LowRankLinear` 被 `weights_only` 安全白名单
+运行。`llm decompose` 包装该流程；`LowRankLinear` 被 `weights_only` 安全白名单
 （`llm.quantization`）覆盖，剪枝/低秩产物可经同一 serving loader 直接加载。
 
 ## 用法
 
 ```bash
-llm-decompose \
+llm decompose \
     --model model.pt \        # torch.save 的 DecoderModel blob
     --output lowrank.pt \
     --rank 8                  # 显式秩（与 --rank-ratio 二选一）

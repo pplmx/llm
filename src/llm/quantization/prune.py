@@ -12,7 +12,7 @@ Two supported policies:
   classic intuition that large-magnitude weights carry more signal.
 - ``random``: keep a uniformly random complement at the target ratio.
 
-``llm-quantize``'s sibling CLI ``llm-prune`` wraps this pass; the resulting
+``llm quantize``'s sibling CLI ``llm prune`` wraps this pass; the resulting
 model is saved as a bare ``torch.save`` blob and served through the same
 securely-allowlisted path as quantized models (``register_framework_safe_globals``
 covers ``llm.quantization``, so :class:`PrunedLinear` loads under

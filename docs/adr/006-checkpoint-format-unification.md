@@ -71,9 +71,9 @@ auto-detected by checking whether `<ckp_path>.safetensors` exists;
 if not, fall back to `torch.load(<ckp_path>)`.
 
 When the legacy path is loaded, the manager emits a one-line
-`DeprecationWarning` recommending `llm-migrate-ckpt <ckp_path>` (a
+`DeprecationWarning` recommending `llm migrate-ckpt <ckp_path>` (a
 CLI shipped in a follow-up slice, see
-`docs/reference/cli.md#llm-migrate-ckpt`).
+`docs/reference/cli.md#llm migrate-ckpt`).
 
 The implementation keeps the same `CheckpointManager` public API
 (`save_checkpoint` / `load_checkpoint`); the only observable change
@@ -111,7 +111,7 @@ no breaking changes to existing training pipelines.
   `latest.meta.json` + `latest.extra_state.pt` instead of one
   `latest.pt`. Negligible on every modern filesystem.
 - **Migration surface.** Users with hundreds of existing v0.0.5
-  checkpoints can convert with the `llm-migrate-ckpt` CLI. Until the
+  checkpoints can convert with the `llm migrate-ckpt` CLI. Until the
   migration is run, the legacy loader still works, but new checkpoints
   are written in the split layout — so the two layouts coexist in the
   same directory across an upgrade window.

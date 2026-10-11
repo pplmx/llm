@@ -7,7 +7,7 @@
 
 ## 策略
 
-`llm-prune` / `PruningConfig` 支持两种策略：
+`llm prune` / `PruningConfig` 支持两种策略：
 
 - `magnitude`（默认）：保留 `|W|` 最大的那部分元素——直觉是大权值承载更多信号。
 - `random`：按 ratio 随机保留，可加 `--seed` 复现。
@@ -15,7 +15,7 @@
 ## 用法
 
 ```bash
-llm-prune \
+llm prune \
     --model model.pt \        # torch.save 的 DecoderModel blob
     --output pruned.pt \
     --ratio 0.5 \             # 每个 Linear 置零比例 (0, 1)
@@ -36,9 +36,9 @@ print(compute_sparsity(model))  # 报告实际整体稀疏度
 
 ## 推理 / 服务
 
-`llm-prune` 输出的是裸 `torch.save` 模块 blob，与 `llm-quantize` 产物走同一套
+`llm prune` 输出的是裸 `torch.save` 模块 blob，与 `llm quantize` 产物走同一套
 安全加载路径：`register_framework_safe_globals` 已覆盖 `llm.quantization`，
-`llm-serve` / serving loader 在 `weights_only=True` 下即可加载剪枝后的模型并正常
+`llm serve` / serving loader 在 `weights_only=True` 下即可加载剪枝后的模型并正常
 前向。`llm/quantization/prune.py` 里 `PrunedLinear` 的 mask 会随权重一起持久化。
 
 ## 测试

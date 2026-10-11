@@ -25,7 +25,7 @@ EXAMPLES = [
     ("qlora_finetuning_demo.py", False),
 ]
 
-# `openai_client_demo.py` requires a running llm-serve + the openai SDK, so
+# `openai_client_demo.py` requires a running llm serve + the openai SDK, so
 # it is deliberately excluded — a live-server smoke belongs in tests/serving.
 
 

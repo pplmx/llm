@@ -246,12 +246,12 @@ Unclear what's in it; should either be promoted to `docs/learning/` or removed.
 from llm import DecoderModel, SimpleCharacterTokenizer, generate, stream_generate, batch_generate
 ```
 
-Plus CLI: `llm-train --task <name>`, `llm-serve`. Five primary CLI tasks
+Plus CLI: `llm train --task <name>`, `llm serve`. Five primary CLI tasks
 (regression, lm, stream_lm, sft, dpo, reward, ppo).
 
 ### Strengths
-- One entry point per user intent (`llm-train`, `llm-serve`).
-- Pydantic-typed configuration exposed via Typer — `llm-train --task lm --help` lists
+- One entry point per user intent (`llm train`, `llm serve`).
+- Pydantic-typed configuration exposed via Typer — `llm train --task lm --help` lists
   validated options.
 - OpenAI-compatible `/v1/chat/completions` endpoint.
 - Error envelopes follow standard FastAPI patterns (HTTPException with detail string).
@@ -319,7 +319,7 @@ the watchdog importer which conflicts with `from llm.serving.api import app` in 
   scikit-learn, seaborn, tensorboard.
 - Dependency groups: `dev`, `test`, `streaming`, `docs`.
 - Entry points: `llm.models`, `llm.generation_backends`, `llm.data_sources`.
-- Scripts: `llm-train`, `llm-serve`.
+- Scripts: `llm train`, `llm serve`.
 - Python `>=3.14` (bleeding edge — limits contributor pool).
 - Lockfile: `uv.lock` (484KB).
 
@@ -386,11 +386,11 @@ both `optional-dependencies` and `dependency-groups`.
   to `[project]`. (Complexity: 5 min.)
 
 #### Finding U — Docker image missing for serving (MEDIUM)
-`Dockerfile` exists, but verify whether it serves `llm-serve` or only runs tests.
+`Dockerfile` exists, but verify whether it serves `llm serve` or only runs tests.
 `compose.yml` is 218 bytes — likely minimal.
 
 - **Fix**: ensure `Dockerfile` produces a runtime image (not test deps) with
-  `llm-serve` as entrypoint.
+  `llm serve` as entrypoint.
 
 ---
 

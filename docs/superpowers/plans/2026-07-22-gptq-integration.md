@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 `src/llm/quantization/` 中集成 GPTQ（Frantar 2022）4-bit 量化算法，提供独立于 simple-PTQ 的正交路径 + CLI `llm-quantize gptq`。
+**Goal:** 在 `src/llm/quantization/` 中集成 GPTQ（Frantar 2022）4-bit 量化算法，提供独立于 simple-PTQ 的正交路径 + CLI `llm quantize gptq`。
 
 **Architecture:** 三个新模块（`gptq.py` 算法核心 / `_gptq_layer.py` 打包存储 / `cli/quantize.py` CLI）+ 双重 entry point（standalone Iterator + CalibrationDataCollector 复用）+ 三层 TDD（算法 / 存储 / e2e）。
 
@@ -23,7 +23,7 @@ src/llm/quantization/
 └── _gptq_layer.py          ← 新增 (GPTQQuantizedLinear + packed 4-bit, ~200 行)
 
 src/llm/cli/
-└── quantize.py             ← 新增 (typer app, llm-quantize gptq subcommand, ~150 行)
+└── quantize.py             ← 新增 (typer app, llm quantize gptq subcommand, ~150 行)
 
 tests/quantization/
 ├── test_gptq_algorithm.py  ← 新增 (Hessian / Cholesky / 算法 correctness)
@@ -1779,7 +1779,7 @@ git commit -m "feat(quant): export GPTQ API alongside simple PTQ"
 
 ---
 
-## Task 10: CLI `llm-quantize gptq` subcommand
+## Task 10: CLI `llm quantize gptq` subcommand
 
 **Files:**
 - Create: `src/llm/cli/quantize.py`
@@ -1791,7 +1791,7 @@ git commit -m "feat(quant): export GPTQ API alongside simple PTQ"
 
 ```bash
 cat src/llm/cli/__init__.py
-grep -n "llm-migrate-ckpt\|llm-quantize" pyproject.toml
+grep -n "llm migrate-ckpt\|llm quantize" pyproject.toml
 ```
 
 - [ ] **Step 2: Append CLI tests**
@@ -1799,7 +1799,7 @@ grep -n "llm-migrate-ckpt\|llm-quantize" pyproject.toml
 Create `tests/cli/test_quantize_cli.py`:
 
 ```python
-"""CLI tests for `llm-quantize gptq` subcommand."""
+"""CLI tests for `llm quantize gptq` subcommand."""
 
 import subprocess
 import sys
@@ -1809,9 +1809,9 @@ import pytest
 
 
 def test_cli_help():
-    """`llm-quantize gptq --help` exits 0 and lists expected flags."""
+    """`llm quantize gptq --help` exits 0 and lists expected flags."""
     result = subprocess.run(
-        ["llm-quantize", "gptq", "--help"],
+        ["llm quantize", "gptq", "--help"],
         capture_output=True,
         text=True,
     )
@@ -1825,7 +1825,7 @@ def test_cli_help():
 def test_cli_missing_required_args_exits_nonzero():
     """No args → non-zero exit."""
     result = subprocess.run(
-        ["llm-quantize", "gptq"],
+        ["llm quantize", "gptq"],
         capture_output=True,
         text=True,
     )
@@ -1838,7 +1838,7 @@ def test_cli_invalid_bits_errors(tmp_path):
     model_path.touch()
     result = subprocess.run(
         [
-            "llm-quantize",
+            "llm quantize",
             "gptq",
             "--model",
             str(model_path),
@@ -1864,7 +1864,7 @@ def test_cli_missing_tokenizer_errors(tmp_path):
     calib_path.write_text("hello world\n")
     result = subprocess.run(
         [
-            "llm-quantize",
+            "llm quantize",
             "gptq",
             "--model",
             str(model_path),
@@ -1887,7 +1887,7 @@ def test_cli_calib_data_mutually_exclusive(tmp_path):
     model_path.touch()
     result = subprocess.run(
         [
-            "llm-quantize",
+            "llm quantize",
             "gptq",
             "--model",
             str(model_path),
@@ -1912,14 +1912,14 @@ def test_cli_calib_data_mutually_exclusive(tmp_path):
 uv run pytest tests/cli/test_quantize_cli.py -v
 ```
 
-Expected: All 5 tests FAIL (no `llm-quantize` command)
+Expected: All 5 tests FAIL (no `llm quantize` command)
 
 - [ ] **Step 4: Create `src/llm/cli/quantize.py`**
 
 Create `src/llm/cli/quantize.py`:
 
 ```python
-"""`llm-quantize` CLI — currently supports `gptq` subcommand."""
+"""`llm quantize` CLI — currently supports `gptq` subcommand."""
 
 import sys
 from pathlib import Path
@@ -2035,12 +2035,12 @@ if __name__ == "__main__":
 grep -A 5 "project.scripts" pyproject.toml
 ```
 
-If `llm-quantize` is not listed, add it. Expected pattern (check existing entries):
+If `llm quantize` is not listed, add it. Expected pattern (check existing entries):
 
 ```toml
 [project.scripts]
-llm-migrate-ckpt = "llm.cli.migrate_ckpt:main"
-llm-quantize = "llm.cli.quantize:app"
+llm migrate-ckpt = "llm.cli.migrate_ckpt:main"
+llm quantize = "llm.cli.quantize:app"
 ```
 
 If the script uses `app()` instead of `main()`, add a `main()` shim:
@@ -2055,7 +2055,7 @@ def main():
 Then in `pyproject.toml`, ensure the entry is:
 
 ```toml
-llm-quantize = "llm.cli.quantize:main"
+llm quantize = "llm.cli.quantize:main"
 ```
 
 - [ ] **Step 6: Reinstall package in editable mode (or `uv sync`) to register CLI**
@@ -2075,7 +2075,7 @@ Expected: All 5 tests PASS
 - [ ] **Step 8: Smoke test CLI manually**
 
 ```bash
-llm-quantize gptq --help
+llm quantize gptq --help
 ```
 
 Expected: Help output lists all flags
@@ -2084,7 +2084,7 @@ Expected: Help output lists all flags
 
 ```bash
 git add src/llm/cli/quantize.py tests/cli/test_quantize_cli.py pyproject.toml
-git commit -m "feat(cli): llm-quantize gptq subcommand"
+git commit -m "feat(cli): llm quantize gptq subcommand"
 ```
 
 ---
@@ -2157,7 +2157,7 @@ Both funnel into the same `quantize_model_gptq` implementation.
 - Simple PTQ path has zero regression risk (unchanged code, unchanged tests).
 - 4-bit packing is a real 50% memory reduction, verified by `test_packed_storage_half_size`.
 - Trainer-loop users can call `quantize_model_with_collector(...)` without re-collecting calibration data.
-- CLI (`llm-quantize gptq`) parallels `llm-migrate-ckpt` for production workflows.
+- CLI (`llm quantize gptq`) parallels `llm migrate-ckpt` for production workflows.
 
 ### Negative
 
@@ -2184,7 +2184,7 @@ Rejected: defeats the purpose of 4-bit quantization (no memory savings);
 ### C. Skip CLI, only Python API
 
 Rejected: production users expect a CLI for repeated quantization jobs.
-CLI parallels `llm-migrate-ckpt` (just shipped in 9a2026f).
+CLI parallels `llm migrate-ckpt` (just shipped in 9a2026f).
 
 ## References
 
@@ -2199,7 +2199,7 @@ CLI parallels `llm-migrate-ckpt` (just shipped in 9a2026f).
 Append to `CHANGELOG.md` under `[Unreleased] > ### Added`:
 
 ```markdown
-- **GPTQ post-training quantization** (阶段十三 §13.3): 4-bit / 8-bit Hessian-aware quantization following Frantar et al. 2022. New `src/llm/quantization/gptq.py` (algorithm + dual entry points) and `src/llm/quantization/_gptq_layer.py` (packed 4-bit storage, 2 weights/byte). Orthogonal to existing simple PTQ path — `ptq.py` unchanged. CLI `llm-quantize gptq --model PATH --output PATH --calib-data PATH --tokenizer PATH --bits 4 --group-size 128` parallels `llm-migrate-ckpt`. Two entry points: `quantize_model_gptq(model, calib_iter, config)` (standalone) and `quantize_model_with_collector(model, collector, n_samples, config)` (reuse existing `CalibrationDataCollector`). Supports `act_order`, `sym`, `percdamp`, `blocksize`, `static_groups`. ADR-007 captures architecture decisions.
+- **GPTQ post-training quantization** (阶段十三 §13.3): 4-bit / 8-bit Hessian-aware quantization following Frantar et al. 2022. New `src/llm/quantization/gptq.py` (algorithm + dual entry points) and `src/llm/quantization/_gptq_layer.py` (packed 4-bit storage, 2 weights/byte). Orthogonal to existing simple PTQ path — `ptq.py` unchanged. CLI `llm quantize gptq --model PATH --output PATH --calib-data PATH --tokenizer PATH --bits 4 --group-size 128` parallels `llm migrate-ckpt`. Two entry points: `quantize_model_gptq(model, calib_iter, config)` (standalone) and `quantize_model_with_collector(model, collector, n_samples, config)` (reuse existing `CalibrationDataCollector`). Supports `act_order`, `sym`, `percdamp`, `blocksize`, `static_groups`. ADR-007 captures architecture decisions.
 ```
 
 - [ ] **Step 3: Update ROADMAP**
@@ -2213,7 +2213,7 @@ In `ROADMAP.md`, find line 392:
 Replace with:
 
 ```
-- [x] **集成 GPTQ** (Frantar 2022, 阶段十三 §13.3 首切片完成: `src/llm/quantization/gptq.py` + `_gptq_layer.py` + `llm-quantize gptq` CLI + dual entry point + 4-bit 打包存储 + act-order/group_size/percdamp 旋钮; 22 unit tests + 5 e2e tests; 零回归对现有 simple-PTQ; ADR-007; AWQ/SmoothQuant 留待后续切片)
+- [x] **集成 GPTQ** (Frantar 2022, 阶段十三 §13.3 首切片完成: `src/llm/quantization/gptq.py` + `_gptq_layer.py` + `llm quantize gptq` CLI + dual entry point + 4-bit 打包存储 + act-order/group_size/percdamp 旋钮; 22 unit tests + 5 e2e tests; 零回归对现有 simple-PTQ; ADR-007; AWQ/SmoothQuant 留待后续切片)
 ```
 
 - [ ] **Step 4: Verify ROADMAP renders correctly**
@@ -2298,7 +2298,7 @@ git commit -m "chore: address review findings from full test run"
 | Algorithm core | 1-4 | `GPTQConfig` + `GPTQQuantizer` + Hessian + Cholesky + column loop + act-order |
 | Storage layer | 5-6 | `GPTQQuantizedLinear` + packed 4-bit + forward |
 | Integration | 7-9 | Two entry points + `__init__.py` exports |
-| CLI | 10 | `llm-quantize gptq` subcommand |
+| CLI | 10 | `llm quantize gptq` subcommand |
 | Docs | 11 | ADR-007 + CHANGELOG + ROADMAP |
 | Verification | 12 | Full test suite + coverage + lint clean |
 
@@ -2308,5 +2308,5 @@ git commit -m "chore: address review findings from full test run"
 - [ ] All 1408 pre-existing tests still pass (zero regression)
 - [ ] Coverage on new files meets targets (95/90/85%)
 - [ ] `make test` clean
-- [ ] `llm-quantize gptq --help` works
+- [ ] `llm quantize gptq --help` works
 - [ ] ADR-007 + CHANGELOG + ROADMAP committed

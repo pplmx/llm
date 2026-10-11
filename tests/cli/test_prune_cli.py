@@ -1,4 +1,4 @@
-"""Tests for the ``llm-prune`` CLI (weight-pruning, RIL TASK-224).
+"""Tests for the ``llm prune`` CLI (weight-pruning, RIL TASK-224).
 
 Mirrors ``tests/cli/test_quantize_cli.py`` (CliRunner) plus one real
 round-trip: build a tiny ``DecoderModel`` blob, prune it via the CLI, and
@@ -139,7 +139,7 @@ def test_prune_cli_module_entry_help_prints_usage():
     """``python -m llm.cli.prune --help`` must route through the Typer app.
 
     The module had no ``__main__`` guard, so ``python -m`` silently no-op'd
-    (exit 0, empty output) while ``llm-prune`` worked — an unreachable module
+    (exit 0, empty output) while ``llm prune`` worked — an unreachable module
     entry was a silent dead path.
     """
     import subprocess

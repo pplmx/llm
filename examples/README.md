@@ -14,7 +14,7 @@ uv run examples/inference_demo.py
 
 ```bash
 # 终端1: 启动推理服务
-uv run llm-serve
+uv run llm serve
 
 # 终端2: 运行客户端
 uv run examples/openai_client_demo.py
@@ -68,7 +68,7 @@ uv run examples/inference_demo.py
 uv run examples/kv_cache_demo.py
 
 # 带服务的推理
-uv run llm-serve &
+uv run llm serve &
 uv run examples/openai_client_demo.py
 ```
 

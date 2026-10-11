@@ -10,7 +10,7 @@ classes need those classes allowlisted first via
 pickle referencing ``os.system`` / ``subprocess`` / arbitrary builtins is
 refused before any code runs.
 
-Extracted from ``llm/serving/loader.py`` so the ``llm-quantize`` CLI (which
+Extracted from ``llm/serving/loader.py`` so the ``llm quantize`` CLI (which
 loads the same class of user-supplied blobs) can reuse the single allowlist
 without pulling the FastAPI-heavy serving stack into the CLI process.
 """

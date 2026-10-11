@@ -1,4 +1,4 @@
-"""Tests for the ``llm-decompose`` CLI (low-rank, RIL TASK-225)."""
+"""Tests for the ``llm decompose`` CLI (low-rank, RIL TASK-225)."""
 
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ def test_decompose_cli_module_entry_help_prints_usage():
     """``python -m llm.cli.decompose --help`` must route through the Typer app.
 
     The module had no ``__main__`` guard, so ``python -m`` silently no-op'd
-    (exit 0, empty output) while ``llm-decompose`` worked — an unreachable
+    (exit 0, empty output) while ``llm decompose`` worked — an unreachable
     module entry was a silent dead path.
     """
     import subprocess

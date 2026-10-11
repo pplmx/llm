@@ -43,7 +43,7 @@ data:
 ```
 
 ```bash
-uv run llm-train --task simpo --config-path your_simpo.yaml
+uv run llm train --task simpo --config-path your_simpo.yaml
 ```
 
 配置旋钮（均可省略走默认值）：

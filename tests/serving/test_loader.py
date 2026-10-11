@@ -80,7 +80,7 @@ def test_load_training_checkpoint_roundtrip(tmp_path, tiny_model, tiny_config):
 def test_load_training_checkpoint_strips_compile_prefix(tmp_path, tiny_model, tiny_config):
     """Legacy checkpoints with torch.compile's ``_orig_mod.`` prefix load fine.
 
-    ``llm-train`` compiles the model by default, and checkpoints saved
+    ``llm train`` compiles the model by default, and checkpoints saved
     before the save-side fix carried ``_orig_mod.*`` keys. The serving
     loader must strip the prefix before ``load_state_dict`` or every
     weight is silently dropped and the served model stays at random init.
@@ -141,7 +141,7 @@ def test_load_training_checkpoint_missing_raises(tmp_path):
 
 def test_load_quantized_model_blob_roundtrip(tmp_path, tiny_model, tiny_config):
     """The loader accepts the bare quantized-model blob emitted by
-    ``llm-quantize`` (``torch.save`` of the whole module) and serves it
+    ``llm quantize`` (``torch.save`` of the whole module) and serves it
     directly, preserving the quantized layers and their outputs."""
     from llm.quantization import GPTQConfig, GPTQQuantizedLinear, quantize_model_gptq
 

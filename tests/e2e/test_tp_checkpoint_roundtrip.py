@@ -3,13 +3,13 @@
 The TP milestones (TASK-200 / TASK-202) verified the state-dict gather /
 scatter helpers in-memory, but never proved a real TP/2D training run ends
 up as a correct, portable on-disk checkpoint through the checkpoint manager.
-These tests pin the two guarantees ``llm-serve``/resume rely on:
+These tests pin the two guarantees ``llm serve``/resume rely on:
 
 * **on-disk save == gathered full state dict**: after a real
   ``CheckpointManager`` save on a TP / TP+DP 2D run, ``latest.safetensors``
   must equal ``model_state_dict(model)`` bit-for-bit on every rank;
 * **serve-load / resume portability**: the on-disk full state dict loads into
-  a fresh single-GPU ``DecoderModel`` (the ``llm-serve`` path) and its forward
+  a fresh single-GPU ``DecoderModel`` (the ``llm serve`` path) and its forward
   matches the TP model's gathered forward, and re-loading it into the TP model
   (scatter) leaves the forward unchanged.
 
@@ -192,7 +192,7 @@ def _roundtrip_worker(rank: int, world_size: int, ctx: dict, results) -> None:
 
         if rank == 0:
             # Serve-load: a FRESH single-GPU model must reproduce the TP model's
-            # forward from the on-disk full state dict (llm-serve portability).
+            # forward from the on-disk full state dict (llm serve portability).
             fresh = _tiny_model(ctx, device=dev)
             load_model_state_dict(fresh, disk)
             fresh.eval()

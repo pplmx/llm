@@ -7,7 +7,7 @@ tags:
 
 # 推理教程
 
-训练完成后如何使用 `llm-serve` 把模型部署为 OpenAI 兼容的 HTTP 服务。和 `01-pretraining.md` / `02-finetuning.md` 一样，所有命令都对齐 `llm-serve` CLI + YAML 配置 —— 而不是单独的 demo 脚本。
+训练完成后如何使用 `llm serve` 把模型部署为 OpenAI 兼容的 HTTP 服务。和 `01-pretraining.md` / `02-finetuning.md` 一样，所有命令都对齐 `llm serve` CLI + YAML 配置 —— 而不是单独的 demo 脚本。
 
 ---
 
@@ -15,26 +15,26 @@ tags:
 
 本教程涵盖：
 
-- **基础部署**：`llm-serve` 启动 + OpenAI 兼容 API（`/v1/chat/completions` + `/generate`）
-- **主流路径**：`llm-serve` + `configs/serve_local_demo.yaml` + `configs/serve_pretrained.yaml`
+- **基础部署**：`llm serve` 启动 + OpenAI 兼容 API（`/v1/chat/completions` + `/generate`）
+- **主流路径**：`llm serve` + `configs/serve_local_demo.yaml` + `configs/serve_pretrained.yaml`
 - **训练 → 服务闭环**：PEFT 适配器（LoRA / IA³ / BitFit / Adapter / Pfeiffer / AdaLoRA）通过 `LLM_SERVING_PEFT_*` env vars 直接挂载
 - **认证 + 安全**：API key（HMAC-SHA256 timing-safe）+ 公开主机守卫（拒绝无 key 绑定 0.0.0.0）
 - **可观测性**：Prometheus 域内指标（tokens / batch fill ratio / KV cache hit / 延迟）+ 结构化 JSON 日志
 - **生产化**：性能开关（paged attention / prefix cache / torch.compile / batched backend）+ 高并发 semaphore
 
-> **前提**：上游已经有训练好的 checkpoint（参考 [01-pretraining.md](./01-pretraining.md) 或 [02-finetuning.md](./02-finetuning.md)）。`llm-serve` 不需要 checkpoint —— 它能从 `ServingConfig` 的 arch 字段构建一个 dummy 模型用于冒烟测试。
+> **前提**：上游已经有训练好的 checkpoint（参考 [01-pretraining.md](./01-pretraining.md) 或 [02-finetuning.md](./02-finetuning.md)）。`llm serve` 不需要 checkpoint —— 它能从 `ServingConfig` 的 arch 字段构建一个 dummy 模型用于冒烟测试。
 
 ---
 
-## 1. 30 秒上手：`llm-serve` smoke test
+## 1. 30 秒上手：`llm serve` smoke test
 
 最简部署：本地回环接口、不需要 checkpoint、不需要 API key。先确认 HTTP 通路本身工作。
 
 ### 1.1 启动服务（无 checkpoint）
 
 ```bash
-# 启动 llm-serve：不传 model_path 时，loader 从 arch 字段构建 dummy 模型
-uv run llm-serve
+# 启动 llm serve：不传 model_path 时，loader 从 arch 字段构建 dummy 模型
+uv run llm serve
 ```
 
 启动日志包含一条结构化 `server_config` 行（机器可读的运维元数据 —— model class / 参数量 / dtype / device / attention impl / api_key_set 等）：
@@ -47,7 +47,7 @@ uv run llm-serve
  "use_paged_attention": false, "api_key_set": false}
 ```
 
-服务监听 `http://127.0.0.1:8000`。默认端口可用 `ServingConfig.port` 覆盖（YAML 写 `port: 9000`，或环境变量 `LLM_SERVING_PORT=9000`）——`llm-serve` 会绑定这个端口而不是硬编码的 8000。
+服务监听 `http://127.0.0.1:8000`。默认端口可用 `ServingConfig.port` 覆盖（YAML 写 `port: 9000`，或环境变量 `LLM_SERVING_PORT=9000`）——`llm serve` 会绑定这个端口而不是硬编码的 8000。
 
 ### 1.2 用 curl 探活
 
@@ -103,7 +103,7 @@ curl http://127.0.0.1:8000/metrics
 
 ---
 
-## 2. 主流路径：`llm-serve` + YAML
+## 2. 主流路径：`llm serve` + YAML
 
 ### 2.1 配置风格：env vars vs YAML
 
@@ -111,7 +111,7 @@ curl http://127.0.0.1:8000/metrics
 
 | 风格         | 例子                                                                                                           | 适用场景                                          |
 | ------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| **env vars** | `LLM_SERVING_API_KEY=... uv run llm-serve`                                                                     | container / docker-compose / Kubernetes ConfigMap |
+| **env vars** | `LLM_SERVING_API_KEY=... uv run llm serve`                                                                     | container / docker-compose / Kubernetes ConfigMap |
 | **YAML**     | `from llm.serving.config import ServingConfig; cfg = ServingConfig.from_yaml("configs/serve_pretrained.yaml")` | 配置文件版本化、与训练配置对称                    |
 
 `configs/serve_local_demo.yaml` 是一个完整的 env-vars-as-YAML 例子。YAML 字段名对应 env vars 去掉 `LLM_SERVING_` 前缀（如 YAML 的 `api_key` ↔ env var 的 `LLM_SERVING_API_KEY`）。
@@ -122,7 +122,7 @@ curl http://127.0.0.1:8000/metrics
 
 ```bash
 # 启动（用 YAML 的所有默认 + 可能的 env var 覆盖）
-LLM_SERVING_HOST=127.0.0.1 uv run llm-serve
+LLM_SERVING_HOST=127.0.0.1 uv run llm serve
 ```
 
 ### 2.3 生产 config：`configs/serve_pretrained.yaml`
@@ -136,12 +136,12 @@ LLM_SERVING_HOST=127.0.0.1 uv run llm-serve
 #     peft_method: lora
 #     peft_kwargs: {rank: 8, alpha: 16.0}
 #     peft_save_path: checkpoints_sft_alpaca/peft_adapter_lora.bin
-uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
+uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 
 # 2. 用 production preset 部署
 LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
 LLM_SERVING_HOST=0.0.0.0 \
-uv run llm-serve
+uv run llm serve
 ```
 
 `configs/serve_pretrained.yaml` 在 `model_path` / `tokenizer_path` / `peft_*` 字段已经填好了默认值，env vars 只覆盖需要按机器调整的字段（`api_key` / `host`）。
@@ -176,7 +176,7 @@ uv run llm-serve
 #     peft_method: lora
 #     peft_kwargs: {rank: 8, alpha: 16.0}
 #     peft_save_path: checkpoints_sft_alpaca/peft_adapter_lora.bin
-uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
+uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 ```
 
 `PEFTAdapterCheckpointCallback`（T2 PEFT #48）在 `on_train_end` 时调 `save_peft` 写 sidecar，envelope 包含 `format_version` + `method_name` + `state_dict` + `peft_kwargs`。文件 ~MB 级（远小于 base checkpoint）。
@@ -191,7 +191,7 @@ LLM_SERVING_PEFT_METHOD=lora \
 LLM_SERVING_PEFT_ADAPTER_PATH=checkpoints_sft_alpaca/peft_adapter_lora.bin \
 LLM_SERVING_PEFT_KWARGS='{"rank": 8, "alpha": 16.0}' \
 LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
-uv run llm-serve
+uv run llm serve
 ```
 
 加载顺序（`load_model_and_tokenizer` → `_apply_peft_if_configured`）：
@@ -241,7 +241,7 @@ LLM_SERVING_PEFT_MERGE=true
 
 ```bash
 # 生成随机 key（32 字节十六进制 = 64 字符）
-LLM_SERVING_API_KEY=$(openssl rand -hex 32) uv run llm-serve
+LLM_SERVING_API_KEY=$(openssl rand -hex 32) uv run llm serve
 ```
 
 请求时二选一 header：
@@ -257,17 +257,17 @@ curl -H "Authorization: Bearer $KEY" http://server:8000/v1/chat/completions -d '
 
 ### 4.2 公开主机守卫
 
-`llm-serve` 启动时会检查 host：
+`llm serve` 启动时会检查 host：
 
 ```bash
 # OK：回环地址 + 无 key
-LLM_SERVING_HOST=127.0.0.1 uv run llm-serve
+LLM_SERVING_HOST=127.0.0.1 uv run llm serve
 
 # OK：非回环 + 有 key
-LLM_SERVING_HOST=0.0.0.0 LLM_SERVING_API_KEY=... uv run llm-serve
+LLM_SERVING_HOST=0.0.0.0 LLM_SERVING_API_KEY=... uv run llm serve
 
 # 启动失败：非回环 + 无 key（防止匿名暴露到公网）
-LLM_SERVING_HOST=0.0.0.0 uv run llm-serve
+LLM_SERVING_HOST=0.0.0.0 uv run llm serve
 # → RuntimeError: Refusing to start: ServingConfig.host='0.0.0.0' binds to a
 #   non-loopback address but api_key is not set. Anonymous access on a public
 #   interface is unsafe. ...
@@ -277,7 +277,7 @@ T2 #7 hardening —— 失败在启动阶段，不是在第一次请求时 silen
 
 ### 4.3 OpenAI Python SDK 直连
 
-`llm-serve` 是 OpenAI 兼容的，所以官方 SDK 直接能用：
+`llm serve` 是 OpenAI 兼容的，所以官方 SDK 直接能用：
 
 ```python
 from openai import OpenAI
@@ -303,21 +303,21 @@ LangChain / LlamaIndex / vLLM 客户端同样适用（任何走 OpenAI HTTP 协�
 
 ### 5.1 Prometheus 抓取
 
-`/metrics` 是标准 Prometheus 暴露端点，**但和推理路由一样受 `llm-serve` 的
+`/metrics` 是标准 Prometheus 暴露端点，**但和推理路由一样受 `llm serve` 的
 API key 保护**（设置了 `LLM_SERVING_API_KEY` 时，未携带 key 的抓取会得到
 `403 Unauthorized`）。在 `prometheus.yml` 里给抓取任务配上 key 头：
 
 ```yaml
 scrape_configs:
-  - job_name: 'llm-serve'
+  - job_name: 'llm serve'
     scrape_interval: 15s
     static_configs:
-      - targets: ['llm-serve:8000']
+      - targets: ['llm serve:8000']
     # /metrics is guarded by the same API key as the inference routes
     # (Authorization: Bearer <key> or X-API-Key: <key> both work).
     authorization:
       type: Bearer
-      credentials_file: /etc/prometheus/llm-serve.key
+      credentials_file: /etc/prometheus/llm serve.key
 ```
 
 ### 5.2 常用 PromQL 查询
@@ -420,7 +420,7 @@ dummy 模型（`model_path=None`）输出的是随机 token 解码字符串。�
 `request_timeout` 默认 60 秒。`max_new_tokens=4096` + 长 prompt + 慢 GPU 可能超过：
 
 ```bash
-LLM_SERVING_REQUEST_TIMEOUT=300 uv run llm-serve
+LLM_SERVING_REQUEST_TIMEOUT=300 uv run llm serve
 ```
 
 ### 6.6 `batch_engine` 看不到 `llm_batch_fill_ratio` 变化
@@ -432,17 +432,17 @@ LLM_SERVING_REQUEST_TIMEOUT=300 uv run llm-serve
 
 ### 6.7 量化模型加载失败
 
-`llm-quantize gptq --output model.pt` 产出的是**裸模块 blob**（`torch.save` 整个量化后的
+`llm quantize gptq --output model.pt` 产出的是**裸模块 blob**（`torch.save` 整个量化后的
 `DecoderModel`，自带 packed weights / scales / 每层量化参数）。serving loader 会自动识别这种
 blob 并直接加载，不需要转换或重建——把 `LLM_SERVING_MODEL_PATH` 指向该 `.pt` 即可：
 
 ```bash
-uv run llm-quantize gptq --model ckpt.pt --output quantized.pt \
+uv run llm quantize gptq --model ckpt.pt --output quantized.pt \
   --calib-data-tokens calib.pt --bits 4 --group-size 128
-LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm-serve
+LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm serve
 ```
 
-如果 `llm-serve` 加载 qlora 或 gptq 量化模型失败：
+如果 `llm serve` 加载 qlora 或 gptq 量化模型失败：
 
 - 确保 checkpoint 路径存在（v2 布局指向 `<stem>.safetensors` 或 stem；旧式布局指向 `.pt`）
 - GPTQ / AWQ / SmoothQuant 量化产物都是裸模块 blob（Python API 的
@@ -458,11 +458,11 @@ LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm-serve
 
 | 来源               | 命令                                                                        | 怎么 serve                                                          |
 | ------------------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `stream_lm` 预训练 | `uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml` | 设 `LLM_SERVING_MODEL_PATH=<checkpoint_dir>/epoch_N`                |
-| `sft` 微调         | `uv run llm-train --task sft --config-path configs/sft_alpaca.yaml`         | 同上（base weights serve）                                          |
+| `stream_lm` 预训练 | `uv run llm train --task stream_lm --config-path configs/streaming_c4.yaml` | 设 `LLM_SERVING_MODEL_PATH=<checkpoint_dir>/epoch_N`                |
+| `sft` 微调         | `uv run llm train --task sft --config-path configs/sft_alpaca.yaml`         | 同上（base weights serve）                                          |
 | `sft` + LoRA       | YAML 设 `training.peft_method` / `peft_kwargs` / `peft_save_path`           | 同时设 `LLM_SERVING_PEFT_*` 字段                                    |
-| `dpo`              | `uv run llm-train --task dpo --config-path configs/dpo_ultrafeedback.yaml`  | 同 sft                                                              |
-| GPTQ 量化          | `uv run llm-quantize gptq --model ... --output quantized.pt`                | 设 `LLM_SERVING_MODEL_PATH=<quantized>.pt`（裸模块 blob，自动识别） |
+| `dpo`              | `uv run llm train --task dpo --config-path configs/dpo_ultrafeedback.yaml`  | 同 sft                                                              |
+| GPTQ 量化          | `uv run llm quantize gptq --model ... --output quantized.pt`                | 设 `LLM_SERVING_MODEL_PATH=<quantized>.pt`（裸模块 blob，自动识别） |
 
 ### 7.2 性能开关（按场景）
 
@@ -472,7 +472,7 @@ LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm-serve
 | **高吞吐 / 多并发**                | `generation_backend=batched`，`use_paged_attention=true`，`max_concurrent_requests=16`                                                     |
 | **长 system prompt 的多轮 chat**   | `enable_prefix_cache=true`，`max_prefixes=32`（摊销 system prompt）                                                                        |
 | **极限吞吐 / 不需要 swap adapter** | `peft_merge=true`                                                                                                                          |
-| **多卡 / 多模型**                  | 每个 GPU 起一个 `llm-serve` 实例，前面挂 nginx / Envoy                                                                                     |
+| **多卡 / 多模型**                  | 每个 GPU 起一个 `llm serve` 实例，前面挂 nginx / Envoy                                                                                     |
 | **量化模型部署**                   | `LLM_SERVING_MODEL_PATH=<量化后ckpt路径>`，注意量化后模型是 int4/int8 权重                                                                 |
 | **推测解码（Python API 专用）**    | 需要 target + draft 双模型，经 `build_speculative_backend` 构造 —— **不能经 serving 配置**（见 [Inference Guide](../guides/inference.md)） |
 
@@ -486,21 +486,21 @@ COPY . /app
 WORKDIR /app
 RUN pip install -e .[serve]
 ENV LLM_SERVING_HOST=0.0.0.0
-ENTRYPOINT ["llm-serve"]
+ENTRYPOINT ["llm serve"]
 ```
 
 build + run：
 
 ```bash
-docker build -t llm-serve .
+docker build -t llm serve .
 docker run -p 8000:8000 \
   -e LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
   -e LLM_SERVING_MODEL_PATH=/checkpoints/epoch_5 \
   -v $PWD/checkpoints:/checkpoints:ro \
-  llm-serve
+  llm serve
 ```
 
-`compose.yml` 已经把这个串好，可以直接 `docker compose up llm-serve`。
+`compose.yml` 已经把这个串好，可以直接 `docker compose up llm serve`。
 
 ### 7.4 客户端集成
 
@@ -519,5 +519,5 @@ docker run -p 8000:8000 \
 
 - 想深入 KV cache 内部（paged / prefix）？看 [docs/reference/architecture.md §KV Cache](../reference/architecture.md)
 - 想部署到生产集群？看 [docs/guides/inference.md](../guides/inference.md)
-- 想加新的 PEFT 方法并自动挂载到 serving？看 [API Reference/peft](../api/peft.md) + `LLM_SERVING_PEFT_METHOD=<your_method>` —— 只要在 `PEFT_REGISTRY` 注册了，`llm-serve` 自动 dispatch
+- 想加新的 PEFT 方法并自动挂载到 serving？看 [API Reference/peft](../api/peft.md) + `LLM_SERVING_PEFT_METHOD=<your_method>` —— 只要在 `PEFT_REGISTRY` 注册了，`llm serve` 自动 dispatch
 - 想看完整端到端 e2e tests？跑 `pytest -m e2e tests/e2e/test_serve_main_path.py`

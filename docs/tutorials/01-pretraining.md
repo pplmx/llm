@@ -7,9 +7,9 @@ tags:
 
 # 预训练教程
 
-> **教程分工**：本教程专注**预训练**（`llm-train --task stream_lm`）。微调（SFT / DPO）见 [02-finetuning.md](./02-finetuning.md)，推理部署见 [03-inference.md](./03-inference.md)。模型评估不在本教程范围，见 [Guides/评估](../guides/evaluation.md)。
+> **教程分工**：本教程专注**预训练**（`llm train --task stream_lm`）。微调（SFT / DPO）见 [02-finetuning.md](./02-finetuning.md)，推理部署见 [03-inference.md](./03-inference.md)。模型评估不在本教程范围，见 [Guides/评估](../guides/evaluation.md)。
 
-从零开始训练一个小型的语言模型，覆盖**主流路径** (`llm-train --task stream_lm`)。教程里的所有命令都和 `llm-train` CLI、YAML 配置、预置数据源 (`data_source`) 对齐——而不是单独的 demo 脚本。
+从零开始训练一个小型的语言模型，覆盖**主流路径** (`llm train --task stream_lm`)。教程里的所有命令都和 `llm train` CLI、YAML 配置、预置数据源 (`data_source`) 对齐——而不是单独的 demo 脚本。
 
 ---
 
@@ -18,7 +18,7 @@ tags:
 本教程涵盖：
 
 - 数据准备（流式 + 离线两种）
-- 主流路径：使用 `llm-train --task stream_lm` + YAML 配置
+- 主流路径：使用 `llm train --task stream_lm` + YAML 配置
 - 检查点管理（包含 **streaming data cursor** 续训）
 - 切换到 SFT / DPO 的入口
 - 训练监控
@@ -74,7 +74,7 @@ apply_to_config(cfg, C4_PRESET)
 
 ---
 
-## 2. 主流路径：`llm-train --task stream_lm`
+## 2. 主流路径：`llm train --task stream_lm`
 
 **`stream_lm` task** 把 `LanguageModelingTask` 接到 `StreamingTextDataModule`，是流式预训练的主入口。
 
@@ -90,18 +90,18 @@ apply_to_config(cfg, C4_PRESET)
 
 ```bash
 # 离线冒烟（推荐先跑这个验证环境）
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml
 
 # C4 真实流式（需要 GPU + datasets 包）
-uv run llm-train --task stream_lm --config-path configs/streaming_c4.yaml
+uv run llm train --task stream_lm --config-path configs/streaming_c4.yaml
 ```
 
 ### 2.2 CLI 覆盖
 
-`llm-train` 支持在命令行覆盖 YAML 字段，常用于实验 sweep：
+`llm train` 支持在命令行覆盖 YAML 字段，常用于实验 sweep：
 
 ```bash
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml \
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml \
   --epochs 3 \
   --steps-per-epoch 20 \
   --batch-size 8 \
@@ -196,13 +196,13 @@ checkpoints/
 
 ```bash
 # 第一次跑（生成 checkpoints/epoch_2.* 三件套）
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
 
 # 接着再跑 2 个 epoch（cursor 自动续上）——resume 通过 YAML 配置，没有 CLI 参数：
 # 编辑 configs/streaming_local_demo.yaml 的 checkpoint 段：
 #   checkpoint:
 #     resume_from_checkpoint: checkpoints/epoch_2
-uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
 ```
 
 **Resume 保证**：
@@ -240,14 +240,14 @@ cat checkpoints/epoch_1.meta.json | jq .
 
 ## 4. 切换到 SFT / DPO
 
-`llm-train` 注册了多个 task，**PEFT + 流式训练同样适用**：
+`llm train` 注册了多个 task，**PEFT + 流式训练同样适用**：
 
 ```bash
 # 监督微调（instruction tuning）
-uv run llm-train --task sft --config-path configs/your_sft_config.yaml
+uv run llm train --task sft --config-path configs/your_sft_config.yaml
 
 # 直接偏好优化（DPO）
-uv run llm-train --task dpo --config-path configs/your_dpo_config.yaml
+uv run llm train --task dpo --config-path configs/your_dpo_config.yaml
 ```
 
 PEFT（LoRA / IA³ / BitFit / Adapter / Prefix Tuning / AdaLoRA）通过 `training.peft_method` + `training.peft_kwargs` 启用——同一份 YAML 格式，无侵入：
