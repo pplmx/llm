@@ -50,6 +50,8 @@ def from_pretrained(
     device: str | torch.device = "auto",
     dtype: torch.dtype | None = None,
     trust_remote_code: bool = False,
+    *,
+    revision: str | None = None,
 ) -> DecoderModel:
     """
     Load a pretrained model from HuggingFace format.
@@ -68,6 +70,8 @@ def from_pretrained(
         device: Device to load model on ("auto", "cuda", "cpu").
         dtype: Data type for model weights.
         trust_remote_code: Whether to trust remote code (for HF Hub).
+        revision: HF Hub revision (tag / branch / commit) to pin when
+            loading from the Hub. Defaults to ``None`` (HF's default branch).
 
     Returns:
         Loaded DecoderModel.
@@ -78,7 +82,7 @@ def from_pretrained(
     if model_path.exists():
         return _load_from_local(model_path, device, dtype)
     else:
-        return _load_from_hub(str(model_path), device, dtype, trust_remote_code)
+        return _load_from_hub(str(model_path), device, dtype, trust_remote_code, revision)
 
 
 def _load_from_local(
@@ -337,6 +341,7 @@ def _load_from_hub(
     device: str | torch.device,
     dtype: torch.dtype | None,
     trust_remote_code: bool,  # noqa: ARG001 - reserved for future HF Hub auth
+    revision: str | None = None,
 ) -> DecoderModel:
     """Load model from HuggingFace Hub."""
     try:
@@ -355,6 +360,7 @@ def _load_from_hub(
     local_dir = snapshot_download(
         repo_id=model_id,
         allow_patterns=["*.json", "*.safetensors"],
+        revision=revision,
     )
 
     return _load_from_local(Path(local_dir), device, dtype)

@@ -30,12 +30,12 @@ class HFTokenizer:
     Wrapper for HuggingFace Transformers Tokenizers.
     """
 
-    def __init__(self, model_name_or_path: str):
+    def __init__(self, model_name_or_path: str, *, revision: str | None = None):
         from transformers import AutoTokenizer
 
         self._tokenizer: PreTrainedTokenizerBase = cast(
             "PreTrainedTokenizerBase",
-            AutoTokenizer.from_pretrained(model_name_or_path),
+            AutoTokenizer.from_pretrained(model_name_or_path, revision=revision),
         )
 
         # Ensure pad token exists

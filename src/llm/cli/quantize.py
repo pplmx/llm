@@ -217,7 +217,9 @@ def _load_calibration_batches(
         typer.echo(f"Loading tokenizer from {tokenizer}...")
         from transformers import AutoTokenizer
 
-        tok = AutoTokenizer.from_pretrained(str(tokenizer))
+        # `tokenizer` is a local calibration-tokenizer Path (not a Hub repo),
+        # so a pinned HF `revision` is inapplicable here (bandit B615 false +).
+        tok = AutoTokenizer.from_pretrained(str(tokenizer))  # nosec B615 - local path, not Hub download
         if tok is None:
             raise RuntimeError(f"failed to load tokenizer from {tokenizer}")
         text_lines = calib_data.read_text().splitlines()
