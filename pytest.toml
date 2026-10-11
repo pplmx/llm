@@ -1,0 +1,29 @@
+# pytest 9 native-Toml config (pytest.toml [pytest] table).
+# Kept separate from pyproject.toml to avoid bloating it.
+[pytest]
+minversion = "9.0"
+filterwarnings = [
+    "ignore:The argument 'device' of:DeprecationWarning",
+    "ignore:Module llm was previously imported"
+]
+addopts = [
+    "-ra",
+    "-q",
+]
+markers = [
+    "quick: Fast unit tests (< 1s)",
+    "slow: Slower tests (1-30s)",
+    "heavy: Resource-intensive tests (> 30s, may require GPU)",
+    "e2e: End-to-end workflow tests",
+    "integration: Tests requiring external dependencies (e.g., HuggingFace)",
+    "gpu: Tests that require at least 1 GPU",
+    "multi_gpu: Tests that require multiple GPUs (2+)",
+    "full_cluster: Tests that require 8 GPUs (full cluster)",
+    "need_gpu(n): Tests that require at least n GPUs",
+]
+consider_namespace_packages = true  # allow same filename across test dirs without __init__.py
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

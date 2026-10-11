@@ -43,16 +43,26 @@ repos:
             args: [--fix]
           - id: ruff-format
 
-    # Mirror the CI lint job gates locally: type check + doctests. These run
-    # on every commit so a self-hosted CI runner is not needed to catch
-    # regressions on the code paths they cover.
-    - repo: local
+    # Fail the commit if uv.lock is out of date with pyproject.toml. A stale
+    # lock silently drifts deps (e.g. torch) on the next `uv run`; `--check`
+    # refuses to regenerate, so the lock only changes via an explicit `uv lock`.
+    - repo: https://github.com/astral-sh/uv-pre-commit
+      rev: 0.9.30
+      hooks:
+          - id: uv-lock
+            args: [--check]
+
+    # Mirrors the CI `ty check src/llm/` gate, scoped by ty.toml (non-src dirs
+    # are intentionally not type-clean, so `uv check` excludes them).
+    - repo: https://github.com/astral-sh/ty-pre-commit
+      rev: v0.0.86
       hooks:
           - id: ty
-            name: ty (type check src/llm)
-            entry: uvx ty check src/llm/
-            language: system
-            pass_filenames: false
+
+    # Mirror the remaining CI lint gates locally: doctests. These run on every
+    # commit so a self-hosted CI runner is not needed to catch regressions.
+    - repo: local
+      hooks:
           - id: doctests
             name: doctests (src/llm)
             entry: uv run pytest --doctest-modules src/llm/ --no-header -q

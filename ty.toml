@@ -1,0 +1,22 @@
+[src]
+# The repo's type-check gate is `ty check src/llm/` (CI + make ty); tests/,
+# scripts/, notebooks/, examples/ etc. are intentionally NOT type-clean. Keep
+# `uv check` (used by the astral ty-pre-commit hook) scoped to the same surface
+# by excluding every non-src top-level directory.
+exclude = [
+    ".agents/**",
+    "__pycache__/**",
+    "tests/**",
+    "scripts/**",
+    "configs/**",
+    "examples/**",
+    "notebooks/**",
+    "docs/**",
+    "_learning/**",
+    "data/**",
+    "checkpoints/**",
+    "logs/**",
+    "results/**",
+    "overrides/**",
+    "site/**",
+]

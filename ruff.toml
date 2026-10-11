@@ -23,5 +23,5 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"tests/**" = ["S101"]  
+"tests/**" = ["S101"]
 "scripts/**" = ["T201"]

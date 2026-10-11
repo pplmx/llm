@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Astral pre-commit hooks + separate tool configs** (dev tooling):
+  `.pre-commit-config.yaml` now adds the maintained
+  [`astral-sh/uv-pre-commit`](https://github.com/astral-sh/uv-pre-commit)
+  `uv-lock --check` hook (fails a commit when `uv.lock` is stale with
+  `pyproject.toml`, preventing silent dep drift such as torch on the next
+  `uv run`) and [`astral-sh/ty-pre-commit`](https://github.com/astral-sh/ty-pre-commit)
+  `ty` hook (replacing the hand-rolled local hook). To avoid bloating
+  `pyproject.toml`, pytest config moved from `[tool.pytest]` to a standalone
+  `pytest.toml` (`[pytest]` table, pytest 9 native TOML), and a new `ty.toml`
+  scopes the type-check to `src/llm/` (matching the CI `ty check src/llm/` gate;
+  non-src dirs are intentionally not type-clean).
+
 - **Flash Attention & Paged Attention full-path integration confirmed**
   (previously listed under "Planned", now shipped): the `llm.core.attn.flash_attn`
   backend (``attn_impl="flash_attn"``) and the paged-attention full model forward
