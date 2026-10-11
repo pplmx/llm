@@ -81,6 +81,19 @@ is expected, not a leak; the memory is freed when the process exits. Running
 GPU tests as a separate short `test-gpu` process (rather than inside the giant
 full suite) shortens how long GPUs appear "reserved" on a shared box.
 
+### Known host-NCCL limitation (tp_dp / tp-checkpoint e2e)
+
+The multi-GPU `need_gpu(n)` engine e2e tests (`test_tp_dp_2d_engine.py`,
+`test_tp_checkpoint_roundtrip.py`) additionally assume the host's NCCL can run
+*multiple concurrent ranks on distinct GPUs*. On some machines (virtualized
+CUDA / misdetected topology) NCCL reports "Multiple Ranks are using the same
+GPU/Partition" even when `set_device` assigns a distinct GPU per rank — a
+host-environment limit, not a code bug (reproducible with a 5-line 6-process
+`all_reduce`, and flaky under full-suite GPU load: the tests pass in isolation
+but can fail at the end of a long GPU-heavy run). These tests are gated by
+`need_gpu(n)` so a GPU-less CI runner skips them; they need a host with working
+multi-rank NCCL.
+
 ## Test profiles (`Justfile`)
 
 | Recipe          | Marker selection                                    | Use                                          |
