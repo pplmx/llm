@@ -157,6 +157,15 @@ def _search_scale(
         groups = [torch.arange(s, min(s + gs, in_f), device=w.device) for s in range(0, in_f, gs)]
 
     scale = torch.ones(in_f, dtype=torch.float32, device=w.device)
+    # Memory cap for the batched candidate sweep: each grid chunk materializes
+    # a handful of ``[chunk, out_f, gs]`` temporaries. Chunking keeps the
+    # per-channel mode (gs == in_f, potentially large) inside the same memory
+    # footprint as the original per-candidate loop (chunk drops to 1 there),
+    # while the common grouped mode (default gs=128) evaluates all candidates
+    # in a single batched pass. The per-candidate error is computed element-wise
+    # on the same ``[out_f, gs]`` slice in the same summation order as a
+    # sequential sweep, so the selected (argmin) scale is bit-identical.
+    cap_elems = 16_000_000
     with _single_thread_reductions():
         # Greedy coordinate refinement: 3 passes let a raised group max (from
         # a scaled-up salient channel) be re-evaluated against the others.
@@ -165,21 +174,28 @@ def _search_scale(
                 w_g = w[:, cols]  # [out_f, gs]
                 act_g = act_mean[cols]  # [gs]
                 s_g = scale[cols]  # [gs]
+                chunk = max(1, cap_elems // (w_g.shape[0] * w_g.shape[1]))
                 for j in range(len(cols)):
                     best_s = s_g[j].item()
                     best_err = float("inf")
-                    for cand in grid:
-                        s_try = s_g.clone()
-                        s_try[j] = cand
-                        scaled = w_g * s_try  # [out_f, gs]
+                    # s_g is fixed across candidates for this channel; only
+                    # position ``j`` is replaced by each grid candidate.
+                    s_others = s_g.clone()
+                    for start in range(0, n_grid, chunk):
+                        cands = grid[start : start + chunk]  # [chunk]
+                        s_try = s_others.unsqueeze(0).expand(cands.shape[0], -1).clone()
+                        s_try[:, j] = cands
+                        scaled = w_g.unsqueeze(0) * s_try.unsqueeze(1)  # [chunk, out_f, gs]
                         # Per-output-row group scale, exactly as at packing time.
-                        delta = (scaled.abs().max(dim=1, keepdim=True)[0] / qmax).clamp(min=1e-8)
-                        recon = torch.round(scaled / delta).clamp(-qmax - 1, qmax) * delta / s_try
-                        # Activation-weighted group reconstruction error.
-                        err = (((w_g - recon) ** 2) * act_g).sum().item()
-                        if err < best_err:
-                            best_err = err
-                            best_s = cand
+                        delta = (scaled.abs().max(dim=-1, keepdim=True)[0] / qmax).clamp(min=1e-8)
+                        recon = torch.round(scaled / delta).clamp(-qmax - 1, qmax) * delta / s_try.unsqueeze(1)
+                        # Activation-weighted group reconstruction error per candidate.
+                        errs = ((w_g.unsqueeze(0) - recon) ** 2 * act_g).sum(dim=(-1, -2))  # [chunk]
+                        local_best = errs.argmin()
+                        local_err = errs[local_best].item()
+                        if local_err < best_err:
+                            best_err = local_err
+                            best_s = cands[local_best].item()
                     s_g[j] = best_s
                     scale[cols[j]] = best_s
 

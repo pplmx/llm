@@ -254,6 +254,60 @@ def test_awq_search_per_channel_group_mode():
     assert (scale > 0).all()
 
 
+def test_search_scale_matches_sequential_sweep():
+    """The vectorized `_search_scale` must pick EXACTLY the same per-channel
+    scale as the original sequential per-candidate sweep (the refactor's
+    argmin guarantee) — the property tests (never-worse, salient protection)
+    wouldn't catch a subtle drift to a different-but-still-good scale."""
+
+    def sequential(w, act_mean, bits, group_size, n_grid):
+        _out_f, in_f = w.shape
+        qmax = 2 ** (bits - 1) - 1
+        grid = 2.0 ** torch.arange(-(n_grid // 2), n_grid - (n_grid // 2), dtype=torch.float32)
+        if group_size == -1:
+            groups = [torch.arange(in_f)]
+        else:
+            gs = min(group_size, in_f)
+            groups = [torch.arange(s, min(s + gs, in_f)) for s in range(0, in_f, gs)]
+        scale = torch.ones(in_f, dtype=torch.float32)
+        for _pass in range(3):
+            for cols in groups:
+                w_g = w[:, cols]
+                act_g = act_mean[cols]
+                s_g = scale[cols]
+                for j in range(len(cols)):
+                    best_s = s_g[j].item()
+                    best_err = float("inf")
+                    for cand in grid.tolist():
+                        s_try = s_g.clone()
+                        s_try[j] = cand
+                        scaled = w_g * s_try
+                        delta = (scaled.abs().max(dim=1, keepdim=True)[0] / qmax).clamp(min=1e-8)
+                        recon = torch.round(scaled / delta).clamp(-qmax - 1, qmax) * delta / s_try
+                        err = (((w_g - recon) ** 2) * act_g).sum().item()
+                        if err < best_err:
+                            best_err = err
+                            best_s = cand
+                    s_g[j] = best_s
+                    scale[cols[j]] = best_s
+        return scale.clamp(min=1e-8)
+
+    from llm.quantization.awq import _search_scale
+
+    for seed in range(8):
+        torch.manual_seed(seed)
+        out_f = 4 + seed % 4
+        bits = 4 if seed % 2 == 0 else 8
+        group_size = -1 if seed % 3 == 0 else 4
+        in_f = 8 if group_size != -1 else 6
+        w = torch.randn(out_f, in_f)
+        act = torch.rand(in_f) * 3 + 0.1
+        n_grid = 8 + seed
+        vec = _search_scale(w, act, bits, group_size, n_grid)
+        ref = sequential(w, act, bits, group_size, n_grid)
+        assert torch.equal(vec, ref), f"seed {seed}: batched != sequential sweep"
+
+
 def test_awq_clip_ratio_bounds_outliers():
     """clip_ratio actually clamps the outlier in the packed reconstruction."""
     from llm.quantization._gptq_layer import _unpack_4bit
