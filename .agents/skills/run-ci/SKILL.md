@@ -62,7 +62,8 @@ Start
 
 end-of-file-fixer, trailing-whitespace, check-toml/yaml, merge-conflict,
 mixed-line-ending (LF), commitizen (Conventional Commits), rumdl markdown
-lint (CHANGELOG.md + docs/audits excluded), ruff check+format, **ty type
+lint (CHANGELOG.md + docs/audits excluded), ruff check+format, **uv-lock**
+(runs `uv lock --check` — fails a commit whose `uv.lock` is stale), **ty type
 check**, **doctests**. Hooks run on every commit; `--no-verify` is forbidden.
 
 ## Commit workflow (AGENTS.md)
