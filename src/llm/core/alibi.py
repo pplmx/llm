@@ -39,10 +39,16 @@ def get_alibi_slopes(num_heads: int) -> torch.Tensor:
     slopes = torch.pow(base, powers)
 
     if closest_power_of_2 != num_heads:
-        # If num_heads is not a power of 2, compute extra slopes
+        # If num_heads is not a power of 2, compute extra slopes using the
+        # SAME consecutive exponent scheme as the canonical ALiBi reference
+        # (paper appendix / official repo, and HF BLOOM ``_get_alibi_slopes``):
+        # extra_start^1, extra_start^2, ..., extra_start^num_remaining. The
+        # previous odd-only exponents (1,3,5,...) diverged from every reference
+        # (and from the consecutive power-of-2 part above), giving the extra
+        # heads steeper linear biases than ALiBi specifies.
         extra_base = 2 ** (-(2 ** -(math.log2(2 * closest_power_of_2) - 3)))
         num_remaining = num_heads - closest_power_of_2
-        extra_powers = torch.arange(1, 2 * num_remaining + 1, 2)
+        extra_powers = torch.arange(1, num_remaining + 1)
         extra_slopes = torch.pow(extra_base, extra_powers)
         slopes = torch.cat([slopes, extra_slopes])
 

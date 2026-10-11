@@ -27,6 +27,41 @@ class TestGetALiBiSlopes:
         slopes = get_alibi_slopes(6)
         assert slopes.shape == (6,)
 
+    def test_non_power_of_2_extra_slopes_match_canonical(self):
+        """Extra-head slopes must match the canonical ALiBi reference (paper
+        appendix / official repo, and HF BLOOM ``_get_alibi_slopes``): the
+        extra heads use CONSECUTIVE exponents ``extra_start^1..^num_remaining``.
+
+        The previous odd-only exponents (1,3,5,...) diverged from every
+        reference, giving non-power-of-2 heads (e.g. 6/10/12/20/24...) steeper
+        linear biases than ALiBi specifies — heads 9+ of n=12 got
+        ``0.707^3`` instead of ``0.707^2``, etc. Pinned explicitly so a
+        regression to the odd scheme is caught."""
+
+        def canonical(num_heads: int) -> list[float]:
+            import math
+
+            def slopes_p2(n: int) -> list[float]:
+                start = 2 ** (-(2 ** -(math.log2(n) - 3)))
+                ratio = start
+                return [start * ratio**i for i in range(n)]
+
+            if math.log2(num_heads).is_integer():
+                return slopes_p2(num_heads)
+            cp2 = 2 ** math.floor(math.log2(num_heads))
+            slopes = slopes_p2(cp2)
+            extra_dims = num_heads - cp2
+            extra_start = 2 ** (-(2 ** -(math.log2(2 * cp2) - 3)))
+            ratio = extra_start
+            extra = [extra_start * ratio**i for i in range(extra_dims)]
+            return slopes + extra
+
+        for num_heads in [6, 10, 12, 20, 24, 40, 56, 80]:
+            got = get_alibi_slopes(num_heads).tolist()
+            assert got == pytest.approx(canonical(num_heads), rel=1e-6), (
+                f"slopes for {num_heads} heads diverge from canonical ALiBi: {got}"
+            )
+
     def test_slopes_positive(self):
         """Test that all slopes are positive."""
         for num_heads in [2, 4, 6, 8, 12, 16]:
