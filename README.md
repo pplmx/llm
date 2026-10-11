@@ -102,32 +102,45 @@ To quickly get started with training a model using the framework, follow these s
   official script (`curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | sh -s -- --to <dir>`), `cargo install
   just`, or a package manager (`brew install just` / `choco install just` / `apt install just`).
 
-### Setting up the Environment
+### For users: install and use `llm`
 
-This project uses `uv` for dependency management and `Justfile` for common development tasks.
+Use `llm` as a **library** dependency of your own project:
 
-1. **Install `uv`**: If you don't have `uv` installed, follow the official instructions [here](https://github.com/astral-sh/uv#installation).
-2. **Initialize Project**: Navigate to the project root directory and run the `just init` command. This will set up the virtual environment, install all necessary dependencies, and install pre-commit hooks.
+```bash
+uv add llm
+```
+
+Or install it as a **command-line tool** — this provides the `llm-train`,
+`llm-serve`, `llm-quantize`, `llm-prune`, `llm-decompose`, and
+`llm-migrate-ckpt` commands:
+
+```bash
+uv tool install llm
+```
+
+### For developers: work on the source in this repo
+
+This project uses `uv` for dependency management and `Justfile` for common
+development tasks. The steps below are for **editing the code in this
+repository**, not for installing the package (see the user install above).
+
+1. **Install `uv`**: If you don't have `uv` installed, follow the official
+   instructions [here](https://github.com/astral-sh/uv#installation). `just` is
+   also required (see Requirements above).
+2. **Initialize the project**: From the repo root, run `just init` to create
+   the virtual environment, install all dependencies, and install pre-commit
+   hooks.
 
     ```bash
     just init
     ```
 
-3. **Synchronize Dependencies (if needed)**: If `pyproject.toml` or `uv.lock` changes, you can re-synchronize dependencies:
+3. **Re-sync dependencies (if needed)**: Whenever `pyproject.toml` or
+   `uv.lock` changes, re-synchronize:
 
     ```bash
     just sync
     ```
-
-### User Installation (Distribution)
-
-If this project were to be distributed as a package, users would typically install it using pip:
-
-```bash
-pip install llm # Assuming 'llm' is the package name on PyPI
-```
-
-However, for development, `just init` is the recommended way to set up the environment.
 
 ## Usage
 
