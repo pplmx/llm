@@ -348,7 +348,7 @@ def test_engine_tp_dp_2d_moe_four_gpu(tmp_path):
     _run_engine_2d(tmp_path, world_size=4, tp_size=2, moe=True)
 
 
-@pytest.mark.need_gpu(4)
+@pytest.mark.need_gpu(6)
 @pytest.mark.slow
 def test_engine_tp_dp_2d_wide_grid_six_gpu(tmp_path):
     """Real-engine TP+DP 2D with a wider DP grid (6 GPUs, tp=2 dp=3)."""
