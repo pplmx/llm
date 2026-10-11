@@ -5,8 +5,9 @@ ENV PATH="/root/.local/bin:$PATH" \
     UV_INDEX_URL="https://mirrors.cernet.edu.cn/pypi/web/simple" \
     PIP_INDEX_URL="https://mirrors.cernet.edu.cn/pypi/web/simple"
 
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install uv and just (command runner)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | sh -s -- --to /usr/local/bin
 
 WORKDIR /app
 
@@ -21,10 +22,10 @@ FROM builder AS validator
 WORKDIR /app
 COPY . .
 
-# Install test deps (default-groups) for make test
+# Install test deps (default-groups) for just test
 RUN uv sync --frozen
 
-RUN make build && make test
+RUN just build && just test
 
 # Final image for running the application
 FROM python:3.14-slim-bookworm
