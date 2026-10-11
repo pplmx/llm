@@ -140,6 +140,14 @@ nav:
       - guides/evaluation.md
       - guides/quantization.md
       - guides/export.md
+      # Research slices (previously orphaned from the site nav)
+      - guides/soft_moe.md
+      - guides/expert_choice.md
+      - guides/dynamic_selection.md
+      - guides/load_balance.md
+      - guides/infinite.md
+      - guides/multimodal_preprocess.md
+      - guides/quant_param_search.md
 
   - 💻 开发:
       - development/README.md
@@ -185,6 +193,7 @@ nav:
       - "010: SmoothQuant Integration": adr/010-smoothquant-integration.md
       - "011: GGUF Export": adr/011-gguf-export.md
       - "012: QLoRA": adr/012-use-qlora.md
+      - "013: Multimodal Encoder Contract": adr/013-multimodal-encoder-contract.md
 
   - ❓ 帮助:
       - faq.md
