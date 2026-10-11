@@ -18,6 +18,7 @@ Usage::
 
 from __future__ import annotations
 
+import importlib.metadata
 from pathlib import Path
 
 import typer
@@ -35,6 +36,31 @@ app = typer.Typer(
     add_completion=False,
     help="llm — a modular PyTorch framework for training and serving LLMs.",
 )
+
+
+def _version_callback(value: bool) -> None:
+    """Eager ``--version``/``-V``: print the version and exit before subcommand
+    or "missing command" resolution. (A typer group callback can't hold a
+    positional argument, but an eager option short-circuits cleanly and leaves
+    subcommand dispatch untouched.)"""
+    if value:
+        typer.echo(f"llm {importlib.metadata.version('llm')}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Show the version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """The ``llm`` command group."""
+
 
 app.add_typer(train_app, name="train", help="Train a model (LM / SFT / DPO / ...).")
 app.add_typer(serve_app, name="serve", help="Start the OpenAI-compatible inference server.")

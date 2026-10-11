@@ -22,6 +22,16 @@ def test_llm_root_help_lists_all_subcommands():
         assert name in result.output
 
 
+def test_llm_version_prints_and_exits_zero():
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert result.output.strip().startswith("llm ")
+
+    short = CliRunner().invoke(app, ["-V"])
+    assert short.exit_code == 0
+    assert short.output.strip() == result.output.strip()
+
+
 def test_llm_routes_each_subcommand_to_its_options():
     # each subcommand's --help must reach that parser's own option tokens
     cases = {
