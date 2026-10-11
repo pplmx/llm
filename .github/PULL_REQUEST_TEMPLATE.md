@@ -27,10 +27,10 @@
 ## Testing
 <!-- Describe the testing you've done -->
 
-- [ ] All existing tests pass (`make test`)
+- [ ] All existing tests pass (`just test`)
 - [ ] Added new tests to cover the changes
 - [ ] Tested locally with different configurations
-- [ ] Checked code quality (`make ruff && make ty`)
+- [ ] Checked code quality (`just ruff && just ty`)
 
 ### Checklist
 

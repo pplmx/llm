@@ -21,10 +21,10 @@ tags:
 
 ### Q: 如何设置开发环境？
 
-使用 `make init` 命令即可一键设置：
+使用 `just init` 命令即可一键设置：
 
 ```bash
-make init
+just init
 ```
 
 这会自动创建虚拟环境、安装依赖并配置 pre-commit 钩子.
@@ -344,9 +344,9 @@ A: 通过环境变量：`LLM_SERVING_PEFT_METHOD=lora LLM_SERVING_PEFT_ADAPTER_P
 ### Q: 如何运行代码质量检查？
 
 ```bash
-make ruff   # 运行 ruff
-make ty     # 运行 ty 类型检查
-make test   # 运行测试
+just ruff   # 运行 ruff
+just ty     # 运行 ty 类型检查
+just test   # 运行测试
 ```
 
 ---

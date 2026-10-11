@@ -26,7 +26,7 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) to understand the expected
 ## Testing Policy
 
 - **Test coverage gate**: `pyproject.toml` sets
-  `tool.coverage.report.fail_under = 77` and `make test-cov` passes
+  `tool.coverage.report.fail_under = 77` and `just test-cov` passes
   `--cov-fail-under=77` to enforce it on CI. This is the coverage the
   CI can actually measure when running the full suite on a GPU-less
   runner (CUDA-required tests fail and don't exercise their code
@@ -36,11 +36,11 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) to understand the expected
   `training/distributed`, etc. Any PR that drops coverage below this
   bar will fail the lint job. New code should come with tests that keep
   coverage at or above the current floor.
-- **Ruff**: `make ruff` runs `ruff format` and `ruff check`. CI runs both.
-- **Type checks**: `make ty` runs `ty check`. CI runs it.
+- **Ruff**: `just ruff` runs `ruff format` and `ruff check`. CI runs both.
+- **Type checks**: `just ty` runs `ty check`. CI runs it.
 - **Markers**: when adding tests, mark them with the appropriate marker
   (`quick`, `slow`, `heavy`, `e2e`, `gpu`, `multi_gpu`) so the local test
-  loop (`make test-fast`) stays fast for daily development.
+  loop (`just test-fast`) stays fast for daily development.
 
 ## Security Findings Policy
 

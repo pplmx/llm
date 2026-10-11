@@ -20,7 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `uv-lock --check` hook (fails a commit when `uv.lock` is stale with
   `pyproject.toml`, preventing silent dep drift such as torch on the next
   `uv run`) and [`astral-sh/ty-pre-commit`](https://github.com/astral-sh/ty-pre-commit)
-  `ty` hook (replacing the hand-rolled local hook). To avoid bloating
+  `ty` hook (replacing the hand-rolled local hook). The command runner moved
+  from `Makefile` to a `Justfile` (`just` http://just.systems; CI installs it
+  via `taiki-e/install-action@just`). All `just test*` targets (and the
+  pre-commit doctests hook) run `uv run --frozen`, so running the suite never
+  silently rewrites `uv.lock` (e.g. a stray re-lock bumping torch mid-run);
+  `just sync`/`just dev` remain non-frozen for intentional re-locks. To avoid
+  bloating
   `pyproject.toml`, pytest config moved from `[tool.pytest]` to a standalone
   `pytest.toml` (`[pytest]` table, pytest 9 native TOML), and a new `ty.toml`
   scopes the type-check to `src/llm/` (matching the CI `ty check src/llm/` gate;

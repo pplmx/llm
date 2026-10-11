@@ -80,8 +80,11 @@ jobs:
             -   name: Build Project
                 run: uv build
 
+            -   name: Install just (command runner)
+                uses: taiki-e/install-action@just
+
             -   name: Run Full Tests with Coverage
-                run: make test-cov
+                run: just test-cov
 
             -   name: Upload coverage report as artifact
                 if: always() # Ensure it runs even if tests fail, to upload partial coverage

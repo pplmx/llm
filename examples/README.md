@@ -52,7 +52,7 @@ uv run examples/qlora_finetuning_demo.py
 
 ```bash
 # 安装项目依赖
-make init
+just init
 
 # 激活虚拟环境
 source .venv/bin/activate

@@ -11,8 +11,8 @@
 | [docs/development/guide-extending.md](docs/development/guide-extending.md) | 加 task / callback / scheduler / metric |
 | [docs/adr/](docs/adr/) | 已锁定架构决策（GQA、KV cache、Paged Attn、QLoRA） |
 | [CHANGELOG.md](CHANGELOG.md) | 近期功能与 breaking changes |
-| [pyproject.toml](pyproject.toml) | 依赖 groups、pytest markers、entry points |
-| [Makefile](Makefile) | 所有 `make` 目标定义 |
+| [pytest.toml](pytest.toml) | pytest markers、config |
+| [Justfile](Justfile) | 所有 `just` 目标定义 |
 
 ## 当前焦点 (P0)
 
@@ -78,17 +78,17 @@ uv run llm-serve
 
 | 命令 | 说明 |
 | --- | --- |
-| `make init` | 首次：依赖 + pre-commit |
-| `make sync` / `make dev` | 默认 groups / 全部 groups |
-| `make test` | 全量（608+，须全绿） |
-| `make test-fast` | 排除 `heavy`、`e2e` |
-| `make test-e2e` | 仅 e2e |
-| `make ruff` | format + lint |
-| `make ty` | 类型检查 |
+| `just init` | 首次：依赖 + pre-commit |
+| `just sync` / `just dev` | 默认 groups / 全部 groups |
+| `just test` | 全量（608+，须全绿） |
+| `just test-fast` | 排除 `heavy`、`e2e` |
+| `just test-e2e` | 仅 e2e |
+| `just ruff` | format + lint |
+| `just ty` | 类型检查 |
 | `uv sync --extra streaming` | HF `datasets` 流式依赖 |
 | `uv lock --check` | 验证 lock 与 pyproject 同步 |
 
-**改动后验证顺序**: `make test` → `make ruff` → `make test`
+**改动后验证顺序**: `just test` → `just ruff` → `just test`
 
 ## uv 约定
 
@@ -139,7 +139,7 @@ Markers（`pyproject.toml`）：`quick` · `slow` · `heavy` · `e2e` · `gpu` �
 - 在 `DecoderModel` 里为多模态打补丁
 - 恢复已删除的 compat shim 或 duplicate registry
 - 为覆盖率堆 demo 测试或重复 e2e
-- 未跑 `make test` 就声称完成
+- 未跑 `just test` 就声称完成
 
 ## Agent skills
 

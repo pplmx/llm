@@ -121,7 +121,7 @@ docs/
 
 ```bash
 # 安装依赖与 pre-commit hooks
-make init
+just init
 
 # 流式预训练（本地冒烟，CPU 可跑）
 uv run llm-train --task stream_lm --config-path configs/streaming_local_demo.yaml
@@ -134,7 +134,7 @@ uv run llm-quantize gptq --model ckpt.pt --output ckpt-int4.pt \
     --calib-data texts.txt --tokenizer gpt2 --bits 4
 
 # 质量门槛
-make ruff && make ty && make test-fast
+just ruff && just ty && just test-fast
 ```
 
 </div>

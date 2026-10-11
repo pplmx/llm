@@ -137,7 +137,7 @@ loss = engine._run_epoch(0)  # batch["modal_embeds"]: [B, 17, embed_dim]
   逐步重嵌入)推理。
 - **CPU e2e 收敛**：小字母表(`asr_vocab=8` → 8 个充分分离的频率峰)下音频塔+解码器
   学会转写 —— 对**从未训练过**的随机转写频谱贪心解码,held-out 准确率达 ~1.0
-  (chance 1/8);更大容量的重配置(`@pytest.mark.e2e`/`heavy`,`make test-e2e`)同达
+  (chance 1/8);更大容量的重配置(`@pytest.mark.e2e`/`heavy`,`just test-e2e`)同达
   >0.95。调参注记：`vocab=32` 时合成任务落在记忆-泛化刀口上(容量/样本量/线程数微扰
   就会翻入记忆盆地),故用 8 字母表把解翻转任务推进泛化盆地。
 

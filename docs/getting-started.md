@@ -26,10 +26,10 @@ git clone https://github.com/pplmx/llm.git
 cd llm
 
 # 安装依赖
-make init
+just init
 ```
 
-或者使用 uv（默认包含 test 依赖组, 可直接 `make test`）:
+或者使用 uv（默认包含 test 依赖组, 可直接 `just test`）:
 
 ```bash
 uv sync

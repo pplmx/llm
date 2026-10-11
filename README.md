@@ -57,7 +57,7 @@ To quickly get started with training a model using the framework, follow these s
 1. **Initialize Project**: Ensure your environment is set up by running the initialization command (see [Installation](#installation) for details).
 
     ```bash
-    make init
+    just init
     ```
 
 2. **Run a Training Example**: Execute the main training script with a language modeling task.
@@ -102,19 +102,19 @@ To quickly get started with training a model using the framework, follow these s
 
 ### Setting up the Environment
 
-This project uses `uv` for dependency management and `Makefile` for common development tasks.
+This project uses `uv` for dependency management and `Justfile` for common development tasks.
 
 1. **Install `uv`**: If you don't have `uv` installed, follow the official instructions [here](https://github.com/astral-sh/uv#installation).
-2. **Initialize Project**: Navigate to the project root directory and run the `make init` command. This will set up the virtual environment, install all necessary dependencies, and install pre-commit hooks.
+2. **Initialize Project**: Navigate to the project root directory and run the `just init` command. This will set up the virtual environment, install all necessary dependencies, and install pre-commit hooks.
 
     ```bash
-    make init
+    just init
     ```
 
 3. **Synchronize Dependencies (if needed)**: If `pyproject.toml` or `uv.lock` changes, you can re-synchronize dependencies:
 
     ```bash
-    make sync
+    just sync
     ```
 
 ### User Installation (Distribution)
@@ -125,7 +125,7 @@ If this project were to be distributed as a package, users would typically insta
 pip install llm # Assuming 'llm' is the package name on PyPI
 ```
 
-However, for development, `make init` is the recommended way to set up the environment.
+However, for development, `just init` is the recommended way to set up the environment.
 
 ## Usage
 

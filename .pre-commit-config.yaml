@@ -65,6 +65,6 @@ repos:
       hooks:
           - id: doctests
             name: doctests (src/llm)
-            entry: uv run pytest --doctest-modules src/llm/ --no-header -q
+            entry: uv run --frozen pytest --doctest-modules src/llm/ --no-header -q
             language: system
             pass_filenames: false

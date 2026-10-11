@@ -58,10 +58,10 @@ is missing; CI gates run `not heavy and not e2e` for daily work.
 ```bash
 uv run pytest tests/<dir> -q                    # targeted
 uv run pytest tests/<dir> -m quick -q           # marker-filtered
-uv run pytest -m "not heavy and not e2e" -q     # daily gate (make test-fast)
-uv run pytest -m e2e -q                         # e2e only (make test-e2e)
+uv run pytest -m "not heavy and not e2e" -q     # daily gate (just test-fast)
+uv run pytest -m e2e -q                         # e2e only (just test-e2e)
 uv run pytest tests/path/test_x.py::test_y -q   # single test
 ```
 
 After adding tests: run them, then the full `run-ci` gate order
-(`make test` → `make ruff` → `make test`).
+(`just test` → `just ruff` → `just test`).

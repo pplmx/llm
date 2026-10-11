@@ -19,32 +19,32 @@ environments where `/root/.cache` is read-only, prefix commands with
 ```text
 Start
   ├─ Quick sanity while iterating   → uv run pytest <target-dir> -q
-  ├─ Daily development gate         → make test-fast   (excludes heavy+e2e)
-  ├─ Full gate before claiming done → make test        (ALL tests must pass)
-  ├─ Lint/format                    → make ruff        (format + lint --fix)
-  ├─ Type check                     → make ty          (uvx ty check src/llm/)
+  ├─ Daily development gate         → just test-fast   (excludes heavy+e2e)
+  ├─ Full gate before claiming done → just test        (ALL tests must pass)
+  ├─ Lint/format                    → just ruff        (format + lint --fix)
+  ├─ Type check                     → just ty          (uvx ty check src/llm/)
   ├─ Dependency change              → uv lock && uv lock --check
-  ├─ Docstring examples changed     → make test-doc    (doctests src/llm)
-  └─ e2e workflows                  → make test-e2e
+  ├─ Docstring examples changed     → just test-doc    (doctests src/llm)
+  └─ e2e workflows                  → just test-e2e
 ```
 
-**AGENTS.md verification order after changes: `make test` → `make ruff` →
-`make test`.** Ruff can rewrite files, so tests run again after it.
+**AGENTS.md verification order after changes: `just test` → `just ruff` →
+`just test`.** Ruff can rewrite files, so tests run again after it.
 
-## Make targets (Makefile)
+## Just targets (Justfile)
 
-| Target                   | Effect                                                       |
-| ------------------------ | ------------------------------------------------------------ |
-| `make test`              | `uv run pytest` — full suite (600+ tests, must be all green) |
-| `make test-fast`         | excludes `heavy` + `e2e` markers                             |
-| `make test-e2e`          | only `e2e` marker                                            |
-| `make test-quick`        | only `quick` marker                                          |
-| `make test-cov`          | coverage with `--cov-fail-under=77` (CI floor, ticket #11)   |
-| `make test-doc`          | `pytest --doctest-modules src/llm/`                          |
-| `make ruff`              | `uvx ruff format .` then `uvx ruff check . --fix`            |
-| `make ty`                | `uvx ty check src/llm/` — matches the CI lint gate           |
-| `make sync` / `make dev` | `uv sync` default groups / all groups+extras                 |
-| `make init`              | deps + `uvx prek install` hooks                              |
+| Target                   | Effect                                                                |
+| ------------------------ | --------------------------------------------------------------------- |
+| `just test`              | `uv run --frozen pytest` — full suite (600+ tests, must be all green) |
+| `just test-fast`         | excludes `heavy` + `e2e` markers                                      |
+| `just test-e2e`          | only `e2e` marker                                                     |
+| `just test-quick`        | only `quick` marker                                                   |
+| `just test-cov`          | coverage with `--cov-fail-under=77` (CI floor, ticket #11)            |
+| `just test-doc`          | `uv run --frozen pytest --doctest-modules src/llm/`                   |
+| `just ruff`              | `uvx ruff format .` then `uvx ruff check . --fix`                     |
+| `just ty`                | `uvx ty check src/llm/` — matches the CI lint gate                    |
+| `just sync` / `just dev` | `uv sync` default groups / all groups+extras                          |
+| `just init`              | deps + `uvx prek install` hooks                                       |
 
 ## What CI enforces (.github/workflows/ci.yml)
 
@@ -53,12 +53,12 @@ Start
   ticket 08-ty-in-ci), `py_compile` of every `examples/*.py`.
 - **doctest**: `uv run pytest --doctest-modules src/llm/`.
 - **build-and-test**: ubuntu/macos/windows × `uv sync --frozen` + `uv build`
-    - `make test-cov`.
+    - `just test-cov`.
 - **security**: `pip-audit --strict` on the exported lock set +
   `bandit -r src/llm/ --severity-level high`.
 - Docker build excludes test/docs/streaming dependency groups.
 
-## Pre-commit hooks (prek, installed via `make init`)
+## Pre-commit hooks (prek, installed via `just init`)
 
 end-of-file-fixer, trailing-whitespace, check-toml/yaml, merge-conflict,
 mixed-line-ending (LF), commitizen (Conventional Commits), rumdl markdown
