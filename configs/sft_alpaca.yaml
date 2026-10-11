@@ -26,7 +26,7 @@
 #
 # Usage
 # -----
-#   uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
+#   uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 #
 # Recommended CLI overrides for experiments
 # -----------------------------------------

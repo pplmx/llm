@@ -12,7 +12,7 @@
 #   # 1. Train a fine-tuned model (SFT + LoRA recommended for >7B):
 #   #    PEFT 走 YAML（training.peft_method / peft_kwargs / peft_save_path），
 #   #    没有 CLI 参数——编辑 configs/sft_alpaca.yaml 的 training 段后：
-#   uv run llm-train --task sft --config-path configs/sft_alpaca.yaml
+#   uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 #
 #   # 2. Serve the trained checkpoint with the PEFT adapter loaded:
 #   #    Pass the YAML values as env vars (LLM_SERVING_* prefix).
@@ -23,7 +23,7 @@
 #   LLM_SERVING_PEFT_ADAPTER_PATH=checkpoints_sft_alpaca/peft_adapter_lora.bin \
 #   LLM_SERVING_PEFT_KWARGS='{"rank": 8, "alpha": 16.0}' \
 #   LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
-#   uv run llm-serve
+#   uv run llm serve
 #
 #   # Or load the YAML directly via a small wrapper (see the `Usage
 #   # with from_yaml()` snippet at the bottom):
@@ -62,7 +62,7 @@
 #   (same `peft_*` workflow applies)
 
 # --- Model checkpoint --------------------------------------------------
-# Path to a training checkpoint produced by `llm-train --task sft` (or
+# Path to a training checkpoint produced by `llm train --task sft` (or
 # `stream_lm` / `dpo` — any task that produces a DecoderModel). The v2
 # split layout lives at `<stem>.safetensors` + `.meta.json` +
 # `.extra_state.pt`; point at the stem (no suffix) and the loader
@@ -76,7 +76,7 @@ tokenizer_type: hf
 # blocks anonymous access.
 host: 0.0.0.0
 # IMPORTANT: replace this with a real secret in production
-# (e.g. `LLM_SERVING_API_KEY=$(openssl rand -hex 32) uv run llm-serve`).
+# (e.g. `LLM_SERVING_API_KEY=$(openssl rand -hex 32) uv run llm serve`).
 # The placeholder below is here so the YAML is structurally valid;
 # the public-host guard requires a non-empty api_key when host is
 # non-loopback.

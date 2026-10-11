@@ -19,7 +19,7 @@
 #
 # Usage
 # -----
-#   uv run llm-train --task stream_lm --config-path configs/streaming_wikitext2_demo.yaml
+#   uv run llm train --task stream_lm --config-path configs/streaming_wikitext2_demo.yaml
 #   uv run python scripts/quantize_eval.py \
 #       --model checkpoints_wiki/epoch_4 --tokenizer-path gpt2 --device cuda:2
 #

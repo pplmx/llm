@@ -1,5 +1,5 @@
 # Example configuration for LLM training
-# Usage: llm-train --task lm --config-path configs/example.yaml
+# Usage: llm train --task lm --config-path configs/example.yaml
 
 model:
   hidden_size: 512

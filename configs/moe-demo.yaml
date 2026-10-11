@@ -1,5 +1,5 @@
 # MoE demo — mirrors docs/development/guide-extending.md "食谱 4".
-# Usage: uv run llm-train --task stream_lm --config-path configs/moe-demo.yaml
+# Usage: uv run llm train --task stream_lm --config-path configs/moe-demo.yaml
 #
 # Enable MoE in the model with mlp_impl: moe + num_experts + top_k;
 # TransformerBlock instantiates the MoE layer instead of the standard MLP.

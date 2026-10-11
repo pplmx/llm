@@ -10,7 +10,7 @@
 # Usage
 # -----
 #   # Part 1 (600 steps):
-#   uv run llm-train --task stream_lm --config-path configs/streaming_c4_demo.yaml
+#   uv run llm train --task stream_lm --config-path configs/streaming_c4_demo.yaml
 #
 #   # Resume (optional; verified on this machine):
 #   #   checkpoint.resume_from_checkpoint: checkpoints_c4_demo/epoch_3

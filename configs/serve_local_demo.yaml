@@ -2,7 +2,7 @@
 #
 # Purpose
 # -------
-# The smallest possible `llm-serve` smoke test that exercises the full
+# The smallest possible `llm serve` smoke test that exercises the full
 # OpenAI-compatible HTTP API path: ServingConfig → FastAPI app →
 # /v1/chat/completions → ContinuousBatchingEngine → tokens back. Use
 # this as the smoke test before deploying a real trained checkpoint.
@@ -14,7 +14,7 @@
 # -----
 #   # 1. Start the server (no checkpoint required; arch fields build
 #   #    a tiny dummy model). Pick any unused port.
-#   uv run llm-serve
+#   uv run llm serve
 #   # Server prints "Application startup complete" + structured
 #   # server_config log line.
 #
