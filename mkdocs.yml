@@ -9,6 +9,10 @@ theme:
   name: material
   language: zh
   custom_dir: overrides
+  favicon: assets/favicon.svg
+  font:
+    text: Noto Sans SC
+    code: Roboto Mono
   icon:
     logo: material/book-open-page-variant
     repo: fontawesome/brands/github
@@ -36,12 +40,15 @@ theme:
     - navigation.indexes
     - navigation.top
     - navigation.footer
+    - navigation.path
+    - navigation.tracking
     - search.suggest
     - search.highlight
     - content.action.edit
     - content.code.copy
     - content.code.annotate
     - content.tabs.link
+    - content.tooltips
 
 # 排除内部 / 归档文档，避免 "not in nav" 告警。
 # 路径相对 docs/（不带 docs/ 前缀）。
@@ -101,6 +108,13 @@ markdown_extensions:
   - tables
   - attr_list
   - md_in_html
+  - abbr
+  - def_list
+  - footnotes
+  - pymdownx.caret
+  - pymdownx.tilde
+  - pymdownx.mark
+  - pymdownx.keys
 
 extra_css:
   - stylesheets/extra.css

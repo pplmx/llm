@@ -110,3 +110,14 @@
     margin: 0;
   }
 }
+
+/* 平滑滚动（配合 navigation.tracking 的锚点滚动） */
+html {
+  scroll-behavior: smooth;
+}
+
+/* 文字选中态与主题色一致 */
+::selection {
+  background: var(--md-primary-fg-color--transparent);
+  color: var(--md-typeset-color);
+}
