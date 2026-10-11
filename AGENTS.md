@@ -12,6 +12,7 @@
 | [docs/adr/](docs/adr/) | 已锁定架构决策（GQA、KV cache、Paged Attn、QLoRA） |
 | [CHANGELOG.md](CHANGELOG.md) | 近期功能与 breaking changes |
 | [pytest.toml](pytest.toml) | pytest markers、config |
+| [docs/development/test-architecture.md](docs/development/test-architecture.md) | 测试架构、GPU-less 测试策略、CI 拆分 |
 | [Justfile](Justfile) | 所有 `just` 目标定义 |
 
 ## 当前焦点 (P0)
@@ -80,8 +81,11 @@ uv run llm-serve
 | --- | --- |
 | `just init` | 首次：依赖 + pre-commit |
 | `just sync` / `just dev` | 默认 groups / 全部 groups |
-| `just test` | 全量（608+，须全绿） |
-| `just test-fast` | 排除 `heavy`、`e2e` |
+| `just test` | 全量（所有 marker，含 GPU/heavy/e2e；GPU 主机跑） |
+| `just test-fast` | CPU-clean 日间闸门：排除 `heavy`、`e2e`、全部 GPU marker |
+| `just test-gpu` | 仅 GPU marker（`gpu`/`multi_gpu`/`need_gpu(n)`/`full_cluster`） |
+| `just test-cov` | 全量 + 覆盖率（scheduled 深闸门，`--cov-fail-under=77`） |
+| `just test-cov-fast` | CPU 核心套件 + 覆盖率（per-push CI 闸门，`--cov-fail-under=77`） |
 | `just test-e2e` | 仅 e2e |
 | `just ruff` | format + lint（--fix） |
 | `just check` | 静态 lint gate（uv lock --check + ruff --check + ty + examples） |

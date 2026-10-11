@@ -12,6 +12,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (None pending from the previously-listed items — both are now implemented and
   covered by the entries below and their regression suites.)
 
+### Changed
+
+- **Test architecture — runtime + GPU-less strategy**:
+  - `just test-fast` / `just test-parallel` are now the **CPU-clean daily gate**
+    (exclude `heavy`, `e2e`, and *all* GPU markers); new `test-gpu`,
+    `test-heavy`, and `test-cov-fast` (core + coverage) recipes.
+  - `tests/conftest.py::pytest_collection_modifyitems` now auto-skips **all**
+    GPU-requiring markers (`gpu` <1, `multi_gpu` <2, `need_gpu(n)` <n,
+    `full_cluster` <8) via usable-GPU count, so a GPU-less host *skips* GPU-only
+    / too-slow-on-CPU tests instead of failing or hanging.
+  - An autouse `_force_wide_terminal` fixture sets `COLUMNS=120`/`LINES=40`, so
+    rich/typer `--help` is not truncated by ambient terminal width — fixing 5
+    CLI-help tests that dropped option names (`--model`/`--host`) on narrow-width
+    CI runners.
+  - Fixed a CUDA-invalid SDPA test reference (`attn_mask`+`is_causal=True`) in
+    `test_sdpa.py` and gated the GPU-dependent `gpus_per_node` test with
+    `need_gpu(2)`.
+  - **CI**: per-push `build-and-test` runs `just test-cov-fast` (fast core +
+    coverage, previously the 6 h full suite); added a scheduled `test-full` job
+    running `just test-cov` (full suite + coverage) on the weekly schedule.
+  - New design doc [`docs/development/test-architecture.md`](docs/development/test-architecture.md).
+
 ### Added
 
 - **Astral pre-commit hooks + separate tool configs** (dev tooling):

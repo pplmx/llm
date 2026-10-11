@@ -36,17 +36,29 @@ Start
 
 | Target                   | Effect                                                                                               |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `just test`              | `uv run --frozen pytest` — full suite (600+ tests, must be all green)                                |
-| `just test-fast`         | excludes `heavy` + `e2e` markers                                                                     |
+| `just test`              | `uv run --frozen pytest` — full suite (all markers)                                                  |
+| `just test-fast`         | CPU-clean daily gate: excludes `heavy` + `e2e` + all GPU markers                                     |
+| `just test-gpu`          | only GPU markers (`gpu`/`multi_gpu`/`need_gpu`/`full_cluster`)                                       |
+| `just test-heavy`        | only `heavy` marker                                                                                  |
 | `just test-e2e`          | only `e2e` marker                                                                                    |
 | `just test-quick`        | only `quick` marker                                                                                  |
-| `just test-cov`          | coverage with `--cov-fail-under=77` (CI floor, ticket #11)                                           |
+| `just test-cov`          | full suite coverage `--cov-fail-under=77` (scheduled deep gate)                                      |
+| `just test-cov-fast`     | core CPU suite coverage (per-push CI gate), `--cov-fail-under=77`                                    |
 | `just test-doc`          | `uv run --frozen pytest --doctest-modules src/llm/`                                                  |
 | `just ruff`              | `uvx ruff format .` then `uvx ruff check . --fix`                                                    |
 | `just check`             | `uv lock --check` + `ruff format --check` + `ruff check` + `ty` + examples compile (mirrors CI lint) |
 | `just ty`                | `uvx ty check src/llm/` — matches the CI lint gate                                                   |
 | `just sync` / `just dev` | `uv sync` default groups / all groups+extras                                                         |
 | `just init`              | deps + `uvx prek install` hooks                                                                      |
+
+## How tests handle GPU-less hosts
+
+`tests/conftest.py::pytest_collection_modifyitems` auto-skips every GPU-requiring
+marker when the host lacks enough *usable* GPUs (via `tests.support.devices`):
+`gpu` (<1), `multi_gpu` (<2), `need_gpu(n)` (<n), `full_cluster` (<8). So a CPU
+CI runner or laptop **skips** (never fails/hangs) GPU tests. `just test-fast` /
+`just test-cov-fast` additionally exclude GPU markers so a CPU host never even
+collects them. GPU tests run via `just test` / `just test-gpu` on a GPU host.
 
 ## What CI enforces (.github/workflows/ci.yml)
 
@@ -55,7 +67,9 @@ Start
   ticket 08-ty-in-ci), `py_compile` of every `examples/*.py`.
 - **doctest**: `uv run pytest --doctest-modules src/llm/`.
 - **build-and-test**: ubuntu/macos/windows × `uv sync --frozen` + `uv build`
-    - `just test-cov`.
+    - `just test-cov-fast` (core CPU suite + coverage, per-push gate).
+- **test-full**: ubuntu, `just test-cov` (full suite + coverage) — runs on the
+  weekly schedule + manual dispatch, not per-push (heavy/e2e too slow).
 - **security**: `pip-audit --strict` on the exported lock set +
   `bandit -r src/llm/ --severity-level high`.
 - Docker build excludes test/docs/streaming dependency groups.
