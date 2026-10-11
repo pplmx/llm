@@ -98,7 +98,9 @@ To quickly get started with training a model using the framework, follow these s
 
 - Python 3.14+
 - [uv](https://github.com/astral-sh/uv): A fast Python package installer and resolver, written in Rust.
-- [make](https://www.gnu.org/software/make/): A build automation tool (typically pre-installed on Linux/macOS, available via Chocolatey/Scoop on Windows).
+- [just](https://github.com/casey/just): A command runner (the `Makefile`'s successor here, http://just.systems). Install it via the
+  official script (`curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | sh -s -- --to <dir>`), `cargo install
+  just`, or a package manager (`brew install just` / `choco install just` / `apt install just`).
 
 ### Setting up the Environment
 
