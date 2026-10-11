@@ -39,9 +39,26 @@ jobs:
                         ghcr.io/pplmx/llm:${GITHUB_REF_NAME:1}
             -
                 name: Test it before Push
+                # The fail-closed startup guard (RIL ISS-164) refuses to boot on
+                # 0.0.0.0 without an api_key, so pass one; then probe the open
+                # /health endpoint to confirm each image actually serves.
                 run: |
-                    docker run --rm ghcr.io/pplmx/llm:latest
-                    docker run --rm ghcr.io/pplmx/llm:${GITHUB_REF_NAME:1}
+                    for image in "ghcr.io/pplmx/llm:latest" "ghcr.io/pplmx/llm:${GITHUB_REF_NAME:1}"; do
+                        docker run -d --rm -p 127.0.0.1:8000:8000 -e LLM_SERVING_API_KEY=test \
+                            --name llm-smoke "$image"
+                        ok=0
+                        for i in $(seq 1 30); do
+                            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then ok=1; break; fi
+                            sleep 2
+                        done
+                        docker logs llm-smoke 2>&1 | tail -20 || true
+                        docker rm -f llm-smoke >/dev/null 2>&1 || true
+                        if [ "$ok" != "1" ]; then
+                            echo "smoke test failed for $image (never healthy)"
+                            exit 1
+                        fi
+                        echo "healthy: $image"
+                    done
             -
                 name: Build and Push
                 uses: docker/build-push-action@v7
