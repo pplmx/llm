@@ -43,6 +43,19 @@ from llm.training.distributed.tensor_parallel import apply_tensor_parallel, appl
 StateDictType = Literal["full", "sharded"]
 
 
+def _dist_new_group(ranks: list[int]) -> dist.ProcessGroup:
+    """Create a process subgroup, typed as the concrete ``ProcessGroup``.
+
+    Torch's stub types ``dist.new_group`` as ``ProcessGroup | Literal[-100]``
+    (the ``-100`` sentinel for a group the caller isn't a member of). Every
+    call here passes an explicit rank list and the row-major/strided layouts
+    only index the groups the current rank belongs to, so the sentinel can
+    never occur at runtime. Casting is type-only (no behavior change) and keeps
+    callers assignable to the ``ProcessGroup | None`` parameters they feed.
+    """
+    return cast(dist.ProcessGroup, dist.new_group(ranks=ranks))
+
+
 def tp_dp_layout(world_size: int, tp_size: int, rank: int | None = None) -> tuple[int, int, int, int]:
     """Resolve the TP + data-parallel 2D layout of the calling rank.
 
@@ -354,8 +367,8 @@ def wrap_model_for_training(
             # the handles for the groups it belongs to (mirrors the TP+DP 2D
             # rule, RIL TASK-202). Pure PP (dp_size == 1) skips subgroup
             # creation entirely and keeps using the default group.
-            pp_groups = [dist.new_group(ranks=list(range(d * pp_size, (d + 1) * pp_size))) for d in range(dp_size)]
-            dp_groups = [dist.new_group(ranks=list(range(p, world_size, pp_size))) for p in range(pp_size)]
+            pp_groups = [_dist_new_group(ranks=list(range(d * pp_size, (d + 1) * pp_size))) for d in range(dp_size)]
+            dp_groups = [_dist_new_group(ranks=list(range(p, world_size, pp_size))) for p in range(pp_size)]
             pp_group = pp_groups[dp_rank]
             dp_group = dp_groups[pp_rank]
         else:
@@ -388,10 +401,10 @@ def wrap_model_for_training(
         tp_groups, pp_groups, dp_groups = three_d_groups(world_size, dp_size, ppr, tpr)
         # ``dist.new_group`` is a world collective: every rank creates the SAME
         # set of groups in the same order, then keeps the handles it belongs to.
-        tp_handles = [dist.new_group(ranks=list(g)) for g in tp_groups]
+        tp_handles = [_dist_new_group(ranks=list(g)) for g in tp_groups]
         if _dp > 1:
-            pp_handles = [dist.new_group(ranks=list(g)) for g in pp_groups]
-            dp_handles = [dist.new_group(ranks=list(g)) for g in dp_groups]
+            pp_handles = [_dist_new_group(ranks=list(g)) for g in pp_groups]
+            dp_handles = [_dist_new_group(ranks=list(g)) for g in dp_groups]
             pp_group = pp_handles[dp_rank]
             dp_group = dp_handles[pp_rank * tpr + tp_rank]
         else:
@@ -486,8 +499,8 @@ def wrap_model_for_training(
         # SAME order (building only "my own" groups would mismatch the other
         # ranks' calls and deadlock); each rank then picks the handles for
         # the groups it belongs to.
-        tp_groups = [dist.new_group(ranks=list(range(d * tp_size, (d + 1) * tp_size))) for d in range(dp_size)]
-        dp_groups = [dist.new_group(ranks=list(range(t, world_size, tp_size))) for t in range(tp_size)]
+        tp_groups = [_dist_new_group(ranks=list(range(d * tp_size, (d + 1) * tp_size))) for d in range(dp_size)]
+        dp_groups = [_dist_new_group(ranks=list(range(t, world_size, tp_size))) for t in range(tp_size)]
         tp_group = tp_groups[dp_rank]
         dp_group = dp_groups[tp_rank]
         model = apply_tensor_parallel(cast(Any, model), process_group=tp_group)
