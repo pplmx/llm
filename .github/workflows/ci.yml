@@ -87,7 +87,7 @@ jobs:
                 # Per-push gate: the fast CPU-clean core suite (excludes
                 # GPU/heavy/e2e). GPU tests auto-skip on this GPU-less runner
                 # (tests/conftest.py); the deep full-suite + coverage gate runs
-                # nightly via the `test-full` job.
+                # on the weekly schedule via the `test-full` job.
                 run: just test-cov-fast
 
             -   name: Upload coverage report as artifact
