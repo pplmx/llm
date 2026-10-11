@@ -256,7 +256,7 @@ class S3TextSource(TextSource):
         """Parse an ``s3://bucket/key`` dataset_path into bucket + key."""
         rest = dataset_path
         if rest.startswith("s3://"):
-            rest = rest[len("s3://"):]
+            rest = rest[len("s3://") :]
         bucket, _, key = rest.partition("/")
         return cls(bucket, key)
 

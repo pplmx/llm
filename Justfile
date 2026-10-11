@@ -76,6 +76,13 @@ fmt:
 ty:
     uvx ty check src/llm/
 
+# Full static lint gate (mirrors the CI lint job: lock freshness, ruff, ty)
+check:
+    uv lock --check
+    uvx ruff format --check .
+    uvx ruff check .
+    uvx ty check src/llm/
+
 # Build the docs site locally (mirrors the docs CI job)
 docs:
     uv run --frozen --group docs mkdocs build --strict
