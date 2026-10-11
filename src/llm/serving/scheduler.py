@@ -93,7 +93,12 @@ class Scheduler:
             RuntimeError: If the waiting queue is at capacity.
         """
         with self._lock:
-            for s in list(self.running) + list(self.waiting):
+            for s in self.running:
+                if s.request_id == seq.request_id and not s.is_finished():
+                    if matches is not None and matches(s):
+                        continue  # same logical request re-added — permit
+                    return False
+            for s in self.waiting:
                 if s.request_id == seq.request_id and not s.is_finished():
                     if matches is not None and matches(s):
                         continue  # same logical request re-added — permit
