@@ -76,6 +76,10 @@ fmt:
 ty:
     uvx ty check src/llm/
 
+# Build the docs site locally (mirrors the docs CI job)
+docs:
+    uv run --frozen --group docs mkdocs build --strict
+
 # Build image
 image:
     docker image build -t {{APP_NAME}} .
