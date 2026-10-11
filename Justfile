@@ -76,12 +76,14 @@ fmt:
 ty:
     uvx ty check src/llm/
 
-# Full static lint gate (mirrors the CI lint job: lock freshness, ruff, ty)
+# Full static lint gate (mirrors the CI lint job: lock freshness, ruff, ty, examples)
 check:
     uv lock --check
     uvx ruff format --check .
     uvx ruff check .
     uvx ty check src/llm/
+    # examples must compile (mirrors the CI lint job)
+    for f in examples/*.py; do uv run --frozen python -m py_compile "$f" || exit 1; done
 
 # Build the docs site locally (mirrors the docs CI job)
 docs:
