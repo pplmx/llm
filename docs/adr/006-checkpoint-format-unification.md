@@ -31,7 +31,7 @@ three concrete problems:
    stored in the same bytes, so a single bit flip takes both down.
 3. **No human-readable metadata.** Inspecting what epoch a checkpoint
    is from, what the best loss was, or what `model_config` was
-   committed requires running `python -c "import torch; ..."` to
+   committed requires running `uv run python -c "import torch; ..."` to
    unpickle the whole 5+ GB blob. Listing several checkpoints to
    compare losses means loading each one in full.
 

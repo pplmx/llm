@@ -415,9 +415,9 @@ should not be a hard runtime dependency.
 uv sync --extra perf
 
 # pip
-pip install 'llm[perf]'
+uv sync --extra perf
 # or, on a CUDA host:
-pip install flash-attn
+uv sync --extra perf
 ```
 
 `uv.lock` pins `flash-attn` as an sdist, so a plain `uv sync --extra perf`
@@ -440,7 +440,7 @@ matches your installed `torch` CUDA build, PyTorch version, Python version,
 and platform — a mismatch is the most common cause of `ImportError:
 flash_attn ... no module named` at runtime. If no pre-built wheel matches
 your exact environment (e.g. a very new `torch`/Python combo), fall back to
-the source build above or `pip install flash-attn` on a CUDA host.
+the source build above or `uv sync --extra perf` on a CUDA host.
 
 > **torch 2.13 / Python 3.14 note**: as of this writing the Astral indexes
 > only publish `flash-attn` wheels up to `torch 2.12`, so on `torch 2.13` +
@@ -501,9 +501,9 @@ model is loadable by **both** this project and HF's transformers.
 uv sync --extra compat
 
 # pip
-pip install 'llm[compat]'
+uv sync --extra compat
 # or, directly:
-pip install safetensors huggingface_hub
+uv sync --extra compat
 ```
 
 ### Save locally

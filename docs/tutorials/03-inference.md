@@ -481,12 +481,12 @@ LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm serve
 最小 Dockerfile 思路（参考项目自带 `compose.yml`）：
 
 ```dockerfile
-FROM python:3.14-slim
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
 COPY . /app
 WORKDIR /app
-RUN pip install -e .[serve]
+RUN uv sync --frozen --no-group test --no-group docs
 ENV LLM_SERVING_HOST=0.0.0.0
-ENTRYPOINT ["llm serve"]
+ENTRYPOINT [".venv/bin/llm", "serve"]
 ```
 
 build + run：

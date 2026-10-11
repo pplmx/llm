@@ -15,7 +15,7 @@
 # -----
 #   # 1. Create a tiny preference JSONL:
 #   mkdir -p data
-#   python -c "
+#   uv run python -c "
 #   import json
 #   data = [
 #       {'prompt': 'Q?', 'chosen': 'Good answer.', 'rejected': 'Bad answer.'},

@@ -24,7 +24,7 @@ required for the core training and serving install. Pull it in with:
 # uv
 uv sync --extra eval
 # or pip
-pip install 'llm[eval]'
+uv sync --extra eval
 ```
 
 The modules involved (`llm.evaluation.harness.*`) all import cleanly
@@ -264,7 +264,7 @@ lm = LlamaLmEvalLM(model, tokenizer, batch_size=2, device="cpu")
 
 | Symptom                                       | Cause                                                         | Fix                                                                                   |
 | --------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `ImportError: lm-eval integration requires …` | `lm_eval` is not installed                                    | `uv sync --extra eval` or `pip install 'llm[eval]'`                                   |
+| `ImportError: lm-eval integration requires …` | `lm_eval` is not installed                                    | `uv sync --extra eval` or `uv sync --extra eval`                                      |
 | `KeyError: unknown preset 'mmlu_xyz'`         | Preset name typo                                              | Use one of `mmlu`, `arc_easy`, `wikitext`, or construct an `EvalPreset` directly      |
 | Result dict is missing `acc_norm`             | Some tasks don't define `acc_norm` (e.g. WikiText perplexity) | This is correct — check the raw `results` block to see which metrics lm_eval reported |
 | `RuntimeError: … out of memory`               | Batch size too large for the GPU                              | Lower `batch_size` in the preset or the `LlamaLmEvalLM` constructor                   |

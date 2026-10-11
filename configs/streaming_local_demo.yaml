@@ -11,7 +11,7 @@
 # -----
 #   # 1. Create a tiny corpus (one line per record):
 #   mkdir -p data
-#   python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" \
+#   uv run python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" \
 #     > data/demo.txt
 #
 #   # 2. Train (the model is intentionally tiny so the run finishes

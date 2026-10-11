@@ -115,16 +115,16 @@ scripts/train_simple_decoder.py
 
 ```bash
 # 基本使用 (开箱即用)
-python scripts/train_simple_decoder.py --file-path data.txt
+uv run scripts/train_simple_decoder.py --file-path data.txt
 
 # 带 checkpoint 自动保存
-python scripts/train_simple_decoder.py -f data.txt --save-dir ./ckpt
+uv run scripts/train_simple_decoder.py -f data.txt --save-dir ./ckpt
 
 # 从 checkpoint 恢复
-python scripts/train_simple_decoder.py -f data.txt --resume ./ckpt/checkpoint_step_100.pt
+uv run scripts/train_simple_decoder.py -f data.txt --resume ./ckpt/checkpoint_step_100.pt
 
 # 完整参数
-python scripts/train_simple_decoder.py \
+uv run scripts/train_simple_decoder.py \
     --file-path data.txt \
     --save-dir ./checkpoints \
     --save-interval 50 \

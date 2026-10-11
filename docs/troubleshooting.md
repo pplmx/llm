@@ -197,7 +197,7 @@ tags:
 
 **问题: import lm_eval 失败**
 
-- **解决方案:** 需要安装可选依赖：`uv sync --extra eval` 或 `pip install 'llm[eval]'`。
+- **解决方案:** 需要安装可选依赖：`uv sync --extra eval` 或 `uv sync --extra eval`。
 
 **问题: MMLU 评估结果异常低**
 

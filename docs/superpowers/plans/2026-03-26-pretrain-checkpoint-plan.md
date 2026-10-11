@@ -61,7 +61,7 @@ save_interval: int = (
 - [ ] **Step 3: 测试参数解析**
 
 ```bash
-python scripts/train_simple_decoder.py --help
+uv run scripts/train_simple_decoder.py --help
 ```
 
 Expected: 显示新参数
@@ -331,7 +331,7 @@ git commit -m "feat: add progress bar to training"
 - [ ] **Step 1: 运行帮助命令**
 
 ```bash
-python scripts/train_simple_decoder.py --help
+uv run scripts/train_simple_decoder.py --help
 ```
 
 Expected: 显示所有参数包括新参数
@@ -345,7 +345,7 @@ echo "hello world this is a test" > /tmp/test_data.txt
 - [ ] **Step 3: 运行训练 (1 step, 快速测试)**
 
 ```bash
-python scripts/train_simple_decoder.py \
+uv run scripts/train_simple_decoder.py \
     --file-path /tmp/test_data.txt \
     --epochs 1 \
     --save-interval 1 \
@@ -365,7 +365,7 @@ Expected: checkpoint_step_*.pt 和 latest.pt
 - [ ] **Step 5: 从 checkpoint 恢复训练**
 
 ```bash
-python scripts/train_simple_decoder.py \
+uv run scripts/train_simple_decoder.py \
     --file-path /tmp/test_data.txt \
     --epochs 1 \
     --resume /tmp/test_ckpt/latest.pt \
@@ -406,16 +406,16 @@ git commit -m "feat: complete checkpoint support for pretraining"
 
 ```bash
 # 基本使用
-python scripts/train_simple_decoder.py --file-path data.txt
+uv run scripts/train_simple_decoder.py --file-path data.txt
 
 # 自动保存 checkpoint
-python scripts/train_simple_decoder.py -f data.txt --save-dir ./ckpt
+uv run scripts/train_simple_decoder.py -f data.txt --save-dir ./ckpt
 
 # 从 checkpoint 恢复
-python scripts/train_simple_decoder.py -f data.txt --resume ./ckpt/latest.pt
+uv run scripts/train_simple_decoder.py -f data.txt --resume ./ckpt/latest.pt
 
 # 完整参数
-python scripts/train_simple_decoder.py \
+uv run scripts/train_simple_decoder.py \
     -f data.txt \
     --save-dir ./ckpt \
     --save-interval 50 \

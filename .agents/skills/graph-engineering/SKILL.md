@@ -107,7 +107,7 @@ ril.py round | ril.py stale --rounds 10                                        #
 若存在多个 agent instance（Loop Engineering 架构下这是常态）：
 
 - 写入图谱前，对目标节点/边执行乐观锁：`ril.py node set` 必须带 `--expect-version <当前 version>`；版本冲突时 CLI 报错并把节点输出到 stderr，此时重新读取并 diff 合并，而不是覆盖。
-- 两个 instance 不得同时对同一 component 下的代码发起 EXECUTE；开始 EXECUTE 前，用 RIL 分布式锁占用对应 task 节点：`python3 .agents/skills/graph-engineering/scripts/ril.py lock --id TASK-x --owner <instance_id>`（默认 30 分钟超时，过期自动释放），结束时 `python3 .agents/skills/graph-engineering/scripts/ril.py unlock --id TASK-x`。**不要**手写 `status=in_progress` 或 `owner=` 字段——RIL schema 没有这些字段，`ril.py` 会直接拒绝。
+- 两个 instance 不得同时对同一 component 下的代码发起 EXECUTE；开始 EXECUTE 前，用 RIL 分布式锁占用对应 task 节点：`uv run python .agents/skills/graph-engineering/scripts/ril.py lock --id TASK-x --owner <instance_id>`（默认 30 分钟超时，过期自动释放），结束时 `uv run python .agents/skills/graph-engineering/scripts/ril.py unlock --id TASK-x`。**不要**手写 `status=in_progress` 或 `owner=` 字段——RIL schema 没有这些字段，`ril.py` 会直接拒绝。
 - evidence 节点只增不改，天然无冲突，鼓励优先通过增加 evidence 而不是编辑已有节点来记录新发现。
 
 ## 3. EVALUATE

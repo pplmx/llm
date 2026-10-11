@@ -14,7 +14,7 @@
 #
 # Download Alpaca and convert to JSONL (one-time):
 #   # HuggingFace `tatsu-lab/alpaca` ships a 52K-row CSV — convert:
-#   python -c "
+#   uv run python -c "
 #   import csv, json
 #   with open('data/alpaca.jsonl', 'w') as out:
 #       for row in csv.DictReader(open('alpaca_data.csv')):

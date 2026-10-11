@@ -35,7 +35,7 @@ tags:
 
 ```bash
 mkdir -p data
-python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" \
+uv run python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" \
   > data/demo.txt
 ```
 

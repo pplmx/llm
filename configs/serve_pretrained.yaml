@@ -27,7 +27,7 @@
 #
 #   # Or load the YAML directly via a small wrapper (see the `Usage
 #   # with from_yaml()` snippet at the bottom):
-#   python -c "
+#   uv run python -c "
 #   from llm.serving.config import ServingConfig
 #   cfg = ServingConfig.from_yaml('configs/serve_pretrained.yaml')
 #   cfg.host = '0.0.0.0'

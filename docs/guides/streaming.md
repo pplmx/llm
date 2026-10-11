@@ -284,7 +284,7 @@ data:
 ```bash
 # 1. Create a small demo corpus
 mkdir -p data
-python -c "print('\n'.join(f'sample line {i}' for i in range(500)))" > data/demo.txt
+uv run python -c "print('\n'.join(f'sample line {i}' for i in range(500)))" > data/demo.txt
 
 # 2. Train for 1 epoch (smoke test)
 uv run llm train --task stream_lm \

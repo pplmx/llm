@@ -44,7 +44,7 @@ the contract for the reverse weight mapping.
 - [ ] ``huggingface_hub`` and ``safetensors`` added to ``[compat]``
       optional dependency group (mirrored in
       ``[project.optional-dependencies]``); install via
-      ``pip install 'llm[compat]'``.
+      ``uv sync --extra compat``.
 - [ ] New ``tests/compat/test_hf_publisher.py``:
       - Roundtrip: small model → ``save_pretrained`` → ``from_pretrained``
         produces a model whose forward pass matches within tolerance.

@@ -262,7 +262,7 @@ def flash_attention(
     try:
         from flash_attn import flash_attn_func
     except ImportError:
-        raise ImportError("Flash Attention is not installed. Install with: pip install flash-attn")
+        raise ImportError("Flash Attention is not installed. Install with: uv sync --extra perf")
 
     # 2. 准备输入格式 [B, S, N, D]
     # Flash Attention 需要 [B, S, H] 或 [B, S, N, D]

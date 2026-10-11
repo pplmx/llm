@@ -12,7 +12,7 @@
 # -----
 #   # 1. Create a tiny Alpaca-style JSONL:
 #   mkdir -p data
-#   python -c "
+#   uv run python -c "
 #   import json
 #   data = [
 #       {'instruction': 'Greet me.', 'input': '', 'output': 'Hello!'},

@@ -68,7 +68,7 @@ DPO 的目标是让 policy 模型给 chosen 的概率高于 rejected，同时不
 
 ```bash
 mkdir -p data
-python -c "
+uv run python -c "
 import json
 
 # SFT 冒烟数据（Alpaca 风格）
