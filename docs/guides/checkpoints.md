@@ -95,7 +95,7 @@ llm migrate-ckpt checkpoints/epoch_5 --dry-run
 llm migrate-ckpt checkpoints/epoch_5 --verify --in-place
 ```
 
-参数与退出码见 [CLI 参考 · llm migrate-ckpt](../reference/cli.md#llm migrate-ckpt)。
+参数与退出码见 [CLI 参考 · llm migrate-ckpt](../reference/cli.md#llm-migrate-ckpt)。
 
 ## 服务化加载
 

@@ -10,7 +10,7 @@ tags:
 以及如何用 `llm quantize` CLI 或 Python API 对训练好的模型做压缩。
 
 > 对应 API 文档见 [llm.quantization](../api/quantization.md)，CLI 参数速查见
-> [CLI 命令参考](../reference/cli.md#llm quantize)。
+> [CLI 命令参考](../reference/cli.md#llm-quantize)。
 
 ## 方法总览
 
@@ -64,7 +64,7 @@ uv run llm quantize gptq \
 
 退出码约定：`0` 成功；`1` 参数校验失败（`--bits` 非法、缺 `--tokenizer`、
 `--model` 不存在等）；`2` 运行期失败（`torch.load` / 分词 / 量化内核 / 保存）。
-完整参数表与校验规则见 [CLI 命令参考](../reference/cli.md#llm quantize)。
+完整参数表与校验规则见 [CLI 命令参考](../reference/cli.md#llm-quantize)。
 
 ## 用 Python API 量化
 
@@ -156,7 +156,7 @@ uv run llm serve
 ## 进一步阅读
 
 - API：`llm.quantization`（[quantization.md](../api/quantization.md)）
-- CLI 参数：[llm quantize](../reference/cli.md#llm quantize)
+- CLI 参数：[llm quantize](../reference/cli.md#llm-quantize)
 - 架构决策：[ADR-007 GPTQ](../adr/007-gptq-integration.md)、
   [ADR-008 混合精度](../adr/008-mixed-precision-quantization.md)、
   [ADR-009 AWQ](../adr/009-awq-integration.md)、

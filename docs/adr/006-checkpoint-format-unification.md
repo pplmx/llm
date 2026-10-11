@@ -73,7 +73,7 @@ if not, fall back to `torch.load(<ckp_path>)`.
 When the legacy path is loaded, the manager emits a one-line
 `DeprecationWarning` recommending `llm migrate-ckpt <ckp_path>` (a
 CLI shipped in a follow-up slice, see
-`docs/reference/cli.md#llm migrate-ckpt`).
+`docs/reference/cli.md#llm-migrate-ckpt`).
 
 The implementation keeps the same `CheckpointManager` public API
 (`save_checkpoint` / `load_checkpoint`); the only observable change

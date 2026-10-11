@@ -65,7 +65,7 @@ uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 ```
 
 > [!NOTE]
-> 全部任务清单见 [CLI 命令参考](reference/cli.md#llm train)。
+> 全部任务清单见 [CLI 命令参考](reference/cli.md#llm-train)。
 
 ### Q: 如何启用分布式训练？
 

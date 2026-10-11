@@ -157,6 +157,7 @@ nav:
       - development/guide-configuration.md
       - development/guide-extending.md
       - development/deep-dive-ddp.md
+      - development/test-architecture.md
 
   - 📚 参考:
       - reference/architecture.md

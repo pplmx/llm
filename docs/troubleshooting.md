@@ -161,7 +161,7 @@ tags:
     - **布尔参数格式**: 布尔参数不带值。默认 `True` 的用 `--no-<name>` 关闭
       （如 `--no-compile`）；默认 `False` 的用 `--<name>` 打开。
     - **查看帮助**: 运行 `uv run llm train --help` 查看全部参数；完整说明见
-      [CLI 命令参考](reference/cli.md#llm train)。
+      [CLI 命令参考](reference/cli.md#llm-train)。
 
 ---
 
