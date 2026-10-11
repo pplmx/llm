@@ -158,6 +158,11 @@ class _CaptureEpochLoss(Callback):
 def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx: dict, results) -> None:
     try:
         device_index = device_indices[rank]
+        # Bind this rank to its GPU BEFORE init_process_group: the NCCL process
+        # group attaches to torch's current CUDA device, and every spawned rank
+        # defaults to GPU 0 until set_device — so all ranks collided on GPU 0
+        # (NCCL "Multiple Ranks are using the same GPU/Partition").
+        torch.cuda.set_device(device_index)
         dist.init_process_group(
             backend="nccl",
             rank=rank,
@@ -173,7 +178,6 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
             # TimeoutError with a real message.
             timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
-        torch.cuda.set_device(device_index)
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
 
         config = _build_config(

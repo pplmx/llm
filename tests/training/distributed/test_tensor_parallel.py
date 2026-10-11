@@ -167,8 +167,10 @@ def _gather_tp_grads(model) -> dict[str, torch.Tensor]:
 def _parity_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
+        # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         dev = torch.device(f"cuda:{device_index}")
 
         # Identical weights on every rank: same CPU seed -> same init.
@@ -295,8 +297,10 @@ def _flash_parity_worker(
     """
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
+        # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(attn_impl="flash_attn", use_rope=use_rope, num_kv_heads=num_kv_heads).to(dev)
@@ -430,8 +434,10 @@ def _mla_parity_worker(rank: int, world_size: int, device_indices: list[int], re
     """
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
+        # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(attn_impl="mla").to(dev)
@@ -535,8 +541,10 @@ def _wrap_worker(rank: int, world_size: int, device_indices: list[int], results)
     """Engine entry path: ``wrap_model_for_training`` tp branch + full gather/load."""
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
+        # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model().to(dev)
@@ -629,8 +637,10 @@ def _parity_2d_worker(rank: int, world_size: int, device_indices: list[int], res
     """
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
+        # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model().to(dev)
@@ -810,8 +820,10 @@ def _wrap_2d_worker(rank: int, world_size: int, device_indices: list[int], resul
     """2D wrap sanity: subgroup wiring + engine-path checkpoint roundtrip (tp=2 dp=dp_size)."""
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
+        # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         dev = torch.device(f"cuda:{device_index}")
 
         tp_size = world_size // 2
@@ -1292,8 +1304,10 @@ def _moe_parity_worker(rank: int, world_size: int, device_indices: list[int], re
     """
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
+        # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)

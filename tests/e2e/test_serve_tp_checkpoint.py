@@ -165,8 +165,9 @@ def _train_tp_worker(rank: int, world_size: int, device_indices: list[int], ctx:
     ``model_config`` embedded in the meta sidecar."""
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device).
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         torch.manual_seed(42 + rank)
 
         config = _build_config(ctx)

@@ -62,11 +62,13 @@ def ddp_test_worker(rank, world_size, device_indices, config, results):
     try:
         device_index = device_indices[rank]
 
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to the current
+        # CUDA device; spawned ranks default to GPU 0 → "same GPU" collision).
+        torch.cuda.set_device(device_index)
+
         # Initialize distributed
         dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
-        # Set device
-        torch.cuda.set_device(device_index)
         device = torch.device(f"cuda:{device_index}")
 
         # Create model and move to device
@@ -318,8 +320,9 @@ def _ddp_weight_consistency_worker(rank, world_size, device_indices, results):
         import torch.distributed as _dist
 
         device_index = device_indices[rank]
-        _dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init (NCCL attaches to current device).
         torch.cuda.set_device(device_index)
+        _dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         device = torch.device(f"cuda:{device_index}")
 
         # Exactly the framework's per-rank seed sequence.

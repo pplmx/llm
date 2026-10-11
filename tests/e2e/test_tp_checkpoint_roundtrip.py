@@ -113,8 +113,11 @@ def _disk_state(ckpt_dir: Path, stem: str = "latest") -> dict[str, torch.Tensor]
 
 def _roundtrip_worker(rank: int, world_size: int, ctx: dict, results) -> None:
     try:
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
+        # the current CUDA device; spawned ranks default to GPU 0 → all ranks
+        # collide on GPU 0 / "same GPU/Partition").
         torch.cuda.set_device(rank % torch.cuda.device_count())
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         dev = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
 
         model = _tiny_model(ctx, device=dev)
@@ -296,8 +299,10 @@ def _build_engine_config(ctx: dict, *, epochs: int = 1, resume_from: str | None 
 def _engine_checkpoint_worker(rank: int, world_size: int, device_indices: list[int], ctx: dict, results) -> None:
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
+        # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         torch.manual_seed(42 + rank)
 
         config = _build_engine_config(ctx)
@@ -435,8 +440,10 @@ def _engine_resume_stage_one_worker(rank: int, world_size: int, device_indices: 
     """Stage 1: train one epoch on the 2D grid and save via the engine loop."""
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
+        # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         torch.manual_seed(42 + rank)
 
         config = _build_engine_config(ctx, epochs=1)
@@ -461,8 +468,10 @@ def _engine_resume_stage_two_worker(rank: int, world_size: int, device_indices: 
     must continue training from the restored epoch/step counter."""
     try:
         device_index = device_indices[rank]
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
+        # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         torch.manual_seed(42 + rank)
 
         # Same 2D grid, same data; resume from the stage-1 epoch checkpoint stem.
