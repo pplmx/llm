@@ -36,6 +36,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
+from llm.core.attn.flash_attn import FLASH_ATTN_AVAILABLE
 from llm.data.modules.sft import SFTDataModule
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
 from llm.training.core.callbacks import Callback
@@ -312,6 +313,7 @@ def test_engine_tp_dp_2d_four_gpu(tmp_path):
 
 @pytest.mark.need_gpu(4)
 @pytest.mark.slow
+@pytest.mark.skipif(not FLASH_ATTN_AVAILABLE, reason="flash-attn not installed")
 def test_engine_tp_dp_2d_flash_attn_four_gpu(tmp_path):
     """Real-engine TP+DP 2D with the flash-attention backend (TASK-204 TP-scope
     extension): the transformed FlashAttention must train through the REAL loop

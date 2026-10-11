@@ -24,6 +24,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 
+from llm.core.attn.flash_attn import FLASH_ATTN_AVAILABLE
 from llm.models.decoder import DecoderModel
 from llm.training.distributed import (
     allreduce_dp_grads,
@@ -393,6 +394,7 @@ def _run_flash_parity(world_size: int, *, use_rope: bool = False, num_kv_heads: 
 
 @pytest.mark.need_gpu(2)
 @pytest.mark.slow
+@pytest.mark.skipif(not FLASH_ATTN_AVAILABLE, reason="flash-attn not installed")
 def test_tp_flash_attn_parity_two_gpu():
     """FlashAttention TP forward/grad/checkpoint parity vs the single-GPU flash reference."""
     _run_flash_parity(2)
@@ -400,6 +402,7 @@ def test_tp_flash_attn_parity_two_gpu():
 
 @pytest.mark.need_gpu(2)
 @pytest.mark.slow
+@pytest.mark.skipif(not FLASH_ATTN_AVAILABLE, reason="flash-attn not installed")
 def test_tp_flash_attn_rope_parity_two_gpu():
     """FlashAttention + RoPE TP parity (RoPE rotates local head slices — position
     is token-local, so TP slicing is transparent to it)."""
@@ -408,6 +411,7 @@ def test_tp_flash_attn_rope_parity_two_gpu():
 
 @pytest.mark.need_gpu(2)
 @pytest.mark.slow
+@pytest.mark.skipif(not FLASH_ATTN_AVAILABLE, reason="flash-attn not installed")
 def test_tp_flash_attn_gqa_parity_two_gpu():
     """FlashAttention + GQA TP parity (num_kv_heads=2 must divide tp_size)."""
     _run_flash_parity(2, num_kv_heads=2)
