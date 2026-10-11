@@ -42,5 +42,5 @@
 # /pyproject.toml               @TBD-build-maintainer
 # /uv.lock                      @TBD-build-maintainer
 # /.github/                     @TBD-build-maintainer
-# /Makefile                     @TBD-build-maintainer
+# /Justfile                     @TBD-build-maintainer
 # /Dockerfile                   @TBD-build-maintainer

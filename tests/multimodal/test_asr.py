@@ -354,7 +354,7 @@ def test_asr_e2e_trainable_audio_tower_and_decoder_transcribe_heldout_audio():
 def test_asr_e2e_heldout_transcription_fluent_regime():
     """Larger heavy/e2e-marker variant: same task at higher capacity and more
     distinct transcripts, so the model sits deep in the generalisation regime
-    and transcribes ~all held-out tokens (runs in ``make test-e2e``)."""
+    and transcribes ~all held-out tokens (runs in ``just test-e2e``)."""
     from llm.multimodal.task import MultimodalTask
     from llm.training.core.engine import TrainingEngine
 

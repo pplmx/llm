@@ -14,7 +14,7 @@ the validation paths via ``CliRunner`` without touching
 
 The test is marked ``e2e`` so it's opt-in via ``pytest -m e2e`` —
 fast enough for daily dev (CPU, ~1s on a tiny model) but excluded
-from the ``make test-fast`` lane.
+from the ``just test-fast`` lane.
 
 Why this test exists separately from ``test_quantize_cli.py``:
 
