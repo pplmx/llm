@@ -82,6 +82,31 @@ def test_grpo_loss_ratio_clipping_limits_negative_effect():
     assert grpo_loss == pytest.approx(clipped_surrogate.item(), abs=1e-4)
 
 
+def test_grpo_kl_penalty_matches_hand_computed_k3():
+    """Pin the K3 KL estimator: mean(exp(ref - pol) - (ref - pol) - 1).
+
+    With a zero advantage the surrogate term is exactly 0, so the returned
+    loss must equal ``kl_beta * K3(q=pol || p=ref)`` computed independently.
+    This guards against a silent rewrite of the KL estimator drifting the
+    divergence it penalises (GRPO relies on it to hold the policy near the
+    reference).
+    """
+    from llm.training.rlhf.grpo import GRPOLoss
+
+    loss = GRPOLoss(clip_eps=0.2, kl_beta=1.0)
+    ref = torch.tensor([[0.0, 1.0, -0.5]])
+    pol = torch.tensor([[1.0, 0.5, 0.25]])
+    adv = torch.zeros(ref.shape[0])  # every advantage 0 -> only the KL penalty survives
+    diff = ref - pol
+    expected = (torch.exp(diff) - diff - 1.0).mean().item()
+
+    out = loss(pol, pol, ref, adv)  # old == cur -> ratio 1, unused against 0 advantage
+    assert out == pytest.approx(expected, abs=1e-5)
+
+    # Scaling: doubling kl_beta doubles the penalty term (surrogate still 0).
+    assert GRPOLoss(clip_eps=0.2, kl_beta=2.0)(pol, pol, ref, adv) == pytest.approx(2 * expected, abs=1e-5)
+
+
 def test_grpo_task_registered_and_builds():
     from llm.data.modules.grpo import GRPODataModule
     from llm.training.rlhf.grpo import GRPOLoss
