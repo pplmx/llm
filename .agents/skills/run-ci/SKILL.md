@@ -22,6 +22,7 @@ Start
   ├─ Daily development gate         → just test-fast   (excludes heavy+e2e)
   ├─ Full gate before claiming done → just test        (ALL tests must pass)
   ├─ Lint/format                    → just ruff        (format + lint --fix)
+  ├─ Full static gate (matches CI)  → just check       (lock + ruff --check + ty + examples)
   ├─ Type check                     → just ty          (uvx ty check src/llm/)
   ├─ Dependency change              → uv lock && uv lock --check
   ├─ Docstring examples changed     → just test-doc    (doctests src/llm)
@@ -33,18 +34,19 @@ Start
 
 ## Just targets (Justfile)
 
-| Target                   | Effect                                                                |
-| ------------------------ | --------------------------------------------------------------------- |
-| `just test`              | `uv run --frozen pytest` — full suite (600+ tests, must be all green) |
-| `just test-fast`         | excludes `heavy` + `e2e` markers                                      |
-| `just test-e2e`          | only `e2e` marker                                                     |
-| `just test-quick`        | only `quick` marker                                                   |
-| `just test-cov`          | coverage with `--cov-fail-under=77` (CI floor, ticket #11)            |
-| `just test-doc`          | `uv run --frozen pytest --doctest-modules src/llm/`                   |
-| `just ruff`              | `uvx ruff format .` then `uvx ruff check . --fix`                     |
-| `just ty`                | `uvx ty check src/llm/` — matches the CI lint gate                    |
-| `just sync` / `just dev` | `uv sync` default groups / all groups+extras                          |
-| `just init`              | deps + `uvx prek install` hooks                                       |
+| Target                   | Effect                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `just test`              | `uv run --frozen pytest` — full suite (600+ tests, must be all green)                                |
+| `just test-fast`         | excludes `heavy` + `e2e` markers                                                                     |
+| `just test-e2e`          | only `e2e` marker                                                                                    |
+| `just test-quick`        | only `quick` marker                                                                                  |
+| `just test-cov`          | coverage with `--cov-fail-under=77` (CI floor, ticket #11)                                           |
+| `just test-doc`          | `uv run --frozen pytest --doctest-modules src/llm/`                                                  |
+| `just ruff`              | `uvx ruff format .` then `uvx ruff check . --fix`                                                    |
+| `just check`             | `uv lock --check` + `ruff format --check` + `ruff check` + `ty` + examples compile (mirrors CI lint) |
+| `just ty`                | `uvx ty check src/llm/` — matches the CI lint gate                                                   |
+| `just sync` / `just dev` | `uv sync` default groups / all groups+extras                                                         |
+| `just init`              | deps + `uvx prek install` hooks                                                                      |
 
 ## What CI enforces (.github/workflows/ci.yml)
 

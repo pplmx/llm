@@ -83,7 +83,8 @@ uv run llm-serve
 | `just test` | 全量（608+，须全绿） |
 | `just test-fast` | 排除 `heavy`、`e2e` |
 | `just test-e2e` | 仅 e2e |
-| `just ruff` | format + lint |
+| `just ruff` | format + lint（--fix） |
+| `just check` | 静态 lint gate（uv lock --check + ruff --check + ty + examples） |
 | `just ty` | 类型检查 |
 | `uv sync --extra streaming` | HF `datasets` 流式依赖 |
 | `uv lock --check` | 验证 lock 与 pyproject 同步 |
