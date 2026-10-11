@@ -228,6 +228,109 @@ def apply_logit_bias(
     return adjusted
 
 
+def apply_penalties(
+    logits: torch.Tensor,
+    token_ids: list[int],
+    *,
+    repetition_penalty: float = 1.0,
+    frequency_penalty: float = 0.0,
+    presence_penalty: float = 0.0,
+    logit_bias: Mapping[Any, float] | None = None,
+) -> torch.Tensor:
+    """Apply the OpenAI logit-stage penalty pipeline in a single fused pass.
+
+    Runs :func:`apply_repetition_penalty`, :func:`apply_frequency_penalty`,
+    :func:`apply_presence_penalty` and :func:`apply_logit_bias` in the exact
+    ordering and with identical semantics, but clones the ``[vocab]`` logits
+    only once and builds the id/penalty tensors a single time instead of once
+    per helper. The decode-loop hot paths (``stream_generate`` /
+    ``batch_generate`` / continuous-batching / speculative) call this once per
+    token; chaining the four helpers pays up to four full-vocab clones and up
+    to six Python->tensor rebuilds (each a device sync) per token.
+
+    Args:
+        logits: 1D ``[vocab_size]`` tensor. Not mutated (it is cloned before
+            any adjustment).
+        token_ids: List of token ids generated so far. Duplicates count toward
+            the frequency penalty; only their set matters for repetition and
+            presence.
+        repetition_penalty: ``> 0``; ``== 1.0`` (the default) disables it.
+            Values in ``(0, 1)`` legitimately encourage repetition. ``<= 0``
+            raises ``ValueError`` (matches :func:`apply_repetition_penalty`).
+        frequency_penalty: OpenAI per-frequency penalty; ``0.0`` (the default)
+            disables it.
+        presence_penalty: OpenAI flat per-presence penalty; ``0.0`` (the
+            default) disables it.
+        logit_bias: OpenAI ``{token_id: bias}`` map; keys may be ``int`` or
+            ``str`` (coerced via ``int()``; invalid entries dropped). ``None``
+            or empty disables it.
+
+    Returns:
+        A new 1D tensor with every active penalty applied — identical to
+        applying the four helpers in sequence. ``logits`` itself is returned
+        unchanged when no penalty is active.
+    """
+    # Repetition-penalty validation must fire BEFORE the empty-``token_ids``
+    # early return: every other penalty is a no-op on an empty history, but a
+    # ``<= 0`` repetition penalty would corrupt sampling even when nothing has
+    # been seen. Mirrors apply_repetition_penalty's guard ordering (RIL
+    # TASK-250 / ISS-391).
+    if repetition_penalty != 1.0 and repetition_penalty <= 0:
+        raise ValueError(f"repetition_penalty must be > 0, got {repetition_penalty!r}")
+
+    hist_active = repetition_penalty != 1.0 or frequency_penalty != 0.0 or presence_penalty != 0.0
+    # logit_bias does not depend on the history: it must still be applied even
+    # when ``token_ids`` is empty.
+    if not logit_bias and not (hist_active and token_ids):
+        return logits
+
+    adjusted = logits.clone()
+    device = adjusted.device
+    vocab_size = adjusted.size(-1)
+
+    if hist_active and token_ids:
+        # One Counter pass yields every token we touch plus its multiplicity
+        # (frequency needs the count; repetition/presence use just the id set).
+        # Out-of-vocab ids are dropped — penalising them is meaningless and the
+        # scatter below would index out of range.
+        valid: dict[int, int] = {t: c for t, c in Counter(token_ids).items() if 0 <= t < vocab_size}
+        if valid:
+            ids = torch.tensor(list(valid), device=device, dtype=torch.long)
+            if repetition_penalty != 1.0:
+                scores = torch.gather(adjusted, 0, ids)
+                scores = torch.where(
+                    scores < 0,
+                    scores * repetition_penalty,
+                    scores / repetition_penalty,
+                )
+                adjusted.scatter_(0, ids, scores)
+            if frequency_penalty != 0.0:
+                counts = torch.tensor([valid[t] for t in valid], device=device, dtype=adjusted.dtype)
+                adjusted.scatter_add_(0, ids, -frequency_penalty * counts)
+            if presence_penalty != 0.0:
+                adjusted.scatter_add_(
+                    0,
+                    ids,
+                    -presence_penalty * torch.ones(len(valid), device=device, dtype=adjusted.dtype),
+                )
+
+    if logit_bias:
+        bias_valid: dict[int, float] = {}
+        for tid, bias in logit_bias.items():
+            try:
+                tid_int = int(tid)
+            except TypeError, ValueError:
+                continue
+            if 0 <= tid_int < vocab_size:
+                bias_valid[tid_int] = float(bias)
+        if bias_valid:
+            bias_ids = torch.tensor(list(bias_valid), device=device, dtype=torch.long)
+            biases = torch.tensor(list(bias_valid.values()), device=device, dtype=adjusted.dtype)
+            adjusted.index_add_(0, bias_ids, biases)
+
+    return adjusted
+
+
 def mask_undecodable_logits(logits: torch.Tensor, tokenizer_vocab_size: int | None) -> None:
     """Mask every logit whose token id the tokenizer cannot decode.
 
@@ -315,7 +418,9 @@ def sampling_probs(
     if top_k is not None:
         vocab_size = next_logits.size(-1)
         values, _ = torch.topk(next_logits, min(top_k, vocab_size), dim=-1)
-        next_logits = next_logits.clone()
+        # `next_logits` is a fresh ``logits / temperature`` tensor (never a
+        # view of the caller's input), so masking it in place is safe — the
+        # clone here was redundant and cost a full-vocab allocation per call.
         # ``values[..., -1:]`` is the per-row top-k threshold: ``[:, -1]``
         # would pick only the LAST row's threshold and blow the broadcast.
         next_logits[next_logits < values[..., -1:]] = -torch.inf
@@ -337,7 +442,9 @@ def sampling_probs(
         # list indexes the gamma axis and goes out of bounds.
         remove_mask = torch.zeros_like(next_logits, dtype=torch.bool)
         remove_mask.scatter_(-1, sorted_indices, sorted_indices_to_remove)
-        next_logits = next_logits.clone()
+        # `next_logits` is still a fresh tensor owned by this function (the
+        # division result or the top-k branch's in-place mask), so masking it
+        # in place is safe; the clone here was redundant.
         next_logits[remove_mask] = -float("inf")
 
     return torch.softmax(next_logits, dim=-1)

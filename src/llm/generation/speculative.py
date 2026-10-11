@@ -27,10 +27,7 @@ import torch
 
 from llm.generation.eager import _mask_pad_logits, _normalize_stop, _reject_impossible_context
 from llm.generation.sampling import (
-    apply_frequency_penalty,
-    apply_logit_bias,
-    apply_presence_penalty,
-    apply_repetition_penalty,
+    apply_penalties,
     mask_undecodable_logits,
     normalize_eos_ids,
     sample_next_token,
@@ -117,15 +114,14 @@ def _verify_speculative_tokens(
 
     def _apply_penalties(logits_row: torch.Tensor, history: list[int]) -> torch.Tensor:
         """Apply the same penalty pipeline as :func:`llm.generation.eager.generate`."""
-        if repetition_penalty != 1.0:
-            logits_row = apply_repetition_penalty(logits_row, history, repetition_penalty)
-        if frequency_penalty != 0.0:
-            logits_row = apply_frequency_penalty(logits_row, history, frequency_penalty)
-        if presence_penalty != 0.0:
-            logits_row = apply_presence_penalty(logits_row, history, presence_penalty)
-        if logit_bias:
-            logits_row = apply_logit_bias(logits_row, logit_bias)
-        return logits_row
+        return apply_penalties(
+            logits_row,
+            history,
+            repetition_penalty=repetition_penalty,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            logit_bias=logit_bias,
+        )
 
     with torch.no_grad():
         target_out = target(full, kv_caches=None, use_cache=False)
@@ -394,14 +390,14 @@ def speculative_generate(
                 getattr(tokenizer, "pad_token_id", None),
                 getattr(tokenizer, "eos_token_id", None),
             )
-            if repetition_penalty != 1.0:
-                next_logits = apply_repetition_penalty(next_logits, draft_ids, repetition_penalty)
-            if frequency_penalty != 0.0:
-                next_logits = apply_frequency_penalty(next_logits, draft_ids, frequency_penalty)
-            if presence_penalty != 0.0:
-                next_logits = apply_presence_penalty(next_logits, draft_ids, presence_penalty)
-            if logit_bias:
-                next_logits = apply_logit_bias(next_logits, logit_bias)
+            next_logits = apply_penalties(
+                next_logits,
+                draft_ids,
+                repetition_penalty=repetition_penalty,
+                frequency_penalty=frequency_penalty,
+                presence_penalty=presence_penalty,
+                logit_bias=logit_bias,
+            )
             tok = sample_next_token(
                 next_logits,
                 temperature=temperature,

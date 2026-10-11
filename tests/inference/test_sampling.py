@@ -3,7 +3,15 @@
 import pytest
 import torch
 
-from llm.generation.sampling import apply_repetition_penalty, sample_next_token, sampling_probs
+from llm.generation.sampling import (
+    apply_frequency_penalty,
+    apply_logit_bias,
+    apply_penalties,
+    apply_presence_penalty,
+    apply_repetition_penalty,
+    sample_next_token,
+    sampling_probs,
+)
 
 
 def test_greedy_sampling():
@@ -122,3 +130,54 @@ def test_repetition_penalty_ignores_tokens_outside_vocab():
     assert torch.allclose(adjusted[2], torch.tensor(3.0))
     # Input is not mutated.
     assert torch.equal(logits, snapshot)
+
+
+def test_apply_penalties_fused_equals_chained():
+    """The fused :func:`apply_penalties` (used by the decode hot paths) must be
+    bit-identical to applying the four helpers in sequence — a later fusion
+    rewrite must not drift the serving/generation output."""
+    rng = torch.Generator().manual_seed(7)
+    cases = [
+        # (vocab, penalty args)
+        (16, {"repetition_penalty": 1.5}),
+        (16, {"frequency_penalty": 0.5}),
+        (16, {"presence_penalty": 0.5}),
+        (16, {"repetition_penalty": 0.5, "frequency_penalty": -1.0, "presence_penalty": 0.3}),
+        (16, {"logit_bias": {0: 2.5, 5: -1.0}}),
+        (
+            16,
+            {
+                "repetition_penalty": 2.0,
+                "frequency_penalty": 0.5,
+                "presence_penalty": 0.2,
+                "logit_bias": {2: 3.0, "4": -0.5},
+            },
+        ),
+    ]
+    for vocab, kwargs in cases:
+        logits = torch.randn(vocab, generator=rng) * 3
+        # history with duplicates, an out-of-vocab id, and (one case) empty
+        token_ids = [3, 1, 3, 0, 7, 99] if kwargs.get("repetition_penalty") else [3, 1, 3, 5, 5]
+        chained = logits
+        if kwargs.get("repetition_penalty", 1.0) != 1.0:
+            chained = apply_repetition_penalty(chained, token_ids, repetition_penalty=kwargs["repetition_penalty"])
+        if kwargs.get("frequency_penalty", 0.0) != 0.0:
+            chained = apply_frequency_penalty(chained, token_ids, frequency_penalty=kwargs["frequency_penalty"])
+        if kwargs.get("presence_penalty", 0.0) != 0.0:
+            chained = apply_presence_penalty(chained, token_ids, presence_penalty=kwargs["presence_penalty"])
+        if kwargs.get("logit_bias"):
+            chained = apply_logit_bias(chained, kwargs["logit_bias"])
+        fused = apply_penalties(logits, token_ids, **kwargs)
+        assert torch.equal(fused, chained)
+
+    # No active penalty -> returns the identical object (mirrors chaining no-ops).
+    x = torch.randn(8)
+    assert apply_penalties(x, [1, 2]) is x
+    # Empty history with a bias still applies the bias.
+    biased = apply_penalties(torch.zeros(4), [], logit_bias={1: 2.0})
+    assert biased[1].item() == 2.0
+    # repetition_penalty <= 0 must raise even with an empty history.
+    with pytest.raises(ValueError, match="repetition_penalty"):
+        apply_penalties(torch.zeros(8), [], repetition_penalty=0.0)
+    with pytest.raises(ValueError, match="repetition_penalty"):
+        apply_penalties(torch.zeros(8), [1], repetition_penalty=-1.0)

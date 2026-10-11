@@ -15,10 +15,7 @@ import torch
 
 from llm.core.kv_cache import KVCache
 from llm.generation.sampling import (
-    apply_frequency_penalty,
-    apply_logit_bias,
-    apply_presence_penalty,
-    apply_repetition_penalty,
+    apply_penalties,
     mask_undecodable_logits,
     normalize_eos_ids,
     sample_next_token,
@@ -872,14 +869,14 @@ class ContinuousBatchingEngine:
                 # speculative mask it on every step (RIL ISS-125).
                 mask_undecodable_logits(seq_logits, getattr(self.tokenizer, "vocab_size", None))
                 context_ids = seq.input_ids + seq.generated_ids
-                if seq.repetition_penalty != 1.0:
-                    seq_logits = apply_repetition_penalty(seq_logits, context_ids, seq.repetition_penalty)
-                if seq.frequency_penalty != 0.0:
-                    seq_logits = apply_frequency_penalty(seq_logits, context_ids, seq.frequency_penalty)
-                if seq.presence_penalty != 0.0:
-                    seq_logits = apply_presence_penalty(seq_logits, context_ids, seq.presence_penalty)
-                if seq.logit_bias:
-                    seq_logits = apply_logit_bias(seq_logits, seq.logit_bias)
+                seq_logits = apply_penalties(
+                    seq_logits,
+                    context_ids,
+                    repetition_penalty=seq.repetition_penalty,
+                    frequency_penalty=seq.frequency_penalty,
+                    presence_penalty=seq.presence_penalty,
+                    logit_bias=seq.logit_bias,
+                )
                 next_token_ids.append(
                     sample_next_token(
                         seq_logits,

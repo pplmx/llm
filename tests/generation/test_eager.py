@@ -441,9 +441,9 @@ def test_stream_generate_no_stop_yields_every_token(tiny_model):
 
 
 def test_stream_generate_repetition_penalty_branch(tiny_model):
-    """``repetition_penalty != 1.0`` exercises the penalty branch (line 120)."""
+    """``repetition_penalty != 1.0`` reaches the fused penalty pipeline."""
     tok = _make_stop_tokenizer(["a", "b", "c"])
-    with patch("llm.generation.eager.apply_repetition_penalty", wraps=lambda logits, _t, _p: logits) as spy:
+    with patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy:
         list(
             stream_generate(
                 model=tiny_model,
@@ -454,13 +454,13 @@ def test_stream_generate_repetition_penalty_branch(tiny_model):
                 repetition_penalty=1.5,
             )
         )
-    assert spy.call_count >= 1
+    assert any(c.kwargs.get("repetition_penalty") == 1.5 for c in spy.call_args_list)
 
 
 def test_stream_generate_frequency_penalty_branch(tiny_model):
-    """``frequency_penalty != 0.0`` exercises the branch (line 122)."""
+    """``frequency_penalty != 0.0`` reaches the fused penalty pipeline."""
     tok = _make_stop_tokenizer(["a", "b", "c"])
-    with patch("llm.generation.eager.apply_frequency_penalty", wraps=lambda logits, _t, _p: logits) as spy:
+    with patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy:
         list(
             stream_generate(
                 model=tiny_model,
@@ -471,13 +471,13 @@ def test_stream_generate_frequency_penalty_branch(tiny_model):
                 frequency_penalty=0.5,
             )
         )
-    assert spy.call_count >= 1
+    assert any(c.kwargs.get("frequency_penalty") == 0.5 for c in spy.call_args_list)
 
 
 def test_stream_generate_presence_penalty_branch(tiny_model):
-    """``presence_penalty != 0.0`` exercises the branch (line 124)."""
+    """``presence_penalty != 0.0`` reaches the fused penalty pipeline."""
     tok = _make_stop_tokenizer(["a", "b", "c"])
-    with patch("llm.generation.eager.apply_presence_penalty", wraps=lambda logits, _t, _p: logits) as spy:
+    with patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy:
         list(
             stream_generate(
                 model=tiny_model,
@@ -488,13 +488,13 @@ def test_stream_generate_presence_penalty_branch(tiny_model):
                 presence_penalty=0.5,
             )
         )
-    assert spy.call_count >= 1
+    assert any(c.kwargs.get("presence_penalty") == 0.5 for c in spy.call_args_list)
 
 
 def test_stream_generate_logit_bias_branch(tiny_model):
-    """``logit_bias`` truthy exercises the branch (line 126)."""
+    """``logit_bias`` truthy reaches the fused penalty pipeline."""
     tok = _make_stop_tokenizer(["a", "b", "c"])
-    with patch("llm.generation.eager.apply_logit_bias", wraps=lambda logits, _b: logits) as spy:
+    with patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy:
         list(
             stream_generate(
                 model=tiny_model,
@@ -505,7 +505,7 @@ def test_stream_generate_logit_bias_branch(tiny_model):
                 logit_bias={1: -10.0},
             )
         )
-    assert spy.call_count >= 1
+    assert any(c.kwargs.get("logit_bias") == {1: -10.0} for c in spy.call_args_list)
 
 
 # ---------------------------------------------------------------------------
@@ -929,7 +929,7 @@ def test_generate_with_repetition_penalty(tiny_model):
     """``generate`` forwards ``repetition_penalty`` to ``stream_generate``."""
     tok = _make_stop_tokenizer(["a", "b"])
     with (
-        patch("llm.generation.eager.apply_repetition_penalty", wraps=lambda logits, _t, _p: logits),
+        patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy,
         patch(
             "llm.generation.eager.sample_next_token",
             side_effect=lambda logits, **kw: 1,
@@ -944,6 +944,7 @@ def test_generate_with_repetition_penalty(tiny_model):
             repetition_penalty=2.0,
         )
     assert result == "pab"
+    assert any(c.kwargs.get("repetition_penalty") == 2.0 for c in spy.call_args_list)
 
 
 # ---------------------------------------------------------------------------
@@ -1001,11 +1002,10 @@ def test_batch_generate_rejects_max_new_tokens_at_context(tiny_model):
 
 
 def test_batch_generate_repetition_penalty_branch(tiny_model):
-    """``repetition_penalty != 1.0`` exercises the batch penalty branch
-    (line 308)."""
+    """``repetition_penalty != 1.0`` reaches the fused penalty pipeline."""
     tok = _CharTokenizer([1])
     with (
-        patch("llm.generation.eager.apply_repetition_penalty", wraps=lambda logits, _t, _p: logits) as spy,
+        patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy,
         patch(
             "llm.generation.eager.sample_next_token",
             side_effect=lambda logits, **kw: 1,
@@ -1019,14 +1019,14 @@ def test_batch_generate_repetition_penalty_branch(tiny_model):
             temperature=0.0,
             repetition_penalty=2.0,
         )
-    assert spy.call_count >= 1
+    assert any(c.kwargs.get("repetition_penalty") == 2.0 for c in spy.call_args_list)
 
 
 def test_batch_generate_frequency_penalty_branch(tiny_model):
-    """``frequency_penalty != 0.0`` exercises the batch branch (line 310)."""
+    """``frequency_penalty != 0.0`` reaches the fused penalty pipeline."""
     tok = _CharTokenizer([1])
     with (
-        patch("llm.generation.eager.apply_frequency_penalty", wraps=lambda logits, _t, _p: logits) as spy,
+        patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy,
         patch(
             "llm.generation.eager.sample_next_token",
             side_effect=lambda logits, **kw: 1,
@@ -1040,14 +1040,14 @@ def test_batch_generate_frequency_penalty_branch(tiny_model):
             temperature=0.0,
             frequency_penalty=0.5,
         )
-    assert spy.call_count >= 1
+    assert any(c.kwargs.get("frequency_penalty") == 0.5 for c in spy.call_args_list)
 
 
 def test_batch_generate_presence_penalty_branch(tiny_model):
-    """``presence_penalty != 0.0`` exercises the batch branch (line 312)."""
+    """``presence_penalty != 0.0`` reaches the fused penalty pipeline."""
     tok = _CharTokenizer([1])
     with (
-        patch("llm.generation.eager.apply_presence_penalty", wraps=lambda logits, _t, _p: logits) as spy,
+        patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy,
         patch(
             "llm.generation.eager.sample_next_token",
             side_effect=lambda logits, **kw: 1,
@@ -1061,14 +1061,14 @@ def test_batch_generate_presence_penalty_branch(tiny_model):
             temperature=0.0,
             presence_penalty=0.5,
         )
-    assert spy.call_count >= 1
+    assert any(c.kwargs.get("presence_penalty") == 0.5 for c in spy.call_args_list)
 
 
 def test_batch_generate_logit_bias_branch(tiny_model):
-    """``logit_bias`` truthy exercises the batch branch (line 314)."""
+    """``logit_bias`` truthy reaches the fused penalty pipeline."""
     tok = _CharTokenizer([1])
     with (
-        patch("llm.generation.eager.apply_logit_bias", wraps=lambda logits, _b: logits) as spy,
+        patch("llm.generation.eager.apply_penalties", wraps=lambda logits, _t, **kw: logits) as spy,
         patch(
             "llm.generation.eager.sample_next_token",
             side_effect=lambda logits, **kw: 1,
@@ -1082,7 +1082,7 @@ def test_batch_generate_logit_bias_branch(tiny_model):
             temperature=0.0,
             logit_bias={1: -10.0},
         )
-    assert spy.call_count >= 1
+    assert any(c.kwargs.get("logit_bias") == {1: -10.0} for c in spy.call_args_list)
 
 
 # ---------------------------------------------------------------------------

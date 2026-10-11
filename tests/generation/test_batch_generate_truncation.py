@@ -180,11 +180,11 @@ def test_batch_generate_repetition_penalty_context_matches_truncated_input(recor
     """BUG: ``generated_ids`` is seeded from the full prompt, but the model
     only sees the truncated prompt in the prefill forward.
 
-    This means ``apply_repetition_penalty`` receives token ids the model never
+    This means ``apply_penalties`` receives token ids the model never
     attended to.  The fix must truncate ``generated_ids`` to match the
     truncated ``input_tensor``.
 
-    We patch ``apply_repetition_penalty`` and assert that the ``token_ids``
+    We patch ``apply_penalties`` and assert that the ``token_ids``
     it receives are a subset of (truncatable to) the tokens the model
     actually saw — i.e. the last ``truncate_len`` prompt tokens plus any
     generated tokens.
@@ -195,7 +195,7 @@ def test_batch_generate_repetition_penalty_context_matches_truncated_input(recor
     max_new_tokens = 4
     truncate_len = 16 - max_new_tokens  # 12
 
-    with patch("llm.generation.eager.apply_repetition_penalty", wraps=_passthrough) as spy:
+    with patch("llm.generation.eager.apply_penalties", wraps=_passthrough) as spy:
         batch_generate(
             model=recording_model,
             tokenizer=tokenizer,
@@ -207,7 +207,7 @@ def test_batch_generate_repetition_penalty_context_matches_truncated_input(recor
 
     # Spy should have been called with token_ids that start from the truncated
     # prompt, NOT the full 20-token prompt.
-    assert spy.call_count > 0, "apply_repetition_penalty should have been called"
+    assert spy.call_count > 0, "apply_penalties should have been called"
     for call in spy.call_args_list:
         context_ids = call.args[1]  # (logits, token_ids)
         # The prompt portion of the context (first truncate_len tokens) must
@@ -218,13 +218,13 @@ def test_batch_generate_repetition_penalty_context_matches_truncated_input(recor
         truncated_away = set(prompt_ids[: len(prompt_ids) - truncate_len])
         prompt_context_set = set(prompt_context)
         assert not (truncated_away & prompt_context_set), (
-            f"apply_repetition_penalty received token_ids from the truncated-away "
+            f"apply_penalties received token_ids from the truncated-away "
             f"prompt portion: {truncated_away & prompt_context_set}. "
             f"Context: {context_ids}"
         )
 
 
-def _passthrough(logits, _token_ids, _repetition_penalty):
+def _passthrough(logits, _token_ids, **_kwargs):
     """Identity wrapper — return logits unchanged."""
     return logits
 

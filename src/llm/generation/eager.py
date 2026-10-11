@@ -4,10 +4,7 @@ import torch
 
 from llm.core.kv_cache import create_decoder_kv_caches
 from llm.generation.sampling import (
-    apply_frequency_penalty,
-    apply_logit_bias,
-    apply_presence_penalty,
-    apply_repetition_penalty,
+    apply_penalties,
     mask_undecodable_logits,
     normalize_eos_ids,
     sample_next_token,
@@ -179,14 +176,14 @@ def stream_generate(
     eos_ids = normalize_eos_ids(getattr(tokenizer, "eos_token_id", None))
 
     for _ in range(max_new_tokens):
-        if repetition_penalty != 1.0:
-            next_token_logits = apply_repetition_penalty(next_token_logits, generated_ids, repetition_penalty)
-        if frequency_penalty != 0.0:
-            next_token_logits = apply_frequency_penalty(next_token_logits, generated_ids, frequency_penalty)
-        if presence_penalty != 0.0:
-            next_token_logits = apply_presence_penalty(next_token_logits, generated_ids, presence_penalty)
-        if logit_bias:
-            next_token_logits = apply_logit_bias(next_token_logits, logit_bias)
+        next_token_logits = apply_penalties(
+            next_token_logits,
+            generated_ids,
+            repetition_penalty=repetition_penalty,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            logit_bias=logit_bias,
+        )
 
         token_id = sample_next_token(
             next_token_logits,
@@ -445,14 +442,14 @@ def batch_generate(
                 # batched KV path stays aligned, but it adds no more tokens.
                 continue
             row_logits = next_token_logits[i]
-            if repetition_penalty != 1.0:
-                row_logits = apply_repetition_penalty(row_logits, generated_ids[i], repetition_penalty)
-            if frequency_penalty != 0.0:
-                row_logits = apply_frequency_penalty(row_logits, generated_ids[i], frequency_penalty)
-            if presence_penalty != 0.0:
-                row_logits = apply_presence_penalty(row_logits, generated_ids[i], presence_penalty)
-            if logit_bias:
-                row_logits = apply_logit_bias(row_logits, logit_bias)
+            row_logits = apply_penalties(
+                row_logits,
+                generated_ids[i],
+                repetition_penalty=repetition_penalty,
+                frequency_penalty=frequency_penalty,
+                presence_penalty=presence_penalty,
+                logit_bias=logit_bias,
+            )
             token_id = sample_next_token(
                 row_logits,
                 temperature=temperature,
