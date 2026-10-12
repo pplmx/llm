@@ -148,6 +148,12 @@ priority_score = category_weight × severity × confidence × (1 / sqrt(effort))
 
 Commit 时在 message 里引用相关 task/issue 节点 id，保证代码历史和图谱可以互相追溯。
 
+**提交节奏：ril 图谱簿记批量合并**。避免 git log 被大量 `chore(ril):` 单记录提交淹没——图谱簿记与代码变更加以区分：
+
+- **代码/功能变更**（fix / feat / refactor / docs / test / build 等）：正常按 Conventional Commits 单独提交，message 中引用相关 ril 节点 id（如 `fix(core): … (RIL TASK-001, ISS-001)`），保持代码历史与图谱双向可追溯，这部分不需要批量化。
+- **图谱簿记**（LEARN 阶段对 graph.json 的 evidence / change / edge / 节点状态记录）：**不要每条记录单独提交**。让 graph.json 的变更在工作树中累积，累计约 **10–50 条记录**（数量是灵活指导而非硬上限，视情况可更多）后，将 graph.json **单独提交为一次合并的 `chore(ril): <摘要>`**，摘要中列出本批覆盖的主要节点 id（例如 `chore(ril): batch 34 records — TASK-440/ISS-428/CHG-395…`）。
+- 提交代码变更时**不要**把 `.planning/ril/graph.json` 一并 `git add`（只 stage 代码 / 测试 / 文档文件），让挂起的图谱簿记留在工作树，仅在合并的 `chore(ril):` 提交里落盘——否则会把单条图谱记录重新混进代码提交，抵消批量效果。
+
 ## 8. 深度探索（无明显 TODO 时）
 
 主动做 Repository Intelligence Deep Dive，寻找隐藏 bug、边界问题、并发问题、错误处理缺陷、资源泄漏、性能瓶颈、测试缺口、安全风险、架构耦合、技术债务，优先形成"证据 → 根因 → 修复 → 验证"闭环。
