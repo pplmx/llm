@@ -1,145 +1,127 @@
-# Agent 指南
+# AGENTS.md
 
-本文件是 AI Agent 的**决策入口**：只保留高频路径与约束，细节读链接文档。
+本文件是仓库对 AI Agent 的**决策入口与规范**：只保留高频路径、硬约束与验证门槛，细节走链接（渐进式披露）。规范语言遵循 **RFC 2119**：**MUST**（必须）· **SHOULD**（应当）· **NEVER / MUST NOT**（禁止）。
 
-## 快速索引
+- 与用户交流用**中文**；代码注释 / 日志 / commit message / 文档技术内容用**英文**。
+- 所有结论 MUST 有实据（代码 / 工具 / 测试 / 文档）；未观测到 = `[INFERENCE]`。
+- 不擅自扩大范围，也不静默缩小范围；缺信息先明说，再做能做完的部分。
 
-| 文件 | 何时读 |
-| --- | --- |
-| [ROADMAP.md](ROADMAP.md) | 当前优先级 P0–P3、阶段完成度 |
-| [docs/reference/architecture.md](docs/reference/architecture.md) | 分层设计、数据流、Registry 机制 |
-| [docs/development/guide-extending.md](docs/development/guide-extending.md) | 加 task / callback / scheduler / metric |
-| [docs/adr/](docs/adr/) | 已锁定架构决策（GQA、KV cache、Paged Attn、QLoRA） |
-| [CHANGELOG.md](CHANGELOG.md) | 近期功能与 breaking changes |
-| [pytest.toml](pytest.toml) | pytest markers、config |
-| [docs/development/test-architecture.md](docs/development/test-architecture.md) | 测试架构、GPU-less 测试策略、CI 拆分 |
-| [Justfile](Justfile) | 所有 `just` 目标定义 |
+## 1. 先读（高频索引）
 
-## 当前焦点 (P0)
+| 主题                                                | 入口                                                                           |
+| --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 当前优先级与阶段完成度                              | [ROADMAP.md](ROADMAP.md)                                                       |
+| 分层设计、数据流、Registry                          | [docs/reference/architecture.md](docs/reference/architecture.md)               |
+| 加 task / callback / scheduler / metric             | [docs/development/guide-extending.md](docs/development/guide-extending.md)     |
+| 已锁定架构决策（GQA、KV cache、Paged Attn、QLoRA…） | [docs/adr/](docs/adr/)                                                         |
+| 近期功能与 breaking changes                         | [CHANGELOG.md](CHANGELOG.md)                                                   |
+| 测试架构：marker 分类、GPU-less 策略、CI 拆分       | [docs/development/test-architecture.md](docs/development/test-architecture.md) |
+| 依赖 group / entry points                           | [pyproject.toml](pyproject.toml)                                               |
+| pytest markers / 配置                               | [pytest.toml](pytest.toml)                                                     |
+| 全部 `just` 命令                                    | [Justfile](Justfile)                                                           |
 
-预训练 **productization**（流式骨架已完成，见 `stream_lm` task）：
+## 2. 仓库地图
 
-- C4 / Pile / RedPajama **preset**（复用 `SOURCE_REGISTRY` + `HFStreamTextSource`）
-- 数据 dedup / 过滤（`TextSource` 装饰器或 pipeline）
-- 主路径文档与 e2e（`llm train --task stream_lm`，非仅 `scripts/`）
+### 2.1 源码分层（层 | 职责 | 扩展点）
 
-完整 backlog 见 [ROADMAP.md § 下一步探索方向](ROADMAP.md#下一步探索方向-).
+| 层              | 职责                                      | 扩展点                                                                    |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------------- |
+| `core/`         | Attention、MLP、Norm、KV cache、PEFT      | `ATTENTION_REGISTRY` / `MLP_REGISTRY` / `NORM_REGISTRY` / `PEFT_REGISTRY` |
+| `models/`       | `DecoderModel`                            | `ModelFactory` · entry point `llm.models`                                 |
+| `data/`         | Dataset、DataModule、流式 source          | `SOURCE_REGISTRY` · entry point `llm.data_sources`                        |
+| `training/`     | Engine、Task、DDP/FSDP                    | `TASK_REGISTRY` · `training/tasks/builtin.py`                             |
+| `generation/`   | 采样、推理 backend                        | `BACKEND_REGISTRY` · entry point `llm.generation_backends`                |
+| `runtime/`      | Registry 基础设施、plugins、model factory | `registry.py` / `plugins.py`                                              |
+| `serving/`      | FastAPI、continuous batching              | `ServingConfig` / `batch_engine.py`                                       |
+| `evaluation/`   | 离线评估                                  | `EvaluationRunner` · `eval_tasks/`                                        |
+| `quantization/` | GPTQ / AWQ / SmoothQuant / FP8 / 混合精度 | 算法实现（无 registry）                                                   |
+| `tokenization/` | tokenizer 与 BPE 训练                     | `tokenizer.py` / `train_bpe.py`                                           |
+| `compat/`       | HF 权重加载、safetensors read             | `hf_loader.py`                                                            |
+| `export/`       | ONNX / TorchScript / GGUF 导出            | `EXPORT_REGISTRY` · entry point `llm.export_backends`                     |
 
-## 源码分层
+**Registries via entry points**：`llm.models` · `llm.generation_backends` · `llm.data_sources` · `llm.export_backends` · `llm.peft_methods`。
 
-| 层 | 职责 | 扩展点 |
-| --- | --- | --- |
-| `core/` | Attention、MLP、Norm、KV cache | `ATTENTION_REGISTRY` / `MLP_REGISTRY` / `NORM_REGISTRY` |
-| `models/` | `DecoderModel` | `ModelFactory` · entry point `llm.models` |
-| `data/` | Dataset、DataModule、流式 source | `SOURCE_REGISTRY` · entry point `llm.data_sources` |
-| `training/` | Engine、Task、DDP/FSDP | `TASK_REGISTRY` · `training/tasks/builtin.py` |
-| `generation/` | 采样、推理 backend | `BACKEND_REGISTRY` · entry point `llm.generation_backends` |
-| `runtime/` | Registry 基础设施、plugins | `registry.py` / `plugins.py` |
-| `serving/` | FastAPI、continuous batching | `ServingConfig` / `batch_engine.py` |
-| `evaluation/` | 离线评估 | `EvaluationRunner` · `eval_tasks/` |
-| `compat/` | HF 权重加载、safetensors read | `hf_loader.py` |
-| `export/` | ONNX 等导出 | `export/onnx.py`（尚无 export registry） |
+### 2.2 内置训练 task（`TASK_REGISTRY`）
 
-### 架构边界（违反前需新 ADR）
+| CLI `--task`                                        | 用途                                           |
+| --------------------------------------------------- | ---------------------------------------------- |
+| `lm`                                                | Map-style 语言建模                             |
+| `stream_lm`                                         | 流式大规模预训练（C4 / Pile / RedPajama 预设） |
+| `sft` / `dpo` / `simpo` / `reward` / `ppo` / `grpo` | 对齐流程                                       |
+| `distill`                                           | 知识蒸馏                                       |
+| `multimodal`                                        | 多模态（modal-fusion 前缀）                    |
+| `regression`                                        | 合成回归 demo                                  |
 
-| 约束 | 说明 |
-| --- | --- |
-| `attn_impl=mla` | 支持 KV cache (linear + paged)。当前是 placeholder 实现 (learnable latent queries + uniform-mean 输出)；DeepSeek-V2-style latent-compressed K, V 是单独的 follow-up，见 [Tier 3 #31 ticket](docs/audits/2026-07-12-tickets/31-mla-kv-cache.md) |
-| Paged Attention | 已全链路支持：[ADR-004](docs/adr/004-paged-attention-serving.md) — prefix cache ✅，model forward 走 `PagedKVCache` |
-| 多模态 / 3D 并行 | 无 registry；需先设计 `MultimodalDataModule` 等，勿硬改 `DecoderModel` |
-| compat shim | Wave 3 已删；新代码走 `runtime/` / factory，不恢复旧路径 |
+### 2.3 架构边界（**跨界前 MUST 先落 ADR**）
 
-## 扩展地图
+| 约束             | 说明                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attn_impl=mla`  | 支持 KV cache（linear + paged），当前为 placeholder 实现；latent-compressed K/V 是独立 follow-up（`docs/audits/2026-07-12-tickets/31-mla-kv-cache.md`） |
+| Paged Attention  | 已全链路支持 [ADR-004](docs/adr/004-paged-attention-serving.md)                                                                                         |
+| 多模态 / 3D 并行 | 无 registry；先设计 `MultimodalDataModule`，勿硬改 `DecoderModel`                                                                                       |
+| compat shim      | Wave 3 已删；新代码走 `runtime/` / factory，不恢复旧路径                                                                                                |
 
-| 目标 | 主要改动位置 |
-| --- | --- |
-| 新训练 task | `training/tasks/` + `TASK_REGISTRY.register` in `builtin.py` |
-| 新 DataModule | `data/modules/` + 与 task 配对注册 |
-| 新流式数据源 | `data/sources.py` + `llm.data_sources` entry point |
-| 新注意力/MLP/Norm | `core/` + `@register_*` in `core/registry.py` |
-| 新推理 backend | `generation/` + `BACKEND_REGISTRY` + entry point |
-| 新评估指标/任务 | `evaluation/metrics/` / `evaluation/eval_tasks/` |
-| 新 CLI 能力 | 优先扩 `llm train` / `llm serve`，脚本仅作 demo |
+## 3. 当前焦点（P0）与 CLI
 
-### 内置训练 task
+统一 CLI：`llm <subcommand>`（`train` · `serve` · `quantize` · `prune` · `decompose` · `migrate-ckpt`），`llm --version` / `-V` = `llm 0.0.5`；`python -m llm` 等价。
 
-| CLI `--task` | 用途 |
-| --- | --- |
-| `lm` | Map-style 语言建模 |
-| `stream_lm` | 流式大规模预训练 |
-| `sft` / `dpo` / `reward` / `ppo` | 对齐流程 |
-| `regression` | 合成回归 demo |
+预训练 **productization**（流式骨架已完成，`stream_lm`）：C4 / Pile / RedPajama **preset**、数据 dedup / 过滤、主路径文档与 e2e。完整 backlog 见 [ROADMAP § 下一步探索方向](ROADMAP.md#下一步探索方向-)。
 
-```bash
-uv run llm train --task stream_lm --help
-uv run llm serve
-```
+## 4. 工作流（开发闭环）
 
-## 常用命令
+1. **Scope**：先读相关 skill（见 §9）；多文件工作先规划。
+2. **研究后动手**：读相关段落、复用既有模式；改导出符号前 MUST 用 LSP 查引用；不猜文件名/路径。
+3. **Implement**：优先改现有文件；改动**最小完备**（见 §6）。
+4. **Verify**：跑 §5 门槛，看真实输出（测试、CLI、UI 各自的验证方式）。
+5. **Cleanup**：更新文档 / CHANGELOG，删脚手架与临时脚本。
 
-| 命令 | 说明 |
-| --- | --- |
-| `just init` | 首次：依赖 + pre-commit |
-| `just sync` / `just dev` | 默认 groups / 全部 groups |
-| `just test` | 全量（所有 marker，含 GPU/heavy/e2e；GPU 主机跑） |
-| `just test-fast` | CPU-clean 日间闸门：排除 `heavy`、`e2e`、全部 GPU marker |
-| `just test-gpu` | 仅 GPU marker（`gpu`/`multi_gpu`/`need_gpu(n)`/`full_cluster`） |
-| `just test-cov` | 全量 + 覆盖率（scheduled 深闸门，`--cov-fail-under=77`） |
-| `just test-cov-fast` | CPU 核心套件 + 覆盖率（per-push CI 闸门，`--cov-fail-under=77`） |
-| `just test-e2e` | 仅 e2e |
-| `just ruff` | format + lint（--fix） |
-| `just check` | 静态 lint gate（uv lock --check + ruff --check + ty + examples） |
-| `just ty` | 类型检查 |
-| `uv sync --extra streaming` | HF `datasets` 流式依赖 |
-| `uv lock --check` | 验证 lock 与 pyproject 同步 |
+## 5. 验证门槛（Definition of Done）
 
-**改动后验证顺序**: `just test` → `just ruff` → `just test`
+**改完 MUST 按序验证**：`just test` → `just ruff` → `just test`（全量 → 格式化/lint → 复跑确认）。
 
-## uv 约定
+- 逐一跑过的命令才算证明；**没跑 suite 不得声称完成**。
+- Bug 修复：复现 → 修根因 → 确认；补回归测试（测行为，非实现）。
+- Feature/API：更新受影响的契约测试，用临时脚本证明新行为。
+- **NEVER**：删测试 / 跳测试 / 降低断言或阈值 / 注释失败用例来伪造「通过」。无法可靠修复则回滚。
+- 失败即根因分析 → 修根因 → 重验，不绕行、不淡化。
 
-- 唯一包管理器：`uv`（不新增 `requirements.txt` / pip workflow）
-- `default-groups = ["test"]` → 普通 `uv sync` 含 pytest
-- 改依赖后：`uv lock` + 提交 `uv.lock`
-- CI / Docker：`uv sync --frozen`；Docker builder 排除 test/docs/streaming group
-- **一律用 `uv run`（或 `uv run python`）执行 Python / 脚本**，不用系统裸 `python3`：本仓库 `requires-python = ">=3.14"`，系统 `python3` 常是 3.12，两者语法语义不同。
-- **Python 3.14（PEP 758）：`except A, B:`（不带括号）是合法且推荐的写法**。`ruff format` 会把 `except (A, B):` 规范化为不带括号形式，这是正确行为——不要把它当成「损坏的 ruff」或「Python 2 残留语法」去改回去。注意：在 3.12 及更早这是语法错误，所以只用 3.14（`uv run`）验证。
+### 常用命令（详见 [Justfile](Justfile)，测试均 `uv run --frozen`）
 
-## 测试约定
+| 命令                                                       | 说明                                                       |
+| ---------------------------------------------------------- | ---------------------------------------------------------- |
+| `just test`                                                | 全量（所有 marker，含 GPU/heavy/e2e；GPU 主机）            |
+| `just test-fast`                                           | CPU-clean 日间闸门：排除 `heavy` / `e2e` 与全部 GPU marker |
+| `just test-gpu` / `test-heavy` / `test-e2e` / `test-quick` | 只跑对应 marker                                            |
+| `just test-cov-fast`                                       | CPU 核心 + 覆盖率（per-push 闸门，`--cov-fail-under`）     |
+| `just test-doc`                                            | doctest（src/llm 内 `///` 示例）                           |
+| `just check`                                               | 静态闸门：`uv lock --check` + ruff + ty + examples-compile |
+| `just ruff` / `just ty`                                    | format + lint / 类型检查                                   |
+| `just docs`                                                | 文档站 mkdocs --strict 构建                                |
+| `just build` / `just image`                                | wheel / Docker 镜像                                        |
 
-```
-tests/
-  support/          # 纯 Python  helper（无 pytest）
-  conftest.py       # device, tiny_*, stub_tokenizer, model_and_tokenizer
-  models/conftest.py
-  data/conftest.py
-```
+## 6. Commit 规范（业界约定）
 
-| 场景 | 做法 |
-| --- | --- |
-| stub tokenizer | `stub_tokenizer` / `line_tokenizer` fixture |
-| DecoderModel 参数 | `decoder_model_kwargs(**overrides)` 或 `models/conftest` |
-| 弱断言 | 避免纯 `isinstance` / `is not None`；断言具体行为或数值 |
-| mock | 默认不用；直接跑真实模块 |
-
-Markers（`pyproject.toml`）：`quick` · `slow` · `heavy` · `e2e` · `gpu` · `multi_gpu`
-
-## 代码与协作规范
-
-- 路径：`pathlib.Path`
-- 注释 / 日志：**英文**；与用户交流：**中文**
-- 遵循 [Conventional Commits](https://www.conventionalcommits.org/)
-- Commit 工作流：`commit_message.txt` → `git commit -F` → 删除
+- **Conventional Commits**；**message 用英文**；subject 简洁（`type(scope): summary`）。
+- body 用 **bullet 一条条列出**（一个要点一行）、条理清晰、**不冗余赘述**——套话会让信息失去检索价值。
 - **Commit 粒度（最小完备）**：
-  - 每个 commit 对应一个逻辑上完整、独立的变更（代码 + 其配套测试同仓）
-  - 多个**非常小**且各自最小完备的改动，可以合并进**同一个 commit**；**一行就能改完的改动不要单独开 commit**，并入相关的小改动一起提交，避免碎片化成噪声
-  - 也不要出现**一个 commit 塞进几千甚至上万行**代码；除非经过**深入评估**后确认该改动确实**天生最小完备**（如大规模机械重构、代码生成、整体迁移），才允许大 commit，并在 message 中为该例外留一句说明
-  - 不要为了拆而拆：宁可合并同类小改动，也不要产生一堆碎片 commit
-- Commit message：body 用 **bullet 一条条列出**（一个要点一行）、**条理清晰、不冗余赘述**——冗余的套话会让信息失去检索价值；只写人类作者的意图与变更，不写过程废话
-- **仅在用户明确要求时 commit**；禁止 `--no-verify`、force push `main`
-- **禁止 `Co-Authored-By` AI 代理署名**（如 `Co-Authored-By: Claude <noreply@anthropic.com>`）；commit message 中不要追加 AI 身份行，commit body 应当只描述人类作者的意图与变更
-- Bug 修复：评估是否补回归测试（测行为，非测实现细节）
+    - 一个 commit = 一个逻辑完整独立的变更（代码 + 配套测试同仓）。
+    - **一行改完的改动不单独开 commit**，并入相关小改动，避免碎片化。
+    - **不把几千 / 上万行塞进单个 commit**；除非深入评估后确属天生最小完备（机械重构、代码生成、整体迁移），例外需在 message 说明。
+    - 不为拆而拆；宁可合并同类小改动。
+- 流程：`commit_message.txt` → `git commit -F` → 删除；**仅在用户明确要求时 commit**。
+- **NEVER** `--no-verify`、force push `main`、追加 `Co-Authored-By` AI 署名。
+- **RIL 图谱簿记批量合并**：graph.json 簿记累积约 10–50 条（灵活指导、非硬上限）后合并提交一次 `chore(ril): <summary>`，不入代码提交。详见 `graph-engineering` skill §LEARN。
 
-## 反模式（避免）
+## 7. 约定与质量底线
+
+- **uv**：唯一包管理器；一律 `uv run` / `uv run python`（本仓 `requires-python = ">=3.14"`，系统裸 `python3` 常是 3.12，二者语法语义不同）。改依赖后 `uv lock` + 提交 `uv.lock`；CI / Docker 用 `uv sync --frozen`。
+- 可选依赖组：`dev` · `test` · `docs` · `security` · `eval` · `logging` · `perf` · `compat` · `dvc` · `streaming`（Docker builder 排除 test/docs/streaming）。
+- Python 3.14（PEP 758）：`except A, B:` 不带括号是合法推荐写法，`ruff format` 规范化为该形式——正确行为，勿当成损坏改回。
+- 路径用 `pathlib.Path`；注释 / 日志英文。
+- **测试**：markers 在 `pytest.toml`（`quick` · `slow` · `heavy` · `e2e` · `integration` · `gpu` · `multi_gpu` · `full_cluster` · `need_gpu(n)`）。fixture `stub_tokenizer` / `line_tokenizer`、`decoder_model_kwargs(**overrides)`；避免纯 `isinstance` 弱断言；默认不 mock，跑真实模块；确定性、隔离、全量安全。
+- **测试桩**：内联 tokenizer 一律改用 `tests/support/tokenizers.py`。
+
+## 8. 反模式（NEVER）
 
 - 内联 `_Tok` / `_LineTokenizer`（用 `tests/support/tokenizers.py`）
 - 在 `DecoderModel` 里为多模态打补丁
@@ -147,16 +129,9 @@ Markers（`pyproject.toml`）：`quick` · `slow` · `heavy` · `e2e` · `gpu` �
 - 为覆盖率堆 demo 测试或重复 e2e
 - 未跑 `just test` 就声称完成
 
-## Agent skills
+## 9. Agent skills 与领域文档
 
-### Issue tracker
-
-Issues and PRDs for this repo live as GitHub issues, tracked via the `gh` CLI. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Default canonical triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+- **长期自主循环**：`graph-engineering`（OBSERVE→…→LEARN，RIL 图谱作为跨 session 记忆；图谱簿记批量提交见其 §LEARN）
+- **测试 / CI / 排障**：`run-ci` · `write-test` · `debug-inference` · `diagnose` · `diagnosing-bugs`
+- **工程**：`code-review` · `codebase-design` · `modern-python-tooling`（uv/ruff/ty/commitizen，pyproject 单一配置源）· `tdd` · `to-prd` · `to-issues`
+- **协作流程**：issue tracker（`gh` CLI）· triage labels · domain 契约，见 `docs/agents/`（domain 详见 `docs/agents/domain.md`）
