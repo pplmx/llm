@@ -10,6 +10,7 @@ theme:
   language: zh
   custom_dir: overrides
   favicon: assets/favicon.svg
+  logo: assets/logo.svg
   font:
     text: Noto Sans SC
     code: Roboto Mono
