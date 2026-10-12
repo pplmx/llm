@@ -131,9 +131,10 @@ Markers（`pyproject.toml`）：`quick` · `slow` · `heavy` · `e2e` · `gpu` �
 - Commit 工作流：`commit_message.txt` → `git commit -F` → 删除
 - **Commit 粒度（最小完备）**：
   - 每个 commit 对应一个逻辑上完整、独立的变更（代码 + 其配套测试同仓）
-  - 多个**非常小**且各自最小完备的改动，可以合并进**同一个 commit**；不必为每个小改动单独开 commit
+  - 多个**非常小**且各自最小完备的改动，可以合并进**同一个 commit**；**一行就能改完的改动不要单独开 commit**，并入相关的小改动一起提交，避免碎片化成噪声
+  - 也不要出现**一个 commit 塞进几千甚至上万行**代码；除非经过**深入评估**后确认该改动确实**天生最小完备**（如大规模机械重构、代码生成、整体迁移），才允许大 commit，并在 message 中为该例外留一句说明
   - 不要为了拆而拆：宁可合并同类小改动，也不要产生一堆碎片 commit
-- Commit message：**bullet 式**（body 一个要点一行）、条理清晰、**不冗余赘述**；只写人类作者的意图与变更，不写过程废话
+- Commit message：body 用 **bullet 一条条列出**（一个要点一行）、**条理清晰、不冗余赘述**——冗余的套话会让信息失去检索价值；只写人类作者的意图与变更，不写过程废话
 - **仅在用户明确要求时 commit**；禁止 `--no-verify`、force push `main`
 - **禁止 `Co-Authored-By` AI 代理署名**（如 `Co-Authored-By: Claude <noreply@anthropic.com>`）；commit message 中不要追加 AI 身份行，commit body 应当只描述人类作者的意图与变更
 - Bug 修复：评估是否补回归测试（测行为，非测实现细节）
