@@ -30,14 +30,14 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "fastapi[standard]>=0.136.3",
-    "openai>=2.41.0",
-    "prometheus-fastapi-instrumentator>=8.0.0",
-    "pydantic-settings>=2.14.2",
-    "python-json-logger>=4.1.0",
-    "starlette>=1.3.1",
-    "torch>=2.13.0,<3.0.0",
-    "transformers>=5.10.2,<6.0.0",
+    "fastapi[standard]>=0.143.0",
+    "openai>=3.30.0",
+    "prometheus-fastapi-instrumentator>=8.1.0",
+    "pydantic-settings>=2.15.0",
+    "python-json-logger>=4.2.0",
+    "starlette>=1.8.0",
+    "torch>=2.14.1,<3.0.0",
+    "transformers>=5.19.0,<6.0.0",
     "urllib3>=2.8.0",  # bumped: PYSEC-2026-4175/4176/4177 (transitive via requests/sentry-sdk) fixed in 2.8.0
 ]
 
@@ -47,29 +47,29 @@ dependencies = [
 [dependency-groups]
 dev = [
   {include-group = "test"},
-  "hypothesis>=6.156.6",
-  "setuptools>=83.0.0",  # bumped: PYSEC-2026-3447 fix in 83.0.0
+  "hypothesis>=6.169.1",
+  "setuptools>=84.0.0",  # bumped: PYSEC-2026-3447 fix in 83.0.0
 ]
 test = [
-    "allure-pytest>=2.16.0",
-    "gguf>=0.18.0",  # llama.cpp's official reader — reference for GGUF k-quant dequant cross-checks
-    "httpx2>=2.12.0",  # bumped: CVE-2026-84382 decompression amplification + CVE-2026-84379/84380 multipart/bodies + CVE-2026-84378 SSE fixed in 2.10-2.12
-    "hypothesis>=6.0",
-    "ipykernel>=7.2.0",
-    "onnx>=1.22.0",  # bumped: PYSEC-2026-2689 fix in 1.22.0
-    "onnxruntime>=1.26.0",
-    "pytest>=9.0",
-    "pytest-cov>=7.0",
-    "pytest-xdist>=3.6.0",
-    "tornado>=6.5.9",  # bumped: PYSEC-2026-3928 + GHSA-* (transitive via ipykernel) fixed in 6.5.8/6.5.9
+    "allure-pytest>=2.16.2",
+    "gguf>=0.19.0",  # llama.cpp's official reader — reference for GGUF k-quant dequant cross-checks
+    "httpx2>=2.13.1",  # bumped: CVE-2026-84382 decompression amplification + CVE-2026-84379/84380 multipart/bodies + CVE-2026-84378 SSE fixed in 2.10-2.12
+    "hypothesis>=6.169.1",
+    "ipykernel>=7.4.0",
+    "onnx>=1.23.2",  # bumped: PYSEC-2026-2689 fix in 1.22.0
+    "onnxruntime>=1.31.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.8.0",
+    "tornado>=6.5.10",  # bumped: PYSEC-2026-3928 + GHSA-* (transitive via ipykernel) fixed in 6.5.8/6.5.9
 ]
 docs = [
-    "mkdocs-material>=9.7.0",
+    "mkdocs-material>=9.7.7",
     # mkdocstrings auto-generates API reference pages from docstrings.
     # ``mkdocstrings-python`` is the Python handler; ``mkdocstrings[python]``
     # pulls in both. Pinned to >=0.27 because the handler API stabilized
     # there.
-    "mkdocstrings[python]>=0.27.0",
+    "mkdocstrings[python]>=1.0.7",
 ]
 # Static security analysis tools. Used in the CI ``security`` job and
 # available locally via ``uv sync --group security``. Pinned to
@@ -77,8 +77,8 @@ docs = [
 # flag on ``pip-audit`` ensures any known CVE in the locked set fails the
 # build. See docs/audits/2026-07-12-tickets/09-pip-audit-bandit-ci.md.
 security = [
-    "bandit>=1.7.0",  # >=1.7 for Python 3.14 support
-    "pip-audit>=2.7.0",
+    "bandit>=1.9.4",  # >=1.7 for Python 3.14 support
+    "pip-audit>=2.10.1",
 ]
 
 [project.optional-dependencies]
@@ -89,18 +89,18 @@ eval = [
     "nltk>=3.10.3",  # bumped: CVE-2026-71513 (AllowlistUnpickler RCE) + CVE-2026-81723 fixed in 3.10.3; PYSEC-2026-2078 landed in 3.10.0
     "rouge-score>=0.1.2",
     "sacrebleu>=2.6.0",
-    "scikit-learn>=1.9.0",
+    "scikit-learn>=1.9.1",
 ]
 logging = [
-    "tensorboard>=2.20.0",
+    "tensorboard>=2.21.0",
 ]
 perf = [
-    "flash-attn>=2.5.0",
+    "flash-attn>=2.8.3.post2",
 ]
 compat = [
     "huggingface_hub>=0.20.0",
     "pillow>=12.3.0",  # bumped: 18 CVEs (PYSEC-2026-2253/4/5/6/7, -3451/2/3, CVE-2026-54058/59197/59198/59200/59204) fix in 12.3.0
-    "safetensors>=0.4.0",
+    "safetensors>=0.8.0",
 ]
 # Optional data-versioning backend (DVC, P0 预训练 productization last item).
 # Without ``dvc`` installed the helpers in :mod:`llm.data.dvc` degrade to
@@ -110,10 +110,10 @@ compat = [
 # ``uv sync --extra dvc`` to enable. ``dvc[s3]`` adds S3/GCS/Azure remote
 # support; the default local-file remote needs nothing extra.
 dvc = [
-    "dvc>=3.0",
+    "dvc>=3.67.1",
 ]
 streaming = [
-    "datasets>=3.0.0",
+    "datasets>=5.1.0",
 ]
 
 [project.entry-points."llm.models"]
