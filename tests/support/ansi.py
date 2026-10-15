@@ -59,5 +59,6 @@ def help_render_diag(output: str = "") -> str:
         f"llm={llm_file}; "
         f"typer.rich_utils.MAX_WIDTH={max_width}; "
         f"raw[:90]={output[:90]!r}; "
+        f"raw_full={output[:2000]!r}; "
         f"stripped_full={stripped!r}"
     )
