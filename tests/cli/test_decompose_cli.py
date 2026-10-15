@@ -108,7 +108,7 @@ def test_decompose_cli_module_entry_help_prints_usage():
     import subprocess
     import sys
 
-    from tests.support.ansi import help_render_diag
+    from tests.support.ansi import help_render_diag, strip_ansi
 
     proc = subprocess.run(
         [sys.executable, "-m", "llm.cli.decompose", "--help"],
@@ -117,6 +117,11 @@ def test_decompose_cli_module_entry_help_prints_usage():
         timeout=60,
     )
     out = proc.stdout + proc.stderr
+    # Assert against the ANSI-stripped help: rich/typer may style the option token
+    # ``--model`` as two separate styled runs (``-`` + ``-model``) when color is
+    # enabled (as on a CI tty), which breaks the literal raw substring even though
+    # the option IS rendered. `strip_ansi` checks semantic presence, not color.
+    clean = strip_ansi(out)
     assert proc.returncode == 0, out
-    assert "--model" in out, help_render_diag(out)
-    assert "--output" in out, help_render_diag(out)
+    assert "--model" in clean, help_render_diag(out)
+    assert "--output" in clean, help_render_diag(out)

@@ -251,13 +251,14 @@ class TestServingCliHelp:
 
         monkeypatch.setattr("uvicorn.run", fake_run, raising=False)
 
-        from tests.support.ansi import help_render_diag
+        from tests.support.ansi import help_render_diag, strip_ansi
 
         result = CliRunner().invoke(cli.app, ["--help"])
+        clean = strip_ansi(result.output)
 
         assert result.exit_code == 0
-        assert "--host" in result.output, help_render_diag(result.output)
-        assert "--port" in result.output, help_render_diag(result.output)
+        assert "--host" in clean, help_render_diag(result.output)
+        assert "--port" in clean, help_render_diag(result.output)
         assert launched["n"] == 0, "llm serve --help must not launch uvicorn"
 
     def test_serve_invokes_main_without_help(self, monkeypatch):
@@ -287,7 +288,7 @@ class TestServingCliHelp:
         import subprocess
         import sys
 
-        from tests.support.ansi import help_render_diag
+        from tests.support.ansi import help_render_diag, strip_ansi
 
         proc = subprocess.run(
             [sys.executable, "-m", "llm.serving.cli", "--help"],
@@ -296,12 +297,13 @@ class TestServingCliHelp:
             timeout=60,
         )
         out = proc.stdout + proc.stderr
+        clean = strip_ansi(out)  # see ansi.py: ANSI styling splits option tokens on a tty
         assert proc.returncode == 0, out
-        assert "--host" in out, help_render_diag(out)
-        assert "--port" in out, help_render_diag(out)
+        assert "--host" in clean, help_render_diag(out)
+        assert "--port" in clean, help_render_diag(out)
         # The module must not fall through to the server boot path.
-        assert "uvicorn" not in out
-        assert "Running on" not in out
+        assert "uvicorn" not in clean
+        assert "Running on" not in clean
 
     def test_api_module_entry_help_prints_usage_without_launching_server(self):
         """``python -m llm.serving.api --help`` must route through the Typer
@@ -315,7 +317,7 @@ class TestServingCliHelp:
         import subprocess
         import sys
 
-        from tests.support.ansi import help_render_diag
+        from tests.support.ansi import help_render_diag, strip_ansi
 
         proc = subprocess.run(
             [sys.executable, "-m", "llm.serving.api", "--help"],
@@ -324,8 +326,9 @@ class TestServingCliHelp:
             timeout=60,
         )
         out = proc.stdout + proc.stderr
+        clean = strip_ansi(out)  # see ansi.py: ANSI styling splits option tokens on a tty
         assert proc.returncode == 0, out
-        assert "--host" in out, help_render_diag(out)
-        assert "--port" in out, help_render_diag(out)
-        assert "uvicorn" not in out
-        assert "Starting up" not in out
+        assert "--host" in clean, help_render_diag(out)
+        assert "--port" in clean, help_render_diag(out)
+        assert "uvicorn" not in clean
+        assert "Starting up" not in clean

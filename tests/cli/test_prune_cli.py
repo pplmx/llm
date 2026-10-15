@@ -145,7 +145,7 @@ def test_prune_cli_module_entry_help_prints_usage():
     import subprocess
     import sys
 
-    from tests.support.ansi import help_render_diag
+    from tests.support.ansi import help_render_diag, strip_ansi
 
     proc = subprocess.run(
         [sys.executable, "-m", "llm.cli.prune", "--help"],
@@ -154,6 +154,9 @@ def test_prune_cli_module_entry_help_prints_usage():
         timeout=60,
     )
     out = proc.stdout + proc.stderr
+    # Assert against ANSI-stripped help; see ansi.py for why (CI tty colors the
+    # option token into separate runs, breaking the literal raw substring).
+    clean = strip_ansi(out)
     assert proc.returncode == 0, out
-    assert "--model" in out, help_render_diag(out)
-    assert "--output" in out, help_render_diag(out)
+    assert "--model" in clean, help_render_diag(out)
+    assert "--output" in clean, help_render_diag(out)
