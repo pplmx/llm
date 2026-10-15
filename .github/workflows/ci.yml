@@ -32,7 +32,7 @@ jobs:
                 run: uv lock --check
 
             -   name: Synchronize Dependencies for Linting
-                run: uv sync --frozen --quiet --no-default-groups
+                run: uv sync --frozen --quiet
 
             -   name: Check Code Formatting
                 run: uvx ruff format --check .
