@@ -20,3 +20,9 @@ exclude = [
     "overrides/**",
     "site/**",
 ]
+
+[rules]
+invalid-mutable-override = "ignore"
+# ty 0.0.87+ flags overriding torch nn.Module.forward (typed Callable[..., Any]) as
+# invalid-mutable-override; this is the standard, correct PyTorch subclassing
+# pattern (45 sites across src/llm). Suppress the rule rather than annotate every forward.
