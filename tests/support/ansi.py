@@ -49,6 +49,7 @@ def help_render_diag(output: str = "") -> str:
     except Exception as exc:  # noqa: BLE001 - diagnostic must not raise
         max_width = f"<error: {exc}>"
 
+    stripped = strip_ansi(output)
     return (
         "help-render diag: "
         f"env[TERMINAL_WIDTH]={os.environ.get('TERMINAL_WIDTH')!r} "
@@ -57,5 +58,6 @@ def help_render_diag(output: str = "") -> str:
         f"typer={_get_version('typer')} rich={_get_version('rich')}; "
         f"llm={llm_file}; "
         f"typer.rich_utils.MAX_WIDTH={max_width}; "
-        f"output[:300]={output[:300]!r}"
+        f"raw[:90]={output[:90]!r}; "
+        f"stripped_full={stripped!r}"
     )
