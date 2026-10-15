@@ -58,7 +58,10 @@ def _atomic_write_bytes(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(payload)
-    with tmp.open("rb") as f, contextlib.suppress(OSError):
+    # fsync on a READ-WRITE handle: Windows `os.fsync` rejects read-only handles
+    # with EBADF (POSIX tolerates them); "rb+" keeps fsync-before-rename durable
+    # on both platforms.
+    with tmp.open("rb+") as f, contextlib.suppress(OSError):
         os.fsync(f.fileno())
     with contextlib.suppress(OSError):
         dir_fd = os.open(str(path.parent), os.O_RDONLY)

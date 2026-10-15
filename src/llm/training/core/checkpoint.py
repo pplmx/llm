@@ -178,7 +178,9 @@ def _fsync_file(path: Path) -> None:
     import contextlib
     import os
 
-    with path.open("rb") as f, contextlib.suppress(OSError):
+    # fsync on a READ-WRITE handle: Windows `os.fsync` rejects read-only handles
+    # with EBADF (POSIX tolerates them); "rb+" keeps fsync-before-rename durable.
+    with path.open("rb+") as f, contextlib.suppress(OSError):
         os.fsync(f.fileno())
     with contextlib.suppress(OSError):
         dir_fd = os.open(str(path.parent), os.O_RDONLY)

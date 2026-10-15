@@ -73,7 +73,10 @@ def _atomic_save_blob(module, output: Path) -> None:
     tmp = output.with_suffix(output.suffix + ".tmp")
     tmp.unlink(missing_ok=True)
     torch.save(module, tmp)
-    with tmp.open("rb") as fh:
+    # fsync on a READ-WRITE handle: Windows `os.fsync` rejects read-only handles
+    # with EBADF (POSIX tolerates them); "rb+" keeps fsync-before-rename durable
+    # on both platforms.
+    with tmp.open("rb+") as fh:
         os.fsync(fh.fileno())
     tmp.replace(output)
 

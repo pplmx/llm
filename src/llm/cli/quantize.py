@@ -121,10 +121,13 @@ def _atomic_save_quantized(model_obj, output: Path) -> None:
     tmp = output.with_suffix(output.suffix + ".tmp")
     tmp.unlink(missing_ok=True)
     torch.save(model_obj, tmp)
-    # fsync so the rename only lands after the bytes are durable.
+    # fsync so the rename only lands after the bytes are durable. Must open the
+    # temp READ-WRITE: Windows `os.fsync` requires a write-access handle and
+    # raises EBADF on a read-only one (POSIX tolerates read-only). Opening "rb+"
+    # keeps the fsync-before-rename durability on both platforms.
     import os
 
-    with tmp.open("rb") as fh:
+    with tmp.open("rb+") as fh:
         os.fsync(fh.fileno())
     tmp.replace(output)
 
