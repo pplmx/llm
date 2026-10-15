@@ -36,29 +36,19 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "multi_gpu: tests that require multiple GPUs (2+)")
     config.addinivalue_line("markers", "full_cluster: tests that require 8 GPUs")
 
-
-@pytest.fixture(autouse=True)
-def _force_wide_terminal(monkeypatch):
-    """Never truncate rich/typer ``--help`` output by ambient terminal width.
-
-    Rich/typer render help at the detected terminal width; on a non-tty or CI
-    runner the width can be narrow, truncating each option to a couple of chars
-    so the option *names* (``--model``, ``--host``, …) vanish from the output.
-    Many CLI tests assert on those names, so force a wide width for every test.
-
-    ``COLUMNS``/``LINES`` are what rich's ``Console`` falls back to when stdout
-    is not a tty, but typer reads a *separate* env var first: ``TERMINAL_WIDTH``
-    becomes its ``MAX_WIDTH`` and, when set, *overrides* ``COLUMNS`` entirely
-    (a narrow ``TERMINAL_WIDTH`` truncates the option names even with a wide
-    ``COLUMNS``). Force both knobs so the width is wide no matter which one the
-    ambient env provides.
-
-    ``monkeypatch`` sets ``os.environ`` (restored per-test), which in-process
-    CliRunner renders and ``subprocess.run`` (env=None) both read.
-    """
-    monkeypatch.setenv("TERMINAL_WIDTH", "120")
-    monkeypatch.setenv("COLUMNS", "120")
-    monkeypatch.setenv("LINES", "40")
+    # Force a wide help width for the WHOLE session (not per-test). typer bakes
+    # its rich ``MAX_WIDTH`` from the ``TERMINAL_WIDTH`` env var the first time
+    # ``typer.rich_utils`` is imported — which happens during COLLECTION, before
+    # any per-test autouse fixture runs. A narrow ``TERMINAL_WIDTH`` in the CI
+    # env therefore truncates every ``--help`` option name (``--model``,
+    # ``--host``, ``--task`` vanish), failing the CLI/Serving help tests; a
+    # per-test monkeypatch is too late to change the already-baked width.
+    # Setting it here, before collection, bakes it wide and persists it in
+    # os.environ so ``subprocess.run(..., env=None)`` module-entry tests inherit
+    # it too.
+    os.environ["TERMINAL_WIDTH"] = "120"
+    os.environ["COLUMNS"] = "120"
+    os.environ["LINES"] = "40"
 
 
 def pytest_collection_modifyitems(config, items):
