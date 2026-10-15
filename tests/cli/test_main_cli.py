@@ -13,6 +13,7 @@ from __future__ import annotations
 from typer.testing import CliRunner
 
 from llm.cli.main import app
+from tests.support.ansi import help_render_diag
 
 
 def test_llm_root_help_lists_all_subcommands():
@@ -42,14 +43,14 @@ def test_llm_routes_each_subcommand_to_its_options():
     }
     for sub, option in cases.items():
         result = CliRunner().invoke(app, [sub, "--help"])
-        assert result.exit_code == 0, f"llm {sub} --help failed: {result.output}"
-        assert option in result.output, f"llm {sub} --help missing {option}"
+        assert result.exit_code == 0, f"llm {sub} --help failed: {help_render_diag(result.output)}"
+        assert option in result.output, f"llm {sub} --help missing {option}: {help_render_diag(result.output)}"
 
 
 def test_llm_quantize_routes_to_gptq_subcommand():
     result = CliRunner().invoke(app, ["quantize", "gptq", "--help"])
     assert result.exit_code == 0
-    assert "--model" in result.output
+    assert "--model" in result.output, help_render_diag(result.output)
 
 
 def test_llm_migrate_ckpt_routes():

@@ -108,6 +108,8 @@ def test_decompose_cli_module_entry_help_prints_usage():
     import subprocess
     import sys
 
+    from tests.support.ansi import help_render_diag
+
     proc = subprocess.run(
         [sys.executable, "-m", "llm.cli.decompose", "--help"],
         capture_output=True,
@@ -116,5 +118,5 @@ def test_decompose_cli_module_entry_help_prints_usage():
     )
     out = proc.stdout + proc.stderr
     assert proc.returncode == 0, out
-    assert "--model" in out
-    assert "--output" in out
+    assert "--model" in out, help_render_diag(out)
+    assert "--output" in out, help_render_diag(out)
