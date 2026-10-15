@@ -12,10 +12,16 @@ from __future__ import annotations
 
 from unittest import mock
 
+import pytest
 import torch
 import torch.nn as nn
 
 from llm.training.core.distributed import broadcast_parameters
+
+# Multi-rank distributed/DDP broadcast tests. Excluded from the per-push
+# CPU-clean gate via the existing `heavy` marker; still runs under
+# `test`/`test-cov` (full) and `test-heavy`.
+pytestmark = pytest.mark.heavy
 
 
 class _Tiny(nn.Module):

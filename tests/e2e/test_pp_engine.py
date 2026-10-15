@@ -30,6 +30,7 @@ import socket
 import time
 from pathlib import Path
 
+import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -47,6 +48,11 @@ from llm.training.distributed import model_state_dict
 from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.sft_task import SFTTask
 from tests.support.data import DummyLMDataModule
+
+# In tests/e2e/ and spawns multi-rank training processes, so it belongs under
+# the `e2e` marker (was unmarked → wrongly ran in the per-push CPU-clean gate
+# and timed out on macOS). Dropped from the gate; still runs via `test-e2e`.
+pytestmark = pytest.mark.e2e
 
 PP_ENGINE_JOIN_TIMEOUT_S = 300
 

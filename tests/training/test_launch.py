@@ -131,6 +131,7 @@ def _timeout_worker(rank, world_size, out_path):
     Path(out_path).write_text(outcome)
 
 
+@pytest.mark.heavy  # torch.multiprocessing spawn: pathological (>300s) on macOS
 def test_single_rank_failure_does_not_hang_forever(tmp_path):
     """A rank that never arrives at a collective must surface as a bounded
     timeout error, not an infinite hang (RIL TASK-195 / ISS-232)."""

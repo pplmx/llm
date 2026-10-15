@@ -67,6 +67,10 @@ test-cov:
 # Core CPU suite + coverage — the per-push CI gate.
 # Excludes GPU/heavy/e2e (CPU-clean); the coverage bar is calibrated to THIS
 # suite (lower than the full-suite `test-cov` bar, which adds heavy/e2e paths).
+# Substantial multi-rank/multimodal/training-loop tests are `heavy`/`e2e`
+# marked, so the CPU-clean gate is a fast path-usable smoke test (macOS CI
+# timed out at ~90 min on the torch.multiprocessing.spawn distributed tests —
+# those are now excluded here and run in test/heavy/e2e/full).
 test-cov-fast:
     uv run --frozen pytest -m "not heavy and not e2e and not gpu and not multi_gpu and not full_cluster and not need_gpu" --cov=llm --cov-fail-under=77 --cov-report=term-missing --cov-report=xml
 

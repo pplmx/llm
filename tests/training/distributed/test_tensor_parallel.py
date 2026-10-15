@@ -39,6 +39,10 @@ from llm.training.distributed import (
 )
 from tests.support.devices import all_gpu_devices
 
+# torch.multiprocessing.spawn multi-rank training: heavy (see
+# test_pipeline_parallel.py); excluded from the per-push CPU gate.
+pytestmark = pytest.mark.heavy
+
 TP_MIN_FREE_BYTES = 1 * 1024**3
 # Generous-but-bounded: on a shared box hosting another GPU workload the
 # multi-rank NCCL rendezvous can take minutes (4-GPU wrap timed out at 180s

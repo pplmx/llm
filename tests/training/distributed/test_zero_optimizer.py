@@ -26,6 +26,10 @@ import torch.nn as nn
 
 from llm.training.distributed import ZeroOptimizer
 
+# torch.multiprocessing.spawn multi-rank training: heavy (see
+# test_pipeline_parallel.py); excluded from the per-push CPU gate.
+pytestmark = pytest.mark.heavy
+
 SEED = 123
 IN_DIM = 4
 HID_DIM = 5

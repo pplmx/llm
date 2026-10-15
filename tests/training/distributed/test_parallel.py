@@ -15,6 +15,11 @@ from llm.training.distributed.parallel import (
 )
 from tests.support.devices import ALL_DEVICES, DEFAULT_DEVICE, cuda_usable
 
+# Multi-rank distributed/FSDP/DDP tests (init_process_group, launcher
+# contract). Excluded from the per-push CPU-clean gate via the existing
+# `heavy` marker; still runs under `test`/`test-cov` (full) and `test-heavy`.
+pytestmark = pytest.mark.heavy
+
 
 class _Tiny(nn.Module):
     def __init__(self):

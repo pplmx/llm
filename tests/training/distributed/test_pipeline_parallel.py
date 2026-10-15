@@ -44,6 +44,13 @@ from llm.training.distributed import (
 from llm.training.distributed.parallel import is_pp
 from llm.training.distributed.pp_tp import PPTPRuntime
 
+# Multi-rank training via torch.multiprocessing.spawn is genuinely heavy
+# (spawns 2-8 worker processes, each importing torch). On macOS the `spawn`
+# start method makes it pathological (>300s per test, timing out the CPU gate);
+# mark `heavy` so the per-push CPU-clean gate skips it. Still runs under
+# `test`/`test-cov` (full) and `test-heavy`.
+pytestmark = pytest.mark.heavy
+
 PP_JOIN_TIMEOUT_S = 300
 
 SEED = 123

@@ -53,6 +53,11 @@ from llm.training.distributed import model_state_dict
 from llm.training.tasks.sft_task import SFTTask
 from tests.support.devices import all_gpu_devices
 
+# In tests/e2e/ and spawns multi-rank training processes, so it belongs under
+# the `e2e` marker (was unmarked, so it wrongly ran in the per-push CPU-clean
+# gate and timed out on macOS). Dropped from the gate; still runs via `test-e2e`.
+pytestmark = pytest.mark.e2e
+
 ENGINE_2D_MIN_FREE_BYTES = 1 * 1024**3
 # Generous but bounded: on a shared box hosting another GPU workload, a
 # multi-rank NCCL rendezvous + tiny training run can take minutes to spin up
