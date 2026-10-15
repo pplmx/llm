@@ -45,9 +45,18 @@ def _force_wide_terminal(monkeypatch):
     runner the width can be narrow, truncating each option to a couple of chars
     so the option *names* (``--model``, ``--host``, …) vanish from the output.
     Many CLI tests assert on those names, so force a wide width for every test.
+
+    ``COLUMNS``/``LINES`` are what rich's ``Console`` falls back to when stdout
+    is not a tty, but typer reads a *separate* env var first: ``TERMINAL_WIDTH``
+    becomes its ``MAX_WIDTH`` and, when set, *overrides* ``COLUMNS`` entirely
+    (a narrow ``TERMINAL_WIDTH`` truncates the option names even with a wide
+    ``COLUMNS``). Force both knobs so the width is wide no matter which one the
+    ambient env provides.
+
     ``monkeypatch`` sets ``os.environ`` (restored per-test), which in-process
     CliRunner renders and ``subprocess.run`` (env=None) both read.
     """
+    monkeypatch.setenv("TERMINAL_WIDTH", "120")
     monkeypatch.setenv("COLUMNS", "120")
     monkeypatch.setenv("LINES", "40")
 
