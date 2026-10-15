@@ -32,18 +32,18 @@ jobs:
                 run: uv lock --check
 
             -   name: Synchronize Dependencies for Linting
-                run: uv sync --frozen --quiet
+                run: uv sync --frozen --quiet --group dev
 
             -   name: Check Code Formatting
-                run: uvx ruff@0.16.1 format --check .
+                run: uv run ruff format --check .
 
             -   name: Lint Code
-                run: uvx ruff@0.16.1 check .
+                run: uv run ruff check .
 
             -   name: Type Check (ty)
                 # Finding W in docs/audits/2026-07-12-technical-due-diligence.md:
                 # type-check drift is now a hard CI gate.
-                run: uvx ty@0.0.86 check src/llm/
+                run: uv run ty check src/llm/
 
             -   name: Verify examples compile
                 run: |
