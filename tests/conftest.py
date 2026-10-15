@@ -7,6 +7,15 @@ import os
 # Must be set before nltk is first imported (happens via pytest.importorskip).
 os.environ.setdefault("NLTK_DISABLE_IMPORT_SECURITY", "1")
 
+# Force a wide help width BEFORE any typer/rich import anywhere below. typer
+# bakes rich ``MAX_WIDTH`` from ``TERMINAL_WIDTH`` the instant ``typer.rich_utils``
+# is imported (conftest/test-module import-time), well before ``pytest_configure``
+# runs — so this must come at the very top, before the ``llm`` imports, to keep
+# the CI runner's narrow ambient value from baking a truncated help width.
+os.environ["TERMINAL_WIDTH"] = "120"
+os.environ["COLUMNS"] = "120"
+os.environ["LINES"] = "40"
+
 import pytest
 import torch
 
