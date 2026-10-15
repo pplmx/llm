@@ -35,15 +35,15 @@ jobs:
                 run: uv sync --frozen --quiet
 
             -   name: Check Code Formatting
-                run: uvx ruff format --check .
+                run: uvx ruff@0.16.1 format --check .
 
             -   name: Lint Code
-                run: uvx ruff check .
+                run: uvx ruff@0.16.1 check .
 
             -   name: Type Check (ty)
                 # Finding W in docs/audits/2026-07-12-technical-due-diligence.md:
                 # type-check drift is now a hard CI gate.
-                run: uvx ty check src/llm/
+                run: uvx ty@0.0.86 check src/llm/
 
             -   name: Verify examples compile
                 run: |
@@ -53,6 +53,7 @@ jobs:
 
     doctest:
         runs-on: ubuntu-latest
+        needs: lint
         steps:
             -   name: Checkout repository
                 uses: actions/checkout@v7
@@ -67,6 +68,7 @@ jobs:
 
     build-and-test:
         runs-on: ${{ matrix.os }}
+        needs: lint
         strategy:
             matrix:
                 os: [ubuntu-latest, macos-latest, windows-latest]
@@ -115,6 +117,7 @@ jobs:
         # GPU tests auto-skip on this GPU-less runner (tests/conftest.py).
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         runs-on: ubuntu-latest
+        needs: lint
         steps:
             -   name: Checkout repository
                 uses: actions/checkout@v7
@@ -153,6 +156,7 @@ jobs:
         # CVEs that are published after a dependency lands). bandit runs
         # on PR and push only.
         runs-on: ubuntu-latest
+        needs: lint
         steps:
             -   name: Checkout repository
                 uses: actions/checkout@v7
@@ -191,6 +195,7 @@ jobs:
 
     docs:
         runs-on: ubuntu-latest
+        needs: lint
         steps:
             -   name: Checkout repository
                 uses: actions/checkout@v7
