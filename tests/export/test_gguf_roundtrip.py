@@ -219,11 +219,22 @@ def test_bad_config_json_is_refused(tmp_path):
 
 def test_writer_fsyncs_before_rename(tmp_path, monkeypatch):
     """Regression (RIL TASK-314/ISS-352): ``write()`` must fsync the temp
-    bytes (and best-effort the directory) before the rename, so a crash right
-    after ``write()`` returns can never leave the final name pointing at an
-    un-flushed or partial inode. The old code renamed with no fsync at all —
-    this test fails when ``os.fsync`` is never called."""
+    file's bytes BEFORE the rename, so a crash right after ``write()`` returns
+    can never leave the final name pointing at an un-flushed or partial inode.
+
+    The file-fsync-before-rename guarantee is the load-bearing invariant on
+    EVERY platform. On POSIX the writer additionally fsyncs (and we also
+    assert) the parent DIRECTORY — a rename is a directory-metadata operation.
+    On Windows that extra step cannot apply: Python's ``os.open`` cannot open
+    a directory handle (msvcrt's ``_wopen`` refuses directories; it would need
+    ``CreateFileW`` with ``FILE_FLAG_BACKUP_SEMANTICS``, which ``os.open``
+    never sets), so ``os.fsync`` of a directory is unsupported there. Windows
+    instead gets rename durability from the NTFS journal, so the directory
+    fsync — and its assertion — is scoped to POSIX accordingly. The old code
+    renamed with no fsync at all — this test fails when os.fsync is never
+    called."""
     import os
+    import sys
 
     fsync_calls: list = []
     real_fsync = os.fsync
@@ -234,4 +245,9 @@ def test_writer_fsyncs_before_rename(tmp_path, monkeypatch):
     path = writer.write()
 
     assert path.exists()
-    assert len(fsync_calls) >= 2, "expected fsync on the temp file AND its directory"
+    # The temp FILE must be fsynced before the rename on ALL platforms.
+    assert len(fsync_calls) >= 1, "the temp file must be fsynced before the rename"
+    if sys.platform != "win32":
+        # POSIX hardening: fsync the parent directory too, since the rename
+        # lands there. (Windows can't fsync a directory — see docstring.)
+        assert len(fsync_calls) >= 2, "expected fsync on the temp file AND its directory (POSIX)"
