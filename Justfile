@@ -83,22 +83,22 @@ ruff: lint fmt
 
 # Lint only
 lint:
-    uvx ruff check . --fix
+    uv run ruff check . --fix
 
 # Format only
 fmt:
-    uvx ruff format .
+    uv run ruff format .
 
 # ty type check
 ty:
-    uvx ty check src/llm/
+    uv run ty check src/llm/
 
 # Full static lint gate (mirrors the CI lint job: lock freshness, ruff, ty, examples)
 check:
     uv lock --check
-    uvx ruff format --check .
-    uvx ruff check .
-    uvx ty check src/llm/
+    uv run ruff format --check .
+    uv run ruff check .
+    uv run ty check src/llm/
     # examples must compile (mirrors the CI lint job)
     for f in examples/*.py; do uv run --frozen python -m py_compile "$f" || exit 1; done
 

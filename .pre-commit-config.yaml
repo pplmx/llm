@@ -37,7 +37,7 @@ repos:
             exclude: (CHANGELOG\.md$|docs/audits/)
 
     - repo: https://github.com/astral-sh/ruff-pre-commit
-      rev: v0.16.1
+      rev: v0.17.0
       hooks:
           - id: ruff-check
             args: [--fix]
@@ -55,7 +55,7 @@ repos:
     # Mirrors the CI `ty check src/llm/` gate, scoped by ty.toml (non-src dirs
     # are intentionally not type-clean, so `uv check` excludes them).
     - repo: https://github.com/astral-sh/ty-pre-commit
-      rev: v0.0.86
+      rev: v0.0.87
       hooks:
           - id: ty
 

@@ -49,6 +49,8 @@ dev = [
   {include-group = "test"},
   "hypothesis>=6.169.1",
   "setuptools>=84.0.0",  # bumped: PYSEC-2026-3447 fix in 83.0.0
+  "ruff>=0.16.1",
+  "ty>=0.0.87",
 ]
 test = [
     "allure-pytest>=2.16.2",
