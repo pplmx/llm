@@ -665,3 +665,54 @@ def test_dedup_opens_seen_hashes_file_once_per_pass(monkeypatch, tmp_path):
     # once per surviving record. (write_text above is not an append, and
     # the io.open patch only counts append-mode opens.)
     assert append_opens == ["a"], f"expected a single append open, got {append_opens}"
+
+
+# --- The dedup wrapper must not hide the inner source's empty-corpus signal ---
+
+
+def test_dedup_local_reports_an_empty_corpus_through_the_registry(tmp_path, caplog):
+    """Building through the registry must keep the inner source's warning.
+
+    ``dedup_local`` wraps ``LocalLineTextSource``, so the empty-corpus warning
+    fires inside the wrapper. Losing it here would leave users of the dedup
+    source without the signal the plain source gained — the same class of silent
+    no-op, just one layer down.
+    """
+    import logging
+    from types import SimpleNamespace
+
+    from llm.data.sources import SOURCE_REGISTRY, ensure_sources_registered
+
+    ensure_sources_registered()
+    corpus = tmp_path / "empty.txt"
+    corpus.write_text("", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="llm.data.sources"):
+        source = SOURCE_REGISTRY.get("dedup_local")(SimpleNamespace(dataset_path=str(corpus)))
+        rows = list(source.iter_texts())
+
+    assert rows == []
+    assert any("yielded 0 non-blank lines" in record.getMessage() for record in caplog.records), (
+        "the dedup wrapper swallowed the inner source's empty-corpus warning"
+    )
+
+
+def test_dedup_actually_removes_duplicates_through_the_registry(tmp_path):
+    """End-to-end dedup through the factory, not just the class.
+
+    Pins that the registry wiring passes the base source through
+    ``DedupTextSource`` at all — a factory returning the bare source would
+    still pass the class-level tests.
+    """
+    from types import SimpleNamespace
+
+    from llm.data.sources import SOURCE_REGISTRY, ensure_sources_registered
+
+    ensure_sources_registered()
+    corpus = tmp_path / "dups.txt"
+    corpus.write_text("same\nsame\nunique one\nsame\nunique two\n", encoding="utf-8")
+
+    source = SOURCE_REGISTRY.get("dedup_local")(SimpleNamespace(dataset_path=str(corpus)))
+    rows = list(source.iter_texts())
+
+    assert rows == ["same", "unique one", "unique two"]
