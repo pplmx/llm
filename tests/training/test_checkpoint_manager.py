@@ -1,8 +1,10 @@
+import logging
 from pathlib import Path
 
 import pytest
 import torch
 
+from llm.training.core.checkpoint import load_checkpoint_payload
 from llm.training.core.config import CheckpointConfig
 from llm.training.core.utils import CheckpointManager, Logger, LoggingConfig
 from tests.support.devices import DEFAULT_DEVICE
@@ -405,3 +407,146 @@ def test_load_corrupt_legacy_checkpoint_degrades_not_crashes(checkpoint_manager)
     start_epoch, best_loss = checkpoint_manager.load_checkpoint(saved, None, None, None, device=DEFAULT_DEVICE)
     assert start_epoch == 0
     assert best_loss == float("inf")
+
+
+# --- Resume fidelity: what round-trips exactly, and what does not ---
+
+
+def test_resume_restores_weights_and_optimizer_bit_exactly(tmp_path):
+    """Weights, AdamW moments and param_group hyperparameters round-trip exactly.
+
+    Kept as a contract because the *observable* effect of resume is that training
+    continues from the same point: a bit of drift here would silently reset the
+    optimizer (its moments are what carry momentum across the boundary).
+    """
+    import torch
+    from safetensors.torch import load_file
+
+    from llm.models.decoder import DecoderModel
+
+    batch = torch.randint(0, 32, (2, 8))
+    torch.manual_seed(0)
+    model = DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    for _ in range(3):
+        loss = model(batch).sum()
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+    config = CheckpointConfig(checkpoint_dir=str(tmp_path), save_interval=1)
+    logger = logging.getLogger("test-resume")
+    logger.addHandler(logging.NullHandler())
+    manager = CheckpointManager(config, rank=0, logger=logger)
+    manager.save_checkpoint(
+        1,
+        model,
+        optimizer,
+        None,
+        None,
+        1.0,
+        model_config={"vocab_size": 32, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16},
+    )
+
+    payload = load_checkpoint_payload(tmp_path / "latest")
+    saved_weights = load_file(str(tmp_path / "latest.safetensors"))
+    for key, value in model.state_dict().items():
+        assert torch.equal(value, saved_weights[key]), f"weight {key} did not round-trip bit-exactly"
+
+    live = optimizer.state_dict()
+    restored = payload["optimizer_state"]
+    assert len(restored["state"]) == len(live["state"])
+    for index, fields in live["state"].items():
+        for field, value in fields.items():
+            assert torch.equal(value, restored["state"][index][field]), (
+                f"optimizer state[{index}][{field}] did not round-trip"
+            )
+    # Hyperparameters must survive too, or the resumed run uses a different lr/etc.
+    for key, value in live["param_groups"][0].items():
+        if key == "params":
+            continue
+        assert restored["param_groups"][0][key] == value, f"param_group[{key}] changed across the checkpoint"
+
+
+def test_checkpoint_does_not_store_rng_state(tmp_path):
+    """The RNG state is NOT part of a checkpoint — this is why resume is not bit-reproducible.
+
+    ``CheckpointManager`` persists model / optimizer / scheduler / scaler /
+    ``extra_state``. With no RNG state, dropout, shuffling and augmentation
+    resume on a fresh random stream, so "3 steps + save + resume 3" differs
+    from "6 steps straight". ``docs/guides/checkpoints.md`` states that
+    limitation; this test keeps the claim honest by asserting the absence
+    directly, so adding RNG persistence later will fail here and prompt a doc
+    update rather than leaving a stale caveat.
+
+    Verified behaviourally too: the same split run in ``eval()`` (dropout off)
+    DOES match bit-for-bit, which is what pins the divergence on randomness
+    rather than on the checkpoint.
+    """
+    import torch as _torch
+
+    from llm.models.decoder import DecoderModel
+
+    config = {"vocab_size": 32, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16}
+    batches = [_torch.randint(0, 32, (2, 8)) for _ in range(6)]
+
+    def _make():
+        _torch.manual_seed(42)
+        return DecoderModel(**config)
+
+    def _step(model, optimizer, batch):
+        loss = model(batch).sum()
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+    def _run(eval_mode: bool):
+        """Run 6 steps straight, and 3+3 with a checkpoint round trip between."""
+        _torch.manual_seed(7)
+        straight = _make()
+        straight_opt = _torch.optim.AdamW(straight.parameters(), lr=1e-3)
+        if eval_mode:
+            straight.eval()
+        for batch in batches:
+            _step(straight, straight_opt, batch)
+
+        split_dir = tmp_path / ("eval" if eval_mode else "train")
+        _torch.manual_seed(7)
+        split = _make()
+        split_opt = _torch.optim.AdamW(split.parameters(), lr=1e-3)
+        if eval_mode:
+            split.eval()
+        for batch in batches[:3]:
+            _step(split, split_opt, batch)
+
+        logger = logging.getLogger("test-rng")
+        logger.addHandler(logging.NullHandler())
+        CheckpointManager(
+            CheckpointConfig(checkpoint_dir=str(split_dir), save_interval=1), rank=0, logger=logger
+        ).save_checkpoint(1, split, split_opt, None, None, 1.0, model_config=config)
+        payload = load_checkpoint_payload(split_dir / "latest")
+
+        # The checkpoint carries no RNG state.
+        for key in payload:
+            assert "rng" not in key.lower(), f"checkpoint unexpectedly carries RNG under {key!r}"
+
+        _torch.manual_seed(999)  # a different stream on the resume path
+        resumed = _make()
+        resumed.load_state_dict(payload["model_state"])
+        if eval_mode:
+            resumed.eval()
+        resumed_opt = _torch.optim.AdamW(resumed.parameters(), lr=1e-3)
+        resumed_opt.load_state_dict(payload["optimizer_state"])
+        for batch in batches[3:]:
+            _step(resumed, resumed_opt, batch)
+
+        return all(
+            _torch.equal(a, b)
+            for a, b in zip(straight.state_dict().values(), resumed.state_dict().values(), strict=True)
+        )
+
+    # Without dropout the two paths agree exactly: the checkpoint itself is faithful.
+    assert _run(eval_mode=True), "eval-mode resume must reproduce the uninterrupted run bit-for-bit"
+    # With dropout the resume path draws different masks, so it diverges — the
+    # documented caveat. If this ever becomes True, RNG persistence was added.
+    assert not _run(eval_mode=False), "dropout resume is expected to diverge; update docs/guides/checkpoints.md"

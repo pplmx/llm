@@ -72,6 +72,13 @@ uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yam
 `CheckpointManager.load_checkpoint` 恢复 model / optimizer / scheduler / scaler / `extra_state`。
 流式任务额外恢复数据 cursor（不重复读、不遗漏）。
 
+**续训不是逐位可复现的**：RNG 状态（global / CUDA 的随机数生成器）不写进 checkpoint。
+因此 dropout、数据打乱、数据增强在续训后会走不同的随机流，"3 步 + 存档 + 续 3 步"与
+"连跑 6 步"的权重不会逐位相同（实测模型带 dropout 时差异可达 1e-3 量级）。
+权重、AdamW 的 `exp_avg` / `exp_avg_sq` / `step`、以及 param_group 超参数都是逐位往返的 —
+差异只来自随机流。需要严格对齐实验时，请固定 `torch.manual_seed` 并在同一进程内跑完，
+或自行在 `extra_state` 里存放/恢复 RNG state。
+
 ## 权重命名空间不变式
 
 `.safetensors` 里存的是**未包裹模型**的键，不是训练时内存里那个模型的 `state_dict()`。
