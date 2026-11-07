@@ -348,7 +348,7 @@ async def generate_text(
         # context-overflowing ``max_new_tokens`` is a real 4xx, not an
         # "Error: ..." chunk inside a 200 stream.
         _validate_stream_request(request.prompt, request.max_new_tokens)
-        return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
+        return StreamingResponse(_sse_frames(_stream_generator(request)), media_type="text/event-stream")
 
     # Non-streaming twin of the same pre-checks: an over-window prompt must be
     # a clean 400 on every backend (eager previously tail-truncated silently
@@ -452,6 +452,25 @@ async def generate_text(
 
     metrics.observe_tokens(endpoint="generate", token_count=_token_count(completion))
     return GenerationResponse(generated_text=completion, token_count=_token_count(completion))
+
+
+async def _sse_frames(payloads: AsyncGenerator[str]) -> AsyncGenerator[str]:
+    """Wrap raw streamed payloads in the SSE wire format.
+
+    ``_stream_generator`` yields bare text (token chunks, or a one-line
+    ``Error: ...`` message) because its own tests exercise that payload
+    contract directly. Over the wire, though, a ``text/event-stream`` body
+    must be built from ``data:`` lines separated by blank lines — a spec-
+    compliant client (browser ``EventSource``, ``httpx-sse``, the OpenAI
+    SDK's stream helper) dispatches NO events from a bare body, so this route
+    looked "streaming" to curl while every real SSE client received nothing.
+    The chat route already framed its chunks; this one now does too, and adds
+    the terminating ``[DONE]`` sentinel both routes use to mark a deliberate
+    end-of-stream.
+    """
+    async for payload in payloads:
+        yield f"data: {payload}\n\n"
+    yield "data: [DONE]\n\n"
 
 
 async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:

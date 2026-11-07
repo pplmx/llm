@@ -509,8 +509,12 @@ def test_generate_stream_acquires_inference_semaphore(monkeypatch):
                 assert response.status_code == 200
                 chunks = [line for line in response.iter_lines() if line]
                 # No stop/newlines in the stream, so the two mock tokens
-                # arrive concatenated as one SSE body line.
-                assert "".join(chunks) == "tok1tok2"
+                # arrive concatenated as one SSE payload; the route frames
+                # each payload as a ``data:`` line and terminates the stream
+                # with the ``[DONE]`` sentinel.
+                payloads = [c.removeprefix("data: ") for c in chunks if c.startswith("data: ")]
+                assert payloads[-1] == "[DONE]", chunks
+                assert "".join(payloads[:-1]) == "tok1tok2"
 
         # The semaphore was acquired exactly once and released when the
         # stream ended.

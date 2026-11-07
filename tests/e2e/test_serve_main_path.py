@@ -231,7 +231,16 @@ class TestLLMServeEndToEnd:
         assert data["token_count"] == len(data["generated_text"])
 
     def test_generate_streaming(self, serving_app: TestClient) -> None:
-        """POST /generate with ``stream=true`` returns SSE chunks."""
+        """POST /generate with ``stream=true`` returns real SSE chunks.
+
+        The body must be SSE-framed (``data: <payload>`` lines separated by
+        blank lines) and end with the ``[DONE]`` sentinel. A bare token body
+        under a ``text/event-stream`` content type parses as NO events in a
+        spec-compliant client (browser ``EventSource``, ``httpx-sse``, the
+        OpenAI SDK's stream helper), so the route would look "streaming" to a
+        curl user while every real SSE client received nothing. The chat route
+        already framed its chunks — this one did not.
+        """
         with serving_app.stream(
             "POST",
             "/generate",
@@ -239,9 +248,19 @@ class TestLLMServeEndToEnd:
         ) as r:
             assert r.status_code == 200
             assert "text/event-stream" in r.headers["content-type"]
-            chunks = [line for line in r.iter_lines() if line]
-            # Real tokens were streamed (not a single-line error).
-            assert len(chunks) > 0
+            lines = [line for line in r.iter_lines() if line]
+
+        assert lines, "stream produced no lines at all"
+        data_lines = [line for line in lines if line.startswith("data: ")]
+        assert len(data_lines) == len(lines), (
+            f"every emitted line must be a `data:` frame; got non-SSE lines: "
+            f"{[line for line in lines if not line.startswith('data: ')][:3]}"
+        )
+        assert data_lines[-1] == "data: [DONE]", (
+            f"stream must end with the `data: [DONE]` sentinel, got {data_lines[-1]!r}"
+        )
+        # The token frames carry the generated text (not an in-band error).
+        assert not any("Error:" in line for line in data_lines), data_lines
 
     def test_metrics_endpoint_exposes_domain_metrics(self, serving_app: TestClient) -> None:
         """GET /metrics includes the custom domain metrics (T2 #22).
