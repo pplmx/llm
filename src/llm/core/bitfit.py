@@ -34,6 +34,8 @@ from collections.abc import Iterator
 
 import torch.nn as nn
 
+from llm.core.peft.types import reject_blank_target_patterns
+
 
 def apply_bitfit(
     model: nn.Module,
@@ -60,6 +62,7 @@ def apply_bitfit(
     """
     if target_modules is None:
         target_modules = []
+    reject_blank_target_patterns(target_modules, "BitFit")
 
     # Snapshot the original requires_grad state so unapply_bitfit can
     # restore it. Save BEFORE toggling anything — that way repeated

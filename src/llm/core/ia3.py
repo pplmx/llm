@@ -42,6 +42,8 @@ from collections.abc import Iterator
 import torch
 import torch.nn as nn
 
+from llm.core.peft.types import reject_blank_target_patterns
+
 
 class IA3Linear(nn.Module):
     """Wrap a frozen ``nn.Linear`` with a trainable multiplicative scale.
@@ -176,6 +178,7 @@ def apply_ia3(
     """
     if target_modules is None:
         target_modules = []
+    reject_blank_target_patterns(target_modules, "IA³")
 
     def should_apply(name: str) -> bool:
         if not target_modules:

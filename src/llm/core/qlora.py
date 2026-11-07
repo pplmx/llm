@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
+from llm.core.peft.types import reject_blank_target_patterns
 from llm.utils.common import init_lora_weights
 
 # NF4 quantization constants (Normal Float 4-bit)
@@ -242,6 +243,7 @@ def apply_qlora(
     """
     if target_modules is None:
         target_modules = []
+    reject_blank_target_patterns(target_modules, "QLoRA")
 
     def should_apply(name: str) -> bool:
         if not target_modules:

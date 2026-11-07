@@ -14,6 +14,7 @@ from collections.abc import Iterator
 import torch
 import torch.nn as nn
 
+from llm.core.peft.types import reject_blank_target_patterns
 from llm.utils.common import init_lora_weights
 
 
@@ -158,6 +159,7 @@ def apply_lora(
     """
     if target_modules is None:
         target_modules = []
+    reject_blank_target_patterns(target_modules, "LoRA")
 
     def should_apply(name: str) -> bool:
         if not target_modules:

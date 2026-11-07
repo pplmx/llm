@@ -30,6 +30,7 @@ import torch
 from torch import nn
 
 from llm.core.attn.base import PrefixCapableAttention
+from llm.core.peft.types import reject_blank_target_patterns
 
 
 class PrefixTuningAttention(nn.Module):
@@ -243,6 +244,7 @@ def apply_prefix_tuning(
     """
     if target_modules is None:
         target_modules = []
+    reject_blank_target_patterns(target_modules, "Prefix Tuning")
 
     def should_apply(name: str) -> bool:
         if not target_modules:

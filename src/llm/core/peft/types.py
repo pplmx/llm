@@ -57,6 +57,29 @@ class TargetModuleFilter(StrEnum):
     ANY = "any"
 
 
+def reject_blank_target_patterns(patterns: list[str] | None, method: str) -> None:
+    """Reject blank entries in a PEFT ``target_modules`` list.
+
+    ``target_modules`` is a list of module-name SUBSTRING patterns matched with
+    ``any(pattern in name for pattern in patterns)``. In Python ``"" in name`` is
+    always True, so a single empty string bypasses the filter completely: measured,
+    ``target_modules=[""]`` wrapped EVERY layer, exactly like ``None``, while
+    ``["  "]`` matched nothing at all. Two visually-identical "blank" inputs
+    produced opposite behaviour with no hint that the filter was ignored.
+
+    A blank pattern is a typo, not a request for "all layers" (that is what
+    ``None`` / ``[]`` already mean), so it fails loudly instead.
+    """
+    if not patterns:
+        return
+    blank = [p for p in patterns if not p or not p.strip()]
+    if blank:
+        raise ValueError(
+            f"{method}: target_modules contains a blank pattern {blank!r}. Patterns are "
+            "substrings matched against module names; use None to target every layer."
+        )
+
+
 @dataclass(frozen=True)
 class PEFTMethod:
     """The contract every PEFT method registers with the registry.

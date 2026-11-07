@@ -57,6 +57,8 @@ from collections.abc import Iterator
 import torch
 import torch.nn as nn
 
+from llm.core.peft.types import reject_blank_target_patterns
+
 
 class AdapterLinear(nn.Module):
     """Wrap a frozen ``nn.Linear`` with a bottleneck adapter on the output.
@@ -170,6 +172,7 @@ def apply_adapter(
     """
     if target_modules is None:
         target_modules = []
+    reject_blank_target_patterns(target_modules, "Adapter")
 
     def should_apply(name: str) -> bool:
         if not target_modules:

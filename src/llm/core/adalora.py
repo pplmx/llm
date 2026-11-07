@@ -18,6 +18,8 @@ from typing import cast
 import torch
 import torch.nn as nn
 
+from llm.core.peft.types import reject_blank_target_patterns
+
 
 def _orthonormalize(matrix: torch.Tensor) -> torch.Tensor:
     """Return the Q factor of the QR decomposition of ``matrix``.
@@ -461,6 +463,7 @@ def apply_adalora(
     """
     if target_modules is None:
         target_modules = []
+    reject_blank_target_patterns(target_modules, "AdaLoRA")
 
     def should_apply(name: str) -> bool:
         if not target_modules:
