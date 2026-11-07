@@ -248,16 +248,37 @@ def count_lora_parameters(model: nn.Module) -> tuple[int, int]:
 
 
 def disable_lora(model: nn.Module) -> None:
-    """Disable LoRA by setting scaling to 0."""
+    """Disable LoRA by setting scaling to 0.
+
+    Records the scaling to restore in ``_original_scaling``. Two guards:
+
+    * A MERGED layer is already a pure pass-through (``merge_weights`` folded the
+      delta into the base and set ``scaling = 0``). Recording that 0 would make
+      a later ``enable_lora`` restore 0 — the adapter would be gone for good.
+      Such a layer keeps its merge snapshot and is left alone: disabling an
+      already-inert adapter is a no-op.
+    * Already-disabled layers keep their first snapshot. Re-recording would
+      store 0 over the real value, so ``disable`` twice then ``enable`` would
+      lose the adapter.
+    """
     for module in model.modules():
-        if isinstance(module, LoRALinear):
-            module._original_scaling = module.scaling
-            module.scaling = 0.0
+        if not isinstance(module, LoRALinear):
+            continue
+        if module._merged_scaling is not None:
+            continue  # merged: the adapter is already inert, keep the snapshot
+        if getattr(module, "_original_scaling", None) is not None:
+            continue  # already disabled: keep the first snapshot
+        module._original_scaling = module.scaling
+        module.scaling = 0.0
 
 
 def enable_lora(model: nn.Module) -> None:
     """Re-enable LoRA after disabling."""
     for module in model.modules():
+        if not isinstance(module, LoRALinear):
+            continue
         orig = getattr(module, "_original_scaling", None)
-        if isinstance(module, LoRALinear) and orig is not None:
-            module.scaling = orig
+        if orig is None:
+            continue
+        module.scaling = orig
+        module._original_scaling = None

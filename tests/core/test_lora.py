@@ -336,3 +336,68 @@ class TestLoRATraining:
 
         # Verify training happened
         assert losses[-1] != losses[0]
+
+
+# --- disable/enable must survive the merge state and repeat calls ---
+
+
+class TestDisableEnableInteractions:
+    """``disable_lora``/``enable_lora`` interact with the merge snapshot.
+
+    Both write ``scaling``, which is the single value ``forward`` uses to decide
+    whether the adapter contributes. Recording a wrong value here is silent: the
+    model runs, it just is (or is not) adapted.
+    """
+
+    @staticmethod
+    def _layer():
+        torch.manual_seed(0)
+        layer = LoRALinear(nn.Linear(16, 16))
+        with torch.no_grad():
+            layer.lora_B.normal_(0, 0.1)
+        return layer
+
+    def test_disable_then_enable_restores_scaling(self):
+        layer = self._layer()
+        original = layer.scaling
+        disable_lora(nn.Sequential(layer))
+        assert layer.scaling == 0.0
+        enable_lora(nn.Sequential(layer))
+        assert layer.scaling == original
+
+    def test_disable_twice_keeps_the_first_snapshot(self):
+        """``disable`` records ``scaling``; re-recording would store 0 and lose it."""
+        model = nn.Sequential(self._layer())
+        layer = model[0]
+        original = layer.scaling
+
+        disable_lora(model)
+        disable_lora(model)  # e.g. a looping/defensive caller
+        enable_lora(model)
+
+        assert layer.scaling == original, "a second disable overwrote the snapshot with 0"
+
+    def test_disabling_a_merged_layer_does_not_erase_the_adapter(self):
+        """A merged layer is already inert; disable must not clobber its snapshot.
+
+        ``merge_weights`` sets ``scaling = 0`` and stores the real value in
+        ``_merged_scaling``. Recording that 0 in ``_original_scaling`` made a
+        later ``enable`` restore 0 — the adapter was gone for good with no error.
+        """
+        model = nn.Sequential(self._layer())
+        layer = model[0]
+        original = layer.scaling
+
+        merge_lora(model)
+        assert layer.scaling == 0.0
+        disable_lora(model)
+        enable_lora(model)
+
+        # Assert BEFORE unmerging: unmerge restores scaling from its own
+        # _merged_scaling snapshot, which would mask a clobbered adapter here.
+        # While merged the layer is a pass-through by design, so enable() must
+        # NOT reactivate the adapter path (that would double-count the delta).
+        assert layer.scaling == 0.0, "enable reactivated the adapter on a merged layer"
+
+        unmerge_lora(model)
+        assert layer.scaling == original, "the adapter was lost across merge -> disable -> enable -> unmerge"
