@@ -177,6 +177,41 @@ class TestConfig:
         with pytest.raises(ValueError, match="Unknown attn_impl"):
             ModelConfig(attn_impl="nonexistent_attention")
 
+    def test_model_config_rejects_non_positive_num_kv_heads(self):
+        """``num_kv_heads <= 0`` must fail at config load, not inside a backend.
+
+        Without this check the failure mode depended on the attention backend:
+        ``mha`` reached ``num_heads % 0`` and raised a bare
+        ``ZeroDivisionError`` (no mention of which config key was wrong),
+        while ``num_kv_heads=-2`` built a negative-width projection without
+        complaint. Reject the value once, up front, for every backend.
+        """
+        for bad in (0, -2):
+            with pytest.raises(ValueError, match="num_kv_heads must be positive"):
+                ModelConfig(num_heads=4, num_kv_heads=bad)
+
+    def test_model_config_rejects_num_kv_heads_exceeding_num_heads(self):
+        """GQA uses FEWER KV heads than query heads; the reverse is nonsense.
+
+        ``num_kv_heads > num_heads`` used to be accepted by
+        ``ModelConfig`` and then rejected by the ``mha`` backend with a
+        divisibility error — and silently ACCEPTED by the ``mla`` backend,
+        which has no GQA repeat at all. Both paths now fail at config load.
+        """
+        for impl in ("mha", "mla"):
+            with pytest.raises(ValueError, match="must not exceed num_heads"):
+                ModelConfig(num_heads=4, num_kv_heads=8, attn_impl=impl)
+
+    def test_model_config_rejects_indivisible_num_kv_heads(self):
+        """``num_heads % num_kv_heads != 0`` cannot be split into equal groups."""
+        with pytest.raises(ValueError, match="must be divisible by num_kv_heads"):
+            ModelConfig(num_heads=4, num_kv_heads=3)
+
+    def test_model_config_accepts_valid_gqa_split(self):
+        """A genuine GQA split (fewer, divisor KV heads) still validates."""
+        config = ModelConfig(num_heads=8, num_kv_heads=2, attn_impl="mha")
+        assert config.num_kv_heads == 2
+
     def test_model_config_mla_with_kv_cache_accepted(self):
         """MLA + KV cache is supported (Tier 3 #31, audit 2026-07-12).
 

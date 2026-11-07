@@ -68,6 +68,28 @@ class ModelConfig(BaseModel):
         if self.hidden_size % self.num_heads != 0:
             raise ValueError("hidden_size must be divisible by num_heads")
 
+        # ``num_kv_heads`` is the GQA knob: MHA/flash_attn repeat each KV head
+        # ``num_heads // num_kv_heads`` times, so the value must divide
+        # ``num_heads``. Without this check the backends raised on their own
+        # and DIVERGED: ``num_kv_heads=0`` reached ``num_heads % 0`` and died
+        # with a bare ``ZeroDivisionError``, ``num_kv_heads=-2`` built a
+        # negative-width projection without complaint, and the MLA backend
+        # (which has no GQA and ignores the knob entirely) accepted any value
+        # — so the same config was rejected by `mha` and silently mis-built by
+        # `mla`. Validate here so every backend agrees.
+        if self.num_kv_heads is not None:
+            if self.num_kv_heads <= 0:
+                raise ValueError(f"num_kv_heads must be positive when set, got {self.num_kv_heads}")
+            if self.num_kv_heads > self.num_heads:
+                raise ValueError(
+                    f"num_kv_heads ({self.num_kv_heads}) must not exceed num_heads ({self.num_heads}); "
+                    "grouped-query attention uses FEWER KV heads than query heads (num_heads == num_kv_heads is plain MHA)."
+                )
+            if self.num_heads % self.num_kv_heads != 0:
+                raise ValueError(
+                    f"num_heads ({self.num_heads}) must be divisible by num_kv_heads ({self.num_kv_heads})"
+                )
+
         if self.mlp_impl == "moe":
             if self.num_experts <= 0:
                 raise ValueError("num_experts must be positive when mlp_impl='moe'.")
