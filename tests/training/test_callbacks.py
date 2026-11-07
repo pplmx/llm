@@ -143,3 +143,34 @@ def test_lr_callback_without_engine_optimizer_noops():
     tb_cb.set_engine(engine)
     # No writer was ever opened and no engine optimizer exists — must no-op.
     tb_cb.on_epoch_end(0, {"avg_loss": 1.0})
+
+
+def test_tensorboard_logger_degrades_when_tensorboard_missing(monkeypatch):
+    """A missing optional ``tensorboard`` must not abort the training run.
+
+    ``tensorboard`` lives in the optional ``[logging]`` extra, but ``train.py``
+    wires :class:`TensorBoardLogger` unconditionally — so a plain
+    ``llm train`` on a default install raised ``ImportError`` from
+    ``on_train_start`` before the first batch, killing an otherwise valid run.
+    The callback now degrades to no-TensorBoard with a warning (the same
+    no-op-with-a-warning contract ``llm.data.dvc`` uses for its optional
+    backend) and training continues.
+    """
+    cb = TensorBoardLogger(log_dir="unused")
+    engine = MagicMock()
+    engine.rank = 0
+    engine.logger = MagicMock()
+    cb.set_engine(engine)
+
+    # Simulate the import failing exactly as it does on a default install.
+    def _boom(_log_path):
+        raise ImportError("tensorboard is an optional training dependency.")
+
+    monkeypatch.setattr(TensorBoardLogger, "_make_writer", staticmethod(_boom))
+    cb.on_train_start()  # must NOT raise
+
+    assert cb.writer is None, "writer must stay unset when tensorboard is unavailable"
+    assert engine.logger.warning.called, "the degradation must be announced, not silent"
+    # Subsequent hooks must tolerate the absent writer.
+    cb.on_epoch_end(0, {"avg_loss": 1.0})
+    cb.on_train_end()

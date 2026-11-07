@@ -69,6 +69,12 @@ optimization:
 
 distributed:
   backend: gloo            # CPU demo — NCCL requires CUDA
+  # Pin ONE worker. Left unset, ``gpus_per_node`` defaults to
+  # ``torch.cuda.device_count()``, so on an 8-GPU box this "CPU demo" would
+  # spawn 8 DDP ranks (and then fail: a gloo CPU demo has no reason to fan
+  # out, and 8 ranks on one machine trip the host NCCL/gloo limits). The
+  # demo exists to smoke the main path in seconds, so keep it single-process.
+  gpus_per_node: 1
 
 checkpoint:
   checkpoint_dir: checkpoints_streaming_demo

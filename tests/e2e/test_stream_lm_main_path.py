@@ -122,6 +122,23 @@ class TestStreamingPresetConfigs:
         assert cfg.training.batch_size == 4
         assert cfg.checkpoint.checkpoint_dir == "checkpoints_streaming_demo"
 
+    def test_local_demo_yaml_pins_one_worker(self) -> None:
+        """The CPU demo must stay single-process.
+
+        ``gpus_per_node`` defaults to ``torch.cuda.device_count()``, so on a
+        multi-GPU host the tutorial's "CPU 也能跑, 几秒完成" smoke command
+        silently spawned one DDP rank PER GPU — and then died in the gloo
+        broadcast of the first forward. Pinning 1 keeps the documented demo
+        runnable everywhere and keeps it a smoke test instead of a
+        multi-process job.
+        """
+        cfg = Config.from_yaml(REPO_ROOT / "configs" / "streaming_local_demo.yaml")
+        assert cfg.distributed.gpus_per_node == 1, (
+            "streaming_local_demo.yaml must pin gpus_per_node=1; unset it becomes "
+            f"torch.cuda.device_count() and fans the CPU demo out to every GPU "
+            f"(got {cfg.distributed.gpus_per_node})"
+        )
+
     def test_local_demo_yaml_runs_end_to_end(
         self, tmp_path: Path, tiny_corpus: Path, monkeypatch: pytest.MonkeyPatch, line_tokenizer
     ) -> None:

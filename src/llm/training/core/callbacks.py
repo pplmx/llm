@@ -293,7 +293,22 @@ class TensorBoardLogger(Callback):
             # (``logs/logs``) and the writer landed in the wrong tree
             # .
             log_path = Path(self.log_dir)
-            self.writer = self._make_writer(log_path)
+            try:
+                self.writer = self._make_writer(log_path)
+            except ImportError:
+                # ``tensorboard`` is an OPTIONAL extra (``[logging]``) while
+                # this callback is wired unconditionally by ``train.py`` — so a
+                # plain `llm train` on a default install used to abort the run
+                # in ``on_train_start`` before the first batch. Degrade to
+                # no-TensorBoard with a one-line hint (the same
+                # no-op-with-a-warning contract ``llm.data.dvc`` uses for its
+                # optional backend) instead of failing the training run.
+                self.writer = None
+                self.engine.logger.warning(
+                    "TensorBoard logging disabled — tensorboard is not installed. "
+                    "Install with `uv sync --extra logging` (or `pip install 'llm[logging]'`) to enable it."
+                )
+                return
             self.engine.logger.info(f"TensorBoard: Logging to {log_path}")
 
     @staticmethod
