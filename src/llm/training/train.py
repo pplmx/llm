@@ -100,6 +100,21 @@ def train_worker(
             local_rank=local_rank,
         )
         engine.run()
+
+        # Persist the run's tokenizer next to the checkpoints (rank 0 only).
+        # ``TokenizerFactory.from_data_config`` builds the ``simple`` vocab from
+        # a fixed default corpus when no ``tokenizer_path`` is configured, so
+        # without this snapshot serving a trained checkpoint needs a
+        # ``tokenizer_path`` the user cannot reproduce.
+        if global_rank == 0:
+            from llm.runtime.tokenizer_factory import persist_training_tokenizer
+
+            saved = persist_training_tokenizer(
+                getattr(data_module, "tokenizer", None),
+                config.checkpoint.checkpoint_dir,
+            )
+            if saved is not None:
+                logging.getLogger("train").info(f"Saved tokenizer to {saved}")
     except Exception:
         logging.getLogger().exception(f"An error occurred in rank {global_rank}")
         raise

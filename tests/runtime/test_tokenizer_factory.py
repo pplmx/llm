@@ -95,6 +95,61 @@ def test_from_serving_config_requires_tokenizer_with_model(tmp_path):
         TokenizerFactory.from_serving_config(config)
 
 
+def test_persist_training_tokenizer_round_trips_through_serving(tmp_path):
+    """Training's tokenizer snapshot must be what serving loads.
+
+    ``from_data_config`` builds the ``simple`` vocab from a FIXED default
+    corpus, so a trained checkpoint's tokenizer is unreproducible by hand and
+    serving refused to start without a ``tokenizer_path``. Training now writes
+    ``tokenizer.pt`` beside the checkpoints and serving discovers it.
+    """
+    from llm.runtime.tokenizer_factory import DEFAULT_SIMPLE_CORPUS, persist_training_tokenizer
+
+    tokenizer = SimpleCharacterTokenizer(DEFAULT_SIMPLE_CORPUS)
+    saved = persist_training_tokenizer(tokenizer, tmp_path)
+    assert saved is not None
+    assert saved.name == "tokenizer.pt"
+
+    ckpt = tmp_path / "model.pt"
+    ckpt.write_text("x", encoding="utf-8")
+    loaded = TokenizerFactory.from_serving_config(ServingConfig(model_path=str(ckpt)))
+    assert loaded.vocab_size == tokenizer.vocab_size
+    assert loaded.decode(loaded.encode("the cat")) == "the cat"
+
+
+def test_explicit_tokenizer_path_beats_discovered_one(tmp_path):
+    """A user-supplied ``tokenizer_path`` must win over the snapshot."""
+    from llm.runtime.tokenizer_factory import DEFAULT_SIMPLE_CORPUS, persist_training_tokenizer
+
+    default_tok = SimpleCharacterTokenizer(DEFAULT_SIMPLE_CORPUS)
+    persist_training_tokenizer(default_tok, tmp_path)
+    # Explicit path pointing at a DIFFERENT (tiny-corpus) tokenizer.
+    other = SimpleCharacterTokenizer(["abc"])
+    other_path = tmp_path / "custom.pt"
+    torch.save(other, other_path)
+
+    ckpt = tmp_path / "model.pt"
+    ckpt.write_text("x", encoding="utf-8")
+    loaded = TokenizerFactory.from_serving_config(ServingConfig(model_path=str(ckpt), tokenizer_path=str(other_path)))
+    assert loaded.vocab_size == other.vocab_size
+    assert loaded.vocab_size != default_tok.vocab_size, "the discovered snapshot must not have won"
+
+
+def test_persist_training_tokenizer_skips_non_simple(tmp_path):
+    """A tokenizer that persists itself must not get a pickled sidecar."""
+
+    class _SelfPersisting:
+        vocab_size = 7
+
+        def save_pretrained(self, directory):  # pragma: no cover - never called
+            raise AssertionError("must not be persisted by the helper")
+
+    from llm.runtime.tokenizer_factory import persist_training_tokenizer
+
+    assert persist_training_tokenizer(_SelfPersisting(), tmp_path) is None
+    assert not (tmp_path / "tokenizer.pt").exists()
+
+
 def test_from_serving_config_hf_requires_path():
     """``tokenizer_type="hf"`` with no path must FAIL LOUD, not silently
     serve with the printable-corpus character tokenizer (which cannot encode

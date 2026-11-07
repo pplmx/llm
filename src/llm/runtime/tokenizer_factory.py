@@ -168,9 +168,40 @@ class TokenizerFactory:
             raise ValueError("tokenizer_path must be specified for HF tokenizer.")
 
         if getattr(config, "model_path", None):
-            raise ValueError("tokenizer_path is required when model_path is set for serving")
+            # Training writes the run's tokenizer beside the checkpoints
+            # (``persist_training_tokenizer``). Pick it up automatically so the
+            # documented train -> serve loop needs no hand-built sidecar: the
+            # ``simple`` vocabulary comes from a fixed default corpus, so a user
+            # had no way to reproduce the exact ``tokenizer.pt`` the run used.
+            # An EXPLICIT ``tokenizer_path`` still wins (handled above).
+            discovered = TokenizerFactory._discover_checkpoint_tokenizer(config.model_path)
+            if discovered is not None:
+                _register_tokenizer_safe_globals()
+                return _ensure_tokenizer_obj(_load_tokenizer_pt(discovered), str(discovered))
+            raise ValueError(
+                "tokenizer_path is required when model_path is set for serving "
+                "(no tokenizer.pt was found beside the checkpoint; training writes one "
+                "into the checkpoint directory)"
+            )
 
         return TokenizerFactory.from_printable_corpus()
+
+    @staticmethod
+    def _discover_checkpoint_tokenizer(model_path: str | Path) -> Path | None:
+        """Return ``<checkpoint dir>/tokenizer.pt`` when a run saved one.
+
+        ``model_path`` may name the checkpoint stem, the ``.pt`` spelling or a
+        sidecar file, so resolve it through the same path helper the checkpoint
+        loader uses and look in that directory.
+        """
+        from llm.training.core.checkpoint import _resolve_checkpoint_paths
+
+        try:
+            legacy, *_ = _resolve_checkpoint_paths(model_path)
+        except TypeError, ValueError:
+            return None
+        candidate = legacy.with_suffix("").parent / "tokenizer.pt"
+        return candidate if candidate.is_file() else None
 
     @staticmethod
     def from_printable_corpus() -> SimpleCharacterTokenizer:
@@ -212,3 +243,46 @@ class TokenizerFactory:
     def cache_hf_tokenizer(data_config: TokenizerConfig) -> None:
         if data_config.tokenizer_type == "hf" and data_config.tokenizer_path:
             HFTokenizer.from_pretrained(data_config.tokenizer_path)
+
+
+def persist_training_tokenizer(tokenizer: Any, checkpoint_dir: str | Path) -> Path | None:
+    """Save a locally-built tokenizer beside the checkpoints so serving can reuse it.
+
+    ``TokenizerFactory.from_data_config`` builds a ``simple`` character
+    tokenizer from ``DEFAULT_SIMPLE_CORPUS`` when no ``tokenizer_path`` is
+    configured. That vocabulary is a property of the TRAINING RUN, but nothing
+    recorded it: ``CheckpointManager`` persists weights + ``model_config`` and
+    stops there, so serving a trained checkpoint needs a ``tokenizer_path`` the
+    user has no way to produce. Following the train -> serve tutorial end to
+    end therefore stopped at
+    ``ValueError: tokenizer_path is required when model_path is set for serving``
+    unless the user hand-rebuilt the exact tokenizer from the source.
+
+    Writes ``<checkpoint_dir>/tokenizer.pt`` (the spelling both
+    ``from_data_config`` and ``from_serving_config`` load) and returns its
+    path. Returns ``None`` — writing nothing — when the tokenizer persists
+    itself (a HuggingFace tokenizer is a directory of files addressed by repo
+    id / path, so there is nothing to snapshot) or when its class is not one
+    the ``weights_only`` allowlist can reconstruct.
+
+    Rank 0 only: the file is identical on every rank, and concurrent writers
+    would race on the same name.
+    """
+    import torch
+
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    if not isinstance(tokenizer, SimpleCharacterTokenizer):
+        # HF tokenizers are a directory of files addressed by repo id/path, and
+        # a third-party class would not survive the weights_only allowlist on
+        # load — persisting either would create a file serving cannot use.
+        return None
+
+    out_dir = Path(checkpoint_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = out_dir / "tokenizer.pt"
+    tmp = out_dir / "tokenizer.pt.tmp"
+    tmp.unlink(missing_ok=True)
+    torch.save(tokenizer, tmp)
+    tmp.replace(target)
+    return target
