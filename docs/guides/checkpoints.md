@@ -72,6 +72,29 @@ uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yam
 `CheckpointManager.load_checkpoint` 恢复 model / optimizer / scheduler / scaler / `extra_state`。
 流式任务额外恢复数据 cursor（不重复读、不遗漏）。
 
+## 权重命名空间不变式
+
+`.safetensors` 里存的是**未包裹模型**的键，不是训练时内存里那个模型的 `state_dict()`。
+这条不变式让同一个 checkpoint 能被所有"重建 plain 模型再按需加包装"的消费方
+（`llm serve` / `llm quantize` / `llm prune` / `llm decompose`）读取。
+
+写入侧由 `training/distributed/parallel.py:model_state_dict` 统一归一化（checkpoint 的
+唯一出口），它做两件事：
+
+| 训练时的包装                     | 磁盘上出现的临时前缀                        | 归一化后                           |
+| -------------------------------- | ------------------------------------------- | ---------------------------------- |
+| `torch.compile`                  | `_orig_mod.`                                | 去掉前缀                           |
+| PEFT（LoRA / AdaLoRA / IA³ / …） | `<layer>.base_layer.*` + `<layer>.lora_A/B` | `.base_layer.` 解开、`lora_*` 丢弃 |
+
+PEFT 的 adapter 增量**不在** checkpoint 里做主存——它由
+`PEFTAdapterCheckpointCallback` 写到 `peft_save_path` 的 sidecar（见
+[微调教程 §4](../tutorials/02-finetuning.md)）。所以加载流程是：先用 checkpoint 的
+base 权重建 plain 模型 → 再 `apply_peft(method)` → 再 `load_peft(sidecar)`。
+
+> 加包装时若绕过 `model_state_dict` 直接 `torch.save(model.state_dict())`，会写出带前缀的
+> 键，`llm serve` 随即以 `Checkpoint is missing N model key(s)` 拒绝启动。
+> 回归测试见 `tests/training/test_peft_checkpoint_integration.py`。
+
 ## 手动检查 / 加载
 
 ```python
