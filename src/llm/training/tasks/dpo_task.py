@@ -11,7 +11,7 @@ from llm.training.tasks.lm_task import LanguageModelingTask
 # from (normally the SFT model). It is snapshot inside ``build_model`` — from
 # the *initial* policy — which runs BEFORE the engine loads any checkpoint
 # into the policy, so without persisting the reference a resumed DPO run would
-# compute every log-ratio against a freshly-random model (RIL round-60
+# compute every log-ratio against a freshly-random model (
 # deep-dive Finding 1).
 REF_MODEL_STATE_KEY = "dpo_ref_model"
 
@@ -44,7 +44,7 @@ class DPOTask(LanguageModelingTask):
 
     def get_checkpoint_state(self) -> dict[str, Any] | None:
         """Persist the frozen reference so a resumed DPO run keeps the ORIGINAL
-        base model (RIL round-60 deep-dive Finding 1).
+        base model (deep-dive Finding 1).
 
         ``build_model`` snapshots the reference *before* the engine loads a
         checkpoint into the policy and the checkpoint never carried the
@@ -115,7 +115,7 @@ class DPOTask(LanguageModelingTask):
         # model — DPO discarded them, so the causal model attended to the
         # padding tokens (a right-padded batch leaks pad-token scores into
         # every valid position's context), diverging from SFT/Reward semantics
-        # (RIL ISS-249).
+        # .
         policy_chosen_logits = model(chosen_input_ids, attn_mask=chosen_attention_mask)
         policy_rejected_logits = model(rejected_input_ids, attn_mask=rejected_attention_mask)
 

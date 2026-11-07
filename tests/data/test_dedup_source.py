@@ -78,8 +78,8 @@ def test_dedup_inmemory_skip_counts_survivors_not_raw_records(tmp_path):
     """In-memory dedup (no seen-hashes file): ``skip=2`` skips the first 2
     *survivors* ('a','b'), NOT 2 raw records (which would land on 'b').
     The streaming resume cursor counts survivors, so the two must agree
-    or a resumed pass re-processes the tail of the consumed window
-    (RIL ISS-088)."""
+    or a resumed pass re-processes the tail of the consumed window.
+    """
     path = _write(tmp_path, "dup.txt", ["a", "a", "b", "c", "d"])
 
     deduped = list(DedupTextSource(LocalLineTextSource(path)).iter_texts(skip=2))
@@ -176,7 +176,7 @@ def test_dedup_write_seen_hashes_appends_new_hashes(tmp_path):
 def test_dedup_nonzero_rank_does_not_bloat_seen_file(tmp_path):
     """Only rank 0 may append to the shared seen-hashes file: every DDP rank
     walks the whole corpus, so without the gate each hash is written once per
-    rank and the file grows up to world_size times its size (round-79 TASK-194 / ISS-233)."""
+    rank and the file grows up to world_size times its size."""
     from unittest.mock import patch
 
     data_path = _write(tmp_path, "data.txt", ["a", "b", "a"])
@@ -267,7 +267,7 @@ def test_dedup_persistence_round_trip(tmp_path):
 
 
 def test_dedup_reset_cross_run_seen_recycles_corpus(tmp_path):
-    """Regression (RIL ISS-064): once a corpus has been fully consumed and
+    """Regression: once a corpus has been fully consumed and
     hashed in an earlier run, a *fresh* source yields nothing (cross-run
     dedup). The streaming engine then calls :meth:`reset_cross_run_seen` on
     corpus-cycle reset; the next pass must re-yield the corpus (scoped to
@@ -306,8 +306,8 @@ def test_dedup_reset_cross_run_seen_recycles_corpus(tmp_path):
 
 def test_dedup_reset_cross_run_seen_still_removes_in_pass_duplicates(tmp_path):
     """reset_cross_run_seen clears only the *cross-run* baseline; in-corpus
-    duplicates are still removed per pass (per-pass dedup semantics from
-    RIL ISS-038 remain intact)."""
+       duplicates are still removed per pass (per-pass dedup semantics from
+    remain intact)."""
     data_path = _write(tmp_path, "data.txt", ["a", "a", "b", "b", "c"])
     seen_path = tmp_path / "seen.txt"
     src = DedupTextSource(
@@ -558,7 +558,7 @@ def test_dedup_reiterates_cleanly_on_second_pass(tmp_path):
     """A corpus cycle re-iterates the same source object. The seen-set
     must be scoped to a single pass: pass 2 re-yields the full corpus
     (minus genuine in-pass duplicates) instead of classifying every
-    record as already-seen and yielding nothing (RIL ISS-038).
+    record as already-seen and yielding nothing.
     """
     path = _write(tmp_path, "data.txt", ["a", "b", "a", "c", "b"])
 

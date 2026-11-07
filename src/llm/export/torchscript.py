@@ -86,7 +86,7 @@ def export_to_torchscript(
     if method == "trace":
         if example_inputs is None:
             # Bounded by the REAL vocab so small-vocab models don't crash
-            # the embedding with out-of-range ids (RIL ISS-058).
+            # the embedding with out-of-range ids.
             device = next(model.parameters()).device
             example_inputs = dummy_token_ids(model, input_shape, device=device)
         # Pre-seed every RoPE cos/sin cache to the example sequence length.
@@ -94,7 +94,7 @@ def export_to_torchscript(
         # re-check), and ``RotaryPositionEmbedding`` builds its table behind
         # data-dependent ``if seq_len > cached`` control flow — the 1st run
         # builds, the 2nd skips, so the recorded graphs differ and tracing
-        # every RoPE model raised ``TracingCheckError`` (RIL ISS-142; the
+        # every RoPE model raised ``TracingCheckError`` (the
         # default non-RoPE model never exercised this). Warming the cache up
         # front makes both runs take the identical "populated" path.
         from llm.core.rope import RotaryPositionEmbedding

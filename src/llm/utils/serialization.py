@@ -1,6 +1,6 @@
 """Safe-pickle helpers: framework allowlist for ``torch.load(weights_only=True)``.
 
-Security contract (RIL ISS-170 / ISS-211): ``torch.load(..., weights_only=True)``
+Security contract: ``torch.load(..., weights_only=True)``
 refuses to execute arbitrary ``__reduce__`` code at load time. Model blobs and
 pre-tokenized artifact files that legitimately embed framework ``nn.Module``
 classes need those classes allowlisted first via
@@ -48,7 +48,7 @@ def register_framework_safe_globals() -> None:
     # Submodules that failed to import (expected for soft/optional deps like
     # flash_attn). Each one degrades the allowlist, so it is logged loud and
     # registration is left UNCOMPLETED — a later call retries instead of
-    # permanently pinning a partial allowlist (RIL ISS-243).
+    # permanently pinning a partial allowlist.
     failures: list[str] = []
 
     def _collect_module_classes(pkg_name: str) -> None:

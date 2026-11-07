@@ -50,7 +50,7 @@ class ServingGenerationService:
             # ``api.lifespan`` constructs the service before the engine —
             # so build one from the just-loaded model here instead of
             # letting ``get_generation_backend`` raise ValueError and abort
-            # server startup (RIL ISS-150).
+            # server startup.
             if config.generation_backend == "batched":
                 engine = ContinuousBatchingEngine.from_serving_config(
                     config,

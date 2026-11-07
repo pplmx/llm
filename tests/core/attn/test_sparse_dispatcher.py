@@ -1,4 +1,4 @@
-"""Tests for the unified sparse-attention dispatcher (TASK-242)."""
+"""Tests for the unified sparse-attention dispatcher."""
 
 from __future__ import annotations
 

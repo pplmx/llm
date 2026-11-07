@@ -1,4 +1,4 @@
-"""DPO-vs-PPO alignment benchmark (TASK-232 / ROADMAP 11.3).
+"""DPO-vs-PPO alignment benchmark (/ ROADMAP 11.3).
 
 Unit-tests the shared judge-reward + preference metric, then a CPU e2e showing
 DPO *converges* on the shared preference signal (preference fraction 0 -> ~1),
@@ -149,7 +149,7 @@ def test_grpo_benchmark_group_reward_fraction_rises():
         # "poor" — with only 2 groups it is a coin flip (each group picks its
         # argmax at chance), so a hard `initial < 0.5` would flake. The robust
         # invariants for the corrected (shifted) metric are convergence to the
-        # rewarded target plus finite, decreasing loss (RIL ISS-333).
+        # rewarded target plus finite, decreasing loss.
         assert result["initial_group_reward_fraction"] in (0.0, 0.5, 1.0)  # sanity: a valid fraction
         assert result["final_group_reward_fraction"] > 0.9
         assert all(loss == loss for loss in result["grpo_loss_trajectory"])  # finite

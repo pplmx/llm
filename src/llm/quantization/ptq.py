@@ -85,15 +85,15 @@ class QuantizedLinear(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with dequantized weights.
 
-        Dequantizes to fp32, computes in fp32 for accuracy, and returns in
-        the layer's effective dtype (native ``nn.Linear`` semantics).  This
-        keeps the layer a faithful drop-in even after the model is cast to
-        fp16/bf16 — the serving engine's ``model.to(device, dtype=fp16)`` or
-        selective quantization over a half base converts ``bias`` to half,
-        and passing it straight into ``F.linear`` against fp32 weights
-        crashed with a dtype mismatch (RIL TASK-196 / ISS-236, quant
-        deep-dive F1; same fix as the GPTQ/AWQ/SmoothQuant layers in
-        ISS-191).
+                Dequantizes to fp32, computes in fp32 for accuracy, and returns in
+                the layer's effective dtype (native ``nn.Linear`` semantics).  This
+                keeps the layer a faithful drop-in even after the model is cast to
+                fp16/bf16 — the serving engine's ``model.to(device, dtype=fp16)`` or
+                selective quantization over a half base converts ``bias`` to half,
+                and passing it straight into ``F.linear`` against fp32 weights
+                crashed with a dtype mismatch (quant
+                deep-dive F1; same fix as the GPTQ/AWQ/SmoothQuant layers in
+        ).
         """
         weight = self._dequantize_weight()
         dtype = self.bias.dtype if self.bias is not None else x.dtype
@@ -138,7 +138,7 @@ class QuantizedLinear(nn.Module):
             # The simple-PTQ layer stores weights in an int8 buffer. A
             # ``bits=4`` config quantized to a 4-bit *range* but persisted
             # them as full int8 values — no packing, no memory saving, while
-            # still advertising a 4-bit model (RIL ISS-197). Real 4-bit
+            # still advertising a 4-bit model. Real 4-bit
             # packing lives in the GPTQ/AWQ layers; fail fast instead of
             # silently storing 8-bit weights behind a 4-bit claim.
             raise NotImplementedError(
@@ -199,7 +199,7 @@ class QuantizedLinear(nn.Module):
                 # the dequantization PER-TENSOR while the layer still declares
                 # per-channel (every row shares one scale, inflating the
                 # quantization-error profile for no structural benefit). Fail
-                # fast instead of silently mis-scaling (RIL ISS-135).
+                # fast instead of silently mis-scaling.
                 raise ValueError(
                     "per_channel=True requires a per-row scale tensor (or None to compute "
                     f"it), got a scalar {scale!r}. Pass a scale with one value per output "
@@ -348,7 +348,7 @@ def compute_model_size(model: nn.Module) -> dict[str, Any]:
             # per byte for bits=4, or one int8 value per byte for bits=8.
             # ``numel()`` counts *bytes*; the true parameter count is
             # bytes * weights-per-byte (otherwise bits=4 reports half the
-            # real weight count — ISS-94). ``total_bytes`` stays the actual
+            # real weight count). ``total_bytes`` stays the actual
             # packed storage either way.
             packed_attr = cast(torch.Tensor, module.weight_packed)
             weights_per_byte = 2 if getattr(module, "bits", 4) == 4 else 1

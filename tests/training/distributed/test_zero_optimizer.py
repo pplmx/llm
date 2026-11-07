@@ -1,4 +1,4 @@
-"""Native ZeRO Stage-1 (``ZeroOptimizer``) tests (RIL TASK-267 / ISS-303).
+"""Native ZeRO Stage-1 (``ZeroOptimizer``) tests.
 
 Verification strategy: numeric parity on CPU + gloo (no GPU), mirroring the
 TP/PP distributed tests. Two ranks build an identical ``nn.Module``; each wraps

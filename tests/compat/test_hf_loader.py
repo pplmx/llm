@@ -53,7 +53,7 @@ class TestWeightMapping:
         falling back to Llama naming rules (which mis-map every MoE/expert
         tensor) when a caller invokes the converter directly — the hf_loader
         guards these first, but the raw convert_* functions shared this
-        silent-fallback footgun (RIL ISS-417)."""
+        silent-fallback footgun."""
         import pytest
 
         with pytest.raises(KeyError, match="mixtral"):
@@ -75,7 +75,7 @@ class TestWeightMapping:
         assert detect_architecture(config) == "mistral"
 
     def test_detect_architecture_mixtral_is_distinct(self):
-        """RIL ISS-144: Mixtral must be detected as its OWN architecture (not
+        """Mixtral must be detected as its OWN architecture (not
         collapsed into dense 'mistral'), so the loader can reject it instead
         of silently building a dense model and dropping every MoE tensor."""
         config = {"model_type": "MixtralForCausalLM"}
@@ -93,7 +93,7 @@ class TestWeightMapping:
         """Qwen2MoE / Qwen3(MoE) must NOT collapse onto the dense qwen2 or
         qwen1 mappings (which would silently drop every expert / most-model
         tensor and run from RANDOM init with warnings only). They must route
-        to "unknown" so from_pretrained refuses loudly (iss-144 / round-71
+        to "unknown" so from_pretrained refuses loudly (iss-144
         anti-garbage-load philosophy)."""
         for model_type in ("qwen2moe", "qwen2_moe", "qwen3", "qwen3moe", "qwen3_moe"):
             config = {"model_type": model_type}
@@ -154,15 +154,14 @@ class TestWeightMapping:
         assert our_config.get("window_size") is None
 
     def test_get_config_mapping_sliding_window_threaded(self):
-        """Mistral's ``sliding_window`` maps onto our ``window_size`` (RIL
-        ISS-242) instead of silently running full-context attention."""
+        """Mistral's ``sliding_window`` maps onto our ``window_size`` instead of silently running full-context attention."""
         assert get_config_mapping({"sliding_window": 4096})["window_size"] == 4096
         assert get_config_mapping({"sliding_window": 0})["window_size"] == 0
 
     def test_get_config_mapping_rope_defaults_on_for_external(self):
         """External real-Llama/Mistral checkpoints always use RoPE — their HF
         configs carry ``rope_theta`` and no ``use_rope`` key.  Mapping such a
-        config must default ``use_rope=True`` (RIL ISS-062), and a persisted
+        config must default ``use_rope=True``, and a persisted
         ``use_rope`` value (from our own save_pretrained) must be honored."""
         # typical external HF Llama/Mistral config: no use_rope key
         external = get_config_mapping(
@@ -184,7 +183,7 @@ class TestWeightMapping:
         """Real Llama/Mistral checkpoints are bias-free (``attention_bias``
         defaults to False); mapping an external config (no bias keys) must
         default all of qkv/mlp/lm_head bias off so random biases don't leak
-        in (RIL ISS-062). Persisted values from our own publisher are honored."""
+        in. Persisted values from our own publisher are honored."""
         external = get_config_mapping({"model_type": "llama", "rope_theta": 500000.0})
         assert external["qkv_bias"] is False
         assert external["mlp_bias"] is False
@@ -197,7 +196,7 @@ class TestWeightMapping:
         assert ours_biased["lm_head_bias"] is True
 
     def test_get_config_mapping_honors_hf_attention_bias_for_external(self):
-        """RIL ISS-145: external checkpoints declare attention bias under HF's
+        """external checkpoints declare attention bias under HF's
         canonical ``attention_bias`` key (Qwen-style). Mapping that key must
         turn qkv/mlp/lm_head bias ON — before this, only our repo-custom keys
         were read and every bias was silently dropped (bias-free default)."""
@@ -263,7 +262,7 @@ class TestHFLoader:
         return tmp_path
 
     def test_from_pretrained_ties_lm_head_to_embeddings_when_key_absent(self, tmp_path):
-        """RIL ISS-143: an external tied-embedding checkpoint (standard HF
+        """an external tied-embedding checkpoint (standard HF
         layout, ``tie_word_embeddings`` with NO ``lm_head.weight``) must copy
         the input embeddings into the LM head — DecoderModel always allocates
         a separate linear head, so before this fix a tied checkpoint loaded
@@ -339,7 +338,7 @@ class TestHFLoader:
         return from_pretrained, tmp_path
 
     def test_leftover_missing_weight_raises_not_warns(self, tmp_path):
-        """RIL ISS-244: a checkpoint whose tensors do NOT cover the config's
+        """a checkpoint whose tensors do NOT cover the config's
         architecture must RAISE (like the GGUF loader) instead of leaving the
         submodule at RANDOM init with a warning-only load."""
         from safetensors.torch import save_file
@@ -355,7 +354,7 @@ class TestHFLoader:
             from_pretrained(str(path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
 
     def test_leftover_unexpected_weight_raises_not_warns(self, tmp_path):
-        """RIL ISS-244: tensor keys the model does not have must not be
+        """tensor keys the model does not have must not be
         silently dropped — that is exactly how a mismatched (but config-
         supported) checkpoint used to load into garbage."""
         from safetensors.torch import save_file
@@ -371,7 +370,7 @@ class TestHFLoader:
             from_pretrained(str(path), device=str(DEFAULT_DEVICE), dtype=torch.float32)
 
     def test_benign_nonpersistent_buffer_is_tolerated(self, tmp_path):
-        """RIL ISS-414: real Llama/Mistral checkpoints ship the RoPE inverse-
+        """real Llama/Mistral checkpoints ship the RoPE inverse-
         frequency buffer (``rotary_emb.inv_freq``, an HF-persisted non-
         persistent buffer). Our model recomputes it at construction, so a
         checkpoint carrying it loads the SAME network (all real tensors intact,
@@ -413,7 +412,7 @@ class TestHFLoader:
         assert torch.equal(_forward(loaded), reference), "benign buffer must not perturb real weights"
 
     def test_windowed_model_roundtrip(self, tmp_path):
-        """RIL ISS-242: a model with sliding-window attention roundtrips
+        """a model with sliding-window attention roundtrips
         through save_pretrained/from_pretrained WITH its window — before the
         wiring, ``sliding_window`` was never persisted or mapped, so the
         reloaded model silently ran full-context attention (wrong logits on
@@ -462,7 +461,7 @@ class TestHFLoader:
         assert "qwen" in archs
 
     def test_sparse_attention_roundtrip(self, tmp_path):
-        """RIL TASK-244: a model with a sparse/streaming scheme roundtrips
+        """a model with a sparse/streaming scheme roundtrips
         through save_pretrained/from_pretrained WITH its scheme. Before the
         wiring, ``attn_sparse`` was never persisted or mapped, so the reloaded
         model silently ran dense attention (wrong logits for a sparse scheme)."""
@@ -533,7 +532,7 @@ class TestHFLoader:
         assert torch.allclose(full_out, _forward(reloaded_full, inputs), atol=1e-5)
 
     def test_mixtral_is_not_advertised_or_loadable(self, tmp_path):
-        """RIL ISS-144: Mixtral (block-sparse MoE) is NOT silently loadable.
+        """Mixtral (block-sparse MoE) is NOT silently loadable.
         Before the fix ``list_supported_architectures`` advertised it but the
         loader built a DENSE model and dropped every expert/router tensor at
         random init (garbage output, warnings only). It must be absent from

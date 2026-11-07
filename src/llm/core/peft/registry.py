@@ -50,7 +50,7 @@ PEFT_REGISTRY: Registry[PEFTMethod] = Registry("PEFTMethod")
 # Idempotency guard — :func:`ensure_methods_registered` returns
 # immediately on the second call so the bootstrap is cheap.
 _methods_registered: bool = False
-# Serializes the cold-start bootstrap (RIL ISS-119) — see
+# Serializes the cold-start bootstrap — see
 # ``generation/registry.ensure_backends_registered`` for the race.
 _method_registration_lock = threading.Lock()
 
@@ -70,7 +70,7 @@ def ensure_methods_registered() -> None:
 
     # Double-checked locking: the fast guard above is the hot path; the
     # lock serializes the cold-start race so concurrent callers re-check
-    # the flag inside the critical section (RIL ISS-119).
+    # the flag inside the critical section.
     with _method_registration_lock:
         if _methods_registered:
             return

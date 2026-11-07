@@ -47,7 +47,7 @@ def test_awq_config_rejects_zero_group_size():
 
 def test_awq_quantizer_rejects_non_divisible_group_size():
     """A group_size that does not divide in_features fails fast at quantizer
-    construction (regression for ISS-022) instead of a late packing bug.
+    construction (regression for) instead of a late packing bug.
     """
     import torch.nn as nn
 
@@ -348,8 +348,8 @@ def test_awq_search_rejects_asymmetric():
 
 def test_4bit_odd_total_count_fails_fast_per_group_and_per_channel():
     """4-bit packing stores two weights per byte over the whole tensor, so an
-    odd TOTAL weight count must fail fast for per-GROUP 4-bit too (round-81
-    quant deep-dive F3 / TASK-198; only group_size == -1 was guarded before)."""
+    odd TOTAL weight count must fail fast for per-GROUP 4-bit too (
+    quant deep-dive F3; only group_size == -1 was guarded before)."""
     from llm.quantization.awq import AWQConfig, AWQQuantizer
 
     for group_size in (3, -1):

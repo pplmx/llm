@@ -85,7 +85,7 @@ def test_perplexity_metric_accepts_list_references():
 
 
 def test_perplexity_metric_ignores_minus_100_textdataset_mask():
-    """Regression (RIL ISS-041): TextDataset marks padded label slots with
+    """Regression: TextDataset marks padded label slots with
     -100, so the LM eval metric must ignore -100. Using the tokenizer's
     pad_token_id instead made cross_entropy raise "Target -100 is out of
     bounds" on any corpus shorter than max_seq_len."""
@@ -172,7 +172,7 @@ def test_evaluation_runner_reports_perplexity(tmp_path):
 
 
 def test_perplexity_metric_all_labels_ignored_returns_inf():
-    """Regression (RIL ISS-055): when every shift-target label is the
+    """Regression: when every shift-target label is the
     ``ignore_index`` (e.g. a 1-token corpus whose shifted labels are all
     ``-100``), ``cross_entropy(..., reduction='mean', ignore_index=-100)``
     averages over zero valid elements and returns NaN. The metric's
@@ -188,7 +188,7 @@ def test_perplexity_metric_all_labels_ignored_returns_inf():
 
 
 def test_evaluation_runner_run_empty_corpus_no_crash(tmp_path):
-    """Regression (RIL ISS-045): an empty eval corpus must not crash
+    """Regression: an empty eval corpus must not crash
     ``EvaluationRunner.run`` (the training-callback path). ``predict``
     returned ``torch.cat([])`` which raises ``ValueError``; instead it must
     yield an empty prediction and the metric layer reports ``inf``."""
@@ -209,7 +209,7 @@ def test_evaluation_runner_run_empty_corpus_no_crash(tmp_path):
 
 
 def test_evaluation_runner_evaluate_empty_corpus_no_crash(tmp_path):
-    """Regression (RIL ISS-045): the tensor-coercing ``evaluate`` path must
+    """Regression: the tensor-coercing ``evaluate`` path must
     also handle an empty corpus without ``torch.stack([])`` / ``torch.cat``
     crashing."""
     corpus = tmp_path / "eval.txt"
@@ -251,7 +251,7 @@ def test_lm_task_predict_variable_length_batches(tmp_path):
 
 
 def test_lm_task_predict_clamps_to_model_capacity(tmp_path):
-    """RIL ISS-130: ``predict`` must clamp the batch to the model's OWN
+    """``predict`` must clamp the batch to the model's OWN
     context window.
 
     The old code hardcoded ``TextDataset(max_seq_len=128)`` and padded every
@@ -285,7 +285,7 @@ def test_lm_task_predict_clamps_to_model_capacity(tmp_path):
 
 
 def test_lm_task_metric_aligns_clamped_predictions(tmp_path):
-    """RIL ISS-192: with a small-context model, the clamped predictions are
+    """with a small-context model, the clamped predictions are
     narrower than the references — the perplexity metric must slice the
     labels to the prediction horizon instead of crashing with a cross_entropy
     shape error.
@@ -293,7 +293,7 @@ def test_lm_task_metric_aligns_clamped_predictions(tmp_path):
     ``predict`` truncates inputs to ``model.max_seq_len`` (32) while
     ``prepare_data`` yields references padded to the dataset ``max_seq_len``
     (128). Before the fix ``cross_entropy(logits[B,31,V], labels[B,127])``
-    raised a RuntimeError, replacing the ISS-130 positional-encoding crash
+    raised a RuntimeError, replacing the positional-encoding crash
     with a metric crash one call later."""
     corpus = tmp_path / "eval.txt"
     corpus.write_text("hello world\n" * 8, encoding="utf-8")
@@ -321,7 +321,7 @@ def test_lm_task_metric_aligns_clamped_predictions(tmp_path):
 
 
 def test_lm_task_respects_explicit_max_seq_len(tmp_path):
-    """RIL ISS-130: the caller-settable ``max_seq_len`` (not a hardcoded 128)
+    """the caller-settable ``max_seq_len`` (not a hardcoded 128)
     is passed through to the dataset truncation."""
     corpus = tmp_path / "eval.txt"
     corpus.write_text("hello world hello world\n" * 8, encoding="utf-8")
@@ -333,7 +333,7 @@ def test_lm_task_respects_explicit_max_seq_len(tmp_path):
 
 
 def test_lm_task_uses_explicit_tokenizer_not_corpus(tmp_path):
-    """RIL ISS-195: a caller-supplied tokenizer (bound to the model's vocab
+    """a caller-supplied tokenizer (bound to the model's vocab
     during training) must win over the corpus-derived one.
 
     Without this, evaluating a model trained with an arbitrary tokenizer
@@ -355,7 +355,7 @@ def test_lm_task_uses_explicit_tokenizer_not_corpus(tmp_path):
 
 
 def test_lm_task_tokenizer_defaults_to_corpus_derived(tmp_path):
-    """RIL ISS-195: without an explicit tokenizer, behavior is unchanged —
+    """without an explicit tokenizer, behavior is unchanged —
     ``LMTask`` derives a character tokenizer from the eval corpus (backward
     compatibility with all existing callers)."""
     corpus = tmp_path / "eval.txt"
@@ -368,7 +368,7 @@ def test_lm_task_tokenizer_defaults_to_corpus_derived(tmp_path):
 
 
 def test_lm_task_rejects_zero_or_negative_batch_size(tmp_path):
-    """``LMTask(batch_size=0)`` must fail fast at construction (RIL ISS-397):
+    """``LMTask(batch_size=0)`` must fail fast at construction:
     ``range(0, len, 0)`` raises a cryptic ValueError and a negative batch
     silently behaves like 1. Validate ``batch_size >= 1`` up front."""
     corpus = tmp_path / "eval.txt"

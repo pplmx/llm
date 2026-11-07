@@ -15,7 +15,7 @@ class SyntheticDataModule(SamplerMapDataModule):
         if num_samples < 1:
             # A 0-sample config produces a 0-length train set → an epoch with
             # zero batches → the engine's per-epoch averaging divides by zero
-            # (ISS-200 class). Fail fast at the boundary instead.
+            # (class). Fail fast at the boundary instead.
             raise ValueError(f"SyntheticDataModule requires training.num_samples >= 1, got {num_samples}.")
 
         # Draw all synthetic data from a DEDICATED fixed-seed generator, NOT
@@ -25,8 +25,8 @@ class SyntheticDataModule(SamplerMapDataModule):
         # DDP — each rank regressed a different target function at the same
         # DistributedSampler index, making the "global batch" incoherent and
         # the aggregate val loss (save_best / EarlyStopping /
-        # ReduceLROnPlateau) statistically meaningless (RIL ISS-134). Same
-        # class as the map_base split_train_val fix (RIL ISS-087): fixed
+        # ReduceLROnPlateau) statistically meaningless. Same
+        # class as the map_base split_train_val fix: fixed
         # seed 0 keeps synthetic runs reproducible and rank-identical.
         generator = torch.Generator()
         generator.manual_seed(0)

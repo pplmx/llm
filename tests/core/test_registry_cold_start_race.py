@@ -1,4 +1,4 @@
-"""Concurrent cold-start bootstrap must not double-register (RIL ISS-119).
+"""Concurrent cold-start bootstrap must not double-register.
 
 All three plugin registries (generation/export/peft) lazily bootstrap on
 first use. Before this fix the guard was a bare check-then-act, so two

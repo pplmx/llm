@@ -11,8 +11,8 @@ Public surface:
       types. Registered via the ``llm.export_backends`` setuptools
       entry point.
     - ``load_gguf_model`` — rebuild a model from a GGUF: either a
-      self-export (written with ``model_config=``, round-71 load-back
-      milestone) **or** a third-party llama.cpp file (round-72 foreign
+      self-export (written with ``model_config=`` load-back
+      milestone) **or** a third-party llama.cpp file (foreign
       import — ``general.architecture`` / ``llama.*`` metadata +
       llama-style tensor names mapped into llm state-dict naming).
     - :data:`EXPORT_REGISTRY` and :func:`export_model` — the

@@ -121,7 +121,7 @@ class TestExportPolicy:
 
     def test_reader_only_quantize_enum_raises_cleanly(self, small_model, tmp_path):
         """A reader-supported-but-not-exportable type must raise GGUFError,
-        not crash with a KeyError in the file_type mapping (round-75 review
+        not crash with a KeyError in the file_type mapping (review
         HIGH regression)."""
         # Q4_1 / Q5_0 are still reader-only (all five K-quants are exportable
         # since their write-path milestones).
@@ -139,7 +139,7 @@ class TestExportPolicy:
         assert path.exists()
 
     def test_non_block_quantizable_shape_warns(self, small_model, tmp_path, caplog):
-        """Regression (RIL TASK-316/ISS-353): a requested Q4_0 export whose 2-D
+        """Regression: a requested Q4_0 export whose 2-D
         tensor's last dim is NOT a multiple of 32 silently downgraded that
         tensor to F16 (debug log only) while ``general.file_type`` advertised
         MOSTLY_Q4_0 — a caller comparing file_type vs sizes misreads precision.
@@ -157,7 +157,7 @@ class TestExportPolicy:
         assert any("kept as F16" in m and "block-quantizable" in m for m in warnings), warnings
 
         # The all-quantizable fixture: 2-D weights quantize, only 1-D biases
-        # stay F16 (convention) -> no degrade warning (RIL TASK-316).
+        # stay F16 (convention) -> no degrade warning.
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="llm.export.gguf.exporter"):
             export_to_gguf(small_model, tmp_path / "ok.gguf", quantize="q4_0")

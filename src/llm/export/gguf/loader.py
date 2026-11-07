@@ -8,11 +8,11 @@ Two file kinds are supported:
 
 * **Self-exports** — files written by :func:`export_to_gguf` with
   ``model_config=`` carry the full architecture config as
-  ``general.llm_model_config``; the exact model is rebuilt from it (round 71).
+  ``general.llm_model_config``; the exact model is rebuilt from it.
 * **Foreign llama.cpp files** — a GGUF with no config blob but standard
   llama.cpp metadata (``general.architecture`` + ``{arch}.*`` keys) and
   llama-style tensor names (``token_embd`` / ``blk.N.attn_*`` /
-  ``blk.N.ffn_*`` / ``output_norm`` / ``output``) is imported (round 72/73):
+  ``blk.N.ffn_*`` / ``output_norm`` / ``output``) is imported (/73):
   the metadata rebuilds a :class:`ModelConfig` and
   :func:`llm.compat.weight_mapping.convert_gguf_weights` maps the tensor
   names into our state-dict naming (same q/k/v fusion and tied-head
@@ -67,7 +67,7 @@ class _SizedAttention(Protocol):
 # (token_embd / blk.{i}.attn_* / blk.{i}.ffn_* / output_norm / output) and
 # identical ``{arch}.*`` metadata keys. Everything else (mixtral, qwen2moe,
 # qwen3moe, gemma, phi3, ...) is refused loudly rather than importing a model
-# every weight of which lands at random init (RIL ISS-220 philosophy).
+# every weight of which lands at random init (philosophy).
 #
 # ``llama2``/``llama3`` are defensive aliases: modern gguf writes the plain
 # ``llama`` arch for all of Llama 1/2/3, but old converters declared the
@@ -136,7 +136,7 @@ def _load_self_export(
 
     # ``norm_eps`` is not a ModelConfig field (pydantic would silently drop
     # it), and the exporter persists the model's LIVE eps separately as
-    # ``general.llm_norm_eps`` (CHG-209 era / RIL ISS-241, mirroring the
+    # ``general.llm_norm_eps`` (era, mirroring the
     # foreign path's ``_rms_norm_eps`` override below). Thread it through the
     # factory override so a self-export with a non-default eps round-trips
     # faithfully instead of silently resetting to 1e-5.
@@ -177,7 +177,7 @@ def _load_foreign_gguf(
         raise
     except (ValueError, TypeError, ZeroDivisionError) as exc:
         # Badly-typed / contradictory metadata must surface as a GGUF error
-        # naming the file, not a raw ValueError traceback (round-73 review).
+        # naming the file, not a raw ValueError traceback (review).
         raise GGUFError(f"{reader.path}: invalid llama.cpp metadata: {exc}") from exc
     if not isinstance(model, DecoderModel):
         raise GGUFError(f"{reader.path}: imported a {type(model).__name__}, expected a dense DecoderModel")
@@ -217,7 +217,7 @@ def _load_foreign_gguf(
 
     # Tied embeddings (llama.cpp omits ``output.weight`` when the head is tied
     # to the embeddings): copy the embedding tensor into the LM head, mirroring
-    # ``from_pretrained``'s standard HF tying semantics (RIL ISS-143).
+    # ``from_pretrained``'s standard HF tying semantics.
     if "lm_head.weight" in missing and "embedding_layer.token_embeddings.weight" in converted:
         embedding_weight = converted["embedding_layer.token_embeddings.weight"]
         if tuple(embedding_weight.shape) == tuple(model.lm_head.weight.shape):
@@ -251,7 +251,7 @@ def _gguf_key_prefix(metadata: dict[str, Any]) -> str:
     exact ``general.architecture`` value — a Mistral file carries
     ``mistral.embedding_length``, a Qwen2 ``qwen2.*``, a Qwen3 ``qwen3.*``, so
     the prefix must come from the FILE, not from the mapped ``model_type``
-    (round-73 review HIGH). Dense Llama-family files virtually always declare
+    (review HIGH). Dense Llama-family files virtually always declare
     the plain ``llama`` arch; a file declaring a llama-family alias (old
     converter's ``llama2``/``llama3``) while still writing ``llama.*`` keys
     falls back to the ``llama`` prefix.
@@ -340,7 +340,7 @@ def _gguf_metadata_to_model_config(
     # RoPE scaling (YaRN / linear / ...): our RoPE has no scaled-frequency
     # support, so a scaled file would import with the base freq_base and be
     # positionally wrong beyond the unscaled context. Refuse loudly rather
-    # than ship a silently-wrong model (RIL ISS-220 philosophy; round-73
+    # than ship a silently-wrong model (philosophy
     # review MEDIUM — warn-and-import is a silent failure path).
     scaling = metadata.get(key("rope.scaling.type"))
     if scaling not in (None, "none"):
@@ -353,7 +353,7 @@ def _gguf_metadata_to_model_config(
     # Dense Llama-style GGUFs are always pre-LN SwiGLU + RMSNorm + RoPE and
     # bias-free (attention/MLP/head). These are the model-defining flags that
     # would otherwise silently rebuild as LayerNorm / gelu-GLU / biased MHA with
-    # every such tensor dropped (RIL ISS-056/062/129).
+    # every such tensor dropped.
     return (
         ModelConfig(
             vocab_size=vocab_size,

@@ -50,12 +50,12 @@ class DistributedManager:
     def setup(self, global_rank: int, world_size: int, local_rank: int | None = None):
         """Initialise the process group for ``global_rank`` of ``world_size``.
 
-        ``global_rank`` is the identity across all nodes — a multi-node worker
-        on node ``node_rank`` gets ``node_rank * local_world_size + local``
-        (RIL TASK-191 / ISS-229) so every node's workers rendezvous into one
-        group without rank collisions.  ``local_rank`` is only used to select
-        the CUDA device index (the per-GPU index on this node); when None it
-        falls back to ``global_rank`` (single-node, where they coincide).
+                ``global_rank`` is the identity across all nodes — a multi-node worker
+                on node ``node_rank`` gets ``node_rank * local_world_size + local``
+        so every node's workers rendezvous into one
+                group without rank collisions.  ``local_rank`` is only used to select
+                the CUDA device index (the per-GPU index on this node); when None it
+                falls back to ``global_rank`` (single-node, where they coincide).
         """
         torch.manual_seed(42 + global_rank)  # Seed for CPU operations
 
@@ -66,7 +66,7 @@ class DistributedManager:
             # NOT already set them — unconditionally overwriting a launcher's
             # correct multi-node address with the config default
             # (127.0.0.1:12355) makes every worker rank rendezvous with node 0
-            # loopback and hang (RIL ISS-187).
+            # loopback and hang.
             os.environ.setdefault("MASTER_ADDR", self.config.master_addr)
             os.environ.setdefault("MASTER_PORT", self.config.master_port)
             # Ensure backend is NCCL if GPUs are used for DDP
@@ -89,7 +89,7 @@ class DistributedManager:
             # Only set device and CUDA seed if CUDA is available and being used.
             # Prefer the GPU with the most free VRAM (shared selection), falling
             # back to the historical ``device_rank % device_count`` mapping when
-            # no device meets the free-memory floor (DEC-094 / RIL TASK-266).
+            # no device meets the free-memory floor.
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
                 device_rank = local_rank if local_rank is not None else global_rank
                 cuda_idx = select_cuda_index(device_rank)
@@ -161,7 +161,7 @@ class DistributedManager:
         A rank that crashed and already tore down leaves every other rank
         blocking in a plain ``barrier()`` forever (the 'finally' teardown of a
         dead worker also never arrives), which is how a single-rank failure
-        wedges the whole job under NCCL (RIL TASK-195 / ISS-232).
+        wedges the whole job under NCCL.
         ``dist.monitored_barrier`` raises when not all ranks arrive within
         ``timeout``; we log it instead of re-raising so an unwinding worker's
         original exception is not masked, and the caller proceeds to cleanup.
@@ -175,10 +175,9 @@ class DistributedManager:
                 # ``dist.monitored_barrier`` is GLOO-only; on NCCL/XCCL it
                 # raises immediately, which broke teardown for every multi-rank
                 # nccl run (a rank that finished training would fail its own
-                # finally-block barrier and wedge the job — RIL TASK-200 / this
+                # finally-block barrier and wedge the job / this
                 # TP milestone). Plain ``barrier()`` here is still bounded by
-                # the process group's ``collective_timeout_seconds`` (RIL
-                # TASK-195), so a crashed sibling surfaces as a timeout instead
+                # the process group's ``collective_timeout_seconds``, so a crashed sibling surfaces as a timeout instead
                 # of an infinite block.
                 dist.barrier()
         except Exception as exc:  # noqa: BLE001 - teardown is best-effort

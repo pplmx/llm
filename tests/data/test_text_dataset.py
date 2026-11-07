@@ -260,7 +260,7 @@ if __name__ == "__main__":
 
 def test_text_dataset_skips_undecodable_rows(tmp_path, sample_text_tokenizer):
     """A single un-encodable row must not fail the whole dataset; it is
-    skipped with a warning (round-76 TASK-189 — same guarantee as the
+    skipped with a warning (— same guarantee as the
     streaming path)."""
     file_path = tmp_path / "mixed.txt"
     file_path.write_text(

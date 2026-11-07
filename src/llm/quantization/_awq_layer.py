@@ -80,7 +80,7 @@ class AWQQuantizedLinear(nn.Module):
         dtype — native ``nn.Linear`` semantics — so post-quant fp16/bf16
         casts (serving engine default, or selective quantization over a half
         base) don't mix dtypes inside ``F.linear`` or emit fp32 into
-        half-precision residual linears (RIL ISS-191). An fp32 model is
+        half-precision residual linears. An fp32 model is
         unchanged.
 
         Args:
@@ -115,7 +115,7 @@ class AWQQuantizedLinear(nn.Module):
             w_fp = w_int_signed * scales_expanded
 
         # Compute in fp32 for accuracy, return in the layer's effective
-        # dtype (RIL ISS-191) — see GPTQQuantizedLinear for the same
+        # dtype — see GPTQQuantizedLinear for the same
         # reasoning; the output must follow the surrounding model's dtype
         # (fp32 model stays fp32; a post-quant fp16/bf16 cast produces
         # half output), not always be fp32.

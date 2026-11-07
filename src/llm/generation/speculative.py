@@ -137,11 +137,11 @@ def _verify_speculative_tokens(
         relevant = target_logits[0, context_len - 1 : context_len + gamma, :]
     # Mask any token id the tokenizer cannot decode (the model vocab may
     # exceed the tokenizer's — padding etc.), so an accepted/bonus token
-    # sampled below is always decodable by the caller (RIL ISS-125). Must
+    # sampled below is always decodable by the caller. Must
     # be applied BEFORE the penalty/acceptance math so the scored
     # distribution still matches what the sampler draws from.
     mask_undecodable_logits(relevant, tokenizer_vocab_size)
-    # Also mask the PAD sentinel (round-71 speculative fix): the eager
+    # Also mask the PAD sentinel (speculative fix): the eager
     # backend never emits PAD (``_mask_pad_logits`` at every decode step), so
     # the speculative backend must exclude it from the acceptance scoring and
     # from the correction/bonus sampling too — otherwise a padded-vocab model
@@ -161,7 +161,7 @@ def _verify_speculative_tokens(
     # ``sample_next_token`` applies top-k/top-p filtering on top of
     # temperature scaling, so scoring the acceptance ratio against a raw
     # full-vocab softmax would make the accepted-token set diverge from
-    # the eager backend's output (RIL ISS-99) — e.g. it could accept a
+    # the eager backend's output — e.g. it could accept a
     # token top-k would have masked. Use the exact filtered distribution
     # via ``sampling_probs`` (same helper as ``sample_next_token``) for
     # both the target and the draft.
@@ -327,7 +327,7 @@ def speculative_generate(
     draft.eval()
     device = next(target.parameters()).device
 
-    # Same context-window handshake as the eager backend (RIL ISS-124): a
+    # Same context-window handshake as the eager backend: a
     # budget that cannot fit is rejected up front, and an over-long prompt is
     # truncated to fit. The speculative backend keeps rebuilding the full
     # context tensor each round and forwarding it through the learned
@@ -341,7 +341,7 @@ def speculative_generate(
         # MID-ROUND once the rebuilt context exceeds the draft's
         # positional-encoding table (opaque ``IndexError: index out of
         # range in self``), unlike the eager backend which truncates up
-        # front (RIL ISS-388). Fail fast with the fix spelled out.
+        # front. Fail fast with the fix spelled out.
         raise ValueError(
             f"draft.max_seq_len ({draft.max_seq_len}) must be >= target.max_seq_len "
             f"({max_seq_len}); speculative decoding rebuilds the full context "
@@ -349,7 +349,7 @@ def speculative_generate(
         )
     prompt_ids = tokenizer.encode(prompt)
     if not prompt_ids:
-        # Mirror the eager backend's round-71 empty-prompt fix (RIL ISS-387):
+        # Mirror the eager backend's empty-prompt fix:
         # an empty prompt decodes to zero tokens, and the very first scoring
         # slice ``target_logits[0, context_len - 1 : ...]`` with ``[-1:]`` on
         # a 0-length row raises an opaque IndexError. Reject it explicitly.
@@ -360,7 +360,7 @@ def speculative_generate(
 
     generated_ids: list[int] = list(prompt_ids)
     # Normalize to a tuple — HF tokenizers can expose ``eos_token_id`` as a
-    # list, and an int-vs-list equality never fires (RIL list-eos regression).
+    # list, and an int-vs-list equality never fires (list-eos regression).
     eos_ids = normalize_eos_ids(getattr(tokenizer, "eos_token_id", None))
 
     # Stop-sequence tracking via a small suffix buffer (same strategy
@@ -384,7 +384,7 @@ def speculative_generate(
             next_logits = logits[0, -1, :]
             mask_undecodable_logits(next_logits, getattr(tokenizer, "vocab_size", None))
             # Mask the PAD sentinel so the draft never proposes it as a
-            # candidate (round-71 speculative fix; eager masks every step).
+            # candidate (speculative fix; eager masks every step).
             _mask_pad_logits(
                 next_logits,
                 getattr(tokenizer, "pad_token_id", None),
@@ -429,7 +429,7 @@ def speculative_generate(
 
         # 3. Emit accepted tokens + bonus (or correction). The EOS token is
         # never part of the yielded output — halt on it *before* decoding and
-        # appending, matching the eager backend (RIL ISS-96/ISS-98) which
+        # appending, matching the eager backend which
         # stops on EOS without emitting the EOS token's decoded text.
         for i in range(accept_count):
             tok = draft_tokens[i]

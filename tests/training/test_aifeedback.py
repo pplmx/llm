@@ -1,4 +1,4 @@
-"""Tests for AI-feedback preference labeling -> DPO (TASK-231 / ROADMAP 11.4)."""
+"""Tests for AI-feedback preference labeling -> DPO (/ ROADMAP 11.4)."""
 
 from __future__ import annotations
 
@@ -119,8 +119,8 @@ def test_aifeedback_dpo_prefers_judge_chosen():
 
 def test_aifeedback_datamodule_rejects_out_of_range_target():
     """An out-of-range ``TargetTokenJudge.target_token`` writes an invalid id
-    into the last position → IndexError deep in the forward. Must fail at setup
-    (RIL ISS-337)."""
+    into the last position → IndexError deep in the forward. Must fail at setup.
+    """
     from llm.data.modules.aifeedback import AIFeedbackDataModule
     from llm.training.rlhf.aifeedback import TargetTokenJudge
 
@@ -132,8 +132,8 @@ def test_aifeedback_datamodule_rejects_out_of_range_target():
 
 def test_aifeedback_datamodule_requires_target_token_judge():
     """A generic judge can tie every row (ties resolve to 'a'), silently
-    defeating the module's separable-pairs contract — refuse at construction
-    (RIL ISS-337)."""
+    defeating the module's separable-pairs contract — refuse at construction.
+    """
     from llm.data.modules.aifeedback import AIFeedbackDataModule
     from llm.training.rlhf.aifeedback import PreferenceJudge
 
@@ -147,7 +147,7 @@ def test_aifeedback_datamodule_requires_target_token_judge():
 
 
 def test_aifeedback_empty_train_sampler_raises():
-    """RIL TASK-323: AIFeedbackDataModule overrides train_dataloader with
+    """AIFeedbackDataModule overrides train_dataloader with
     drop_last=True and must carry the same loud empty-epoch guard as the base
     SamplerMapDataModule — a world_size > len(train_dataset) run must not
     silently train on nothing."""

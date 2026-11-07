@@ -1,4 +1,4 @@
-"""Tests for QAT fake quantization (RIL TASK-218 / DEC-054)."""
+"""Tests for QAT fake quantization."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def test_fake_quant_roundtrip_error_is_bounded():
 
 
 def test_fake_quant_linear_uses_static_weight_scale():
-    """TASK-220: a per-channel static (calibration) weight scale is honored."""
+    """: a per-channel static (calibration) weight scale is honored."""
     torch.manual_seed(0)
     layer = FakeQuantLinear(16, 8, bits=8, quant_activation=False)
     w = torch.randn(8, 16) * 2
@@ -113,7 +113,7 @@ def test_fake_quant_linear_uses_static_weight_scale():
 
 
 def test_fake_quant_linear_floor_cap_clamps_activation():
-    """TASK-220: activation floor-cap clamps negatives before quantization."""
+    """: activation floor-cap clamps negatives before quantization."""
     torch.manual_seed(2)
     layer_cap = FakeQuantLinear(8, 4, bits=8, quant_activation=True, floor_cap=0.0)
     layer_none = FakeQuantLinear(8, 4, bits=8, quant_activation=True, floor_cap=None)
@@ -130,7 +130,7 @@ def test_fake_quant_linear_floor_cap_clamps_activation():
 
 
 def test_fake_quant_linear_learnable_scale_trains():
-    """TASK-220: a learnable static scale receives a gradient (trainable)."""
+    """: a learnable static scale receives a gradient (trainable)."""
     torch.manual_seed(0)
     w = torch.ones(2, 4) * 10.0
     static = w.detach().abs().amax(dim=1) / 127.0  # ~0.0787 per row

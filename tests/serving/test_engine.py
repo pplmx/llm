@@ -45,7 +45,7 @@ def test_slot_allocator_allocate_and_free_round_trip():
 def test_engine_serves_rope_model(device, mock_tokenizer):
     """A ``use_rope=True`` model must be servable by the batch engine.
 
-    Regression (RIL ISS-112): ``_rope_positions`` evaluated the int-only
+    Regression: ``_rope_positions`` evaluated the int-only
     ``start_pos == 0`` guard before the tensor type check, so the engine's
     ``[B, S]`` ``position_ids`` tensor raised ``Boolean value of Tensor with
     more than one element is ambiguous`` on the very first step — every RoPE
@@ -193,7 +193,7 @@ def test_engine_paged_attention_uses_configured_pool(tiny_model, device, mock_to
 
 
 def test_engine_paged_attention_prefix_cache_does_not_short_circuit(tiny_model, device, mock_tokenizer):
-    """Regression (RIL ISS-068): with ``use_paged_attention=True`` AND
+    """Regression: with ``use_paged_attention=True`` AND
     ``enable_prefix_cache=True`` the prefix-cache fast path must NOT
     short-circuit to a 1-token prefill.
 
@@ -541,7 +541,7 @@ def test_generate_request_with_stop_truncates_output(tiny_model, device, mock_to
 
 def test_engine_excludes_eos_text_from_output(tiny_model, device, mock_tokenizer):
     """The EOS token's decoded text must NOT appear in the output (parity
-    with the eager/speculative backends — RIL ISS-96/ISS-98).
+    with the eager/speculative backends).
 
     ``_emit_tokens`` used to decode and yield the EOS id like any ordinary
     token (``_lock_step_post`` appends it, then marks the seq FINISHED), so a
@@ -579,7 +579,7 @@ def test_engine_excludes_eos_text_from_output(tiny_model, device, mock_tokenizer
 def test_engine_top_p_one_generates_without_error(tiny_model, device, mock_tokenizer):
     """``top_p=1.0`` is the OpenAI client default ("1.0 means no truncation")
     and the schema documents it as such — it must flow through the REAL
-    batch-engine generation path without erroring (RIL ISS-401). Regression:
+    batch-engine generation path without erroring. Regression:
     ``sampling_probs`` rejected ``top_p >= 1.0``, so this exact payload
     killed the shared step (and, pre-fix, the whole batch) with a 4xx-class
     ValueError."""
@@ -606,7 +606,7 @@ def test_engine_top_p_one_generates_without_error(tiny_model, device, mock_token
 
 def test_engine_isolates_per_row_sampling_failure(tiny_model, device, mock_tokenizer, monkeypatch):
     """A per-row sampling failure must fail ONLY that request, not the whole
-    shared batch (RIL ISS-405). One request whose sampling blows up sharing a
+    shared batch. One request whose sampling blows up sharing a
     step with a healthy request: the malformed row is FINISHED and its slot
     freed while the healthy row keeps generating. (Schema validation already
     blocks the known bad params at the HTTP boundary; this pins the engine's
@@ -657,7 +657,7 @@ def test_engine_isolates_per_row_sampling_failure(tiny_model, device, mock_token
 
 
 def test_stop_terminated_request_frees_kv_slot(tiny_model, device, mock_tokenizer):
-    """Regression (RIL ISS-044): a request that ends via a stop-sequence match
+    """Regression: a request that ends via a stop-sequence match
     must release its KV slot (dense + prefix + paged), otherwise the pool
     leaks a slot per stop-terminated request and eventually 503s on
     ``No free slots available in KV cache``.
@@ -696,7 +696,7 @@ def test_stop_terminated_request_frees_kv_slot(tiny_model, device, mock_tokenize
 
 
 def test_stop_terminated_request_frees_paged_blocks(tiny_model, device, mock_tokenizer):
-    """Regression (RIL ISS-044): on the paged path a stop-terminated request
+    """Regression: on the paged path a stop-terminated request
     must also return its KV blocks to the paged allocator."""
     tiny_model.eval()
 
@@ -731,7 +731,7 @@ def test_stop_terminated_request_frees_paged_blocks(tiny_model, device, mock_tok
 
 
 def test_stream_request_does_not_double_yield_tail_buffer(tiny_model, device, mock_tokenizer):
-    """Regression (RIL ISS-054): when a sequence is already finished at the
+    """Regression: when a sequence is already finished at the
     top of ``stream_request``'s loop (e.g. a concurrent step completed it)
     and a stop is configured, the drained tail buffer must be emitted exactly
     once — not again by the post-loop ``yield buffer``.
@@ -768,7 +768,7 @@ def test_stream_request_does_not_double_yield_tail_buffer(tiny_model, device, mo
 
 
 def test_abandoned_stream_request_releases_slot_and_sequence(tiny_model, device, mock_tokenizer):
-    """Regression (RIL ISS-105): abandoning the streaming generator mid-run
+    """Regression: abandoning the streaming generator mid-run
     (consumer disconnect → ``gen.close()`` / GC) must release the KV slot and
     drop the sequence.
 
@@ -806,7 +806,7 @@ def test_abandoned_stream_request_releases_slot_and_sequence(tiny_model, device,
 
 
 def test_abandoned_stream_removes_under_step_lock(tiny_model, device, mock_tokenizer):
-    """Regression (RIL ISS-117): the abandoned-generator cleanup mutates the
+    """Regression: the abandoned-generator cleanup mutates the
     scheduler's live ``running`` list, so ``scheduler.remove`` must run under
     the engine's ``_step_lock`` — otherwise it races with ``_lock_step_pre``
     iterating that list in a concurrent ``step()`` (a mid-iteration pop
@@ -843,7 +843,7 @@ def test_abandoned_stream_removes_under_step_lock(tiny_model, device, mock_token
 
 
 def test_persistent_forward_failure_does_not_livelock_engine(tiny_model, device, mock_tokenizer):
-    """Regression (RIL ISS-051): a request whose forward persistently fails
+    """Regression: a request whose forward persistently fails
     (OOM / bad token id / shape mismatch) must be dropped, not re-scheduled
     forever.
 
@@ -1098,7 +1098,7 @@ def test_prefix_cache_entry_invalidated_on_slot_reuse(tiny_model, device, mock_t
 
 
 def test_engine_paged_prefix_replay_reuses_blocks_and_matches_prefill(tiny_model, device, mock_tokenizer):
-    """TASK-065: on the paged path with ``enable_prefix_cache=True``, a new
+    """: on the paged path with ``enable_prefix_cache=True``, a new
     request whose prompt exactly matches a cached prefix must STAGE the cached
     blocks (shared, refcounted) instead of re-prefilling them, and generate
     output identical to a full prefill.
@@ -1214,7 +1214,7 @@ def test_engine_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device, mock
 
 
 def test_engine_rejects_duplicate_request_id_with_different_content(tiny_model, device, mock_tokenizer):
-    """RIL ISS-123/F3: a *distinct* request reusing an active request_id must
+    """a *distinct* request reusing an active request_id must
     be rejected at add_request.
 
     The slot allocator keys KV slots by request_id, so two different requests
@@ -1252,7 +1252,7 @@ def test_engine_rejects_duplicate_request_id_with_different_content(tiny_model, 
 
 
 def test_engine_allows_double_add_of_same_logical_request(tiny_model, device, mock_tokenizer):
-    """RIL ISS-123/F3 guard must NOT break the double-add contract: the
+    """guard must NOT break the double-add contract: the
     engine re-adds the SAME request inside ``generate_request`` ->
     ``stream_request``, and the reap loop explicitly removes every copy.
     An id re-add with *identical* content is the same logical request and must
@@ -1293,7 +1293,7 @@ def test_engine_paged_rejects_prompt_that_exceeds_max_seq_len(tiny_model, device
 
 
 def test_engine_folds_sparse_attention_into_run_attn_mask(device, mock_tokenizer):
-    """RIL TASK-246: the batch engine folds a served model's ``attn_sparse``
+    """the batch engine folds a served model's ``attn_sparse``
     scheme (sink + window) into ``run_attn_mask`` so the batched/paged serving
     path actually constrains keys instead of silently running dense — the
     decoder's own auto-mask never runs because the engine always supplies an
@@ -1372,7 +1372,7 @@ def test_engine_folds_sparse_attention_into_run_attn_mask(device, mock_tokenizer
 
 
 def test_engine_caches_sparse_pattern_mask(device, mock_tokenizer):
-    """RIL TASK-247: the engine builds the sparse pattern mask once and reuses it
+    """the engine builds the sparse pattern mask once and reuses it
     across steps (cached on scheme + k_len), instead of recomputing a
     ``[k_len, k_len]`` bool mask on every decode step. Also covers the invalidation
     rules (scheme change, config resize) and the dense (no-scheme) case."""

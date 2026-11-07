@@ -40,7 +40,7 @@ class LayerQuantPolicy:
         sym:        True (symmetric) or False (asymmetric)
         act_order:  True (sort columns by diag(H) descending) or False
 
-    The last three fields are the FP8 knobs (RIL TASK-203). FP8's knobs are
+    The last three fields are the FP8 knobs. FP8's knobs are
     NOT expressible in the shared fields above (an FP8 layer has no bits /
     group_size / symmetry in the int-quant sense), so the policy model is
     extended instead of abusing ``bits``:
@@ -124,7 +124,7 @@ def resolve_layer_policies[T](
     """Build layer-name -> effective config map from policies.
 
     Generic over the base config type (T). Works for GPTQConfig and AWQ /
-    SmoothQuantConfig today, and for Fp8Config since TASK-203 extended
+    SmoothQuantConfig today, and for Fp8Config since extended
     LayerQuantPolicy with the FP8 knobs. Each override field is applied only
     when the base config dataclass actually has that field — an FP8 override
     on an int algorithm (or an int override on FP8) is rejected with a clear
@@ -188,7 +188,7 @@ def resolve_layer_policies[T](
         # Every optional override, in policy-declaration order. Only fields
         # the base config actually HAS are applied; a non-None field the base
         # lacks is a config/model mismatch and must fail loudly, never be a
-        # silently-ignored option (TASK-203).
+        # silently-ignored option.
         for key, value in (
             ("bits", policy.bits),
             ("group_size", policy.group_size),
@@ -210,7 +210,7 @@ def resolve_layer_policies[T](
         # Strip recursion-vector field if base config has one (e.g.
         # GPTQConfig.layer_policies). Effective configs must NOT carry the
         # policies that produced them, or infinite recursion ensues.
-        # We explicitly set it to () (not just remove from overrides) so
+        # We explicitly set it to (not just remove from overrides) so
         # `dataclasses.replace` resets it instead of preserving the base's
         # value.
         if hasattr(base_config, "layer_policies"):

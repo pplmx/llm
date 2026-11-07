@@ -156,7 +156,7 @@ class TestQuantizedLinear:
         assert quant_linear.weight_scale.shape == (20,)
 
     def test_per_channel_rejects_scalar_scale(self):
-        """RIL ISS-135: per_channel=True with a scalar scale silently became
+        """per_channel=True with a scalar scale silently became
         PER-TENSOR dequantization (a 0-dim as_tensor broadcasts to every row,
         all rows share one scale). The caller must provide a per-row tensor;
         a scalar is rejected instead of silently mis-scaling."""
@@ -166,7 +166,7 @@ class TestQuantizedLinear:
             QuantizedLinear.from_linear(linear, config, scale=3.14)
 
     def test_per_channel_accepts_per_row_scale_tensor(self):
-        """RIL ISS-135: a per-row scale tensor (one per output channel) is
+        """a per-row scale tensor (one per output channel) is
         honored — each row keeps its own scale in dequantization."""
         config = QuantConfig(per_channel=True)
         linear = nn.Linear(10, 20)
@@ -192,7 +192,7 @@ class TestQuantizedLinear:
         assert quant_linear.weight_scale.shape == (1,)
 
     def test_forward_accepts_fp16_bf16_input(self):
-        """fp16/bf16 inputs must not crash (regression for ISS-018)."""
+        """fp16/bf16 inputs must not crash (regression for)."""
         linear = nn.Linear(10, 20)
         quant_linear = QuantizedLinear.from_linear(linear)
 
@@ -205,7 +205,7 @@ class TestQuantizedLinear:
 
     def test_forward_after_fp16_cast_matches(self):
         """Post-quant fp16 cast (serving engine default) must not crash and
-        must feed half-precision downstream linears (RIL TASK-196 / ISS-236,
+        must feed half-precision downstream linears (
         quant deep-dive F1).
 
         ``model.to(device, dtype=torch.float16)`` converts the fp32 ``bias``
@@ -286,7 +286,7 @@ class TestQuantizeModel:
 
     def test_compute_model_size_counts_gptq_quantized_layers(self):
         """compute_model_size must not report all-zero stats for a GPTQ-
-        quantized model (regression for ISS-020).
+        quantized model (regression for).
 
         GPTQ replaces ``nn.Linear`` with ``GPTQQuantizedLinear``; before the
         fix the stats loop only recognised simple-PTQ ``QuantizedLinear`` and
@@ -319,7 +319,7 @@ class TestQuantizeModel:
 
     def test_compute_model_size_counts_true_weights_for_4bit(self):
         """``total_params`` must count true weights, not packed bytes, for
-        4-bit GPTQ/AWQ (regression for ISS-94).
+        4-bit GPTQ/AWQ (regression for).
 
         ``weight_packed`` is an int8 tensor holding TWO int4 weights per byte,
         so ``packed.numel()`` undercounts the parameter count by 2x for
@@ -388,7 +388,7 @@ class TestQuantizeModel:
         assert rel < rel_sym
 
     def test_from_linear_rejects_4bit_no_packing(self):
-        """Regression (RIL ISS-197): simple-PTQ ``bits=4`` silently stored
+        """Regression: simple-PTQ ``bits=4`` silently stored
         the 4-bit grid as int8 — no packing, no memory saving, while
         advertising a 4-bit model. It must fail loud and point at the packed
         GPTQ/AWQ paths instead of pretending compression happened."""

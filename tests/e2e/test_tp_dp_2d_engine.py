@@ -1,4 +1,4 @@
-"""TP + data-parallel 2D engine e2e (RIL TASK-202).
+"""TP + data-parallel 2D engine e2e.
 
 Trains a tiny SFT model on ``world_size`` GPUs through the REAL
 ``TrainingEngine`` with ``parallel_strategy='tp'`` and ``tp_size`` less than
@@ -66,7 +66,7 @@ ENGINE_2D_MIN_FREE_BYTES = 1 * 1024**3
 ENGINE_2D_JOIN_TIMEOUT_S = 480
 # Bounded per-collective timeout for the spawn workers' process groups (see
 # the init_process_group call sites). Mirrors DistributedConfig's
-# collective_timeout_seconds for the harness's hand-rolled PGs (RIL TASK-305).
+# collective_timeout_seconds for the harness's hand-rolled PGs.
 PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=60)
 
 
@@ -92,20 +92,20 @@ def _release_parent_cuda_caches() -> None:
 def _build_config(ctx: dict, *, backend: str, parallel_strategy: str, tp_size: int, flash: bool = False) -> Config:
     """Shared tiny-SFT config builder (identical model/loss schedule across runs).
 
-    ``max_seq_len`` must comfortably exceed the verbatim Alpaca-style prompt
-    (146 tokens) — at 32/64 the response tokens fall outside the truncation
-    window, every label becomes -100, CrossEntropyLoss returns NaN, the SFT
-    task's NaN guard returns a constant 0.0 loss, and the run silently trains
-    NOTHING (the old e2e was vacuous; surfaced while hard-coding the TP+DP
-    milestone).
+       ``max_seq_len`` must comfortably exceed the verbatim Alpaca-style prompt
+       (146 tokens) — at 32/64 the response tokens fall outside the truncation
+       window, every label becomes -100, CrossEntropyLoss returns NaN, the SFT
+       task's NaN guard returns a constant 0.0 loss, and the run silently trains
+       NOTHING (the old e2e was vacuous; surfaced while hard-coding the TP+DP
+       milestone).
 
-    ``flash=True`` switches the attention backend to ``flash_attn`` (the
-    TASK-204 TP-scope extension) and forces ``use_amp=True``: the flash kernel
-    requires half precision, and the engine resolves this to bf16 autocast on
-    supported hardware. ``mla=True`` switches to ``MultiLatentAttention`` (the
-    TASK-206 TP-scope slice); MLA runs through the sdpa functional in fp32, so
-    no AMP is needed. ``moe=True`` enables MoE expert parallelism (TASK-207) on
-    the dense MLP blocks (4 experts / 2 ranks, top-2).
+       ``flash=True`` switches the attention backend to ``flash_attn`` (the
+    TP-scope extension) and forces ``use_amp=True``: the flash kernel
+       requires half precision, and the engine resolves this to bf16 autocast on
+       supported hardware. ``mla=True`` switches to ``MultiLatentAttention`` (the
+    TP-scope slice); MLA runs through the sdpa functional in fp32, so
+       no AMP is needed. ``moe=True`` enables MoE expert parallelism on
+       the dense MLP blocks (4 experts / 2 ranks, top-2).
     """
     if flash and ctx.get("mla", False):
         raise ValueError("flash and mla are mutually exclusive attention backend overrides")
@@ -172,7 +172,7 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
             backend="nccl",
             rank=rank,
             world_size=world_size,
-            # Bound every collective (RIL TASK-305): the library path uses
+            # Bound every collective: the library path uses
             # DistributedConfig.collective_timeout_seconds, but these test
             # spawn workers call init_process_group directly — an unbounded
             # PG left survivors blocking ~forever on the next collective when
@@ -295,7 +295,7 @@ def _run_engine_2d(
                 if process.is_alive():
                     process.kill()
             # Diagnose the stall instead of reporting a blind timeout: the
-            # observed failure (RIL TASK-305) was all ranks finishing
+            # observed failure was all ranks finishing
             # training, then one dying mid-collective and the survivors
             # blocking until this join fired. Knowing WHO is alive and WHO
             # produced results pinpoints the dead rank.
@@ -324,7 +324,7 @@ def test_engine_tp_dp_2d_four_gpu(tmp_path):
 @pytest.mark.slow
 @pytest.mark.skipif(not FLASH_ATTN_AVAILABLE, reason="flash-attn not installed")
 def test_engine_tp_dp_2d_flash_attn_four_gpu(tmp_path):
-    """Real-engine TP+DP 2D with the flash-attention backend (TASK-204 TP-scope
+    """Real-engine TP+DP 2D with the flash-attention backend (TP-scope
     extension): the transformed FlashAttention must train through the REAL loop
     under bf16 AMP autocast and stay bit-identical across DP groups."""
     _run_engine_2d(tmp_path, world_size=4, tp_size=2, flash=True)
@@ -333,18 +333,18 @@ def test_engine_tp_dp_2d_flash_attn_four_gpu(tmp_path):
 @pytest.mark.need_gpu(4)
 @pytest.mark.slow
 def test_engine_tp_dp_2d_mla_four_gpu(tmp_path):
-    """Real-engine TP+DP 2D with the MultiLatentAttention backend (TASK-206,
-    TASK-204 mla leg): the block-interleaved K/V column slice must train through
-    the REAL loop (fp32, no AMP needed for the sdpa functional) and stay
-    bit-identical across DP groups — including the replicated ``latents``
-    parameter averaged by ``allreduce_dp_grads``."""
+    """Real-engine TP+DP 2D with the MultiLatentAttention backend (,
+    mla leg): the block-interleaved K/V column slice must train through
+       the REAL loop (fp32, no AMP needed for the sdpa functional) and stay
+       bit-identical across DP groups — including the replicated ``latents``
+       parameter averaged by ``allreduce_dp_grads``."""
     _run_engine_2d(tmp_path, world_size=4, tp_size=2, mla=True)
 
 
 @pytest.mark.need_gpu(4)
 @pytest.mark.slow
 def test_engine_tp_dp_2d_moe_four_gpu(tmp_path):
-    """Real-engine TP+DP 2D with MoE expert parallelism on (TASK-207): the EP
+    """Real-engine TP+DP 2D with MoE expert parallelism on: the EP
     slice (replicated gate + rank-local experts + the step-boundary
     ``allreduce_dp_grads`` expert-skip / gate-SUM) must train through the REAL
     loop with dead-expert-tolerant routing and stay bit-identical across DP
@@ -409,7 +409,7 @@ def _single_rank_avg_loss(ctx: dict) -> float:
 
 @pytest.mark.quick
 def test_pure_tp_reports_true_metric_loss_not_divided_by_world(tmp_path):
-    """Regression for RIL ISS-252: pure TP (every rank trains the SAME data)
+    """Regression for pure TP (every rank trains the SAME data)
     must report the true epoch loss, not the single-rank loss / world_size.
 
     The engine metrics reducer divides by the number of DISTINCT data shards
@@ -464,6 +464,5 @@ def test_pure_tp_reports_true_metric_loss_not_divided_by_world(tmp_path):
 
     ref = _single_rank_avg_loss(ctx)
     assert avg_0 == pytest.approx(ref, rel=1e-2), (
-        f"pure-TP reported epoch loss {avg_0} != single-rank reference {ref} "
-        f"(the ISS-252 /world bug would report ~{ref / 2})"
+        f"pure-TP reported epoch loss {avg_0} != single-rank reference {ref} (the /world bug would report ~{ref / 2})"
     )

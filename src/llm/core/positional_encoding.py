@@ -81,7 +81,7 @@ class PositionalEncoding(nn.Module):
             # persisted copy is dead weight). Storing it persistent bloated
             # every checkpoint and exported artifact (ONNX/TorchScript/GGUF
             # embed it as a constant) and got Q4_0-quantized by the GGUF
-            # exporter under a name llama.cpp doesn't recognize (RIL ISS-146).
+            # exporter under a name llama.cpp doesn't recognize.
             self.register_buffer("pe", pe, persistent=False)
 
     def forward(self, x: torch.Tensor, start_pos: int = 0, position_ids: torch.Tensor | None = None) -> torch.Tensor:

@@ -1,4 +1,4 @@
-"""Tests for the ``llm prune`` CLI (weight-pruning, RIL TASK-224).
+"""Tests for the ``llm prune`` CLI (weight-pruning).
 
 Mirrors ``tests/cli/test_quantize_cli.py`` (CliRunner) plus one real
 round-trip: build a tiny ``DecoderModel`` blob, prune it via the CLI, and
@@ -75,7 +75,7 @@ def test_cli_refuses_clobber(runner: CliRunner, tmp_path: Path):
 
 
 def test_cli_warns_when_seed_ignored_for_magnitude(runner: CliRunner, tmp_path: Path):
-    """RIL ISS-335: a --seed passed with --method magnitude does nothing; the
+    """a --seed passed with --method magnitude does nothing; the
     CLI must surface that instead of silently pretending the run is
     reproducible."""
     model = _tiny_decoder(tmp_path / "m.pt")

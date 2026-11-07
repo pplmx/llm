@@ -85,7 +85,7 @@ class MultiHeadAttention(nn.Module):
             # RoPE rotates Q and K by head position (real Llama/Mistral inject
             # position here, not via additive embeddings). ``max_seq_len`` is
             # required so the cos/sin table is sized to the model's context
-            # (RIL ISS-062 — core.rope had zero callers before this wiring).
+            # (core.rope had zero callers before this wiring).
             if max_seq_len is None:
                 raise ValueError("use_rope=True requires max_seq_len for the RoPE cos/sin table")
             self.rope = RotaryPositionEmbedding(
@@ -146,7 +146,7 @@ class MultiHeadAttention(nn.Module):
             # tensor through as ``start_pos`` — return it unchanged. The
             # ``== 0`` early-return below is int-only; evaluating it on a
             # multi-element tensor raises a Boolean-ambiguity error, so the
-            # tensor branch MUST come first (RIL ISS-112).
+            # tensor branch MUST come first.
             return start_pos
         if start_pos == 0:
             return None
@@ -233,7 +233,7 @@ class MultiHeadAttention(nn.Module):
 
         # Rotary position embedding (real Llama/Mistral). Applies to Q/K
         # BEFORE they are written to the KV cache, so the cache stores the
-        # rotated keys (matching HF Llama cache semantics — RIL ISS-062).
+        # rotated keys (matching HF Llama cache semantics).
         if self.use_rope:
             positions = self._rope_positions(batch_size, seq_len, start_pos, device=q.device)
             q, k = self.rope(q, k, positions)
@@ -243,7 +243,7 @@ class MultiHeadAttention(nn.Module):
             if self.alibi is not None:
                 # ALiBi is only wired into the linear (non-paged) path in this
                 # milestone; paged attention has no additive-bias channel, so
-                # reject loudly instead of silently dropping the PE (RIL —
+                # reject loudly instead of silently dropping the PE (
                 # ALiBi milestone).
                 raise NotImplementedError(
                     "ALiBi (use_alibi=True) is not supported with paged attention; "
@@ -255,7 +255,7 @@ class MultiHeadAttention(nn.Module):
                 # paged/continuous-batching serving silently ignored the prefix
                 # and ran as though the model was never prefix-tuned (silent
                 # wrong answer). Reject loudly, matching FlashAttention's
-                # existing refusal (RIL round-71 paged-prefix fix).
+                # existing refusal (paged-prefix fix).
                 raise NotImplementedError(
                     "prefix tuning (prefix_kv) is not supported with paged attention; "
                     "use the linear KV-cache path (kv_caches) instead."
@@ -323,7 +323,7 @@ class MultiHeadAttention(nn.Module):
         # 3. Attention computation
         # Use common SDPA wrapper to handle mask polarity and window size
         #
-        # ALiBi bias (RIL — ALiBi milestone): a square [1, N, Sk, Sk] bias
+        # ALiBi bias (ALiBi milestone): a square [1, N, Sk, Sk] bias
         # reflects key column j at absolute position j. The queries sit at the
         # LAST ``Sq`` absolute positions (prefill with no cache: 0..Sq-1; with
         # KV-cache decode, the current tokens are at ``Sk-Sq..Sk-1``), and
@@ -347,7 +347,7 @@ class MultiHeadAttention(nn.Module):
             window_size=self.window_size,
             # The prefix was prepended to K/V above (k_len = prefix_len + q_len
             # in prefill), so an unshifted top-left causal mask hides every real
-            # key. Shift the causal diagonal by the prefix length (round-71
+            # key. Shift the causal diagonal by the prefix length (
             # prefix-causal fix).
             prefix_len=prefix_k.shape[2] if prefix_kv is not None else 0,
         )  # Output shape: [B, N, S, D]
@@ -475,7 +475,7 @@ class MultiHeadAttention(nn.Module):
             block_size=block_size,
             # Per-row real query-token counts so the kernel only applies the
             # causal overlay to prefill rows, not to decode rows whose single
-            # query is left-padded into a larger batch-max row (RIL ISS-048).
+            # query is left-padded into a larger batch-max row.
             query_lens=lengths,
         )  # [B, N_q, S, D]
 

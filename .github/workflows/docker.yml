@@ -39,7 +39,7 @@ jobs:
                         ghcr.io/pplmx/llm:${GITHUB_REF_NAME:1}
             -
                 name: Test it before Push
-                # The fail-closed startup guard (RIL ISS-164) refuses to boot on
+                # The fail-closed startup guard refuses to boot on
                 # 0.0.0.0 without an api_key, so pass one; then probe the open
                 # /health endpoint to confirm each image actually serves.
                 run: |

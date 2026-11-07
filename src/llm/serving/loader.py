@@ -66,7 +66,7 @@ def load_training_checkpoint(path: str | Path) -> TrainingCheckpoint:
     # not routed through the legacy path (which would emit a misleading
     # "run llm migrate-ckpt" DeprecationWarning for a quantized artifact).
     #
-    # Security (RIL ISS-170): the probe loads with ``weights_only=True`` so an
+    # Security: the probe loads with ``weights_only=True`` so an
     # untrusted ``.pt`` cannot execute arbitrary ``__reduce__`` code at serve
     # time. The framework's own module classes are allowlisted (see
     # ``_register_framework_safe_globals``), so legitimate quantized blobs load
@@ -111,7 +111,7 @@ def infer_vocab_size(state_dict: dict[str, torch.Tensor]) -> int:
     unreachable — a config-less **tied-embedding** checkpoint (no
     ``lm_head.weight``, per ``llm.compat.weight_mapping``) wrongly raised
     ``Cannot infer vocab_size`` even though the embedding tensor was present
-    and loadable (RIL ISS-167).
+    and loadable.
     """
     if "lm_head.weight" in state_dict:
         return int(state_dict["lm_head.weight"].shape[0])
@@ -138,8 +138,7 @@ def infer_legacy_architecture(state_dict: dict[str, torch.Tensor]) -> dict[str, 
     """Recover architecture flags a checkpoint carries in its own key naming.
 
     A config-less legacy checkpoint has no ``model_config`` sidecar, so we
-    must read the architecture back from the state-dict key pattern (RIL
-    ISS-416). Without this, ``_build_decoder`` hardcoded ``use_glu=False`` and
+    must read the architecture back from the state-dict key pattern. Without this, ``_build_decoder`` hardcoded ``use_glu=False`` and
     dropped every other flag, so a GLU checkpoint's ``gate_proj`` weights were
     silenced at random init with only a warning, and RMS-norm / bias-bearing
     models served with the wrong norm.
@@ -222,7 +221,7 @@ def _build_decoder(
 
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     if missing:
-        # Loud, like the hf_loader (RIL ISS-244 / ISS-416): a config-less
+        # Loud, like the hf_loader: a config-less
         # checkpoint whose tensors do NOT cover the built model leaves the
         # uncovered params at RANDOM init — serving garbage with a warning is
         # a silent misconfiguration (e.g. a GLU checkpoint served as a non-GLU
@@ -292,7 +291,7 @@ def _serving_target_device(device: str) -> torch.device:
 
 
 def _compile_if_requested(model: DecoderModel, config: ServingConfig) -> Any:
-    """torch.compile the served model when ``compile_model=True`` (RIL TASK-328).
+    """torch.compile the served model when ``compile_model=True``.
 
     Only effective on CUDA (a CPU compile is a slowdown for a tiny model, not
     an acceleration), and only for plain ``DecoderModel`` instances — the

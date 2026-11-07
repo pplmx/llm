@@ -11,7 +11,7 @@ This class exists only so the registry can name the SFT entry point
 ``SFTTask`` stays a stable import for users and tests. It is deliberately
 a **pure alias** — no overrides.
 
-RIL ISS-339: the previous ``train_step``/``validation_step``/``build_criterion``
+ the previous ``train_step``/``validation_step``/``build_criterion``
 copies silently diverged from the parent:
 
 - they threaded the batch ``attention_mask`` into ``model(input_ids,

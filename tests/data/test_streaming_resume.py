@@ -53,7 +53,7 @@ def test_streaming_dataset_resumes_from_saved_state(tmp_path, line_tokenizer):
 
 
 def test_streaming_dataset_inmemory_dedup_resume_does_not_repeat_consumed_tail(tmp_path, line_tokenizer):
-    """Regression (RIL ISS-088): with in-memory dedup (the default — no
+    """Regression: with in-memory dedup (the default — no
     seen-hashes file), the streaming resume cursor counts *survivors* of the
     dedup source. The ``iter_texts(skip=...)`` of a fresh dedup source must
     therefore skip survivors too — otherwise a resumed pass re-processes the
@@ -182,7 +182,7 @@ def test_streaming_module_rejects_world_size_mismatch(tmp_path, monkeypatch, lin
 
 
 def test_streaming_module_world_size_guard_order_independent(tmp_path, monkeypatch, line_tokenizer):
-    """Regression (RIL ISS-204): the world-size resume guard must not depend
+    """Regression: the world-size resume guard must not depend
     on call order. The old guard compared ``saved_world_size`` only when
     ``self._world_size`` had ALREADY been set — i.e. only when
     ``train_dataloader`` happened to run before ``load_checkpoint_state``.

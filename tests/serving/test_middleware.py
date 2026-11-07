@@ -69,7 +69,7 @@ def test_echoes_request_id_even_on_5xx(app_with_middleware):
     assert response.status_code == 500
 
 
-# --- Request body size limit (RIL ISS-171) ---
+# --- Request body size limit ---
 
 
 async def _echo_body(request: Request):

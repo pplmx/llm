@@ -1,4 +1,4 @@
-"""A standalone multimodal decoder model that fuses modal embeddings (TASK-227).
+"""A standalone multimodal decoder model that fuses modal embeddings.
 
 Per ADR-013, this is composed WITHOUT patching :class:`DecoderModel`. A
 :class:`MultimodalModel` wraps a plain ``DecoderModel`` and injects the
@@ -44,7 +44,7 @@ class ModalityFusion(nn.Module):
             raise ValueError(
                 f"modal_embeds last dim {modal_embeds.shape[-1]} != fusion modal_dim "
                 f"{self.modal_dim}; the encoder's output embed_dim must match the "
-                "fusion projection (RIL ISS-354)"
+                "fusion projection "
             )
         if modal_embeds.dim() == 2:
             modal_embeds = modal_embeds.unsqueeze(1)  # (B, 1, modal_dim)
@@ -66,7 +66,7 @@ class MultimodalModel(nn.Module):
 
     The modal prefix width is the *encoder's* ``num_tokens`` (intrinsic to the
     input geometry), not a constructor choice: the old ``num_modal_tokens``
-    param was stored and never read by forward/generate (RIL TASK-311/ISS-349)
+    param was stored and never read by forward/generate
     and is removed.
     """
 
@@ -84,8 +84,7 @@ class MultimodalModel(nn.Module):
             # The in-forward encoder's output dimension is the source of truth
             # for the fusion projection: its embeds are fed straight into
             # ``ModalityFusion``, so an explicit ``modal_dim`` that contradicts
-            # it is a misconfiguration that would only explode per-batch (RIL
-            # TASK-317/ISS-354).
+            # it is a misconfiguration that would only explode per-batch.
             enc_dim = int(getattr(encoder, "embed_dim", self.hidden_size))
             if modal_dim is not None and modal_dim != enc_dim:
                 raise ValueError(

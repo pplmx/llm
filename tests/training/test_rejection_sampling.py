@@ -1,4 +1,4 @@
-"""Tests for rejection sampling (TASK-230 / ROADMAP 11.4)."""
+"""Tests for rejection sampling (/ ROADMAP 11.4)."""
 
 from __future__ import annotations
 
@@ -123,7 +123,7 @@ def test_rejection_sample_datamodule_rejects_bad_mode():
 def test_rejection_sample_datamodule_refuses_empty_keep():
     """When no response clears the filter, the kept TensorDataset would be
     length 0 → an empty epoch → the engine averages over zero batches. The
-    module must fail at setup with a clear error (RIL ISS-336)."""
+    module must fail at setup with a clear error."""
     from llm.data.modules.rejection_sample import RejectionSampleDataModule
 
     config = _config(num_samples=8)
@@ -133,14 +133,14 @@ def test_rejection_sample_datamodule_refuses_empty_keep():
 
 
 def test_rejection_sample_dataloader_never_empty_under_large_world_size():
-    """ISS-423 family: RejectionSampleDataModule uses drop_last=False, so a
+    """family: RejectionSampleDataModule uses drop_last=False, so a
     run with world_size > len(train_dataset) still yields a non-empty epoch.
 
     The prompt/aifeedback/grpo modules use drop_last=True and thus carry the
     loud empty-sampler guard; rejection_sample is safe *by construction*
     (drop_last=False, DistributedSampler pads), so it correctly has no guard.
     This pins that invariant — a future 'simplification' to drop_last=True
-    would silently reintroduce the ISS-423 empty-epoch zero-loss hazard.
+    would silently reintroduce the empty-epoch zero-loss hazard.
     """
     from llm.data.modules.rejection_sample import RejectionSampleDataModule
 

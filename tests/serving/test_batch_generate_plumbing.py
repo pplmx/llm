@@ -228,11 +228,11 @@ def test_eager_backend_batch_generate_forwards_stop(tiny_model, device, stub_tok
 
 
 def test_batch_generate_response_token_count_is_tokens_not_chars(client_with_mock):
-    """Regression (RIL ISS-344): the /batch_generate response's ``token_count``
+    """Regression: the /batch_generate response's ``token_count``
     must report the tokenizer's token count, not ``len(text)`` — the pre-fix
     code used a char-count proxy that over-counts for HF/BPE tokenizers and
     disagreed with the same route's metric and the sibling /generate route
-    (the ISS-225 fix removed that proxy from /generate but missed this field).
+    (the fix removed that proxy from /generate but missed this field).
     """
     client, mock = client_with_mock
 

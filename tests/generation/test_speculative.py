@@ -89,7 +89,7 @@ def test_speculative_matches_eager_greedy_when_draft_equals_target():
 
 @pytest.mark.parametrize(("draft_seed", "max_tokens"), [(123, 1), (99, 4), (5, 8)])
 def test_speculative_greedy_matches_eager_with_nonmatching_draft(draft_seed, max_tokens):
-    """RIL TASK-251: greedy speculative == greedy eager even when the (random)
+    """greedy speculative == greedy eager even when the (random)
     draft never matches the target's argmax — this forces the rejection /
     correction path (the existing draft==target test only covers accept-all,
     so this guards the fallback branch against regressions)."""
@@ -106,7 +106,7 @@ def test_speculative_greedy_matches_eager_with_nonmatching_draft(draft_seed, max
 
 
 def test_speculative_masks_undecodable_tail_vocab():
-    """RIL ISS-125 on the speculative backend: draft candidates AND the
+    """on the speculative backend: draft candidates AND the
     target-verified bonus must be bounded to the tokenizer's decodeable
     vocab. A padded-vocab model (model vocab > tokenizer vocab) used to
     emit an id in the tail, which ``tokenizer.decode`` rejected with
@@ -165,7 +165,7 @@ def test_speculative_masks_undecodable_tail_vocab():
 
 
 def test_speculative_never_emits_pad_token():
-    """RIL round-71 speculative fix: the PAD sentinel must be masked from the
+    """speculative fix: the PAD sentinel must be masked from the
     draft candidates AND the target acceptance/correction scoring, exactly like
     the eager backend does at every decode step.
 
@@ -227,7 +227,7 @@ def _make_small_ctx_decoder(seed: int = 0) -> torch.nn.Module:
 
 
 def test_speculative_rejects_impossible_context_budget():
-    """RIL ISS-124: like the eager backend, speculative must reject a
+    """like the eager backend, speculative must reject a
     ``max_new_tokens`` budget that cannot fit the context window up front.
 
     ``max_new_tokens >= max_seq_len`` leaves no room for even a single prompt
@@ -256,7 +256,7 @@ def test_speculative_rejects_impossible_context_budget():
 def test_speculative_empty_prompt_rejected():
     """An empty prompt (encode -> []) must raise a clear ValueError, not an
     opaque IndexError from the first scoring slice with a 0-length context
-    (RIL ISS-387; eager fixed this at round-71)."""
+    (eager fixed this at)."""
     target = _make_tiny_decoder(seed=0)
     draft = _make_tiny_decoder(seed=0)
 
@@ -283,8 +283,8 @@ def test_speculative_empty_prompt_rejected():
 
 
 def test_speculative_rejects_shorter_context_draft():
-    """A draft with a shorter ``max_seq_len`` than the target must fail fast
-    (RIL ISS-388), not crash mid-round with an opaque positional-encoding
+    """A draft with a shorter ``max_seq_len`` than the target must fail fast,
+    not crash mid-round with an opaque positional-encoding
     IndexError once the rebuilt context overflows the draft's table."""
     from tests.support.models import decoder_model_kwargs
 
@@ -335,7 +335,7 @@ class _OrdTokenizer:
 
 
 def test_speculative_truncates_long_prompt_like_eager():
-    """RIL ISS-124: a prompt that exceeds ``max_seq_len`` is truncated to fit
+    """a prompt that exceeds ``max_seq_len`` is truncated to fit
     (same shrink the eager backend applies), not left to crash the learned-PE
     table. Parity: on the same inputs, speculative and eager emit the same
     decoded tokens.
@@ -432,7 +432,7 @@ def test_speculative_stops_on_eos():
 def test_speculative_eos_text_excluded_from_output():
     """The EOS token's decoded text must NOT appear in the output.
 
-    Mismatches the eager backend (ISS-98): the speculative backend used to
+    Mismatches the eager backend: the speculative backend used to
     append the accepted EOS token to ``generated_ids`` and yield its decoded
     chunk before halting, while eager halts *before* decoding the EOS token.
     With a tokenizer whose EOS decodes to a real character the two backends
@@ -564,7 +564,7 @@ def test_speculative_stochastic_rejection_preserves_target_distribution():
 
 def test_speculative_top_k_acceptance_uses_filtered_distributions():
     """The acceptance ratio must be scored against the **filtered** target/draft
-    distributions the samplers actually draw from (ISS-99).
+    distributions the samplers actually draw from.
 
     With ``top_k=1`` the draft proposes its argmax token (token 1, q_log[1]=3.0)
     with probability 1, and the target's filtered distribution is a one-hot on

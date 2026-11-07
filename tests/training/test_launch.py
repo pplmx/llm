@@ -1,4 +1,4 @@
-"""Multi-node launcher rank assignment (RIL TASK-191 / ISS-229).
+"""Multi-node launcher rank assignment.
 
 The documented multi-node flow (``NUM_NODES=2 NODE_RANK=... GPUS_PER_NODE=4``)
 was structurally broken: every node spawned ``world_size`` local workers with
@@ -47,10 +47,10 @@ def test_setup_inits_group_with_global_rank_and_device_with_local_rank():
         patch("llm.training.core.distributed.torch.cuda.is_available", return_value=True),
         patch("llm.training.core.distributed.torch.cuda.device_count", return_value=8),
         # ``select_cuda_index`` reads free VRAM to prefer the fattest GPU
-        # (round-138 device select). Simulate "all devices equally free" so
+        # (device select). Simulate "all devices equally free" so
         # the mapping collapses to the historical ``rank % device_count``
         # identity — otherwise the expectation depends on this host's live
-        # GPU utilisation (RIL TASK-293/ISS-322).
+        # GPU utilisation.
         patch("llm.training.core.device_select._free_bytes", return_value=10 * 1024**3),
         patch("llm.training.core.distributed.torch.manual_seed"),
     ):
@@ -97,7 +97,7 @@ def test_setup_defaults_local_rank_to_global_rank():
 
 def test_collective_timeout_default_and_bounds():
     """The group timeout ships conservative by default and is tunable; a
-    non-positive value is rejected at config time (RIL TASK-195 / ISS-232)."""
+    non-positive value is rejected at config time."""
     assert DistributedConfig().collective_timeout_seconds == 1800
     assert DistributedConfig(collective_timeout_seconds=5).collective_timeout_seconds == 5
     with pytest.raises(ValidationError):
@@ -134,7 +134,7 @@ def _timeout_worker(rank, world_size, out_path):
 @pytest.mark.heavy  # torch.multiprocessing spawn: pathological (>300s) on macOS
 def test_single_rank_failure_does_not_hang_forever(tmp_path):
     """A rank that never arrives at a collective must surface as a bounded
-    timeout error, not an infinite hang (RIL TASK-195 / ISS-232)."""
+    timeout error, not an infinite hang."""
     import torch.multiprocessing as mp
 
     out0 = tmp_path / "r0.txt"

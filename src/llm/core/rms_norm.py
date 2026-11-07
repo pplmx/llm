@@ -73,7 +73,7 @@ class RMSNorm(nn.Module):
 
         # 计算均方值 (不减去均值的方差)
         # mean(x^2)
-        # RIL ISS-384: ``x.pow(2)`` in host dtype overflows past |x| > ~256 for
+        # ``x.pow(2)`` in host dtype overflows past |x| > ~256 for
         # fp16 (max 65504) and ~3.4e38/bf16 is even lower in practice, turning
         # the mean-square inf and collapsing the layer to all-zeros. Accumulate
         # in fp32 (standard RMSNorm practice) and keep the RMS in fp32: the

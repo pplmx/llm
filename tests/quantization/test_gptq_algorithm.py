@@ -65,7 +65,7 @@ def test_gptq_config_rejects_zero_group_size():
 
 def test_gptq_quantizer_rejects_non_divisible_group_size():
     """A group_size that does not divide in_features fails fast with a clear
-    error at quantizer construction (regression for ISS-022), instead of a
+    error at quantizer construction (regression for), instead of a
     late ``repeat_interleave`` broadcast crash during packing.
     """
     import torch.nn as nn
@@ -462,7 +462,7 @@ def test_quantize_linear_with_gptq_adjusts_oversized_group_size():
 
 def test_act_order_group_scales_aligned_with_original_columns():
     """act_order + grouped quantization must return per-column scales aligned
-    to the original (un-permuted) q_out columns (regression for ISS-019).
+    to the original (un-permuted) q_out columns (regression for).
 
     The quantizer permutes weight columns by Hessian saliency, quantizes in
     that order, then restores ``q_out`` to the original column order. The
@@ -513,7 +513,7 @@ def test_act_order_group_scales_aligned_with_original_columns():
 def test_4bit_odd_total_count_fails_fast_per_group_and_per_channel():
     """4-bit packing stores two weights per byte over the whole tensor, so an
     odd TOTAL weight count must fail fast for per-GROUP 4-bit too — previously
-    only group_size == -1 was guarded (round-81 quant deep-dive F3 / TASK-198)
+    only group_size == -1 was guarded (quant deep-dive F3)
     and the group path crashed later in ``_pack_4bit`` after Hessian compute."""
     from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
 

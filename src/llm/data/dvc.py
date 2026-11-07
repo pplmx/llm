@@ -169,8 +169,8 @@ def init_dvc(
     """
     repo_root = Path(repo_root).resolve()
     if not DVC_AVAILABLE:
-        # Same no-op+warning degradation as dvc_add / dvc_pull (round-78
-        # TASK-192 / ISS-230): previously init_dvc shelled out anyway and
+        # Same no-op+warning degradation as dvc_add / dvc_pull (
+        # ): previously init_dvc shelled out anyway and
         # raised FileNotFoundError when the dvc CLI was absent.
         logger.warning(
             "init_dvc(%s) skipped: DVC is not installed. Install with `uv sync --extra dvc` to enable data versioning.",

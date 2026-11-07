@@ -1,4 +1,4 @@
-"""GGUF K-quant + legacy-quant dequantization (import path) — round 75 milestone.
+"""GGUF K-quant + legacy-quant dequantization (import path) milestone.
 
 The GGUF reader (rounds 71-73) imports foreign llama.cpp files but only
 understood F32 / F16 / Q4_0 / Q8_0; every real downloadable llama.cpp GGUF is
@@ -355,7 +355,7 @@ def test_reader_dequantizes_q4_k_and_q6_k(tmp_path):
 
 def test_reader_empty_kquant_tensor_returns_empty(tmp_path):
     """A (0, N) K-quant tensor reads back as an empty array, not an error
-    (round-75 review LOW: previously raised a raw ValueError from the block
+    (review LOW: previously raised a raw ValueError from the block
     parser)."""
     data = _build_raw_gguf([("w_q4k", GGMLQuantizationType.Q4_K, (0, 256), b"")])
     path = tmp_path / "empty_q4k.gguf"
@@ -495,7 +495,7 @@ def test_foreign_import_kquant_within_quantizer_error(tmp_path, kquant):
 
     Norms and embeddings stay F16 (exactly how llama.cpp stores them); only
     the matmul weights are block-quantized — the realistic Q4_K_M/Q5_K_M/Q6_K
-    layout that round-72's import milestone could not previously read.
+    layout that 's import milestone could not previously read.
     """
     cfg = _build_llama_cfg()
     ensure_builtins_registered()

@@ -263,13 +263,13 @@ class TestSimpleCharacterTokenizerEndToEnd:
             tokenizer.encode("a")
 
     def test_encode_undeclared_marker_falls_through(self, basic_tokenizer):
-        """Regression (RIL ISS-214): encoding an EOS/BOS marker when the
+        """Regression: encoding an EOS/BOS marker when the
         tokenizer never declared it must NOT raise a bare ``KeyError:
         '<EOS>'`` with no context.
 
         It falls through to the char-wise path: literal composition when the
         marker chars are in the vocab, or the contextual vocab error
-        otherwise. Declared markers keep the single-token fast path (ISS-152).
+        otherwise. Declared markers keep the single-token fast path.
         """
         import string
 
@@ -287,7 +287,7 @@ class TestSimpleCharacterTokenizerEndToEnd:
         assert "<EOS>" not in tokenizer.stoi
         assert tokenizer.encode("<EOS>") == [tokenizer.stoi[c] for c in "<EOS>"]
 
-        # A declared marker still maps to its single token id (ISS-152).
+        # A declared marker still maps to its single token id.
         declared = SimpleCharacterTokenizer(["<EOS>"])
         assert declared.encode("<EOS>") == [declared.eos_token_id]
 

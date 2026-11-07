@@ -1,4 +1,4 @@
-"""QAT integration tests (RIL TASK-219 / DEC-054)."""
+"""QAT integration tests."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def test_training_config_rejects_invalid_qat_bits():
 
 
 def test_qat_engine_trains_with_finite_loss():
-    """Single-rank QAT engine run stays finite (TASK-219 integration).
+    """Single-rank QAT engine run stays finite (integration).
 
     The dummy data has RANDOM targets, so loss sits near ln(vocab) rather than
     decreasing; the fake-quant STE training loop must still run three epochs

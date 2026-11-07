@@ -1,6 +1,6 @@
 """A CPU-verifiable multimodal DataModule pairing text + an auxiliary modality.
 
-Spike (RIL TASK-226 / DEC-058): establishes the *batch + data-module contract*
+Spike: establishes the *batch + data-module contract*
 for multimodal training without touching :class:`DecoderModel`. Each synthetic
 sample pairs token ids (with next-token labels) with a raw auxiliary-modality
 feature vector; the registry's encoder projects that feature into embeddings,
@@ -171,7 +171,7 @@ class MultimodalDataModule(SamplerMapDataModule):
         if self.asr_vocab > vocab:
             raise ValueError(f"asr_vocab={self.asr_vocab} exceeds model vocab_size={vocab}")
         # The codec maps token ``t`` to freq bin ``2 + (t % (n_mels - 2))``
-        # (RIL TASK-310): the top valid token is ``n_mels - 2``, which lands on
+        #: the top valid token is ``n_mels - 2``, which lands on
         # bin 2 — but ``spectrogram_to_tokens`` recovers id ``freq - 2`` == 0,
         # NOT ``n_mels - 2``. So the exact-inversion bound is ``asr_vocab <=
         # n_mels - 2``; permitting ``n_mels - 1`` silently corrupted the label
@@ -222,7 +222,7 @@ class MultimodalDataModule(SamplerMapDataModule):
         val_num = max(1, num // 10)
 
         # Fixed seed for reproducible, rank-identical synthetic data (mirrors
-        # the SyntheticDataModule RIL ISS-134 pattern — never the global RNG).
+        # the SyntheticDataModule pattern — never the global RNG).
         gen = torch.Generator()
         gen.manual_seed(0)
         if self.audio_asr:
@@ -231,7 +231,7 @@ class MultimodalDataModule(SamplerMapDataModule):
             # Generate ``num + val_num`` samples so the validation split is
             # DISJOINT from training (previously val_dataset trained on the
             # training set, which silently made val metrics equal train metrics
-            # — deep-dive TASK-228).
+            # — deep-dive).
             rows = [
                 (torch.arange(vocab).repeat(seq_len // vocab + 1)[:seq_len] + i).fmod(vocab).long()
                 for i in range(num + val_num)
@@ -303,7 +303,7 @@ class MultimodalDataModule(SamplerMapDataModule):
 
     def val_dataloader(self, rank: int, world_size: int) -> tuple[DataLoader | None, DistributedSampler | None]:
         # Must serve the disjoint ``val_dataset`` split, not ``train_dataset``
-        # (RIL ISS-342): the base ``SamplerMapDataModule.val_dataloader`` does,
+        #: the base ``SamplerMapDataModule.val_dataloader`` does,
         # but a copy of the train path here silently made every validation epoch
         # score the TRAINING split — val_loss/val_ppl equalled train and
         # checkpoint selection / EarlyStopping were meaningless.

@@ -53,7 +53,7 @@ class ParallelBranchMLP(nn.Module):
 
 
 def test_quantize_model_gptq_partial_forward_failure_uniform_fallback():
-    """RIL ISS-136: a forward failure mid-calibration must not leave the
+    """a forward failure mid-calibration must not leave the
     per-layer capture counts diverged (a layer whose hook never fired holds
     ZERO captures and later crashes with 'No calibration data accumulated
     (n_samples=0)' AFTER earlier layers were already replaced).
@@ -121,7 +121,7 @@ def test_gptq_gpu_quantization_keeps_buffers_on_device():
 
     # Use the fattest usable GPU (repo ``DEFAULT_DEVICE`` convention) rather
     # than literal ``"cuda"`` (cuda:0), which can be an occupied / low-VRAM
-    # device on a shared host and makes the test flaky (RIL ISS-046).
+    # device on a shared host and makes the test flaky.
     device = str(DEFAULT_DEVICE) if all_gpu_devices() else "cpu"
 
     model = DecoderModel(vocab_size=1024, hidden_size=64, num_layers=2, num_heads=4, max_seq_len=128)
@@ -440,7 +440,7 @@ def test_quantize_model_gptq_falls_back_when_forward_skips_target_layers():
 
 
 def test_calibration_consumes_all_batches(monkeypatch):
-    """Regression for ISS-021: every calibration batch must feed each layer's
+    """Regression for: every calibration batch must feed each layer's
     Hessian, not just the first one.
 
     quantize_model_gptq captured per-layer inputs via a model forward using
@@ -473,7 +473,7 @@ def test_calibration_consumes_all_batches(monkeypatch):
 class _ForwardAlwaysRaises(nn.Module):
     """A model whose forward fails on every calibration batch — the
     total-failure case that previously fed raw model inputs (token ids) as
-    layer activations with only a DEBUG log (RIL TASK-197 / ISS-237)."""
+    layer activations with only a DEBUG log."""
 
     def __init__(self):
         super().__init__()

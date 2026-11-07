@@ -116,7 +116,7 @@ class TestTensorDataSize:
             tensor_data_size(GGMLQuantizationType.Q4_0, (3, 10))
 
     def test_q4_1_and_k_quants_supported_by_reader(self):
-        # The reader dequantizes the legacy Q4_1 and the K-quant family (round 75).
+        # The reader dequantizes the legacy Q4_1 and the K-quant family.
         assert tensor_data_size(GGMLQuantizationType.Q4_1, (3, 64)) == (192 // 32) * 20
         assert tensor_data_size(GGMLQuantizationType.Q4_K, (3, 256)) == 3 * 144
         assert tensor_data_size(GGMLQuantizationType.Q6_K, (3, 256)) == 3 * 210

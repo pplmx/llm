@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # ``llm serve`` is a Typer command so ``--help`` works like ``llm train``
-# (RIL: the script used to point at the bare :func:`main`, which ignores
+# (the script used to point at the bare :func:`main`, which ignores
 # argv — ``llm serve --help`` silently launched uvicorn and held a CUDA
 # device). The flags default to ``None`` so the full ``ServingConfig`` /
 # ``LLM_SERVING_*`` env resolution in :func:`main` still applies when the

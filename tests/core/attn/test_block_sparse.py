@@ -1,4 +1,4 @@
-"""Tests for Block Sparse Attention mask builder (TASK-237 / ROADMAP 15.2)."""
+"""Tests for Block Sparse Attention mask builder (/ ROADMAP 15.2)."""
 
 from __future__ import annotations
 

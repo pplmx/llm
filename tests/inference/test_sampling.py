@@ -20,7 +20,7 @@ def test_greedy_sampling():
 
 
 def test_negative_temperature_rejected():
-    """RIL TASK-249: a negative temperature silently inverts the logits and
+    """a negative temperature silently inverts the logits and
     turns the sampler anti-greedy (draws the lowest-logit token); it must be
     rejected instead of silently corrupting generation. Sampling at
     temperature 0 (greedy) remains valid; a positive temperature still works."""
@@ -38,7 +38,7 @@ def test_negative_temperature_rejected():
 
 
 def test_invalid_penalty_and_topk_rejected():
-    """RIL TASK-250: repetition_penalty <= 0 silently corrupts logits (0 divides
+    """repetition_penalty <= 0 silently corrupts logits (0 divides
     by zero -> inf, negative flips sign) and top_k <= 0 crashes with a cryptic
     IndexError; both are now rejected with clear ValueErrors. Legitimate values
     ((0, 1] repetition, top_k >= 1) still work."""

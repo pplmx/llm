@@ -46,7 +46,7 @@ class TestExportToOnnx:
 
 def _fp16_export_loads_and_verifies(tmp_path, *, num_layers: int):
     """fp16 export must produce an onnxruntime-loadable artifact whose
-    outputs match the eager model (RIL ISS-067). Returns the ORT session."""
+    outputs match the eager model. Returns the ORT session."""
     import onnxruntime as ort
     import torch
 
@@ -76,7 +76,7 @@ def _fp16_export_loads_and_verifies(tmp_path, *, num_layers: int):
 
 
 def test_export_fp16_onnxruntime_loadable(tmp_path):
-    """Regression (RIL ISS-067): a fp16 model exports successfully but the
+    """Regression: a fp16 model exports successfully but the
     artifact must be loadable by onnxruntime — it previously was not, because
     TorchScript ONNX fusion mislabeled LayerNormalization input types
     (LayerNorm weight=float16, X=float) and onnxruntime rejected the graph
@@ -107,7 +107,7 @@ def test_export_fp16_onnx_matches_eager(tmp_path):
 
 
 def test_export_to_onnx_small_vocab_no_crash(tmp_path):
-    """Regression (RIL ISS-058): a model with ``vocab_size < 100`` must
+    """Regression: a model with ``vocab_size < 100`` must
     export without crashing on an out-of-range dummy token id.
 
     The old dummy input was ``torch.randint(0, 100, ...)`` — for a

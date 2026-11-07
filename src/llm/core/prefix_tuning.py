@@ -112,7 +112,7 @@ class PrefixTuningAttention(nn.Module):
         # ``base_layer.weight.device``), an attention module has no single
         # ``weight`` — derive device/dtype from its first parameter and create
         # the prefix params there, so ``torch.cat(prefix_k, k)`` inside the
-        # base attention never hits a device/dtype mismatch (RIL ISS-158).
+        # base attention never hits a device/dtype mismatch.
         first_param = next(self.base_attn.parameters())
         device = first_param.device
         dtype = first_param.dtype
@@ -168,7 +168,7 @@ class PrefixTuningAttention(nn.Module):
         # slowest). A bare ``.view`` would reinterpret the SAME flat memory
         # as ``[head][pos][dim]``, so heads read K/V computed from the wrong
         # prefix positions whenever both ``num_kv_heads > 1`` and
-        # ``prefix_len > 1`` (RIL ISS-047). Reshape to ``[pos][head][dim]``
+        # ``prefix_len > 1``. Reshape to ``[pos][head][dim]``
         # then permute the position/head axes to get the correct layout.
         pk = pk.reshape(self.prefix_len, self.num_kv_heads, self.head_dim).permute(1, 0, 2).unsqueeze(0)
         pv = pv.reshape(self.prefix_len, self.num_kv_heads, self.head_dim).permute(1, 0, 2).unsqueeze(0)
@@ -296,7 +296,7 @@ def get_prefix_parameters(model: nn.Module) -> Iterator[torch.Tensor]:
     buffers) and yields nothing — the PEFT registry's ``get_parameters``
     for ``prefix_tuning`` feeds :func:`llm.core.peft.checkpoint.save_peft`,
     which must not crash with ``AttributeError`` on a folded-and-share
-    workflow (RIL ISS-209).
+    workflow.
     """
     for module in model.modules():
         if isinstance(module, PrefixTuningAttention):

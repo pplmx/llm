@@ -121,7 +121,7 @@ class TestMHAPrefixKV:
 class TestMHAPrefixCausal:
     """Prefix K/V prepends ``prefix_len`` columns, so a *causal* prefill/decode
     must shift its diagonal by the prefix — otherwise every real context key is
-    masked and the query attends only prefix keys (round-71 HIGH).
+    masked and the query attends only prefix keys (HIGH).
 
     Every older prefix test called MHA with the default ``is_causal=False``, so
     this causal path was never exercised.
@@ -165,7 +165,7 @@ class TestMHAPrefixCausal:
     def test_paged_prefix_kv_rejected(self):
         """The paged/continuous-batching branch cannot thread ``prefix_kv``, so
         it must reject loudly instead of silently serving an un-prefixed model
-        (round-71 paged-prefix fix; matches FlashAttention's refusal)."""
+        (paged-prefix fix; matches FlashAttention's refusal)."""
         import pytest
 
         torch.manual_seed(3)

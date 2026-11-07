@@ -1,4 +1,4 @@
-"""Tests for MultimodalDataModule (text + modality pairing, TASK-226)."""
+"""Tests for MultimodalDataModule (text + modality pairing)."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def test_multimodal_datamodule_val_dataloader():
 
 
 def test_multimodal_datamodule_val_is_disjoint_from_train():
-    """Regression (TASK-228 deep-dive): validation must NOT reuse the training
+    """Regression (deep-dive): validation must NOT reuse the training
     set (previously val_dataset == train_dataset, making val metrics identical
     to train)."""
     config = _config(num_samples=32)
@@ -72,7 +72,7 @@ def test_multimodal_datamodule_val_is_disjoint_from_train():
 
 
 def test_multimodal_datamodule_val_loader_is_disjoint_from_train():
-    """Regression (RIL ISS-342): the VALIDATION LOADER must iterate the
+    """Regression: the VALIDATION LOADER must iterate the
     disjoint held-out split.
 
     ``val_dataloader`` previously copied the train path and served
@@ -94,7 +94,7 @@ def test_multimodal_datamodule_val_loader_is_disjoint_from_train():
     for vm in batch["modal_embeds"]:
         assert not (vm.unsqueeze(0) == train_modal).all(dim=1).any(), (
             "validation loader emitted a TRAINING sample — val_dataloader must "
-            "serve the disjoint val_dataset, not train_dataset (RIL ISS-342)"
+            "serve the disjoint val_dataset, not train_dataset "
         )
 
 

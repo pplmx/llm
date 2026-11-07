@@ -8,7 +8,7 @@ from llm.tokenization.tokenizer import BaseTokenizer
 
 logger = logging.getLogger(__name__)
 
-# Same encoder-failure contract as StreamingTextDataset (round-76 TASK-189).
+# Same encoder-failure contract as StreamingTextDataset.
 _UNDECODABLE_ERRORS = (KeyError, ValueError, UnicodeError)
 
 
@@ -104,7 +104,7 @@ class TextDataset(Dataset):
             # cannot represent e.g. '\n', CJK, or emoji).  The old behaviour
             # aborted the dataset at setup on the first such row; when
             # ``skip_undecodable`` we degrade to per-line encoding and skip
-            # the offending rows with a warning (round-76 TASK-189).  Rows are
+            # the offending rows with a warning.  Rows are
             # split WITHOUT their trailing newline so a newline-less vocab
             # (the demo tokenizer) still encodes multi-line files.
             if not self.skip_undecodable:

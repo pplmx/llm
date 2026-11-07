@@ -1,4 +1,4 @@
-"""AI-feedback (judge-labeled) preference DataModule feeding DPO (TASK-231)."""
+"""AI-feedback (judge-labeled) preference DataModule feeding DPO."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class AIFeedbackDataModule(SamplerMapDataModule):
             # The module's contract is "each pair's good response ends in the
             # judge's target token" (see docstring). A generic PreferenceJudge
             # can tie every row — prefer_batch resolves ties toward 'a', so the
-            # "chosen"/"rejected" split silently degenerates (RIL ISS-337).
+            # "chosen"/"rejected" split silently degenerates.
             raise TypeError(
                 "AIFeedbackDataModule requires a TargetTokenJudge (got "
                 f"{type(judge).__name__}): the synthetic pairs are built on a "
@@ -49,7 +49,7 @@ class AIFeedbackDataModule(SamplerMapDataModule):
         if not 0 <= target < vocab:
             # An out-of-range target is written straight into the last
             # position; the embedding would raise IndexError deep in the
-            # forward pass (RIL ISS-337). Validate here, loudly.
+            # forward pass. Validate here, loudly.
             raise ValueError(
                 f"TargetTokenJudge.target_token={target} is out of range for "
                 f"vocab_size={vocab}; the last position would embed an invalid "

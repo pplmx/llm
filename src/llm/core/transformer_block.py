@@ -96,7 +96,7 @@ class TransformerBlock(nn.Module):
             # when requested so the default path's call shape is unchanged.
             attention_kwargs.update(max_seq_len=max_seq_len, use_rope=True, rope_theta=rope_theta)
         if alibi is not None:
-            # ALiBi is wired into the mha backend only (RIL — ALiBi milestone);
+            # ALiBi is wired into the mha backend only (ALiBi milestone);
             # DecoderModel rejects alibi with any other attn_impl before this
             # point, so the kwargs legitimately only reach MHA.
             attention_kwargs.update(alibi=alibi)

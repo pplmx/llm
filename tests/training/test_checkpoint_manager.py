@@ -75,7 +75,7 @@ def test_checkpoint_rotation(checkpoint_manager):
 
 
 def test_rotation_prunes_prior_runs_epochs_on_resume(tmp_path):
-    """RIL TASK-322: ``keep_last_n`` must bound the epoch snapshots on DISK,
+    """``keep_last_n`` must bound the epoch snapshots on DISK,
     not just the current process's in-memory list.
 
     A fresh CheckpointManager (a resumed run) starts with an empty
@@ -189,7 +189,7 @@ def test_load_checkpoint(checkpoint_manager):
 def test_load_checkpoint_mismatched_architecture_raises(checkpoint_manager):
     """Resume from a checkpoint whose model architecture differs from the
     current one must RAISE with a clear error, not silently restart from
-    scratch (RIL ISS-108).
+    scratch.
 
     A shape/key mismatch means the user changed config (e.g. hidden_size) or
     pointed at the wrong checkpoint; silently discarding the resume trains a
@@ -208,7 +208,7 @@ def test_load_checkpoint_mismatched_architecture_raises(checkpoint_manager):
 
 
 def test_save_stamps_matching_save_id_into_meta_and_extra(checkpoint_manager):
-    """RIL ISS-127: every save stamps a shared ``save_id`` (and the epoch)
+    """every save stamps a shared ``save_id`` (and the epoch)
     into BOTH the meta.json and the extra_state.pt sidecar. The loader uses
     the pair to prove the three sidecars came from one atomic save."""
     import json
@@ -225,7 +225,7 @@ def test_save_stamps_matching_save_id_into_meta_and_extra(checkpoint_manager):
 
 
 def test_load_rejects_inconsistent_trio_stale_extra(checkpoint_manager):
-    """RIL ISS-127: a crash interrupted between writing the (new) weights
+    """a crash interrupted between writing the (new) weights
     sidecar and the (old) extra_state/optimizer must NOT resume silently with
     a mismatched trio — new weights paired with stale optimizer/scheduler
     state would silently re-train/skip. Loading must raise instead."""
@@ -256,7 +256,7 @@ def test_load_rejects_inconsistent_trio_stale_extra(checkpoint_manager):
 
 
 def test_load_optimizer_mismatch_raises_not_silent_hybrid_resume(checkpoint_manager):
-    """RIL ISS-206: a structural optimizer mismatch (changed param-group
+    """a structural optimizer mismatch (changed param-group
     layout) must raise loudly instead of silently "starting from scratch"
     AFTER the model has already been mutated.
 
@@ -307,14 +307,14 @@ def test_load_optimizer_mismatch_raises_not_silent_hybrid_resume(checkpoint_mana
 
 
 def test_load_rejects_resume_with_mismatched_model_config(checkpoint_manager):
-    """RIL ISS-126: resuming must not silently accept a checkpoint whose
-    architecture-defining config differs from the current run.
+    """resuming must not silently accept a checkpoint whose
+       architecture-defining config differs from the current run.
 
-    A changed ``vocab_size`` / ``hidden_size`` / ``max_seq_len`` / MoE knobs
-    between runs means the (shape-compatible or not) weights were trained for
-    a different model; resuming silently would either corrupt the run (when
-    shapes happen to line up) or retrain from scratch. Fail loudly, like the
-    ISS-108 shape guard and the ISS-127 trio guard.
+       A changed ``vocab_size`` / ``hidden_size`` / ``max_seq_len`` / MoE knobs
+       between runs means the (shape-compatible or not) weights were trained for
+       a different model; resuming silently would either corrupt the run (when
+       shapes happen to line up) or retrain from scratch. Fail loudly, like the
+    shape guard and the trio guard.
     """
     import torch.nn as nn
 
@@ -333,7 +333,7 @@ def test_load_rejects_resume_with_mismatched_model_config(checkpoint_manager):
 
 
 def test_load_resume_matching_model_config_is_accepted(checkpoint_manager):
-    """RIL ISS-126 guard must not reject a compatible resume: identical
+    """guard must not reject a compatible resume: identical
     arch-defining fields load normally, and non-arch drift (dropout etc.) is
     ignored."""
     import torch.nn as nn
@@ -359,7 +359,7 @@ def test_load_resume_matching_model_config_is_accepted(checkpoint_manager):
 
 
 def test_load_rejects_fresh_weights_with_stale_meta_extra(checkpoint_manager):
-    """RIL ISS-166: the meta↔extra cross-check alone could NOT catch the exact
+    """the meta↔extra cross-check alone could NOT catch the exact
     crash window a fresh weights file sits beside a stale-but-mutually-
     consistent meta/extra pair. The weights sidecar now carries the save_id,
     so a weights-vs-meta mismatch must raise instead of silently resuming with
@@ -385,7 +385,7 @@ def test_load_rejects_fresh_weights_with_stale_meta_extra(checkpoint_manager):
 
 
 def test_load_corrupt_legacy_checkpoint_degrades_not_crashes(checkpoint_manager):
-    """RIL ISS-172: a truncated/corrupt ``.pt`` raises EOFError/
+    """a truncated/corrupt ``.pt`` raises EOFError/
     UnpicklingError (NOT in the old OSError/RuntimeError/KeyError/ValueError
     except tuple), so it used to crash with a raw traceback instead of the
     designed degrade-to-scratch path. It must now log + start from scratch."""

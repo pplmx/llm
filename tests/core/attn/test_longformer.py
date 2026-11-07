@@ -1,4 +1,4 @@
-"""Tests for the Longformer-style dilated sliding-window mask (TASK-240 / 15.2)."""
+"""Tests for the Longformer-style dilated sliding-window mask (.2)."""
 
 from __future__ import annotations
 

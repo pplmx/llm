@@ -15,7 +15,7 @@ policy:
   rank-eligible tensor (last dim not a multiple of 32/256 — a real
   footgun, e.g. ``hidden_size``/vocab not multiple of 32), a summary
   warning is emitted; 1-D biases staying F16 is convention and not
-  warned (RIL TASK-316/ISS-353);
+  warned;
 - metadata carries the standard ``general.*`` keys; user metadata wins
   over defaults.
 
@@ -105,7 +105,7 @@ def _resolve_quant_type(quantize: str | GGMLQuantizationType | None) -> GGMLQuan
     # The reader understands more types than the writer can produce (legacy
     # Q4_1/Q5_0/Q5_1 and IQ*). Refuse those reader-only types — they have no
     # ``general.file_type`` mapping — rather than crashing with a KeyError
-    # later (round-75 review HIGH). The K-quant family is exportable and stays
+    # later (review HIGH). The K-quant family is exportable and stays
     # in ``EXPORT_TENSOR_TYPES`` (rounds 147-151).
     if ttype not in EXPORT_TENSOR_TYPES:
         raise GGUFError(
@@ -132,14 +132,14 @@ def _default_metadata(
         # Full architecture config as a JSON string so ``load_gguf_model`` can
         # rebuild the exact model (GGUF metadata is typed but has no nested
         # dict type; a JSON string round-trips losslessly). Keys are sorted for
-        # deterministic output. (RIL round-71 GGUF loader milestone.)
+        # deterministic output. (GGUF loader milestone.)
         defaults["general.llm_model_config"] = json.dumps(model_config, sort_keys=True)
         # Persist the model's LIVE norm epsilon as its own key: ``ModelConfig``
         # has no ``norm_eps`` field, so a non-default eps (e.g. Qwen2's 1e-6)
         # cannot travel inside the config blob and a self-export would
         # round-trip to the loader default 1e-5 — RMS norm scaled differently
-        # means wrong inference (RIL ISS-241; mirrors the hf_publisher fix in
-        # CHG-201, which persists ``rms_norm_eps`` the same way).
+        # means wrong inference (mirrors the hf_publisher fix in
+        # , which persists ``rms_norm_eps`` the same way).
         defaults["general.llm_norm_eps"] = float(_model_norm_eps(model))
     if user_metadata:
         defaults.update(user_metadata)
@@ -218,7 +218,7 @@ def export_to_gguf(
             (e.g. ``ModelConfig.model_dump()``). When present it is
             persisted as ``general.llm_model_config`` so
             :func:`llm.export.gguf.loader.load_gguf_model` can rebuild
-            the exact model — closing the export-only loop (round 71).
+            the exact model — closing the export-only loop.
 
     Returns:
         The resolved output path.
@@ -247,7 +247,7 @@ def export_to_gguf(
         # rank-eligible tensor (last dim not a multiple of 32/256) is a real
         # footgun — the export looks Q4_0 while a weight stays F16. Surface it
         # as ONE summary warning; 1-D biases staying F16 is convention and not
-        # flagged (RIL TASK-316/ISS-353).
+        # flagged.
         if ttype != quant_type and quant_type in _BLOCK_QUANT_TYPES and arr.ndim >= quantize_min_ndim:
             degraded.append((name, tuple(arr.shape)))
         writer.add_tensor(name, arr, ggml_type=ttype)

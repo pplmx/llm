@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 # Request-input bounds — defense-in-depth against client memory-exhaustion
-# DoS (RIL ISS-171). The schema caps are a fast 422 fail BEFORE encoding;
+# DoS. The schema caps are a fast 422 fail BEFORE encoding;
 # the transport-level body-size middleware (serving/middleware.py) is the
 # hard cap on the whole request, so every layer is bounded.
 MAX_PROMPT_CHARS = 256_000  # ~64K tokens of prompt text — generous but bounded
@@ -109,7 +109,7 @@ class GenerationRequest(BaseModel):
         1.0,
         ge=0.0,
         le=2.0,
-        description="Controls randomness. 0 for Greedy Search. Capped at 2.0 like /v1/chat/completions (RIL ISS-412).",
+        description="Controls randomness. 0 for Greedy Search. Capped at 2.0 like /v1/chat/completions.",
     )
     top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter. None to disable.")
     top_p: float | None = Field(
@@ -174,7 +174,7 @@ class BatchGenerationRequest(BaseModel):
         1.0,
         ge=0.0,
         le=2.0,
-        description="Sampling temperature. 0 for greedy. Capped at 2.0 like /generate (RIL ISS-412).",
+        description="Sampling temperature. 0 for greedy. Capped at 2.0 like /generate.",
     )
     top_k: int | None = Field(None, ge=1, description="Top-k sampling parameter.")
     top_p: float | None = Field(

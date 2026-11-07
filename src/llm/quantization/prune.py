@@ -1,4 +1,4 @@
-"""Weight pruning of pretrained models (ROADMAP 13.4 "模型剪枝", RIL TASK-224).
+"""Weight pruning of pretrained models (ROADMAP 13.4 "模型剪枝").
 
 Pruning sparsifies a model's weight matrices by zeroing a fraction of each
 ``nn.Linear``'s entries, keeping the rest intact. It is complementary to the
@@ -115,7 +115,7 @@ def _magnitude_mask(weight: torch.Tensor, ratio: float) -> torch.Tensor:
     boundary) resolve deterministically instead of all surviving. A
     ``abs >= threshold`` style keeps EVERY boundary tie, so a weight whose
     zero-mass exceeds the drop quota prunes NOTHING (achieved sparsity drifts
-    silently toward 0) — RIL TASK-309.
+    silently toward 0).
     """
     flat = weight.detach().abs().reshape(-1)
     keep = round((1.0 - ratio) * flat.numel())
@@ -177,7 +177,7 @@ def prune_model(model: nn.Module, config: PruningConfig) -> float:
     if not pruned_any:
         # Matches decompose_model's fail-loud contract: a target_modules filter
         # that matches nothing is a user mistake, not a silent no-op (deep-dive
-        # TASK-228).
+        # ).
         raise ValueError("prune_model: target_modules matched no nn.Linear layers to prune.")
     return compute_sparsity(model)
 

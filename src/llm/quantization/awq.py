@@ -338,7 +338,7 @@ def _pack_weights(
 
     # 4-bit packing stores two weights per int8 byte over the whole tensor;
     # reject an odd total weight count up front (same guard as GPTQQuantizer)
-    # for BOTH per-channel and per-group 4-bit (round-81 quant deep-dive F3)
+    # for BOTH per-channel and per-group 4-bit (quant deep-dive F3)
     # instead of a late ``_pack_4bit`` ValueError after scale search.
     if bits == 4 and (out_f * in_f) % 2 != 0:
         raise ValueError(
@@ -486,7 +486,7 @@ def quantize_model_awq(
     # diverged (a layer that never got its first batch holds ZERO captures and
     # later crashes with "No calibration data accumulated (n_samples=0)" after
     # earlier layers were already replaced). Any inconsistency -> rebuild every
-    # target's captures from direct calls over the full set (RIL ISS-136).
+    # target's captures from direct calls over the full set.
     expected_captures = len(calib_batches)
     capt_sizes = {n: len(v) for n, v in captured.items()}
     any_captured = any(s > 0 for s in capt_sizes.values())
@@ -532,7 +532,7 @@ def quantize_model_awq(
         if layer.bias is not None:
             with torch.no_grad():
                 new_layer.bias.copy_(layer.bias.data)
-        # Adopt the replaced layer's dtype (RIL ISS-191): selective
+        # Adopt the replaced layer's dtype: selective
         # quantization over an already fp16/bf16 base must yield a half
         # quant layer, otherwise the forward emits fp32 into the remaining
         # half-precision linears and crashes.

@@ -57,7 +57,7 @@ def test_mla_with_mask(mla, input_tensor):
 
 @pytest.mark.slow
 def test_mla_with_2d_long_padding_mask(mla, input_tensor):
-    """Regression (RIL TASK-206 engine e2e): MLA must accept the 2-D ``[B, S]``
+    """Regression (engine e2e): MLA must accept the 2-D ``[B, S]``
     long 0/1 padding mask (1 = real token) the SFT / DPO / Reward pipelines
     emit — the ML front-end passed it raw (MHA lowers it inside ``sdpa()``),
     but the latent attention's mask collapse only understood the 4-D
@@ -98,8 +98,7 @@ def test_mla_causal(mla, input_tensor):
 
 @pytest.mark.slow
 def test_mla_causal_sees_tokens_beyond_num_latents():
-    """Causal MLA must not silently drop keys past ``num_latents`` (RIL
-    ISS-380). The old code let SDPA build an auto-causal mask over the
+    """Causal MLA must not silently drop keys past ``num_latents``. The old code let SDPA build an auto-causal mask over the
     latent QUERY axis, so latent row ``l`` attended only keys ``0..l`` and
     any sequence longer than ``num_latents`` had its later tokens invisible
     to the attention sublayer — perturbing them changed the output by 0.0.
@@ -128,7 +127,7 @@ def test_mla_causal_sees_tokens_beyond_num_latents():
 
 @pytest.mark.slow
 def test_mla_causal_matches_full_attention_maskless():
-    """Mask-less causal MLA is defined as full-row attention (RIL ISS-380):
+    """Mask-less causal MLA is defined as full-row attention:
     the latent query axis is a fixed learned pool, not the sequence
     positions, so ``is_causal`` cannot express per-position causality and
     must not change the result when no mask restricts visibility."""
@@ -215,7 +214,7 @@ def test_mla_norm_first():
 
 
 def test_mla_plain_sublayer_without_norm_residual():
-    """RIL ISS-139: with ``include_norm_residual=False`` (what the
+    """with ``include_norm_residual=False`` (what the
     TransformerBlock passes for a plain sublayer), MLA must NOT own a norm
     or apply an internal residual — the block adds the residual. Before the
     fix MLA always built ``self.norm`` and applied an internal norm+residual,

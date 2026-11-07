@@ -76,10 +76,10 @@ class TrainingTask(abc.ABC, CheckpointContributor):
     def supports_pipeline_parallel(self) -> bool:
         """Whether this task's standard-loop loss matches the pipeline contract.
 
-        Pipeline parallelism (RIL DEC-049 / TASK-210) drives the model through
+        Pipeline parallelism drives the model through
         a stage schedule whose loss is exactly ``model(input_ids)`` + LM-shift
         + cross-entropy, computed on the last stage. The LMTask family
-        (including the ``SFTTask`` alias — RIL ISS-339 collapsed it onto
+        (including the ``SFTTask`` alias collapsed it onto
         LanguageModelingTask, so it no longer threads the batch
         ``attention_mask``) already matches this contract. Tasks whose
         ``train_step`` deviates — ``regression`` is not next-token loss —
@@ -123,7 +123,7 @@ class TrainingTask(abc.ABC, CheckpointContributor):
         frozen companion model at build time (e.g. DPO's reference) must be
         told the loaded weights here so they can re-align it — otherwise the
         companion keeps whatever random init ``build_model`` produced and the
-        training signal is silently computed against noise (RIL round-60
+        training signal is silently computed against noise (
         deep-dive Finding 1). Default: no-op.
         """
 

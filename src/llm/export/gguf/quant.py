@@ -18,7 +18,7 @@ use ``roundf`` (half away from zero).
 
 **Dequantize (import)** — the reader additionally dequantizes the types that
 make up virtually every downloadable llama.cpp GGUF, so the foreign-import
-milestone works on real files (round 75):
+milestone works on real files:
 
 - legacy 32-wide schemes ``Q4_1`` / ``Q5_0`` / ``Q5_1``;
 - the 256-wide K-quant family ``Q2_K`` / ``Q3_K`` / ``Q4_K`` / ``Q5_K`` /
@@ -277,7 +277,7 @@ def quantize_q4_k(data: np.ndarray) -> np.ndarray:
 
     The output is self-consistent with the (gguf-py verified) dequantizer, so
     any file it writes is loadable by llama.cpp's Q4_K dequantizer (same
-    validity contract as the Q6_K writer, RIL DEC-098).
+    validity contract as the Q6_K writer).
     """
     x = np.asarray(data, dtype=np.float32).reshape(-1)
     if x.size % GGML_K_BLOCK_SIZE:
@@ -347,13 +347,13 @@ def _encode_scale_min_q4k(scales: np.ndarray, sc: np.ndarray, m: np.ndarray) -> 
 def quantize_q2_k(data: np.ndarray) -> np.ndarray:
     """Quantize float data to Q2_K blocks (256-wide), returning packed bytes.
 
-    Layout (``block_q2_K``, which :func:`dequantize_q2_k` reads):
-    ``scales(16) + qs(64) + d(2) + dmin(2)``. Sixteen 16-element groups each
-    carry ``dl = d*(scales&0xF)`` and ``ml = dmin*(scales>>4)``; element
-    ``(g, k)`` decodes as ``dl_g * q - ml_g`` with ``q`` a 2-bit value packed
-    4-per-byte in ``qs``. Output is self-consistent with the (gguf-py
-    verified) dequantizer so llama.cpp can load it (validity contract of
-    DEC-098/099/100).
+        Layout (``block_q2_K``, which :func:`dequantize_q2_k` reads):
+        ``scales(16) + qs(64) + d(2) + dmin(2)``. Sixteen 16-element groups each
+        carry ``dl = d*(scales&0xF)`` and ``ml = dmin*(scales>>4)``; element
+        ``(g, k)`` decodes as ``dl_g * q - ml_g`` with ``q`` a 2-bit value packed
+        4-per-byte in ``qs``. Output is self-consistent with the (gguf-py
+        verified) dequantizer so llama.cpp can load it (validity contract of
+    ).
     """
     x = np.asarray(data, dtype=np.float32).reshape(-1)
     if x.size % GGML_K_BLOCK_SIZE:
@@ -486,7 +486,7 @@ def quantize_q3_k(data: np.ndarray) -> np.ndarray:
     as ``dl_g * q`` where ``q = ql - (qh<<2)``, ``ql`` a 2-bit value in ``qs``
     and ``qh`` the sign-offset bit in ``hmask`` (set when ``q >= 0``). Output is
     self-consistent with the (gguf-py verified) dequantizer, so llama.cpp can
-    load it (validity contract of DEC-098..103).
+    load it (validity contract of..103).
     """
     x = np.asarray(data, dtype=np.float32).reshape(-1)
     if x.size % GGML_K_BLOCK_SIZE:
@@ -505,7 +505,7 @@ def quantize_q3_k(data: np.ndarray) -> np.ndarray:
         # the ggml tie rule used by Q4_0). The old transposed index order —
         # ``groups[argmax(axis=1), arange(16)]`` — picked the per-COLUMN
         # extreme for each group instead, so every ``sc[g]`` was derived from
-        # a DIFFERENT group's data (RIL TASK-312/ISS-350); ``global_max`` was
+        # a DIFFERENT group's data; ``global_max`` was
         # unaffected (any axis max is the global max), hiding the error.
         max_abs = groups[np.arange(16), np.abs(groups).argmax(axis=1)]
         global_max = float(max_abs.max()) if max_abs.size else 0.0
@@ -559,7 +559,7 @@ def _pack_q3_scales(raw: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Reader-side dequantization (round 75): legacy 32-wide schemes + K-quants.
+# Reader-side dequantization: legacy 32-wide schemes + K-quants.
 # Each function takes a flat uint8 whole-payload byte array and the logical
 # element count and returns the dequantized float32 vector.  Layouts are the
 # ``block_q4_1`` / ``block_q5_0`` / ``block_q5_1`` / ``block_q2_K`` /

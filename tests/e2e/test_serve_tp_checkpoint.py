@@ -1,6 +1,6 @@
-"""llm serve serves a TP-trained checkpoint end-to-end (RIL TASK-208).
+"""llm serve serves a TP-trained checkpoint end-to-end.
 
-TASK-204 leg 3 closes the last gap in the TP story: the loader-level proof
+ leg 3 closes the last gap in the TP story: the loader-level proof
 (``test_tp_checkpoint_roundtrip``) showed the on-disk full state dict and the
 embedded ``model_config`` round-trip at load time, but nobody had booted the
 real ``llm serve`` FastAPI app against a checkpoint produced by an actual

@@ -138,7 +138,7 @@ class ModelFactory:
             # third-party decoder-family plugin (MODEL_REGISTRY is the
             # llm.models entry-point extension point) got a confusing TypeError
             # or — with a ``**kwargs`` catch-all — a silently-broken model
-            # built from the wrong fields (RIL ISS-415).
+            # built from the wrong fields.
             builder = MODEL_REGISTRY.get(model_type)
             params = inspect.signature(builder).parameters
             if all(arg in params for arg in ModelFactory._DECODER_SHAPE_ARGS):

@@ -21,7 +21,7 @@ class PerplexityMetric(BaseMetric):
                 ``-100`` so the metric-name registry (which instantiates
                 with no args) matches the documented contract in
                 ``metrics/__init__.py`` and an all-ignored corpus yields
-                the documented ``inf`` rather than NaN (RIL ISS-385).
+                the documented ``inf`` rather than NaN.
         """
         self.ignore_index = ignore_index
 
@@ -70,7 +70,7 @@ class PerplexityMetric(BaseMetric):
 
         _batch, _seq_len, vocab_size = predictions.shape
 
-        # RIL ISS-192 + ISS-386: score exactly ``label_width`` positions,
+        # score exactly ``label_width`` positions,
         # start-aligned on BOTH sides. The old ``predictions[:, :-1]`` kept
         # every prediction row (untouched when predictions were WIDER than
         # the references) while the labels were clipped to ``label_width`` —
@@ -80,14 +80,14 @@ class PerplexityMetric(BaseMetric):
         label_width = max(min(references.shape[1] - 1, _seq_len - 1), 0)
         logits = predictions[:, :label_width, :].contiguous().view(-1, vocab_size)
 
-        # RIL ISS-192: ``LMTask.predict`` clamps inputs to the model's
+        # ``LMTask.predict`` clamps inputs to the model's
         # context window (``min(max_seq_len, model.max_seq_len)``) while the
         # references are padded to the dataset's ``max_seq_len`` — for a
         # small-context model the predictions are *narrower* than the
         # references, so the naive ``references[:, 1:]`` yields more label
         # positions than logits rows and ``cross_entropy`` raises a shape
         # error mid-evaluation. Slice the labels to the prediction horizon;
-        # the truncated tail was never scored anyway (implies ISS-386's
+        # the truncated tail was never scored anyway (implies 's
         # uniform windowing above).
         labels = references[:, 1 : 1 + label_width].contiguous().view(-1)
 
@@ -100,7 +100,7 @@ class PerplexityMetric(BaseMetric):
             # ``reduction='mean'`` and ``ignore_index`` averages over ZERO
             # valid elements and returns NaN. Return the documented
             # ``inf`` (undefined perplexity) instead — NaN would serialize
-            # to JSON ``null`` and poison the report (RIL ISS-055).
+            # to JSON ``null`` and poison the report.
             return {"perplexity": float("inf")}
 
         if self.ignore_index is not None:

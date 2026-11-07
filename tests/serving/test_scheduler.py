@@ -166,7 +166,7 @@ class TestScheduler:
 
 
 class TestSchedulerConcurrency:
-    """Concurrent access to ``waiting`` / ``running`` (RIL ISS-069).
+    """Concurrent access to ``waiting`` / ``running``.
 
     ``Scheduler.get_sequence`` runs on the streaming/caller thread while
     ``Scheduler.schedule`` (from an engine ``step()``) mutates the same

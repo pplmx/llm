@@ -59,7 +59,7 @@ class TestExportToTorchscript:
         assert output_path.exists()
 
     def test_export_trace_small_vocab_no_crash(self, tmp_path):
-        """Regression (RIL ISS-058): torchscript trace must generate a dummy
+        """Regression: torchscript trace must generate a dummy
         input bounded by the real vocab, so a ``vocab_size < 100`` model
         exports instead of crashing the embedding with ``IndexError``."""
         small = DecoderModel(vocab_size=16, hidden_size=8, num_layers=1, num_heads=2, max_seq_len=32)
@@ -68,7 +68,7 @@ class TestExportToTorchscript:
         assert result.exists()
 
     def test_export_trace_rope_model_exports(self, tmp_path):
-        """RIL ISS-142: a RoPE model (the default for external Llama/Mistral
+        """a RoPE model (the default for external Llama/Mistral
         checkpoints) must trace to TorchScript.
 
         ``torch.jit.trace`` runs the model twice (trace + sanity re-check).

@@ -1,4 +1,4 @@
-"""Knowledge-distillation training task (ROADMAP 13.4 / RIL DEC-055).
+"""Knowledge-distillation training task (ROADMAP 13.4).
 
 ``DistillationTask`` trains a compact STUDENT model against a FROZEN teacher
 using :class:`DistillationLoss` (``alpha*CE + (1-alpha)*T^2*KL``). It keeps the

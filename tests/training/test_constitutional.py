@@ -1,4 +1,4 @@
-"""Tests for the rule-based Constitutional-AI slice (TASK-235 / ROADMAP 11.4)."""
+"""Tests for the rule-based Constitutional-AI slice (/ ROADMAP 11.4)."""
 
 from __future__ import annotations
 

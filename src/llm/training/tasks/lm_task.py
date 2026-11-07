@@ -113,7 +113,7 @@ class LanguageModelingTask(TrainingTask):
                 bottleneck_dim=t_cfg.adapter_bottleneck_dim,
                 target_modules=t_cfg.adapter_target_modules,
             )
-        # QAT (ROADMAP 13.2 / RIL DEC-054): opt-in fake-quantization. When
+        # QAT (ROADMAP 13.2): opt-in fake-quantization. When
         # ``use_qat=True`` every matching nn.Linear is wrapped in
         # FakeQuantLinear (dynamic scale, straight-through estimator) so
         # training adapts the full-precision weights to the deployment
@@ -217,7 +217,7 @@ class LanguageModelingTask(TrainingTask):
         # ReduceLROnPlateau is NOT an LRScheduler, so it cannot compose with
         # the LinearLR warmup (SequentialLR requires LRScheduler items). The
         # engine special-cases its metric-based step (val/avg loss). Before
-        # RIL ISS-182 the config advertised ``step``/``plateau`` but built no
+        # the config advertised ``step``/``plateau`` but built no
         # scheduler, silently training at constant LR.
         if scheduler_type == "plateau":
             return optim.lr_scheduler.ReduceLROnPlateau(
@@ -259,7 +259,7 @@ class LanguageModelingTask(TrainingTask):
         # ``train_step`` is exactly the pipeline's contract:
         # ``model(input_ids)`` + LM shift + CE (no attention mask threaded
         # into the model), so PP reproduces the serial loss bit-for-bit
-        # (RIL DEC-049 / TASK-210).
+        # .
         return True
 
     def build_criterion(self) -> nn.Module:
@@ -323,7 +323,7 @@ class LanguageModelingTask(TrainingTask):
         loss = criterion(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
         if torch.isnan(loss):
-            # A diverged step is a signal, not a "perfect" step (RIL ISS-343):
+            # A diverged step is a signal, not a "perfect" step:
             # complain loudly instead of silently logging loss 0.0 / ppl 1.0 as
             # if the model trained. The returned 0.0 ``requires_grad`` tensor is
             # decoupled from the model graph, so this step's backward/optimizer

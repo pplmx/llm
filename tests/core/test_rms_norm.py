@@ -67,8 +67,8 @@ def test_rms_norm_rms_property():
 
 
 def test_rms_norm_fp16_large_activations_no_collapse():
-    """Half-precision RMSNorm must not collapse to zero for large activations
-    (RIL ISS-384). ``pow(2)`` in fp16 overflows at |x| > ~256 (fp16 max
+    """Half-precision RMSNorm must not collapse to zero for large activations.
+    ``pow(2)`` in fp16 overflows at |x| > ~256 (fp16 max
     65504), so a naive ``x.pow(2).mean()`` in host dtype produced an inf
     mean-square and the normalized output silently collapsed to all-zeros.
     The mean-square must be accumulated in fp32 (cast back for the RMS),
@@ -91,7 +91,7 @@ def test_rms_norm_fp16_large_activations_no_collapse():
 
 def test_rms_norm_fp16_matches_fp32_reference():
     """Half-precision RMSNorm must agree with the fp32 computation on
-    moderate-magnitude inputs (RIL ISS-384). The fp32 accumulation path is
+    moderate-magnitude inputs. The fp32 accumulation path is
     the reference; the fp16 path must produce near-identical output."""
     torch.manual_seed(7)
     x = torch.randn(2, 8, 1024, dtype=torch.float32) * 3.0

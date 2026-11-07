@@ -50,7 +50,7 @@ def _validate_method(method: str) -> str:
 
 
 def _reject_clobbering_input(output: Path, model: Path) -> None:
-    """Refuse to overwrite the source checkpoint in place (RIL ISS-161 pattern)."""
+    """Refuse to overwrite the source checkpoint in place (pattern)."""
     if output.resolve() == model.resolve():
         _die(
             f"--output ({output}) must not be the same file as --model ({model}); "
@@ -86,7 +86,7 @@ def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
 
     Empty / whitespace-only input normalizes to ``None`` ("all") so the CLI
     summary echoes ``all`` only when every nn.Linear is actually targeted. The
-    old ``[]`` filtered to ZERO layers and then failed at runtime (RIL ISS-330).
+    old ``[]`` filtered to ZERO layers and then failed at runtime.
     """
     if target_modules is None:
         return None
@@ -109,7 +109,7 @@ def prune(
     _validate_ratio(ratio)
     _validate_method(method)
     if method == "magnitude" and seed is not None:
-        # Only "random" pruning consumes the seed (RIL ISS-335); passing one
+        # Only "random" pruning consumes the seed; passing one
         # with magnitude silently does nothing — surface it so the user isn't
         # misled into thinking the run is reproducible.
         typer.echo(

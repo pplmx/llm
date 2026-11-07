@@ -57,7 +57,7 @@ def test_streaming_dataset_reset_restarts_corpus(tmp_path, line_tokenizer):
 
 
 def test_streaming_dataset_reset_recycles_persisted_dedup_corpus(tmp_path, line_tokenizer):
-    """Regression (RIL ISS-064): ``reset()`` on a persistent-dedup source
+    """Regression: ``reset()`` on a persistent-dedup source
     must clear the cross-run seen-set so a corpus fully consumed+hashed by a
     prior run can be recycled.
 
@@ -189,7 +189,7 @@ def test_streaming_data_module_warns_on_inmemory_dedup(tmp_path, monkeypatch, li
 
 
 def test_streaming_dataset_rejects_negative_overlap(tmp_path, line_tokenizer):
-    """RIL ISS-202: a negative ``overlap`` must fail fast instead of being
+    """a negative ``overlap`` must fail fast instead of being
     silently treated as "no overlap" (TextDataset already rejects it).
 
     The old ``__init__`` only checked ``overlap >= max_seq_len``, so a
@@ -217,7 +217,7 @@ def test_streaming_skips_undecodable_rows(tmp_path, sample_text_tokenizer):
 
     The default character tokenizer is ASCII-only, so a real corpus always
     contains un-encodable rows; one such row must not abort multi-hour
-    pretraining (round-76 TASK-189).
+    pretraining.
     """
     text_file = tmp_path / "corpus.txt"
     text_file.write_text(
@@ -253,7 +253,7 @@ def test_streaming_undecodable_rows_fail_loud_when_not_skipping(tmp_path, sample
 
 def test_streaming_skipped_counter_resets_across_passes(tmp_path, sample_text_tokenizer, caplog):
     """``reset()``'s "could not encode this pass" log must describe a SINGLE
-    pass, not the cumulative lifetime count (RIL ISS-394): the counter was
+    pass, not the cumulative lifetime count: the counter was
     never zeroed, so pass 2 reported pass1+pass2 skipped rows as "this
     pass". Iterate, reset, iterating again with another undecodable row
     must log the pass-local count."""
@@ -283,8 +283,7 @@ def test_streaming_skipped_counter_resets_across_passes(tmp_path, sample_text_to
 
 
 def test_streaming_skipped_counter_resets_per_reset(tmp_path, sample_text_tokenizer, caplog):
-    """The "could not encode this pass" summary must reset per reset() (RIL
-    ISS-394). The counter was never zeroed, so reset() #2 reported the
+    """The "could not encode this pass" summary must reset per reset(). The counter was never zeroed, so reset() #2 reported the
     LIFETIME total (pass1+pass2) as "this pass". With two passes each
     skipping one row, the second summary must say 1, not 2."""
     import logging

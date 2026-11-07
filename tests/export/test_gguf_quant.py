@@ -431,7 +431,7 @@ class TestQ3K:
         assert np.all(np.isfinite(out))
 
     def test_roundtrip_error_is_bounded(self, rng):
-        """Regression (RIL TASK-312/ISS-350): each group's scale must come from
+        """Regression: each group's scale must come from
         that GROUP's own max-magnitude element. The old ``groups[argmax(axis=1),
         np.arange(16)]`` transposed the index order and used the per-COLUMN
         extreme for every group, so scale factors were swapped across groups —

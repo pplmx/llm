@@ -1,4 +1,4 @@
-"""Tests for GRPO (TASK-229): group advantages, GRPO loss, and a CPU e2e."""
+"""Tests for GRPO: group advantages, GRPO loss, and a CPU e2e."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def test_grpo_datamodule_batch_and_group_rewards():
 
 
 def test_grpo_datamodule_rejects_distributed_world_size():
-    """RIL ISS-333: GRPO only composes with world_size=1.
+    """GRPO only composes with world_size=1.
 
     A ``DistributedSampler(shuffle=False)`` hands each rank the interleaved
     indices (``rank, rank+ws, ...``), so a multi-rank slice is not a set of
@@ -174,7 +174,7 @@ def _group_reward_hits(model, module):
     with torch.no_grad():
         logits = model(response_tokens)
         # Shifted next-token factorization, matching GRPOTask._per_token_log_probs
-        # (RIL ISS-333): logits[t] predicts response_tokens[t+1].
+        #: logits[t] predicts response_tokens[t+1].
         shift_logits = logits[..., :-1, :].contiguous()
         shift_tokens = response_tokens[..., 1:].contiguous()
         lp = functional.log_softmax(shift_logits, -1).gather(-1, shift_tokens.unsqueeze(-1)).squeeze(-1).sum(-1)
@@ -210,7 +210,7 @@ def test_grpo_engine_improves_group_reward():
         # The PRE-training group reward on a 2-group demo is a coin flip (each
         # group picks its argmax at chance, ~1/group_size) — NOT
         # deterministically "poor". The old `before < 0.5` asserted a premise
-        # that only held under the unshifted metric (RIL ISS-333). The real
+        # that only held under the unshifted metric. The real
         # invariants: loss decreases and the group reward CONVERGES to the
         # rewarded (fixed-random) target.
         assert after > 0.9, f"GRPO did not converge group reward: {before:.3f} -> {after:.3f}"

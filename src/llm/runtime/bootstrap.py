@@ -20,14 +20,13 @@ def ensure_builtins_registered() -> None:
     different ``sys.path``. The two reference builtins live in this package,
     so they are registered as code-level fallbacks when discovery yielded
     nothing; only a total failure (no entry points AND no fallback) is an
-    error, raised with the entry-point group named so the fix is obvious
-    (RIL ISS-418).
+    error, raised with the entry-point group named so the fix is obvious.
     """
     global _builtins_registered
     if _builtins_registered:
         return
 
-    # Double-checked locking (RIL ISS-119 pattern, see generation/registry.py):
+    # Double-checked locking (pattern, see generation/registry.py):
     # the guard above is the hot path; the lock serializes the cold-start race
     # (two threads both passing the bare flag, both loading entry points, the
     # second thread's Registry.register("decoder", ...) raising ValueError), so

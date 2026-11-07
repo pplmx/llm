@@ -63,7 +63,7 @@ def _allowlist_test_model() -> None:
     """Register the test-local ``_TwoLayerMLP`` as a trusted pickle class.
 
     ``llm quantize`` loads model blobs with ``weights_only=True`` plus the
-    framework allowlist (RIL ISS-211), refusing anything outside it. This
+    framework allowlist, refusing anything outside it. This
     test model is a plain ``nn.Module`` defined in this test module, so it is
     registered up front — exactly what a user with a custom non-framework
     module class must do before invoking the CLI.

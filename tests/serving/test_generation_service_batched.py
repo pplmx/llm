@@ -1,6 +1,6 @@
 """Tests for ``ServingGenerationService`` backend wiring.
 
-Regression for RIL ISS-150: ``generation_backend=batched`` must be able to
+Regression for ``generation_backend=batched`` must be able to
 start the REST server. ``api.lifespan`` constructs the service *before*
 the engine, so ``from_config`` had to build the batched engine itself —
 otherwise ``get_generation_backend("batched", engine=None)`` raised

@@ -1,4 +1,4 @@
-"""Knowledge-distillation losses (ROADMAP 13.4 / RIL DEC-055, TASK-221).
+"""Knowledge-distillation losses (ROADMAP 13.4).
 
 Hinton et al. 2015: train a compact student against a frozen teacher by
 softening both output distributions with a temperature ``T`` and adding a

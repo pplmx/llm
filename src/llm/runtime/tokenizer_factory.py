@@ -15,7 +15,7 @@ from llm.tokenization.tokenizer import BaseTokenizer, HFTokenizer
 def _default_simple_corpus() -> list[str]:
     """The documented default corpus for a ``simple`` tokenizer with no path.
 
-    ``string.printable`` so real text is encodable (RIL ISS-196: the old
+    ``string.printable`` so real text is encodable (the old
     corpus of just the three markers produced a vocab of only their
     constituent characters, so the default config raised ``KeyError`` on any
     real corpus), plus the three markers so ``<PAD>``/``<EOS>``/``<BOS>`` are
@@ -36,7 +36,7 @@ def _register_tokenizer_safe_globals() -> None:
     tokenizer base, so ``torch.load(..., weights_only=True)`` can reconstruct
     a user-saved ``tokenizer.pt`` WITHOUT executing arbitrary pickled code.
 
-    Security (RIL ISS-185): before this, both ``from_data_config`` and
+    Security: before this, both ``from_data_config`` and
     ``from_serving_config`` loaded a user-supplied ``tokenizer.pt`` with
     ``weights_only=False`` — an unrestricted ``pickle.load`` where a crafted
     ``__reduce__`` (e.g. ``os.system``) ran as the training/serving process
@@ -44,7 +44,7 @@ def _register_tokenizer_safe_globals() -> None:
     references any class OUTSIDE these (an attacker's ``os.system`` /
     ``subprocess`` / a genuinely custom undeclared tokenizer class) raises
     UnpicklingError and is refused — no ``weights_only=False`` fallback
-    (consistent with the round-62 checkpoint hardening, ISS-170).
+    (consistent with the checkpoint hardening).
     """
     global _SAFE_GLOBALS_REGISTERED
     if _SAFE_GLOBALS_REGISTERED:
@@ -72,7 +72,7 @@ def _load_tokenizer_pt(path: Path) -> Any:
     Any pickle whose embedded globals fall outside the safe-globals allowlist
     — a genuinely malicious payload, OR a real HF ``PreTrainedTokenizerFast``
     whose pickle state carries ``tokenizers``/``sentencepiece`` rust objects
-    the allowlist cannot enumerate (RIL ISS-413) — raises ``UnpicklingError``
+    the allowlist cannot enumerate — raises ``UnpicklingError``
     from torch's weights-only unpickler. Both cases must fail loud with a
     remediation hint; the HF case is user error (an HF tokenizer should be
     configured as ``tokenizer_type='hf'`` with a repo id/directory, not saved
@@ -95,7 +95,7 @@ def _ensure_tokenizer_obj(loaded: Any, path: str) -> BaseTokenizer:
     full-checkpoint dict) loads cleanly under ``weights_only=True`` but is not
     a tokenizer — the mistake only surfaces later as a confusing
     ``AttributeError: 'dict' object has no attribute 'encode'`` at the first
-    request. Catch it here (RIL ISS-420).
+    request. Catch it here.
     """
     # ``BaseTokenizer`` is a plain (non runtime-checkable) Protocol, so a
     # structural check on the contract methods is the safe test here.
@@ -145,7 +145,7 @@ class TokenizerFactory:
         if default_corpus is None:
             # ``or``-fallback would silently REPLACE an explicitly-passed
             # empty corpus with the printable default — honou the parameter,
-            # only ``None`` selects the default (RIL ISS-420).
+            # only ``None`` selects the default.
             default_corpus = DEFAULT_SIMPLE_CORPUS
         return cast(BaseTokenizer, SimpleCharacterTokenizer(default_corpus))
 
@@ -174,13 +174,13 @@ class TokenizerFactory:
 
     @staticmethod
     def from_printable_corpus() -> SimpleCharacterTokenizer:
-        # Printable corpus PLUS the PAD/EOS/BOS markers (RIL TASK-327): a
+        # Printable corpus PLUS the PAD/EOS/BOS markers: a
         # plain printable-only tokenizer has ``eos_token_id None``, and every
         # generation backend silently treats a ``None`` EOS as "never stop" —
         # serving's dummy-model fallback (the only production consumer) ran
         # every request to ``max_new_tokens``. ``DEFAULT_SIMPLE_CORPUS`` is the
         # same printable set plus the three declared specials, so this matches
-        # the training default (ISS-152 already fixed the train/eval side).
+        # the training default (already fixed the train/eval side).
         return SimpleCharacterTokenizer(DEFAULT_SIMPLE_CORPUS)
 
     @staticmethod
@@ -202,7 +202,7 @@ class TokenizerFactory:
             raise ValueError(
                 f"{dataset_path} is not valid UTF-8 ({exc}); from_dataset_text builds "
                 "a character tokenizer from decoded text — decode the file with your "
-                "own step first (RIL ISS-420)."
+                "own step first."
             ) from exc
         chars = sorted(set(text))
         corpus = ["<PAD>", "<EOS>", "<BOS>", *chars]

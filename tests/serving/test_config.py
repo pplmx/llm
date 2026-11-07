@@ -215,7 +215,7 @@ class TestServingConfigNumericBounds:
 
 class TestServingCliPort:
     def test_cli_main_forwards_config_port(self, monkeypatch):
-        """RIL TASK-326: ``llm serve`` must bind the operator's configured
+        """``llm serve`` must bind the operator's configured
         port, not a hardcoded 8000 (ServingConfig.port -> uvicorn.run)."""
         from llm.serving import cli
 
@@ -311,7 +311,7 @@ class TestServingCliHelp:
         exits 0 instead of booting uvicorn on a CUDA device.
 
         ``api.py``'s ``__main__`` guard previously called the alias to
-        :func:`cli.main` — the third instance of the ISS-424/425 bug shape.
+        :func:`cli.main` — the third instance of the bug shape.
         A bare ``python -m llm.serving.api`` (no ``--help``) must still boot.
         """
         import subprocess

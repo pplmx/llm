@@ -2,8 +2,7 @@
 
 Focus on the empty-input guards: with zero samples (or a validation
 split that truncates to zero) the helpers used to raise a bare
-``ZeroDivisionError`` where they now fail fast with a clear message
-(RIL ISS-331).
+``ZeroDivisionError`` where they now fail fast with a clear message.
 """
 
 from __future__ import annotations

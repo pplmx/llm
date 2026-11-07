@@ -57,7 +57,7 @@ def test_fp8_layer_forward_is_close_to_fp32_reference():
 
 def test_fp8_biased_layer_preserves_graph_dtype():
     """A biased FP8 layer must emit the surrounding graph's dtype, not the
-    bias's (RIL ISS-383). ``Fp8QuantizedLinear`` stores an fp32 bias
+    bias's. ``Fp8QuantizedLinear`` stores an fp32 bias
     parameter, and ``forward`` resolved the output dtype from the bias
     (``dtype = self.bias.dtype``), so quantizing an fp16 model produced
     fp32 activations that flowed into an fp16 graph — a dtype break that
@@ -75,7 +75,7 @@ def test_fp8_biased_layer_preserves_graph_dtype():
 
 def test_fp8_unbiased_layer_preserves_graph_dtype():
     """Bias-less FP8 layers already resolve output dtype from the input; keep
-    that contract pinned (RIL ISS-383 guard)."""
+    that contract pinned (guard)."""
     layer = nn.Linear(16, 8, bias=False)  # no bias (PyTorch's default has one!)
     q = quantize_fp8_linear(layer, activation_scale=torch.tensor(1.0))
     assert q.bias is None
@@ -169,7 +169,7 @@ def test_quantize_model_fp8_logits_correlate_with_fp32_baseline():
 
 
 def test_fp8_static_scale_is_global_max_across_calib_batches():
-    """Regression (RIL TASK-313/ISS-351): static-activation capture seeds from
+    """Regression: static-activation capture seeds from
     the first calibration batch and must keep a RUNNING MAX over the rest. The
     old ``numel() == 1`` sentinel never flips (a 0-dim scalar also has
     ``numel() == 1``) so every batch OVERWROTE the captured max — the stored
@@ -203,7 +203,7 @@ def test_quantize_model_fp8_static_requires_calibration():
 class _DeadBranchMLP(nn.Module):
     """Two Linear branches, only one reached by ``forward`` — lets a static
     calibration leave one declared target's hook never fired, reproducing the
-    RIL latency that used to silently quantize the dead layer with a garbage
+    latency that used to silently quantize the dead layer with a garbage
     scale."""
 
     def __init__(self, hidden: int = 16):
@@ -217,7 +217,7 @@ class _DeadBranchMLP(nn.Module):
 
 
 def test_quantize_model_fp8_static_dead_layer_raises_not_garbage():
-    """RIL: a static-activation target whose forward hook NEVER fires during
+    """: a static-activation target whose forward hook NEVER fires during
     calibration must fail LOUDLY, not silently quantize with a near-zero
     activation scale.
 
@@ -352,7 +352,7 @@ def test_cli_fp8_dynamic_needs_no_calib_and_saves(runner, tmp_path: Path):
 def test_cli_fp8_static_requires_calib_source(runner, tmp_path: Path):
     """``--activation static`` needs a calibration source — exit 1 with a hint
     naming the dynamic escape hatch. (The default is now ``dynamic``, so the
-    bare command needs no calibration; RIL ISS-330.)"""
+    bare command needs no calibration.)"""
     from llm.cli.quantize import app
 
     model = tmp_path / "m.pt"
@@ -367,7 +367,7 @@ def test_cli_fp8_static_requires_calib_source(runner, tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Per-layer policies (RIL TASK-203): FP8 knobs in LayerQuantPolicy
+# Per-layer policies: FP8 knobs in LayerQuantPolicy
 # ---------------------------------------------------------------------------
 
 

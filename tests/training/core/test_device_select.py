@@ -1,4 +1,4 @@
-"""Most-free-VRAM CUDA device selection (RIL TASK-266 / DEC-094).
+"""Most-free-VRAM CUDA device selection.
 
 The runtime (TrainingEngine + distributed launcher) must map each rank to the
 GPU with the most free VRAM instead of the historical ``rank % device_count``

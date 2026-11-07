@@ -1,4 +1,4 @@
-"""Tests for low-rank (SVD U-V) decomposition (ROADMAP 13.4, RIL TASK-225)."""
+"""Tests for low-rank (SVD U-V) decomposition (ROADMAP 13.4)."""
 
 from __future__ import annotations
 

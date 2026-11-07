@@ -70,7 +70,7 @@ def sft_config(tiny_alpaca_jsonl: Path, tmp_path: Path):
     # MUST exceed the ~146-char Alpaca-style template prompt: at 32 the
     # response is truncated, every label becomes -100 and the SFT NaN guard
     # returns a constant 0.0 loss (the "training" is silently a no-op —
-    # vacuous-e2e finding, RIL round-84/85).
+    # vacuous-e2e finding).
     cfg.model.max_seq_len = 256
     cfg.training.batch_size = 2
     cfg.training.epochs = 1
@@ -168,7 +168,7 @@ class TestSFTTaskEndToEnd:
         data_module.setup()
         # Vacuous-run guard: at least one real (non-ignored) label must exist,
         # or the SFT NaN guard made the whole "training" a constant-0 no-op
-        # while the checkpoint assertions below still passed (RIL round-84/85).
+        # while the checkpoint assertions below still passed.
         sample_labels = data_module.train_dataset[0]["labels"]
         assert (sample_labels != -100).any(), "tiny SFT corpus has NO real labels — training would be a no-op"
         task = SFTTask(sft_config, data_module)

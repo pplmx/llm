@@ -103,8 +103,7 @@ class _AllGatherScatter(torch.autograd.Function):
     rank already computes the identical full ``dL/dlogits``, and each rank's
     contribution to the gathered output is its own ``vocab/tp`` slice — the
     sum-over-ranks that ``torch.distributed.nn.functional.all_gather`` applies
-    in its backward would double (x tp) every upstream gradient (RIL TASK-200 /
-    DEC-045 — caught by the numeric-parity test).
+    in its backward would double (x tp) every upstream gradient (caught by the numeric-parity test).
     """
 
     @staticmethod
@@ -155,7 +154,7 @@ class ColumnParallelLinear(nn.Module):
         # ordered by rank). A non-None value handles block-interleaved
         # partitions (the fused QKV, where the local slice is
         # [q_rank, k_rank, v_rank] and gathers must scatter every rank's piece
-        # back into the q/k/v blocks of the full tensor — RIL TASK-200).
+        # back into the q/k/v blocks of the full tensor).
         self.full_index_list = full_index_list
         self.weight = nn.Parameter(weight.detach().clone().contiguous())
         if bias is not None:
@@ -246,7 +245,7 @@ class VocabParallelHead(nn.Module):
         # there is no column-parallel layer between here and the replicated
         # final_norm, so without an input-grad all-reduce every rank would
         # backprop only its own vocab-slice contribution into the shared norm
-        # weights, giving a /tp-scaled (and wrong) gradient (RIL TASK-200).
+        # weights, giving a /tp-scaled (and wrong) gradient.
         if hidden_states.requires_grad:
             hidden_states = _BackwardAllReduce.apply(hidden_states, self._group)
         local = functional.linear(hidden_states, self.weight, self.bias)
@@ -261,7 +260,7 @@ class VocabParallelHead(nn.Module):
 
 
 class _ExpertParallelMoE(nn.Module):
-    """MoE layer under tensor parallelism: expert parallelism (TASK-207).
+    """MoE layer under tensor parallelism: expert parallelism.
 
     Replaces ``block.mlp`` (a ``MoE``) in place. The GATE stays a full
     replicated ``nn.Linear`` (every rank computes identical routing — the
@@ -373,7 +372,7 @@ class _TPState:
         self.group = group
         self.world_size = world_size
         self.rank = rank
-        # TP + data-parallel 2D (TASK-202): the strided group of ranks holding
+        # TP + data-parallel 2D: the strided group of ranks holding
         # the SAME shard across TP groups, averaged at step boundaries.
         # ``None`` in pure TP v1 (whole world = one TP group, no DP dimension).
         self.dp_group: dist.ProcessGroup | None = None
@@ -399,7 +398,7 @@ class _TPState:
                 self.partition[key + ".weight"] = 1
                 if getattr(module, "bias", None) is not None:
                     self.partition[key + ".bias"] = None
-        # Expert-parallel MoE blocks (TASK-207): ``prefix`` -> (total_experts,
+        # Expert-parallel MoE blocks: ``prefix`` -> (total_experts,
         # n_local), where ``prefix`` is the MoE module's own name (e.g.
         # "transformer_blocks.0.mlp"), so its state-dict keys live under
         # ``prefix.experts.{li}.**``. Each rank owns experts
@@ -630,16 +629,16 @@ def apply_tensor_parallel(
         # v1 supports backends that share the MHA projection surface: fused
         # QKV (column-parallel over heads) + row-parallel out_proj with
         # per-rank head geometry patchable via num_heads/num_kv_heads/head_dim/
-        # kv_dim. FlashAttention declares exactly that surface (RIL ISS-137),
+        # kv_dim. FlashAttention declares exactly that surface,
         # so the transform below applies unchanged; the kv-cache / paged
         # decoding differences live in forward, not in the weights.
-        # MultiLatentAttention (TASK-206) uses a different parameter layout
+        # MultiLatentAttention uses a different parameter layout
         # (latent_query/value/output projections + [K,V]-block input_kv_proj),
         # dispatched to a dedicated branch — see ``_mha_flash_attn_slice`` /
         # ``_mla_slice``. sdpa is a FUNCTIONAL (core/attn/sdpa.py), not a
         # registered attn_impl: every backend above runs its attention through
-        # it, so TP covers the sdpa kernel transitively (TASK-209). MoE blocks
-        # get expert parallelism (TASK-207): the gate is replicated and the
+        # it, so TP covers the sdpa kernel transitively. MoE blocks
+        # get expert parallelism: the gate is replicated and the
         # experts are split across ranks by expert index (guarded below).
         if attn_cls not in ("MultiHeadAttention", "FlashAttention", "MultiLatentAttention"):
             raise NotImplementedError(
@@ -679,7 +678,7 @@ def apply_tensor_parallel(
     for block in m.transformer_blocks:
         attn = block.self_attn
         if type(attn).__name__ == "MultiLatentAttention":
-            # MLA layout (TASK-206): the head axis threads through four
+            # MLA layout: the head axis threads through four
             # projections, each sliced per-head:
             #   * latent_q_proj [hidden, latent_dim] and latent_output_proj
             #     [hidden, latent_dim] are column-parallel over their OUTPUT
@@ -786,8 +785,7 @@ def apply_tensor_parallel(
         # ranks' q / k / v rows — the local model then splits its slice as
         # [q_local, kv_local, kv_local] and reads garbage (query rows as K/V).
         # Slice each of q, k, v SEPARATELY and reassemble as
-        # [q_rank, k_rank, v_rank] so the local split stays correct (RIL
-        # TASK-200 / DEC-045 — this was a real wrong-answer bug, caught by the
+        # [q_rank, k_rank, v_rank] so the local split stays correct (this was a real wrong-answer bug, caught by the
         # TP-vs-reference numeric-parity test).
         q_size = attn.num_heads * attn.head_dim
         kv_size = attn.num_kv_heads * attn.head_dim
@@ -836,7 +834,7 @@ def apply_tensor_parallel(
     for block in m.transformer_blocks:
         mlp = block.mlp
         if getattr(mlp, "num_experts", None):
-            # MoE expert parallelism (TASK-207): the gate is replicated (full
+            # MoE expert parallelism: the gate is replicated (full
             # ``nn.Linear`` — identical routing on every rank, averaged across
             # the TP group like the norms), and only this rank's slice of
             # experts survives. Each local expert is a complete MLP (full
@@ -894,7 +892,7 @@ def apply_tensor_parallel(
 def _decoder_shell_for_stage(stage: nn.Module, model: DecoderModel) -> DecoderModel:
     """Build a DecoderModel proxy that owns exactly one pipeline stage's blocks.
 
-    3D parallel (RIL TASK-216 / DEC-052, DEC-053): pipelining partitions the
+    3D parallel: pipelining partitions the
     model into ``_PipelineStage`` modules, each referencing a DISJOINT slice
     of the original ``transformer_blocks`` (plus the embedding on stage 0 and
     final-norm + lm_head on the last stage). ``apply_tensor_parallel`` is
@@ -922,7 +920,7 @@ def _decoder_shell_for_stage(stage: nn.Module, model: DecoderModel) -> DecoderMo
     if attn_impl is None:
         raise NotImplementedError(
             f"stage tensor parallelism does not recognise attention backend "
-            f"{type(first_attn).__name__}; expected mha/flash_attn/mla (RIL DEC-052)."
+            f"{type(first_attn).__name__}; expected mha/flash_attn/mla."
         )
     n_experts = int(getattr(first_mlp, "num_experts", 0) or 0)
     hidden = int(m.hidden_size)
@@ -975,7 +973,7 @@ def apply_tensor_parallel_stage(
     process_group: dist.ProcessGroup | None = None,
 ) -> nn.Module:
     """Tensor-parallelise a single pipeline stage in place, reusing the
-    monolithic transform (RIL TASK-216 / DEC-053 blocker (b)).
+    monolithic transform (blocker (b)).
 
     Builds a DecoderModel proxy around the stage's block slice and runs
     :func:`apply_tensor_parallel` on it (which rewires the shared block
@@ -999,7 +997,7 @@ def apply_tensor_parallel_stage(
         # The monolithic ``_TPState`` map keys come from the SHELL's
         # ``named_modules()`` which names blocks ``transformer_blocks.N.*``,
         # but the ``_PipelineStage``'s own ``state_dict()`` names them
-        # ``blocks.N.*``. RIL ISS-403: without remapping, the TP checkpoint
+        # ``blocks.N.*``. without remapping, the TP checkpoint
         # gather/scatter helpers look up ``partition``/``full_index`` with the
         # stage's ``blocks.*`` keys, find nothing (treated as replicated), and
         # silently persist only this rank's SHARDED stage weights — no global

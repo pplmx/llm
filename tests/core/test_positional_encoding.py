@@ -32,7 +32,7 @@ def test_sinusoidal_encoding_initialization():
     assert hasattr(model, "pe")
     assert isinstance(model.pe, torch.Tensor)
     assert model.pe.shape == (1, MAX_SEQ_LEN, HIDDEN_SIZE)
-    # RIL ISS-146: the deterministic sine table must NOT be a persistent
+    # the deterministic sine table must NOT be a persistent
     # buffer — it bloated every checkpoint and exported artifact (ONNX/
     # TorchScript/GGUF embed it as a constant, and GGUF even Q4_0-quantized
     # it under an unrecognized name). It is regenerated on construction.
@@ -243,7 +243,7 @@ def test_sinusoidal_encoding_odd_hidden_size(hidden_size):
 
 
 def test_position_ids_out_of_range_raise_clean_error_not_cuda_assert():
-    """RU (round-44 defensive): feeding ``position_ids`` >= ``max_seq_len`` to
+    """RU (defensive): feeding ``position_ids`` >= ``max_seq_len`` to
     the encoding must fail fast with a ValueError, NOT reach the embedding
     gather — on CUDA that gather is an out-of-bounds device-side assert that
     poisons the whole process (every in-flight request, not just the sender).

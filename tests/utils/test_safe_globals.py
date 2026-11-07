@@ -1,6 +1,6 @@
 """Tests for :func:`llm.utils.serialization.register_framework_safe_globals`.
 
-Pins the failure semantics (RIL ISS-243): a submodule import failure during
+Pins the failure semantics: a submodule import failure during
 the allowlist walk must be LOUD (a warning naming the culprit) and must NOT
 finalise registration — otherwise one broken module permanently pins a
 partial allowlist (``torch.load(weights_only=True)`` later raises
@@ -57,7 +57,7 @@ def test_register_allows_framework_module_loads_weights_only():
 def test_partial_walk_warns_and_does_not_finalise(monkeypatch, caplog: pytest.LogCaptureFixture):
     """A broken submodule is LOUD and leaves registration retryable.
 
-    Regression for ISS-243: the walk used to swallow every import error yet
+    Regression for: the walk used to swallow every import error yet
     still set ``_SAFE_GLOBALS_REGISTERED = True``, permanently freezing a
     partial allowlist with no way to repair it.
     """

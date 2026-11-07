@@ -147,13 +147,13 @@ class TestPrefixTuningAttentionLayout:
     prefix_len, head_dim]`` (head varies slowest). Converting with a bare
     ``.view`` reinterprets the *same flat memory* as ``[head][pos][dim]``,
     so heads read K/V from the wrong prefix positions whenever both
-    ``num_kv_heads > 1`` and ``prefix_len > 1`` (RIL ISS-047). The correct
+    ``num_kv_heads > 1`` and ``prefix_len > 1``. The correct
     conversion is ``reshape(prefix_len, num_kv_heads, head_dim).permute(1,
     0, 2)``.
     """
 
     def test_expand_preserves_per_head_position_semantics(self):
-        """Regression (RIL ISS-047): ``_expand_to_attn_shape`` must map
+        """Regression: ``_expand_to_attn_shape`` must map
         ``pk[pos, head*head_dim + dim]`` to
         ``expanded[batch, head, pos, dim]`` — heads must not read each
         other's prefix positions."""
@@ -234,7 +234,7 @@ class TestPrefixTuningAttentionForward:
 
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
     def test_half_precision_base_mha_works(self, dtype):
-        """Regression (RIL ISS-158): prefix params must be created on the
+        """Regression: prefix params must be created on the
         base attention's device/dtype. Wrapping an already fp16/bf16 base
         (serve/export paths) and running forward would otherwise crash in
         ``torch.cat(prefix_k, k)`` on the dtype mismatch, since the prefix
@@ -432,7 +432,7 @@ class TestFoldReparameterization:
         assert torch.allclose(attn.prefix_k, snapshot_k)
 
     def test_get_prefix_parameters_skips_folded_wrappers(self):
-        """Regression (RIL ISS-209): after ``fold_reparameterization`` the
+        """Regression: after ``fold_reparameterization`` the
         reparam MLPs are deleted, but ``get_prefix_parameters`` (the PEFT
         registry's ``get_parameters`` for ``prefix_tuning``, used by
         ``save_peft``/``load_peft``) unconditionally yielded them —

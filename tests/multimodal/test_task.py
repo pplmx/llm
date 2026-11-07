@@ -1,4 +1,4 @@
-"""Integration + CPU e2e for the multimodal training task (TASK-227)."""
+"""Integration + CPU e2e for the multimodal training task."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def test_multimodal_task_builds_fusion_model_and_ce_criterion():
 
 
 def test_multimodal_task_build_model_threads_datamodule_embed_dim():
-    """Regression (RIL ISS-354): build_model() must thread the datamodule's
+    """Regression: build_model() must thread the datamodule's
     embed_dim into the fusion projection. It previously defaulted modal_dim to
     decoder.hidden_size, so a datamodule with embed_dim != hidden_size crashes
     with a cryptic nn.Linear mismatch at forward time (loud, but only at the

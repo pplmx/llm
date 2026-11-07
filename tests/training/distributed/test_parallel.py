@@ -99,7 +99,7 @@ def test_fsdp_over_compile_roundtrip_plain_keys():
     The engine compiles the model *before* wrapping it in FSDP, so an FSDP
     FULL_STATE_DICT names its keys ``_orig_mod.*``.  Save must strip that
     prefix (plain keys, portable to ``llm serve`` / DDP), and load must re-add
-    it for a compiled-FSDP model (round-76 deep-dive D1 — previously the
+    it for a compiled-FSDP model (deep-dive D1 — previously the
     default fsdp job could not resume its own checkpoint).
     """
     import os
@@ -137,7 +137,7 @@ def test_fsdp_over_compile_roundtrip_plain_keys():
 def test_gpus_per_node_env_var_parses():
     """``GPUS_PER_NODE=2`` (and the nested config env spelling) must scale the
     job without crashing: the before-validator previously compared the raw env
-    string to an int (round-76 deep-dive D3). Requires >=2 usable GPUs because
+    string to an int (deep-dive D3). Requires >=2 usable GPUs because
     DistributedConfig validates requested <= available."""
     with patch.dict("os.environ", {"GPUS_PER_NODE": "2"}, clear=False):
         cfg = DistributedConfig()
@@ -192,8 +192,8 @@ def test_distributed_config_defaults_include_fsdp_knobs():
 def test_distributed_config_accepts_3d_with_explicit_grid():
     """'3d' is accepted with explicit dp/pp/tp sizes; missing/invalid rejected.
 
-    RIL DEC-052/TASK-216: '3d' composes pipeline + tensor parallelism, so it
-    requires a positive, explicit dp_size*pp_size*tp_size grid at config load.
+    '3d' composes pipeline + tensor parallelism, so it
+       requires a positive, explicit dp_size*pp_size*tp_size grid at config load.
     """
     cfg = DistributedConfig(parallel_strategy="3d", dp_size=1, pp_size=2, tp_size=2)
     assert cfg.parallel_strategy == "3d"
@@ -241,7 +241,7 @@ def test_distributed_config_cpu_offload_roundtrip():
     assert cfg.fsdp_cpu_offload is True
 
 
-# --- wrap_model_for_training MoE unused-parameter handling (RIL ISS-138) ---
+# --- wrap_model_for_training MoE unused-parameter handling ---
 
 
 def _moe_model() -> torch.nn.Module:
@@ -260,7 +260,7 @@ def _moe_model() -> torch.nn.Module:
 
 
 def test_wrap_ddp_moe_enables_find_unused_parameters():
-    """RIL ISS-138: a MoE model wrapped for DDP must set
+    """a MoE model wrapped for DDP must set
     ``find_unused_parameters=True`` — a batch can deterministically leave some
     experts unrouted (top-k over many experts), so those params get NO
     gradient and DDP (find_unused_parameters=False) fails the backward with
@@ -439,7 +439,7 @@ def test_fsdp_auto_wrap_positive_returns_callable():
 
 @pytest.mark.parametrize("dtype", ["fp32", "bf16"])
 def test_fsdp_mixed_precision_builder_known_dtypes(dtype):
-    """Supported dtypes build without raising (fp16 is REFUSED — RIL ISS-188)."""
+    """Supported dtypes build without raising (fp16 is REFUSED)."""
     from llm.training.distributed.parallel import _fsdp_mixed_precision
 
     result = _fsdp_mixed_precision(dtype)
@@ -450,7 +450,7 @@ def test_fsdp_mixed_precision_builder_known_dtypes(dtype):
 
 
 def test_fsdp_mixed_precision_builder_refuses_fp16():
-    """Regression (RIL ISS-188): fp16 sharded params/reductions need a loss
+    """Regression: fp16 sharded params/reductions need a loss
     scaler the framework does not wire — silently running un-scaled fp16 never
     converges. The policy builder must refuse loudly instead."""
     from llm.training.distributed.parallel import _fsdp_mixed_precision
@@ -467,11 +467,11 @@ def test_fsdp_mixed_precision_builder_rejects_unknown():
         _fsdp_mixed_precision("int8")
 
 
-# --- DistributedManager.setup: launcher env respect (RIL ISS-187) ---
+# --- DistributedManager.setup: launcher env respect ---
 
 
 def test_setup_respects_launcher_master_env(monkeypatch):
-    """Regression (RIL ISS-187): ``DistributedManager.setup`` must NOT
+    """Regression: ``DistributedManager.setup`` must NOT
     overwrite a launcher-provided ``MASTER_ADDR``/``MASTER_PORT`` (torchrun
     sets them for multi-node rendezvous); it may only fall back to config
     defaults when the env is unset. The old ``os.environ[...] = config`` made

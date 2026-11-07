@@ -1,4 +1,4 @@
-"""Tests for wiring sparse/streaming attention into the model config (TASK-243).
+"""Tests for wiring sparse/streaming attention into the model config.
 
 Proves a ``ModelConfig.attn_sparse`` scheme is a *selectable model option*:
 - ``ModelConfig`` validates the kind;
@@ -59,7 +59,7 @@ def test_helper_returns_none_when_unset():
 
 
 def test_sparse_scheme_rejects_flash_attn_backend():
-    """RIL TASK-248: the flash_attn backend ignores ``attn_mask``, so a sparse
+    """the flash_attn backend ignores ``attn_mask``, so a sparse
     scheme with it would silently run dense attention. The model refuses loudly
     instead of building a scheme that has no effect. (mha/mla route through the
     SDPA wrapper and do consume the mask, so they remain supported.)"""
@@ -92,7 +92,7 @@ def test_helper_returns_mask_out_convention():
 
 
 def test_helper_builds_rectangular_key_history_mask():
-    """RIL TASK-245: at a KV-cache decode step the mask is [Sq, Sk] over the key
+    """at a KV-cache decode step the mask is [Sq, Sk] over the key
     history (Sk >= Sq), so sink/window can constrain the accumulated past keys
     instead of a degenerate square of the 1-token input."""
     cfg = _config(attn_sparse={"kind": "streaming", "num_sink": 2, "window_size": 4})
@@ -107,7 +107,7 @@ def test_helper_builds_rectangular_key_history_mask():
 
 
 def test_decoder_decode_uses_key_history_mask():
-    """RIL TASK-245: during KV-cache decode the sparse scheme constrains the
+    """during KV-cache decode the sparse scheme constrains the
     accumulated keys (sparse decode differs from dense), and a full-coverage
     scheme keeps the decode dense-equivalent. KV is held fixed via a dense
     prefill; only the decode-time scheme varies."""

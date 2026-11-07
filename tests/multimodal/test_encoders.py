@@ -1,4 +1,4 @@
-"""Tests for the modality-encoder registry + minimal CPU encoder (TASK-226)."""
+"""Tests for the modality-encoder registry + minimal CPU encoder."""
 
 from __future__ import annotations
 

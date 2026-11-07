@@ -1,4 +1,4 @@
-"""Pipeline-parallelism engine e2e (RIL DEC-049 / TASK-210).
+"""Pipeline-parallelism engine e2e.
 
 Trains a tiny LM model through the REAL ``TrainingEngine`` with
 ``parallel_strategy='pp'`` on ``world_size`` CPU processes (gloo). This covers
@@ -61,7 +61,7 @@ def _dict_collate(batch: list) -> dict:
     """Collate TensorDataset rows into an SFT-style dict batch.
 
     Carries the extra ``attention_mask`` key SFTDataModule emits — the PP stage
-    forward must DROP it without changing the loss (RIL ISS-339 / TASK-304).
+    forward must DROP it without changing the loss.
     """
     input_ids, labels = zip(*batch, strict=True)
     input_ids = torch.stack(input_ids)
@@ -192,17 +192,17 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         moved = [key for key in before_digests if before_digests[key] != digests1.get(key)]
         assert moved, f"rank {rank}: no parameter changed across PP training — the run was a no-op"
 
-        # ---- TASK-212: the checkpoint must carry THIS rank's optimizer ----#
+        # ---: the checkpoint must carry THIS rank's optimizer ----#
         # ---- moments (Adam exp_avg), with an entry per stage/rank.      ---#
         ckpt_path = str(Path(ckpt_dir) / "epoch_1.pt")
         payload = load_checkpoint_payload(ckpt_path)
         optimizer_blob = payload.get("optimizer_state")
         assert isinstance(optimizer_blob, dict), "PP checkpoint must persist an optimizer_state"
         stage_states = optimizer_blob.get("__pp_stage_states__")
-        assert isinstance(stage_states, dict), "PP checkpoint must persist per-stage optimizer states (TASK-212)"
+        assert isinstance(stage_states, dict), "PP checkpoint must persist per-stage optimizer states"
         assert str(rank) in stage_states, f"rank {rank}: own stage optimizer state missing from checkpoint"
         saved_moment = _first_moment(stage_states[str(rank)])
-        assert saved_moment is not None, "PP optimizer moments must be non-empty after training (TASK-212)"
+        assert saved_moment is not None, "PP optimizer moments must be non-empty after training"
 
         # ---- Epoch 2: resume from the checkpoint, continue ----
         # Every rank must load its OWN slice from the global-named dict; a
@@ -222,14 +222,12 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
         engine2 = TrainingEngine(config=config2, task=task2, rank=rank, world_size=world_size, data_module=data_module2)
         # The resumed engine must sense it starts at epoch index 1.
         assert engine2.start_epoch == 1, f"rank {rank}: resume did not sense start_epoch=1"
-        # TASK-212: the resumed optimizer must have restored ITS OWN stage's
+        #: the resumed optimizer must have restored ITS OWN stage's
         # moments (the pre-fix behavior reset them to a fresh state, so the
         # first exp_avg would be None here).
         resumed_moment = _first_moment(engine2.optimizer.state_dict())
-        assert resumed_moment is not None, f"rank {rank}: resume reset the optimizer moments (TASK-212)"
-        assert torch.equal(resumed_moment, saved_moment), (
-            f"rank {rank}: resumed moments differ from checkpoint (TASK-212)"
-        )
+        assert resumed_moment is not None, f"rank {rank}: resume reset the optimizer moments"
+        assert torch.equal(resumed_moment, saved_moment), f"rank {rank}: resumed moments differ from checkpoint"
         engine2.run()
         assert engine2.global_step > steps1, f"rank {rank}: resume did not advance global_step"
         full2 = model_state_dict(engine2.model)
@@ -326,7 +324,7 @@ def test_pp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
 
 
 def test_pp_dp_2d_engine_trains_and_resumes_four_process_cpu(tmp_path) -> None:
-    """PP + data-parallel 2D (RIL TASK-211) engine e2e on a 2x2 [DP][PP] grid.
+    """PP + data-parallel 2D engine e2e on a 2x2 [DP][PP] grid.
 
     Four CPU/gloo ranks with ``pp_size=2``: the DP dimension shards the data
     per DP group, ``allreduce_pp_dp_grads`` averages at each step boundary,
@@ -338,7 +336,7 @@ def test_pp_dp_2d_engine_trains_and_resumes_four_process_cpu(tmp_path) -> None:
 
 
 def test_pp_microbatch_overlap_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
-    """PP with n_microbatches=2 (RIL TASK-213) through the REAL engine.
+    """PP with n_microbatches=2 through the REAL engine.
 
     The schedule chunks each batch into two microbatches (different loss
     entries, gradient normalised internally) — the engine must still train,
@@ -349,7 +347,7 @@ def test_pp_microbatch_overlap_engine_trains_and_resumes_two_process_cpu(tmp_pat
 
 
 def test_pp_bf16_amp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None:
-    """PP + bf16 AMP (RIL TASK-214) through the REAL engine on CPU.
+    """PP + bf16 AMP through the REAL engine on CPU.
 
     ``use_amp=True`` with ``amp_dtype='bfloat16'`` runs every stage's forward
     AND the schedule's internal backward inside bf16 autocast — no GradScaler
@@ -362,7 +360,7 @@ def test_pp_bf16_amp_engine_trains_and_resumes_two_process_cpu(tmp_path) -> None
 
 
 def test_pp_engine_sft_alias_trains_and_resumes_two_process_cpu(tmp_path) -> None:
-    """SFT alias under pipeline parallelism (RIL TASK-304 / ISS-339 overlap).
+    """SFT alias under pipeline parallelism (overlap).
 
     ``SFTTask`` is a pure alias of ``LanguageModelingTask``, so it MUST run
     under ``parallel_strategy='pp'`` exactly like the parent. It also collates

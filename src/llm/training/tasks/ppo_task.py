@@ -79,7 +79,7 @@ class PPOTask(TrainingTask):
         The trainer's reference model is deep-copied from the policy inside
         ``prepare_training`` — BEFORE the engine loads any checkpoint into
         the policy — so a resumed PPO run would otherwise compute its KL
-        penalty against a stale model (RIL round-60 deep-dive Finding 1).
+        penalty against a stale model (deep-dive Finding 1).
         """
         if self.ppo_trainer is not None:
             self.ppo_trainer.on_checkpoint_loaded(model)
@@ -89,7 +89,7 @@ class PPOTask(TrainingTask):
 
         Only used for read-only copies (reward base). The *training*
         policy keeps its ``DistributedDataParallel`` wrapper so multi-GPU
-        gradients actually all-reduce (RIL round-47 deep-dive) — pass
+        gradients actually all-reduce (deep-dive) — pass
         ``engine.model`` directly to the trainer, never the stripped
         ``.module``.
         """
@@ -115,7 +115,7 @@ class PPOTask(TrainingTask):
         # backward must hit DDP's gradient all-reduce. Passing the
         # unwrapped ``.module`` smuggles gradients past DDP, so every rank
         # silently trains a divergent model and only rank 0's policy is
-        # ever checkpointed (RIL round-47 deep-dive).
+        # ever checkpointed (deep-dive).
         policy = engine.model
         reward_model = self._build_reward_model().to(engine.device)
 
@@ -174,14 +174,14 @@ class PPOTask(TrainingTask):
                 avg_loss = sum(m.get("loss", 0.0) for m in epoch_metrics) / len(epoch_metrics)
 
             # Collect extra state on ALL ranks BEFORE the rank-0 save gate
-            # (mirrors the engine's standard loop, RIL ISS-179): streaming
+            # (mirrors the engine's standard loop): streaming
             # DataModules gather per-rank shard cursors collectively
             # (all_gather_object), so calling this only on rank 0 would
             # DEADLOCK (rank 1 never enters the collective) and would drop all
             # other shards' resume cursors.
             extra_state = collect_extra_state(engine, self, engine.data_module)
 
-            # FSDP FULL_STATE_DICT is a cross-rank all-gather (RIL ISS-186):
+            # FSDP FULL_STATE_DICT is a cross-rank all-gather:
             # every rank must enter save_checkpoint; non-rank-0 ranks gather-
             # and-discard inside, only rank 0 writes + fires the callback.
             if engine.rank == 0 or is_fsdp(engine.model):

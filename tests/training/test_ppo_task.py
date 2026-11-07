@@ -138,7 +138,7 @@ def test_ppo_task_honors_max_steps(tmp_path, tiny_model, monkeypatch):
 
 @pytest.mark.quick
 def test_ppo_policy_keeps_ddp_wrapper(monkeypatch):
-    """Regression (RIL round-47): ``prepare_training`` must hand the trainer
+    """Regression: ``prepare_training`` must hand the trainer
     the DDP-wrapped ``engine.model`` — not its unwrapped ``.module``.
 
     With the OLD code the trainer's every forward ran on the bare module, so

@@ -28,7 +28,7 @@ def _normalize_eos_ids(eos_token_id: int | list[int] | tuple[int, ...] | None) -
     HF tokenizers can expose ``eos_token_id`` as a list/sequence; a raw
     ``next_token.item() == eos_id`` int-vs-list comparison silently never
     matches, so every rollout runs to ``response_max_len`` with post-EOS junk
-    folded into the training signal (RIL ISS-116/334).
+    folded into the training signal.
     """
     if eos_token_id is None:
         return ()
@@ -98,7 +98,7 @@ class PPOTrainer:
         if self.ref_model is not None:
             self.ref_model.to(self.device)
             self.ref_model.eval()
-            # RIL ISS-334 (mirrors the critic's ISS-173 handling): the frozen
+            # (mirrors the critic's handling): the frozen
             # reference is reconstructed from the policy (which the engine
             # broadcasts before prepare_training), but broadcast it explicitly
             # too — if the copy ran before a rank-0 sync, multi-GPU ranks
@@ -109,7 +109,7 @@ class PPOTrainer:
             broadcast_parameters(self.ref_model)
         if self.value_model is not None:
             self.value_model.to(self.device)
-            # RIL ISS-173: the critic deep-copies the policy (which the engine
+            # the critic deep-copies the policy (which the engine
             # broadcasts before prepare_training), but broadcast it explicitly
             # too — if the copy ran before a rank-0 sync, multi-GPU ranks
             # would start with divergent critic weights and GAE bootstraps.
@@ -172,7 +172,7 @@ class PPOTrainer:
             self.value_model.load_state_dict(state["value_model"])
             # A persisted critic was restored — keep it (the critic's base at
             # the moment the checkpoint was saved) instead of re-syncing to
-            # the now-moved policy in on_checkpoint_loaded (RIL ISS-175).
+            # the now-moved policy in on_checkpoint_loaded.
             self._value_restored_from_ckpt = True
         if self.value_optimizer is not None and "value_optimizer" in state:
             self.value_optimizer.load_state_dict(state["value_optimizer"])
@@ -187,7 +187,7 @@ class PPOTrainer:
         """Align the frozen companions with a checkpoint-loaded base policy.
 
         Called by the engine right after ``load_checkpoint`` applies resumed
-        weights to the policy (RIL round-60 deep-dive Finding 1, same contract
+        weights to the policy (deep-dive Finding 1, same contract
         as ``DPOTask.on_checkpoint_loaded``).
 
         - Resuming from an SFT/base checkpoint (no persisted ``ref_model`` /
@@ -196,8 +196,8 @@ class PPOTrainer:
           regularised / bootstrapped against. Both are deep-copied inside
           ``prepare_training`` BEFORE the engine loads the checkpoint, so
           without this hook the KL penalty and the GAE value bootstrap use
-          stale (pre-resume) models (RIL round-60 Finding 1 + round-62
-          surface-B Finding 3 / ISS-175).
+          stale (pre-resume) models (Finding 1 +
+          surface-B Finding 3).
         - Resuming from a mid-PPO checkpoint: ``load_checkpoint_state`` already
           restored the original companion weights; keep them.
         """
@@ -210,7 +210,7 @@ class PPOTrainer:
             self.value_model.base_model.load_state_dict(model.state_dict())
 
     def _sync_value_grads(self) -> None:
-        """All-reduce the critic's gradients across ranks (RIL ISS-173).
+        """All-reduce the critic's gradients across ranks.
 
         No-op when not running distributed. Mirrors what DDP does for the
         policy: gradients are summed then divided by the world size so every
@@ -240,7 +240,7 @@ class PPOTrainer:
         (reference model, critic base) must deep-copy the *unwrapped*
         module — deep-copying a DDP wrapper drags along its process-group
         references and the isinstance(DecoderModel) guards below would
-        otherwise fail (RIL round-47 deep-dive).
+        otherwise fail (deep-dive).
         """
         return self.policy.module if isinstance(self.policy, DistributedDataParallel) else self.policy
 
@@ -287,7 +287,7 @@ class PPOTrainer:
                 # prompt length is (real tokens) - (response tokens). The
                 # old ``(1 - response_mask[i]).sum()`` counted trailing
                 # padding as prompt tokens, offsetting every non-longest
-                # sample's response region into padding (RIL ISS-043).
+                # sample's response region into padding.
                 prompt_len = int(attention_mask[i].sum().long()) - resp_len
                 positions = prompt_len - 1 + torch.arange(resp_len, device=all_values.device)
                 response_values[i, :resp_len] = all_values[i, positions]
@@ -333,8 +333,7 @@ class PPOTrainer:
         but never scores the post-response state s_L (prompt + full response,
         i.e. the state that would predict one more token). That state is the
         continuation point of a max-len-truncated episode — GAE must bootstrap
-        from V(s_L) there instead of treating the cut as terminal (RIL
-        ISS-178). Returns a scalar tensor.
+        from V(s_L) there instead of treating the cut as terminal. Returns a scalar tensor.
         """
         if self.value_model is None:
             raise RuntimeError("value_model is required to compute the terminal value")
@@ -362,7 +361,7 @@ class PPOTrainer:
             truncated: List of bools — True when the response hit
                 ``response_max_len`` instead of terminating at EOS. Truncated
                 episodes are not genuinely terminal and must be bootstrapped
-                with V(s_L) in GAE (RIL ISS-178). With a tokenizer that has
+                with V(s_L) in GAE. With a tokenizer that has
                 no EOS every rollout is truncated.
         """
         self.policy.eval()
@@ -371,9 +370,9 @@ class PPOTrainer:
         # ``hasattr(self.tokenizer, "eos_id")`` was always False — no
         # tokenizer exposes ``eos_id`` — so rollouts never stopped at EOS and
         # ran to ``response_max_len`` with post-EOS junk folded into the
-        # training signal (RIL ISS-116).
+        # training signal.
         eos_id = getattr(self.tokenizer, "eos_token_id", None)
-        # Normalize list-valued tokenizers so EOS termination works (RIL ISS-334).
+        # Normalize list-valued tokenizers so EOS termination works.
         eos_ids = _normalize_eos_ids(eos_id)
 
         all_prompt_ids = []
@@ -394,7 +393,7 @@ class PPOTrainer:
                 log_probs = []
 
                 # The episode is truncated iff generation exhausts
-                # ``response_max_len`` without emitting EOS (RIL ISS-178).
+                # ``response_max_len`` without emitting EOS.
                 # Assume truncated; an EOS hit below clears it.
                 truncated = True
 
@@ -405,7 +404,7 @@ class PPOTrainer:
                 # response_max_len`` drives the embedding past the positional
                 # table: learned PE raises IndexError, sinusoidal silently
                 # truncates the position slice and corrupts hidden states
-                # (RIL ISS-334). ``budget`` is the number of response tokens.
+                # . ``budget`` is the number of response tokens.
                 budget = self.config.response_max_len
                 model_max_seq_len = getattr(self.policy, "max_seq_len", None)
                 if model_max_seq_len is not None:
@@ -433,14 +432,14 @@ class PPOTrainer:
                     # ``logits / T``), never to the recorded log-prob — with
                     # ``T != 1`` the old code logged ``log_softmax(logits/T)``
                     # and silently mixed two differently-scaled policies in
-                    # the ratio (RIL ISS-053).
+                    # the ratio.
                     # Sample from the temperature- AND top-k/top-p-filtered
-                    # distribution (RIL ISS-176: the config declared these
+                    # distribution (the config declared these
                     # knobs but generation honored only temperature — pure
                     # multinomial over the full distribution otherwise). The
                     # recorded ``old_log_prob`` below stays the RAW unscaled
                     # log-softmax so the IS ratio ``exp(new - old)`` matches
-                    # ppo_step's raw re-score (RIL ISS-053).
+                    # ppo_step's raw re-score.
                     if self.config.temperature == 0:
                         next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
                     else:
@@ -468,8 +467,7 @@ class PPOTrainer:
                     # the response training signal (and rollout compute is not
                     # wasted on the tail). Only an EOS termination makes the
                     # episode genuinely terminal — anything else is a
-                    # truncation whose last state must be bootstrapped (RIL
-                    # ISS-178).
+                    # truncation whose last state must be bootstrapped.
                     if eos_ids and next_token.item() in eos_ids:
                         truncated = False
                         break
@@ -535,8 +533,7 @@ class PPOTrainer:
         # ``[prompt_len-1, total_len-1)``. Masking with the *unshifted*
         # ``response_mask`` covered the state AFTER the last response token
         # and skipped the first response token's predictor — a one-position
-        # bias that misregularized the shift-aligned policy loss (RIL
-        # ISS-118). ``response_mask[:, 1:]`` selects exactly the predicting
+        # bias that misregularized the shift-aligned policy loss. ``response_mask[:, 1:]`` selects exactly the predicting
         # states; drop ``kl[:, -1]`` (the state predicting beyond the window).
         state_mask = response_mask[:, 1:]
         kl = (kl[:, :-1] * state_mask).sum() / state_mask.sum().clamp(min=1)
@@ -557,7 +554,7 @@ class PPOTrainer:
         advantages = batch.advantages
         returns = batch.returns
 
-        # Deterministic re-scoring (RIL ISS-174): ``old_log_probs`` were
+        # Deterministic re-scoring: ``old_log_probs`` were
         # computed under ``policy.eval()`` during rollout generation. Re-
         # scoring the SAME inputs in train mode applies dropout (default
         # p=0.1), so even at epoch 0 ``ratio = exp(new - old) != 1``, the
@@ -598,7 +595,7 @@ class PPOTrainer:
         # losses over real tokens only — a plain ``.mean()`` divides by
         # ``B * response_len`` so padded positions (0 contribution) silently
         # scale gradients by ``real_tokens / (B * response_len)``, which
-        # varies per mini-batch (RIL ISS-065).
+        # varies per mini-batch.
         response_window_mask = torch.zeros_like(old_log_probs, dtype=torch.bool)
 
         for i in range(batch_size):
@@ -610,7 +607,7 @@ class PPOTrainer:
                 # their difference is the true prompt length. Counting
                 # ``(1 - response_mask[i]).sum()`` instead inflated prompt_len
                 # by the trailing pad count and sliced padding-position log
-                # probs into the ratio (RIL ISS-043).
+                # probs into the ratio.
                 prompt_len = int(attention_mask[i].sum().long()) - resp_len
                 new_response_log_probs[i, :resp_len] = token_log_probs[i, prompt_len - 1 : prompt_len - 1 + resp_len]
                 response_window_mask[i, :resp_len] = True
@@ -630,7 +627,7 @@ class PPOTrainer:
         policy_loss_1 = -response_advantages * ratio
         policy_loss_2 = -response_advantages * clipped_ratio
         # Normalize over real response tokens only (masked mean) so padded
-        # zero positions do not dilute the gradient scale (RIL ISS-065).
+        # zero positions do not dilute the gradient scale.
         policy_loss = (torch.max(policy_loss_1, policy_loss_2) * response_window_mask).sum() / (
             response_window_mask.sum().clamp(min=1)
         )
@@ -653,7 +650,7 @@ class PPOTrainer:
             # Masked MSE over real response tokens only — a plain mean over
             # the [B, response_len] window includes padded positions (both
             # 0), which dilutes the value gradient identically to the policy
-            # loss above (RIL ISS-065).
+            # loss above.
             squared = (pred_values - target_returns) ** 2
             value_loss = (squared * response_window_mask).sum() / (response_window_mask.sum().clamp(min=1))
             value_loss = self.config.value_coef * value_loss
@@ -689,12 +686,12 @@ class PPOTrainer:
 
         self.optimizer.step()
         if self.value_optimizer is not None:
-            # RIL ISS-173: the critic is trained OUTSIDE the policy's DDP
+            # the critic is trained OUTSIDE the policy's DDP
             # wrapper, so its gradients must be all-reduced explicitly before
             # stepping — otherwise rank R's critic diverges after the first
             # update and the shared policy is trained against rank-inconsistent
             # advantage/target scales (the same gradients-not-synchronized
-            # class round-47 fixed for the policy).
+            # class fixed for the policy).
             self._sync_value_grads()
             self.value_optimizer.step()
 
@@ -704,7 +701,7 @@ class PPOTrainer:
             # contribute ratio=1 (approx_kl contribution 0), so a plain
             # ``.mean()`` dilutes the telemetry by real/total tokens — with
             # heavily padded mini-batches the ``target_kl`` early-stop fires
-            # late or never (RIL ISS-090).
+            # late or never.
             real_tokens = response_window_mask.sum().clamp(min=1)
             approx_kl = ((ratio - 1) - ratio.log()).mul(response_window_mask).sum() / real_tokens
             ratio_mean = (ratio * response_window_mask).sum() / real_tokens
@@ -720,7 +717,7 @@ class PPOTrainer:
             "ratio_mean": ratio_mean.item(),
         }
 
-        # Restore train mode (RIL ISS-174): generation re-evals the policy
+        # Restore train mode: generation re-evals the policy
         # anyway, but leaving dropout modules silently off would change
         # behavior for any caller that trains after ppo_step.
         self.policy.train()
@@ -747,13 +744,13 @@ class PPOTrainer:
         """
         # 1. Generate responses. The fourth element reports which episodes
         # were truncated at ``response_max_len`` rather than EOS-terminated;
-        # those need a V(s_L) bootstrap in GAE (RIL ISS-178).
+        # those need a V(s_L) bootstrap in GAE.
         prompt_ids, response_ids, log_probs, truncated = self.generate_responses(prompts)
 
         # 2. Compute rewards
         rewards = self.compute_rewards(prompt_ids, response_ids)
 
-        # ``normalize_rewards`` (RIL ISS-176): standardize the reward batch
+        # ``normalize_rewards``: standardize the reward batch
         # to zero-mean/unit-variance before storing (general-preferences-style
         # reward standardization). Previously the knob was never read — the
         # raw reward scale fed GAE/returns unchanged.
@@ -778,7 +775,7 @@ class PPOTrainer:
                 values = self.compute_response_values(p_ids, r_ids)
                 # Truncated episodes are not terminal: collect the critic's
                 # V(s_L) at the post-response state so GAE bootstraps it
-                # instead of assuming a hard stop (RIL ISS-178).
+                # instead of assuming a hard stop.
                 if trunc:
                     terminal_value = self.compute_terminal_value(p_ids, r_ids)
             self.buffer.add(
@@ -800,7 +797,7 @@ class PPOTrainer:
         # just the current mini-batch pass. The old inner-only ``break`` let
         # the outer ``for _epoch`` re-apply PPO updates to the SAME rollout
         # after epoch 0 diverged, defeating the KL-blowup safeguard
-        # entirely (RIL ISS-052).
+        # entirely.
         kl_breached = False
         for _epoch in range(self.config.ppo_epochs):
             if kl_breached:
@@ -823,7 +820,7 @@ class PPOTrainer:
         # Aggregate metrics — a degenerate-but-legal config (ppo_epochs=0, or
         # an empty buffer because mini_batch_size slicing produced nothing)
         # yields no batches; return zeroed metrics instead of IndexError-ing
-        # on ``all_metrics[0]`` or dividing by zero (RIL ISS-177).
+        # on ``all_metrics[0]`` or dividing by zero.
         avg_metrics = {}
         if all_metrics:
             for key in all_metrics[0]:

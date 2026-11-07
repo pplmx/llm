@@ -20,7 +20,7 @@ class RolloutSample:
     rewards: torch.Tensor  # [1] scalar reward from reward model
     old_log_probs: torch.Tensor  # [response_len] log probs from policy
     values: torch.Tensor | None = None  # [response_len] value estimates (optional)
-    # RIL ISS-178: whether the episode was cut off by ``response_max_len``
+    # whether the episode was cut off by ``response_max_len``
     # (as opposed to genuinely terminating at EOS). Truncated episodes are
     # NOT terminal — GAE must bootstrap from the critic's value at the
     # post-response state ``s_L`` instead of hardcoding next_value=0.
@@ -193,7 +193,7 @@ class RolloutBuffer:
                 # Full GAE with sparse terminal reward.
                 values = sample.values
                 response_len = len(sample.response_ids)
-                # RIL ISS-178: the episode's last state is terminal ONLY when
+                # the episode's last state is terminal ONLY when
                 # the response ended at EOS — then nothing follows and
                 # next_value is 0. A response truncated by
                 # ``response_max_len`` is NOT finished: the policy would keep

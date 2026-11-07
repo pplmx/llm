@@ -123,7 +123,7 @@ class GPTQQuantizer:
         # tensor, so an odd total weight count would crash mid-pipeline in
         # ``_pack_4bit`` (after Hessian accumulation) for BOTH per-channel and
         # per-group 4-bit. Fail fast with the same "clear error instead of a
-        # late crash" spirit as the group-size check above (round-81 quant
+        # late crash" spirit as the group-size check above (quant
         # deep-dive F3 — the guard previously covered only group_size == -1).
         if self.config.bits == 4 and (self.out_features * self.in_features) % 2 != 0:
             raise ValueError(
@@ -276,7 +276,7 @@ class GPTQQuantizer:
                     # stored for dequantization below — a whole-group scalar
                     # (``.max()`` over all rows) systematically shrank the
                     # reconstruction of any row whose magnitude was below the
-                    # group max (RIL ISS-057).
+                    # group max.
                     gs = self.config.group_size
                     group_idx = (i + j) // gs
                     if group_idx != cached_group_idx:
@@ -572,7 +572,7 @@ def quantize_model_gptq(
     # later crashes with "No calibration data accumulated (n_samples=0)">
     # after earlier layers were already replaced (partial in-place mutation).
     # Any inconsistency -> rebuild every layer's captures from the direct
-    # calls over the full calibration set (RIL ISS-136).
+    # calls over the full calibration set.
     expected_captures = len(calib_batches)
     capt_sizes = {n: len(v) for n, v in captured.items()}
     any_captured = any(s > 0 for s in capt_sizes.values())
@@ -622,7 +622,7 @@ def quantize_model_gptq(
         if layer.bias is not None:
             with torch.no_grad():
                 new_layer.bias.copy_(layer.bias.data)
-        # Adopt the replaced layer's dtype (RIL ISS-191): selective
+        # Adopt the replaced layer's dtype: selective
         # quantization over an already fp16/bf16 base must yield an fp16
         # quant layer, otherwise the forward emits fp32 into the remaining
         # half-precision linears and crashes.

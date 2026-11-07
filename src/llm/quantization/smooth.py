@@ -90,8 +90,8 @@ ALPHA_SEARCH_GRID = (0.25, 0.5, 0.75, 1.0)
 # _smooth_layer.py) and divides by both at forward time (``x / input_scales``,
 # ``x / act_scale``), so any scale below fp16's subnormal floor (~5.96e-8)
 # would FLUSH to 0.0 on storage and ``x / 0.0`` yields NaN — the all-zero /
-# vanishing-magnitude calibration cases crashed silently (round-82 / ISS-235,
-# ISS-239).  Clamping to this floor keeps every packed scale strictly positive
+# vanishing-magnitude calibration cases crashed silently (,
+# ).  Clamping to this floor keeps every packed scale strictly positive
 # AND exact in fp16, so dead-in-calibration layers degrade to a finite
 # near-zero output instead.
 _ACT_SCALE_FLOOR = float(torch.finfo(torch.float16).tiny)
@@ -108,7 +108,7 @@ def _smoothing_scales(
     (nothing to smooth). Scales are clamped to an fp16-safe positive floor
     (``_ACT_SCALE_FLOOR``) so a vanishing-magnitude channel never stores a
     scale that flushes to 0 in the packed fp16 ``input_scales`` (that would
-    NaN the ``x / input_scales`` forward — round-82 / ISS-239).
+    NaN the ``x / input_scales`` forward).
 
     Args:
         act_max: Per-channel max abs activation [in_features].
@@ -138,7 +138,7 @@ def _activation_scale(act_max: torch.Tensor, s: torch.Tensor) -> float:
     (or vanishing) scale; that must not reach the fp16-stored ``act_scale``
     where it would flush to 0 and NaN the forward.  Clamp at
     ``_ACT_SCALE_FLOOR`` so dead-in-calibration layers produce a small
-    finite output instead (round-82 / ISS-235) — the same degradation GPTQ
+    finite output instead — the same degradation GPTQ
     already gives its dead columns.
     """
     scale = (act_max / s).max().item() / 127.0
@@ -191,7 +191,7 @@ def _eval_layer_error(
 
     # ``bias`` may be fp16/bf16 (a ``model.half()`` layer) while ``x``/``w``
     # here are fp32 — cast it to fp32 once so both linear passes share one
-    # dtype (RIL ISS-060). ``linear`` accepts ``None`` bias.
+    # dtype. ``linear`` accepts ``None`` bias.
     bias_fp32 = bias.to(dtype=torch.float32) if bias is not None else None
 
     total_err = 0.0
@@ -385,7 +385,7 @@ def quantize_model_smoothquant(
     # diverged (a layer that never got its first batch holds ZERO captures and
     # later crashes with "No calibration data accumulated (n_samples=0)" after
     # earlier layers were already replaced). Any inconsistency -> rebuild every
-    # target's captures from direct calls over the full set (RIL ISS-136).
+    # target's captures from direct calls over the full set.
     expected_captures = len(calib_batches)
     capt_sizes = {n: len(v) for n, v in captured.items()}
     any_captured = any(s > 0 for s in capt_sizes.values())
@@ -434,7 +434,7 @@ def quantize_model_smoothquant(
         if layer.bias is not None:
             with torch.no_grad():
                 new_layer.bias.copy_(layer.bias.data)
-        # Adopt the replaced layer's dtype (RIL ISS-191): selective
+        # Adopt the replaced layer's dtype: selective
         # quantization over an already fp16/bf16 base must yield a half
         # quant layer, otherwise the forward emits fp32 into the remaining
         # half-precision linears and crashes.

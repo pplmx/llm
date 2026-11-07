@@ -1,6 +1,6 @@
 """Native ZeRO Stage-1 optimizer-state partitioning (no DeepSpeed dependency).
 
-ROADMAP 15.5 (P2) — DeepSpeed ZeRO 集成, first slice (RIL TASK-267/ISS-303):
+ROADMAP 15.5 (P2) — DeepSpeed ZeRO 集成, first slice:
 a self-contained :class:`ZeroOptimizer` that partitions optimizer state across
 data-parallel ranks so per-rank optimizer-state memory is ~1/world_size of the
 full set, then all-gathers the updated parameters so every rank converges to

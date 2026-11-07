@@ -40,7 +40,7 @@ class StreamingTextDataModule(StreamDataModule):
         # World size carried by a checkpoint loaded BEFORE ``train_dataloader``
         # ran (and therefore before ``_world_size`` was known). The mismatch
         # check is deferred to ``train_dataloader`` instead of being silently
-        # skipped (RIL ISS-204: the guard was order-dependent on
+        # skipped (the guard was order-dependent on
         # ``_world_size`` already being set when ``load_checkpoint_state``
         # ran — ``load_extra_state`` makes no such ordering guarantee).
         self._pending_world_size: int | None = None
@@ -83,14 +83,14 @@ class StreamingTextDataModule(StreamDataModule):
 
     def _validate_world_size(self, saved_world_size: int | None) -> None:
         """Refuse a checkpoint whose shard cursors were built for another
-        rank layout.
+                rank layout.
 
-        Shard cursors depend on the ``rank % num_shards`` arithmetic, so a
-        checkpoint saved under ``world_size=A`` is meaningless to a run using
-        ``world_size=B`` (ranks silently re-train wrong shards). Called both
-        from ``load_checkpoint_state`` (when ``_world_size`` is already known)
-        and from ``train_dataloader`` (for a checkpoint loaded earlier —
-        RIL ISS-204).
+                Shard cursors depend on the ``rank % num_shards`` arithmetic, so a
+                checkpoint saved under ``world_size=A`` is meaningless to a run using
+                ``world_size=B`` (ranks silently re-train wrong shards). Called both
+                from ``load_checkpoint_state`` (when ``_world_size`` is already known)
+                and from ``train_dataloader`` (for a checkpoint loaded earlier
+        ).
         """
         if saved_world_size is None or self._world_size is None:
             return
@@ -188,7 +188,7 @@ class StreamingTextDataModule(StreamDataModule):
         saved_world_size = state.get("stream_world_size")
         if self._world_size is None:
             # Loaded before ``train_dataloader``: stash for deferred validation
-            # (RIL ISS-204 — the pre-fix guard only fired when ``_world_size``
+            # (the pre-fix guard only fired when ``_world_size``
             # was already set, silently skipping the check for early loads).
             self._pending_world_size = None if saved_world_size is None else int(saved_world_size)
         else:

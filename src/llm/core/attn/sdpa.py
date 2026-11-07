@@ -10,7 +10,7 @@ def _add_attn_bias(mask: Tensor | None, bias: Tensor, query: Tensor) -> Tensor:
     the codebase's bool mask convention (True = keep) and 0/-inf float
     additive masks must be converted to a float additive tensor first, then
     the signed ALiBi bias is summed in (ALiBi is NOT a mask — it is a
-    position-dependent score adjustment, RIL — ALiBi milestone).
+    position-dependent score adjustment, — ALiBi milestone).
     """
     if mask is None:
         return bias.to(query.dtype)
@@ -61,7 +61,7 @@ def sdpa(
         window_size (int | None): Sliding window size.
         prefix_len (int): How many prefix K/V columns were prepended ahead of
             the real keys (Prefix Tuning). Shifts any causal diagonal by this
-            amount so the real context stays visible (round-71 fix).
+            amount so the real context stays visible (fix).
     """
 
     # 1. Handle Window Size and Mask Merging
@@ -73,7 +73,7 @@ def sdpa(
     # - We have BOTH causal=True AND an attention mask (Torc SDPA generally prefers one or the other, or merged)
     # - causal=True with a prefix shift: torch's native is_causal mask is
     #   left-aligned (diagonal=1) and cannot express the prefix offset, so the
-    #   shifted causal mask must be materialized here (round-71 prefix fix).
+    #   shifted causal mask must be materialized here (prefix fix).
     if has_window or (is_causal and (attn_mask is not None or prefix_len != 0)):
         seq_len_q = query.size(-2)
         seq_len_k = key.size(-2)
@@ -93,7 +93,7 @@ def sdpa(
             # position ``prefix_len + i`` — so the causal bound is
             # ``j <= prefix_len + i``, i.e. ``diagonal = 1 + prefix_len``.
             # Without the shift the real (right-shifted) context keys were all
-            # masked and the query attended only prefix keys (RIL round-71,
+            # masked and the query attended only prefix keys (
             # prefix-causal HIGH).
             full_mask = torch.triu(
                 torch.ones((seq_len_q, seq_len_k), device=device, dtype=torch.bool),
@@ -109,7 +109,7 @@ def sdpa(
             # position. Using the *relative* row index (0..seq_len_q-1)
             # against absolute key columns attends the OLDEST window_size
             # keys at every decode step instead of the keys just before the
-            # current position (RIL — decode window bug).
+            # current position (decode window bug).
             row_offset = max(0, seq_len_k - seq_len_q)
             row_idx = (torch.arange(seq_len_q, device=device) + row_offset).unsqueeze(1)
             col_idx = torch.arange(seq_len_k, device=device).unsqueeze(0)
@@ -127,7 +127,7 @@ def sdpa(
         # / ``[B,1,S]`` / ``[B,1,1,S]``) collided the pattern's first axis with
         # the batch when B == Sq — "size of tensor a (S) must match size of
         # tensor b (B)" — and a 2-D bool mask could not carry a batch at all
-        # (RIL TASK-318). With the pattern already rank-4, the batch axis
+        # . With the pattern already rank-4, the batch axis
         # broadcasts against the leading ``1`` and every mask convention merges
         # to ``[B, 1, Sq, Sk]``.
         if full_mask is not None and full_mask.ndim == 2:
@@ -137,7 +137,7 @@ def sdpa(
             # Normalize to the query device first: sparse/streaming masks are
             # built CPU-side (decoder.forward / serving), but the causal/window
             # ``full_mask`` below lives on ``device`` — OR-ing a CPU bool mask
-            # into it raised on GPU machines (RIL ISS-300). No-op when already
+            # into it raised on GPU machines. No-op when already
             # on device, so this is cheap on the common path.
             attn_mask = attn_mask.to(device)
             # attn_mask: True = Mask out
@@ -154,7 +154,7 @@ def sdpa(
                 # straight against the pattern, while a ``[B, S]`` per-sample
                 # padding mask needs an explicit batch axis — torch left-pads a
                 # 2-D ``(B, S)`` to ``(1, 1, B, S)``, colliding its second axis
-                # with the pattern's query axis (RIL TASK-318).
+                # with the pattern's query axis.
                 bool_mask = attn_mask
                 if bool_mask.ndim == 2:
                     is_attention_plane = query.dim() == 4 and bool_mask.shape == (
@@ -171,7 +171,7 @@ def sdpa(
                 # different spaces. Convert the boolean part to an additive
                 # mask (0 / -inf) and sum them, so the caller's additive mask
                 # is NOT silently dropped on the window / causal+mask path
-                # (RIL ISS-115).
+                # .
                 bool_part = full_mask
                 # Normalize the float mask's shape to a key-additive layout
                 # ([B, 1, 1, S_k]) so it plays well with the rank-2
@@ -197,7 +197,7 @@ def sdpa(
                 # keep and *real* tokens to mask out). The data pipeline
                 # emits ``[B, S]``; expand to the canonical ``[B, 1, 1, S]``
                 # layout so it ORs against the rank-4 ``full_mask`` without
-                # leaving the batch axis in the head position (RIL TASK-318).
+                # leaving the batch axis in the head position.
                 mask_out = attn_mask == 0
                 if mask_out.ndim == 2:
                     mask_out = mask_out.unsqueeze(1).unsqueeze(1)
@@ -250,7 +250,7 @@ def sdpa(
             # as ``[B, 1, 1, S]`` (or an int/float dtype, expanded below). The
             # complex-path bool branch (above) is the one that must expose a
             # batch axis, because there the caller's mask is merged with the
-            # rank-4 causal/window pattern (RIL TASK-318).
+            # rank-4 causal/window pattern.
             torch_attn_mask = ~attn_mask
         elif attn_mask.dtype.is_floating_point:
             # Float additive mask (0 = keep, -inf = mask out): pass through

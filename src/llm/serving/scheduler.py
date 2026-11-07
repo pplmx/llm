@@ -11,7 +11,7 @@ class QueueFullError(RuntimeError):
     Typed so the serving routers can map it to an honest retryable 503
     (``ErrorCode.QUEUE_FULL``) instead of the generic ``RuntimeError`` →
     "Model unavailable" catch-all, which misdiagnosed the backpressure
-    condition (RIL ISS-407).
+    condition.
     """
 
 
@@ -29,8 +29,7 @@ class Scheduler:
     :meth:`add_sequence`, :meth:`get_sequence` and :attr:`has_pending_work`
     WITHOUT the engine lock — without a scheduler-internal lock those
     concurrent ``popleft`` / iteration calls crashed with ``RuntimeError:
-    deque mutated during iteration`` under concurrent streaming (RIL
-    ISS-069). Lock ordering stays acyclic: ``schedule`` (engine lock →
+    deque mutated during iteration`` under concurrent streaming. Lock ordering stays acyclic: ``schedule`` (engine lock →
     scheduler lock) never nests the engine lock inside the scheduler lock.
     """
 
@@ -53,7 +52,7 @@ class Scheduler:
 
         Used by the serving routers to pre-empt a request (honest ``503
         queue_full``) before it reaches ``add_sequence``'s raise, and so the
-        stream route can reject BEFORE the SSE starts (RIL ISS-407).
+        stream route can reject BEFORE the SSE starts.
         """
         with self._lock:
             return len(self.waiting) >= self.max_waiting
@@ -74,7 +73,7 @@ class Scheduler:
     def add_sequence_if_not_conflicting(self, seq: Sequence, matches: Callable[[Sequence], bool] | None = None) -> bool:
         """Add ``seq`` unless an ACTIVE sequence already occupies its request_id.
 
-        Guard for RIL ISS-123: two distinct requests sharing one client
+        Guard for two distinct requests sharing one client
         request_id hash to the SAME KV slot (``SlotAllocator`` keys slots by
         request_id), so their K/V and generated tokens contaminate each other
         and a ``free()`` by either returns the other's live slot to the pool.
@@ -146,7 +145,7 @@ class Scheduler:
         """Drop a sequence from the waiting queue / running list.
 
         Used by the streaming generator's cleanup path when the consumer
-        abandons mid-generation (RIL ISS-105): the abandoned generator is the
+        abandons mid-generation: the abandoned generator is the
         sequence's only stepper and can never advance it again, so leaving it
         RUNNING permanently consumes a KV slot (``schedule`` only filters
         FINISHED). Idempotent: returns the removed sequence or ``None``.

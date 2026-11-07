@@ -60,7 +60,7 @@ def test_ppo_trainer_checkpoint_roundtrip(tiny_setup):
 
 
 def test_ppo_trainer_ref_model_persisted_and_restored(tiny_setup):
-    """RIL round-60 deep-dive Finding 1 (PPO): the frozen KL reference must be
+    """deep-dive Finding 1 (PPO): the frozen KL reference must be
     checkpointed and restored verbatim on resume.
 
     ``PPOTrainer.__init__`` deep-copies the policy into ``ref_model`` inside
@@ -87,7 +87,7 @@ def test_ppo_trainer_ref_model_persisted_and_restored(tiny_setup):
 
 
 def test_ppo_trainer_on_checkpoint_loaded_syncs_ref_to_policy(tiny_setup):
-    """RIL round-60 deep-dive Finding 1 (PPO): when the loaded checkpoint did
+    """deep-dive Finding 1 (PPO): when the loaded checkpoint did
     NOT carry a persisted ref (an SFT/base checkpoint — the standard RLHF
     flow), the reference must equal the checkpoint-loaded policy."""
 

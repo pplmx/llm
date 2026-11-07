@@ -1,4 +1,4 @@
-"""Tests for the StreamingLLM attention-sink mask builder (TASK-238 / 15.1)."""
+"""Tests for the StreamingLLM attention-sink mask builder (.1)."""
 
 from __future__ import annotations
 

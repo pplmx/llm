@@ -53,7 +53,7 @@ class SimpleCharacterTokenizer:
         # this, the markers were flattened into their constituent plain
         # characters and ``eos_token_id`` stayed ``None``, so eval generations
         # (LMTask / lm_eval generate_until) never stopped on the model's EOS
-        # (RIL ISS-152). Corpora that don't declare them keep the exact same
+        # . Corpora that don't declare them keep the exact same
         # vocab layout as before.
         self._bos_token_id: int | None = None
         self._eos_token_id: int | None = None
@@ -95,11 +95,11 @@ class SimpleCharacterTokenizer:
         # A special marker encoded verbatim maps to its single token id (the
         # pad precedent). Without this, ``encode("<EOS>")`` flattened to the
         # char ids of '<','E','O','S','>' even when the tokenizer had
-        # registered the marker as a special (RIL ISS-152). The guard keeps
+        # registered the marker as a special. The guard keeps
         # the fast path for declared markers only: a tokenizer built from a
         # corpus that never registers EOS/BOS (e.g. a printable-only one)
         # would otherwise raise a bare ``KeyError: '<EOS>'`` with no context
-        # (RIL ISS-214) — it now falls through to the char-wise loop, which
+        # — it now falls through to the char-wise loop, which
         # returns the literal composition or the contextual vocab error.
         if text in (self.pad_char, self.eos_char, self.bos_char) and text in self.stoi:
             return [self.stoi[text]]

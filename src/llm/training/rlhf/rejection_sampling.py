@@ -1,4 +1,4 @@
-"""Rejection sampling for RL alignment (ROADMAP 11.4 / RIL TASK-230).
+"""Rejection sampling for RL alignment (ROADMAP 11.4).
 
 Rejection sampling (best-of-N / top-K): sample ``N`` responses per prompt, score
 each with a reward, then **keep the highest-reward subset** (top-K or

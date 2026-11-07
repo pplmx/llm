@@ -59,7 +59,7 @@ class RewardModel(nn.Module):
                 # ``seq_lengths`` would be -1 and the harvest below would
                 # silently index hidden_states[..., -1] — the LAST (padding)
                 # hidden state — feeding a garbage reward into the
-                # Bradley-Terry loss with no error (RIL ISS-248). An
+                # Bradley-Terry loss with no error. An
                 # all-padded sequence is a data-pipeline corruption signal;
                 # fail loud instead of rewarding the padding token.
                 raise ValueError(
@@ -134,7 +134,7 @@ class RewardTask(TrainingTask):
 
         # ReduceLROnPlateau is NOT an LRScheduler (cannot compose with the
         # LinearLR warmup); the engine special-cases its metric-based step.
-        # Before RIL ISS-182 the config advertised step/plateau but no
+        # Before the config advertised step/plateau but no
         # scheduler was built, silently training at constant LR.
         if scheduler_type == "plateau":
             return optim.lr_scheduler.ReduceLROnPlateau(

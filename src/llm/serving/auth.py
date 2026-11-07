@@ -86,7 +86,7 @@ def assert_safe_bind(
     actually binds (``LLM_SERVING_HOST`` / ``ServingConfig.host``), a
     Docker/uvicorn launch that skipped the CLI can no longer bind
     ``0.0.0.0`` with ``api_key=None`` and serve instruction-generating
-    endpoints fully anonymously (RIL ISS-164). ``host=0.0.0.0`` without
+    endpoints fully anonymously. ``host=0.0.0.0`` without
     auth fails at startup rather than silently at runtime.
 
     Args:

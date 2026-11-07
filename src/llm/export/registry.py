@@ -47,7 +47,7 @@ ExportBackendFactory = Callable[..., Path]
 EXPORT_REGISTRY: Registry[ExportBackendFactory] = Registry("ExportBackend")
 
 _exporters_registered = False
-# Serializes the cold-start bootstrap (RIL ISS-119) — see
+# Serializes the cold-start bootstrap — see
 # ``generation/registry.ensure_backends_registered`` for the race.
 _exporter_registration_lock = threading.Lock()
 
@@ -85,7 +85,7 @@ def ensure_exporters_registered() -> None:
 
     # Double-checked locking: fast guard above, re-check inside the lock
     # so two threads cold-starting concurrently can't double-register
-    # (the second ``register("onnx")`` would raise) (RIL ISS-119).
+    # (the second ``register("onnx")`` would raise).
     with _exporter_registration_lock:
         if _exporters_registered:
             return

@@ -43,11 +43,11 @@ class SFTDataset(Dataset):
             padding_value: Token ID for padding input_ids. ``None`` (default)
                 resolves to ``tokenizer.pad_token_id`` when the tokenizer has
                 one, else ``0`` — hardcoding ``0`` pads with an arbitrary id
-                for tokenizers whose real pad id differs (RIL ISS-337).
+                for tokenizers whose real pad id differs.
             ignore_index: Label value for masked tokens (padding/prompt).
         """
         if max_seq_len <= 0:
-            # RIL ISS-199: a non-positive ``max_seq_len`` truncates the token
+            # a non-positive ``max_seq_len`` truncates the token
             # ids from the end while ``pad_len`` goes negative, making
             # ``attention_mask`` LONGER than ``input_ids`` (verified 146 vs
             # 293 with max_seq_len=-1) — an opaque shape crash deep in
@@ -81,11 +81,11 @@ class SFTDataset(Dataset):
                     if not isinstance(item, dict):
                         # A scalar JSON row (bare string/number) would reach
                         # ``alpaca_template``/``item.get`` and die with a raw
-                        # AttributeError mid-setup (RIL ISS-336). Skip it with
+                        # AttributeError mid-setup. Skip it with
                         # context instead.
                         logger.warning("Skipping SFT row that is not a JSON object: %r", item)
                         continue
-                    # RIL ISS-345: a response that ALONE reaches max_seq_len
+                    # a response that ALONE reaches max_seq_len
                     # means front-truncation drops the ENTIRE prompt (zero -100
                     # context tokens survive), so the row would train as an
                     # unconditioned response continuation. Drop it with a
@@ -96,7 +96,7 @@ class SFTDataset(Dataset):
                     if len(self.tokenizer.encode(_response_text)) >= self.max_seq_len:
                         logger.warning(
                             "Skipping SFT row whose response alone reaches max_seq_len=%d: "
-                            "no prompt context could survive truncation (RIL ISS-345).",
+                            "no prompt context could survive truncation.",
                             self.max_seq_len,
                         )
                         continue
@@ -162,7 +162,7 @@ class SFTDataset(Dataset):
         # Truncate if too long — from the FRONT so the supervised response
         # survives. ``input_ids[:max_seq_len]`` kept the full prompt and
         # chopped the completion tail, discarding the only supervised signal
-        # (prompt tokens are masked) (RIL ISS-332).
+        # (prompt tokens are masked).
         if len(input_ids) > self.max_seq_len:
             input_ids = input_ids[-self.max_seq_len :]
             labels = labels[-self.max_seq_len :]

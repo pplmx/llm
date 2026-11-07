@@ -18,7 +18,7 @@ def normalize_eos_ids(
     ``token_id == eos_id`` int-vs-list comparison silently never matches, so
     every generation backend would run to ``max_new_tokens`` with post-EOS
     junk folded into the output (the same shape the RLHF trainer guards with
-    ``_normalize_eos_ids`` — RIL ISS-116/334). ``None`` becomes ``()`` (no
+    ``_normalize_eos_ids``). ``None`` becomes ``()`` (no
     EOS halting, e.g. the serving fallback character tokenizer).
     """
     if eos_token_id is None:
@@ -45,10 +45,10 @@ def apply_repetition_penalty(
     # ``repetition_penalty <= 0`` silently corrupts the distribution: 0 divides
     # by zero (inf) and a negative value flips each seen score's sign,
     # producing non-finite or inverted logits. Values in (0, 1) legitimately
-    # *encourage* repetition, so only reject <= 0 (RIL TASK-250). The guard
+    # *encourage* repetition, so only reject <= 0. The guard
     # must run BEFORE the empty ``token_ids`` early-return below, or the
     # direct-API path with an empty history silently accepts a corrupt penalty
-    # (RIL ISS-391).
+    # .
     if repetition_penalty <= 0:
         raise ValueError(f"repetition_penalty must be > 0, got {repetition_penalty!r}")
     if repetition_penalty == 1.0 or not token_ids:
@@ -273,8 +273,7 @@ def apply_penalties(
     # Repetition-penalty validation must fire BEFORE the empty-``token_ids``
     # early return: every other penalty is a no-op on an empty history, but a
     # ``<= 0`` repetition penalty would corrupt sampling even when nothing has
-    # been seen. Mirrors apply_repetition_penalty's guard ordering (RIL
-    # TASK-250 / ISS-391).
+    # been seen. Mirrors apply_repetition_penalty's guard ordering.
     if repetition_penalty != 1.0 and repetition_penalty <= 0:
         raise ValueError(f"repetition_penalty must be > 0, got {repetition_penalty!r}")
 
@@ -338,7 +337,7 @@ def mask_undecodable_logits(logits: torch.Tensor, tokenizer_vocab_size: int | No
     model's vocabulary is *larger* than the tokenizer's (a padded vocab, or a
     BPE/HF model served with a char tokenizer), sampling a tail id used to
     crash mid-stream — ``tokenizer.decode([token_id])`` raises ``KeyError``
-    after part of the text was already yielded (RIL ISS-125). The penalty
+    after part of the text was already yielded. The penalty
     helpers already guard out-of-range ids; the sampled id itself must be
     bounded to the tokenizer's decodeable range too, by zeroing the tail
     probability mass (equivalently pinning those logits to ``-inf``).
@@ -375,7 +374,7 @@ def sampling_probs(
     score acceptance ratios against the **same filtered distributions** the
     draft/target samplers actually propose from — scoring against the raw
     full-vocab softmax would make the accepted-token set diverge from the
-    eager backend's output (RIL ISS-99).
+    eager backend's output.
 
     Args:
         logits: Batched logits of shape ``[..., vocab_size]`` (typically 1D
@@ -389,18 +388,17 @@ def sampling_probs(
         top_p: Nucleus filter; the smallest tokens whose cumulative
             probability exceeds ``top_p`` are masked out. ``top_p >= 1.0``
             (and ``None``) disable the filter — they draw from the full
-            distribution, matching OpenAI's "1.0 means no truncation" default
-            (RIL ISS-401).
+            distribution, matching OpenAI's "1.0 means no truncation" default.
     """
     # A non-positive temperature would silently invert the logits (anti-greedy)
     # or divide by zero. ``temperature == 0`` is the caller's greedy case
     # (handled in :func:`sample_next_token` before this is reached), so any
     # value here must be positive — reject instead of emitting a corrupt
-    # distribution (RIL TASK-249).
+    # distribution.
     if temperature <= 0:
         raise ValueError(f"temperature must be > 0, got {temperature!r}")
     # ``top_k <= 0`` makes torch.topk's ``k`` out of range and surfaces as a new
-    # cryptic IndexError; reject it with a clear message (RIL TASK-250).
+    # cryptic IndexError; reject it with a clear message.
     if top_k is not None and top_k < 1:
         raise ValueError(f"top_k must be >= 1 when set, got {top_k!r}")
     # ``top_p <= 0`` is the only invalid value: ``top_p=0`` (the greedy
@@ -409,7 +407,7 @@ def sampling_probs(
     # full distribution. ``top_p >= 1.0`` is EXPLICITLY valid (OpenAI client
     # default; the serving schemas document it as "no truncation") and is a
     # no-op for the filter, so only the degenerate non-positive range is
-    # rejected (RIL ISS-390/ISS-401).
+    # rejected.
     if top_p is not None and top_p <= 0:
         raise ValueError(f"top_p must be > 0 when set (1.0 or None disables nucleus filtering), got {top_p!r}")
 
@@ -463,7 +461,7 @@ def sample_next_token(
     if temperature < 0:
         # A negative temperature silently inverts the logits, making the
         # sampler anti-greedy (draw the lowest-logit token) with no error.
-        # Reject it so silent generation corruption is impossible (RIL TASK-249).
+        # Reject it so silent generation corruption is impossible.
         raise ValueError(f"temperature must be >= 0, got {temperature!r}")
 
     probs = sampling_probs(

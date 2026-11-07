@@ -82,13 +82,13 @@ def test_reward_data_module_explicit_val_file(tmp_path):
 
 def test_reward_dataset_truncation_keeps_response_tail(tmp_path):
     """Truncation drops the PROMPT PREFIX, preserving the response END — the
-    position the reward model actually scores (RIL ISS-332).
+        position the reward model actually scores.
 
-    The old ``[:max_seq_len]`` kept the prompt and chopped the response tail,
-    so the scored last non-pad token was an arbitrary mid-response token. The
-    completion stays SHORTER than the window (so a prompt context token
-    survives); a completion that ALONE reaches max_seq_len is dropped
-    (RIL ISS-345) rather than scored with zero conditioning context.
+        The old ``[:max_seq_len]`` kept the prompt and chopped the response tail,
+        so the scored last non-pad token was an arbitrary mid-response token. The
+        completion stays SHORTER than the window (so a prompt context token
+        survives); a completion that ALONE reaches max_seq_len is dropped
+    rather than scored with zero conditioning context.
     """
     import json
     from string import printable
@@ -115,7 +115,7 @@ def test_reward_dataset_truncation_keeps_response_tail(tmp_path):
 
 
 def test_reward_dataset_drops_pair_when_completion_over_window(tmp_path, caplog):
-    """Regression (RIL ISS-345): a pair whose completion ALONE reaches
+    """Regression: a pair whose completion ALONE reaches
     max_seq_len is dropped as a unit — front-truncation would otherwise wipe
     the prompt context and, when only one side overflows, chosen vs rejected
     would be scored with different conditioning context."""
@@ -140,14 +140,14 @@ def test_reward_dataset_drops_pair_when_completion_over_window(tmp_path, caplog)
     with caplog.at_level("WARNING", logger="llm.data.datasets.reward"):
         dataset = RewardDataset(file_path=fp, tokenizer=tok, max_seq_len=20)
 
-    assert len(dataset) == 1, "over-window pairs must be dropped as a unit (ISS-345)"
+    assert len(dataset) == 1, "over-window pairs must be dropped as a unit"
     assert dataset.data[0]["prompt"] == "Z:"
     assert any("completion alone" in message for message in caplog.messages)
 
 
 def test_reward_dataset_skips_non_dict_rows(tmp_path):
     """A scalar JSON row (bare int/string) must be skipped, not crash dataset
-    construction with a raw TypeError (RIL ISS-381)."""
+    construction with a raw TypeError."""
     from string import printable
 
     from llm.data.datasets.reward import RewardDataset
@@ -170,8 +170,7 @@ def test_reward_dataset_skips_non_dict_rows(tmp_path):
 
 
 def test_reward_dataset_pair_shared_truncation(tmp_path):
-    """Chosen and rejected must be scored under the SAME prompt suffix (RIL
-    ISS-382): per-side ``[-max_seq_len:]`` sent the longer side to a truncated
+    """Chosen and rejected must be scored under the SAME prompt suffix: per-side ``[-max_seq_len:]`` sent the longer side to a truncated
     prompt while the shorter kept the full one, so a length mismatch scored
     the pair under different conditioning. Layout mirrors the DPO test:
     prompt "PQR:" + "AAAA" = 8 > 6, prompt + "B" = 5 <= 6; pair overflow 2 ->
@@ -203,7 +202,7 @@ def test_reward_dataset_pair_shared_truncation(tmp_path):
 
 
 def test_reward_dataset_rejects_nonpositive_max_seq_len(tmp_path):
-    """RIL ISS-199: a non-positive ``max_seq_len`` fails fast instead of
+    """a non-positive ``max_seq_len`` fails fast instead of
     silently producing misaligned attention_mask/input_ids."""
     from string import printable
 
@@ -220,7 +219,7 @@ def test_reward_dataset_rejects_nonpositive_max_seq_len(tmp_path):
 
 
 def test_reward_dataset_json_decode_error(tmp_path):
-    """RIL ISS-201: a malformed JSONL line raises an actionable ValueError
+    """a malformed JSONL line raises an actionable ValueError
     with the file path, aligned with SFT/DPO — not a raw JSONDecodeError."""
     from string import printable
 
@@ -237,7 +236,7 @@ def test_reward_dataset_json_decode_error(tmp_path):
 def test_reward_dataset_drops_empty_completion(tmp_path):
     """An empty chosen/rejected completion makes the reward model score the
     prompt itself (or a fully-masked row) instead of the response end — the
-    row must be dropped at load (RIL ISS-336)."""
+    row must be dropped at load."""
     from string import printable
 
     from llm.data.datasets.reward import RewardDataset

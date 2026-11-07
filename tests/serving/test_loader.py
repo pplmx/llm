@@ -24,7 +24,7 @@ def test_infer_vocab_size_from_lm_head(tiny_model, tiny_config):
 
 
 def test_infer_vocab_size_from_tied_embedding(tiny_model, tiny_config):
-    """Regression (RIL ISS-167): a config-less checkpoint with tied embeddings
+    """Regression: a config-less checkpoint with tied embeddings
     has no ``lm_head.weight`` — the embedding fallback must use the REAL key
     (``embedding_layer.token_embeddings.weight``), not the misspelled one."""
     state = model_state_dict(tiny_model)
@@ -38,7 +38,7 @@ def test_infer_num_layers(tiny_model, tiny_config):
 
 
 def test_loader_refuses_malicious_pickle_without_executing(tmp_path):
-    """Regression (RIL ISS-170): ``load_training_checkpoint`` on an
+    """Regression: ``load_training_checkpoint`` on an
     attacker-controlled ``.pt`` must NOT run arbitrary ``__reduce__`` code.
     The file below would ``os.system``-touch a marker if executed under the
     old ``weights_only=False`` probe; the hardened loader refuses it."""
@@ -235,10 +235,10 @@ def test_dummy_fallback_without_checkpoint():
 
 
 def test_compile_model_skipped_on_cpu_with_warning(caplog):
-    """RIL TASK-328: ``compile_model`` is now wired in the loader — on a CPU
+    """``compile_model`` is now wired in the loader — on a CPU
     target it must warn loudly and return the UNCOMPILED model (torch.compile
     on CPU is a slowdown for a tiny model, so silently doing nothing would
-    repeat the round-173 no-op bug; an actual CPU compile is pointless)."""
+    repeat the no-op bug; an actual CPU compile is pointless)."""
     import logging
 
     config = ServingConfig(compile_model=True, device="cpu")
@@ -251,7 +251,7 @@ def test_compile_model_skipped_on_cpu_with_warning(caplog):
 
 @pytest.mark.gpu
 def test_compile_model_compiles_and_decodes_on_cuda():
-    """RIL TASK-328: on a CUDA target, ``compile_model=True`` wraps the served
+    """on a CUDA target, ``compile_model=True`` wraps the served
     model in torch.compile, and a KV-cache decode loop through the compiled
     model produces a valid token each step (exercises the in-place KV-cache
     path that is the risky part of compiling generation)."""
@@ -291,13 +291,13 @@ def test_compile_model_compiles_and_decodes_on_cuda():
 
 
 def test_dummy_fallback_tokenizer_has_eos_and_bos():
-    """RIL TASK-327: the default serving tokenizer must declare EOS/BOS so
+    """the default serving tokenizer must declare EOS/BOS so
     dummy-model generation can stop.
 
     The fallback used to be built from ``string.printable`` alone, leaving
     ``eos_token_id``/``bos_token_id`` as ``None``; every generation backend
     treats a ``None`` EOS as "never stop", so demo requests always ran to
-    ``max_new_tokens`` (the ISS-152 fix had only covered train/eval).
+    ``max_new_tokens`` (the fix had only covered train/eval).
     """
     config = ServingConfig()
     model, tokenizer = load_model_and_tokenizer(config)
@@ -307,7 +307,7 @@ def test_dummy_fallback_tokenizer_has_eos_and_bos():
 
 
 def test_config_less_glu_checkpoint_preserved():
-    """RIL ISS-416: a config-less legacy checkpoint built with a GLU + RMSNorm
+    """a config-less legacy checkpoint built with a GLU + RMSNorm
     + learned-PE model must load BIT-IDENTICAL (every tensor preserved).
 
     Before the fix ``_build_decoder`` hardcoded ``use_glu=False`` /
@@ -346,7 +346,7 @@ def test_config_less_glu_checkpoint_preserved():
 
 
 def test_config_less_mismatched_architecture_raises():
-    """RIL ISS-416: a config-less checkpoint whose weights do NOT cover the
+    """a config-less checkpoint whose weights do NOT cover the
     serving model must FAIL LOUDLY (like hf_loader), never serve random-init
     weights behind a warning-only missing-keys notice."""
     from llm.models.decoder import DecoderModel
@@ -371,7 +371,7 @@ def test_config_less_mismatched_architecture_raises():
 
 
 def test_infer_legacy_architecture_recovers_glu_rmsnorm():
-    """RIL ISS-416: the config-less architecture inference must recover GLU /
+    """the config-less architecture inference must recover GLU /
     intermediate width / RMSNorm / bias flags from the state-dict key naming."""
     from llm.models.decoder import DecoderModel
     from llm.serving.loader import infer_legacy_architecture

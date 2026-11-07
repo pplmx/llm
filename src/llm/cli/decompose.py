@@ -73,7 +73,7 @@ def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
 
     Empty / whitespace-only input normalizes to ``None`` ("all") so the CLI
     summary echoes ``all`` only when every nn.Linear is actually targeted. The
-    old ``[]`` filtered to ZERO layers and then failed at runtime (RIL ISS-330).
+    old ``[]`` filtered to ZERO layers and then failed at runtime.
     """
     if target_modules is None:
         return None

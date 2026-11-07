@@ -105,7 +105,7 @@ class IA3Linear(nn.Module):
         # re-snapshot ``_merged_ia3_l`` as ones (the active scale
         # post-first-merge) and multiply by ones (no-op), so the snapshot
         # becomes ones; the later ``unmerge_weights`` then divides by ones
-        # and leaves the base permanently scaled (RIL ISS-159).
+        # and leaves the base permanently scaled.
         if self._merged_ia3_l is not None:
             return
         with torch.no_grad():

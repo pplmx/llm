@@ -136,8 +136,7 @@ class BPETokenizer:
         ``tokenizer.json``). Callers fall back with ``getattr(tokenizer,
         "pad_token_id", 0)`` — but the attribute *exists* as None, so the
         default never fires and padding builds ``[None] * n``, crashing
-        ``torch.tensor`` in ``batch_generate`` / ``TextDataset`` (RIL
-        ISS-155). Fall back to the UNK token's id then the documented ``0``,
+        ``torch.tensor`` in ``batch_generate`` / ``TextDataset``. Fall back to the UNK token's id then the documented ``0``,
         so the property never returns ``None`` and never collides with
         content.
 
@@ -151,7 +150,7 @@ class BPETokenizer:
         if pad_id is not None:
             return pad_id
         unk_id = self.unk_token_id
-        # RIL ISS-393: falling back to the UNK id aliases pad == unk. Make the
+        # falling back to the UNK id aliases pad == unk. Make the
         # aliasing explicit (see :attr:`unk_token_id`) so consumers masking
         # pad logits do not silently also suppress OOV/UNK tokens.
         return unk_id if unk_id is not None else 0
@@ -160,7 +159,7 @@ class BPETokenizer:
     def unk_token_id(self) -> int | None:
         """The UNK token's id, or ``None`` when the vocab has no ``<unk>``.
 
-        Useful for detecting the RIL ISS-393 aliasing: when ``[PAD]`` is
+        Useful for detecting the aliasing: when ``[PAD]`` is
         absent from the vocab, :attr:`pad_token_id` falls back to this id
         (then ``0``), so a consumer masking pad logits would also suppress
         UNK/OOV tokens. Callers that must let the model emit OOV tokens can

@@ -1,4 +1,4 @@
-"""Tests for the ``llm decompose`` CLI (low-rank, RIL TASK-225)."""
+"""Tests for the ``llm decompose`` CLI (low-rank)."""
 
 from __future__ import annotations
 

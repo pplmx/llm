@@ -1,6 +1,6 @@
 """Fake quantization for Quantization-Aware Training (QAT).
 
-ROADMAP 13.2 / RIL TASK-218, DEC-054: PTQ is already covered (simple /
+ROADMAP 13.2 PTQ is already covered (simple /
 GPTQ / AWQ / SmoothQuant / FP8). QAT keeps the *deployment* quantization in
 the forward but flows a **straight-through estimator** (STE) gradient into
 the underlying float parameters, so training adapts weights to the quantized
@@ -10,7 +10,7 @@ round-to-nearest PTQ loses).
 This module provides a uniform, symmetric fake quantiser for INT8 / INT4
 weights (per-channel dynamic scale) and, optionally, per-tensor activations,
 with scale = absmax / qmax computed fresh each forward (dynamic scaling —
-learned / calibration scales are the TASK-220 slice). ``round`` is steered:
+learned / calibration scales are the slice). ``round`` is steered:
 forward rounds, backward passes the gradient through unchanged, so the
 underlying fp32 ``Parameter`` never gets a zero gradient from the quantiser.
 """

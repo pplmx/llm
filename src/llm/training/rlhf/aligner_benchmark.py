@@ -1,4 +1,4 @@
-"""DPO vs PPO/RLHF vs GRPO alignment benchmark on a shared preference task (TASK-233).
+"""DPO vs PPO/RLHF vs GRPO alignment benchmark on a shared preference task.
 
 A CPU-verifiable harness that runs ALL aligners against the same synthetic
 preference signal — a judge whose "good" response ends in a target token — and
@@ -69,8 +69,7 @@ def _seq_log_prob(model: nn.Module, ids: torch.Tensor) -> float:
     model.eval()
     # Probe on the model's own device: the engine moved it to CUDA when a GPU
     # is available, but benchmark callers pass raw CPU preference tensors —
-    # without the .to() the logits and the ids gather would mismatch (RIL
-    # ISS-300). No-op when the ids already live on the model's device.
+    # without the .to() the logits and the ids gather would mismatch. No-op when the ids already live on the model's device.
     ids = ids.to(_probe_device(model))
     with torch.no_grad():
         logits = model(ids.unsqueeze(0))  # [1, L, V]
@@ -117,7 +116,7 @@ def _reference_kl(policy: nn.Module, reference: nn.Module, sequences: torch.Tens
     policy.eval()
     reference.eval()
     # Probe on the policy's own device (engine moved it to CUDA on GPU
-    # machines; benchmark callers pass raw CPU sequences — RIL ISS-300).
+    # machines; benchmark callers pass raw CPU sequences).
     sequences = sequences.to(_probe_device(policy))
     with torch.no_grad():
         p_logits = policy(sequences)
@@ -181,12 +180,12 @@ def _grpo_group_reward_fraction(model: nn.Module, module: Any) -> float:
     """Fraction of GRPO groups whose most-likely response is the rewarded target."""
     model.eval()
     # Probe on the model's own device (engine moved it to CUDA on GPU
-    # machines; the data-module response tokens are CPU — RIL ISS-300).
+    # machines; the data-module response tokens are CPU).
     response_tokens = module.response_tokens.to(_probe_device(model))
     with torch.no_grad():
         logits = model(response_tokens)
     # Shifted next-token factorization, matching GRPOTask._per_token_log_probs
-    # (RIL ISS-333): logits[t] predicts response_tokens[t+1]. The unshifted
+    #: logits[t] predicts response_tokens[t+1]. The unshifted
     # gather over-estimated by letting the model copy input tokens.
     shift_logits = logits[..., :-1, :].contiguous().float()
     shift_tokens = response_tokens[..., 1:].contiguous()
@@ -220,7 +219,7 @@ def run_grpo(config: Any, epochs: int, eval_sequences: torch.Tensor | None = Non
     # affinity for the cyclic target, so this starts near chance. The
     # trajectory itself is sampled AFTER each epoch — with the learnable
     # cyclic target the reward already saturates by epoch 1, so only the
-    # pre-training value (and the final value) carry signal (RIL ISS-333).
+    # pre-training value (and the final value) carry signal.
     group_traj: list[float] = []
     loss_traj: list[float] = []
     kl_traj: list[float] = []

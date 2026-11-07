@@ -23,7 +23,7 @@ def test_dpo_task_init_and_build(tiny_config):
 
 
 def test_dpo_ref_model_is_broadcast_by_engine(tiny_config):
-    """Regression (RIL ISS-038): DPOTask clones its frozen reference inside
+    """Regression: DPOTask clones its frozen reference inside
     ``build_model`` — *before* the engine broadcasts the policy from rank 0.
     Without an extra sync the reference copy carries each rank's own
     RNG-initialised weights and multi-GPU DPO computes logps against a
@@ -56,7 +56,7 @@ def test_dpo_ref_model_is_broadcast_by_engine(tiny_config):
 
 
 def test_dpo_ref_model_persisted_and_restored(tiny_config):
-    """RIL round-60 deep-dive Finding 1: the frozen DPO reference must be
+    """deep-dive Finding 1: the frozen DPO reference must be
     checkpointed with the run and restored verbatim on resume.
 
     ``DPOTask.build_model`` snapshots the policy into ``ref_model`` BEFORE
@@ -151,9 +151,9 @@ def test_dpo_ref_model_synced_from_loaded_checkpoint(tiny_config, tmp_path):
 def test_dpo_batch_logps_shape_guard_raises(tiny_config):
     """The shared _get_batch_logps raises a clear error on logits/labels seq-len mismatch.
 
-    The guard lives on LanguageModelingTask (shared by DPO and SimPO since the
-    round-153 dedup); a mismatched batch would otherwise gather garbage windows
-    with an opaque downstream error.
+       The guard lives on LanguageModelingTask (shared by DPO and SimPO since the
+    dedup); a mismatched batch would otherwise gather garbage windows
+       with an opaque downstream error.
     """
     import pytest
 
@@ -182,7 +182,7 @@ def test_dpo_task_train_step(tiny_config):
         "chosen_labels": chosen_labels,
         "rejected_input_ids": rejected_ids,
         "rejected_labels": rejected_labels,
-        # The data pipeline always supplies these (RIL ISS-249); DPOTask now
+        # The data pipeline always supplies these; DPOTask now
         # feeds them to the model forwards.
         "chosen_attention_mask": torch.ones(batch_size, seq_len, dtype=torch.long),
         "rejected_attention_mask": torch.ones(batch_size, seq_len, dtype=torch.long),
@@ -195,7 +195,7 @@ def test_dpo_task_train_step(tiny_config):
 
 
 def test_dpo_attention_masks_reach_the_model(tiny_config):
-    """Regression for RIL ISS-249: DPOTask must pass the per-row attention
+    """Regression for DPOTask must pass the per-row attention
     masks the data pipeline builds into the policy and reference forwards.
 
     Zeroing a real content token's mask bit must change the DPO loss — before
@@ -237,5 +237,5 @@ def test_dpo_attention_masks_reach_the_model(tiny_config):
     # Same layout, only the mask differs — a mask-transparent DPO would return
     # identical losses (the pre-fix behavior this guards against).
     assert not torch.allclose(loss_ones, loss_masked), (
-        "DPO loss is insensitive to the attention mask — the masks never reach the model (ISS-249)"
+        "DPO loss is insensitive to the attention mask — the masks never reach the model"
     )

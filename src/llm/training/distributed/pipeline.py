@@ -3,7 +3,7 @@
 ``parallel_strategy="pp"`` partitions a :class:`~llm.models.DecoderModel`
 across ``pp_size`` pipeline stages — one stage per rank — and drives the
 training / validation schedule with
-:class:`torch.distributed.pipelining.ScheduleGPipe` (RIL DEC-049 / TASK-210).
+:class:`torch.distributed.pipelining.ScheduleGPipe`.
 
 v1 layout is a **pure pipeline**: the whole world is the pipeline
 (``pp_size == world_size``, no data-parallel dimension). Every stage rank
@@ -46,7 +46,7 @@ __all__ = [
 def pp_dp_layout(world_size: int, pp_size: int, rank: int | None = None) -> tuple[int, int, int, int]:
     """Resolve the PP + data-parallel 2D layout of the calling rank.
 
-    PP+DP 2D (RIL TASK-211) arranges ranks in a row-major ``[DP][PP]`` grid:
+    PP+DP 2D arranges ranks in a row-major ``[DP][PP]`` grid:
     ``rank = dp_rank * pp_size + pp_rank``, so every pipeline group is a
     CONTIGUOUS run of ``pp_size`` ranks (the stage-to-stage P2P activation /
     gradient links stay within intranode-friendly blocks, mirroring the TP
@@ -117,7 +117,7 @@ class _PipelineStage(nn.Module):
     states — or ``logits`` on the last stage.
 
     ``gradient_checkpointing`` (propagated from the source model by
-    :func:`partition_decoder_model`, RIL TASK-213) makes the stage forward
+    :func:`partition_decoder_model`) makes the stage forward
     wrap each block call in ``torch.utils.checkpoint`` exactly like
     :meth:`DecoderModel.forward` does — recomputing block activations in the
     backward instead of storing them — so per-stage activation memory drops
@@ -137,7 +137,7 @@ class _PipelineStage(nn.Module):
         for _i, blk in enumerate(self.blocks):
             if self.gradient_checkpointing and self.training:
                 # The exact checkpointed block call DecoderModel.forward makes
-                # (TASK-213): recompute block activations in the backward by
+                #: recompute block activations in the backward by
                 # wrapping the same argument sequence the plain path uses.
                 from torch.utils.checkpoint import checkpoint
 
@@ -179,7 +179,7 @@ def partition_decoder_model(model: nn.Module, num_stages: int) -> list[nn.Module
             reference is verified at the dropout=0 test configuration — with
             dropout > 0 each stage draws its own RNG stream and the parity is
             approximate, which is the standard GPipe caveat). Gradient
-            checkpointing IS supported since TASK-213 (the stage forward
+            checkpointing IS supported since (the stage forward
             wraps block calls like the monolithic model does).
     """
     am = cast(Any, model)  # nn.Module attr access types as Tensor|Module; we know what we built
@@ -197,7 +197,7 @@ def partition_decoder_model(model: nn.Module, num_stages: int) -> list[nn.Module
         # PP v1 is fp32-only (the engine refuses use_amp), and the flash_attn
         # kernel rejects fp32 — running it here would crash on the first stage
         # forward with an opaque torch backend error instead of this setup
-        # refusal (review MEDIUM on DEC-049/TASK-210).
+        # refusal (review MEDIUM on).
         raise NotImplementedError(
             "Pipeline parallelism v1 does not support attn_impl='flash_attn' (the flash kernel "
             "requires half precision, but PP v1 is fp32-only). Use attn_impl='mha', 'sdpa' or "
@@ -218,7 +218,7 @@ def partition_decoder_model(model: nn.Module, num_stages: int) -> list[nn.Module
         if s == num_stages - 1:
             stage.final_norm = am.final_norm
             stage.lm_head = am.lm_head
-        # Propagate the source model's activation-recomputation flag (TASK-213)
+        # Propagate the source model's activation-recomputation flag
         # so each stage forward checkpoints its blocks like the monolithic
         # model does.
         stage.gradient_checkpointing = bool(getattr(am, "gradient_checkpointing", False))
@@ -261,7 +261,7 @@ class _PPRuntime:
     stage_module: nn.Module
     local_to_global: dict[str, str] = field(default_factory=dict)
     device: torch.device = field(default_factory=lambda: torch.device("cpu"))
-    dp_group: dist.ProcessGroup | None = None  # PP+DP 2D (TASK-211): strided DP column
+    dp_group: dist.ProcessGroup | None = None  # PP+DP 2D: strided DP column
 
     @property
     def last_stage_rank(self) -> int:
@@ -278,10 +278,10 @@ class _PPRuntime:
         ``group_src`` (not ``src``): torch 2.13's ``broadcast`` treats ``src``
         as the source rank in the GLOBAL process group regardless of the
         ``group`` argument, and requires ``group_src`` for a group-LOCAL
-        source. Under a PP subgroup (2D, TASK-211) ``self.last_stage_rank`` is
+        source. Under a PP subgroup (2D) ``self.last_stage_rank`` is
         the group-local index — passing it as ``src`` is only correct when the
         subgroup happens to contain that global rank (the world group / PP
-        group 0 in a 2x2 grid) and deadlocks otherwise (the TASK-211 probe
+        group 0 in a 2x2 grid) and deadlocks otherwise (the probe
         caught the group {2,3} case spinning forever).
         """
         t = loss.detach().to(self.device)
@@ -291,11 +291,11 @@ class _PPRuntime:
     def full_state_dict(self) -> dict[str, Any]:
         """Cross-stage collect: every stage's owned params into one global-named dict.
 
-        Each rank gathers its own slice (global names via ``local_to_global``)
-        and ``all_gather_object`` over the PP group, then every rank merges
-        the union — a collective exactly like the TP full-state-dict gather,
-        so the checkpoint manager's "every shard must enter it" contract
-        (RIL ISS-186) applies.
+                Each rank gathers its own slice (global names via ``local_to_global``)
+                and ``all_gather_object`` over the PP group, then every rank merges
+                the union — a collective exactly like the TP full-state-dict gather,
+                so the checkpoint manager's "every shard must enter it" contract
+        applies.
         """
         mine = {self.local_to_global[k]: v for k, v in self.stage_module.state_dict().items()}
         gathered: list[dict[str, Any]] = [{} for _ in range(self.num_stages)]
@@ -306,7 +306,7 @@ class _PPRuntime:
                 # Stages own DISJOINT global-name slices; a collision means a
                 # stage emitted a non-owned (e.g. duplicated) name and one
                 # copy would be silently dropped from the checkpoint — fail
-                # loud instead (review LOW on DEC-049/TASK-210).
+                # loud instead (review LOW on).
                 if name in merged:
                     raise RuntimeError(
                         f"pipeline stage overlap: global name {name!r} was produced by more than one "
@@ -335,12 +335,12 @@ def build_pipeline_model(
 
     v1 maps stages one-to-one onto ranks: ``stage_index == dist.get_rank()``
     and ``num_stages == world_size`` (a pure pipeline, no PP+DP hybrid yet).
-    PP + data-parallel 2D (RIL TASK-211) passes a ``pp_rank`` (the group-local
+    PP + data-parallel 2D passes a ``pp_rank`` (the group-local
     index in the ``[DP][PP]`` grid), a ``pp_group`` for the pipeline P2P and a
     ``dp_group`` for step-boundary gradient averaging; stage ``pp_rank`` then
     belongs to DP column ``dp_rank`` instead of being a whole-world stage.
 
-    ``n_microbatches`` > 1 (RIL TASK-213) chunks each training batch so the
+    ``n_microbatches`` > 1 chunks each training batch so the
     pipeline schedule can overlap stages and shrink per-stage activation
     memory; the schedule normalizes the gradient by the microbatch count, so
     the per-optimizer-step gradient is identical to ``n_microbatches=1``.
@@ -369,7 +369,7 @@ def build_pipeline_model(
     # sequence lengths are dataset-dependent and a static example would
     # over-constrain them (the metadata validation rejects shape drift).
     # ``group=pp_group`` routes the P2P links over the pipeline subgroup
-    # (TASK-211); ``None`` = the default/world group (pure PP v1).
+    # ; ``None`` = the default/world group (pure PP v1).
     pipeline_stage = PipelineStage(stage_module, pp_rank, num_stages, device, input_args=None, group=pp_group)
     schedule = ScheduleGPipe(pipeline_stage, n_microbatches=n_microbatches, loss_fn=lm_shift_loss)
 
@@ -398,7 +398,7 @@ def build_pipeline_model(
 def allreduce_pp_dp_grads(model: nn.Module) -> None:
     """Average a pipeline stage's gradients over its data-parallel group.
 
-    PP + data-parallel 2D (RIL TASK-211): the strided DP group holds the SAME
+    PP + data-parallel 2D: the strided DP group holds the SAME
     stage (same ``pp_rank``) on DIFFERENT data shards, so each copy's
     gradient only carries its own shard. Averaging over the DP group
     converges every stage to the true full-batch gradient (DDP semantics) —

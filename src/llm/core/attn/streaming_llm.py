@@ -1,4 +1,4 @@
-"""StreamingLLM attention-sink mask builder (ROADMAP 15.1 / TASK-238).
+"""StreamingLLM attention-sink mask builder (ROADMAP 15.1).
 
 StreamingLLM (Xiao et al. 2023) keeps a rolling-context LLM stable over long
 streams by always attending to the *first few* positions (the **attention

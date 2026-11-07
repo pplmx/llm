@@ -94,7 +94,7 @@ class EmbeddingLayer(nn.Module):
         if self.use_rope:
             # RoPE models inject position inside attention; adding the
             # sinusoidal/learned positional encoding here would double-count
-            # position information (real Llama/Mistral semantics — RIL ISS-062).
+            # position information (real Llama/Mistral semantics).
             return scaled_embs
         output_embs = self.positional_encoding(scaled_embs, start_pos=start_pos, position_ids=position_ids)
         return output_embs

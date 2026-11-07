@@ -47,7 +47,7 @@ class RougeMetric(BaseMetric):
         # reports ``0.0`` on empty input (``BleuMetric`` -> ``{"bleu": 0.0}``,
         # ``AccuracyMetric``/``F1Metric`` -> 0.0); an empty ``{}`` made the
         # per-dimension keys silently vanish from eval output and consumers
-        # doing ``results["rouge-1"]`` hit a KeyError (round-73 FINDING 5).
+        # doing ``results["rouge-1"]`` hit a KeyError (FINDING 5).
         if not predictions:
             return {t.replace("rouge", "rouge-").lower(): 0.0 for t in self.rouge_types}
 
@@ -82,7 +82,7 @@ class BleuMetric(BaseMetric):
         # Empty inputs — nothing to score, and we shouldn't require the
         # optional dependency just to short-circuit. sacrebleu raises a raw
         # IndexError on an EMPTY reference corpus (not just an empty
-        # predictions list — RIL ISS-395), so guard both sides. Matches the
+        # predictions list), so guard both sides. Matches the
         # ``0.0`` convention of :class:`AccuracyMetric` / :class:`F1Metric`.
         if not predictions or not references:
             return {"bleu": 0.0}
@@ -115,7 +115,7 @@ class ChrFMetric(BaseMetric):
         # Empty inputs — nothing to score, and we shouldn't require the
         # optional dependency just to short-circuit. sacrebleu raises a raw
         # IndexError on an EMPTY reference corpus (not just an empty
-        # predictions list — RIL ISS-395), so guard both sides. Matches the
+        # predictions list), so guard both sides. Matches the
         # ``0.0`` convention of :class:`AccuracyMetric` / :class:`F1Metric`.
         if not predictions or not references:
             return {"chrf": 0.0}

@@ -59,7 +59,7 @@ def test_from_data_config_no_path_uses_default_corpus():
 
 
 def test_from_data_config_default_tokenizer_encodes_real_text():
-    """Regression (RIL ISS-196): the documented default simple tokenizer
+    """Regression: the documented default simple tokenizer
     (``tokenizer_type="simple"`` with no path) must be able to encode real
     text. The old default corpus ``["<PAD>", "<EOS>", "<BOS>"]`` produced a
     vocab of only the three markers' constituent characters, so any real
@@ -125,7 +125,7 @@ def test_from_dataset_text_round_trips_file_contents(tmp_path):
 
 
 def test_from_dataset_text_registers_eos_bos_specials(tmp_path):
-    """Regression (RIL ISS-152): ``from_dataset_text`` builds its corpus as
+    """Regression: ``from_dataset_text`` builds its corpus as
     ``["<PAD>", "<EOS>", "<BOS>", *chars]`` intending all three markers to be
     registered as special tokens. Only ``<PAD>`` was special-cased — the
     ``<EOS>``/``<BOS>`` markers were flattened into their constituent plain
@@ -148,7 +148,7 @@ def test_from_dataset_text_registers_eos_bos_specials(tmp_path):
 
 
 def test_tokenizer_loader_refuses_malicious_pickle(tmp_path):
-    """Regression (RIL ISS-185): ``TokenizerFactory`` on an attacker-controlled
+    """Regression: ``TokenizerFactory`` on an attacker-controlled
     ``tokenizer.pt`` must NOT run arbitrary ``__reduce__`` code. The old
     ``weights_only=False`` load executed the payload (os.system-touch a marker);
     the hardened loader refuses via the allowlist and no marker is created."""
@@ -196,7 +196,7 @@ def test_tokenizer_roundtrip_still_works_weights_only(tmp_path):
 
 def test_from_data_config_honors_empty_default_corpus():
     """An EXPLICIT ``default_corpus=[]`` must not be silently replaced by the
-    printable default corpus (RIL ISS-420): the ``or`` fallback used to swap
+    printable default corpus: the ``or`` fallback used to swap
     any falsy list, so a caller asking for an empty corpus got the printable
     one instead."""
     from llm.runtime.tokenizer_factory import TokenizerFactory
@@ -217,7 +217,7 @@ def test_from_serving_config_rejects_non_tokenizer_pickle(tmp_path):
     """A ``tokenizer_path`` pointing at a model/state-dict blob must fail loud
     with a clear message instead of surfacing as a confusing
     ``AttributeError: 'dict' object has no attribute 'encode'`` at the first
-    request (RIL ISS-420)."""
+    request."""
     import torch
 
     from llm.runtime.tokenizer_factory import TokenizerFactory
@@ -235,7 +235,7 @@ def test_from_serving_config_rejects_non_tokenizer_pickle(tmp_path):
 
 def test_from_dataset_text_non_utf8_raises_clear_error(tmp_path):
     """``from_dataset_text`` must report a non-UTF-8 file with a clear,
-    actionable error instead of a raw ``UnicodeDecodeError`` (RIL ISS-420)."""
+    actionable error instead of a raw ``UnicodeDecodeError``."""
     from llm.runtime.tokenizer_factory import TokenizerFactory
 
     path = tmp_path / "corpus.txt"

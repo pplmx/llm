@@ -58,7 +58,7 @@ def test_bpe_tokenizer_empty_input():
 
 @pytest.mark.quick
 def test_bpe_pad_token_id_is_valid_when_pad_missing_from_vocab(sample_text_file):
-    """Regression (RIL ISS-155): ``pad_token_id`` returned
+    """Regression: ``pad_token_id`` returned
     ``token_to_id("[PAD]")`` which is ``None`` whenever the trained/loaded
     vocab does not contain ``[PAD]`` (custom ``special_tokens``, or a
     foreign ``tokenizer.json``). Callers use ``getattr(tokenizer,

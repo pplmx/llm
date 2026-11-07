@@ -137,7 +137,7 @@ class TestGradientCheckpointingMemory:
         # Use the fattest usable GPU (repo ``DEFAULT_DEVICE`` convention)
         # rather than literal ``cuda:0``, which may be an occupied / low-VRAM
         # device on a shared host — the class gate only proves *some* GPU has
-        # headroom, not cuda:0 specifically (RIL ISS-046).
+        # headroom, not cuda:0 specifically.
         from tests.support.devices import DEFAULT_DEVICE
 
         device = DEFAULT_DEVICE

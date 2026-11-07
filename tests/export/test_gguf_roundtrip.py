@@ -1,4 +1,4 @@
-"""GGUF load-back milestone: export → load_gguf_model round-trips (round 71).
+"""GGUF load-back milestone: export → load_gguf_model round-trips.
 
 The exporter was write-only: a GGUF file could not be read back into a
 usable model. Now ``export_to_gguf(..., model_config=config.model_dump())``
@@ -101,7 +101,7 @@ def test_roundtrip_f16_within_quantizer_error(roundtrip_config, tmp_path):
 
 
 def test_roundtrip_preserves_nondefault_norm_eps(roundtrip_config, tmp_path):
-    """Regression for RIL ISS-241: a model with a non-default norm eps (e.g.
+    """Regression for a model with a non-default norm eps (e.g.
     Qwen2's 1e-6) must round-trip through a self-export. ModelConfig has no
     norm_eps field, so the exporter persists the model's LIVE eps separately
     and the loader threads it back — before the fix the rebuilt model silently
@@ -218,7 +218,7 @@ def test_bad_config_json_is_refused(tmp_path):
 
 
 def test_writer_fsyncs_before_rename(tmp_path, monkeypatch):
-    """Regression (RIL TASK-314/ISS-352): ``write()`` must fsync the temp
+    """Regression: ``write()`` must fsync the temp
     file's bytes BEFORE the rename, so a crash right after ``write()`` returns
     can never leave the final name pointing at an un-flushed or partial inode.
 

@@ -1,4 +1,4 @@
-"""Longformer-style dilated sliding-window attention mask (ROADMAP 15.2 / TASK-240).
+"""Longformer-style dilated sliding-window attention mask (ROADMAP 15.2).
 
 Longformer (Beltagy et al. 2020) builds near-linear attention from a **dilated
 sliding window** plus a few **global** tokens: within the window a query attends

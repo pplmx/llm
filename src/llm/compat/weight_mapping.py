@@ -26,8 +26,7 @@ LLAMA_MAPPING = {
     # Embeddings
     "model.embed_tokens.weight": "embedding_layer.token_embeddings.weight",
     # Learned positional encoding (only present on pos_encoding_learned
-    # models; inverse maps back so the trained PE survives save->load, RIL
-    # ISS-063). Non-standard key — ignored by HF transformers, honored by
+    # models; inverse maps back so the trained PE survives save->load). Non-standard key — ignored by HF transformers, honored by
     # our own from_pretrained.
     "model.positional_encoding.pos_embedding.weight": "embedding_layer.positional_encoding.pos_embedding.weight",
     # Final norm
@@ -50,7 +49,7 @@ LLAMA_MAPPING = {
     # MLA extra parameters (our pseudo-MLA): identity through the Llama
     # naming scheme so a trained MLA model round-trips save_pretrained ->
     # from_pretrained with its latents / latent_*_proj / input_kv_proj
-    # intact instead of being silently dropped at random init (RIL ISS-169).
+    # intact instead of being silently dropped at random init.
     # External DeepSeek-style MLA checkpoints use different names and are out
     # of scope for the llama loader.
     "model.layers.{layer}.self_attn.latents": "transformer_blocks.{layer}.self_attn.latents",
@@ -177,7 +176,7 @@ def detect_architecture(config: dict[str, Any]) -> str:
     elif "mixtral" in model_type:
         # Mixtral is MoE (sparse experts + router). Our mapping is dense-only
         # and from_pretrained would build a DENSE model, silently dropping
-        # every experts.*/gate tensor (RIL ISS-144). Keep it distinguishable
+        # every experts.*/gate tensor. Keep it distinguishable
         # so the loader can REJECT it with a clear error instead of shipping
         # a model whose routers/experts are all at random init.
         return "mixtral"
@@ -188,7 +187,7 @@ def detect_architecture(config: dict[str, Any]) -> str:
         # would map ``qwen2_moe`` onto the DENSE Qwen2 rules (dropping every
         # expert/router tensor) and ``qwen3`` onto the Qwen1 GPT-style rules
         # (dropping most weights) — both then run from RANDOM init with
-        # warnings only (the ISS-144 / round-71 anti-garbage-load philosophy).
+        # warnings only (the anti-garbage-load philosophy).
         # Route them to "unknown" so the loader refuses loudly.
         return "unknown"
     elif "qwen2" in model_type:
@@ -199,7 +198,7 @@ def detect_architecture(config: dict[str, Any]) -> str:
         # Unknown model_type (gpt2, gemma, baichuan, ...). Previously this
         # defaulted to the llama mapping and from_pretrained loaded with
         # strict=False — every unmapped weight stayed at random init and the
-        # model generated garbage with only warning logs (round-71 compat
+        # model generated garbage with only warning logs (compat
         # fix). Return a distinguishable token so the loader REFUSES instead.
         return "unknown"
 
@@ -227,7 +226,7 @@ def get_weight_mapping(architecture: str) -> dict[str, str]:
             ``hf_loader`` guards these, but ``convert_hf_weights`` /
             ``convert_gguf_weights`` / ``convert_our_weights`` call this
             directly and used to silently fall back to Llama rules, mis-mapping
-            every MoE/expert tensor (RIL ISS-417 / ISS-144 class).
+            every MoE/expert tensor (class).
     """
     if architecture in _KNOWN_UNSUPPORTED:
         raise KeyError(
@@ -329,7 +328,7 @@ def convert_gguf_weights(
         :func:`convert_hf_to_combined_qkv`), and the list of GGUF tensor names
         that had no mapping. A non-empty ``unmapped`` list means the file is
         not a pure dense Llama-style GGUF (or carries extra tensors); the
-        caller should refuse rather than silently drop them (RIL ISS-220
+        caller should refuse rather than silently drop them (
         philosophy).
     """
     mapping = expand_layer_mapping(GGUF_MAPPING, num_layers)
@@ -541,9 +540,9 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         "max_seq_len": hf_config.get("max_position_embeddings", 4096),
         # Mistral's sliding-window attention: absent on Llama/Qwen externals
         # and defaulted to None (full-context) — wiring it prevents the silent
-        # full-context attention past a 4096 window (RIL ISS-242).
+        # full-context attention past a 4096 window.
         "window_size": hf_config.get("sliding_window"),
-        # Sparse/streaming attention scheme (RIL TASK-244): our own publisher
+        # Sparse/streaming attention scheme: our own publisher
         # persists ``attn_sparse`` (kind + params) so a sparse model roundtrips
         # with its scheme instead of silently rebuilding as dense on load.
         # External checkpoints carry no such key and default to None (dense).
@@ -557,7 +556,7 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # than silently defaulting to gelu.
         # Attention family so an MLA model round-trips as MLA instead of
         # silently rebuilding as MHA with every MLA tensor dropped at random
-        # init (RIL ISS-169). Our own publisher persists it; external
+        # init. Our own publisher persists it; external
         # Llama/Mistral checkpoints carry no such key and default to MHA.
         "attn_impl": hf_config.get("attn_impl", "mha"),
         "mlp_activation": hf_config.get("hidden_act", "silu"),
@@ -565,38 +564,37 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # True, but our own ``save_pretrained`` persists the actual
         # ``use_glu`` so a DEFAULT (non-GLU) model round-trips with its
         # fc1/fc2 MLP instead of being rebuilt as GLU with random gate
-        # weights (RIL ISS-056). Absent (an external HF checkpoint) -> True.
+        # weights. Absent (an external HF checkpoint) -> True.
         "use_glu": hf_config.get("use_glu", True),
         # Learned positional encoding flag so a learned-PE model round-trips
         # with its trained pos_embedding weights instead of silently falling
-        # back to sinusoidal (RIL ISS-063). Default False (matching the
+        # back to sinusoidal. Default False (matching the
         # DecoderModel default).
         "pos_encoding_learned": hf_config.get("pos_encoding_learned", False),
         # Normalization implementation so an RMSNorm-trained model round-trips
-        # with RMSNorm instead of silently rebuilding as LayerNorm (RIL
-        # ISS-062). Our own publisher persists it; external checkpoints
+        # with RMSNorm instead of silently rebuilding as LayerNorm. Our own publisher persists it; external checkpoints
         # default to layer_norm (the DecoderModel default).
         "norm_impl": hf_config.get("norm_impl", "layer_norm"),
         # Pre-LN vs post-LN block ordering. Our own publisher persists the
         # explicit flag so a post-LN model roundtrips as post-LN instead of
-        # silently becoming the pre-LN default (RIL ISS-072).
+        # silently becoming the pre-LN default.
         "norm_first": hf_config.get("norm_first", True),
         # RoPE: real Llama/Mistral/Qwen always use rotary position embedding
         # (their HF configs carry ``rope_theta`` and no ``use_rope`` key), so
         # an external checkpoint defaults to RoPE-on. Our own publisher
         # persists the explicit flag, keeping save->load self-consistent
-        # (RIL ISS-062 — core.rope had zero callers before this wiring).
+        # (core.rope had zero callers before this wiring).
         "use_rope": hf_config.get("use_rope", True),
         # Bias flags: real Llama/Mistral checkpoints are bias-free (no
         # qkv/mlp/lm_head biases — ``attention_bias=False``). An external
         # checkpoint therefore defaults to bias-free; our own publisher
         # persists the actual flags so a biased model roundtrips with its
-        # biases (RIL ISS-062).
+        # biases.
         #
         # External checkpoints declare attention bias under HF's CANONICAL
         # ``attention_bias`` key (Qwen-style), not our repo-custom names —
         # falling back to those keys silently dropped every attention/MLP
-        # bias for ``attention_bias: true`` checkpoints (RIL ISS-145). Prefer
+        # bias for ``attention_bias: true`` checkpoints. Prefer
         # our own persisted flags, then HF's canonical key for externals.
         "qkv_bias": hf_config.get("qkv_bias", hf_config.get("attention_bias", False)),
         "mlp_bias": hf_config.get("mlp_bias", hf_config.get("attention_bias", False)),

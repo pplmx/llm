@@ -1,4 +1,4 @@
-"""Block Sparse Attention mask builder (ROADMAP 15.2 / TASK-237).
+"""Block Sparse Attention mask builder (ROADMAP 15.2).
 
 Block-sparse attention (BigBird, Longformer-style) lets a query attend only to a
 selected set of *key blocks* instead of every key: a small window around the

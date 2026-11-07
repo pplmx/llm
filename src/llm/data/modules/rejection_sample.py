@@ -12,7 +12,7 @@ from llm.training.rlhf.rejection_sampling import rejection_sample
 
 
 class RejectionSampleDataModule(SamplerMapDataModule):
-    """Synthetic rejection-sampling DataModule (TASK-230 / ROADMAP 11.4).
+    """Synthetic rejection-sampling DataModule (/ ROADMAP 11.4).
 
     Generates ``num_samples`` responses whose reward is 1 iff the response ends
     in token 0 (else 0), applies the chosen rejection filter (top-K or threshold),
@@ -66,7 +66,7 @@ class RejectionSampleDataModule(SamplerMapDataModule):
         if kept.shape[0] == 0:
             # An all-zero-kept TensorDataset yields an epoch with zero batches —
             # the engine then reads a meaningless 0.0 loss / divides by zero
-            # batches (ISS-200 class). Nothing clearing the filter means the
+            # batches (class). Nothing clearing the filter means the
             # config cannot demonstrate the pipeline: fail at setup, loudly.
             raise ValueError(
                 f"RejectionSampleDataModule kept ZERO of {batch} responses "

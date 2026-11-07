@@ -177,7 +177,7 @@ def _naive_int8_output_error(layer: nn.Linear, calib: torch.Tensor) -> float:
 
 
 def test_quantizer_search_alpha_with_fp16_bias():
-    """Regression (RIL ISS-060): ``search_alpha=True`` must not crash on a
+    """Regression: ``search_alpha=True`` must not crash on a
     layer whose bias is fp16/bf16 (e.g. ``model.half()``).
 
     ``_eval_layer_error`` casts the weights and activations to fp32 but fed
@@ -257,8 +257,8 @@ def test_smoothquant_rejects_asymmetric():
 
 def test_zero_activation_calibration_does_not_produce_nan():
     """A layer whose calibration activations are ALL zero yields act_scale=0;
-    forward must degrade to a finite near-zero output, not NaN (round-82 /
-    ISS-235 — the dead-layer guard GPTQ already has)."""
+       forward must degrade to a finite near-zero output, not NaN (/
+    — the dead-layer guard GPTQ already has)."""
     from llm.quantization.smooth import SmoothQuantConfig, _quantize_linear_with_smoothquant
 
     layer = nn.Linear(8, 4)
@@ -279,7 +279,7 @@ def test_vanishing_channel_input_scales_do_not_produce_nan():
     exact-zero 'dead' mask, so under alpha=1.0 _smoothing_scales yields a
     sub-fp16 input scale that flushed to 0 in the packed fp16 buffer — and a
     live forward carrying an exact 0.0 on that channel hit 0/0 -> NaN. The
-    fp16-safe floor must keep the forward finite (round-82 / ISS-239)."""
+    fp16-safe floor must keep the forward finite."""
     from llm.quantization.smooth import SmoothQuantConfig, _quantize_linear_with_smoothquant
 
     layer = nn.Linear(8, 4)

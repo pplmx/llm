@@ -22,7 +22,7 @@ The code is a bijection when the vocab fits the usable freq bins
 (``vocab_size <= n_mels - 2``): :func:`spectrogram_to_tokens` recovers the
 exact transcript by slot-energy argmax over frequency (``freq - 2``). The
 DataModule (MultimodalDataModule with ``audio_asr=True``) validates that
-bound. (RIL TASK-310: ``n_mels - 1`` is deliberately rejected — the top token
+bound. (``n_mels - 1`` is deliberately rejected — the top token
 ``n_mels - 2`` would land on bin 2 and decode as ``0``, silently corrupting
 that label.)
 """

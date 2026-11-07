@@ -60,7 +60,7 @@ def test_chat_non_streaming_preserves_whitespace(monkeypatch, client):
     """The non-streaming chat completion must NOT strip the completion's own
     leading/trailing whitespace (the model may legitimately emit a leading
     newline) — matches the streaming path, which emits chunks verbatim, and
-    OpenAI semantics (RIL ISS-114)."""
+    OpenAI semantics."""
     # The route does generated_text[len(prompt):]; make the mock compute it.
     monkeypatch.setattr("llm.serving.routers.chat._sync_generate", lambda prompt, **kw: prompt + "  hi  ")
 
@@ -72,7 +72,7 @@ def test_chat_non_streaming_preserves_whitespace(monkeypatch, client):
 @pytest.mark.slow
 def test_chat_finish_reason_length_when_budget_exhausted(monkeypatch, client):
     """finish_reason must be ``"length"`` (OpenAI spec) when generation consumed
-    the full ``max_tokens`` budget, not hard-coded ``"stop"`` (RIL ISS-114)."""
+    the full ``max_tokens`` budget, not hard-coded ``"stop"``."""
     # 4 chars >= max_tokens=2 → length.
     monkeypatch.setattr("llm.serving.routers.chat._sync_generate", lambda prompt, **kw: prompt + "abcd")
 
@@ -313,7 +313,7 @@ def _finish_reason_from_stream(client, monkeypatch, stream_tokens, max_tokens):
 
 @pytest.mark.slow
 def test_chat_stream_finish_reason_length_when_budget_exhausted(client, monkeypatch):
-    """Regression (RIL ISS-151): streaming chat must report
+    """Regression: streaming chat must report
     ``finish_reason="length"`` when the stream consumed the full
     ``max_tokens`` budget — not hard-code ``"stop"`` like the non-streaming
     sibling (which reports ``"length"`` for identical input)."""
@@ -359,7 +359,7 @@ def test_chat_completions_stream_does_not_drop_prompt_prefix_token(client, monke
     """Streaming chat must NOT strip generated tokens that happen to be a
     prefix of the rendered prompt.
 
-    Regression for ISS-016: the stream handler used to drop the leading
+    Regression for: the stream handler used to drop the leading
     streamed token whenever ``prompt.startswith(token)`` was true, assuming
     the backend echoes the prompt. Backends never echo the prompt on the
     streaming path (only ``generate()`` prepends it for the non-streaming

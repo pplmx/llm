@@ -36,8 +36,7 @@ class PrefixCache:
         """Drop a prefix entry (no-op if absent).
 
         Used when the sequence that owned the cached blocks is freed — the
-        stored block IDs become dangling and must not be replayed (RIL
-        ISS-071).  Because LRU eviction may already have dropped the entry,
+        stored block IDs become dangling and must not be replayed.  Because LRU eviction may already have dropped the entry,
         absence is not an error.
         """
         self.cache.pop(prefix_hash, None)
@@ -95,7 +94,7 @@ class PagedKVCache:
         A sequence registers at most ONE live prefix entry: :meth:`free`
         drops the entry its owner registered (and only that entry), so a
         re-registration under a different hash evicts the previous one here
-        to keep that bookkeeping exact (RIL TASK-065).
+        to keep that bookkeeping exact.
         """
         if not self.enable_prefix_cache or self.prefix_cache is None:
             return
@@ -109,7 +108,7 @@ class PagedKVCache:
         # ``extend_sequence`` grow the cached entry past the prompt into its
         # decode blocks; a subsequent hit would then fork the owner's WHOLE
         # decode table, pinning those blocks and forcing the owner into a
-        # copy-on-write spiral on every decode step (RIL TASK-065 follow-up).
+        # copy-on-write spiral on every decode step (follow-up).
         self.prefix_cache.add(prefix_hash, list(block_ids))
         self._seq_to_hash[seq_id] = prefix_hash
         # The LAST registrar of a hash is the entry's owner (a fresh prefill
@@ -217,7 +216,7 @@ class PagedKVCache:
         # sequence (or any shared-block holder) writes into a block that is
         # still referenced by the prefix-cache owner, it must copy-on-write
         # first — writing in place would corrupt the cached K/V the owner
-        # (and the model's attention) still reads (RIL TASK-065). Later
+        # (and the model's attention) still reads. Later
         # layers read the remapped table fresh from the manager, so they
         # land in the private block without re-running the COW.
         for i in range(num_new_tokens):
@@ -252,7 +251,7 @@ class PagedKVCache:
         new_id = self.block_manager.cow_block(old_id)
         # Copy the preserved prefix content from the shared block before this
         # layer's write overwrites its slice; later layers read the same
-        # logical block and must see the full history (TASK-065).
+        # logical block and must see the full history.
         with torch.no_grad():
             self.k_cache[:, new_id, :, :, :].copy_(self.k_cache[:, old_id, :, :, :])
             self.v_cache[:, new_id, :, :, :].copy_(self.v_cache[:, old_id, :, :, :])
@@ -324,7 +323,7 @@ class PagedKVCache:
         ``free_sequence`` returns them to the allocator a later request may
         be handed the same blocks. Leaving it in place would replay
         another/in-flight sequence's newly-written K/V as a cached prefix —
-        use-after-free of the KV blocks (RIL ISS-071).
+        use-after-free of the KV blocks.
 
         Only the entry the sequence itself registered is removed (via
         ``_seq_to_hash``, which :meth:`add_prefix` keeps exact by evicting a
@@ -333,8 +332,7 @@ class PagedKVCache:
         blocks, which remain live (and pristine — every write into a shared
         block copy-on-writes) for as long as the owner holds them, so its
         free must not evict an entry it does not own; doing so would make the
-        first replay destroy the very cache entry that served it (RIL
-        TASK-065).
+        first replay destroy the very cache entry that served it.
         """
         if self.prefix_cache is not None:
             prefix_hash = self._seq_to_hash.pop(seq_id, None)

@@ -14,7 +14,7 @@ as a per-tensor (or per-output-row for weights) fp32 scale. Activation
 scaling is either STATIC (``activation_scale`` captured at calibration time)
 or DYNAMIC (absmax computed per forward).
 
-The forward returns in the layer's effective dtype (RIL ISS-191 pattern) and
+The forward returns in the layer's effective dtype (pattern) and
 never mixes dtypes inside ``F.linear``, so a post-quant fp16/bf16 model cast
 stays valid. True fp8 matmul kernels, fp8 KV cache, and fp8 backprop are out
 of scope for this milestone.
@@ -106,7 +106,7 @@ class Fp8QuantizedLinear(nn.Module):
         return x_scaled.to(fp8_dtype).to(x.dtype) * scale
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # RIL ISS-383: resolve the output dtype from the INPUT (the graph's
+        # resolve the output dtype from the INPUT (the graph's
         # dtype), not the bias. The bias is stored fp32 (via
         # ``quantize_fp8_linear``'s `bias.data.copy_`), so ``bias.dtype``
         # leaked fp32 activations into an fp16 graph whenever the layer had

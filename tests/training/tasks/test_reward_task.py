@@ -115,7 +115,7 @@ def test_reward_model_value_head_trainable(tiny_model, device):
 
 
 def test_reward_model_rejects_fully_masked_row(tiny_model, device):
-    """Regression for RIL ISS-248: a fully-masked row (mask.sum == 0) has no
+    """Regression for a fully-masked row (mask.sum == 0) has no
     reward token — ``seq_lengths`` would be -1 and the old code silently
     harvested the LAST (padding) hidden state as the reward. Must fail loud."""
     reward_model = RewardModel(tiny_model).to(device)

@@ -34,12 +34,12 @@ def configure_logging(log_level: str = "INFO"):
 
 
 def _global_rank(node_rank: int, local_rank: int, local_world_size: int) -> int:
-    """Global process-group rank for a worker on a node (RIL TASK-191).
+    """Global process-group rank for a worker on a node.
 
     Every node spawns ``gpus_per_node`` local workers; the global rank
     ``node_rank * local_world_size + local_rank`` makes them all rendezvous
     into ONE process group without the per-node rank collisions that broke
-    multi-node launch (ISS-229).
+    multi-node launch.
     """
     return node_rank * local_world_size + local_rank
 
@@ -78,7 +78,7 @@ def train_worker(
             TensorBoardLogger(log_dir=config.logging.log_dir),
             LRSchedulerCallback(),
         ]
-        # Optional periodic LM evaluation (RIL TASK-329): guarded inside the
+        # Optional periodic LM evaluation: guarded inside the
         # builder against collective-forward parallel strategies + missing
         # eval corpus; returns None when training.eval_interval == 0.
         periodic_eval = build_periodic_eval_callback(
@@ -108,7 +108,7 @@ def train_worker(
             # A plain barrier here would wedge if a sibling already crashed
             # and tore down; monitored_barrier bounds that and logs the
             # missing ranks instead of masking this worker's own exception
-            # (RIL TASK-195 / ISS-232).
+            # .
             DistributedManager.monitored_barrier()
         distributed_manager.cleanup()
 
@@ -129,7 +129,7 @@ def main(
     # ``None`` = keep the YAML config's value; only an explicit
     # ``--compile/--no-compile`` (or ``--amp/--no-amp``) overrides it. A
     # ``True`` default would UNCONDITIONALLY re-enable compile/AMP on every
-    # run whose YAML deliberately disabled them (RIL ISS-411).
+    # run whose YAML deliberately disabled them.
     compile: bool | None = typer.Option(None, help="Enable torch.compile (--compile / --no-compile)."),
     amp: bool | None = typer.Option(None, help="Enable AMP (--amp / --no-amp)."),
 ):
@@ -165,7 +165,7 @@ def main(
     node_rank = config.distributed.node_rank
     # Each node spawns only its OWN ``gpus_per_node`` workers; the global
     # process-group rank offsets by ``node_rank * local_world_size`` so
-    # multiple nodes join one group without collisions (RIL TASK-191/ISS-229).
+    # multiple nodes join one group without collisions.
     # Single-node keeps node_rank=0 and local == world (identical behaviour).
     gpus_per_node = config.distributed.gpus_per_node
     local_world_size = gpus_per_node if (gpus_per_node is not None and gpus_per_node > 0) else 1

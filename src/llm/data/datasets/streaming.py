@@ -40,7 +40,7 @@ class StreamingTextDataset(IterableDataset):
         skip_undecodable: bool = True,
     ):
         # No ``padding_value``: streaming emits fixed-length windows (truncated,
-        # never padded), so a padding knob here was dead state (RIL TASK-325).
+        # never padded), so a padding knob here was dead state.
         self.text_source = text_source
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
@@ -56,7 +56,7 @@ class StreamingTextDataset(IterableDataset):
         self._warned_undecodable = False
 
         if overlap < 0:
-            # RIL ISS-202: silently treating a negative ``overlap`` as "no
+            # silently treating a negative ``overlap`` as "no
             # overlap" hides a config bug; TextDataset already rejects it.
             raise ValueError("overlap must be a non-negative integer")
         if overlap >= max_seq_len:
@@ -92,7 +92,7 @@ class StreamingTextDataset(IterableDataset):
         cross-run seen-set is also cleared: otherwise a corpus whose whole
         content was consumed+hashed in a prior run classifies every record
         as already-seen on the recycled pass and the engine raises
-        ``"streaming corpus is empty"`` (RIL ISS-064). In-memory per-pass
+        ``"streaming corpus is empty"``. In-memory per-pass
         dedup is unaffected.
         """
         if self._skipped_undecodable:
@@ -104,7 +104,7 @@ class StreamingTextDataset(IterableDataset):
         # Zero the counter (and the first-warn flag) so the NEXT pass's
         # "could not encode this pass" summary reflects THAT pass, not the
         # lifetime total — the counter used to accumulate across corpus
-        # cycles and every reset after the first over-reported (RIL ISS-394).
+        # cycles and every reset after the first over-reported.
         self._skipped_undecodable = 0
         self._warned_undecodable = False
         self.stream_data_state.reset()

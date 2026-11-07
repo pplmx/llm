@@ -76,8 +76,7 @@ def oov_client(monkeypatch, device):
     """TestClient backed by a real tiny model + SimpleCharacterTokenizer.
 
     The char tokenizer raises ``KeyError`` for characters outside its corpus,
-    exercising the router's error mapping for out-of-vocabulary prompts (RIL
-    ISS-113) — the default ``StubTokenizer`` never raises.
+    exercising the router's error mapping for out-of-vocabulary prompts — the default ``StubTokenizer`` never raises.
     """
     from unittest.mock import MagicMock
 
@@ -136,7 +135,7 @@ def oov_client(monkeypatch, device):
 
 @pytest.mark.slow
 def test_generate_oov_prompt_returns_400_not_500(oov_client):
-    """Regression (RIL ISS-113): an out-of-vocabulary character in the prompt
+    """Regression: an out-of-vocabulary character in the prompt
     raises ``KeyError`` from the char tokenizer; the router must surface it as
     a 4xx (client-caused), not a 500 'Internal server error'."""
     payload = {"prompt": "héllo", "max_new_tokens": 2, "temperature": 0.0}
@@ -166,7 +165,7 @@ def test_generate_stream_oov_prompt_returns_400(oov_client):
 
 @pytest.mark.slow
 def test_chat_completions_oov_prompt_returns_400_not_500(oov_client):
-    """Regression (RIL ISS-147): an out-of-vocabulary character in the chat
+    """Regression: an out-of-vocabulary character in the chat
     message content raises ``KeyError`` from the char tokenizer; the chat
     router must map it to a client 400 (like the ``/generate`` sibling), not
     fall through to the generic handler and surface a 500 'Internal server
@@ -184,7 +183,7 @@ def test_chat_completions_oov_prompt_returns_400_not_500(oov_client):
 
 @pytest.mark.slow
 def test_generate_stream_oversized_max_new_tokens_returns_400(oov_client):
-    """Regression (RIL ISS-149): streaming /generate with
+    """Regression: streaming /generate with
     ``max_new_tokens >= model.max_seq_len`` must be a client 400 before the
     SSE starts — not a 200 stream containing an in-band 'Error: ValueError'
     (the eager service rejects it, but only once the generator runs)."""
@@ -196,7 +195,7 @@ def test_generate_stream_oversized_max_new_tokens_returns_400(oov_client):
 
 @pytest.mark.slow
 def test_chat_stream_oov_prompt_returns_400(oov_client):
-    """Regression (RIL ISS-149): a streaming chat with un-encodable content
+    """Regression: a streaming chat with un-encodable content
     must be a client 400 before the SSE starts, not a 200 stream containing
     'Error: KeyError'."""
     payload = {
@@ -213,7 +212,7 @@ def test_chat_stream_oov_prompt_returns_400(oov_client):
 
 @pytest.mark.slow
 def test_chat_stream_oversized_max_tokens_returns_400(oov_client):
-    """Regression (RIL ISS-149): a streaming chat with
+    """Regression: a streaming chat with
     ``max_tokens >= model.max_seq_len`` must be a client 400 pre-SSE (here
     the encodability check on the rendered prompt may legitimately fire
     first for the tiny abc-corpus tokenizer — the contract is the 400 status
@@ -248,10 +247,10 @@ def test_generate_text(client):
     data = response.json()
     assert "generated_text" in data
     assert "token_count" in data
-    # Regression (RIL ISS-148): the eager backend returns prompt+completion;
+    # Regression: the eager backend returns prompt+completion;
     # the route must strip the prompt so generated_text is the completion only
-    # and token_count counts generated tokens, not prompt chars. Since round-73
-    # ISS-225 the count comes from re-encoding the completion with the serving
+    # and token_count counts generated tokens, not prompt chars. Since
+    # the count comes from re-encoding the completion with the serving
     # tokenizer (``StubTokenizer.encode`` here returns a fixed [1,2,3]), so it
     # is the tokenizer's token count, not a character count.
     assert not data["generated_text"].startswith(payload["prompt"])
@@ -268,15 +267,15 @@ def test_generate_advanced_params(client):
     assert response.status_code == 200
     data = response.json()
     assert "generated_text" in data
-    # Non-streaming /generate must not echo the prompt (RIL ISS-148).
+    # Non-streaming /generate must not echo the prompt.
     assert not data["generated_text"].startswith(payload["prompt"])
-    # Token-count is the serving tokenizer's count of the completion (ISS-225),
+    # Token-count is the serving tokenizer's count of the completion,
     # not a character count.
     assert data["token_count"] == len(StubTokenizer().encode(data["generated_text"]))
 
 
 def test_token_count_uses_tokenizer_not_char_length(monkeypatch):
-    """ISS-225: non-streaming token counts re-encode with the serving tokenizer,
+    """: non-streaming token counts re-encode with the serving tokenizer,
     so a multi-char-token tokenizer (HF/BPE) reports the true token count
     instead of the character count the routes used before."""
     from types import SimpleNamespace
@@ -338,7 +337,7 @@ def test_metrics_endpoint(client):
 
 @pytest.mark.slow
 def test_metrics_endpoint_requires_api_key_when_configured(monkeypatch):
-    """Regression (RIL ISS-165): with ``api_key`` set, the Prometheus
+    """Regression: with ``api_key`` set, the Prometheus
     /metrics endpoint must be guarded like the inference routes — 403 without
     the key, 200 with it. Previously ``Instrumentator.expose`` registered a
     plain, unauthenticated GET /metrics."""
@@ -455,7 +454,7 @@ def test_generate_stream_error_yields_error_chunk(monkeypatch):
 
 @pytest.mark.slow
 def test_generate_stream_acquires_inference_semaphore(monkeypatch):
-    """Regression (RIL ISS-042): ``/generate?stream=true`` must acquire the
+    """Regression: ``/generate?stream=true`` must acquire the
     inference semaphore for the *lifetime of the stream*, exactly like the
     chat streaming route. The original concurrency-control fix scoped the
     semaphore to the non-streaming handlers and chat streaming but missed
@@ -585,7 +584,7 @@ def test_generate_runtime_error_returns_503(monkeypatch):
             payload = {"prompt": "hello", "max_new_tokens": 5}
             response = c.post("/generate", json=payload)
             assert response.status_code == 503
-            # RIL ISS-168: the 503 envelope must NOT echo the backend
+            # the 503 envelope must NOT echo the backend
             # exception text back to the client.
             assert "model crashed" not in response.text
             assert response.json()["error"]["message"] == "Model unavailable during generation"
@@ -738,17 +737,17 @@ def test_auth_enforcement(monkeypatch):
 
 
 def test_stream_prevalidation_checks_prompt_plus_engine_budget(monkeypatch):
-    """Regression (RIL ISS-346): streaming pre-validation must reject
-    ``len(prompt) + max_new_tokens > min(model.max_seq_len, engine.max_seq_len)``
-    BEFORE the SSE starts, not just ``max_new_tokens >= model.max_seq_len``.
+    """Regression: streaming pre-validation must reject
+       ``len(prompt) + max_new_tokens > min(model.max_seq_len, engine.max_seq_len)``
+       BEFORE the SSE starts, not just ``max_new_tokens >= model.max_seq_len``.
 
-    A batched engine's KV window (``LLM_SERVING_MAX_SEQ_LEN``) can be smaller
-    than ``model.max_seq_len``. A prompt that already eats most of that window
-    passes the old token-count-only check, then
-    ``ContinuousBatchingEngine.add_request`` raises ``ValueError`` inside the
-    already-started SSE — an in-band ``Error:`` chunk in a 200 stream (the
-    ISS-149 class this pre-validation exists to prevent). The non-streaming
-    twin returns a clean 400 for the same request.
+       A batched engine's KV window (``LLM_SERVING_MAX_SEQ_LEN``) can be smaller
+       than ``model.max_seq_len``. A prompt that already eats most of that window
+       passes the old token-count-only check, then
+       ``ContinuousBatchingEngine.add_request`` raises ``ValueError`` inside the
+       already-started SSE — an in-band ``Error:`` chunk in a 200 stream (the
+    class this pre-validation exists to prevent). The non-streaming
+       twin returns a clean 400 for the same request.
     """
     import llm.serving.routers.generate as gen
 
@@ -764,7 +763,7 @@ def test_stream_prevalidation_checks_prompt_plus_engine_budget(monkeypatch):
     class _FakeService:
         # Shape mirrors ServingGenerationService: the engine lives on
         # ``backend.engine`` (an earlier ``service.engine`` fake masked the
-        # dead-read SSR — RIL TASK-315/ISS-355).
+        # dead-read SSR).
         model = _FakeModel()
         backend = _FakeBackend()
         tokenizer = StubTokenizer()  # 1 char -> 1 token
@@ -788,7 +787,7 @@ def test_stream_prevalidation_checks_prompt_plus_engine_budget(monkeypatch):
 
 
 def test_prevalidation_rejects_engineless_over_window_like_engine(monkeypatch):
-    """Regression (RIL TASK-315/ISS-355, superseded by RIL DEC-113/ISS-408):
+    """Regression (superseded by):
     the eager (engine-less) backend used to SILENTLY tail-truncate over-window
     prompts — degrading to a ~1-token prompt (garbage output) once
     ``max_new_tokens`` approaches the window — and the validation used to
@@ -824,8 +823,8 @@ def test_prevalidation_rejects_engineless_over_window_like_engine(monkeypatch):
 
 
 def test_nonstream_engineless_over_window_is_400(client):
-    """The non-streaming route applies the same budget pre-check as streaming
-    (RIL ISS-408/DEC-113): an over-window prompt against the default eager
+    """The non-streaming route applies the same budget pre-check as streaming:
+    an over-window prompt against the default eager
     backend is a clean 400, not a silent tail-truncated 200."""
     # StubTokenizer.encode -> fixed 3 tokens; 3 + 14 = 17 > model window 16.
     resp = client.post("/generate", json={"prompt": "hello world", "max_new_tokens": 14})
@@ -839,7 +838,7 @@ def test_nonstream_engineless_over_window_is_400(client):
 
 
 def test_queue_full_precheck_is_honest_queue_full_503(monkeypatch):
-    """RIL ISS-407: a full waiting queue is rejected with a retryable
+    """a full waiting queue is rejected with a retryable
     ``queue_full`` 503 — NOT the misleading 'Model unavailable' the generic
     ``RuntimeError`` catch produced — and it fires before the SSE/threadpool
     work starts."""

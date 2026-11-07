@@ -1,4 +1,4 @@
-"""Foreign llama.cpp GGUF import milestone (round 72).
+"""Foreign llama.cpp GGUF import milestone.
 
 ``load_gguf_model`` now imports GGUF files that are NOT self-exports —
 standard llama.cpp files carrying ``general.architecture`` + ``llama.*``
@@ -331,7 +331,7 @@ def test_foreign_import_qwen2_prefix(llama_config, tmp_path):
 
     The key prefix must come from ``general.architecture`` (gguf-py writes
     ``{arch}.*`` keys), otherwise a real Qwen2 file is refused or its norm_eps
-    silently defaults wrong (round-73 review HIGH).
+    silently defaults wrong (review HIGH).
     """
     cfg = llama_config.model_copy(update={"hidden_size": 32, "num_heads": 4, "intermediate_size": 64})
     torch.manual_seed(5)

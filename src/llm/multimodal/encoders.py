@@ -1,7 +1,6 @@
 """Modality encoder registry + minimal CPU encoder (ROADMAP 阶段十二 spike).
 
-This is the *contract first* slice of multimodal support (RIL TASK-226 /
-DEC-058). It lands the registration surface and one tiny, CPU-verifiable
+This is the *contract first* slice of multimodal support. It lands the registration surface and one tiny, CPU-verifiable
 encoder; real vision/audio encoders (CLIP/SigLIP etc.) plug in later by
 registering under :data:`MODALITY_ENCODER_REGISTRY`. Per the ADR boundary, no
 code here patches :class:`llm.models.decoder.DecoderModel` — a multimodal model

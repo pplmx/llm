@@ -1,4 +1,4 @@
-"""Tests for periodic in-training evaluation (RIL TASK-329).
+"""Tests for periodic in-training evaluation.
 
 Covers the ``build_periodic_eval_callback`` wiring — disabled-by-default,
 corpus resolution, missing-corpus and collective-strategy refusal — plus the
@@ -215,7 +215,7 @@ def test_callback_cadence_is_optimizer_steps_not_batch_index():
 
 
 def test_engine_runs_periodic_eval_end_to_end(tmp_path):
-    """End-to-end (RIL TASK-329): with ``training.eval_interval > 0`` the
+    """End-to-end: with ``training.eval_interval > 0`` the
     engine's callback runs a real LM evaluation on the model mid-training and
     logs the metrics at rank 0."""
     import logging
@@ -280,8 +280,7 @@ def test_engine_runs_periodic_eval_end_to_end(tmp_path):
 
 def test_callback_persists_last_eval_step_across_resume():
     """``EvaluationCallback`` must persist ``_last_eval_step`` in checkpoint
-    state so a resumed run does NOT re-evaluate the checkpoint's step (RIL
-    ISS-398). Without it a resume ran the eval once more at the same step —
+    state so a resumed run does NOT re-evaluate the checkpoint's step. Without it a resume ran the eval once more at the same step —
     harmless but violating the "fire once per optimizer step" cadence."""
 
     class _StubModel:

@@ -4,7 +4,7 @@ When ``num_batches % gradient_accumulation_steps != 0`` the final optimizer
 step fires on a partial window. Each loss was scaled by ``1/accum_steps``,
 so without correction the tail step would carry only
 ``window_count/accum_steps`` of a full batch's gradient — a silent,
-step-to-step-varying effective-LR reduction (RIL ISS-066).
+step-to-step-varying effective-LR reduction.
 """
 
 import torch

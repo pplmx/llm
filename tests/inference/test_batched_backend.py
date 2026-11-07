@@ -48,7 +48,7 @@ class _TinyVocabTokenizer:
 
     Simulates a padded model vocab (or a BPE/HF model served with a char
     tokenizer): the model may emit ids up to its own vocab, but only the
-    first ``vocab_size`` are decodable — the ISS-125 regression shape.
+    first ``vocab_size`` are decodable — the regression shape.
     """
 
     vocab_size: int = 5
@@ -70,7 +70,7 @@ class _TinyVocabTokenizer:
 def test_engine_stream_masks_undecodable_tail_vocab(tiny_model, device):
     """Batched engine must not sample a token the tokenizer cannot decode.
 
-    Mirror of the eager/speculative ISS-125 regression (test_eager.py): the
+    Mirror of the eager/speculative regression (test_eager.py): the
     engine's ``_forward_and_sample`` used to mask only the pad token, so a
     padded-vocab model served with a smaller-vocab tokenizer sampled the tail
     id and ``_emit_tokens`` crashed with ``tokenizer.decode([id])`` ->
@@ -106,7 +106,7 @@ def test_engine_rejects_prompt_exceeding_model_capacity(device):
 
     A configured engine ``max_seq_len`` larger than the checkpoint's
     ``max_seq_len`` used to let a too-long request through ``add_request`` and
-    crash in the positional-encoding range check mid-forward (round-73 serving
+    crash in the positional-encoding range check mid-forward (serving
     deep-dive). The context bound must be ``min(engine window, model
     capacity)``.
     """
@@ -133,8 +133,8 @@ def test_engine_rejects_prompt_exceeding_model_capacity(device):
 
 @pytest.mark.quick
 def test_backend_threads_client_request_id_into_engine(tiny_model, device, stub_tokenizer):
-    """ISS-224: the client's request_id must reach the engine, so its
-    duplicate-request-id protection (RIL ISS-123/F3) works from the HTTP path
+    """: the client's request_id must reach the engine, so its
+    duplicate-request-id protection works from the HTTP path
     (it was previously dropped at every layer between router and engine)."""
     engine = ContinuousBatchingEngine(
         model=tiny_model.to(device),

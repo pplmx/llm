@@ -106,14 +106,13 @@ def _validate_calib_inputs(
 def _atomic_save_quantized(model_obj, output: Path) -> None:
     """Write ``model_obj`` to ``output`` atomically (temp + fsync + rename).
 
-    Mirrors the checkpoint manager's ``_atomic_write_bytes`` pattern (RIL
-    ISS-127): a direct ``torch.save`` to the final path leaves a corrupt
+    Mirrors the checkpoint manager's ``_atomic_write_bytes`` pattern: a direct ``torch.save`` to the final path leaves a corrupt
     partial file if it is interrupted (ENOSPC, crash, Ctrl-C). ``torch.save``
     has no bytes-level hook here (the payload is a pickled module, not a
     bytes buffer we control), so write to a sibling temp file first, fsync it,
     then rename into place — a crash before the rename leaves the temp behind
     but never a truncated file under the final name. Also removes a stale
-    temp from a previous interrupted run before re-saving (RIL ISS-161).
+    temp from a previous interrupted run before re-saving.
     """
     import torch
 
@@ -139,7 +138,7 @@ def _reject_clobbering_input(output: Path, model: Path) -> None:
     irretrievably replaces the original FP weights after an expensive
     quantization — the single most destructive misuse of this CLI. The
     comparison resolves symlinks and relative paths so ``out.pt`` vs
-    ``./out.pt`` vs a symlink to ``out.pt`` are all caught (RIL ISS-161).
+    ``./out.pt`` vs a symlink to ``out.pt`` are all caught.
     """
     out_resolved = output.resolve()
     model_resolved = model.resolve()
@@ -152,7 +151,7 @@ def _reject_clobbering_input(output: Path, model: Path) -> None:
     # An existing directory as --output is a usage error, not a runtime one:
     # the atomic-save helper writes a sibling ``<name>.tmp`` then renames it
     # onto ``output``, surfacing as a raw ``IsADirectoryError`` whose message
-    # names the .tmp file, not the path the user typed (RIL CLI polish).
+    # names the .tmp file, not the path the user typed (CLI polish).
     if output.exists() and output.is_dir():
         _die(f"--output ({output}) is an existing directory; must be a file path.")
 
@@ -186,7 +185,7 @@ def _validate_quant_params(
         # Asymmetric GPTQ is unimplemented end-to-end (the quantizer raises
         # NotImplementedError mid-loop). Reject it here as an argument error
         # (exit 1) instead of letting it surface as an exit-2 "quantization
-        # failed" deep in the Hessian loop (RIL ISS-330).
+        # failed" deep in the Hessian loop.
         _die("--asym asymmetric GPTQ is not yet implemented; use symmetric quantization (default) or drop --asym.")
     if bits not in (4, 8):
         _die(f"--bits must be 4 or 8 (GPTQ supports these two widths); got {bits}.")
@@ -239,8 +238,8 @@ def _load_calibration_batches(
     # Calibration files are a tensor or a list of tensors — plain payloads
     # that ``weights_only=True`` loads fine. Loading with the old
     # ``weights_only=False`` executed arbitrary ``__reduce__`` code from a
-    # third-party/shared calibration file (RIL ISS-211), matching the
-    # arbitrary-pickle RCE the repo closed elsewhere (ISS-170/ISS-185).
+    # third-party/shared calibration file, matching the
+    # arbitrary-pickle RCE the repo closed elsewhere.
     if calib_data_tokens is None:
         raise RuntimeError("pre-tokenized calibration path is required")
     loaded = torch.load(calib_data_tokens, map_location="cpu", weights_only=True)
@@ -258,7 +257,7 @@ def _load_calibration_batches(
         )
     # Anything else (dict, tuple, scalar) would make the quantizer iterate
     # dict keys / fail deep inside Hessian capture — reject it at load time
-    # with a clear message instead (RIL ISS-330).
+    # with a clear message instead.
     raise RuntimeError(
         f"{calib_data_tokens} has an unexpected payload ({type(loaded).__name__}); "
         "expected a single tensor or a list of tensors (one per calibration sample)."
@@ -278,7 +277,7 @@ def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
     # Empty / whitespace-only input → None ("all"), so the CLI summary echoes
     # ``all`` only when the algorithm actually quantizes every nn.Linear
     # layer. The old ``[]`` filtered to ZERO layers and then failed at runtime
-    # with "target_modules matched no nn.Linear" (RIL ISS-330).
+    # with "target_modules matched no nn.Linear".
     return parsed or None
 
 
@@ -361,11 +360,11 @@ def gptq(
     try:
         typer.echo(f"Loading model from {model}...")
         # Framework model/quantization classes are allowlisted and loaded with
-        # ``weights_only=True`` (RIL ISS-211), closing the arbitrary-pickle RCE
+        # ``weights_only=True``, closing the arbitrary-pickle RCE
         # that ``weights_only=False`` left open on a user-supplied model file
         # (a shared/community ``.pt`` can smuggle a ``__reduce__``). A pickle
         # referencing anything outside the framework + torch.nn allowlist is
-        # REFUSED — matching the hardened serving loader (ISS-170). Callers
+        # REFUSED — matching the hardened serving loader. Callers
         # with a genuinely custom non-framework model class register it via
         # ``torch.serialization.add_safe_globals`` before invoking the CLI.
         from llm.utils.serialization import register_framework_safe_globals
@@ -478,8 +477,7 @@ def fp8(
         if calib_data is None and calib_data_tokens is None:
             # Static is opt-in now (dynamic is the default), so when the user
             # asks for it without data the message should name the only thing
-            # they need to add (a calib source) AND the escape hatch (RIL
-            # ISS-330): ``--activation dynamic`` needs no calibration at all.
+            # they need to add (a calib source) AND the escape hatch: ``--activation dynamic`` needs no calibration at all.
             _die(
                 "activation='static' requires calibration data via --calib-data/"
                 "--calib-data-tokens; use --activation dynamic to quantize "

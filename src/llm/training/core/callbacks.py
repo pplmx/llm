@@ -210,7 +210,7 @@ class EarlyStopping(Callback):
 
         Without this the patience counter restarts from scratch on every
         resume: a run that had almost exhausted its patience keeps training
-        full epochs instead of stopping soon (RIL ISS-089).
+        full epochs instead of stopping soon.
         """
         return {
             "early_stopping": {
@@ -291,7 +291,7 @@ class TensorBoardLogger(Callback):
             # already passes ``config.logging.log_dir``. Appending
             # ``config.logging.log_dir`` again doubled the path component
             # (``logs/logs``) and the writer landed in the wrong tree
-            # (RIL ISS-410).
+            # .
             log_path = Path(self.log_dir)
             self.writer = self._make_writer(log_path)
             self.engine.logger.info(f"TensorBoard: Logging to {log_path}")
@@ -323,7 +323,7 @@ class TensorBoardLogger(Callback):
             # Log learning rate when the engine owns an optimizer/scheduler.
             # Custom-loop tasks (PPO/RLHF) keep their optimizers inside the
             # trainer, so neither is set here — skip the LR scalar instead of
-            # raising (RIL ISS-402; the engine validates the standard-loop
+            # raising (the engine validates the standard-loop
             # contract at setup, so a missing optimizer is only legal for
             # custom loops).
             if self.engine.scheduler:
@@ -376,8 +376,7 @@ class EvaluationCallback(Callback):
         Without this a resumed run re-evaluates the checkpoint's step once
         (the ``_last_eval_step == global_step`` guard starts at 0 on resume,
         so the first boundary step fires an extra eval that already ran
-        before the checkpoint). Periodicity is preserved on resume (RIL
-        ISS-398)."""
+        before the checkpoint). Periodicity is preserved on resume."""
         return {"periodic_eval": {"last_eval_step": self._last_eval_step}}
 
     def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
@@ -404,7 +403,7 @@ class EvaluationCallback(Callback):
         single-process runs the forward is local, so only rank 0 needs to run.
         The model is toggled to eval mode around the run and restored
         afterwards so the training loop's batch-norm/dropout state is not
-        disturbed (RIL TASK-329).
+        disturbed.
 
         Cadence is keyed on ``engine.global_step`` (the optimizer-step counter)
         — gating on the dataloader ``batch_idx`` instead rescaled the interval
@@ -451,7 +450,7 @@ class LRSchedulerCallback(Callback):
         if optimizer is None:
             # Custom-loop tasks (PPO/RLHF) own their optimizers inside the
             # trainer, so ``engine.optimizer`` is deliberately unset — there
-            # is nothing to observe here (RIL ISS-402). Not an error: the
+            # is nothing to observe here. Not an error: the
             # engine validates the standard-loop contract at setup.
             return
         if self.engine.rank == 0:
@@ -475,7 +474,7 @@ class LRSchedulerCallback(Callback):
         optimizer = self.engine.optimizer
         if optimizer is None:
             # Custom-loop tasks (PPO/RLHF) — no engine-owned optimizer to
-            # observe (RIL ISS-402); skip quietly like on_train_step_end.
+            # observe; skip quietly like on_train_step_end.
             return
         if self.engine.rank == 0:
             current_lr = optimizer.param_groups[0]["lr"]
@@ -626,8 +625,7 @@ class AdaLoRAPruningCallback(Callback):
                 # ``init_rank`` — rather than collapsing the whole budget to
                 # ``target_rank`` at the first cadence: ``tfinal=global_step``
                 # made ``current_step >= tfinal`` true immediately, an abrupt
-                # cut that also risks the un-prune crash on a resumed run (RIL
-                # ISS-110). Set ``adalora_tfinal`` (or provide streaming
+                # cut that also risks the un-prune crash on a resumed run. Set ``adalora_tfinal`` (or provide streaming
                 # ``steps_per_epoch``) for a real schedule.
                 if self.engine.rank == 0:
                     self.engine.logger.info(
@@ -662,7 +660,7 @@ class AdaLoRAPruningCallback(Callback):
         # during __init__, which is BEFORE on_train_start creates the tracker
         # — without this the restored EMA-fragment would be a no-op there and
         # every resumed run silently restarts the importance signal from
-        # zeros (RIL ISS-092; the old roundtrip test only passed because it
+        # zeros (the old roundtrip test only passed because it
         # called on_train_start before load).
         self._ensure_tracker()
         if self._tracker is None or not state:
@@ -735,7 +733,7 @@ class PEFTAdapterCheckpointCallback(Callback):
         (re-train, or use the main checkpoint). Crashing here would
         lose the main checkpoint too.
 
-        Rank-gated to rank 0 (RIL ISS-208): the engine invokes
+        Rank-gated to rank 0: the engine invokes
         ``on_train_end`` on EVERY rank, and ``save_peft`` does an
         unconditional ``torch.save`` to the same path — under DDP, N
         processes concurrently write/truncate the same file (race

@@ -249,7 +249,7 @@ class TestEnvelopeFromUnexpected:
         assert env["error"]["message"] == "Internal server error."
 
     def test_does_not_leak_exception_class_name(self):
-        """Regression (RIL ISS-168): the envelope must NOT carry
+        """Regression: the envelope must NOT carry
         ``type(exc).__name__`` — it let a client fingerprint the framework and
         backend class from any 500."""
         exc = RuntimeError("crash")

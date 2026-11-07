@@ -40,7 +40,7 @@ class CharBoundTokenizer(LineTokenizer):
         super().__init__(modulus=modulus, pad_token_id=pad_token_id)
         self.max_len = max_len
         # ``eos_token_id`` is the tokenizer API convention (the old ``eos_id``
-        # attr matched nothing — rollouts never stopped; RIL ISS-116). Default
+        # attr matched nothing — rollouts never stopped). Default
         # None so existing tests are unchanged (no early-stop).
         self.eos_token_id = eos_token_id
 

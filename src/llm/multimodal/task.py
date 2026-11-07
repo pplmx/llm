@@ -1,4 +1,4 @@
-"""Multimodal training task (TASK-227, ADR-013)."""
+"""Multimodal training task (, ADR-013)."""
 
 from __future__ import annotations
 
@@ -42,11 +42,10 @@ class MultimodalTask(LanguageModelingTask):
         # The modal prefix width is an encoder property (``encoder.num_tokens``
         # from the input geometry), not a config choice; the old
         # ``model.multimodal_modal_tokens`` knob was stored but never read by
-        # forward/generate (RIL TASK-311/ISS-349) and is removed.
+        # forward/generate and is removed.
         # The fusion projection dim must match the datamodule's encoder output
         # (``embed_dim``), which is NOT necessarily decoder.hidden_size — a
-        # mismatched ``modal_dim`` only explodes at the first train step (RIL
-        # TASK-317/ISS-354).
+        # mismatched ``modal_dim`` only explodes at the first train step.
         return MultimodalModel(
             decoder,
             modal_dim=getattr(self.data_module, "embed_dim", None),

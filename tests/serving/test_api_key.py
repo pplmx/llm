@@ -134,7 +134,7 @@ def test_main_allows_non_loopback_with_api_key(monkeypatch):
     assert started.get("host") == "0.0.0.0"  # noqa: S104
 
 
-# --- the shared fail-closed bind guard (RIL ISS-164) ---
+# --- the shared fail-closed bind guard ---
 #
 # The Docker image runs ``uvicorn llm.serving.api:app --host $LLM_SERVING_HOST``
 # directly — it never calls ``main()`` — so the guard had to move into the
@@ -211,7 +211,7 @@ def test_lifespan_calls_shared_guard_with_actual_bind(monkeypatch):
     assert calls == [("0.0.0.0", None)]  # noqa: S104
 
 
-# --- Dockerfile single-source-of-truth regression (RIL ISS-164) ---
+# --- Dockerfile single-source-of-truth regression ---
 
 
 def test_dockerfile_binds_from_llm_serving_host():

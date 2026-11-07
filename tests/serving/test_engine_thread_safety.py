@@ -239,7 +239,7 @@ def test_concurrent_step_does_not_overshoot_generated_ids(fake_engine):
     """Concurrent ``step()`` calls must not append more than one token per
     logical step to a sequence.
 
-    Regression (ISS-027): ``step()`` previously held ``_step_lock`` only for
+    Regression: ``step()`` previously held ``_step_lock`` only for
     the pre/post bookkeeping and ran the model forward *unlocked*, so two
     threads hitting ``step()`` concurrently could each run the forward against
     the same slots and each append a token to the same sequence in one logical
@@ -294,7 +294,7 @@ def test_stream_request_drains_tail_when_concurrent_step_evicts(fake_engine, mon
     concurrent ``step()`` evicts the finished sequence before the owner drains
     it.
 
-    Regression (RIL serving scan F1): the loop re-fetched the sequence via
+    Regression (serving scan F1): the loop re-fetched the sequence via
     ``get_sequence`` after ``step()``; a concurrent stepper's ``schedule()``
     filters finished sequences out of ``running``, so the re-fetch returned
     None and the owner broke without draining the final token (truncated

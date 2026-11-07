@@ -111,8 +111,7 @@ class FlashAttention(nn.Module):
         num_kv_heads: int | None = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
-        # Same optional kwargs the TransformerBlock always threads (RIL
-        # ISS-137): the block historically passed ``window_size=`` and (when
+        # Same optional kwargs the TransformerBlock always threads: the block historically passed ``window_size=`` and (when
         # ``use_rope``) ``max_seq_len=``/``use_rope=True``/``rope_theta=``
         # UNCONDITIONALLY, so ``FlashAttention`` without these params raised
         # ``TypeError: got an unexpected keyword argument 'window_size'`` on
@@ -151,7 +150,7 @@ class FlashAttention(nn.Module):
         if use_rope:
             # RoPE rotates Q/K by head position (real Llama/Mistral inject
             # position here, not via additive embeddings), identically to MHA
-            # (RIL ISS-062). ``max_seq_len`` sizes the cos/sin table.
+            # . ``max_seq_len`` sizes the cos/sin table.
             if max_seq_len is None:
                 raise ValueError("use_rope=True requires max_seq_len for the RoPE cos/sin table")
             self.rope = RotaryPositionEmbedding(
@@ -220,34 +219,34 @@ class FlashAttention(nn.Module):
     ) -> Tensor | tuple[Tensor, tuple[Tensor, Tensor]]:
         """Forward pass.
 
-        See :meth:`MultiHeadAttention.forward` for the full argument
-        contract — the signatures are intentionally identical so the
-        continuous batching engine and training engine can pick
-        ``flash_attn`` as a drop-in replacement.
+                See :meth:`MultiHeadAttention.forward` for the full argument
+                contract — the signatures are intentionally identical so the
+                continuous batching engine and training engine can pick
+                ``flash_attn`` as a drop-in replacement.
 
-        Note:
-            ``attn_mask`` is **ignored** — ``flash_attn_func`` does not
-            accept arbitrary masks. For non-causal masking or padded
-            sequences use ``is_causal=False`` and pre-pad, or fall back
-            to ``attn_impl="mha"``. Sliding-window on dense inputs is
-            **supported** via ``window_size=`` (threaded by the decoder,
-            RIL ISS-242); the still-future piece is combining a sliding
-            window with a **padding** mask — that needs
-            ``flash_attn_varlen_func`` (variable-length batches).
-            ``paged_kv_cache`` is also rejected on this path — flash-attn
-            does not expose a paged-attn kernel; use ``attn_impl="mha"``
-            when serving with paged KV.
+                Note:
+                    ``attn_mask`` is **ignored** — ``flash_attn_func`` does not
+                    accept arbitrary masks. For non-causal masking or padded
+                    sequences use ``is_causal=False`` and pre-pad, or fall back
+                    to ``attn_impl="mha"``. Sliding-window on dense inputs is
+                    **supported** via ``window_size=`` (threaded by the decoder
+        ); the still-future piece is combining a sliding
+                    window with a **padding** mask — that needs
+                    ``flash_attn_varlen_func`` (variable-length batches).
+                    ``paged_kv_cache`` is also rejected on this path — flash-attn
+                    does not expose a paged-attn kernel; use ``attn_impl="mha"``
+                    when serving with paged KV.
 
-            ``prefix_kv`` is supported (Li & Liang 2021). The prefix
-            K/V are concatenated to the projected K/V after the
-            KV-cache write (so the cache stores only dynamic tokens)
-            and before the GQA repeat (so the prefix is treated like a
-            regular token and replicated to all query heads). Prefix
-            dtype is auto-cast to the projected K/V dtype to satisfy
-            ``flash_attn_func``'s fp16/bf16 requirement. The captured
-            ``current_kv`` (when ``use_cache=True``) excludes the
-            prefix — matching the MHA contract at
-            ``MultiHeadAttention.forward``.
+                    ``prefix_kv`` is supported (Li & Liang 2021). The prefix
+                    K/V are concatenated to the projected K/V after the
+                    KV-cache write (so the cache stores only dynamic tokens)
+                    and before the GQA repeat (so the prefix is treated like a
+                    regular token and replicated to all query heads). Prefix
+                    dtype is auto-cast to the projected K/V dtype to satisfy
+                    ``flash_attn_func``'s fp16/bf16 requirement. The captured
+                    ``current_kv`` (when ``use_cache=True``) excludes the
+                    prefix — matching the MHA contract at
+                    ``MultiHeadAttention.forward``.
         """
         if paged_kv_cache is not None:
             raise NotImplementedError(
@@ -283,7 +282,7 @@ class FlashAttention(nn.Module):
             # Apply RoPE to Q/K BEFORE the kernel (flash_attn_func performs no
             # positional encoding of its own). Identical to MHA's wiring — the
             # kernel then sees rotated Q/K and the KV cache stores the rotated
-            # K, exactly like the MHA backend (RIL ISS-137).
+            # K, exactly like the MHA backend.
             positions = self._rope_positions(batch_size, seq_len, start_pos, device=q.device)
             q, k = self.rope(q, k, positions)
 

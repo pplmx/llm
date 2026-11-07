@@ -1,4 +1,4 @@
-"""GRPO training task (TASK-229, ROADMAP 阶段十一)."""
+"""GRPO training task (, ROADMAP 阶段十一)."""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ class GRPOTask(LanguageModelingTask):
         :meth:`LanguageModelingTask._get_batch_logps`. Gathering ``ids[t]`` from
         ``logits[t]`` instead lets the model inflate the objective by copying
         input tokens (its own embedding leaks through the residual stream) and
-        included a spurious ``t=0`` "self-prediction" term (RIL ISS-333).
+        included a spurious ``t=0`` "self-prediction" term.
         """
         shift_logits = logits[..., :-1, :].contiguous()
         shift_ids = ids[..., 1:].contiguous()
@@ -116,7 +116,7 @@ class GRPOTask(LanguageModelingTask):
 
     def get_checkpoint_state(self) -> dict[str, Any] | None:
         """Persist the frozen KL reference so a resumed GRPO run keeps the
-        ORIGINAL base policy (mirrors DPO's round-60 fix).
+        ORIGINAL base policy (mirrors DPO's fix).
 
         ``build_model`` snapshots the reference *before* the engine loads a
         checkpoint into the policy, so without this a resumed run would compute

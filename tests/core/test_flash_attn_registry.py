@@ -107,7 +107,7 @@ def test_flash_attn_instantiates_when_dependency_present():
 
 
 def test_flash_attn_constructible_through_transformer_block():
-    """RIL ISS-137: ``attn_impl='flash_attn'`` must build through the model
+    """``attn_impl='flash_attn'`` must build through the model
     stack (TransformerBlock threads ``window_size=`` and — when requested —
     the RoPE kwargs into every attention backend).
 

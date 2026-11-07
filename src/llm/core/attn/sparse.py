@@ -1,4 +1,4 @@
-"""Unified sparse / streaming attention-mask dispatcher (TASK-242).
+"""Unified sparse / streaming attention-mask dispatcher.
 
 Collects the four attention-mask builders shipped in ROADMAP 15.1 / 15.2
 (block-sparse, StreamingLLM, Longformer, BigBird) behind one public entry point
@@ -61,12 +61,12 @@ def build_config_attention_mask(config: object, seq_len: int, *, key_len: int | 
     produced. During a KV-cache decode step ``Sq`` (typically 1) is far smaller
     than ``Sk`` = cache length + new tokens, and the pattern must be expressed
     over the *key history* so sink/window actually constrain the accumulated
-    past keys (RIL TASK-245).
+    past keys.
 
     Causality is intentionally delegated to the consuming model: a decoder
     forward applies its own causal masking (``is_causal``) during prefill, so
     building a causal mask here would double-mask and break the full-coverage
-    sparse == dense parity invariant (RIL TASK-243). In a decode step there are
+    sparse == dense parity invariant. In a decode step there are
     no future keys, so the pattern-only mask fully determines the reachable set.
     """
     spar = getattr(config, "attn_sparse", None)

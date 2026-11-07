@@ -105,7 +105,7 @@ class TestRotaryPositionEmbedding:
         assert q_rot.shape == q.shape
 
     def test_forward_position_ids_beyond_max_seq_len(self, device):
-        """RIL ISS-141: indexing the RoPE table by ABSOLUTE positions that
+        """indexing the RoPE table by ABSOLUTE positions that
         reach the model's ``max_seq_len`` must not crash with an out-of-bounds
         index.
 

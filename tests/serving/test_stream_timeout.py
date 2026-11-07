@@ -1,6 +1,6 @@
 """Router-level idle timeout on the streaming /generate route.
 
-RIL sweep finding (LOW): the streaming generator held ``inference_semaphore``
+sweep finding (LOW): the streaming generator held ``inference_semaphore``
 for the whole stream with no deadline, so a stalled/misbehaving model kept a
 concurrency slot forever — with ``max_concurrent_requests`` stuck streams the
 whole API would stop admitting new requests. The stream now applies an IDLE
@@ -8,7 +8,7 @@ timeout (``config.request_timeout`` with no chunk produced): a stream that
 keeps producing tokens is never cut off; a stale one aborts and releases the
 slot.
 
-F2 (TASK-109 / ISS-122): the router's idle timeout must not leave the
+F2: the router's idle timeout must not leave the
 abandoned sync engine generator (``stream_request``) running — it holds the
 KV/scheduler slot and burns forward passes until the async generator is GC'd.
 The ``_drive_sync_iterator`` bridge closes the sync generator once the
@@ -37,7 +37,7 @@ from llm.serving.schemas import ChatCompletionRequest, ChatMessage, GenerationRe
 
 @pytest.mark.quick
 def test_drive_sync_iterator_closes_generator_when_consumer_abandons():
-    """RIL ISS-122/F2: abandoning the async bridge (idle timeout) must close
+    """abandoning the async bridge (idle timeout) must close
     the underlying sync generator after its in-flight step — NOT leave it
     suspended holding resources until asyncgen GC finalizes it."""
 
@@ -80,7 +80,7 @@ def test_generate_stream_timeout_releases_engine_slot(tiny_model, device, stub_t
     the engine's KV slot promptly (close of stream_request runs its finally
     reap), instead of pinning the slot until the asyncgen is GC'd.
 
-    Reproduces ISS-122: the route streams through a REAL engine whose step is
+    Reproduces: the route streams through a REAL engine whose step is
     slow enough that the idle window fires mid-generation; after the stream
     aborts, the engine slot for the request must be freed without any manual
     gc.collect(). The reap runs from the worker-thread done-callback, so it
@@ -193,7 +193,7 @@ def test_stream_generator_uses_config_timeout():
 
 # --- Chat streaming idle timeout -----------------------------------------
 #
-# RIL round-45 hardening added an idle timeout to `/generate?stream=true`
+# hardening added an idle timeout to `/generate?stream=true`
 # but not `/v1/chat/completions?stream=true`, which held the inference
 # semaphore for the stream lifetime with the same stall profile. These
 # tests pin the same behaviour for the chat route.
@@ -292,7 +292,7 @@ def _histogram_count_and_sum(hist, **labels):
 
 @pytest.mark.quick
 def test_generate_stream_unexpected_error_leaks_no_class(monkeypatch):
-    """RIL ISS-227 / ISS-168: an unexpected mid-stream backend failure must
+    """an unexpected mid-stream backend failure must
     yield a FIXED error chunk — not the exception class name (which would let
     a client fingerprint the framework/backend) — and still count the tokens
     streamed before the failure."""
@@ -348,7 +348,7 @@ def test_generate_stream_timeout_records_504_status(monkeypatch):
 
 @pytest.mark.quick
 def test_generate_nonstream_timeout_releases_engine_slot(tiny_model, device, stub_tokenizer, monkeypatch):
-    """RIL ISS-406: a ``request_timeout`` on the NON-streaming engine-backed
+    """a ``request_timeout`` on the NON-streaming engine-backed
     /generate must close the abandoned ``stream_request`` so its ``finally``
     reaps the KV slot promptly — the old path ran ``generate_request`` in a
     threadpool that could not be interrupted, orphaning the full generation

@@ -1,4 +1,4 @@
-"""GRPO reward-scored prompt/response groups (TASK-229, CPU-verifiable)."""
+"""GRPO reward-scored prompt/response groups (, CPU-verifiable)."""
 
 from __future__ import annotations
 
@@ -25,8 +25,7 @@ class GRPODataModule(SamplerMapDataModule):
     fresh random model already assigns the shortest/lowest-id sequences a
     systematically higher summed log-prob, so such a target starts saturated and
     GRPO's improvement is unobservable. A fixed random target is genuinely
-    in-distribution: a random model cannot tell it from the distractors (RIL
-    ISS-333).
+    in-distribution: a random model cannot tell it from the distractors.
 
     The batch is exactly ``batch_size`` responses (one full epoch batch) with
     ``batch_size`` a multiple of ``group_size`` and stable (unshuffled) ordering,
@@ -96,7 +95,7 @@ class GRPODataModule(SamplerMapDataModule):
         :class:`GRPOTask` would silently mix responses from different prompts
         (and can crash when the per-rank total is not a multiple of
         ``group_size``). The "single stable batch" + initial-policy ``old``
-        snapshot premise also only holds at world_size=1 (RIL ISS-333).
+        snapshot premise also only holds at world_size=1.
         """
         if world_size > 1:
             raise ValueError(

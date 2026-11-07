@@ -22,7 +22,7 @@ def test_build_accepts_overrides(tiny_config):
 
 
 def test_from_config_roundtrips_model_defining_flags(tiny_config):
-    """RIL ISS-129: model-defining flags (RoPE + bias-free, as real
+    """model-defining flags (RoPE + bias-free, as real
     Llama/Mistral use) must survive the ModelConfig -> kwargs -> model trip.
 
     Before this fix, ``decoder_kwargs_from_config`` only mapped the original
@@ -90,11 +90,11 @@ def test_duplicate_registration_raises():
 
 
 def test_bootstrap_cold_start_race_is_serialized():
-    """Regression (RIL ISS-212): two threads racing ``ensure_builtins_registered``
+    """Regression: two threads racing ``ensure_builtins_registered``
     on a cold MODEL_REGISTRY must not both run ``load_entry_point_registry``
     and double-register ``decoder``.
 
-    Mirrors the sibling-registry fix (RIL ISS-119,
+    Mirrors the sibling-registry fix (
     ``tests/core/test_registry_cold_start_race.py``) that this runtime
     bootstrap was missing — the guard was a bare check-then-act flag.
     """
@@ -144,7 +144,7 @@ def test_bootstrap_falls_back_to_code_builtins_when_entry_points_empty(monkeypat
     (source-tree use without ``pip install -e .``, stale venv, subprocess
     with a different sys.path), the code-level builtins must still register —
     an empty registry used to be pinned as ``_builtins_registered=True`` and
-    every ``ModelFactory.from_config`` failed with no hint (RIL ISS-418)."""
+    every ``ModelFactory.from_config`` failed with no hint."""
     import llm.runtime.bootstrap as boot
     from llm.runtime.registry import Registry
 
@@ -169,7 +169,7 @@ def test_bootstrap_falls_back_to_code_builtins_when_entry_points_empty(monkeypat
 
 
 def test_from_config_shapes_kwargs_to_registered_builder(monkeypatch, tiny_config):
-    """RIL ISS-415: a third-party decoder-family builder (the llm.models
+    """a third-party decoder-family builder (the llm.models
     entry-point extension point) receives the FULL decoder kwargs — not the
     4 MLP fields the old ``else`` branch passed, which produced a TypeError
     or a silently-broken model. The regression_mlp outlier still gets MLP

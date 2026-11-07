@@ -22,7 +22,7 @@ def test_load_entry_point_registry_skips_existing_names():
 
 
 def test_load_entry_point_registry_warns_on_skipped_collision(caplog):
-    """Regression (RIL ISS-163): a plugin claiming a built-in's name is
+    """Regression: a plugin claiming a built-in's name is
     silently dropped by the default ``overwrite=False`` path. The
     ``export/registry.py`` docstring claims this "raises loudly", but the
     loader used to skip with no log line — a packaging conflict that went
@@ -45,7 +45,7 @@ def test_load_entry_point_registry_warns_on_skipped_collision(caplog):
 
 
 def test_load_entry_point_registry_overwrite_replaces_existing_names():
-    """Regression (RIL ISS-061): ``overwrite=True`` must REPLACE a
+    """Regression: ``overwrite=True`` must REPLACE a
     pre-registered name instead of crashing.
 
     The old loader skipped the existence guard when ``overwrite=True`` but
@@ -95,7 +95,7 @@ def test_load_entry_point_hooks_invokes_callables():
 
 
 def test_load_entry_point_registry_isolates_broken_plugin():
-    """RIL ISS-131: one plugin failing to import must not abort the loop — the
+    """one plugin failing to import must not abort the loop — the
     healthy plugins still register, and the registry is usable."""
     registry: Registry[str] = Registry("test")
     registry.register("builtin", "factory-builtin")
@@ -121,7 +121,7 @@ def test_load_entry_point_registry_isolates_broken_plugin():
 
 
 def test_load_entry_point_hooks_isolates_broken_hook():
-    """RIL ISS-131: a hook raising must not prevent later hooks from running."""
+    """a hook raising must not prevent later hooks from running."""
     good = MagicMock()
     good.name = "good"
     good.load.return_value = good  # any callable

@@ -22,7 +22,7 @@ _backends_registered = False
 # Serializes the cold-start bootstrap. Without this, two threads racing
 # ``get_generation_backend`` on first use can both pass the ``_backends_registered``
 # guard, and the second ``register`` raises "already registered"
-# (RIL ISS-119).
+# .
 _backend_registration_lock = threading.Lock()
 
 
@@ -73,7 +73,7 @@ def ensure_backends_registered() -> None:
     # Double-checked locking: the guard above is the hot path (it never
     # blocks once registered); the lock serializes the cold-start race
     # so a concurrent caller re-checks the flag inside the critical
-    # section instead of double-registering (RIL ISS-119).
+    # section instead of double-registering.
     with _backend_registration_lock:
         if _backends_registered:
             return

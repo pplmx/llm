@@ -25,8 +25,7 @@ def _load_one(name: str, group: str, ep):
     registry — the built-ins and every healthy plugin still register. Before
     this, one broken ``llm.models`` entry point aborted the WHOLE loop, so
     ``import llm.runtime`` (which runs ``ensure_builtins_registered``) failed
-    outright and nothing — including the built-ins — could be used
-    (RIL ISS-131).
+    outright and nothing — including the built-ins — could be used.
     """
     try:
         return ep.load()
@@ -50,7 +49,7 @@ def load_entry_point_registry[T](
     """Load callables from entry points into a registry.
 
     Returns names that were newly registered. A plugin that fails to load is
-    logged (not fatal) — the rest of the group still registers (RIL ISS-131).
+    logged (not fatal) — the rest of the group still registers.
     """
     loaded: list[str] = []
     for ep in _iter_group_entry_points(group):
@@ -61,7 +60,7 @@ def load_entry_point_registry[T](
             # the built-in wins without a hint that the plugin was dropped.
             # Log it so the packaging conflict (which export/registry.py's
             # docstring claims "raises loudly") is at least observable
-            # (RIL ISS-163).
+            # .
             logger.warning(
                 "Skipping entry point '%s' in group '%s': name already "
                 "registered (built-in or earlier plugin); pass overwrite=True "
@@ -76,7 +75,7 @@ def load_entry_point_registry[T](
         if preexisting:
             # ``overwrite=True`` and the name is already registered:
             # ``Registry.register`` would raise, so use the explicit
-            # replace path (RIL ISS-061).
+            # replace path.
             registry.replace(ep.name, factory)
         else:
             registry.register(ep.name, factory)
@@ -88,7 +87,7 @@ def load_entry_point_hooks(group: str) -> list[str]:
     """Invoke zero-arg registration hooks from entry points.
 
     Hooks that fail to load or raise are logged, not fatal — the remaining
-    hooks still run (RIL ISS-131).
+    hooks still run.
     """
     invoked: list[str] = []
     for ep in _iter_group_entry_points(group):

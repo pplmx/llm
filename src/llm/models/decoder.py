@@ -32,9 +32,9 @@ def _build_config_attention_mask(model, seq_len: int, key_len: int) -> torch.Ten
 
     The import stays lazy here — a module-level ``from llm.core.attn.sparse``
     would start ``llm.core.attn`` -> registry -> decoder mid-import and cycle
-    (RIL TASK-245 kept it inline for that reason). ``@torch.jit.unused`` flags
+    (kept it inline for that reason). ``@torch.jit.unused`` flags
     the helper so TorchScript skips compiling it instead of rejecting the inline
-    ``from`` import (UnsupportedNodeError, RIL ISS-299); in scripted mode calling
+    ``from`` import (UnsupportedNodeError); in scripted mode calling
     into it raises, which is correct since sparse schemes never worked under
     scripting and the mask should come from the caller instead.
     """
@@ -95,7 +95,7 @@ class DecoderModel(nn.Module):
         # ALiBi is a second positional-encoding system; it cannot coexist with
         # RoPE, and this milestone wires it only into the mha attention
         # backend (flash_attn/MLA/paged reject loudly rather than silently
-        # dropping the PE — RIL — ALiBi milestone).
+        # dropping the PE — — ALiBi milestone).
         if use_alibi and use_rope:
             raise ValueError("use_alibi=True and use_rope=True are mutually exclusive position encodings")
         if use_alibi and attn_impl != "mha":
@@ -103,7 +103,7 @@ class DecoderModel(nn.Module):
                 f"use_alibi=True is only supported with attn_impl='mha', got attn_impl={attn_impl!r}; "
                 "flash_attn/MLA have no additive-bias channel in this milestone"
             )
-        # Sparse/streaming scheme (RIL TASK-248): the pattern mask is consumed only
+        # Sparse/streaming scheme: the pattern mask is consumed only
         # by backends that route through the sdpa wrapper (mha and mla). The
         # flash_attn backend explicitly ignores ``attn_mask``, so combining a
         # sparse scheme with it would silently run dense attention — refuse loudly
@@ -123,28 +123,28 @@ class DecoderModel(nn.Module):
         self.norm_first = norm_first  # Store for final norm logic
         # ``norm_impl`` is a model-defining flag (LayerNorm vs RMSNorm); store
         # it so hf_publisher can persist it and save->load roundtrips keep the
-        # same normalization function (RIL ISS-062).
+        # same normalization function.
         self.norm_impl = norm_impl
         # RoPE is model-defining too (real Llama/Mistral inject position in
         # attention, not additive embeddings); store so hf_publisher persists
-        # and the loader honors it (RIL ISS-062).
+        # and the loader honors it.
         self.use_rope = use_rope
         self.rope_theta = rope_theta
         self.use_alibi = use_alibi
         # Sliding-window attention size is model-defining (Mistral uses a
         # 4096-token window): store it so hf_publisher persists it and the
         # loader honors an external checkpoint's ``sliding_window`` instead of
-        # running full-context attention past the window (RIL ISS-242).
+        # running full-context attention past the window.
         self.window_size = window_size
         # Sparse/streaming attention scheme is model-defining too: when set, the
         # forward builds the dispatched mask from the current sequence length so
-        # training/inference can select a scheme by name (RIL TASK-243). Stored
+        # training/inference can select a scheme by name. Stored
         # as an immutable mapping snapshot.
         self.attn_sparse = dict(attn_sparse) if attn_sparse else None
         # Bias flags are model-defining too: real Llama/Mistral are bias-free
         # (qkv/mlp/lm_head), while our grown-from-scratch default is biased.
         # Store them so hf_publisher persists the actual values and the loader
-        # can honor external bias-free checkpoints (RIL ISS-062).
+        # can honor external bias-free checkpoints.
         self.qkv_bias = bool(qkv_bias)
         self.mlp_bias = bool(mlp_bias)
         self.lm_head_bias = bool(lm_head_bias)
@@ -255,7 +255,7 @@ class DecoderModel(nn.Module):
         # pattern-only mask over the *key history*. A KV-cache decode step has
         # ``Sq``=current-token rows but ``Sk``=accumulated-key columns, so the
         # mask cannot be square here — otherwise sink/window would never
-        # constrain the cached past keys (RIL TASK-245).
+        # constrain the cached past keys.
         if attn_mask is None and self.attn_sparse is not None:
             key_len = start_pos + input_ids.shape[1]
             attn_mask = _build_config_attention_mask(self, input_ids.shape[1], key_len=key_len)

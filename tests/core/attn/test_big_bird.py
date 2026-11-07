@@ -1,4 +1,4 @@
-"""Tests for the BigBird attention mask builder (TASK-241 / ROADMAP 15.2)."""
+"""Tests for the BigBird attention mask builder (/ ROADMAP 15.2)."""
 
 from __future__ import annotations
 

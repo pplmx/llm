@@ -110,7 +110,7 @@ class TestLoRALinear:
         assert lora_layer.scaling == lora_layer.alpha / lora_layer.rank
 
     def test_double_merge_is_idempotent_then_unmerge_restores(self, lora_layer):
-        """Regression (RIL ISS-159): calling ``merge_weights`` twice (a
+        """Regression: calling ``merge_weights`` twice (a
         defensive/loop caller, or serve-merge after an earlier export-merge)
         must NOT clobber the unmerge snapshot. The old code re-stored
         ``_merged_scaling = self.scaling`` on the second call — but scaling

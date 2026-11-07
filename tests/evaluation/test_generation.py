@@ -72,7 +72,7 @@ def test_chrf_no_overlap():
 @pytest.mark.parametrize(("metric_cls", "key"), [(BleuMetric, "bleu"), (ChrFMetric, "chrf")])
 def test_generation_metric_empty_references_returns_zero(metric_cls, key):
     """Empty references with non-empty predictions must return the same 0.0
-    empty contract as empty predictions (RIL ISS-395) — sacrebleu raises a
+    empty contract as empty predictions — sacrebleu raises a
     raw IndexError on an empty reference corpus, so the metric must
     short-circuit before calling it."""
     metric = metric_cls()
@@ -119,7 +119,7 @@ def test_rouge_metric_empty_inputs_without_rouge_score(monkeypatch):
     """Empty predictions/references report ``0.0`` per dimension WITHOUT
     importing rouge_score (the short-circuit precedes the import). Matches the
     sibling-metric convention; an empty ``{}`` made rouge keys vanish from eval
-    output (round-73 FINDING 5 / ISS-228)."""
+    output (FINDING 5)."""
     monkeypatch.setitem(sys.modules, "rouge_score", None)
 
     metric = RougeMetric()

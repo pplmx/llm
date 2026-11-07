@@ -51,7 +51,7 @@ def test_end_to_end_paged_inference():
 
 
 def test_decode_row_attends_to_full_context_when_mixed_with_prefill():
-    """Regression (RIL ISS-048): a decode row (single query token) in a batch
+    """Regression: a decode row (single query token) in a batch
     that also contains a prefill row must attend to its full cached context,
     not just key position 0.
 

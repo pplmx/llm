@@ -45,7 +45,7 @@ class MultiLatentAttention(nn.Module):
             latent query axis is a fixed learned pool, NOT the sequence
             positions, so a torch auto-causal mask over it would cap key
             visibility at ``num_latents`` and silently drop every later
-            token (RIL ISS-380). Causal MLA therefore attends to the
+            token. Causal MLA therefore attends to the
             whole row's keys, and any ``attn_mask`` restricts which keys
             are visible.
         device: Device for the model.
@@ -102,8 +102,7 @@ class MultiLatentAttention(nn.Module):
         # Only built when this module OWNS the norm+residual (the block passes
         # include_norm_residual=False, expecting a plain sublayer — MHA
         # mirrors this by leaving self.norm None). When False, MLA must NOT
-        # apply an internal norm/residual; the block adds the residual (RIL
-        # ISS-139, double-norm regression otherwise).
+        # apply an internal norm/residual; the block adds the residual (double-norm regression otherwise).
         self.norm = nn.LayerNorm(hidden_size, eps=eps, **factory_kwargs) if include_norm_residual else None
 
         # Learnable latent vectors - initialized directly with normal distribution
@@ -205,7 +204,7 @@ class MultiLatentAttention(nn.Module):
             # ``flat = attn_mask[:, 0]`` slice still yields ``[B, S_q, S_k]``.
             # Without this, training a ``mla`` model crashed on the first
             # mask-consuming forward (no MLA engine e2e existed to catch it —
-            # surfaced by the TASK-206 MLA TP engine test).
+            # surfaced by the MLA TP engine test).
             if attn_mask.ndim == 2:
                 if attn_mask.dtype != torch.bool:
                     # long/float 0/1: 1 = keep -> mask-out predicate is == 0
@@ -234,7 +233,7 @@ class MultiLatentAttention(nn.Module):
         # "attend to the full ``input_kv_proj(x)``"; when a mask is present
         # it is already collapsed above to the current-position window and
         # broadcast over the latents, so the mask does the only visibility
-        # restriction the architecture can express (RIL ISS-380).
+        # restriction the architecture can express.
         latent_output = sdpa(
             query=latent_q,
             key=k,
@@ -419,7 +418,7 @@ class MultiLatentAttention(nn.Module):
 
         # Residual + Post-LN only when this module owns the norm+residual (the
         # block passes include_norm_residual=False for a plain sublayer; adding
-        # a residual here would double it, RIL ISS-139).
+        # a residual here would double it).
         if self.include_norm_residual and self.norm is not None:
             output = output + residual
             if not self.norm_first:

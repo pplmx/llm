@@ -1,4 +1,4 @@
-"""Knowledge-Distillation task tests (RIL TASK-222/223, DEC-055).
+"""Knowledge-Distillation task tests.
 
 Covers three layers of the ``distill`` training path:
 

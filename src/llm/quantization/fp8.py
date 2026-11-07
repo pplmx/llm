@@ -42,7 +42,7 @@ class Fp8Config:
         layer_policies: Atomic per-layer override policies (algorithm-agnostic
             LayerQuantPolicy tuples). Empty tuple (default) → all layers use
             this base config. FP8's knobs ARE expressible in the policy model
-            (weight_dtype / per_channel / activation — RIL TASK-203), so a
+            (weight_dtype / per_channel / activation), so a
             policy can e.g. keep the shared E4M3/per-channel base while
             demoting outlier layers to the wider-range E5M2 per-tensor /
             dynamic-activation, mixing FP8 variants in one plan.
@@ -153,7 +153,7 @@ def quantize_model_fp8(
                     # the old branch re-seeded on EVERY batch and the scale
                     # silently came from the LAST calibration batch —
                     # larger activations later saturated the fp8 range
-                    # (RIL TASK-313/ISS-351).
+                    # .
                     captured[name] = amax
                     seeded.add(name)
                 else:
@@ -193,7 +193,7 @@ def quantize_model_fp8(
             # NEVER hold — the old guard was dead and a static layer whose
             # forward hook never fired silently quantized with a scale of
             # ``clamp(0)/fmax ≈ 1e-8/fmax``, bleaching activations by ~1e10 on
-            # dequant (RIL TASK-313 / ISS-351-class). If the calibration
+            # dequant (class). If the calibration
             # forward never reached this static layer, refuse loudly (same
             # contract as the GPTQ uniform-fallback's error) instead of
             # serving a garbage scale.

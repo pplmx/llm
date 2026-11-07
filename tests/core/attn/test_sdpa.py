@@ -72,7 +72,7 @@ def test_sdpa_causal_and_window(sample_qkv_tensors):
 
 
 def test_sdpa_float_additive_mask_not_dropped_on_complex_path(sample_qkv_tensors):
-    """Regression (RIL ISS-115): a float additive attention mask (0 / -inf)
+    """Regression: a float additive attention mask (0 / -inf)
     must be honored on the complex path (``window_size`` or
     ``is_causal=True`` + mask), not silently dropped.
 
@@ -176,7 +176,7 @@ def test_sdpa_long_01_mask_matches_additive_reference(sample_qkv_tensors):
 
 
 def test_sdpa_bool_2d_complex_path_broadcasts(sample_qkv_tensors):
-    """Regression (RIL TASK-318): on the complex path (causal/window + mask)
+    """Regression: on the complex path (causal/window + mask)
     a 2-D bool mask crashed with "size of tensor a (S) must match size of
     tensor b (B)" — the rank-2 causal pattern was OR-ed against a caller mask
     whose leading axis is either the *batch* (``[B, S]`` per-sample padding

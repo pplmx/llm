@@ -1,4 +1,4 @@
-"""Tests for SyntheticDataModule determinism across ranks (RIL ISS-134)."""
+"""Tests for SyntheticDataModule determinism across ranks."""
 
 import torch
 
@@ -30,7 +30,7 @@ def _setup_like_rank(num_samples: int = 16, rank: int = 0):
 
 
 def test_synthetic_data_identical_across_ranks():
-    """RIL ISS-134: per-rank global RNG seeding must NOT diverge the synthetic
+    """per-rank global RNG seeding must NOT diverge the synthetic
     train/val data. DDP regression previously trained each rank on different
     values at the same sampler index (incoherent global batch, meaningless
     aggregate val loss)."""
@@ -63,7 +63,7 @@ def test_synthetic_data_deterministic_across_runs():
 
 def test_synthetic_data_module_rejects_zero_samples():
     """A ``num_samples=0`` config would build a 0-length train set → an empty
-    epoch → the engine's per-epoch average divides by zero (RIL ISS-336)."""
+    epoch → the engine's per-epoch average divides by zero."""
     import pytest
 
     module = SyntheticDataModule(_synthetic_config(num_samples=0))

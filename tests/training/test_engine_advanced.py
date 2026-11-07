@@ -114,7 +114,7 @@ def test_engine_applies_gradient_checkpointing_flag(mock_config):
 
 @pytest.mark.heavy
 def test_engine_restores_global_step_on_resume(tmp_path, mock_config):
-    """Regression (RIL round-47): ``global_step`` must survive a resume.
+    """Regression: ``global_step`` must survive a resume.
 
     Previously every resume restarted the step counter at 0, silently
     re-arming ``max_steps`` (a run stopped at 3 steps resumed and trained 3
@@ -162,7 +162,7 @@ def test_engine_restores_global_step_on_resume(tmp_path, mock_config):
 
 @pytest.mark.heavy
 def test_engine_epoch_avg_not_deflated_by_max_steps(mock_config):
-    """Regression (RIL round-47): a ``max_steps`` cap that truncates the
+    """Regression: a ``max_steps`` cap that truncates the
     final epoch must not deflate the epoch average.
 
     Previously ``batch_count`` was set to the FULL epoch length even when
@@ -221,7 +221,7 @@ def test_engine_validation_empty_dataloader_skips(mock_config):
 
 
 def test_engine_training_empty_dataloader_raises(mock_config):
-    """RIL TASK-323: an empty training epoch must raise loudly instead of
+    """an empty training epoch must raise loudly instead of
     returning a silent 0.0 that save_best / EarlyStopping / ReduceLROnPlateau
     would treat as a perfect loss (drop_last on a multi-GPU run with a corpus
     smaller than the replica count)."""
@@ -286,7 +286,7 @@ def test_evaluation_callback_fires_without_attribute_error(mock_config):
 
 @pytest.mark.heavy
 def test_engine_skipped_step_does_not_advance_global_step_or_fire_optimizer_hook(mock_config):
-    """Regression (RIL ISS-107): a GradScaler-skipped optimizer step (a
+    """Regression: a GradScaler-skipped optimizer step (a
     gradient that is inf/NaN after ``unscale_``) must NOT advance
     ``global_step`` and must NOT fire ``on_optimizer_step``.
 
@@ -409,7 +409,7 @@ class _EarlyStopProbeTask(LanguageModelingTask):
 
 @pytest.mark.heavy
 def test_engine_early_stop_does_not_train_extra_epoch(mock_config, tmp_path):
-    """Regression (RIL TASK-321, finding 1): EarlyStopping fires in
+    """Regression (finding 1): EarlyStopping fires in
     ``on_epoch_end``, but the engine examined ``should_stop_training`` only at
     the NEXT loop top — after a FULL extra epoch (train + validation +
     scheduler step) had already run. Patience exhaustion at epoch 1 must stop
@@ -446,7 +446,7 @@ def test_engine_early_stop_does_not_train_extra_epoch(mock_config, tmp_path):
 
 @pytest.mark.heavy
 def test_engine_stop_during_validation_commits_epoch_checkpoint(tmp_path, mock_config):
-    """Regression (RIL TASK-321, finding 2): a ``should_stop_training`` set
+    """Regression (finding 2): a ``should_stop_training`` set
     during ``on_validation_end`` was checked mid-loop BEFORE
     ``scheduler.step()`` and ``save_checkpoint``, so the stopping epoch's
     weights (often the best) were never persisted and the scheduler skipped

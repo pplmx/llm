@@ -530,7 +530,7 @@ def test_prefix_cache_disabled_returns_none():
 
 
 def test_free_invalidates_prefix_cache_entry():
-    """BUG (RIL ISS-071): ``free(seq_id)`` freed a sequence's blocks but left
+    """BUG: ``free(seq_id)`` freed a sequence's blocks but left
     its prefix-cache entry (and ``_seq_to_hash``) pointing at the physical
     block IDs.  Once the allocator recycled those blocks for another
     sequence, a later ``try_get_prefix_blocks`` with the same prefix
@@ -570,7 +570,7 @@ def test_free_invalidates_prefix_cache_entry():
 
 
 def test_free_nonexistent_seq_then_reuse_does_not_resolve_stale_prefix():
-    """Follow-up on ISS-071: after a sequence frees, the allocator hands its
+    """Follow-up on: after a sequence frees, the allocator hands its
     blocks to a NEW sequence; the old prefix must not alias the new KV.
 
     This mirrors the real engine flow (sequence completed → free → a later
@@ -601,9 +601,7 @@ def test_free_nonexistent_seq_then_reuse_does_not_resolve_stale_prefix():
     block_table2 = cache.update(seq_id=2, k_new=k2, v_new=v2)
 
     # Old prefix must not alias sequence 2's (recycled) blocks.
-    assert cache.try_get_prefix_blocks(tokens) is None, (
-        "stale prefix resolved to recycled blocks after free (ISS-071 UAF)"
-    )
+    assert cache.try_get_prefix_blocks(tokens) is None, "stale prefix resolved to recycled blocks after free (UAF)"
     # Sanity: seq 2 really did land in the pool — its write succeeded and
     # its table is live (whether or not the allocator reused seq 1's exact
     # block ids, the stale prefix must never point at them).
@@ -708,7 +706,7 @@ def test_multi_layer_update_scopes_each_layer_kv():
 
 
 # ---------------------------------------------------------------------------
-# Paged prefix replay (RIL TASK-065): shared-block staging + COW-on-write.
+# Paged prefix replay: shared-block staging + COW-on-write.
 # ---------------------------------------------------------------------------
 
 
@@ -895,7 +893,7 @@ def test_cow_on_shared_block_preserves_all_layers():
 
 
 def test_add_prefix_snapshots_block_table_so_entry_does_not_grow():
-    """REGRESSION (TASK-065 follow-up): ``add_prefix`` must snapshot the
+    """REGRESSION (follow-up): ``add_prefix`` must snapshot the
     block table, not alias the owner's LIVE list. ``extend_sequence`` mutates
     the stored table in place as the owner decodes, so an aliased entry would
     silently grow past the prompt into the owner's decode blocks — a later
@@ -946,7 +944,7 @@ def test_add_prefix_snapshots_block_table_so_entry_does_not_grow():
 def test_stage_prefix_full_hit_block_aligned_boundary():
     """Block-aligned full-prompt hit: the rewrite lands at the last token of a
     fully-filled block; the shared boundary block is COW'd and the owner's
-    content is preserved (TASK-065 boundary case N % block_size == 0)."""
+    content is preserved (boundary case N % block_size == 0)."""
     cache = PagedKVCache(
         num_layers=1,
         num_kv_heads=2,
@@ -979,7 +977,7 @@ def test_stage_prefix_full_hit_block_aligned_boundary():
 
 
 def test_free_of_evicted_stale_registrar_does_not_steal_reregistered_entry():
-    """REGRESSION (TASK-065 follow-up): when a sequence's prefix entry is
+    """REGRESSION (follow-up): when a sequence's prefix entry is
     LRU-evicted and ANOTHER sequence later re-registers the same prompt hash,
     the first sequence's ``free()`` must not evict the second's live entry —
     only the current owner of the cached blocks may invalidate them."""

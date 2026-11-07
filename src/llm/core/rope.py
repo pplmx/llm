@@ -65,7 +65,7 @@ class RotaryPositionEmbedding(nn.Module):
         # For ``scaling_type="dynamic"`` the table is a function of the length
         # it was built for (scale = seq_len / max_seq_len), so the monotonic
         # ``_seq_len_cached`` alone cannot invalidate it — remember the exact
-        # length that drove the last build (RIL dynamic-scaling cache bug).
+        # length that drove the last build (dynamic-scaling cache bug).
         self._built_seq_len = 0
         self._cos_cached: torch.Tensor | None = None
         self._sin_cached: torch.Tensor | None = None
@@ -149,7 +149,7 @@ class RotaryPositionEmbedding(nn.Module):
         # position >= max_seq_len, batch-serving position_ids) the table is
         # indexed by ABSOLUTE position — an absolute position beyond
         # ``max_seq_len`` used to raise a raw ``IndexError: index N out of
-        # bounds`` (RIL ISS-141; the serving tier guards over-context prompts
+        # bounds`` (the serving tier guards over-context prompts
         # up front, training/dense-cache RoPE callers did not).
         cover_len = int(position_ids.max().item()) + 1 if position_ids is not None else seq_len
         self._update_cos_sin_cache(max(cover_len, seq_len), q.device, q.dtype)

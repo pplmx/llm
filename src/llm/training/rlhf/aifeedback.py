@@ -1,4 +1,4 @@
-"""AI-feedback preference labeling for DPO (ROADMAP 11.4 / RIL TASK-231).
+"""AI-feedback preference labeling for DPO (ROADMAP 11.4).
 
 RLAIF: instead of human labels, an AI/rule-based *judge* decides which of two
 responses is preferred; the resulting (chosen, rejected) pairs are consumed by

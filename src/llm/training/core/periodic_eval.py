@@ -1,4 +1,4 @@
-"""Optional periodic in-training evaluation (RIL TASK-329).
+"""Optional periodic in-training evaluation.
 
 Wires the (previously never-instantiated) :class:`EvaluationCallback` into
 training: every ``training.eval_interval`` optimizer steps, a lightweight LM

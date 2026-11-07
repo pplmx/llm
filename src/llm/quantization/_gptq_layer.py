@@ -115,7 +115,7 @@ class GPTQQuantizedLinear(nn.Module):
         then returns in the input's dtype — native ``nn.Linear`` semantics,
         keeping the layer a faithful drop-in replacement even after the
         model is cast to fp16/bf16 (serving default) or selectively
-        quantized over a half base (RIL ISS-191). Asymmetric quantization
+        quantized over a half base. Asymmetric quantization
         (`sym=False`) is not yet implemented — raises NotImplementedError.
 
         Args:
@@ -152,7 +152,7 @@ class GPTQQuantizedLinear(nn.Module):
             w_fp = w_int_signed * scales_expanded
 
         # Dequantize in fp32 for accuracy, then compute in fp32 and return
-        # in the layer's effective dtype (RIL ISS-191). A post-quant
+        # in the layer's effective dtype. A post-quant
         # fp16/bf16 cast — the serving engine's
         # ``model.to(device, dtype=torch.float16)``, or selective
         # quantization over an already-half base — converts ``bias``/scales

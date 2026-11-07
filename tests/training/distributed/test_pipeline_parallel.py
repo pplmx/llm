@@ -1,6 +1,6 @@
 """Pipeline-parallelism milestone tests (``parallel_strategy='pp'``).
 
-Verification strategy (RIL DEC-049 / TASK-210): numeric parity against a full
+Verification strategy: numeric parity against a full
 single-rank reference model. Every rank builds the SAME ``DecoderModel`` from
 the same CPU seed, then ``build_pipeline_model`` partitions it into one stage
 per rank. A pipeline ``schedule.step`` must give a loss that equals the serial
@@ -352,14 +352,14 @@ def test_pp_partition_refuses_unsupported_models() -> None:
     mlp = nn.Sequential(nn.Linear(8, 8), nn.ReLU())
     with pytest.raises(NotImplementedError, match="transformer_blocks"):
         partition_decoder_model(mlp, 2)
-    # Gradient checkpointing is SUPPORTED since RIL TASK-213 (the stage forward
+    # Gradient checkpointing is SUPPORTED (the stage forward
     # wraps block calls like the monolithic model does) — the model must
     # partition, not refuse.
     model = _build_model()
     model.enable_gradient_checkpointing()
     stages = partition_decoder_model(model, 2)
     assert all(getattr(stage, "gradient_checkpointing", False) for stage in stages)
-    # flash_attn cannot run in PP's forced fp32 (review MEDIUM on TASK-210).
+    # flash_attn cannot run in PP's forced fp32 (review MEDIUM on).
     # Charade the model attr (the real flash kernel is an optional dependency,
     # so constructing a flash model would gate this test on it); the
     # partitioner must refuse on the attr alone.
@@ -462,7 +462,7 @@ def test_lm_shift_loss_contract() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PP + data-parallel 2D (RIL TASK-211): pp_size < world_size
+# PP + data-parallel 2D: pp_size < world_size
 # ---------------------------------------------------------------------------
 
 
@@ -558,7 +558,7 @@ def _pp_2d_parity_worker(rank: int, world_size: int, results: dict) -> None:
 
 
 def test_pp_dp_2d_loss_and_grad_parity_four_process_cpu() -> None:
-    """PP + data-parallel 2D (TASK-211) on a 2x2 [DP][PP] gloo/CPU grid.
+    """PP + data-parallel 2D on a 2x2 [DP][PP] gloo/CPU grid.
 
     Each DP group pipelines its own data shard; the loss must equal that
     shard's serial LM-shift loss (broadcast over the PP subgroup), and the
@@ -638,7 +638,7 @@ def _pp_2d_dyn_worker(rank: int, world_size: int, results: dict) -> None:
 
 def test_pp_dp_2d_training_stays_in_lockstep_four_process_cpu() -> None:
     """After a few SGD steps the DP-averaged stage copies must stay bit-identical
-    across all four ranks (a DP-group divergence — the TASK-211 failure mode —
+    across all four ranks (a DP-group divergence — the failure mode —
     fails this equality)."""
     out = _run_spawn_worker(_pp_2d_dyn_worker, 4)
     keys = set(out[0]["full"].keys())
@@ -663,7 +663,7 @@ def test_pp_dp_layout_validation() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PP microbatch overlap + gradient checkpointing (RIL TASK-213)
+# PP microbatch overlap + gradient checkpointing
 # ---------------------------------------------------------------------------
 
 
@@ -677,9 +677,7 @@ def _pp_gc_worker(rank: int, world_size: int, results: dict) -> None:
         model.enable_gradient_checkpointing()
         stage = build_pipeline_model(model, world_size, torch.device("cpu"))
         rt = stage._pp
-        assert rt.stage_module.gradient_checkpointing, (
-            "partitioner must propagate the GC flag to every stage (TASK-213)"
-        )
+        assert rt.stage_module.gradient_checkpointing, "partitioner must propagate the GC flag to every stage"
         criterion = nn.CrossEntropyLoss(ignore_index=-100)
         input_ids, labels = _make_inputs()
         losses: list = []
@@ -697,7 +695,7 @@ def _pp_gc_worker(rank: int, world_size: int, results: dict) -> None:
 
 
 def test_pp_gradient_checkpointing_parity_two_process_cpu() -> None:
-    """A gradient-checkpointed model must partition (no refusal since TASK-213)
+    """A gradient-checkpointed model must partition (no refusal since)
     and the stage forwards must recompute activations WITHOUT changing the
     numerics vs the (equally checkpointed) serial reference."""
     torch.manual_seed(SEED)
@@ -795,7 +793,7 @@ def test_pp_n_microbatches_build_rejects_zero() -> None:
 
 
 def _pp_amp_worker(rank: int, world_size: int, results: dict) -> None:
-    """Engine construction with PP + float16 AMP must refuse loudly (TASK-214)."""
+    """Engine construction with PP + float16 AMP must refuse loudly."""
     try:
         dist.init_process_group(
             "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
@@ -825,7 +823,7 @@ def _pp_amp_worker(rank: int, world_size: int, results: dict) -> None:
 
 
 def test_pp_refuses_float16_amp_two_process_cpu() -> None:
-    """PP + use_amp only supports bf16 (TASK-214): the schedule computes AND
+    """PP + use_amp only supports bf16: the schedule computes AND
     backprops the loss inside step(), so a GradScaler (float16 AMP) cannot
     scale the loss before the schedule's backward. float16 must refuse loudly
     on construction; bf16 is exercised by the engine e2e."""
@@ -837,7 +835,7 @@ def test_pp_refuses_float16_amp_two_process_cpu() -> None:
 
 
 def _pp_tp_parity_worker(rank: int, world_size: int, results: dict) -> None:
-    """PP+TP chain parity (RIL TASK-216, dp_size=1): 2 stages x 2 TP ranks on gloo.
+    """PP+TP chain parity (dp_size=1): 2 stages x 2 TP ranks on gloo.
 
     Each rank partitions the model into 2 stages, TP-shards its own stage over
     the stage's 2-rank group (``apply_tensor_parallel_stage``), drives a GPipe-
@@ -900,7 +898,7 @@ def test_pp_tp_loss_and_grad_routing_parity_four_process_cpu() -> None:
 def _pp_tp_wrap_train_worker(rank: int, world_size: int, results: dict) -> None:
     """Compose via ``wrap_model_for_training('3d')`` and drive an optimizer.
 
-    Proves the wrap '3d' branch (RIL TASK-216) produces a trainable composed
+    Proves the wrap '3d' branch produces a trainable composed
     stage: the PPTPRuntime step + optimizer cycle decreases the broadcast loss
     (the mechanics the engine training loop will call).
     """
@@ -1060,7 +1058,7 @@ def _pp3d_dp2_worker(rank: int, world_size: int, results: dict) -> None:
 @pytest.mark.quick
 def test_pp3d_dp2_full_3d_grid_eight_process_cpu() -> None:
     """DP+PP+TP (2x2x2): per-column data/loss, per-column serial parity, and
-    cross-column gradient lockstep after DP averaging (RIL TASK-217)."""
+    cross-column gradient lockstep after DP averaging."""
     out = _run_spawn_worker(_pp3d_dp2_worker, 8)
     for rank, payload in out.items():
         assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
@@ -1122,12 +1120,12 @@ def test_pp3d_engine_dp2_full_3d_train_eight_process_cpu() -> None:
 def _pp3d_checkpoint_worker(rank: int, world_size: int, ctx: dict, results: dict) -> None:
     """Full 4-rank (dp=1 x pp=2 x tp=2) 3d TrainingEngine checkpoint round-trip.
 
-    RIL ISS-403 regression: a 3d stage is ``_pp3d``+``_tp`` but NOT ``_pp``, so
-    before the fix model_state_dict/load_model_state_dict + the checkpoint
-    optimizer gates took the TP-local branch — save persisted only stage-0
-    weights and resume scattered against a colliding local namespace. Must
-    now: save a GLOBAL full model + per-stage optimizer moments, and resume
-    each stage's own weights + moments in lockstep.
+    regression: a 3d stage is ``_pp3d``+``_tp`` but NOT ``_pp``, so
+       before the fix model_state_dict/load_model_state_dict + the checkpoint
+       optimizer gates took the TP-local branch — save persisted only stage-0
+       weights and resume scattered against a colliding local namespace. Must
+       now: save a GLOBAL full model + per-stage optimizer moments, and resume
+       each stage's own weights + moments in lockstep.
     """
     try:
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -1178,7 +1176,7 @@ def _pp3d_checkpoint_worker(rank: int, world_size: int, ctx: dict, results: dict
         payload = load_checkpoint_payload(ckpt_path)
         assert isinstance(payload["optimizer_state"], dict), "3d checkpoint must persist optimizer_state"
         stage_states = payload["optimizer_state"].get("__pp_stage_states__")
-        assert isinstance(stage_states, dict), "3d checkpoint must persist per-stage optimizer states (TASK-212)"
+        assert isinstance(stage_states, dict), "3d checkpoint must persist per-stage optimizer states"
         assert str(rank) in stage_states, f"rank {rank}: own stage optimizer state missing"
         from llm.training.distributed.parallel import is_pp3d
 
@@ -1212,7 +1210,7 @@ def _pp3d_checkpoint_worker(rank: int, world_size: int, ctx: dict, results: dict
 @pytest.mark.quick
 def test_pp3d_checkpoint_roundtrip_four_process_cpu(tmp_path) -> None:
     """3d (pp=2 x tp=2) engine save + resume: global full dict + per-stage
-    optimizer moments, not stage-0-only weights (RIL ISS-403)."""
+    optimizer moments, not stage-0-only weights."""
     ckpt_dir = str(tmp_path / "pp3d_checkpoints")
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(_free_port())

@@ -1,4 +1,4 @@
-"""Tests for weight pruning (ROADMAP 13.4, RIL TASK-224)."""
+"""Tests for weight pruning (ROADMAP 13.4)."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def test_prune_model_replaces_linears_and_reports_sparsity():
 
 
 def test_magnitude_prune_with_ties_achieves_exact_ratio():
-    """Regression (RIL TASK-309): an ``abs >= threshold`` mask keeps EVERY
+    """Regression: an ``abs >= threshold`` mask keeps EVERY
     boundary tie, so a weight whose zero-mass exceeds the drop quota prunes
     NOTHING (e.g. a 20%-nonzero layer at ratio 0.5 achieved 0.0 sparsity —
     silent wrong result on already-pruned / dead-channel weights). The
@@ -117,7 +117,7 @@ def test_prune_no_linear_raises():
 
 
 def test_prune_unmatched_target_modules_raises_not_silent_noop():
-    """Regression (TASK-228): a target_modules filter that matches nothing must
+    """Regression: a target_modules filter that matches nothing must
     fail loudly instead of silently returning 0% sparsity."""
     from llm.quantization.prune import PrunedLinear, PruningConfig, prune_model
 

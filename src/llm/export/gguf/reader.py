@@ -54,7 +54,7 @@ from llm.export.gguf.spec import (
 
 # Reader-side dequantizers for the block-quantized types beyond Q4_0/Q8_0:
 # legacy 32-wide schemes (Q4_1/Q5_0/Q5_1) and the 256-wide K-quant family
-# (Q2_K..Q6_K) that dominate real llama.cpp files (round 75 milestone).  Each
+# (Q2_K..Q6_K) that dominate real llama.cpp files (milestone).  Each
 # takes the flat uint8 payload and returns the dequantized float32 vector.
 _READER_DEQUANTIZERS = {
     GGMLQuantizationType.Q4_1: dequantize_q4_1,
@@ -224,7 +224,7 @@ class GGUFReader:
         if numel == 0:
             # An empty quantized tensor has no blocks to dequantize; mirror
             # the F32/F16 empty-array return instead of raising from the
-            # block parser (round-75 review LOW).
+            # block parser (review LOW).
             return np.empty(info.shape, dtype=np.float32)
         if info.ggml_type in _READER_DEQUANTIZERS:
             return _READER_DEQUANTIZERS[info.ggml_type](np.frombuffer(raw, dtype=np.uint8), numel).reshape(info.shape)

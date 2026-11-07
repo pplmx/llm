@@ -1,4 +1,4 @@
-"""GRPO (Group Relative Policy Optimization) loss + group advantages (TASK-229).
+"""GRPO (Group Relative Policy Optimization) loss + group advantages.
 
 GRPO (Shao et al. 2024) aligns a policy by giving each response a **group-relative**
 advantage — the z-score of its reward within the group of ``G`` responses sampled

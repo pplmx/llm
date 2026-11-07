@@ -1,7 +1,7 @@
-"""Multimodal extension (ROADMAP 阶段十二, RIL TASK-226/TASK-227).
+"""Multimodal extension (ROADMAP 阶段十二).
 
-Layer 1 (TASK-226) lands the registry + DataModule contract; Layer 2
-(TASK-227) adds a standalone :class:`MultimodalModel` that fuses modal
+Layer 1 lands the registry + DataModule contract; Layer 2
+adds a standalone :class:`MultimodalModel` that fuses modal
 embeddings into token-embedding space plus a ``multimodal`` training task.
 Nothing here patches :class:`DecoderModel` (see
 ``docs/adr/013-multimodal-encoder-contract.md``).

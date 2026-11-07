@@ -164,7 +164,7 @@ class LlamaLmEvalLM:
             # ``ctx_len`` = how many of ``full``'s tokens are context; the
             # continuation tokens actually present in the window are
             # ``full[ctx_len:]`` (NOT the full ``cont_ids`` — those can
-            # extend past the window, RIL ISS-050).
+            # extend past the window).
             ctx_len = max(0, len(full) - len(cont_ids))
 
             # Tokens are scored shift-by-one: the token at window position
@@ -241,7 +241,7 @@ class LlamaLmEvalLM:
             # the first ``max_length`` — contributes. lm_eval's downstream
             # word-perplexity divides the returned sum by the FULL doc word
             # count; truncating the numerator here silently deflates the metric
-            # on any document longer than ``max_seq_len`` (RIL ISS-128).
+            # on any document longer than ``max_seq_len``.
             #
             # Each window carries ``max_length`` tokens through the model and
             # sums the log-probs of the *new* tokens (those after the previous
@@ -277,7 +277,7 @@ class LlamaLmEvalLM:
                 # ``len(ids) - 1`` (doc length ≡ 2 mod (max_length-1)), so
                 # ``ids[-1]`` is never scored while the downstream metric
                 # divides by the full doc word count — a silently deflated
-                # perplexity (RIL ISS-193).
+                # perplexity.
                 if end >= len(ids):
                     break
                 start = end - 1  # overlap one context token for the next window
@@ -303,7 +303,7 @@ class LlamaLmEvalLM:
             # ``until: "END"``). A bare ``list(until)`` would split a
             # multi-char scalar into per-char stops, so ``_strip_stop_strings``
             # trims at the FIRST occurrence of any single char — massively
-            # over-trimming completions (RIL ISS-132). Normalize exactly like
+            # over-trimming completions. Normalize exactly like
             # lm_eval's handle_stop_sequences (str -> [str], None -> []).
             if isinstance(until, str):
                 until = [until]
@@ -319,8 +319,8 @@ class LlamaLmEvalLM:
                 # tokenizers decode special tokens to "" by default
                 # (``skip_special_tokens=True``), so a decoded-string stop
                 # never fires and ``generate_until`` over-ran to
-                # ``max_gen_toks`` past the EOS — the ISS-049 regression the
-                # string guard intended to solve (RIL ISS-226 / round-73
+                # ``max_gen_toks`` past the EOS — the regression the
+                # string guard intended to solve (
                 # FINDING 6). The id sequence is token-precise and
                 # decode-independent.
                 if [eos_id] not in stops:
@@ -348,17 +348,17 @@ class LlamaLmEvalLM:
     def _strip_stop_strings(text: str, stops: list) -> str:
         """Cut ``text`` at the earliest occurrence of any string stop.
 
-        Mirrors lm_eval's ``postprocess_generated_text``: a generation
-        answer must not contain the stop delimiter (upstream LMs strip it
-        before returning). Token-id ``until`` entries are matched pre-decode
-        (as suffixes) and never appear as text, so only strings are
-        post-processed here.
+               Mirrors lm_eval's ``postprocess_generated_text``: a generation
+               answer must not contain the stop delimiter (upstream LMs strip it
+               before returning). Token-id ``until`` entries are matched pre-decode
+               (as suffixes) and never appear as text, so only strings are
+               post-processed here.
 
-        RIL ISS-194: take the MINIMUM index across all string stops, not the
-        first stop in ``stops`` list order — list order is not occurrence
-        order. E.g. ``stops=["END", "ANSWER"]`` on text ``"foo ANSWER bar
-        END"`` must cut at ``"ANSWER"`` (index 4), not at ``"END"`` (index
-        14), or the returned completion still contains a delimiter.
+        take the MINIMUM index across all string stops, not the
+               first stop in ``stops`` list order — list order is not occurrence
+               order. E.g. ``stops=["END", "ANSWER"]`` on text ``"foo ANSWER bar
+               END"`` must cut at ``"ANSWER"`` (index 4), not at ``"END"`` (index
+               14), or the returned completion still contains a delimiter.
         """
         if not stops:
             return text
@@ -380,7 +380,7 @@ class LlamaLmEvalLM:
           matched against the *decoded* generated text (a tokenizer is
           available here), so early stopping actually fires instead of
           generating the full ``max_gen_toks`` with the delimiter
-          embedded (RIL ISS-049).
+          embedded.
         """
         if self._matches_any_suffix(generated, until):
             return True
@@ -403,7 +403,7 @@ class LlamaLmEvalLM:
         ``_matches_any_stop`` halts generation the moment an ``until``
         id-sequence becomes a *suffix* of ``generated``, but the stop ids are
         still in ``generated`` — decoding the whole run embeds the stop's
-        text in the returned completion (RIL ISS-106). String stops have the
+        text in the returned completion. String stops have the
         post-decode :meth:`_strip_stop_strings` cut; id-sequence stops need
         an exact token-boundary cut here (lossless, unlike a
         ``decode(stop_ids)`` text round-trip). String entries are skipped —

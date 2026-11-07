@@ -207,7 +207,7 @@ class TestLoadSplitFormat:
         assert checkpoint_manager.loaded_extra_state["stream_data"]["0"]["line_index"] == 99
 
     def test_split_layout_wins_over_stale_legacy_shadow(self, checkpoint_manager, tmp_path: Path):
-        """RIL ISS-205: a legacy ``.pt`` frozen at a pre-migration epoch must
+        """a legacy ``.pt`` frozen at a pre-migration epoch must
         NOT shadow a newer split trio at the same stem.
 
         ``llm migrate-ckpt`` keeps the legacy file by default
@@ -247,7 +247,7 @@ class TestLoadSplitFormat:
         assert payload["loss"] == 0.5
 
     def test_partial_split_trio_fails_loud_not_silent_scratch(self, checkpoint_manager, tmp_path: Path):
-        """RIL ISS-205 (companion): a partial split trio (1-2 sidecars, e.g.
+        """(companion): a partial split trio (1-2 sidecars, e.g.
         a crash between the meta and extra_state renames) must raise loudly
         instead of silently degrading to "start from scratch".
 

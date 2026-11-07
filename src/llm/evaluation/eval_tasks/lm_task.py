@@ -28,12 +28,11 @@ class LMTask(BaseTask):
                 be at least the model's ``max_seq_len`` when the caller knows
                 it — the old hardcoded 128 silently crashed any model with a
                 smaller context ("Sequence endpoint 128 exceeds maximum
-                sequence length", RIL ISS-130). Defaults to 128 for backward
+                sequence length"). Defaults to 128 for backward
                 compatibility with callers that never tuned it.
             tokenizer: The tokenizer bound to the model being evaluated. When
                 provided it replaces the corpus-derived one so the vocab ids
-                fed to the model actually match its trained vocabulary (RIL
-                ISS-195: the old behavior always re-derived a character
+                fed to the model actually match its trained vocabulary (the old behavior always re-derived a character
                 tokenizer from the eval corpus, so any model trained with a
                 real tokenizer was scored with mismatched ids). Defaults to a
                 corpus-derived simple tokenizer for backward compatibility.
@@ -41,8 +40,7 @@ class LMTask(BaseTask):
         if batch_size < 1:
             # ``range(0, len(x), 0)`` raises a cryptic "range() arg 3 must
             # not be zero" and a negative batch silently behaves like 1 —
-            # neither is a usable config. Fail fast at construction (RIL
-            # ISS-397).
+            # neither is a usable config. Fail fast at construction.
             raise ValueError(f"batch_size must be >= 1, got {batch_size!r}")
         self.dataset_path = dataset_path
         self.batch_size = batch_size
@@ -53,8 +51,7 @@ class LMTask(BaseTask):
         # the standard ignore index -100 (never a real token id), so the
         # metric must ignore -100 — passing the tokenizer's pad_token_id
         # instead crashes cross_entropy with "Target -100 is out of bounds"
-        # and silently scores pad tokens when the pad id collides (RIL
-        # ISS-041, regression from the ISS-040 label-masking fix).
+        # and silently scores pad tokens when the pad id collides (regression from the label-masking fix).
         self.metrics = [PerplexityMetric(ignore_index=-100)]
         self.pad_token_id = getattr(self.tokenizer, "pad_token_id", None)
 
@@ -85,7 +82,7 @@ class LMTask(BaseTask):
         # input whose lengths differ across batches (the standard flow only
         # escaped because TextDataset pre-pads to 128).
         global_max_len = max((len(x) for x in inputs), default=0)
-        # Clamp to the model's own context window (RIL ISS-130). The dataset
+        # Clamp to the model's own context window. The dataset
         # is pre-truncated to ``self.max_seq_len``, but a caller that tuned
         # ``LMTask(max_seq_len=128)`` while handing it a smaller model would
         # still forward 128-token rows into a smaller positional-encoding
@@ -101,7 +98,7 @@ class LMTask(BaseTask):
         pad_id = self.pad_token_id if self.pad_token_id is not None else 0
 
         # Evaluate on the SAME device the model lives on — the periodic
-        # training eval (RIL TASK-329) runs a GPU-trained model, so CPU inputs
+        # training eval runs a GPU-trained model, so CPU inputs
         # would otherwise raise a device mismatch (index_select found index on
         # cpu vs params on cuda) instead of evaluating. Defensive for mocks
         # (no ``parameters()``/``device``) that fall back to CPU.

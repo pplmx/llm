@@ -25,7 +25,7 @@ class ServingConfig(BaseSettings):
         8000,
         ge=1,
         le=65535,
-        description="TCP port to bind the HTTP server (RIL TASK-326)",
+        description="TCP port to bind the HTTP server ",
     )  # Set LLM_SERVING_PORT=9000 to override the llm serve default
 
     # Generation
@@ -36,7 +36,7 @@ class ServingConfig(BaseSettings):
     # non-positive timeout makes every request time out instantly, and
     # ``max_blocks``/``block_size``/``max_prefixes`` feed directly into
     # block arithmetic that divides by ``block_size``.
-    # torch.compile the served model for acceleration (RIL TASK-328). Wired in
+    # torch.compile the served model for acceleration. Wired in
     # ``load_model_and_tokenizer``: effective on CUDA for plain DecoderModel
     # checkpoints (skipped with a warning for quantized blobs / CPU serving).
     compile_model: bool = False
@@ -45,8 +45,7 @@ class ServingConfig(BaseSettings):
         16 * 1024 * 1024,
         ge=1,
         description=(
-            "Maximum accepted request-body size in bytes; larger bodies get "
-            "413 before the model does any work (RIL ISS-171)."
+            "Maximum accepted request-body size in bytes; larger bodies get 413 before the model does any work."
         ),
     )
     request_timeout: float = Field(60.0, gt=0.0, description="Request timeout in seconds")
@@ -156,7 +155,7 @@ class ServingConfig(BaseSettings):
         """Load configuration from a YAML file.
 
         Shaped after :meth:`llm.training.core.config.Config.from_yaml`, with
-        one deliberate divergence (RIL DEC-106): a missing file returns the
+        one deliberate divergence: a missing file returns the
         default :class:`ServingConfig` (``llm serve`` treats an absent config
         as "all defaults"), whereas the training side **raises
         FileNotFoundError** on a missing ``--config-path`` (an explicit path

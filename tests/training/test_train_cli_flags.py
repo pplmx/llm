@@ -1,4 +1,4 @@
-"""llm train CLI flag-contract tests (RIL ISS-411).
+"""llm train CLI flag-contract tests.
 
 ``--compile`` / ``--amp`` must be *overrides*: when the flag is omitted the
 YAML config stays authoritative. A ``True`` typer default previously
@@ -46,7 +46,7 @@ def _run_and_capture(runner, monkeypatch, args):
 @pytest.mark.quick
 def test_train_cli_omitted_compile_amp_keep_yaml(runner, monkeypatch, tmp_path):
     """A YAML config that disabled compile/AMP must NOT be silently flipped
-    back on when the user passes neither flag (RIL ISS-411)."""
+    back on when the user passes neither flag."""
     cfg = _write_cfg(tmp_path, use_compile=False, use_amp=False)
     result, seen = _run_and_capture(runner, monkeypatch, ["--task", "lm", "--config-path", str(cfg)])
     assert result.exit_code == 0, result.stdout

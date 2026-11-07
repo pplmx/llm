@@ -80,7 +80,7 @@ class SmoothQuantLinear(nn.Module):
         fp32 for accuracy and the result returns in the input's dtype —
         native ``nn.Linear`` semantics — so post-quant fp16/bf16 casts don't
         mix dtypes inside ``F.linear`` or emit fp32 into half-precision
-        residual linears (RIL ISS-191). An fp32 model is unchanged.
+        residual linears. An fp32 model is unchanged.
 
         Args:
             x: Input tensor of shape [..., in_features].
@@ -106,7 +106,7 @@ class SmoothQuantLinear(nn.Module):
 
         w_fp = self._dequantize_weights()
         # Compute in fp32 for accuracy, return in the layer's effective
-        # dtype (RIL ISS-191) — see GPTQQuantizedLinear for the same
+        # dtype — see GPTQQuantizedLinear for the same
         # reasoning; the output must follow the surrounding model's dtype
         # (fp32 model stays fp32; a post-quant fp16/bf16 cast produces
         # half output), not always be fp32.

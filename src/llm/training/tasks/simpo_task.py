@@ -13,7 +13,7 @@ plus a chosen-response SFT regularizer::
 
 Because the reward is a function of the policy itself (no frozen reference),
 SimPO is cheaper and simpler than DPO and is robust to the reference-model
-divergence traps that DPO must checkpoint around (RIL round-60 Finding 1).
+divergence traps that DPO must checkpoint around (Finding 1).
 
 This task reuses the same preference ``DPODataModule`` (chosen/rejected pairs)
 and the standard language-modelling loop; it is fully CPU-verifiable with a

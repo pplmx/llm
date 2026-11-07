@@ -274,7 +274,7 @@ class TestLoadPeftRoundTrip:
             assert torch.equal(loaded, saved)
 
     def test_lora_rank_mismatch_raises_clear_error_not_copy_runtimeerror(self, tmp_path: Path) -> None:
-        """Regression (RIL ISS-210): ``load_peft`` into a model whose adapter
+        """Regression: ``load_peft`` into a model whose adapter
         has a DIFFERENT rank than the checkpoint must raise a clear,
         param-shape-aware error — not a cryptic ``copy_`` size RuntimeError.
 
@@ -669,7 +669,7 @@ class TestLoadPeftErrors:
             load_peft(fresh, path, "lora")
 
     def test_load_blocks_pickle_code_execution(self, tmp_path: Path) -> None:
-        """Security regression (RIL ISS-074): ``load_peft`` must unpickle with
+        """Security regression: ``load_peft`` must unpickle with
         ``weights_only=True`` so a hostile adapter file cannot run arbitrary
         code via ``__reduce__``.
 
@@ -711,7 +711,7 @@ class TestLoadPeftErrors:
 
         assert _EVIL_MARKER == [], (
             "load_peft unpickled the malicious __reduce__ (weights_only=False): "
-            "the marker list filled — arbitrary code execution vector (ISS-074)"
+            "the marker list filled — arbitrary code execution vector"
         )
 
 

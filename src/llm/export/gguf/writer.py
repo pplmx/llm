@@ -47,8 +47,8 @@ def _atomic_write_bytes(path: Path, payload: bytes) -> None:
 
     Fsync is performed BEFORE the rename so a power-loss/crash right after
     ``write()`` returns can never leave the final name pointing at an
-    un-flushed or partial inode (RIL ISS-352). Mirrors the checkpoint
-    manager's ``_fsync_file``/``_atomic_write_bytes`` pattern (RIL ISS-127);
+    un-flushed or partial inode. Mirrors the checkpoint
+    manager's ``_fsync_file``/``_atomic_write_bytes`` pattern;
     the old code renamed with no fsync at all. Best-effort on filesystems
     that reject fsync of the directory.
     """
@@ -182,7 +182,7 @@ class GGUFWriter:
             # ``GGUF_DEFAULT_ALIGNMENT`` (32); the reader hardcodes 32 for
             # ``_data_start``. A smaller writer alignment would emit a file
             # whose own reader (and llama.cpp) rejects every tensor as
-            # preceding the data section (RIL ISS-059). Reject it up front.
+            # preceding the data section. Reject it up front.
             raise ValueError(f"alignment must be >= GGUF_DEFAULT_ALIGNMENT ({GGUF_DEFAULT_ALIGNMENT}), got {alignment}")
         self.output_path = Path(output_path)
         self.version = version

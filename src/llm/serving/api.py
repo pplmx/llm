@@ -110,7 +110,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     # The bind and the guard now share ONE address: the Docker CMD binds
     # ``$LLM_SERVING_HOST`` and this lifespan validates the same
     # ``ServingConfig.host``, so the fail-closed check fires for direct
-    # uvicorn launches too (RIL ISS-164).
+    # uvicorn launches too.
     from llm.serving.auth import assert_safe_bind
 
     assert_safe_bind(config.host, config.api_key)
@@ -120,7 +120,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     tokenizer = generation_service.tokenizer
     # The ``batched`` backend owns its own ContinuousBatchingEngine (built
     # inside ``from_config`` so ``generation_backend=batched`` can start the
-    # server at all — RIL ISS-150); reuse it for the step observer and
+    # server at all); reuse it for the step observer and
     # shutdown instead of building a second, unwired engine the service never
     # uses. Every other backend has no engine, so build one for the observer/
     # unload wiring as before.
@@ -219,7 +219,7 @@ app = FastAPI(
 #
 # Request-body cap first-added = outermost after the harness sees every
 # request, so oversized bodies are rejected before the routers or schema
-# validation buffer them (RIL ISS-171). RequestID stays outermost for
+# validation buffer them. RequestID stays outermost for
 # request tracking on every response, including 413s.
 app.add_middleware(RequestBodySizeLimit, max_bytes=config.max_request_bytes)
 app.add_middleware(RequestIDMiddleware)
@@ -232,7 +232,7 @@ app.include_router(chat_router.router)
 # Prometheus RED metrics + custom /metrics endpoint.
 #
 # /metrics is guarded with the SAME api_key dependency as the inference
-# endpoints (RIL ISS-165): previously Instrumentator.expose registered a
+# endpoints: previously Instrumentator.expose registered a
 # plain GET /metrics with no auth, so live throughput/latency metadata was
 # scrapable by anyone even when api_key was set. When no api_key is
 # configured, get_api_key returns None and the endpoint stays open, matching
@@ -248,7 +248,7 @@ if __name__ == "__main__":
     # Lazy import so `python -m llm.serving.api` works without
     # pre-loading uvicorn at import time. Route through the Typer
     # ``app`` so a ``--help`` invocation prints usage and exits instead
-    # of silently booting uvicorn on a CUDA device (RIL ISS-424/425/427).
+    # of silently booting uvicorn on a CUDA device.
     from llm.serving.cli import app as _cli_app
 
     _cli_app()

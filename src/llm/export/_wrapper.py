@@ -47,7 +47,7 @@ def model_vocab_size(model: nn.Module) -> int | None:
     Trace-based exporters build a random token-id dummy input and must
     bound it by the REAL vocabulary — a hardcoded ``randint(0, 100)``
     crashes with ``IndexError`` inside the embedding for any model with
-    ``vocab_size < 100`` (RIL ISS-058). This helper resolves the vocab
+    ``vocab_size < 100``. This helper resolves the vocab
     from the common embedding layouts (``DecoderModel`` and friends);
     returns ``None`` when the model exposes no recognizable embedding so
     callers keep their historical default.

@@ -272,7 +272,7 @@ def test_checkpoint_roundtrip_persists_ema_via_engine():
 
 
 def test_adalora_ema_restored_without_tracker_preexisting():
-    """Regression (RIL ISS-092): the engine restores checkpoint extra_state
+    """Regression: the engine restores checkpoint extra_state
     during ``__init__`` — BEFORE ``on_train_start`` builds the AdaLoRA EMA
     tracker. ``load_checkpoint_state`` must be able to build + restore the
     tracker itself, otherwise every resumed run silently restarts the

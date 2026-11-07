@@ -25,7 +25,7 @@ from llm.runtime import ModelFactory
 
 logger = logging.getLogger(__name__)
 
-# RIL ISS-414: Hf checkpoints ship benign non-persistent buffers we recompute
+# Hf checkpoints ship benign non-persistent buffers we recompute
 # at construction instead of loading. Keys ending in any of these suffixes are
 # tolerated (warned about, not rejected) by the unconsumed-key guard.
 _BENIGN_NONPERSISTENT_BUFFER_SUFFIXES = (
@@ -109,7 +109,7 @@ def _load_from_local(
     # Mixtral is MoE; our weight mapping is dense-only, so loading one would
     # build a DENSE model and silently drop every expert/router tensor, then
     # run with all of them at RANDOM init — garbage output with warnings only
-    # (RIL ISS-144). Refuse loudly rather than advertise broken support.
+    # . Refuse loudly rather than advertise broken support.
     if architecture == "mixtral":
         raise NotImplementedError(
             "Mixtral (block-sparse MoE) is not supported by from_pretrained: the "
@@ -120,7 +120,7 @@ def _load_from_local(
 
     # Unknown model_type (gpt2, gemma, baichuan, ...): the mapping has no rules
     # for it. Loading with strict=False used to leave EVERY unmapped weight at
-    # random init — garbage generation with only warning logs (round-71 compat
+    # random init — garbage generation with only warning logs (compat
     # fix). Refuse loudly, mirroring the Mixtral rejection.
     if architecture == "unknown":
         raise NotImplementedError(
@@ -157,13 +157,13 @@ def _load_from_local(
         intermediate_size=our_config.get("intermediate_size"),
         norm_eps=our_config.get("rms_norm_eps", 1e-5),
         # Honor the persisted ``attn_impl`` (our publisher) so an MLA model
-        # roundtrips as MLA (RIL ISS-169); external real-Llama/Mistral
+        # roundtrips as MLA; external real-Llama/Mistral
         # checkpoints have no such key and default to MHA.
         attn_impl=our_config.get("attn_impl", "mha"),
         # Honor the persisted ``use_glu`` (our publisher) or default to True
         # for external real-Llama/Mistral checkpoints. Hardcoding True here
         # rebuilt a GLU MLP for a DEFAULT non-GLU model and left every
-        # ``gate_proj`` at random init (RIL ISS-056).
+        # ``gate_proj`` at random init.
         use_glu=our_config.get("use_glu", True),
         mlp_impl="mlp",
         mlp_activation=our_config.get("mlp_activation", "silu"),
@@ -174,11 +174,11 @@ def _load_from_local(
         rope_theta=our_config.get("rope_theta", 10000.0),
         use_alibi=our_config.get("use_alibi", False),
         # Sliding-window attention (Mistral) — threaded from the config's
-        # ``sliding_window``; absent/None runs full-context (RIL ISS-242).
+        # ``sliding_window``; absent/None runs full-context.
         window_size=our_config.get("window_size"),
         # Sparse/streaming attention scheme — restored from the persisted
         # ``attn_sparse`` so a sparse model does not silently become dense on
-        # reload (RIL TASK-244). Absent/None means dense attention.
+        # reload. Absent/None means dense attention.
         attn_sparse=our_config.get("attn_sparse"),
         qkv_bias=our_config.get("qkv_bias", False),
         mlp_bias=our_config.get("mlp_bias", False),
@@ -202,13 +202,13 @@ def _load_from_local(
         num_layers=our_config["num_layers"],
     )
 
-    # Loud-fail guard (RIL ISS-244): HF tensors the mapping does NOT consume
+    # Loud-fail guard: HF tensors the mapping does NOT consume
     # must not be silently dropped — that is exactly how a partially-mapped
     # (but config-declared-supported) checkpoint used to load into a model
     # whose un-mapped weights stayed at RANDOM init with warnings only. The
     # GGUF loader already raises on the same condition.
     #
-    # RIL ISS-414: not every unmapped key is a genuine foreign weight. Real
+    # not every unmapped key is a genuine foreign weight. Real
     # Llama/Mistral checkpoints ship benign **non-persistent** buffers that we
     # recompute at construction rather than load:
     #   * ``*.self_attn.rotary_emb.inv_freq`` — HF persists the RoPE inverse
@@ -254,10 +254,10 @@ def _load_from_local(
         head_dim=attn0.head_dim,
     )
 
-    # Loud-fail guard (RIL ISS-169): an MLA checkpoint must NEVER silently
+    # Loud-fail guard: an MLA checkpoint must NEVER silently
     # rebuild as MHA (or vice versa) — every MLA tensor would be dropped by
     # ``load_state_dict(strict=False)`` leaving attention at random init, the
-    # exact silent-weight-drop class ISS-144 rejects loudly for Mixtral.
+    # exact silent-weight-drop class rejects loudly for Mixtral.
     # Detect by whether the state dict carries MLA-only parameters.
     mla_key_prefixes = (
         ".self_attn.latents",
@@ -291,7 +291,7 @@ def _load_from_local(
     # LM head to the input embeddings ship NO ``lm_head.weight``. The
     # DecoderModel always allocates a separate linear head, so a tied
     # checkpoint left it at RANDOM init with only a Missing-keys warning —
-    # silently garbage generation (RIL ISS-143). When the head key is absent
+    # silently garbage generation. When the head key is absent
     # but the embedding tensor is present, copy the embeddings into the head
     # (standard HF tying semantics).
     if "lm_head.weight" in missing and "embedding_layer.token_embeddings.weight" in converted_state_dict:
@@ -312,7 +312,7 @@ def _load_from_local(
             )
 
     if missing:
-        # Loud, like the GGUF loader (RIL ISS-244): a checkpoint the config
+        # Loud, like the GGUF loader: a checkpoint the config
         # declared SUPPORTED but whose tensors do not fully cover the model
         # leaves submodules at RANDOM init — garbage generation with a warning
         # is a silent misconfiguration, not a recoverable condition.
@@ -418,7 +418,6 @@ def list_supported_architectures() -> list[str]:
 
     ``mistral`` is included (dense Mistral). ``mixtral`` is deliberately NOT:
     it is block-sparse MoE, which :func:`from_pretrained` rejects with a clear
-    error rather than silently dropping every expert/router tensor (RIL
-    ISS-144).
+    error rather than silently dropping every expert/router tensor.
     """
     return ["llama", "llama2", "llama3", "mistral", "qwen", "qwen2"]

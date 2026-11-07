@@ -91,8 +91,8 @@ def _token_count(text: str) -> int:
     The non-streaming routes used ``len(text)`` — a char-count proxy that is
     exact for character-level tokenizers but wrong for HF/BPE tokenizers
     (one token spans several chars), and it diverged from the streaming path,
-    which counts tokens as they are decoded (RIL round-73 serving deep-dive
-    FINDING 4 / ISS-225). Re-encode ``text`` with the serving tokenizer for
+    which counts tokens as they are decoded (serving deep-dive
+    FINDING 4). Re-encode ``text`` with the serving tokenizer for
     the true count; any tokenizer that is unset or fails to round-trip its own
     output falls back to ``len(text)``.
     """
@@ -141,8 +141,7 @@ async def _drive_sync_iterator(iterator):
     when the async consumer stops pulling (idle timeout / disconnect), so a
     timeout-aborted stream leaves the engine's ``stream_request`` generator
     suspended mid-generation — holding its KV/scheduler slot and burning
-    forward passes until the async generator is finally GC'd (RIL ISS-122,
-    F2). This adapter guarantees the sync generator's ``finally`` reap runs
+    forward passes until the async generator is finally GC'd. This adapter guarantees the sync generator's ``finally`` reap runs
     as soon as the consumer walks away.
 
     Cancelling the awaiting task does NOT stop the worker thread: the
@@ -208,8 +207,8 @@ def _validate_prompt_encodable(prompt: str) -> None:
     A character-level tokenizer raises ``KeyError`` for any character outside
     its corpus (a client-caused condition). On the streaming path this must be
     validated BEFORE the SSE starts — an error raised inside the generator
-    would otherwise surface as a 200 stream containing ``Error: KeyError``
-    (RIL ISS-113). Non-streaming handlers catch the same ``KeyError`` in their
+    would otherwise surface as a 200 stream containing ``Error: KeyError``.
+    Non-streaming handlers catch the same ``KeyError`` in their
     ``except`` clauses.
     """
     service = _require_generation_service()
@@ -230,16 +229,16 @@ def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
     (``max_new_tokens >= model.max_seq_len`` leaves the prompt no room). On
     the streaming path it must be validated BEFORE the SSE starts, exactly
     like encodability — otherwise a request that the service rejects
-    surfaces as a 200 stream containing ``Error: ValueError`` (RIL ISS-149)
+    surfaces as a 200 stream containing ``Error: ValueError``
     instead of the 400 its non-streaming twin returns.
 
     Also checks ``len(prompt) + max_new_tokens`` against the EFFECTIVE KV
-    window (RIL ISS-346): a batched engine's ``max_seq_len`` (e.g.
+    window: a batched engine's ``max_seq_len`` (e.g.
     ``LLM_SERVING_MAX_SEQ_LEN``) can be SMALLER than ``model.max_seq_len``.
     A prompt that already eats most of that window passes the
     ``max_new_tokens``-only check, then ``ContinuousBatchingEngine.add_request``
     raises ``ValueError`` INSIDE the already-started SSE — an in-band
-    ``Error:`` chunk, exactly the ISS-149 class this validation exists to
+    ``Error:`` chunk, exactly the class this validation exists to
     prevent.
     """
     service = _require_generation_service()
@@ -255,13 +254,13 @@ def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
     # The engine lives on the BACKEND (``BatchedGenerationBackend.engine`` /
     # ``SpeculativeDecodingBackend.engine``), not on the service itself — the
     # original ``service.engine`` read was always None, so this window check
-    # never fired (RIL TASK-315/ISS-355). An engine REFUSES over-window
+    # never fired. An engine REFUSES over-window
     # requests (``add_request`` raises ValueError INSIDE the started SSE), so
     # those must still be pre-rejected as 400. An engine-less backend (eager)
     # used to SILENTLY tail-truncate over-window prompts — degrading to a
     # ~1-token prompt (and hence garbage output) when ``max_new_tokens``
     # approaches ``max_seq_len``, and diverging from the batched engine's
-    # clean 400 for the identical payload (RIL ISS-408 / DEC-113). The check
+    # clean 400 for the identical payload. The check
     # now fires for EVERY backend: the budget is the effective model window
     # (``model.max_seq_len``), tightened by the engine's KV window when one
     # exists. Both stream and non-stream reject the same payload the same way.
@@ -295,7 +294,7 @@ def _validate_queue_has_capacity() -> None:
     queue is full — an honest retryable 503 (``ErrorCode.QUEUE_FULL``) instead
     of surfacing the queue-full condition as a misleading ``RuntimeError`` →
     "Model unavailable" (non-stream) or an in-band ``Error: stream failed``
-    chunk (stream, RIL ISS-407). Best-effort: the queue can still fill between
+    chunk (stream). Best-effort: the queue can still fill between
     this check and the actual enqueue; the ``QueueFullError`` handlers below
     cover that race.
     """
@@ -315,8 +314,7 @@ def _validate_stream_request(prompt: str, max_new_tokens: int) -> None:
     """Run all client-caused pre-stream validations (encodability + bounds).
 
     Shared by ``/generate`` and ``/v1/chat/completions`` streaming routes so
-    an invalid request is a real 400 before any SSE bytes are sent (RIL
-    ISS-149), never an ``Error: ...`` chunk inside a 200 stream.
+    an invalid request is a real 400 before any SSE bytes are sent, never an ``Error: ...`` chunk inside a 200 stream.
     """
     _validate_prompt_encodable(prompt)
     _validate_generation_bounds(prompt, max_new_tokens)
@@ -348,15 +346,15 @@ async def generate_text(
     if request.stream:
         # Validate before the SSE starts so an un-encodable prompt or a
         # context-overflowing ``max_new_tokens`` is a real 4xx, not an
-        # "Error: ..." chunk inside a 200 stream (RIL ISS-113, ISS-149).
+        # "Error: ..." chunk inside a 200 stream.
         _validate_stream_request(request.prompt, request.max_new_tokens)
         return StreamingResponse(_stream_generator(request), media_type="text/event-stream")
 
     # Non-streaming twin of the same pre-checks: an over-window prompt must be
     # a clean 400 on every backend (eager previously tail-truncated silently
-    # — RIL ISS-408/DEC-113), matching the streaming route and the batched
+    # ), matching the streaming route and the batched
     # engine rather than producing garbage output; a full waiting queue must
-    # be an honest retryable 503 (RIL ISS-407).
+    # be an honest retryable 503.
     _validate_generation_bounds(request.prompt, request.max_new_tokens)
     _validate_queue_has_capacity()
 
@@ -368,9 +366,9 @@ async def generate_text(
                     with metrics.track_inflight():
                         # Thread the client's request_id to the engine so
                         # batched/continuous-batching duplicate-request-id
-                        # protection (RIL ISS-123/F3) works from the HTTP path
-                        # — it was previously dropped at every layer (round-73
-                        # FINDING 3 / ISS-224).
+                        # protection works from the HTTP path
+                        # — it was previously dropped at every layer (
+                        # FINDING 3).
                         gen_kwargs = {
                             "request_id": request.request_id,
                             "max_new_tokens": request.max_new_tokens,
@@ -398,7 +396,7 @@ async def generate_text(
                             # interrupted on timeout, so a 504 left the abandoned
                             # ``generate_request`` running in the threadpool —
                             # holding its KV slot and burning forward passes long
-                            # after the client left (RIL ISS-406). ``_drive_sync_iterator``
+                            # after the client left. ``_drive_sync_iterator``
                             # closes the underlying ``stream_request`` generator the
                             # moment the consumer is cancelled, and its ``finally``
                             # reaps the slot promptly.
@@ -422,13 +420,12 @@ async def generate_text(
         except QueueFullError as exc:
             # MUST precede the generic ``RuntimeError`` catch (QueueFullError
             # subclasses it): backpressure is a retryable condition, not a
-            # model failure (RIL ISS-407) — the generic block would map it to
+            # model failure — the generic block would map it to
             # a misleading "Model unavailable during generation".
             t.set_status(503)
             raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
         except RuntimeError as exc:
-            # Do NOT echo the backend exception text back to the client (RIL
-            # ISS-168): it can contain filesystem paths / framework internals
+            # Do NOT echo the backend exception text back to the client: it can contain filesystem paths / framework internals
             # that aid fingerprinting. Log it server-side, send a fixed message.
             t.set_status(503)
             logger.error("backend generation failed: %s", exc)
@@ -449,7 +446,7 @@ async def generate_text(
     # ``stream()`` yields chunks only). Reported as-is, the prompt would be
     # echoed into ``generated_text`` and counted as generated tokens,
     # diverging from both this route's streaming mode and ``/v1/chat``
-    # (chat.py strips the same prior-echo — RIL ISS-148). Strip the prompt
+    # (chat.py strips the same prior-echo). Strip the prompt
     # if the model echoed it back, mirroring chat.py's completion extraction.
     completion = generated_text[len(request.prompt) :] if generated_text.startswith(request.prompt) else generated_text
 
@@ -464,7 +461,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
     applied per chunk: a stream that keeps producing tokens is never cut
     off, but a stalled/misbehaving generator must not hold the inference
     semaphore slot forever — with ``max_concurrent_requests`` stuck streams
-    the whole API would stop admitting new requests (RIL sweep finding).
+    the whole API would stop admitting new requests (sweep finding).
     """
     timer = metrics.request_timer(endpoint="generate")
     token_count = 0
@@ -473,17 +470,17 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
         try:
             # Acquire the inference semaphore for the *lifetime of the
             # stream*, exactly like the chat streaming route does. The
-            # original concurrency-control fix (RIL ISS-036) scoped the
+            # original concurrency-control fix scoped the
             # semaphore to the non-streaming handlers and chat streaming
             # but missed this route — /generate?stream=true could hold
             # unlimited concurrent generations past
             # max_concurrent_requests while peer routes were bounded
-            # (RIL ISS-042).
+            # .
             async with inference_semaphore or _null_cm():
                 with metrics.track_inflight():
                     iterator = _sync_stream_generate(
                         prompt=request.prompt,
-                        request_id=request.request_id,  # ISS-224: thread to the engine
+                        request_id=request.request_id,  #: thread to the engine
                         max_new_tokens=request.max_new_tokens,
                         temperature=request.temperature,
                         top_k=request.top_k,
@@ -509,7 +506,7 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                             # sync generator in the background so
                             # ``stream_request``'s finally-reap (scheduler
                             # remove + slot release) runs promptly instead of
-                            # at asyncgen GC (RIL ISS-122).
+                            # at asyncgen GC.
                             timed_out = True
                             t.set_status(504)
                             yield "Error: stream timed out (no tokens for the request_timeout window)"
@@ -520,20 +517,19 @@ async def _stream_generator(request: GenerationRequest) -> AsyncGenerator[str]:
                         # multi-token chunk, so ``+= 1`` undercounted and
                         # ``finish_reason`` (length-vs-stop) resolved wrong.
                         # Re-encoding matches the non-streaming route's
-                        # ``_token_count(completion)`` (RIL ISS-225 direction).
+                        # ``_token_count(completion)`` (direction).
                         token_count += _token_count(chunk)
                         yield chunk
             if not timed_out:
                 t.set_status(200)
             # Count every token actually streamed, even on timeout/failure —
             # a stalled or failed stream otherwise silently undercounts token
-            # volume (RIL round-73 FINDING 7 / ISS-227).
+            # volume (FINDING 7).
             metrics.observe_tokens(endpoint="generate", token_count=token_count)
         except Exception:
             logger.exception("Error in stream generation")
             t.set_status(500)
-            # Do NOT echo the exception class name back to the client (RIL
-            # ISS-168): it lets a client fingerprint the framework/backend.
+            # Do NOT echo the exception class name back to the client: it lets a client fingerprint the framework/backend.
             # Log server-side, send a fixed message. Count the tokens streamed
             # before the failure.
             metrics.observe_tokens(endpoint="generate", token_count=token_count)
@@ -572,13 +568,12 @@ async def batch_generate_text(
         except QueueFullError as exc:
             # MUST precede the generic ``RuntimeError`` catch (QueueFullError
             # subclasses it): backpressure is a retryable condition, not a
-            # model failure (RIL ISS-407) — the generic block would map it to
+            # model failure — the generic block would map it to
             # a misleading "Model unavailable during generation".
             t.set_status(503)
             raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
         except RuntimeError as exc:
-            # Do NOT echo the backend exception text back to the client (RIL
-            # ISS-168): it can contain filesystem paths / framework internals
+            # Do NOT echo the backend exception text back to the client: it can contain filesystem paths / framework internals
             # that aid fingerprinting. Log it server-side, send a fixed message.
             t.set_status(503)
             logger.error("backend generation failed: %s", exc)
@@ -598,7 +593,7 @@ async def batch_generate_text(
     # Backend ``batch_generate`` returns ``prompt + completion`` per row (it
     # delegates to ``generate()``); strip the echoed prompt so the response is
     # the completion only, consistent with ``/generate`` and streaming
-    # (RIL ISS-148). ``strict=False`` preserves the lenient results-driven
+    # . ``strict=False`` preserves the lenient results-driven
     # behavior this endpoint always had (production backends return one row
     # per prompt, so no truncation happens there).
     stripped: list[str] = []
@@ -611,7 +606,7 @@ async def batch_generate_text(
     return BatchGenerationResponse(
         results=[
             # True tokenizer count, matching the metric above and the sibling
-            # /generate route (RIL ISS-344): len(text) is a char-count proxy
+            # /generate route: len(text) is a char-count proxy
             # that over-counts for HF/BPE tokenizers, breaking client
             # token-usage accounting.
             GenerationResponse(generated_text=text, token_count=_token_count(text))

@@ -181,7 +181,7 @@ class TestPEFTAdapterCheckpointCallbackSave:
         assert not path.exists()
 
     def test_save_skipped_on_nonzero_rank(self, engine_mock: MagicMock, tmp_dir: Path) -> None:
-        """Regression (RIL ISS-208): ``on_train_end`` runs on EVERY rank, but
+        """Regression: ``on_train_end`` runs on EVERY rank, but
         ``save_peft`` unconditionally ``torch.save``s the same path — under
         DDP, N processes concurrently truncate/write the same file (race
         corruption) and do N-1 redundant full writes. Only rank 0 must write

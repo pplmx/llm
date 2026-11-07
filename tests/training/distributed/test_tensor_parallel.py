@@ -1,6 +1,6 @@
 """Tensor-parallelism milestone tests (``parallel_strategy='tp'``).
 
-Verification strategy (RIL TASK-200 / DEC-045): numeric parity against a full
+Verification strategy: numeric parity against a full
 single-rank reference model. Every rank builds the SAME ``DecoderModel`` from
 the same CPU seed (deterministic init), then rank-slices it in place; a
 forward with dropout disabled must produce bit-comparable logits, a single
@@ -120,7 +120,7 @@ def _gather_tp_grads(model) -> dict[str, torch.Tensor]:
     Mirrors the checkpoint gather (``_TPState.gather_full_state_dict``): the
     fused-QKV column shards are stored in local [q,k,v]-block order and must
     be scattered back into the full q/k/v blocks via ``full_index``; MoE
-    expert-parallel shards (TASK-207) are rebuilt rank-major by global expert
+    expert-parallel shards are rebuilt rank-major by global expert
     index (dead local experts contribute zero).
     """
     tp = model._tp
@@ -289,7 +289,7 @@ def test_tp_forward_grad_checkpoint_parity_two_gpu():
 def _flash_parity_worker(
     rank: int, world_size: int, device_indices: list[int], results, use_rope: bool, num_kv_heads: int | None
 ) -> None:
-    """FlashAttention TP parity (TASK-204 slice).
+    """FlashAttention TP parity (slice).
 
     The TP transform extends to ``attn_impl='flash_attn'`` because it shares
     MHA's projection surface (fused QKV column-parallel over heads + row
@@ -426,7 +426,7 @@ def test_tp_flash_attn_gqa_parity_two_gpu():
 
 
 def _mla_parity_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
-    """MultiLatentAttention TP parity (TASK-206, TASK-204 mla leg).
+    """MultiLatentAttention TP parity (mla leg).
 
     MLA has a different head-slicing surface than the fused-QKV backends:
     latent_q_proj / latent_output_proj are column over hidden, input_kv_proj
@@ -622,7 +622,7 @@ def test_tp_wrap_engine_path_roundtrip_two_gpu():
 
 
 def _parity_2d_worker(rank: int, world_size: int, device_indices: list[int], results, tp_size: int) -> None:
-    """TP + data-parallel 2D (TASK-202): tp_size x dp_size grid on ``world_size`` GPUs.
+    """TP + data-parallel 2D: tp_size x dp_size grid on ``world_size`` GPUs.
 
     Every rank builds the same full model (one CPU seed), wraps it with
     ``wrap_model_for_training(tp, tp_size=world_size//2)`` and compares
@@ -959,7 +959,7 @@ def test_tp_rejects_tp_size_not_dividing_world():
 
 
 def test_tp_mla_and_moe_scope_boundary(monkeypatch):
-    """TP scope after the MLA + MoE slices (TASK-206 / TASK-207): MLA is
+    """TP scope after the MLA + MoE slices: MLA is
     accepted (its latent layout is head-sliced by the dedicated branch) and MoE
     is accepted (expert parallelism — replicated gate + rank-local experts).
     Only a num_experts that fails to divide evenly is rejected. The scope
@@ -1050,7 +1050,7 @@ def test_three_d_layout_resolver():
     """DP + PP + TP 3D rank-layout math (row-major [DP][PP][TP], rank injectable).
 
     Rank = ((dp_rank * pp_size) + pp_rank) * tp_size + tp_rank, so every rank
-    maps to exactly one grid point (TASK-215 / DEC-052).
+    maps to exactly one grid point.
     """
     from llm.training.distributed import three_d_layout
 
@@ -1084,7 +1084,7 @@ def test_three_d_layout_resolver():
 
 def test_three_d_groups_bijection_and_contiguity():
     """3D group membership tables: one group per family per rank, contiguous
-    TP/PP runs and strided DP columns (TASK-215).
+    TP/PP runs and strided DP columns.
     """
     from llm.training.distributed import three_d_groups
 
@@ -1119,7 +1119,7 @@ def test_three_d_groups_bijection_and_contiguity():
 
 def test_three_d_rank_groups_selection():
     """Per-rank group membership: every 3D coordinate maps to the correct
-    tp/pp/dp group it belongs to (TASK-216 groundwork, no live group needed).
+    tp/pp/dp group it belongs to (groundwork, no live group needed).
     """
     from llm.training.distributed import three_d_rank_groups
 
@@ -1146,7 +1146,7 @@ def test_three_d_rank_groups_selection():
 
 
 def _moe_roundtrip_worker(rank: int, world_size: int, results) -> None:
-    """MoE expert-parallel checkpoint boundary on CPU (gloo, TASK-207)."""
+    """MoE expert-parallel checkpoint boundary on CPU (gloo)."""
     try:
         dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
         dev = torch.device("cpu")
@@ -1213,7 +1213,7 @@ def _moe_roundtrip_worker(rank: int, world_size: int, results) -> None:
 
 
 def _moe_dead_rank_worker(rank: int, world_size: int, results) -> None:
-    """Backward with a rank that routes NO token to any local expert (TASK-207).
+    """Backward with a rank that routes NO token to any local expert.
 
     A single token with top_k=1 hits exactly ONE expert globally, so exactly
     one rank's local experts receive zero routed tokens. That rank must still
@@ -1277,7 +1277,7 @@ def test_tp_moe_state_dict_roundtrip_cpu():
     Each rank holds a DISJOINT expert subset and a replicated full gate; the
     gathered full dict must equal the reference bit-for-bit (this is what
     ``llm serve`` / resume rely on) and loading it back must leave the TP
-    forward unchanged (TASK-207).
+    forward unchanged.
     """
     _setup_tp_env()
     manager = mp.Manager()
@@ -1296,7 +1296,7 @@ def test_tp_moe_state_dict_roundtrip_cpu():
 
 
 def _moe_parity_worker(rank: int, world_size: int, device_indices: list[int], results) -> None:
-    """MoE expert-parallel forward / gradient / checkpoint parity (TASK-207).
+    """MoE expert-parallel forward / gradient / checkpoint parity.
 
     The EP forward restructures the dense MoE sum (masked per-local-expert
     ``index_add_`` + an all-reduce instead of the dense token loop), so
@@ -1372,12 +1372,12 @@ def _moe_parity_worker(rank: int, world_size: int, device_indices: list[int], re
 def test_tp_moe_forward_grad_checkpoint_parity_two_gpu():
     """MoE expert-parallel parity vs a full reference: forward, gradients
     (incl. the replicated gate + expert shards), and the full-state-dict
-    gather/scatter boundary (2 GPUs, TASK-207)."""
+    gather/scatter boundary (2 GPUs)."""
     _run_spawn_parity(_moe_parity_worker, world_size=2)
 
 
 def _clip_global_worker(rank: int, world_size: int, results) -> None:
-    """Global-norm clip parity (RIL ISS-253): every rank clips by the FULL
+    """Global-norm clip parity: every rank clips by the FULL
     model norm, not its own shard's local norm."""
     try:
         dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
@@ -1458,7 +1458,7 @@ def test_clip_grad_norm_tp_global_norm_over_two_ranks():
 
 
 def _stage0_tp_forward_worker(rank: int, world_size: int, results) -> None:
-    """Stage-aware TP parity (RIL TASK-216 / DEC-053 blocker (b), gloo/CPU).
+    """Stage-aware TP parity (blocker (b), gloo/CPU).
 
     Stage 0 of a 2-stage pipeline (embedding + first half of the blocks) is
     tensor-parallelised in place via the monolithic-transform proxy, and its

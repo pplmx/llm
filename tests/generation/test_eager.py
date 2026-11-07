@@ -155,7 +155,7 @@ def test_mask_pad_logits_skips_when_pad_equals_eos():
     """``pad_token_id == eos_token_id`` (GPT-2/Qwen2.5 HF tokenizers, and the
     ``HFTokenizer`` pad fallback) must NOT be masked — masking it sets the EOS
     logit to ``-inf`` at every decode step, so EOS can never be sampled and
-    generation runs to ``max_new_tokens`` (RIL ISS-379)."""
+    generation runs to ``max_new_tokens``."""
     logits = torch.zeros(12)
     _mask_pad_logits(logits, pad_token_id=5, eos_token_id=5)
     assert logits[5].item() != float("-inf")
@@ -598,7 +598,7 @@ class _SmallVocabDecoder:
 
 
 def test_stream_generate_masks_undecodable_tail_vocab(tiny_model):
-    """RIL ISS-125: a model whose vocab exceeds the tokenizer's must not
+    """a model whose vocab exceeds the tokenizer's must not
     sample a token the tokenizer cannot decode.
 
     ``sample_next_token`` returns any id in ``[0, model_vocab)``; with a
@@ -636,7 +636,7 @@ def test_stream_generate_masks_undecodable_tail_vocab(tiny_model):
 
 
 def test_batch_generate_masks_undecodable_tail_vocab(tiny_model):
-    """RIL ISS-125 on the batched path: the ``[B, vocab]`` next-token logits
+    """on the batched path: the ``[B, vocab]`` next-token logits
     are masked too, so a padded-vocab decode never raises ``KeyError``."""
     bs, seq, vocab = 2, 1, 100  # two prompts, 100-wide model vocab
     logits = torch.full((bs, seq, vocab), -1.0)
@@ -766,8 +766,7 @@ def test_stream_generate_halts_on_eos_and_excludes_it(tiny_model):
 def test_stream_generate_keeps_eos_emittable_when_pad_equals_eos(tiny_model):
     """pad==eos (GPT-2/Qwen2.5-style) must keep the shared logit reachable:
     the per-step pad mask must not ``-inf`` the EOS id, or generation can
-    never halt on EOS and every request runs to ``max_new_tokens`` (RIL
-    ISS-379).``"""
+    never halt on EOS and every request runs to ``max_new_tokens``.``"""
 
     # tokenizer with pad == eos == 5 ('f')
     class _PadEqEos(_CharTokenizer):
@@ -803,7 +802,7 @@ def test_stream_generate_halts_on_list_eos_token_id(tiny_model):
     Regression: the backends compared ``token_id == eos_id``, and an int is
     never equal to a list — generation ran to ``max_new_tokens`` with the EOS
     token (and any post-EOS junk) in the output. Same shape ``_normalize_eos_ids``
-    guards in the RLHF trainer (RIL ISS-116/334).
+    guards in the RLHF trainer.
     """
     tok = _make_eos_tokenizer(eos_id=[5, 6])  # id 5 ('f') and 6 ('g') both EOS
     call = {"n": 0}
@@ -874,7 +873,7 @@ def test_batch_generate_halts_on_eos_and_excludes_it(tiny_model):
 
 
 def test_batch_generate_halts_loop_when_all_rows_eos(tiny_model):
-    """RIL ISS-409: the decode loop halts the moment every row has emitted
+    """the decode loop halts the moment every row has emitted
     EOS. Previously each row decoded through all ``max_new_tokens`` steps —
     up to ``max_new_tokens`` x the necessary forward work — and the post-EOS
     junk was only cut AFTER the loop."""
@@ -1221,7 +1220,7 @@ def test_batch_generate_no_stop_returns_full(tiny_model):
 
 
 # ---------------------------------------------------------------------------
-# batch_generate — left-pad attention mask (RIL ISS-070)
+# batch_generate — left-pad attention mask
 # ---------------------------------------------------------------------------
 
 
@@ -1275,7 +1274,7 @@ class _PadAwareTokenizer:
 
 
 def test_batch_generate_left_pad_attention_mask(mask_recording_model):
-    """BUG (RIL ISS-070): ``batch_generate`` left-pads unequal-length prompts
+    """BUG: ``batch_generate`` left-pads unequal-length prompts
     but passed NO attention mask, so the left-pad token embeddings (real
     embeddings under a causal mask) leaked into attention during the prefill
     AND stayed in the KV cache for every decode step — silently diverging
@@ -1332,8 +1331,8 @@ def test_batch_generate_left_pad_attention_mask(mask_recording_model):
 
 def test_reject_negative_max_new_tokens_batch_generate(tiny_model):
     """``batch_generate`` must reject a negative ``max_new_tokens`` up front
-    (RIL ISS-389) instead of dying with an opaque ``zeros()`` RuntimeError
-    deep in the decode loop."""
+    instead of dying with an opaque ``zeros()`` RuntimeError
+        deep in the decode loop."""
     from llm.generation.eager import _reject_impossible_context
 
     with pytest.raises(ValueError, match=">= 0"):
@@ -1343,14 +1342,14 @@ def test_reject_negative_max_new_tokens_batch_generate(tiny_model):
 
 
 def test_reject_negative_max_new_tokens_generate(tiny_model):
-    """``generate`` must reject a negative ``max_new_tokens`` (RIL ISS-389) —
+    """``generate`` must reject a negative ``max_new_tokens`` —
     it previously returned the bare prompt without generating anything."""
     with pytest.raises(ValueError, match=">= 0"):
         generate(tiny_model, _CharTokenizer(), "hello", max_new_tokens=-1)
 
 
 def test_batch_generate_use_cache_false(tiny_model):
-    """``batch_generate`` must honor ``use_cache=False`` (RIL ISS-392) — the
+    """``batch_generate`` must honor ``use_cache=False`` — the
     knob was hardcoded to ``use_cache=True`` on the batched path while
     ``stream_generate`` honored it, so an identical ``GenerationConfig``
     behaved differently by backend. The no-cache path rebuilds the full

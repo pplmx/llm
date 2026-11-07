@@ -511,7 +511,7 @@ def test_mha_paged_kv_cache_requires_layer_idx_and_batch_indices():
         mha(x, paged_kv_cache=paged, layer_idx=0, batch_indices=None)
 
 
-# --- RoPE wiring (RIL ISS-062) -----------------------------------------------
+# --- RoPE wiring -----------------------------------------------
 
 
 def test_mha_rope_requires_max_seq_len():
@@ -530,8 +530,8 @@ def test_mha_rope_requires_max_seq_len():
 
 def test_mha_rope_wires_rotary_module():
     """A ``use_rope=True`` MHA must own a :class:`RotaryPositionEmbedding`
-    and a non-RoPE one must not. ``core.rope`` previously had zero callers
-    (RIL ISS-062)."""
+    and a non-RoPE one must not. ``core.rope`` previously had zero callers.
+    """
     rope_mha = MultiHeadAttention(
         hidden_size=16,
         num_heads=2,
@@ -598,7 +598,7 @@ def test_mha_rope_accepts_tensor_start_pos():
     ``_rope_positions`` used to evaluate ``start_pos == 0`` (an int-only
     guard) BEFORE the tensor type check — on a ``[B, S]`` tensor that raises
     ``Boolean value of Tensor with more than one element is ambiguous``, so
-    every batched request for a RoPE model returned 500 (RIL ISS-112).
+    every batched request for a RoPE model returned 500.
     """
     torch.manual_seed(0)
     mha = MultiHeadAttention(

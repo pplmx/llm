@@ -530,7 +530,7 @@ def test_batch_generate_zero_new_tokens_with_stop(tiny_model, device):  # noqa: 
     The stop-decode loop walks only *generated* tokens, so a zero-token budget
     leaves nothing to iterate and ``generated_part`` must default to "" (the
     prompt text only) — matching ``stream_generate``. Previously this path
-    raised ``UnboundLocalError`` (RIL round-154 finding).
+    raised ``UnboundLocalError`` (finding).
     """
     from llm.generation.eager import batch_generate
 

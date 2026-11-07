@@ -70,7 +70,7 @@ def test_module_imports_cleanly():
     assert isinstance(HF_HUB_AVAILABLE, bool)
 
 
-# --- Quantized-model dtype sniffing (RIL ISS-198) --------------------------
+# --- Quantized-model dtype sniffing --------------------------
 
 
 def test_model_weight_dtype_dense_uses_lm_head():
@@ -80,7 +80,7 @@ def test_model_weight_dtype_dense_uses_lm_head():
 
 
 def test_model_weight_dtype_quantized_falls_back_to_embedding():
-    """Regression (RIL ISS-198): a PTQ-quantized model replaces ``lm_head``
+    """Regression: a PTQ-quantized model replaces ``lm_head``
     (and every Linear) with :class:`QuantizedLinear`, which stores integer
     ``weight_quantized`` buffers — the old ``lm_head.weight.dtype`` sniff
     raised ``AttributeError``. The helper must fall back to the never-
@@ -96,7 +96,7 @@ def test_model_weight_dtype_quantized_falls_back_to_embedding():
 
 
 def test_save_pretrained_config_builds_for_quantized_model_no_crash():
-    """Regression (RIL ISS-198): ``_build_hf_config`` must not crash on a
+    """Regression: ``_build_hf_config`` must not crash on a
     quantized model — the ``torch_dtype`` field is derived defensively and
     the full config payload comes out JSON-ready."""
     from llm.quantization import QuantConfig, quantize_model
@@ -275,7 +275,7 @@ def _make_non_glu_decoder() -> torch.nn.Module:
 
     The default model's MLP has only ``fc1`` (activated) + ``fc2`` — no
     ``gate_proj``. An earlier save->load roundtrip silently broke for this
-    configuration (RIL ISS-056): the publisher emitted ``mlp.up_proj`` from
+    configuration: the publisher emitted ``mlp.up_proj`` from
     the (nonexistent) ``mlp.gate_proj``, so the artifact was missing
     ``up_proj``; then the loader rebuilt a GLU MLP (hardcoded
     ``use_glu=True``) and left every ``gate_proj`` at random init.
@@ -300,7 +300,7 @@ def _make_non_glu_decoder() -> torch.nn.Module:
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_learned_pos_encoding(tmp_path: Path):
-    """Regression (RIL ISS-063): a ``pos_encoding_learned=True`` model must
+    """Regression: a ``pos_encoding_learned=True`` model must
     roundtrip save->load preserving its trained positional-encoding weights.
 
     The trained ``pos_embedding.weight`` had no weight-mapping entry so it was
@@ -349,7 +349,7 @@ def test_save_pretrained_roundtrip_learned_pos_encoding(tmp_path: Path):
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_rms_norm(tmp_path: Path):
-    """Regression (RIL ISS-062): ``norm_impl='rms_norm'`` must roundtrip
+    """Regression: ``norm_impl='rms_norm'`` must roundtrip
     save->load with the same normalization, not silently become LayerNorm.
 
     The loader/build never persisted nor honored ``norm_impl``, so an
@@ -392,7 +392,7 @@ def test_save_pretrained_roundtrip_rms_norm(tmp_path: Path):
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_norm_first(tmp_path: Path):
-    """Regression (RIL ISS-072): ``norm_first=False`` (post-LN) must roundtrip
+    """Regression: ``norm_first=False`` (post-LN) must roundtrip
     save->load preserving post-LN — not silently rebuild as pre-LN.
 
     Neither the publisher nor the loader persisted ``norm_first``, so a
@@ -436,7 +436,7 @@ def test_save_pretrained_roundtrip_norm_first(tmp_path: Path):
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_rope(tmp_path: Path):
-    """Regression (RIL ISS-062): a RoPE model must roundtrip save->load
+    """Regression: a RoPE model must roundtrip save->load
     with the same rotary position embedding — not silently become a
     non-RoPE model (or vice versa).
 
@@ -487,7 +487,7 @@ def test_save_pretrained_roundtrip_rope(tmp_path: Path):
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_default_keeps_non_rope(tmp_path: Path):
-    """Roundtrip self-consistency (RIL ISS-062): a DEFAULT (non-RoPE) model
+    """Roundtrip self-consistency: a DEFAULT (non-RoPE) model
     must persist ``use_rope: false`` so the loader (which defaults missing
     ``use_rope`` to True for external checkpoints) does NOT rebuild it as a
     rotary model. Otherwise save->load would silently change the network."""
@@ -518,7 +518,7 @@ def test_save_pretrained_roundtrip_default_keeps_non_rope(tmp_path: Path):
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_persists_bias_flags(tmp_path: Path):
-    """Regression (RIL ISS-062): bias flags are model-defining. A biased
+    """Regression: bias flags are model-defining. A biased
     (repo-default) model must roundtrip with its biases, and a bias-free
     model must NOT silently gain random biases on load.
 
@@ -582,7 +582,7 @@ def test_save_pretrained_roundtrip_persists_bias_flags(tmp_path: Path):
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_default_non_glu_model(tmp_path: Path):
-    """Regression (RIL ISS-056): a DEFAULT (non-GLU) model must roundtrip
+    """Regression: a DEFAULT (non-GLU) model must roundtrip
     save->load with equivalent logits — not leave the MLP at random init."""
     from llm.models.decoder import DecoderModel
 
@@ -719,7 +719,7 @@ def test_module_exposes_save_and_push():
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_save_pretrained_roundtrip_mla(tmp_path: Path):
-    """Regression (RIL ISS-169): an ``attn_impl='mla'`` model must roundtrip
+    """Regression: an ``attn_impl='mla'`` model must roundtrip
     through save_pretrained/from_pretrained AS MLA — not silently rebuild as
     MHA with every MLA tensor (latents / latent_*_proj / input_kv_proj)
     dropped by ``load_state_dict(strict=False)`` (garbage output)."""
@@ -765,7 +765,7 @@ def test_save_pretrained_roundtrip_mla(tmp_path: Path):
 
 @pytest.mark.skipif(not SAFETENSORS_AVAILABLE, reason="safetensors not installed")
 def test_from_pretrained_refuses_mla_weights_into_mha(tmp_path: Path):
-    """Regression (RIL ISS-169): an MLA checkpoint whose ``attn_impl`` was NOT
+    """Regression: an MLA checkpoint whose ``attn_impl`` was NOT
     persisted must be refused loudly instead of silently rebuilding as MHA
     with the MLA tensors dropped at random init."""
     from llm.models.decoder import DecoderModel

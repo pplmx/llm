@@ -115,14 +115,14 @@ def test_dpo_dataset_truncation(tmp_path, tokenizer):
 
 def test_dpo_dataset_truncation_keeps_completion_tail(tmp_path, tokenizer):
     """Truncation drops the PROMPT PREFIX, preserving the supervised
-    completion (RIL ISS-332).
+        completion.
 
-    The old ``[:max_seq_len]`` cut the completion tail — where chosen/rejected
-    usually diverge — so the preference signal was truncated away. The kept
-    tokens must be the END of prompt+completion with live labels. The
-    completion stays SHORTER than the window (so at least one prompt context
-    token survives); a completion that ALONE reaches max_seq_len is dropped
-    (RIL ISS-345) rather than kept with zero conditioning context.
+        The old ``[:max_seq_len]`` cut the completion tail — where chosen/rejected
+        usually diverge — so the preference signal was truncated away. The kept
+        tokens must be the END of prompt+completion with live labels. The
+        completion stays SHORTER than the window (so at least one prompt context
+        token survives); a completion that ALONE reaches max_seq_len is dropped
+    rather than kept with zero conditioning context.
     """
     file_path = tmp_path / "truncate.jsonl"
     with file_path.open("w") as f:
@@ -146,8 +146,8 @@ def test_dpo_dataset_truncation_keeps_completion_tail(tmp_path, tokenizer):
 
 def test_dpo_dataset_skips_non_dict_rows(tmp_path, tokenizer):
     """A scalar JSON row (bare int/string) must be skipped, not crash dataset
-    construction with a raw TypeError/AttributeError (RIL ISS-381; SFT fixed
-    the same class at ISS-336)."""
+    construction with a raw TypeError/AttributeError (SFT fixed
+    the same class at)."""
     file_path = tmp_path / "non_dict.jsonl"
     with file_path.open("w") as f:
         f.write('{"prompt": "Q:", "chosen": "Good", "rejected": "Bad"}\n')
@@ -162,8 +162,7 @@ def test_dpo_dataset_skips_non_dict_rows(tmp_path, tokenizer):
 
 
 def test_dpo_dataset_pair_shared_truncation(tmp_path, tokenizer):
-    """Chosen and rejected must be conditioned on the SAME prompt suffix (RIL
-    ISS-382). The old per-side ``input_ids[-max_seq_len:]`` truncated the
+    """Chosen and rejected must be conditioned on the SAME prompt suffix. The old per-side ``input_ids[-max_seq_len:]`` truncated the
     longer side independently, so when chosen overflowed but rejected did
     not, chosen was scored under a truncated prompt while rejected kept the
     full one — a corrupted, imbalanced preference signal.
@@ -199,7 +198,7 @@ def test_dpo_dataset_pair_shared_truncation(tmp_path, tokenizer):
 
 
 def test_dpo_dataset_drops_pair_when_completion_over_window(tmp_path, tokenizer, caplog):
-    """Regression (RIL ISS-345): a pair whose completion ALONE reaches
+    """Regression: a pair whose completion ALONE reaches
     max_seq_len is dropped as a unit, not silently kept.
 
     Front-truncation on such a row removes the ENTIRE prompt (zero -100 context
@@ -217,7 +216,7 @@ def test_dpo_dataset_drops_pair_when_completion_over_window(tmp_path, tokenizer,
         dataset = DPODataset(file_path=file_path, tokenizer=tokenizer, max_seq_len=20)
 
     # Only the healthy pair survives; both over-window pairs are dropped even
-    # when a single side overflows (pair symmetry, RIL ISS-345).
+    # when a single side overflows (pair symmetry).
     assert len(dataset) == 1
     assert any("completion alone" in message for message in caplog.messages)
 
@@ -238,7 +237,7 @@ def test_dpo_dataset_padding_small_sequence(tmp_path, tokenizer):
     prompt_ids = tokenizer.encode("X")
     chosen_ids = tokenizer.encode("Y")
     seq_len = len(prompt_ids) + len(chosen_ids)
-    # Padding uses the tokenizer's real pad id (RIL ISS-337): the old hardcoded
+    # Padding uses the tokenizer's real pad id: the old hardcoded
     # ``padding_value=0`` padded with an arbitrary id here (pad_token_id=100).
     pad_id = tokenizer.pad_token_id
     assert item["chosen_input_ids"][seq_len:].tolist() == [pad_id] * (10 - seq_len)
@@ -248,7 +247,7 @@ def test_dpo_dataset_padding_small_sequence(tmp_path, tokenizer):
 
 def test_dpo_dataset_empty_completion_dropped(tmp_path, tokenizer):
     """An empty chosen/rejected completion yields all-(-100) labels (constant
-    log(2) in the DPO loss) — the row must be dropped at load (RIL ISS-336)."""
+    log(2) in the DPO loss) — the row must be dropped at load."""
     file_path = tmp_path / "empty_completion.jsonl"
     with file_path.open("w") as f:
         f.write('{"prompt": "Q", "chosen": "", "rejected": "Bad"}\n')
@@ -283,7 +282,7 @@ def test_dpo_dataset_directory_as_file(tmp_path, tokenizer):
 
 
 def test_dpo_dataset_rejects_nonpositive_max_seq_len(tmp_path, tokenizer):
-    """RIL ISS-199: a non-positive ``max_seq_len`` fails fast instead of
+    """a non-positive ``max_seq_len`` fails fast instead of
     silently truncating ids and misaligning attention_mask against
     input_ids."""
     fp = tmp_path / "x.jsonl"

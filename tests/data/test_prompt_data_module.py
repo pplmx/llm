@@ -124,7 +124,7 @@ def test_prompt_module_val_dataloader_returns_loader(tmp_path):
 
 
 def test_prompt_module_empty_train_sampler_raises(tmp_path):
-    """RIL TASK-323: a world_size > len(train_dataset) run with drop_last=True
+    """a world_size > len(train_dataset) run with drop_last=True
     gives EVERY rank a zero-sample sampler, so the engine would silently train
     whole epochs on nothing and score them 0.0. PromptDataModule overrides
     train_dataloader and must carry the same loud guard as SamplerMapDataModule

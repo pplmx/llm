@@ -64,7 +64,7 @@ class TestPromptDataset:
 
     def test_skips_non_dict_scalar_rows(self, tmp_path):
         """A scalar JSON row (bare int/string) must be skipped, not crash with
-        a raw AttributeError on ``item.get`` (RIL ISS-381)."""
+        a raw AttributeError on ``item.get``."""
         data_path = tmp_path / "prompts.jsonl"
         with data_path.open("w", encoding="utf-8") as f:
             for line in [
@@ -103,8 +103,8 @@ class TestPromptDataset:
 
     def test_malformed_row_raises_value_error_naming_file(self, tmp_path):
         """A malformed JSONL row must surface as a ValueError naming the file
-        (aligned with the SFT/DPO/Reward datasets, RIL ISS-201), not a raw
-        JSONDecodeError (round-78 TASK-193 / ISS-231)."""
+        (aligned with the SFT/DPO/Reward datasets), not a raw
+        JSONDecodeError."""
         data_path = tmp_path / "broken.jsonl"
         data_path.write_text('{"prompt": "ok"}\n{"broken}\n', encoding="utf-8")
         with pytest.raises(ValueError, match="Invalid JSON in prompt file"):

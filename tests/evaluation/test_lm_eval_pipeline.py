@@ -383,8 +383,8 @@ class _FakeRequest:
 
 class _HfLikeTokenizer:
     """Mimics transformers' default decode: special tokens (id 9) are SKIPPED,
-    so ``decode([eos_id]) == \"\"`` — the exact shape that defeated the
-    ISS-049 decoded-string EOS stop (round-73 FINDING 6 / ISS-226)."""
+       so ``decode([eos_id]) == \"\"`` — the exact shape that defeated the
+    decoded-string EOS stop (FINDING 6)."""
 
     eos_token_id = 9
     pad_token_id = 0
@@ -463,7 +463,7 @@ def test_lm_eval_lm_loglikelihood_batches_requests():
 
 
 def test_lm_eval_lm_loglikelihood_continuation_longer_than_max_length():
-    """Regression (RIL ISS-050): a continuation longer than ``max_length``
+    """Regression: a continuation longer than ``max_length``
     must not overflow the truncated slice.
 
     When the continuation alone exceeds ``max_length``, ``full`` keeps only
@@ -513,7 +513,7 @@ def test_lm_eval_lm_loglikelihood_rolling_returns_list_of_floats():
 
 
 def test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc():
-    """RIL ISS-128: rolling perplexity must score the WHOLE document, not just
+    """rolling perplexity must score the WHOLE document, not just
     the first ``max_length`` tokens.
 
     lm_eval's downstream word-perplexity divides the returned log-likelihood
@@ -566,7 +566,7 @@ def test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc():
 
 
 def test_lm_eval_lm_loglikelihood_rolling_covers_final_token_at_boundary():
-    """RIL ISS-193: a window boundary landing exactly on ``len(ids) - 1`` must
+    """a window boundary landing exactly on ``len(ids) - 1`` must
     not drop the final token.
 
     With ``max_length == 64`` a 65-token doc is exactly the old break condition
@@ -607,12 +607,12 @@ def test_lm_eval_lm_loglikelihood_rolling_covers_final_token_at_boundary():
     assert total == pytest.approx(expected, rel=1e-4), (
         f"rolling sum {total:.4f} != {expected:.4f}: the final token of a "
         "65-token doc (L == 2 mod (max_length-1)) must be scored, not dropped "
-        "(RIL ISS-193)"
+        " "
     )
 
 
 def test_lm_eval_lm_strip_stops_cuts_at_earliest_occurrence():
-    """RIL ISS-194: ``_strip_stop_strings`` must cut at the EARLIEST string
+    """``_strip_stop_strings`` must cut at the EARLIEST string
     stop in the text, not the first stop in list order.
 
     lm_eval's canonical ``postprocess_generated_text`` takes ``min`` over
@@ -657,7 +657,7 @@ def test_lm_eval_lm_generate_until_stops_on_until_token():
 
 
 def test_lm_eval_lm_generate_until_strips_token_id_stop():
-    """Regression (RIL ISS-106, sibling of the string-stop strip): an
+    """Regression (sibling of the string-stop strip): an
     ``until`` *token-id sequence* must be cut from the returned generation
     the same way the string path is.
 
@@ -676,12 +676,12 @@ def test_lm_eval_lm_generate_until_strips_token_id_stop():
 
 
 def test_lm_eval_lm_generate_until_stops_on_hf_eos_token():
-    """RIL ISS-226: an HF-style tokenizer whose ``decode([eos_id])`` returns
+    """an HF-style tokenizer whose ``decode([eos_id])`` returns
     \"\" must still halt generation the moment the model emits EOS.
 
     A decoded-string EOS stop can't fire for such a tokenizer (special tokens
     are skipped on decode, so ``eos_str == \"\"``), and generation used to
-    over-run to ``max_gen_toks`` past the EOS — the very ISS-049 regression
+    over-run to ``max_gen_toks`` past the EOS — the very regression
     the string guard intended to solve. The EOS is now also registered as a
     token-id-sequence stop, which is token-precise and decode-independent.
     """
@@ -699,7 +699,7 @@ def test_lm_eval_lm_generate_until_stops_on_hf_eos_token():
 
 
 def test_lm_eval_lm_generate_until_stops_on_string_until():
-    """Regression (RIL ISS-049): lm_eval passes ``until`` as a list of
+    """Regression: lm_eval passes ``until`` as a list of
     *strings* for essentially all generation tasks, so ``generate_until``
     must stop when the *decoded* generated text ends with a string stop —
     not silently generate the full ``max_gen_toks`` (which then includes
@@ -743,7 +743,7 @@ def test_lm_eval_lm_generate_until_auto_appends_and_strips_eos():
 
 
 def test_lm_eval_lm_generate_until_accepts_scalar_string_until():
-    """RIL ISS-132: ``until`` may be a scalar string (a task YAML writes
+    """``until`` may be a scalar string (a task YAML writes
     ``until: "bc"``), not only a list. A bare ``list("bc")`` split the
     multi-char scalar into per-character stops, so ``_strip_stop_strings``
     trimmed at the FIRST occurrence of any single char anywhere in the

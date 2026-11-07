@@ -43,7 +43,7 @@ def paged_attention_forward(
             query length so a decode row's single query lives at local index
             0, and the causal overlay (which is only meaningful for prefill
             rows with multiple query tokens) must not mask a decode row's
-            full context (RIL ISS-048). When ``None`` (direct tests /
+            full context. When ``None`` (direct tests /
             deprecated callers), the overlay applies to every row whenever
             ``query_len > 1``, mirroring the historical behaviour.
 
@@ -122,7 +122,7 @@ def paged_attention_forward(
         # the batch-max query length, so a decode row's single real query sits
         # at local index 0 with padding after it; applying the overlay to that
         # row masks every key > 0, collapsing decode attention onto key 0 and
-        # producing garbage output (RIL ISS-048). Gate the overlay per-row on
+        # producing garbage output. Gate the overlay per-row on
         # having more than one real query token.
         if query_lens is not None:
             prefill_rows = query_lens.reshape(-1, 1, 1, 1) > 1  # [B, 1, 1, 1]

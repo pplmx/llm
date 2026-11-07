@@ -79,7 +79,7 @@ class TestWriterHeader:
             GGUFWriter("x.gguf", version=99)
 
     def test_sub32_alignment_rejected(self):
-        """Regression (RIL ISS-059): alignment < 32 (the GGUF tensor-data
+        """Regression: alignment < 32 (the GGUF tensor-data
         floor) must be rejected at construction.
 
         The writer computes ``data_start`` with its custom ``alignment`` but
@@ -165,7 +165,7 @@ class TestTensorRoundTrip:
         18/34 bytes), NOT scales-then-data. llama.cpp casts the payload to
         ``block_q4_0*``/``block_q8_0*`` and walks fixed-size blocks, so a
         scales-first layout misaligns every block for the GGUF ecosystem
-        (RIL — regressed round 51)."""
+        (regressed)."""
         for type_name, quantize in (("q4_0", quantize_q4_0), ("q8_0", quantize_q8_0)):
             rng = np.random.default_rng(3)
             data = rng.normal(size=128).astype(np.float32)
@@ -230,7 +230,7 @@ class TestTensorRoundTrip:
             writer.add_tensor("w", np.zeros(32, dtype=np.int64), ggml_type="f16")
 
     def test_unsupported_type_raises(self):
-        # Q4_1 / Q5_0 are reader-supported but not exportable (round 75): the
+        # Q4_1 / Q5_0 are reader-supported but not exportable: the
         # writer must refuse them up front, naming the exportable set. (Q6_K is
         # exportable since the Q6_K write-path milestone, Q4_K since the Q4_K
         # write-path milestone, so neither belongs here.)
@@ -396,7 +396,7 @@ class TestCorruptFiles:
 
     def test_unsupported_tensor_type(self, tmp_path):
         # Q8_1 / IQ* are not understood by the v1 reader (deprecated upstream /
-        # grid-based); Q4_1 and the K-quants are now supported (round 75).
+        # grid-based); Q4_1 and the K-quants are now supported.
         head = _header() + _tensor_info(type_code=GGMLQuantizationType.Q8_1)
         path = tmp_path / "unsup_tt.gguf"
         path.write_bytes(_assemble(head))

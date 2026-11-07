@@ -232,7 +232,7 @@ class DedupTextSource(TextSource):
         # pass*, never lifetime-wide. Streaming pretraining cycles the
         # corpus until its step budget is met; a lifetime-scoped seen-set
         # would classify the whole corpus as duplicates on the second
-        # pass and raise "streaming corpus is empty" (RIL ISS-038).
+        # pass and raise "streaming corpus is empty".
         self._persisted: set[str] = set()
         # Hashes appended to ``seen_hashes_path`` during this session.
         # Tracks what we have already written so a corpus cycle does not
@@ -254,7 +254,7 @@ class DedupTextSource(TextSource):
         before ``steps_per_epoch``: without it, a corpus whose entire content
         was consumed and hashed in an earlier run would classify every record
         as already-seen on the *first* pass of the next run and raise
-        ``"streaming corpus is empty; nothing to train on"`` (RIL ISS-064).
+        ``"streaming corpus is empty; nothing to train on"``.
 
         ``_written`` is kept (hashes already persisted this session stay
         persisted); only the *baseline* used to seed per-pass ``seen`` is
@@ -266,13 +266,13 @@ class DedupTextSource(TextSource):
     def _should_persist_writes(self) -> bool:
         """True when this process may append hashes to the shared file.
 
-        Only rank 0 may write it: every DDP rank walks the *whole* raw corpus
-        (dedup happens before the dataset's per-rank sharding), so without
-        this guard each surviving digest is appended once per rank and the
-        file grows up to world_size times the corpus size (round-79
-        TASK-194 / ISS-233).  Rank 0 alone persists every record (it sees
-        them all too), and the other ranks keep deduping against the durable
-        file, so cross-run dedup is unchanged.
+                Only rank 0 may write it: every DDP rank walks the *whole* raw corpus
+                (dedup happens before the dataset's per-rank sharding), so without
+                this guard each surviving digest is appended once per rank and the
+                file grows up to world_size times the corpus size (
+        ).  Rank 0 alone persists every record (it sees
+                them all too), and the other ranks keep deduping against the durable
+                file, so cross-run dedup is unchanged.
         """
         if not self.write_seen_hashes:
             return False
@@ -303,7 +303,7 @@ class DedupTextSource(TextSource):
         #   pre-resume session exactly; otherwise a resumed pass re-processes
         #   the tail of the consumed window as fresh data and the streaming
         #   cursor (which counts survivors) diverges from the raw-record skip
-        #   (RIL ISS-088).
+        # .
         #
         # Dedup is scoped to this single pass: the seen-set is seeded
         # from the construction-time ``_persisted`` snapshot (cross-run

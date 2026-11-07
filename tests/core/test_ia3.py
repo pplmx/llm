@@ -209,7 +209,7 @@ class TestIA3LinearMerge:
         assert torch.allclose(base.weight, original_weight, atol=1e-5)
 
     def test_double_merge_is_idempotent_then_unmerge_restores(self):
-        """Regression (RIL ISS-159): a second ``merge_weights`` must not
+        """Regression: a second ``merge_weights`` must not
         clobber the unmerge snapshot (mirror of the LoRA/AdaLoRA fix).
         Re-snapshotting at ones makes the later ``unmerge_weights`` divide
         by ones — leaving the base permanently scaled with no error."""

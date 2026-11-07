@@ -107,7 +107,7 @@ def test_sft_task_build_criterion(tiny_config):
 
 def test_sft_task_is_pure_alias_of_language_modeling_task(tiny_config, tiny_model, device):
     """SFTTask must produce EXACTLY the parent's loss/metrics on the same
-    dict batch (RIL ISS-339): the old copies threaded attention_mask into
+    dict batch: the old copies threaded attention_mask into
     the model forward — a mask the flash_attn backend ignores and the PP
     scheduler drops — silently diverging by backend/strategy. With pure
     delegation the two classes are bit-for-bit identical.
@@ -132,7 +132,7 @@ def test_sft_task_is_pure_alias_of_language_modeling_task(tiny_config, tiny_mode
 
     # eval mode disables dropout, so both forwards are deterministic and the
     # bit-for-bit comparison is meaningful (two train-mode forwards differ by
-    # dropout noise — RIL ISS-174).
+    # dropout noise).
     tiny_model.eval()
     sft_loss, sft_metrics = sft_task.train_step(batch, tiny_model, criterion)
     lm_loss, lm_metrics = lm_task.train_step(batch, tiny_model, criterion)
@@ -149,7 +149,7 @@ def test_sft_task_is_pure_alias_of_language_modeling_task(tiny_config, tiny_mode
 
 def test_sft_task_rejects_length_one_sequences(tiny_config, tiny_model, device):
     """A degenerate (length-1) row must fail loudly like the parent, not be
-    silently swallowed as a 0.0 loss via the NaN guard (RIL ISS-339)."""
+    silently swallowed as a 0.0 loss via the NaN guard."""
     task = SFTTask(tiny_config, data_module=None)
     criterion = task.build_criterion()
 

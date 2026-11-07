@@ -51,7 +51,7 @@ EXPOSE 8000
 # so uvicorn must bind the SAME value the guard validates. Hardcoding
 # ``--host 0.0.0.0`` here while ``LLM_SERVING_HOST`` defaulted to 127.0.0.1
 # meant ``docker run -p 8000:8000 <image>`` served anonymous inference on
-# 0.0.0.0 — the guard saw a loopback config and never fired (RIL ISS-164).
+# 0.0.0.0 — the guard saw a loopback config and never fired.
 #
 # Defaulting to 0.0.0.0 now makes the OUT-OF-THE-BOX container fail CLOSED:
 # launching it without ``-e LLM_SERVING_API_KEY=...`` refuses to start with

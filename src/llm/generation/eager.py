@@ -25,7 +25,7 @@ def _mask_pad_logits(
     through the ``HFTokenizer`` fallback, and masking the shared id sets
     ``logits[eos] = -inf`` at every decode step — EOS can then never be
     sampled, so the halt branches below never fire and generation runs to
-    ``max_new_tokens`` (RIL ISS-379).
+    ``max_new_tokens``.
     """
     if pad_token_id is None:
         return
@@ -51,7 +51,7 @@ def _reject_impossible_context(max_seq_len: int | None, max_new_tokens: int) -> 
     ``ValueError`` so library callers fail fast with a clear message.
     """
     if max_new_tokens < 0:
-        # RIL ISS-389: ``batch_generate`` accepted a negative budget and died
+        # ``batch_generate`` accepted a negative budget and died
         # with an opaque ``zeros()`` RuntimeError; ``generate`` silently
         # returned the bare prompt. Reject it explicitly, like the serving
         # tier, so library callers fail fast instead of guessing.
@@ -120,7 +120,7 @@ def stream_generate(
         # A prompt that decodes to zero tokens (empty string, or a tokenizer
         # with no char for it) would reach ``logits[0, -1, :]`` with a
         # zero-length sequence and crash with an opaque IndexError — and a
-        # batch row never did the decode at all (round-71 empty-prompt fix).
+        # batch row never did the decode at all (empty-prompt fix).
         # The serving tier rejects an empty prompt up front; reject here too
         # for direct API callers.
         raise ValueError("prompt must decode to at least one token (got an empty token sequence)")
@@ -172,7 +172,7 @@ def stream_generate(
     max_stop_len = max((len(s) for s in stops), default=0) if stops else 0
     buffer = ""
     # Normalize to a tuple — HF tokenizers can expose ``eos_token_id`` as a
-    # list, and an int-vs-list equality never fires (RIL list-eos regression).
+    # list, and an int-vs-list equality never fires (list-eos regression).
     eos_ids = normalize_eos_ids(getattr(tokenizer, "eos_token_id", None))
 
     for _ in range(max_new_tokens):
@@ -322,8 +322,7 @@ def batch_generate(
         use_cache: Whether to use the KV cache across decode steps. The
             eager batch path used to hardcode ``True`` while
             ``stream_generate`` honored the knob — an identical
-            ``GenerationConfig`` behaved differently by backend (RIL
-            ISS-392). ``False`` rebuilds the full context each step.
+            ``GenerationConfig`` behaved differently by backend. ``False`` rebuilds the full context each step.
         stop: OpenAI-compat stop sequence(s). Generation for each
             sequence halts the moment the generated text (post-prompt)
             contains any stop string; the stop string itself is NOT
@@ -344,7 +343,7 @@ def batch_generate(
 
     # Encode all prompts. An empty row decodes to zero tokens and would either
     # crash the padded prefill or emit garbage (all-PAD prefill → arbitrary
-    # sampled token, round-71 empty-prompt fix) — reject it up front.
+    # sampled token empty-prompt fix) — reject it up front.
     encoded_prompts = [tokenizer.encode(p) for p in prompts]
     for i, ids in enumerate(encoded_prompts):
         if not ids:
@@ -382,7 +381,7 @@ def batch_generate(
     # pad-token embeddings under the (default) causal mask: without an
     # explicit mask the prefill forward attends over the pad K/V, AND those
     # pad columns stay in the KV cache for every decode step — silently
-    # diverging from the single-prompt path (RIL ISS-070).  We build one
+    # diverging from the single-prompt path.  We build one
     # mask sized to the full generation window and slice it per forward:
     # the prefill key length is ``max_prompt_len`` and each decode step t
     # grows the key length to ``max_prompt_len + t + 1``.  Generated columns
@@ -429,7 +428,7 @@ def batch_generate(
     # the whole loop halts as soon as every row has emitted EOS — the previous
     # code decoded every row through ALL ``max_new_tokens`` steps and only cut
     # the post-EOS tail afterwards, doing up to ``max_new_tokens`` x the
-    # necessary forward work when rows finish early (RIL ISS-409).
+    # necessary forward work when rows finish early.
     eos_ids = normalize_eos_ids(getattr(tokenizer, "eos_token_id", None))
     finished: list[bool] = [False] * batch_size
     n_finished = 0
@@ -484,7 +483,7 @@ def batch_generate(
         else:
             # Without cache, rebuild the FULL per-row context each step so
             # the no-cache batch path matches
-            # ``stream_generate(use_cache=False)`` (RIL ISS-392). The rows
+            # ``stream_generate(use_cache=False)``. The rows
             # must be reconstructed exactly as the prefill saw them —
             # left-pads + prompt + generated tokens — so the same
             # ``pad_mask`` still aligns (the left-pad columns are masked;

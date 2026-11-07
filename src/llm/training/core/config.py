@@ -39,7 +39,7 @@ class ModelConfig(BaseModel):
     # mapped by ``decoder_kwargs_from_config`` — without them a model built
     # with non-default flags (real Llama/Mistral: RoPE + bias-free) was
     # silently rebuilt with the defaults when served from a checkpoint,
-    # leaving architectural params at random init (RIL ISS-129).
+    # leaving architectural params at random init.
     pos_encoding_learned: bool = False
     mlp_activation: str = "gelu"
     norm_first: bool = True
@@ -50,7 +50,7 @@ class ModelConfig(BaseModel):
     rope_theta: float = 10000.0
     use_alibi: bool = False  # ALiBi linear-bias PE (BLOOM-style, mha backend only)
 
-    # Optional sparse / streaming attention scheme (ROADMAP 15.1/15.2, TASK-243).
+    # Optional sparse / streaming attention scheme (ROADMAP 15.1/15.2).
     # ``kind`` selects one of the dispatched builders (block_sparse / streaming /
     # longformer / bigbird); remaining keys are that builder's params. When set a
     # caller can build the mask via
@@ -100,7 +100,7 @@ class ModelConfig(BaseModel):
         # static-latent-query scheme performs no positional encoding, and its
         # ``**`` catch-all used to SILENTLY swallow ``use_rope=True`` — the
         # config validated, the model built, and the position encoding was
-        # simply absent (RIL ISS-140). Refuse loudly instead of running a
+        # simply absent. Refuse loudly instead of running a
         # silently wrong model.
         if self.use_rope and self.attn_impl not in ("mha", "flash_attn"):
             raise ValueError(
@@ -109,7 +109,7 @@ class ModelConfig(BaseModel):
                 f"attn_impl or set model.use_rope=False."
             )
         # ALiBi is mutually exclusive with RoPE and (in this milestone) only
-        # wired for the mha backend (RIL — ALiBi milestone).
+        # wired for the mha backend (ALiBi milestone).
         if self.use_alibi and self.use_rope:
             raise ValueError("use_alibi=True and use_rope=True are mutually exclusive position encodings")
         if self.use_alibi and self.attn_impl != "mha":
@@ -161,7 +161,7 @@ class TrainingConfig(BaseModel):
             "shouldn't run forever even if num_samples is large."
         ),
     )
-    # Periodic in-training evaluation (RIL TASK-329): a lightweight LM eval
+    # Periodic in-training evaluation: a lightweight LM eval
     # (perplexity/accuracy over a text corpus) fires every ``eval_interval``
     # optimizer steps. 0 = disabled (the default). Guarded by
     # ``build_periodic_eval_callback``: refuses collective-forward parallel
@@ -483,7 +483,7 @@ class TrainingConfig(BaseModel):
         ),
     )
 
-    # Quantization-Aware Training (QAT, ROADMAP 13.2 / RIL DEC-054). Optional.
+    # Quantization-Aware Training (QAT, ROADMAP 13.2). Optional.
     # When enabled, ``LanguageModelingTask.build_model`` wraps matching
     # ``nn.Linear`` layers in ``FakeQuantLinear`` so the forward fake-quantizes
     # (dynamic scale, straight-through estimator) while the full-precision
@@ -513,7 +513,7 @@ class TrainingConfig(BaseModel):
             raise ValueError(f"qat_bits must be 4 or 8, got {value}")
         return value
 
-    # Knowledge Distillation (ROADMAP 13.4 / RIL DEC-055). Consumed by the
+    # Knowledge Distillation (ROADMAP 13.4). Consumed by the
     # ``distill`` task; controls the Hinton-style KD loss.
     distill_temperature: float = Field(
         4.0,
@@ -536,7 +536,7 @@ class TrainingConfig(BaseModel):
         ),
     )
 
-    # GRPO (Group Relative Policy Optimization, ROADMAP 阶段十一 / RIL TASK-229).
+    # GRPO (Group Relative Policy Optimization, ROADMAP 阶段十一).
     grpo_clip_eps: float = Field(
         0.2,
         ge=0,
@@ -597,15 +597,15 @@ class DistributedConfig(BaseSettings):
         description=(
             "Parallel strategy: 'ddp' (default), 'fsdp', 'tp' (tensor parallelism, "
             "with optional tp_size < world_size for TP+data-parallel 2D), or 'pp' "
-            "(pipeline parallelism, RIL DEC-049/TASK-210, with optional "
-            "pp_size < world_size for PP+data-parallel 2D, RIL TASK-211). PP lays "
+            "(pipeline parallelism, with optional "
+            "pp_size < world_size for PP+data-parallel 2D). PP lays "
             "the world out as pipeline stages (one stage per rank) and only "
             "supports the standard-language-modeling loop: it refuses "
             "non-standard-loop tasks, AMP, torch.compile and TP+FSDP composition "
-            "with a clear error. '3d' (RIL DEC-052/TASK-216) composes pipeline + "
+            "with a clear error. '3d'composes pipeline + "
             "tensor parallelism (dp_size data-parallel size, dp=1 for pure PP+TP); "
             "it needs explicit dp_size*pp_size*tp_size == world_size and the "
-            "standard-loop LM contract. 'zero' (RIL TASK-269/DEC-097) runs native "
+            "standard-loop LM contract. 'zero'runs native "
             "ZeRO Stage-1: each rank holds full parameters/gradients (averaged "
             "over the world group each step) but partitions optimizer state "
             "~1/world_size, then all-gathers the updated weights so all ranks "
@@ -620,7 +620,7 @@ class DistributedConfig(BaseSettings):
             "Tensor-parallel size for parallel_strategy='tp'. A value of 0 "
             "means 'use world_size' (pure TP, one TP group = the whole world). "
             "A value less than world_size enables TP + data-parallel 2D "
-            "(TASK-202): ranks are laid out row-major as [DP][TP] - each TP "
+            "ranks are laid out row-major as [DP][TP] - each TP "
             "group is a contiguous world_size/tp_size-rank range that "
             "partitions the model in parallel over its own data-parallel "
             "shard, and the world_size/tp_size DP groups average gradients "
@@ -636,7 +636,7 @@ class DistributedConfig(BaseSettings):
             "Pipeline size for parallel_strategy='pp'. A value of 0 "
             "means 'use world_size' (pure PP, one pipeline group = the whole "
             "world). A value less than world_size enables PP + data-parallel "
-            "2D (TASK-211): ranks are laid out row-major as [DP][PP] - each "
+            "2D: ranks are laid out row-major as [DP][PP] - each "
             "pipeline group is a contiguous world_size/pp_size-rank range "
             "whose stage-to-stage P2P stays intranode-friendly, and the "
             "world_size/pp_size DP groups (strided columns holding the same "
@@ -648,9 +648,9 @@ class DistributedConfig(BaseSettings):
         1,
         ge=0,
         description=(
-            "Data-parallel size for parallel_strategy='3d' (RIL DEC-052/TASK-216). "
+            "Data-parallel size for parallel_strategy='3d'. "
             "1 (default) means pure pipeline+tensor parallel (no data-parallel "
-            "dimension); > 1 enables the full DP+PP+TP grid (TASK-217). "
+            "dimension); > 1 enables the full DP+PP+TP grid. "
             "world_size must equal dp_size * pp_size * tp_size."
         ),
     )
@@ -659,7 +659,7 @@ class DistributedConfig(BaseSettings):
         ge=1,
         description=(
             "Number of microbatches (chunks) the pipeline schedule splits "
-            "each training batch into (parallel_strategy='pp', TASK-213). "
+            "each training batch into (parallel_strategy='pp'). "
             "n_microbatches > 1 lets the ScheduleGPipe overlap stages "
             "(reducing bubbles) and shrinks activation memory per stage; the "
             "schedule normalizes the gradient by the microbatch count, so the "
@@ -677,7 +677,7 @@ class DistributedConfig(BaseSettings):
             "forever in a collective (all_reduce / barrier / FSDP ops) with "
             "no error — the job hangs instead of failing loudly. Lower it "
             "for fast fail-fast in tests; raises "
-            "torch.distributed.TimeoutError on lapse (RIL TASK-195/ISS-232)."
+            "torch.distributed.TimeoutError on lapse."
         ),
     )
 
@@ -720,7 +720,7 @@ class DistributedConfig(BaseSettings):
     def set_gpus_per_node(cls, v: int | None) -> int:
         # pydantic-settings feeds the raw env string into a ``mode="before"``
         # validator, so ``v`` is a ``str`` when set via ``GPUS_PER_NODE=2`` /
-        # ``LLM_DISTRIBUTED__GPUS_PER_NODE=2`` (round-76 deep-dive D3 — the
+        # ``LLM_DISTRIBUTED__GPUS_PER_NODE=2`` (deep-dive D3 — the
         # env-scaled path crashed with ``'>' not supported between str and
         # int`` before training); coerce before comparing.
         try:
@@ -816,7 +816,7 @@ class DataConfig(BaseModel):
     tokenizer_path: str | None = None  # Path to file (simple) or repo_id/path (hf)
     dataset_path: str | None = None
     val_dataset_path: str | None = None  # Optional explicit validation file
-    eval_dataset_path: str | None = None  # Explicit periodic-eval corpus (RIL TASK-329)
+    eval_dataset_path: str | None = None  # Explicit periodic-eval corpus
     dataset_name: str | None = None  # HuggingFace dataset id when data_source='hf'
     dataset_config: str | None = None
     dataset_split: str = "train"
@@ -824,7 +824,7 @@ class DataConfig(BaseModel):
     max_seq_len: int = Field(
         512,
         gt=0,
-        description="Context length each sample is truncated/padded to; must be positive (RIL ISS-199 — a non-positive value silently truncates ids and misaligns attention_mask).",
+        description="Context length each sample is truncated/padded to; must be positive (a non-positive value silently truncates ids and misaligns attention_mask).",
     )
     steps_per_epoch: int | None = Field(
         None,
@@ -838,7 +838,7 @@ class DataConfig(BaseModel):
             "its vocabulary) with a logged warning instead of aborting the "
             "run. The default character tokenizer is ASCII-only, so a real "
             "corpus almost always contains un-encodable rows; set False to "
-            "fail loud on the first such row (round-76 TASK-189)."
+            "fail loud on the first such row."
         ),
     )
 
@@ -924,7 +924,7 @@ class PPOConfig(BaseModel):
 
         ``rollout_batch_size`` and ``ref_model_update_freq`` are declared for
         API stability but have no implementation in PPOTrainer — setting them
-        silently does nothing, which is a configuration footgun (RIL ISS-334).
+        silently does nothing, which is a configuration footgun.
         """
         if self.rollout_batch_size != 16:
             raise ValueError(
@@ -988,7 +988,7 @@ class Config(BaseSettings):
         silently returned a default :class:`Config`, which silently
         disabled whatever the user asked for (e.g. running the distributed
         guide's ``--config-path configs/fsdp-pretrain.yaml`` actually fell
-        back to plain DDP). Fail fast instead (RIL TASK-291/ISS-320).
+        back to plain DDP). Fail fast instead.
 
         Raises:
             FileNotFoundError: if the config file does not exist.

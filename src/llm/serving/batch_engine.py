@@ -91,7 +91,7 @@ class _StepResult:
     #: penalty step failed (a row-local validation or undecodable-token
     #: error). Those rows are FINISHED + slot-released by post-compute while
     #: the healthy rows continue — a single malformed request must not
-    #: preempt every concurrent one on the shared step (RIL ISS-405).
+    #: preempt every concurrent one on the shared step.
     failed_rows: list[int] = field(default_factory=list)
 
 
@@ -287,8 +287,7 @@ class ContinuousBatchingEngine:
         # only guards the Python-side state machine. Future async refactors
         # should release this lock during the inner model forward.
         self._step_lock = threading.Lock()
-        # Cache for the served model's sparse/streaming pattern mask (RIL
-        # TASK-247): built once on first use and reused across decode steps
+        # Cache for the served model's sparse/streaming pattern mask: built once on first use and reused across decode steps
         # instead of recomputing a ``[k_len, k_len]`` boolean mask every step.
         # Immutable for the engine's lifetime, keyed on (scheme, k_len) so a
         # scheme change or config resize invalidates it.
@@ -304,10 +303,9 @@ class ContinuousBatchingEngine:
         keys (``True`` = mask out), cached across steps; ``None`` when the model
         has no ``attn_sparse`` scheme.
 
-        The pattern is folded into the per-step causal ``run_attn_mask`` (RIL
-        TASK-246). It is absolute-position based and constant for the engine's
+        The pattern is folded into the per-step causal ``run_attn_mask``. It is absolute-position based and constant for the engine's
         lifetime, so it is built once and cached keyed on (scheme, k_len) — a
-        scheme change or a config resize invalidates the cache (RIL TASK-247).
+        scheme change or a config resize invalidates the cache.
         The cached tensor lives on ``self.device`` so the OR with the causal
         mask is device-correct (the builders return CPU tensors).
         """
@@ -387,7 +385,7 @@ class ContinuousBatchingEngine:
         # KV-window budget — the engine window may be configured (or resized)
         # larger than the checkpoint's ``max_seq_len``, and a request that fits
         # the engine budget but exceeds the model capacity used to crash in the
-        # positional-encoding range check (RIL round-73 serving deep-dive:
+        # positional-encoding range check (serving deep-dive:
         # ``max_seq_len=128`` engine serving a ``max_seq_len=8`` model).
         budget = min(getattr(self.model, "max_seq_len", self.max_seq_len), self.max_seq_len)
         if len(input_ids) + request.max_new_tokens > budget:
@@ -416,8 +414,7 @@ class ContinuousBatchingEngine:
             stop=request.stop,
         )
 
-        # Reject a *different* request that reuses an active request_id (RIL
-        # ISS-123/F3). The slot allocator keys KV slots by request_id, so two
+        # Reject a *different* request that reuses an active request_id. The slot allocator keys KV slots by request_id, so two
         # distinct requests claiming the same id would both write into the
         # same slot — cross-request contamination plus a freed-slot reuse when
         # the first finishes. We must NOT reject unconditionally: the engine's
@@ -478,12 +475,12 @@ class ContinuousBatchingEngine:
         stop_hit = False
 
         # Normalize to a tuple — HF tokenizers can expose ``eos_token_id`` as a
-        # list, and an int-vs-list equality never fires (RIL list-eos
+        # list, and an int-vs-list equality never fires (list-eos
         # regression): the drain would emit the EOS token's text.
         eos_ids = normalize_eos_ids(getattr(self.tokenizer, "eos_token_id", None))
         for token_id in new_token_ids:
             # The EOS token ends generation; never emit its decoded text
-            # (parity with the eager/speculative backends — RIL ISS-96/98).
+            # (parity with the eager/speculative backends).
             # ``_lock_step_post`` already appended it and marked the sequence
             # FINISHED, so the drain here simply stops short of the EOS.
             if eos_ids and token_id in eos_ids:
@@ -541,7 +538,7 @@ class ContinuousBatchingEngine:
                     if stop_hit:
                         # A stop-sequence match finished the request/sequence
                         # *outside* a step, so ``_lock_step_post`` never ran its
-                        # free path — release the slot here or it leaks (ISS-044).
+                        # free path — release the slot here or it leaks.
                         with self._step_lock:
                             self._release_request_slot_by_id(req_id)
                         return
@@ -549,7 +546,7 @@ class ContinuousBatchingEngine:
                         # The sequence is already finished, so after draining the
                         # tail buffer there is nothing left to stream. Return
                         # (not ``break``): the post-loop ``yield buffer`` would
-                        # emit the SAME tail a second time (RIL ISS-054).
+                        # emit the SAME tail a second time.
                         yield buffer
                     return
                 self.step()
@@ -561,7 +558,7 @@ class ContinuousBatchingEngine:
                 # releasing ``_step_lock`` and this ``get_sequence``
                 # re-acquiring the scheduler lock, so the re-fetch returned
                 # ``None`` and the final step's token(s) were silently
-                # dropped (RIL F1 — concurrent stream truncation). The
+                # dropped (concurrent stream truncation). The
                 # ``Sequence`` object itself is never destroyed until the
                 # ``finally`` reap below, and ``step()`` appended this
                 # iteration's tokens to ``seq.generated_ids`` in place, so
@@ -586,7 +583,7 @@ class ContinuousBatchingEngine:
             # consumer disconnects (gen.close() / GC) it can never advance the
             # sequence again, so a RUNNING sequence with its slot allocated
             # would otherwise leak one ``max_batch_size`` slot per disconnect
-            # (RIL ISS-105). Reap the sequence and release its slot here;
+            # . Reap the sequence and release its slot here;
             # ``_release_request_slot_by_id`` is a no-op if it was already
             # freed (normal completion, stop-halt, forward failure). Loop
             # because a caller may have added the request twice (a stray
@@ -597,7 +594,7 @@ class ContinuousBatchingEngine:
             # engine mutation — otherwise it races with ``_lock_step_pre``
             # iterating the ``running`` list a concurrent ``step()`` returned,
             # and the mid-iteration pop silently skips/duplicates a sequence
-            # for that step (RIL ISS-117, a regression the ISS-105 fix
+            # for that step (a regression the fix
             # originally left un-serialized).
             with self._step_lock:
                 while self.scheduler.remove(req_id) is not None:
@@ -655,7 +652,7 @@ class ContinuousBatchingEngine:
         .. warning::
            On the PAGED path (``paged_kv_cache`` set) the forward mutates the
            block manager (allocation / extension / copy-on-write of shared
-           prefix blocks — RIL TASK-065) which is NOT thread-safe. Two
+           prefix blocks) which is NOT thread-safe. Two
            overlapping ``step_async`` calls would interleave those mutations
            and corrupt the block table. Production serving uses the
            synchronous :meth:`step` (which holds the lock across the whole
@@ -720,7 +717,7 @@ class ContinuousBatchingEngine:
                     and self.paged_kv_cache.enable_prefix_cache
                     and len(seq.input_ids) > 0
                 ):
-                    # Paged path prefix replay (RIL TASK-065). An exact
+                    # Paged path prefix replay. An exact
                     # full-prompt match stages the cached blocks into the new
                     # sequence SHARED (refcounted — ``stage_prefix`` forks
                     # them) and runs only the final prompt token, mirroring
@@ -777,7 +774,7 @@ class ContinuousBatchingEngine:
         # row is set after the fill.
         run_attn_mask = torch.ones((batch_size, 1, q_len, k_len), dtype=torch.bool, device=self.device)
 
-        # Sparse/streaming scheme (RIL TASK-246): when the served model carries an
+        # Sparse/streaming scheme: when the served model carries an
         # ``attn_sparse`` scheme, fold its sink+window pattern into the mask so the
         # batched/paged serving path actually constrains keys instead of silently
         # running dense (the decoder's own auto-mask is bypassed here because the
@@ -855,7 +852,7 @@ class ContinuousBatchingEngine:
                 # (GPT-2/Qwen2.5 HF tokenizers, or the HFTokenizer
                 # fallback), masking the shared id would suppress the EOS
                 # halt signal and every request would run to
-                # max_new_tokens (RIL ISS-379).
+                # max_new_tokens.
                 pad_id = getattr(self.tokenizer, "pad_token_id", None)
                 if pad_id is not None and 0 <= pad_id < seq_logits.size(-1):
                     eos_ids = normalize_eos_ids(getattr(self.tokenizer, "eos_token_id", None))
@@ -866,7 +863,7 @@ class ContinuousBatchingEngine:
                 # BPE/HF model served with a smaller-vocab tokenizer would
                 # otherwise sample a tail id and crash in ``_emit_tokens`` at
                 # ``tokenizer.decode([id])`` (KeyError), while eager and
-                # speculative mask it on every step (RIL ISS-125).
+                # speculative mask it on every step.
                 mask_undecodable_logits(seq_logits, getattr(self.tokenizer, "vocab_size", None))
                 context_ids = seq.input_ids + seq.generated_ids
                 seq_logits = apply_penalties(
@@ -892,7 +889,7 @@ class ContinuousBatchingEngine:
                 # deterministically fail this request no matter how often it
                 # is retried). Fail ONLY this row: mark it FINISHED + release
                 # its slot in post-compute so the shared step keeps serving
-                # the other concurrent requests (RIL ISS-405). The row is
+                # the other concurrent requests. The row is
                 # logged loud so operators see the 4xx-class cause; it is NOT
                 # a model-forward failure shared by the whole batch.
                 logger.error(
@@ -906,7 +903,7 @@ class ContinuousBatchingEngine:
                 next_token_ids.append(-1)  # placeholder; never appended below
         if failed_rows and len(failed_rows) == len(next_token_ids):
             # Every row in the batch failed — roll it up into a forward
-            # failure so the engine-level livelock guard (RIL ISS-051) marks
+            # failure so the engine-level livelock guard marks
             # the whole batch FINISHED instead of re-scheduling it forever.
             return _StepResult(
                 inputs=inputs,
@@ -921,7 +918,7 @@ class ContinuousBatchingEngine:
         Shared by the finished-in-step path (:meth:`_lock_step_post`), the
         stop-sequence termination path (:meth:`stream_request`) and the
         forward-failure path. Omitting this anywhere leaves the slot
-        permanently leaked (RIL ISS-044): the scheduler filters FINISHED
+        permanently leaked: the scheduler filters FINISHED
         sequences out of ``running`` without ever freeing their slot, so a
         slot leaked per stop-terminated request eventually exhausts the pool
         and every ``allocate()`` raises ``No free slots available in KV
@@ -964,7 +961,7 @@ class ContinuousBatchingEngine:
             # status flip a persistently-failing sequence (OOM, bad token
             # id, shape mismatch) stays RUNNING and is re-scheduled every
             # step — re-allocated, re-forwarded, re-failed — livelocking
-            # the whole engine past the first error (RIL ISS-051).
+            # the whole engine past the first error.
             for i, seq in enumerate(inputs.running_sequences):
                 seq.status = RequestState.FINISHED
                 self._release_request_slots(seq.request_id, inputs.batch_slots_list[i])
@@ -976,7 +973,7 @@ class ContinuousBatchingEngine:
         failed = set(result.failed_rows)
         for i, seq in enumerate(inputs.running_sequences):
             if i in failed:
-                # Per-row sampling failure (RIL ISS-405): fail ONLY this
+                # Per-row sampling failure: fail ONLY this
                 # request — release its slot and mark it FINISHED so the next
                 # ``schedule()`` drops it, mirroring the forward-failure
                 # handling above without touching the healthy rows.
@@ -1015,7 +1012,7 @@ class ContinuousBatchingEngine:
             if (
                 # Normalize to a tuple — HF tokenizers can expose
                 # ``eos_token_id`` as a list, and an int-vs-list equality
-                # never fires (RIL list-eos regression; the drain above was
+                # never fires (list-eos regression; the drain above was
                 # fixed the same way, this comparison was missed).
                 (eos_ids is not None and token_id in eos_ids)
                 or len(seq.generated_ids) >= seq.max_new_tokens

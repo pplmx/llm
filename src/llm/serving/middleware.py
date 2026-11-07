@@ -28,7 +28,7 @@ class _RequestBodyTooLargeError(Exception):
 class RequestBodySizeLimit:
     """Pure-ASGI middleware rejecting request bodies over ``max_bytes``.
 
-    Defense-in-depth for client memory-exhaustion DoS (RIL ISS-171): without
+    Defense-in-depth for client memory-exhaustion DoS: without
     a limit, a single multi-hundred-MB JSON body (one giant ``prompt``, many
     chat messages) is fully buffered and tokenized. Two layers here:
 

@@ -342,7 +342,7 @@ def test_unpack_4bit_raises_on_odd_numel():
 
 
 def test_gptq_layer_forward_accepts_fp16_bf16_input():
-    """fp16/bf16 inputs must not crash (regression for ISS-018).
+    """fp16/bf16 inputs must not crash (regression for).
 
     Weights are materialised in fp32; before the fix the input was passed
     to ``F.linear`` un-upcast, so half-precision model inference (the HF
@@ -374,7 +374,7 @@ def test_gptq_layer_forward_accepts_fp16_bf16_input():
     ref = layer(x32)  # fp32 baseline
     for x in (x32.half(), x32.bfloat16()):
         out = layer(x)
-        # RIL ISS-191: an fp32 layer keeps fp32 output for half inputs (the
+        # an fp32 layer keeps fp32 output for half inputs (the
         # layer's effective dtype follows bias), so this contract is
         # unchanged; the dtype-aware paths are covered by the fp16-cast
         # and partial-quant regressions below.
@@ -407,7 +407,7 @@ def _build_gptq_layer(out_f: int = 4, in_f: int = 8, *, bias: bool = True):
 
 def test_gptq_layer_forward_after_fp16_cast_matches():
     """Post-quant fp16 cast (serving engine default) must not crash and must
-    feed half-precision downstream linears (RIL ISS-191).
+    feed half-precision downstream linears.
 
     The old forward always emitted fp32 — ``model.to(dtype=torch.float16)``
     converts the fp32 ``bias`` (and scales) to half, so ``F.linear(x_f32,
@@ -431,7 +431,7 @@ def test_gptq_layer_forward_after_fp16_cast_matches():
 
 def test_selective_quant_of_fp16_model_does_not_crash():
     """Quantizing one layer of an already-fp16 model must keep the whole
-    model runnable in fp16 (regression for RIL ISS-191).
+    model runnable in fp16 (regression for).
 
     The selective-quant path copies the original (fp16) bias via
     ``new_layer.bias.copy_(layer.bias.data)`` — ``copy_`` keeps the fp32
@@ -446,7 +446,7 @@ def test_selective_quant_of_fp16_model_does_not_crash():
     # Reproduce the repo conversion path for the first linear: replace it
     # with a quantized layer, copy the fp16 bias into the fp32 parameter,
     # then adopt the replaced layer's dtype (quantize_model_gptq now does
-    # ``new_layer.to(layer.weight.dtype)``, RIL ISS-191).
+    # ``new_layer.to(layer.weight.dtype)``).
     w = torch.randn(8, 8) * 0.3
     qmax = 7.0
     scale = w.abs().max(dim=1, keepdim=True)[0].clamp(min=1e-8) / qmax
@@ -474,7 +474,7 @@ def test_selective_quant_of_fp16_model_does_not_crash():
 
 
 def test_quantizer_grouped_scale_matches_per_row_dequant():
-    """Regression (RIL ISS-057): GPTQ per-group quantization must quantize
+    """Regression: GPTQ per-group quantization must quantize
     against the SAME per-output-row scale the pack/dequant path stores.
 
     The dequant scales are per output row (``w_group.abs().max(dim=1)``),

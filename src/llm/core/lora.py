@@ -101,7 +101,7 @@ class LoRALinear(nn.Module):
         ``scaling`` is already 0 (post first merge), so the re-fold no-ops
         AND the snapshot becomes 0 — the later ``unmerge_weights`` then
         restores scaling=0 and leaves the base permanently folded at 2x
-        adapter strength (RIL ISS-159).
+        adapter strength.
         """
         if self._merged_scaling is not None:
             return

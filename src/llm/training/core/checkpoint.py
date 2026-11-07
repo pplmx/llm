@@ -70,7 +70,7 @@ LEGACY_SUFFIX = ".pt"
 #: Matches a periodic epoch snapshot file (e.g. ``epoch_12.safetensors``,
 #: ``epoch_12.meta.json``, ``epoch_12.extra_state.pt`` or the legacy
 #: ``epoch_12.pt``). Used by :func:`_cleanup_old_checkpoints` to discover
-#: every epoch snapshot on disk across resumed runs (RIL TASK-322).
+#: every epoch snapshot on disk across resumed runs.
 _EPOCH_FILE_RE = re.compile(r"^epoch_(\d+)\.(safetensors|meta\.json|extra_state\.pt|pt)$")
 
 
@@ -133,7 +133,7 @@ _CONFIG_COMPAT_FIELDS: tuple[str, ...] = (
     "mlp_impl",
     "norm_impl",
     "use_kv_cache",
-    # Model-defining flags (RIL ISS-129). These must also match on resume —
+    # Model-defining flags. These must also match on resume —
     # they change tensor shapes (bias/no-bias) and the position-encoding
     # behavior, so a mismatch would silently load weights into the wrong
     # architecture.
@@ -195,7 +195,7 @@ def _atomic_write_bytes(target: Path, payload: bytes) -> None:
 
     Fsync is performed BEFORE the rename so that when the rename lands, the
     file contents are already durable — a crash after the rename can no
-    longer leave an empty/partial file under the final name (RIL ISS-127).
+    longer leave an empty/partial file under the final name.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
@@ -213,7 +213,7 @@ def _save_weights_safetensors(
 ) -> None:
     """Save ``state_dict`` to ``path`` as safetensors (contiguous + clone).
 
-    ``save_id``/``epoch`` (RIL ISS-127 + ISS-166) are stored in the file's
+    ``save_id``/``epoch`` are stored in the file's
     metadata header so the loader can prove the WEIGHTS sidecar came from the
     same atomic save as the meta.json and extra_state.pt sidecars. Previously
     the generation marker lived only in meta/extra, so a crash between the
@@ -271,8 +271,8 @@ def _save_extra_state_pt(
     schema, but only the training-state slots are present.
 
     ``save_id`` and ``epoch`` are stamped into the sidecar so the loader
-    can cross-check the three sidecars came from the SAME atomic save
-    (RIL ISS-127): a crash mid-save that leaves a fresh weights file with
+    can cross-check the three sidecars came from the SAME atomic save:
+    a crash mid-save that leaves a fresh weights file with
     a stale meta/extra trio would otherwise resume silently with
     mismatched optimizer/scheduler state.
     """
@@ -297,7 +297,7 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
     all) exist the save was interrupted mid-write: raise
     :class:`CheckpointIncompleteError` rather than returning ``None``
     (which the caller would treat as "nothing here" and silently fall back
-    to scratch — RIL ISS-205). Only when NO sidecar exists does the caller
+    to scratch). Only when NO sidecar exists does the caller
     legitimately fall through to the legacy layout.
     """
     safetensors_path = stem_dir.with_name(stem_dir.name + SAFETENSORS_SUFFIX)
@@ -321,7 +321,7 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
     model_state = load_file(str(safetensors_path))
     # Re-wrap into a torch state_dict (still tensors, just not safetensors-format).
     model_state = dict(model_state.items())
-    # The weights-sidecar generation stamp (RIL ISS-166): read the safetensors
+    # The weights-sidecar generation stamp: read the safetensors
     # header metadata written by ``_save_weights_safetensors``.
     weights_meta: dict[str, str] = {}
     try:
@@ -340,16 +340,16 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
             CHECKPOINT_FORMAT_VERSION,
         )
 
-    # ``weights_only=True`` (RIL ISS-170): this sidecar is written by
+    # ``weights_only=True``: this sidecar is written by
     # CheckpointManager and contains only optimizer/scheduler/scaler state
     # (tensors + primitives) plus the ``save_id``/``epoch`` stamps — no
     # arbitrary user objects. Loading with arbitrary-pickle semantics let a
     # user-supplied/untrusted checkpoint execute ``__reduce__`` code on
-    # resume. Parse failures are normalized (RIL ISS-172) so a corrupt
+    # resume. Parse failures are normalized so a corrupt
     # sidecar degrades to the fail-loud path instead of crashing.
     extra = _torch_load_checkpoint_sidecar(extra_state_path)
 
-    # Cross-check the trio came from ONE atomic save (RIL ISS-127 + ISS-166).
+    # Cross-check the trio came from ONE atomic save.
     # Each save stamps a ``save_id`` and ``epoch`` into the weights file, the
     # meta.json, and the extra_state.pt; if a crash interrupted the save, one
     # sidecar can sit beside a stale pair from another save. Resuming that
@@ -411,7 +411,7 @@ def _torch_load_checkpoint_sidecar(path: Path) -> Any:
     (``IndexError: pop from empty list``, ``EOFError``, ``AttributeError``,
     ``ValueError``, ...) that are NOT in the standard pickle exceptions —
     without normalization those escaped the resume degrade path as raw
-    tracebacks (RIL ISS-172).
+    tracebacks.
     """
     try:
         return torch.load(path, map_location="cpu", weights_only=True)
@@ -438,7 +438,7 @@ def _load_legacy_checkpoint(legacy_path: Path) -> dict[str, Any] | None:
         DeprecationWarning,
         stacklevel=3,
     )
-    # ``weights_only=True`` (RIL ISS-170): legacy checkpoints are a plain
+    # ``weights_only=True``: legacy checkpoints are a plain
     # ``torch.save`` of a dict (model_state tensors + model_config dict +
     # optimizer/scheduler/scaler primitives) — nothing that needs arbitrary
     # pickle. Loading with ``weights_only=False`` here would execute
@@ -474,7 +474,7 @@ def load_checkpoint_payload(path: str | Path) -> dict[str, Any] | None:
     # ``llm migrate-ckpt`` keeps the legacy ``.pt`` by default
     # (``in_place=False``) — so a coexisting legacy file is a FROZEN
     # pre-migration snapshot that would silently stale-resume every
-    # post-migration epoch (RIL ISS-205). Legacy is the fallback only when
+    # post-migration epoch. Legacy is the fallback only when
     # no split sidecar is present at all.
     any_split = any(p.exists() for p in (safetensors_path, meta_path, extra_state_path))
     if any_split or not legacy_path.exists():
@@ -503,7 +503,7 @@ class CheckpointIncompleteError(RuntimeError):
     A crash between the ``_save_split`` renames (weights -> meta ->
     extra_state) leaves one or two sidecars at the stem but not all three.
     Resuming from that is unsafe — it would silently re-train from epoch 0
-    while the partial trio represents a later epoch (RIL ISS-205). The
+    while the partial trio represents a later epoch. The
     loader raises this instead of silently returning ``None`` so the caller
     can point at the previous intact epoch checkpoint.
     """
@@ -579,7 +579,7 @@ def convert_legacy_checkpoint_to_split(
         # The new layout's weights sidecar is safetensors; converting without
         # the package raises a raw ImportError from deep inside
         # ``_save_weights_safetensors``. Gate up front with the documented
-        # error so the CLI stays on its one-line exit-1 contract (RIL ISS-329).
+        # error so the CLI stays on its one-line exit-1 contract.
         raise CheckpointMigrationError(
             f"Converting {legacy_path} requires the 'safetensors' package. "
             "Install with `uv sync --extra compat` or `pip install llm[compat]`."
@@ -598,7 +598,7 @@ def convert_legacy_checkpoint_to_split(
             "(or move the existing sidecars aside first)."
         )
 
-    # Load the legacy blob. ``weights_only=True`` (RIL ISS-170): the migration
+    # Load the legacy blob. ``weights_only=True``: the migration
     # path runs on user-supplied files, and a framework legacy dict is a plain
     # tensors+primitives payload — arbitrary-pickle loading here would be an
     # RCE on `llm migrate-ckpt attacker.pt`.
@@ -609,7 +609,7 @@ def convert_legacy_checkpoint_to_split(
         # ``torch.save(model)`` blob raises UnpicklingError/RuntimeError here —
         # BEFORE the dict validation below. Map it to CheckpointMigrationError so
         # the CLI surfaces the documented clean one-line exit-1 error instead of
-        # a raw traceback (RIL ISS-329).
+        # a raw traceback.
         raise CheckpointMigrationError(f"{legacy_path} could not be loaded as a torch checkpoint: {exc}") from exc
 
     # Validate the payload is a v0.0.5 training dict BEFORE indexing it. A
@@ -618,7 +618,7 @@ def convert_legacy_checkpoint_to_split(
     # non-dict pickle — raises TypeError/KeyError on ``payload["model_state"]``
     # below. The CLI only catches CheckpointMigrationError, so the raw
     # exception would have escaped as a traceback instead of the documented
-    # clean one-line error (RIL ISS-162).
+    # clean one-line error.
     if not isinstance(payload, dict) or "model_state" not in payload:
         raise CheckpointMigrationError(
             f"{legacy_path} does not appear to be a v0.0.5 training checkpoint "
@@ -628,8 +628,8 @@ def convert_legacy_checkpoint_to_split(
 
     # Write the split trio. Stamp a shared save_id into the weights file AND
     # meta + extra_state so the loader can cross-check the trio came from one
-    # write (RIL ISS-127; the weights stamp closes the meta↔extra-only window
-    # of RIL ISS-166 for freshly-migrated checkpoints too).
+    # write (the weights stamp closes the meta↔extra-only window
+    # of for freshly-migrated checkpoints too).
     migrated_save_id = uuid.uuid4().hex
     _save_weights_safetensors(
         payload["model_state"],
@@ -674,7 +674,7 @@ def _discover_epoch_snapshots(checkpoint_dir: Path) -> dict[int, Path]:
 
     Retention must span resumes: the in-memory list of a fresh (resumed)
     process is empty, so only a directory scan can see prior runs' periodic
-    snapshots (RIL TASK-322). Returns ``{epoch_number: any sidecar path}``
+    snapshots. Returns ``{epoch_number: any sidecar path}``
     so callers can stat mtime and reconstruct the full trio's stem.
     """
     found: dict[int, Path] = {}
@@ -733,7 +733,7 @@ class CheckpointManager:
         meta_path = base.with_name(base.name + META_SUFFIX)
         extra_state_path = base.with_name(base.name + EXTRA_STATE_SUFFIX)
 
-        # Per-save generation marker (RIL ISS-127): written into BOTH the
+        # Per-save generation marker: written into BOTH the
         # meta and the extra_state sidecars so the loader can prove the trio
         # came from one atomic save. A crash between writing the weights and
         # the extra_state would otherwise leave meta/extra from a previous
@@ -741,7 +741,7 @@ class CheckpointManager:
         # optimizer/epoch. ``epoch`` is cross-checked the same way.
         save_id = uuid.uuid4().hex
 
-        # Stamp the save_id into the weights sidecar FIRST (RIL ISS-166): the
+        # Stamp the save_id into the weights sidecar FIRST: the
         # three sidecars only prove they came from one atomic save if the
         # weights file also carries the generation marker — a crash between a
         # weights write and the meta/extra write would otherwise leave a fresh
@@ -783,11 +783,11 @@ class CheckpointManager:
     ):
         collective = is_fsdp(model) or is_tp(model) or is_pp(model) or is_pp3d(model)
         # PP stages own DISJOINT parameter slices, so each rank's optimizer
-        # state only covers its own stage (RIL TASK-212). Rank 0's state dict
+        # state only covers its own stage. Rank 0's state dict
         # alone cannot replay the other stages' moments at resume, so gather
         # EVERY rank's stage optimizer state over the WORLD before the write
         # and persist them keyed by GLOBAL rank. The gather is world-wide (not
-        # PP-group-wide) deliberately: under PP+DP (TASK-211) different DP
+        # PP-group-wide) deliberately: under PP+DP different DP
         # groups hold DISTINCT moments, and a PP-group-only gather would drop
         # the other groups from rank 0's file. Every rank must enter it (it is
         # a collective) even though non-zero ranks discard the result.
@@ -803,14 +803,14 @@ class CheckpointManager:
 
         if self.rank != 0:
             # FSDP's FULL_STATE_DICT state_dict() and the TP full-state-dict
-            # gather are cross-rank collectives (RIL ISS-186 / TASK-200):
+            # gather are cross-rank collectives:
             # every shard must enter them or rank 0 blocks forever. Non-zero
             # ranks enter the gather and discard the result (they never
             # write); rank 0 below does the disk write.
             if collective:
                 model_state_dict(model)
             if collective and dist.is_initialized():
-                # Durable-return contract (RIL ISS-256): a collective save
+                # Durable-return contract: a collective save
                 # must not return on non-zero ranks before rank 0's disk write
                 # is complete — a rank that reads the checkpoint right after
                 # the call (last-epoch engine e2e, any resume-from-disk on a
@@ -877,7 +877,7 @@ class CheckpointManager:
             self.logger.debug(f"Checkpoint saved to {epoch_name}{SAFETENSORS_SUFFIX}")
 
         if collective and dist.is_initialized():
-            # Match the non-zero-rank barrier above (RIL ISS-256): every rank
+            # Match the non-zero-rank barrier above: every rank
             # waits here until rank 0's disk writes are durable, so no rank
             # can return from a collective save ahead of the on-disk state.
             dist.barrier()
@@ -885,8 +885,7 @@ class CheckpointManager:
     def _cleanup_old_checkpoints(self):
         # ``checkpoints_saved`` only records THIS process's writes; a resumed
         # run starts with it empty, so basing retention on the list alone left
-        # prior runs' ``epoch_N`` trios to pile up on disk forever (RIL
-        # TASK-322). Prune from what is actually on disk: keep the newest
+        # prior runs' ``epoch_N`` trios to pile up on disk forever. Prune from what is actually on disk: keep the newest
         # ``keep_last_n`` epoch snapshots by save time (mtime; epoch number
         # breaks same-second ties). The in-memory list is kept coherent as the
         # current run's record (engine tests/introspection read it).
@@ -941,7 +940,7 @@ class CheckpointManager:
         except (OSError, EOFError, pickle.UnpicklingError, TypeError) as e:
             # File-level corruption: the payload itself could not be read
             # (truncated pickle stream, wrong-kind ``.pt``, ``[None]*n``
-            # padding) — the designed degrade-to-scratch path (RIL ISS-172).
+            # padding) — the designed degrade-to-scratch path.
             # Nothing has been mutated yet, so degrading to scratch here is
             # GENUINE. Structural mismatches (model shape, optimizer /
             # scheduler / scaler layout) NEVER land here — they are raised
@@ -958,7 +957,7 @@ class CheckpointManager:
             )
             return 0, float("inf")
 
-        # Resume-config compatibility check (RIL ISS-126): a checkpoint
+        # Resume-config compatibility check: a checkpoint
         # whose model_config differs from the current run's in any
         # architecture-defining field means the user changed config (or
         # pointed at the wrong checkpoint). Weight-shape mismatches are
@@ -986,8 +985,8 @@ class CheckpointManager:
         # the pre-fix code swallowed them and returned ``(0, inf)`` while the
         # model (and maybe the optimizer) already held checkpoint weights — a
         # silent hybrid resume that trains a fresh epoch counter / LR
-        # schedule over resumed weights (RIL ISS-206). Data-integrity errors
-        # from the payload read (ISS-126/127/205) are also re-raised by the
+        # schedule over resumed weights. Data-integrity errors
+        # from the payload read are also re-raised by the
         # loader and must NOT be swallowed here. Optimizer / scheduler /
         # scaler load BEFORE the model so a mismatch leaves the model
         # untouched — never a partially-resumed model behind a scratch notice.
@@ -1001,8 +1000,8 @@ class CheckpointManager:
             ):
                 opt_blob = payload["optimizer_state"]
                 if isinstance(opt_blob, dict) and "__pp_stage_states__" in opt_blob:
-                    # TASK-212: per-stage optimizer states persisted by GLOBAL
-                    # rank (under PP+DP, TASK-211, different DP groups hold
+                    #: per-stage optimizer states persisted by GLOBAL
+                    # rank (under PP+DP, different DP groups hold
                     # distinct moments, so stage index alone would collide).
                     # Each rank restores its own slice — same topology on
                     # resume, so global keys still match the same stages.
@@ -1015,13 +1014,13 @@ class CheckpointManager:
                     else:
                         optimizer.load_state_dict(my_state)
                 else:
-                    # Pre-TASK-212 checkpoint: the optimizer slot holds rank 0's
+                    # Pre checkpoint: the optimizer slot holds rank 0's
                     # partial state which cannot be replayed onto every stage.
                     # Restore weights + scheduler but reset the optimizer, with
                     # an explicit note — never a silent dropout.
                     self.logger.warning(
                         "PP resume: checkpoint predates per-stage optimizer checkpointing "
-                        "(TASK-212) — restoring weights and scheduler but starting the "
+                        "— restoring weights and scheduler but starting the "
                         "optimizer from fresh state."
                     )
             elif optimizer is not None and payload.get("optimizer_state") is not None:
@@ -1044,7 +1043,7 @@ class CheckpointManager:
             # shape/key incompatibility (the most common) means the current
             # model architecture does NOT match the checkpoint. Fail loud
             # instead of silently training a full run that looks like a
-            # resume but discards all prior state (RIL ISS-108 / ISS-206).
+            # resume but discards all prior state.
             message = str(e)
             if isinstance(e, RuntimeError) and any(
                 marker in message

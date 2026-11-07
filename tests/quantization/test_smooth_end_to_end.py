@@ -267,7 +267,7 @@ class _ForwardAlwaysRaises(nn.Module):
 
 def test_quantize_model_smoothquant_warns_when_forward_always_fails(caplog):
     """Total calibration-failure must warn loudly instead of silently feeding
-    raw batches as layer activations (RIL TASK-197 / ISS-237)."""
+    raw batches as layer activations."""
     from llm.quantization._smooth_layer import SmoothQuantLinear
     from llm.quantization.smooth import SmoothQuantConfig, quantize_model_smoothquant
 

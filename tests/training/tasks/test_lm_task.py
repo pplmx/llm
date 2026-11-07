@@ -117,7 +117,7 @@ def test_lm_task_validation(mock_config):
 
 @pytest.mark.quick
 def test_lm_task_nan_loss_is_surfaced_loudly(caplog, mock_config):
-    """Regression (RIL ISS-343): a NaN step must be surfaced with a warning,
+    """Regression: a NaN step must be surfaced with a warning,
     not silently reported as a perfect loss 0.0 / ppl 1.0 as if the model
     trained."""
 
@@ -144,4 +144,4 @@ def test_lm_task_nan_loss_is_surfaced_loudly(caplog, mock_config):
     assert loss.item() == 0.0
     assert metrics == {"loss": 0.0, "ppl": 1.0}
     # ...but the divergence must be visible in the logs, not swallowed.
-    assert any("NaN" in message for message in caplog.messages), "NaN loss branch must emit a warning (RIL ISS-343)"
+    assert any("NaN" in message for message in caplog.messages), "NaN loss branch must emit a warning "

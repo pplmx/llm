@@ -1,4 +1,4 @@
-"""BigBird attention mask builder (ROADMAP 15.2 / TASK-241).
+"""BigBird attention mask builder (ROADMAP 15.2).
 
 BigBird (Zaheer et al. 2020) combines three attention patterns: a handful of
 **global** tokens, a **local window**, and a fixed set of **random** key blocks.

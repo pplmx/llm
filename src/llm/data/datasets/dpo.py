@@ -32,7 +32,7 @@ class DPODataset(Dataset):
         ignore_index: int = -100,
     ):
         if max_seq_len <= 0:
-            # RIL ISS-199: mirrors the SFTDataset guard — a non-positive
+            # mirrors the SFTDataset guard — a non-positive
             # ``max_seq_len`` truncates ids and grows attention_mask past
             # input_ids, crashing downstream with an opaque shape error.
             raise ValueError(f"max_seq_len must be positive, got {max_seq_len}")
@@ -41,7 +41,7 @@ class DPODataset(Dataset):
         self.max_seq_len = max_seq_len
         # ``None`` → tokenizer.pad_token_id (fallback 0), matching the text
         # datasets — hardcoding 0 pads with an arbitrary id for tokenizers
-        # whose real pad id differs (RIL ISS-337).
+        # whose real pad id differs.
         if padding_value is None:
             tokenizer_pad = getattr(self.tokenizer, "pad_token_id", None)
             self.padding_value = tokenizer_pad if tokenizer_pad is not None else 0
@@ -63,8 +63,7 @@ class DPODataset(Dataset):
                         item = json.loads(line)
                         # A scalar JSON row (bare string/number) would reach
                         # ``k in item`` / ``item["chosen"]`` below and die with
-                        # a raw TypeError/AttributeError mid-setup (RIL
-                        # ISS-381; SFT fixed the same class at ISS-336). Skip
+                        # a raw TypeError/AttributeError mid-setup (SFT fixed the same class at). Skip
                         # it with context instead.
                         if not isinstance(item, dict):
                             logger.warning("Skipping DPO row that is not a JSON object: %r", item)
@@ -76,7 +75,7 @@ class DPODataset(Dataset):
                         # An empty completion yields all-(-100) labels — both
                         # log-probs come out 0 and the pair contributes a
                         # constant log(2) to the DPO loss, silently diluting
-                        # every gradient step (RIL ISS-336).
+                        # every gradient step.
                         if not item["chosen"] or not item["rejected"]:
                             logger.warning(
                                 "Skipping DPO item with an empty chosen/rejected completion: "
@@ -99,7 +98,7 @@ class DPODataset(Dataset):
                                 self.max_seq_len,
                             )
                             continue
-                        # RIL ISS-345: a completion that ALONE reaches
+                        # a completion that ALONE reaches
                         # max_seq_len means front-truncation drops the ENTIRE
                         # prompt (zero -100 context tokens survive) — the
                         # response would be scored with no conditioning, and as
@@ -114,7 +113,7 @@ class DPODataset(Dataset):
                                 "Skipping DPO item whose chosen/rejected completion alone "
                                 "reaches max_seq_len=%d: no prompt context could survive "
                                 "truncation, so the preference pair would be trained "
-                                "unconditioned/asymmetrically (RIL ISS-345).",
+                                "unconditioned/asymmetrically.",
                                 self.max_seq_len,
                             )
                             continue
@@ -144,7 +143,7 @@ class DPODataset(Dataset):
                 sides of the pair drop the SAME amount, so chosen and
                 rejected are always scored under the same prompt suffix —
                 independent per-side truncation sent the shorter side to a
-                longer prompt context (RIL ISS-382).
+                longer prompt context.
         """
         input_ids = prompt_ids + completion_ids
         labels = [self.ignore_index] * len(prompt_ids) + completion_ids
@@ -156,7 +155,7 @@ class DPODataset(Dataset):
         # Truncate — from the FRONT so the completion (the supervised / scored
         # part) survives. ``input_ids[:max_seq_len]`` kept the prompt and
         # chopped the completion tail, where chosen/rejected usually diverge
-        # (RIL ISS-332).
+        # .
         if len(input_ids) > self.max_seq_len:
             input_ids = input_ids[-self.max_seq_len :]
             labels = labels[-self.max_seq_len :]
@@ -191,8 +190,8 @@ class DPODataset(Dataset):
         # token count keeps their conditioning context identical — the old
         # per-side ``input_ids[-max_seq_len:]`` sent chosen (longer) to a
         # truncated prompt suffix while rejected (shorter) kept the full
-        # prompt, scoring the pair under different contexts (RIL ISS-382).
-        # The ISS-345 load guard already dropped pairs where a *completion
+        # prompt, scoring the pair under different contexts.
+        # The load guard already dropped pairs where a *completion
         # alone* reaches max_seq_len, so ``front_trim`` never exceeds the
         # prompt length here.
         prompt_ids = self.tokenizer.encode(prompt)

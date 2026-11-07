@@ -187,8 +187,8 @@ def test_save_report_creates_parent_dirs(tmp_path: Path):
 
 
 # --------------------------------------------------------------------------- #
-# metric_names config resolution (ISS-251 — metric-name resolution was dead
-# config; the dead EvalConfig shell was removed in RIL TASK-325, the registry
+# metric_names config resolution (— metric-name resolution was dead
+# config; the dead EvalConfig shell was removed in, the registry
 # and resolve_metrics machinery that replaced it are what these pin down)
 # --------------------------------------------------------------------------- #
 
@@ -227,14 +227,14 @@ def test_runner_empty_metric_names_fall_back_to_task_metrics(tmp_path: Path):
 
 
 def test_runner_unknown_metric_name_raises(tmp_path: Path):
-    """An unresolvable metric name is loud, not silently ignored (ISS-251)."""
+    """An unresolvable metric name is loud, not silently ignored."""
     with pytest.raises(ValueError, match="unknown metric"):
         EvaluationRunner(_StubTask(), output_dir=str(tmp_path), metric_names=["nope"])
 
 
 def test_evaluate_accepts_string_references(tmp_path: Path):
     """``evaluate`` must not raise an opaque TypeError coercing STRING
-    references/predictions with ``as_tensor`` (RIL ISS-396) — generation
+    references/predictions with ``as_tensor`` — generation
     tasks yield text. Non-numeric references pass through unchanged (like
     ``run``), numeric ones still get tensor coercion."""
     runner = EvaluationRunner(_StubTask(), output_dir=str(tmp_path))
@@ -243,8 +243,7 @@ def test_evaluate_accepts_string_references(tmp_path: Path):
 
 
 def test_evaluate_returns_num_samples_like_run(tmp_path: Path):
-    """``evaluate`` must return the same result shape as ``run`` (RIL
-    ISS-396) — both carry ``num_samples``; the old ``evaluate`` dropped it,
+    """``evaluate`` must return the same result shape as ``run`` — both carry ``num_samples``; the old ``evaluate`` dropped it,
     so callers that switch paths get different-shaped reports."""
     runner = EvaluationRunner(_StubTask(), output_dir=str(tmp_path))
     run_results = runner.run(model=None)

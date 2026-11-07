@@ -574,12 +574,12 @@ def test_fp8_static_without_calib_exits_1_with_hint(runner: CliRunner, tmp_path:
 
 
 def test_load_calibration_tokens_refuses_malicious_pickle(tmp_path: Path):
-    """Regression (RIL ISS-211): a pre-tokenized calibration file must NOT
+    """Regression: a pre-tokenized calibration file must NOT
     execute arbitrary ``__reduce__`` code.
 
     The old ``weights_only=False`` would run ``os.system`` from a crafted
     third-party ``--calib-data-tokens`` file; the hardened load refuses it
-    before any code runs (same posture as the serving loader, ISS-170).
+    before any code runs (same posture as the serving loader).
     """
     import os
     import pickle
@@ -602,12 +602,12 @@ def test_load_calibration_tokens_refuses_malicious_pickle(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# ISS-161: clobber guard + atomic save
+#: clobber guard + atomic save
 # ---------------------------------------------------------------------------
 
 
 def test_cli_rejects_output_equal_to_model(runner, tmp_path):
-    """Regression (RIL ISS-161): ``--output == --model`` must exit 1 before
+    """Regression: ``--output == --model`` must exit 1 before
     quantization, not overwrite the source checkpoint with the quantized
     model."""
     model_path = tmp_path / "model.pt"
@@ -630,7 +630,7 @@ def test_cli_rejects_output_equal_to_model(runner, tmp_path):
 
 
 def test_cli_rejects_output_aliasing_model_via_resolved_path(runner, tmp_path):
-    """Regression (RIL ISS-161): `--output ./model.pt` with `--model
+    """Regression: `--output ./model.pt` with `--model
     model.pt` refers to the same file — the resolve()-based guard must
     catch the alias, not just the byte-identical string."""
     model_path = tmp_path / "model.pt"
@@ -653,7 +653,7 @@ def test_cli_rejects_output_aliasing_model_via_resolved_path(runner, tmp_path):
 
 
 def test_atomic_save_leaves_no_tmp_and_writes_loadable_output(tmp_path):
-    """Regression (RIL ISS-161): the quantization write goes through a temp
+    """Regression: the quantization write goes through a temp
     file + atomic rename. A successful save must leave no ``.tmp`` sibling
     and the output must load as the saved object."""
     import torch

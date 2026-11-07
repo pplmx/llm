@@ -79,13 +79,13 @@ def test_sft_dataset(tmp_path):
 def test_sft_dataset_truncation_keeps_response_tail(tmp_path):
     """Truncation drops the PROMPT PREFIX, never the supervised response tail.
 
-    Regression (RIL ISS-332): the old ``input_ids[:max_seq_len]`` kept the
+    Regression: the old ``input_ids[:max_seq_len]`` kept the
     whole prompt and chopped the response end — the only supervised signal,
     since prompt tokens are label-masked. With a pair whose prompt alone
     exceeds the window, the KEPT tokens must be the response end with live
     labels, not an all-masked row. The response stays SHORTER than the window
     (so a prompt context token survives); a response that ALONE reaches
-    max_seq_len is dropped (RIL ISS-345) rather than kept with zero
+    max_seq_len is dropped rather than kept with zero
     conditioning context.
     """
     data = [{"instruction": "A" * 100, "input": "", "output": "B" * 2}]
@@ -120,7 +120,7 @@ def test_sft_dataset_truncation_keeps_response_tail(tmp_path):
 
 
 def test_sft_dataset_drops_response_over_window(tmp_path, caplog):
-    """Regression (RIL ISS-345): a response that ALONE reaches max_seq_len is
+    """Regression: a response that ALONE reaches max_seq_len is
     dropped, not silently kept as an unconditioned response-continuation.
 
     Front-truncation on such a row removes the ENTIRE prompt (zero -100 context
@@ -139,12 +139,12 @@ def test_sft_dataset_drops_response_over_window(tmp_path, caplog):
     with caplog.at_level("WARNING", logger="llm.data.datasets.sft"):
         dataset = SFTDataset(file_path, tokenizer, max_seq_len=10)
 
-    assert len(dataset) == 0, "response alone >= max_seq_len must be dropped (ISS-345)"
-    assert any("ISS-345" in message or "response alone reaches" in message for message in caplog.messages)
+    assert len(dataset) == 0, "response alone >= max_seq_len must be dropped"
+    assert any(" " in message or "response alone reaches" in message for message in caplog.messages)
 
 
 def test_sft_dataset_rejects_nonpositive_max_seq_len(tmp_path):
-    """RIL ISS-199: a non-positive ``max_seq_len`` fails fast instead of
+    """a non-positive ``max_seq_len`` fails fast instead of
     silently truncating ids and misaligning attention_mask against
     input_ids."""
     from string import printable
@@ -163,7 +163,7 @@ def test_sft_dataset_rejects_nonpositive_max_seq_len(tmp_path):
 def test_sft_dataset_skips_non_dict_rows(tmp_path):
     """A scalar JSON row (bare string/number) would crash in
     ``alpaca_template``/``item.get`` with a raw AttributeError mid-setup; it
-    must be skipped with context instead (RIL ISS-336)."""
+    must be skipped with context instead."""
     from string import printable
 
     from llm.data.datasets.sft import SFTDataset

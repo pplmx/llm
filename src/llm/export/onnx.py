@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def _normalize_layer_norm_dtypes(onnx_path: str | Path) -> Path:
     """Fix TorchScript ONNX LayerNormalization type binding for half-precision
-    models (RIL ISS-067).
+    models.
 
     ``torch.onnx.export(..., dynamo=False)`` fuses a hand-written
     :class:`llm.core.layer_norm.LayerNorm` into an ONNX
@@ -80,7 +80,7 @@ def _normalize_layer_norm_dtypes(onnx_path: str | Path) -> Path:
 
     model.graph.node.extend(new_nodes)
     onnx.save(model, str(onnx_path))
-    logger.info("Rewrote %d LayerNormalization node(s) to fix fp16 type binding (RIL ISS-067).", fixed)
+    logger.info("Rewrote %d LayerNormalization node(s) to fix fp16 type binding.", fixed)
     return onnx_path
 
 
@@ -122,7 +122,7 @@ def export_to_onnx(
     wrapped_model.eval()
 
     # Create dummy input — bounded by the REAL vocab so small-vocab models
-    # don't crash the embedding with out-of-range ids (RIL ISS-058).
+    # don't crash the embedding with out-of-range ids.
     dummy_input = dummy_token_ids(model, input_shape, device=device)
 
     # Default dynamic axes for variable batch and sequence length
@@ -153,7 +153,7 @@ def export_to_onnx(
         )
 
     # fp16/bf16: TorchScript ONNX fusion mislabels LayerNormalization X-input
-    # types, producing an artifact onnxruntime cannot load (RIL ISS-067).
+    # types, producing an artifact onnxruntime cannot load.
     # Pure post-processing fixes the type binding in place.
     model_dtype = next(model.parameters()).dtype
     if model_dtype in (torch.float16, torch.bfloat16):
@@ -199,7 +199,7 @@ def verify_onnx(
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
 
     # Create test input — bounded by the real vocab when a model is supplied
-    # so small-vocab models don't crash the embedding (RIL ISS-058).
+    # so small-vocab models don't crash the embedding.
     if model is not None:
         test_input = dummy_token_ids(model, input_shape)
     else:

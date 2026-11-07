@@ -58,7 +58,7 @@ def _model_weight_dtype(model: DecoderModel) -> torch.dtype:
     old inline sniff used). On a quantized model the ``lm_head`` has been
     replaced by a quantized layer that stores *integer* weights (int8
     ``weight_quantized`` / packed buffers) with float scales — reading
-    ``lm_head.weight`` then raises ``AttributeError`` (RIL ISS-198). The
+    ``lm_head.weight`` then raises ``AttributeError``. The
     embedding layer is never quantized (it is an ``nn.Embedding``), so its
     weight dtype is the representative compute dtype of the model.
     """
@@ -128,47 +128,47 @@ def _build_hf_config(model: DecoderModel, architecture: str = "llama") -> dict[s
     # Persist whether the MLP is gated (SwiGLU) so ``from_pretrained``
     # rebuilds the same architecture. The DEFAULT ``use_glu=False`` model has
     # only ``fc1``/``fc2``; hardcoding GLU on load left every ``gate_proj`` at
-    # random init (RIL ISS-056).
+    # random init.
     use_glu = bool(getattr(mlp0, "use_glu", True))
     # Learned positional encoding is a model-defining flag; without persisting
     # it (and mapping the trained pos_embedding weight) a learned-PE model
-    # silently loses its PE across save->load (RIL ISS-063).
+    # silently loses its PE across save->load.
     pos_encoding_learned = bool(getattr(model.embedding_layer.positional_encoding, "learned", False))
     norm_impl = str(getattr(model, "norm_impl", "layer_norm"))
     # Pre-LN vs post-LN block ordering is model-defining: a post-LN trained
     # model silently rebuilds as the pre-LN default without this flag being
-    # persisted (RIL ISS-072). Persist the actual value the same way the
+    # persisted. Persist the actual value the same way the
     # other architecture flags (norm_impl, RoPE, biases) are handled.
     norm_first = bool(getattr(model, "norm_first", True))
     # RoPE is model-defining too (real Llama/Mistral inject position in
     # attention, not additive embeddings). Persist the actual flag + base so a
     # RoPE model roundtrips as RoPE and a non-RoPE model does NOT silently
     # become RoPE on load (the loader defaults missing ``use_rope`` to True
-    # for external checkpoints — RIL ISS-062).
+    # for external checkpoints).
     use_rope = bool(getattr(model, "use_rope", False))
     rope_theta = float(getattr(model, "rope_theta", 10000.0))
     # Bias flags are model-defining (real Llama/Mistral are bias-free; our
     # grown-from-scratch default is biased). Persist the actual values so a
     # biased model roundtrips with its biases and an unbiased one does NOT
-    # silently gain random biases on load (RIL ISS-062).
+    # silently gain random biases on load.
     qkv_bias = bool(getattr(model, "qkv_bias", True))
     mlp_bias = bool(getattr(model, "mlp_bias", True))
     lm_head_bias = bool(getattr(model, "lm_head_bias", True))
-    # Attention family is model-defining (RIL ISS-169): without persisting it,
+    # Attention family is model-defining: without persisting it,
     # an MLA model roundtrips through save_pretrained/from_pretrained as a
     # plain MHA and every MLA tensor (latents / latent_*_proj / input_kv_proj)
     # is silently dropped by ``load_state_dict(strict=False)`` — garbage
     # output with only a warning. Persist the same way hidden_act / use_glu /
     # norm_first are handled.
     attn_impl = "mla" if type(model.transformer_blocks[0].self_attn).__name__ == "MultiLatentAttention" else "mha"
-    # Sliding-window attention (Mistral-style, RIL ISS-242): persist the window
+    # Sliding-window attention (Mistral-style): persist the window
     # so a windowed model roundtrips with it instead of silently running
     # full-context attention on load. Omitted when unset.
     window_size = getattr(model, "window_size", None)
     sliding_meta: dict[str, int] = {}
     if window_size is not None:
         sliding_meta["sliding_window"] = int(window_size)
-    # Sparse/streaming attention scheme (RIL TASK-244): a model built with
+    # Sparse/streaming attention scheme: a model built with
     # ``attn_sparse`` is sparse/streaming *by construction*, so without
     # persisting the scheme a save->load roundtrip silently falls back to
     # dense attention on reload. Persist the scheme (JSON-safe dict) the same
@@ -258,7 +258,7 @@ def save_pretrained(model: DecoderModel, save_directory: str | Path) -> Path:
     # 1. Write safetensors FIRST: a crash between the two writes then leaves
     # a MISSING config.json (loud failure on load) instead of a fresh config
     # paired with a stale/missing weights file — the silent shape/arch
-    # mismatch class. config.json goes last (RIL ISS-419).
+    # mismatch class. config.json goes last.
     num_layers = len(model.transformer_blocks)
     attn0 = model.transformer_blocks[0].self_attn
     if not isinstance(attn0, _SizedAttention):
@@ -341,7 +341,7 @@ def push_to_hub(
         # ``mkdir_temporary`` staging leaked one full model directory under
         # the system temp path per call (unbounded disk growth in long-running
         # containers / CI sweeps, since the repo is ``exist_ok=True`` by
-        # default; RIL ISS-419).
+        # default).
         with tempfile.TemporaryDirectory(prefix="llm-push-") as _staging:
             return push_to_hub(
                 model,

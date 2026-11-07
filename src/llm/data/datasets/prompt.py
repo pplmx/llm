@@ -26,15 +26,15 @@ class PromptDataset(Dataset):
                     if not isinstance(item, dict):
                         # A scalar JSON row (bare string/number) would reach
                         # ``item.get`` and die with a raw AttributeError
-                        # mid-setup (RIL ISS-381). Skip it with context.
+                        # mid-setup. Skip it with context.
                         continue
                     prompt = item.get("prompt") or item.get("instruction") or item.get("text")
                     if prompt:
                         self.prompts.append(str(prompt))
         except json.JSONDecodeError as exc:
-            # Match the SFT/DPO/Reward datasets' contract (RIL ISS-201): a
+            # Match the SFT/DPO/Reward datasets' contract: a
             # malformed row must surface as a ValueError naming the file,
-            # not a raw JSONDecodeError with no context (round-78 TASK-193).
+            # not a raw JSONDecodeError with no context.
             raise ValueError(f"Invalid JSON in prompt file {self.file_path}: {exc}") from None
 
         if not self.prompts:

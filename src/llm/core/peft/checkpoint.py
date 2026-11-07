@@ -32,7 +32,7 @@ it to re-apply the method when the model hasn't been wrapped yet
 kwargs via :func:`load_peft`'s ``**override_kwargs``, but only
 shape-preserving ones (e.g. ``alpha``); a shape-defining override
 (e.g. ``rank``) raises a clear mismatch error — widening is not
-implemented (RIL ISS-210).
+implemented.
 
 Forward compatibility: bumping :data:`PEFT_CHECKPOINT_FORMAT_VERSION`
 is the supported migration path. :func:`load_peft` rejects unknown
@@ -149,7 +149,7 @@ def load_peft(
             adapter parameter SHAPES (e.g. ``alpha`` for LoRA). Changing a
             shape-defining kwarg (e.g. ``rank``) leaves the checkpoint's
             tensors incompatible with the fresh model and raises a clear
-            shape-mismatch error (RIL ISS-210) — rank widening is not
+            shape-mismatch error — rank widening is not
             implemented; load into a model built with the SAME shape-defining
             kwargs.
 
@@ -182,7 +182,7 @@ def load_peft(
     # the pickle.  The payload is a plain dict of strings + tensors
     # (:func:`save_peft` writes only ``format_version`` / ``method_name``
     # / ``peft_kwargs`` / ``state_dict``), so the safe loader needs no
-    # allowlist (RIL ISS-074).
+    # allowlist.
     payload = torch.load(in_path, weights_only=True, map_location="cpu")
 
     # Format-version check. Bumping the version is the supported
@@ -233,7 +233,7 @@ def load_peft(
     with torch.no_grad():
         for i, p in enumerate(current):
             saved_tensor = saved[f"{method_name}.{i}"]
-            # Shape check before the copy (RIL ISS-210). The count check
+            # Shape check before the copy. The count check
             # above catches a different number of adapter parameters, but it
             # CANNOT catch a same-count, different-shape layout — e.g. LoRA
             # adapter-surgery where the checkpoint was written at rank=4 and

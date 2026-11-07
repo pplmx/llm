@@ -48,7 +48,7 @@ def test_quantized_buffers_stay_on_cuda(method, quantize_fn, config):
 
     # Use the fattest usable GPU (repo ``DEFAULT_DEVICE`` convention) rather
     # than literal ``"cuda"`` (cuda:0), which can be an occupied / low-VRAM
-    # device on a shared host and makes the test flaky (RIL ISS-046).
+    # device on a shared host and makes the test flaky.
     device = str(DEFAULT_DEVICE) if all_gpu_devices() else "cpu"
     quantized = quantize(model, iter(calib), config, device=device)
     quantized.eval()

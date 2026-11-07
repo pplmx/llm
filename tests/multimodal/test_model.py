@@ -1,4 +1,4 @@
-"""Tests for the standalone MultimodalModel / ModalityFusion (TASK-227)."""
+"""Tests for the standalone MultimodalModel / ModalityFusion."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def test_multimodal_model_returns_text_logits_of_input_length():
 
 
 def test_multimodal_model_prefix_width_is_encoder_driven():
-    """Regression (RIL TASK-311/ISS-349): the old ``num_modal_tokens``
+    """Regression: the old ``num_modal_tokens``
     constructor knob was stored but never read — forward/generate derive the
     prefix width from ``modal_embeds`` itself, so a 'knob' value could not
     take effect (setting 1 vs 9 produced bit-identical output). The knob is
@@ -60,7 +60,7 @@ def test_multimodal_model_prefix_width_is_encoder_driven():
 
 
 def test_multimodal_model_attn_mask_2d_bool_honored():
-    """Regression (RIL TASK-318): ``MultimodalModel.forward`` accepts an
+    """Regression: ``MultimodalModel.forward`` accepts an
     ``attn_mask`` and threads it into the decoder blocks, but a natural
     ``[B, fused_len]`` bool mask crashed both sdpa paths (fast: no
     unsqueeze; complex: OR against the rank-2 causal mask). The mask must

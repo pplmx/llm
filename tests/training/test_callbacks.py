@@ -61,7 +61,7 @@ def test_early_stopping_auto_mode():
 
 
 def test_early_stopping_restores_patience_on_resume():
-    """Regression (RIL ISS-089): EarlyStopping must persist wait/best across
+    """Regression: EarlyStopping must persist wait/best across
     a resume, and on_train_start must not clobber the restored state.
 
     Previously the patience counter restarted on every resume, so a run that
@@ -98,7 +98,7 @@ def test_early_stopping_restores_patience_on_resume():
 
 
 def test_tensorboard_logger_log_dir_not_doubled(tmp_path):
-    """Regression (RIL ISS-410): ``on_train_start`` must log to EXACTLY the
+    """Regression: ``on_train_start`` must log to EXACTLY the
     configured ``log_dir``. It used to append ``config.logging.log_dir`` a
     second time, so the writer landed at ``logs/logs`` (train.py already
     passes ``config.logging.log_dir`` as the constructor arg)."""
@@ -124,7 +124,7 @@ def test_tensorboard_logger_log_dir_not_doubled(tmp_path):
 
 def test_lr_callback_without_engine_optimizer_noops():
     """Custom-loop tasks (PPO/RLHF) expose no engine-owned optimizer; the LR
-    observers must skip quietly instead of raising (RIL ISS-402)."""
+    observers must skip quietly instead of raising."""
     engine = MagicMock()
     engine.rank = 0
     engine.optimizer = None

@@ -297,7 +297,7 @@ class TestMigrateCkptCli:
 
     def test_in_place_with_verify_deletes_only_after_passing(self, cli_runner: CliRunner, legacy_checkpoint: Path):
         """``--in-place --verify`` must run the round-trip check against the
-        still-present legacy blob before deleting it (regression for ISS-017):
+        still-present legacy blob before deleting it (regression for):
         the old code unlinked legacy at convert time, so verification crashed
         with FileNotFoundError (exit 1) instead of comparing.
         """
@@ -347,7 +347,7 @@ class TestMigrateCkptCli:
         assert "not found" in strip_ansi(result.stderr)
 
     def test_directory_named_pt_exits_1(self, cli_runner: CliRunner, tmp_path: Path):
-        """Regression (RIL ISS-213): a *directory* named ``foo.pt`` passed the
+        """Regression: a *directory* named ``foo.pt`` passed the
         ``exists()`` gate then died with an ``IsADirectoryError`` raw
         traceback deep in ``torch.load``. It must exit 1 with the clean
         one-line error, matching the ``is_file()`` guard in quantize."""
@@ -374,7 +374,7 @@ class TestMigrateCkptCli:
         assert stem.with_suffix(SAFETENSORS_SUFFIX).exists()
 
     def test_non_training_blob_exits_1_cleanly(self, cli_runner: CliRunner, tmp_path: Path):
-        """Regression (RIL ISS-162): a ``.pt`` blob that is NOT a v0.0.5
+        """Regression: a ``.pt`` blob that is NOT a v0.0.5
         training dict (e.g. a bare ``torch.save`` of a model object from
         ``llm quantize``) raises ``TypeError``/``KeyError`` deep inside
         ``convert_legacy_checkpoint_to_split``. The CLI must surface it as
@@ -441,7 +441,7 @@ class TestMigrateCkptCli:
         assert "verification failed" in combined
 
     def test_verify_missing_model_state_exits_2(self, cli_runner: CliRunner, legacy_checkpoint: Path):
-        """Regression (RIL ISS-329): ``--verify`` used ``.get("model_state", {})``
+        """Regression: ``--verify`` used ``.get("model_state", {})``
         so a legacy blob with NO model_state made the comparison loop a no-op
         and verification passed vacuously. It must fail loudly (exit 2)."""
         convert_legacy_checkpoint_to_split(legacy_checkpoint)

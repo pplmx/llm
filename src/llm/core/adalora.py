@@ -30,7 +30,7 @@ def _orthonormalize(matrix: torch.Tensor) -> torch.Tensor:
     ``NotImplementedError: "geqrf_cpu" not implemented for 'Half'``), so
     for low-precision inputs the decomposition runs in fp32 and the
     orthonormal factor is cast back to the input dtype. AdaLoRA layers
-    adopt their base layer's dtype (RIL ISS-156), so a natively fp16/
+    adopt their base layer's dtype, so a natively fp16/
     bf16 model — the norm for this framework's serve/export paths — would
     otherwise crash on every forward, merge and unmerge.
     """
@@ -239,7 +239,7 @@ class AdaLoRALinear(nn.Module):
 
         The loss is computed over ``lora_P`` / ``lora_Q`` themselves —
         the matrices the optimizer updates — NOT over the QR factors used
-        in forward (RIL ISS-157). Those factors are orthonormal by
+        in forward. Those factors are orthonormal by
         construction, so penalising them returns ~float noise no matter
         how degenerate the underlying P/Q are: a regularizer that cannot
         distinguish a rank-1 P from a perfectly orthonormal one is dead
@@ -272,7 +272,7 @@ class AdaLoRALinear(nn.Module):
         self.scaling`` where ``scaling`` is already 0 (post first merge),
         so the re-fold no-ops AND the snapshot becomes 0 — the later
         ``unmerge_weights`` then restores scaling=0 and leaves the base
-        permanently folded at 2x adapter strength (RIL ISS-159).
+        permanently folded at 2x adapter strength.
         """
         if self._merged_scaling is not None:
             return

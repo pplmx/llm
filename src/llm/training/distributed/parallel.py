@@ -59,7 +59,7 @@ def _dist_new_group(ranks: list[int]) -> dist.ProcessGroup:
 def tp_dp_layout(world_size: int, tp_size: int, rank: int | None = None) -> tuple[int, int, int, int]:
     """Resolve the TP + data-parallel 2D layout of the calling rank.
 
-    TP+DP 2D (RIL TASK-202) arranges ranks in a row-major ``[DP][TP]`` grid:
+    TP+DP 2D arranges ranks in a row-major ``[DP][TP]`` grid:
     ``rank = dp_rank * tp_size + tp_rank``, so every TP group is a CONTIGUOUS
     run of ``tp_size`` ranks (intra-node friendly for the TP all-reduces) and
     the ``dp_size`` DP groups are strided — the ranks that hold the SAME model
@@ -103,7 +103,7 @@ def three_d_layout(
 ) -> tuple[int, int, int, int, int, int]:
     """Resolve the DP + PP + TP 3D layout of the calling rank.
 
-    3D parallelism (RIL TASK-215, DEC-052) arranges ranks in a row-major
+    3D parallelism arranges ranks in a row-major
     ``[DP][PP][TP]`` grid, nesting the two 2D conventions already in the repo:
     ``rank = ((dp_rank * pp_size) + pp_rank) * tp_size + tp_rank``. TP groups
     are the innermost contiguous runs of ``tp_size`` ranks (intra-node friendly
@@ -152,27 +152,27 @@ def three_d_groups(
     tp_size: int,
 ) -> tuple[list[list[int]], list[list[int]], list[list[int]]]:
     """Return the rank lists for the three grid families of a ``[DP][PP][TP]``
-    layout, as pure (side-effect-free) membership tables.
+       layout, as pure (side-effect-free) membership tables.
 
-    The caller builds ``dist.new_group`` handle lists from these rank lists —
-    a world collective that must be issued identically on every rank — then
-    picks the handles for the groups this rank belongs to (mirroring
-    ``tp_dp_layout`` / ``pp_dp_layout``). Returning plain rank lists keeps this
-    slice testable without a live process group (TASK-215) while giving
-    TASK-216/217 the exact groups to materialise.
+       The caller builds ``dist.new_group`` handle lists from these rank lists —
+       a world collective that must be issued identically on every rank — then
+       picks the handles for the groups this rank belongs to (mirroring
+       ``tp_dp_layout`` / ``pp_dp_layout``). Returning plain rank lists keeps this
+       slice testable without a live process group while giving
+    the exact groups to materialise.
 
-    Returns ``(tp_groups, pp_groups, dp_groups)`` where:
+       Returns ``(tp_groups, pp_groups, dp_groups)`` where:
 
-    * ``tp_groups``: one per ``(dp, pp)`` stage, a contiguous ``tp_size`` run
-      within the stage (``dp_size * pp_size`` groups).
-    * ``pp_groups``: one per ``dp``, the whole contiguous pipeline column of
-      ``pp_size * tp_size`` ranks (``dp_size`` groups).
-    * ``dp_groups``: one per ``(pp, tp)`` parameter shard, the strided column
-      at stride ``pp_size * tp_size`` across DP blocks (``pp_size * tp_size``
-      groups).
+       * ``tp_groups``: one per ``(dp, pp)`` stage, a contiguous ``tp_size`` run
+         within the stage (``dp_size * pp_size`` groups).
+       * ``pp_groups``: one per ``dp``, the whole contiguous pipeline column of
+         ``pp_size * tp_size`` ranks (``dp_size`` groups).
+       * ``dp_groups``: one per ``(pp, tp)`` parameter shard, the strided column
+         at stride ``pp_size * tp_size`` across DP blocks (``pp_size * tp_size``
+         groups).
 
-    Every rank belongs to exactly one group of each family (bijection is
-    asserted in the unit tests).
+       Every rank belongs to exactly one group of each family (bijection is
+       asserted in the unit tests).
     """
     dp_size, pp_size, tp_size, *_ = three_d_layout(world_size, dp_size, pp_size, tp_size)
     block = pp_size * tp_size
@@ -200,7 +200,7 @@ def three_d_rank_groups(
 
     Convenience over :func:`three_d_layout` + :func:`three_d_groups`: returns
     the rank's coordinates AND the three rank lists describing the groups it
-    belongs to. The caller (TASK-216/217 stage composition) builds
+    belongs to. The caller (stage composition) builds
     ``dist.new_group`` handles from these lists; returning plain rank lists
     keeps the selection unit-testable without a live process group.
 
@@ -234,7 +234,7 @@ def _fsdp_mixed_precision(dtype: str) -> Any | None:
             buffer_dtype=buffer_dtype,
         )
     if dtype == "fp16":
-        # Refuse rather than silently produce an un-winnable run (RIL ISS-188):
+        # Refuse rather than silently produce an un-winnable run:
         # FP16 parameters/reductions need a loss scaler or gradients underflow
         # and the run never converges. The engine only wires a GradScaler for
         # float16 AMP (not the default bf16/auto path), and FSDP's own scaling
@@ -305,50 +305,50 @@ def wrap_model_for_training(
 ) -> nn.Module:
     """Wrap a model for distributed training.
 
-    For single-rank or CPU runs the model is returned unchanged —
-    wrapping a CPU model in ``DistributedDataParallel`` is a no-op
-    that can confuse some optimisers, and ``FullyShardedDataParallel``
-    requires CUDA.
+        For single-rank or CPU runs the model is returned unchanged —
+        wrapping a CPU model in ``DistributedDataParallel`` is a no-op
+        that can confuse some optimisers, and ``FullyShardedDataParallel``
+        requires CUDA.
 
-    Args:
-        model: The bare ``nn.Module`` to wrap.
-        parallel_strategy: ``"ddp"``, ``"fsdp"``, ``"tp"`` or ``"pp"``
-            (pipeline parallelism, RIL DEC-049/TASK-210 — see
-            :mod:`llm.training.distributed.pipeline`).
-        device: Target device (used to set ``device_ids`` for DDP
-            and ``device_id`` for FSDP).
-        world_size: Number of ranks in the process group.
-        fsdp_mixed_precision: FSDP parameter / gradient dtype.
-            One of ``"fp32"``, ``"bf16"``, ``"fp16"``.
-        fsdp_auto_wrap_min_params: FSDP size-based auto-wrap
-            threshold. ``0`` disables auto-wrap.
-        fsdp_cpu_offload: Offload FSDP params to CPU when idle.
-        tp_size: Tensor-parallel size for ``parallel_strategy="tp"``.
-            v1 uses the whole world as one TP group, so it defaults to
-            ``world_size``; must be > 1 and divide every partitioned axis.
-        pp_size: Pipeline size for ``parallel_strategy="pp"``. ``0`` (default)
-            means "use the whole world as one pipeline group" (pure PP v1,
-            RIL DEC-049/TASK-210). A value below ``world_size`` enables PP +
-            data-parallel 2D (RIL TASK-211): ranks are laid out row-major as
-            ``[DP][PP]`` — each pipeline group is a CONTIGUOUS
-            ``world_size/pp_size``-rank range whose stage-to-stage P2P stays
-            intranode-friendly, and the ``world_size/pp_size`` DP groups (the
-            strided columns holding the same stage) average gradients across
-            data shards at each step. ``world_size`` must divide evenly by
-            ``pp_size``.
-        pp_n_microbatches: Pipeline microbatch count for
-            ``parallel_strategy="pp"`` (RIL TASK-213). ``1`` (default) runs
-            one chunk per batch; ``> 1`` chunks each batch so the schedule can
-            overlap stages and shrink per-stage activation memory. The
-            schedule normalizes the gradient by the microbatch count, so the
-            optimizer step is numerically unchanged.
+        Args:
+            model: The bare ``nn.Module`` to wrap.
+            parallel_strategy: ``"ddp"``, ``"fsdp"``, ``"tp"`` or ``"pp"``
+                (pipeline parallelism — see
+                :mod:`llm.training.distributed.pipeline`).
+            device: Target device (used to set ``device_ids`` for DDP
+                and ``device_id`` for FSDP).
+            world_size: Number of ranks in the process group.
+            fsdp_mixed_precision: FSDP parameter / gradient dtype.
+                One of ``"fp32"``, ``"bf16"``, ``"fp16"``.
+            fsdp_auto_wrap_min_params: FSDP size-based auto-wrap
+                threshold. ``0`` disables auto-wrap.
+            fsdp_cpu_offload: Offload FSDP params to CPU when idle.
+            tp_size: Tensor-parallel size for ``parallel_strategy="tp"``.
+                v1 uses the whole world as one TP group, so it defaults to
+                ``world_size``; must be > 1 and divide every partitioned axis.
+            pp_size: Pipeline size for ``parallel_strategy="pp"``. ``0`` (default)
+                means "use the whole world as one pipeline group" (pure PP v1
+    ). A value below ``world_size`` enables PP +
+                data-parallel 2D: ranks are laid out row-major as
+                ``[DP][PP]`` — each pipeline group is a CONTIGUOUS
+                ``world_size/pp_size``-rank range whose stage-to-stage P2P stays
+                intranode-friendly, and the ``world_size/pp_size`` DP groups (the
+                strided columns holding the same stage) average gradients across
+                data shards at each step. ``world_size`` must divide evenly by
+                ``pp_size``.
+            pp_n_microbatches: Pipeline microbatch count for
+                ``parallel_strategy="pp"``. ``1`` (default) runs
+                one chunk per batch; ``> 1`` chunks each batch so the schedule can
+                overlap stages and shrink per-stage activation memory. The
+                schedule normalizes the gradient by the microbatch count, so the
+                optimizer step is numerically unchanged.
 
-    Raises:
-        ValueError: if ``parallel_strategy`` is not recognised.
-        RuntimeError: if FSDP is requested on a CPU-only host
-            (FSDP needs CUDA + a process group).
-        NotImplementedError: for unsupported tensor-parallel
-            configurations (see ``apply_tensor_parallel`` scope guards).
+        Raises:
+            ValueError: if ``parallel_strategy`` is not recognised.
+            RuntimeError: if FSDP is requested on a CPU-only host
+                (FSDP needs CUDA + a process group).
+            NotImplementedError: for unsupported tensor-parallel
+                configurations (see ``apply_tensor_parallel`` scope guards).
     """
     if parallel_strategy == "pp":
         # Pipeline parallelism can run on CPU ranks (gloo) for 2-process
@@ -361,11 +361,11 @@ def wrap_model_for_training(
             raise ValueError("pipeline parallelism cannot be composed with another parallel_strategy in v1")
         pp_size, dp_size, dp_rank, pp_rank = pp_dp_layout(world_size, pp_size)
         if dp_size > 1:
-            # PP + data-parallel 2D (TASK-211): ``dist.new_group`` is a
+            # PP + data-parallel 2D: ``dist.new_group`` is a
             # collective over the WORLD group, so EVERY rank must create the
             # SAME set of subgroups in the SAME order; each rank then picks
             # the handles for the groups it belongs to (mirrors the TP+DP 2D
-            # rule, RIL TASK-202). Pure PP (dp_size == 1) skips subgroup
+            # rule). Pure PP (dp_size == 1) skips subgroup
             # creation entirely and keeps using the default group.
             pp_groups = [_dist_new_group(ranks=list(range(d * pp_size, (d + 1) * pp_size))) for d in range(dp_size)]
             dp_groups = [_dist_new_group(ranks=list(range(p, world_size, pp_size))) for p in range(pp_size)]
@@ -384,7 +384,7 @@ def wrap_model_for_training(
         )
 
     if parallel_strategy == "3d":
-        # PP+TP composition (RIL DEC-052/TASK-216, dp=1; TASK-217 for dp>1):
+        # PP+TP composition (dp=1 for dp>1):
         # data-parallel columns x pipeline stages x tensor-parallel within each
         # stage. Like TP and PP it runs on CPU ranks (gloo) for multi-process
         # numeric verification, so it does NOT take the DDP/FSDP CPU-no-op
@@ -414,7 +414,7 @@ def wrap_model_for_training(
         stages = partition_decoder_model(cast(Any, model), ppr)
         stage = stages[pp_rank].to(device)
         apply_tensor_parallel_stage(stage, model=cast(Any, model), process_group=stage_tp_group)
-        # RIL ISS-403: expose the stage's checkpoint boundary like ``_pp`` so
+        # expose the stage's checkpoint boundary like ``_pp`` so
         # ``model_state_dict``/``load_model_state_dict`` produce a GLOBAL full
         # model dict (across every pipeline stage) instead of the stage-local
         # ``blocks.*`` shard. ``_build_name_maps`` maps stage keys
@@ -441,7 +441,7 @@ def wrap_model_for_training(
         return stage
 
     if parallel_strategy == "zero":
-        # Native ZeRO Stage-1 (RIL TASK-269/DEC-097): the model stays a plain,
+        # Native ZeRO Stage-1: the model stays a plain,
         # full copy on every rank (no DDP/FSDP/TP/PP wrappers). The engine
         # averages gradients over the world group at each step and drives a
         # ZeroOptimizer whose optimizer state is sharded ~1/world_size, then
@@ -459,7 +459,7 @@ def wrap_model_for_training(
         return model
 
     if parallel_strategy == "ddp":
-        # MoE models MUST opt into unused-parameter tracking (RIL ISS-138):
+        # MoE models MUST opt into unused-parameter tracking:
         # a batch that routes zero tokens to an expert leaves that expert
         # outside the autograd graph, and DDP (find_unused_parameters=False)
         # then fails the backward with "expected to have finished reduction
@@ -539,7 +539,7 @@ def _align_state_dict_keys(state_dict: dict[str, Any], expected_keys: Iterable[s
     ``_orig_mod.*`` when the engine compiled the model before wrapping (FSDP
     over ``torch.compile``).  Checkpoints are stored plain, so on FSDP load
     we must add the ``_orig_mod.`` prefix back when (and only when) the live
-    model exposes it (round-76 deep-dive D1).  A no-op when the namespaces
+    model exposes it (deep-dive D1).  A no-op when the namespaces
     already agree, and it also accepts the legacy prefixed form.
     """
     prefixed_expected = any(key.startswith("_orig_mod.") for key in expected_keys)
@@ -599,7 +599,7 @@ def load_model_state_dict(
             multi-rank save/load. Ignored for DDP / bare models.
     """
     if is_pp3d(model):
-        # Composed PP+TP stage (RIL ISS-403): the checkpoint carries the full
+        # Composed PP+TP stage: the checkpoint carries the full
         # global-named model dict (all stages); scatter this stage's slice
         # back onto its TP shards. Must come BEFORE is_pp/is_tp — a 3d stage
         # is tagged ``_pp3d`` AND ``_tp`` but not ``_pp``, so without this it
@@ -611,7 +611,7 @@ def load_model_state_dict(
     if is_pp(model):
         # A pipeline stage owns a DISJOINT slice of the full model; the
         # checkpoint carries global model names, so each rank scatters its
-        # own slice from the full dict (RIL DEC-049 / TASK-210).
+        # own slice from the full dict.
         cast(Any, model)._pp.scatter_load(_strip_compile_prefix(state_dict))
         return
     if model.__class__.__name__ == "FullyShardedDataParallel":
@@ -624,7 +624,7 @@ def load_model_state_dict(
         return
     if is_tp(model):
         # Slice the full state dict into this rank's shards, in place
-        # (RIL TASK-200 / DEC-045 — TP checkpoint boundary mirrors FSDP-full).
+        # (TP checkpoint boundary mirrors FSDP-full).
         cast(Any, model)._tp.scatter_load_state_dict(model_for_checkpoint_io(model), _strip_compile_prefix(state_dict))
         return
     model_for_checkpoint_io(model).load_state_dict(_strip_compile_prefix(state_dict))
@@ -635,7 +635,7 @@ def is_fsdp(model: nn.Module) -> bool:
 
     Used to decide whether a checkpoint save is a cross-rank collective:
     FSDP's ``FULL_STATE_DICT`` ``state_dict()`` all-gathers every shard, so
-    every rank must enter it or rank 0 blocks forever (RIL ISS-186).
+    every rank must enter it or rank 0 blocks forever.
     """
     return model.__class__.__name__ == "FullyShardedDataParallel"
 
@@ -656,7 +656,7 @@ def is_pp3d(model: nn.Module) -> bool:
 
     ``wrap_model_for_training(..., parallel_strategy='3d')`` partitions the
     model into pipeline stages, tensor-parallelises this rank's stage, and tags
-    it with ``_pp3d`` carrying the :class:`PPTPRuntime` (<RIL TASK-216>). The
+    it with ``_pp3d`` carrying the :class:`PPTPRuntime` (<>). The
     tag lets the engine / checkpoint helpers recognise the composed stage like
     ``is_pp`` / ``is_tp`` do for their strategies.
     """
@@ -668,7 +668,7 @@ def allreduce_dp_grads(model: nn.Module) -> None:
 
     Two reductions, both required for TP models to stay in lockstep:
 
-    * **DP group (2D, RIL TASK-202):** each data-parallel group trains on a
+    * **DP group (2D):** each data-parallel group trains on a
       different data shard, so every rank's gradient (for its shard copies AND
       the replicated parameters) only carries THAT group's shard gradient.
       Averaging over the DP group converges to the true full-batch gradient
@@ -701,7 +701,7 @@ def allreduce_dp_grads(model: nn.Module) -> None:
         if param.grad is None and not (tp.is_expert_param(name) or tp.is_gate_param(name)):
             continue
         if param.grad is None:
-            # MoE router/expert with zero routed tokens (TASK-207): the
+            # MoE router/expert with zero routed tokens: the
             # gradient is genuinely ZERO, but the collective below must be
             # entered by EVERY rank — a peer whose experts got hits enters the
             # gate-SUM / DP-group reduce, so a skipped call would deadlock.
@@ -711,14 +711,14 @@ def allreduce_dp_grads(model: nn.Module) -> None:
         if dp_group is not None:
             dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, group=dp_group)
         if tp.is_expert_param(name):
-            # Expert-parallel shard (TASK-207): each rank owns a DIFFERENT
+            # Expert-parallel shard: each rank owns a DIFFERENT
             # expert, so its gradient belongs only to it — never averaged over
             # the TP group (that would bleed one expert's gradient into its
             # neighbours'). DP-group averaging above still applies: the same
             # expert shards held by different data groups train different data.
             continue
         if tp.is_gate_param(name):
-            # Replicated MoE router (TASK-207): unlike norms/embedding, the
+            # Replicated MoE router: unlike norms/embedding, the
             # gate's weight gradient is a per-rank PARTIAL (each rank backprops
             # only ITS experts' contributions through the routing marginals),
             # so the true gradient is the SUM over the TP group — the input
@@ -732,7 +732,7 @@ def allreduce_dp_grads(model: nn.Module) -> None:
 
 
 def allreduce_3d_dp_grads(model: nn.Module) -> None:
-    """Average a PP+TP stage's gradients over its data-parallel columns (TASK-217).
+    """Average a PP+TP stage's gradients over its data-parallel columns.
 
     3D with dp_size>1 shards the data per column: every rank in a column trains
     on the same shard through the whole pipeline, so its stage gradient only
@@ -769,7 +769,7 @@ def clip_grad_norm_tp(
     ``torch.nn.utils.clip_grad_norm_`` computes the total norm over THIS
     rank's parameters only — under tensor parallelism each rank holds a
     DISJOINT shard, so every rank would clip with a different (too small)
-    local factor and the shards drift apart (RIL ISS-253). This helper
+    local factor and the shards drift apart. This helper
     instead all-reduces the per-rank squared norms over the TP ``group`` so
     every rank uses the SAME full-model norm, then clips its locals with the
     common factor (Megatron semantics).
@@ -801,7 +801,7 @@ def clip_grad_norm_tp(
     # tell us where the group lives — the all-reduce below then contributes a
     # proper ZERO on the right device instead of a CPU tensor crashing NCCL
     # with "No backend type associated with device type cpu" (surfaced by the
-    # vacuous SFT-loss test during the ISS-253 milestone).
+    # vacuous SFT-loss test during the milestone).
     try:
         device = next(model.parameters()).device
     except StopIteration:
@@ -859,9 +859,9 @@ def model_state_dict(
     # in FSDP, so an FSDP full-state dict carries ``_orig_mod.*`` keys just
     # like a bare compiled module, and a checkpoint missing the strip cannot
     # be resumed (load always normalizes, and FSDP expects ``_orig_mod.*``)
-    # nor transferred to ``llm serve`` (round-76 deep-dive D1).
+    # nor transferred to ``llm serve`` (deep-dive D1).
     if is_pp3d(model):
-        # Composed PP+TP stage (RIL ISS-403): gather the FULL global-named
+        # Composed PP+TP stage: gather the FULL global-named
         # model dict across every stage (TP-shards reconstructed per stage
         # first). Must come BEFORE is_pp/is_tp — a 3d stage is tagged
         # ``_pp3d`` AND ``_tp``, so without this it would fall into the
@@ -870,13 +870,13 @@ def model_state_dict(
         return cast(Any, model)._pp3d.full_state_dict()
     if is_pp(model):
         # Cross-stage all-gather: EVERY rank must enter it (mirrors the TP /
-        # FSDP rule — RIL ISS-186) so rank 0's save does not block. Each rank
+        # FSDP rule) so rank 0's save does not block. Each rank
         # contributes its owned slice under GLOBAL model names; the manager
         # writes rank 0's merged dict, and a resume scatters it back.
         return cast(Any, model)._pp.full_state_dict()
     if is_tp(model):
         # Cross-rank all-gather: EVERY rank must enter it (mirrors the FSDP
-        # FULL_STATE_DICT rule — RIL ISS-186) so rank 0's save does not block.
+        # FULL_STATE_DICT rule) so rank 0's save does not block.
         # Each rank rebuilds the full dict; the manager writes rank 0's.
         return cast(Any, model)._tp.gather_full_state_dict(model_for_checkpoint_io(model))
     state = fsdp_state if fsdp_state is not None else model_for_checkpoint_io(model).state_dict()
@@ -886,7 +886,7 @@ def model_state_dict(
 def allreduce_zero_grads(model: nn.Module, group: dist.ProcessGroup | None = None) -> None:
     """Average every parameter gradient over the ZeRO data-parallel group.
 
-    ZeRO Stage-1 (RIL TASK-269/DEC-097) keeps a plain full model copy on every
+    ZeRO Stage-1 keeps a plain full model copy on every
     rank (no DDP wrapper) and averages the locally-summed gradients over the
     world (DP) group so each rank carries the true full-batch gradient before
     its sharded optimizer step. This is the classic ZeRO-1 gradient reduction

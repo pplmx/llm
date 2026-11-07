@@ -100,7 +100,7 @@ async def chat_completions(
         # Validate before the SSE starts so an un-encodable message or a
         # context-overflowing ``max_tokens`` is a real 4xx, not an
         # "Error: ..." chunk inside a 200 stream — the sibling ``/generate``
-        # stream pre-validates the same way (RIL ISS-113, ISS-149).
+        # stream pre-validates the same way.
         _validate_stream_request(prompt, request.max_tokens)
         return StreamingResponse(
             _chat_stream_generator(
@@ -138,18 +138,17 @@ async def chat_completions(
         except QueueFullError as exc:
             # MUST precede the generic ``RuntimeError`` catch (QueueFullError
             # subclasses it): backpressure is a retryable condition, not a
-            # model failure (RIL ISS-407).
+            # model failure.
             t.set_status(503)
             raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
         except RuntimeError as exc:
-            # Do NOT echo the backend exception text back to the client (RIL
-            # ISS-168): it can contain filesystem paths / framework internals.
+            # Do NOT echo the backend exception text back to the client: it can contain filesystem paths / framework internals.
             t.set_status(503)
             logger.error("backend generation failed: %s", exc)
             raise APIError(ErrorCode.MODEL_UNAVAILABLE, "Model unavailable during generation") from exc
         # Character-level tokenizers raise ``KeyError`` for characters outside
         # their corpus (the same exception the ``/generate`` sibling maps to a
-        # client 400 — RIL ISS-147). Without it this client-caused error would
+        # client 400). Without it this client-caused error would
         # fall through to the generic handler and surface as a spurious 500.
         except (ValueError, KeyError) as exc:
             t.set_status(400)
@@ -168,7 +167,7 @@ async def chat_completions(
     # completion itself is returned verbatim — `.strip()` removed a model's
     # own leading/trailing whitespace (e.g. a leading newline char-tokenizers
     # commonly emit), diverging from the streaming path which emits chunks
-    # verbatim (RIL ISS-114).
+    # verbatim.
     completion = generated_text[len(prompt) :] if generated_text.startswith(prompt) else generated_text
 
     # Per the OpenAI spec, a completion truncated by the ``max_tokens`` budget
@@ -176,7 +175,7 @@ async def chat_completions(
     # re-encoding the text with the serving tokenizer (exact for char
     # tokenizers, and correct for HF/BPE tokenizers where one token spans
     # several chars) — matching the ``token_count`` the streaming path
-    # accumulates per decoded token (RIL ISS-151 / round-73 FINDING 4).
+    # accumulates per decoded token (FINDING 4).
     completion_tokens = _token_count(completion)
     metrics.observe_tokens(endpoint="chat_completions", token_count=completion_tokens)
     finish_reason = "length" if completion_tokens >= request.max_tokens else "stop"
@@ -247,7 +246,7 @@ async def _chat_stream_generator(
                     # the rendered prompt string, so every streamed chunk
                     # is emitted verbatim.
                     #
-                    # Like the /generate stream (RIL round 45), apply an
+                    # Like the /generate stream, apply an
                     # IDLE timeout per chunk (``request_timeout`` with no
                     # token produced): a steady stream is never cut off, but
                     # a stalled generator must not hold the inference
@@ -271,7 +270,7 @@ async def _chat_stream_generator(
                             # sync generator in the background, so the
                             # engine's finally-reap frees the KV/scheduler
                             # slot promptly instead of at asyncgen GC
-                            # (RIL ISS-122).
+                            # .
                             t.set_status(504)
                             timeout_chunk = ChatCompletionChunk(
                                 id=completion_id,
@@ -289,7 +288,7 @@ async def _chat_stream_generator(
                             yield "data: [DONE]\n\n"
                             # Count the tokens streamed before the stall — a
                             # timed-out stream must not undercount volume
-                            # (RIL round-73 FINDING 7 / ISS-227).
+                            # (FINDING 7).
                             metrics.observe_tokens(endpoint="chat_completions", token_count=token_count)
                             return
                         # Count the decoded tokens, not the SSE chunk — with
@@ -310,7 +309,7 @@ async def _chat_stream_generator(
             # that hit the ``max_tokens`` budget is ``"length"`` per the
             # OpenAI spec, not ``"stop"``. ``token_count`` is the number of
             # streamed tokens — the same count the non-streaming path
-            # approximates with ``len(completion)`` (RIL ISS-151).
+            # approximates with ``len(completion)``.
             finish_reason = "length" if token_count >= request.max_tokens else "stop"
             final_chunk = ChatCompletionChunk(
                 id=completion_id,
@@ -326,10 +325,9 @@ async def _chat_stream_generator(
         except Exception:
             logger.exception("Error in chat stream generation")
             t.set_status(500)
-            # Do NOT echo the exception class name back to the client (RIL
-            # ISS-168): it lets a client fingerprint the framework/backend.
+            # Do NOT echo the exception class name back to the client: it lets a client fingerprint the framework/backend.
             # Log server-side, send a fixed message. Count the tokens streamed
-            # before the failure (round-73 FINDING 7 / ISS-227).
+            # before the failure (FINDING 7).
             metrics.observe_tokens(endpoint="chat_completions", token_count=token_count)
 
             error_chunk = ChatCompletionChunk(

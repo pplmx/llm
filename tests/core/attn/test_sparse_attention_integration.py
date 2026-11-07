@@ -1,4 +1,4 @@
-"""Integration tests: block-sparse & StreamingLLM masks through real attention (TASK-239).
+"""Integration tests: block-sparse & StreamingLLM masks through real attention.
 
 Proves the mask builders actually shape the *computed* attention output, not just
 a boolean table:

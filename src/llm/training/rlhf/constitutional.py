@@ -1,4 +1,4 @@
-"""Constitutional-AI slice: rule-based self-critique -> revision (TASK-235).
+"""Constitutional-AI slice: rule-based self-critique -> revision.
 
 Constitutional AI (Bai et al. 2022) steers a model with a *constitution* — a
 list of principles — plus a self-critique / self-revision loop that makes the

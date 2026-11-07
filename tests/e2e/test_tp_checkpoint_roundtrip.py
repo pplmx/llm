@@ -1,6 +1,6 @@
-"""TP checkpoint ON-DISK roundtrip (RIL TASK-205).
+"""TP checkpoint ON-DISK roundtrip.
 
-The TP milestones (TASK-200 / TASK-202) verified the state-dict gather /
+The TP milestones verified the state-dict gather /
 scatter helpers in-memory, but never proved a real TP/2D training run ends
 up as a correct, portable on-disk checkpoint through the checkpoint manager.
 These tests pin the two guarantees ``llm serve``/resume rely on:
@@ -131,7 +131,7 @@ def _roundtrip_worker(rank: int, world_size: int, ctx: dict, results) -> None:
         # ALSO averages the replicated-param gradients over the TP group) keeps
         # the replicated params bit-identical across ranks — the engine does
         # this every step, and without it the on-disk equality check on ranks
-        # != 0 would trip on the FP drift (ISS-254).
+        # != 0 would trip on the FP drift.
         opt = torch.optim.SGD(model.parameters(), lr=0.05)
         x = torch.randint(0, ctx["vocab_size"], (2, 12), device=dev, dtype=torch.long)
         for _ in range(2):
@@ -157,7 +157,7 @@ def _roundtrip_worker(rank: int, world_size: int, ctx: dict, results) -> None:
             scaler=None,
             loss=float(loss.item()),
         )
-        # ``save_checkpoint`` now guarantees durable-return (RIL ISS-256):
+        # ``save_checkpoint`` now guarantees durable-return:
         # every rank exits the collective save only after rank 0's disk write
         # is complete, so the file below is guaranteed present. (The barrier
         # this comment used to describe was moved INTO save_checkpoint — every
@@ -414,7 +414,7 @@ def _run_engine_checkpoint(tmp_path: Path, world_size: int, tp_size: int) -> Non
 def test_engine_tp_dp_2d_on_disk_checkpoint_four_gpu(tmp_path):
     """Real-engine TP+DP 2D auto-saved checkpoint == gathered full state (4 GPUs, tp=2 dp=2).
 
-    Regression-guards ISS-256: the engine's epoch-end save used to let
+    Regression-guards: the engine's epoch-end save used to let
     non-zero ranks return before rank 0's disk write was durable, so a rank
     reading the checkpoint right after ``run()`` raced the write (seen as
     FileNotFoundError / stale file reads). ``save_checkpoint`` now makes the
@@ -537,5 +537,5 @@ def _run_engine_resume_roundtrip(tmp_path: Path, world_size: int, tp_size: int) 
 @pytest.mark.slow
 def test_engine_tp_dp_2d_resume_from_disk_four_gpu(tmp_path):
     """A real-engine TP+DP 2D checkpoint resumes in a fresh world with the
-    optimizer step counter / epoch restored, and training continues (TASK-205)."""
+    optimizer step counter / epoch restored, and training continues."""
     _run_engine_resume_roundtrip(tmp_path, world_size=4, tp_size=2)

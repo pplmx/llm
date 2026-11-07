@@ -149,7 +149,7 @@ class TestConfig:
 
     def test_config_from_yaml_missing_path_raises(self, tmp_path):
         """An explicitly-passed --config-path that doesn't exist is a user
-        error, not a silent fall-back to defaults (RIL TASK-291/ISS-320)."""
+        error, not a silent fall-back to defaults."""
         missing = tmp_path / "no-such-config.yaml"
         with pytest.raises(FileNotFoundError, match="config file not found"):
             Config.from_yaml(missing)
@@ -216,7 +216,7 @@ class TestConfig:
         # capability at import time.
 
     def test_model_config_rejects_rope_for_mla(self):
-        """RIL ISS-140: ``use_rope=True`` with ``attn_impl='mla'`` is
+        """``use_rope=True`` with ``attn_impl='mla'`` is
         rejected at config time. MLA's static-latent-query scheme performs no
         positional encoding, and its ``**`` catch-all silently swallowed the
         RoPE kwargs — a config validated, the model built, and the position

@@ -35,15 +35,14 @@ class TestPPOConfig:
 
     def test_rejects_unimplemented_rollout_batch_size(self):
         """``rollout_batch_size`` is declared but never read by the trainer —
-        a non-default value silently does nothing. Fail fast instead (RIL
-        ISS-334)."""
+        a non-default value silently does nothing. Fail fast instead."""
         with pytest.raises(ValueError, match="rollout_batch_size"):
             PPOConfig(rollout_batch_size=32)
 
     def test_rejects_unimplemented_ref_model_update_freq(self):
         """``ref_model_update_freq`` implies the frozen reference re-syncs to
         the policy, which is never implemented — a non-default value silently
-        does nothing. Fail fast instead (RIL ISS-334)."""
+        does nothing. Fail fast instead."""
         with pytest.raises(ValueError, match="ref_model_update_freq"):
             PPOConfig(ref_model_update_freq=100)
 
@@ -104,7 +103,7 @@ class TestRolloutBuffer:
         )
 
     def test_gae_truncated_episode_bootstraps_from_terminal_value(self):
-        """Regression (RIL ISS-178): a max-len-truncated episode is NOT
+        """Regression: a max-len-truncated episode is NOT
         terminal — GAE must bootstrap the last response state with the
         critic's ``V(s_L)`` (the value at the state AFTER the last
         generated token) instead of hardcoding ``next_value=0.0``. The old
@@ -436,7 +435,7 @@ class TestPPOTrainer:
     def test_compute_terminal_value(self, tiny_setup):
         """V(s_L): the critic value at the state AFTER the last response
         token (prompt + full response), the bootstrap used for truncated
-        episodes (RIL ISS-178). ``compute_response_values`` only emits the
+        episodes. ``compute_response_values`` only emits the
         value BEFORE each generated token — the post-response state was
         never scored, so truncated episodes could not be bootstrapped."""
         from llm.training.rlhf.ppo_trainer import PPOTrainer
@@ -494,7 +493,7 @@ class TestPPOTrainer:
             )
 
     def test_generate_responses_old_log_probs_are_raw_policy(self, tiny_setup):
-        """Regression (RIL ISS-053): ``old_log_probs`` must be log-probs of
+        """Regression: ``old_log_probs`` must be log-probs of
         the RAW policy (matching what ``ppo_step`` recomputes), not the
         temperature-scaled distribution used for sampling.
 
@@ -587,11 +586,11 @@ class TestPPOTrainer:
 
     def test_generate_responses_stops_at_eos(self, tiny_setup):
         """PPO rollout must stop at the tokenizer's EOS token (regression for
-        RIL ISS-116). The old guard read ``hasattr(tokenizer, "eos_id")`` —
-        no tokenizer exposes ``eos_id`` (the convention is ``eos_token_id``)
-        — so rollouts always ran to ``response_max_len`` and folded post-EOS
-        junk into the training signal. With the attribute fixed, forcing the
-        first sampled token to be EOS must yield a 1-token response."""
+        ). The old guard read ``hasattr(tokenizer, "eos_id")`` —
+                no tokenizer exposes ``eos_id`` (the convention is ``eos_token_id``)
+                — so rollouts always ran to ``response_max_len`` and folded post-EOS
+                junk into the training signal. With the attribute fixed, forcing the
+                first sampled token to be EOS must yield a 1-token response."""
         from unittest.mock import patch
 
         from llm.training.rlhf.ppo_trainer import PPOTrainer
@@ -617,8 +616,7 @@ class TestPPOTrainer:
     def test_generate_responses_caps_at_model_context(self, tiny_setup):
         """PPO rollout must not generate past the model's positional table: a
         prompt near ``max_seq_len`` yields at most the remaining context budget
-        of response tokens, even when ``response_max_len`` is larger (RIL
-        ISS-334)."""
+        of response tokens, even when ``response_max_len`` is larger."""
         from unittest.mock import patch
 
         from llm.training.rlhf.ppo_trainer import PPOTrainer
@@ -649,7 +647,7 @@ class TestPPOTrainer:
         """A prompt that already reaches ``max_seq_len`` must fail fast with a
         clear error — the old code kept generating and either raised IndexError
         from the learned positional embedding or silently mis-truncated the
-        sinusoidal position cache (RIL ISS-334)."""
+        sinusoidal position cache."""
         from llm.training.rlhf.ppo_trainer import PPOTrainer
 
         policy, reward_model, tokenizer, config = tiny_setup
@@ -671,8 +669,7 @@ class TestPPOTrainer:
     def test_generate_responses_stops_at_list_valued_eos(self, tiny_setup):
         """Some HF tokenizers expose ``eos_token_id`` as a list/sequence. The
         old ``next_token.item() == eos_id`` int-vs-list comparison silently
-        never matched, so every rollout ran to ``response_max_len`` (RIL
-        ISS-116/334). A list-valued EOS must still stop generation."""
+        never matched, so every rollout ran to ``response_max_len``. A list-valued EOS must still stop generation."""
         from unittest.mock import patch
 
         from llm.training.rlhf.ppo_trainer import PPOTrainer
@@ -696,7 +693,7 @@ class TestPPOTrainer:
         assert truncated == [False], "an EOS-terminated episode is NOT truncated"
 
     def test_generate_responses_reports_max_len_truncation(self, tiny_setup):
-        """Regression (RIL ISS-178): when the tokenizer has no EOS the
+        """Regression: when the tokenizer has no EOS the
         rollout always exhausts ``response_max_len``; ``generate_responses``
         must report those episodes as truncated so GAE can bootstrap with
         ``V(s_L)`` instead of treating them as terminal."""
@@ -725,7 +722,7 @@ class TestPPOTrainer:
         )
 
     def test_train_step_threads_truncation_and_collects_terminal_value(self, tiny_setup):
-        """Regression (RIL ISS-178): ``train_step`` must thread the truncation
+        """Regression: ``train_step`` must thread the truncation
         flag from generation into the rollout buffer and collect ``V(s_L)``
         for truncated episodes, so ``compute_advantages`` bootstraps instead
         of forcing terminal. End-to-end over the full train_step pipeline."""
@@ -849,7 +846,7 @@ class TestPPOTrainer:
         assert torch.isfinite(torch.tensor(metrics["value_loss"]))
 
     def test_ppo_step_losses_normalized_over_real_tokens(self):
-        """Regression (RIL ISS-065): the policy loss must be normalized over
+        """Regression: the policy loss must be normalized over
         REAL response tokens, not the padded ``[B, response_len]`` window.
 
         A plain ``.mean()`` divides by ``B * response_len``; padded positions
@@ -980,7 +977,7 @@ class TestPPOTrainer:
         assert abs(float(masked_loss - unmasked_loss)) > 1e-9
 
     def test_compute_kl_penalty_aligned_to_response_predicting_states(self, tiny_setup):
-        """Regression (RIL ISS-118): the KL penalty must average over the
+        """Regression: the KL penalty must average over the
         states that PREDICT response tokens — ``[prompt_len-1, total_len-1)``,
         one slot before each response token, matching the policy-loss shift —
         not the unshifted response positions (which include the state after
@@ -1031,7 +1028,7 @@ class TestPPOTrainer:
         )
 
     def test_ppo_step_approx_kl_normalized_over_real_tokens(self):
-        """Regression (RIL ISS-090): ``approx_kl`` / ``ratio_mean`` telemetry
+        """Regression: ``approx_kl`` / ``ratio_mean`` telemetry
         must be masked means over REAL response tokens, not the padded
         ``[B, response_len]`` window.
 
@@ -1143,7 +1140,7 @@ class TestPPOTrainer:
         assert abs(float(ref_masked - ref_unmasked)) > 1e-9
 
     def test_target_kl_stops_all_ppo_epochs(self, tiny_setup):
-        """Regression (RIL ISS-052): ``target_kl`` early stopping must halt
+        """Regression: ``target_kl`` early stopping must halt
         the whole epoch loop, not just the current mini-batch loop.
 
         The old ``break`` sat inside the inner ``for batch in get_batches``
@@ -1194,7 +1191,7 @@ class TestPPOTrainer:
         )
 
     def test_ppo_step_padding_not_counted_as_prompt_tokens(self, tiny_setup):
-        """Regression (RIL ISS-043): trailing padding in a padded mini-batch
+        """Regression: trailing padding in a padded mini-batch
         must not be counted as prompt tokens.
 
         ``rollout_buffer._collate_batch`` pads each sample to the longest
@@ -1268,7 +1265,7 @@ class TestPPOTrainer:
         assert torch.allclose(response_values[1, :1], torch.tensor([202.0], device=str(DEFAULT_DEVICE)))
 
     def test_ppo_step_epoch0_ratio_is_identity_under_eval(self, tiny_setup):
-        """Regression (RIL ISS-174): re-scoring a rollout with the SAME policy
+        """Regression: re-scoring a rollout with the SAME policy
         must give an identity ratio at epoch 0 — the policy's weights have not
         moved, and old_log_probs were computed under eval() (no dropout). The
         old code re-scored in train() mode, so dropout (p=0.1) made ratio != 1
@@ -1280,7 +1277,7 @@ class TestPPOTrainer:
         policy, reward_model, tokenizer, config = tiny_setup
         assert hasattr(policy, "training")  # real DecoderModel — has dropout ops
         assert any(m.__class__.__name__ == "Dropout" for m in policy.modules()), (
-            "test precondition: tiny_model must contain dropout to expose ISS-174"
+            "test precondition: tiny_model must contain dropout to expose "
         )
 
         trainer = PPOTrainer(
@@ -1311,7 +1308,7 @@ class TestPPOTrainer:
         assert abs(metrics["approx_kl"]) < 1e-3, f"epoch-0 approx_kl should be ~0, got {metrics['approx_kl']}"
 
     def test_train_step_empty_prompts_returns_zeroed_metrics(self, tiny_setup):
-        """Regression (RIL ISS-177): a degenerate-but-legal step (empty prompt
+        """Regression: a degenerate-but-legal step (empty prompt
         list -> empty buffer -> no mini-batches) must return zeroed metrics
         instead of IndexError on ``all_metrics[0]`` or dividing by zero."""
         from llm.training.rlhf.ppo_trainer import PPOTrainer
@@ -1330,7 +1327,7 @@ class TestPPOTrainer:
         assert "approx_kl" not in metrics  # no batches -> no ppo metrics, but no crash
 
     def test_generate_responses_honors_top_k(self, tiny_setup):
-        """Regression (RIL ISS-176): ``top_k=1`` must make every sampled token
+        """Regression: ``top_k=1`` must make every sampled token
         the argmax (deterministic greedy); previously the knob was declared in
         the config but generation sampled pure multinomial over the full
         distribution."""
@@ -1367,7 +1364,7 @@ class TestPPOTrainer:
                 policy.train()
 
     def test_train_step_normalize_rewards_standardizes(self, tiny_setup):
-        """Regression (RIL ISS-176): ``normalize_rewards=True`` must
+        """Regression: ``normalize_rewards=True`` must
         standardize the reward batch to ~zero mean / unit variance before it
         feeds GAE/returns; previously the knob was never read."""
         from llm.training.rlhf.ppo_trainer import PPOTrainer

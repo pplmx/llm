@@ -54,7 +54,7 @@ def test_codec_shape_deterministic_and_finite():
 
 
 def test_codec_roundtrip_exact_at_boundary_vocab():
-    """Max exactly-invertible vocab is ``n_mels - 2`` (RIL TASK-310).
+    """Max exactly-invertible vocab is ``n_mels - 2``.
 
     Token ``t`` encodes to freq bin ``2 + (t % (n_mels - 2))``. For a
     permitted vocab the top valid token is ``vocab - 1``. At ``vocab ==
@@ -76,7 +76,7 @@ def test_codec_roundtrip_exact_at_boundary_vocab():
 def test_codec_boundary_vocab_roundtrip_is_corrupted():
     """The old permitted ``vocab == n_mels - 1`` breaks the roundtrip: the top
     valid token ``n_mels - 2`` lands on freq bin 2 and decodes as id ``0``.
-    Pins the exact failure the DataModule bound now rejects (RIL TASK-310)."""
+    Pins the exact failure the DataModule bound now rejects."""
     mels, slot_h, frames = 32, 8, 64
     vocab = mels - 1  # 31 — previously allowed, silently corrupt
     t = torch.tensor([[mels - 2]])  # top valid token, decodes to 0
@@ -198,7 +198,7 @@ def test_datamodule_asr_validates_vocab_fits_mel_bins():
 
 
 def test_datamodule_asr_rejects_boundary_vocab():
-    """Regression (RIL TASK-310): ``asr_vocab == n_mels - 1`` used to PASS
+    """Regression: ``asr_vocab == n_mels - 1`` used to PASS
     validation yet silently corrupt the codec (token ``n_mels - 2`` round-trips
     to 0). Now rejected; ``n_mels - 2`` (the exact-inversion max) passes."""
     config = _config()

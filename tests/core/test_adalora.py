@@ -151,7 +151,7 @@ class TestOrthogonalityRegularization:
         assert loss.item() >= 0.0
 
     def test_loss_is_nonzero_for_untrained_random_parameters(self, layer):
-        """Regression (RIL ISS-157): the regularizer must penalise the RAW
+        """Regression: the regularizer must penalise the RAW
         ``lora_P`` / ``lora_Q`` parameters (the ones the optimizer trains),
         not the QR-orthonormalized forward copies. The old implementation fed
         the orthonormal-by-construction factors into ``||PᵀP - I||²`` and
@@ -164,7 +164,7 @@ class TestOrthogonalityRegularization:
     def test_loss_increases_when_P_perturbed(self, layer):  # noqa: N802
         """Making P highly degenerate (all columns identical → rank 1) must
         push the loss well above the near-zero value of a well-conditioned
-        P — the regularizer is responsive, not constant (RIL ISS-157)."""
+        P — the regularizer is responsive, not constant."""
         baseline = layer.orth_reg_loss().item()
         with torch.no_grad():
             layer.lora_P.normal_()
@@ -178,7 +178,7 @@ class TestOrthogonalityRegularization:
 
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
     def test_half_precision_base_layer_works(self, dtype):
-        """Regression (RIL ISS-156): ``torch.linalg.qr`` is not
+        """Regression: ``torch.linalg.qr`` is not
         implemented for Half/BFloat16, and every AdaLoRA forward/merge
         orthonormalizes P/Q via QR. A model whose base layer is natively
         fp16/bf16 (the norm for this framework's serve/export paths) must
@@ -230,7 +230,7 @@ class TestMergeUnmerge:
         assert torch.allclose(base.weight, original_weight, atol=1e-5)
 
     def test_double_merge_is_idempotent_then_unmerge_restores(self):
-        """Regression (RIL ISS-159): a second ``merge_weights`` (defensive /
+        """Regression: a second ``merge_weights`` (defensive /
         loop caller, or serve-merge after an earlier export-merge) must NOT
         clobber the unmerge snapshot — mirror of the LoRA fix. The old code
         re-stored ``_merged_scaling = self.scaling`` on the second call

@@ -1,4 +1,4 @@
-"""Tests for Knowledge Distillation loss (RIL TASK-221 / DEC-055)."""
+"""Tests for Knowledge Distillation loss."""
 
 from __future__ import annotations
 

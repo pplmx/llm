@@ -81,12 +81,12 @@ def _verify_round_trip(legacy: Path, sidecars: dict[str, Path]) -> tuple[bool, s
     the actual sidecar contents, so we read them directly.
     """
     # Legacy side: load the .pt directly (bypassing the helper).
-    # ``weights_only=True`` (RIL ISS-170): both sides are framework-authored
+    # ``weights_only=True``: both sides are framework-authored
     # tensors+primitives payloads; arbitrary-pickle loading an untrusted file
     # here would be an RCE on `llm migrate-ckpt`. A corrupt blob / bare
     # ``torch.save(model)`` raises UnpicklingError/RuntimeError before any
     # comparison — surface it as a clean verification failure, not a raw
-    # traceback (RIL ISS-329).
+    # traceback.
     try:
         legacy_payload = torch.load(legacy, map_location="cpu", weights_only=True)
     except (pickle.UnpicklingError, EOFError, RuntimeError, OSError) as exc:
@@ -207,7 +207,7 @@ def main(
 
     # A directory named ``foo.pt`` would pass the exists() gate, then
     # ``torch.load(directory)`` raised an IsADirectoryError raw traceback
-    # (RIL ISS-213); mirror quantize's ``_validate_model_path`` which checks
+    # ; mirror quantize's ``_validate_model_path`` which checks
     # ``is_file()`` so the error is the documented one-line exit-1 form.
     if not legacy_path.is_file():
         typer.echo(f"error: legacy checkpoint is not a regular file: {legacy_path}", err=True)

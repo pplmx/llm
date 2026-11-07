@@ -51,7 +51,7 @@ def _as_token_tensor(value: Any) -> Any:
     ``evaluate`` promises tensor inputs, so numeric rows (int lists,
     tensors) are coerced like before; a STRING row (generation task
     references) is left as-is — ``as_tensor(str, dtype=torch.long)`` raises
-    an opaque ``TypeError`` the ``run`` path never hit (RIL ISS-396).
+    an opaque ``TypeError`` the ``run`` path never hit.
     """
     if isinstance(value, torch.Tensor):
         return value
@@ -70,7 +70,7 @@ def _align_reference_device(predictions: Any, references: Any) -> Any:
 
     A model evaluated where it lives (CUDA) yields CUDA predictions while
     ``prepare_data`` returns CPU tensors; feeding CPU references straight to
-    ``nll_loss`` then raises a device mismatch (RIL TASK-329's periodic
+    ``nll_loss`` then raises a device mismatch ('s periodic
     training eval hit exactly this). Non-tensor references (e.g. strings for
     generation metrics) pass through unchanged.
     """
@@ -92,7 +92,7 @@ class EvaluationRunner:
             instances with task-specific constructor kwargs).
         output_dir: Where reports are written.
         metric_names: Optional metric NAMES resolved via
-            :func:`llm.evaluation.metrics.resolve_metrics` (RIL ISS-251).
+            :func:`llm.evaluation.metrics.resolve_metrics`.
             When ``None`` or empty, the runner falls back to
             ``task.metrics``.
     """
@@ -132,7 +132,7 @@ class EvaluationRunner:
         accepts BOTH numeric (tensor-coercible) and string references: an
         ``as_tensor(..., dtype=torch.long)`` coercion of a generation task's
         text rows raised an opaque ``TypeError`` while :meth:`run` served
-        the same task fine (RIL ISS-396). Non-numeric rows pass through
+        the same task fine. Non-numeric rows pass through
         unchanged; numeric ones still reach the metrics as tensors —
         PerplexityMetric stacks lists of tensors, so the two-row stack form
         is preserved.

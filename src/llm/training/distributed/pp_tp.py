@@ -1,4 +1,4 @@
-"""PP + TP co-parallel runtime (RIL TASK-216 / DEC-052, DEC-053).
+"""PP + TP co-parallel runtime.
 
 3D parallel, data-parallel size 1 (pure pipeline + tensor-parallel within each
 stage): every rank owns one pipeline stage whose transformer blocks are
@@ -6,7 +6,7 @@ tensor-parallelised over the stage's TP group.
 
 torch's ``ScheduleGPipe`` cannot drive this layout: ``PipelineStage`` forbids
 ``group_size > num_stages`` and derives P2P peers from ``stage_index % group_size``
-(DEC-053). So this module provides a small, correct GPipe-style driver (one
+So this module provides a small, correct GPipe-style driver (one
 microbatch, no overlap) that routes the activation / input-gradient P2P
 between pipeline stages rank-to-rank at a fixed ``tp_rank`` within a column.
 
@@ -41,7 +41,7 @@ class PPTPRuntime:
         pp_size: Number of pipeline stages.
         tp_size: Tensor-parallel size (ranks per stage).
         dp_size: Data-parallel (column) count. ``> 1`` shards the data per
-            column (TASK-217); each rank also gets a ``dp_group`` to average
+            column; each rank also gets a ``dp_group`` to average
             gradients across columns at the step boundary.
         dp_rank: This rank's data-parallel (column) index.
         stage: This rank's TP-sharded ``_PipelineStage``.
@@ -83,7 +83,7 @@ class PPTPRuntime:
         self.device = device
         # Stage-local checkpoint key -> GLOBAL model key. Mirrors the ``_pp``
         # runtime's ``local_to_global`` so the 3d stage exposes the same
-        # checkpoint boundary (RIL ISS-403). Built by the wrap site from
+        # checkpoint boundary. Built by the wrap site from
         # ``partition_decoder_model`` boundaries; absent (defensive) disables
         # the global-named collect and falls back to the plain local gather.
         self.local_to_global = local_to_global or {}
@@ -113,7 +113,7 @@ class PPTPRuntime:
         # (grad_fn=ToCopyBackward) whose ``.grad`` is never populated. When
         # gloo P2P delivers a CPU tensor and the engine picked CUDA, the copy
         # diverges from the source and the last stage later reads ``.grad``
-        # as None -> crash (RIL ISS-298). Reordering keeps the received tensor
+        # as None -> crash. Reordering keeps the received tensor
         # a true autograd leaf so backward populates its ``.grad``.
         t = t.detach().to(self.device)
         if require_grad:
@@ -197,7 +197,7 @@ class PPTPRuntime:
         dist.broadcast(t, group_src=src, group=group)
         return t
 
-    # --- checkpoint boundary (RIL ISS-403) -------------------------------.
+    # --- checkpoint boundary -------------------------------.
 
     def _column_group(self) -> Any:
         """The column's process group (all stages of THIS pipeline) for the
@@ -208,8 +208,8 @@ class PPTPRuntime:
         """Gather the FULL global-named model state dict across every pipeline
         stage of this column (each stage's TP shards reconstructed first).
 
-        Mirrors ``_PPRuntime.full_state_dict`` for the composed PP+TP stage
-        (RIL ISS-403): a 3d stage owns a TP-sharded slice of the model, so a
+        Mirrors ``_PPRuntime.full_state_dict`` for the composed PP+TP stage:
+        a 3d stage owns a TP-sharded slice of the model, so a
         correct checkpoint must (1) TP-gather this stage's shards back to the
         full stage slice, (2) remap stage-local names onto GLOBAL model names,
         (3) collect every stage's slice across the column, and (4) merge the
@@ -242,7 +242,7 @@ class PPTPRuntime:
 
     def scatter_load(self, state_dict: dict[str, torch.Tensor]) -> None:
         """Load the global-named full state dict, keeping only this stage's
-        slice and TP-scattering it onto this stage (RIL ISS-403).
+        slice and TP-scattering it onto this stage.
 
         Inverse of :meth:`full_state_dict`: map global names back to this
         stage's local keys via ``local_to_global``, then let ``_TPState``

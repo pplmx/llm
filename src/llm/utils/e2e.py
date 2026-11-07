@@ -184,7 +184,7 @@ def run_e2e_pipeline(
     """
     # The validation split is ``num_samples // 5``; fewer than 5 samples
     # truncates it to zero, and `train_model`/`evaluate_model` would then die
-    # on a 0-batch divide. Fail fast at the boundary with the reason (RIL ISS-331).
+    # on a 0-batch divide. Fail fast at the boundary with the reason.
     if config.num_samples < 5:
         raise ValueError(
             f"E2EConfig.num_samples must be >= 5 so the validation split "

@@ -51,7 +51,7 @@ class SamplerMapDataModule(MapDataModule):
         is ``ceil((len - replicas) / replicas) == 0``). The engine would then
         train whole epochs on nothing and silently score them 0.0 —
         ``save_best``/``EarlyStopping`` read that as a perfect loss. Fail at
-        loader construction instead of training on nothing (RIL TASK-323).
+        loader construction instead of training on nothing.
 
         Shared by every DataModule that builds a ``drop_last=True`` train
         sampler (the base ``train_dataloader`` plus the RLHF / AI-feedback
@@ -118,7 +118,7 @@ class TokenizedMapDataModule(SamplerMapDataModule):
         train_size = int(train_ratio * len(dataset))
         val_size = len(dataset) - train_size
         if val_size <= 0 or train_size <= 0:
-            # RIL ISS-200: a 1-sample corpus makes train_size = int(0.9*1) = 0
+            # a 1-sample corpus makes train_size = int(0.9*1) = 0
             # while val_size = 1, so the ``val_size <= 0`` guard alone yields
             # random_split([0, 1]) — an EMPTY train set. The epoch then trains
             # on zero batches and save_best/EarlyStopping read a meaningless
@@ -133,7 +133,7 @@ class TokenizedMapDataModule(SamplerMapDataModule):
         # 90/10 partition — each rank then trains on a partly-disjoint 90% and
         # the engine's ``reduce_mean`` of val_loss averages across ranks that
         # computed on *different* examples, so val/best/EarlyStopping are
-        # statistically meaningless on multi-GPU (RIL ISS-087). A fixed
+        # statistically meaningless on multi-GPU. A fixed
         # generator also makes the partition identical across runs.
         generator = torch.Generator()
         generator.manual_seed(0)

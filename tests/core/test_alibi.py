@@ -156,7 +156,7 @@ class TestALiBiPositionBias:
 
 
 class TestAliBiModelIntegration:
-    """DecoderModel-level ALiBi wiring (RIL — ALiBi milestone, TASK-159/ISS-190)."""
+    """DecoderModel-level ALiBi wiring (ALiBi milestone)."""
 
     def _model(self, use_alibi):
         torch.manual_seed(0)
@@ -241,7 +241,7 @@ class TestAliBiModelIntegration:
 
 
 class TestSDPAWithAttnBias:
-    """Direct sdpa() wrapper ALiBi bias tests (RIL — ALiBi milestone)."""
+    """Direct sdpa() wrapper ALiBi bias tests (ALiBi milestone)."""
 
     @staticmethod
     def _sdpa(**kw):

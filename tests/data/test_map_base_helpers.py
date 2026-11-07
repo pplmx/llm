@@ -91,7 +91,7 @@ def test_setup_tokenized_file_dataset_raises_when_val_path_missing(tmp_path):
 
 
 def test_train_dataloader_raises_when_drop_last_empties_every_rank():
-    """RIL TASK-323: ``DistributedSampler(drop_last=True)`` gives EVERY rank a
+    """``DistributedSampler(drop_last=True)`` gives EVERY rank a
     zero-sample sampler when world_size > len(train_dataset) — the engine then
     trains whole epochs on nothing and silently scores them 0.0, which
     save_best / EarlyStopping / ReduceLROnPlateau read as a perfect loss. The
@@ -127,7 +127,7 @@ def test_train_dataloader_raises_when_drop_last_empties_every_rank():
 
 
 def test_split_train_val_identical_across_ranks():
-    """All DDP ranks must derive the same 90/10 partition (RIL ISS-087).
+    """All DDP ranks must derive the same 90/10 partition.
 
     ``DistributedManager.setup`` seeds the global torch RNG per rank
     (``manual_seed(42 + rank)``); if ``split_train_val`` consumed it, each
@@ -157,7 +157,7 @@ def test_split_train_val_identical_across_ranks():
 
 
 def test_split_train_val_single_sample_uses_whole_dataset_as_train():
-    """RIL ISS-200: a 1-sample corpus must not yield an empty train set.
+    """a 1-sample corpus must not yield an empty train set.
 
     ``int(0.9 * 1) == 0`` and ``val_size = 1``, so the old ``val_size <= 0``
     guard let ``random_split(dataset, [0, 1])`` produce an EMPTY train subset
