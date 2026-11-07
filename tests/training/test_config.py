@@ -177,6 +177,28 @@ class TestConfig:
         with pytest.raises(ValueError, match="Unknown attn_impl"):
             ModelConfig(attn_impl="nonexistent_attention")
 
+    def test_log_level_validated_at_config_load(self):
+        """An unknown level must fail here, not in a logging call later.
+
+        The two consumers failed differently and late:
+        ``configure_logging`` handed the string to
+        ``logging.basicConfig(level=...)`` (``ValueError: Unknown level``)
+        while ``Logger`` did ``getattr(logging, name)``
+        (``AttributeError: module 'logging' has no attribute 'BOGUS'``).
+        """
+        from llm.training.core.config import LoggingConfig
+
+        for bad in ("BOGUS", "", "not-a-level"):
+            with pytest.raises(ValueError, match="unknown log_level"):
+                LoggingConfig(log_level=bad)
+
+    def test_log_level_normalised_to_upper(self):
+        """A lowercase level is accepted and normalised, so ``debug`` works."""
+        from llm.training.core.config import LoggingConfig
+
+        assert LoggingConfig(log_level="debug").log_level == "DEBUG"
+        assert LoggingConfig(log_level="Warning").log_level == "WARNING"
+
     def test_model_config_rejects_non_positive_num_kv_heads(self):
         """``num_kv_heads <= 0`` must fail at config load, not inside a backend.
 

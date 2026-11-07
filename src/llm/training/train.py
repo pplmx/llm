@@ -136,10 +136,15 @@ def main(
     """
     Modular PyTorch DDP Training Framework.
     """
-    configure_logging()
-    logger = logging.getLogger("train")
-
     config = Config.from_yaml(config_path) if config_path else Config()
+    # Apply the configured level to the ROOT logger too. ``TrainigEngine``
+    # builds a ``Logger`` that honours ``config.logging.log_level`` for its
+    # own ``[Rank N]`` lines, but everything logged outside that namespace
+    # (library warnings, plugin output, the CLI's own setup messages) went to
+    # a root logger pinned at INFO — so `log_level: DEBUG` produced DEBUG
+    # `[Rank 0]` lines beside INFO-only everything else.
+    configure_logging(config.logging.log_level)
+    logger = logging.getLogger("train")
 
     if epochs is not None:
         config.training.epochs = epochs

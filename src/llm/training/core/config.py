@@ -829,6 +829,26 @@ class LoggingConfig(BaseModel):
     log_dir: str = "logs"
     save_logs: bool = True
 
+    @field_validator("log_level")
+    @classmethod
+    def _validate_log_level(cls, value: str) -> str:
+        """Reject an unknown level name at config-load time.
+
+        The two consumers disagreed on how to fail: ``train.configure_logging``
+        passed the string straight to ``logging.basicConfig(level=...)``
+        (``ValueError: Unknown level: 'BOGUS'``) while
+        ``llm.training.core.logger.Logger`` did ``getattr(logging, name)``
+        (``AttributeError: module 'logging' has no attribute 'BOGUS'``). Both
+        are late and unhelpful; validate once here and name the valid levels.
+        """
+        import logging as _logging
+
+        name = value.upper()
+        if name not in _logging.getLevelNamesMapping():
+            valid = sorted(_logging.getLevelNamesMapping())
+            raise ValueError(f"unknown log_level {value!r}; expected one of {valid}")
+        return name
+
 
 class DataConfig(BaseModel):
     """Data configuration"""
