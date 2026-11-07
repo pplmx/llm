@@ -531,6 +531,38 @@ def _strip_compile_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
     return state_dict
 
 
+def _strip_peft_adapter_state(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a PEFT-wrapped state dict to the plain base-model namespace.
+
+    When a task applies PEFT *inside* ``build_model`` (``peft_method`` /
+    ``use_lora`` / …), every wrapped ``nn.Linear`` becomes a ``LoRALinear``
+    whose state dict reads ``layer.base_layer.weight`` plus
+    ``layer.lora_A`` / ``layer.lora_B``. Persisting that verbatim makes the
+    checkpoint unloadable by every consumer that rebuilds a PLAIN model and
+    then applies PEFT itself — ``llm serve`` does exactly that, so the
+    documented "SFT + LoRA -> serve" loop failed with
+    ``Checkpoint is missing 18 model key(s) (first: ['lm_head.bias', ...])``.
+
+    The adapter deltas live in the sidecar that
+    ``PEFTAdapterCheckpointCallback`` writes (or are recoverable from the
+    ``lora_*`` tensors this drops), so the checkpoint should hold the BASE
+    weights under their plain names — the same contract a non-PEFT run
+    produces. This mirrors :func:`_strip_compile_prefix`: checkpoints always
+    store the portable namespace, and loaders normalize inbound keys.
+
+    A state dict with no PEFT wrapper is returned unchanged.
+    """
+    if not any(".base_layer." in key or ".lora_" in key for key in state_dict):
+        return state_dict
+    stripped: dict[str, Any] = {}
+    for key, value in state_dict.items():
+        # Adapter tensors are not base weights; the sidecar carries them.
+        if ".lora_" in key or key.endswith(".lora_A") or key.endswith(".lora_B"):
+            continue
+        stripped[key.replace(".base_layer.", ".")] = value
+    return stripped
+
+
 def _align_state_dict_keys(state_dict: dict[str, Any], expected_keys: Iterable[str]) -> dict[str, Any]:
     """Remap a checkpoint's keys onto the namespace a wrapped module expects.
 
@@ -880,7 +912,7 @@ def model_state_dict(
         # Each rank rebuilds the full dict; the manager writes rank 0's.
         return cast(Any, model)._tp.gather_full_state_dict(model_for_checkpoint_io(model))
     state = fsdp_state if fsdp_state is not None else model_for_checkpoint_io(model).state_dict()
-    return _strip_compile_prefix(state)
+    return _strip_peft_adapter_state(_strip_compile_prefix(state))
 
 
 def allreduce_zero_grads(model: nn.Module, group: dist.ProcessGroup | None = None) -> None:

@@ -622,3 +622,120 @@ class TestEndToEndPEFTCheckpointIntegration:
         assert len(saved_up) == len(loaded)
         for s, l_iter in zip(saved_up, loaded, strict=True):
             assert torch.equal(s, l_iter)
+
+
+# --- Checkpoint state must hold PLAIN base weights, not PEFT wrappers ---
+
+
+def test_model_state_dict_strips_peft_wrappers():
+    """A PEFT-wrapped model's saved state must use the plain base namespace.
+
+    Tasks that apply PEFT inside ``build_model`` turn every wrapped
+    ``nn.Linear`` into a ``LoRALinear``, whose state dict reads
+    ``layer.base_layer.weight`` plus ``layer.lora_A`` / ``.lora_B``.
+    Persisting that verbatim made the checkpoint unloadable by consumers that
+    rebuild a PLAIN model and then apply PEFT themselves — ``llm serve`` does
+    exactly that, so the documented "SFT + LoRA -> serve" loop died with
+    ``Checkpoint is missing 18 model key(s) (first: ['lm_head.bias', ...])``.
+    """
+    from llm.core.lora import apply_lora
+    from llm.models.decoder import DecoderModel
+    from llm.training.distributed.parallel import model_state_dict
+
+    model = DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16)
+    baseline_keys = set(model_state_dict(model))
+    assert "lm_head.weight" in baseline_keys
+
+    apply_lora(model, rank=4, alpha=8.0)
+    wrapped = model.state_dict()
+    assert any(".base_layer." in k for k in wrapped), "precondition: LoRA wraps the linears"
+    assert any(".lora_A" in k for k in wrapped), "precondition: adapter tensors exist"
+
+    saved = model_state_dict(model)
+    assert not any(".base_layer." in k for k in saved), (
+        f"wrapped keys leaked: {[k for k in saved if 'base_layer' in k][:3]}"
+    )
+    assert not any(".lora_" in k for k in saved), "adapter tensors belong in the sidecar, not the base checkpoint"
+    assert set(saved) == baseline_keys, "the saved state must match a plain model's key set"
+
+
+def test_unwrapped_model_state_dict_is_untouched():
+    """A model without PEFT must pass through with the SAME dict object."""
+    from llm.models.decoder import DecoderModel
+    from llm.training.distributed.parallel import _strip_peft_adapter_state
+
+    model = DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16)
+    state = model.state_dict()
+    assert _strip_peft_adapter_state(state) is state, "no-PEFT state must not be rebuilt"
+
+
+def test_checkpoint_round_trips_through_serving_with_peft(tmp_path):
+    """End-to-end: a PEFT checkpoint loads in ``llm serve``'s plain-model path.
+
+    This is the loop the tutorial promises ("SFT + LoRA -> serve one-liner").
+    """
+    import torch
+
+    from llm.core.lora import apply_lora
+    from llm.core.peft.checkpoint import save_peft
+    from llm.models.decoder import DecoderModel
+    from llm.serving.config import ServingConfig
+    from llm.serving.loader import load_model_and_tokenizer
+    from llm.training.core.checkpoint import CheckpointConfig, CheckpointManager
+
+    model = DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16)
+    apply_lora(model, rank=4, alpha=8.0)
+    adapter_path = tmp_path / "adapter.bin"
+    save_peft(model, adapter_path, "lora", rank=4, alpha=8.0)
+
+    ckpt_dir = tmp_path / "ckpt"
+    manager = CheckpointManager(
+        CheckpointConfig(checkpoint_dir=str(ckpt_dir), save_interval=1), rank=0, logger=_quiet_logger()
+    )
+    manager.save_checkpoint(
+        1,
+        model,
+        None,
+        None,
+        None,
+        1.0,
+        model_config={"vocab_size": 32, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16},
+    )
+
+    # Sanity: the persisted file carries plain keys (this is what the fix ensures).
+    from safetensors.torch import load_file
+
+    persisted = load_file(str(ckpt_dir / "epoch_2.safetensors"))
+    assert "lm_head.weight" in persisted, sorted(persisted)[:5]
+
+    cfg = ServingConfig(
+        model_path=str(ckpt_dir / "epoch_2"),
+        tokenizer_path=str(_tiny_tokenizer_path(tmp_path)),
+        peft_method="lora",
+        peft_adapter_path=str(adapter_path),
+        peft_kwargs={"rank": 4, "alpha": 8.0},
+    )
+    loaded, _tok = load_model_and_tokenizer(cfg)
+    assert loaded is not None
+    out = loaded(torch.randint(0, 32, (1, 4)))
+    assert out.shape == (1, 4, 32)
+
+
+def _quiet_logger():
+    import logging
+
+    logger = logging.getLogger("test-peft-ckpt")
+    logger.addHandler(logging.NullHandler())
+    return logger
+
+
+def _tiny_tokenizer_path(tmp_path):
+    """Write a tokenizer.pt matching the tiny model's vocab, return its path."""
+
+    from llm.runtime.tokenizer_factory import persist_training_tokenizer
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    tok = SimpleCharacterTokenizer([chr(c) for c in range(32, 32 + 30)])
+    path = persist_training_tokenizer(tok, tmp_path)
+    assert path is not None
+    return path
