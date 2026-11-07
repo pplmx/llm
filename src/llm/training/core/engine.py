@@ -302,6 +302,14 @@ class TrainingEngine:
             parallel_strategy=self.config.distributed.parallel_strategy,
             device=self.device,
             world_size=self.world_size,
+            # FSDP knobs. ``wrap_model_for_training`` has always accepted
+            # these, and the config declares + documents all three, but the
+            # engine never forwarded them — so `distributed.fsdp_mixed_precision`
+            # / `fsdp_auto_wrap_min_params` / `fsdp_cpu_offload` in a YAML were
+            # silently ignored and every FSDP run got the wrapper defaults.
+            fsdp_mixed_precision=self.config.distributed.fsdp_mixed_precision,
+            fsdp_auto_wrap_min_params=self.config.distributed.fsdp_auto_wrap_min_params,
+            fsdp_cpu_offload=self.config.distributed.fsdp_cpu_offload,
             tp_size=self.config.distributed.tp_size,
             dp_size=self.config.distributed.dp_size,
             pp_size=self.config.distributed.pp_size,
