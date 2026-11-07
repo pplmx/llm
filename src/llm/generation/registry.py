@@ -102,3 +102,8 @@ def get_generation_backend(
     """
     ensure_backends_registered()
     return BACKEND_REGISTRY.get(name)(engine=engine, **kwargs)
+
+
+# Public reads must see the built-ins rather than an empty registry. The
+# bootstrap stays lazy — it runs on the first read, never at import time.
+BACKEND_REGISTRY.set_warmup(ensure_backends_registered)

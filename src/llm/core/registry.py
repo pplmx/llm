@@ -69,9 +69,12 @@ def _make_rms_norm(*args: Any, **kwargs: Any) -> nn.Module:
 
 
 def ensure_norms_registered() -> None:
-    if "layer_norm" not in NORM_REGISTRY:
+    # ``has_raw`` rather than ``in``: this function IS the bootstrap, and the
+    # registry's warm-up hook calls it, so a membership test routed through
+    # ``__contains__`` would re-enter the bootstrap.
+    if not NORM_REGISTRY.has_raw("layer_norm"):
         NORM_REGISTRY.register("layer_norm", _make_layer_norm)
-    if "rms_norm" not in NORM_REGISTRY:
+    if not NORM_REGISTRY.has_raw("rms_norm"):
         NORM_REGISTRY.register("rms_norm", _make_rms_norm)
 
 
@@ -99,3 +102,8 @@ __all__ = [
     "register_mlp",
     "set_attention_kv_cache_capability",
 ]
+
+
+# Public reads must see the built-ins rather than an empty registry. The
+# bootstrap stays lazy — it runs on the first read, never at import time.
+NORM_REGISTRY.set_warmup(ensure_norms_registered)

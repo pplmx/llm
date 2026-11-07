@@ -126,3 +126,8 @@ __all__ = [
     "ensure_exporters_registered",
     "export_model",
 ]
+
+
+# Public reads must see the built-ins rather than an empty registry. The
+# bootstrap stays lazy — it runs on the first read, never at import time.
+EXPORT_REGISTRY.set_warmup(ensure_exporters_registered)

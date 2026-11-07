@@ -84,7 +84,10 @@ def ensure_methods_registered() -> None:
             # loader defaults to ``overwrite=False`` so plugins claiming
             # built-in names are silently skipped (matching the export
             # convention).
-            if method.name not in PEFT_REGISTRY:
+            # ``has_raw``: this IS the bootstrap the registry's warm-up hook
+            # calls, so a membership test through ``__contains__`` would
+            # re-enter it and deadlock on the registration lock below.
+            if not PEFT_REGISTRY.has_raw(method.name):
                 PEFT_REGISTRY.register(method.name, method)
 
         load_entry_point_registry("llm.peft_methods", PEFT_REGISTRY)
@@ -285,3 +288,8 @@ __all__ = [
     "merge_peft",
     "unmerge_peft",
 ]
+
+
+# Public reads must see the built-ins rather than an empty registry. The
+# bootstrap stays lazy — it runs on the first read, never at import time.
+PEFT_REGISTRY.set_warmup(ensure_methods_registered)

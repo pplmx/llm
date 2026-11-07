@@ -53,7 +53,9 @@ def load_entry_point_registry[T](
     """
     loaded: list[str] = []
     for ep in _iter_group_entry_points(group):
-        preexisting = ep.name in registry
+        # Raw lookup: this runs while the registry's own ensure_* bootstrap is
+        # still populating it, so triggering the warm-up here would re-enter.
+        preexisting = registry.has_raw(ep.name)
         if not overwrite and preexisting:
             # A third-party plugin claiming a built-in's name (e.g. an
             # exporter named ``onnx``) is silently kept out of the registry:

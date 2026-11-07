@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from llm.runtime.plugins import load_entry_point_hooks, load_entry_point_registry
 from llm.runtime.registry import Registry
 
@@ -134,3 +136,83 @@ def test_load_entry_point_hooks_isolates_broken_hook():
         invoked = load_entry_point_hooks("llm.tasks")
 
     assert invoked == ["good"]
+
+
+# --- Lazy registries must answer public reads, without deadlocking ---
+
+
+def test_lazy_registry_names_trigger_the_bootstrap():
+    """``names()`` on a lazy registry must list the built-ins, not [].
+
+    The docs tell users to run ``PEFT_REGISTRY.names()`` to discover methods,
+    but the registry is populated lazily by an ``ensure_*`` function. Following
+    the docs in a fresh process used to return an EMPTY list, so the documented
+    workflow reported that no methods existed.
+    """
+    from llm.core.peft import registry as peft_registry
+
+    # Force the cold state a fresh process starts in.
+    peft_registry._methods_registered = False
+    peft_registry.PEFT_REGISTRY._entries.clear()
+    peft_registry.PEFT_REGISTRY._warming = False
+
+    names = peft_registry.PEFT_REGISTRY.names()
+    assert names, "names() returned an empty list for a lazily-populated registry"
+    assert "lora" in names
+
+
+def test_lazy_registry_unknown_get_lists_the_builtins():
+    """An unknown lookup must name the real alternatives, not an empty string."""
+    from llm.core.peft import registry as peft_registry
+
+    peft_registry._methods_registered = False
+    peft_registry.PEFT_REGISTRY._entries.clear()
+    peft_registry.PEFT_REGISTRY._warming = False
+
+    with pytest.raises(ValueError, match="not found") as excinfo:
+        peft_registry.PEFT_REGISTRY.get("definitely_not_a_method")
+    message = str(excinfo.value)
+    assert "lora" in message, f"the error should list the available methods, got: {message}"
+
+
+def test_bootstrap_does_not_deadlock_with_the_warmup_hook():
+    """Calling ``ensure_*`` directly must not re-enter through a read.
+
+    The ``ensure_*`` functions hold a non-reentrant lock and then check
+    membership on the registry they are filling. Once reads trigger the
+    bootstrap, that inner check re-enters the lock and deadlocks — observed as
+    ``import llm.serving`` (and every test in ``test_peft_registry.py``)
+    hanging forever.
+    """
+    from llm.core.peft import registry as peft_registry
+    from llm.generation.registry import BACKEND_REGISTRY, ensure_backends_registered
+
+    peft_registry._methods_registered = False
+    peft_registry.PEFT_REGISTRY._entries.clear()
+    peft_registry.PEFT_REGISTRY._warming = False
+
+    # Must return promptly; the surrounding test would hang otherwise.
+    peft_registry.ensure_methods_registered()
+    ensure_backends_registered()
+    assert "lora" in peft_registry.PEFT_REGISTRY.names()
+    assert "eager" in BACKEND_REGISTRY.names()
+
+
+def test_infrastructure_reads_bypass_the_bootstrap():
+    """``has_raw`` must never trigger the warm-up (it runs during the bootstrap)."""
+    from llm.runtime.registry import Registry
+
+    calls: list[str] = []
+    registry: Registry[int] = Registry("RawProbe")
+
+    def warmup() -> None:
+        calls.append("warmup")
+        registry.register("from_warmup", 1)
+
+    registry.set_warmup(warmup)
+
+    assert registry.has_raw("from_warmup") is False, "has_raw triggered the bootstrap"
+    assert calls == []
+    # A normal read does populate it.
+    assert registry.names() == ["from_warmup"]
+    assert calls == ["warmup"]
