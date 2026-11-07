@@ -2,6 +2,8 @@
 Tests for Scheduler - request scheduling for continuous batching.
 """
 
+from unittest.mock import MagicMock
+
 from llm.serving.scheduler import Scheduler
 from llm.serving.schemas import RequestState, Sequence
 
@@ -286,3 +288,78 @@ class TestSchedulerConcurrency:
             t.join()
 
         assert not errors, f"concurrent add/schedule/get raised: {errors[0]!r}"
+
+
+class TestSchedulerRepr:
+    """The repr must expose queue depth and be safe under concurrency."""
+
+    def test_repr_shows_queue_depths(self):
+        """``waiting`` / ``running`` lengths are the core serving-health signal.
+
+        They are what distinguishes "requests piling up" from "queue healthy but
+        each step is slow", and the default ``<Scheduler object at 0x...>``
+        hides both.
+        """
+        scheduler = Scheduler(max_batch_size=4, max_waiting=2)
+        empty = repr(scheduler)
+        assert "object at 0x" not in empty, "Scheduler still uses the default object repr"
+        assert "max_batch_size=4" in empty
+        assert "waiting=0" in empty
+        assert "running=0" in empty
+
+        scheduler.add_sequence(MagicMock())
+        assert "waiting=1" in repr(scheduler)
+
+        scheduler.add_sequence(MagicMock())
+        full = repr(scheduler)
+        assert "waiting=2" in full
+        assert scheduler.is_full(), "repr and is_full disagree about a full queue"
+
+    def test_repr_is_safe_while_another_thread_mutates_the_queues(self):
+        """``repr`` must take the scheduler lock, like every other reader.
+
+        The deques are mutated by ``step()`` and the streaming paths without the
+        engine lock; an unlocked ``len()`` can observe a torn state or raise
+        ``RuntimeError: deque mutated during iteration``.
+        """
+        import threading
+
+        scheduler = Scheduler(max_batch_size=8, max_waiting=64)
+        errors: list[BaseException] = []
+        stop = threading.Event()
+
+        def churn() -> None:
+            try:
+                while not stop.is_set():
+                    scheduler.add_sequence(MagicMock())
+                    scheduler.clear()
+            except BaseException as exc:  # noqa: BLE001 - report from the thread
+                errors.append(exc)
+
+        def reader() -> None:
+            try:
+                for _ in range(2000):
+                    text = repr(scheduler)
+                    assert text.startswith("Scheduler(")
+            except BaseException as exc:  # noqa: BLE001 - report from the thread
+                errors.append(exc)
+
+        threads = [threading.Thread(target=churn) for _ in range(2)] + [
+            threading.Thread(target=reader) for _ in range(2)
+        ]
+        for thread in threads:
+            thread.start()
+        readers_done = threading.Event()
+
+        def _wait_readers() -> None:
+            for thread in threads[2:]:
+                thread.join()
+            readers_done.set()
+
+        threading.Thread(target=_wait_readers).start()
+        readers_done.wait(timeout=30)
+        stop.set()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        assert not errors, f"concurrent repr raised: {errors[0]!r}"

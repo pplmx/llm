@@ -183,6 +183,20 @@ class SlotAllocator:
     def get_slot(self, request_id: str) -> int:
         return self.seq_to_slot.get(request_id, -1)
 
+    def __repr__(self) -> str:
+        """Show occupancy, which is what a stalled-batch bug hunt needs.
+
+        The default ``<SlotAllocator object at 0x...>`` hides which requests
+        hold which slots. When a batch stops admitting new requests, the first
+        question is whether every slot is taken by a live sequence or leaked by
+        one that was never freed — invisible without this.
+
+        Only counts are printed, not the id mapping: the mapping can hold
+        hundreds of request ids, and a repr that long is unusable in a log line
+        or a debugger panel.
+        """
+        return f"SlotAllocator(total_slots={self.total_slots}, free={self.num_free}, in_use={len(self.seq_to_slot)})"
+
 
 class ContinuousBatchingEngine:
     """

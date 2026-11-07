@@ -173,6 +173,32 @@ class TestSlotAllocator:
         allocator.free("req-1")
         assert allocator.num_free == 8
 
+    def test_repr_exposes_occupancy(self):
+        """``repr`` must show slot occupancy, not the default object address.
+
+        A batch that stops admitting new requests is first diagnosed by asking
+        whether every slot is held by a live sequence or leaked by one that was
+        never freed. ``<SlotAllocator object at 0x...>`` answers none of that.
+        """
+        allocator = SlotAllocator(total_slots=8)
+        empty = repr(allocator)
+        assert "object at 0x" not in empty, "SlotAllocator still uses the default object repr"
+        assert "total_slots=8" in empty
+        assert "free=8" in empty
+        assert "in_use=0" in empty
+
+        allocator.allocate("req-1")
+        allocator.allocate("req-2")
+        busy = repr(allocator)
+        assert "free=6" in busy
+        assert "in_use=2" in busy
+
+        # The repr must follow a release, which is the leak symptom itself.
+        allocator.free("req-1")
+        released = repr(allocator)
+        assert "free=7" in released
+        assert "in_use=1" in released
+
     def test_get_slot_returns_mapped_slot(self):
         allocator = SlotAllocator(total_slots=8)
         slot = allocator.allocate("req-1")

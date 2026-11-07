@@ -47,6 +47,27 @@ class Scheduler:
         with self._lock:
             return len(self.waiting) > 0 or len(self.running) > 0
 
+    def __repr__(self) -> str:
+        """Show queue depths — the core serving-health signal.
+
+        ``waiting`` / ``running`` lengths are what explain a slow or stalled
+        server (work piling up vs. actually batching), and the default
+        ``<Scheduler object at 0x...>`` hides both.
+
+        Read under ``_lock``: ``step()`` and the streaming paths mutate these
+        deques concurrently, so an unlocked read could observe a torn state or
+        raise ``RuntimeError: deque mutated during iteration``.
+        """
+        with self._lock:
+            waiting = len(self.waiting)
+            running = len(self.running)
+        return (
+            f"Scheduler(max_batch_size={self.max_batch_size}, "
+            f"max_waiting={self.max_waiting}, "
+            f"waiting={waiting}, "
+            f"running={running})"
+        )
+
     def is_full(self) -> bool:
         """True when the waiting queue is at ``max_waiting`` capacity.
 
