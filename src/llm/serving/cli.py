@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 import typer
 
@@ -42,7 +43,24 @@ def serve(
     config_path: str | None = typer.Option(None, "--config", help="Path to a serving YAML config."),
 ) -> None:
     """Start the llm serve OpenAI-compatible inference server."""
-    cfg = ServingConfig() if config_path is None else ServingConfig.from_yaml(config_path)
+    if config_path is None:
+        cfg = ServingConfig()
+    else:
+        # ``ServingConfig.from_yaml`` returns the DEFAULTS for a missing path
+        # (a library-call convenience, pinned by its own test). That is wrong
+        # for an explicit ``--config``: the server then starts happily on
+        # 127.0.0.1:8000 with a default model while the operator believes their
+        # YAML is in effect — no warning, no non-zero exit. Validate here rather
+        # than changing the library method, whose "absent means all defaults"
+        # behaviour other callers may rely on.
+        resolved = Path(config_path)
+        if not resolved.is_file():
+            typer.echo(
+                f"Error: serving config not found: {config_path}. Check the --config value.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        cfg = ServingConfig.from_yaml(resolved)
     if host is not None:
         cfg.host = host
     if port is not None:
