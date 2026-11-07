@@ -28,7 +28,7 @@ model:
 training:
   epochs: 3
   batch_size: 32
-  learning_rate: 3.0e-4
+  lr: 3.0e-4
   warmup_epochs: 0        # short run: flat LR
   num_samples: 100000
   max_steps: 1500

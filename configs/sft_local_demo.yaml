@@ -61,7 +61,7 @@ model:
 training:
   epochs: 1
   batch_size: 4
-  learning_rate: 1.0e-3   # AdamW default
+  lr: 1.0e-3   # AdamW default
   num_samples: 1000
   max_steps: 50            # hard cap so demos can't run forever
   warmup_epochs: 0         # skip warmup for the smoke test

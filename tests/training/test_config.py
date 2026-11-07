@@ -177,6 +177,55 @@ class TestConfig:
         with pytest.raises(ValueError, match="Unknown attn_impl"):
             ModelConfig(attn_impl="nonexistent_attention")
 
+    def test_unknown_config_key_raises_with_suggestion(self, tmp_path):
+        """A typo must not silently evaporate.
+
+        ``Config`` is a ``BaseSettings`` with ``extra="ignore"`` so unrelated
+        ``LLM_*`` environment variables cannot crash a run — but that same
+        leniency made a typo in a YAML file a no-op: the run continued with the
+        default and the user believed the setting applied.
+        """
+        p = tmp_path / "typo.yaml"
+        p.write_text("model:\n  hidden_dim: 512\n", encoding="utf-8")
+        with pytest.raises(ValueError, match=r"unknown key.*model\.hidden_dim"):
+            Config.from_yaml(p)
+
+    def test_unknown_config_key_suggests_the_real_name(self, tmp_path):
+        """The message must point at the intended key, not just complain."""
+        p = tmp_path / "typo.yaml"
+        p.write_text("training:\n  epoch: 3\n", encoding="utf-8")
+        with pytest.raises(ValueError, match=r"did you mean training\.epochs"):
+            Config.from_yaml(p)
+
+    def test_serving_config_is_rejected_with_the_right_advice(self, tmp_path):
+        """A serving file in `configs/` must not look like a bag of typos."""
+        p = tmp_path / "serve.yaml"
+        p.write_text("model_path: checkpoints/best\nhost: 0.0.0.0\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="looks like a SERVING config"):
+            Config.from_yaml(p)
+
+    def test_shipped_training_configs_all_load(self):
+        """The repo's own configs must satisfy the same guard.
+
+        This is the regression that matters: the guard found
+        `training.learning_rate` (real key: `lr`) in EIGHT shipped configs,
+        where the intended learning rate was silently replaced by the 1e-3
+        default — a 50x error for `sft_alpaca.yaml`'s 2.0e-5.
+        """
+        import pathlib
+
+        import yaml
+
+        configs_dir = pathlib.Path(__file__).resolve().parents[2] / "configs"
+        checked = 0
+        for path in sorted(configs_dir.glob("*.yaml")):
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            if {"model_path", "tokenizer_path", "host", "api_key"} & set(raw):
+                continue  # serving schema, covered by ServingConfig
+            Config.from_yaml(path)
+            checked += 1
+        assert checked >= 10, f"expected to check the shipped training configs, only saw {checked}"
+
     def test_log_level_validated_at_config_load(self):
         """An unknown level must fail here, not in a logging call later.
 

@@ -52,7 +52,7 @@ model:
 training:
   epochs: 3
   batch_size: 16
-  learning_rate: 2.0e-5   # typical SFT lr for transformer fine-tunes
+  lr: 2.0e-5   # typical SFT lr for transformer fine-tunes
   num_samples: 100000
   warmup_epochs: 1         # ~SFT-warmup-equivalent in steps
   max_steps: 10000

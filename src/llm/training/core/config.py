@@ -1044,6 +1044,62 @@ class Config(BaseSettings):
             )
         with path.open(encoding="utf-8") as f:
             config_dict = yaml.safe_load(f) or {}
+        _reject_unknown_config_keys(config_dict, path)
         return cls.model_validate(config_dict)
 
     # Note: from_args_and_env removed, CLI logic moves to Typed/CLI tool
+
+
+def _reject_unknown_config_keys(config_dict: object, source: Path) -> None:
+    """Fail on config keys the schema does not know, with a "did you mean" hint.
+
+    ``Config.model_config`` sets ``extra="ignore"`` because it is a
+    ``BaseSettings``: unknown ``LLM_*`` environment variables must not crash a
+    run (the process inherits plenty of unrelated ones). But for a YAML file
+    the same leniency is a trap — a typo silently evaporates and the run
+    proceeds with the default, so the user believes a setting took effect when
+    it never did. Measured on this repo before the guard:
+
+        training.learning_rate -> silently ignored (the key is ``lr``)
+        model.hidden_dim       -> silently ignored (``hidden_size``)
+        training.epoch         -> silently ignored (``epochs``)
+        optimization.use_ampx  -> silently ignored (``use_amp``)
+
+    Checked here rather than by flipping ``extra`` to ``forbid`` so the
+    environment-variable path keeps its tolerance.
+    """
+    if not isinstance(config_dict, dict):
+        raise ValueError(f"config file {source} must contain a YAML mapping at the top level")
+
+    # A serving config is a DIFFERENT schema in the same `configs/` directory.
+    # Without this check the user gets "unknown key model_path (did you mean
+    # model?)", which invites them to "fix" a perfectly valid serving file.
+    serving_only = {"model_path", "tokenizer_path", "host", "api_key"} & set(config_dict)
+    if serving_only:
+        raise ValueError(
+            f"{source} looks like a SERVING config (it sets {', '.join(sorted(serving_only))}), but "
+            "`llm train --config-path` expects a TRAINING config. Use it with `llm serve --config-path` instead."
+        )
+    from difflib import get_close_matches
+
+    def _check(mapping: dict[str, object], model: type[BaseModel], prefix: str) -> None:
+        known = set(model.model_fields)
+        unknown = [key for key in mapping if key not in known]
+        if not unknown:
+            return
+        problems = []
+        for key in unknown:
+            matches = get_close_matches(str(key), known, n=1, cutoff=0.6)
+            problems.append(f"{prefix}{key}" + (f" (did you mean {prefix}{matches[0]}?)" if matches else ""))
+        raise ValueError(
+            f"unknown key(s) in config file {source}: {', '.join(problems)}. "
+            f"Known keys here: {', '.join(sorted(known))}."
+        )
+
+    _check(config_dict, Config, "")
+    for section, field in Config.model_fields.items():
+        value = config_dict.get(section)
+        if isinstance(value, dict):
+            annotation = field.annotation
+            if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+                _check(value, annotation, f"{section}.")
