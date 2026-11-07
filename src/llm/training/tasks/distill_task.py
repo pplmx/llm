@@ -129,7 +129,11 @@ class DistillationTask(LanguageModelingTask):
 
     def train_step(self, batch, model: nn.Module, criterion: nn.Module) -> tuple[torch.Tensor, dict]:
         loss = self._kd_step(batch, model, criterion)
-        if torch.isnan(loss):
+        # ``isfinite``, not ``isnan``: ±inf is equally catastrophic and used to
+        # slip through as a "real" loss, accumulating into the epoch mean while
+        # the engine's gradient check skipped the optimizer step. Mirrors the
+        # guard in ``lm_task.train_step``.
+        if not torch.isfinite(loss):
             return torch.tensor(0.0, device=loss.device, requires_grad=True), {"loss": 0.0, "ppl": 1.0}
         return loss, {
             "loss": loss.item(),

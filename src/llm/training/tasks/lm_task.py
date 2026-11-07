@@ -322,17 +322,27 @@ class LanguageModelingTask(TrainingTask):
 
         loss = criterion(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
-        if torch.isnan(loss):
+        if not torch.isfinite(loss):
             # A diverged step is a signal, not a "perfect" step:
             # complain loudly instead of silently logging loss 0.0 / ppl 1.0 as
             # if the model trained. The returned 0.0 ``requires_grad`` tensor is
             # decoupled from the model graph, so this step's backward/optimizer
             # become a no-op — the run survives transient overflows but MUST be
             # visible in the logs (lr / dtype / data divergence).
+            #
+            # ``isfinite`` rather than ``isnan``: +inf and -inf are equally
+            # catastrophic but slipped through the NaN-only guard. An inf batch
+            # loss was reported as a REAL loss, accumulated into the epoch mean
+            # (so the whole epoch scored inf) and fed to ``save_best`` /
+            # ``EarlyStopping`` — while the engine's gradient check silently
+            # skipped the optimizer step. The two layers disagreed about whether
+            # the step happened.
             logger.warning(
-                "NaN training loss detected — criterion returned NaN. Reporting "
+                "Non-finite training loss detected (%s) — criterion returned %s. Reporting "
                 "loss 0.0 / ppl 1.0 so the run continues, but this batch was NOT "
-                "learned; check learning rate, dtype, and data for divergence."
+                "learned; check learning rate, dtype, and data for divergence.",
+                "NaN" if torch.isnan(loss) else ("+inf" if loss.item() > 0 else "-inf"),
+                loss.item(),
             )
             return torch.tensor(0.0, device=loss.device, requires_grad=True), {"loss": 0.0, "ppl": 1.0}
 
