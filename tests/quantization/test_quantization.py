@@ -13,6 +13,47 @@ from llm.quantization.ptq import (
 )
 
 
+class TestCalibrationInputContract:
+    """Calibration batches must be MODEL INPUTS (token ids), not hidden states.
+
+    ``docs/guides/quantization.md`` used to show
+    ``calib = [torch.randn(4, 16, 128)]`` — a ``[batch, seq, hidden]`` tensor.
+    ``DecoderModel.forward`` takes token ids, so every forward failed, and the
+    algorithm silently degraded to feeding the raw batches straight to each
+    target layer ("only valid when those tensors ARE the layers' activations").
+    For a real decoder that produces garbage weights behind a warning.
+
+    These tests pin the input shape the guide must show, so the example cannot
+    regress to something that runs without error but quantizes to nonsense.
+    """
+
+    @staticmethod
+    def _tiny_model(hidden_size: int = 128):
+        from llm.models.decoder import DecoderModel
+
+        return DecoderModel(vocab_size=64, hidden_size=hidden_size, num_layers=1, num_heads=4, max_seq_len=16)
+
+    def test_gptq_accepts_token_ids(self):
+        from llm.quantization import GPTQConfig, quantize_model_gptq
+
+        model = self._tiny_model()
+        calib = [torch.randint(0, 64, (1, 12))]
+        out = quantize_model_gptq(model, iter(calib), config=GPTQConfig(bits=4, group_size=128))
+        from llm.quantization import GPTQQuantizedLinear
+
+        assert any(isinstance(m, GPTQQuantizedLinear) for m in out.modules())
+
+    def test_gptq_rejects_hidden_state_batches(self):
+        """The documented-before shape must NOT quietly 'work'."""
+        from llm.quantization import GPTQConfig, quantize_model_gptq
+
+        model = self._tiny_model()
+        # [batch, seq, hidden] — the old, wrong example shape.
+        calib = [torch.randn(4, 16, 128)]
+        with pytest.raises((RuntimeError, ValueError)):
+            quantize_model_gptq(model, iter(calib), config=GPTQConfig(bits=4, group_size=128))
+
+
 class TestNoLinearContract:
     """Every quantization entry point must refuse a Linear-free model.
 

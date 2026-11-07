@@ -81,7 +81,16 @@ from llm.cli._model_loading import load_trained_model  # CLI 用的同一个 loa
 from llm.quantization import GPTQConfig, quantize_model_gptq
 
 model = load_trained_model("checkpoints/epoch_5")  # v2 分片布局的 stem
-calib = [torch.randn(4, 16, 128)]  # 用真实校准数据替换
+
+# 校准批次是**模型输入**（token ids `[batch, seq_len]`），不是隐藏状态。
+# 喂 `[B, T, hidden]` 隐藏状态会让模型 forward 全部失败，算法退化成"把原始
+# 批次直接当各目标层输入"，产出的量化权重是垃圾（日志里会有 fallback 警告）。
+# 用训练该 checkpoint 时的同一个 tokenizer 分词得到：
+from transformers import AutoTokenizer
+
+tok = AutoTokenizer.from_pretrained("gpt2")  # 换成该 checkpoint 的 tokenizer
+texts = ["the quick brown fox", "jumps over the lazy dog"]
+calib = [tok(t, return_tensors="pt").input_ids for t in texts]
 
 quantized = quantize_model_gptq(
     model,
