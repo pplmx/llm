@@ -3,7 +3,7 @@
 多模态是 ROADMAP 阶段十二（P2）与"下一步探索方向 P1"的扩展方向。首个落地是
 **契约优先的 spike**：先定义数据 + 编码器扩展面，纯 CPU 可验证，**不硬改
 `DecoderModel`**（架构边界见
-[ADR-013](/llm/docs/adr/013-multimodal-encoder-contract.md)）。
+[ADR-013](../adr/013-multimodal-encoder-contract.md)）。
 
 ## 已落地：数据 / 编码器契约
 

@@ -290,3 +290,57 @@ def test_documented_calls_use_real_keyword_arguments() -> None:
     # regex broke), which would pass silently otherwise.
     assert checked > 50, f"only {checked} documented calls were resolved — the scan probably broke"
     assert not problems, "documented calls that would raise TypeError:\n  " + "\n  ".join(problems)
+
+
+# --- Docs navigation must resolve: relative links and referenced files ---
+
+
+def test_relative_links_in_docs_resolve() -> None:
+    """A broken relative link sends the reader to a 404.
+
+    Reworking the docs tree silently breaks links, and `mkdocs --strict` does not
+    catch a target that is a valid project path but a wrong relative path (nor
+    links into non-markdown files it leaves alone).
+    """
+    problems: list[str] = []
+    for path in _all_docs():
+        for lineno, line in enumerate(path.read_text(errors="ignore").split("\n"), 1):
+            for match in re.finditer(r"\]\(([^)#][^)]*?)(?:#[^)]*)?\)", line):
+                target = match.group(1).strip()
+                if target.startswith(("http://", "https://", "mailto:", "...")):
+                    continue
+                if not (path.parent / target).resolve().exists():
+                    problems.append(f"{path.relative_to(_DOCS.parent)}:{lineno} -> {target}")
+    assert not problems, "broken relative links in docs:\n  " + "\n  ".join(problems)
+
+
+def test_files_referenced_by_docs_exist() -> None:
+    """Docs point at source and test files by path; those must exist.
+
+    A renamed module or test file leaves the reader following a dead pointer, and
+    nothing else notices — the doc still renders.
+
+    ``docs/audits/`` is excluded: those are dated snapshots of what a review
+    recommended at the time, including files that were proposed and never
+    created. Holding them to today's tree would only produce noise, exactly like
+    ``docs/superpowers/``.
+    """
+    repo_root = _DOCS.parent
+    problems: list[str] = []
+    checked = 0
+    for path in _all_docs():
+        if "audits" in path.parts:
+            continue
+        for lineno, line in enumerate(path.read_text(errors="ignore").split("\n"), 1):
+            for match in re.finditer(r"\b((?:tests|src|configs)/[\w/]+\.(?:py|toml|yaml))", line):
+                referenced = match.group(1)
+                # Placeholder names the reader is told to create themselves
+                # ("copy this config to configs/your_distill.yaml").
+                if "your_" in referenced:
+                    continue
+                checked += 1
+                if not (repo_root / referenced).exists():
+                    problems.append(f"{path.relative_to(repo_root)}:{lineno} -> {referenced}")
+
+    assert checked > 20, f"only {checked} file references found — the scan probably broke"
+    assert not problems, "docs reference files that do not exist:\n  " + "\n  ".join(problems)
