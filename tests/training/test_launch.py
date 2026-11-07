@@ -151,3 +151,58 @@ def test_single_rank_failure_does_not_hang_forever(tmp_path):
     r0 = out0.read_text().strip()
     assert r0.startswith("EXC "), f"survivor should raise bounded timeout, got: {r0}"
     assert r0.split()[1] in {"TimeoutError", "RuntimeError"}, f"unexpected exception: {r0}"
+
+
+def test_rendezvous_env_never_overwrites_a_launcher_value():
+    """``setup`` must only FILL MASTER_ADDR/PORT, never clobber them.
+
+    ``torchrun`` / ``mp.spawn`` / SLURM set these before the process starts. An
+    unconditional ``os.environ[...] = config`` would replace a launcher's real
+    multi-node address with the config default (127.0.0.1:12355), and every
+    worker would rendezvous on node-0 loopback and hang. The existing test
+    checks the *semantics*; this one pins the *mechanism* at the source level,
+    because a single ``os.environ`` assignment is easy to reintroduce without
+    noticing.
+    """
+    import inspect
+    import re
+
+    from llm.training.core.distributed import DistributedManager
+
+    source = inspect.getsource(DistributedManager.setup)
+    for var in ("MASTER_ADDR", "MASTER_PORT"):
+        direct = re.search(rf'os\.environ\[\s*["\']{var}["\']\s*\]\s*=', source)
+        assert direct is None, (
+            f"DistributedManager.setup assigns os.environ['{var}'] directly; use "
+            "os.environ.setdefault so a launcher-provided rendezvous address wins"
+        )
+        assert f'setdefault("{var}"' in source or f"setdefault('{var}'" in source, (
+            f"DistributedManager.setup no longer fills {var} from the config"
+        )
+
+
+def test_no_library_code_seeds_the_global_torch_rng():
+    """Tasks must scope their seeds; a bare ``torch.manual_seed`` leaks globally.
+
+    ``DistillationTask`` used to call ``torch.manual_seed`` during
+    ``build_model`` and never restore the generator, so anything drawing from
+    the global stream afterwards implicitly depended on whether that task had
+    been built. Seeding inside ``build_model`` is legitimate — it must be
+    wrapped in ``torch.random.fork_rng``.
+    """
+    import pathlib
+    import re
+
+    import llm.training.tasks.distill_task as distill
+
+    tasks_dir = pathlib.Path(distill.__file__).parent
+    problems: list[str] = []
+    for path in sorted(tasks_dir.glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if "manual_seed" not in source:
+            continue
+        if "fork_rng" in source:
+            continue  # scoped — fine
+        offenders = re.findall(r"^.*torch\.manual_seed\(.*$", source, re.M)
+        problems.append(f"{path.name}: {offenders[0].strip()[:70]}")
+    assert not problems, "task code seeds the global RNG without fork_rng:\n  " + "\n  ".join(problems)
