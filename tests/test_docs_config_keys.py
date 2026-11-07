@@ -222,3 +222,71 @@ def test_documented_cli_flags_exist() -> None:
                     f"{path.relative_to(_DOCS.parent)}: `llm {' '.join(prefix)}` has no {flag}\n    {line.strip()}"
                 )
     assert not problems, "documented CLI flags that do not exist:\n  " + "\n  ".join(sorted(set(problems)))
+
+
+# --- Documented CALLS must match the real signatures ---
+
+
+def _python_blocks() -> list[tuple[pathlib.Path, str]]:
+    return [
+        (path, block)
+        for path in _all_docs()
+        for block in re.findall(r"```python\n(.*?)```", path.read_text(errors="ignore"), re.S)
+    ]
+
+
+def test_documented_calls_use_real_keyword_arguments() -> None:
+    """A documented call must not pass a keyword the function does not accept.
+
+    Docs are executable instructions. ``apply_peft(model, rank=8)`` reads fine
+    and raises ``TypeError`` the moment a reader runs it — the kwargs belong to
+    ``peft_kwargs``, not to the entry point. Import resolution (the test above)
+    cannot see this: the symbol exists, the call shape does not.
+    """
+    import ast
+    import importlib
+    import inspect
+
+    problems: list[str] = []
+    checked = 0
+    for path, block in _python_blocks():
+        try:
+            tree = ast.parse(block)
+        except SyntaxError:
+            continue  # partial snippets / illustrative fragments
+        local: dict[str, object] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("llm"):
+                try:
+                    module = importlib.import_module(node.module)
+                except ModuleNotFoundError:
+                    continue
+                for alias in node.names:
+                    target = getattr(module, alias.name, None)
+                    if callable(target):
+                        local[alias.asname or alias.name] = target
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            function = local.get(node.func.id)
+            if function is None:
+                continue
+            checked += 1
+            try:
+                signature = inspect.signature(function)  # type: ignore[arg-type]
+            except ValueError, TypeError:
+                continue
+            parameters = signature.parameters
+            if any(p.kind is p.VAR_KEYWORD for p in parameters.values()):
+                continue  # accepts **kwargs by design
+            problems.extend(
+                f"{path.relative_to(_DOCS.parent)}: {node.func.id}(..., {keyword.arg}=...) "
+                f"— not a parameter of {node.func.id}"
+                for keyword in node.keywords
+                if keyword.arg is not None and keyword.arg not in parameters
+            )
+
+    # A vacuity floor: the scan found calls but resolved none (e.g. the import
+    # regex broke), which would pass silently otherwise.
+    assert checked > 50, f"only {checked} documented calls were resolved — the scan probably broke"
+    assert not problems, "documented calls that would raise TypeError:\n  " + "\n  ".join(problems)
