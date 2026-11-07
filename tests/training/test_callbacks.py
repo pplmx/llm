@@ -1,3 +1,4 @@
+import operator
 from unittest.mock import MagicMock
 
 import pytest
@@ -174,3 +175,77 @@ def test_tensorboard_logger_degrades_when_tensorboard_missing(monkeypatch):
     # Subsequent hooks must tolerate the absent writer.
     cb.on_epoch_end(0, {"avg_loss": 1.0})
     cb.on_train_end()
+
+
+# --- EarlyStopping: mode resolution must be idempotent ---
+
+
+@pytest.mark.parametrize(
+    ("mode", "monitor", "expected_op", "delta_negative"),
+    [
+        ("min", "val_loss", operator.lt, True),
+        ("max", "val_acc", operator.gt, False),
+        ("auto", "val_loss", operator.lt, True),
+        ("auto", "val_accuracy", operator.gt, False),
+    ],
+)
+def test_early_stopping_mode_resolution_is_idempotent(mode, monitor, expected_op, delta_negative):
+    """Re-resolving the mode must not flip ``min_delta`` back.
+
+    ``_check_mode`` used to do ``self.min_delta *= -1``, so calling it a second
+    time restored the ORIGINAL sign (-0.1 -> +0.1 -> -0.1). Only ``__init__``
+    calls it today, but the in-place mutation means any future re-resolve
+    silently compares against the wrong threshold. It now derives the sign from
+    the recorded ``min_delta`` every time.
+    """
+    stopping = EarlyStopping(monitor=monitor, patience=2, mode=mode, min_delta=0.1)
+    after_init = (stopping.monitor_op, stopping.min_delta)
+
+    # ONE extra call is enough to expose the bug: the old implementation did
+    # `min_delta *= -1`, so a single re-resolve flipped the sign. Asserting only
+    # after TWO calls would miss it entirely, because two flips return to the
+    # original value.
+    stopping._check_mode()
+    assert (stopping.monitor_op, stopping.min_delta) == after_init, (
+        f"mode={mode!r} drifted after ONE extra check: {after_init} -> {(stopping.monitor_op, stopping.min_delta)}"
+    )
+
+    stopping._check_mode()
+    assert (stopping.monitor_op, stopping.min_delta) == after_init, (
+        f"mode={mode!r} drifted after repeated checks: {after_init} -> {(stopping.monitor_op, stopping.min_delta)}"
+    )
+    assert stopping.monitor_op is expected_op
+    assert (stopping.min_delta < 0) is delta_negative
+
+
+def test_early_stopping_resume_keeps_restored_patience():
+    """A resumed run must not reset the patience counter it just restored."""
+    from unittest.mock import MagicMock
+
+    stopping = EarlyStopping(monitor="val_loss", patience=3, mode="min")
+    engine = MagicMock()
+    engine.rank = 0
+    stopping.set_engine(engine)
+
+    stopping.load_checkpoint_state({"early_stopping": {"wait": 2, "stopped_epoch": 0, "best_value": 0.5}})
+    stopping.on_train_start()
+
+    assert stopping.wait == 2, "on_train_start clobbered the restored patience counter"
+    assert stopping.best_value == 0.5
+
+
+def test_early_stopping_fresh_run_starts_from_zero():
+    """Without restored state, a new run must begin with a clean counter."""
+    from unittest.mock import MagicMock
+
+    stopping = EarlyStopping(monitor="val_loss", patience=3, mode="min")
+    engine = MagicMock()
+    engine.rank = 0
+    stopping.set_engine(engine)
+
+    stopping.wait = 9
+    stopping.best_value = 0.1
+    stopping.on_train_start()
+
+    assert stopping.wait == 0
+    assert stopping.best_value is None

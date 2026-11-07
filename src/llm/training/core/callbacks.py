@@ -180,6 +180,7 @@ class EarlyStopping(Callback):
     ):
         super().__init__()
         self.monitor = monitor
+        self._min_delta = min_delta
         self.min_delta = min_delta
         self.patience = patience
         self.verbose = verbose
@@ -191,19 +192,24 @@ class EarlyStopping(Callback):
         self._check_mode()
 
     def _check_mode(self):
+        """Resolve ``monitor_op`` and the sign of ``min_delta`` from the mode.
+
+        Idempotent: it derives the sign from the ORIGINAL ``_min_delta`` each
+        time instead of mutating ``self.min_delta`` in place. The old version
+        did ``self.min_delta *= -1``, so a second call flipped the sign back
+        (measured: -0.1 -> +0.1 -> -0.1) and early stopping silently compared
+        against the wrong threshold. Only ``__init__`` calls it today, but the
+        in-place mutation makes any future re-resolve (e.g. after restoring a
+        recipe) quietly wrong.
+        """
         if self.mode not in ["auto", "min", "max"]:
             raise ValueError(f"EarlyStopping mode {self.mode} is unknown, 'auto', 'min' or 'max'.")
-        if self.mode == "min":
+        if self.mode == "min" or (self.mode == "auto" and "loss" in self.monitor):
             self.monitor_op = operator.lt
-            self.min_delta *= -1
-        elif self.mode == "max":
-            self.monitor_op = operator.gt
-        else:  # auto
-            if "loss" in self.monitor:
-                self.monitor_op = operator.lt
-                self.min_delta *= -1
-            else:
-                self.monitor_op = operator.gt
+            self.min_delta = -self._min_delta
+            return
+        self.monitor_op = operator.gt
+        self.min_delta = self._min_delta
 
     def get_checkpoint_state(self) -> dict[str, Any] | None:
         """Persist the patience counter and best value across a resume.
