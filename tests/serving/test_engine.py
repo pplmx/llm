@@ -1428,3 +1428,95 @@ def test_engine_caches_sparse_pattern_mask(device, mock_tokenizer):
     # Dense model (no scheme) -> no mask.
     model.attn_sparse = None
     assert engine._sparse_pattern_mask(64) is None
+
+
+# --- Batch isolation: concurrent requests must not contaminate each other ---
+
+
+def _drive_to_completion(engine, request_id: str, *, max_steps: int = 64) -> None:
+    """Step the engine until ``request_id`` finishes (or the budget runs out)."""
+    for _ in range(max_steps):
+        seq = engine.scheduler.get_sequence(request_id)
+        if seq is None or seq.is_finished():
+            return
+        engine.step()
+
+
+def test_batched_requests_report_their_own_tokens(tiny_model, device, mock_tokenizer):
+    """Each request's generated ids must match what it would get ALONE.
+
+    The requests are advanced in LOCKSTEP (one ``engine.step()`` per round for
+    all of them), so the engine really sees a multi-row batch. Comparing each
+    batched result against its solo run is what catches cross-request
+    contamination — a "batched" test that walks one request to completion first
+    never puts two rows in the same forward pass and cannot detect it.
+    """
+    tiny_model.eval()
+
+    # Distinct LENGTHS: MockTokenizer.encode maps a prompt to range(1, len+1),
+    # so equal-length prompts would produce identical ids and the comparison
+    # could not detect a batch row being reused.
+    prompts = ["ab", "cdef", "ghijkl"]
+    max_new = 3
+
+    def solo(prompt: str) -> list[int]:
+        engine = ContinuousBatchingEngine(
+            model=tiny_model, tokenizer=mock_tokenizer, max_batch_size=1, device=str(device)
+        )
+        request = GenerationRequest(prompt=prompt, max_new_tokens=max_new, temperature=0.0)
+        request.request_id = f"solo-{prompt}"
+        engine.add_request(request)
+        _drive_to_completion(engine, request.request_id)
+        return list(engine.scheduler.get_sequence(request.request_id).generated_ids)
+
+    expectations = {p: solo(p) for p in prompts}
+
+    batched = ContinuousBatchingEngine(
+        model=tiny_model, tokenizer=mock_tokenizer, max_batch_size=len(prompts), device=str(device)
+    )
+    for prompt in prompts:
+        request = GenerationRequest(prompt=prompt, max_new_tokens=max_new, temperature=0.0)
+        request.request_id = f"batched-{prompt}"
+        batched.add_request(request)
+
+    # Advance everybody together: every round the engine batches all still-running
+    # requests into ONE forward pass.
+    for _ in range(64):
+        running = [
+            f"batched-{p}"
+            for p in prompts
+            if (seq := batched.scheduler.get_sequence(f"batched-{p}")) is not None and not seq.is_finished()
+        ]
+        if not running:
+            break
+        batched.step()
+
+    for prompt in prompts:
+        got = list(batched.scheduler.get_sequence(f"batched-{prompt}").generated_ids)
+        assert got == expectations[prompt], (
+            f"prompt {prompt!r} got {got} when batched but {expectations[prompt]} alone — "
+            "requests are contaminating each other"
+        )
+
+
+def test_identical_prompts_produce_identical_tokens_when_batched(tiny_model, device, mock_tokenizer):
+    """Greedy decoding is deterministic, so identical prompts must agree exactly.
+
+    Under ``temperature=0`` the sampler takes the argmax; if batching perturbed
+    the forward pass (wrong slot, stale KV cache), the identical-prompt requests
+    would drift apart, which is easy to assert.
+    """
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(model=tiny_model, tokenizer=mock_tokenizer, max_batch_size=4, device=str(device))
+    for index in range(4):
+        request = GenerationRequest(prompt="abcd", max_new_tokens=4, temperature=0.0)
+        request.request_id = f"same-{index}"
+        engine.add_request(request)
+
+    for _ in range(64):
+        if all((seq := engine.scheduler.get_sequence(f"same-{i}")) is not None and seq.is_finished() for i in range(4)):
+            break
+        engine.step()
+
+    results = [list(engine.scheduler.get_sequence(f"same-{i}").generated_ids) for i in range(4)]
+    assert all(r == results[0] for r in results), f"identical prompts diverged under batching: {results}"
