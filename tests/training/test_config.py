@@ -680,3 +680,93 @@ class TestInertSwitchSubOptions:
         assert any("no effect" in message for message in emitted), (
             f"the YAML load path dropped the explicit-set information; captured: {emitted}"
         )
+
+
+class TestOptimizationInertSubOptions:
+    """``OptimizationConfig`` has the same switch/sub-option shape."""
+
+    @pytest.mark.parametrize(
+        ("switch", "suboption", "value"),
+        [
+            ("use_compile", "compile_mode", "max-autotune"),
+            ("use_compile", "compile_dynamic", True),
+            ("use_amp", "amp_dtype", "float16"),
+        ],
+    )
+    def test_suboption_without_its_switch_warns(self, switch, suboption, value, caplog):
+        """``compile_mode`` / ``amp_dtype`` are only read inside their switch branch.
+
+        Setting one with the switch off produced a config that looks tuned while
+        the engine never reads the value — the same silent no-op the
+        ``TrainingConfig`` guard covers for the PEFT/QAT groups.
+        """
+        import logging
+
+        from llm.training.core.config import OptimizationConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            OptimizationConfig(**{switch: False, suboption: value})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(switch in message and suboption in message for message in messages), (
+            f"setting {suboption} with {switch}=False was not reported: {messages}"
+        )
+
+    def test_default_optimization_config_does_not_warn(self, caplog):
+        """Defaults must stay quiet (they are all valid)."""
+        import logging
+
+        from llm.training.core.config import OptimizationConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            OptimizationConfig()
+
+        assert not any("no effect" in record.getMessage() for record in caplog.records)
+
+    def test_enabled_switches_do_not_warn(self, caplog):
+        """The options are legitimate once their switch is on."""
+        import logging
+
+        from llm.training.core.config import OptimizationConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            OptimizationConfig(use_compile=True, compile_mode="max-autotune", use_amp=True, amp_dtype="float16")
+
+        assert not any("no effect" in record.getMessage() for record in caplog.records)
+
+    def test_num_workers_zero_with_persistent_workers_still_builds_a_loader(self):
+        """``num_workers=0`` + ``persistent_workers=True`` must not reach torch.
+
+        torch's DataLoader raises ``ValueError: persistent_workers option needs
+        num_workers > 0``. The config layer accepts the combination, so the data
+        module has to downgrade the flag — and this builds the real DataLoader
+        rather than restating the boolean, so the guard is exercised for real.
+        """
+        import torch
+        from torch.utils.data import DistributedSampler, TensorDataset
+
+        from llm.data.modules.map_base import SamplerMapDataModule
+        from llm.training.core.config import Config
+
+        class _Concrete(SamplerMapDataModule):
+            """Minimal concrete subclass — only ``build_dataloader`` is exercised."""
+
+            def prepare_data(self) -> None:
+                return None
+
+            def setup(self) -> None:
+                return None
+
+        config = Config(
+            optimization=OptimizationConfig(num_workers=0, persistent_workers=True, prefetch_factor=4),
+        )
+        module = _Concrete(config)
+        dataset = TensorDataset(torch.randn(8, 4), torch.randn(8, 2))
+        sampler = DistributedSampler(dataset, num_replicas=1, rank=0, shuffle=False)
+
+        # Must not raise: torch rejects both persistent_workers and
+        # prefetch_factor when num_workers == 0.
+        loader = module.build_dataloader(dataset, sampler)
+
+        assert loader.num_workers == 0
+        assert list(loader), "the loader must still yield batches"

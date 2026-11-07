@@ -129,6 +129,17 @@ training:
 **你有没有显式写这个字段**（Pydantic 的 `model_fields_set`），不是值和默认值比——
 默认值本身都合法，拿默认值报警只会制造噪音。YAML 载入的路径同样能识别显式字段。
 
+`optimization` 下有两组同样的形态：
+
+| 总开关        | 它的子参数                            |
+| ------------- | ------------------------------------- |
+| `use_compile` | `compile_mode` · `compile_dynamic`    |
+| `use_amp`     | `amp_dtype`                           |
+
+另外 `num_workers: 0` 时 `persistent_workers` / `prefetch_factor` 都会失去意义——torch 的
+DataLoader 对这两个直接报错，所以数据模块会自己降级（`persistent_workers` 关掉、
+`prefetch_factor` 不传），不需要你手动组合。
+
 ## 方法三: 使用环境变量 (分布式训练)
 
 在进行多节点分布式训练时, 通常使用环境变量来告知每个进程其角色和如何找到主进程.

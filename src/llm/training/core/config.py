@@ -952,6 +952,35 @@ class OptimizationConfig(BaseModel):
     persistent_workers: bool = False
     gradient_accumulation_steps: int = Field(1, ge=1)
 
+    @model_validator(mode="after")
+    def _warn_inert_suboptions(self) -> OptimizationConfig:
+        """Flag options that are unread because their enabling switch is off.
+
+        ``compile_mode`` / ``compile_dynamic`` are only consumed inside the
+        ``if use_compile`` branch, and ``amp_dtype`` only where AMP is on — the
+        same "switch + sub-option" shape ``TrainingConfig`` already warns about.
+        Reported only when the user EXPLICITLY wrote the field (via
+        ``model_fields_set``), so a plain config stays silent.
+        """
+        explicitly_set = self.model_fields_set
+        groups = {
+            "use_compile": ("compile_mode", "compile_dynamic"),
+            "use_amp": ("amp_dtype",),
+        }
+        for switch, suboptions in groups.items():
+            if getattr(self, switch):
+                continue
+            ignored = sorted(name for name in suboptions if name in explicitly_set)
+            if ignored:
+                logger.warning(
+                    "%s is off, so the configured option(s) %s have no effect. Set %s=True "
+                    "to enable them, or remove them from the config.",
+                    switch,
+                    ", ".join(ignored),
+                    switch,
+                )
+        return self
+
 
 class CheckpointConfig(BaseModel):
     """Checkpoint configuration"""
