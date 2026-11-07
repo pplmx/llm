@@ -168,6 +168,19 @@ class ModelConfig(BaseModel):
         return self
 
 
+# Shared caveat for the legacy per-method switches. Each of them wraps
+# ``nn.Linear`` (BitFit freezes weights instead), so enabling two at once stacks
+# two adapters on every layer and trains both parameter sets — measured,
+# ``use_ia3`` + ``use_adapter`` gave 48320 trainable params against 47968 for
+# adapter alone. There is no mutual-exclusion validator, so the combination is
+# accepted silently; the note lives on every field so it shows up in editor help
+# and ``--help``, not only in the CHANGELOG.
+_LEGACY_SWITCH_CAVEAT = (
+    " Combine at most one legacy use_* switch — prefer the single peft_method "
+    "field. Two at once stack two adapters on every layer and train both."
+)
+
+
 class TrainingConfig(BaseModel):
     """Training configuration"""
 
@@ -349,7 +362,7 @@ class TrainingConfig(BaseModel):
             "Master switch for Prefix Tuning. When True, "
             "LanguageModelingTask wraps every MultiHeadAttention with "
             "PrefixTuningAttention and freezes the base MHA so only "
-            "the prefix path is trainable."
+            "the prefix path is trainable." + _LEGACY_SWITCH_CAVEAT
         ),
     )
     prefix_tuning_len: int = Field(
@@ -392,7 +405,7 @@ class TrainingConfig(BaseModel):
             "Master switch for IA³ (T-Few). When True, "
             "LanguageModelingTask wraps every nn.Linear with IA3Linear "
             "and freezes the base weight so only the ia3_l scale is "
-            "trainable. Per-layer cost is out_features trainable params."
+            "trainable. Per-layer cost is out_features trainable params." + _LEGACY_SWITCH_CAVEAT
         ),
     )
     ia3_init_scale: float = Field(
@@ -426,7 +439,7 @@ class TrainingConfig(BaseModel):
             "Master switch for BitFit (bias-only fine-tuning). When "
             "True, LanguageModelingTask calls apply_bitfit(model) to "
             "freeze every parameter and enable gradients on every "
-            "bias. Per-model cost is exactly the sum of bias sizes."
+            "bias. Per-model cost is exactly the sum of bias sizes." + _LEGACY_SWITCH_CAVEAT
         ),
     )
     bitfit_target_modules: list[str] | None = Field(
@@ -454,7 +467,7 @@ class TrainingConfig(BaseModel):
             "True, LanguageModelingTask wraps every nn.Linear with "
             "AdapterLinear (down → activation → up bottleneck residual) "
             "and freezes the base weight so only the adapter is "
-            "trainable."
+            "trainable." + _LEGACY_SWITCH_CAVEAT
         ),
     )
     adapter_bottleneck_dim: int = Field(

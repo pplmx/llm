@@ -124,3 +124,57 @@ def test_every_declared_field_is_consumed_by_the_factory():
     assert known_indirect <= field_names, (
         f"fields classified as indirect no longer exist: {sorted(known_indirect - field_names)}"
     )
+
+
+# --- Legacy per-method switches must warn about combining ---
+
+
+def test_legacy_peft_switches_document_that_they_must_not_be_combined():
+    """Each legacy ``use_*`` switch must carry the combine-at-most-one caveat.
+
+    All four wrap ``nn.Linear`` (BitFit freezes weights instead), so enabling
+    two at once stacks two adapters on every layer and trains BOTH parameter
+    sets — measured, ``use_ia3`` + ``use_adapter`` produced 48320 trainable
+    params against 47968 for adapter alone. There is no mutual-exclusion
+    validator, so the combination is accepted silently; the field description is
+    the only place a user sees the warning (editor help, ``--help``), and it
+    used to live only in the CHANGELOG.
+    """
+    from llm.training.core.config import TrainingConfig
+
+    for field_name in ("use_prefix_tuning", "use_ia3", "use_bitfit", "use_adapter"):
+        description = TrainingConfig.model_fields[field_name].description or ""
+        assert "Combine at most one" in description, (
+            f"{field_name} lost its combine-at-most-one caveat; stack two adapters silently again?"
+        )
+
+
+def test_combining_two_legacy_switches_stacks_both_adapters():
+    """Pin the behaviour the caveat warns about, so it cannot drift unnoticed.
+
+    This is a characterisation test: the config deliberately does not forbid the
+    combination (choosing the method is the user's call), so the risk is that a
+    future refactor silently changes what combining means.
+    """
+    from llm.data.modules.synthetic import SyntheticDataModule
+    from llm.training.core.config import Config
+    from llm.training.tasks.lm_task import LanguageModelingTask
+
+    model_cfg = {"vocab_size": 64, "hidden_size": 32, "num_layers": 1, "num_heads": 4, "max_seq_len": 16}
+
+    def trainable(**overrides) -> int:
+        cfg = Config(model=model_cfg, training={"batch_size": 2, "num_samples": 4, **overrides})
+        data_module = SyntheticDataModule(cfg)
+        data_module.setup()
+        torch.manual_seed(0)
+        model = LanguageModelingTask(cfg, data_module).build_model()
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    ia3_only = trainable(use_ia3=True)
+    adapter_only = trainable(use_adapter=True)
+    both = trainable(use_ia3=True, use_adapter=True)
+
+    assert both > adapter_only, (
+        "combining the switches no longer adds the second adapter — the caveat's premise changed"
+    )
+    assert both > ia3_only
