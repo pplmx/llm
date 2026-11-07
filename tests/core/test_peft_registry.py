@@ -537,3 +537,67 @@ def test_merge_peft_restores_every_wrapped_layer() -> None:
     for module, snapshot in zip(wrapped, snapshots, strict=True):
         delta = (module.base_layer.weight - snapshot).abs().max().item()
         assert delta < 1e-5, f"a wrapped layer was not restored after unmerge: max|delta|={delta:.2e}"
+
+
+# ---------------------------------------------------------------------------
+# disable_peft / enable_peft: the adapter must actually disappear and return
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("method", "kwargs", "markers"),
+    [
+        ("lora", {"rank": 4, "alpha": 8.0}, ("lora_A", "lora_B")),
+        ("ia3", {}, ("ia3_l",)),
+        ("adapter", {"bottleneck_dim": 8}, (".down.", ".up.")),
+    ],
+)
+def test_disable_peft_removes_and_enable_restores_the_adapter(method, kwargs, markers) -> None:
+    """Each method's disable/enable pair must be numerically exact.
+
+    ``test_disable_enable_lora`` only asserts that calling them does not raise.
+    Both directions matter and neither was checked: a ``disable`` that left the
+    adapter partially active would silently corrupt every ablation run, and an
+    ``enable`` that failed to restore it would make the adapter vanish after an
+    evaluation sweep.
+
+    Only ADAPTER parameters are perturbed. ``apply_peft`` leaves the embedding
+    and norms trainable too; nudging those would move the base model and no
+    disable could bring the output back (that mistake read as "disable is
+    broken" for all four methods).
+    """
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(0)
+    model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=1, num_heads=4, max_seq_len=16)
+    model.eval()
+    input_ids = torch.randint(0, 64, (2, 8))
+
+    with torch.no_grad():
+        baseline = model(input_ids).clone()
+
+    apply_peft(model, method, **kwargs)
+    adapter_params = [(name, param) for name, param in model.named_parameters() if any(m in name for m in markers)]
+    assert adapter_params, f"no adapter parameters matched {markers} for {method}"
+    for _name, param in adapter_params:
+        param.data.normal_(0, 0.05)
+
+    with torch.no_grad():
+        adapted = model(input_ids).clone()
+    assert not torch.allclose(adapted, baseline, atol=1e-4), (
+        f"{method}: the adapter did not change the output, so the checks below would be vacuous"
+    )
+
+    disable_peft(model, method)
+    with torch.no_grad():
+        disabled = model(input_ids).clone()
+    assert torch.allclose(disabled, baseline, atol=1e-4), (
+        f"{method}: disable left the adapter active, max|delta|={(disabled - baseline).abs().max().item():.2e}"
+    )
+
+    enable_peft(model, method)
+    with torch.no_grad():
+        reenabled = model(input_ids).clone()
+    assert torch.allclose(reenabled, adapted, atol=1e-4), (
+        f"{method}: enable did not restore the adapter, max|delta|={(reenabled - adapted).abs().max().item():.2e}"
+    )
