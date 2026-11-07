@@ -75,6 +75,10 @@ optimization:
 
 distributed:
   backend: gloo            # CPU demo
+  # Pin ONE worker, like the pretraining demo: left unset, ``gpus_per_node``
+  # defaults to ``torch.cuda.device_count()``, so this "CPU smoke" would
+  # fan out to one DDP rank per GPU instead of finishing in seconds.
+  gpus_per_node: 1
 
 checkpoint:
   checkpoint_dir: checkpoints_dpo_demo
