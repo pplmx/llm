@@ -110,6 +110,21 @@ class ModelConfig(BaseModel):
                 f"set_attention_kv_cache_capability."
             )
 
+        # ``norm_impl`` / ``mlp_impl`` are registry keys too, but they were only
+        # checked when the model was BUILT. A typo therefore survived config
+        # load, CLI parsing and the whole startup path, then failed deep in
+        # ``DecoderModel`` construction — while ``attn_impl`` already failed
+        # here. Validate all three at the same point.
+        from llm.core.registry import MLP_REGISTRY, NORM_REGISTRY, ensure_norms_registered
+
+        # NORM_REGISTRY populates lazily (see ``_resolve_norm_factory``), so
+        # trigger the registration before comparing against its names.
+        ensure_norms_registered()
+        if self.norm_impl not in NORM_REGISTRY.names():
+            raise ValueError(f"Unknown norm_impl '{self.norm_impl}'. Available: {', '.join(NORM_REGISTRY.names())}.")
+        if self.mlp_impl not in MLP_REGISTRY.names():
+            raise ValueError(f"Unknown mlp_impl '{self.mlp_impl}'. Available: {', '.join(MLP_REGISTRY.names())}.")
+
         if self.use_kv_cache and not ATTENTION_KV_CACHE_CAPABILITY[self.attn_impl]:
             raise ValueError(
                 f"attn_impl='{self.attn_impl}' does not support KV cache "

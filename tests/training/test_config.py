@@ -177,6 +177,37 @@ class TestConfig:
         with pytest.raises(ValueError, match="Unknown attn_impl"):
             ModelConfig(attn_impl="nonexistent_attention")
 
+    @pytest.mark.parametrize(
+        ("field", "bad", "valid"),
+        [
+            ("norm_impl", "layernorm", "rms_norm"),
+            ("mlp_impl", "mlpp", "moe"),
+            ("attn_impl", "mhaa", "mha"),
+        ],
+    )
+    def test_registry_impl_names_validated_at_config_load(self, field, bad, valid):
+        """All three registry keys must fail at load, not at model build.
+
+        ``attn_impl`` was validated here while ``norm_impl`` / ``mlp_impl`` were
+        only checked inside ``DecoderModel`` construction — a typo survived
+        config load, CLI parsing and startup, then failed deep in the model.
+        """
+        with pytest.raises(ValidationError, match=f"Unknown {field}"):
+            ModelConfig(**{field: bad})
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("norm_impl", "rms_norm"),
+            ("norm_impl", "layer_norm"),
+            ("attn_impl", "mha"),
+            ("attn_impl", "mla"),
+        ],
+    )
+    def test_valid_registry_impl_names_accepted(self, field, value):
+        """The guard must not reject legitimate registry entries."""
+        assert getattr(ModelConfig(**{field: value}), field) == value
+
     def test_unknown_config_key_raises_with_suggestion(self, tmp_path):
         """A typo must not silently evaporate.
 
