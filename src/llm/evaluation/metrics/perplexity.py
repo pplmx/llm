@@ -25,11 +25,14 @@ class PerplexityMetric(BaseMetric):
         """
         self.ignore_index = ignore_index
 
-    def compute(self, predictions: torch.Tensor, references: torch.Tensor | list) -> dict:
+    def compute(self, predictions: torch.Tensor | list, references: torch.Tensor | list) -> dict:
         """Compute perplexity.
 
         Args:
-            predictions: Logits tensor of shape (batch, seq, vocab)
+            predictions: Logits tensor of shape (batch, seq, vocab). An
+                EMPTY list is accepted and reports the documented ``inf``
+                (see below); any other non-tensor fails loud rather than
+                raising a bare ``AttributeError`` on ``.shape``.
             references: Target token IDs of shape (batch, seq). A list
                 of equal-length token sequences is coerced to a tensor
                 so the metric works through both :meth:`EvaluationRunner.run`
@@ -40,6 +43,20 @@ class PerplexityMetric(BaseMetric):
             the batch is empty or no shift-targets are available (e.g.
             ``seq == 1``), since perplexity is undefined in those cases.
         """
+        if not isinstance(predictions, torch.Tensor):
+            if isinstance(predictions, list) and not predictions:
+                # Empty eval split: ``LMTask.predict`` returns a zero-size
+                # tensor, but a task whose ``predict`` returns raw rows (or a
+                # caller passing ``[]``) reaches here with a plain list.
+                # Perplexity is undefined, so report the documented ``inf`` —
+                # the same answer the zero-size tensor path gives.
+                return {"perplexity": float("inf")}
+            raise TypeError(
+                "perplexity predictions must be a torch.Tensor of shape "
+                f"(batch, seq, vocab), got {type(predictions).__name__}; "
+                "stack/cat the per-batch logits into one tensor first."
+            )
+
         if not isinstance(references, torch.Tensor):
             # ``run()`` passes raw (non-tensor) references: LMTask yields
             # equal-length padded sequences, so a list of tensors stacks

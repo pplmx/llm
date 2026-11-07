@@ -11,6 +11,7 @@ Covers the deep-dive findings:
   was clamped.
 """
 
+import pytest
 import torch
 
 from llm.evaluation.metrics import resolve_metrics
@@ -62,3 +63,25 @@ def test_references_wider_than_predictions_still_scores():
     result = pm.compute(preds, refs)
     ppl = result["perplexity"]
     assert ppl > 0
+
+
+def test_empty_prediction_list_returns_inf():
+    """An empty eval split must report the documented ``inf``.
+
+    ``PerplexityMetric.compute`` documents ``inf`` for an empty batch and
+    ``LMTask.predict`` already returns a zero-size tensor for an empty
+    split — but a caller passing plain lists (``compute([], [])``, or a task
+    whose ``predict`` returns raw rows) hit a bare
+    ``AttributeError: 'list' object has no attribute 'shape'`` on the very
+    first line that touched ``predictions.shape``. Every sibling metric
+    reports its zero value on empty input, so this path is the odd one out.
+    """
+    assert PerplexityMetric().compute([], []) == {"perplexity": float("inf")}
+
+
+def test_non_tensor_predictions_raise_actionable_type_error():
+    """A non-empty non-tensor prediction list must fail with a message that
+    names the expected shape, not an opaque ``AttributeError`` on ``.shape``."""
+    pm = PerplexityMetric()
+    with pytest.raises(TypeError, match=r"\(batch, seq, vocab\)"):
+        pm.compute([1, 2, 3], [1, 2, 3])
