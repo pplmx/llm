@@ -80,6 +80,31 @@ class PagedKVCache:
         # prompt) must not steal a live entry registered by someone else.
         self._hash_to_owner: dict[str, int] = {}
 
+    def __repr__(self) -> str:
+        """Debug-friendly summary including live block/prefix occupancy.
+
+        The default ``<PagedKVCache object at 0x...>`` hides the numbers an
+        inference bug hunt actually needs: how many blocks are free, how many
+        sequences hold blocks, and how full the prefix cache is. Mirrors the
+        ``ClassName(key=value, ...)`` style used by ``BlockManager`` and
+        ``KVCache``.
+        """
+        prefix_info = ""
+        if self.prefix_cache is not None:
+            prefix_info = f", prefixes={len(self.prefix_cache.cache)}/{self.prefix_cache.max_prefixes}"
+        return (
+            f"PagedKVCache(num_layers={self.num_layers}, "
+            f"num_kv_heads={self.num_kv_heads}, "
+            f"head_dim={self.head_dim}, "
+            f"blocks={self.num_blocks}, "
+            f"block_size={self.block_size}, "
+            f"free_blocks={self.block_manager.num_free_blocks}, "
+            f"sequences={len(self.block_manager.sequences)}, "
+            f"device={self.k_cache.device}, "
+            f"dtype={self.k_cache.dtype}"
+            f"{prefix_info})"
+        )
+
     def _hash_tokens(self, tokens: list[int]) -> str:
         """Generate hash for token list.
 

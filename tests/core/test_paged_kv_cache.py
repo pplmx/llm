@@ -1026,3 +1026,31 @@ def test_free_of_evicted_stale_registrar_does_not_steal_reregistered_entry():
     # Only the current owner's free() drops the entry.
     cache.free(4)
     assert cache.try_get_prefix_blocks(prompt_tokens) is None
+
+
+def test_paged_kv_cache_repr_exposes_block_and_prefix_occupancy():
+    """``repr`` must show live occupancy, not just the construction parameters.
+
+    Default ``<PagedKVCache object at 0x...>`` hides free-block count and prefix
+    cache fill — the numbers that explain a stalled batch or a prefix-cache miss.
+    """
+    cache = PagedKVCache(
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=4,
+        num_blocks=8,
+        block_size=8,
+        device="cpu",
+        dtype=torch.float32,
+        enable_prefix_cache=True,
+    )
+    text = repr(cache)
+    assert "object at 0x" not in text, "PagedKVCache still uses the default object repr"
+    assert "free_blocks=8" in text
+    assert "sequences=0" in text
+    assert "prefixes=0/10" in text
+
+    # A real allocation must be visible.
+    block_ids = cache.update(1, torch.randn(1, 8, 2, 4), torch.randn(1, 8, 2, 4))
+    assert block_ids, "no blocks were allocated"
+    assert "free_blocks=8" not in repr(cache), "repr did not reflect the allocated block"

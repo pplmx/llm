@@ -215,3 +215,28 @@ class TestPrefillPerformance:
         assert speedup >= 1.05, (
             f"prefill too slow: opt={opt_seconds * 1000:.2f}ms, old={old_seconds * 1000:.2f}ms, speedup={speedup:.2f}x"
         )
+
+
+# --- repr must expose the runtime state a bug hunt needs ---
+
+
+def test_kvcache_repr_reports_capacity_and_live_length():
+    """``repr`` must show capacity AND how much is in use.
+
+    The default ``<KVCache object at 0x...>`` hides both. A stale ``seq_len`` or
+    an undersized ``max_seq_len`` is invisible in a debugger dump otherwise, and
+    this object is the first thing inspected when generation produces wrong
+    output.
+    """
+    from llm.core.kv_cache import KVCache
+
+    cache = KVCache(max_batch_size=2, max_seq_len=16, num_kv_heads=4, head_dim=8)
+    before = repr(cache)
+    assert "object at 0x" not in before, "KVCache still uses the default object repr"
+    assert "max_seq_len=16" in before
+    assert "seq_len=0" in before
+
+    cache.update(torch.randn(2, 4, 3, 8), torch.randn(2, 4, 3, 8))
+    after = repr(cache)
+    assert "seq_len=3" in after, "repr did not follow the cache growing"
+    assert "seq_len=0" not in after

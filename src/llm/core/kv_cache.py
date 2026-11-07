@@ -54,6 +54,25 @@ class KVCache:
         self.v_cache = torch.zeros(max_batch_size, num_kv_heads, max_seq_len, head_dim, device=device, dtype=dtype)
         self._seq_len = 0
 
+    def __repr__(self) -> str:
+        """Debug-friendly summary, mirroring ``BlockManager.__repr__``.
+
+        The default ``<KVCache object at 0x...>`` says nothing about the cache's
+        capacity or how much of it is in use, which is exactly what an inference
+        bug hunt needs (a stale ``seq_len`` or an undersized ``max_seq_len`` is
+        invisible otherwise). Mirrors the ``ClassName(key=value, ...)`` style
+        used across the runtime objects.
+        """
+        return (
+            f"KVCache(max_batch_size={self.max_batch_size}, "
+            f"max_seq_len={self.max_seq_len}, "
+            f"num_kv_heads={self.num_kv_heads}, "
+            f"head_dim={self.head_dim}, "
+            f"seq_len={self._seq_len}, "
+            f"device={self.k_cache.device}, "
+            f"dtype={self.k_cache.dtype})"
+        )
+
     @property
     def seq_len(self) -> int:
         """Current cached sequence length."""
