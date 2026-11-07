@@ -96,6 +96,12 @@ imported = load_gguf_model("llama-2-7b.Q4_K_M.gguf")  # 真实 K-quant 文件
 export_model("torchscript", model, "model.pt", method="trace", input_shape=(1, 64))
 ```
 
+> **Python 3.14+ 注意**：本仓要求 Python ≥ 3.14，而 PyTorch 在该版本上已把
+> `torch.jit.trace` / `torch.jit.load` 标记为**不受支持**（导入即发
+> `FutureWarning`，提示改用 `torch.export`）。当前实测导出与加载仍可用、数值与
+> 原模型逐位一致，但这条路径随时可能在上游被移除。新项目请优先用 ONNX（下方）
+> 或 `torch.export`；保留 TorchScript 是为了既有 C++ 部署链路。
+
 ## ONNX：参考实现
 
 `llm.export.onnx` 是导出层的参考实现，附带验证工具：
