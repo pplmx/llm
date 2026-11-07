@@ -60,6 +60,23 @@ path = export_to_gguf(model, "model-q4.gguf", quantize="q4_0", model_name="my-mo
 
 导出的 GGUF 文件可直接交给 llama.cpp 等 GGML 系运行时加载。
 
+传了 `model_config=`（或经由 `export_model("gguf", ...)`）时，文件里会额外写入
+`general.llm_model_config` 配置块，`load_gguf_model` 可直接把**本仓自己导出**的
+文件重建回来——这条路径用于导出后回读验证，与下面的“导入第三方 llama.cpp 文件”
+是两条独立入口：
+
+```python
+from llm.export import export_to_gguf, load_gguf_model
+
+export_to_gguf(model, "model-f32.gguf", model_config=model_cfg)  # model_cfg: dict from your TrainingConfig
+reloaded = load_gguf_model("model-f32.gguf")
+```
+
+**漏传 `model_config` 就无法自加载**：文件里只有 `general.architecture: "llm"`，
+而导入器的架构映射表只认 llama.cpp 系的 `llama` / `mistral` / `qwen2`，于是报
+`unsupported GGUF architecture 'llm'`——这个错误看上去像“架构不支持本模型”，
+实际是“这个文件不是按可回读方式导出的”。
+
 反向路径也已打通：`load_gguf_model` 能加载**第三方 llama.cpp 文件**——没有
 `general.llm_model_config` 配置块、但带有 `general.architecture` +
 `{arch}.*` 元数据（`{arch}` 即架构名，如 `llama.*` / `qwen2.*`）和 llama

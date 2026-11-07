@@ -251,3 +251,52 @@ def test_writer_fsyncs_before_rename(tmp_path, monkeypatch):
         # POSIX hardening: fsync the parent directory too, since the rename
         # lands there. (Windows can't fsync a directory — see docstring.)
         assert len(fsync_calls) >= 2, "expected fsync on the temp file AND its directory (POSIX)"
+
+
+def test_export_without_model_config_cannot_be_self_loaded(roundtrip_config, tmp_path):
+    """The export→load path requires ``model_config``; the failure must say so.
+
+    Without it the file carries ``general.architecture: "llm"`` and nothing else
+    the loader can rebuild from, while the architecture map only knows the
+    llama.cpp family. The resulting message ("unsupported GGUF architecture
+    'llm'") reads like "this model is unsupported" when the real cause is "this
+    file was not exported for read-back" — which is easy to act on and the other
+    reading is not.
+    """
+    torch.manual_seed(0)
+    model = _build_model(roundtrip_config).eval()
+    path = export_to_gguf(model, tmp_path / "no_config.gguf", quantize="f32")
+
+    with pytest.raises(GGUFError, match="unsupported GGUF architecture"):
+        load_gguf_model(path)
+
+
+def test_export_with_model_config_round_trips_for_every_quant_level(roundtrip_config, tmp_path):
+    """Quantization degrades monotonically; F32 stays exact.
+
+    Documents the fidelity ladder the docs promise, so a regression that made
+    q4_0 lossless (impossible — the blocks are lossy) or F32 lossy would show up
+    as a surprising number rather than passing silently.
+    """
+    torch.manual_seed(0)
+    model = _build_model(roundtrip_config).eval()
+    input_ids = torch.randint(0, roundtrip_config.vocab_size, (1, 8))
+    with torch.no_grad():
+        reference = model(input_ids).clone()
+
+    worst: dict[str, float] = {}
+    for quant in ("f32", "q8_0", "q4_0"):
+        path = export_to_gguf(
+            model,
+            tmp_path / f"{quant}.gguf",
+            quantize=quant,
+            model_config=roundtrip_config.model_dump(),
+        )
+        restored = load_gguf_model(path).eval()
+        with torch.no_grad():
+            out = restored(input_ids)
+        worst[quant] = (out - reference).abs().max().item()
+
+    assert worst["f32"] < 1e-3, f"f32 round trip should be near-exact, got {worst['f32']:.2e}"
+    assert worst["q8_0"] > worst["f32"], "q8_0 should be lossier than f32"
+    assert worst["q4_0"] > worst["q8_0"], "q4_0 should be lossier than q8_0"
