@@ -405,6 +405,49 @@ class TrainingConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _warn_inert_switch_suboptions(self) -> TrainingConfig:
+        """Flag sub-options the user set while their master switch is off.
+
+        ``qat_bits`` / ``adalora_init_rank`` / ``prefix_tuning_len`` and friends
+        are only read inside the corresponding ``use_*`` branch, so setting one
+        with the switch off changes nothing — a config that looks configured but
+        behaves as if every knob were default. Only fields the user EXPLICITLY
+        set are reported (``model_fields_set``), so a plain default config stays
+        quiet; the check is about intent, not about the value differing.
+        """
+        inert_groups = {
+            "use_qat": ("qat_bits", "qat_quant_activation", "qat_target_modules"),
+            "use_adalora": (
+                "adalora_init_rank",
+                "adalora_target_rank",
+                "adalora_alpha",
+                "adalora_orth_reg_weight",
+                "adalora_ema_alpha",
+                "adalora_tinit",
+                "adalora_tfinal",
+                "adalora_prune_every",
+                "adalora_target_modules",
+            ),
+            "use_prefix_tuning": ("prefix_tuning_len",),
+            "use_ia3": ("ia3_init_scale", "ia3_target_modules"),
+            "use_adapter": ("adapter_bottleneck_dim", "adapter_target_modules"),
+        }
+        explicitly_set = self.model_fields_set
+        for master, suboptions in inert_groups.items():
+            if getattr(self, master, False):
+                continue
+            ignored = sorted(name for name in suboptions if name in explicitly_set)
+            if ignored:
+                logger.warning(
+                    "%s is off, so the configured option(s) %s have no effect. Set %s=True "
+                    "to enable them, or remove them from the config.",
+                    master,
+                    ", ".join(ignored),
+                    master,
+                )
+        return self
+
+    @model_validator(mode="after")
     def _validate_adalora(self) -> TrainingConfig:
         # Cross-field checks that the Field constraints alone can't express.
         if self.adalora_target_rank > self.adalora_init_rank:

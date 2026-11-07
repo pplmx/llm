@@ -594,3 +594,89 @@ class TestPlateauWithoutValidation:
             assert not any("plateau" in record.getMessage() for record in caplog.records), (
                 f"{scheduler} should not trigger the plateau warning"
             )
+
+
+class TestInertSwitchSubOptions:
+    """Sub-options set while their master switch is off change nothing."""
+
+    @pytest.mark.parametrize(
+        ("master", "suboption", "value"),
+        [
+            ("use_qat", "qat_bits", 4),
+            ("use_qat", "qat_quant_activation", True),
+            ("use_adalora", "adalora_init_rank", 16),
+            ("use_prefix_tuning", "prefix_tuning_len", 20),
+            ("use_ia3", "ia3_init_scale", 0.05),
+            ("use_adapter", "adapter_bottleneck_dim", 32),
+        ],
+    )
+    def test_configured_suboption_without_its_switch_warns(self, master, suboption, value, caplog):
+        """Each group must report the ignored option by name.
+
+        The sub-options are only read inside ``if use_<x>`` in the task's
+        ``build_model``, so setting one with the switch off produces a config
+        that LOOKS configured while behaving as if every knob were default.
+        """
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            TrainingConfig(**{master: False, suboption: value})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(master in message and suboption in message for message in messages), (
+            f"setting {suboption} with {master}=False was not reported: {messages}"
+        )
+
+    def test_default_config_does_not_warn(self, caplog):
+        """A config that never mentions the sub-options stays quiet.
+
+        The guard keys on ``model_fields_set`` (intent), not on value comparison,
+        so the defaults — which are all valid — cannot produce noise.
+        """
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            TrainingConfig()
+
+        assert not any("no effect" in record.getMessage() for record in caplog.records)
+
+    def test_enabling_the_switch_silences_the_warning(self, caplog):
+        """The same sub-option is fine once its switch is on."""
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            TrainingConfig(use_qat=True, qat_bits=4)
+
+        assert not any("no effect" in record.getMessage() for record in caplog.records)
+
+    def test_yaml_path_reports_inert_suboptions(self, tmp_path, caplog):
+        """The warning must also fire for YAML, the path users actually take.
+
+        ``model_fields_set`` has to survive ``Config.from_yaml`` for the intent
+        check to work there — verified, and pinned here so a loader change that
+        stopped tracking explicit keys would be caught.
+        """
+        import logging
+
+        from llm.training.core.config import Config
+
+        config_path = tmp_path / "inert.yaml"
+        config_path.write_text(
+            "training:\n  use_qat: false\n  qat_bits: 4\n",
+            encoding="utf-8",
+        )
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            config = Config.from_yaml(str(config_path))
+
+        assert config.training.qat_bits == 4  # the value IS stored, just unused
+        emitted = [record.getMessage() for record in caplog.records]
+        assert any("no effect" in message for message in emitted), (
+            f"the YAML load path dropped the explicit-set information; captured: {emitted}"
+        )

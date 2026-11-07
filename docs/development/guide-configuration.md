@@ -105,6 +105,30 @@ llm train --task regression --no-amp   # 禁用
 
    *注意: `llm train` 使用 `--config-path` 参数加载 YAML 配置. 如果您希望在自己的 Python 脚本中加载配置, 可以显式调用 `Config.from_yaml()`.*
 
+### 开关与它的子参数
+
+`training` 里有五个走"总开关 + 子参数"形态的微调/量化选项。子参数**只在总开关为
+真时才会被读取**（实现上就是 `if use_xxx:` 分支里读），所以：
+
+| 总开关              | 它的子参数                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `use_qat`           | `qat_bits` · `qat_quant_activation` · `qat_target_modules`                                                                                                                                              |
+| `use_adalora`       | `adalora_init_rank` · `adalora_target_rank` · `adalora_alpha` · `adalora_orth_reg_weight` · `adalora_ema_alpha` · `adalora_tinit` · `adalora_tfinal` · `adalora_prune_every` · `adalora_target_modules` |
+| `use_prefix_tuning` | `prefix_tuning_len`                                                                                                                                                                                     |
+| `use_ia3`           | `ia3_init_scale` · `ia3_target_modules`                                                                                                                                                                 |
+| `use_adapter`       | `adapter_bottleneck_dim` · `adapter_target_modules`                                                                                                                                                     |
+
+```yaml
+training:
+  use_qat: false      # ← 关着
+  qat_bits: 4         # ← 这行不会生效
+```
+
+这种写法会通过校验，只在配置构造时记一条 WARNING（形如
+`use_qat is off, so the configured option(s) qat_bits have no effect`）。判定依据是
+**你有没有显式写这个字段**（Pydantic 的 `model_fields_set`），不是值和默认值比——
+默认值本身都合法，拿默认值报警只会制造噪音。YAML 载入的路径同样能识别显式字段。
+
 ## 方法三: 使用环境变量 (分布式训练)
 
 在进行多节点分布式训练时, 通常使用环境变量来告知每个进程其角色和如何找到主进程.
