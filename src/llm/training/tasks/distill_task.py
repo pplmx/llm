@@ -45,9 +45,15 @@ class DistillationTask(LanguageModelingTask):
         tcfg = self.config.training
         # The student is the model the optimizer updates; the teacher is a
         # frozen, pre-trained clone of the same architecture.
-        torch.manual_seed(_STUDENT_SEED)
-        student = ModelFactory.from_config(self.config.model)
-        teacher = self._build_teacher()
+        # Seeded construction must not leak into the caller's RNG stream:
+        # ``build_model`` runs inside the engine's setup, and anything that
+        # draws from the global generator afterwards (dropout placement,
+        # augmentation, a test's own sampling) would silently depend on which
+        # task happened to call this. Fork the RNG for the construction only.
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(_STUDENT_SEED)
+            student = ModelFactory.from_config(self.config.model)
+            teacher = self._build_teacher()
         for p in teacher.parameters():
             p.requires_grad_(False)
         teacher.eval()
@@ -65,6 +71,8 @@ class DistillationTask(LanguageModelingTask):
             # Convenience/dev teacher: a distinct construction seed so the
             # frozen teacher and the fresh student start from different
             # weights (a frozen clone would make KL == 0 trivially).
+            # Already inside build_model's forked RNG (see above), so this
+            # does not escape either.
             torch.manual_seed(_TEACHER_SEED)
             return ModelFactory.from_config(self.config.model)
         teacher = ModelFactory.from_config(self.config.model)

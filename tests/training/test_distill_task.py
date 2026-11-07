@@ -213,3 +213,51 @@ def _run_distill_e2e(tmp_path) -> None:
     assert all(math.isfinite(loss) for loss in kd_losses)
     assert kd_losses[-1] < kd_losses[0] * 0.5, f"KD loss did not decrease: {kd_losses[0]:.4f} -> {kd_losses[-1]:.4f}"
     assert kl_after < kl_before * 0.5, f"student did not approach teacher: KL {kl_before:.4f} -> {kl_after:.4f}"
+
+
+# --- build_model must not leak its construction seed into the global RNG ---
+
+
+def test_build_model_does_not_mutate_the_global_rng():
+    """Seeded construction is for reproducibility, not for the caller.
+
+    ``build_model`` runs during engine setup and used a bare
+    ``torch.manual_seed(...)``, which redirects the GLOBAL generator. Anything
+    that draws from it afterwards — dropout placement in a later component,
+    an augmentation, a test's own sampling — then depends on whether this task
+    happened to be built. ``torch.random.fork_rng`` scopes the seeding to the
+    construction.
+    """
+    from llm.training.tasks.distill_task import DistillationTask
+
+    torch.manual_seed(1234)
+    expected = torch.randn(4)
+
+    torch.manual_seed(1234)
+    task = DistillationTask(_config(), data_module=None)
+    task.build_model()
+
+    assert torch.equal(torch.randn(4), expected), "build_model leaked its seed into the global RNG"
+
+
+def test_build_model_stays_deterministic_and_teacher_differs():
+    """Isolating the RNG must not lose the two properties the seeds provide."""
+    from llm.training.tasks.distill_task import DistillationTask
+
+    def build():
+        task = DistillationTask(_config(), data_module=None)
+        return task.build_model(), task.teacher
+
+    student_a, teacher_a = build()
+    student_b, teacher_b = build()
+
+    assert all(
+        torch.equal(x, y) for x, y in zip(student_a.state_dict().values(), student_b.state_dict().values(), strict=True)
+    ), "student construction became non-deterministic"
+    assert all(
+        torch.equal(x, y) for x, y in zip(teacher_a.state_dict().values(), teacher_b.state_dict().values(), strict=True)
+    ), "teacher construction became non-deterministic"
+    # A frozen clone of the student would make KL trivially 0.
+    assert not all(
+        torch.equal(x, y) for x, y in zip(student_a.state_dict().values(), teacher_a.state_dict().values(), strict=True)
+    ), "teacher must start from different weights than the student"
