@@ -96,3 +96,26 @@ def dummy_token_ids(
 
 
 __all__ = ["ExportCacheWrapper", "dummy_token_ids", "model_vocab_size"]
+
+
+def clamp_input_shape(model: nn.Module, shape: tuple[int, int]) -> tuple[int, int]:
+    """Bound a ``(batch, seq_len)`` dummy-input shape by the model's context window.
+
+    Trace-based exporters default to ``(1, 32)``, but a model trained with a
+    SMALLER ``max_seq_len`` cannot be traced at that length: the positional
+    encoding's range check raises
+    ``ValueError: Sequence endpoint 32 exceeds maximum sequence length 16``,
+    which reads as a user error rather than "the exporter's default dummy
+    input is too long for this model". Clamp the sequence axis to the model's
+    own capacity so any model exports with no arguments, while an explicit
+    over-long ``input_shape`` from the caller is still honoured (their choice,
+    and the error then genuinely belongs to them).
+
+    ``max_seq_len`` is read from the model, falling back to the wrapped model's
+    attribute, and left untouched when the model exposes no capacity.
+    """
+    batch_size, seq_len = shape
+    capacity = getattr(model, "max_seq_len", None)
+    if not isinstance(capacity, int) or capacity <= 0:
+        return shape
+    return batch_size, min(seq_len, capacity)

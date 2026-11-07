@@ -7,7 +7,11 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from llm.export._wrapper import ExportCacheWrapper, dummy_token_ids
+from llm.export._wrapper import ExportCacheWrapper, clamp_input_shape, dummy_token_ids
+
+#: Default ``(batch, seq_len)`` dummy shape for trace-based exports. The
+#: sequence axis is clamped to the model's own context window at call time.
+_DEFAULT_INPUT_SHAPE: tuple[int, int] = (1, 32)
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +91,7 @@ def _normalize_layer_norm_dtypes(onnx_path: str | Path) -> Path:
 def export_to_onnx(
     model: nn.Module,
     output_path: str | Path,
-    input_shape: tuple[int, int] = (1, 32),
+    input_shape: tuple[int, int] | None = None,
     opset_version: int = 17,
     dynamic_axes: dict | None = None,
     verbose: bool = False,
@@ -98,7 +102,11 @@ def export_to_onnx(
     Args:
         model: The model to export (e.g., DecoderModel)
         output_path: Path to save the ONNX file
-        input_shape: (batch_size, seq_len) for dummy input
+        input_shape: (batch_size, seq_len) for the dummy input. ``None``
+            (the default) traces at ``(1, 32)`` clamped to the model's own
+            context window, so a model trained with a short ``max_seq_len``
+            exports without arguments instead of failing the positional
+            encoding's range check.
         opset_version: ONNX opset version (default: 17)
         dynamic_axes: Dynamic axes for variable-length inputs
         verbose: Print export details
@@ -122,8 +130,10 @@ def export_to_onnx(
     wrapped_model.eval()
 
     # Create dummy input — bounded by the REAL vocab so small-vocab models
-    # don't crash the embedding with out-of-range ids.
-    dummy_input = dummy_token_ids(model, input_shape, device=device)
+    # don't crash the embedding with out-of-range ids, and by the model's own
+    # context window when the caller did not pin a shape.
+    resolved_shape = input_shape if input_shape is not None else clamp_input_shape(model, _DEFAULT_INPUT_SHAPE)
+    dummy_input = dummy_token_ids(model, resolved_shape, device=device)
 
     # Default dynamic axes for variable batch and sequence length
     if dynamic_axes is None:
@@ -168,7 +178,7 @@ def export_to_onnx(
 def verify_onnx(
     onnx_path: str | Path,
     model: nn.Module | None = None,
-    input_shape: tuple[int, int] = (1, 32),
+    input_shape: tuple[int, int] | None = None,
     rtol: float = 1e-3,
     atol: float = 1e-5,
 ) -> bool:
@@ -200,10 +210,15 @@ def verify_onnx(
 
     # Create test input — bounded by the real vocab when a model is supplied
     # so small-vocab models don't crash the embedding.
+    resolved_shape = (
+        input_shape
+        if input_shape is not None
+        else (clamp_input_shape(model, _DEFAULT_INPUT_SHAPE) if model is not None else _DEFAULT_INPUT_SHAPE)
+    )
     if model is not None:
-        test_input = dummy_token_ids(model, input_shape)
+        test_input = dummy_token_ids(model, resolved_shape)
     else:
-        batch_size, seq_len = input_shape
+        batch_size, seq_len = resolved_shape
         test_input = torch.randint(0, 100, (batch_size, seq_len))
 
     # Run ONNX inference

@@ -33,7 +33,11 @@ from typing import TYPE_CHECKING, Any
 import torch
 import torch.nn as nn
 
-from llm.export._wrapper import ExportCacheWrapper, dummy_token_ids
+from llm.export._wrapper import ExportCacheWrapper, clamp_input_shape, dummy_token_ids
+
+#: Default ``(batch, seq_len)`` dummy shape for trace-based exports. The
+#: sequence axis is clamped to the model's own context window at call time.
+_DEFAULT_INPUT_SHAPE: tuple[int, int] = (1, 32)
 
 if TYPE_CHECKING:
     pass
@@ -44,7 +48,7 @@ def export_to_torchscript(
     output_path: str | Path,
     *,
     method: str = "trace",
-    input_shape: tuple[int, int] = (1, 32),
+    input_shape: tuple[int, int] | None = None,
     example_inputs: torch.Tensor | None = None,
     strict: bool = True,
     **kwargs: Any,
@@ -88,7 +92,8 @@ def export_to_torchscript(
             # Bounded by the REAL vocab so small-vocab models don't crash
             # the embedding with out-of-range ids.
             device = next(model.parameters()).device
-            example_inputs = dummy_token_ids(model, input_shape, device=device)
+            resolved_shape = input_shape if input_shape is not None else clamp_input_shape(model, _DEFAULT_INPUT_SHAPE)
+            example_inputs = dummy_token_ids(model, resolved_shape, device=device)
         # Pre-seed every RoPE cos/sin cache to the example sequence length.
         # ``torch.jit.trace`` runs the model TWICE (tracing + a sanity
         # re-check), and ``RotaryPositionEmbedding`` builds its table behind

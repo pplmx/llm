@@ -127,6 +127,34 @@ def test_export_to_onnx_small_vocab_no_crash(tmp_path):
     assert result.exists()
 
 
+def test_export_to_onnx_short_context_no_crash(tmp_path):
+    """Regression: a model with a small ``max_seq_len`` must export by default.
+
+    The trace-based exporters defaulted to an ``input_shape`` of ``(1, 32)``
+    without consulting the model, so any model trained with a shorter context
+    (e.g. ``max_seq_len=16``, common for smoke configs) failed the positional
+    encoding's range check:
+    ``ValueError: Sequence endpoint 32 exceeds maximum sequence length 16``.
+    That reads as a user error, but the user passed no shape at all. The
+    default is now clamped to the model's own context window.
+    """
+    model = DecoderModel(vocab_size=16, hidden_size=8, num_layers=1, num_heads=2, max_seq_len=16)
+    result = export_to_onnx(model, tmp_path / "model.onnx")  # no input_shape
+    assert result.exists()
+
+
+def test_export_to_onnx_explicit_over_long_shape_still_errors(tmp_path):
+    """An explicit over-long ``input_shape`` stays the caller's problem.
+
+    Clamping only the EXPORTER's default must not silently rewrite a shape the
+    caller pinned — an over-capacity trace would produce an artifact that
+    cannot run at the requested length, so failing loud is correct.
+    """
+    model = DecoderModel(vocab_size=16, hidden_size=8, num_layers=1, num_heads=2, max_seq_len=16)
+    with pytest.raises(ValueError, match="exceeds maximum sequence length"):
+        export_to_onnx(model, tmp_path / "model.onnx", input_shape=(1, 64))
+
+
 class TestVerifyOnnx:
     """Tests for verify_onnx function."""
 

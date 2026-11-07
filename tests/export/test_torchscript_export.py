@@ -67,6 +67,26 @@ class TestExportToTorchscript:
         result = export_to_torchscript(small, output_path, input_shape=(1, 32))
         assert result.exists()
 
+    def test_export_trace_short_context_no_crash(self, tmp_path):
+        """Regression: a short-context model must export with default args.
+
+        Same defect as the ONNX path: the default ``input_shape`` was
+        ``(1, 32)`` regardless of the model's ``max_seq_len``, so a
+        ``max_seq_len=16`` model failed the positional encoding's range check
+        with an error that blamed the caller even though they passed no shape.
+        """
+        short = DecoderModel(vocab_size=16, hidden_size=8, num_layers=1, num_heads=2, max_seq_len=16)
+        result = export_to_torchscript(short, tmp_path / "model.pt")  # no input_shape
+        assert result.exists()
+
+    def test_export_trace_short_context_artifact_runs(self, tmp_path):
+        """The clamped trace must still be a usable scripted module."""
+        short = DecoderModel(vocab_size=16, hidden_size=8, num_layers=1, num_heads=2, max_seq_len=16)
+        result = export_to_torchscript(short, tmp_path / "model.pt")
+        loaded = torch.jit.load(str(result))
+        out = loaded(torch.randint(0, 16, (1, 8)))
+        assert out.shape == (1, 8, 16)
+
     def test_export_trace_rope_model_exports(self, tmp_path):
         """a RoPE model (the default for external Llama/Mistral
         checkpoints) must trace to TorchScript.
