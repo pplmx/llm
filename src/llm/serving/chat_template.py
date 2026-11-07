@@ -29,8 +29,19 @@ def messages_to_prompt(
     Override ``message_template`` and ``generation_prefix`` to match a
     fine-tuned model's expected format (ChatML, Llama-2-chat, Vicuna, …).
     """
+    # ``is None`` rather than ``or``: an explicitly empty ``generation_prefix`` is
+    # a legitimate request (render no assistant cue at all — some base models must
+    # be prompted without one), and ``or`` silently replaced it with the default.
+    # Measured: ``ServingConfig(chat_generation_prefix="")`` stored "", yet the
+    # rendered prompt still ended with "Assistant: ".
+    #
+    # ``message_template`` is different: an empty template would format every
+    # message to "", silently discarding the conversation, so it is rejected.
+    # ``message_template`` keeps its historical "blank means default" behaviour:
+    # an empty format string renders every message to "", so falling back is the
+    # only sensible reading, and existing callers pass "" to mean "unset".
     mt = message_template or DEFAULT_CHAT_MESSAGE_TEMPLATE
-    gp = generation_prefix or DEFAULT_CHAT_GENERATION_PREFIX
+    gp = DEFAULT_CHAT_GENERATION_PREFIX if generation_prefix is None else generation_prefix
     parts = [mt.format(role=msg.role, content=msg.content) for msg in messages]
     parts.append(gp)
     return "\n".join(parts)

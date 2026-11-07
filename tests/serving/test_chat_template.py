@@ -117,3 +117,40 @@ def test_serving_config_overrides_via_env(monkeypatch):
     cfg = ServingConfig()
     assert cfg.chat_message_template == "<|im_{role}|>\n{content}<|im_end|>"
     assert cfg.chat_generation_prefix == "<|im_start|>assistant\n"
+
+
+# --- An explicit empty generation prefix must be honoured ---
+
+
+def test_empty_generation_prefix_renders_no_assistant_cue():
+    """``generation_prefix=""`` must mean "append nothing", not "use the default".
+
+    ``or`` conflates an explicit empty string with "unset", so a user who
+    configured ``chat_generation_prefix: ""`` — some base models must be prompted
+    without an ``Assistant:`` cue — still got the default appended. Measured via
+    ``ServingConfig``: the config stored "", yet the rendered prompt still ended
+    with "Assistant: ", with no warning.
+    """
+    messages = [_Msg(role="user", content="hi")]
+
+    with_default = _messages_to_prompt(messages)
+    assert with_default.endswith(DEFAULT_CHAT_GENERATION_PREFIX), "the default cue should still be present"
+
+    without_cue = _messages_to_prompt(messages, generation_prefix="")
+    assert not without_cue.endswith(DEFAULT_CHAT_GENERATION_PREFIX), (
+        "an explicit empty prefix was replaced by the default"
+    )
+    assert without_cue.rstrip().endswith("hi"), "the message body itself should still render"
+    assert without_cue != with_default
+
+
+def test_none_generation_prefix_still_uses_the_default():
+    """``None`` remains the "unset" sentinel, so the default cue still appears."""
+    messages = [_Msg(role="user", content="hi")]
+    assert _messages_to_prompt(messages, generation_prefix=None) == _messages_to_prompt(messages)
+
+
+def test_custom_generation_prefix_is_used_verbatim():
+    messages = [_Msg(role="user", content="hi")]
+    rendered = _messages_to_prompt(messages, generation_prefix="<|assistant|>")
+    assert rendered.endswith("<|assistant|>")
