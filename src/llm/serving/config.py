@@ -29,7 +29,7 @@ class ServingConfig(BaseSettings):
     )  # Set LLM_SERVING_PORT=9000 to override the llm serve default
 
     # Generation
-    generation_backend: str = "eager"  # eager | batched
+    generation_backend: str = "eager"  # eager | batched | <third-party plugin>
 
     # Performance. Kept > 0 deliberately: 0 concurrency builds
     # ``asyncio.Semaphore(0)`` (every request blocks then 504s), a
@@ -184,6 +184,31 @@ class ServingConfig(BaseSettings):
     # rejected for these in the model_validator below — failing loud at
     # startup is better than silently no-op'ing at first-request time.
     _NON_MERGEABLE_METHODS: frozenset[str] = frozenset({"bitfit", "qlora", "prefix_tuning"})
+
+    @field_validator("generation_backend")
+    @classmethod
+    def _validate_generation_backend(cls, value: str) -> str:
+        """Reject an unknown backend name at config-load time.
+
+        ``get_generation_backend`` does fail loudly with the same list, but
+        only at the first request after the server has booted — a typo'd
+        ``LLM_SERVING_GENERATION_BACKEND=batchedd`` looked fine through
+        startup, model load and ``/health``, then 500'd every call. Validating
+        here matches the ``peft_method`` / ``attn_impl`` fail-fast contract: a
+        bad config never gets a server up.
+        """
+        # Lazy import: the auth / CLI-startup guards build a config without
+        # ever resolving a backend.
+        from llm.generation.registry import BACKEND_REGISTRY, ensure_backends_registered
+
+        ensure_backends_registered()
+        try:
+            BACKEND_REGISTRY.get(value)
+        except ValueError as exc:
+            raise ValueError(
+                f"Unknown generation_backend {value!r}. Registered backends: {BACKEND_REGISTRY.names()}."
+            ) from exc
+        return value
 
     @field_validator("peft_method")
     @classmethod

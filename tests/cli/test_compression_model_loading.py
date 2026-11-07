@@ -140,3 +140,21 @@ def test_quantize_cli_accepts_v2_checkpoint(tmp_path: Path) -> None:
     assert result.exit_code == 0, strip_ansi(result.output)
     assert out.exists()
     assert "named_modules" not in strip_ansi(result.output)
+
+
+def test_fp8_quantize_cli_accepts_v2_checkpoint(tmp_path: Path) -> None:
+    """The FP8 subcommand must share the GPTQ command's layout handling.
+
+    The first pass at this fix covered only the GPTQ path; ``llm quantize fp8``
+    kept its own bare ``torch.load`` and still rejected every v2 spelling with
+    ``[Errno 2] No such file or directory``. Both subcommands now go through
+    the same loader, and this test pins the FP8 side.
+    """
+    from llm.cli.quantize import app
+
+    stem = _save_split_checkpoint(tmp_path)
+    out = tmp_path / "fp8.pt"
+    result = CliRunner().invoke(app, ["fp8", "--model", str(stem), "--output", str(out)])
+    assert result.exit_code == 0, strip_ansi(result.output)
+    assert out.exists(), "the FP8-quantized model must be written"
+    assert "No such file or directory" not in strip_ansi(result.output)

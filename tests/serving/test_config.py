@@ -98,6 +98,27 @@ class TestServingConfigFromYaml:
         assert cfg.model_path is None
 
 
+class TestServingConfigGenerationBackendValidation:
+    """A typo'd backend name must fail at config load, not at first request.
+
+    ``get_generation_backend`` already raises with the registry's name list,
+    but only once a request arrives — the server would boot, load the model,
+    and answer ``/health`` before 500-ing every generation call.
+    """
+
+    @pytest.mark.parametrize("name", ["eager", "batched", "speculative"])
+    def test_registered_backends_accepted(self, name):
+        assert ServingConfig(generation_backend=name).generation_backend == name
+
+    def test_unknown_backend_rejected_at_load(self):
+        with pytest.raises(ValueError, match="Unknown generation_backend"):
+            ServingConfig(generation_backend="batchedd")  # plausible typo
+
+    def test_error_names_the_available_backends(self):
+        with pytest.raises(ValueError, match="Registered backends"):
+            ServingConfig(generation_backend="nope")
+
+
 class TestServingConfigPeftValidation:
     def test_valid_peft_method_accepted(self):
         cfg = ServingConfig(peft_method="lora")

@@ -11,7 +11,7 @@ Subcommand surface (matches
 ``docs/superpowers/plans/2026-07-22-gptq-integration.md`` § Task 10):
 
     llm quantize gptq \\
-        --model PATH                 # torch.save blob with a DecoderModel \\
+        --model PATH                 # checkpoint stem / .pt / .safetensors / saved module \\
         --output PATH                # where to write the quantized model \\
         --calib-data PATH            # raw text (one sample per line) — needs --tokenizer \\
         --calib-data-tokens PATH     # pre-tokenized tensor file — mutually exclusive with --calib-data \\
@@ -489,14 +489,15 @@ def fp8(
     _validate_model_path(model)
     _reject_clobbering_input(output, model)
 
-    import torch
-
+    from llm.cli._model_loading import load_trained_model
     from llm.quantization.fp8 import quantize_model_fp8
-    from llm.utils.serialization import register_framework_safe_globals
 
     try:
-        register_framework_safe_globals()
-        model_obj = torch.load(model, map_location="cpu", weights_only=True)
+        typer.echo(f"Loading model from {model}...")
+        # Same layout handling as the GPTQ command: the v2 split layout this
+        # repo writes (ADR-006) as well as a legacy blob / bare saved module.
+        # Loading with ``torch.load`` here rejected every v2 spelling.
+        model_obj = load_trained_model(model)
     except Exception as exc:
         typer.echo(f"Error: failed to load model {model}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
