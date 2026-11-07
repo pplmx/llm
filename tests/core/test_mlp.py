@@ -492,3 +492,87 @@ def test_explicit_intermediate_size_is_used_verbatim():
     mlp = MLP(hidden_size=32, intermediate_size=256)
     assert mlp.intermediate_size == 256
     assert mlp.fc1.out_features == 256
+
+
+# --- MLP_REGISTRY must be genuinely extensible (third-party factories) ---
+
+
+def test_third_party_mlp_with_a_narrow_signature_builds():
+    """A plugin factory may declare fewer params than the built-ins.
+
+    The transformer block used to pass the full kwarg map unconditionally, so a
+    plugin accepting only ``hidden_size`` / ``intermediate_size`` failed with
+    "got an unexpected keyword argument 'include_norm_residual'" — the registry
+    advertised extensibility it did not have. Unknown kwargs are now filtered
+    against the factory's signature.
+    """
+    from llm.core.registry import MLP_REGISTRY
+    from llm.models.decoder import DecoderModel
+
+    class _NarrowMLP(torch.nn.Module):
+        def __init__(self, hidden_size, intermediate_size=None):
+            super().__init__()
+            self.fc = torch.nn.Linear(hidden_size, hidden_size)
+
+        def forward(self, x):
+            return self.fc(x)
+
+    config = {"vocab_size": 32, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16}
+    MLP_REGISTRY.replace("_test_narrow_mlp", _NarrowMLP)
+    try:
+        torch.manual_seed(0)
+        model = DecoderModel(**config, mlp_impl="_test_narrow_mlp")
+        assert type(model.transformer_blocks[0].mlp).__name__ == "_NarrowMLP"
+    finally:
+        MLP_REGISTRY._entries.pop("_test_narrow_mlp", None)
+
+
+def test_third_party_mlp_with_var_kwargs_still_receives_everything():
+    """A factory that accepts ``**kwargs`` keeps seeing the full map.
+
+    Filtering must only drop what the signature cannot take; a plugin opting into
+    ``**kwargs`` may legitimately inspect ``use_glu`` / ``norm_first``.
+    """
+    from llm.core.registry import MLP_REGISTRY
+    from llm.models.decoder import DecoderModel
+
+    seen: dict[str, object] = {}
+
+    class _RecordingMLP(torch.nn.Module):
+        def __init__(self, hidden_size, intermediate_size=None, **kwargs):
+            super().__init__()
+            seen.update(kwargs)
+            self.fc = torch.nn.Linear(hidden_size, hidden_size)
+
+        def forward(self, x):
+            return self.fc(x)
+
+    config = {"vocab_size": 32, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16}
+    MLP_REGISTRY.replace("_test_recording_mlp", _RecordingMLP)
+    try:
+        torch.manual_seed(0)
+        DecoderModel(**config, mlp_impl="_test_recording_mlp")
+    finally:
+        MLP_REGISTRY._entries.pop("_test_recording_mlp", None)
+
+    for key in ("include_norm_residual", "use_glu", "norm_first"):
+        assert key in seen, f"a **kwargs plugin should still receive {key}"
+
+
+def test_builtin_mlp_still_honours_use_glu():
+    """The filtering must not break the built-in kwargs it might drop.
+
+    Guards the obvious regression: if the filter were wrong, ``use_glu`` would
+    silently stop reaching the factory and GLU models would become plain FFNs.
+    """
+    from llm.models.decoder import DecoderModel
+
+    config = {"vocab_size": 32, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16}
+    torch.manual_seed(0)
+    plain = DecoderModel(**config)
+    torch.manual_seed(0)
+    glu = DecoderModel(**config, use_glu=True)
+
+    assert sum(p.numel() for p in glu.parameters()) != sum(p.numel() for p in plain.parameters()), (
+        "use_glu no longer reaches the MLP factory"
+    )

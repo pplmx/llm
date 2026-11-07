@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import logging
 from collections.abc import Callable
 
 import torch
@@ -8,6 +10,8 @@ import torch.nn as nn
 from llm.core.alibi import ALiBiPositionBias
 from llm.core.kv_cache import KVCache
 from llm.utils.common import make_factory_kwargs
+
+logger = logging.getLogger(__name__)
 
 
 class TransformerBlock(nn.Module):
@@ -137,6 +141,23 @@ class TransformerBlock(nn.Module):
             common_mlp_kwargs["include_norm_residual"] = False
             common_mlp_kwargs["use_glu"] = use_glu
             common_mlp_kwargs["norm_first"] = False
+
+        # A third-party factory registered under this registry may declare fewer
+        # parameters than the built-ins (e.g. it takes only ``hidden_size`` and
+        # ``intermediate_size``). Passing the full map unconditionally made such
+        # a plugin fail with "got an unexpected keyword argument
+        # 'include_norm_residual'" — the registry was not actually extensible.
+        # Filter to what the signature accepts; a factory with ``**kwargs`` keeps
+        # receiving everything.
+        try:
+            accepted = inspect.signature(mlp_cls).parameters
+        except TypeError, ValueError:  # builtins / C callables: pass everything
+            accepted = {}
+        if accepted and not any(p.kind is inspect.Parameter.VAR_KEYWORD for p in accepted.values()):
+            dropped = sorted(set(common_mlp_kwargs) - set(accepted))
+            if dropped:
+                logger.debug("mlp_impl=%s does not accept %s; not forwarding", mlp_impl, dropped)
+                common_mlp_kwargs = {k: v for k, v in common_mlp_kwargs.items() if k in accepted}
 
         self.mlp = mlp_cls(**common_mlp_kwargs)
 
