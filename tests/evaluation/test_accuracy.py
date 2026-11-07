@@ -41,12 +41,24 @@ def test_accuracy_empty():
 
 
 def test_accuracy_mismatched_lengths_raise():
+    """Length mismatch must name the contract, not the ``zip`` mechanism.
+
+    ``zip(..., strict=True)`` raised "zip() argument 2 is shorter than
+    argument 1", which tells a task author nothing about the actual mistake
+    (``predict()`` returned a different number of rows than ``prepare_data``).
+    """
     metric = AccuracyMetric()
     predictions = ["a", "b"]
     references = ["a"]
 
-    with pytest.raises(ValueError, match="zip\\(\\) argument"):
+    with pytest.raises(ValueError, match="one reference per prediction"):
         metric.compute(predictions, references)
+
+
+def test_accuracy_mismatch_error_names_both_counts():
+    """The message must report both lengths so the skewed side is obvious."""
+    with pytest.raises(ValueError, match=r"3 predictions and 2 references"):
+        AccuracyMetric().compute(["a", "b", "c"], ["a", "b"])
 
 
 def test_accuracy_name():
@@ -85,3 +97,26 @@ def test_f1_empty_returns_zero():
     metric = F1Metric()
     result = metric.compute([], [])
     assert result == {"f1": 0.0}
+
+
+def test_f1_missing_sklearn_raises_actionable_install_hint(monkeypatch):
+    """A missing ``scikit-learn`` must name the extra to install.
+
+    ``F1Metric`` let the raw ``ModuleNotFoundError: No module named
+    'sklearn'`` escape, while every sibling soft-dependency metric
+    (bleu / chrf / rouge) converts it into an install hint. The message named
+    neither the extra nor the package, so a user had to read the source to
+    learn what to run.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "sklearn" or name.startswith("sklearn."):
+            raise ImportError("No module named 'sklearn'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    with pytest.raises(ImportError, match=r"llm\[eval\]"):
+        F1Metric().compute(["a"], ["b"])
