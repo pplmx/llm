@@ -450,3 +450,90 @@ def test_ensure_methods_registered_reexported_from_core_registry() -> None:
     from llm.core.registry import ensure_peft_methods_registered
 
     assert callable(ensure_peft_methods_registered)
+
+
+# ---------------------------------------------------------------------------
+# merge_peft / unmerge_peft: the round trip must be numerically invisible
+# ---------------------------------------------------------------------------
+
+
+def test_merge_peft_lora_preserves_and_restores_model_output() -> None:
+    """Merging must not change the model's output; unmerging must restore it.
+
+    The existing ``test_merge_peft_lora_round_trip`` only asserts "must not
+    raise" with no numeric check, so a merge that dropped or double-counted the
+    adapter — the exact failure mode the scaling snapshot exists to prevent —
+    would still pass.
+
+    The baseline is captured AFTER ``apply_peft``: applying an adapter consumes
+    RNG, so a model built before and after are not comparable (that mistake read
+    as a 2.66 delta and looked like a merge bug).
+    """
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(0)
+    model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=2, num_heads=4, max_seq_len=16)
+    model.eval()
+    input_ids = torch.randint(0, 64, (2, 8))
+
+    # Control: capture the adapter-free output of a model built from the SAME seed.
+    torch.manual_seed(0)
+    plain_model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=2, num_heads=4, max_seq_len=16)
+    plain_model.eval()
+    with torch.no_grad():
+        plain_output = plain_model(input_ids).clone()
+
+    apply_peft(model, "lora", rank=4, alpha=8.0, dropout=0.0)
+    for name, param in model.named_parameters():
+        if "lora_B" in name:
+            param.data.normal_(0, 0.1)
+
+    with torch.no_grad():
+        adapted = model(input_ids).clone()
+
+    assert not torch.allclose(adapted, plain_output, atol=1e-3), (
+        "the adapter did not change the output, so the round-trip checks below are vacuous"
+    )
+
+    merge_peft(model, "lora")
+    with torch.no_grad():
+        merged = model(input_ids).clone()
+    assert torch.allclose(merged, adapted, atol=1e-4), (
+        f"merge changed the model output: max|delta|={(merged - adapted).abs().max().item():.2e}"
+    )
+
+    unmerge_peft(model, "lora")
+    with torch.no_grad():
+        unmerged = model(input_ids).clone()
+    assert torch.allclose(unmerged, adapted, atol=1e-4), (
+        f"unmerge did not restore the adapter-path output: max|delta|={(unmerged - adapted).abs().max().item():.2e}"
+    )
+
+
+def test_merge_peft_restores_every_wrapped_layer() -> None:
+    """Every wrapped layer must be restored, not just the first one.
+
+    A dispatch bug that stopped after one module would leave the rest folded at
+    serve time; the aggregate output check can mask that when layers differ in
+    scale.
+    """
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(0)
+    model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=2, num_heads=4, max_seq_len=16)
+    model.eval()
+    apply_peft(model, "lora", rank=4, alpha=8.0)
+    for name, param in model.named_parameters():
+        if "lora_B" in name:
+            param.data.normal_(0, 0.1)
+
+    wrapped = [module for module in model.modules() if type(module).__name__ == "LoRALinear"]
+    assert len(wrapped) > 1, "expected several wrapped layers in this model"
+    snapshots = [module.base_layer.weight.detach().clone() for module in wrapped]
+
+    merge_peft(model, "lora")
+    unmerge_peft(model, "lora")
+
+    for module, snapshot in zip(wrapped, snapshots, strict=True):
+        delta = (module.base_layer.weight - snapshot).abs().max().item()
+        assert delta < 1e-5, f"a wrapped layer was not restored after unmerge: max|delta|={delta:.2e}"
