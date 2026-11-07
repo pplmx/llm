@@ -70,7 +70,32 @@ uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yam
 ```
 
 `CheckpointManager.load_checkpoint` 恢复 model / optimizer / scheduler / scaler / `extra_state`。
-流式任务额外恢复数据 cursor（不重复读、不遗漏）。
+流式任务额外恢复数据 cursor（不重复读、不遗漏）。**学习率也会恢复**：`StepLR` 这类
+调度器的 LR 存在 optimizer 的 `param_group` 里，checkpoint 同时写了 optimizer 与 scheduler
+状态，两者一起才把 LR 与 `last_epoch` 还原到位。
+
+### 路径写错时会发生什么
+
+`resume_from_checkpoint` **指向不存在的文件**不会中止训练——`load_checkpoint` 记一条
+WARNING 后返回 `(epoch=0, loss=inf)`，即**从零开始**：
+
+```text
+WARNING  Checkpoint file not found: <path> (checked legacy + split layouts). Starting from scratch.
+```
+
+这是有意为之（同一份 YAML 可以既用于首次训练又用于续训），代价是：长时间训练里
+这条 WARNING 很容易被后续日志冲掉，看起来像是"续训成功"。手动核对的两个办法：
+
+- 启动日志里的 `Epoch N SUMMARY` 应从 N > 1 开始，而不是 1；
+- `latest.meta.json` 的 `epoch` 字段应与日志一致。
+
+若希望路径错误必须中止，请在启动脚本里先校验文件存在再拉起训练（`llm train` 目前
+没有 dry-run 开关，也没有"续训路径必须存在"的强制选项）：
+
+```bash
+test -f checkpoints/epoch_2.safetensors || { echo "checkpoint missing"; exit 1; }
+uv run llm train --task stream_lm --config-path configs/streaming_local_demo.yaml --epochs 2
+```
 
 **续训不是逐位可复现的**：RNG 状态（global / CUDA 的随机数生成器）不写进 checkpoint。
 因此 dropout、数据打乱、数据增强在续训后会走不同的随机流，"3 步 + 存档 + 续 3 步"与

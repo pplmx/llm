@@ -594,3 +594,59 @@ def test_a_successful_save_leaves_no_partial_files(tmp_path):
     path = _make_saved_checkpoint(tmp_path)
     leftovers = [p.name for p in path.iterdir() if p.name.endswith(".tmp")]
     assert not leftovers, f"partial files left behind: {leftovers}"
+
+
+def test_resume_restores_the_learning_rate_and_scheduler_counters(tmp_path):
+    """A resumed run must continue at the SAVED learning rate.
+
+    Every existing load test uses placeholder state objects, so the one thing a
+    user notices after a resume — the LR picking up where it left off instead of
+    restarting at the base value — was never asserted. The LR lives in the
+    optimizer's ``param_group``, while the scheduler stores its counters, so both
+    sidecars must be applied for the trajectory to continue.
+    """
+    import torch
+    import torch.nn as nn
+
+    from llm.training.core.checkpoint import CheckpointConfig, CheckpointManager
+
+    logger = logging.getLogger("test-resume-lr")
+    logger.addHandler(logging.NullHandler())
+    checkpoint_dir = tmp_path / "ckpts"
+    manager = CheckpointManager(
+        CheckpointConfig(checkpoint_dir=str(checkpoint_dir), save_interval=1),
+        rank=0,
+        logger=logger,
+    )
+
+    torch.manual_seed(0)
+    model = nn.Linear(4, 2)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.8)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
+    for _ in range(3):
+        optimizer.step()
+        scheduler.step()
+    saved_lr = optimizer.param_groups[0]["lr"]
+    saved_epoch = scheduler.state_dict()["last_epoch"]
+    assert saved_lr < 0.8, "the schedule must have moved before this test means anything"
+
+    manager.save_checkpoint(3, model, optimizer, scheduler, None, loss=0.5)
+
+    # A resume builds fresh objects, as the engine does.
+    torch.manual_seed(0)
+    resumed_model = nn.Linear(4, 2)
+    resumed_optimizer = torch.optim.SGD(resumed_model.parameters(), lr=0.8)
+    resumed_scheduler = torch.optim.lr_scheduler.StepLR(resumed_optimizer, step_size=1, gamma=0.5)
+    assert resumed_optimizer.param_groups[0]["lr"] == 0.8, "sanity: starts at the base LR"
+
+    manager.config.resume_from_checkpoint = str(checkpoint_dir / "latest.safetensors")
+    epoch, _ = manager.load_checkpoint(
+        resumed_model, resumed_optimizer, resumed_scheduler, None, device=torch.device("cpu")
+    )
+
+    # Saved epoch 3 means "epoch 3 completed", so the resume starts at 4.
+    assert epoch == 4
+    assert resumed_optimizer.param_groups[0]["lr"] == pytest.approx(saved_lr), (
+        f"LR restarted instead of resuming: {resumed_optimizer.param_groups[0]['lr']} vs saved {saved_lr}"
+    )
+    assert resumed_scheduler.state_dict()["last_epoch"] == saved_epoch, "scheduler counters did not resume"
