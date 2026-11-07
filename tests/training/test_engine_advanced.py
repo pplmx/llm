@@ -1,5 +1,6 @@
 import pytest
 import torch
+from torch.utils.data import DataLoader, TensorDataset
 
 from llm.data.modules.synthetic import SyntheticDataModule
 from llm.training.core.config import Config, ModelConfig, OptimizationConfig, TrainingConfig
@@ -543,3 +544,97 @@ def test_engine_uses_compiled_module_when_compile_succeeds(mock_config):
     compile_mock.assert_called_once()
     assert compile_mock.call_args.kwargs.get("mode") == "reduce-overhead"
     assert engine.model is not None
+
+
+# --- Non-finite gradient guard: a poisoned step must be refused, not applied ---
+
+
+def _run_with_poisoned_gradients(poison_steps: int, total_batches: int):
+    """Run a real engine whose first ``poison_steps`` gradients are NaN.
+
+    Returns (engine, parameters_before, clip_call_count). Patches
+    ``clip_grad_norm_`` because that is where the engine both clips and detects
+    the skip signal — the same place a real fp16 overflow would surface.
+    """
+    config = Config(
+        model=ModelConfig(vocab_size=16, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16),
+        training=TrainingConfig(batch_size=2, num_samples=total_batches * 2, epochs=1, run_validation=False),
+        optimization=OptimizationConfig(gradient_accumulation_steps=1, amp_dtype="auto", use_compile=False),
+    )
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    task = LanguageModelingTask(config, data_module)
+
+    torch.manual_seed(0)
+    engine = TrainingEngine(config, task, rank=0, world_size=1, data_module=data_module)
+    input_ids = torch.randint(0, 16, (total_batches * 2, 8), dtype=torch.long)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(input_ids, input_ids.clone()), batch_size=2)
+    engine.val_dataloader = None
+
+    before = [p.detach().clone() for p in engine.model.parameters()]
+    original_clip = torch.nn.utils.clip_grad_norm_
+    calls = {"count": 0}
+
+    def _poisoning_clip(params, max_norm, *args, **kwargs):
+        calls["count"] += 1
+        result = original_clip(params, max_norm, *args, **kwargs)
+        if calls["count"] <= poison_steps:
+            for param in params:
+                if param.grad is not None:
+                    param.grad.fill_(float("nan"))
+            return torch.tensor(float("nan"))
+        return result
+
+    torch.nn.utils.clip_grad_norm_ = _poisoning_clip
+    try:
+        engine.run()
+    finally:
+        torch.nn.utils.clip_grad_norm_ = original_clip
+    return engine, before, calls["count"]
+
+
+def test_non_finite_gradient_does_not_corrupt_parameters():
+    """A NaN gradient must be REFUSED, not written into the weights.
+
+    ``clip_grad_norm_`` returns the total norm computed from the unscaled
+    gradients, and a non-finite value is exactly the signal a GradScaler would
+    use to skip the update. On the fp32/bf16/CPU path there is no scaler to do
+    that, so the engine has to refuse the step itself — otherwise one overflow
+    poisons every parameter and the run is dead with no error.
+    """
+    engine, before, _ = _run_with_poisoned_gradients(poison_steps=99, total_batches=2)
+
+    after = [p.detach().clone() for p in engine.model.parameters()]
+    for original, current in zip(before, after, strict=True):
+        assert torch.equal(original, current), "a poisoned step modified the parameters"
+        assert torch.isfinite(current).all(), "a poisoned step wrote non-finite weights"
+
+
+def test_skipped_step_does_not_advance_global_step():
+    """``global_step`` counts SUCCESSFUL optimizer steps only.
+
+    It drives ``max_steps``, the periodic-eval cadence and the AdaLoRA prune
+    schedule, so counting refused steps would trigger all three early.
+    """
+    engine, _, clip_calls = _run_with_poisoned_gradients(poison_steps=99, total_batches=2)
+
+    assert clip_calls == 2, f"expected 2 step boundaries, saw {clip_calls}"
+    assert engine.global_step == 0, f"refused steps advanced global_step to {engine.global_step}"
+
+
+def test_training_recovers_after_a_skipped_step():
+    """Skipping is transient: the next healthy step must still update weights.
+
+    The guard would be useless (and hide a stall) if it latched — a real fp16
+    overflow happens on isolated batches and training continues.
+    """
+    engine, before, clip_calls = _run_with_poisoned_gradients(poison_steps=2, total_batches=3)
+
+    assert clip_calls == 3
+    assert engine.global_step == 1, f"exactly one healthy step should have run, got {engine.global_step}"
+    after = [p.detach().clone() for p in engine.model.parameters()]
+    assert any(not torch.equal(o, c) for o, c in zip(before, after, strict=True)), (
+        "training did not resume after the poisoned steps"
+    )
+    assert all(torch.isfinite(p).all() for p in after)
