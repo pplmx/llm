@@ -719,3 +719,141 @@ class TestPagedAttentionForward:
         )
         assert output.shape == (batch_size, num_heads, 1, head_dim)
         assert torch.zeros_like(output).equal(output)
+
+
+# --- Numerical equivalence with plain attention (shape checks cannot see bugs) ---
+
+
+def _causal_reference(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    """Plain scaled-dot-product attention for a single sequence, causal.
+
+    Inputs are ``[1, H, T, D]`` (q) and ``[1, T, H, D]`` (k, v); the return is
+    ``[1, H, T, D]``. This is the semantics the paged kernel must reproduce.
+    """
+    head_dim = q.shape[-1]
+    scores = torch.einsum("bhtd,bshd->bhts", q, k) * head_dim**-0.5
+    seq_len = k.shape[1]
+    causal = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool), diagonal=1)
+    scores = scores.masked_fill(causal, float("-inf"))
+    return torch.einsum("bhts,bshd->bhtd", scores.softmax(dim=-1), v)
+
+
+def _build_cached(k, v, block_size, n_blocks, physical_order):
+    """Place a single sequence's K/V into paged blocks; return (kcache, vcache).
+
+    ``physical_order[logical_block]`` is the physical block id that logical
+    block occupies, so a scrambled order exercises non-contiguous tables.
+    Cache layout is ``[num_blocks, num_kv_heads, block_size, head_dim]``.
+    """
+    num_heads = k.shape[2]
+    head_dim = k.shape[3]
+    seq_len = k.shape[1]
+    k_cache = torch.zeros(n_blocks, num_heads, block_size, head_dim)
+    v_cache = torch.zeros(n_blocks, num_heads, block_size, head_dim)
+    for token in range(seq_len):
+        logical, offset = divmod(token, block_size)
+        physical = int(physical_order[logical])
+        k_cache[physical, :, offset] = k[0, token]
+        v_cache[physical, :, offset] = v[0, token]
+    return k_cache, v_cache
+
+
+def test_paged_attention_matches_plain_attention_on_prefill():
+    """Prefill through paged blocks must equal plain causal attention exactly.
+
+    Every existing test in this class asserts the output SHAPE, so a kernel
+    that attended to the wrong keys would still pass. This compares against a
+    reference implementation instead.
+    """
+    torch.manual_seed(0)
+    heads, head_dim, block_size, seq_len = 2, 8, 4, 6
+    n_blocks = (seq_len + block_size - 1) // block_size
+
+    q = torch.randn(1, heads, seq_len, head_dim)
+    k = torch.randn(1, seq_len, heads, head_dim)
+    v = torch.randn(1, seq_len, heads, head_dim)
+    expected = _causal_reference(q, k, v)
+
+    k_cache, v_cache = _build_cached(k, v, block_size, n_blocks, list(range(n_blocks)))
+    out = paged_attention_forward(
+        q=q,
+        k_cache=k_cache,
+        v_cache=v_cache,
+        block_tables=torch.arange(n_blocks).unsqueeze(0),
+        seq_lens=torch.tensor([seq_len]),
+        num_kv_heads=heads,
+        block_size=block_size,
+        query_lens=torch.tensor([seq_len]),
+    )
+    assert torch.allclose(out, expected, atol=1e-6), (
+        f"paged prefill diverged from plain attention: max|delta|={(out - expected).abs().max().item():.2e}"
+    )
+
+
+def test_paged_attention_matches_plain_attention_on_decode():
+    """A single decode query must attend to the WHOLE cached context.
+
+    The causal overlay is only meaningful for multi-query prefill rows; applying
+    it to a decode row would mask everything past key 0 and collapse the
+    attention onto the first token. Comparing against a plain full-context
+    reference catches that.
+    """
+    torch.manual_seed(0)
+    heads, head_dim, block_size, seq_len = 2, 8, 4, 6
+    n_blocks = (seq_len + block_size - 1) // block_size
+
+    q = torch.randn(1, heads, 1, head_dim)
+    k = torch.randn(1, seq_len, heads, head_dim)
+    v = torch.randn(1, seq_len, heads, head_dim)
+
+    # Reference: no causal mask needed, the query is the last position.
+    scores = torch.einsum("bhtd,bshd->bhts", q, k) * head_dim**-0.5
+    expected = torch.einsum("bhts,bshd->bhtd", scores.softmax(dim=-1), v)
+
+    k_cache, v_cache = _build_cached(k, v, block_size, n_blocks, list(range(n_blocks)))
+    out = paged_attention_forward(
+        q=q,
+        k_cache=k_cache,
+        v_cache=v_cache,
+        block_tables=torch.arange(n_blocks).unsqueeze(0),
+        seq_lens=torch.tensor([seq_len]),
+        num_kv_heads=heads,
+        block_size=block_size,
+        query_lens=torch.tensor([1]),
+    )
+    assert torch.allclose(out, expected, atol=1e-6), (
+        f"paged decode diverged from plain attention: max|delta|={(out - expected).abs().max().item():.2e}"
+    )
+
+
+def test_paged_attention_handles_scrambled_blocks_and_partial_last_block():
+    """Non-contiguous physical blocks and a partly-filled tail must be exact.
+
+    ``seq_len=10`` with ``block_size=4`` leaves the last block half full, and
+    the block table is deliberately out of order — the two cases most likely to
+    break a hand-rolled gather.
+    """
+    torch.manual_seed(0)
+    heads, head_dim, block_size, seq_len = 2, 8, 4, 10
+    n_blocks = (seq_len + block_size - 1) // block_size
+
+    q = torch.randn(1, heads, seq_len, head_dim)
+    k = torch.randn(1, seq_len, heads, head_dim)
+    v = torch.randn(1, seq_len, heads, head_dim)
+    expected = _causal_reference(q, k, v)
+
+    physical_order = [2, 0, 1]  # logical block i lives in physical block physical_order[i]
+    k_cache, v_cache = _build_cached(k, v, block_size, n_blocks, physical_order)
+    out = paged_attention_forward(
+        q=q,
+        k_cache=k_cache,
+        v_cache=v_cache,
+        block_tables=torch.tensor([physical_order]),
+        seq_lens=torch.tensor([seq_len]),
+        num_kv_heads=heads,
+        block_size=block_size,
+        query_lens=torch.tensor([seq_len]),
+    )
+    assert torch.allclose(out, expected, atol=1e-6), (
+        f"scrambled-block paged attention diverged: max|delta|={(out - expected).abs().max().item():.2e}"
+    )
