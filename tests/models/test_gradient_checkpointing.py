@@ -14,21 +14,31 @@ from tests.support.devices import cuda_usable
 from tests.support.models import decoder_model_kwargs
 
 
+def _small_model_config() -> dict:
+    """Tiny decoder config shared by the classes below.
+
+    Module level rather than a class-scoped fixture so both the behaviour tests
+    and the equivalence tests use one definition.
+    """
+    kwargs = decoder_model_kwargs(
+        vocab_size=100,
+        hidden_size=64,
+        num_layers=2,
+        num_heads=2,
+        max_seq_len=32,
+    )
+    kwargs.pop("device", None)
+    kwargs.pop("dtype", None)
+    return kwargs
+
+
+@pytest.fixture
+def small_model_config():
+    return _small_model_config()
+
+
 class TestGradientCheckpointing:
     """Tests for gradient checkpointing in DecoderModel."""
-
-    @pytest.fixture
-    def small_model_config(self):
-        kwargs = decoder_model_kwargs(
-            vocab_size=100,
-            hidden_size=64,
-            num_layers=2,
-            num_heads=2,
-            max_seq_len=32,
-        )
-        kwargs.pop("device", None)
-        kwargs.pop("dtype", None)
-        return kwargs
 
     def test_gradient_checkpointing_init_disabled(self, small_model_config, device):
         """Test that gradient checkpointing is disabled by default."""
@@ -181,4 +191,59 @@ class TestGradientCheckpointingMemory:
         assert mem_with_ckpt <= mem_no_ckpt * 1.1, (
             f"Checkpointing should not increase memory significantly: "
             f"{mem_with_ckpt / 1e6:.1f}MB vs {mem_no_ckpt / 1e6:.1f}MB"
+        )
+
+
+class TestGradientCheckpointingEquivalence:
+    """Checkpointing must change MEMORY use, not the numbers.
+
+    The existing ``test_checkpointing_produces_valid_gradients`` only checks
+    that gradients are non-NaN and not all zero — a checkpointing implementation
+    that recomputed with subtly different math (wrong mask, dropped dropout
+    seed, mis-scaled loss) would pass it. This class compares against the plain
+    path instead.
+    """
+
+    @staticmethod
+    def _grads(config: dict, device: str, *, checkpointing: bool):
+        """Build a seeded model, run forward+backward, return (loss, grads)."""
+        torch.manual_seed(1)
+        model = DecoderModel(**config, gradient_checkpointing=checkpointing, device=device)
+        model.train()
+        input_ids = torch.randint(0, config["vocab_size"], (2, 8), device=device)
+        loss = model(input_ids).sum()
+        loss.backward()
+        grads = {
+            name: param.grad.detach().clone() for name, param in model.named_parameters() if param.grad is not None
+        }
+        return loss.item(), grads
+
+    def test_gradients_match_the_plain_path(self, small_model_config, device):
+        """Every parameter gradient must be identical with and without checkpointing.
+
+        ``torch.utils.checkpoint`` recomputes activations in the backward pass;
+        the recomputation is only correct if it is exactly the same computation,
+        so equality (not just "close") is the right bar here.
+        """
+        plain_loss, plain_grads = self._grads(small_model_config, device, checkpointing=False)
+        ckpt_loss, ckpt_grads = self._grads(small_model_config, device, checkpointing=True)
+
+        assert plain_loss == pytest.approx(ckpt_loss, rel=1e-6), (
+            f"forward loss changed under checkpointing: {plain_loss} vs {ckpt_loss}"
+        )
+        assert set(plain_grads) == set(ckpt_grads), "the two paths produced gradients for different parameters"
+
+        worst_name, worst_delta = None, 0.0
+        for name in plain_grads:
+            delta = (plain_grads[name] - ckpt_grads[name]).abs().max().item()
+            if delta > worst_delta:
+                worst_name, worst_delta = name, delta
+        assert worst_delta < 1e-6, f"gradient of {worst_name} differs by {worst_delta:.2e} under checkpointing"
+
+    def test_a_parameter_actually_receives_a_nonzero_gradient(self, small_model_config, device):
+        """Guard against the comparison being vacuous (all-zero gradients match trivially)."""
+        _, grads = self._grads(small_model_config, device, checkpointing=True)
+        assert grads, "no gradients were produced at all"
+        assert any(g.abs().sum().item() > 0 for g in grads.values()), (
+            "every gradient is zero, so an equality check would be meaningless"
         )
