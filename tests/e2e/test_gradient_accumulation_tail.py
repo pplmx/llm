@@ -96,3 +96,52 @@ def test_divisible_window_unchanged():
     # per-step variation is only from data randomness, not a 2x structural
     # drop between full and tail steps.
     assert all(g > 0.0 for g in recorder.grad_norms)
+
+
+def test_max_steps_cut_in_a_full_window_does_not_corrupt_the_last_gradient():
+    """``max_steps`` truncation must stop on a WHOLE window, not a partial one.
+
+    ``max_steps`` counts optimizer steps, so stopping after N steps means the
+    batches processed are a multiple of ``accum_steps`` — every step then has a
+    full window and the tail re-scale must not fire. If the loop instead counted
+    micro-batches, the final step would carry an un-rescaled fraction of a
+    global batch and quietly apply a smaller update.
+    """
+    engine = _make_engine(accum_steps=3, batch_size=2, num_samples=40)  # 20 batches
+    engine.config.training.max_steps = 2
+    recorder = _GradNormRecorder(engine)
+    engine.callbacks.append(recorder)
+    engine.run()
+
+    assert engine.global_step == 2, "max_steps must cap OPTIMIZER steps"
+    assert len(recorder.grad_norms) == 2
+    # Both windows are full (6 micro-batches consumed), so the two gradient
+    # norms come from comparable amounts of data — no structural ~1/3 drop.
+    first, second = recorder.grad_norms
+    assert first > 0.0, f"first window had zero grad: {recorder.grad_norms}"
+    assert second > 0.0, f"second window had zero grad: {recorder.grad_norms}"
+    assert 0.5 * first <= second <= 2.0 * first, (
+        f"max_steps cut produced an inconsistently-scaled step: {recorder.grad_norms}"
+    )
+
+
+def test_divisible_tail_also_rescales_when_the_epoch_ends_exactly():
+    """A tail of exactly ``accum_steps`` micro-batches needs no correction.
+
+    Complements ``test_partial_tail_window_gradient_scale``: the re-scale must
+    fire for a SHORT tail and stay out of the way when the window is full, which
+    ``accum_counter != accum_steps`` expresses.
+    """
+    engine = _make_engine(accum_steps=2, batch_size=2, num_samples=12)  # 6 batches
+    recorder = _GradNormRecorder(engine)
+    engine.callbacks.append(recorder)
+    engine.run()
+
+    assert engine.global_step == 3
+    assert len(recorder.grad_norms) == 3
+    assert all(norm > 0.0 for norm in recorder.grad_norms)
+    mean = sum(recorder.grad_norms) / len(recorder.grad_norms)
+    for norm in recorder.grad_norms:
+        assert 0.4 * mean <= norm <= 2.5 * mean, (
+            f"a full-window step was mis-scaled: {recorder.grad_norms} (mean {mean:.4g})"
+        )
