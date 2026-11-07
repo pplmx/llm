@@ -91,7 +91,11 @@ def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
 
 @app.callback()
 def decompose(
-    model: Path = typer.Option(..., "--model", help="Path to model blob (.pt torch.save of a DecoderModel)."),
+    model: Path = typer.Option(
+        ...,
+        "--model",
+        help="Checkpoint to load: v2 split stem (e.g. 'checkpoints/epoch_5'), the '.pt' spelling, a '.safetensors' sidecar, a legacy single-file .pt blob, or a bare torch.save'd module.",
+    ),
     output: Path = typer.Option(..., "--output", help="Output path for the low-rank model blob."),
     rank: int | None = typer.Option(None, "--rank", help="Explicit rank r (mutually exclusive with --rank-ratio)."),
     rank_ratio: float | None = typer.Option(

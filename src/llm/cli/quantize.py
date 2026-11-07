@@ -289,7 +289,7 @@ def gptq(
     model: Path = typer.Option(
         ...,
         "--model",
-        help="Path to model checkpoint (.pt with DecoderModel state_dict).",
+        help="Checkpoint to load: v2 split stem (e.g. 'checkpoints/epoch_5'), the '.pt' spelling, a '.safetensors' sidecar, a legacy single-file .pt blob, or a bare torch.save'd module.",
     ),
     output: Path = typer.Option(
         ...,
@@ -416,7 +416,7 @@ def fp8(
     model: Path = typer.Option(
         ...,
         "--model",
-        help="Path to model checkpoint (.pt with DecoderModel state_dict).",
+        help="Checkpoint to load: v2 split stem (e.g. 'checkpoints/epoch_5'), the '.pt' spelling, a '.safetensors' sidecar, a legacy single-file .pt blob, or a bare torch.save'd module.",
     ),
     output: Path = typer.Option(
         ...,

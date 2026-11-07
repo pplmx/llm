@@ -104,7 +104,11 @@ def _resolve_target_modules(target_modules: str | None) -> list[str] | None:
 
 @app.callback()
 def prune(
-    model: Path = typer.Option(..., "--model", help="Path to model blob (.pt torch.save of a DecoderModel)."),
+    model: Path = typer.Option(
+        ...,
+        "--model",
+        help="Checkpoint to load: v2 split stem (e.g. 'checkpoints/epoch_5'), the '.pt' spelling, a '.safetensors' sidecar, a legacy single-file .pt blob, or a bare torch.save'd module.",
+    ),
     output: Path = typer.Option(..., "--output", help="Output path for the pruned model blob."),
     ratio: float = typer.Option(0.5, "--ratio", help="Fraction of each Linear's weights to zero (0 < ratio < 1)."),
     method: str = typer.Option("magnitude", "--method", help="'magnitude' (keep largest |W|) or 'random'."),
