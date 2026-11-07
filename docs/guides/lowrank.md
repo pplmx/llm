@@ -13,7 +13,7 @@ SVD（Eckart-Young）得到该秩下的最优 F 范数近似。它是 ROADMAP 13
 
 ```bash
 llm decompose \
-    --model model.pt \        # torch.save 的 DecoderModel blob
+    --model checkpoints/epoch_5 \   # checkpoint stem（或 .pt / .safetensors / blob）
     --output lowrank.pt \
     --rank 8                  # 显式秩（与 --rank-ratio 二选一）
     # 或 --rank-ratio 0.25    # 自动秩 = ratio * min(out, in)

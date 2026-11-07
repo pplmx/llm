@@ -16,7 +16,7 @@
 
 ```bash
 llm prune \
-    --model model.pt \        # torch.save 的 DecoderModel blob
+    --model checkpoints/epoch_5 \   # checkpoint stem（或 .pt / .safetensors / blob）
     --output pruned.pt \
     --ratio 0.5 \             # 每个 Linear 置零比例 (0, 1)
     --method magnitude        # magnitude | random

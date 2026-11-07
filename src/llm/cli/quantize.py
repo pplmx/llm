@@ -157,15 +157,18 @@ def _reject_clobbering_input(output: Path, model: Path) -> None:
 
 
 def _validate_model_path(model: Path) -> None:
-    """The model file must exist and be a regular file.
+    """The model path must be a file or a checkpoint stem with v2 sidecars.
 
-    Empty files would torch.load successfully but produce a malformed
-    state_dict downstream — fail fast instead.
+    A regular file covers the legacy single-file blob and the ``.safetensors``
+    sidecar; a bare stem / ``<stem>.pt`` spelling resolves to the v2 split
+    trio that :func:`llm.cli._model_loading.load_trained_model` loads.
     """
-    if not model.exists():
-        _die(f"--model {model} does not exist.")
-    if not model.is_file():
-        _die(f"--model {model} is not a regular file.")
+    from llm.cli._model_loading import checkpoint_exists
+
+    if model.is_dir():
+        _die(f"--model {model} is a directory, not a regular file.")
+    if not checkpoint_exists(model):
+        _die(f"--model {model} does not exist (no file and no v2 checkpoint sidecars at this stem).")
 
 
 def _validate_quant_params(
@@ -352,25 +355,20 @@ def gptq(
     _reject_clobbering_input(output, model)
 
     # --- 2. Late imports (keep startup cheap) ---------------------------
-    import torch
 
     from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
 
     # --- 3. Load inputs -------------------------------------------------
     try:
         typer.echo(f"Loading model from {model}...")
-        # Framework model/quantization classes are allowlisted and loaded with
-        # ``weights_only=True``, closing the arbitrary-pickle RCE
-        # that ``weights_only=False`` left open on a user-supplied model file
-        # (a shared/community ``.pt`` can smuggle a ``__reduce__``). A pickle
-        # referencing anything outside the framework + torch.nn allowlist is
-        # REFUSED — matching the hardened serving loader. Callers
-        # with a genuinely custom non-framework model class register it via
-        # ``torch.serialization.add_safe_globals`` before invoking the CLI.
-        from llm.utils.serialization import register_framework_safe_globals
+        # ``load_trained_model`` accepts the v2 split layout this repo writes
+        # (ADR-006) as well as a legacy single-file blob / a bare saved
+        # ``nn.Module``. Its bare-module probe keeps the hardened
+        # ``weights_only=True`` + framework-allowlist loading, so a shared
+        # ``.pt`` still cannot smuggle a ``__reduce__``.
+        from llm.cli._model_loading import load_trained_model
 
-        register_framework_safe_globals()
-        model_obj = torch.load(model, map_location="cpu", weights_only=True)
+        model_obj = load_trained_model(model)
     except Exception as exc:
         typer.echo(f"Error: failed to load model {model}: {exc}", err=True)
         raise typer.Exit(code=2) from exc

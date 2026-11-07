@@ -59,10 +59,18 @@ def _reject_clobbering_input(output: Path, model: Path) -> None:
 
 
 def _validate_model_path(model: Path) -> None:
-    if not model.exists():
-        _die(f"--model {model} does not exist.")
-    if not model.is_file():
-        _die(f"--model {model} is not a regular file.")
+    """The model path must be a file or a checkpoint stem with v2 sidecars.
+
+    A regular file covers the legacy single-file blob and the ``.safetensors``
+    sidecar; a bare stem / ``<stem>.pt`` spelling resolves to the v2 split
+    trio that :func:`llm.cli._model_loading.load_trained_model` loads.
+    """
+    from llm.cli._model_loading import checkpoint_exists
+
+    if model.is_dir():
+        _die(f"--model {model} is a directory, not a regular file.")
+    if not checkpoint_exists(model):
+        _die(f"--model {model} does not exist (no file and no v2 checkpoint sidecars at this stem).")
 
 
 def _atomic_save_blob(module, output: Path) -> None:
@@ -119,15 +127,12 @@ def prune(
     _validate_model_path(model)
     _reject_clobbering_input(output, model)
 
-    import torch
-
+    from llm.cli._model_loading import load_trained_model
     from llm.quantization.prune import PruningConfig, prune_model
-    from llm.utils.serialization import register_framework_safe_globals
 
     try:
         typer.echo(f"Loading model from {model}...")
-        register_framework_safe_globals()
-        model_obj = torch.load(model, map_location="cpu", weights_only=True)
+        model_obj = load_trained_model(model)
     except Exception as exc:
         typer.echo(f"Error: failed to load model {model}: {exc}", err=True)
         raise typer.Exit(code=2) from exc

@@ -46,7 +46,7 @@ tags:
 ```bash
 # 原始文本校准（需要 HF tokenizer）
 uv run llm quantize gptq \
-    --model checkpoints/epoch_5.pt \
+    --model checkpoints/epoch_5 \
     --output checkpoints/epoch_5-int4.pt \
     --calib-data calibration.txt \
     --tokenizer gpt2 \
@@ -56,11 +56,16 @@ uv run llm quantize gptq \
 
 # 预分词校准（无需 --tokenizer）
 uv run llm quantize gptq \
-    --model checkpoints/epoch_5.pt \
+    --model checkpoints/epoch_5 \
     --output checkpoints/epoch_5-int8.pt \
     --calib-data-tokens calib_tokens.pt \
     --bits 8
 ```
+
+`--model` 接受 checkpoint 的**任意一种写法**：v2 分片布局的 stem
+（`checkpoints/epoch_5`，架构从 `.meta.json` 里的 `model_config` 重建）、
+它的 `.pt` 写法、直接指 `.safetensors` 权重文件，或旧版单文件
+`torch.save(model)` blob（例如 `llm prune` 自己的输出）。
 
 退出码约定：`0` 成功；`1` 参数校验失败（`--bits` 非法、缺 `--tokenizer`、
 `--model` 不存在等）；`2` 运行期失败（`torch.load` / 分词 / 量化内核 / 保存）。
@@ -72,9 +77,10 @@ uv run llm quantize gptq \
 
 ```python
 import torch
+from llm.cli._model_loading import load_trained_model  # CLI 用的同一个 loader
 from llm.quantization import GPTQConfig, quantize_model_gptq
 
-model = torch.load("checkpoints/epoch_5.pt")  # 或从 Config 重建
+model = load_trained_model("checkpoints/epoch_5")  # v2 分片布局的 stem
 calib = [torch.randn(4, 16, 128)]  # 用真实校准数据替换
 
 quantized = quantize_model_gptq(
