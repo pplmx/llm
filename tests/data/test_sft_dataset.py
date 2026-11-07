@@ -174,3 +174,55 @@ def test_sft_dataset_skips_non_dict_rows(tmp_path):
 
     dataset = SFTDataset(file_path=fp, tokenizer=SimpleCharacterTokenizer([printable]), max_seq_len=32)
     assert len(dataset) == 1, "the non-dict row must be skipped"
+
+
+# --- All rows skipped: warn at the source, not just at the sampler ---
+
+
+@pytest.mark.parametrize(
+    ("module_name", "class_name", "expected_unit"),
+    [
+        ("llm.data.datasets.sft", "SFTDataset", "examples"),
+        ("llm.data.datasets.dpo", "DPODataset", "preference pairs"),
+        ("llm.data.datasets.reward", "RewardDataset", "preference pairs"),
+    ],
+)
+def test_warns_when_every_row_is_skipped(tmp_path, caplog, module_name, class_name, expected_unit):
+    """A corpus with zero usable rows must say so where the cause is known.
+
+    Without this, an all-invalid corpus surfaces much later as
+    ``train dataset has 0 samples, which is too small for world_size=1 with
+    DistributedSampler drop_last ... Use fewer GPUs or a larger train split`` —
+    which blames the WORLD SIZE for what is actually a malformed file, and
+    sends the reader looking in the wrong place.
+    """
+    import importlib
+
+    cls = getattr(importlib.import_module(module_name), class_name)
+    path = tmp_path / "all_invalid.jsonl"
+    path.write_text('"bare string"\n42\n[1, 2]\n', encoding="utf-8")
+    tokenizer = SimpleCharacterTokenizer(["abcdef"])
+
+    with caplog.at_level("WARNING"):
+        dataset = cls(str(path), tokenizer)
+
+    assert len(dataset) == 0
+    zero_row_warnings = [r for r in caplog.records if "Parsed 0 usable" in r.getMessage()]
+    assert zero_row_warnings, f"{class_name} did not warn about the empty corpus; got: {caplog.text}"
+    message = zero_row_warnings[0].getMessage()
+    assert expected_unit in message
+    assert str(path) in message, "the warning must name the offending file"
+    assert "Training cannot start" in message
+
+
+def test_no_zero_row_warning_when_data_loads(tmp_path, caplog):
+    """The warning must not fire on a healthy corpus."""
+    path = tmp_path / "ok.jsonl"
+    path.write_text(json.dumps({"instruction": "ab", "input": "", "output": "cde"}) + "\n", encoding="utf-8")
+    tokenizer = SimpleCharacterTokenizer(["abcdef"])
+
+    with caplog.at_level("WARNING"):
+        dataset = SFTDataset(str(path), tokenizer)
+
+    assert len(dataset) == 1
+    assert not [r for r in caplog.records if "Parsed 0 usable" in r.getMessage()]

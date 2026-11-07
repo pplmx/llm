@@ -109,6 +109,18 @@ class SFTDataset(Dataset):
             raise OSError(f"Error reading SFT file {self.file_path}: {e}")
 
         logger.info(f"Loaded {len(data)} examples from {self.file_path}")
+
+        if not data:
+            # Every row was skipped. Downstream that surfaces as an empty
+            # Dataset, then as "train dataset has 0 samples ... Use fewer GPUs
+            # or a larger train split" from the sampler guard — which blames
+            # world_size for what is actually a malformed corpus. Say it here,
+            # where the real cause is known.
+            logger.warning(
+                f"Parsed 0 usable examples from {self.file_path}: every row was skipped "
+                "(non-object JSON rows, missing instruction/input/output keys, or responses already at "
+                "max_seq_len). Training cannot start from this file."
+            )
         return data
 
     def alpaca_template(self, item: dict[str, Any]) -> tuple[str, str]:
