@@ -27,6 +27,7 @@ import math
 import os
 import socket
 import time
+import traceback
 from datetime import timedelta
 from string import printable
 from typing import Any
@@ -236,7 +237,11 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
         results[rank] = {"success": True, "steps": steps}
         dist.destroy_process_group()
     except Exception as e:  # noqa: BLE001 — report worker failure in the parent
-        results[rank] = {"success": False, "error": repr(e)}
+        # ``repr(e)`` alone loses where the failure happened, which is most of
+        # the diagnostic value when the root cause is host-level (e.g. a
+        # transient ``OSError(28, 'No space left on device')`` from the tiny
+        # /dev/shm a container gives us). The parent prints this verbatim.
+        results[rank] = {"success": False, "error": repr(e), "traceback": traceback.format_exc()}
     finally:
         if dist.is_initialized():
             dist.destroy_process_group()
@@ -308,7 +313,9 @@ def _run_engine_2d(
             break
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
-        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+        assert results[rank]["success"], (
+            f"rank {rank} failed: {results[rank].get('error')}\n{results[rank].get('traceback', '')}"
+        )
     step_counts = {results[rank]["steps"] for rank in range(world_size)}
     assert len(step_counts) == 1, f"ranks stepped unevenly across DP groups: {step_counts}"
 
@@ -385,7 +392,11 @@ def _pure_tp_metric_worker(rank: int, world_size: int, ctx: dict, results) -> No
         results[rank] = {"success": True, "avg_loss": cap.avg_loss, "val_loss": cap.val_loss}
         dist.destroy_process_group()
     except Exception as e:  # noqa: BLE001 — report worker failure in the parent
-        results[rank] = {"success": False, "error": repr(e)}
+        # ``repr(e)`` alone loses where the failure happened, which is most of
+        # the diagnostic value when the root cause is host-level (e.g. a
+        # transient ``OSError(28, 'No space left on device')`` from the tiny
+        # /dev/shm a container gives us). The parent prints this verbatim.
+        results[rank] = {"success": False, "error": repr(e), "traceback": traceback.format_exc()}
     finally:
         if dist.is_initialized():
             dist.destroy_process_group()
@@ -452,7 +463,9 @@ def test_pure_tp_reports_true_metric_loss_not_divided_by_world(tmp_path):
             break
     for rank in range(2):
         assert rank in results, f"rank {rank} produced no result"
-        assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
+        assert results[rank]["success"], (
+            f"rank {rank} failed: {results[rank].get('error')}\n{results[rank].get('traceback', '')}"
+        )
 
     # Both pure-TP ranks saw the same data — identical reported loss.
     avg_0, avg_1 = results[0]["avg_loss"], results[1]["avg_loss"]
