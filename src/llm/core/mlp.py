@@ -45,8 +45,14 @@ class MLP(nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
+        if intermediate_size is not None and intermediate_size < 1:
+            # ``intermediate_size or 4 * hidden_size`` swallowed 0 and quietly
+            # built a 4x-wide FFN instead; a negative value reached nn.Linear and
+            # surfaced as "Trying to create tensor with negative dimension" from
+            # inside torch, which names neither the parameter nor the caller.
+            raise ValueError(f"intermediate_size must be >= 1, got {intermediate_size!r}")
         self.hidden_size = hidden_size
-        self.intermediate_size = intermediate_size or (4 * hidden_size)
+        self.intermediate_size = 4 * hidden_size if intermediate_size is None else intermediate_size
         self.norm_first = norm_first
         self.use_glu = use_glu
         self.include_norm_residual = include_norm_residual

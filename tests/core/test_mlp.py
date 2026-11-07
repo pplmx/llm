@@ -462,3 +462,33 @@ def test_mlp_numerical_consistency_glu():
         expected = mlp.fc2(res_fc1 * res_gate)
         actual = mlp(x)
         assert torch.allclose(actual, expected, atol=1e-6)
+
+
+# --- intermediate_size must be validated, not silently defaulted ---
+
+
+def test_intermediate_size_none_defaults_to_4x_hidden():
+    """``None`` is the documented "unset" sentinel and keeps the 4x default."""
+    mlp = MLP(hidden_size=32, intermediate_size=None)
+    assert mlp.intermediate_size == 4 * 32
+    assert mlp.fc1.out_features == 128
+
+
+@pytest.mark.parametrize("bad", [0, -1, -8])
+def test_intermediate_size_rejects_non_positive(bad):
+    """A non-positive FFN width must fail with a named parameter.
+
+    ``intermediate_size or (4 * hidden_size)`` swallowed 0 and quietly built a
+    4x-wide FFN instead — the caller's explicit 0 never took effect. A negative
+    value reached ``nn.Linear`` and surfaced as "Trying to create tensor with
+    negative dimension" from inside torch, which names neither the parameter nor
+    the caller.
+    """
+    with pytest.raises(ValueError, match="intermediate_size"):
+        MLP(hidden_size=32, intermediate_size=bad)
+
+
+def test_explicit_intermediate_size_is_used_verbatim():
+    mlp = MLP(hidden_size=32, intermediate_size=256)
+    assert mlp.intermediate_size == 256
+    assert mlp.fc1.out_features == 256

@@ -42,9 +42,17 @@ class LMTask(BaseTask):
             # not be zero" and a negative batch silently behaves like 1 —
             # neither is a usable config. Fail fast at construction.
             raise ValueError(f"batch_size must be >= 1, got {batch_size!r}")
+        if max_seq_len is not None and max_seq_len < 1:
+            # ``max_seq_len or 128`` used to swallow 0 and hand back 128, so a
+            # caller asking for a 0-length window silently evaluated with the
+            # default instead. A negative value happened to reach TextDataset,
+            # which raises — but only for SOME values, and from a different
+            # layer, which is not a usable contract. Validate both here, the way
+            # ``batch_size`` already is.
+            raise ValueError(f"max_seq_len must be >= 1, got {max_seq_len!r}")
         self.dataset_path = dataset_path
         self.batch_size = batch_size
-        self.max_seq_len = max_seq_len or 128
+        self.max_seq_len = 128 if max_seq_len is None else max_seq_len
         self.tokenizer = tokenizer or TokenizerFactory.from_dataset_text(dataset_path)
         # Mask padded positions so short trailing sequences are scored
         # only over real tokens. TextDataset marks padded label slots with

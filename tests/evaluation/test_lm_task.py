@@ -378,3 +378,31 @@ def test_lm_task_rejects_zero_or_negative_batch_size(tmp_path):
     for bad in (0, -1, -5):
         with pytest.raises(ValueError, match="batch_size"):
             LMTask(dataset_path=str(corpus), batch_size=bad)
+
+
+def test_lm_task_rejects_zero_or_negative_max_seq_len(tmp_path):
+    """``max_seq_len`` must be validated the way ``batch_size`` already is.
+
+    ``max_seq_len or 128`` conflated 0 with "unset", so a caller asking for a
+    0-length window silently evaluated with the 128 default. A negative value
+    happened to be caught by ``TextDataset`` — a different layer — so the task
+    rejected SOME bad values but not 0, with no documented contract either way.
+    """
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world\n", encoding="utf-8")
+    from llm.evaluation.eval_tasks.lm_task import LMTask
+
+    for bad in (0, -1, -5):
+        with pytest.raises(ValueError, match="max_seq_len"):
+            LMTask(dataset_path=str(corpus), max_seq_len=bad)
+
+
+def test_lm_task_none_max_seq_len_still_defaults_to_128(tmp_path):
+    """``None`` remains the "unset" sentinel and keeps the documented default."""
+    corpus = tmp_path / "eval.txt"
+    corpus.write_text("hello world\n", encoding="utf-8")
+    from llm.evaluation.eval_tasks.lm_task import LMTask
+
+    assert LMTask(dataset_path=str(corpus)).max_seq_len == 128
+    assert LMTask(dataset_path=str(corpus), max_seq_len=None).max_seq_len == 128
+    assert LMTask(dataset_path=str(corpus), max_seq_len=64).max_seq_len == 64
