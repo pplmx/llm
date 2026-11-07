@@ -468,3 +468,80 @@ class TestNonFiniteOptimizerValues:
 
         for value in (1e-3, 2e-5, 5e-7, 1.0):
             assert TrainingConfig(lr=value).lr == value
+
+
+class TestWarmupEpochs:
+    """``warmup_epochs`` bounds and the over-long-warmup warning."""
+
+    def test_negative_warmup_rejected(self):
+        """A negative warmup has no meaning and produced a nonsense schedule.
+
+        Measured before the guard: ``warmup_epochs=-1`` made the cosine schedule
+        START higher (0.00091) than with ``warmup_epochs=0`` (0.00087) — the LR
+        rose out of nothing, with no error.
+        """
+        from llm.training.core.config import TrainingConfig
+
+        with pytest.raises(ValueError, match="warmup_epochs"):
+            TrainingConfig(warmup_epochs=-1)
+
+    def test_zero_warmup_is_valid(self):
+        """``0`` disables warmup and is the documented flat-LR choice."""
+        from llm.training.core.config import TrainingConfig
+
+        assert TrainingConfig(warmup_epochs=0).warmup_epochs == 0
+
+    def test_warmup_longer_than_epochs_warns(self, caplog):
+        """``warmup_epochs > epochs`` must warn: the decay never starts.
+
+        Measured: ``epochs=3, warmup_epochs=5`` leaves the LR on the rising half
+        for the whole run (peak 0.0006 against a 0.001 base), so training happens
+        at 60% of the requested rate with nothing in the logs.
+        """
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            config = TrainingConfig(epochs=3, warmup_epochs=5)
+
+        assert config.warmup_epochs == 5  # accepted: a pure-warmup run is legal
+        assert any("warmup_epochs" in record.getMessage() for record in caplog.records), (
+            "an over-long warmup must be reported"
+        )
+
+    def test_normal_warmup_does_not_warn(self, caplog):
+        """No false positive on the shipped-style configuration."""
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            TrainingConfig(epochs=3, warmup_epochs=1)
+
+        assert not any("warmup_epochs" in record.getMessage() for record in caplog.records)
+
+    def test_warmup_equal_to_epochs_still_reaches_the_peak(self):
+        """``warmup_epochs == epochs`` is allowed and ends AT the peak LR.
+
+        Pins the boundary the ``>`` comparison relies on: one more epoch would
+        warn, exactly equal does not, and the schedule still peaks.
+        """
+        import torch
+        import torch.nn as nn
+
+        from llm.training.core.config import Config
+        from llm.training.tasks.lm_task import LanguageModelingTask
+
+        config = Config(training=TrainingConfig(epochs=3, warmup_epochs=3, scheduler_type="cosine"))
+        model = nn.Linear(4, 2)
+        optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+        task = LanguageModelingTask.__new__(LanguageModelingTask)
+        task.config = config
+        scheduler = task.build_scheduler(optimizer)
+
+        peak = 0.0
+        for _ in range(3):
+            scheduler.step()
+            peak = max(peak, optimizer.param_groups[0]["lr"])
+        assert peak == pytest.approx(1e-3, rel=1e-6), "warmup == epochs should end at the base LR"

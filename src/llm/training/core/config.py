@@ -1,3 +1,4 @@
+import logging
 import math
 from pathlib import Path
 from typing import Any
@@ -6,6 +7,8 @@ import torch
 import yaml
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class ModelConfig(BaseModel):
@@ -217,7 +220,17 @@ class TrainingConfig(BaseModel):
     weight_decay: float = 0.01
     num_samples: int = 20000
     scheduler_type: str = Field("cosine", pattern="^(cosine|step|plateau)$")
-    warmup_epochs: int = 1
+    warmup_epochs: int = Field(
+        1,
+        ge=0,
+        description=(
+            "Linear LR warmup length in EPOCHS (0 disables it). Must not exceed "
+            "``epochs``: the warmup phase would then consume the whole run and the "
+            "cosine/step decay never starts, so the LR ends below its base value. "
+            "A config that large is accepted (a deliberate all-warmup run is legal) "
+            "but logs a warning at scheduler construction."
+        ),
+    )
     gradient_clip_val: float = 1.0
     run_validation: bool = True
     max_steps: int = Field(
@@ -350,6 +363,26 @@ class TrainingConfig(BaseModel):
             "to apply_adalora. None → every nn.Linear is wrapped."
         ),
     )
+
+    @model_validator(mode="after")
+    def _warn_warmup_longer_than_the_run(self) -> TrainingConfig:
+        """Flag ``warmup_epochs > epochs``, which silently disables the decay.
+
+        Measured: ``epochs=3, warmup_epochs=5`` keeps the LR on the rising half
+        of the schedule for the whole run — the peak is never reached (0.0006
+        against a 0.001 base), so training happens at 60% of the requested rate
+        with nothing in the logs to say so. Not an error: a pure-warmup run is a
+        legitimate (if unusual) experiment.
+        """
+        if self.warmup_epochs > self.epochs:
+            logger.warning(
+                "warmup_epochs (%d) exceeds epochs (%d): the LR schedule never reaches its "
+                "peak, so training runs entirely inside the warmup ramp. Set warmup_epochs=0 "
+                "for a flat LR, or lower it below epochs.",
+                self.warmup_epochs,
+                self.epochs,
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_adalora(self) -> TrainingConfig:
