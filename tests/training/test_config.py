@@ -419,3 +419,27 @@ class TestDataSourceCustomSources:
 
         cfg = DataConfig(data_source="s3_test_plugin")
         assert cfg.data_source == "s3_test_plugin"
+
+
+class TestNonFiniteOptimizerValues:
+    """An infinite learning rate must be rejected, not applied to the weights."""
+
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+    def test_lr_must_be_finite(self, bad):
+        """``gt=0`` alone lets ``inf`` through (``inf > 0`` is True).
+
+        Measured: ``TrainingConfig(lr=inf)`` was accepted and one SGD step turned
+        every weight into ``-inf``. ``nan`` happened to be rejected because a NaN
+        comparison fails the ``gt=0`` check, but relying on that leaves the
+        ``inf`` hole.
+        """
+        from llm.training.core.config import TrainingConfig
+
+        with pytest.raises(ValueError, match="lr"):
+            TrainingConfig(lr=bad)
+
+    def test_normal_learning_rates_still_accepted(self):
+        from llm.training.core.config import TrainingConfig
+
+        for value in (1e-3, 2e-5, 5e-7, 1.0):
+            assert TrainingConfig(lr=value).lr == value

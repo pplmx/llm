@@ -178,3 +178,28 @@ def test_combining_two_legacy_switches_stacks_both_adapters():
         "combining the switches no longer adds the second adapter — the caveat's premise changed"
     )
     assert both > ia3_only
+
+
+# --- Non-finite float config values must be rejected at load time ---
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), 0.0, -1.0])
+def test_rope_theta_must_be_finite_and_positive(bad):
+    """A bad ``rope_theta`` must fail at CONFIG time, not corrupt every forward.
+
+    ``rope_theta`` had no validator. Measured: ``rope_theta=nan`` made every
+    positional encoding NaN, so the model returned an all-NaN tensor while
+    construction and config validation both succeeded — the failure only shows up
+    as garbage output (or a NaN loss) much later.
+    """
+    with pytest.raises(ValueError, match="rope_theta"):
+        _build(rope_theta=bad)
+
+
+def test_rope_theta_accepts_the_normal_value():
+    """The guard must not reject the default (10000.0) or other sane bases."""
+    torch.manual_seed(0)
+    model = ModelFactory.from_config(_build(rope_theta=10000.0))
+    assert model is not None
+    torch.manual_seed(0)
+    assert ModelFactory.from_config(_build(rope_theta=500000.0)) is not None

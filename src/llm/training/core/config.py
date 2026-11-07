@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +48,23 @@ class ModelConfig(BaseModel):
     mlp_bias: bool = True
     lm_head_bias: bool = True
     use_rope: bool = False
-    rope_theta: float = 10000.0
+    rope_theta: float = Field(
+        10000.0,
+        description=(
+            "RoPE base frequency. Must be finite and > 0: a NaN value makes every "
+            "positional encoding NaN, so the model returns an all-NaN tensor with no "
+            "error at construction time (measured); inf is accepted by RoPE but is "
+            "nonsense as a base frequency."
+        ),
+    )
+
+    @field_validator("rope_theta")
+    @classmethod
+    def _validate_rope_theta(cls, value: float) -> float:
+        if not math.isfinite(value) or value <= 0.0:
+            raise ValueError(f"rope_theta must be a finite value > 0, got {value!r}")
+        return value
+
     use_alibi: bool = False  # ALiBi linear-bias PE (BLOOM-style, mha backend only)
 
     # Optional sparse / streaming attention scheme (ROADMAP 15.1/15.2).
@@ -189,6 +206,7 @@ class TrainingConfig(BaseModel):
     lr: float = Field(
         1e-3,
         gt=0,
+        allow_inf_nan=False,
         validation_alias=AliasChoices("lr", "learning_rate"),
         description=(
             "Learning rate. The YAML key is ``training.lr``; "
