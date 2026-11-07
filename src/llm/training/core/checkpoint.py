@@ -330,8 +330,20 @@ def _load_split_checkpoint(stem_dir: Path) -> dict[str, Any] | None:
     except OSError, ValueError, RuntimeError:
         weights_meta = {}
 
-    with meta_path.open("r", encoding="utf-8") as f:
-        meta = json.load(f)
+    try:
+        with meta_path.open("r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except json.JSONDecodeError as exc:
+        # A torn or hand-edited meta.json currently escapes as
+        # ``JSONDecodeError: Expecting property name ... line 1 column 2``,
+        # which names the parser, not the problem. The sibling sidecar loader
+        # (``_torch_load_checkpoint_sidecar``) already normalizes its parse
+        # failures; do the same so every corrupt-sidecar path says what to do.
+        raise ValueError(
+            f"corrupt checkpoint sidecar {meta_path}: not valid JSON ({exc}). "
+            "The save was interrupted or the file was edited; restore all three "
+            "sidecars from the same save (or a previous checkpoint)."
+        ) from exc
     if meta.get("format_version") != CHECKPOINT_FORMAT_VERSION:
         logger.warning(
             "Checkpoint meta.json format_version=%s does not match expected %s; "

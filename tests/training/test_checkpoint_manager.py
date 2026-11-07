@@ -550,3 +550,47 @@ def test_checkpoint_does_not_store_rng_state(tmp_path):
     # With dropout the resume path draws different masks, so it diverges — the
     # documented caveat. If this ever becomes True, RNG persistence was added.
     assert not _run(eval_mode=False), "dropout resume is expected to diverge; update docs/guides/checkpoints.md"
+
+
+def _make_saved_checkpoint(tmp_path) -> Path:
+    """Save one minimal split checkpoint and return its directory."""
+    logger = logging.getLogger("test-torn")
+    logger.addHandler(logging.NullHandler())
+    config = {"vocab_size": 32, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16}
+    from llm.models.decoder import DecoderModel
+
+    manager = CheckpointManager(CheckpointConfig(checkpoint_dir=str(tmp_path), save_interval=1), rank=0, logger=logger)
+    manager.save_checkpoint(1, DecoderModel(**config), None, None, None, 1.0, model_config=config)
+    return tmp_path
+
+
+def test_corrupt_meta_json_reports_a_corrupt_checkpoint(tmp_path):
+    """A torn meta.json must say the checkpoint is corrupt, not leak JSONDecodeError.
+
+    ``json.load`` raised ``JSONDecodeError: Expecting property name ... line 1
+    column 2`` straight out of the loader — naming the parser rather than the
+    situation. The sibling sidecar loader already normalizes its parse
+    failures, so a torn checkpoint now reports the same way regardless of which
+    of the three files was damaged.
+    """
+    path = _make_saved_checkpoint(tmp_path)
+    (path / "latest.meta.json").write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="corrupt checkpoint sidecar"):
+        load_checkpoint_payload(path / "latest")
+
+
+def test_missing_sidecar_reports_incomplete_checkpoint(tmp_path):
+    """Dropping any one of the three files must be reported as incomplete."""
+    for missing in ("latest.meta.json", "latest.extra_state.pt", "latest.safetensors"):
+        path = _make_saved_checkpoint(tmp_path / missing.replace(".", "_"))
+        (path / missing).unlink()
+        with pytest.raises(Exception, match=r"incomplete|not found|No such file"):
+            load_checkpoint_payload(path / "latest")
+
+
+def test_a_successful_save_leaves_no_partial_files(tmp_path):
+    """Each sidecar is written via ``.tmp`` + rename, so nothing partial remains."""
+    path = _make_saved_checkpoint(tmp_path)
+    leftovers = [p.name for p in path.iterdir() if p.name.endswith(".tmp")]
+    assert not leftovers, f"partial files left behind: {leftovers}"
