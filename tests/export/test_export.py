@@ -200,3 +200,68 @@ class TestGetOnnxInfo:
         assert info["opset_version"] >= 17
         assert len(info["inputs"]) == 1
         assert info["inputs"][0]["name"] == "input_ids"
+
+
+# --- ONNX dynamic axes: the exported graph must accept other shapes ---
+
+
+def test_onnx_export_defaults_to_dynamic_batch_and_sequence(small_model, tmp_path):
+    """The default export must accept ANY batch / seq_len, not just the traced shape.
+
+    ``input_shape`` only picks the dummy input for tracing; ``dynamic_axes``
+    defaults to marking both spatial dims symbolic. That is what makes a single
+    artifact usable for real, variable-shaped traffic — and nothing pinned it, so
+    dropping the default would silently produce a graph that only accepts the
+    one traced shape.
+    """
+    import numpy as np
+    import onnxruntime as ort
+    import torch
+
+    path = tmp_path / "dynamic.onnx"
+    export_to_onnx(small_model, path, input_shape=(1, 8))
+
+    info = get_onnx_info(str(path))
+    assert info["inputs"][0]["shape"] == ["batch_size", "seq_len"], (
+        f"the exported graph is not dynamic: {info['inputs']}"
+    )
+
+    session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    for shape in ((1, 8), (2, 8), (1, 12), (3, 5)):
+        torch.manual_seed(0)
+        ids = torch.randint(0, small_model.embedding_layer.token_embeddings.num_embeddings, shape)
+        got = session.run(None, {"input_ids": ids.numpy()})[0]
+        with torch.no_grad():
+            expected = small_model(ids).numpy()
+        assert got.shape == expected.shape, f"shape {shape} produced {got.shape}"
+        assert np.allclose(got, expected, atol=1e-4), (
+            f"shape {shape} diverged from eager (max |d|={np.abs(got - expected).max():.2e})"
+        )
+
+
+def test_onnx_export_can_be_pinned_static(small_model, tmp_path):
+    """``dynamic_axes={}`` must produce a graph fixed to the traced shape.
+
+    Documented as the way to get a static graph for engines that optimize it
+    better; without a test the claim could silently stop holding.
+    """
+    import onnxruntime as ort
+    import torch
+
+    path = tmp_path / "static.onnx"
+    export_to_onnx(small_model, path, input_shape=(1, 8), dynamic_axes={})
+
+    info = get_onnx_info(str(path))
+    assert info["inputs"][0]["shape"] == [1, 8], f"expected a static shape, got {info['inputs']}"
+
+    session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    ok = torch.randint(0, small_model.embedding_layer.token_embeddings.num_embeddings, (1, 8))
+    session.run(None, {"input_ids": ok.numpy()})  # traced shape is accepted
+
+    # A static graph rejects any other batch size with onnxruntime's own
+    # InvalidArgument — a specific type, so this cannot pass on an unrelated error.
+    from onnxruntime.capi.onnxruntime_pybind11_state import InvalidArgument
+
+    wider = torch.randint(0, small_model.embedding_layer.token_embeddings.num_embeddings, (2, 8))
+    with pytest.raises(InvalidArgument):
+        session.run(None, {"input_ids": wider.numpy()})

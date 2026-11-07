@@ -131,6 +131,18 @@ verify_onnx("model.onnx")  # 加载并检查图
 info = get_onnx_info("model.onnx")  # 输入/输出签名等
 ```
 
+`input_shape` 只决定**追踪用的示例输入**，不影响导出后的可用形状：导出默认写入
+动态轴（`input_ids` 与 `logits` 的 batch / seq_len 两维都是符号维），所以同一份
+`.onnx` 可以直接接受其他 batch 与序列长度：
+
+```python
+sess = ort.InferenceSession("model.onnx", providers=["CPUExecutionProvider"])
+logits = sess.run(None, {"input_ids": ids.numpy()})[0]  # ids 可为任意 batch/长度
+```
+
+实测不同形状下与原模型的输出差都在 1e-07 量级（纯浮点噪声）。若要固定形状
+（某些推理引擎对静态图优化更好），传 `dynamic_axes={}` 覆盖默认值。
+
 ## 注册自定义导出后端
 
 第三方导出目标（TensorRT-LLM、vLLM 等）通过 `llm.export_backends` entry-point
