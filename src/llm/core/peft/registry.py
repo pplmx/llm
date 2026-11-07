@@ -36,6 +36,8 @@ import threading
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
+import torch.nn as nn
+
 from llm.core.peft.methods import iter_builtin_methods
 from llm.core.peft.types import PEFTMethod
 from llm.runtime.plugins import load_entry_point_registry
@@ -123,12 +125,53 @@ def apply_peft(model: nn.Module, name: str, **kwargs: Any) -> nn.Module:
         The same ``model`` (chainable).
 
     Raises:
-        ValueError: If ``name`` is not in :data:`PEFT_REGISTRY`.
+        ValueError: If ``name`` is not in :data:`PEFT_REGISTRY`, or if the
+            method added no parameters at all (see below).
         TypeError: If the method's wrapper rejects the model shape
             (e.g. Prefix Tuning on a non-MHA base).
+
+    A method that finds nothing to adapt (e.g. LoRA on a model whose linears
+    were already replaced by quantized layers, which are not ``nn.Linear``)
+    used to return the model untouched and report success. The caller then
+    saved an "adapter" or served a model believing the wrapper was applied.
+    Every PEFT method ADDS parameters, so a zero delta means nothing happened —
+    raise instead of silently returning a model that is not adapted.
     """
     method = _resolve(name)
-    return method.apply(model, **kwargs)
+
+    def fingerprint() -> tuple[int, frozenset[int], frozenset[str]]:
+        # A real application shows up in at least one of these: most methods ADD
+        # parameters, BitFit adds none but FLIPS ``requires_grad`` on the biases,
+        # and every method changes the module-type set when it wraps anything.
+        return (
+            sum(p.numel() for p in model.parameters()),
+            frozenset(id(p) for p in model.parameters() if p.requires_grad),
+            frozenset(type(m).__name__ for m in model.modules()),
+        )
+
+    before = fingerprint()
+    result = method.apply(model, **kwargs)
+    if fingerprint() != before:
+        return result
+
+    # The method matched nothing. That is EXPECTED for a model that simply has
+    # no layer of the kind the method adapts — ``prefix_tuning`` on a pure-MLP
+    # module is a documented silent no-op (see
+    # ``tests/core/test_peft_registry.py::test_apply_peft_prefix_tuning_is_noop_on_non_mha``).
+    # It is a MISTAKE, though, when the model has no adaptable layer at all:
+    # the caller then saves an "adapter" or serves an unadapted model while
+    # believing the wrapper was applied. Quantization is the realistic trigger
+    # (``nn.Linear`` replaced by ``GPTQQuantizedLinear``, so LoRA has nothing to
+    # wrap), so gate the error on that structural condition rather than on every
+    # no-op.
+    has_adaptable_layer = any(isinstance(m, (nn.Linear, nn.MultiheadAttention)) for m in model.modules())
+    if not has_adaptable_layer:
+        raise ValueError(
+            f"PEFT method {name!r} changed nothing: the model contains no nn.Linear or attention "
+            "layer this method can adapt. A model whose layers were already replaced (e.g. by "
+            "quantization) cannot be adapted in place — adapt before quantizing."
+        )
+    return result
 
 
 def _require_helper(

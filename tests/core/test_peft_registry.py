@@ -179,6 +179,50 @@ def test_apply_peft_prefix_tuning_is_noop_on_non_mha(model: _TinyMLP) -> None:
     assert isinstance(model.fc2, nn.Linear)
 
 
+def test_apply_peft_raises_when_model_has_nothing_to_adapt() -> None:
+    """A model with no nn.Linear / attention must not report a successful adapt.
+
+    Quantization is the realistic trigger: ``quantize_model_gptq`` replaces
+    every ``nn.Linear`` with ``GPTQQuantizedLinear``, so a later
+    ``apply_peft(model, "lora")`` found nothing to wrap, returned the model
+    untouched, and reported success. The caller then saved an "adapter" (or
+    served a model) believing the wrapper was applied.
+    """
+
+    class _EmbeddingOnly(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.emb = nn.Embedding(8, 8)
+
+        def forward(self, x):
+            return self.emb(x)
+
+    with pytest.raises(ValueError, match="changed nothing"):
+        apply_peft(_EmbeddingOnly(), "lora", rank=4, alpha=8.0)
+
+
+def test_apply_peft_guard_names_the_quantization_trigger() -> None:
+    """The message must explain WHY, since quantized layers look like linears."""
+
+    class _EmbeddingOnly(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.emb = nn.Embedding(8, 8)
+
+    with pytest.raises(ValueError, match="adapt before quantizing"):
+        apply_peft(_EmbeddingOnly(), "lora", rank=4, alpha=8.0)
+
+
+def test_apply_peft_still_adapts_a_normal_decoder() -> None:
+    """The guard must not fire on the ordinary path."""
+    from llm.models.decoder import DecoderModel
+
+    model = DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16)
+    before = sum(1 for _ in model.parameters())
+    apply_peft(model, "lora", rank=4, alpha=8.0)
+    assert sum(1 for _ in model.parameters()) > before
+
+
 def test_apply_peft_unknown_method_raises() -> None:
     with pytest.raises(ValueError, match="not found in PEFTMethod registry"):
         apply_peft(model, "definitely_not_a_method")
