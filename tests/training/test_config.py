@@ -228,6 +228,31 @@ class TestConfig:
         with pytest.raises(ValueError, match=r"did you mean training\.epochs"):
             Config.from_yaml(p)
 
+    def test_legacy_learning_rate_key_names_the_rename(self, tmp_path):
+        """``learning_rate`` is an accepted ALIAS, so the message must say so.
+
+        ``lr`` declares ``validation_alias=AliasChoices("lr", "learning_rate")``,
+        so pydantic accepts both spellings when the model is built directly — but
+        the YAML guard only inspects ``model_fields``, where ``learning_rate`` is
+        invisible. The user saw the full known-key list and no hint, even though
+        the field explicitly accepts that spelling. This is the exact typo that
+        shipped in eight configs before anyone noticed.
+        """
+        p = tmp_path / "legacy.yaml"
+        p.write_text("training:\n  learning_rate: 2.0e-5\n", encoding="utf-8")
+        with pytest.raises(ValueError, match=r"training\.learning_rate \(rename it to training\.lr\)"):
+            Config.from_yaml(p)
+
+    def test_alias_hint_takes_precedence_over_fuzzy_match(self, tmp_path):
+        """An exact alias must be reported as a rename, not a vague suggestion."""
+        p = tmp_path / "legacy.yaml"
+        p.write_text("training:\n  learning_rate: 1e-3\n", encoding="utf-8")
+        with pytest.raises(ValueError, match=r"rename it to training\.lr") as excinfo:
+            Config.from_yaml(p)
+        message = str(excinfo.value)
+        assert "rename it to training.lr" in message
+        assert "did you mean" not in message, "an exact alias should not fall back to fuzzy matching"
+
     def test_serving_config_is_rejected_with_the_right_advice(self, tmp_path):
         """A serving file in `configs/` must not look like a bag of typos."""
         p = tmp_path / "serve.yaml"

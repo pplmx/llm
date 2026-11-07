@@ -1128,13 +1128,39 @@ def _reject_unknown_config_keys(config_dict: object, source: Path) -> None:
         )
     from difflib import get_close_matches
 
+    def _aliases(model: type[BaseModel]) -> dict[str, str]:
+        """Map an accepted alias (e.g. ``learning_rate``) to its canonical field.
+
+        ``lr`` declares ``validation_alias=AliasChoices("lr", "learning_rate")``,
+        so pydantic accepts both when the model is built directly — but this YAML
+        guard looks only at ``model_fields``, where ``learn...`` is invisible.
+        A user writing the documented historical key therefore got the whole
+        known-key list and no hint, even though the field explicitly accepts it.
+        """
+        mapping: dict[str, str] = {}
+        for name, field in model.model_fields.items():
+            alias = field.validation_alias
+            if alias is None:
+                continue
+            for choice in getattr(alias, "choices", ()):
+                if isinstance(choice, str) and choice != name:
+                    mapping[choice] = name
+        return mapping
+
     def _check(mapping: dict[str, object], model: type[BaseModel], prefix: str) -> None:
         known = set(model.model_fields)
         unknown = [key for key in mapping if key not in known]
         if not unknown:
             return
+        aliases = _aliases(model)
         problems = []
         for key in unknown:
+            if str(key) in aliases:
+                # Accepting the alias would be kinder, but the YAML key IS the
+                # canonical one everywhere else in the docs; name the rename
+                # instead of silently honouring a deprecated spelling.
+                problems.append(f"{prefix}{key} (rename it to {prefix}{aliases[str(key)]})")
+                continue
             matches = get_close_matches(str(key), known, n=1, cutoff=0.6)
             problems.append(f"{prefix}{key}" + (f" (did you mean {prefix}{matches[0]}?)" if matches else ""))
         raise ValueError(
