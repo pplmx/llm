@@ -104,12 +104,21 @@ class CalibrationDataCollector:
         self.hooks: list[Any] = []
 
     def register_hooks(self, layer_types: tuple = (nn.Linear,)) -> None:
-        """
-        Register forward hooks on specified layer types.
+        """Register forward hooks on specified layer types.
+
+        Idempotent: calling it twice would attach a SECOND hook to every layer,
+        and each hook appends to the same ``ActivationStats`` — measured before
+        the guard, a double call doubled every ``num_samples`` count (2048 ->
+        4096) and therefore skewed the scales derived from them. Callers do hit
+        this (a re-run after a failed collect, a shared collector reused across
+        models), and the failure is a silently wrong quantization scale, so the
+        second call now clears the previous hooks instead of stacking.
 
         Args:
             layer_types: Tuple of layer types to hook.
         """
+        if self.hooks:
+            self.remove_hooks()
         for name, module in self.model.named_modules():
             if isinstance(module, layer_types):
                 self.stats[name] = ActivationStats(name=name)
