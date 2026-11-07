@@ -28,7 +28,7 @@ from llm.training.core.config import Config, ModelConfig, TrainingConfig
 
 config = Config.from_yaml("configs/streaming_c4.yaml")
 print(config.model.hidden_size)
-print(config.training.learning_rate)
+print(config.training.lr)  # learning rate field is `lr`
 ```
 
 ## Callbacks

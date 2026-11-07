@@ -126,7 +126,7 @@ model:
 training:
   epochs: 1
   batch_size: 4
-  learning_rate: 1.0e-3
+  lr: 1.0e-3
   num_samples: 1000
 
 data:

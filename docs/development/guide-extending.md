@@ -41,13 +41,17 @@ class RegressionTask(TrainingTask):
         if self.config.training.scheduler_type == "cosine":
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.config.training.epochs)
         elif self.config.training.scheduler_type == "step":
+            # `TrainingConfig` has no step_size / gamma fields — the real
+            # implementations derive them from `epochs` and pin gamma
+            # (see lm_task.build_scheduler). Do the same rather than inventing
+            # config keys that do not exist.
             scheduler = optim.lr_scheduler.StepLR(
-                optimizer, step_size=self.config.training.step_size, gamma=self.config.training.gamma
+                optimizer, step_size=max(1, self.config.training.epochs // 2), gamma=0.5
             )
         elif self.config.training.scheduler_type == "plateau":
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
         elif self.config.training.scheduler_type == "exponential":  # <-- 新增逻辑
-            scheduler = ExponentialLR(optimizer, gamma=self.config.training.gamma)
+            scheduler = ExponentialLR(optimizer, gamma=0.9)
         else:
             scheduler = None  # 或者抛出错误
 
