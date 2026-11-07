@@ -489,3 +489,57 @@ def test_engine_stop_during_validation_commits_epoch_checkpoint(tmp_path, mock_c
     assert stop.fired, "stop callback never fired"
     assert engine.global_step == 5, f"epoch 0 should be the only trained epoch, got {engine.global_step} steps"
     assert len(engine.checkpoint_manager.checkpoints_saved) >= 1, "stopping epoch checkpoint was silently dropped"
+
+
+# --- torch.compile failure must degrade, not abort the run ---
+
+
+def _tiny_engine(mock_config):
+    """Build an engine for a tiny model (logging goes to the test's caplog)."""
+    dm = SyntheticDataModule(mock_config)
+    dm.setup()
+    task = LanguageModelingTask(mock_config, dm)
+    return TrainingEngine(mock_config, task, rank=0, world_size=1, data_module=dm)
+
+
+def test_engine_continues_when_torch_compile_fails(mock_config):
+    """A failing ``torch.compile`` must warn and train uncompiled.
+
+    The fallback existed but was never exercised: an uncompilable model (custom
+    op, unsupported dtype, a driver quirk) silently took the ``except`` branch,
+    and nothing proved the engine then kept a USABLE module rather than a
+    half-transformed one. Training with ``use_compile=True`` must still run.
+    """
+    from unittest.mock import patch
+
+    mock_config.optimization.use_compile = True
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("simulated compile failure")
+
+    with patch("torch.compile", side_effect=_boom):
+        engine = _tiny_engine(mock_config)
+
+    assert isinstance(engine.model, torch.nn.Module), "engine kept no usable module after a failed compile"
+    # The model must still forward — a partially transformed module would not.
+    # Build the probe on the engine's device (it moves the model to CUDA on a
+    # GPU host, so a CPU tensor here would fail on device mismatch, not on the
+    # property under test).
+    probe = torch.randint(0, mock_config.model.vocab_size, (1, 8), device=engine.device)
+    with torch.no_grad():
+        out = engine.model(probe)
+    assert out.shape == (1, 8, mock_config.model.vocab_size)
+
+
+def test_engine_uses_compiled_module_when_compile_succeeds(mock_config):
+    """The success path must actually call torch.compile with the configured mode."""
+    from unittest.mock import patch
+
+    mock_config.optimization.use_compile = True
+    mock_config.optimization.compile_mode = "reduce-overhead"
+    with patch("torch.compile", side_effect=lambda m, **kw: m) as compile_mock:
+        engine = _tiny_engine(mock_config)
+
+    compile_mock.assert_called_once()
+    assert compile_mock.call_args.kwargs.get("mode") == "reduce-overhead"
+    assert engine.model is not None
