@@ -55,3 +55,37 @@ def test_negative_aux_weight_rejected():
     gate = torch.randn(20, 3)
     with pytest.raises(ValueError, match="aux_weight"):
         load_balancing_loss(gate, 3, aux_weight=-0.1)
+
+
+def test_perfectly_uniform_routing_hits_the_theoretical_minimum():
+    """Uniform routing must give EXACTLY 1.0, not merely "less than imbalanced".
+
+    ``load_balancing_loss = aux_weight * num_experts * sum(f_i * P_i)``. With
+    uniform dispatch ``f_i = P_i = 1/E``, so the sum is ``E * (1/E^2) = 1/E`` and
+    the product is exactly 1.0 for ANY expert count. The existing comparison
+    test only checks balanced < imbalanced, which holds even if a constant
+    factor is wrong — pinning the absolute value catches that.
+    """
+    expected = 1.0
+    for num_experts in (2, 4, 8):
+        # Identical logits -> uniform softmax -> perfectly balanced dispatch.
+        gate = torch.zeros(64, num_experts)
+        value = float(load_balancing_loss(gate, num_experts))
+        assert value == pytest.approx(expected, abs=1e-6), (
+            f"{num_experts} experts: uniform routing gave {value}, expected exactly {expected}"
+        )
+
+
+def test_total_collapse_hits_the_maximum():
+    """Sending every token to one expert must give exactly ``num_experts``.
+
+    At full collapse ``sum(f_i * P_i) = 1``, so the result is ``num_experts`` —
+    the other end of the range, and equally independent of any constant factor.
+    """
+    for num_experts in (2, 4, 8):
+        collapsed = torch.full((64, num_experts), -20.0)
+        collapsed[:, 0] = 20.0
+        value = float(load_balancing_loss(collapsed, num_experts))
+        assert value == pytest.approx(float(num_experts), rel=1e-4), (
+            f"{num_experts} experts: full collapse gave {value}, expected {num_experts}"
+        )
