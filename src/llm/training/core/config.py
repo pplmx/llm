@@ -385,6 +385,26 @@ class TrainingConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _warn_plateau_without_validation(self) -> TrainingConfig:
+        """Flag ``scheduler_type="plateau"`` with validation disabled.
+
+        ``ReduceLROnPlateau`` reduces the LR when its metric stops improving.
+        With ``run_validation=False`` the engine feeds it the TRAINING loss, which
+        keeps inching down while a model learns — measured over 10 epochs, the LR
+        never moved once. It is not useless (a run that truly converges in-sample
+        does plateau, and then the reduction fires), but the schedule will be far
+        less responsive than "plateau" implies, so say so.
+        """
+        if self.scheduler_type == "plateau" and not self.run_validation:
+            logger.warning(
+                "scheduler_type='plateau' with run_validation=False: ReduceLROnPlateau will be "
+                "driven by the TRAINING loss, which usually keeps decreasing — the LR may not "
+                "drop at all during the run. Enable validation (training.run_validation) or use "
+                "a 'cosine'/'step' schedule instead.",
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_adalora(self) -> TrainingConfig:
         # Cross-field checks that the Field constraints alone can't express.
         if self.adalora_target_rank > self.adalora_init_rank:

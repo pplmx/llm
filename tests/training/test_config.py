@@ -545,3 +545,52 @@ class TestWarmupEpochs:
             scheduler.step()
             peak = max(peak, optimizer.param_groups[0]["lr"])
         assert peak == pytest.approx(1e-3, rel=1e-6), "warmup == epochs should end at the base LR"
+
+
+class TestPlateauWithoutValidation:
+    """``scheduler_type='plateau'`` needs a metric that actually plateaus."""
+
+    def test_plateau_without_validation_warns(self, caplog):
+        """ReduceLROnPlateau fed the TRAIN loss barely ever reduces the LR.
+
+        Measured over a real 10-epoch run with ``run_validation=False``, the LR
+        stayed at its base value for every epoch — training loss keeps inching
+        down while a model learns, so ``ReduceLROnPlateau`` never sees a plateau.
+        Not fatal (in-sample convergence does eventually flatten, and then the
+        reduction fires), which is why this warns instead of raising.
+        """
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            config = TrainingConfig(scheduler_type="plateau", run_validation=False)
+
+        assert config.scheduler_type == "plateau"  # still accepted
+        assert any("plateau" in record.getMessage() for record in caplog.records), (
+            "the ineffective combination must be reported"
+        )
+
+    def test_plateau_with_validation_does_not_warn(self, caplog):
+        """The intended setup stays quiet."""
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            TrainingConfig(scheduler_type="plateau", run_validation=True)
+
+        assert not any("plateau" in record.getMessage() for record in caplog.records)
+
+    def test_cosine_without_validation_does_not_warn(self, caplog):
+        """Schedules that do not need a metric must not trip the guard."""
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        for scheduler in ("cosine", "step"):
+            with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+                TrainingConfig(scheduler_type=scheduler, run_validation=False)
+            assert not any("plateau" in record.getMessage() for record in caplog.records), (
+                f"{scheduler} should not trigger the plateau warning"
+            )

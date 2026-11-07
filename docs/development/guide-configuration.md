@@ -74,6 +74,21 @@ llm train --task regression --no-amp   # 禁用
       log_interval: 50
     ```
 
+   `training.scheduler_type` 有三档，注意 `plateau` 的前提：
+
+   | 取值             | 行为                    | 前提                            |
+   | ---------------- | ----------------------- | ------------------------------- |
+   | `cosine`（默认） | 余弦退火到 `lr` 的 1/10 | 无                              |
+   | `step`           | 每 `epochs//2` 轮乘 0.5 | 无                              |
+   | `plateau`        | 指标不再改善时乘 0.5    | **需要 `run_validation: true`** |
+
+   `ReduceLROnPlateau` 靠"指标停止改善"触发降学习率。关掉验证
+   （`training.run_validation: false`）时，引擎传给它的是**训练 loss**，而训练
+   loss 在模型还在学习时会一直缓慢下降——实测 10 个 epoch 里学习率一次都没降过。
+   这不是彻底失效（真正在训练集上收敛后 loss 会平掉，那时才会降），但调度会远没有
+   "plateau" 这个名字暗示的灵敏。这种组合能通过校验，只在构造配置时记一条 WARNING；
+   想要确定的退火曲线，请用 `cosine` / `step`，或者打开验证。
+
 2. **在您的训练脚本中加载它**:
 
    框架的 `Config` 类提供了 `from_yaml` 方法来从 YAML 文件加载配置. 您可以在自己的训练脚本中调用此方法:
