@@ -34,6 +34,7 @@ called from the ``on_step`` hook passed to
 
 from __future__ import annotations
 
+import math
 from collections.abc import Generator
 from contextlib import contextmanager
 from types import TracebackType
@@ -167,7 +168,10 @@ class ServingMetrics:
         if total_active_slots <= 0:
             raise ValueError(f"Cannot compute batch fill ratio: total_active_slots={total_active_slots}")
         ratio = scheduled / total_active_slots
-        if ratio < 0.0 or ratio > 1.0:
+        # ``math.isfinite`` guards NaN explicitly: a NaN ratio passes both range
+        # comparisons below and would be exposed on /metrics, poisoning every
+        # dashboard aggregation until the next step.
+        if not math.isfinite(ratio) or ratio < 0.0 or ratio > 1.0:
             raise ValueError(
                 f"Batch fill ratio {ratio} is outside [0, 1] "
                 f"(scheduled={scheduled}, total_active_slots={total_active_slots})"
@@ -175,7 +179,16 @@ class ServingMetrics:
         self.batch_fill_ratio.set(ratio)
 
     def record_kv_cache_hit_ratio(self, ratio: float) -> None:
-        """Update ``llm_kv_cache_hit_ratio``. ``ratio`` must be in [0, 1]."""
+        """Update ``llm_kv_cache_hit_ratio``. ``ratio`` must be a finite value in [0, 1].
+
+        NaN is rejected explicitly: both ``nan < 0.0`` and ``nan > 1.0`` are
+        False, so a plain range check lets it through. The Gauge then exposes
+        the literal string ``NaN`` on ``/metrics``, and a single NaN poisons
+        every ``avg()`` / ``rate()`` aggregation on a dashboard until the next
+        successful step — with no error at the recording site.
+        """
+        if not math.isfinite(ratio):
+            raise ValueError(f"KV cache hit ratio must be finite, got {ratio!r}")
         if ratio < 0.0 or ratio > 1.0:
             raise ValueError(f"KV cache hit ratio {ratio} is outside [0, 1]")
         self.kv_cache_hit_ratio.set(ratio)

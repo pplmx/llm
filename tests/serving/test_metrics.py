@@ -9,6 +9,7 @@ Prometheus registry used by ``/metrics`` in production.
 
 from __future__ import annotations
 
+import pytest
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 from llm.serving.metrics import METRICS, ServingMetrics
@@ -214,3 +215,49 @@ def test_generate_stream_counts_decoded_tokens_not_chunks(monkeypatch):
     assert "".join(collected) == "abc"
     counter_value = m.tokens_generated_total.labels(endpoint="generate")._value.get()
     assert counter_value == 3, f"expected 3 decoded tokens in one chunk, observed {counter_value}"
+
+
+# --- Non-finite ratios must be rejected, not exposed ---
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_kv_cache_hit_ratio_rejects_non_finite(bad):
+    """A non-finite ratio must raise, not reach the Gauge.
+
+    ``nan < 0.0`` and ``nan > 1.0`` are BOTH False, so a plain range check lets
+    NaN through. Prometheus then scrapes the literal string ``NaN``, and one NaN
+    is enough to poison every ``avg()`` / ``rate()`` aggregation on a dashboard
+    until the next successful step — with no error raised at the recording site.
+    ``inf`` slips past the same way for the ``-inf`` side.
+    """
+    metrics = ServingMetrics(registry=CollectorRegistry())
+
+    with pytest.raises(ValueError, match="finite"):
+        metrics.record_kv_cache_hit_ratio(bad)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_batch_fill_ratio_rejects_non_finite(bad):
+    """``scheduled / total`` can only be non-finite via a non-finite input."""
+    metrics = ServingMetrics(registry=CollectorRegistry())
+
+    with pytest.raises(ValueError, match=r"outside \[0, 1\]|finite"):
+        metrics.record_batch_fill_ratio(scheduled=bad, total_active_slots=8)
+
+
+def test_valid_ratios_still_recorded_after_the_guard():
+    """The guard must not reject the values it is meant to allow."""
+    from prometheus_client import generate_latest
+
+    registry = CollectorRegistry()
+    metrics = ServingMetrics(registry=registry)
+
+    metrics.record_kv_cache_hit_ratio(0.0)
+    metrics.record_kv_cache_hit_ratio(0.5)
+    metrics.record_kv_cache_hit_ratio(1.0)
+    metrics.record_batch_fill_ratio(scheduled=0, total_active_slots=8)
+    metrics.record_batch_fill_ratio(scheduled=8, total_active_slots=8)
+
+    exposed = generate_latest(registry).decode()
+    assert "NaN" not in exposed, "a NaN reached /metrics"
+    assert "Inf" not in exposed, "an Inf reached /metrics"
