@@ -66,5 +66,3 @@ PYTHONUNBUFFERED=1 uv run llm serve  # check startup config log lines first
   implementation details — see `write-test` skill).
 - Verify: targeted dir first (`uv run pytest tests/generation tests/serving
   -q`), then the full loop (`run-ci` skill).
-- Record findings in the RIL graph (evidence nodes cite test names /
-  file:line) via the `graph-engineering` skill.

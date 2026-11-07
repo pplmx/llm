@@ -110,7 +110,6 @@
     - 不为拆而拆；宁可合并同类小改动。
 - 流程：`commit_message.txt` → `git commit -F` → 删除；**仅在用户明确要求时 commit**。
 - **NEVER** `--no-verify`、force push `main`、追加 `Co-Authored-By` AI 署名。
-- **RIL 图谱簿记批量合并**：graph.json 簿记累积约 10–50 条（灵活指导、非硬上限）后合并提交一次 `chore(ril): <summary>`，不入代码提交。详见 `graph-engineering` skill §LEARN。
 
 ## 7. 约定与质量底线
 
@@ -131,7 +130,6 @@
 
 ## 9. Agent skills 与领域文档
 
-- **长期自主循环**：`graph-engineering`（OBSERVE→…→LEARN，RIL 图谱作为跨 session 记忆；图谱簿记批量提交见其 §LEARN）
 - **测试 / CI / 排障**：`run-ci` · `write-test` · `debug-inference` · `diagnose` · `diagnosing-bugs`
 - **工程**：`code-review` · `codebase-design` · `modern-python-tooling`（uv/ruff/ty/commitizen，pyproject 单一配置源）· `tdd` · `to-prd` · `to-issues`
 - **协作流程**：issue tracker（`gh` CLI）· triage labels · domain 契约，见 `docs/agents/`（domain 详见 `docs/agents/domain.md`）

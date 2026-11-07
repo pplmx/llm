@@ -88,10 +88,8 @@ check**, **doctests**. Hooks run on every commit; `--no-verify` is forbidden.
    validates). Body describes the human author's intent; **no AI
    co-author lines**.
 2. `git commit -F commit_message.txt`, then delete the file.
-3. Commit only when the user explicitly asked (or the active workflow, e.g.
-   graph-engineering loop, mandates it). Never force-push `main`.
-4. RIL graph commits reference node ids, e.g.
-   `fix(core): ... (RIL TASK-001, ISS-001)`.
+3. Commit only when the user explicitly asked (or the active workflow
+   mandates it). Never force-push `main`.
 
 ## Failure triage
 
