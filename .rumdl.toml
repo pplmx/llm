@@ -2,7 +2,6 @@
 disable = ["MD029", "MD034", "MD036", "MD059", "MD033", "MD025"]
 respect_gitignore = true
 exclude = [
-    ".planning",
     "docs/superpowers",
     "docs/infographic",
     "docs/audits",
