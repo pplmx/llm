@@ -144,3 +144,81 @@ def test_documented_llm_imports_resolve() -> None:
                 if name and not hasattr(module, name)
             )
     assert not problems, "documented imports that do not resolve:\n  " + "\n  ".join(problems)
+
+
+# --- Documented CLI invocations must match the real commands and flags ---
+
+#: ``(llm argv prefix)`` -> nothing; the flag set is read from ``--help`` once.
+_CLI_TIMEOUT = 120
+
+
+def _cli_flags(prefix: tuple[str, ...]) -> set[str]:
+    """Flags accepted by ``llm <prefix>``, read from its real ``--help``."""
+    import subprocess
+
+    result = subprocess.run(  # noqa: S603 — argv is built from internal constants, not user input
+        ["uv", "run", "--frozen", "llm", *prefix, "--help"],  # noqa: S607 — `uv` comes from PATH by design
+        capture_output=True,
+        text=True,
+        timeout=_CLI_TIMEOUT,
+        check=False,
+    )
+    assert result.returncode == 0, f"`llm {' '.join(prefix)} --help` failed:\n{result.stderr[-800:]}"
+    return set(re.findall(r"(--[a-z][a-z0-9-]+)", result.stdout))
+
+
+#: ``command -> subcommands`` for the commands that take one. ``quantize`` is
+#: the only two-level command; a doc line without the subcommand would reference
+#: flags that live one level down and never reach them.
+_SUBCOMMANDS = {"quantize": ["gptq", "fp8"]}
+
+
+def _documented_invocations() -> list[tuple[pathlib.Path, str]]:
+    """Every ``llm <command> ...`` occurrence in a live doc, with its line."""
+    found: list[tuple[pathlib.Path, str]] = []
+    for path in _all_docs():
+        for line in path.read_text(encoding="utf-8", errors="ignore").split("\n"):
+            if not re.search(r"\bllm\s+(train|serve|quantize|prune|decompose|migrate-ckpt)\b", line):
+                continue
+            # Prose that EXPLAINS a flag does not exist ("`llm train` has no
+            # --scheduler-type") names a flag without invoking it. Only lines
+            # that look like an invocation are checked.
+            if re.search(r"没有|不存在|不支持|has no|does not have|is not a", line):
+                continue
+            found.append((path, line))
+    return found
+
+
+def test_documented_cli_flags_exist() -> None:
+    """A documented flag must be accepted by the command it is written for.
+
+    Docs are instructions: an invented or renamed flag sends the reader to a
+    Typer "No such option" error. Reading the flag sets from ``--help`` rather
+    than from source keeps the test honest about what the CLI really accepts,
+    including aliases Typer synthesises.
+    """
+    real: dict[tuple[str, ...], set[str]] = {}
+    problems: list[str] = []
+    for path, line in _documented_invocations():
+        command = re.search(r"\bllm\s+(train|serve|quantize|prune|decompose|migrate-ckpt)", line).group(1)
+        prefix: tuple[str, ...] = (command,)
+        if command in _SUBCOMMANDS:
+            # Pick the subcommand this line names, if any; otherwise the flags
+            # are compared against the union of all its subcommands.
+            named = [s for s in _SUBCOMMANDS[command] if re.search(rf"\bllm\s+{command}\s+{s}\b", line)]
+            if named:
+                prefix = (command, named[0])
+        if prefix not in real:
+            real[prefix] = _cli_flags(prefix)
+        if command in _SUBCOMMANDS and len(prefix) == 1:
+            allowed = set().union(*(_cli_flags((command, s)) for s in _SUBCOMMANDS[command]))
+        else:
+            allowed = real[prefix]
+        for flag in re.findall(r"(--[a-z][a-z0-9-]+)", line):
+            if flag == "--help":
+                continue
+            if flag not in allowed:
+                problems.append(
+                    f"{path.relative_to(_DOCS.parent)}: `llm {' '.join(prefix)}` has no {flag}\n    {line.strip()}"
+                )
+    assert not problems, "documented CLI flags that do not exist:\n  " + "\n  ".join(sorted(set(problems)))
