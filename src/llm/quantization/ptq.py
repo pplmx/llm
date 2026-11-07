@@ -288,6 +288,14 @@ def quantize_model(
             quant_layer = QuantizedLinear.from_linear(module, config, scale)
             replacements.append((name, quant_layer))
 
+    if not replacements:
+        # Every sibling method (gptq / awq / smooth / fp8) refuses a model with
+        # no ``nn.Linear``; this one logged "Quantized 0 linear layers" and
+        # returned an unquantized COPY, so a caller who forgot a Linear (or
+        # passed an already-quantized model) got a silent no-op that only
+        # showed up as an unchanged file size. Same message as the siblings.
+        raise ValueError("model has no nn.Linear modules; nothing to quantize.")
+
     # Apply replacements
     for name, quant_layer in replacements:
         _replace_module(model, name, quant_layer)

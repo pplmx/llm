@@ -13,6 +13,51 @@ from llm.quantization.ptq import (
 )
 
 
+class TestNoLinearContract:
+    """Every quantization entry point must refuse a Linear-free model.
+
+    ``quantize_model`` (simple PTQ) was the one method that did NOT: it logged
+    "Quantized 0 linear layers" and returned an unquantized COPY, so a caller
+    who passed the wrong module tree got a silent no-op that surfaced only as
+    an unchanged output file size. The sibling methods (gptq / awq /
+    smoothquant / fp8) already raised, and ``docs/guides/quantization.md``
+    documents the shared behaviour.
+    """
+
+    def test_ptq_rejects_a_model_with_no_linear(self):
+        class NoLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.emb = nn.Embedding(4, 4)
+
+            def forward(self, x):
+                return self.emb(x)
+
+        with pytest.raises(ValueError, match=r"no nn\.Linear"):
+            quantize_model(NoLinear(), QuantConfig())
+
+    def test_ptq_error_matches_the_sibling_wording(self):
+        """Same message as gptq/awq/smooth/fp8, so callers can catch one string."""
+
+        class NoLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.emb = nn.Embedding(4, 4)
+
+            def forward(self, x):
+                return self.emb(x)
+
+        with pytest.raises(ValueError, match="nothing to quantize") as exc:
+            quantize_model(NoLinear(), QuantConfig())
+        assert str(exc.value) == "model has no nn.Linear modules; nothing to quantize."
+
+    def test_ptq_still_quantizes_when_a_linear_exists(self):
+        """The guard must not fire on the normal path."""
+        model = nn.Sequential(nn.Linear(8, 8, bias=False))
+        out = quantize_model(model, QuantConfig())
+        assert any(isinstance(m, QuantizedLinear) for m in out.modules())
+
+
 class TestActivationStats:
     """Tests for ActivationStats."""
 
