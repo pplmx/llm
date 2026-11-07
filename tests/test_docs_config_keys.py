@@ -40,7 +40,13 @@ def _training_schema() -> dict[str, set[str]]:
 
 
 def _all_docs() -> list[pathlib.Path]:
-    return sorted(_DOCS.rglob("*.md"))
+    """Markdown files whose content is enforced.
+
+    ``docs/superpowers/`` holds historical design records for modules that were
+    proposed and either renamed or never shipped; they are not instructions a
+    reader follows, so holding them to today's API would only produce noise.
+    """
+    return sorted(p for p in _DOCS.rglob("*.md") if "superpowers" not in p.parts)
 
 
 def _yaml_blocks(text: str) -> list[str]:
@@ -99,3 +105,42 @@ def test_the_known_rename_stays_gone(stale: str) -> None:
     """
     offenders = [str(p.relative_to(_DOCS.parent)) for p in _all_docs() if stale in p.read_text(errors="ignore")]
     assert not offenders, f"docs still mention the removed field {stale!r}: {offenders}"
+
+
+# --- Documented Python imports must resolve ---
+
+
+def _python_blocks() -> list[tuple[pathlib.Path, str]]:
+    blocks: list[tuple[pathlib.Path, str]] = []
+    for path in _all_docs():
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        blocks.extend((path, match.group(1)) for match in re.finditer(r"```python\n(.*?)```", text, re.S))
+    return blocks
+
+
+def test_documented_llm_imports_resolve() -> None:
+    """Every ``from llm.<mod> import <name>`` in a doc block must exist.
+
+    Docs are executable instructions; an import of a symbol the package no
+    longer exports sends the reader straight to ``ImportError``. This caught
+    ``from llm.tokenization import load_tokenizer`` (the factory is
+    ``TokenizerFactory`` now) and ``DecoderModel.from_pretrained`` in the
+    evaluation guide.
+    """
+    import importlib
+
+    problems: list[str] = []
+    for path, block in _python_blocks():
+        for match in re.finditer(r"^from (llm[\w.]*) import ([\w, ]+)$", block, re.M):
+            module_name, names = match.group(1), match.group(2)
+            try:
+                module = importlib.import_module(module_name)
+            except ModuleNotFoundError:
+                problems.append(f"{path.relative_to(_DOCS.parent)}: module {module_name} does not exist")
+                continue
+            problems.extend(
+                f"{path.relative_to(_DOCS.parent)}: {module_name}.{name} is not exported"
+                for name in (n.strip() for n in names.split(","))
+                if name and not hasattr(module, name)
+            )
+    assert not problems, "documented imports that do not resolve:\n  " + "\n  ".join(problems)

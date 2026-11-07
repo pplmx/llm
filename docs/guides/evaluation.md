@@ -99,12 +99,19 @@ is a minimal adapter that wraps any `DecoderModel` + tokenizer pair:
 
 ```python
 import torch
-from llm.models import DecoderModel
-from llm.tokenization import load_tokenizer
+from llm.cli._model_loading import load_trained_model  # same loader the CLIs use
+from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.evaluation.harness.lm_eval_lm import LlamaLmEvalLM
+from types import SimpleNamespace
 
-model = DecoderModel.from_pretrained("checkpoints/my-model")
-tokenizer = load_tokenizer("checkpoints/my-model/tokenizer.json")
+# v2 split stem (or the .pt / .safetensors spelling) of a trained checkpoint.
+model = load_trained_model("checkpoints/my-model")
+
+# Training writes `tokenizer.pt` beside the checkpoints; the factory discovers
+# it when `tokenizer_path` is unset (an explicit path still wins).
+tokenizer = TokenizerFactory.from_serving_config(
+    SimpleNamespace(tokenizer_path=None, tokenizer_type="simple", model_path="checkpoints/my-model")
+)
 
 lm = LlamaLmEvalLM(
     model,
