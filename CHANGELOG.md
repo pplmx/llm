@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   KV-cache invariants tests). The stale "Planned" entries previously left these
   listed as future work.
 
-- **SimPO alignment** (ROADMAP 11.4 / RIL TASK-278/ISS-314/DEC-105):
+- **SimPO alignment** (ROADMAP 11.4):
   `llm/training/tasks/simpo_task.py` -- reference-free, length-normalized
   preference optimization (`--task simpo`, Meng et al. 2024). Implicit reward
   = `beta * mean log p(y)`; loss = `-log sigma(beta*(mean_logp_w - mean_logp_l) - gamma)`
@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `simpo_gamma` / `simpo_lambda`. Verified reference-free, finite+backprop,
   directional (chosen preferred on a fixed batch) and an engine e2e.
 
-- **GGUF Q3_K write path** (RIL TASK-277/ISS-313/DEC-104):
+- **GGUF Q3_K write path**:
   `llm/export/gguf/quant.py::quantize_q3_k` packs the 256-wide `block_q3_K`
   (hmask32+qs64+scales12+d2, 16 groups of 16, value = dl*q with q = ql-(qh<<2),
   signed 6-bit scales) matching the gguf-py-verified `dequantize_q3_k` exactly,
@@ -90,14 +90,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   K-quant family — **all five** reader-supported K-quants (Q2_K..Q6_K) are now
   exportable.
 
-- **GGUF Q2_K write path** (RIL TASK-276/ISS-312/DEC-103):
+- **GGUF Q2_K write path**:
   `llm/export/gguf/quant.py::quantize_q2_k` packs the 256-wide `block_q2_K`
   (scales16+qs64+d2+dmin2, 16 groups of 16, value = dl*q - ml) matching the
   gguf-py-verified `dequantize_q2_k` exactly, wired into the exporter
   (`quantize="q2_k"`, file type 10). This completes every common llama.cpp
   K-quant export path.
 
-- **Asymmetric simple-PTQ** (RIL TASK-275/ISS-311/DEC-102):
+- **Asymmetric simple-PTQ**:
   `llm/quantization/ptq.py::QuantizedLinear.from_linear` now supports
   `QuantConfig(symmetric=False)` — 8-bit scale + zero-point weight
   quantization, per-tensor and per-channel. The unsigned grid is stored as
@@ -106,13 +106,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   distributions (asymmetric strictly beats symmetric on all-positive /
   all-negative rows).
 
-- **GGUF memory-mapped reading** (RIL TASK-274/ISS-310): `GGUFReader` now maps
+- **GGUF memory-mapped reading**: `GGUFReader` now maps
   the file read-only with `mmap` instead of copying the whole payload into RAM,
   so large exported models load with lazy, page-cached weights (ideal for
   serving). Parsing/metadata/`read_tensor`/`read_tensor_raw` are unchanged;
   added `close()` (idempotent) for explicit resource release.
 
-- **Native ZeRO Stage-1** (ROADMAP 15.5 / RIL TASK-267/268/269):
+- **Native ZeRO Stage-1** (ROADMAP 15.5):
   - `llm/training/distributed/zero.py`: `ZeroOptimizer` partitions
     optimiser-state across data-parallel ranks (~1/`world_size` per rank,
     round-robin by flat index), all-gathers the full updated weights each step,
@@ -129,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     CPU/gloo engine e2e (finite loss, disjoint shards, bit-exact lockstep).
     Docs: [distributed guide](docs/guides/distributed.md).
 
-- **Rejection Sampling** (ROADMAP 阶段十一 / RIL TASK-230):
+- **Rejection Sampling** (ROADMAP 阶段十一):
   - `llm/training/rlhf/rejection_sampling.py`: `select_top_k` /
     `select_above_threshold` / `rejection_sample` (mask + kept/base reward stats).
   - `llm/data/modules/rejection_sample.py`: `RejectionSampleDataModule` emits the
@@ -137,7 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CPU e2e: kept responses' mean reward > base, and SFT raises the model's
     likelihood of the kept responses. Docs: [guide](docs/guides/rejection_sampling.md).
 
-- **GRPO (Group Relative Policy Optimization)** (ROADMAP 阶段十一 / RIL TASK-229):
+- **GRPO (Group Relative Policy Optimization)** (ROADMAP 阶段十一):
   - `llm/training/rlhf/grpo.py`: `group_advantages` (per-group z-score) and
     `GRPOLoss` (clipped importance-weighted surrogate + K3 KL-to-reference).
   - `--task grpo` (`GRPOTask` + `GRPODataModule`): standard-loop training over
@@ -147,7 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CPU e2e: the rewarded response becomes the group-favored one (group-reward
     hit-rate 0 -> ~1). Docs: [GRPO guide](docs/guides/grpo.md) + CLI reference row.
 
-- **Multimodal slice 2 — modal-fusion model + training task** (ROADMAP 阶段十二 / RIL TASK-227):
+- **Multimodal slice 2 — modal-fusion model + training task** (ROADMAP 阶段十二):
   - `llm/multimodal/model.py`: standalone `MultimodalModel` (wraps a `DecoderModel`
     without patching it) that prepends the registry-encoded `modal_embeds` as a
     token-embedding-space prefix, runs the decoder blocks + LM head, and returns
@@ -160,7 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     next-token accuracy improving, all without touching `DecoderModel`.
   - Docs: multimodal guide (slice 2) + CLI reference row.
 
-- **Multimodal extension — contract-first spike** (ROADMAP 阶段十二 / RIL TASK-226):
+- **Multimodal extension — contract-first spike** (ROADMAP 阶段十二):
   - `llm/multimodal/`: `ModalityEncoder` ABC + `MODALITY_ENCODER_REGISTRY` +
     `@register_encoder` (entry-point-extensible via `llm.modality_encoders`),
     minimal CPU-verifiable `LinearModalityEncoder`, and a synthetic
@@ -171,7 +171,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     encoders can be persisted/loaded later.
   - Docs: [multimodal guide](docs/guides/multimodal.md) + [ADR-013](docs/adr/013-multimodal-encoder-contract.md).
 
-- **Low-Rank Decomposition** (ROADMAP 13.4 / RIL TASK-225):
+- **Low-Rank Decomposition** (ROADMAP 13.4):
   - `llm/quantization/lowrank.py`: `LowRankLinear` (stores `u: out x r`, `v: r x in`;
     forward `(x @ V^T) @ U^T + b`), `LowRankConfig` (rank XOR rank_ratio,
     target_modules), `decompose_model` / `decompose_layer` (truncated SVD U-V,
@@ -184,7 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Docs: [low-rank guide](docs/guides/lowrank.md) + CLI reference row + ROADMAP
     13.4 checked.
 
-- **Weight Pruning** (ROADMAP 13.4 / RIL TASK-224):
+- **Weight Pruning** (ROADMAP 13.4):
   - `llm/quantization/prune.py`: `PrunedLinear` (persistent binary `weight_mask`),
     `PruningConfig` (ratio / method / target_modules / random_seed), `prune_model`
     (magnitude or random policy; mirrors the GPTQ `_replace_module` in-place swap),
@@ -196,7 +196,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Docs: [pruning guide](docs/guides/pruning.md) + CLI reference row + ROADMAP
     13.4 checked.
 
-- **Knowledge Distillation** (ROADMAP 13.4 / RIL DEC-055):
+- **Knowledge Distillation** (ROADMAP 13.4):
   - `DistillationLoss` (Hinton temperature-scaled KL: `alpha*CE + (1-alpha)*T^2*KL`)
     in `llm/training/distillation.py`.
   - `--task distill`: `DistillationTask` trains a fresh student against a frozen
@@ -342,15 +342,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ALiBi extra-head slopes now match the canonical reference** (correctness, core): `get_alibi_slopes` computed the additional slopes for non-power-of-2 head counts with **odd-only** exponents (`extra_base^1, extra_base^3, ...`), diverging from every authoritative ALiBi reference (paper appendix / official repo and HF BLOOM `_get_alibi_slopes`), which use **consecutive** exponents `extra_base^1 .. extra_base^num_remaining`. Non-power-of-2 head counts (6/10/12/20/24/40/48/56/80/96...) got steeper linear biases than ALiBi specifies (e.g. for 12 heads, extra head 2 got `0.707^3` ≈ 0.354 instead of the canonical `0.707^2` = 0.5), shifting each head's effective context window. Now aligned to canonical: verified `get_alibi_slopes` matches `_get_alibi_slopes` for all head counts 1–32 + a wide set, and a regression test pins the values for 6/10/12/20/24/40/56/80 so the odd scheme cannot silently return.
 
 - **`llm-serve` CLI now honors `--help`** (correctness, serving): the `llm-serve` script was registered to the bare `llm.serving.api:main` (a function with no argv parsing), so `llm-serve --help` silently **ignored** the flag and launched a real uvicorn server — holding a CUDA device and starting the model — instead of printing usage. It now points at a Typer app (`llm.serving.cli:app`) exposing `--host`/`--port`/`--config` options; `--help` prints usage and exits 0 without launching (verified: no uvicorn/CUDA startup). Backward-compat preserved: `cli.main(config=...)` / `api.main()` keep their signatures (tests that build a config and forward it still work), all flags default to `None` so the full `ServingConfig`/`LLM_SERVING_*` env resolution still applies…
-- **RLHF / AI-feedback DataModules: empty-train-sampler guard restored** (correctness, data): `SamplerMapDataModule.train_dataloader` gained a loud guard in RIL TASK-323 for the `drop_last=True` + `world_size > len(dataset)` case (every rank gets a zero-sample sampler, so the engine silently trains whole epochs on nothing and scores 0.0, which `save_best`/`EarlyStopping` read as perfect). But `PromptDataModule` (PPO), `AIFeedbackDataModule` (DPO), and `GRPODataModule` **override** `train_dataloader` with their own `drop_last=True` sampler, silently dropping that guard — so a too-small dataset under those modules trained on nothing instead of failing loudly. Extracted the guard into a shared `_guard_nonempty_train_sampler` and wired it into the base + all three overrides (GRPO is single-process so world_size is always 1, but the guard is harmless there for consistency). Probe confirmed the overrides returned `sampler_len=0` before the fix; now they raise `ValueError`.
-- **FP8 static-activation calibration: dead-layer guard now fires** (correctness, quantization): `quantize_model_fp8(..., Fp8Config(activation="static"))` pre-seeds `captured[static_name]` with a zero sentinel, so the old "no scale for this layer" check (`name not in act_scale`) could NEVER hold for a pre-seeded static name — the guard was dead. A static target whose forward hook never fired during calibration (e.g. an unreachable branch of the model) silently quantized with `act_scale ≈ clamp(0)/fmax ≈ 1e-8`, which bleaches activations by ~1e10 on dequant and emits garbage logits. The hook now records which target layers actually fired, and a static layer that never fired raises loudly (same contract as the GPTQ uniform-fallback's error): "static activation calibration produced no scale ... use activation='dynamic' or fix the model forward." GPTQ already handled this case (ISS-136); FP8 did not.
+- **RLHF / AI-feedback DataModules: empty-train-sampler guard restored** (correctness, data): `SamplerMapDataModule.train_dataloader` gained a loud guard for the `drop_last=True` + `world_size > len(dataset)` case (every rank gets a zero-sample sampler, so the engine silently trains whole epochs on nothing and scores 0.0, which `save_best`/`EarlyStopping` read as perfect). But `PromptDataModule` (PPO), `AIFeedbackDataModule` (DPO), and `GRPODataModule` **override** `train_dataloader` with their own `drop_last=True` sampler, silently dropping that guard — so a too-small dataset under those modules trained on nothing instead of failing loudly. Extracted the guard into a shared `_guard_nonempty_train_sampler` and wired it into the base + all three overrides (GRPO is single-process so world_size is always 1, but the guard is harmless there for consistency). Probe confirmed the overrides returned `sampler_len=0` before the fix; now they raise `ValueError`.
+- **FP8 static-activation calibration: dead-layer guard now fires** (correctness, quantization): `quantize_model_fp8(..., Fp8Config(activation="static"))` pre-seeds `captured[static_name]` with a zero sentinel, so the old "no scale for this layer" check (`name not in act_scale`) could NEVER hold for a pre-seeded static name — the guard was dead. A static target whose forward hook never fired during calibration (e.g. an unreachable branch of the model) silently quantized with `act_scale ≈ clamp(0)/fmax ≈ 1e-8`, which bleaches activations by ~1e10 on dequant and emits garbage logits. The hook now records which target layers actually fired, and a static layer that never fired raises loudly (same contract as the GPTQ uniform-fallback's error): "static activation calibration produced no scale ... use activation='dynamic' or fix the model forward." GPTQ already handled this case; FP8 did not.
 - **`httpx2` transitive/vendor CVE bump** (security, `dev` group): locked `httpx2` was `2.9.1`, vulnerable to **CVE-2026-84382** (streaming-response decompression amplification, unbounded peak memory; fixed 2.12.0), **CVE-2026-84379/84380** (multipart CRLF injection / body-derived Content-Length; fixed 2.11.0), and **CVE-2026-84378** (SSE parser rescans; fixed 2.10.0). Bumped `dev` to `httpx2>=2.12.0` and re-locked, resolving to `httpx2 2.13.1` (with `httpcore2 2.9.1→2.13.1`); serving HTTP suite (72 tests) passes on the new client. Renovate PR #67 was NOT adopted — it also regenerates the whole lock against `pypi.org` (1932-line rewrite discarding the `mirrors.tuna` index).
 - **`nltk` transitive CVE bump** (security, `eval` extra): the locked `nltk` was `3.10.1`, which carries **CVE-2026-71513** (GHSA-5gh2-94qg-qppq — `AllowlistUnpickler` validates the pickle module string but not the global name, so a crafted pickle can resolve dotted names into arbitrary RCE) plus **CVE-2026-81723** (Snyk: inefficient algorithmic complexity, `<3.10.3`). `nltk` is a transitive dep via `sacrebleu`, so the prior bump only reached `3.10.1`. Bumped the `eval` extra to `nltk>=3.10.3` and re-locked (minimal diff preserving the tuna mirror); evaluator unit suite (129 tests) passes on 3.10.3. The stale Renovate PR #62 was NOT adopted — it regenerates the entire lock against `pypi.org` (1918-line rewrite discarding the project's `mirrors.tuna` index), not a clean security bump.
-- **GPU e2e suite first-time verification on real NCCL hardware** (verification round): the 8-GPU box had been ~98% busy all prior sessions, so the `slow`/`need_gpu` e2e suite (which never runs in GPU-less CI) had never been exercised here. With all 8 GPUs idle this session they now pass on real hardware: 2-GPU serve-TP-trained-checkpoint, 2-GPU TP checkpoint round-trip, 4-GPU deep-TP checkpoint round-trip, 4-GPU + 6-GPU TP+DP-2D on-disk checkpoint (incl. the wide grid), the 4-GPU TP+DP-2D engine (plain + flash-attn + mla backends), the DDP training family (2-GPU train, 2-GPU identical-initial-weights regression, 8-GPU full-cluster, all-available-GPUs), single-GPU training, and the device-selection harness. One exception recorded for further attribution: the 4-GPU **MoE** TP+DP-2D e2e intermittently deadlocks in an NCCL `ALLGATHER` on this **virtualized host** (GPU NUMA ID = N/A) — the gloo CPU unittests of the same `allreduce_dp_grads` MoE expert-skip path pass 4/4, the diverging NCCL rank *changes between runs*, and an isolated clean re-run passes, so it is provisionally attributed to the host's NCCL rather than the MoE collective logic, but needs a bare-metal host to fully rule out an NCCL-only MoE-EP divergence (tracked as GitHub #72 / RIL ISS-421).
-- **serving config-less (legacy) checkpoint loading** (RIL ISS-416): `llm-serve` on a checkpoint with no `model_config` sidecar no longer silently serves the wrong architecture. `_build_decoder` used to hardcode `use_glu=False`/`intermediate_size=None` and drop the norm/bias flags, so a GLU + RMSNorm + learned-PE checkpoint's weights were dropped at random init with a warning only. The loader now infers the recoverable architecture from the state-dict key naming (`use_glu`, `intermediate_size`, `norm_impl`, `qkv_bias`/`mlp_bias`/`lm_head_bias`, `pos_encoding_learned`) and promotes residual *missing* model keys to a loud `ValueError` (like `hf_loader`) — a mismatched hidden_size etc. now refuses to serve instead of random-initing.
-- **3d (PP+TP) checkpoint save/load** (RIL ISS-403): `parallel_strategy='3d'` checkpoints no longer persist only stage-0 weights (and silently scatter stage-0 into every stage on resume). A 3d stage is tagged `_pp3d` + `_tp` but not `_pp`, so `model_state_dict`/`load_model_state_dict` and the checkpoint optimizer-gather gates fell into the TP-local branch producing a colliding stage-local `blocks.*` dict. `apply_tensor_parallel_stage` now remaps the `_TPState` key maps onto the stage's own namespace (the shell uses `transformer_blocks.*`, the stage `blocks.*`, so the per-stage TP gather used to misalign), and `PPTPRuntime` gains `full_state_dict`/`scatter_load` that gather each stage's TP-shards to a **global-named full model dict** and scatter it back per stage; `model_state_dict`/`load_model_state_dict` and the checkpoint `is_pp` gates now treat `is_pp3d` like a pipeline stage. Verified by a 4-rank CPU engine save→resume e2e (global dict covers all blocks, per-stage optimizer moments restored, weights move on resume).
+- **GPU e2e suite first-time verification on real NCCL hardware** (verification round): the 8-GPU box had been ~98% busy all prior sessions, so the `slow`/`need_gpu` e2e suite (which never runs in GPU-less CI) had never been exercised here. With all 8 GPUs idle this session they now pass on real hardware: 2-GPU serve-TP-trained-checkpoint, 2-GPU TP checkpoint round-trip, 4-GPU deep-TP checkpoint round-trip, 4-GPU + 6-GPU TP+DP-2D on-disk checkpoint (incl. the wide grid), the 4-GPU TP+DP-2D engine (plain + flash-attn + mla backends), the DDP training family (2-GPU train, 2-GPU identical-initial-weights regression, 8-GPU full-cluster, all-available-GPUs), single-GPU training, and the device-selection harness. One exception recorded for further attribution: the 4-GPU **MoE** TP+DP-2D e2e intermittently deadlocks in an NCCL `ALLGATHER` on this **virtualized host** (GPU NUMA ID = N/A) — the gloo CPU unittests of the same `allreduce_dp_grads` MoE expert-skip path pass 4/4, the diverging NCCL rank *changes between runs*, and an isolated clean re-run passes, so it is provisionally attributed to the host's NCCL rather than the MoE collective logic, but needs a bare-metal host to fully rule out an NCCL-only MoE-EP divergence (tracked as GitHub #72).
+- **serving config-less (legacy) checkpoint loading**: `llm-serve` on a checkpoint with no `model_config` sidecar no longer silently serves the wrong architecture. `_build_decoder` used to hardcode `use_glu=False`/`intermediate_size=None` and drop the norm/bias flags, so a GLU + RMSNorm + learned-PE checkpoint's weights were dropped at random init with a warning only. The loader now infers the recoverable architecture from the state-dict key naming (`use_glu`, `intermediate_size`, `norm_impl`, `qkv_bias`/`mlp_bias`/`lm_head_bias`, `pos_encoding_learned`) and promotes residual *missing* model keys to a loud `ValueError` (like `hf_loader`) — a mismatched hidden_size etc. now refuses to serve instead of random-initing.
+- **3d (PP+TP) checkpoint save/load**: `parallel_strategy='3d'` checkpoints no longer persist only stage-0 weights (and silently scatter stage-0 into every stage on resume). A 3d stage is tagged `_pp3d` + `_tp` but not `_pp`, so `model_state_dict`/`load_model_state_dict` and the checkpoint optimizer-gather gates fell into the TP-local branch producing a colliding stage-local `blocks.*` dict. `apply_tensor_parallel_stage` now remaps the `_TPState` key maps onto the stage's own namespace (the shell uses `transformer_blocks.*`, the stage `blocks.*`, so the per-stage TP gather used to misalign), and `PPTPRuntime` gains `full_state_dict`/`scatter_load` that gather each stage's TP-shards to a **global-named full model dict** and scatter it back per stage; `model_state_dict`/`load_model_state_dict` and the checkpoint `is_pp` gates now treat `is_pp3d` like a pipeline stage. Verified by a 4-rank CPU engine save→resume e2e (global dict covers all blocks, per-stage optimizer moments restored, weights move on resume).
 - **`ty` type-check cleanups** (maintainability): three pre-existing diagnostics that had accumulated since the last green `ty` run are fixed — `PerplexityMetric.compute` now passes `ignore_index` as a named arg instead of through a `**kwargs` dict (typing narrowing was lost); `api.py` aliases `cli.main` as `cli_main` so the module-level `main` isn't shadowed by the lazy import; and `LLMMetrics.track_inflight` uses `Generator` instead of the deprecated `Iterator` return annotation under `@contextmanager`.
-- **hf_loader tolerates benign non-persistent buffers** (RIL ISS-414): `from_pretrained` no longer refuses real Llama/Mistral checkpoints that ship the RoPE inverse-frequency buffer (`*.self_attn.rotary_emb.inv_freq`). HF persists this buffer, but our `RoPE` registers it `persistent=False` and recomputes it from `rope_theta` at construction, so it is not a model weight — the unconsumed-key guard now warns about such benign buffers instead of rejecting the whole dump. Genuinely foreign unmapped weights still fail loudly (unchanged, RIL ISS-244/ISS-169).
+- **hf_loader tolerates benign non-persistent buffers**: `from_pretrained` no longer refuses real Llama/Mistral checkpoints that ship the RoPE inverse-frequency buffer (`*.self_attn.rotary_emb.inv_freq`). HF persists this buffer, but our `RoPE` registers it `persistent=False` and recomputes it from `rope_theta` at construction, so it is not a model weight — the unconsumed-key guard now warns about such benign buffers instead of rejecting the whole dump. Genuinely foreign unmapped weights still fail loudly (unchanged).
 - **KV-cache prefill perf gate is now GPU-only** (CI hygiene): `tests/core/test_kv_cache_invariants.py::TestPrefillPerformance::test_prefill_faster_than_naive_loop` asserted a 2× speedup over a Python-loop reference path, but on CPU the optimized advanced-indexing path measures ~0.68× — i.e. *slower* — because the per-call tensor-construction overhead dominates when there is no kernel-launch cost to amortize. The 5× / 2× target only materializes on GPU, where the kernel-fusion + memory-coalescing wins from advanced indexing outweigh the index-build cost (this was an old docstring lie — the class comment claimed "calibrated for CPU" when it actually required GPU). The test is now gated by `@pytest.mark.skipif(not torch.cuda.is_available(), reason="prefill perf gate requires GPU")` and the docstring is corrected to reflect the GPU calibration. CPU CI hosts skip cleanly (5 passed, 1 skipped on this machine); GPU CI runners still execute the gate. This unblocks the `build-and-test` matrix job (it was the single failing test in the broader suite — `1460 passed, 0 failed, 29 skipped, 1 xfailed` after the fix, vs `1460 passed, 1 failed` before).
 
 ### Performance
@@ -378,7 +378,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.item()` device-syncs per sample) with an O(L) vectorized closed form
   (`A_t = gamma*lambda`-decayed reverse cumulative sum). Numerics preserved: the
   reduction runs in float64 to avoid float32 overflow for small
-  `gamma*gae_lambda`, keeps the sparse terminal-reward + ISS-178 truncated-
+  `gamma*gae_lambda`, keeps the sparse terminal-reward + truncated-
   episode `V(s_L)` bootstrap exactly, and falls back to the stable forward scan
   for pathological near-zero decay. Bit-equal to the loop across 4,000
   randomized configs (worst abs diff ~1e-6); new regression test pins the

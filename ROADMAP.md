@@ -124,14 +124,14 @@
 ### 5. 高级分布式训练 🔄
 
 - [x] FSDP — `parallel_strategy=fsdp` + `wrap_model_for_training()` 已实现
-- [x] Tensor Parallelism — `parallel_strategy=tp` (Megatron 风格 column/row 并行 + 全量 state-dict checkpoint, RIL CHG-199)
-- [x] TP + 数据并行 2D — `tp_size < world_size` `[DP][TP]` 网格, DP 组间梯度平均 (RIL TASK-202/CHG-203)
-- [x] MoE Expert Parallel — 复制门 + 按 expert 分片, 零命中反向死锁修复 (RIL TASK-207)
-- [x] Pipeline Parallelism v1 — `parallel_strategy=pp`, `ScheduleGPipe` 分阶段前向/反向, stage 划分于 transformer_blocks, 全量 global-name state-dict 收集/散播, PP 组全局梯度裁剪; 与串行 2-stage 逐位一致 (RIL DEC-049/TASK-210)
-- [x] Pipeline Parallelism v2 — PP+DP 2D (`pp_size` + DP 组梯度平均, RIL TASK-211) / microbatch 重叠 (`pp_n_microbatches>1`, RIL TASK-213) / AMP (bf16) 与 gradient checkpointing 支持均已落地; 剩余: stage 按需物化
-- [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'` (RIL TASK-216): `PPTPRuntime` 列内 stage 间 P2P 前向/反向 + TP 列内张量并行, 跨列 DP 梯度平均; 4/8 进程 CPU/gloo 引擎 e2e (RIL round-131 修 PP3D 接收张量非叶子 `.grad` 崩溃)
-- [x] 真实 CUDA 分布式验证 — 8×A100-80GB 上 19 个 gpu-marked e2e 全绿 (RIL TASK-260): DDP 2/8-GPU, TP 2/4-GPU deep, TP+DP 2D 4/6-GPU, serving TP checkpoint, tensor-parallel 数值 parity; 修正 GPU 环境设备不一致 cluster (ISS-298/299/300)
-- [x] DeepSpeed ZeRO 集成（原生 ZeRO Stage-1 以 `parallel_strategy='zero'` 落地：`ZeroOptimizer` 优化器状态分片 + 按 rank 分片 checkpoint + 引擎标准循环集成与 CPU/gloo 双 rank e2e；非外部 DeepSpeed 依赖；真实 CUDA 多卡验证顺延，见 RIL TASK-269/DEC-097）
+- [x] Tensor Parallelism — `parallel_strategy=tp` (Megatron 风格 column/row 并行 + 全量 state-dict checkpoint)
+- [x] TP + 数据并行 2D — `tp_size < world_size` `[DP][TP]` 网格, DP 组间梯度平均
+- [x] MoE Expert Parallel — 复制门 + 按 expert 分片, 零命中反向死锁修复
+- [x] Pipeline Parallelism v1 — `parallel_strategy=pp`, `ScheduleGPipe` 分阶段前向/反向, stage 划分于 transformer_blocks, 全量 global-name state-dict 收集/散播, PP 组全局梯度裁剪; 与串行 2-stage 逐位一致
+- [x] Pipeline Parallelism v2 — PP+DP 2D (`pp_size` + DP 组梯度平均) / microbatch 重叠 (`pp_n_microbatches>1`) / AMP (bf16) 与 gradient checkpointing 支持均已落地; 剩余: stage 按需物化
+- [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'`: `PPTPRuntime` 列内 stage 间 P2P 前向/反向 + TP 列内张量并行, 跨列 DP 梯度平均; 4/8 进程 CPU/gloo 引擎 e2e (修 PP3D 接收张量非叶子 `.grad` 崩溃)
+- [x] 真实 CUDA 分布式验证 — 8×A100-80GB 上 19 个 gpu-marked e2e 全绿: DDP 2/8-GPU, TP 2/4-GPU deep, TP+DP 2D 4/6-GPU, serving TP checkpoint, tensor-parallel 数值 parity; 修正 GPU 环境设备不一致 cluster
+- [x] DeepSpeed ZeRO 集成（原生 ZeRO Stage-1 以 `parallel_strategy='zero'` 落地：`ZeroOptimizer` 优化器状态分片 + 按 rank 分片 checkpoint + 引擎标准循环集成与 CPU/gloo 双 rank e2e；非外部 DeepSpeed 依赖；真实 CUDA 多卡验证顺延，见 ）
 
 ---
 
@@ -375,7 +375,7 @@
 - [x] 实现 GRPO (Group Relative Policy Optimization: `group_advantages` z-score + 裁剪 `GRPOLoss` + `--task grpo`，合成奖励分组 CPU e2e 显示组奖励随训练提升；见 [docs/guides/grpo.md](docs/guides/grpo.md))
 - [x] **探索 Constitutional AI** (规则式 constitution judge + 自批判→改写循环的 CPU 切片：`ForbiddenToken`/`EndsWithToken` 原则 + `critique`/`revise`，e2e 显示改写版全合规且分数严格上升；见 [docs/guides/constitutional.md](docs/guides/constitutional.md))
 - [x] 实现 Rejection Sampling (`rejection_sample` top-K/threshold 选择 + `RejectionSampleDataModule` SFT-on-selected，CPU e2e 显示保留集平均奖励高于原始样本且 SFT 后保留响应似然提升；见 [docs/guides/rejection_sampling.md](docs/guides/rejection_sampling.md))
-- [x] **实现 SimPO** (reference-free、长度归一化偏好优化: `--task simpo`，`simpo_beta`/`simpo_gamma`/`simpo_lambda`，复用 `DPODataModule`；CPU 单元/方向性/引擎 e2e 验证选择更受偏好项；见 RIL TASK-278/ISS-314/DEC-105)
+- [x] **实现 SimPO** (reference-free、长度归一化偏好优化: `--task simpo`，`simpo_beta`/`simpo_gamma`/`simpo_lambda`，复用 `DPODataModule`；CPU 单元/方向性/引擎 e2e 验证选择更受偏好项；见)
 
 ---
 
@@ -400,22 +400,22 @@
 #### 12.1 视觉-语言模型
 
 - [x] 集成视觉编码器（CLIP/SigLIP 风格 `VisionTransformerEncoder`,注册 `"vit"`,
-  RIL TASK-259/CHG-272;含可训练塔 `train_encoder` 与对比对齐 `ContrastiveAligner`,
-  TASK-261/262,见 [multimodal guide](docs/guides/multimodal.md)）
+;含可训练塔 `train_encoder` 与对比对齐 `ContrastiveAligner`,
+,见 [multimodal guide](docs/guides/multimodal.md)）
 - [x] 实现图像-文本对齐模块（`ContrastiveAligner` + `contrastive_loss`,InfoNCE/SigLIP,
-  RIL TASK-262/CHG-277）
+）
 - [x] Visual Instruction Tuning（`vit_instruction_len` 掩码 `[instruction|response]`
-  SFT,RIL TASK-263/CHG-278）→ **12.1 完成**
+  SFT ）→ **12.1 完成**
 - [ ] 多模态预训练（真实数据集接入 + 大规模训练管线）
 
 #### 12.2 音频扩展
 
 - [x] 集成音频编码器（Whisper-style `AudioSpectrogramEncoder`,注册 `"audio"`,
-  RIL TASK-264;原始频谱管线 + 可训练塔与 vision 共用 `modal_samples` 键）
+;原始频谱管线 + 可训练塔与 vision 共用 `modal_samples` 键）
 - [x] 实现语音识别和生成（转写↔频谱 codec `multimodal/asr.py` + `MultimodalModel.generate()`
-  音频条件贪心解码 + held-out 转写 e2e ~1.0,RIL TASK-265;见 [multimodal guide](docs/guides/multimodal.md)）
+  音频条件贪心解码 + held-out 转写 e2e ~1.0;见 [multimodal guide](docs/guides/multimodal.md)）
 - [x] 支持语音指令微调（`audio_asr=True` 复用 `vit_instruction_len` 掩码
-  `[instruction | transcript]` SFT,音频决定转写内容,RIL TASK-265）→ **12.2 完成**
+  `[instruction | transcript]` SFT,音频决定转写内容 ）→ **12.2 完成**
 
 #### 12.3 统一多模态接口
 
@@ -591,11 +591,11 @@
 
 - [x] FSDP — config + `wrap_model_for_training()` 已实现
 - [x] Tensor Parallelism — `parallel_strategy=tp`, `apply_tensor_parallel` (column/row 并行, fused-QKV 分片, vocab-parallel lm_head + logits all-gather, 全量 state-dict gather/scatter checkpoint, 数值恒等 parity 测试)
-- [x] TP + 数据并行 2D — `tp_size < world_size`: 行主序 `[DP][TP]` 网格 (TP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_dp_grads` (AVG) 平均 DP 组梯度; 2x2 / 2x3 / 4x2 网格 parity + 4/6-GPU 真实引擎 e2e 全绿 (RIL TASK-202)
-- [x] Pipeline Parallelism — `parallel_strategy='pp'` (RIL DEC-049/TASK-210): 按 `transformer_blocks` 切分 stage (stage 0 = embedding + 首块, 末 stage = final_norm + lm_head), `ScheduleGPipe` 驱动, 纯 pipeline 两进程 CPU/gloo bit-exact parity + 引擎 e2e 训练/保存/恢复; 强制 FP32 + LM-only 拒绝
-- [x] PP + 数据并行 2D — `pp_size < world_size`: 行主序 `[DP][PP]` 网格 (PP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_pp_dp_grads` (AVG) 平均 DP 组梯度, loss 按 PP 组 broadcast (`group_src`); 2x2 网格 bit-parity + 4 进程 CPU/gloo 引擎 e2e 全绿 + 状态字典跨 4 rank 逐位一致 (RIL TASK-211)
+- [x] TP + 数据并行 2D — `tp_size < world_size`: 行主序 `[DP][TP]` 网格 (TP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_dp_grads` (AVG) 平均 DP 组梯度; 2x2 / 2x3 / 4x2 网格 parity + 4/6-GPU 真实引擎 e2e 全绿
+- [x] Pipeline Parallelism — `parallel_strategy='pp'`: 按 `transformer_blocks` 切分 stage (stage 0 = embedding + 首块, 末 stage = final_norm + lm_head), `ScheduleGPipe` 驱动, 纯 pipeline 两进程 CPU/gloo bit-exact parity + 引擎 e2e 训练/保存/恢复; 强制 FP32 + LM-only 拒绝
+- [x] PP + 数据并行 2D — `pp_size < world_size`: 行主序 `[DP][PP]` 网格 (PP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_pp_dp_grads` (AVG) 平均 DP 组梯度, loss 按 PP 组 broadcast (`group_src`); 2x2 网格 bit-parity + 4 进程 CPU/gloo 引擎 e2e 全绿 + 状态字典跨 4 rank 逐位一致
 - [ ] 集成 DeepSpeed ZeRO (Stage 2/3)
-- [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'` (RIL TASK-216)
+- [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'`
 
 #### 15.6 文档与社区
 

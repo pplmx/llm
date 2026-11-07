@@ -89,7 +89,7 @@ HF `config.json`，并在 `from_pretrained` 时还原（走
 解码（KV-cache generation）：`DecoderModel.forward` 自动构造掩码时按**有效 key
 历史长度**（`key_len = cache 长度 + 当前 token`）生成 `[Sq, Sk]` 矩形掩码，而不是
 按 1-token 输入生成退化方形掩码——否则 sink + window 永远无法约束已缓存的过去
-key，长程流式生成的稀疏方案形同虚设（RIL TASK-245）。eager 生成循环因此能
+key，长程流式生成的稀疏方案形同虚设。eager 生成循环因此能
 端到端工作：稀疏 decode 会改变输出，而全 coverage 稀疏 decode 与稠密 decode
 一致（CPU parity 验证在 `tests/core/attn/test_sparse_model_config.py`。
 
@@ -97,7 +97,7 @@ key，长程流式生成的稀疏方案形同虚设（RIL TASK-245）。eager �
 构造 `run_attn_mask`，因此 decoder 的自动稀疏掩码不会触发。当被服务的模型带有
 `attn_sparse` 时，engine 会把该方案的 sink+window pattern 按**绝对位置**折进
 `run_attn_mask`（与因果掩码 OR 合并），从而在 batched/paged 服务路径真正约束
-key（RIL TASK-246）。CPU parity 验证在
+key。CPU parity 验证在
 `tests/serving/test_engine.py::test_engine_folds_sparse_attention_into_run_attn_mask`：
 同权重下稀疏 prefill 改变输出，全 coverage 稀疏与稠密逐位一致，掩码本身也会把
 旧的非 sink/窗口外 key 标为 masked。
@@ -105,11 +105,11 @@ key（RIL TASK-246）。CPU parity 验证在
 服务端性能：该稀疏 pattern 掩码随 engine 生命周期不变，因此只**构建一次并缓存**
 （键控 scheme + `k_len`，scheme 变更或 resize 时失效），不再每个 decode 步重算
 `[k_len, k_len]` 的布尔掩码；且缓存落在 `self.device`，避免 builder 返回 CPU 张量
-与 CUDA 因果掩码 OR 时的设备不匹配（RIL TASK-247）。验证在
+与 CUDA 因果掩码 OR 时的设备不匹配。验证在
 `tests/serving/test_engine.py::test_engine_caches_sparse_pattern_mask`。
 
 后端兼容性：稀疏掩码只有走 sdpa 包装器的 backend（`attn_impl="mha"` / `"mla"`）会真正
 消费；`flash_attn` 后端明确**忽略** `attn_mask`，因此 `ModelConfig.attn_sparse` 配
 `attn_impl="flash_attn"` 会在构造时直接抛 `NotImplementedError`（与 `use_alibi` 对
-非 mha 的处理一致），避免用户以为稀疏生效、实际跑稠密（RIL TASK-248）。验证在
+非 mha 的处理一致），避免用户以为稀疏生效、实际跑稠密。验证在
 `tests/core/attn/test_sparse_model_config.py::test_sparse_scheme_rejects_flash_attn_backend`。

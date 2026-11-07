@@ -100,7 +100,7 @@ llm serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（�
 
 | 变量                                  | 默认值   | 说明                                                                                                                       |
 | ------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `LLM_SERVING_PORT`                    | `8000`   | 监听端口（RIL TASK-326）；`LLM_SERVING_PORT=9000` 覆盖默认的 8000                                                          |
+| `LLM_SERVING_PORT`                    | `8000`   | 监听端口；`LLM_SERVING_PORT=9000` 覆盖默认的 8000                                                                          |
 | `LLM_SERVING_MODEL_PATH`              | None     | 训练 checkpoint：v2 三件套的 stem（或 `.safetensors` 路径），也接受旧式单文件 `.pt`；None = dummy 模型                     |
 | `LLM_SERVING_TOKENIZER_PATH`          | None     | tokenizer pickle 或 HF repo id                                                                                             |
 | `LLM_SERVING_TOKENIZER_TYPE`          | simple   | `simple` / `hf`                                                                                                            |
@@ -108,7 +108,7 @@ llm serve [OPTIONS]   # 实际参数全部来自 LLM_SERVING_* 环境变量（�
 | `LLM_SERVING_GENERATION_BACKEND`      | eager    | `eager` / `batched`（speculative 需要 target + draft 双模型，走 Python API，见 [Inference Guide](../guides/inference.md)） |
 | `LLM_SERVING_COMPILE_MODEL`           | false    | 启动时 torch.compile                                                                                                       |
 | `LLM_SERVING_MAX_CONCURRENT_REQUESTS` | 4        | 并发请求上限（semaphore）                                                                                                  |
-| `LLM_SERVING_MAX_REQUEST_BYTES`       | 16777216 | 请求体大小上限（字节）；超限在模型执行前直接返回 `413`（RIL ISS-171）                                                      |
+| `LLM_SERVING_MAX_REQUEST_BYTES`       | 16777216 | 请求体大小上限（字节）；超限在模型执行前直接返回 `413`                                                                     |
 | `LLM_SERVING_REQUEST_TIMEOUT`         | 60.0     | 单请求超时（秒）                                                                                                           |
 
 #### 安全与可观测

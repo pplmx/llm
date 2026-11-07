@@ -50,7 +50,7 @@
 
 ---
 
-## 训练中的周期性评估 (RIL TASK-329)
+## 训练中的周期性评估
 
 除每个 epoch 结束时的 `_run_validation_epoch()` 外，框架还支持**训练中按步（per-N-step）的轻量 LM 评估**：每隔
 `training.eval_interval` 个 optimizer step，用 `LMTask` 在指定语料上计算 perplexity/accuracy 等指标（走

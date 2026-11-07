@@ -26,7 +26,7 @@
   不受 `max_seq_len` 的加法位置表限制）。融合投影维度取 datamodule 的
   `embed_dim`（`ModalFusion.modal_dim`），即 encoder 输出维度，而不默认
   `hidden_size`；`MultimodalModel` 以 in-forward encoder 的 `embed_dim` 为准，
-  维度失配会 fail-fast 报错（RIL ISS-354）。
+  维度失配会 fail-fast 报错。
 - `--task multimodal`（`MultimodalTask` + `MultimodalDataModule`，已注册）：标准训练
   循环，batch 携带 `modal_embeds`，以 CE 优化文本 next-token。
 

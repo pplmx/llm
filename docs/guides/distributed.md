@@ -35,7 +35,7 @@ communication overhead even when sharding isn't needed. Pick
 FSDP when you're hitting OOM with `batch_size=1` and the model
 parameters are the bottleneck, not the activations.
 
-**ZeRO Stage-1** (`parallel_strategy="zero"`, RIL TASK-269) sits between
+**ZeRO Stage-1** (`parallel_strategy="zero"`) sits between
 the two: like DDP, every rank keeps the full model and gradients; like FSDP,
 it shards the **optimiser state** across ranks (~1/`world_size` per rank) and
 all-gathers the updated weights each step. It is the right pick when the
@@ -114,11 +114,11 @@ All three knobs live on `DistributedConfig` and are documented in
 the config help string. The defaults are conservative and safe to
 leave alone:
 
-| Knob                        | Default      | What it does                                                                                                                                                                                                             |
-| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `fsdp_mixed_precision`      | `"bf16"`     | Parameter / gradient / buffer dtype. `"bf16"` is recommended on modern GPUs. `"fp16"` is rejected (an FP16 shard needs a loss scaler the framework doesn't wire — RIL ISS-188). `"fp32"` skips mixed precision entirely. |
-| `fsdp_auto_wrap_min_params` | `10_000_000` | Size-based auto-wrap threshold. Modules with at least this many parameters get their own FSDP unit. Set to `0` to disable auto-wrap and wrap the whole model as one unit.                                                |
-| `fsdp_cpu_offload`          | `false`      | Offload params to CPU when idle. Trades throughput for memory — only useful when the model is too big to fit even after BF16 sharding.                                                                                   |
+| Knob                        | Default      | What it does                                                                                                                                                                                               |
+| --------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fsdp_mixed_precision`      | `"bf16"`     | Parameter / gradient / buffer dtype. `"bf16"` is recommended on modern GPUs. `"fp16"` is rejected (an FP16 shard needs a loss scaler the framework doesn't wire). `"fp32"` skips mixed precision entirely. |
+| `fsdp_auto_wrap_min_params` | `10_000_000` | Size-based auto-wrap threshold. Modules with at least this many parameters get their own FSDP unit. Set to `0` to disable auto-wrap and wrap the whole model as one unit.                                  |
+| `fsdp_cpu_offload`          | `false`      | Offload params to CPU when idle. Trades throughput for memory — only useful when the model is too big to fit even after BF16 sharding.                                                                     |
 
 ### Auto-wrap policy in detail
 
@@ -290,7 +290,7 @@ Requirements and constraints (all fail loudly, not silently wrong):
   the MLP intermediate width evenly; with MoE it must also divide
   `num_experts` evenly.
 - TP supports the `mha`, `flash_attn` and `mla` attention backends and,
-  since TASK-207, MoE via expert parallelism (the gate stays replicated and
+  since then, MoE via expert parallelism (the gate stays replicated and
   the experts are split across ranks by expert index; the full state dict is
   rebuilt rank-major on save so `llm serve` / resume need no special
   handling). `sdpa` is a *functional*, not a registered `attn_impl` — every
@@ -302,7 +302,7 @@ Requirements and constraints (all fail loudly, not silently wrong):
 
 Pipeline parallelism (`parallel_strategy="pp"`) places **different layers of
 the model on different devices** and streams activations forward / gradients
-backward between them (RIL DEC-049 / TASK-210). It is the option when a single
+backward between them. It is the option when a single
 GPU cannot hold the model *at all* — TP shards individual weight matrices
 across devices, PP chunks the layer stack itself, cutting each device's
 activation + weight footprint to ~1/`pp_size` of the whole.
@@ -334,7 +334,7 @@ checkpoints, `llm serve` and resume are unchanged.
 ### PP + data-parallel 2D
 
 Set `pp_size` smaller than the total number of ranks to add a data-parallel
-dimension (RIL TASK-211). Ranks are laid out in a row-major `[DP][PP]` grid —
+dimension. Ranks are laid out in a row-major `[DP][PP]` grid —
 **pipeline groups are contiguous rank ranges** (the stage-to-stage P2P
 activation/gradient links stay intranode-friendly), DP groups are the strided
 columns that hold the *same* stage across pipeline groups:
@@ -359,7 +359,7 @@ distributed:
 `world_size` must divide evenly by `pp_size` (a non-divisor is rejected at
 wrap time).
 
-### Pipelining knobs (RIL TASK-213)
+### Pipelining knobs
 
 - **Microbatch overlap** — `pp_n_microbatches > 1` chunks each training batch
   so `ScheduleGPipe` can overlap stage compute (`n_microbatches=1` is pure
@@ -376,14 +376,14 @@ PP refuses loudly rather than silently training the wrong loss:
 
 - **Standard-loop LM tasks only** — the task must advertise
   `supports_pipeline_parallel()` (the `LMTask` family, including the `SFT` /
-  `sft` alias — since RIL TASK-304 `SFTTask` is a pure alias of
+  `sft` alias — since `SFTTask` is a pure alias of
   LanguageModelingTask and, like the parent, does not thread an
   `attention_mask` into the model). Custom-loop tasks (PPO / reward) and
   other opted-out tasks (distill / regression) are rejected at setup. `DPOTask`
   inherits the standard loop from `LanguageModelingTask`, so it passes setup and
   only fails at run time when the pipeline stage forward receives its batch dict.
 - **AMP must be bf16** (`use_amp=True` needs `amp_dtype='bfloat16'`; float16 is
-  refused, RIL TASK-214): the schedule computes AND backprops the loss inside
+  refused): the schedule computes AND backprops the loss inside
   `step()`, so a GradScaler (float16 AMP) cannot scale the loss before the
   schedule's backward. BF16 needs no loss scaling and runs every stage's
   forward/backward inside bf16 autocast.
@@ -434,7 +434,7 @@ all.
 | `tp_size`                   | `0` (= world)     | TP size for `"tp"`; `< world_size` enables TP+DP 2D     |
 | `pp_size`                   | `0` (= world)     | PP size for `"pp"`; `< world_size` enables PP+DP 2D     |
 | `pp_n_microbatches`         | `1`               | Pipeline microbatch count (overlap + memory) for `"pp"` |
-| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` (fp16 rejected, RIL ISS-188)        |
+| `fsdp_mixed_precision`      | `"bf16"`          | `"fp32"` / `"bf16"` (fp16 rejected)                     |
 | `fsdp_auto_wrap_min_params` | `10_000_000`      | Size-based auto-wrap threshold                          |
 | `fsdp_cpu_offload`          | `false`           | Offload params to CPU when idle                         |
 
@@ -506,7 +506,7 @@ uv run llm train --task stream_lm --config-path configs/ddp.yaml
   aggressive sharding), enable `fsdp_cpu_offload`, or —
   if your hardware lacks bf16 — fall back to
   `fsdp_mixed_precision="fp32"` (fp16 is rejected: an FP16 shard
-  needs a loss scaler the framework doesn't wire, RIL ISS-188).
+  needs a loss scaler the framework doesn't wire).
 
 **Q: Training is slow.**
 

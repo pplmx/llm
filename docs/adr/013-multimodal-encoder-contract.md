@@ -4,7 +4,7 @@ Date: 2026-08-23
 
 ## Status
 
-Accepted (spike slice - ROADMAP 阶段十二 / RIL DEC-058 / TASK-226)
+Accepted (spike slice - ROADMAP 阶段十二)
 
 ## Context
 

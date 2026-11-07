@@ -1,7 +1,7 @@
 # 知识蒸馏 (Knowledge Distillation)
 
 知识蒸馏把一个大/已训练模型（**teacher**）的"软"预测迁移到一个更紧凑的
-学生模型（**student**），是一种模型压缩手段（ROADMAP 13.4，RIL DEC-055）。
+学生模型（**student**），是一种模型压缩手段（ROADMAP 13.4， ）。
 本框架用 Hinton 温度缩放 KL 实现，入口是训练任务 `distill`。
 
 ## 目标损失

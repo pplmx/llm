@@ -5,7 +5,7 @@
 arXiv:2405.14734）。与 DPO 不同，SimPO **不冻结参考模型**，直接以策略自身的
 **长度归一化平均 log-prob** 作为隐式奖励，因此更省显存/算力、也没有参考模型
 漂移/续训时参考快照不一致的问题（对比 DPO 需要持久化冻结参考，见
-`docs/guides/dpo_vs_ppo.md` 与 RIL 第 60 轮结论）。
+`docs/guides/dpo_vs_ppo.md` 与 结论）。
 
 ## 公式
 
