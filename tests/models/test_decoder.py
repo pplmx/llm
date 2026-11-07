@@ -305,3 +305,87 @@ def test_decoder_model_dropout_train_eval_modes(decoder_model, input_ids_tensor,
             f"Outputs in train mode should be identical if all dropout_p are 0 (emb_p={emb_p}, attn_p={attn_p}, mlp_p={mlp_p}, "
             f"norm_first={norm_f}, pos_learned={pos_learned})"
         )
+
+
+# --- Position-encoding flags are ORTHOGONAL layers, not competing modes ---
+
+
+def test_learned_positional_encoding_adds_a_table_without_touching_rope():
+    """``pos_encoding_learned`` and ``use_rope`` live in different layers.
+
+    ``pos_encoding_learned`` toggles the additive table inside the embedding
+    layer; ``use_rope`` toggles rotations inside attention. So they compose —
+    unlike ``use_alibi``/``use_rope``, which ModelConfig rejects as mutually
+    exclusive. Nothing pinned that distinction, so a future change that made
+    learned encoding silently override RoPE would look like a refactor.
+    """
+    from llm.core.positional_encoding import PositionalEncoding
+    from llm.runtime.model_factory import ModelFactory
+    from llm.training.core.config import ModelConfig
+
+    base = {"vocab_size": 64, "hidden_size": 32, "num_layers": 1, "num_heads": 4, "max_seq_len": 32}
+
+    def build(**overrides):
+        torch.manual_seed(0)
+        config = ModelConfig(**base, **overrides)
+        return ModelFactory.from_config(config)
+
+    learned_and_rope = build(pos_encoding_learned=True, use_rope=True)
+    rope_only = build(use_rope=True)
+
+    encoding = learned_and_rope.embedding_layer.positional_encoding
+    assert isinstance(encoding, PositionalEncoding)
+    assert encoding.learned is True, "learned encoding did not reach the embedding layer"
+    assert learned_and_rope.use_rope is True, "enabling learned encoding disabled RoPE"
+
+    # The table is real parameters, and only the learned model has them.
+    learned_params = sum(p.numel() for p in learned_and_rope.parameters())
+    rope_params = sum(p.numel() for p in rope_only.parameters())
+    assert learned_params > rope_params, "pos_encoding_learned added no parameters"
+
+    # Both paths influence the output: with RoPE off the model computes something
+    # different, so the flags are not one silently winning over the other.
+    input_ids = torch.randint(0, 64, (1, 8))
+    with torch.no_grad():
+        both = learned_and_rope.eval()(input_ids).clone()
+        rope_without_learned = rope_only.eval()(input_ids).clone()
+    assert not torch.allclose(both, rope_without_learned), "the learned table had no effect when RoPE was also on"
+
+
+def test_alibi_and_rope_stay_mutually_exclusive():
+    """The contrast case: these two ARE competing modes and must be rejected."""
+    from llm.training.core.config import ModelConfig
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ModelConfig(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=1,
+            num_heads=4,
+            use_alibi=True,
+            use_rope=True,
+        )
+
+
+def test_kv_cache_flag_does_not_change_the_math():
+    """``use_kv_cache`` is a serving-storage switch, not a semantics switch.
+
+    A cache must return exactly what the uncached forward computes; if toggling
+    it moved the logits, every cached generation would drift from the reference.
+    """
+    from llm.runtime.model_factory import ModelFactory
+    from llm.training.core.config import ModelConfig
+
+    base = {"vocab_size": 64, "hidden_size": 32, "num_layers": 2, "num_heads": 4, "max_seq_len": 32}
+    input_ids = torch.randint(0, 64, (1, 8))
+
+    outputs = {}
+    for flag in (True, False):
+        torch.manual_seed(0)
+        model = ModelFactory.from_config(ModelConfig(**base, use_kv_cache=flag)).eval()
+        with torch.no_grad():
+            outputs[flag] = model(input_ids).clone()
+
+    assert torch.allclose(outputs[True], outputs[False], atol=0.0), (
+        f"use_kv_cache changed the logits (max |d|={(outputs[True] - outputs[False]).abs().max():.2e})"
+    )
