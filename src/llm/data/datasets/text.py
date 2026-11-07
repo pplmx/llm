@@ -92,7 +92,19 @@ class TextDataset(Dataset):
         except OSError as e:
             raise OSError(f"Error reading file {self.file_path}: {e}")
 
-        if not text_content:  # Handle empty file
+        if not text_content:
+            # An empty corpus yields an EMPTY dataset, which every consumer
+            # tolerates silently: a DataLoader iterates zero batches (training
+            # "finishes" instantly) and evaluation scores nothing, so the
+            # reported perplexity is `inf` — indistinguishable from a terrible
+            # model. Say it here, where the real cause is known, mirroring the
+            # zero-usable-rows warning in the SFT/DPO/reward datasets.
+            logger.warning(
+                "Text file %s is empty: the dataset will contain 0 sequences, so "
+                "training/evaluation over it does nothing. Check the --dataset-path "
+                "value and whether the corpus downloaded correctly.",
+                self.file_path,
+            )
             self.sequences: list[list[int]] = []
             return
 

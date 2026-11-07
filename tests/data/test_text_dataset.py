@@ -101,9 +101,36 @@ class TestTextDatasetInitialization:
         assert dataset.sequences[1] == all_tokens[step : step + max_len]
 
     @pytest.mark.parametrize("dummy_text_file", [""], indirect=True)  # Empty file
-    def test_empty_file(self, dummy_text_file, sample_text_tokenizer):
-        dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN)
+    def test_empty_file(self, dummy_text_file, sample_text_tokenizer, caplog):
+        """An empty corpus must WARN, not silently yield a zero-length dataset.
+
+        A 0-sequence dataset is tolerated by every consumer: a DataLoader
+        iterates zero batches, so training "finishes" instantly, and evaluation
+        scores nothing, reporting ``perplexity: inf`` — which reads as a terrible
+        model rather than an empty file. The warning names the file and the likely
+        cause, matching the zero-usable-rows warning the SFT/DPO/reward datasets
+        already emit.
+        """
+        with caplog.at_level("WARNING", logger="llm.data.datasets.text"):
+            dataset = TextDataset(str(dummy_text_file), sample_text_tokenizer, MAX_SEQ_LEN)
+
         assert len(dataset) == 0
+        warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+        assert any("is empty" in message for message in warnings), f"an empty corpus must be reported, got: {warnings}"
+        assert any(str(dummy_text_file) in message for message in warnings), (
+            "the warning should name the file so the user can check the path"
+        )
+
+    def test_non_empty_file_does_not_warn_about_being_empty(self, tmp_path, sample_text_tokenizer, caplog):
+        """The guard must not fire for a normal corpus (no noisy false positive)."""
+        corpus = tmp_path / "corpus.txt"
+        corpus.write_text("hello world this is a real corpus\n" * 4, encoding="utf-8")
+
+        with caplog.at_level("WARNING", logger="llm.data.datasets.text"):
+            dataset = TextDataset(str(corpus), sample_text_tokenizer, MAX_SEQ_LEN)
+
+        assert len(dataset) > 0
+        assert not any("is empty" in record.getMessage() for record in caplog.records)
 
     @pytest.mark.parametrize("dummy_text_file", ["short"], indirect=True)  # Text shorter than max_seq_len
     def test_text_shorter_than_max_seq_len(self, dummy_text_file, sample_text_tokenizer):
