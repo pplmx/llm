@@ -5,6 +5,7 @@ from __future__ import annotations
 import abc
 import functools
 import hashlib
+import logging
 import re
 from collections.abc import Callable, Iterator
 from importlib import import_module
@@ -19,6 +20,9 @@ TextSourceBuilder = Callable[[Any], "TextSource"]
 SOURCE_REGISTRY: Registry[TextSourceBuilder] = Registry("TextSource")
 
 _sources_registered = False
+
+
+logger = logging.getLogger(__name__)
 
 
 class TextSource(abc.ABC):
@@ -50,6 +54,7 @@ class LocalLineTextSource(TextSource):
 
     def iter_texts(self, skip: int = 0) -> Iterator[str]:
         skipped = 0
+        emitted = 0
         with self.file_path.open(encoding="utf-8") as handle:
             for line in handle:
                 stripped = line.strip()
@@ -58,7 +63,26 @@ class LocalLineTextSource(TextSource):
                 if skipped < skip:
                     skipped += 1
                     continue
+                emitted += 1
                 yield stripped
+        if emitted == 0 and skip == 0:
+            # A source that yields nothing makes the whole streaming pipeline a
+            # no-op: the dataset iterates zero rows and the engine only notices
+            # when its step budget fails to fill ("streaming corpus is empty") —
+            # minutes later, after the run has already started. Warn here, where
+            # the file is in hand, mirroring ``TextDataset``'s empty-corpus
+            # warning.
+            #
+            # Checked per ``iter_texts`` call rather than in ``__init__``: the
+            # source re-reads the file each time, so a corpus that is empty now
+            # may be appended to before the next pass, and rejecting it at
+            # construction would break that legitimate workflow.
+            logger.warning(
+                "Text source %s yielded 0 non-blank lines: the dataset will produce no "
+                "rows and training/evaluation over it does nothing. Check the "
+                "data.dataset_path value and whether the corpus downloaded correctly.",
+                self.file_path,
+            )
 
 
 class HFStreamTextSource(TextSource):
