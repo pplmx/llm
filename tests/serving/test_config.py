@@ -353,3 +353,44 @@ class TestServingCliHelp:
         assert "--port" in clean, help_render_diag(out)
         assert "uvicorn" not in clean
         assert "Starting up" not in clean
+
+
+class TestConfigPrecedence:
+    """YAML explicit values > environment variables > field defaults.
+
+    ``ServingConfig`` is a ``BaseSettings``; ``from_yaml`` builds it with
+    ``model_validate``, which merges the YAML over the env-derived defaults.
+    The consequence is easy to get wrong when reading the docs: an env var only
+    fills a field the YAML did NOT set. ``configs/serve_pretrained.yaml`` pins
+    ``host`` and ``api_key`` explicitly, so ``LLM_SERVING_HOST`` /
+    ``LLM_SERVING_API_KEY`` do nothing for that file — which is exactly the pair
+    the tutorial used to name as env-overridable.
+    """
+
+    def test_yaml_explicit_value_beats_environment(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LLM_SERVING_PORT", "7777")
+        path = tmp_path / "serve.yaml"
+        path.write_text("port: 8123\n", encoding="utf-8")
+        assert ServingConfig.from_yaml(path).port == 8123
+
+    def test_environment_fills_a_field_the_yaml_omits(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LLM_SERVING_PORT", "7777")
+        path = tmp_path / "serve.yaml"
+        path.write_text("host: 127.0.0.1\n", encoding="utf-8")
+        assert ServingConfig.from_yaml(path).port == 7777
+
+    def test_shipped_pretrained_config_pins_host_and_api_key(self):
+        """Pin the fact the tutorial now warns about.
+
+        If someone later removes those two lines from the YAML, the tutorial's
+        caveat becomes stale — this test makes that regression visible.
+        """
+        import pathlib
+
+        yaml_path = pathlib.Path(__file__).resolve().parents[2] / "configs" / "serve_pretrained.yaml"
+        raw = yaml_path.read_text(encoding="utf-8")
+        for field in ("host:", "api_key:"):
+            assert field in raw, (
+                f"serve_pretrained.yaml no longer pins {field} — update the precedence note in "
+                "docs/tutorials/03-inference.md §2.3"
+            )

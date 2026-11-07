@@ -144,7 +144,16 @@ LLM_SERVING_HOST=0.0.0.0 \
 uv run llm serve
 ```
 
-`configs/serve_pretrained.yaml` 在 `model_path` / `tokenizer_path` / `peft_*` 字段已经填好了默认值，env vars 只覆盖需要按机器调整的字段（`api_key` / `host`）。
+`configs/serve_pretrained.yaml` 在 `model_path` / `tokenizer_path` / `peft_*` 字段已经填好了默认值。
+
+**配置优先级**（`ServingConfig` 是 pydantic `BaseSettings`，`from_yaml` 走 `model_validate`）：
+
+```text
+YAML 显式写的字段  >  环境变量 LLM_SERVING_*  >  字段默认值
+```
+
+也就是说 env vars 只能填 YAML **没有显式设置**的字段。这一点对 `serve_pretrained.yaml` 尤其要注意：该文件**显式写死了 `host: 0.0.0.0` 和 `api_key`**，所以
+`LLM_SERVING_HOST` / `LLM_SERVING_API_KEY` 对它**不生效**——要改这两项得改 YAML，或另写一份不设它们的配置。
 
 ### 2.4 配置结构详解
 
