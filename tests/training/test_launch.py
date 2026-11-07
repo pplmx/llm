@@ -9,6 +9,7 @@ pin the new global-rank arithmetic and the setup wiring.
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -206,3 +207,80 @@ def test_no_library_code_seeds_the_global_torch_rng():
         offenders = re.findall(r"^.*torch\.manual_seed\(.*$", source, re.M)
         problems.append(f"{path.name}: {offenders[0].strip()[:70]}")
     assert not problems, "task code seeds the global RNG without fork_rng:\n  " + "\n  ".join(problems)
+
+
+# --- Teardown must survive a failing barrier ---
+
+
+def test_monitored_barrier_swallows_failures_so_cleanup_can_run():
+    """A failing teardown barrier must NOT prevent ``cleanup()`` from running.
+
+    ``train_worker``'s ``finally`` does ``monitored_barrier()`` and then
+    ``cleanup()``. If the barrier re-raised, the process group would never be
+    destroyed on the rank that failed — the exact wedge the monitored barrier
+    exists to avoid. ``monitored_barrier`` therefore logs and returns.
+    """
+    from unittest.mock import patch
+
+    import torch.distributed as dist
+
+    from llm.training.core.distributed import DistributedManager
+
+    with (
+        patch.object(dist, "is_available", return_value=True),
+        patch.object(dist, "is_initialized", return_value=True),
+        patch.object(dist, "get_backend", return_value="gloo"),
+        patch.object(dist, "monitored_barrier", side_effect=RuntimeError("rank missing")),
+    ):
+        # Must not raise.
+        DistributedManager.monitored_barrier()
+
+
+def test_monitored_barrier_is_a_noop_before_init():
+    """Teardown runs on paths where the group was never created."""
+    from unittest.mock import patch
+
+    import torch.distributed as dist
+
+    from llm.training.core.distributed import DistributedManager
+
+    with (
+        patch.object(dist, "is_available", return_value=True),
+        patch.object(dist, "is_initialized", return_value=False),
+        patch.object(dist, "monitored_barrier") as barrier,
+    ):
+        DistributedManager.monitored_barrier()
+        barrier.assert_not_called()
+
+
+def test_failed_checkpoint_save_leaves_no_partial_files(tmp_path):
+    """A save that dies mid-write must not leave ``.tmp`` residue behind.
+
+    Level-triggered checkpoints run unattended; a failed save that left a
+    half-written ``.tmp`` sitting beside a good trio is how a later debug
+    session mistakes garbage for a checkpoint (and how disk fills up silently).
+    """
+    import llm.training.core.checkpoint as checkpoint_module
+    from llm.models.decoder import DecoderModel
+    from llm.training.core.checkpoint import CheckpointConfig, CheckpointManager
+
+    config = {"vocab_size": 32, "hidden_size": 16, "num_layers": 1, "num_heads": 2, "max_seq_len": 16}
+    logger = logging.getLogger("test-partial")
+    logger.addHandler(logging.NullHandler())
+    manager = CheckpointManager(CheckpointConfig(checkpoint_dir=str(tmp_path), save_interval=1), rank=0, logger=logger)
+    model = DecoderModel(**config)
+
+    real_save = checkpoint_module._save_weights_safetensors
+
+    def _fail(*_args, **_kwargs):
+        raise OSError("simulated disk full")
+
+    checkpoint_module._save_weights_safetensors = _fail
+    try:
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.save_checkpoint(1, model, None, None, None, 1.0, model_config=config)
+    finally:
+        checkpoint_module._save_weights_safetensors = real_save
+
+    leftovers = sorted(p.name for p in tmp_path.iterdir())
+    assert not leftovers, f"a failed save left files behind: {leftovers}"
