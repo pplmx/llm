@@ -122,3 +122,67 @@ def test_aligner_composes_with_vision_tower_output():
     loss = aligner.loss(image_tokens, text)
     assert torch.isfinite(loss)
     assert loss.item() > 0
+
+
+# --- Numerical stability of the learnable temperature ---
+
+
+def test_logit_scale_clamps_and_stays_finite_at_extremes():
+    """A trained/desynced temperature must never produce NaN or inf.
+
+    The scale is a LEARNABLE parameter, so nothing bounds it during training:
+    an unpinned ``exp(logit_scale)`` can overflow to inf (logits inf, CE NaN) or
+    underflow to 0 (all logits zero). The module clamps the scale at 100; this
+    pins the behaviour at both ends, including the uniform-loss baseline that
+    the underflow case must degrade to gracefully.
+    """
+    import math
+
+    from llm.multimodal import ContrastiveAligner, contrastive_loss
+
+    aligner = ContrastiveAligner(image_dim=16, text_dim=16, proj_dim=8)
+    images, texts = torch.randn(4, 16), torch.randn(4, 16)
+
+    for logit_scale in (-20.0, -100.0, 100.0, 1e6):
+        with torch.no_grad():
+            aligner.logit_scale.fill_(logit_scale)
+            logits = aligner(images, texts)
+        assert torch.isfinite(logits).all(), f"logits not finite at logit_scale={logit_scale}"
+        loss = contrastive_loss(logits)
+        assert torch.isfinite(loss), f"loss not finite at logit_scale={logit_scale}"
+
+    # Underflow to scale==0 gives a uniform similarity matrix, whose InfoNCE is
+    # exactly ln(B) — a useful invariant, and the graceful degradation path.
+    with torch.no_grad():
+        aligner.logit_scale.fill_(-100.0)
+        uniform_loss = contrastive_loss(aligner(images, texts))
+    assert math.isclose(float(uniform_loss), math.log(4), rel_tol=1e-5)
+
+
+def test_siglip_loss_prefers_matched_pairs_at_realistic_temperature():
+    """Matched pairs must score lower than random ones at a usable scale.
+
+    SigLIP is a per-pair binary loss, so it lacks InfoNCE's sharp diagonal
+    contrast; the property only holds once the similarity scale is sane. At an
+    extreme scale (e.g. 1/0.07 on unnormalized random features) the negative
+    pairs dominate and the ordering can invert — documenting the realistic
+    regime here keeps the assertion honest.
+    """
+    from llm.multimodal import contrastive_loss
+
+    def logits(a: torch.Tensor, b: torch.Tensor, temperature: float) -> torch.Tensor:
+        a = torch.nn.functional.normalize(a, dim=-1)
+        b = torch.nn.functional.normalize(b, dim=-1)
+        return a @ b.T / temperature
+
+    torch.manual_seed(0)
+    random_a, random_b = torch.randn(8, 16), torch.randn(8, 16)
+    matched = torch.randn(8, 16)
+
+    for temperature in (1.0, 4.0):
+        random_loss = float(contrastive_loss(logits(random_a, random_b, temperature), sigmoid=True))
+        matched_loss = float(contrastive_loss(logits(matched, matched.clone(), temperature), sigmoid=True))
+        assert matched_loss < random_loss, (
+            f"at temperature={temperature} SigLIP scored matched pairs ({matched_loss:.4f}) "
+            f"worse than random ones ({random_loss:.4f})"
+        )
