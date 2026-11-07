@@ -216,3 +216,64 @@ def test_infrastructure_reads_bypass_the_bootstrap():
     # A normal read does populate it.
     assert registry.names() == ["from_warmup"]
     assert calls == ["warmup"]
+
+
+def test_a_plugin_cannot_take_a_builtin_exporter_name(caplog):
+    """Built-ins win: the docstring's "reference implementation" guarantee, for real.
+
+    ``ensure_exporters_registered`` claims the built-ins are registered before
+    the entry-point load precisely so a plugin claiming ``onnx`` cannot replace
+    the reference exporter. That is load-order logic with no direct test on the
+    real registry — the generic ``load_entry_point_registry`` cases above use a
+    throwaway one.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from llm.export.registry import EXPORT_REGISTRY, ensure_exporters_registered
+
+    ensure_exporters_registered()
+    builtin = EXPORT_REGISTRY.get("onnx")
+
+    hijack = MagicMock()
+    hijack.name = "onnx"
+    hijack.load.return_value = "hijacked-exporter"
+
+    with (
+        patch("llm.runtime.plugins._iter_group_entry_points", return_value=[hijack]),
+        caplog.at_level("WARNING"),
+    ):
+        loaded = load_entry_point_registry("llm.export_backends", EXPORT_REGISTRY)
+
+    assert loaded == [], "the plugin should not have been registered"
+    assert EXPORT_REGISTRY.get("onnx") is builtin, "the built-in exporter was replaced by a plugin"
+    assert any("onnx" in record.getMessage() for record in caplog.records), "the collision must be logged"
+
+
+def test_registering_a_third_party_backend_makes_it_config_valid():
+    """A plugin's backend name must pass ``ServingConfig`` validation — and only it.
+
+    ``generation_backend`` is validated against ``BACKEND_REGISTRY`` at config
+    load. If that check read a stale/empty registry, a freshly registered plugin
+    would be rejected as unknown; if it passed everything through, a typo would
+    reach the server and 500 on the first request. Both directions are asserted
+    so the test cannot pass on a no-op validator.
+    """
+    from llm.generation.registry import BACKEND_REGISTRY, ensure_backends_registered
+
+    ensure_backends_registered()
+
+    # Baseline: an unregistered name is rejected (the guard is live).
+    from llm.serving.config import ServingConfig
+
+    with pytest.raises(ValueError, match="generation_backend"):
+        ServingConfig(generation_backend="_test_plugin_backend")
+
+    BACKEND_REGISTRY.replace("_test_plugin_backend", lambda **_kwargs: None)
+    try:
+        assert ServingConfig(generation_backend="_test_plugin_backend").generation_backend == "_test_plugin_backend"
+    finally:
+        BACKEND_REGISTRY._entries.pop("_test_plugin_backend", None)
+
+    # Once removed it is rejected again, proving the lookup is not cached per name.
+    with pytest.raises(ValueError, match="generation_backend"):
+        ServingConfig(generation_backend="_test_plugin_backend")

@@ -74,9 +74,14 @@ def build_onnx_exporter(
 def ensure_exporters_registered() -> None:
     """Idempotently register built-in exporters and load entry points.
 
-    Built-ins are registered BEFORE the entry-point load so a plugin
-    that claims ``onnx`` raises loudly — the built-in is the
-    reference implementation. This matches the convention in
+    Built-ins are registered BEFORE the entry-point load, so a plugin that claims
+    ``onnx`` cannot take the name: ``load_entry_point_registry`` sees it already
+    present and **skips the plugin with a warning** (pass ``overwrite=True`` to
+    replace a built-in deliberately). The built-in stays the reference
+    implementation.
+
+    Registration order is the mechanism, and the outcome is a logged skip rather
+    than an exception. Matches the convention in
     ``generation/registry.ensure_backends_registered``.
     """
     global _exporters_registered
