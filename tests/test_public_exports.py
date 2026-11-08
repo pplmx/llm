@@ -70,3 +70,55 @@ def test_key_packages_star_import_cleanly(module_name):
     assert exported == set(declared), (
         f"{module_name}: star-import produced {sorted(exported ^ set(declared))} differing from __all__"
     )
+
+
+def test_declared_entry_points_all_resolve():
+    """Every `llm.*` entry point in pyproject must load.
+
+    These are the plugin seam: `pyproject.toml` names a module path, and the
+    installed distribution is what makes it real. A typo'd path or a renamed
+    function is INVISIBLE until a user installs the package and a registry
+    silently comes up empty — the in-repo tests mock the entry-point iteration, so
+    they cannot catch it either.
+
+    Resolved from the INSTALLED distribution (importlib.metadata), so this checks
+    the same data a shipped wheel would carry.
+    """
+    from importlib.metadata import entry_points
+
+    declared = [group for group in entry_points().groups if group.startswith("llm.")]
+    assert declared, "no llm.* entry-point groups are installed — the package metadata is not active"
+
+    problems: list[str] = []
+    seen = 0
+    for group in sorted(declared):
+        for entry_point in entry_points(group=group):
+            seen += 1
+            try:
+                entry_point.load()
+            except Exception as exc:  # noqa: BLE001 - report ANY load failure
+                problems.append(f"{group}:{entry_point.name} -> {type(exc).__name__}: {exc}")
+
+    assert seen > 0, "llm.* groups exist but declare no entry points"
+    assert not problems, "entry points fail to load:\n  " + "\n  ".join(problems)
+
+
+def test_entry_point_module_paths_exist_in_the_source_tree():
+    """The declared module paths must be real files, not only importable-by-luck.
+
+    `entry_point.load()` above could succeed through a stale editable install; this
+    checks the SOURCE, so a path typo is caught even before reinstalling.
+    """
+    import importlib
+    from importlib.metadata import entry_points
+
+    problems: list[str] = []
+    for group in sorted(g for g in entry_points().groups if g.startswith("llm.")):
+        for entry_point in entry_points(group=group):
+            module_path = entry_point.value.split(":")[0]
+            try:
+                importlib.import_module(module_path)
+            except Exception as exc:  # noqa: BLE001 - report ANY import failure
+                problems.append(f"{group}:{entry_point.name} -> {module_path}: {type(exc).__name__}: {exc}")
+
+    assert not problems, "entry points name modules that do not import:\n  " + "\n  ".join(problems)
