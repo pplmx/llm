@@ -486,3 +486,56 @@ class TestConflictingRequestIdGuard:
         assert scheduler.add_sequence_if_not_conflicting(reused) is True, (
             "a FINISHED sequence still blocked id reuse — ids would be permanently consumed"
         )
+
+
+class TestSlotReuseAfterCompletion:
+    """A finished sequence must free its batch slot for a waiting one.
+
+    `test_schedule_respects_max_batch_size` only counts how many sequences one
+    `schedule()` call returns. The behaviour that makes continuous batching worth
+    anything is the NEXT step: when a running sequence finishes, its slot must go to
+    the head of the waiting queue instead of leaving a hole until every sequence is
+    done. A scheduler that never re-promoted would pass the counting test.
+    """
+
+    def test_waiting_sequence_takes_over_a_freed_slot(self):
+        scheduler = Scheduler(max_batch_size=1, max_waiting=8)
+        first = make_sequence("first")
+        scheduler.add_sequence(first)
+
+        assert [seq.request_id for seq in scheduler.schedule()] == ["first"]
+
+        second = make_sequence("second")
+        scheduler.add_sequence(second)
+        assert len(scheduler.waiting) == 1
+
+        # While the first runs, the full batch means the second waits.
+        assert [seq.request_id for seq in scheduler.schedule()] == ["first"]
+        assert len(scheduler.waiting) == 1
+
+        # The moment the first finishes, the second must be promoted.
+        first.status = RequestState.FINISHED
+        scheduled = scheduler.schedule()
+
+        assert [seq.request_id for seq in scheduled] == ["second"], (
+            f"freed slot was not reused: scheduled {[seq.request_id for seq in scheduled]}"
+        )
+        assert len(scheduler.waiting) == 0
+
+    def test_progress_is_not_blocked_by_a_long_running_sequence(self):
+        """A queued short request runs alongside a long one while capacity allows.
+
+        With room in the batch there is no reason to hold a waiting sequence back,
+        so a scheduler that only ever admitted one sequence at a time would starve
+        short requests behind long ones.
+        """
+        scheduler = Scheduler(max_batch_size=2, max_waiting=8)
+        scheduler.add_sequence(make_sequence("long"))
+        scheduler.schedule()
+
+        scheduler.add_sequence(make_sequence("short"))
+        scheduled = scheduler.schedule()
+
+        assert {seq.request_id for seq in scheduled} == {"long", "short"}, (
+            f"a waiting request was held back despite free capacity: {[s.request_id for s in scheduled]}"
+        )
