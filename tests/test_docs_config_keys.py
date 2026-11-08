@@ -353,3 +353,55 @@ def test_files_referenced_by_docs_exist() -> None:
 
     assert checked > 20, f"only {checked} file references found — the scan probably broke"
     assert not problems, "docs reference files that do not exist:\n  " + "\n  ".join(problems)
+
+
+class TestDocumentedImportsResolve:
+    """A `from llm.x import y` in the docs must name a REAL module.
+
+    Docs are instructions. `test_documented_cli_flags_exist` already checks the CLI
+    surface; the Python-import surface had no equivalent, so a renamed or removed
+    module in a guide would send readers to an ImportError.
+
+    Teaching recipes are exempt by construction: they write
+    ``# in tasks/classification_task.py`` and import the module the READER is about
+    to create, so those names are deliberately absent.
+    """
+
+    #: Modules the docs tell the reader to CREATE. ``guide-extending.md`` presents a
+    #: recipe whose code block is headed ``# in tasks/classification_task.py`` and
+    #: imports the task the reader is about to write, so the name is absent ON
+    #: PURPOSE. Listing it explicitly keeps the scan exhaustive everywhere else.
+    _CREATE_IT_YOURSELF = frozenset({"llm.training.tasks.classification_task"})
+
+    @classmethod
+    def _documented_module_imports(cls):
+        import re
+
+        for path in _all_docs():
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for match in re.finditer(r"\bfrom\s+(llm[\w.]*)\s+import\b", text):
+                if match.group(1) in cls._CREATE_IT_YOURSELF:
+                    continue
+                yield path, match.group(1)
+
+    def test_documented_llm_modules_import(self):
+        import importlib
+
+        problems: list[str] = []
+        checked = 0
+        for path, module_name in self._documented_module_imports():
+            # `llm.X` is the shape used in placeholder examples.
+            if module_name == "llm.X":
+                continue
+            checked += 1
+            try:
+                importlib.import_module(module_name)
+            except ModuleNotFoundError:
+                # Recipes that teach you to CREATE a module reference it before it
+                # exists. Only flag the ones sitting under an existing package that
+                # the repo actually ships.
+                problems.append(f"{path.relative_to(_DOCS.parent)}: {module_name}")
+
+        assert checked > 0, "no `from llm... import` statements found in the docs — the scan is broken"
+        # Nothing may fail that is not a documented "you create this" recipe.
+        assert not problems, "docs import modules that do not exist:\n  " + "\n  ".join(sorted(set(problems)))
