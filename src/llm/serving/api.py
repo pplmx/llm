@@ -5,7 +5,7 @@ This module wires the pieces together:
 - :class:`RequestIDMiddleware` (request correlation + access log)
 - exception handlers that map every failure to the structured envelope
   in :mod:`llm.serving.errors`
-- the three routers (health, generate, chat)
+- the four routers (health, generate, chat, completions)
 - :class:`prometheus_fastapi_instrumentator.Instrumentator`
 
 All endpoint logic lives in the routers; this file stays focused on
@@ -47,6 +47,7 @@ from llm.serving.generation_service import ServingGenerationService
 from llm.serving.metrics import METRICS
 from llm.serving.middleware import RequestBodySizeLimit, RequestIDMiddleware
 from llm.serving.routers import chat as chat_router
+from llm.serving.routers import completions as completions_router
 from llm.serving.routers import generate as generate_router
 from llm.serving.routers import health as health_router
 
@@ -143,6 +144,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     # module-level attributes without instantiating a real model.
     generate_router.configure(config, generation_service, inference_semaphore, METRICS)
     chat_router.configure(config, inference_semaphore, METRICS)
+    completions_router.configure(config, inference_semaphore, METRICS)
 
     _log_server_config(generation_service, config)
 
@@ -228,6 +230,7 @@ app.add_middleware(RequestIDMiddleware)
 app.include_router(health_router.router)
 app.include_router(generate_router.router)
 app.include_router(chat_router.router)
+app.include_router(completions_router.router)
 
 # Prometheus RED metrics + custom /metrics endpoint.
 #

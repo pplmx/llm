@@ -307,6 +307,151 @@ class ChatCompletionRequest(BaseModel):
         return self
 
 
+# OpenAI legacy Completions API (`POST /v1/completions`).
+#
+# This is the pre-chat OpenAI surface. It is still what a lot of tooling
+# speaks: the official SDK exposes `client.completions.create`, and
+# LangChain's `OpenAI` (as opposed to `ChatOpenAI`) / text-davinci-era
+# prompt templates, plus a long tail of evaluation harnesses, call it
+# directly. Without the route those clients got a bare 404 even though the
+# server can generate text perfectly well.
+#
+# OpenAI accepts either a single `prompt` string or a list of them. The list
+# form is supported natively: the router emits one `CompletionChoice` per
+# prompt, in order, matching OpenAI's contract rather than joining the
+# prompts into one request.
+
+
+class CompletionRequest(BaseModel):
+    """OpenAI-compatible legacy completions request."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    model: str = Field("llm", description="Model ID (ignored, for compatibility).")
+    prompt: str | list[str] = Field(
+        ...,
+        description=(
+            "Prompt(s) to complete. A single string yields one choice; a list of up to "
+            f"{MAX_BATCH_PROMPTS} strings yields one choice per prompt, in order."
+        ),
+    )
+    max_tokens: int = Field(50, ge=1, le=4096, description="Maximum tokens to generate per prompt.")
+    temperature: float = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature.")
+    top_p: float | None = Field(
+        None, gt=0.0, le=1.0, description="Nucleus sampling parameter. 1.0 means no truncation."
+    )
+    stream: bool = Field(False, description="Whether to stream responses as server-sent events.")
+    stop: str | list[str] | None = Field(
+        None,
+        description="Stop sequence(s). Accepts a single string or a list of up to 4 strings.",
+    )
+    presence_penalty: float = Field(0.0, ge=-2.0, le=2.0, description="OpenAI-compatible per-presence penalty.")
+    frequency_penalty: float = Field(0.0, ge=-2.0, le=2.0, description="OpenAI-compatible per-frequency penalty.")
+    logit_bias: dict[str, float] | None = Field(
+        None,
+        description="OpenAI-compatible per-token additive bias. JSON keys are token ids (as strings).",
+    )
+
+    # Declared-but-unsupported knobs, mirroring ``ChatCompletionRequest``:
+    # silently ignoring them yields a 200 whose behaviour differs from what the
+    # client asked for.
+    n: int | None = Field(None, description="UNSUPPORTED: multiple completions per request.")
+    seed: int | None = Field(None, description="UNSUPPORTED: sampling reproducibility.")
+    stream_options: dict[str, Any] | None = Field(None, description="UNSUPPORTED: stream usage reporting.")
+
+    @field_validator("prompt")
+    @classmethod
+    def _check_prompt(cls, v: str | list[str]) -> str | list[str]:
+        prompts = [v] if isinstance(v, str) else v
+        if not prompts:
+            raise ValueError("prompt must be a non-empty string or a non-empty list of strings")
+        if len(prompts) > MAX_BATCH_PROMPTS:
+            raise ValueError(f"prompt list may contain at most {MAX_BATCH_PROMPTS} entries")
+        for s in prompts:
+            if not isinstance(s, str):
+                raise TypeError(f"each prompt must be a str, got {type(s).__name__}")
+            if not s:
+                raise ValueError("each prompt must be a non-empty string")
+            if len(s) > MAX_PROMPT_CHARS:
+                raise ValueError(f"each prompt may be at most {MAX_PROMPT_CHARS} characters")
+        return v
+
+    @field_validator("stop")
+    @classmethod
+    def _check_stop(cls, v):
+        return _validate_stop(v)
+
+    @model_validator(mode="after")
+    def _reject_unsupported_knobs(self) -> CompletionRequest:
+        """Refuse knobs this server cannot honour, instead of ignoring them.
+
+        Same contract as :meth:`ChatCompletionRequest._reject_unsupported_knobs`.
+        ``n=1`` is the OpenAI default and means "one completion", which is
+        exactly what this server does, so it is accepted.
+        """
+        unsupported = {
+            "n": self.n,
+            "seed": self.seed,
+            "stream_options": self.stream_options,
+        }
+        requested = [name for name, value in unsupported.items() if value is not None and value != 1]
+        if requested:
+            raise ValueError(
+                f"unsupported completion parameter(s): {', '.join(sorted(requested))}. "
+                "This server generates a single completion per prompt and does not implement "
+                "seeding or streaming usage reporting; remove the parameter instead of having "
+                "it silently ignored."
+            )
+        return self
+
+
+class CompletionChoice(BaseModel):
+    """A single legacy-completions choice."""
+
+    text: str = Field(..., description="Generated text (prompt is NOT echoed).")
+    index: int = Field(..., description="Index of this choice.")
+    finish_reason: Literal["stop", "length"] | None = Field(None, description="Reason for stopping.")
+    logprobs: None = Field(None, description="Unsupported; always null.")
+
+
+class CompletionUsage(BaseModel):
+    """Token usage statistics for legacy completions."""
+
+    prompt_tokens: int = Field(..., description="Number of tokens across all prompts.")
+    completion_tokens: int = Field(..., description="Number of generated tokens across all choices.")
+    total_tokens: int = Field(..., description="Total tokens used.")
+
+
+class CompletionResponse(BaseModel):
+    """OpenAI-compatible legacy completions response."""
+
+    id: str = Field(default_factory=lambda: f"cmpl-{uuid.uuid4().hex[:12]}")
+    object: Literal["text_completion"] = "text_completion"
+    created: int = Field(default_factory=lambda: int(time.time()))
+    model: str = Field("llm", description="Model used.")
+    choices: list[CompletionChoice] = Field(..., description="One choice per prompt, in order.")
+    usage: CompletionUsage = Field(..., description="Token usage.")
+
+
+class CompletionChunkChoice(BaseModel):
+    """A choice in a streaming legacy-completions chunk."""
+
+    text: str = Field("", description="Delta text for this chunk.")
+    index: int = Field(0, description="Index of the prompt this delta belongs to.")
+    finish_reason: Literal["stop", "length"] | None = None
+    logprobs: None = None
+
+
+class CompletionChunk(BaseModel):
+    """OpenAI-compatible streaming chunk for legacy completions."""
+
+    id: str = Field(default_factory=lambda: f"cmpl-{uuid.uuid4().hex[:12]}")
+    object: Literal["text_completion"] = "text_completion"
+    created: int = Field(default_factory=lambda: int(time.time()))
+    model: str = "llm"
+    choices: list[CompletionChunkChoice] = Field(..., description="Chunk choices.")
+
+
 class ChatCompletionUsage(BaseModel):
     """Token usage statistics."""
 

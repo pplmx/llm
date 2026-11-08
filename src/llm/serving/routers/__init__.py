@@ -2,12 +2,14 @@
 
 Each router owns one logical endpoint group:
 
-- ``health`` — liveness/readiness probes (``/health``).
+- ``health`` — liveness/readiness probes (``/health``, ``/v1/models``).
 - ``generate`` — text-generation endpoints (``/generate``,
   ``/batch_generate``).
 - ``chat`` — OpenAI-compatible chat completions (``/v1/chat/completions``).
+- ``completions`` — OpenAI-compatible legacy text completions
+  (``/v1/completions``).
 """
 
-from llm.serving.routers import chat, generate, health
+from llm.serving.routers import chat, completions, generate, health
 
-__all__ = ["chat", "generate", "health"]
+__all__ = ["chat", "completions", "generate", "health"]
