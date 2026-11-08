@@ -537,7 +537,18 @@ docker run -p 8000:8000 \
   llm serve
 ```
 
-`compose.yml` 已经把这个串好，可以直接 `docker compose up llm serve`。
+`compose.yml` 已经把这个串好。镜像默认 `LLM_SERVING_HOST=0.0.0.0`，而
+lifespan 守卫拒绝在没有 `api_key` 时绑定非回环地址，所以**密钥是必需的**——
+`compose.yml` 用 `${LLM_SERVING_API_KEY:?...}` 声明了这一点，未设置时
+`docker compose` 在解析阶段就会中止并说明该设哪个变量，而不是等容器启动几秒后再失败：
+
+```bash
+export LLM_SERVING_API_KEY=$(openssl rand -hex 32)
+docker compose up -d          # 或：just compose-up
+```
+
+要加载某个 checkpoint，再导出 `LLM_SERVING_MODEL_PATH`（默认留空 = 不加载权重，
+用配置里的 arch 字段构建 dummy 模型）：**不**设置它时容器启动的是随机初始化模型。
 
 ### 7.4 客户端集成
 
