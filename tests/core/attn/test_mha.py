@@ -639,3 +639,81 @@ def test_mha_rope_rotates_keys_per_position():
         _, (k_pos0, _) = rope_mha(x, use_cache=True, start_pos=0)
         _, (k_pos1, _) = rope_mha(x, use_cache=True, start_pos=1)
     assert not torch.allclose(k_pos0, k_pos1, atol=1e-5)
+
+
+class TestCausalMaskingIsReal:
+    """`test_mha_causal` only asserts the flag and the output shape.
+
+    Its own comment admits "further checks could involve comparing outputs with a
+    manually created causal mask" — so a completely non-functional mask would pass
+    it. These tests measure the INFLUENCE STRUCTURE instead: perturb one input
+    position and see which output positions move. That is independent of the
+    implementation (no mask tensor to replicate) and directly encodes the
+    definition of causality.
+
+    ``norm_first=False`` is used deliberately. With the default pre-norm the
+    residual stream dominates each position, so cross-position influence shrinks
+    to ~1e-7 and a threshold test cannot distinguish structures; post-norm makes
+    the difference visible.
+    """
+
+    @staticmethod
+    def _influence_matrix(model, hidden_states, *, threshold=1e-3, delta=100.0):
+        """Return ``matrix[perturbed][affected]`` for a single forward batch."""
+        sequence_length = hidden_states.size(1)
+        with torch.no_grad():
+            baseline = model(hidden_states)
+            matrix = []
+            for perturbed in range(sequence_length):
+                probe = hidden_states.clone()
+                probe[0, perturbed] += delta
+                shifted = model(probe)
+                per_position = (shifted - baseline).abs()[0].abs().max(dim=-1).values
+                matrix.append([float(value) > threshold for value in per_position])
+        return matrix
+
+    def test_causal_attention_is_lower_triangular(self):
+        """Position j may only influence positions j..T-1 (the future, never the past)."""
+        torch.manual_seed(0)
+        model = MultiHeadAttention(
+            hidden_size=32,
+            num_heads=4,
+            num_kv_heads=4,
+            is_causal=True,
+            norm_first=False,
+            p=0.0,
+        ).eval()
+        hidden_states = torch.randn(1, 6, 32)
+        matrix = self._influence_matrix(model, hidden_states)
+
+        for perturbed, affected in enumerate(matrix):
+            expected = [position >= perturbed for position in range(6)]
+            assert affected == expected, (
+                f"perturbing position {perturbed} affected {affected}, expected {expected} — "
+                "the causal mask is not restricting attention to the past"
+            )
+
+    def test_non_causal_attention_lets_every_position_see_every_other(self):
+        """The negative control: without the mask, influence must be dense.
+
+        This is what makes the causal test meaningful — if both settings produced a
+        triangular matrix, the causal test would pass on an implementation that
+        simply always masks.
+        """
+        torch.manual_seed(0)
+        model = MultiHeadAttention(
+            hidden_size=32,
+            num_heads=4,
+            num_kv_heads=4,
+            is_causal=False,
+            norm_first=False,
+            p=0.0,
+        ).eval()
+        hidden_states = torch.randn(1, 6, 32)
+        matrix = self._influence_matrix(model, hidden_states)
+
+        for perturbed, affected in enumerate(matrix):
+            assert all(affected), (
+                f"perturbing position {perturbed} affected only {affected} — "
+                "non-causal attention should propagate to every position"
+            )
