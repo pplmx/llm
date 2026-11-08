@@ -134,3 +134,64 @@ def test_chat_completion_request_caps_messages_and_content():
     # Legit list still validates.
     req = ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}])
     assert req.messages[0].content == "hi"
+
+
+# --- Unsupported OpenAI knobs must be REFUSED, not silently dropped ---
+
+
+class TestUnsupportedChatKnobs:
+    """A compatibility surface must not accept a parameter and ignore it.
+
+    With pydantic's default ``extra="ignore"``, a client sending ``n=3`` or
+    ``stream_options={"include_usage": true}`` got a 200 whose behaviour differed
+    from the request: one completion instead of three, no usage in the stream.
+    The client had no way to notice. These knobs are now declared and rejected
+    with a message naming the field.
+    """
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("n", 3),
+            ("seed", 42),
+            ("response_format", {"type": "json_object"}),
+            ("stream_options", {"include_usage": True}),
+            ("tools", [{"type": "function"}]),
+        ],
+    )
+    def test_unsupported_knob_is_rejected_by_name(self, field, value):
+        from llm.serving.schemas import ChatCompletionRequest
+
+        with pytest.raises(ValueError, match=field):
+            ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], **{field: value})
+
+    def test_plain_request_still_validates(self):
+        """The guard must not disturb a request that asks for nothing exotic."""
+        from llm.serving.schemas import ChatCompletionRequest
+
+        request = ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}])
+        assert request.n is None
+        assert request.seed is None
+        assert request.stream_options is None
+
+    def test_n_equals_one_is_accepted(self):
+        """``n=1`` is what this server always does, so it is not a lost request."""
+        from llm.serving.schemas import ChatCompletionRequest
+
+        request = ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], n=1)
+        assert request.n == 1
+
+    def test_several_unsupported_knobs_are_all_named(self):
+        """The error must list every offending field, not just the first."""
+        from llm.serving.schemas import ChatCompletionRequest
+
+        with pytest.raises(ValueError, match="n") as excinfo:
+            ChatCompletionRequest(
+                messages=[{"role": "user", "content": "hi"}],
+                n=2,
+                seed=7,
+                tools=[{"type": "function"}],
+            )
+        message = str(excinfo.value)
+        for name in ("n", "seed", "tools"):
+            assert name in message, f"{name} missing from: {message}"

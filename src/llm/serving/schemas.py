@@ -2,9 +2,9 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Request-input bounds — defense-in-depth against client memory-exhaustion
 # DoS. The schema caps are a fast 422 fail BEFORE encoding;
@@ -226,6 +226,16 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request."""
 
+    # ``extra="ignore"`` is pydantic's default and is what this model used
+    # implicitly: ANY unrecognised OpenAI field was accepted and dropped. For a
+    # compatibility surface that is the worst option — a client sending
+    # ``n=3`` / ``seed=42`` / ``stream_options={"include_usage": true}`` got a
+    # 200 with silently different behaviour. The common unsupported knobs are
+    # now DECLARED below so they can be refused with a clear message; fields we
+    # have never heard of still pass through (clients send plenty of harmless
+    # extras).
+    model_config = ConfigDict(extra="ignore")
+
     model: str = Field("llm", description="Model ID (ignored, for compatibility).")
     messages: list[ChatMessage] = Field(
         ...,
@@ -260,6 +270,41 @@ class ChatCompletionRequest(BaseModel):
         None,
         description="OpenAI-compatible per-token additive bias. JSON keys are token ids (as strings); values are added to the affected logits before sampling.",
     )
+
+    # --- Declared-but-unsupported OpenAI knobs -----------------------------
+    # Each defaults to the value that means "not requested", and a validator
+    # rejects any other value. Without this they were silently dropped (see the
+    # ``model_config`` note above).
+    n: int | None = Field(None, description="UNSUPPORTED: multiple completions per request.")
+    seed: int | None = Field(None, description="UNSUPPORTED: sampling reproducibility.")
+    response_format: dict[str, Any] | None = Field(None, description="UNSUPPORTED: structured output.")
+    stream_options: dict[str, Any] | None = Field(None, description="UNSUPPORTED: stream usage reporting.")
+    tools: list[Any] | None = Field(None, description="UNSUPPORTED: tool/function calling.")
+
+    @model_validator(mode="after")
+    def _reject_unsupported_knobs(self) -> ChatCompletionRequest:
+        """Refuse knobs this server cannot honour, instead of ignoring them.
+
+        Silently accepting them gives a 200 whose behaviour differs from what
+        the client asked for — the client has no way to notice. Answering with a
+        4xx that names the field is the honest contract.
+        """
+        unsupported = {
+            "n": self.n,
+            "seed": self.seed,
+            "response_format": self.response_format,
+            "stream_options": self.stream_options,
+            "tools": self.tools,
+        }
+        requested = [name for name, value in unsupported.items() if value is not None and value != 1]
+        if requested:
+            raise ValueError(
+                f"unsupported chat-completion parameter(s): {', '.join(sorted(requested))}. "
+                "This server generates a single completion and does not implement structured "
+                "output, tool calling, seeding, or streaming usage reporting; remove the "
+                "parameter instead of having it silently ignored."
+            )
+        return self
 
 
 class ChatCompletionUsage(BaseModel):
