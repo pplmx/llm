@@ -396,3 +396,41 @@ def test_chat_completions_stream_does_not_drop_prompt_prefix_token(client, monke
             if content is not None:
                 streamed.append(content)
         assert streamed == ["u", "sually", " done"]
+
+
+def test_stream_terminal_chunk_carries_a_finish_reason(client):
+    """The last data chunk before ``[DONE]`` must report WHY generation ended.
+
+    OpenAI's SSE contract puts ``finish_reason`` on a terminal chunk with an
+    empty delta; clients read it to distinguish a natural stop from a truncated
+    response. The existing streaming test only asserts that ``[DONE]`` is
+    present, so a server that ended the stream with a bare content chunk would
+    pass while every well-behaved client saw ``finish_reason: null``.
+    """
+    import json
+
+    payload = {
+        "messages": [{"role": "user", "content": "hello"}],
+        "max_tokens": 10,
+        "stream": True,
+    }
+
+    with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+        assert response.status_code == 200
+        data_lines = [line for line in response.iter_lines() if line and line.startswith("data: ")]
+
+    assert data_lines[-1] == "data: [DONE]", "the stream must terminate with [DONE]"
+    body_lines = data_lines[:-1]
+    assert body_lines, "the stream carried no data chunks"
+
+    # Everything except the terminal chunk carries delta content.
+    terminal = json.loads(body_lines[-1][len("data: ") :])
+    finish_reason = terminal["choices"][0]["finish_reason"]
+    assert finish_reason in {"stop", "length"}, f"terminal chunk finish_reason was {finish_reason!r}"
+    assert terminal["choices"][0]["delta"].get("content") in (None, ""), (
+        "the terminal chunk must carry an EMPTY delta, not more content"
+    )
+
+    # Every chunk shares one completion id (clients group the stream by it).
+    ids = {json.loads(line[len("data: ") :])["id"] for line in body_lines}
+    assert len(ids) == 1, f"chunks disagreed on the completion id: {sorted(ids)}"

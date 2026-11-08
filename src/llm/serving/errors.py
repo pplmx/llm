@@ -15,6 +15,15 @@ that the global handler maps to an envelope). The envelope shape is::
 The HTTP status is set by the ``status_code`` field on ``APIError`` (or by
 mapping ``ErrorCode`` to its default status). The X-Request-ID middleware
 sets ``request.state.request_id`` and echoes it on the response header.
+
+**Relationship to the OpenAI error contract.** OpenAI returns
+``{"error": {"message", "type", "param", "code"}}``. This envelope shares
+``message`` and ``code`` but adds ``details`` / ``request_id`` and does NOT emit
+``type`` / ``param`` — it is this project's own shape, kept richer on purpose
+(the field-level validation context under ``details`` is more useful
+server-side than a bare ``param`` string). Clients that only read
+``error.message`` work unchanged; a client that requires ``error.type`` will
+not. ``/v1/chat/completions`` is OpenAI-SHAPED, not a strict drop-in.
 """
 
 from __future__ import annotations
