@@ -807,3 +807,45 @@ def test_speculative_backend_streams():
     # doesn't blow up and yields the prompt + something.
     assert out.startswith("abc")
     assert len(out) >= len("abc")
+
+
+def test_speculative_with_identical_draft_accepts_everything():
+    """When the draft IS the target, acceptance is 1.0 and the output must match.
+
+    The module docstring's claim #2 is that the sampled output distribution
+    matches the target's — but every existing test runs at ``temperature=0.0``
+    (greedy), so the SAMPLING path (acceptance ratio, residual correction) was
+    never exercised against its defining property.
+
+    With ``draft is target`` the ratio ``p/q`` is exactly 1 everywhere, so every
+    draft token must be accepted and the emitted tokens must equal what the target
+    alone would sample from the same RNG stream. This is the one case where the
+    equality is exact rather than statistical, so it isolates the acceptance math
+    from sampling noise.
+    """
+    tokenizer = StubTokenizer()
+    model = _make_tiny_decoder(seed=0).to(DEFAULT_DEVICE).eval()
+
+    prompt = "hello"
+    torch.manual_seed(1234)
+    reference = eager_generate(model, tokenizer, prompt, max_new_tokens=8, temperature=0.9, use_cache=False)
+
+    torch.manual_seed(1234)
+    speculative = "".join(
+        speculative_generate(
+            model,
+            model,  # identical draft
+            tokenizer,
+            prompt,
+            max_new_tokens=8,
+            gamma=4,
+            temperature=0.9,
+        )
+    )
+
+    # ``eager_generate`` returns prompt + continuation; ``speculative_generate``
+    # yields only the continuation, so compare on the continuation.
+    expected_continuation = reference[len(prompt) :] if reference.startswith(prompt) else reference
+    assert speculative == expected_continuation, (
+        f"identical draft produced {speculative!r} but target-only sampling produced {expected_continuation!r}"
+    )
