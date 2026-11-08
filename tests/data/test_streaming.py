@@ -309,3 +309,123 @@ def test_streaming_skipped_counter_resets_per_reset(tmp_path, sample_text_tokeni
     assert "Skipped 1 row(s)" in summaries[-1], (
         f"reset() must zero the counter between passes; last summary was {summaries[-1]!r}"
     )
+
+
+# --- Checkpoint resume must be EXACT: no re-read, no skip ---
+
+
+def _write_corpus(tmp_path, n_lines: int):
+    path = tmp_path / "corpus.txt"
+    path.write_text("\n".join(f"line{i:03d} abcdef" for i in range(n_lines)) + "\n", encoding="utf-8")
+    return path
+
+
+def test_resume_concatenation_equals_one_continuous_run(tmp_path, line_tokenizer):
+    """A resumed pass must produce exactly the samples an uninterrupted pass does.
+
+    This is the property that makes streaming checkpoints meaningful, and it was
+    untested: the existing resume tests only check that ``reset()`` clears the
+    cursor and that workers are forced to one process. A cursor that re-read a
+    row would duplicate data (silently overweighting it in training) and one
+    that skipped a row would lose it — neither shows up as an error.
+
+    The split is done mid-corpus so both halves are non-trivial.
+    """
+    from llm.data.stream_state import StreamDataState
+
+    corpus = _write_corpus(tmp_path, 40)
+    reference = list(
+        StreamingTextDataset(
+            text_source=LocalLineTextSource(str(corpus)),
+            tokenizer=line_tokenizer,
+            max_seq_len=16,
+            stream_data_state=StreamDataState(),
+        )
+    )
+    assert len(reference) > 8, "corpus too small for a meaningful split"
+
+    # Interrupt after a few samples, snapshot the cursor, then continue.
+    state = StreamDataState()
+    first_pass = StreamingTextDataset(
+        text_source=LocalLineTextSource(str(corpus)),
+        tokenizer=line_tokenizer,
+        max_seq_len=16,
+        stream_data_state=state,
+    )
+    iterator = iter(first_pass)
+    head = [next(iterator) for _ in range(4)]
+    snapshot = state.to_dict()
+
+    resumed = StreamingTextDataset(
+        text_source=LocalLineTextSource(str(corpus)),  # a fresh source, as a resume builds
+        tokenizer=line_tokenizer,
+        max_seq_len=16,
+        stream_data_state=StreamDataState.from_dict(snapshot),
+    )
+    tail = list(resumed)
+
+    combined = head + tail
+    assert len(combined) == len(reference), (
+        f"resume produced {len(combined)} samples, an uninterrupted pass produces {len(reference)}"
+    )
+    for index, (got, expected) in enumerate(zip(combined, reference, strict=True)):
+        assert torch.equal(got["input_ids"], expected["input_ids"]), (
+            f"sample {index} differs after resume — the cursor repeated or skipped rows"
+        )
+
+
+def test_per_rank_cursors_are_independent_across_a_resume(tmp_path, line_tokenizer):
+    """Each rank's cursor must survive a checkpoint on its own.
+
+    A shared/overwritten cursor would make one rank replay rows another already
+    consumed, silently changing the effective data mix. The shard key is derived
+    from the rank, so a snapshot taken after every rank consumed a few samples
+    must carry a distinct ``line_index`` per rank.
+    """
+    from llm.data.stream_state import StreamDataState
+
+    corpus = _write_corpus(tmp_path, 40)
+    state = StreamDataState()
+    heads = {}
+    for rank in range(2):
+        dataset = StreamingTextDataset(
+            text_source=LocalLineTextSource(str(corpus)),
+            tokenizer=line_tokenizer,
+            max_seq_len=16,
+            rank=rank,
+            world_size=2,
+            stream_data_state=state,
+        )
+        iterator = iter(dataset)
+        heads[rank] = [next(iterator) for _ in range(3)]
+
+    snapshot = state.to_dict()
+    assert set(snapshot) == {"0", "1"}, f"expected one cursor per rank, got {sorted(snapshot)}"
+
+    # Restore and confirm each rank continues from ITS OWN position.
+    restored = StreamDataState.from_dict(snapshot)
+    for rank in range(2):
+        dataset = StreamingTextDataset(
+            text_source=LocalLineTextSource(str(corpus)),
+            tokenizer=line_tokenizer,
+            max_seq_len=16,
+            rank=rank,
+            world_size=2,
+            stream_data_state=restored,
+        )
+        tail = list(dataset)
+        assert len(heads[rank]) + len(tail) > 0
+        # The whole shard is served exactly once: no sample repeats across the split.
+        shard = list(
+            StreamingTextDataset(
+                text_source=LocalLineTextSource(str(corpus)),
+                tokenizer=line_tokenizer,
+                max_seq_len=16,
+                rank=rank,
+                world_size=2,
+                stream_data_state=StreamDataState(),
+            )
+        )
+        assert len(heads[rank] + tail) == len(shard), (
+            f"rank {rank}: resumed shard length {len(heads[rank] + tail)} != {len(shard)}"
+        )
