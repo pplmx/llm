@@ -6,6 +6,7 @@ YAML loading, env var prefix, security defaults, and merge guard.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -394,3 +395,94 @@ class TestConfigPrecedence:
                 f"serve_pretrained.yaml no longer pins {field} — update the precedence note in "
                 "docs/tutorials/03-inference.md §2.3"
             )
+
+
+# --------------------------------------------------------------------------- #
+# A YAML null must not silently clear an env var the operator set
+# --------------------------------------------------------------------------- #
+
+
+class TestYamlNullShadowsEnvVar:
+    """``api_key: null`` in a YAML beats ``LLM_SERVING_API_KEY`` — warn about it.
+
+    Precedence is counter-intuitive: an explicit YAML key is a *supplied* value,
+    so pydantic-settings lets it win over the environment. A ``null`` is the
+    worst case, because it reads as "not configured here" while actually
+    CLEARING what the operator exported.
+
+    This was a live safety bug, not a theoretical one: with
+    ``LLM_SERVING_API_KEY`` exported, ``configs/serve_local_demo.yaml`` pinned
+    ``api_key: null`` and the server served an unauthenticated request with
+    **200**. The shipped configs no longer carry that line, and this warning
+    makes the next occurrence visible instead of silent.
+    """
+
+    def test_warns_when_null_shadows_a_set_env_var(self, tmp_path: Path, monkeypatch, caplog):
+        from llm.serving.config import ServingConfig
+
+        monkeypatch.setenv("LLM_SERVING_API_KEY", "secret-from-env")
+        yml = tmp_path / "serve.yaml"
+        yml.write_text("host: 127.0.0.1\napi_key: null\n", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="llm.serving.config"):
+            cfg = ServingConfig.from_yaml(yml)
+
+        assert cfg.api_key is None, "an explicit YAML null still wins — that is the documented precedence"
+        messages = " ".join(r.getMessage() for r in caplog.records)
+        assert "api_key" in messages
+        assert "LLM_SERVING_API_KEY" in messages
+        assert "OVERRIDES" in messages
+
+    def test_silent_when_no_env_var_is_set(self, tmp_path: Path, monkeypatch, caplog):
+        """No env var, nothing shadowed — a null field is legitimate then."""
+        from llm.serving.config import ServingConfig
+
+        monkeypatch.delenv("LLM_SERVING_API_KEY", raising=False)
+        yml = tmp_path / "serve.yaml"
+        yml.write_text("host: 127.0.0.1\napi_key: null\n", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="llm.serving.config"):
+            ServingConfig.from_yaml(yml)
+
+        assert not [r for r in caplog.records if "OVERRIDES" in r.getMessage()]
+
+    def test_silent_when_yaml_value_is_not_null(self, tmp_path: Path, monkeypatch, caplog):
+        """A real YAML value overriding the env var is normal, not a footgun."""
+        from llm.serving.config import ServingConfig
+
+        monkeypatch.setenv("LLM_SERVING_API_KEY", "secret-from-env")
+        yml = tmp_path / "serve.yaml"
+        yml.write_text("host: 127.0.0.1\napi_key: explicit-from-yaml\n", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="llm.serving.config"):
+            ServingConfig.from_yaml(yml)
+
+        assert not [r for r in caplog.records if "OVERRIDES" in r.getMessage()]
+
+    def test_shipped_serve_configs_do_not_pin_api_key(self):
+        """No shipped serving config may pin ``api_key`` — not even to null.
+
+        An explicit value shadows the env var; ``null`` shadows it to "no auth".
+        The only safe shape is to omit the key entirely and let the environment
+        (or an explicit code-level override) supply it.
+        """
+        import yaml
+
+        configs_dir = Path(__file__).resolve().parents[2] / "configs"
+        offenders = []
+        for path in sorted(configs_dir.glob("serve*.yaml")):
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            if "api_key" in raw:
+                offenders.append(f"{path.name}: api_key={raw['api_key']!r}")
+        assert not offenders, (
+            "shipped serving configs must not set api_key at all (an explicit YAML "
+            "value shadows LLM_SERVING_API_KEY):\n  " + "\n  ".join(offenders)
+        )
+
+    def test_env_var_reaches_the_demo_config(self, monkeypatch):
+        """The documented env-var workflow must actually work for the demo."""
+        from llm.serving.config import ServingConfig
+
+        monkeypatch.setenv("LLM_SERVING_API_KEY", "b" * 64)
+        cfg = ServingConfig.from_yaml(Path(__file__).resolve().parents[2] / "configs" / "serve_local_demo.yaml")
+        assert cfg.api_key == "b" * 64

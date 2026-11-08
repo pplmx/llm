@@ -70,9 +70,15 @@ mlp_impl: mlp
 # Loopback host — public-host guard refuses to bind non-loopback
 # without an api_key.
 host: 127.0.0.1
-# Auth disabled (loopback-only). Set `api_key: <secret>` and
-# `host: 0.0.0.0` together to expose the API beyond localhost.
-api_key: null
+# Auth disabled by default (loopback-only).
+#
+# There is deliberately NO ``api_key:`` line here. A YAML key is an EXPLICIT
+# value and (pydantic-settings) wins over the environment, so ``api_key: null``
+# SHADOWS ``LLM_SERVING_API_KEY``: an operator who exported a key got a server
+# that served anonymously anyway. Measured before this was fixed — with a key
+# in the env var, an unauthenticated request still returned 200. Omitting the
+# line lets the env var be the source; set it (and `host: 0.0.0.0`) to expose
+# the API beyond localhost.
 log_level: INFO
 device: cpu               # CPU demo; production should set "cuda"
 generation_backend: eager

@@ -1,3 +1,5 @@
+import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -178,6 +180,7 @@ class ServingConfig(BaseSettings):
             return cls()
         with path.open(encoding="utf-8") as f:
             config_dict = yaml.safe_load(f) or {}
+        _warn_on_shadowed_env_vars(config_dict)
         return cls.model_validate(config_dict)
 
     # Methods that don't expose a merge helper. ``peft_merge=True`` is
@@ -265,3 +268,43 @@ class ServingConfig(BaseSettings):
                 f"different method."
             )
         return self
+
+
+logger = logging.getLogger(__name__)
+
+#: Fields whose env var is worth flagging when a YAML pins them to null.
+#:
+#: ``api_key`` is the one that matters for safety: a YAML ``api_key: null`` is
+#: an EXPLICIT value and pydantic-settings therefore lets it WIN over
+#: ``LLM_SERVING_API_KEY``. An operator who exported a key got a server that
+#: served anonymously anyway — measured end-to-end before this warning existed
+#: (unauthenticated request returned 200 with the env var set).
+_SHADOW_SENSITIVE_FIELDS = frozenset({"api_key", "model_path", "peft_adapter_path", "tokenizer_path"})
+
+
+def _warn_on_shadowed_env_vars(config_dict: dict[str, Any]) -> None:
+    """Log when a YAML ``null`` silently overrides an env var that IS set.
+
+    Precedence is the surprise: most operators expect an exported
+    ``LLM_SERVING_*`` variable to win over a config file, but an explicit YAML
+    key wins under pydantic-settings. A ``null`` is the worst case — it reads
+    as "not configured here" while actually CLEARING the value supplied by the
+    environment.
+
+    Logging rather than raising: a genuinely-null field is legitimate (the
+    shipped demo configs disable optional features that way), and refusing to
+    start on it would be wrong. The point is that the operator can see the
+    value they set is being ignored.
+    """
+    for field, value in config_dict.items():
+        if value is not None or field not in _SHADOW_SENSITIVE_FIELDS:
+            continue
+        env_name = f"LLM_SERVING_{field.upper()}"
+        if os.environ.get(env_name):
+            logger.warning(
+                "config YAML sets %s: null, which OVERRIDES the %s environment "
+                "variable; remove the line from the YAML to let the env var take effect",
+                field,
+                env_name,
+                extra={"event": "config_env_shadowed", "field": field, "env_var": env_name},
+            )
