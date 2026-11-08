@@ -90,3 +90,76 @@ def test_verify_round_trips_the_weights(legacy_checkpoint: Path):
     assert set(before) == set(after), "the conversion changed which tensors exist"
     for name, tensor in before.items():
         assert torch.equal(tensor, after[name]), f"tensor {name} changed during migration"
+
+
+class TestLegacyBlobSurvivesAFailedMigration:
+    """Every failure path must leave the legacy blob intact.
+
+    The existing tests cover the SUCCESS path (verify passes -> blob deleted).
+    The safety-critical half is the failure path: if a conversion or verification
+    goes wrong, the legacy blob is the user's only copy, so it must still be there
+    afterwards. Without this, an `--in-place` bug that deleted first and verified
+    later would show up as data loss rather than a red test.
+    """
+
+    def test_a_failed_round_trip_preserves_the_legacy_blob(self, tmp_path: Path, monkeypatch):
+        """Verification that fails must exit non-zero and keep the source.
+
+        Simulated by making the round-trip check report a mismatch, which is
+        exactly what a corrupt conversion would produce.
+        """
+        import llm.cli.migrate_ckpt as migrate_module
+
+        legacy = tmp_path / "model.pt"
+        torch.manual_seed(0)
+        model = DecoderModel(**CONFIG)
+        torch.save({"model_state": model.state_dict(), "model_config": CONFIG}, legacy)
+
+        monkeypatch.setattr(migrate_module, "_verify_round_trip", lambda *args, **kwargs: (False, "tensor mismatch"))
+
+        result = _run(str(legacy), "--in-place", "--verify")
+
+        assert result.exit_code != 0, f"a failed verification exited 0: {result.output}"
+        assert legacy.exists(), "the legacy blob was deleted even though verification failed"
+        assert "preserved" in result.output.lower() or "hint" in result.output.lower(), (
+            f"the failure message does not tell the user the blob survived: {result.output}"
+        )
+
+    def test_an_unloadable_source_preserves_the_file(self, tmp_path: Path):
+        """A file that cannot be read at all must not be removed either."""
+        legacy = tmp_path / "model.pt"
+        legacy.write_bytes(b"not a checkpoint")
+
+        result = _run(str(legacy), "--in-place", "--verify")
+
+        assert result.exit_code != 0
+        assert legacy.exists(), "an unparseable source file was deleted"
+        assert legacy.read_bytes() == b"not a checkpoint"
+
+    def test_dry_run_never_reaches_conversion_or_verification(self, tmp_path: Path, monkeypatch):
+        """`--dry-run` must print the plan and stop, touching nothing.
+
+        It short-circuits BEFORE conversion and verification, so a
+        verification failure cannot occur on this path — which is the point: the
+        plan is shown without doing any work, and in particular without deleting
+        the legacy blob that `--in-place` would otherwise remove.
+        """
+        import llm.cli.migrate_ckpt as migrate_module
+
+        legacy = tmp_path / "model.pt"
+        torch.manual_seed(0)
+        model = DecoderModel(**CONFIG)
+        torch.save({"model_state": model.state_dict(), "model_config": CONFIG}, legacy)
+
+        before = {path.name for path in tmp_path.iterdir()}
+
+        def _must_not_run(*_args, **_kwargs):
+            raise AssertionError("--dry-run reached the round-trip verification")
+
+        monkeypatch.setattr(migrate_module, "_verify_round_trip", _must_not_run)
+
+        result = _run(str(legacy), "--dry-run", "--verify")
+
+        assert result.exit_code == 0, result.output
+        assert "dry-run" in result.output.lower()
+        assert {path.name for path in tmp_path.iterdir()} == before, "a dry run created or removed files"
