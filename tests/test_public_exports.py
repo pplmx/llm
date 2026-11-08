@@ -49,7 +49,22 @@ def test_every_module_all_entry_resolves():
     assert not missing, "__all__ advertises names that do not exist:\n  " + "\n  ".join(sorted(missing))
 
 
-@pytest.mark.parametrize("module_name", ["llm", "llm.models", "llm.training.core", "llm.serving", "llm.multimodal"])
+def _packages_with_a_declared_surface() -> list[str]:
+    """Key packages that declare ``__all__`` — the ones this test can check.
+
+    ``llm.training.core`` used to sit in the parametrize list above while being a
+    *namespace* package (no ``__init__.py``, so no ``__all__`` by construction).
+    Its case therefore skipped on every run, permanently: one of five
+    parametrized cases never executed, while the list made it look covered.
+    Deriving the list from the modules themselves keeps the count honest and
+    makes a package that LOSES its ``__all__`` drop out visibly instead of
+    silently skipping.
+    """
+    names = ["llm", "llm.models", "llm.training.core", "llm.serving", "llm.multimodal"]
+    return [name for name in names if hasattr(importlib.import_module(name), "__all__")]
+
+
+@pytest.mark.parametrize("module_name", _packages_with_a_declared_surface())
 def test_key_packages_star_import_cleanly(module_name):
     """A package's declared surface must be importable as a whole.
 
@@ -58,8 +73,11 @@ def test_key_packages_star_import_cleanly(module_name):
     """
     module = importlib.import_module(module_name)
     declared = getattr(module, "__all__", None)
-    if declared is None:
-        pytest.skip(f"{module_name} declares no __all__ (nothing to star-import deliberately)")
+    assert declared is not None, (
+        f"{module_name} lost its __all__ after being selected by "
+        "_packages_with_a_declared_surface; either restore it or drop the package "
+        "from that list deliberately"
+    )
 
     namespace: dict[str, object] = {}
     exec(f"from {module_name} import *", namespace)  # noqa: S102 - fixed, repo-owned module names
