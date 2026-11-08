@@ -432,3 +432,43 @@ class TestAdapterScalingInvariant:
         # The growth is roughly 8x (both bottleneck and out_features scale).
         ratio = large.trainable_parameters / small.trainable_parameters
         assert ratio > 5.0
+
+
+class TestAdapterZeroInitGradientChain:
+    """The zero-init interplay, which `test_forward_grad_flows_only_to_adapter` misses.
+
+    That test already proves a backward reaches the adapter and not the base. What
+    it cannot show is the ASYMMETRY the zero init creates: `up` starts at zero, so
+    `down`'s gradient (which flows THROUGH up) is zero at step 1 while `up`'s own
+    gradient is not. That is why Houlsby adapters train at all — and why any
+    refactor that re-detached the residual would silently stop `down` from learning.
+    """
+
+    def test_up_gradient_is_live_at_zero_init_but_down_is_blocked(self):
+        torch.manual_seed(0)
+        layer = AdapterLinear(nn.Linear(8, 8), bottleneck_dim=4)  # pristine init
+        x = torch.randn(3, 8)
+
+        layer(x).sum().backward()
+
+        assert layer.up.weight.grad is not None
+        # d(loss)/d(up) = residual^T @ hidden — independent of up itself, so live.
+        assert layer.up.weight.grad.abs().sum() > 0, "up.weight cannot learn at init"
+        # d(loss)/d(down) flows through up, which is 0 at init, so it is blocked.
+        assert layer.down.weight.grad is not None
+        assert layer.down.weight.grad.abs().sum() == 0, (
+            "down received gradient despite up==0 — the chain should be blocked at step 1"
+        )
+
+    def test_once_up_is_non_zero_down_starts_learning(self):
+        """The complement: perturb `up` and `down`'s gradient comes alive."""
+        torch.manual_seed(0)
+        layer = AdapterLinear(nn.Linear(8, 8), bottleneck_dim=4)
+        with torch.no_grad():
+            layer.up.weight.normal_(0, 0.1)
+        x = torch.randn(3, 8)
+
+        layer(x).sum().backward()
+
+        assert layer.down.weight.grad is not None
+        assert layer.down.weight.grad.abs().sum() > 0, "down still receives no gradient after up was made non-zero"
