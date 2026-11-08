@@ -768,3 +768,75 @@ class TestWeightMappingIsInjective:
         assert len(expanded) == per_layer_rules * num_layers + non_layer_rules, (
             f"{architecture}: expected {per_layer_rules}*{num_layers}+{non_layer_rules} rules, got {len(expanded)}"
         )
+
+
+class TestArchitecturalConfigSurvivesTheRoundTrip:
+    """A reload must keep the model's SHAPE, not just its weights.
+
+    `test_windowed_model_roundtrip` pins `window_size` specifically. The general
+    property — that every architectural knob a user set comes back — has no test, and
+    it is the one that matters for GQA: a model saved with `num_kv_heads=2` of
+    `num_heads=4` that reloaded as full multi-head would have the SAME tensor shapes
+    for the projections it re-derives, load without a single missing/unexpected key,
+    and still be a different model (more KV memory, different attention).
+    """
+
+    @staticmethod
+    def _roundtrip(tmp_path, **overrides):
+        import torch
+
+        from llm.compat.hf_loader import from_pretrained
+        from llm.compat.hf_publisher import save_pretrained
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(0)
+        config = {
+            "vocab_size": 64,
+            "hidden_size": 32,
+            "num_layers": 2,
+            "num_heads": 4,
+            "num_kv_heads": 2,
+            "max_seq_len": 64,
+            "intermediate_size": 64,
+        }
+        config.update(overrides)
+        source = DecoderModel(**config).eval()
+        save_pretrained(source, str(tmp_path))
+        return source, from_pretrained(str(tmp_path), device="cpu").eval()
+
+    def test_gqa_head_split_is_preserved(self, tmp_path):
+        """`num_kv_heads` must not silently become `num_heads` (full MHA)."""
+        source, reloaded = self._roundtrip(tmp_path, num_kv_heads=2)
+
+        assert reloaded.num_heads == source.num_heads == 4
+        assert self._kv_heads(reloaded) == 2, (
+            f"GQA was lost on reload: got {self._kv_heads(reloaded)} KV heads for {reloaded.num_heads} heads"
+        )
+
+    def test_full_mha_is_not_rewritten_as_gqa(self, tmp_path):
+        """The other direction: num_kv_heads == num_heads must stay that way."""
+        _source, reloaded = self._roundtrip(tmp_path, num_kv_heads=4)
+
+        assert self._kv_heads(reloaded) == 4
+
+    def test_hidden_and_layer_counts_survive(self, tmp_path):
+        source, reloaded = self._roundtrip(tmp_path, num_layers=3)
+
+        assert reloaded.hidden_size == source.hidden_size
+        assert reloaded.max_seq_len == source.max_seq_len
+        # Layer count is only visible through the module stack.
+        assert len(reloaded.transformer_blocks) == 3, (
+            f"expected 3 transformer blocks after reload, got {len(reloaded.transformer_blocks)}"
+        )
+
+    @staticmethod
+    def _kv_heads(model) -> int:
+        """Read the KV head count off a real attention module."""
+        for module in model.modules():
+            kv_heads = getattr(module, "num_kv_heads", None)
+            if kv_heads is not None:
+                return kv_heads
+            kv_heads = getattr(module, "n_kv_heads", None)
+            if kv_heads is not None:
+                return kv_heads
+        raise AssertionError("no attention module exposes a KV-head count")
