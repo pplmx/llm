@@ -15,7 +15,7 @@ tags:
 
 本教程涵盖：
 
-- **基础部署**：`llm serve` 启动 + OpenAI 兼容 API（`/v1/chat/completions` + `/generate`）
+- **基础部署**：`llm serve` 启动 + OpenAI 兼容 API（`/v1/chat/completions` + `/v1/completions` + `/generate`）
 - **主流路径**：`llm serve` + `configs/serve_local_demo.yaml` + `configs/serve_pretrained.yaml`
 - **训练 → 服务闭环**：PEFT 适配器（LoRA / IA³ / BitFit / Adapter / Pfeiffer / AdaLoRA）通过 `LLM_SERVING_PEFT_*` env vars 直接挂载
 - **认证 + 安全**：API key（HMAC-SHA256 timing-safe）+ 公开主机守卫（拒绝无 key 绑定 0.0.0.0）
@@ -78,7 +78,35 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 > **小贴士**：因为是 dummy 模型（未训练），输出是随机 token 解码出来的字符串。要看到有意义的输出，请先训练一个 checkpoint，然后跳到 §3。
 
-### 1.4 查 Prometheus 指标
+### 1.4 调 OpenAI 兼容 legacy completions
+
+`/v1/completions` 是 chat 之前的 OpenAI 文本补全接口，官方 SDK 的
+`client.completions.create`、LangChain 的非 chat `OpenAI` 包装器、以及一批
+prompt-template / 评测脚本仍然在用它。请求多了一个 `model` 字段、少了
+`messages`：
+
+```bash
+curl http://127.0.0.1:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llm", "prompt": "hello", "max_tokens": 10}'
+```
+
+```json
+{"id": "cmpl-1f0c9a77ab12", "object": "text_completion", "created": 1753040016,
+ "model": "llm", "choices": [{"text": "xxx", "index": 0, "finish_reason": "stop", "logprobs": null}],
+ "usage": {"prompt_tokens": 1, "completion_tokens": 4, "total_tokens": 5}}
+```
+
+契约要点：
+
+- `choices[i].text` 只含**补全内容**，不回显 prompt。
+- `prompt` 可以传字符串或字符串列表。传列表时返回**每个 prompt 一条**
+  choice，`index` 按请求顺序递增。
+- `finish_reason` 在 `max_tokens` 用完时为 `length`，自然停下为 `stop`。
+- 不支持 `n` / `seed` / `stream_options`，传了会得到 422 而不是被静默忽略。
+- 流式模式（`stream: true`）只接受单个 prompt。
+
+### 1.5 查 Prometheus 指标
 
 ```bash
 curl http://127.0.0.1:8000/metrics
@@ -97,7 +125,7 @@ curl http://127.0.0.1:8000/metrics
 
 加上 `prometheus-fastapi-instrumentator` 自带的 HTTP RED 指标（请求率 / 错误率 / 延迟 per-route）。
 
-### 1.5 关掉服务
+### 1.6 关掉服务
 
 `Ctrl+C` 即可。日志会打印 `Shutting down...`，`engine.unload_model()` 释放 GPU/CPU 内存。
 
@@ -513,14 +541,14 @@ docker run -p 8000:8000 \
 
 ### 7.4 客户端集成
 
-| 客户端            | 怎么连                                                      |
-| ----------------- | ----------------------------------------------------------- |
-| `curl`            | 见 §1.3                                                     |
-| OpenAI Python SDK | `OpenAI(base_url="http://server:8000/v1", api_key=...)`     |
-| LangChain         | `ChatOpenAI(base_url="http://server:8000/v1", api_key=...)` |
-| LlamaIndex        | 同 OpenAI                                                   |
-| vLLM client       | 同 OpenAI                                                   |
-| 自定义 HTTP       | `/v1/chat/completions` 完全兼容 OpenAI schema               |
+| 客户端            | 怎么连                                                         |
+| ----------------- | -------------------------------------------------------------- |
+| `curl`            | 见 §1.3（chat）/ §1.4（legacy completions）                    |
+| OpenAI Python SDK | `OpenAI(base_url="http://server:8000/v1", api_key=...)`        |
+| LangChain         | `ChatOpenAI` 或 `OpenAI`（非 chat）—— 同一个 `base_url`        |
+| LlamaIndex        | 同 OpenAI                                                      |
+| vLLM client       | 同 OpenAI                                                      |
+| 自定义 HTTP       | `/v1/chat/completions` 与 `/v1/completions` 均为 OpenAI schema |
 
 ---
 

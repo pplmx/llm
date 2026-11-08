@@ -341,10 +341,10 @@ uv run llm serve
 ```
 
 When `api_key` is set, all `/generate`, `/batch_generate`,
-`/v1/chat/completions`, and `/metrics` requests require a matching
-`Authorization: Bearer <key>` header or `X-API-Key: <key>` header.
-Requests without a valid key receive `403 Unauthorized`. `/health` is
-the only route that stays public.
+`/v1/chat/completions`, `/v1/completions`, and `/metrics` requests require
+a matching `Authorization: Bearer <key>` header or `X-API-Key: <key>`
+header. Requests without a valid key receive `403 Unauthorized`. `/health`
+and `/v1/models` are the only routes that stay public.
 
 # Re-extract from a saved log file
 

@@ -60,7 +60,7 @@
 - [x] HuggingFace 权重加载 (`from_pretrained`)
 - [x] safetensors **加载** (`compat/hf_loader`)
 - [x] ONNX 导出
-- [x] OpenAI 兼容 Serving API (LangChain/LlamaIndex 可直接对接 HTTP)
+- [x] OpenAI 兼容 Serving API (`/v1/chat/completions` + legacy `/v1/completions`；LangChain/LlamaIndex 可直接对接 HTTP)
 - [x] safetensors **保存** (`compat/hf_publisher.save_pretrained`, shipped in #25)
 - [x] checkpoint 格式统一 (P1, v2 split layout: `model.safetensors` + `meta.json` + `extra_state.pt`, 保留 backward-compat loader, ADR-006 + `llm migrate-ckpt` CLI 收尾)
 - [x] TorchScript 导出 (可扩 `export/` 模块, Tier 3 #33)
