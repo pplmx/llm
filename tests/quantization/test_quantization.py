@@ -481,3 +481,66 @@ class TestQuantizeModel:
         linear = torch.nn.Linear(4, 4)
         with pytest.raises(NotImplementedError, match="4-bit"):
             QuantizedLinear.from_linear(linear, QuantConfig(bits=4))
+
+
+class TestQuantizedForwardIsNumericallyCorrect:
+    """`test_forward_pass` only asserts the OUTPUT SHAPE, which any wrong
+    implementation satisfies. These pin what the forward must actually compute.
+
+    ``QuantizedLinear`` dequantizes on the fly (``weight_quantized * scale``) and
+    runs a dense matmul against that. The failure this guards against is a forward
+    that silently uses the ORIGINAL dense weights — the layer would report int8
+    storage while computing full precision, so no accuracy loss would ever appear
+    and the "quantized" model would be indistinguishable in quality.
+    """
+
+    def test_forward_equals_the_dequantized_weight_product(self):
+        torch.manual_seed(0)
+        linear = nn.Linear(64, 32)
+        quant_linear = QuantizedLinear.from_linear(linear, QuantConfig(bits=8))
+
+        probes = torch.randn(4, 64)
+        with torch.no_grad():
+            actual = quant_linear(probes)
+            dequantized = quant_linear.weight_quantized.to(torch.float32) * quant_linear.weight_scale
+            expected = probes @ dequantized.T + quant_linear.bias
+
+        assert torch.allclose(actual, expected, atol=1e-5), (
+            "forward is not x @ (W_q * scale).T + b — the stored quantized weights are not driving the computation"
+        )
+
+    def test_forward_differs_from_the_dense_layer(self):
+        """Without this, the comparison above would also pass on an identity-ish layer."""
+        torch.manual_seed(0)
+        linear = nn.Linear(64, 32)
+        dense = linear.weight.detach().clone()
+        quant_linear = QuantizedLinear.from_linear(linear, QuantConfig(bits=8))
+
+        probes = torch.randn(4, 64)
+        with torch.no_grad():
+            actual = quant_linear(probes)
+            dense_output = probes @ dense.T + linear.bias
+
+        assert not torch.allclose(actual, dense_output, atol=1e-6), (
+            "the quantized forward matches the dense layer exactly; quantization had no effect"
+        )
+
+    def test_dequantization_error_stays_within_the_int8_half_step(self):
+        """Independent bound: symmetric int8 with scale=amax/127 has max error amax/254.
+
+        A wrong rounding mode, a wrong zero-point, or a scale computed from the
+        wrong axis all push the error past this bound — and none of them would be
+        visible from shapes alone.
+        """
+        torch.manual_seed(0)
+        linear = nn.Linear(64, 32)
+        weight = linear.weight.detach()
+        quant_linear = QuantizedLinear.from_linear(linear, QuantConfig(bits=8))
+
+        dequantized = quant_linear.weight_quantized.to(torch.float32) * quant_linear.weight_scale
+        half_step = weight.abs().max().item() / 254.0
+        max_error = (dequantized - weight).abs().max().item()
+
+        assert max_error <= half_step + 1e-6, (
+            f"dequantization error {max_error:.6f} exceeds the int8 half-step bound {half_step:.6f}"
+        )
