@@ -1,5 +1,7 @@
 """End-to-end tests for GPTQ integration on full models."""
 
+import copy
+
 import pytest
 import torch
 import torch.nn as nn
@@ -501,3 +503,33 @@ def test_quantize_model_gptq_warns_when_forward_always_fails(caplog):
     # The fallback still runs (direct calls over the calibration set) and is
     # dimensionally valid here.
     assert isinstance(quantized.fc1, GPTQQuantizedLinear)
+
+
+def test_loading_full_precision_weights_into_a_gptq_model_is_partial():
+    """The quantisation key rename makes a non-strict load a PARTIAL restore.
+
+    ``quantize_model_gptq`` swaps each ``nn.Linear`` for a
+    ``GPTQQuantizedLinear``: ``...weight`` becomes ``...weight_packed`` plus
+    ``...scales`` / ``...zeros``, while ``...bias`` keeps its name. Loading a
+    full-precision checkpoint with ``strict=False`` therefore leaves the model
+    half-restored (biases from the checkpoint, weights from its own init) without
+    raising — the failure mode that makes this worth documenting and pinning.
+    """
+    from llm.quantization._gptq_layer import GPTQQuantizedLinear
+    from llm.quantization.gptq import GPTQConfig, quantize_model_gptq
+
+    torch.manual_seed(0)
+    base = TwoLayerMLP(hidden=8)
+    calibration = [torch.randn(4, 8)]
+
+    quantized = quantize_model_gptq(copy.deepcopy(base), calibration, GPTQConfig(bits=4))
+    assert any(isinstance(module, GPTQQuantizedLinear) for module in quantized.modules())
+
+    base_keys = set(base.state_dict())
+    quantized_keys = set(quantized.state_dict())
+    shared = base_keys & quantized_keys
+    assert shared == {"fc1.bias", "fc2.bias"}, f"unexpected shared keys: {sorted(shared)}"
+
+    missing, unexpected = quantized.load_state_dict(base.state_dict(), strict=False)
+    assert set(base_keys) - set(unexpected) == shared, "exactly the biases should load"
+    assert missing, "the packed weights should report as missing"

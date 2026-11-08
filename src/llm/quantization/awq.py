@@ -425,6 +425,18 @@ def quantize_model_awq(
     Raises:
         ValueError: If model has no nn.Linear, target_modules unmatched, layer
             already quantized, or calibration is empty.
+
+    Note:
+        Quantization REPLACES each ``nn.Linear`` with an
+        :class:`AWQQuantizedLinear`, so the state-dict KEYS change:
+        ``...qkv_proj.weight`` becomes ``...qkv_proj.weight_packed`` plus
+        ``...qkv_proj.scales`` / ``...qkv_proj.input_scales`` (``...bias`` keeps
+        its name). Loading a full-precision checkpoint into a quantized model
+        with ``strict=False`` therefore does a PARTIAL restore — the biases load,
+        the weights do not, and nothing raises. Quantize the model whose weights
+        you mean to keep, or load full-precision weights FIRST and quantize
+        after. The CLI avoids this entirely by saving the whole module with
+        ``torch.save``.
     """
     config = config or AWQConfig()
     if device is not None:

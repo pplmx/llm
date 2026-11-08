@@ -497,6 +497,18 @@ def quantize_model_gptq(
 
     Raises:
         ValueError: If model has no nn.Linear, target_modules unmatched, or layer already quantized.
+
+    Note:
+        Quantization REPLACES each ``nn.Linear`` with a
+        :class:`GPTQQuantizedLinear`, so the state-dict KEYS change:
+        ``...qkv_proj.weight`` becomes ``...qkv_proj.weight_packed`` plus
+        ``...qkv_proj.scales`` / ``...qkv_proj.zeros`` (``...bias`` keeps its
+        name). Loading a full-precision checkpoint into a quantized model with
+        ``strict=False`` therefore does a PARTIAL restore — the biases load, the
+        weights do not, and nothing raises. Quantize the model whose weights you
+        mean to keep, or load full-precision weights FIRST and quantize after.
+        The CLI avoids this entirely by saving the whole module with
+        ``torch.save``.
     """
     config = config or GPTQConfig()
     if device is not None:

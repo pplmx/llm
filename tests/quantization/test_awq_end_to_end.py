@@ -305,3 +305,34 @@ def test_quantize_model_awq_warns_when_forward_always_fails(caplog):
         quantized = quantize_model_awq(model, iter(calib), AWQConfig())
     assert any("failed on EVERY calibration batch" in r.getMessage() for r in caplog.records)
     assert isinstance(quantized.fc1, AWQQuantizedLinear)
+
+
+def test_loading_full_precision_weights_into_an_awq_model_is_partial():
+    """Same partial-restore shape as GPTQ and FP8, with AWQ's own key names.
+
+    ``quantize_model_awq`` swaps each ``nn.Linear`` for an
+    ``AWQQuantizedLinear``: ``...weight`` becomes ``...weight_packed`` plus
+    ``...scales`` / ``...input_scales``, while ``...bias`` keeps its name. A
+    non-strict load of a full-precision checkpoint therefore restores the biases
+    and silently keeps the model's own packed weights.
+    """
+    import copy
+
+    from llm.quantization._awq_layer import AWQQuantizedLinear
+    from llm.quantization.awq import AWQConfig, quantize_model_awq
+
+    torch.manual_seed(0)
+    base = TwoLayerMLP(hidden=8)
+    calibration = [torch.randn(4, 8)]
+
+    quantized = quantize_model_awq(copy.deepcopy(base), calibration, AWQConfig(bits=4))
+    assert any(isinstance(module, AWQQuantizedLinear) for module in quantized.modules())
+
+    base_keys = set(base.state_dict())
+    quantized_keys = set(quantized.state_dict())
+    shared = base_keys & quantized_keys
+    assert shared == {"fc1.bias", "fc2.bias"}, f"unexpected shared keys: {sorted(shared)}"
+
+    missing, unexpected = quantized.load_state_dict(base.state_dict(), strict=False)
+    assert set(base_keys) - set(unexpected) == shared, "exactly the biases should load"
+    assert missing, "the packed weights should report as missing"
