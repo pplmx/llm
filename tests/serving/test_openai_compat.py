@@ -434,3 +434,36 @@ def test_stream_terminal_chunk_carries_a_finish_reason(client):
     # Every chunk shares one completion id (clients group the stream by it).
     ids = {json.loads(line[len("data: ") :])["id"] for line in body_lines}
     assert len(ids) == 1, f"chunks disagreed on the completion id: {sorted(ids)}"
+
+
+class TestModelsEndpoint:
+    """``GET /v1/models`` is the reachability probe OpenAI clients send first.
+
+    Its absence meant the official SDK's ``client.models.list()`` failed with a
+    bare 404, which some clients report as "server unreachable" before ever
+    attempting a completion — even though ``/v1/chat/completions`` worked.
+    """
+
+    def test_models_endpoint_lists_one_model(self, client):
+        response = client.get("/v1/models")
+        assert response.status_code == 200
+
+        body = response.json()
+        assert body["object"] == "list", f"unexpected envelope: {body}"
+        assert isinstance(body["data"], list)
+        assert len(body["data"]) == 1, "this server hosts exactly one model"
+
+        entry = body["data"][0]
+        assert entry["object"] == "model"
+        assert entry["id"], "the model entry needs a non-empty id"
+        assert "owned_by" in entry
+
+    def test_models_endpoint_is_registered_before_any_auth_gate(self, client):
+        """The probe must answer even when the client never sends a request body.
+
+        A model listing that required an auth header would defeat the purpose:
+        clients call it to decide whether the server is reachable at all.
+        """
+        response = client.get("/v1/models")
+        assert response.status_code == 200
+        assert response.json()["data"][0]["id"]
