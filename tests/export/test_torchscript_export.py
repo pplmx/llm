@@ -191,3 +191,72 @@ class TestRegistryDispatch:
     def test_export_model_unknown_target_raises(self, small_model, tmp_path):
         with pytest.raises(ValueError, match="not found in ExportBackend"):
             export_model("definitely_not_real", small_model, tmp_path / "x.pt")
+
+
+class TestTracedModuleAcceptsOtherShapes:
+    """A traced artifact is used at whatever shape inference demands.
+
+    ``test_artifact_matches_eager_model`` compares a single fixed shape (1, 8) —
+    the same shape the export was traced at. Real serving calls the artifact with a
+    different batch size and sequence length, and a trace that baked in either
+    dimension would still pass that test. Traced modules only stay flexible where
+    the shapes are dynamic, so this pins the flexibility the exporter advertises.
+    """
+
+    @staticmethod
+    def _exported(tmp_path):
+        import torch
+
+        from llm.export.torchscript import export_to_torchscript
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(0)
+        model = DecoderModel(
+            vocab_size=32,
+            hidden_size=16,
+            num_layers=1,
+            num_heads=2,
+            max_seq_len=16,
+            intermediate_size=32,
+        ).eval()
+        output_path = tmp_path / "model.pt"
+        export_to_torchscript(model, output_path, input_shape=(1, 6))
+        return model, torch.jit.load(str(output_path)).eval()
+
+    def test_other_sequence_lengths_match_eager(self, tmp_path):
+        import torch
+
+        model, scripted = self._exported(tmp_path)
+
+        for sequence_length in (1, 6, 10):
+            inputs = torch.randint(0, 32, (1, sequence_length))
+            with torch.no_grad():
+                eager = model(inputs)
+                if isinstance(eager, tuple):
+                    eager = eager[0]
+                traced = scripted(inputs)
+                if isinstance(traced, tuple):
+                    traced = traced[0]
+
+            assert torch.equal(traced, eager), (
+                f"seq_len={sequence_length}: traced output differs from eager — the trace froze the length"
+            )
+
+    def test_other_batch_sizes_match_eager(self, tmp_path):
+        import torch
+
+        model, scripted = self._exported(tmp_path)
+
+        for batch_size in (1, 2, 4):
+            inputs = torch.randint(0, 32, (batch_size, 6))
+            with torch.no_grad():
+                eager = model(inputs)
+                if isinstance(eager, tuple):
+                    eager = eager[0]
+                traced = scripted(inputs)
+                if isinstance(traced, tuple):
+                    traced = traced[0]
+
+            assert torch.equal(traced, eager), (
+                f"batch={batch_size}: traced output differs from eager — the trace froze the batch dimension"
+            )

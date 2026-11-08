@@ -12,6 +12,15 @@ dependencies. The exported artifact is a ``.pt`` file loadable via
 ``torch.jit.load`` — useful for deployment paths that can't or
 won't bring up an ONNX runtime.
 
+.. warning::
+   PyTorch warns that ``torch.jit.trace`` / ``torch.jit.load`` are **not
+   supported on Python 3.14+** and "may break" there (one export emits several
+   ``FutureWarning``s). This project requires Python >= 3.14, so the backend still
+   works today — verified: export, load and eager-equality all succeed — but it
+   rests on an API PyTorch has stopped supporting. Prefer the ``onnx`` target for
+   new deployment paths; keep this one for pipelines that already consume ``.pt``,
+   and check the warning when upgrading torch.
+
 Two export modes are supported:
 
 - ``method='trace'`` (default): records operations with example
