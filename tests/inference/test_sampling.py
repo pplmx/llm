@@ -181,3 +181,59 @@ def test_apply_penalties_fused_equals_chained():
         apply_penalties(torch.zeros(8), [], repetition_penalty=0.0)
     with pytest.raises(ValueError, match="repetition_penalty"):
         apply_penalties(torch.zeros(8), [1], repetition_penalty=-1.0)
+
+
+class TestCombinedTopKAndTopP:
+    """Both filters can be set at once; the result must be their INTERSECTION.
+
+    `top_k` keeps the k largest logits and `top_p` keeps the smallest set whose
+    cumulative probability exceeds the threshold. Applying them in either order
+    leaves exactly the surviving tokens that pass BOTH — so the effective
+    support is the smaller of the two. Setting them together is legal in the
+    OpenAI API and nothing was checking the interaction, which is where an
+    implementation can silently drop one of the two filters.
+    """
+
+    def test_effective_support_is_the_intersection(self):
+        import torch
+
+        from llm.generation.sampling import sampling_probs
+
+        torch.manual_seed(0)
+        logits = torch.randn(20) * 2
+
+        k_only = sampling_probs(logits, temperature=1.0, top_k=5)
+        p_only = sampling_probs(logits, temperature=1.0, top_p=0.9)
+        both = sampling_probs(logits, temperature=1.0, top_k=5, top_p=0.9)
+
+        k_support = set(torch.nonzero(k_only > 0).flatten().tolist())
+        p_support = set(torch.nonzero(p_only > 0).flatten().tolist())
+        both_support = set(torch.nonzero(both > 0).flatten().tolist())
+
+        assert both_support == k_support & p_support, (
+            f"combined support {sorted(both_support)} is not the intersection "
+            f"of top_k {sorted(k_support)} and top_p {sorted(p_support)}"
+        )
+        assert both.sum().item() == pytest.approx(1.0, abs=1e-5), "the surviving mass must still be normalised"
+
+    def test_combined_filter_never_widens_the_support(self):
+        """Setting BOTH must never keep MORE tokens than either filter alone.
+
+        A bug that applied only the looser of the two, or reset the mask between
+        them, would widen the support relative to the stricter single filter.
+        """
+        import torch
+
+        from llm.generation.sampling import sampling_probs
+
+        torch.manual_seed(0)
+        logits = torch.randn(32) * 2
+
+        for top_k, top_p in ((5, 0.9), (10, 0.5), (3, 0.99)):
+            combined = sampling_probs(logits, temperature=1.0, top_k=top_k, top_p=top_p)
+            k_only = sampling_probs(logits, temperature=1.0, top_k=top_k)
+            p_only = sampling_probs(logits, temperature=1.0, top_p=top_p)
+
+            combined_count = int((combined > 0).sum())
+            assert combined_count <= int((k_only > 0).sum()), f"top_p widened the top_k support for {top_k}/{top_p}"
+            assert combined_count <= int((p_only > 0).sum()), f"top_k widened the top_p support for {top_k}/{top_p}"
