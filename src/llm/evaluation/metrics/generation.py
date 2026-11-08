@@ -3,6 +3,25 @@ from importlib import import_module
 from llm.evaluation.metrics.base import BaseMetric
 
 
+def _require_aligned(predictions: list, references: list, metric_name: str) -> None:
+    """Reject a predictions/references length mismatch with a usable message.
+
+    ``zip(..., strict=True)`` already refuses to silently truncate, but the
+    error a user sees is ``zip() argument 2 is shorter than argument 1`` — it
+    names neither the metric nor the arrays, and says nothing about the
+    evaluation path that produced them. The mismatch originates upstream (a
+    ``predict`` returning fewer rows than ``prepare_data``), so the message has
+    to point there.
+    """
+    if len(predictions) != len(references):
+        raise ValueError(
+            f"{metric_name}: predictions and references must be aligned, got "
+            f"{len(predictions)} prediction(s) and {len(references)} reference(s). "
+            "This usually means the task's predict() dropped rows (e.g. filtering "
+            "malformed samples) without dropping the matching references."
+        )
+
+
 class RougeMetric(BaseMetric):
     """ROUGE metric for generation tasks.
 
@@ -54,6 +73,7 @@ class RougeMetric(BaseMetric):
         if self._scorer is None:
             self._scorer = self._build_scorer(self.rouge_types)
 
+        _require_aligned(predictions, references, self.name)
         results = {}
         for pred, ref in zip(predictions, references, strict=True):
             scores = self._scorer.score(ref, pred)
@@ -87,6 +107,8 @@ class BleuMetric(BaseMetric):
         if not predictions or not references:
             return {"bleu": 0.0}
 
+        _require_aligned(predictions, references, self.name)
+
         try:
             sacrebleu = import_module("sacrebleu")
         except ImportError as exc:
@@ -119,6 +141,8 @@ class ChrFMetric(BaseMetric):
         # ``0.0`` convention of :class:`AccuracyMetric` / :class:`F1Metric`.
         if not predictions or not references:
             return {"chrf": 0.0}
+
+        _require_aligned(predictions, references, self.name)
 
         try:
             sacrebleu = import_module("sacrebleu")

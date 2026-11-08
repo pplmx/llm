@@ -181,3 +181,110 @@ def test_chrf_metric_empty_inputs_without_sacrebleu(monkeypatch):
     metric = ChrFMetric()
     result = metric.compute([], [])
     assert result == {"chrf": 0.0}
+
+
+# --------------------------------------------------------------------------- #
+# Predictions/references alignment
+# --------------------------------------------------------------------------- #
+
+
+class _FakeScorer:
+    """Stand-in for ``rouge_score.RougeScorer``."""
+
+    def __init__(self, rouge_types, use_stemmer=True):
+        self._types = rouge_types
+
+    def score(self, reference, prediction):
+        class _S:
+            fmeasure = 0.5
+
+        return {t: _S() for t in self._types}
+
+
+class _FakeSacrebleu:
+    """Stand-in for ``sacrebleu`` recording what reached the scorer."""
+
+    def __init__(self):
+        self.calls: list[tuple[int, int]] = []
+
+    def corpus_bleu(self, predictions, references):
+        self.calls.append((len(predictions), len(references)))
+        return type("_R", (), {"score": 50.0})()
+
+    def corpus_chrf(self, predictions, references):
+        self.calls.append((len(predictions), len(references)))
+        return type("_R", (), {"score": 50.0})()
+
+
+@pytest.fixture
+def fake_metric_deps(monkeypatch):
+    """Install fake ``rouge_score`` / ``sacrebleu`` so the REAL compute path runs.
+
+    The rest of this file monkeypatches ``sys.modules[name] = None`` to model a
+    host WITHOUT the optional deps, which means every assertion about scoring
+    stops at the ImportError. These fakes let the alignment logic below be
+    exercised for real; a scoring library is not what is under test here.
+    """
+    import types
+
+    rouge_pkg = types.ModuleType("rouge_score")
+    rouge_scorer = types.ModuleType("rouge_score.rouge_scorer")
+    rouge_scorer.RougeScorer = _FakeScorer
+    rouge_pkg.rouge_scorer = rouge_scorer
+
+    sacrebleu = _FakeSacrebleu()
+    monkeypatch.setitem(sys.modules, "rouge_score", rouge_pkg)
+    monkeypatch.setitem(sys.modules, "rouge_score.rouge_scorer", rouge_scorer)
+    monkeypatch.setitem(sys.modules, "sacrebleu", sacrebleu)
+    return sacrebleu
+
+
+class TestMetricsRejectMisalignedInputs:
+    """A length mismatch must fail loudly for EVERY generation metric.
+
+    Before this, the three metrics disagreed: ``RougeMetric`` used
+    ``zip(..., strict=True)`` and raised ``zip() argument 2 is shorter than
+    argument 1``, while ``BleuMetric`` / ``ChrFMetric`` forwarded the ragged
+    pair to sacrebleu, which scored the truncated set and returned a
+    plausible-looking number. A silently wrong BLEU is worse than a crash — a
+    task whose ``predict`` drops rows would report a score computed from the
+    wrong pairs, with nothing in the output saying so.
+
+    The runner calls ``metric.compute(predictions, references)`` straight from
+    ``task.predict`` / ``task.prepare_data`` with no length check of its own, so
+    the metric is the last place the mismatch can be caught.
+    """
+
+    @pytest.mark.parametrize("metric_cls", [RougeMetric, BleuMetric, ChrFMetric])
+    def test_mismatch_raises_with_a_usable_message(self, metric_cls, fake_metric_deps):
+        metric = metric_cls()
+        with pytest.raises(ValueError, match="must be aligned") as excinfo:
+            metric.compute(["a", "b", "c"], ["x"])
+
+        message = str(excinfo.value)
+        assert metric.name in message, "the error must name the metric that rejected the input"
+        assert "3" in message, "the prediction count must appear"
+        assert "1" in message, "the reference count must appear"
+
+    @pytest.mark.parametrize("metric_cls", [RougeMetric, BleuMetric, ChrFMetric])
+    def test_aligned_inputs_still_score(self, metric_cls, fake_metric_deps):
+        """The guard must not reject a normal evaluation."""
+        out = metric_cls().compute(["a", "b"], ["x", "y"])
+        assert isinstance(out, dict), "a metric must return a dict of scores"
+        assert out, "an aligned batch must still produce scores"
+
+    def test_bleu_never_forwards_a_ragged_pair_to_sacrebleu(self, fake_metric_deps):
+        """The specific regression: sacrebleu used to receive the mismatch.
+
+        Asserting the raise alone would not prove the call was prevented; this
+        checks the library saw no call at all.
+        """
+        with pytest.raises(ValueError, match="must be aligned"):
+            BleuMetric().compute(["a", "b", "c"], ["x"])
+        assert fake_metric_deps.calls == [], "sacrebleu must not be invoked with misaligned inputs"
+
+    def test_rouge_message_replaces_the_bare_zip_error(self, fake_metric_deps):
+        """``RougeMetric`` raised a message naming neither metric nor arrays."""
+        with pytest.raises(ValueError, match="must be aligned") as excinfo:
+            RougeMetric().compute(["a", "b"], ["x"])
+        assert "zip()" not in str(excinfo.value), "the bare zip() message gives the user nothing to act on"
