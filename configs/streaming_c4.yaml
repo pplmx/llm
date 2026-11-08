@@ -15,7 +15,9 @@
 # -----
 # - Streaming means no full dataset is downloaded or held in memory —
 #   `HFStreamTextSource` pulls records one at a time.
-# - `seen_hashes_path` enables the dedup wrapper layer (T3 #39) so
+# - The dedup wrapper layer (T3 #39) needs `data_source: dedup_hf`, not `hf`:
+#   ONLY the dedup_* factories wrap the source, so dedup knobs set beside `hf`
+#   are read by nothing (verified — `hf` yields every row). With dedup_hf,
 #   duplicate records across runs are dropped (cross-run persistence).
 # - For The Pile, swap `dataset_name` → `monology/pile-uncopyrighted`
 #   and drop `dataset_config`.
@@ -40,7 +42,7 @@ training:
   max_steps: 100000
 
 data:
-  data_source: hf         # HF streaming source
+  data_source: dedup_hf   # HF streaming source + dedup wrapper
   tokenizer_type: hf
   tokenizer_path: gpt2    # HF tokenizer id
   dataset_name: allenai/c4

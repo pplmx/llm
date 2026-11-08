@@ -1093,9 +1093,12 @@ class DataConfig(BaseModel):
     )
 
     # Dedup wrapper knobs (only consulted when data_source starts with
-    # 'dedup_'). The defaults are no-ops so existing configs are
-    # unaffected; users opt in by either switching data_source to
-    # 'dedup_local' / 'dedup_hf' or by passing seen_hashes_path.
+    # 'dedup_'). The defaults are no-ops so existing configs are unaffected.
+    # Opting in means switching data_source to 'dedup_local' / 'dedup_hf' —
+    # setting seen_hashes_path alone does NOT wrap the source (a config that
+    # "enables dedup" that way silently duplicates every record). Verified
+    # against the registry: local + seen_hashes_path yields all rows,
+    # dedup_local yields one.
     seen_hashes_path: str | None = Field(
         None,
         description=(
@@ -1120,6 +1123,40 @@ class DataConfig(BaseModel):
             "hashlib.new works ('sha256', 'sha1', 'md5', 'blake2b', ...)."
         ),
     )
+
+    @model_validator(mode="after")
+    def _warn_dedup_knobs_without_a_dedup_source(self) -> DataConfig:
+        """Flag dedup knobs set while ``data_source`` is not a dedup variant.
+
+        ``_resolve_dedup_kwargs`` is only consulted by the ``dedup_local`` /
+        ``dedup_hf`` factories, so with a plain ``local``/``hf`` source these
+        fields are read by nothing. Verified: ``local`` plus
+        ``seen_hashes_path`` yields every row (3 duplicates stay 3), while
+        ``dedup_local`` yields one — a config that looks like it enabled dedup
+        and silently did not.
+        """
+        if self.data_source.startswith("dedup_"):
+            return self
+        # Require BOTH an explicit mention and a non-default value: writing
+        # `seen_hashes_path: null` (as streaming_local_demo.yaml does, with a
+        # "not used with data_source=local" comment) states the same thing as
+        # omitting it and must not warn.
+        explicitly_set = self.model_fields_set
+        defaults = {"seen_hashes_path": None, "write_seen_hashes": False, "hash_algo": "sha256"}
+        ignored = [
+            name
+            for name in ("seen_hashes_path", "write_seen_hashes", "hash_algo")
+            if name in explicitly_set and getattr(self, name) != defaults[name]
+        ]
+        if ignored:
+            logger.warning(
+                "data_source=%r is not a dedup variant, so the configured option(s) %s have "
+                "no effect. Switch to 'dedup_local' / 'dedup_hf' to enable deduplication, or "
+                "remove them.",
+                self.data_source,
+                ", ".join(ignored),
+            )
+        return self
 
     @field_validator("data_source")
     @classmethod

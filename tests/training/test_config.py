@@ -849,3 +849,84 @@ class TestUnusedParallelSizes:
 
         with pytest.raises(ValueError, match="must tile the world exactly"):
             three_d_layout(world_size=4, dp_size=2, pp_size=2, tp_size=2)
+
+
+class TestDedupKnobsNeedADedupSource:
+    """Dedup knobs are only read by the ``dedup_*`` source factories."""
+
+    @pytest.mark.parametrize(
+        ("source", "knob", "value"),
+        [
+            ("local", "seen_hashes_path", "hashes.txt"),
+            ("local", "write_seen_hashes", True),
+            ("local", "hash_algo", "md5"),
+            ("hf", "seen_hashes_path", "hashes.txt"),
+        ],
+    )
+    def test_knob_without_a_dedup_source_warns(self, source, knob, value, caplog):
+        """A plain source never wraps ``DedupTextSource``, so the knob is inert.
+
+        Measured against the registry: ``local`` plus ``seen_hashes_path`` yields
+        every row (3 duplicates stay 3), while ``dedup_local`` yields one. The
+        old field comment claimed setting ``seen_hashes_path`` was itself enough
+        to opt in — it is not, and two shipped configs relied on that.
+        """
+        import logging
+
+        from llm.training.core.config import DataConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DataConfig(data_source=source, **{knob: value})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(knob in message and source in message for message in messages), (
+            f"{knob} with data_source={source!r} was not reported: {messages}"
+        )
+
+    def test_dedup_source_is_silent(self, caplog):
+        """The legitimate pairing must not warn."""
+        import logging
+
+        from llm.training.core.config import DataConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DataConfig(data_source="dedup_local", seen_hashes_path="hashes.txt", write_seen_hashes=True)
+
+        assert not any("is not a dedup variant" in record.getMessage() for record in caplog.records)
+
+    def test_explicit_null_does_not_warn(self, caplog):
+        """``seen_hashes_path: null`` states the same thing as omission.
+
+        ``configs/streaming_local_demo.yaml`` writes exactly that, annotated
+        "not used with data_source=local" — a deliberate no-op, not a mistake.
+        """
+        import logging
+
+        from llm.training.core.config import DataConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DataConfig(data_source="local", seen_hashes_path=None)
+
+        assert not any("is not a dedup variant" in record.getMessage() for record in caplog.records)
+
+    def test_shipped_streaming_configs_actually_enable_dedup(self):
+        """The streaming presets must use a ``dedup_*`` source, not plain ``hf``.
+
+        They set ``seen_hashes_path`` + ``write_seen_hashes`` and their header
+        claims that enables the wrapper. It did not: ``hf`` never wraps
+        ``DedupTextSource``, so those presets silently skipped deduplication and
+        never wrote the hash file.
+        """
+        import pathlib
+
+        import yaml
+
+        configs_dir = pathlib.Path(__file__).resolve().parents[2] / "configs"
+        for name in ("streaming_c4.yaml", "streaming_c4_demo.yaml"):
+            raw = yaml.safe_load((configs_dir / name).read_text(encoding="utf-8")) or {}
+            data = raw.get("data") or {}
+            if not any(k in data for k in ("seen_hashes_path", "write_seen_hashes")):
+                continue
+            assert data.get("data_source", "").startswith("dedup_"), (
+                f"{name} sets dedup knobs but data_source={data.get('data_source')!r}, which ignores them"
+            )

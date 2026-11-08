@@ -35,7 +35,7 @@ training:
   run_validation: false   # signal comes from train loss + post-run ppl eval
 
 data:
-  data_source: hf
+  data_source: dedup_hf   # hf + dedup wrapper (plain `hf` ignores seen_hashes_path)
   tokenizer_type: hf
   tokenizer_path: gpt2
   dataset_name: allenai/c4
