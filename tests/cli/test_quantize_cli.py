@@ -669,3 +669,87 @@ def test_atomic_save_leaves_no_tmp_and_writes_loadable_output(tmp_path):
     loaded = torch.load(output, map_location="cpu", weights_only=False)
     assert loaded["value"] == 42
     assert torch.equal(loaded["tensor"], torch.ones(2, 3))
+
+
+class TestInPlaceClobberGuard:
+    """`quantize` must never write over its own `--model`.
+
+    `torch.save(quantized, output)` with `--output == --model` replaces the source
+    FP weights irreversibly after an expensive quantisation — the most destructive
+    misuse of this CLI. The guard exists and its docstring says it resolves
+    symlinks and relative paths, but NOTHING tested it (unlike `prune` /
+    `decompose`, which at least had an identical-string test).
+    """
+
+    @staticmethod
+    def _model(tmp_path: Path) -> Path:
+        import torch
+
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(0)
+        model = DecoderModel(
+            vocab_size=32,
+            hidden_size=16,
+            num_layers=1,
+            num_heads=2,
+            max_seq_len=16,
+            intermediate_size=32,
+        ).eval()
+        path = tmp_path / "m.pt"
+        torch.save(model, path)
+        return path
+
+    @staticmethod
+    def _calibration(tmp_path: Path) -> Path:
+        """Minimal pre-tokenized calibration batch (the CLI requires one)."""
+        import torch
+
+        path = tmp_path / "calib.pt"
+        torch.save([torch.randint(0, 32, (2, 4))], path)
+        return path
+
+    def test_identical_paths_are_refused(self, runner: CliRunner, tmp_path: Path):
+        model = self._model(tmp_path)
+        calib = self._calibration(tmp_path)
+        result = runner.invoke(
+            app, ["gptq", "--model", str(model), "--output", str(model), "--calib-data-tokens", str(calib)]
+        )
+
+        assert result.exit_code != 0
+        assert "must not be the same file" in strip_ansi(result.output + (result.stderr or ""))
+        assert model.exists(), "the source checkpoint was destroyed"
+
+    def test_a_symlinked_output_is_refused(self, runner: CliRunner, tmp_path: Path):
+        """The comparison must resolve symlinks, not compare the raw arguments."""
+        model = self._model(tmp_path)
+        calib = self._calibration(tmp_path)
+        alias = tmp_path / "alias.pt"
+        alias.symlink_to(model)
+
+        result = runner.invoke(
+            app, ["gptq", "--model", str(model), "--output", str(alias), "--calib-data-tokens", str(calib)]
+        )
+
+        assert result.exit_code != 0
+        assert "must not be the same file" in strip_ansi(result.output + (result.stderr or ""))
+        assert model.exists(), "the source checkpoint was destroyed through a symlinked --output"
+
+    def test_a_relative_spelling_is_refused(self, runner: CliRunner, tmp_path: Path):
+        import os
+
+        model = self._model(tmp_path)
+        calib = self._calibration(tmp_path)
+
+        cwd = Path.cwd()
+        os.chdir(tmp_path)
+        try:
+            result = runner.invoke(
+                app, ["gptq", "--model", str(model), "--output", "./m.pt", "--calib-data-tokens", str(calib)]
+            )
+        finally:
+            os.chdir(cwd)
+
+        assert result.exit_code != 0
+        assert "must not be the same file" in strip_ansi(result.output + (result.stderr or ""))
+        assert model.exists()
