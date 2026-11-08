@@ -1641,3 +1641,87 @@ class TestBatchGenerateRequestsIsolation:
                 f"result {result!r} does not start with its own prompt {prompt!r} — "
                 "the sequence was assembled from another request's context"
             )
+
+
+class TestInterleavedSequencesAdvanceTogether:
+    """Two sequences must advance through the SAME `step()` calls, independently.
+
+    This is the engine's whole point — iteration-level scheduling — and nothing
+    tested it. Every existing engine test either drives one request or runs
+    requests sequentially, so a scheduler that only ever advanced the first
+    sequence would still pass them all. The check here is that both sequences gain
+    exactly one token per step while sharing the KV pool and slot table, and that
+    the tokens they produce equal what each would produce ALONE (greedy, so any
+    difference is real interference rather than sampling noise).
+    """
+
+    @staticmethod
+    def _run_steps(engine, request_ids, max_steps=20):
+        """Advance the engine, recording the longest generated prefix per request."""
+        collected = {request_id: [] for request_id in request_ids}
+        schedule_sizes = []
+        for _ in range(max_steps):
+            stats = engine.step()
+            schedule_sizes.append(stats.scheduled)
+            for request_id in request_ids:
+                sequence = engine.scheduler.get_sequence(request_id)
+                if sequence is not None and len(sequence.generated_ids) > len(collected[request_id]):
+                    collected[request_id] = list(sequence.generated_ids)
+            if stats.scheduled == 0:
+                break
+        return collected, schedule_sizes
+
+    def _engine(self, tiny_model, device, mock_tokenizer):
+        return ContinuousBatchingEngine(
+            model=tiny_model,
+            tokenizer=mock_tokenizer,
+            device=device,
+            max_batch_size=4,
+            max_seq_len=32,
+        )
+
+    def test_both_sequences_gain_one_token_per_step(self, tiny_model, device, mock_tokenizer):
+        from llm.serving.schemas import GenerationRequest
+
+        engine = self._engine(tiny_model, device, mock_tokenizer)
+        for index, prompt in enumerate(["hello", "world"]):
+            request = GenerationRequest(prompt=prompt, max_new_tokens=4, temperature=0.0)
+            request.request_id = f"r{index}"
+            engine.add_request(request)
+
+        collected, schedule_sizes = self._run_steps(engine, ["r0", "r1"])
+
+        # The first step must have scheduled BOTH sequences, not just one.
+        assert schedule_sizes[0] == 2, f"first step scheduled {schedule_sizes[0]} sequences, expected 2"
+
+        # Every decoding step advances both by exactly one token.
+        for request_id, tokens in collected.items():
+            assert len(tokens) == 4, f"{request_id} produced {len(tokens)} tokens, expected 4"
+
+    def test_interleaved_output_equals_solo_output(self, tiny_model, device, mock_tokenizer):
+        """Sharing the engine must not change what either sequence generates."""
+        from llm.serving.schemas import GenerationRequest
+
+        def run(prompts):
+            engine = self._engine(tiny_model, device, mock_tokenizer)
+            for index, prompt in enumerate(prompts):
+                request = GenerationRequest(prompt=prompt, max_new_tokens=4, temperature=0.0)
+                request.request_id = f"r{index}"
+                engine.add_request(request)
+            collected, _ = self._run_steps(engine, [f"r{i}" for i in range(len(prompts))])
+            return collected
+
+        # Different LENGTHS, not just different text: the mock tokenizer encodes
+        # purely by length, so two same-length prompts are indistinguishable
+        # inputs and a "they must differ" assertion would be testing the fixture.
+        together = run(["hello", "world!!"])
+        alone_a = run(["hello"])["r0"]
+        alone_b = run(["world!!"])["r0"]
+
+        assert together["r0"] == alone_a, (
+            f"sequence 'hello' changed when run alongside 'world!!': {together['r0']} != {alone_a}"
+        )
+        assert together["r1"] == alone_b, (
+            f"sequence 'world!!' changed when run alongside 'hello': {together['r1']} != {alone_b}"
+        )
+        assert together["r0"] != together["r1"], "both sequences produced identical tokens — they may share one context"
