@@ -930,3 +930,78 @@ class TestDedupKnobsNeedADedupSource:
             assert data.get("data_source", "").startswith("dedup_"), (
                 f"{name} sets dedup knobs but data_source={data.get('data_source')!r}, which ignores them"
             )
+
+
+class TestKvCacheCapabilityMessageStaysAccurate:
+    """The "switch to an impl that supports KV cache" hint must reflect reality.
+
+    ``ModelConfig`` rejects ``use_kv_cache=True`` on an impl whose capability
+    record is ``False``, and the message used to end with a hard-coded
+    ``(currently: mha)``. By then ``flash_attn`` and ``mla`` supported KV cache
+    as well, so the one actionable sentence in the error steered the user to the
+    least attractive of three working options — and the list re-staled every time
+    an impl gained support, silently.
+
+    Nothing asserted the text, which is why it survived. These tests derive the
+    expectation from the same registry the check uses, so the assertion cannot
+    drift away from the truth either.
+    """
+
+    @staticmethod
+    def _non_kv_capable_impl(monkeypatch):
+        """Register a throwaway impl whose capability record is False.
+
+        ``replace`` rather than ``register`` so a previous test in the same
+        process cannot make this one fail on a duplicate name; the registry
+        entry and the capability record are both restored by ``monkeypatch`` so
+        nothing leaks into other tests.
+        """
+        from llm.core.registry import ATTENTION_KV_CACHE_CAPABILITY, ATTENTION_REGISTRY
+
+        name = "test_no_kv_cache_impl"
+        monkeypatch.setattr(ATTENTION_REGISTRY, "_entries", dict(ATTENTION_REGISTRY._entries))
+        ATTENTION_REGISTRY.replace(name, object)
+        monkeypatch.setitem(ATTENTION_KV_CACHE_CAPABILITY, name, False)
+        return name
+
+    def test_message_lists_every_kv_capable_impl(self, monkeypatch):
+        from llm.core.registry import ATTENTION_KV_CACHE_CAPABILITY
+        from llm.training.core.config import ModelConfig
+
+        name = self._non_kv_capable_impl(monkeypatch)
+        expected = sorted(impl for impl, supports in ATTENTION_KV_CACHE_CAPABILITY.items() if supports)
+        assert len(expected) >= 2, (
+            "this test needs more than one KV-capable impl, otherwise the "
+            "'(currently: ...)' list could be right by accident"
+        )
+
+        with pytest.raises(ValidationError) as excinfo:
+            ModelConfig(attn_impl=name, use_kv_cache=True)
+
+        message = str(excinfo.value)
+        for impl in expected:
+            assert impl in message, f"KV-capable impl {impl!r} missing from the error message"
+        assert message.count("currently:") == 1
+
+    def test_message_does_not_hardcode_a_single_impl(self, monkeypatch):
+        """Regression guard for the literal that was there: ``(currently: mha)``.
+
+        Computed from the registry rather than comparing to a pasted string, so
+        adding a KV-capable impl updates the expectation automatically — the
+        failure mode is a stale message, and a hard-coded expectation would
+        re-introduce the same staleness one level up.
+        """
+        from llm.core.registry import ATTENTION_KV_CACHE_CAPABILITY
+        from llm.training.core.config import ModelConfig
+
+        kv_capable = sorted(impl for impl, supports in ATTENTION_KV_CACHE_CAPABILITY.items() if supports)
+        if kv_capable == ["mha"]:  # pragma: no cover - only if support regresses
+            pytest.skip("only one KV-capable impl exists; nothing to disagree with")
+
+        name = self._non_kv_capable_impl(monkeypatch)
+        with pytest.raises(ValidationError) as excinfo:
+            ModelConfig(attn_impl=name, use_kv_cache=True)
+
+        assert "(currently: mha)." not in str(excinfo.value), (
+            "the message still ends with the hard-coded '(currently: mha)' list"
+        )

@@ -146,10 +146,18 @@ class ModelConfig(BaseModel):
             raise ValueError(f"Unknown mlp_impl '{self.mlp_impl}'. Available: {', '.join(MLP_REGISTRY.names())}.")
 
         if self.use_kv_cache and not ATTENTION_KV_CACHE_CAPABILITY[self.attn_impl]:
+            # Derive the suggestion from the registry instead of hard-coding a
+            # list. The message used to end "(currently: mha)" while
+            # flash_attn and mla both support KV cache too, so a user on a
+            # non-supporting impl was steered to the least attractive of three
+            # options — and the list silently re-staled each time an impl gained
+            # support.
+            kv_capable = sorted(name for name, supports in ATTENTION_KV_CACHE_CAPABILITY.items() if supports)
             raise ValueError(
                 f"attn_impl='{self.attn_impl}' does not support KV cache "
                 f"(capability=False). Set model.use_kv_cache=False or switch "
-                f"to an attention impl that supports KV cache (currently: mha)."
+                f"to an attention impl that supports KV cache "
+                f"(currently: {', '.join(kv_capable)})."
             )
 
         # RoPE is only wired into the MHA and flash_attn backends (the block
