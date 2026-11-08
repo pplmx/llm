@@ -501,10 +501,24 @@ def test_pfeiffer_kwarg_forwarding(model: _TinyTransformerBlock) -> None:
     assert model.mlp.fc2.bottleneck_dim == 4
 
 
-def test_registry_count_after_pfeiffer_added() -> None:
-    """Pfeiffer brings the registry to 8 methods (was 7 before this slice)."""
-    assert len(PEFT_REGISTRY.names()) == 8
+def test_pfeiffer_is_registered_as_a_builtin() -> None:
+    """Pfeiffer must be dispatchable through ``apply_peft``.
+
+    This used to assert ``len(PEFT_REGISTRY.names()) == 8`` with the docstring
+    "Pfeiffer brings the registry to 8 methods (was 7 before this slice)". The
+    count is a snapshot of history, not a property of this feature: it says
+    nothing about Pfeiffer and it becomes wrong on the next method added. Worse,
+    it was the only thing near this file noticing the count at all, while the
+    exhaustive check lives in ``test_peft_registry.py``.
+
+    What this slice actually needs is that the method is reachable by name —
+    which the exhaustive test cannot assert for the APPLY path (it inspects the
+    registry, not dispatch).
+    """
     assert "pfeiffer_adapter" in PEFT_REGISTRY.names()
+    # And it must be the dispatchable entry, not just a name in a list.
+    entry = PEFT_REGISTRY.get("pfeiffer_adapter")
+    assert entry.apply is apply_pfeiffer_adapter
 
 
 # ---------------------------------------------------------------------------

@@ -101,29 +101,55 @@ def test_every_declared_field_is_consumed_by_the_factory():
     legitimately do not change the shape (they change behaviour, gate another
     field, or are consumed outside the decoder factory).
     """
-    field_names = set(ModelConfig.model_fields)
+    import ast
+    import inspect
+    import pathlib
 
-    # Fields consumed outside the decoder factory, or behavioural rather than
-    # shape-changing, each with its own dedicated test somewhere in the suite.
-    known_indirect = {
-        "dropout",  # fans out into embedding/attn/mlp dropout probabilities
-        "top_k",  # only meaningful with mlp_impl='moe'
-        "use_kv_cache",  # validated against ATTENTION_KV_CACHE_CAPABILITY
-        "max_seq_len",  # changes buffers, not parameter count
-        "rope_theta",  # changes RoPE frequencies, not shape
-        "norm_first",  # ordering only
-    }
+    from llm.runtime.model_factory import decoder_kwargs_from_config
+
+    field_names = set(ModelConfig.model_fields)
     assert field_names, "ModelConfig reported no fields"
 
-    # The bias/intermediate/expert fields are the ones most likely to be declared
-    # and forgotten; assert they are present so this test fails loudly if they
-    # ever disappear or are renamed without a check.
-    for required in ("qkv_bias", "mlp_bias", "lm_head_bias", "intermediate_size", "num_experts"):
-        assert required in field_names, f"{required} vanished from ModelConfig"
+    # Fields deliberately NOT forwarded to ``DecoderModel``. Every entry must
+    # name a field that still exists (asserted below), so this cannot rot into a
+    # list of names nobody removes.
+    not_forwarded = {
+        "use_kv_cache",  # consumed by ModelConfig.check_consistency, not the constructor
+    }
 
-    assert known_indirect <= field_names, (
-        f"fields classified as indirect no longer exist: {sorted(known_indirect - field_names)}"
+    # Read the attribute accesses off the mapping function's source. This is
+    # what "consumed by the factory" means concretely: ``config.<field>`` is
+    # evaluated and placed in the kwargs dict. Checking a hand-written list of
+    # "important" fields (bias/intermediate/expert) is what this test used to
+    # do, and it left 19 of 25 fields entirely unverified — a field added and
+    # never forwarded would have passed.
+    source = pathlib.Path(inspect.getsourcefile(decoder_kwargs_from_config)).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "decoder_kwargs_from_config"
     )
+    forwarded = {
+        node.attr
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "config"
+    }
+
+    unforwarded = sorted(field_names - forwarded - not_forwarded)
+    assert not unforwarded, (
+        "ModelConfig declares fields that decoder_kwargs_from_config never forwards "
+        f"to the model: {unforwarded}. Either forward them, or add them to "
+        "``not_forwarded`` with a comment saying where they ARE consumed."
+    )
+
+    stale_exemptions = not_forwarded - field_names
+    assert not stale_exemptions, f"not_forwarded names fields that no longer exist: {sorted(stale_exemptions)}"
+
+    # A field listed as "not forwarded" must actually not be forwarded, or the
+    # exemption is hiding a duplicate decision rather than documenting one.
+    for exempt in not_forwarded:
+        assert exempt not in forwarded, f"{exempt!r} is exempted but IS forwarded"
 
 
 # --- Legacy per-method switches must warn about combining ---

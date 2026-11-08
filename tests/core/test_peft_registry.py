@@ -100,10 +100,38 @@ def test_registry_holds_peftmethod_dataclass():
         assert entry.name == name
 
 
-def test_all_seven_builtins_registered():
-    names = PEFT_REGISTRY.names()
-    for expected in ("lora", "qlora", "adalora", "prefix_tuning", "ia3", "bitfit", "adapter"):
-        assert expected in names, f"Built-in PEFT method '{expected}' missing from registry"
+def test_all_builtins_registered():
+    """EVERY built-in PEFT method must be present.
+
+    This test used to be ``test_all_seven_builtins_registered`` and checked
+    seven names. ``pfeiffer_adapter`` was added as an eighth and was never
+    included here — and because the assertion only said "these seven are
+    members" (never "the set is exactly this"), it kept passing while covering
+    7/8 of what its name claimed. A regression that dropped
+    ``pfeiffer_adapter`` from the registry would have gone unnoticed by the one
+    test whose name says "all built-ins".
+
+    The expected set is now the authoritative list, compared with ``==``
+    against the registry so a missing method fails here. Adding a new built-in
+    therefore requires touching this list — which is the intent: "all built-ins
+    are registered" cannot be asserted without knowing what they are.
+    """
+    expected = {
+        "lora",
+        "qlora",
+        "adalora",
+        "prefix_tuning",
+        "ia3",
+        "bitfit",
+        "adapter",
+        "pfeiffer_adapter",
+    }
+    names = set(PEFT_REGISTRY.names())
+    missing = expected - names
+    assert not missing, f"Built-in PEFT method(s) missing from registry: {sorted(missing)}"
+    # Equality (not just containment) so a RENAME also fails loudly here rather
+    # than leaving the old name silently unchecked.
+    assert names == expected, f"registry built-ins changed: extra={sorted(names - expected)}"
 
 
 def test_registry_names_are_sorted():
