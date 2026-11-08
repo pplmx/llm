@@ -96,6 +96,20 @@ def quantize_model_fp8(
     Raises:
         ValueError: for empty/invalid calibration, unmatched targets, or a
             layer already quantized.
+
+    Note:
+        Quantization REPLACES each ``nn.Linear`` with an
+        :class:`Fp8QuantizedLinear`, so the state-dict KEYS change:
+        ``...qkv_proj.weight`` becomes ``...qkv_proj.weight_fp8`` plus
+        ``...qkv_proj.weight_scale`` (and ``activation_scale`` for static acts).
+        The consequence is easy to miss: loading a full-precision checkpoint into
+        a quantized model with ``strict=False`` reports the base weight as
+        "unexpected" and all quantized params as "missing" — i.e. NOTHING is
+        loaded and the model silently keeps its own initialization. To preserve
+        outputs, quantize the model whose weights you actually want (or load the
+        full-precision weights FIRST, then quantize). See
+        :func:`llm.serving.loader.load_model_and_tokenizer` for the supported
+        path, which round-trips the whole quantized module.
     """
     config = config or Fp8Config()
     if device is not None:

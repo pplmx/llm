@@ -605,3 +605,51 @@ def test_fp8_layer_output_is_finite_for_large_activation_scale():
         with torch.no_grad():
             out = quantized(torch.randn(2, 32) * magnitude)
         assert torch.isfinite(out).all(), f"non-finite output at input scale {magnitude}"
+
+
+def test_loading_full_precision_weights_into_a_quantized_model_is_partial():
+    """The trap is a PARTIAL load, not a total miss — which is worse.
+
+    ``quantize_model_fp8`` replaces each ``nn.Linear`` with an
+    ``Fp8QuantizedLinear``: ``...weight`` becomes ``...weight_fp8`` plus
+    ``...weight_scale``, but ``...bias`` KEEPS its name. So loading a
+    full-precision checkpoint with ``strict=False`` does not fail cleanly — the
+    biases load and the weights do not, leaving the model half-restored from the
+    checkpoint and half-kept from its own initialization. Nothing raises, and the
+    caller believes the checkpoint was applied.
+
+    Documented in ``quantize_model_fp8``'s Note; this test pins the actual split
+    so the guidance stays true (if the keys ever became fully disjoint, or fully
+    shared, the note would need rewriting).
+    """
+    import copy
+
+    import torch
+    import torch.nn as nn
+
+    from llm.quantization.fp8 import Fp8Config, Fp8QuantizedLinear, quantize_model_fp8
+
+    torch.manual_seed(0)
+    base = nn.Sequential(nn.Linear(8, 8), nn.ReLU(), nn.Linear(8, 4))
+    quantized = quantize_model_fp8(copy.deepcopy(base), [torch.randn(2, 8)], Fp8Config())
+    assert any(isinstance(module, Fp8QuantizedLinear) for module in quantized.modules())
+
+    base_keys = set(base.state_dict())
+    quantized_keys = set(quantized.state_dict())
+
+    # Biases keep their names; weights are renamed to the fp8 pair.
+    shared = base_keys & quantized_keys
+    assert shared, "expected the bias keys to survive quantisation"
+    assert all(key.endswith(".bias") for key in shared), f"non-bias keys were shared unexpectedly: {sorted(shared)}"
+    assert all(key.endswith((".weight_fp8", ".weight_scale", ".activation_scale")) for key in quantized_keys - shared)
+
+    # The documented consequence: a NON-STRICT load is a PARTIAL restore.
+    missing, unexpected = quantized.load_state_dict(base.state_dict(), strict=False)
+    loaded = base_keys - set(unexpected)
+    assert loaded == shared, "the loaded keys must be exactly the shared (bias) ones"
+    assert missing, "every quantized weight parameter should report as missing"
+
+    # And that partial restore actually changed the biases.
+    for name in shared:
+        expected = base.state_dict()[name].to(quantized.state_dict()[name].device)
+        assert torch.equal(quantized.state_dict()[name], expected), f"{name} was not restored"
