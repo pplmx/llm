@@ -329,3 +329,51 @@ def test_preset_applied_to_a_dedup_config_keeps_it_operational():
         rows = list(source.iter_texts())
 
     assert rows == ["same", "unique"], f"deduplication did not survive the preset: {rows}"
+
+
+@pytest.mark.parametrize("alias", ["c4", "the-pile", "pile", "wikipedia"])
+def test_resolve_preset_rejects_bare_aliases(alias):
+    """Bare aliases are NOT supported — the docstring used to claim they were.
+
+    ``resolve_preset`` matches the ``BUILTIN_PRESETS`` key, the
+    ``redpajama:<subset>`` shorthand, or a preset's ``dataset_name``. ``"c4"``
+    is none of those (the key is ``"allenai/c4"`` and the RedPajama subset is
+    reached as ``"redpajama/c4"``), so it raises. Pinned because the docstring
+    advertised ``"c4"`` / ``"the-pile"`` as canonical short names and a caller
+    following it got a KeyError.
+    """
+    from llm.data.presets import resolve_preset
+
+    with pytest.raises(KeyError, match="unknown data preset"):
+        resolve_preset(alias)
+
+
+def test_resolve_preset_shorthand_is_case_insensitive():
+    """The ``redpajama:<subset>`` prefix is matched case-insensitively.
+
+    The implementation lower-cases only the prefix, so ``RedPajama:arxiv`` and
+    ``redpajama:arxiv`` must agree — while the subset after the separator is
+    kept as written (dict keys are lower-case).
+    """
+    from llm.data.presets import resolve_preset
+
+    lower = resolve_preset("redpajama:arxiv")
+    mixed = resolve_preset("RedPajama:arxiv")
+    assert lower is mixed or lower == mixed
+    assert lower.dataset_config == "arxiv"
+
+
+def test_resolve_preset_bare_full_id_picks_a_shared_subset():
+    """All RedPajama presets share one dataset id, so the bare id is ambiguous.
+
+    ``docs/guides/data.md`` tells users to prefer ``redpajama/<subset>`` because
+    the bare id resolves to whichever subset comes first. Assert the ambiguity is
+    real (rather than, say, the last registered subset silently winning) so the
+    doc's advice stays correct.
+    """
+    from llm.data.presets import resolve_preset
+
+    preset = resolve_preset("togethercomputer/RedPajama-Data-1T")
+    assert preset.dataset_config == "arxiv", (
+        f"the bare id resolved to {preset.dataset_config!r}; data.md documents 'arxiv'"
+    )

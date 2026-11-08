@@ -180,9 +180,17 @@ def resolve_preset(name: str) -> DatasetPreset:
 
     ``name`` may be:
 
-    - the preset's canonical short name (``"c4"``, ``"the-pile"``,
-      ``"redpajama/c4"`` …), or
-    - the full HuggingFace dataset id (``"allenai/c4"``).
+    - the ``BUILTIN_PRESETS`` key (``"allenai/c4"``, ``"monology/pile-uncopyrighted"``,
+      ``"redpajama/arxiv"`` …),
+    - the RedPajama shorthand ``"redpajama:<subset>"`` (case-insensitive prefix),
+    - a bare HuggingFace dataset id, matched against each preset's
+      ``dataset_name`` — note the RedPajama presets SHARE one dataset id, so
+      ``"togethercomputer/RedPajama-Data-1T"`` resolves to whichever subset was
+      registered first (``redpajama/arxiv``); use the explicit
+      ``redpajama/<subset>`` form when you need a specific one.
+
+    Bare aliases like ``"c4"`` or ``"the-pile"`` do NOT resolve — this
+    docstring previously claimed they did. Use the full id or add a preset.
 
     Raises:
         KeyError: if no preset matches. The error message includes
