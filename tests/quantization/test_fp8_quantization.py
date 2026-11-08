@@ -516,3 +516,92 @@ def test_quantize_model_fp8_policy_can_lift_calibration_requirement():
                 layer_policies=(LayerQuantPolicy(("nope.fc1",), activation="dynamic"),),
             ),
         )
+
+
+# --- FP8_MAX must track torch's actual format limits, not a stale constant ---
+
+
+def test_fp8_max_matches_torch_finfo():
+    """Every entry in ``FP8_MAX`` must equal ``torch.finfo(dtype).max``.
+
+    The quantizer derives ``scale = absmax / FP8_MAX``, so a table value that
+    drifts from the real format limit makes every reconstructed weight wrong by
+    that ratio — and the existing tests only compare against ``FP8_MAX`` itself,
+    which cannot catch it. Cross-checked against torch.
+    """
+    import torch
+
+    from llm.quantization._fp8_layer import FP8_MAX
+
+    torch_limits = {
+        "e4m3": torch.finfo(torch.float8_e4m3fn).max,
+        "e5m2": torch.finfo(torch.float8_e5m2).max,
+    }
+    assert set(FP8_MAX) == set(torch_limits), f"FP8_MAX covers {sorted(FP8_MAX)}, torch has {sorted(torch_limits)}"
+    for name, expected in torch_limits.items():
+        assert FP8_MAX[name] == expected, f"{name}: table says {FP8_MAX[name]}, torch says {expected}"
+
+
+def test_quantized_weights_stay_within_the_format_range():
+    """No quantized weight may exceed the format max, even with a huge outlier.
+
+    ``x / scale`` is cast straight to fp8, which saturates at the format limit —
+    that is the intended behaviour (an outlier costs precision, not an inf), so
+    the stored magnitudes must be bounded.
+    """
+    import torch
+
+    from llm.quantization._fp8_layer import FP8_MAX, quantize_fp8_linear
+
+    torch.manual_seed(0)
+    layer = torch.nn.Linear(16, 8)
+    with torch.no_grad():
+        layer.weight[0, 0] = 1e6  # one enormous outlier
+    quantized = quantize_fp8_linear(layer)
+
+    stored = quantized.weight_fp8.float().abs()
+    assert torch.isfinite(stored).all(), "the outlier produced inf instead of saturating"
+    assert stored.max().item() <= FP8_MAX["e4m3"], (
+        f"stored weight {stored.max().item()} exceeds the E4M3 max {FP8_MAX['e4m3']}"
+    )
+
+
+def test_quantize_model_fp8_rejects_an_already_quantized_model():
+    """Re-quantizing must fail loudly, like AWQ and GPTQ already do.
+
+    The underlying ``Fp8QuantizedLinear`` has no ``weight`` attribute, so a
+    second pass would otherwise die with a bare
+    ``AttributeError: 'Fp8QuantizedLinear' object has no attribute 'weight'``.
+    """
+    import pytest
+    import torch
+
+    from llm.quantization.fp8 import quantize_model_fp8
+
+    torch.manual_seed(0)
+    model = torch.nn.Sequential(torch.nn.Linear(16, 16))
+    calibration = [torch.randn(4, 16)]
+
+    quantized = quantize_model_fp8(model, calibration)
+    with pytest.raises(ValueError, match="already FP8-quantized"):
+        quantize_model_fp8(quantized, calibration)
+
+
+def test_fp8_layer_output_is_finite_for_large_activation_scale():
+    """Dynamic activation scaling must keep the output finite as inputs grow.
+
+    The scale is derived per forward from ``x.abs().max()``, so a large-magnitude
+    batch is normalized before the cast rather than overflowing the format.
+    """
+    import torch
+
+    from llm.quantization._fp8_layer import quantize_fp8_linear
+
+    torch.manual_seed(0)
+    layer = torch.nn.Linear(32, 16)
+    quantized = quantize_fp8_linear(layer)
+
+    for magnitude in (1.0, 1e3, 1e5):
+        with torch.no_grad():
+            out = quantized(torch.randn(2, 32) * magnitude)
+        assert torch.isfinite(out).all(), f"non-finite output at input scale {magnitude}"
