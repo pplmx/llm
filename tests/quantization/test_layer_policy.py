@@ -320,3 +320,57 @@ def test_resolve_generic_over_arbitrary_dataclass():
 
 
 pytestmark = pytest.mark.quick
+
+
+# =============================================================================
+# Cross-algorithm override fields — the documented "reject loudly" contract
+# =============================================================================
+
+
+class TestCrossAlgorithmOverrides:
+    """An override field the base config lacks must be REJECTED, not dropped.
+
+    ``LayerQuantPolicy`` carries both int-quant knobs (bits / group_size / sym /
+    act_order) and FP8 knobs (weight_dtype / per_channel / activation). The
+    docstring promises that an FP8 field on an int algorithm (or the reverse) is
+    "rejected loudly rather than silently dropped" — which matters, because a
+    silently dropped override produces a layer quantized at the BASE setting
+    while the caller believes the override applied.
+    """
+
+    def test_fp8_field_on_an_int_algorithm_is_rejected(self):
+        from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
+        from llm.quantization.gptq import GPTQConfig
+
+        policy = LayerQuantPolicy(target_modules=("fc1",), weight_dtype="e5m2")
+        with pytest.raises(ValueError, match="GPTQConfig has no weight_dtype field"):
+            resolve_layer_policies((policy,), {"fc1", "fc2"}, GPTQConfig(bits=4))
+
+    def test_int_field_on_fp8_is_rejected(self):
+        from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
+        from llm.quantization.fp8 import Fp8Config
+
+        policy = LayerQuantPolicy(target_modules=("fc1",), group_size=64)
+        with pytest.raises(Exception, match="group_size"):
+            resolve_layer_policies((policy,), {"fc1", "fc2"}, Fp8Config())
+
+    def test_fp8_field_on_fp8_is_accepted(self):
+        """The same field is legitimate on the algorithm that HAS it."""
+        from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
+        from llm.quantization.fp8 import Fp8Config
+
+        policy = LayerQuantPolicy(target_modules=("fc1",), weight_dtype="e5m2")
+        resolved = resolve_layer_policies((policy,), {"fc1"}, Fp8Config())
+
+        assert resolved["fc1"].weight_dtype == "e5m2", "the override did not reach the effective config"
+
+    def test_int_field_on_int_is_accepted(self):
+        """And the int knobs still work on the int algorithm."""
+        from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
+        from llm.quantization.gptq import GPTQConfig
+
+        policy = LayerQuantPolicy(target_modules=("fc1",), bits=8, group_size=32)
+        resolved = resolve_layer_policies((policy,), {"fc1"}, GPTQConfig(bits=4))
+
+        assert resolved["fc1"].bits == 8
+        assert resolved["fc1"].group_size == 32
