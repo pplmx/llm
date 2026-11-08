@@ -300,3 +300,61 @@ def test_export_with_model_config_round_trips_for_every_quant_level(roundtrip_co
     assert worst["f32"] < 1e-3, f"f32 round trip should be near-exact, got {worst['f32']:.2e}"
     assert worst["q8_0"] > worst["f32"], "q8_0 should be lossier than f32"
     assert worst["q4_0"] > worst["q8_0"], "q4_0 should be lossier than q8_0"
+
+
+@pytest.mark.parametrize(
+    ("label", "overrides"),
+    [
+        ("gqa", {"num_kv_heads": 1}),
+        ("glu", {"use_glu": True}),
+        ("nondefault_rope_theta", {"rope_theta": 500.0}),
+        ("glu_and_gqa", {"use_glu": True, "num_kv_heads": 1}),
+    ],
+)
+def test_roundtrip_is_exact_across_architecture_variants(label, overrides, tmp_path):
+    """F32 export→load must stay bit-exact for the shapes GGUF names differently.
+
+    The default fixture covers one plain GQA-with-2-kv-heads model. These
+    variants exercise the mapping paths that change the TENSOR SET rather than
+    just the values: GQA (q/k/v have different widths), GLU (an extra gate
+    projection), and a non-default ``rope_theta`` (a config field that must
+    survive as metadata, not as weights). A regression in any of them would
+    produce a model that loads but computes something else.
+    """
+    from llm.compat.weight_mapping import convert_gguf_weights  # noqa: F401  (import parity with the loader)
+
+    torch.manual_seed(0)
+    config_kwargs = {
+        "vocab_size": 32,
+        "hidden_size": 16,
+        "num_layers": 1,
+        "num_heads": 2,
+        "num_kv_heads": 2,
+        "intermediate_size": 32,
+        "max_seq_len": 16,
+        "use_rope": True,
+        "norm_first": True,
+        "qkv_bias": False,
+        "mlp_bias": False,
+        "lm_head_bias": False,
+        **overrides,
+    }
+    config = ModelConfig(**config_kwargs)
+    model = _build_model(config).eval()
+    path = export_to_gguf(model, tmp_path / f"{label}.gguf", quantize="f32", model_config=config.model_dump())
+
+    restored = load_gguf_model(path).eval()
+
+    # Config fields must survive as METADATA (they are not weights).
+    if "rope_theta" in overrides:
+        assert restored.rope_theta == overrides["rope_theta"], (
+            f"{label}: rope_theta {restored.rope_theta} != {overrides['rope_theta']}"
+        )
+
+    input_ids = torch.randint(0, config.vocab_size, (1, 8))
+    with torch.no_grad():
+        expected = model(input_ids)
+        actual = restored(input_ids)
+    assert torch.equal(expected, actual), (
+        f"{label}: round trip was not bit-exact (max |d|={(expected - actual).abs().max():.2e})"
+    )
