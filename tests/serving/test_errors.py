@@ -850,3 +850,59 @@ class TestNoFreeSlotsIsRetryableBackpressure:
         assert response.json()["error"]["code"] == "model_unavailable"
         # And it must NOT carry retry guidance it cannot honour.
         assert "Retry-After" not in response.headers
+
+
+class TestNoFreeSlotsReachesTheRouterThroughTheRealEngine:
+    """The exception must survive the engine's own machinery, not just a mock.
+
+    The router-level tests above inject ``NoFreeSlotsError`` straight from a
+    mocked generation service, which proves the router's ``except`` clause maps
+    the type correctly — but not that the type ever ARRIVES. In production it is
+    raised deep inside ``_lock_step_pre`` (during ``allocate``), travels out of
+    ``step()``, and then out of ``stream_request``'s generator before the router
+    sees anything. A ``finally`` that swallowed it, or a generator wrapper that
+    converted it, would leave the router tests green and the live API reporting
+    a generic 500.
+
+    This drives a REAL engine with a deliberately exhausted allocator, so the
+    raise happens on the real path.
+    """
+
+    @staticmethod
+    def _exhausted_engine(device):
+        import torch
+
+        from llm.models.decoder import DecoderModel
+        from llm.serving.batch_engine import ContinuousBatchingEngine
+        from llm.serving.schemas import GenerationRequest
+        from tests.support.tokenizers import StubTokenizer
+
+        torch.manual_seed(0)
+        model = DecoderModel(vocab_size=100, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=32, device=device)
+        engine = ContinuousBatchingEngine(model=model, tokenizer=StubTokenizer(), max_batch_size=2, max_seq_len=32)
+        request = GenerationRequest(prompt="hi", max_new_tokens=3)
+        engine.add_request(request)
+        # Take every slot so the next allocate() inside step() raises.
+        while engine.slot_allocator.num_free > 0:
+            engine.slot_allocator.allocate(f"occupied-{engine.slot_allocator.num_free}")
+        return engine, request
+
+    def test_step_raises_the_typed_error(self, device):
+        from llm.serving.batch_engine import NoFreeSlotsError
+
+        engine, _request = self._exhausted_engine(device)
+        with pytest.raises(NoFreeSlotsError):
+            engine.step()
+
+    def test_stream_request_propagates_it_to_the_caller(self, device):
+        """``stream_request`` must not swallow or rewrap it.
+
+        That generator owns a ``finally`` which reaps sequences and releases
+        slots on every exit path — the natural place for an exception to be
+        lost. The router can only map the type if it reaches the caller intact.
+        """
+        from llm.serving.batch_engine import NoFreeSlotsError
+
+        engine, request = self._exhausted_engine(device)
+        with pytest.raises(NoFreeSlotsError):
+            list(engine.stream_request(request))
