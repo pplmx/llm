@@ -19,7 +19,6 @@ def task_context():
     return task, model_cfg
 
 
-@pytest.mark.heavy
 def test_lm_task_perplexity_masked_entirely(task_context):
     """Test perplexity calculation when targets are entirely masked (ignore_index)."""
     task, _model_cfg = task_context
@@ -35,7 +34,6 @@ def test_lm_task_perplexity_masked_entirely(task_context):
     assert metrics["ppl"] == 1.0
 
 
-@pytest.mark.heavy
 def test_lm_task_perplexity_extreme_values(task_context):
     """Test perplexity with high loss."""
     task, _model_cfg = task_context
@@ -59,7 +57,6 @@ def test_lm_task_perplexity_extreme_values(task_context):
     assert metrics["ppl"] == pytest.approx(math.exp(loss.item()), rel=1e-5)
 
 
-@pytest.mark.heavy
 def test_lm_task_target_creation(task_context):
     """Verify that targets are handled correctly in train_step."""
     task, _model_cfg = task_context

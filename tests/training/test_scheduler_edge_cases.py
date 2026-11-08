@@ -1,4 +1,3 @@
-import pytest
 import torch.optim as optim
 from torch.nn import Linear
 
@@ -7,7 +6,6 @@ from llm.training.tasks.lm_task import LanguageModelingTask
 from llm.training.tasks.regression_task import RegressionTask
 
 
-@pytest.mark.heavy
 def test_regression_task_scheduler_avoids_zero_tmax():
     """Requirement: cosine scheduler uses T_max>=1 when warmup consumes all epochs."""
     config = Config(
@@ -32,7 +30,6 @@ def test_regression_task_scheduler_avoids_zero_tmax():
     scheduler.step()
 
 
-@pytest.mark.heavy
 def test_lm_task_scheduler_avoids_zero_tmax():
     """Requirement: LMTask scheduler survives epochs equal to warmup_epochs."""
     config = Config(

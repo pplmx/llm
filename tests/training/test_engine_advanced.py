@@ -17,7 +17,6 @@ def mock_config():
     )
 
 
-@pytest.mark.heavy
 def test_engine_auto_amp_dtype(mock_config):
     """Test that amp_dtype='auto' resolves to float32 on CPU."""
     dm = SyntheticDataModule(mock_config)
@@ -38,7 +37,6 @@ def test_engine_auto_amp_dtype(mock_config):
     assert engine.resolved_amp_dtype == expected_amp_dtype
 
 
-@pytest.mark.heavy
 def test_engine_explicit_amp_dtype(mock_config):
     """Test that explicit amp_dtype is respected."""
     mock_config.optimization.amp_dtype = "float32"
@@ -49,7 +47,6 @@ def test_engine_explicit_amp_dtype(mock_config):
     assert engine.resolved_amp_dtype == "float32"
 
 
-@pytest.mark.heavy
 def test_engine_stops_at_max_steps(mock_config):
     """Regression: ``training.max_steps`` must cap total optimizer steps.
 
@@ -91,7 +88,6 @@ def test_optimization_gradient_checkpointing_field_parses():
     assert OptimizationConfig(gradient_checkpointing=True).gradient_checkpointing is True
 
 
-@pytest.mark.heavy
 def test_engine_applies_gradient_checkpointing_flag(mock_config):
     """The engine must enable DecoderModel checkpointing from the config key."""
     mock_config.optimization.gradient_checkpointing = True
@@ -113,7 +109,6 @@ def test_engine_applies_gradient_checkpointing_flag(mock_config):
     assert engine.model.gradient_checkpointing is True
 
 
-@pytest.mark.heavy
 def test_engine_restores_global_step_on_resume(tmp_path, mock_config):
     """Regression: ``global_step`` must survive a resume.
 
@@ -161,7 +156,6 @@ def test_engine_restores_global_step_on_resume(tmp_path, mock_config):
     )
 
 
-@pytest.mark.heavy
 def test_engine_epoch_avg_not_deflated_by_max_steps(mock_config):
     """Regression: a ``max_steps`` cap that truncates the
     final epoch must not deflate the epoch average.
@@ -285,7 +279,6 @@ def test_evaluation_callback_fires_without_attribute_error(mock_config):
     engine._run_callbacks("on_train_step_end", epoch=0, batch_idx=0, loss=torch.tensor(1.0), metrics={"loss": 1.0})
 
 
-@pytest.mark.heavy
 def test_engine_skipped_step_does_not_advance_global_step_or_fire_optimizer_hook(mock_config):
     """Regression: a GradScaler-skipped optimizer step (a
     gradient that is inf/NaN after ``unscale_``) must NOT advance
@@ -352,7 +345,6 @@ def test_engine_skipped_step_does_not_advance_global_step_or_fire_optimizer_hook
     assert spy.calls == 0, f"on_optimizer_step must not fire on a skipped step, got {spy.calls} calls"
 
 
-@pytest.mark.heavy
 def test_engine_finite_steps_still_fire_optimizer_hook(mock_config):
     """Control for the skipped-step test: on a healthy (finite-gradient)
     run, ``on_optimizer_step`` fires exactly once per optimizer step, so
@@ -408,7 +400,6 @@ class _EarlyStopProbeTask(LanguageModelingTask):
         return torch.tensor(val), {"val_loss": val}
 
 
-@pytest.mark.heavy
 def test_engine_early_stop_does_not_train_extra_epoch(mock_config, tmp_path):
     """Regression (finding 1): EarlyStopping fires in
     ``on_epoch_end``, but the engine examined ``should_stop_training`` only at
@@ -445,7 +436,6 @@ def test_engine_early_stop_does_not_train_extra_epoch(mock_config, tmp_path):
     assert engine.global_step == 10, f"EarlyStopping ran an extra epoch: {engine.global_step} steps, expected 10"
 
 
-@pytest.mark.heavy
 def test_engine_stop_during_validation_commits_epoch_checkpoint(tmp_path, mock_config):
     """Regression (finding 2): a ``should_stop_training`` set
     during ``on_validation_end`` was checked mid-loop BEFORE
