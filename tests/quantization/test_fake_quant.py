@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import torch
 import torch.nn.functional as functional
 import torch.optim as optim
@@ -80,17 +81,61 @@ def test_fake_quant_linear_trains_and_reduces_loss():
     assert losses[-1] < losses[0], "QAT fake-quant training should reduce the loss"
 
 
-def test_fake_quant_roundtrip_error_is_bounded():
-    """Reconstruction error is bounded by the dynamic scale (<= qmax/2 grid)."""
+@pytest.mark.parametrize("bits", [4, 8])
+@pytest.mark.parametrize("per_channel", [False, True])
+def test_fake_quant_roundtrip_error_is_bounded(bits, per_channel):
+    """Reconstruction error must be at most HALF A GRID STEP, by construction.
+
+    The old assertion was ``err < 1.0`` for a 10-range input — a fixed number
+    that any plausible-but-wrong scale would also satisfy. The real bound is
+    ``step/2`` where ``step = absmax/channel_absmax / qmax``; asserting it
+    exactly is what catches a scale that is off by a factor, which is the
+    failure mode that actually matters (too large a step destroys the signal,
+    too small silently clips).
+
+    Also pins that per-channel never does worse than per-tensor.
+    """
     torch.manual_seed(1)
-    x = torch.randn(1, 64) * 10
-    fq = FakeQuantize(8)
-    q = fq(x)
-    err = (q - x).abs().max().item()
-    # With dynamic per-tensor scale = absmax/qmax, the max grid step is
-    # absmax_block/qmax ~ (10*qmax-ish)/qmax = 10, half-step ~5; assert a
-    # tighter empirical bound than random round-trip (signal it's fine).
-    assert err < 1.0, f"round-trip error {err} should be small for a 10-range input"
+    x = torch.randn(64, 128) * 3.0
+    qmax = (1 << (bits - 1)) - 1
+
+    quantizer = FakeQuantize(bits, per_channel=per_channel, channel_dim=0)
+    rec = quantizer(x)
+    err = (rec - x).abs().max().item()
+
+    if per_channel:
+        # Each output row picks its own scale, so the bound is the WORST row's
+        # half-step, not the global one.
+        row_absmax = x.abs().amax(dim=1)
+        bound = (row_absmax / qmax).max().item() / 2
+    else:
+        bound = x.abs().max().item() / qmax / 2
+
+    assert err <= bound + 1e-6, f"{bits}-bit per_channel={per_channel}: err {err} exceeds half-step {bound}"
+    # A quantizer that returned its input unchanged would also satisfy the
+    # upper bound, so require the grid to actually bite.
+    assert err > 0.0, "quantization was a no-op"
+
+
+def test_fake_quant_per_channel_beats_per_tensor_on_skewed_rows():
+    """Per-channel exists to help when rows have very different magnitudes.
+
+    With one outlier row, a per-tensor scale wastes almost its whole range on
+    that row; per-channel gives every row its own. This is the property that
+    motivates the flag, so assert it on data where it must hold.
+    """
+    torch.manual_seed(0)
+    x = torch.randn(8, 32) * 0.1
+    x[0] *= 100.0  # one row dwarfs the rest
+
+    per_tensor = ((FakeQuantize(8)(x) - x).abs()).amax(dim=1)
+    per_channel = ((FakeQuantize(8, per_channel=True, channel_dim=0)(x) - x).abs()).amax(dim=1)
+
+    # Rows other than the outlier must be reconstructed more precisely.
+    assert (per_channel[1:] <= per_tensor[1:] + 1e-9).all(), (
+        f"per-channel did worse on ordinary rows: {per_channel[1:].tolist()} vs {per_tensor[1:].tolist()}"
+    )
+    assert per_channel[1:].mean() < per_tensor[1:].mean(), "per-channel brought no benefit on skewed rows"
 
 
 def test_fake_quant_linear_uses_static_weight_scale():
