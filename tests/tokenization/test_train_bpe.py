@@ -209,3 +209,77 @@ def test_train_bpe_no_valid_files_exits(tmp_path):
         with pytest.raises(SystemExit) as exc:
             main()
         assert exc.value.code == 1
+
+
+# --- Case handling: lower-casing makes the tokenizer lossy, and it is opt-out ---
+
+
+def test_default_training_folds_case(tmp_path):
+    """Document the DEFAULT behaviour: ``decode(encode('Hello'))`` is ``'hello'``.
+
+    The BPE normalizer lower-cases, and a byte-level decoder cannot restore case
+    the normalizer dropped. That is worth pinning explicitly because it means the
+    tokenizer is not lossless — a property callers assume by default.
+    """
+    from llm.tokenization.bpe_tokenizer import BPETokenizer
+
+    corpus = _write_text_file(str(tmp_path / "corpus.txt"), ["hello world\n", "Hello World\n"] * 20)
+    tokenizer = BPETokenizer.train([corpus], vocab_size=200, min_frequency=1)
+
+    variants = ["Hello", "HELLO", "heLLo"]
+    assert [tokenizer.decode(tokenizer.encode(text)) for text in variants] == ["hello"] * 3
+
+
+def test_keep_case_round_trips_exactly(tmp_path):
+    """``lowercase=False`` must preserve case through encode/decode.
+
+    This is the whole point of the flag: code, proper nouns and format-sensitive
+    text cannot survive a case-folding normalizer, and before the flag there was
+    no way to opt out.
+    """
+    from llm.tokenization.bpe_tokenizer import BPETokenizer
+
+    corpus = _write_text_file(
+        str(tmp_path / "corpus.txt"),
+        ["hello world\n", "Hello World\n", "HELLO WORLD\n", "def FooBar(): pass\n"] * 20,
+    )
+    tokenizer = BPETokenizer.train([corpus], vocab_size=400, min_frequency=1, lowercase=False)
+
+    for text in ("Hello", "HELLO", "heLLo", "def FooBar(): pass", "Hello World"):
+        assert tokenizer.decode(tokenizer.encode(text)) == text, f"{text!r} did not round trip"
+
+
+def test_keep_case_preserves_distinct_inputs(tmp_path):
+    """Case variants must map to DIFFERENT token id sequences, not just survive decoding.
+
+    A tokenizer that normalized case away could still look correct if only the
+    decoded string were checked against a lower-cased expectation; the ids are
+    what the model actually sees.
+    """
+    from llm.tokenization.bpe_tokenizer import BPETokenizer
+
+    corpus = _write_text_file(
+        str(tmp_path / "corpus.txt"),
+        ["hello\n", "Hello\n", "HELLO\n"] * 30,
+    )
+    tokenizer = BPETokenizer.train([corpus], vocab_size=300, min_frequency=1, lowercase=False)
+
+    sequences = [tuple(tokenizer.encode(text)) for text in ("hello", "Hello", "HELLO")]
+    assert len(set(sequences)) == 3, f"case variants collapsed to {sequences}"
+
+
+def test_cli_keep_case_flag_round_trips(tmp_path):
+    """The CLI must expose the opt-out, not just the Python API."""
+    from llm.tokenization.bpe_tokenizer import BPETokenizer
+
+    text_file = _write_text_file(str(tmp_path / "corpus.txt"), ["MiXeD Case\n"] * 30)
+    output_path = str(tmp_path / "tokenizer.json")
+
+    with patch(
+        "sys.argv",
+        ["train_bpe", "--files", text_file, "--output", output_path, "--vocab_size", "300", "--keep-case"],
+    ):
+        main()
+
+    tokenizer = BPETokenizer.load(output_path)
+    assert tokenizer.decode(tokenizer.encode("MiXeD Case")) == "MiXeD Case"

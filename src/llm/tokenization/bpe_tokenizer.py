@@ -5,23 +5,38 @@ from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers,
 DEFAULT_UNK_TOKEN = "".join(("<", "unk", ">"))
 
 
+def _build_normalizer(lowercase: bool) -> normalizers.Normalizer:
+    """NFC always; lower-casing only when asked (it makes the tokenizer lossy)."""
+    steps: list[normalizers.Normalizer] = [normalizers.NFC()]
+    if lowercase:
+        steps.append(normalizers.Lowercase())
+    return normalizers.Sequence(steps)
+
+
 class BPETokenizer:
     """
     A Byte Pair Encoding (BPE) tokenizer using the `tokenizers` library.
     """
 
-    def __init__(self, tokenizer: Tokenizer | None = None):
+    def __init__(self, tokenizer: Tokenizer | None = None, *, lowercase: bool = True):
         """
         Initializes the BPETokenizer.
 
         Args:
-            tokenizer (Tokenizer, optional): An existing tokenizers.Tokenizer instance.
+            tokenizer (Tokenizer, optional): An existing ``tokenizers.Tokenizer`` instance.
+            lowercase (bool): Normalize text to lower case before splitting.
+                Defaults to True for backwards compatibility. **Note this makes
+                the tokenizer lossy**: ``decode(encode(x))`` is NOT ``x`` — a
+                byte-level decoder cannot restore case that the normalizer
+                dropped, so ``Hello``/``HELLO``/``heLLo`` all decode to
+                ``hello``. Pass False when case carries meaning (code,
+                proper nouns, format-sensitive text).
         """
         if tokenizer is not None:
             self.tokenizer = tokenizer
         else:
             self.tokenizer = Tokenizer(models.BPE(unk_token=DEFAULT_UNK_TOKEN))
-            self.tokenizer.normalizer = normalizers.Sequence([normalizers.NFC(), normalizers.Lowercase()])
+            self.tokenizer.normalizer = _build_normalizer(lowercase)
             self.tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
             self.tokenizer.decoder = decoders.ByteLevel()
 
@@ -32,6 +47,8 @@ class BPETokenizer:
         vocab_size: int = 5000,
         min_frequency: int = 2,
         special_tokens: list[str] | None = None,
+        *,
+        lowercase: bool = True,
     ) -> BPETokenizer:
         """
         Trains a BPE tokenizer on the given files.
@@ -41,6 +58,7 @@ class BPETokenizer:
             vocab_size (int): The desired vocabulary size.
             min_frequency (int): The minimum frequency for a pair to be merged.
             special_tokens (list[str]): List of special tokens to include.
+            lowercase (bool): Normalize to lower case (see ``__init__``).
 
         Returns:
             BPETokenizer: A trained tokenizer instance.
@@ -49,7 +67,7 @@ class BPETokenizer:
             special_tokens = [DEFAULT_UNK_TOKEN, "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
 
         tokenizer = Tokenizer(models.BPE(unk_token=DEFAULT_UNK_TOKEN))
-        tokenizer.normalizer = normalizers.Sequence([normalizers.NFC(), normalizers.Lowercase()])
+        tokenizer.normalizer = _build_normalizer(lowercase)
         tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
         tokenizer.decoder = decoders.ByteLevel()
 

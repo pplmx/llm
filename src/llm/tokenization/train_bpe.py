@@ -37,6 +37,15 @@ def main():
         default=[DEFAULT_UNK_TOKEN, "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
         help="List of special tokens to include.",
     )
+    parser.add_argument(
+        "--keep-case",
+        action="store_true",
+        help=(
+            "Do not lower-case during normalization. The default folds case, which makes "
+            "the tokenizer lossy (decode(encode('Hello')) == 'hello'); use this when case "
+            "carries meaning (code, proper nouns)."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -61,6 +70,7 @@ def main():
         vocab_size=args.vocab_size,
         min_frequency=args.min_frequency,
         special_tokens=args.special_tokens,
+        lowercase=not args.keep_case,
     )
 
     tokenizer.save(args.output)
