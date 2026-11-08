@@ -922,14 +922,35 @@ class TestDedupKnobsNeedADedupSource:
         import yaml
 
         configs_dir = pathlib.Path(__file__).resolve().parents[2] / "configs"
-        for name in ("streaming_c4.yaml", "streaming_c4_demo.yaml"):
-            raw = yaml.safe_load((configs_dir / name).read_text(encoding="utf-8")) or {}
+
+        # Discover the configs instead of listing them. The hard-coded pair
+        # ("streaming_c4.yaml", "streaming_c4_demo.yaml") meant a NEW preset
+        # could set dedup knobs beside a plain ``hf`` source and this test would
+        # not look at it at all — verified by dropping such a file into
+        # ``configs/``: the suite stayed green. The property being asserted is
+        # about every shipped streaming preset, so the test has to enumerate
+        # them the way a user would.
+        candidates = sorted(configs_dir.glob("streaming*.yaml"))
+        assert candidates, "no streaming configs found; the glob or the directory moved"
+
+        checked = []
+        for path in candidates:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             data = raw.get("data") or {}
-            if not any(k in data for k in ("seen_hashes_path", "write_seen_hashes")):
+            knobs = [k for k in ("seen_hashes_path", "write_seen_hashes") if k in data]
+            if not knobs:
                 continue
+            # An explicit ``null`` is the documented "not applicable here" form
+            # (``streaming_local_demo.yaml`` writes it under data_source=local).
+            # It must not be reported as inert configuration.
+            if all(data[k] is None for k in knobs):
+                continue
+            checked.append(path.name)
             assert data.get("data_source", "").startswith("dedup_"), (
-                f"{name} sets dedup knobs but data_source={data.get('data_source')!r}, which ignores them"
+                f"{path.name} sets {knobs} but data_source={data.get('data_source')!r}, "
+                "which ignores them (only dedup_* factories wrap the source)"
             )
+        assert checked, "no streaming config with active dedup knobs was checked — the guard is vacuous"
 
 
 class TestKvCacheCapabilityMessageStaysAccurate:

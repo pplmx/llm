@@ -16,11 +16,45 @@ from llm.cli.main import app
 from tests.support.ansi import help_render_diag, strip_ansi
 
 
+def _registered_subcommands() -> set[str]:
+    """Subcommand names actually wired into the root app."""
+    names = {cmd.name for cmd in app.registered_commands if cmd.name}
+    names |= {group.name for group in app.registered_groups if group.name}
+    return names
+
+
 def test_llm_root_help_lists_all_subcommands():
+    """``--help`` must mention EVERY subcommand the app registers.
+
+    The names used to be a hard-coded six-tuple. That passes for the six that
+    exist today and silently stops covering the seventh: a new subcommand whose
+    ``help`` text never reached the root would leave this test green, which is
+    the opposite of what a test named "lists all subcommands" should do.
+
+    Derived from the app, so adding a subcommand extends the check
+    automatically — and removing one from the help now fails instead of
+    quietly shrinking the covered set.
+    """
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
-    for name in ("train", "serve", "quantize", "prune", "decompose", "migrate-ckpt"):
-        assert name in result.output
+
+    expected = _registered_subcommands()
+    assert expected, "the root app registers no subcommands; the CLI wiring moved"
+
+    missing = sorted(name for name in expected if name not in result.output)
+    assert not missing, f"subcommand(s) missing from the root --help output: {missing}"
+
+
+def test_registered_subcommands_match_their_help_routes():
+    """Every registered subcommand must be invokable (its own ``--help`` works).
+
+    ``registered_commands`` is declarative; a name can be present yet bind to a
+    broken callback. Listing it is therefore only half the property the root
+    help claims — "you can run these".
+    """
+    for name in sorted(_registered_subcommands()):
+        result = CliRunner().invoke(app, [name, "--help"])
+        assert result.exit_code == 0, f"`llm {name} --help` failed:\n{result.output[-800:]}"
 
 
 def test_llm_version_prints_and_exits_zero():

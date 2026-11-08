@@ -84,6 +84,24 @@ def test_ddp_and_zero_strategies_allowed(tokenizer, corpus):
         assert isinstance(cb, EvaluationCallback), f"{strategy} must allow periodic eval"
 
 
+def test_single_process_allows_every_strategy(tokenizer, corpus):
+    """At ``world_size == 1`` nothing is collective, so nothing is refused.
+
+    The guard keys on ``world_size > 1``; without this the rejection test above
+    could be satisfied by a guard that simply rejected the strategy names
+    outright, which would break single-GPU runs that set one for later scaling.
+    """
+    from llm.training.core.periodic_eval import _COLLECTIVE_FORWARD_STRATEGIES
+
+    for strategy in sorted(_COLLECTIVE_FORWARD_STRATEGIES):
+        config = Config()
+        config.training.eval_interval = 10
+        config.data.eval_dataset_path = corpus
+        config.distributed.parallel_strategy = strategy
+        cb = build_periodic_eval_callback(config, model_max_seq_len=16, tokenizer=tokenizer, world_size=1)
+        assert isinstance(cb, EvaluationCallback), f"{strategy} must be allowed at world_size=1"
+
+
 # --------------------------------------------------------------------------- #
 # EvaluationCallback guards
 # --------------------------------------------------------------------------- #
