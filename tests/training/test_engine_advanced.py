@@ -638,3 +638,76 @@ def test_training_recovers_after_a_skipped_step():
         "training did not resume after the poisoned steps"
     )
     assert all(torch.isfinite(p).all() for p in after)
+
+
+# --- QAT signature: the bits live on the modules, not in the state dict ---
+
+
+def _qat_config(mock_config, qat_bits: int):
+    """Configure ``mock_config`` for a one-epoch QAT run."""
+    mock_config.training.epochs = 1
+    mock_config.training.run_validation = False
+    mock_config.training.use_qat = True
+    mock_config.training.qat_bits = qat_bits
+    mock_config.optimization.use_compile = False
+    mock_config.optimization.use_amp = False
+    mock_config.checkpoint.save_interval = 1
+    return mock_config
+
+
+def _run_qat_engine(config, checkpoint_dir, resume_from=None):
+    from torch.utils.data import DataLoader, TensorDataset
+
+    config.checkpoint.checkpoint_dir = str(checkpoint_dir)
+    config.checkpoint.resume_from_checkpoint = resume_from
+
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    task = LanguageModelingTask(config, data_module)
+
+    torch.manual_seed(0)
+    engine = TrainingEngine(config, task, rank=0, world_size=1, data_module=data_module)
+    input_ids = torch.randint(0, config.model.vocab_size, (4, 16), dtype=torch.long)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(input_ids, input_ids.clone()), batch_size=2)
+    engine.val_dataloader = None
+    return engine
+
+
+def test_qat_resume_with_different_bits_is_refused(tmp_path, mock_config):
+    """A resume must not silently change the quantizer precision.
+
+    ``apply_fake_quant`` stores ``bits`` on each ``FakeQuantLinear``, so it is
+    absent from the state dict: a 4-bit checkpoint loads cleanly into an 8-bit
+    model and then computes something else (measured max |delta| 0.13 on
+    identical weights). The engine records a QAT signature in ``extra_state`` so
+    the mismatch is caught instead of silently swapping the model.
+    """
+    checkpoint_dir = tmp_path / "ckpt"
+    _run_qat_engine(_qat_config(mock_config, qat_bits=4), checkpoint_dir).run()
+
+    resumed_dir = tmp_path / "ckpt8"
+    resumed_dir.mkdir()
+    checkpoint = checkpoint_dir / "latest.safetensors"
+    with pytest.raises(ValueError, match="QAT"):
+        _run_qat_engine(_qat_config(mock_config, qat_bits=8), resumed_dir, resume_from=str(checkpoint))
+
+
+def test_qat_resume_with_matching_bits_still_works(tmp_path, mock_config):
+    """The guard must not block the legitimate case.
+
+    Same bits, same activation setting, same targets — the resume proceeds and
+    the model is still wrapped in ``FakeQuantLinear`` afterwards.
+    """
+    checkpoint_dir = tmp_path / "ckpt"
+    _run_qat_engine(_qat_config(mock_config, qat_bits=4), checkpoint_dir).run()
+
+    resumed_dir = tmp_path / "ckpt_resume"
+    resumed_dir.mkdir()
+    checkpoint = checkpoint_dir / "latest.safetensors"
+    engine = _run_qat_engine(_qat_config(mock_config, qat_bits=4), resumed_dir, resume_from=str(checkpoint))
+    engine.run()
+
+    mlp = engine.model.transformer_blocks[0].mlp
+    assert type(mlp.fc1).__name__ == "FakeQuantLinear", "QAT wrapping was lost on resume"
+    assert mlp.fc1.bits == 4

@@ -126,7 +126,21 @@ class TrainingEngine:
         TensorBoard/LRScheduler x-indices duplicate across the resume
         boundary (deep-dive).
         """
-        return {"engine.global_step": self.global_step}
+        state: dict[str, Any] = {"engine.global_step": self.global_step}
+        # QAT wraps every target Linear in ``FakeQuantLinear`` whose ``bits``
+        # live on the MODULE, not in the state dict — so a resume with a
+        # different ``qat_bits`` loads cleanly and then computes something else
+        # (measured: max |delta| 0.13 on the same weights at 4-bit vs 8-bit).
+        # Record the signature so the mismatch is caught instead of silently
+        # changing the model between runs.
+        training_cfg = self.config.training
+        if getattr(training_cfg, "use_qat", False):
+            state["engine.qat_signature"] = {
+                "bits": training_cfg.qat_bits,
+                "quant_activation": training_cfg.qat_quant_activation,
+                "target_modules": list(training_cfg.qat_target_modules or []),
+            }
+        return state
 
     def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
         """Restore ``global_step`` from a checkpoint's merged extra_state.
@@ -141,6 +155,21 @@ class TrainingEngine:
         restored = state.get("engine.global_step")
         if restored is not None:
             self.global_step = int(restored)
+
+        saved_qat = state.get("engine.qat_signature")
+        if saved_qat is not None:
+            training_cfg = self.config.training
+            current_qat = {
+                "bits": training_cfg.qat_bits,
+                "quant_activation": training_cfg.qat_quant_activation,
+                "target_modules": list(training_cfg.qat_target_modules or []),
+            }
+            if saved_qat != current_qat:
+                raise ValueError(
+                    f"Checkpoint was trained with QAT {saved_qat} but this run configures {current_qat}. "
+                    "The bits live on the quantizer modules, not in the state dict, so resuming would "
+                    "silently change the model. Match the QAT settings or start a fresh run."
+                )
 
     def _run_callbacks(self, method_name: str, *args, **kwargs):
         for callback in self.callbacks:
