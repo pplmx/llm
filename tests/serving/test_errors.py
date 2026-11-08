@@ -18,6 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from llm.serving.errors import (
+    _CODE_TO_STATUS,
     APIError,
     ErrorCode,
     default_status_for,
@@ -120,12 +121,28 @@ class TestDefaultStatusFor:
             (ErrorCode.INVALID_REQUEST, 400),
             (ErrorCode.UNAUTHORIZED, 403),
             (ErrorCode.TIMEOUT, 504),
+            (ErrorCode.QUEUE_FULL, 503),
             (ErrorCode.MODEL_UNAVAILABLE, 503),
+            (ErrorCode.PAYLOAD_TOO_LARGE, 413),
             (ErrorCode.INTERNAL, 500),
         ],
     )
     def test_mapping(self, code: ErrorCode, status: int):
         assert default_status_for(code) == status
+
+    def test_every_code_has_a_status(self):
+        """Every ``ErrorCode`` member must be mapped, and only to a valid status.
+
+        The parametrized list above can silently fall behind when a new member
+        is added: ``QUEUE_FULL`` and ``PAYLOAD_TOO_LARGE`` were both absent from
+        it, so a code could ship with no mapping and nothing failed. A missing
+        key surfaces as a ``KeyError`` inside error *handling* — turning the
+        response a client can act on into an opaque 500.
+        """
+        for member in ErrorCode:
+            status = default_status_for(member)
+            assert 400 <= status <= 599, f"{member} maps to a non-error status {status}"
+        assert set(ErrorCode) == set(_CODE_TO_STATUS), "an ErrorCode member has no HTTP status mapping"
 
 
 # --------------------------------------------------------------------------- #

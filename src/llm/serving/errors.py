@@ -48,6 +48,7 @@ class ErrorCode(StrEnum):
     TIMEOUT = "timeout"
     QUEUE_FULL = "queue_full"
     MODEL_UNAVAILABLE = "model_unavailable"
+    PAYLOAD_TOO_LARGE = "payload_too_large"
     INTERNAL = "internal"
 
 
@@ -59,6 +60,7 @@ _CODE_TO_STATUS: dict[ErrorCode, int] = {
     ErrorCode.TIMEOUT: 504,
     ErrorCode.QUEUE_FULL: 503,  # retryable — same HTTP status as model_unavailable
     ErrorCode.MODEL_UNAVAILABLE: 503,
+    ErrorCode.PAYLOAD_TOO_LARGE: 413,
     ErrorCode.INTERNAL: 500,
 }
 

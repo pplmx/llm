@@ -8,6 +8,7 @@ so operators can correlate uvicorn access logs with application logs.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -58,7 +59,7 @@ class RequestBodySizeLimit:
             except TypeError, ValueError:
                 declared = None
             if declared is not None and declared > self.max_bytes:
-                return await send(self._too_large_response())
+                return await self._send_too_large(scope, send)
 
         received = 0
 
@@ -78,21 +79,67 @@ class RequestBodySizeLimit:
         try:
             return await self.app(scope, limited_receive, send)
         except _RequestBodyTooLargeError:
-            await send(self._too_large_response())
+            await self._send_too_large(scope, send)
             return
 
-    @staticmethod
-    def _too_large_response() -> dict:
-        """An ASGI ``send`` single-call payload (413 with a JSON envelope)."""
-        body = b'{"error":{"message":"Request body too large","type":"invalid_request_error"}}'
-        return {
-            "type": "http.response.start",
-            "status": 413,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode()),
-            ],
-        }
+    async def _send_too_large(self, scope, send) -> None:
+        """Emit the complete 413 response — ``start`` AND ``body``.
+
+        Sending only ``http.response.start`` with a ``content-length`` header
+        is an ASGI protocol violation: uvicorn logs "ASGI callable returned
+        without completing response" and closes the connection before writing
+        the body, so a client that was promised N bytes receives none and
+        reports a truncated transfer. Measured with curl:
+        ``curl: (18) transfer closed with 77 bytes remaining to read``. The
+        HTTP client sees a framing error instead of the 413 it was sent, which
+        is strictly worse than no size cap at all (the request "fails" in a
+        way that looks like a network fault).
+
+        The body also now matches the documented error envelope
+        (:func:`llm.serving.errors.to_envelope`): the old payload used
+        OpenAI's ``type``/``message`` spelling, so a client parsing
+        ``error.code`` — the shape every other error on this API uses — found
+        nothing.
+        """
+        # Reuse the shared code/status source of truth rather than repeating
+        # the literals, so a client branching on ErrorCode.PAYLOAD_TOO_LARGE and
+        # this payload cannot drift apart.
+        from llm.serving.errors import ErrorCode, default_status_for
+
+        body = json.dumps(
+            {
+                "error": {
+                    "code": ErrorCode.PAYLOAD_TOO_LARGE.value,
+                    "message": f"Request body too large (the limit is {self.max_bytes} bytes).",
+                    "details": {"limit_bytes": self.max_bytes},
+                    "request_id": _request_id_from_scope(scope),
+                }
+            }
+        ).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": default_status_for(ErrorCode.PAYLOAD_TOO_LARGE),
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
+def _request_id_from_scope(scope: dict) -> str:
+    """The request id assigned by :class:`RequestIDMiddleware`, if any.
+
+    That middleware runs *outside* this one, so by the time the size cap fires
+    it has already stashed the id on ``scope["state"]`` (Starlette shares one
+    state dict between the two, and the id is set before the inner app is
+    called). Echoing it keeps the 413 correlatable with its access-log line
+    instead of being the one error on this API with no request id.
+    """
+    state = scope.get("state") or {}
+    return state.get("request_id", "unknown")
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):

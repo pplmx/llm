@@ -109,3 +109,168 @@ def test_accepts_body_under_cap(body_limit_app):
     response = client.post("/echo", content=b"ok" * 100)
     assert response.status_code == 200
     assert response.text == "len=200"
+
+
+# --- The 413 must be a COMPLETE response, and envelope-shaped ---
+
+
+class _RecordingSend:
+    """Capture the ASGI messages a middleware sends."""
+
+    def __init__(self) -> None:
+        self.messages: list[dict] = []
+
+    async def __call__(self, message: dict) -> None:
+        self.messages.append(message)
+
+    @property
+    def types(self) -> list[str]:
+        return [m["type"] for m in self.messages]
+
+    @property
+    def body(self) -> bytes:
+        return b"".join(m.get("body", b"") for m in self.messages if m["type"] == "http.response.body")
+
+    @property
+    def start(self) -> dict:
+        return next(m for m in self.messages if m["type"] == "http.response.start")
+
+    @property
+    def declared_length(self) -> int:
+        return int(dict(self.start["headers"])[b"content-length"])
+
+
+async def _unreachable_app(*_args):  # pragma: no cover - asserted never called
+    raise AssertionError("the size cap must reject before the app runs")
+
+
+def _declared_oversized_scope(**extra) -> dict:
+    return {"type": "http", "method": "POST", "path": "/echo", "headers": [(b"content-length", b"99999")], **extra}
+
+
+def test_declared_oversized_sends_a_complete_response():
+    """The 413 must send ``http.response.body``, not just ``start``.
+
+    Sending only ``http.response.start`` while declaring a ``content-length``
+    is an ASGI protocol violation: uvicorn logs "ASGI callable returned
+    without completing response", closes the connection, and the client gets
+    **zero** of the bytes it was promised. Measured through curl against a real
+    uvicorn server: ``curl: (18) transfer closed with 77 bytes remaining to
+    read`` — a framing error that looks like a network fault rather than the
+    413 the server meant to send. Both the existing tests here asserted only
+    the status code, so this could not be seen.
+
+    Asserting the framing directly (declared length == bytes actually sent)
+    is what catches it: a ``start``-only implementation satisfies every
+    status-code assertion while delivering nothing.
+    """
+    import asyncio
+
+    send = _RecordingSend()
+    mw = RequestBodySizeLimit(_unreachable_app, max_bytes=1024)
+    asyncio.run(mw(_declared_oversized_scope(), _no_body_receive, send))
+
+    assert send.types == ["http.response.start", "http.response.body"], f"incomplete ASGI response: {send.types}"
+    assert send.start["status"] == 413
+    assert send.declared_length == len(send.body), (
+        f"declared content-length {send.declared_length} != bytes sent {len(send.body)}"
+    )
+
+
+def test_incremental_oversized_sends_a_complete_response():
+    """The streaming-cap path must also send a body, not just the start line."""
+    import asyncio
+
+    send = _RecordingSend()
+    mw = RequestBodySizeLimit(_drain_app, max_bytes=10)
+    scope = {"type": "http", "method": "POST", "path": "/echo", "headers": []}
+    asyncio.run(mw(scope, _chunked_receive([b"x" * 6, b"x" * 6, b"x" * 6]), send))
+
+    assert send.types == ["http.response.start", "http.response.body"]
+    assert send.start["status"] == 413
+    assert send.declared_length == len(send.body)
+    assert send.declared_length > 0
+
+
+async def _no_body_receive():  # pragma: no cover - the cap fires before any read
+    return {"type": "http.request", "body": b"", "more_body": False}
+
+
+async def _drain_app(_scope, receive, send):
+    """An app that reads the whole body — the incremental cap fires on read.
+
+    The streaming path can only notice an oversized body if something pulls
+    it; an app that never calls ``receive`` (a real handler whose body
+    validation happens elsewhere) legitimately never trips the cap.
+    """
+    while True:
+        message = await receive()
+        if not message.get("more_body", False):
+            break
+    await send({"type": "http.response.start", "status": 200, "headers": []})
+    await send({"type": "http.response.body", "body": b"ok"})
+
+
+def _chunked_receive(chunks: list[bytes]):
+    """Build a ``receive`` that yields ``chunks`` as a chunked request body."""
+    state = {"i": 0}
+
+    async def receive():
+        i = state["i"]
+        state["i"] += 1
+        return {"type": "http.request", "body": chunks[i], "more_body": i < len(chunks) - 1}
+
+    return receive
+
+
+def test_413_body_matches_the_documented_error_envelope(body_limit_app):
+    """A 413 must use the same envelope shape as every other error on this API.
+
+    The old payload was ``{"error": {"message", "type"}}`` — OpenAI's spelling
+    — while the rest of the serving tier emits
+    ``{"error": {"code", "message", "details", "request_id"}}``. A client
+    branching on ``error.code`` (the documented contract) got nothing for the
+    one error it most needs to act on: lower the request size rather than retry.
+    """
+    client = TestClient(body_limit_app, raise_server_exceptions=False)
+    response = client.post("/echo", content=b"x" * 100, headers={"content-length": str(2 * 1024 * 1024)})
+
+    assert response.status_code == 413
+    payload = response.json()
+    error = payload["error"]
+    assert error["code"] == "payload_too_large"
+    assert error["details"]["limit_bytes"] == 1024
+    assert isinstance(error["message"], str)
+    assert error["message"]
+    # Same key set as the envelope every other route emits.
+    assert set(error) == {"code", "message", "details", "request_id"}
+
+
+def test_413_echoes_the_request_id_when_one_was_assigned():
+    """The 413 must carry the request id, so it correlates with its access log.
+
+    ``RequestIDMiddleware`` runs outside this one and has already stored the id
+    on ``scope["state"]`` by the time the cap fires. Without echoing it, the
+    413 is the one error response on this API with no request id — and it is
+    emitted from a code path that never reaches the exception handlers.
+    """
+    import asyncio
+
+    send = _RecordingSend()
+    mw = RequestBodySizeLimit(_unreachable_app, max_bytes=1024)
+    scope = _declared_oversized_scope(state={"request_id": "rid-123"})
+    asyncio.run(mw(scope, _no_body_receive, send))
+
+    assert '"request_id": "rid-123"' in send.body.decode()
+
+
+def test_413_without_a_request_id_does_not_crash():
+    """No ``scope["state"]`` (middleware used standalone) must still respond."""
+    import asyncio
+
+    send = _RecordingSend()
+    mw = RequestBodySizeLimit(_unreachable_app, max_bytes=1024)
+    asyncio.run(mw(_declared_oversized_scope(), _no_body_receive, send))
+
+    assert send.start["status"] == 413
+    assert '"request_id": "unknown"' in send.body.decode()
