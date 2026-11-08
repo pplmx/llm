@@ -237,3 +237,50 @@ def test_pruned_decoder_light_prune_keeps_accuracy_heavy_degrades():
         assert _cyclic_accuracy(heavy) < 0.5, "heavy pruning did not degrade the model"
     finally:
         torch.set_num_threads(prev)
+
+
+class TestPrunedForwardAppliesTheMask:
+    """The forward must actually multiply by the mask.
+
+    ``PrunedLinear`` keeps the ORIGINAL weights and a separate binary
+    ``weight_mask``, computing ``x @ (W * M).T + b``. That design is deliberate
+    (weights stay trainable, the mask is a buffer), but it has a failure mode the
+    shape/finiteness test cannot see: a forward that forgot the ``* mask`` would
+    return the dense layer's output while the model is reported as 50% sparse.
+
+    Verified against an independently computed dense-with-mask reference, for
+    both a square and a rectangular layer so a mask-orientation bug cannot hide.
+    """
+
+    @pytest.mark.parametrize(("in_features", "out_features"), [(16, 16), (48, 32), (32, 48)])
+    def test_forward_equals_the_masked_weight_product(self, in_features, out_features):
+        from llm.quantization.prune import PrunedLinear, PruningConfig, prune_model
+
+        torch.manual_seed(0)
+        layer = nn.Linear(in_features, out_features)
+        weight = layer.weight.detach().clone()
+        bias = layer.bias.detach().clone()
+
+        model = nn.Sequential(layer)
+        prune_model(model, PruningConfig(ratio=0.5))
+        pruned = model[0]
+        assert isinstance(pruned, PrunedLinear)
+
+        mask = pruned.weight_mask
+        assert mask.shape == weight.shape, f"mask {tuple(mask.shape)} != weight {tuple(weight.shape)}"
+        assert set(torch.unique(mask).tolist()) <= {0.0, 1.0}, "the mask must be binary"
+
+        probes = torch.randn(4, in_features)
+        with torch.no_grad():
+            actual = pruned(probes)
+            expected = probes @ (weight * mask).T + bias
+
+        assert torch.allclose(actual, expected, atol=1e-6), (
+            f"forward does not equal x @ (W * M).T + b for {in_features}x{out_features} — the mask is not being applied"
+        )
+
+        # And it must differ from the DENSE result, or the test proves nothing.
+        dense = probes @ weight.T + bias
+        assert not torch.allclose(actual, dense, atol=1e-6), (
+            "the pruned forward matches the dense layer; the mask had no effect"
+        )
