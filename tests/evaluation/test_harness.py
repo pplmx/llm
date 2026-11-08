@@ -46,3 +46,83 @@ def test_lm_eval_adapter_lists_known_benchmarks():
     adapter = LmEvalAdapter()
     tasks = adapter.list_tasks()
     assert "mmlu" in tasks or "arc" in tasks
+
+
+class TestSummarizeFlatteningRules:
+    """The documented rules for ``summarize`` each need a test.
+
+    It is a pure static method (works without ``lm_eval`` installed), so every
+    rule in its docstring is directly checkable — and each exists to prevent a
+    specific misreading of lm_eval's result tree.
+    """
+
+    def test_comma_suffix_is_the_aggregation_tag_not_a_subset(self):
+        """``"acc,none"`` collapses to ``"acc"``; different metric names survive.
+
+        lm_eval's suffix is the FILTER tag (almost always ``none`` for these
+        tasks), not a subset name — grouped benchmarks report their subsets as
+        separate top-level task keys. Dropping the tag is therefore lossless, and
+        a regression that dropped the metric PREFIX instead would turn every
+        task into a single ``"none"`` entry.
+        """
+        from llm.evaluation.harness.adapter import LmEvalAdapter
+
+        flat = LmEvalAdapter.summarize(
+            {"results": {"arc_easy": {"acc,none": 0.75, "acc_norm,none": 0.70, "acc_stderr,none": 0.01}}}
+        )
+        assert flat == {"arc_easy": {"acc": 0.75, "acc_norm": 0.70, "acc_stderr": 0.01}}
+
+    def test_booleans_are_dropped(self):
+        """``True`` must not become ``1.0``.
+
+        Python's ``bool`` is an ``int`` subclass, so without the explicit check a
+        boolean flag in the tree would be coerced into a plausible-looking
+        metric value. The docstring calls this out; nothing was testing it.
+        """
+        from llm.evaluation.harness.adapter import LmEvalAdapter
+
+        flat = LmEvalAdapter.summarize(
+            {
+                "results": {
+                    "task": {
+                        "acc,none": 0.5,
+                        "is_broken,none": True,
+                        "is_ok,none": False,
+                    }
+                }
+            }
+        )
+        assert flat == {"task": {"acc": 0.5}}, f"booleans leaked into the metrics: {flat}"
+
+    def test_non_numeric_values_are_skipped(self):
+        """String aliases/versions are not metrics."""
+        from llm.evaluation.harness.adapter import LmEvalAdapter
+
+        flat = LmEvalAdapter.summarize(
+            {"results": {"task": {"acc,none": 0.5, "alias": "arc_easy", "version,none": "1.0"}}}
+        )
+        assert flat == {"task": {"acc": 0.5}}
+
+    def test_groups_and_configs_are_ignored(self):
+        """Only the ``results`` block is flattened (documented behaviour).
+
+        Callers who want the group roll-ups must read the raw dict; silently
+        merging them here would overwrite per-task numbers with aggregates.
+        """
+        from llm.evaluation.harness.adapter import LmEvalAdapter
+
+        flat = LmEvalAdapter.summarize(
+            {
+                "results": {"arc_easy": {"acc,none": 0.75}},
+                "groups": {"arc": {"acc,none": 0.99}},
+                "configs": {"arc_easy": {"num_fewshot": 0}},
+            }
+        )
+        assert flat == {"arc_easy": {"acc": 0.75}}, f"group/config blocks leaked in: {flat}"
+
+    def test_empty_and_missing_results_blocks(self):
+        """A run with no results yields an empty map, not a crash."""
+        from llm.evaluation.harness.adapter import LmEvalAdapter
+
+        assert LmEvalAdapter.summarize({"results": {}}) == {}
+        assert LmEvalAdapter.summarize({}) == {}
