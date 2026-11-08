@@ -857,3 +857,85 @@ def test_paged_attention_handles_scrambled_blocks_and_partial_last_block():
     assert torch.allclose(out, expected, atol=1e-6), (
         f"scrambled-block paged attention diverged: max|delta|={(out - expected).abs().max().item():.2e}"
     )
+
+
+class TestForkReferenceCounting:
+    """A forked pair must be safe to free in EITHER order.
+
+    ``fork_sequence`` shares blocks by incrementing every allocator's refcount, so
+    freeing one sequence must decrement but not release them while the other still
+    reads them. The existing fork tests only assert the returned table and token
+    count — nothing ever freed a forked pair, so a missing ``fork`` increment (or a
+    premature release) would not have shown up.
+    """
+
+    def test_freeing_the_source_leaves_the_fork_usable(self):
+        from llm.core.paged_attention.block_manager import BlockManager
+
+        manager = BlockManager(num_blocks=16, block_size=8, num_layers=1)
+        initial_free = manager.num_free_blocks
+
+        source_blocks = manager.allocate_sequence(seq_id=1, num_tokens=16)
+        fork_blocks = manager.fork_sequence(src_seq_id=1, dst_seq_id=2)
+        assert fork_blocks == source_blocks, "a fork must share the same physical blocks"
+        assert manager.num_free_blocks == initial_free - len(source_blocks), "forking allocated new blocks"
+
+        manager.free_sequence(1)
+
+        # The FORK still owns them, so nothing may return to the pool yet.
+        assert manager.num_free_blocks == initial_free - len(source_blocks), (
+            "freeing the source released blocks the fork still references"
+        )
+        assert manager.get_block_table(2) == fork_blocks
+        assert manager.get_num_tokens(2) == 16
+
+        manager.free_sequence(2)
+        assert manager.num_free_blocks == initial_free, "the pair did not fully release its blocks"
+
+    def test_freeing_the_fork_leaves_the_source_usable(self):
+        from llm.core.paged_attention.block_manager import BlockManager
+
+        manager = BlockManager(num_blocks=16, block_size=8, num_layers=1)
+        initial_free = manager.num_free_blocks
+
+        source_blocks = manager.allocate_sequence(seq_id=1, num_tokens=16)
+        manager.fork_sequence(src_seq_id=1, dst_seq_id=2)
+
+        manager.free_sequence(2)
+
+        assert manager.num_free_blocks == initial_free - len(source_blocks), (
+            "freeing the fork released blocks the source still references"
+        )
+        assert manager.get_block_table(1) == source_blocks
+
+        manager.free_sequence(1)
+        assert manager.num_free_blocks == initial_free
+
+    def test_copy_on_write_hands_the_copier_a_private_block(self):
+        """COW decrements the shared count and the caller remaps its table.
+
+        ``cow_block`` deliberately does NOT remap (its docstring says the caller
+        does), so this asserts both halves: the fresh id differs, the original
+        stops being shared, and after the caller's remap both frees balance.
+        """
+        from llm.core.paged_attention.block_manager import BlockManager
+
+        manager = BlockManager(num_blocks=16, block_size=8, num_layers=1)
+        initial_free = manager.num_free_blocks
+
+        source_blocks = manager.allocate_sequence(seq_id=1, num_tokens=16)
+        manager.fork_sequence(src_seq_id=1, dst_seq_id=2)
+        assert manager.is_block_shared(source_blocks[0])
+
+        private = manager.cow_block(source_blocks[0])
+
+        assert private != source_blocks[0], "COW returned the shared block itself"
+        assert not manager.is_block_shared(source_blocks[0]), (
+            "after COW the original should have a single remaining reader (the fork)"
+        )
+        assert manager.is_block_shared(private) is False, "the private copy must not be shared"
+
+        manager.get_block_table(1)[0] = private
+        manager.free_sequence(1)
+        manager.free_sequence(2)
+        assert manager.num_free_blocks == initial_free
