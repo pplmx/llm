@@ -240,3 +240,47 @@ def test_kvcache_repr_reports_capacity_and_live_length():
     after = repr(cache)
     assert "seq_len=3" in after, "repr did not follow the cache growing"
     assert "seq_len=0" not in after
+
+
+class TestGetUsableLengthContract:
+    """`get_usable_length` is a plain sum, and the name is easy to misread.
+
+    It answers "how long WOULD the context be", not "how many tokens still fit",
+    and it does not clamp: on an 8-slot cache, ``get_usable_length(100)`` returns
+    100. That is deliberate — a caller comparing the result against ``max_seq_len``
+    must see the true overshoot — while ``update`` is what actually refuses an
+    overflow. Pinned so a future change cannot silently switch it to a clamp and
+    break that comparison.
+    """
+
+    def test_it_is_an_unclamped_sum(self):
+        cache = KVCache(max_batch_size=1, max_seq_len=8, num_kv_heads=1, head_dim=4)
+
+        assert cache.get_usable_length(3) == 3
+        # Beyond capacity it still reports the true total.
+        assert cache.get_usable_length(100) == 100, (
+            "get_usable_length clamped to max_seq_len; callers comparing against the "
+            "capacity would no longer see the overshoot"
+        )
+
+    def test_it_accumulates_with_the_current_length(self):
+        cache = KVCache(max_batch_size=1, max_seq_len=8, num_kv_heads=1, head_dim=4)
+        cache.update(torch.zeros(1, 1, 3, 4), torch.zeros(1, 1, 3, 4))
+
+        assert cache.seq_len == 3
+        assert cache.get_usable_length(2) == 5
+
+    def test_update_refuses_the_overflow_that_this_reports(self):
+        """The two must agree about what "too long" means.
+
+        ``get_usable_length`` reports the overshoot; ``update`` is the enforcement
+        point. If update ever started dropping tokens instead of raising, the
+        reported length and the actual cached length would diverge silently.
+        """
+        cache = KVCache(max_batch_size=1, max_seq_len=8, num_kv_heads=1, head_dim=4)
+        cache.update(torch.zeros(1, 1, 6, 4), torch.zeros(1, 1, 6, 4))
+
+        assert cache.get_usable_length(4) == 10
+        with pytest.raises(ValueError, match="overflow"):
+            cache.update(torch.zeros(1, 1, 4, 4), torch.zeros(1, 1, 4, 4))
+        assert cache.seq_len == 6, "a refused write must not advance the cached length"

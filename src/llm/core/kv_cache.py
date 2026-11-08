@@ -252,7 +252,16 @@ class KVCache:
         self._seq_len = 0
 
     def get_usable_length(self, new_tokens: int) -> int:
-        """Get the usable cache length after adding new tokens."""
+        """Total length after appending ``new_tokens`` — a plain sum.
+
+        NOT clamped to :attr:`max_seq_len`: ``get_usable_length(100)`` on an
+        8-slot cache returns 100. Despite the name it answers "how long would the
+        context be", not "how many tokens still fit"; use
+        ``max_seq_len - seq_len`` for the remaining room, and note that
+        :meth:`update` is what actually refuses an overflow (it raises rather
+        than dropping tokens). Kept unclamped so callers that compare the result
+        against ``max_seq_len`` see the true overshoot.
+        """
         return self._seq_len + new_tokens
 
     @classmethod
