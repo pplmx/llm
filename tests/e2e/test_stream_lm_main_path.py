@@ -183,11 +183,21 @@ class TestStreamingPresetConfigs:
         assert (ckpt_dir / "epoch_1.extra_state.pt").exists()
 
     def test_c4_yaml_loads(self) -> None:
-        """``configs/streaming_c4.yaml`` must reference C4 correctly."""
+        """``configs/streaming_c4.yaml`` must reference C4 correctly.
+
+        The preset runs ``data_source: dedup_hf``, not ``hf``: only the
+        ``dedup_*`` factories wrap the source, so dedup knobs set beside a
+        plain ``hf`` source are read by nothing and the config silently
+        duplicates every record. The assertion follows the config that actually
+        ships (it pinned ``"hf"`` from before that switch, so the whole e2e
+        file was red).
+        """
         path = REPO_ROOT / "configs" / "streaming_c4.yaml"
         assert path.exists(), f"missing config: {path}"
         cfg = Config.from_yaml(path)
-        assert cfg.data.data_source == "hf"
+        # dedup_hf == the HF streaming source plus the dedup wrapper; the
+        # preset must keep both halves for the knobs below to mean anything.
+        assert cfg.data.data_source == "dedup_hf"
         assert cfg.data.dataset_name == "allenai/c4"
         assert cfg.data.dataset_config == "en"
         assert cfg.data.text_column == "text"
