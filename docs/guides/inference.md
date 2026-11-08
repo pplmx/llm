@@ -377,15 +377,18 @@ the transport-level checks that run before a handler — uses one envelope:
 human-readable `message`. `request_id` echoes the `X-Request-ID` response
 header, so a client-reported failure can be found in the server's access log.
 
-| `code`              | HTTP | Meaning                                                  |
-| ------------------- | ---- | -------------------------------------------------------- |
-| `invalid_request`   | 400  | Malformed or un-encodable request (also 422 for schema). |
-| `unauthorized`      | 403  | Missing or wrong API key.                                |
-| `payload_too_large` | 413  | Body exceeded `max_request_bytes`.                       |
-| `internal`          | 500  | Unexpected server fault (details are logged, not sent).  |
-| `queue_full`        | 503  | Waiting queue full — retry later.                        |
-| `model_unavailable` | 503  | Backend failure during generation.                       |
-| `timeout`           | 504  | `request_timeout` elapsed.                               |
+| `code`               | HTTP | Meaning                                                  |
+| -------------------- | ---- | -------------------------------------------------------- |
+| `invalid_request`    | 400  | Malformed or un-encodable request (422 for schema).      |
+| `unauthorized`       | 403  | Missing or wrong API key.                                |
+| `not_found`          | 404  | Unknown path.                                            |
+| `method_not_allowed` | 405  | Wrong verb for a real route — check the `Allow` header.  |
+| `payload_too_large`  | 413  | Body exceeded `max_request_bytes`.                       |
+| `rate_limited`       | 429  | Too many requests.                                       |
+| `internal`           | 500  | Unexpected server fault (details logged, not sent).      |
+| `queue_full`         | 503  | Waiting queue full — retry later.                        |
+| `model_unavailable`  | 503  | Backend failure during generation.                       |
+| `timeout`            | 504  | `request_timeout` elapsed.                               |
 
 Only `queue_full` (and, with backoff, `model_unavailable`) are worth retrying
 unchanged. `payload_too_large` will never succeed for the same body — the
