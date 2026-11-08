@@ -154,11 +154,17 @@ def test_mha_gradients(mha, input_tensor):
 )
 @pytest.mark.slow
 def test_mha_causal(mha, input_tensor):
-    """Test causal MHA for both norm/residual modes."""
+    """Smoke test that a causal-configured module runs and keeps the shape.
+
+    The masking BEHAVIOUR is asserted in :class:`TestCausalMaskingIsReal`, which
+    measures the influence structure (which output positions move when one input
+    position is perturbed) rather than trusting the flag. This test only covers the
+    plumbing, so a broken mask would still pass here — that is why the structural
+    tests exist.
+    """
     assert mha.is_causal is True
     output = mha(input_tensor)
     assert output.shape == input_tensor.shape
-    # Further checks could involve comparing outputs with a manually created causal mask.
 
 
 @pytest.mark.slow
