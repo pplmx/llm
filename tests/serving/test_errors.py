@@ -215,6 +215,77 @@ class TestEnvelopeFromValidationError:
         assert env["error"]["details"]["errors"] == [{"type": "missing", "loc": ["x"]}]
         assert env["error"]["request_id"] == "req-1"
 
+    def test_ctx_carrying_a_valueerror_is_serializable(self):
+        """A ``value_error`` entry's ``ctx`` holds the EXCEPTION OBJECT.
+
+        pydantic keeps the original exception so callers can re-raise it. Fed
+        straight into ``JSONResponse`` that raises
+        ``TypeError: Object of type ValueError is not JSON serializable``
+        **inside the 422 handler**, which surfaced as a 500 "internal error"
+        for every request that tripped a custom validator (`stop` longer than
+        4 strings, unsupported chat knobs, an empty prompt) — the client-caused
+        422 was reported as a server fault and the actionable message was
+        lost.
+        """
+        import json
+
+        raw_error = {
+            "type": "value_error",
+            "loc": ("body", "stop"),
+            "msg": "Value error, stop list may contain at most 4 strings",
+            "input": ["a", "a", "a", "a", "a"],
+            "ctx": {"error": ValueError("stop list may contain at most 4 strings")},
+        }
+        exc = RequestValidationError(errors=[raw_error])
+
+        env = envelope_from_validation_error(exc, "req-1")
+
+        # The whole envelope must be JSON-encodable — that is what
+        # ``JSONResponse`` does with it.
+        json.dumps(env)
+        rendered = env["error"]["details"]["errors"][0]
+        assert rendered["msg"] == "Value error, stop list may contain at most 4 strings"
+        assert rendered["ctx"]["error"]["type"] == "ValueError"
+        assert rendered["ctx"]["error"]["message"] == "stop list may contain at most 4 strings"
+
+    def test_ctx_and_input_are_recursively_rendered(self):
+        """Nested non-primitive values are coerced, not left to blow up later.
+
+        A validator can put anything in ``ctx``; the envelope must stay total
+        because a validation error about arbitrary client input can never
+        itself be allowed to fail.
+        """
+        import json
+
+        raw_error = {
+            "type": "value_error",
+            "loc": ("body",),
+            "msg": "bad",
+            "input": {"nested": {"deep": (1, 2)}},
+            "ctx": {"error": KeyError("missing-key"), "extra": {"set": {1}}},
+        }
+        env = envelope_from_validation_error(RequestValidationError(errors=[raw_error]), "req-2")
+
+        json.dumps(env)
+        rendered = env["error"]["details"]["errors"][0]
+        assert rendered["ctx"]["error"] == {"type": "KeyError", "message": "'missing-key'"}
+        assert rendered["input"] == {"nested": {"deep": [1, 2]}}
+        # A set is rendered to a list (order is irrelevant for one element).
+        assert rendered["ctx"]["extra"]["set"] == [1]
+
+    def test_json_safe_primitives_pass_through_unchanged(self):
+        """Already-JSON-safe error entries must not be mangled."""
+        errors = [
+            {"type": "missing", "loc": ["body", "prompt"], "msg": "Field required", "input": None},
+            {"type": "too_short", "loc": ["body", "messages"], "msg": "at least 1", "ctx": {"min_length": 1}},
+        ]
+        env = envelope_from_validation_error(RequestValidationError(errors=errors), "req-3")
+
+        assert env["error"]["details"]["errors"] == [
+            {"type": "missing", "loc": ["body", "prompt"], "msg": "Field required", "input": None},
+            {"type": "too_short", "loc": ["body", "messages"], "msg": "at least 1", "ctx": {"min_length": 1}},
+        ]
+
 
 # --------------------------------------------------------------------------- #
 # envelope_from_api_error

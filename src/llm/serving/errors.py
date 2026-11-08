@@ -169,13 +169,51 @@ def envelope_from_http_exception(exc: HTTPException, request_id: str) -> dict[st
 
 
 def envelope_from_validation_error(exc: RequestValidationError, request_id: str) -> dict[str, Any]:
-    """Convert a pydantic / FastAPI ``RequestValidationError`` to the envelope."""
+    """Convert a pydantic / FastAPI ``RequestValidationError`` to the envelope.
+
+    The ``ctx`` field of a ``value_error`` entry holds the **exception object**
+    itself (``{"error": ValueError("...")}``), not a string — pydantic keeps the
+    original so callers can re-raise it. Feeding that straight into
+    ``JSONResponse`` makes ``json.dumps`` raise ``TypeError: Object of type
+    ValueError is not JSON serializable`` **inside the 422 handler**, which the
+    enclosing exception handling then reports as a 500 "internal error". So
+    every request that trips a custom validator — ``stop`` longer than 4
+    strings, an unsupported chat knob, an empty prompt — answered with a 500
+    instead of the 422 the client caused, and the real validation message was
+    lost.
+
+    The fix is to render each error entry to JSON-safe primitives here, where
+    the envelope is built, so every route benefits rather than each validator
+    being rewritten to avoid ``ValueError``.
+    """
     return to_envelope(
         code="invalid_request",
         message="Request validation failed.",
         request_id=request_id,
-        details={"errors": exc.errors()},
+        details={"errors": [_json_safe(error) for error in exc.errors()]},
     )
+
+
+def _json_safe(value: Any) -> Any:
+    """Recursively coerce ``value`` into JSON-serializable primitives.
+
+    ``loc`` / ``input`` / ``url`` are already JSON-safe for the request shapes
+    this API accepts, but ``ctx`` and ``input`` can carry arbitrary objects —
+    the ``ctx["error"]`` exception above, a non-serializable ``input`` for a
+    custom type. Recursing generically keeps the envelope total: a validation
+    error about arbitrary client input must never itself fail to serialize.
+    """
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, BaseException):
+        # ``ctx["error"]``: keep the message (the actionable part) and how it
+        # was raised, drop the object.
+        return {"type": type(value).__name__, "message": str(value)}
+    return str(value)
 
 
 def envelope_from_api_error(exc: APIError, request_id: str) -> dict[str, Any]:
