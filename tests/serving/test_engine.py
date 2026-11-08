@@ -1725,3 +1725,43 @@ class TestInterleavedSequencesAdvanceTogether:
             f"sequence 'world!!' changed when run alongside 'hello': {together['r1']} != {alone_b}"
         )
         assert together["r0"] != together["r1"], "both sequences produced identical tokens — they may share one context"
+
+
+def test_per_row_catch_does_not_swallow_fatal_exceptions(tiny_model, device, mock_tokenizer, monkeypatch):
+    """Per-row isolation must catch ordinary sampling errors, NOT everything.
+
+    ``_forward_and_sample`` wraps each row in
+    ``except (ValueError, KeyError, IndexError)`` so a row-local sampling
+    problem fails only that request. Widening that to ``except BaseException``
+    would look harmless and pass every existing test: the isolation test above
+    raises ``ValueError``, which both forms catch.
+
+    But ``BaseException`` also swallows ``KeyboardInterrupt`` and
+    ``SystemExit`` (a Ctrl-C during a batch would be turned into "this row
+    finished, keep serving") and ``MemoryError`` (an OOM during sampling would
+    be recorded as a per-row sample failure instead of aborting, so the engine
+    keeps stepping on an exhausted process). Those must propagate.
+
+    The exception is injected through ``sample_next_token`` because that is the
+    call the per-row ``try`` wraps — reaching it any other way would not
+    exercise the catch clause being tested.
+    """
+    import llm.serving.batch_engine as be
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    def _raise_fatal(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(be, "sample_next_token", _raise_fatal)
+
+    engine.add_request(GenerationRequest(prompt="hi", max_new_tokens=3))
+
+    # A KeyboardInterrupt during sampling must escape the per-row handler.
+    with pytest.raises(KeyboardInterrupt):
+        engine.step()
