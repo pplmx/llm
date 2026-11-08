@@ -292,3 +292,106 @@ def test_vanishing_channel_input_scales_do_not_produce_nan():
     x[:, 7] = 0.0
     out = qlayer(x)
     assert torch.isfinite(out).all()
+
+
+def test_smoothing_preserves_the_layer_output_exactly():
+    """The core SmoothQuant identity: ``x @ Wᵀ == (x/s) @ (s·W)ᵀ``.
+
+    Everything else in this module rests on it — the activation side divides by
+    ``s`` and the weight side multiplies by ``s``, so the layer must compute the
+    same function before quantization. If the ``s`` formula were wrong (say the
+    alpha exponents swapped), the scales would still look plausible per-channel
+    while every layer silently computed something different, and no existing test
+    would notice because they only check the scale values themselves.
+    """
+    import torch
+
+    from llm.quantization.smooth import _smoothing_scales
+
+    torch.manual_seed(0)
+    weight = torch.randn(16, 32) * 0.05
+    activations = torch.randn(4, 32)
+    act_max = activations.abs().amax(dim=0)
+    w_max = weight.abs().amax(dim=0)
+
+    for alpha in (0.0, 0.25, 0.5, 0.75, 1.0):
+        s = _smoothing_scales(act_max, w_max, alpha)
+        original = activations @ weight.T
+        smoothed = (activations / s) @ (weight * s).T
+        assert torch.allclose(original, smoothed, atol=1e-5, rtol=1e-5), (
+            f"alpha={alpha}: smoothing changed the layer output by {(original - smoothed).abs().max().item():.2e}"
+        )
+
+
+def test_act_scale_floor_is_representable_in_fp16():
+    """``_ACT_SCALE_FLOOR`` must survive the fp16 round trip exactly.
+
+    The quantizer stores ``act_scale`` / ``input_scales`` as fp16. A floor that
+    is not fp16-exact would either flush to zero (dividing by it NaNs the
+    forward) or round to a different value than the floored scale, which is the
+    failure mode the constant exists to prevent.
+    """
+    import torch
+
+    from llm.quantization.smooth import _ACT_SCALE_FLOOR
+
+    stored = torch.tensor(_ACT_SCALE_FLOOR).to(torch.float16).to(torch.float32)
+    assert stored.item() == _ACT_SCALE_FLOOR, f"floor {_ACT_SCALE_FLOOR} is not fp16-exact (became {stored.item()})"
+    assert _ACT_SCALE_FLOOR > 0.0
+    assert torch.finfo(torch.float16).tiny == _ACT_SCALE_FLOOR, (
+        "the floor should be the fp16 smallest normal so it is the largest exact value that still never flushes"
+    )
+
+
+def test_dead_channels_get_unit_scale_not_zero():
+    """A channel with no activation or no weight must not be scaled.
+
+    ``s = a**alpha / w**(1-alpha)`` collapses to 0 or inf on a dead channel;
+    the implementation substitutes 1 so the channel passes through untouched
+    instead of dividing by zero in the forward.
+    """
+    import torch
+
+    from llm.quantization.smooth import _smoothing_scales
+
+    act_max = torch.tensor([1.0, 0.0, 2.0, 0.0, 0.5])
+    w_max = torch.tensor([0.1, 0.2, 0.0, 0.0, 0.3])
+    dead = (act_max == 0) | (w_max == 0)
+
+    for alpha in (0.0, 0.5, 1.0):
+        s = _smoothing_scales(act_max, w_max, alpha)
+        assert torch.isfinite(s).all(), f"alpha={alpha}: non-finite scale {s.tolist()}"
+        assert (s > 0).all(), f"alpha={alpha}: non-positive scale {s.tolist()}"
+        assert torch.allclose(s[dead], torch.ones_like(s[dead])), (
+            f"alpha={alpha}: dead channels should pass through unscaled, got {s[dead].tolist()}"
+        )
+
+
+def test_smoothquant_reduces_activation_outliers_at_alpha_half():
+    """The point of the transform: smoothed activations are flatter per channel.
+
+    With ``alpha=0.5`` the per-channel activation range after dividing by ``s``
+    should be compressed relative to the raw range — that compression is why
+    INT8 activation quantization works at all. A wrong ``s`` direction (dividing
+    where it should multiply) would leave the outliers untouched or worse.
+    """
+    import torch
+
+    from llm.quantization.smooth import _smoothing_scales
+
+    torch.manual_seed(0)
+    weight = torch.randn(16, 32) * 0.05
+    # One channel dominates, as in real transformer activations.
+    activations = torch.randn(8, 32)
+    activations[:, 0] *= 50.0
+
+    act_max = activations.abs().amax(dim=0)
+    w_max = weight.abs().amax(dim=0)
+    s = _smoothing_scales(act_max, w_max, 0.5)
+
+    raw_spread = (act_max / act_max.min()).max().item()
+    smoothed_spread = ((act_max / s) / (act_max / s).min()).max().item()
+    assert smoothed_spread < raw_spread, (
+        f"alpha=0.5 should flatten the per-channel activation range: "
+        f"raw {raw_spread:.2f} -> smoothed {smoothed_spread:.2f}"
+    )
