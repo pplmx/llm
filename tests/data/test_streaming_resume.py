@@ -412,3 +412,63 @@ def test_streaming_module_gathers_all_shards_across_ranks(tmp_path):
         nprocs=2,
         join=True,
     )
+
+
+def test_streaming_dataset_midstream_resume_reproduces_the_exact_continuation(tmp_path, line_tokenizer):
+    """Resuming mid-stream must yield the SAME chunks an uninterrupted run would.
+
+    The existing test above drains the dataset first and then asserts the
+    resumed run is empty — that pins "a finished stream resumes into nothing",
+    which is the degenerate end-of-corpus case. It says nothing about the case
+    that matters for a multi-hour pretraining run: crash after N steps, resume,
+    and get the same data the uninterrupted run would have produced next. That
+    property depends on BOTH halves of the documented contract — the
+    ``line_index`` cursor AND the partial ``token_buffer`` carried across the
+    boundary (a chunk is emitted only once ``max_seq_len`` tokens accumulate, so
+    the tail of a consumed line lives in the buffer, not on disk).
+
+    Compared chunk-by-chunk, not by count: a resume that re-emits a boundary
+    line would produce a plausible number of chunks with different contents.
+    """
+    text_file = tmp_path / "corpus.txt"
+    text_file.write_text(
+        "\n".join(f"row{i:03d}-{'y' * 20}" for i in range(30)) + "\n",
+        encoding="utf-8",
+    )
+
+    def build(state: StreamDataState) -> StreamingTextDataset:
+        return StreamingTextDataset(
+            text_source=LocalLineTextSource(text_file),
+            tokenizer=line_tokenizer,
+            max_seq_len=16,
+            rank=0,
+            world_size=1,
+            stream_data_state=state,
+        )
+
+    # Uninterrupted run: keep everything after the first three chunks.
+    uninterrupted = build(StreamDataState())
+    stream = iter(uninterrupted)
+    consumed = [next(stream)["input_ids"].tolist() for _ in range(3)]
+    assert consumed, "the first three chunks must exist for this test to mean anything"
+
+    # Snapshot the cursor BEFORE draining the rest. Draining advances the live
+    # ``line_index`` to end-of-corpus, so saving afterwards would snapshot the
+    # finished state and the resume would (correctly) yield nothing — which is
+    # the degenerate case the test above already covers, not a mid-stream one.
+    saved = uninterrupted.stream_data_state.to_dict()
+    saved_line_index = saved["0"]["line_index"]
+    assert 0 < saved_line_index < 30, (
+        f"the snapshot must be mid-corpus to exercise a mid-stream resume, got line_index={saved_line_index}"
+    )
+
+    expected_tail = [batch["input_ids"].tolist() for batch in stream]
+    assert expected_tail, "the corpus must extend past the consumed prefix"
+
+    resumed = build(StreamDataState.from_dict(saved))
+    actual_tail = [batch["input_ids"].tolist() for batch in resumed]
+
+    assert actual_tail == expected_tail, (
+        "resuming mid-stream diverged from the uninterrupted run: the cursor "
+        "and/or the partial token buffer were not restored exactly"
+    )
