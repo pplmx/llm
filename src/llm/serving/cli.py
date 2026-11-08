@@ -84,6 +84,23 @@ def main(config: ServingConfig | None = None) -> None:
     # Shared fail-closed guard — see llm.serving.auth.assert_safe_bind.
     assert_safe_bind(config.host, config.api_key)
 
+    # Hand the resolved config to the app BEFORE uvicorn imports it.
+    #
+    # ``uvicorn.run`` takes this module's app by import STRING, so it may
+    # (re)import ``llm.serving.api`` in this process; without this call the
+    # app rebuilt its own ``ServingConfig`` from env vars and everything the
+    # CLI resolved — a ``--config`` YAML, ``--host``/``--port``, an
+    # explicitly passed config — was silently dropped. The security-relevant
+    # half: a YAML ``api_key`` never reached ``auth.get_api_key``, which
+    # reads ``llm.serving.api.config``, so ``/generate`` and ``/metrics``
+    # served anonymously. Verified live before the fix (200 with no auth
+    # header while the YAML set a key). The bind address looked right the
+    # whole time because uvicorn gets host/port as its own arguments, which
+    # is exactly why this went unnoticed.
+    from llm.serving import api as _api
+
+    _api.apply_config(config)
+
     reload = os.environ.get("LLM_SERVING_RELOAD", "").lower() in ("1", "true", "yes")
     # Imported lazily so ``main`` is cheap to import (e.g. for `--help`).
     import uvicorn

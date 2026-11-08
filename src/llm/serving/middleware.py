@@ -12,6 +12,8 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Callable
+from typing import cast
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -43,9 +45,25 @@ class RequestBodySizeLimit:
     transport layer and does NOT interfere with SSE response streaming.
     """
 
-    def __init__(self, app, max_bytes: int):
+    def __init__(self, app, max_bytes: int | Callable[[], int]):
         self.app = app
-        self.max_bytes = max_bytes
+        # A callable defers the cap to request time. The app registers this
+        # middleware at import, while ``ServingConfig`` can still be replaced
+        # by an entry point (``apply_config``) right up to startup; a frozen
+        # int would keep whatever the environment held at import.
+        if callable(max_bytes):
+            # ``cast`` because ``int`` is itself callable by the type checker's
+            # reckoning (it has a ``__call__``-ish signature through the ABCs),
+            # so the ``callable()`` narrowing cannot prove the branch.
+            self._resolve_max_bytes: Callable[[], int] = cast("Callable[[], int]", max_bytes)
+        else:
+            fixed = max_bytes
+            self._resolve_max_bytes = lambda: fixed
+
+    @property
+    def max_bytes(self) -> int:
+        """The effective cap in bytes (re-resolved on every request)."""
+        return self._resolve_max_bytes()
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":

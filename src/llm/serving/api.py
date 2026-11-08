@@ -90,9 +90,40 @@ logger.addHandler(_log_handler)
 config = ServingConfig()
 logger.setLevel(config.log_level)
 
-# Concurrency control: bound concurrent in-flight generations regardless
-# of FastAPI's worker count.
+# Concurrency control: bound concurrent in-flight generations regardless of
+# FastAPI's worker count.
 inference_semaphore = asyncio.Semaphore(config.max_concurrent_requests)
+
+
+def apply_config(config_: ServingConfig) -> None:
+    """Replace the module-level config and propagate it to the bound objects.
+
+    uvicorn loads this module by import string (``"llm.serving.api:app"``), so
+    every entry point that builds a ``ServingConfig`` *before* the server
+    starts — ``llm serve --config X.yaml``, the ``--host``/``--port`` flags, a
+    caller passing a pre-built config — has to hand it over explicitly.
+    Without this, the module rebuilt a SECOND config from env vars at import
+    time and the caller's object was silently discarded. Measured on
+    ``llm serve --config`` with ``api_key: secret-in-yaml``: ``/generate`` and
+    ``/metrics`` both answered **200 with no auth header**, because the app
+    read ``api_key=None`` from the discarded default while the YAML value
+    never left the CLI's local object. The bind address looked correct
+    throughout, because uvicorn takes host/port as its own arguments — which
+    is exactly why the loss went unnoticed.
+
+    Must run BEFORE the lifespan starts, since import-time state
+    (``max_request_bytes`` on the size-cap middleware, the concurrency
+    semaphore, and the logger level) is derived from ``config``. Keeping that
+    sequence is why this is a plain function rather than new arguments to
+    :func:`main`.
+    """
+    global config, inference_semaphore
+    config = config_
+    logger.setLevel(config.log_level)
+    # Rebuild rather than mutate: the semaphore's bound is fixed at
+    # construction, so a larger ``max_concurrent_requests`` on the object
+    # would otherwise leave the old (smaller) limit in effect.
+    inference_semaphore = asyncio.Semaphore(config.max_concurrent_requests)
 
 
 @contextlib.asynccontextmanager
@@ -223,7 +254,11 @@ app = FastAPI(
 # request, so oversized bodies are rejected before the routers or schema
 # validation buffer them. RequestID stays outermost for
 # request tracking on every response, including 413s.
-app.add_middleware(RequestBodySizeLimit, max_bytes=config.max_request_bytes)
+# ``max_bytes`` is resolved through a callable so :func:`apply_config` can
+# still change the cap: the middleware is constructed during import, and a
+# value captured here would freeze whatever the env happened to hold before
+# the CLI handed its config over.
+app.add_middleware(RequestBodySizeLimit, max_bytes=lambda: config.max_request_bytes)
 app.add_middleware(RequestIDMiddleware)
 
 # Routers.
