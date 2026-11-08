@@ -363,3 +363,49 @@ class TestSchedulerRepr:
             thread.join(timeout=10)
 
         assert not errors, f"concurrent repr raised: {errors[0]!r}"
+
+
+class TestSchedulerSlotReuse:
+    """A finished sequence must hand its slot to a waiting one.
+
+    This is the point of continuous batching: the batch size is a limit on
+    CONCURRENT sequences, not on total work, so a completed request has to free
+    capacity within the same step. The existing
+    ``test_schedule_removes_finished`` checks the removal but not that the freed
+    slot is actually refilled.
+    """
+
+    def test_finished_sequence_slot_is_refilled_from_waiting(self):
+        scheduler = Scheduler(max_batch_size=2)
+        for i in range(4):
+            scheduler.add_sequence(make_sequence(f"req{i}"))
+
+        first = scheduler.schedule()
+        assert [s.request_id for s in first] == ["req0", "req1"]
+        assert len(scheduler.waiting) == 2
+
+        first[0].status = RequestState.FINISHED
+        second = scheduler.schedule()
+
+        ids = [s.request_id for s in second]
+        assert "req0" not in ids, "the finished sequence must leave the running set"
+        assert ids == ["req1", "req2"], f"the freed slot was not refilled: {ids}"
+        assert len(scheduler.waiting) == 1
+
+    def test_batch_stays_at_capacity_while_work_remains(self):
+        """Under sustained load the batch must stay FULL, not drain.
+
+        A scheduler that only removed finished sequences (without refilling)
+        would shrink the batch over time and waste the engine's whole point.
+        """
+        scheduler = Scheduler(max_batch_size=3)
+        for i in range(9):
+            scheduler.add_sequence(make_sequence(f"req{i}"))
+
+        for round_index in range(3):
+            running = scheduler.schedule()
+            assert len(running) == 3, f"round {round_index} ran {len(running)} sequences, expected 3"
+            for sequence in running:
+                sequence.status = RequestState.FINISHED
+
+        assert not scheduler.waiting, "all nine should have been served"
