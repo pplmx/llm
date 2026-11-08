@@ -16,6 +16,7 @@ be followed through the documentation.
 
 from __future__ import annotations
 
+import functools
 import pathlib
 import re
 
@@ -152,8 +153,16 @@ def test_documented_llm_imports_resolve() -> None:
 _CLI_TIMEOUT = 120
 
 
+@functools.cache
 def _cli_flags(prefix: tuple[str, ...]) -> set[str]:
-    """Flags accepted by ``llm <prefix>``, read from its real ``--help``."""
+    """Flags accepted by ``llm <prefix>``, read from its real ``--help``.
+
+    ``lru_cache`` is load-bearing, not decoration: each call spawns
+    ``uv run llm ... --help`` (seconds of interpreter start-up), and the caller
+    below looks up the same prefix once per documented command line. Without the
+    cache a doc with ~100 annotated lines issued several hundred subprocesses and
+    the test took 43s — by far the slowest in the CPU gate.
+    """
     import subprocess
 
     result = subprocess.run(  # noqa: S603 — argv is built from internal constants, not user input
