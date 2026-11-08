@@ -409,3 +409,80 @@ class TestSchedulerSlotReuse:
                 sequence.status = RequestState.FINISHED
 
         assert not scheduler.waiting, "all nine should have been served"
+
+
+class TestConflictingRequestIdGuard:
+    """Two live sequences must never share a `request_id`.
+
+    `SlotAllocator` keys KV slots by `request_id`, so two distinct requests whose
+    client-supplied ids collide would write into the SAME slot: their K/V and
+    generated tokens contaminate each other, and a `free()` by either returns the
+    other's still-live slot to the pool. `add_sequence_if_not_conflicting` exists
+    to prevent exactly that, and had no test at all.
+    """
+
+    def test_a_conflicting_duplicate_is_rejected(self):
+        scheduler = Scheduler(max_batch_size=4, max_waiting=8)
+        first = make_sequence("dup", "first prompt")
+        assert scheduler.add_sequence_if_not_conflicting(first) is True
+
+        conflicting = make_sequence("dup", "a completely different prompt")
+        assert scheduler.add_sequence_if_not_conflicting(conflicting) is False, (
+            "a different request reusing a live request_id was accepted — both would share one KV slot"
+        )
+        assert len(scheduler.waiting) == 1, "the rejected sequence must not have been enqueued"
+
+    def test_conflict_is_detected_against_running_sequences_too(self):
+        """The guard must scan `running`, not only `waiting`.
+
+        A request that already started decoding is the more dangerous case: its
+        slot holds real K/V that a second request would overwrite.
+        """
+        scheduler = Scheduler(max_batch_size=4, max_waiting=8)
+        scheduler.add_sequence_if_not_conflicting(make_sequence("dup"))
+        scheduler.schedule()
+
+        conflicting = make_sequence("dup", "different")
+        assert scheduler.add_sequence_if_not_conflicting(conflicting) is False
+        assert len(scheduler.waiting) == 0
+
+    def test_the_same_logical_request_may_be_re_added_via_matches(self):
+        """The engine's internal double-add contract must keep working.
+
+        ``generate_request`` re-adds the same logical request so the reap loop can
+        remove every copy; the ``matches`` callback is what distinguishes that from
+        a genuine collision.
+        """
+        scheduler = Scheduler(max_batch_size=4, max_waiting=8)
+        original = make_sequence("dup", "same prompt")
+        assert scheduler.add_sequence_if_not_conflicting(original) is True
+
+        re_added = make_sequence("dup", "same prompt")
+        allowed = scheduler.add_sequence_if_not_conflicting(
+            re_added,
+            matches=lambda other: other.prompt == re_added.prompt and other.input_ids == re_added.input_ids,
+        )
+        assert allowed is True, "the same logical request was wrongly rejected as a conflict"
+        assert len(scheduler.waiting) == 2
+
+    def test_matches_does_not_whitelist_a_different_request(self):
+        """A `matches` callback that returns False must still reject."""
+        scheduler = Scheduler(max_batch_size=4, max_waiting=8)
+        scheduler.add_sequence_if_not_conflicting(make_sequence("dup", "one"))
+
+        other = make_sequence("dup", "two")
+        assert scheduler.add_sequence_if_not_conflicting(other, matches=lambda _existing: False) is False
+        assert len(scheduler.waiting) == 1
+
+    def test_a_finished_holder_does_not_block_reuse(self):
+        """Once the original finishes, its id is free again."""
+        scheduler = Scheduler(max_batch_size=4, max_waiting=8)
+        finished = make_sequence("dup")
+        scheduler.add_sequence_if_not_conflicting(finished)
+        scheduler.schedule()
+        finished.status = RequestState.FINISHED
+
+        reused = make_sequence("dup", "new request, reused id")
+        assert scheduler.add_sequence_if_not_conflicting(reused) is True, (
+            "a FINISHED sequence still blocked id reuse — ids would be permanently consumed"
+        )
