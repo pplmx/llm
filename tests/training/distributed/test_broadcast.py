@@ -12,16 +12,15 @@ from __future__ import annotations
 
 from unittest import mock
 
-import pytest
 import torch
 import torch.nn as nn
 
 from llm.training.core.distributed import broadcast_parameters
 
-# Multi-rank distributed/DDP broadcast tests. Excluded from the per-push
-# CPU-clean gate via the existing `heavy` marker; still runs under
-# `test`/`test-cov` (full) and `test-heavy`.
-pytestmark = pytest.mark.heavy
+# NOTE: no module-level `heavy` marker. All three cases run without a real
+# multi-rank group in ~0.2s — the no-op paths (no process group, single-rank
+# group) plus one that drives the broadcast on a tiny CPU group the test builds
+# itself. The marker used to sit here and kept them out of the per-push CPU gate.
 
 
 class _Tiny(nn.Module):

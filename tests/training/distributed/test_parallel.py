@@ -15,10 +15,13 @@ from llm.training.distributed.parallel import (
 )
 from tests.support.devices import ALL_DEVICES, DEFAULT_DEVICE, cuda_usable
 
-# Multi-rank distributed/FSDP/DDP tests (init_process_group, launcher
-# contract). Excluded from the per-push CPU-clean gate via the existing
-# `heavy` marker; still runs under `test`/`test-cov` (full) and `test-heavy`.
-pytestmark = pytest.mark.heavy
+# NOTE: no module-level `heavy` marker. Although this file covers distributed
+# surfaces, all 48 cases run WITHOUT a process group in ~2s: they exercise config
+# validation, state-dict gather/strip, FSDP policy selection and the
+# single-rank/no-GPU no-op paths. The marker used to sit here and excluded the
+# whole file from the per-push CPU-clean gate, so a config-validation regression
+# would only surface in the full/heavy runs. Tests that genuinely need multiple
+# ranks build their own group and are guarded where they are defined.
 
 
 class _Tiny(nn.Module):
