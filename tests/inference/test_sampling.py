@@ -237,3 +237,39 @@ class TestCombinedTopKAndTopP:
             combined_count = int((combined > 0).sum())
             assert combined_count <= int((k_only > 0).sum()), f"top_p widened the top_k support for {top_k}/{top_p}"
             assert combined_count <= int((p_only > 0).sum()), f"top_k widened the top_p support for {top_k}/{top_p}"
+
+
+@pytest.mark.parametrize("bad_top_p", [0.0, -0.5])
+def test_sampling_probs_rejects_nonpositive_top_p(bad_top_p):
+    """``top_p <= 0`` must be rejected, not silently ignored.
+
+    ``sampling_probs`` already rejects a non-positive ``temperature`` and
+    ``top_k < 1`` here. ``top_p`` was the sibling case that had its guard but
+    no assertion **in this file** — the only test for it lived in
+    ``tests/generation/test_sampling_validation.py``. Verified by mutation:
+    weakening the guard to ``top_p < 0`` is caught when both directories run,
+    but SURVIVES when this file runs alone, so the protection depended on which
+    test subset a change happened to be checked against.
+
+    ``top_p=0`` is the degenerate "greedy analog" that would otherwise draw
+    non-deterministically: the nucleus filter's ``0.0 < top_p < 1.0`` condition
+    skips it and the draw falls back to the full distribution.
+    """
+    with pytest.raises(ValueError, match="top_p"):
+        sampling_probs(torch.zeros(8), top_p=bad_top_p)
+
+
+@pytest.mark.parametrize("top_p", [1.0, 1.5, None])
+def test_sampling_probs_accepts_top_p_at_or_above_one(top_p):
+    """ "1.0 means no truncation" (the OpenAI client default) must not raise.
+
+    ``top_p >= 1.0`` is explicitly valid and behaves like ``None``: the full
+    distribution survives. Rejecting it made every default-configured OpenAI
+    request fail, which is why the boundary is pinned in both directions — a
+    guard that rejects everything non-``None`` would pass the rejection test
+    above.
+    """
+    probs = sampling_probs(torch.zeros(8), top_p=top_p)
+    assert probs.shape == (8,)
+    assert torch.isclose(probs.sum(), torch.ones(()), atol=1e-6)
+    assert (probs > 0).all(), "top_p >= 1.0 must not mask any token"
