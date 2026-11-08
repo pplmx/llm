@@ -840,3 +840,94 @@ class TestArchitecturalConfigSurvivesTheRoundTrip:
             if kv_heads is not None:
                 return kv_heads
         raise AssertionError("no attention module exposes a KV-head count")
+
+
+class TestShapeInvariantConfigSurvivesTheRoundTrip:
+    """Knobs whose value does NOT change any tensor shape.
+
+    These are the most dangerous losses on a reload, because every completeness
+    check still passes: the weights are bit-identical, the state dict has zero
+    missing and zero unexpected keys, and the model is nevertheless a different
+    function. `use_rope=False` (learned positions instead of rotary), `norm_first`
+    (pre- vs post-norm) and the MLP activation all fall in this class.
+
+    The persistence layer uses the HF names (`hidden_act`, not `mlp_activation`), so
+    a test that looks for our key in `config.json` would report a false absence —
+    these read the RECONSTRUCTED module instead.
+    """
+
+    @staticmethod
+    def _roundtrip(tmp_path, **overrides):
+        from llm.compat.hf_loader import from_pretrained
+        from llm.compat.hf_publisher import save_pretrained
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(0)
+        config = {
+            "vocab_size": 64,
+            "hidden_size": 32,
+            "num_layers": 1,
+            "num_heads": 2,
+            "num_kv_heads": 2,
+            "max_seq_len": 64,
+            "intermediate_size": 64,
+        }
+        config.update(overrides)
+        source = DecoderModel(**config).eval()
+        save_pretrained(source, str(tmp_path))
+        return source, from_pretrained(str(tmp_path), device="cpu").eval()
+
+    def test_learned_positions_are_not_silently_restored_as_rope(self, tmp_path):
+        """`use_rope=False` must NOT come back as RoPE (or vice versa)."""
+        source, reloaded = self._roundtrip(tmp_path, use_rope=False)
+
+        assert getattr(source, "use_rope", None) is False
+        assert self._rope_flag(reloaded) is False, (
+            "a model trained with learned positional embeddings reloaded with RoPE — same shapes, different function"
+        )
+
+    def test_rope_is_not_silently_dropped(self, tmp_path):
+        """The positive direction, so the check above cannot pass by accident."""
+        source, reloaded = self._roundtrip(tmp_path, use_rope=True)
+
+        assert getattr(source, "use_rope", None) is True
+        assert self._rope_flag(reloaded) is True
+
+    def test_post_norm_stays_post_norm(self, tmp_path):
+        """`norm_first=False` (post-norm) must survive; pre-norm is the default."""
+        source, reloaded = self._roundtrip(tmp_path, norm_first=False)
+
+        assert getattr(source, "norm_first", None) is False
+        assert self._norm_first_flag(reloaded) is False, (
+            "a post-norm model reloaded as pre-norm — identical shapes, different function"
+        )
+
+    @pytest.mark.parametrize(
+        ("activation", "module_name"),
+        [("gelu", "GELU"), ("silu", "SiLU"), ("relu", "ReLU")],
+    )
+    def test_mlp_activation_round_trips_through_hidden_act(self, tmp_path, activation, module_name):
+        """The MLP activation is persisted as HF's `hidden_act` and must rebuild."""
+        _source, reloaded = self._roundtrip(tmp_path, mlp_activation=activation)
+
+        found = {type(module).__name__ for module in reloaded.modules()}
+        assert module_name in found, (
+            f"mlp_activation={activation!r} did not rebuild a {module_name} module; saw {sorted(found)}"
+        )
+
+    @staticmethod
+    def _rope_flag(model):
+        for module in model.modules():
+            for attr in ("use_rope", "rope"):
+                value = getattr(module, attr, None)
+                if isinstance(value, bool):
+                    return value
+        return getattr(model, "use_rope", None)
+
+    @staticmethod
+    def _norm_first_flag(model):
+        for module in model.modules():
+            value = getattr(module, "norm_first", None)
+            if isinstance(value, bool):
+                return value
+        return getattr(model, "norm_first", None)
