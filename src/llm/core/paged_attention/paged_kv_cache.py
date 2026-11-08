@@ -18,8 +18,17 @@ class PrefixCache:
         self.cache: OrderedDict[str, list[int]] = OrderedDict()
 
     def add(self, prefix_hash: str, block_ids: list[int]) -> None:
-        """Add prefix blocks to cache."""
-        if len(self.cache) >= self.max_prefixes:
+        """Add prefix blocks to cache, evicting the LRU entry when full.
+
+        Re-registering an EXISTING hash must not evict anything: it replaces a
+        value in place, so the cache neither grows nor needs room. The guard is
+        ``prefix_hash not in self.cache`` rather than a bare size check because
+        the size check alone charged an unrelated LRU entry for a no-growth
+        update — with two sequences sharing a prompt (the common case), the
+        second registration silently dropped a *different* prefix and shrank the
+        cache below ``max_prefixes``.
+        """
+        if prefix_hash not in self.cache and len(self.cache) >= self.max_prefixes:
             self.cache.popitem(last=False)
 
         self.cache[prefix_hash] = block_ids

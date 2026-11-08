@@ -1054,3 +1054,68 @@ def test_paged_kv_cache_repr_exposes_block_and_prefix_occupancy():
     block_ids = cache.update(1, torch.randn(1, 8, 2, 4), torch.randn(1, 8, 2, 4))
     assert block_ids, "no blocks were allocated"
     assert "free_blocks=8" not in repr(cache), "repr did not reflect the allocated block"
+
+
+class TestPrefixCacheEviction:
+    """Re-registering an existing prefix must not evict an unrelated entry.
+
+    Two sequences sharing a prompt (a common system prompt) both call
+    ``add_prefix`` with the SAME hash. The old ``add`` checked only the SIZE, so
+    the second registration popped the LRU entry even though the cache was not
+    growing — silently dropping a *different*, still-useful prefix and shrinking
+    the cache to ``max_prefixes - 1``. Reached through the public
+    ``PagedKVCache.add_prefix`` API, not just the internal helper.
+    """
+
+    def test_overwrite_at_capacity_evicts_nothing(self):
+        from llm.core.paged_attention.paged_kv_cache import PrefixCache
+
+        cache = PrefixCache(max_prefixes=3)
+        for name in ("a", "b", "c"):
+            cache.add(name, [ord(name)])
+
+        before = dict(cache.cache)
+        cache.add("c", [999])  # 'c' is present, so this replaces in place
+        after = dict(cache.cache)
+
+        assert set(before) == set(after), f"an unrelated prefix was evicted: {sorted(set(before) - set(after))}"
+        assert cache.cache["c"] == [999], "the new blocks must replace the old ones"
+        assert len(cache.cache) == 3
+
+    def test_a_genuinely_new_key_still_evicts_the_lru(self):
+        """The fix must not disable eviction outright."""
+        from llm.core.paged_attention.paged_kv_cache import PrefixCache
+
+        cache = PrefixCache(max_prefixes=2)
+        cache.add("a", [1])
+        cache.add("b", [2])
+        cache.add("fresh", [3])
+
+        assert list(cache.cache) == ["b", "fresh"], f"expected LRU 'a' evicted, got {list(cache.cache)}"
+        assert len(cache.cache) == 2
+
+    def test_repeated_registration_through_the_public_api(self):
+        """The path that actually triggers it: several sequences, one shared prefix."""
+        from llm.core.paged_attention.paged_kv_cache import PagedKVCache
+
+        cache = PagedKVCache(
+            num_layers=1,
+            num_kv_heads=1,
+            head_dim=4,
+            num_blocks=32,
+            block_size=4,
+            enable_prefix_cache=True,
+            max_prefixes=3,
+        )
+        cache.add_prefix(1, [10, 11, 12, 13], [0])
+        cache.add_prefix(2, [20, 21, 22, 23], [1])
+        cache.add_prefix(3, [30, 31, 32, 33], [2])
+        cached_before = set(cache.prefix_cache.cache)
+        assert len(cached_before) == 3
+
+        # A fourth sequence reuses sequence 3's prompt — same hash, same entry.
+        cache.add_prefix(4, [30, 31, 32, 33], [3])
+
+        assert set(cache.prefix_cache.cache) == cached_before, (
+            "re-registering a shared prefix dropped another sequence's cached prefix"
+        )
