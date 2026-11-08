@@ -356,6 +356,41 @@ The `api_key_set` field intentionally carries the **presence** of an
 API key, never its value — see `src/llm/serving/auth.py:52` for the
 `hmac.compare_digest` timing-safe comparison.
 
+### Error responses
+
+Every failure on this API — handler errors, request-validation failures, and
+the transport-level checks that run before a handler — uses one envelope:
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "Request validation failed.",
+    "details": {"errors": [...]},
+    "request_id": "9da4c46a76984bc8a15b1895fb13c3c0"
+  }
+}
+```
+
+`code` is a stable, machine-readable identifier (`ErrorCode` in
+`src/llm/serving/errors.py`) — clients should branch on it rather than on the
+human-readable `message`. `request_id` echoes the `X-Request-ID` response
+header, so a client-reported failure can be found in the server's access log.
+
+| `code`              | HTTP | Meaning                                                  |
+| ------------------- | ---- | -------------------------------------------------------- |
+| `invalid_request`   | 400  | Malformed or un-encodable request (also 422 for schema). |
+| `unauthorized`      | 403  | Missing or wrong API key.                                |
+| `payload_too_large` | 413  | Body exceeded `max_request_bytes`.                       |
+| `internal`          | 500  | Unexpected server fault (details are logged, not sent).  |
+| `queue_full`        | 503  | Waiting queue full — retry later.                        |
+| `model_unavailable` | 503  | Backend failure during generation.                       |
+| `timeout`           | 504  | `request_timeout` elapsed.                               |
+
+Only `queue_full` (and, with backoff, `model_unavailable`) are worth retrying
+unchanged. `payload_too_large` will never succeed for the same body — the
+client has to send less data.
+
 ## Grouped Query Attention (GQA)
 
 GQA reduces KV cache memory by sharing KV heads across multiple query heads.
