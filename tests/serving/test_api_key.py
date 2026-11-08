@@ -9,6 +9,7 @@ auth dependency. Regression coverage for the ``hmac.compare_digest`` switch
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 import yaml
@@ -383,3 +384,93 @@ def test_compose_model_path_defaults_to_unset_not_a_broken_path():
         "LLM_SERVING_MODEL_PATH must default to empty (${VAR:-}); "
         "a concrete default would point at a checkpoint the image does not have"
     )
+
+
+# --- A published placeholder must never act as a credential ---------------
+
+
+class TestPlaceholderKeysAreRefused:
+    """A placeholder in a shipped config is a published credential.
+
+    ``configs/serve_pretrained.yaml`` used to ship
+    ``api_key: REPLACE_WITH_RANDOM_32_BYTE_HEX_AT_STARTUP`` so the YAML would
+    be structurally valid and the public-host guard would pass on inspection.
+    Nothing rejected that value at startup, so launching the preset as-is ran a
+    server whose ONLY credential was a string printed in this repository.
+    Measured end-to-end before the guard existed: with that placeholder
+    configured, a request carrying exactly the documented string returned
+    ``200`` while an unauthenticated one returned ``403`` — auth was "on" and
+    defeated simultaneously.
+
+    The guard refuses a placeholder on ANY bind, not just a public one: an
+    operator running loopback-only today with a port forward tomorrow would
+    otherwise expose the endpoint with a known key.
+    """
+
+    @pytest.mark.parametrize(
+        "placeholder",
+        [
+            "REPLACE_WITH_RANDOM_32_BYTE_HEX_AT_STARTUP",
+            "replace_with_your_key",
+            "changeme",
+            "<your-api-key>",
+            "YOUR_API_KEY",
+            "placeholder-secret",
+        ],
+    )
+    def test_placeholder_shapes_are_detected(self, placeholder):
+        from llm.serving.auth import is_placeholder_secret
+
+        assert is_placeholder_secret(placeholder) is True
+
+    @pytest.mark.parametrize(
+        "real_key",
+        [
+            None,
+            "",
+            # A real `openssl rand -hex 32`.
+            "9f2c47a1b83d05e6c4712f8a0d3b96e5a7c21d4f60b8e39a5c7d21f08b3a6e4c",
+        ],
+    )
+    def test_real_or_absent_keys_are_not_flagged(self, real_key):
+        from llm.serving.auth import is_placeholder_secret
+
+        assert is_placeholder_secret(real_key) is False
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "0.0.0.0"])  # noqa: S104
+    def test_placeholder_refused_on_any_bind(self, host):
+        """Loopback is NOT enough — see the class docstring."""
+        from llm.serving.auth import assert_safe_bind
+
+        with pytest.raises(RuntimeError, match="placeholder"):
+            assert_safe_bind(host, "REPLACE_WITH_RANDOM_32_BYTE_HEX_AT_STARTUP")
+
+    def test_the_shipped_preset_carries_no_placeholder_key(self):
+        """The regression that prompted the guard: the file itself.
+
+        The preset binds ``0.0.0.0``, so the startup guard already refuses it
+        without a key — but only after this fix. Before it, the file's
+        placeholder satisfied the "key is set" condition and the server came up
+        with a public credential.
+        """
+        import yaml
+
+        compose_dir = Path(__file__).resolve().parents[2] / "configs"
+        raw = yaml.safe_load((compose_dir / "serve_pretrained.yaml").read_text(encoding="utf-8"))
+        assert "api_key" not in raw, (
+            "serve_pretrained.yaml must not set api_key at all: an explicit YAML "
+            "value SHADOWS LLM_SERVING_API_KEY (pydantic-settings precedence), so even "
+            "`api_key: null` would break the documented env-var workflow"
+        )
+
+    def test_env_var_supplies_the_key_when_yaml_omits_it(self, monkeypatch):
+        """The documented workflow must actually work.
+
+        Omitting the key from the YAML is what lets ``LLM_SERVING_API_KEY`` be
+        the source. Verified from the real file, not a constructed config.
+        """
+        from llm.serving.config import ServingConfig
+
+        monkeypatch.setenv("LLM_SERVING_API_KEY", "9f2c47a1b83d05e6c4712f8a0d3b96e5a7c21d4f60b8e39a5c7d21f08b3a6e4c")
+        cfg = ServingConfig.from_yaml(Path(__file__).resolve().parents[2] / "configs" / "serve_pretrained.yaml")
+        assert cfg.api_key == "9f2c47a1b83d05e6c4712f8a0d3b96e5a7c21d4f60b8e39a5c7d21f08b3a6e4c"

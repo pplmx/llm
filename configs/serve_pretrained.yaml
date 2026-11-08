@@ -75,12 +75,21 @@ tokenizer_type: hf
 # Bind to all interfaces (container-friendly); the api_key gate
 # blocks anonymous access.
 host: 0.0.0.0
-# IMPORTANT: replace this with a real secret in production
-# (e.g. `LLM_SERVING_API_KEY=$(openssl rand -hex 32) uv run llm serve`).
-# The placeholder below is here so the YAML is structurally valid;
-# the public-host guard requires a non-empty api_key when host is
-# non-loopback.
-api_key: REPLACE_WITH_RANDOM_32_BYTE_HEX_AT_STARTUP
+# REQUIRED: this preset binds 0.0.0.0, so it will not start without a key.
+#
+# There is deliberately NO ``api_key:`` line here. A YAML key is an EXPLICIT
+# value and (pydantic-settings) wins over the environment — writing
+# ``api_key: null`` would therefore *shadow* ``LLM_SERVING_API_KEY`` and the
+# documented way to supply the key would silently stop working (verified).
+# Omitting the key lets the env var be the source, and the startup guard
+# refuses the bind when it is unset:
+#
+#   export LLM_SERVING_API_KEY=$(openssl rand -hex 32)
+#   uv run llm serve --config configs/serve_pretrained.yaml
+#
+# Do not put a placeholder here either: it would be published in this
+# repository AND accepted as the credential. The startup guard rejects any
+# value matching a placeholder pattern (REPLACE_WITH…, changeme, <your-…>).
 log_level: INFO
 device: cuda              # CUDA is the production default; CPU works
                           # for tiny models but is slow for real ones.

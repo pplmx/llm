@@ -71,6 +71,42 @@ def is_loopback(host: str) -> bool:
     return bool(host.startswith("127."))
 
 
+#: Substrings that mark a value as an un-replaced template placeholder.
+#:
+#: ``configs/serve_pretrained.yaml`` ships
+#: ``api_key: REPLACE_WITH_RANDOM_32_BYTE_HEX_AT_STARTUP`` so the YAML is
+#: structurally valid and the public-host guard passes when the preset is
+#: inspected. Nothing rejects that value at startup, so a user who launches the
+#: preset as-is runs a server whose **only credential is a string printed in
+#: this repository** — protected against nobody who can read the source.
+#: Verified end-to-end before this guard existed: with the placeholder as the
+#: configured key, a request carrying exactly that documented string returned
+#: ``200`` while an unauthenticated one returned ``403``, i.e. the key
+#: "worked" and was public.
+_PLACEHOLDER_MARKERS = (
+    "REPLACE_WITH",
+    "REPLACE_ME",
+    "CHANGEME",
+    "CHANGE_ME",
+    "YOUR_API_KEY",
+    "<your",
+    "placeholder",
+)
+
+
+def is_placeholder_secret(api_key: str | None) -> bool:
+    """Return True when ``api_key`` looks like an un-replaced template value.
+
+    Matching is case-insensitive and substring-based: placeholders are written
+    in many shapes (``REPLACE_WITH_...``, ``changeme``, ``<your-key>``), and a
+    real random hex secret cannot contain any of these words.
+    """
+    if not api_key:
+        return False
+    lowered = api_key.lower()
+    return any(marker.lower() in lowered for marker in _PLACEHOLDER_MARKERS)
+
+
 def assert_safe_bind(
     host: str,
     api_key: str | None,
@@ -89,12 +125,24 @@ def assert_safe_bind(
     endpoints fully anonymously. ``host=0.0.0.0`` without
     auth fails at startup rather than silently at runtime.
 
+    A **placeholder** key is refused on any bind, not just a public one: it
+    reads as "auth is on" while the credential is published in the repo, so
+    the guard's purpose (stopping anonymous exposure) is defeated even on
+    loopback the moment the operator forwards a port.
+
     Args:
         host: The bind address the server will use.
         api_key: The configured ``ServingConfig.api_key`` (``None`` when
             auth is disabled).
         source: Name used in the error message for context.
     """
+    if is_placeholder_secret(api_key):
+        raise RuntimeError(
+            f"Refusing to start: {source} holds the placeholder value "
+            f"{api_key!r}, which is published in this repository and is therefore not a "
+            f"secret. Generate a real key, e.g. "
+            f"`export LLM_SERVING_API_KEY=$(openssl rand -hex 32)`."
+        )
     if not is_loopback(host) and not api_key:
         raise RuntimeError(
             f"Refusing to start: {source}={host!r} binds to a "
