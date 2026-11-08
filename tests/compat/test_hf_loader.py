@@ -931,3 +931,58 @@ class TestShapeInvariantConfigSurvivesTheRoundTrip:
             if isinstance(value, bool):
                 return value
         return getattr(model, "norm_first", None)
+
+
+class TestRopeThetaSurvivesTheRoundTrip:
+    """`rope_theta` changes the rotary FREQUENCIES, not any shape.
+
+    `test_get_config_mapping_rope_defaults_on_for_external` proves the mapping
+    function READS a theta out of an external config. It cannot prove the value is
+    written back and re-read by `save_pretrained` -> `from_pretrained`, which is a
+    different path (publisher config writer + loader config reader).
+
+    A drop here is silent and expensive: Llama-3 uses theta=500000 instead of the
+    10000 default, and a model reloaded at 10000 has bit-identical weights, zero
+    missing keys, and the wrong positional geometry on every prompt.
+    """
+
+    def _roundtrip(self, tmp_path, theta: float):
+        from llm.compat.hf_loader import from_pretrained
+        from llm.compat.hf_publisher import save_pretrained
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(0)
+        source = DecoderModel(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=1,
+            num_heads=2,
+            num_kv_heads=2,
+            max_seq_len=64,
+            intermediate_size=64,
+            rope_theta=theta,
+        ).eval()
+        save_pretrained(source, str(tmp_path))
+        return source, from_pretrained(str(tmp_path), device="cpu").eval()
+
+    @pytest.mark.parametrize("theta", [10000.0, 500000.0, 1000000.0])
+    def test_non_default_theta_is_preserved(self, tmp_path, theta):
+        _source, reloaded = self._roundtrip(tmp_path, theta)
+
+        assert self._theta(reloaded) == pytest.approx(theta), (
+            f"rope_theta {theta} came back as {self._theta(reloaded)} — bit-identical weights, wrong positional geometry"
+        )
+
+    def test_default_theta_is_not_mangled(self, tmp_path):
+        """The default must stay the default rather than becoming something else."""
+        _source, reloaded = self._roundtrip(tmp_path, 10000.0)
+
+        assert self._theta(reloaded) == pytest.approx(10000.0)
+
+    @staticmethod
+    def _theta(model):
+        for module in model.modules():
+            theta = getattr(module, "rope_theta", None)
+            if isinstance(theta, (int, float)):
+                return float(theta)
+        return float(model.rope_theta)
