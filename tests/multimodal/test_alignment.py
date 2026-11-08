@@ -186,3 +186,133 @@ def test_siglip_loss_prefers_matched_pairs_at_realistic_temperature():
             f"at temperature={temperature} SigLIP scored matched pairs ({matched_loss:.4f}) "
             f"worse than random ones ({random_loss:.4f})"
         )
+
+
+class TestContrastiveLossExactBoundaries:
+    """Known-value checks the statistical tests cannot make.
+
+    `test_contrastive_loss_logits_square_and_uniform_baseline` compares against the
+    ln(B) baseline for RANDOM, near-zero logits, with a tolerance — it cannot
+    distinguish an implementation that is slightly off from one that is exactly
+    right. Two configurations have closed-form answers, and they pin both the
+    information-theoretic floor and the ceiling.
+    """
+
+    @pytest.mark.parametrize("batch", [2, 4, 8, 32])
+    def test_uniform_logits_give_exactly_log_batch(self, batch):
+        """Zero logits => uniform predictions => cross-entropy is exactly ln(B).
+
+        This is the maximum-entropy value of the InfoNCE objective: with no
+        signal, the loss cannot be lower and cannot be higher.
+        """
+        loss = contrastive_loss(torch.zeros(batch, batch))
+
+        assert loss.item() == pytest.approx(math.log(batch), rel=0, abs=1e-6), (
+            f"uniform logits gave {loss.item():.6f}, expected ln({batch}) = {math.log(batch):.6f}"
+        )
+
+    def test_perfect_separation_gives_zero_loss(self):
+        """A large diagonal with no off-diagonal mass drives InfoNCE to 0.
+
+        The ceiling: once every pair is unambiguous, the objective is satisfied
+        exactly. A temperature-scaling or label-alignment bug would leave a
+        positive residual here even though every statistical test still passed.
+        """
+        batch = 8
+        logits = torch.eye(batch) * 100.0
+
+        assert contrastive_loss(logits).item() == pytest.approx(0.0, abs=1e-6)
+
+    def test_loss_is_invariant_to_transposing_the_logits(self):
+        """InfoNCE averages image-to-text and text-to-image, so it is symmetric."""
+        torch.manual_seed(0)
+        logits = torch.randn(6, 6)
+
+        assert contrastive_loss(logits).item() == pytest.approx(contrastive_loss(logits.t()).item(), abs=1e-6)
+
+    def test_a_wrong_label_alignment_costs_more_than_the_correct_one(self):
+        """Permuting the target is the anti-test: `labels` must be the diagonal.
+
+        If the implementation scored the wrong axis, or used a scrambled label
+        vector, the "perfect" matrix above would NOT be the minimum. Here the same
+        magnitudes are arranged so the true pairing is off-diagonal instead.
+        """
+        batch = 6
+        aligned = torch.full((batch, batch), -100.0)
+        aligned.fill_diagonal_(100.0)
+        misaligned = torch.full((batch, batch), -100.0)
+        misaligned.fill_diagonal_(-100.0)
+        # Put the large scores one step off the diagonal (cyclic shift).
+        for row in range(batch):
+            misaligned[row, (row + 1) % batch] = 100.0
+
+        assert contrastive_loss(misaligned).item() > contrastive_loss(aligned).item() + 10.0, (
+            "a shifted pairing scored comparably to the correct one — labels are not the diagonal"
+        )
+
+    @pytest.mark.parametrize("batch", [2, 4, 8])
+    def test_siglip_floor_is_the_negative_pair_fraction(self, batch):
+        """SigLIP averages over the whole BxB grid, so perfect positives still cost.
+
+        Only B of the B*B cells are positive. With the positives saturated, every
+        negative cell contributes log(2) = -log(sigmoid(0)) and the positives
+        contribute ~0, so the loss floor is exactly ((B*B - B)/B*B) * ln(2). That is
+        a definitional consequence of the sigmoid formulation, not a defect — pinning
+        it stops a future "fix" from silently switching the normalisation to
+        match InfoNCE's row-wise mean.
+        """
+        logits = torch.eye(batch) * 100.0
+        negative_fraction = (batch * batch - batch) / (batch * batch)
+        expected = negative_fraction * math.log(2)
+
+        assert contrastive_loss(logits, sigmoid=True).item() == pytest.approx(expected, rel=0, abs=1e-6), (
+            f"SigLIP floor for B={batch} was {contrastive_loss(logits, sigmoid=True).item():.6f}, "
+            f"expected {expected:.6f}"
+        )
+
+    def test_siglip_uniform_gives_log_two(self):
+        """Zero logits => every cell contributes log(2), so the mean is ln 2."""
+        assert contrastive_loss(torch.zeros(4, 4), sigmoid=True).item() == pytest.approx(math.log(2), abs=1e-6)
+
+
+class TestAlignerLogitsAreCosineSimilarities:
+    """The aligner's logits must be exactly ``scale * cos``.
+
+    The existing tests check shapes, the uniform baseline and the scale clamp, but
+    never that the numbers are the RIGHT cosine similarities. An implementation
+    that forgot the L2 normalisation, projected only one side, or pooled over the
+    wrong axis would still produce a finite `[B, B]` matrix that trains.
+    """
+
+    def _recompute(self, aligner, image_embeds, text_embeds):
+        import torch.nn.functional as functional
+
+        with torch.no_grad():
+            img = functional.normalize(aligner.image_proj(aligner._pool(image_embeds, image=True)), dim=-1)
+            txt = functional.normalize(aligner.text_proj(aligner._pool(text_embeds, image=False)), dim=-1)
+            scale = aligner.logit_scale.exp().clamp(max=100.0)
+            return scale * (img @ txt.t())
+
+    def test_logits_equal_independent_cosine_scaling(self):
+        torch.manual_seed(0)
+        aligner = ContrastiveAligner(image_dim=8, text_dim=8, proj_dim=4)
+        image_embeds = torch.randn(3, 5, 8)
+        text_embeds = torch.randn(3, 5, 8)
+
+        logits = aligner(image_embeds, text_embeds)
+
+        assert torch.allclose(logits, self._recompute(aligner, image_embeds, text_embeds), atol=1e-5), (
+            "aligner logits differ from scale * L2(proj_img) @ L2(proj_txt).T"
+        )
+
+    def test_logits_respect_the_cosine_bound(self):
+        """|logit| <= scale, since |cos| <= 1. A missing normalisation breaks this."""
+        torch.manual_seed(0)
+        aligner = ContrastiveAligner(image_dim=8, text_dim=8, proj_dim=4)
+        logits = aligner(torch.randn(4, 5, 8), torch.randn(4, 5, 8))
+
+        scale = aligner.logit_scale.exp().clamp(max=100.0).item()
+        assert logits.abs().max().item() <= scale + 1e-5, (
+            f"a logit of {logits.abs().max().item():.4f} exceeds the scale {scale:.4f} — "
+            "the embeddings are not unit-normalised"
+        )
