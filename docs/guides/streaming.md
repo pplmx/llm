@@ -96,6 +96,20 @@ apply_to_config(cfg, REDPAJAMA_PRESETS["redpajama/arxiv"])
 # cfg.dataset_config == "arxiv"
 ```
 
+预设**只设置数据集定位**（`dataset_name` / `dataset_config` / `dataset_split` /
+`text_column`），不碰 `data_source`。而 C4 / Pile / RedPajama 这类网页语料恰恰是
+重复内容最多的，所以用预设时通常还要把来源换成 dedup 变体，否则不会去重：
+
+```python
+cfg = DataConfig(data_source="dedup_hf", seen_hashes_path="checkpoints/c4_hashes.txt")
+apply_to_config(cfg, C4_PRESET)  # 保留预设的数据集定位
+cfg.data_source = "dedup_hf"  # 预设不会覆盖它，但先写更清楚
+```
+
+`apply_to_config` 会把 `data_source` 设成 `hf`，但**保留已是 `dedup_*` 的值**——
+预设负责数据集定位，去重与否是来源形态，不该被预设覆盖。所以上面的写法直接有效，
+不需要“先应用预设再改回去”。
+
 ### Available Presets
 
 | Preset Name               | Dataset                              | Config          | Text Column |

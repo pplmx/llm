@@ -267,3 +267,65 @@ def test_presets_module_does_not_import_datasets():
         "presets.py must not import the 'datasets' package — keep the "
         "soft-dependency boundary so the module loads without it."
     )
+
+
+# --- A preset supplies dataset LOCATION, not the source flavour ---
+
+
+@pytest.mark.parametrize("source", ["dedup_hf", "dedup_local"])
+def test_apply_to_config_preserves_a_dedup_source(source):
+    """Applying a preset must not turn deduplication OFF.
+
+    ``apply_to_config`` used to assign ``config.data_source = "hf"``
+    unconditionally, so a caller who chose ``dedup_hf`` and set
+    ``seen_hashes_path`` had it silently rewritten to ``hf`` — deduplication
+    stopped happening and the hash path became inert, with nothing logged. The
+    preset is meant to supply the dataset, not to overrule the wrapper choice.
+    """
+    cfg = DataConfig(data_source=source, seen_hashes_path="checkpoints/hashes.txt")
+    apply_to_config(cfg, C4_PRESET)
+
+    assert cfg.data_source == source, f"preset overwrote {source} with {cfg.data_source!r}"
+    assert cfg.dataset_name == "allenai/c4", "the preset must still supply the dataset"
+    assert cfg.dataset_config == "en"
+
+
+def test_apply_to_config_still_switches_a_plain_source_to_hf():
+    """Presets address HF datasets, so a non-dedup source still becomes ``hf``.
+
+    Pins the half of the behaviour that must NOT change: ``local`` describes
+    where bytes come from, but a preset names a HuggingFace dataset, and the two
+    are incompatible without the switch.
+    """
+    for source in ("local", "hf"):
+        cfg = DataConfig(data_source=source)
+        apply_to_config(cfg, THEPILE_PRESET)
+        assert cfg.data_source == "hf", f"{source} should become 'hf' when a preset is applied"
+        assert cfg.dataset_name == "monology/pile-uncopyrighted"
+
+
+def test_preset_applied_to_a_dedup_config_keeps_it_operational():
+    """The whole point: the resulting config still deduplicates end to end.
+
+    Asserts the observable effect rather than the attribute — a dedup source must
+    collapse repeated lines, which an ``hf`` source would not.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from llm.data.sources import SOURCE_REGISTRY, ensure_sources_registered
+
+    ensure_sources_registered()
+
+    cfg = DataConfig(data_source="dedup_local")
+    apply_to_config(cfg, C4_PRESET)
+    assert cfg.data_source == "dedup_local"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        corpus = Path(tmp) / "dups.txt"
+        corpus.write_text("same\nsame\nunique\n", encoding="utf-8")
+        cfg.dataset_path = str(corpus)
+        source = SOURCE_REGISTRY.get(cfg.data_source)(cfg)
+        rows = list(source.iter_texts())
+
+    assert rows == ["same", "unique"], f"deduplication did not survive the preset: {rows}"

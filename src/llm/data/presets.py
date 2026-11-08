@@ -139,10 +139,12 @@ BUILTIN_PRESETS: dict[str, DatasetPreset] = {
 def apply_to_config(config: Any, preset: DatasetPreset) -> Any:
     """Mutate ``config`` (a :class:`DataConfig`) to bind to ``preset``.
 
-    Sets ``data_source="hf"`` and the four HF fields
-    (``dataset_name``, ``dataset_config``, ``dataset_split``,
-    ``text_column``). Unrelated fields (``max_seq_len``,
-    ``tokenizer_*``, ``val_dataset_path``, …) are left untouched.
+    Sets the four HF fields (``dataset_name``, ``dataset_config``,
+    ``dataset_split``, ``text_column``) and ``data_source`` to ``"hf"`` —
+    EXCEPT when the caller already chose a ``dedup_*`` variant, which is
+    preserved so applying a preset cannot silently turn deduplication off.
+    Unrelated fields (``max_seq_len``, ``tokenizer_*``, ``val_dataset_path``, …)
+    are left untouched.
 
     The mutated ``config`` is returned for fluent use:
 
@@ -158,7 +160,14 @@ def apply_to_config(config: Any, preset: DatasetPreset) -> Any:
         raise TypeError(
             f"apply_to_config expected a DataConfig with a 'data_source' attribute; got {type(config).__name__}"
         )
-    config.data_source = "hf"
+    # A preset supplies dataset LOCATION, not the source *flavour*. Keep a
+    # dedup variant the caller already chose — overwriting `dedup_hf` with `hf`
+    # silently disabled deduplication (and orphaned `seen_hashes_path`), which
+    # is exactly the class of silent no-op the config layer warns about
+    # elsewhere. Anything else becomes `hf`, because the preset addresses an HF
+    # dataset.
+    if not config.data_source.startswith("dedup_"):
+        config.data_source = "hf"
     config.dataset_name = preset.dataset_name
     config.dataset_config = preset.dataset_config
     config.dataset_split = preset.dataset_split
