@@ -1119,3 +1119,88 @@ class TestPrefixCacheEviction:
         assert set(cache.prefix_cache.cache) == cached_before, (
             "re-registering a shared prefix dropped another sequence's cached prefix"
         )
+
+
+class TestNoBlockLeakAcrossCycles:
+    """Alloc/free must be a true round trip — including the COW and prefix paths.
+
+    ``test_sequential_allocate_free`` allocates everything then frees everything,
+    which returns to zero even if each cycle leaked a block (the frees are simply
+    balanced by construction). A per-cycle leak only shows up when the SAME pool
+    is cycled repeatedly, so these loop alloc/free N times and compare the free
+    count against the initial value.
+    """
+
+    def test_plain_alloc_free_cycles_do_not_drift(self):
+        cache = PagedKVCache(num_layers=1, num_kv_heads=1, head_dim=4, num_blocks=16, block_size=4, device=DEVICE)
+        initial = cache.block_manager.num_free_blocks
+
+        # Nine tokens with block_size 4 spans THREE blocks, so a leak that only
+        # triggers on multi-block sequences is visible.
+        tokens = torch.zeros(1, 9, 1, 4, device=DEVICE)
+        for cycle in range(10):
+            cache.update(100 + cycle, tokens, tokens.clone())
+            cache.free(100 + cycle)
+
+        assert cache.block_manager.num_free_blocks == initial, (
+            f"free blocks drifted {initial} -> {cache.block_manager.num_free_blocks} over 10 cycles"
+        )
+
+    def test_prefix_registration_cycles_do_not_drift(self):
+        """Registering a prefix pins its owner's blocks; freeing must unpin them."""
+        cache = PagedKVCache(
+            num_layers=1,
+            num_kv_heads=1,
+            head_dim=4,
+            num_blocks=16,
+            block_size=4,
+            device=DEVICE,
+            enable_prefix_cache=True,
+            max_prefixes=4,
+        )
+        initial = cache.block_manager.num_free_blocks
+
+        tokens = torch.zeros(1, 4, 1, 4, device=DEVICE)
+        for cycle in range(5):
+            seq_id = 200 + cycle
+            cache.update(seq_id, tokens, tokens.clone())
+            cache.add_prefix(seq_id, [10, 11, 12, 13], list(cache.get_block_table(seq_id)))
+            cache.free(seq_id)
+
+        assert cache.block_manager.num_free_blocks == initial, (
+            f"prefix registration leaked blocks: {initial} -> {cache.block_manager.num_free_blocks}"
+        )
+
+    def test_copy_on_write_blocks_are_released(self):
+        """A COW copies into a FRESH block; freeing the sequence must release it.
+
+        This is the most plausible leak site: the original shared block belongs to
+        the prefix owner, so only the private copy is the copier's to release.
+        """
+        cache = PagedKVCache(
+            num_layers=1,
+            num_kv_heads=1,
+            head_dim=4,
+            num_blocks=16,
+            block_size=4,
+            device=DEVICE,
+            enable_prefix_cache=True,
+            max_prefixes=4,
+        )
+        initial = cache.block_manager.num_free_blocks
+
+        # Partial block, so the next append writes INSIDE the shared block.
+        two_tokens = torch.zeros(1, 2, 1, 4, device=DEVICE)
+        cache.update(1, two_tokens, two_tokens.clone())
+        cache.add_prefix(1, [10, 11], list(cache.get_block_table(1)))
+        cache.stage_prefix(2, list(cache.get_block_table(1)), 2)
+
+        cache.update(2, torch.zeros(1, 2, 1, 4, device=DEVICE), torch.zeros(1, 2, 1, 4, device=DEVICE))
+        assert cache.get_block_table(2) != cache.get_block_table(1), "COW did not happen — the test proved nothing"
+
+        cache.free(2)
+        cache.free(1)
+
+        assert cache.block_manager.num_free_blocks == initial, (
+            f"COW leaked a block: {initial} -> {cache.block_manager.num_free_blocks}"
+        )
