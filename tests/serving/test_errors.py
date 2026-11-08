@@ -492,3 +492,91 @@ class TestRegisterExceptionHandlers:
             assert response.status_code == 405
             assert response.headers.get("Allow") == "POST"
             assert response.headers["X-Request-ID"]
+
+
+# --------------------------------------------------------------------------- #
+# Body request_id vs the X-Request-ID header
+# --------------------------------------------------------------------------- #
+
+
+class TestRequestIdConsistency:
+    """The body's ``request_id`` must always equal the ``X-Request-ID`` header.
+
+    ``docs/guides/inference.md`` states it plainly: "``request_id`` echoes the
+    ``X-Request-ID`` response header, so a client-reported failure can be found
+    in the server's access log". That promise is what makes a client-reported
+    id useful — an operator greps the access log for the id the client quoted.
+
+    Nothing tested it. Each error path builds its response in a different place
+    (the typed handler, the framework handler, the validation handler, and the
+    body-size middleware, which never reaches an exception handler at all), so
+    they can drift apart one at a time and every existing test would stay
+    green — the per-path tests each check only their own half.
+    """
+
+    @staticmethod
+    def _app():
+        from fastapi import FastAPI
+
+        from llm.serving.errors import APIError, ErrorCode
+        from llm.serving.middleware import RequestBodySizeLimit, RequestIDMiddleware
+
+        app = FastAPI()
+        # Mirrors the production wiring in ``llm.serving.api``: the size cap is
+        # added first (inner), the request-id middleware second (outer).
+        app.add_middleware(RequestBodySizeLimit, max_bytes=1024)
+        app.add_middleware(RequestIDMiddleware)
+        register_exception_handlers(app)
+
+        @app.get("/api-error")
+        async def _api_error() -> dict[str, bool]:
+            raise APIError(ErrorCode.INVALID_REQUEST, "bad")
+
+        @app.post("/echo")
+        async def _echo(payload: dict) -> dict[str, bool]:
+            # The body is validated (not used): the test only needs the route
+            # to parse a JSON body so a malformed one yields a real 422.
+            del payload
+            return {"ok": True}
+
+        return app
+
+    @pytest.mark.parametrize(
+        ("label", "send"),
+        [
+            ("api_error", lambda c: c.get("/api-error")),
+            ("validation", lambda c: c.post("/echo", content=b"{not json")),
+            ("framework_404", lambda c: c.get("/nope")),
+            ("framework_405", lambda c: c.get("/echo")),
+            (
+                "payload_too_large",
+                lambda c: c.post("/echo", content=b"{}", headers={"content-length": "99999"}),
+            ),
+        ],
+    )
+    def test_body_request_id_matches_the_header(self, label, send):
+        from fastapi.testclient import TestClient
+
+        with TestClient(self._app(), raise_server_exceptions=False) as client:
+            response = send(client)
+
+        body_id = response.json()["error"]["request_id"]
+        header_id = response.headers.get("X-Request-ID")
+        assert header_id, f"{label}: no X-Request-ID header"
+        assert body_id == header_id, f"{label}: body request_id {body_id!r} != header {header_id!r}"
+
+    def test_an_inbound_request_id_is_echoed_in_both_places(self):
+        """A client-supplied id must come back in the body AND the header.
+
+        Clients stitch retries together by sending their own id, so the id they
+        get back has to be theirs — not a freshly generated one — on both
+        surfaces.
+        """
+        from fastapi.testclient import TestClient
+
+        inbound = "abcdef0123456789abcdef0123456789"
+        with TestClient(self._app(), raise_server_exceptions=False) as client:
+            response = client.get("/nope", headers={"X-Request-ID": inbound})
+
+        assert response.headers["X-Request-ID"] == inbound
+        assert response.json()["error"]["request_id"] == inbound
