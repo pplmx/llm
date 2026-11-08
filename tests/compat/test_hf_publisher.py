@@ -875,3 +875,49 @@ class TestUnmappableModelsAreRefused:
             assert torch.equal(expected, actual), (
                 f"{label}: round trip was not bit-exact (max |d|={(expected - actual).abs().max():.2e})"
             )
+
+
+class TestPublishedFormatScope:
+    """The published directory is a SELF-roundtrip format.
+
+    It is named Llama-style because that is the convention the loader reads, but
+    the architecture is this project's. Documenting that in a test keeps a future
+    change from quietly assuming transformers interop.
+    """
+
+    def test_published_config_declares_llama_naming(self, tmp_path):
+        """The config says ``model_type: llama`` — the loader's naming key.
+
+        Asserting it pins WHY the directory looks transformers-compatible: it is
+        a naming convention, not a compatibility claim.
+        """
+        import json
+
+        from llm.compat.hf_publisher import save_pretrained
+        from llm.models.decoder import DecoderModel
+
+        model = DecoderModel(
+            vocab_size=64, hidden_size=32, num_layers=1, num_heads=2, max_seq_len=32, intermediate_size=64
+        )
+        save_pretrained(model, tmp_path)
+
+        config = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+        assert config["model_type"] == "llama"
+
+    def test_our_model_uses_layernorm_with_bias(self, tmp_path):
+        """The structural difference from HF Llama: LayerNorm + bias, not RMSNorm.
+
+        This is exactly what makes the published directory a different network
+        under transformers (which would build RMSNorm without bias). Pinned so
+        the boundary recorded in the module docstring has a failing test behind
+        it if the default norm ever changes.
+        """
+
+        from llm.models.decoder import DecoderModel
+
+        model = DecoderModel(
+            vocab_size=64, hidden_size=32, num_layers=1, num_heads=2, max_seq_len=32, intermediate_size=64
+        )
+        norm = model.transformer_blocks[0].norm1
+        assert type(norm).__name__ == "LayerNorm", f"default norm changed to {type(norm).__name__}"
+        assert norm.bias is not None, "HF Llama's RMSNorm has no bias; a bias here is the structural difference"

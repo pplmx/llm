@@ -6,6 +6,18 @@ format that the existing :func:`llm.compat.hf_loader.from_pretrained`
 can roundtrip-load (i.e. produces ``config.json`` +
 ``model.safetensors`` in Llama-style naming).
 
+**Scope — this is a self-roundtrip format, not a transformers-compatible one.**
+The emitted ``config.json`` says ``model_type: "llama"`` because that is the
+naming convention the loader reads, but the *architecture* is this project's,
+and the two do not always coincide. Measured on a default ``DecoderModel``:
+transformers' ``AutoModelForCausalLM`` **does** load the directory without
+error, yet it builds RMSNorm blocks (no bias, 14,592 params) while the saved
+model was LayerNorm with bias (12,768 params) — so the reconstructed network is
+a different function. Correct-looking weights under a silently different norm is
+the worst failure shape, hence this note. Use this helper to move models between
+this project's own runs; write a bespoke converter for a real transformers
+checkpoint.
+
 Both helpers are **soft-dependency-friendly**:
 
 * ``safetensors`` is required for save — install via
