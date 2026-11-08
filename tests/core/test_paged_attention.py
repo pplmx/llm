@@ -939,3 +939,99 @@ class TestForkReferenceCounting:
         manager.free_sequence(1)
         manager.free_sequence(2)
         assert manager.num_free_blocks == initial_free
+
+
+class TestBlockAllocatorInvariants:
+    """Accounting invariants that any operation sequence must preserve.
+
+    The allocator is the layer everything else trusts, so its bookkeeping is
+    checked exhaustively rather than case by case: for every valid sequence of
+    allocate / fork / free over a small pool, the free-list plus allocated count
+    must always sum to the pool size and the free list must never contain a
+    duplicate. A refcount leak or a double-release breaks both.
+    """
+
+    @staticmethod
+    def _run(ops: str) -> None:
+        from llm.core.paged_attention.block_allocator import BlockAllocator
+
+        allocator = BlockAllocator(num_blocks=8, block_size=4)
+        held: list[int] = []
+        for op in ops:
+            if op == "A":
+                held.append(allocator.allocate())
+            elif op == "F":
+                held.append(allocator.fork(held[-1]))
+            else:
+                allocator.free(held.pop())
+
+            assert allocator.num_free_blocks + allocator.num_allocated_blocks == 8, (
+                f"accounting broke after {ops!r} at {op!r}"
+            )
+            assert len(allocator.free_blocks) == len(set(allocator.free_blocks)), (
+                f"duplicate block in the free list after {ops!r} at {op!r}"
+            )
+
+    def test_every_valid_operation_sequence_preserves_accounting(self):
+        import itertools
+
+        checked = 0
+        for length in range(1, 6):
+            for ops in itertools.product("AFR", repeat=length):
+                depth = 0
+                valid = True
+                for op in ops:
+                    if op == "A":
+                        depth += 1
+                    elif op == "F":
+                        if depth == 0:
+                            valid = False
+                            break
+                        depth += 1
+                    else:
+                        if depth == 0:
+                            valid = False
+                            break
+                        depth -= 1
+                if not valid:
+                    continue
+                checked += 1
+                self._run("".join(ops))
+
+        assert checked >= 80, f"only {checked} sequences exercised — the generator is not covering the space"
+
+    def test_copy_on_write_refuses_when_the_pool_is_exhausted(self):
+        """COW needs a fresh block; with none free it must raise, not corrupt.
+
+        ``copy_on_write`` on a shared block allocates. If it silently returned the
+        shared id under pressure, the next write would corrupt the other reader —
+        exactly the situation COW exists to prevent. Pinned because no existing
+        test runs the allocator to exhaustion and then asks for a COW.
+        """
+        from llm.core.paged_attention.block_allocator import BlockAllocator
+
+        allocator = BlockAllocator(num_blocks=2, block_size=4)
+        first = allocator.allocate()
+        allocator.allocate()
+        allocator.fork(first)  # makes `first` shared, pool now full
+        assert allocator.num_free_blocks == 0
+        assert allocator.is_shared(first)
+
+        with pytest.raises(RuntimeError, match="free"):
+            allocator.copy_on_write(first)
+
+        assert allocator.is_shared(first), "a refused COW must leave the block shared"
+
+    def test_copy_on_write_of_an_unshared_block_allocates_nothing(self):
+        """The cheap path: a lone owner already has a private block."""
+        from llm.core.paged_attention.block_allocator import BlockAllocator
+
+        allocator = BlockAllocator(num_blocks=8, block_size=4)
+        block = allocator.allocate()
+        free_before = allocator.num_free_blocks
+
+        same = allocator.copy_on_write(block)
+
+        assert same == block, "an unshared block must be returned as-is"
+        assert allocator.num_free_blocks == free_before, "an unshared COW must not consume a block"
+        assert allocator.get_ref_count(block) == 1
