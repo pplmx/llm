@@ -164,8 +164,14 @@ model:
   attn_impl: "mha"
   mlp_impl: "moe"
   norm_impl: "rms_norm"
+  num_experts: 8        # required when mlp_impl: "moe" (default 0 is rejected)
+  top_k: 2              # also required: 0 < top_k <= num_experts
 ```
 
+> Every knob here is validated at config-load time: `mlp_impl: "moe"` requires
+> **both** `num_experts > 0` and `0 < top_k <= num_experts`, and fast-fails
+> otherwise. Omit `mlp_impl` (or keep its default) unless you also set both.
+>
 > **Note**: `attn_impl: mla` supports KV cache (both linear `KVCache` and paged `PagedKVCache`). The current MLA is the **placeholder** variant (learnable latent queries + uniform-mean output broadcast over the sequence); the architectural benefit of per-position caching is limited because the output is uniform. Real DeepSeek-V2-style MLA (latent-compressed K, V + decoupled RoPE) is a separate follow-up.
 
 ## Data Abstraction

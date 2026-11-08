@@ -19,6 +19,7 @@ from __future__ import annotations
 import functools
 import pathlib
 import re
+from typing import ClassVar
 
 import pytest
 
@@ -405,3 +406,98 @@ class TestDocumentedImportsResolve:
         assert checked > 0, "no `from llm... import` statements found in the docs — the scan is broken"
         # Nothing may fail that is not a documented "you create this" recipe.
         assert not problems, "docs import modules that do not exist:\n  " + "\n  ".join(sorted(set(problems)))
+
+
+# --------------------------------------------------------------------------- #
+# Documented YAML must survive validation, not just key-name lookup
+# --------------------------------------------------------------------------- #
+
+
+class TestDocumentedYamlBlocksValidate:
+    """A documented config snippet must pass the REAL validators.
+
+    ``test_no_doc_yaml_block_uses_an_unknown_training_key`` above checks only
+    that every key exists in the schema. That cannot see a block whose keys are
+    all real but whose VALUES contradict each other — and such a block is worse
+    than a typo: it reads as copy-pasteable while being rejected on load.
+
+    Measured on the guide set: ``reference/architecture.md`` showed
+
+        model:
+          attn_impl: "mha"
+          mlp_impl: "moe"
+          norm_impl: "rms_norm"
+
+    Every key is valid, yet ``ModelConfig`` rejects it because ``num_experts``
+    defaults to 0 and ``mlp_impl='moe'`` requires it positive. A reader copying
+    the snippet got a validation error from a page that looked authoritative.
+
+    A block is only validated once its parsed form carries a recognised
+    top-level section (``model`` / ``training`` / ``data`` / ...), so unrelated
+    YAML (Kubernetes, Prometheus, illustrative pseudo-config) is skipped rather
+    than force-fitted to :class:`Config`.
+    """
+
+    #: Sections that make a block a training config rather than incidental YAML.
+    _SECTIONS: ClassVar[set[str]] = {
+        "model",
+        "training",
+        "data",
+        "optimization",
+        "distributed",
+        "evaluation",
+        "logging",
+    }
+
+    @staticmethod
+    def _blocks() -> list[tuple[pathlib.Path, dict]]:
+        import yaml
+
+        found = []
+        for path in _all_docs():
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            # A page that registers its OWN source (``SOURCE_REGISTRY.register(
+            # "s3", ...)``) legitimately then documents ``data_source: s3``; the
+            # registry name does not exist until the reader runs the snippet
+            # above it. Collect the NAMES that page registers — exempting the
+            # whole page would also bless an unregistered typo like ``gcs``
+            # (verified: it did, before this was narrowed).
+            page_sources = set(re.findall(r'SOURCE_REGISTRY\.register\(\s*"([^"]+)"', text))
+            for block in _yaml_blocks(text):
+                try:
+                    parsed = yaml.safe_load(block)
+                except yaml.YAMLError:
+                    continue  # illustrative fragments
+                if not isinstance(parsed, dict):
+                    continue
+                if not (set(parsed) & TestDocumentedYamlBlocksValidate._SECTIONS):
+                    continue
+                source = (parsed.get("data") or {}).get("data_source")
+                if source is not None and str(source) in page_sources:
+                    # The page registers exactly this name above the YAML, and
+                    # the block was verified to validate once it is registered.
+                    continue
+                found.append((path, parsed))
+        # Guard against a vacuous pass (the failure mode this file already hit
+        # once with a wrong path): a scan that finds nothing proves nothing.
+        assert len(found) >= 20, f"expected the guides to carry many config blocks, found {len(found)}"
+        return found
+
+    def test_every_documented_config_block_validates(self) -> None:
+        from pydantic import ValidationError
+
+        problems: list[str] = []
+        for path, parsed in self._blocks():
+            try:
+                Config(**parsed)
+            except ValidationError as exc:
+                first = str(exc).splitlines()[0].strip()
+                detail = next(
+                    (line.strip() for line in str(exc).splitlines() if "Value error" in line or "error," in line),
+                    first,
+                )
+                problems.append(f"{path.relative_to(_DOCS.parent)}: {detail}")
+        assert not problems, (
+            "documented YAML blocks that do not pass the real validators "
+            "(a copy-paste reader would hit this):\n  " + "\n  ".join(problems)
+        )
