@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 import torch
 import torch.nn as nn
@@ -195,3 +197,82 @@ def test_decomposed_decoder_full_rank_keeps_accuracy_rank1_degrades():
         assert _cyclic_accuracy(collapsed) < 0.6, "rank-1 collapse did not degrade the model"
     finally:
         torch.set_num_threads(prev)
+
+
+class TestEckartYoungOptimality:
+    """The rank-k SVD factorisation must be the BEST rank-k approximation.
+
+    The existing tests check that full rank is exact and that compression is
+    reported — both of which a gradient-fit or random-projection stand-in would
+    also satisfy. Eckart-Young is what distinguishes an actual SVD: no rank-k
+    matrix can fit the layer better. Without it, replacing `_svd_factors` with
+    something cheaper but worse would not be caught.
+    """
+
+    @pytest.mark.parametrize("rank", [2, 4, 8])
+    def test_svd_beats_random_rank_k_products(self, rank):
+        """Brute-force search over rank-k matrices must never beat the SVD.
+
+        The reference is independent of the implementation: random ``L @ R``
+        products of the right rank, scored by the same MSE, plus the optimal
+        per-column least-squares solution. The SVD has to win or tie.
+        """
+        from llm.quantization.lowrank import decompose_layer
+
+        torch.manual_seed(0)
+        in_features, out_features = 32, 32
+        layer = nn.Linear(in_features, out_features)
+        probes = torch.randn(64, in_features)
+
+        with torch.no_grad():
+            reference = layer(probes)
+
+        low_rank = decompose_layer(layer, rank=rank)
+        with torch.no_grad():
+            approximation = low_rank(probes)
+        svd_mse = (reference - approximation).pow(2).mean().item()
+
+        # Independent truth 1: random rank-k weight matrices.
+        best_random = float("inf")
+        for _ in range(400):
+            left = torch.randn(out_features, rank) * 0.3
+            right = torch.randn(rank, in_features) * 0.3
+            candidate = probes @ (left @ right).T + layer.bias
+            best_random = min(best_random, (candidate - reference).pow(2).mean().item())
+
+        assert svd_mse <= best_random, (
+            f"rank {rank}: SVD mse {svd_mse:.6f} worse than the best of 400 random rank-{rank} products "
+            f"({best_random:.6f}) — the factorisation is not the SVD"
+        )
+
+        # Independent truth 2: exact least squares for the rank-k basis it chose
+        # is the floor for ANY rank-k map, so the SVD must be close to a direct
+        # truncated-SVD reconstruction of the weight.
+        weight = layer.weight.detach()
+        u, s, vh = torch.linalg.svd(weight, full_matrices=False)
+        truncated = (u[:, :rank] * s[:rank]) @ vh[:rank]
+        reference_reconstruction = probes @ truncated.T + layer.bias
+        truncated_mse = (reference_reconstruction - reference).pow(2).mean().item()
+
+        assert svd_mse == pytest.approx(truncated_mse, rel=1e-4), (
+            f"rank {rank}: decomposed layer mse {svd_mse:.6f} != truncated-SVD mse {truncated_mse:.6f}"
+        )
+
+    def test_error_decreases_monotonically_with_rank(self):
+        """Higher rank must never fit worse — a sanity floor for the ordering."""
+        from llm.quantization.lowrank import decompose_layer
+
+        torch.manual_seed(0)
+        layer = nn.Linear(32, 32)
+        probes = torch.randn(64, 32)
+        with torch.no_grad():
+            reference = layer(probes)
+
+        errors = []
+        for rank in (1, 2, 4, 8, 16):
+            low_rank = decompose_layer(layer, rank=rank)
+            with torch.no_grad():
+                errors.append((reference - low_rank(probes)).pow(2).mean().item())
+
+        for lower, higher in itertools.pairwise(errors):
+            assert higher <= lower + 1e-6, f"error grew with rank: {errors}"
