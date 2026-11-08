@@ -4,6 +4,18 @@ services:
         image: llm
         ports:
             - 8000:8000
+        environment:
+            # The image defaults LLM_SERVING_HOST to 0.0.0.0 and refuses to
+            # start without auth (the lifespan guard in llm.serving.api), so a
+            # key is REQUIRED here — otherwise `just compose-up` dies at startup
+            # with the guard's error instead of serving.
+            #
+            # ``:?`` makes that explicit and actionable at `docker compose`
+            # parse time: an unset variable aborts with this message instead of
+            # the container starting and failing a few seconds later.
+            LLM_SERVING_HOST: 0.0.0.0
+            LLM_SERVING_API_KEY: ${LLM_SERVING_API_KEY:?set LLM_SERVING_API_KEY, e.g. export LLM_SERVING_API_KEY=$(openssl rand -hex 32)}
+            LLM_SERVING_MODEL_PATH: ${LLM_SERVING_MODEL_PATH:-}
 
 networks:
     llm-net:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+import yaml
 
 from llm.serving import api
 from llm.serving.errors import APIError, ErrorCode
@@ -328,3 +329,57 @@ def test_lifespan_allows_loopback_without_api_key():
     finally:
         api.config.host = original_host
         api.config.api_key = original_key
+
+
+# --- compose.yml must not ship a container that cannot start ---
+
+
+def test_compose_passes_the_api_key_the_image_requires():
+    """``just compose-up`` must not produce a container that dies at startup.
+
+    The image defaults ``LLM_SERVING_HOST=0.0.0.0`` and the lifespan refuses to
+    start without auth, so a compose file that omits the key builds a service
+    that fails a few seconds after ``docker compose up`` — with the guard's
+    error as the only explanation. Verified before this was fixed: reproducing
+    the image's exact environment (host 0.0.0.0, no key) printed
+    "Refusing to start: ... api_key is not set" and uvicorn exited.
+
+    The ``:?`` form is asserted specifically: it turns the failure into a
+    ``docker compose`` parse-time abort that NAMES the variable, instead of a
+    container that starts and collapses later.
+    """
+    from pathlib import Path
+
+    compose = Path(__file__).resolve().parents[2] / "compose.yml"
+    assert compose.exists(), "repo compose.yml not found"
+    env = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]["llm"]["environment"]
+
+    # S104 suppressed: this ASSERTS the container's intentional public bind
+    # string; it does not bind anything.
+    assert env["LLM_SERVING_HOST"] == "0.0.0.0", "the image's fail-closed default must be made explicit"  # noqa: S104
+    key_expr = str(env["LLM_SERVING_API_KEY"])
+    # ``${VAR:?message}`` — required, with an actionable message.
+    assert key_expr.startswith("${LLM_SERVING_API_KEY:?"), (
+        "the API key must be REQUIRED via ${LLM_SERVING_API_KEY:?...}; "
+        f"got {key_expr!r}. Without the ':?' a missing variable expands to empty "
+        "and the container fails at runtime instead of at compose parse time."
+    )
+    # The message must say what to do, not just that something is missing.
+    assert "LLM_SERVING_API_KEY" in key_expr
+
+
+def test_compose_model_path_defaults_to_unset_not_a_broken_path():
+    """An unset model path must expand to empty, which the loader treats as unset.
+
+    ``load_model_and_tokenizer`` guards with ``if not config.model_path``, so an
+    empty string is safe. A literal path default would instead make
+    ``docker compose up`` try to load a checkpoint that does not exist.
+    """
+    from pathlib import Path
+
+    compose = Path(__file__).resolve().parents[2] / "compose.yml"
+    env = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]["llm"]["environment"]
+    assert str(env["LLM_SERVING_MODEL_PATH"]).endswith(":-}"), (
+        "LLM_SERVING_MODEL_PATH must default to empty (${VAR:-}); "
+        "a concrete default would point at a checkpoint the image does not have"
+    )
