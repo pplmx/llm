@@ -84,7 +84,16 @@ def rng() -> np.random.Generator:
 
 
 def _random_payload(rng, qtype: GGMLQuantizationType, n_blocks: int, *, structured: bool):
-    """Random or structured ``uint8`` byte payload for ``n_blocks`` blocks."""
+    """Random or structured ``uint8`` byte payload for ``n_blocks`` blocks.
+
+    The random branch draws EVERY byte uniformly, so the fp16 ``d`` / ``dmin``
+    scale fields it produces are frequently NaN/Inf — measured on Q5_K, 80 of 200
+    such payloads dequantize to non-finite output. That is intentional: it is the
+    only way to exercise the reference implementations on the degenerate scale
+    paths, and the caller compares with ``equal_nan=True`` so both sides must place
+    the NaN at the SAME positions. The stray "invalid value encountered in
+    multiply" RuntimeWarnings this emits are expected, not a defect.
+    """
     _, block_bytes = _BLOCK_LAYOUTS[qtype]
     if structured:
         # Alternating byte values exercise both nibble nibbles / bit positions
@@ -591,3 +600,31 @@ def test_foreign_import_kquant_within_quantizer_error(tmp_path, kquant):
     logits = out[0] if isinstance(out, tuple) else out
     assert logits.shape == (1, 8, cfg.vocab_size)
     assert torch.isfinite(logits).all()
+
+
+def test_random_payloads_really_do_exercise_non_finite_scales():
+    """Guards the test INPUT, not the implementation.
+
+    ``_random_payload(..., structured=False)`` is what drives the references
+    through their NaN/Inf-scale paths; the comparison downstream is only
+    meaningful because those payloads exist. If someone "cleans up" the generator
+    (e.g. masks the fp16 fields to finite ranges) the degenerate paths silently
+    stop being covered while every assertion still passes.
+
+    Measured on Q5_K: roughly 40% of uniformly random 176-byte blocks dequantize
+    to non-finite output.
+    """
+    from gguf.constants import GGMLQuantizationType as GGMLType
+
+    rng = np.random.default_rng(0)
+    non_finite_payloads = 0
+    trials = 60
+    for _ in range(trials):
+        payload = _random_payload(rng, GGMLType.Q5_K, n_blocks=4, structured=False)
+        if not np.isfinite(DEQUANT[GGMLType.Q5_K](payload.reshape(-1), 4 * 256)).all():
+            non_finite_payloads += 1
+
+    assert non_finite_payloads > 0, (
+        f"none of {trials} uniformly random Q5_K payloads produced a non-finite value — "
+        "the degenerate scale paths are no longer exercised"
+    )
