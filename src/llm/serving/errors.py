@@ -28,12 +28,14 @@ not. ``/v1/chat/completions`` is OpenAI-SHAPED, not a strict drop-in.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class ErrorCode(StrEnum):
@@ -45,6 +47,9 @@ class ErrorCode(StrEnum):
 
     INVALID_REQUEST = "invalid_request"
     UNAUTHORIZED = "unauthorized"
+    NOT_FOUND = "not_found"
+    METHOD_NOT_ALLOWED = "method_not_allowed"
+    RATE_LIMITED = "rate_limited"
     TIMEOUT = "timeout"
     QUEUE_FULL = "queue_full"
     MODEL_UNAVAILABLE = "model_unavailable"
@@ -57,6 +62,9 @@ class ErrorCode(StrEnum):
 _CODE_TO_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
     ErrorCode.UNAUTHORIZED: 403,
+    ErrorCode.NOT_FOUND: 404,
+    ErrorCode.METHOD_NOT_ALLOWED: 405,
+    ErrorCode.RATE_LIMITED: 429,
     ErrorCode.TIMEOUT: 504,
     ErrorCode.QUEUE_FULL: 503,  # retryable — same HTTP status as model_unavailable
     ErrorCode.MODEL_UNAVAILABLE: 503,
@@ -135,8 +143,12 @@ def to_envelope(
     }
 
 
-def envelope_from_http_exception(exc: HTTPException, request_id: str) -> dict[str, Any]:
-    """Convert a ``fastapi.HTTPException`` to the envelope shape.
+def envelope_from_http_exception(exc: HTTPException | StarletteHTTPException, request_id: str) -> dict[str, Any]:
+    """Convert a framework ``HTTPException`` to the envelope shape.
+
+    Accepts Starlette's base class because that is what the registered handler
+    receives: every framework-raised 404/405/413 is a ``StarletteHTTPException``,
+    and FastAPI's ``HTTPException`` is just one subclass of it.
 
     The detail field may be a string or a dict; we pass it through as
     ``details`` so callers don't lose context.
@@ -148,20 +160,28 @@ def envelope_from_http_exception(exc: HTTPException, request_id: str) -> dict[st
         details = {"detail": exc.detail}
     # Map well-known statuses to a stable code. Unknown statuses map to
     # "internal" (so operators see something they can search for).
+    #
+    # 405 used to be missing here and every wrong-method request reported
+    # `code: "internal"` — telling a client that a request it aimed at the
+    # wrong verb, or at the wrong URL prefix, was a SERVER fault. The code is
+    # the documented branch point (`docs/guides/inference.md`), so
+    # misclassifying it sends integrators looking in the wrong place.
     status_to_code = {
-        400: "invalid_request",
-        401: "unauthorized",
-        403: "unauthorized",
-        404: "not_found",
-        408: "timeout",
-        422: "invalid_request",
-        429: "rate_limited",
-        500: "internal",
-        502: "model_unavailable",
-        503: "model_unavailable",
-        504: "timeout",
+        400: ErrorCode.INVALID_REQUEST.value,
+        401: ErrorCode.UNAUTHORIZED.value,
+        403: ErrorCode.UNAUTHORIZED.value,
+        404: ErrorCode.NOT_FOUND.value,
+        405: ErrorCode.METHOD_NOT_ALLOWED.value,
+        408: ErrorCode.TIMEOUT.value,
+        413: ErrorCode.PAYLOAD_TOO_LARGE.value,
+        422: ErrorCode.INVALID_REQUEST.value,
+        429: ErrorCode.RATE_LIMITED.value,
+        500: ErrorCode.INTERNAL.value,
+        502: ErrorCode.MODEL_UNAVAILABLE.value,
+        503: ErrorCode.MODEL_UNAVAILABLE.value,
+        504: ErrorCode.TIMEOUT.value,
     }
-    code = status_to_code.get(exc.status_code, "internal")
+    code = status_to_code.get(exc.status_code, ErrorCode.INTERNAL.value)
     return to_envelope(
         code=code,
         message=str(exc.detail) if exc.detail is not None else code,
@@ -257,12 +277,29 @@ def get_request_id(request: Request) -> str:
     return getattr(request.state, "request_id", "unknown")
 
 
-def envelope_response(payload: dict[str, Any], status_code: int, request_id: str) -> JSONResponse:
-    """Build the canonical JSON response: envelope body + ``X-Request-ID`` header."""
+def envelope_response(
+    payload: dict[str, Any],
+    status_code: int,
+    request_id: str,
+    headers: Mapping[str, str] | None = None,
+) -> JSONResponse:
+    """Build the canonical JSON response: envelope body + ``X-Request-ID`` header.
+
+    Args:
+        payload: The envelope dict (see :func:`to_envelope`).
+        status_code: HTTP status to send.
+        request_id: Echoed on the ``X-Request-ID`` response header.
+        headers: Extra response headers from the originating exception.
+            A ``405 Method Not Allowed`` must carry ``Allow`` — dropping it
+            leaves the client unable to discover which methods the route
+            supports, which is the whole point of the status.
+    """
+    merged = dict(headers or {})
+    merged["X-Request-ID"] = request_id
     return JSONResponse(
         status_code=status_code,
         content=payload,
-        headers={"X-Request-ID": request_id},
+        headers=merged,
     )
 
 
@@ -307,17 +344,35 @@ def register_exception_handlers(app: FastAPI, *, logger: Any | None = None) -> N
             request_id=get_request_id(request),
         )
 
+    # Framework-generated HTTP errors (404 unknown path, 405 wrong method,
+    # 409 conflict, ...) MUST be registered on Starlette's base class, not on
+    # FastAPI's subclass. Starlette installs its own default handler for
+    # `StarletteHTTPException`; FastAPI's `HTTPException` subclasses it, and
+    # handler dispatch resolves by MRO, so the default wins and answers
+    # `{"detail": "Not Found"}` — the pre-envelope shape. Measured: with a
+    # handler registered only for FastAPI's `HTTPException` (or reached
+    # through the generic `Exception` handler below), a real 404/405 answered
+    # `{"detail":"Not Found"}` and `envelope_from_http_exception` was never
+    # called at all — dead code on every real request.
+    #
+    # That matters most for 404/405, which are the failures a client is most
+    # likely to hit while integrating: they were the only responses on this
+    # API not carrying `error.code` or `request_id`, so the documented error
+    # contract did not hold for them.
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
+        request_id = get_request_id(request)
+        return envelope_response(
+            envelope_from_http_exception(exc, request_id),
+            status_code=exc.status_code,
+            request_id=request_id,
+            headers=getattr(exc, "headers", None),
+        )
+
     @app.exception_handler(Exception)
     async def _unhandled_handler(request: Request, exc: Exception) -> Response:
-        request_id = get_request_id(request)
-        if isinstance(exc, HTTPException):
-            return envelope_response(
-                envelope_from_http_exception(exc, request_id),
-                status_code=exc.status_code,
-                request_id=request_id,
-            )
         return envelope_response(
-            envelope_from_unexpected(exc, request_id, logger=logger),
+            envelope_from_unexpected(exc, get_request_id(request), logger=logger),
             status_code=500,
-            request_id=request_id,
+            request_id=get_request_id(request),
         )

@@ -164,6 +164,25 @@ class TestEnvelopeFromHttpException:
         assert env["error"]["code"] == "not_found"
         assert env["error"]["details"] == {"field": "missing"}
 
+    def test_405_is_method_not_allowed_not_internal(self):
+        """A wrong-method request is a CLIENT fault, not ``internal``.
+
+        405 was absent from the status mapping, so every ``GET`` on a
+        POST-only route reported ``code: "internal"`` — telling an integrator
+        that a request aimed at the wrong verb (or the wrong URL prefix) was a
+        server-side failure and sending them to look in the wrong place. The
+        code is the documented branch point.
+        """
+        exc = HTTPException(status_code=405, detail="Method Not Allowed")
+        env = envelope_from_http_exception(exc, "req-405")
+        assert env["error"]["code"] == "method_not_allowed"
+
+    def test_413_is_payload_too_large(self):
+        """A framework-raised 413 must share the middleware's code."""
+        exc = HTTPException(status_code=413, detail="too big")
+        env = envelope_from_http_exception(exc, "req-413")
+        assert env["error"]["code"] == ErrorCode.PAYLOAD_TOO_LARGE.value
+
     def test_401_unauthorized(self):
         exc = HTTPException(status_code=401, detail="unauth")
         env = envelope_from_http_exception(exc, "req-3")
@@ -405,3 +424,71 @@ class TestRegisterExceptionHandlers:
         logger = logging.getLogger("test.register")
         register_exception_handlers(app, logger=logger)
         assert len(app.exception_handlers) > 0
+
+    def test_registers_a_handler_for_starlette_http_exception(self):
+        """Framework 404/405 must resolve to THIS handler, not Starlette's.
+
+        Starlette installs a default handler for ``StarletteHTTPException``;
+        FastAPI's ``HTTPException`` subclasses it. A handler registered only
+        for the subclass never runs, because dispatch resolves by MRO and the
+        base-class handler wins. The unit tests for
+        ``envelope_from_http_exception`` all passed while that function was
+        never called on a real request — so the registration itself has to be
+        asserted.
+        """
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        app = FastAPI()
+        register_exception_handlers(app)
+        assert StarletteHTTPException in app.exception_handlers
+
+    def test_real_404_and_405_use_the_envelope(self):
+        """End-to-end: the framework's own errors must be enveloped.
+
+        404 (unknown path) and 405 (wrong method) are the failures a client
+        integrating against this API hits first, yet they were the only
+        responses answering ``{"detail": ...}`` instead of the documented
+        ``{"error": {code, message, details, request_id}}``.
+        """
+        from fastapi.testclient import TestClient
+
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        @app.post("/only-post")
+        async def _only_post() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(app) as client:
+            not_found = client.get("/does-not-exist")
+            assert not_found.status_code == 404
+            assert not_found.json()["error"]["code"] == "not_found"
+            assert not_found.json()["error"]["request_id"] is not None
+
+            wrong_method = client.get("/only-post")
+            assert wrong_method.status_code == 405
+            assert wrong_method.json()["error"]["code"] == "method_not_allowed"
+            # The Allow header is what makes 405 actionable.
+            assert wrong_method.headers["Allow"] == "POST"
+
+    def test_real_405_preserves_the_allow_header(self):
+        """Wrapping a 405 must not drop ``Allow``.
+
+        ``Allow`` is the entire actionable content of a 405 — it tells the
+        client which verb the route takes. An envelope wrapper that built a
+        fresh response lost it, leaving a 405 the client could not act on.
+        """
+        from fastapi.testclient import TestClient
+
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        @app.post("/only-post")
+        async def _only_post() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(app) as client:
+            response = client.put("/only-post")
+            assert response.status_code == 405
+            assert response.headers.get("Allow") == "POST"
+            assert response.headers["X-Request-ID"]
