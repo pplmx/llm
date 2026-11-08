@@ -160,3 +160,40 @@ def test_prune_cli_module_entry_help_prints_usage():
     assert proc.returncode == 0, out
     assert "--model" in clean, help_render_diag(out)
     assert "--output" in clean, help_render_diag(out)
+
+
+def test_cli_refuses_clobber_through_a_symlink(runner: CliRunner, tmp_path: Path):
+    """The clobber guard must compare RESOLVED paths.
+
+    `test_cli_refuses_clobber` only passes the identical string twice. A user can
+    reach the same file by another name — a symlink, a relative spelling — and a
+    naive `==` comparison on the raw arguments would let the write through and
+    destroy the source checkpoint after an expensive prune.
+    """
+    model = _tiny_decoder(tmp_path / "m.pt")
+    alias = tmp_path / "alias.pt"
+    alias.symlink_to(model)
+
+    result = runner.invoke(app, ["--model", str(model), "--output", str(alias), "--ratio", "0.5"])
+
+    assert result.exit_code != 0
+    assert "must not be the same file" in strip_ansi(result.output + (result.stderr or ""))
+    assert model.exists(), "the source checkpoint was destroyed through a symlinked --output"
+
+
+def test_cli_refuses_clobber_through_a_relative_spelling(runner: CliRunner, tmp_path: Path):
+    """Same file, different spelling: `m.pt` vs `./m.pt`."""
+    import os
+
+    model = _tiny_decoder(tmp_path / "m.pt")
+
+    cwd = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        result = runner.invoke(app, ["--model", str(model), "--output", "./m.pt", "--ratio", "0.5"])
+    finally:
+        os.chdir(cwd)
+
+    assert result.exit_code != 0
+    assert "must not be the same file" in strip_ansi(result.output + (result.stderr or ""))
+    assert model.exists()
