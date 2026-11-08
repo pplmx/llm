@@ -358,3 +358,46 @@ def test_4bit_odd_total_count_fails_fast_per_group_and_per_channel():
         scale = torch.ones(9)  # per-input-channel activation scale
         with pytest.raises(ValueError, match="even total weight count"):
             quantizer.quantize(scale)
+
+
+def test_awq_search_is_locally_optimal_by_exhaustion():
+    """No single-channel change may lower the objective the search minimizes.
+
+    ``test_search_scale_matches_sequential_sweep`` compares the batched search
+    against a hand-written sequential copy of the SAME algorithm, so a bug in
+    the objective itself (wrong error metric, wrong grid) would agree with
+    itself. This test is independent of the implementation: it takes the
+    returned scales, perturbs ONE channel at a time over the whole candidate
+    grid, and requires the search's answer to remain the argmin.
+
+    The objective must be the squared activation-weighted reconstruction error
+    — using absolute error instead makes the result look non-optimal even for a
+    correct implementation (measured while writing this).
+    """
+    import torch
+
+    from llm.quantization.awq import _group_quantize_dequant, _search_scale
+
+    torch.manual_seed(0)
+    weight = torch.randn(4, 16) * 0.1
+    act_mean = torch.rand(16) * 2.0 + 0.1
+    bits, group_size, n_grid = 4, 16, 20
+
+    scale = _search_scale(weight, act_mean, bits, group_size, n_grid)
+    candidates = 2.0 ** torch.arange(-(n_grid // 2), n_grid - (n_grid // 2), dtype=torch.float32)
+
+    def objective(scales: torch.Tensor) -> float:
+        w_scaled = weight * scales.unsqueeze(0)
+        recon = _group_quantize_dequant(w_scaled, bits, group_size) / scales.unsqueeze(0)
+        return (((recon - weight) ** 2) * act_mean.unsqueeze(0)).sum().item()
+
+    baseline = objective(scale)
+    for channel in range(weight.shape[1]):
+        for candidate in candidates.tolist():
+            trial = scale.clone()
+            trial[channel] = candidate
+            improved = objective(trial)
+            assert improved >= baseline - 1e-9, (
+                f"channel {channel} -> {candidate} lowers the objective "
+                f"{baseline:.9f} -> {improved:.9f}, so the search did not minimize it"
+            )
