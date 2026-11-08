@@ -265,3 +265,72 @@ def test_onnx_export_can_be_pinned_static(small_model, tmp_path):
     wider = torch.randint(0, small_model.embedding_layer.token_embeddings.num_embeddings, (2, 8))
     with pytest.raises(InvalidArgument):
         session.run(None, {"input_ids": wider.numpy()})
+
+
+class TestVerifyOnnxActuallyDiscriminates:
+    """`verify_onnx` must be able to say NO, and at the DEFAULT tolerance.
+
+    The existing tests only assert `result is True` on a correct export, and one of
+    them passes `rtol=1e-2, atol=1e-3` — 100x looser than the function's own
+    defaults (`rtol=1e-3, atol=1e-5`). A verifier that always returned True would
+    satisfy both. These pin the rejecting half.
+    """
+
+    def test_correct_export_passes_at_the_default_tolerance(self):
+        onnxruntime = pytest.importorskip("onnxruntime")  # noqa: F841
+        import tempfile
+        from pathlib import Path
+
+        import torch
+
+        from llm.export.onnx import export_to_onnx, verify_onnx
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(0)
+        model = DecoderModel(
+            vocab_size=32, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16, intermediate_size=32
+        ).eval()
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.onnx"
+            export_to_onnx(model, path, input_shape=(1, 6))
+
+            # NO tolerance overrides: this is the contract the exporter ships with.
+            assert verify_onnx(path, model=model) is True
+
+    def test_a_structurally_different_export_is_rejected(self):
+        """Verifying model A's ONNX against model B must fail, not pass.
+
+        Two decoders with the same shapes but different layer COUNTS produce files
+        of matching tensor shapes, so this is exactly the case a shape-blind
+        verifier would wave through. Both are seeded so the comparison is about
+        structure, not random init.
+        """
+        onnxruntime = pytest.importorskip("onnxruntime")  # noqa: F841
+        import tempfile
+        from pathlib import Path
+
+        import torch
+
+        from llm.export.onnx import export_to_onnx, verify_onnx
+        from llm.models.decoder import DecoderModel
+
+        shared = {
+            "vocab_size": 32,
+            "hidden_size": 16,
+            "num_heads": 2,
+            "max_seq_len": 16,
+            "intermediate_size": 32,
+        }
+        torch.manual_seed(0)
+        reference = DecoderModel(num_layers=2, **shared).eval()
+        torch.manual_seed(0)
+        shallower = DecoderModel(num_layers=1, **shared).eval()
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "shallower.onnx"
+            export_to_onnx(shallower, path, input_shape=(1, 6))
+
+            assert verify_onnx(path, model=reference) is False, (
+                "verify_onnx accepted a 1-layer export as a match for a 2-layer model"
+            )
