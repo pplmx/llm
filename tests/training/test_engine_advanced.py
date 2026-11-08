@@ -711,3 +711,68 @@ def test_qat_resume_with_matching_bits_still_works(tmp_path, mock_config):
     mlp = engine.model.transformer_blocks[0].mlp
     assert type(mlp.fc1).__name__ == "FakeQuantLinear", "QAT wrapping was lost on resume"
     assert mlp.fc1.bits == 4
+
+
+def test_peft_signature_is_persisted_and_validated(mock_config):
+    """The engine records PEFT hyper-parameters, which the state dict cannot.
+
+    ``lora_A`` / ``lora_B`` round-trip through ``model_state``, but ``alpha`` /
+    ``dropout`` / ``target_modules`` live on the wrapped layers or in the config.
+    A checkpoint taken at alpha=16 therefore loads cleanly into a model built at
+    alpha=64 and computes something else (measured max |delta| 0.44 on identical
+    adapter weights). ``extra_state`` carries the signature so the drift is
+    caught instead of silently rescaling the adapter.
+
+    Exercises the engine's two state methods directly rather than running a full
+    training loop: the property under test is signature bookkeeping, not the
+    training mechanics (which the QAT tests already cover end to end).
+    """
+    mock_config.training.peft_method = "lora"
+    mock_config.training.peft_kwargs = {"rank": 8, "alpha": 16.0}
+
+    engine = TrainingEngine.__new__(TrainingEngine)
+    engine.config = mock_config
+    engine.global_step = 7
+
+    saved = engine.get_checkpoint_state()
+    assert saved["engine.global_step"] == 7
+    assert saved["engine.peft_signature"] == {"method": "lora", "kwargs": {"rank": 8, "alpha": 16.0}}
+
+    # Matching config: restores without complaint.
+    engine.load_checkpoint_state(
+        {
+            "engine.global_step": 7,
+            "engine.peft_signature": {"method": "lora", "kwargs": {"rank": 8, "alpha": 16.0}},
+        }
+    )
+    assert engine.global_step == 7
+
+    # Resuming at a different alpha must be refused.
+    with pytest.raises(ValueError, match="PEFT"):
+        engine.load_checkpoint_state(
+            {
+                "engine.global_step": 7,
+                "engine.peft_signature": {"method": "lora", "kwargs": {"rank": 8, "alpha": 64.0}},
+            }
+        )
+
+
+def test_qat_signature_is_persisted_and_validated(mock_config):
+    """The QAT counterpart, exercised directly for the same reason."""
+    mock_config.training.use_qat = True
+    mock_config.training.qat_bits = 4
+
+    engine = TrainingEngine.__new__(TrainingEngine)
+    engine.config = mock_config
+    engine.global_step = 0
+
+    saved = engine.get_checkpoint_state()
+    assert saved["engine.qat_signature"]["bits"] == 4
+
+    with pytest.raises(ValueError, match="QAT"):
+        engine.load_checkpoint_state(
+            {
+                "engine.global_step": 0,
+                "engine.qat_signature": {"bits": 8, "quant_activation": False, "target_modules": []},
+            }
+        )

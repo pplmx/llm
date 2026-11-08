@@ -140,6 +140,17 @@ class TrainingEngine:
                 "quant_activation": training_cfg.qat_quant_activation,
                 "target_modules": list(training_cfg.qat_target_modules or []),
             }
+        # Same reasoning for PEFT: ``alpha`` / ``dropout`` / ``target_modules``
+        # live on the wrapped layers or in the config, never in the state dict,
+        # while ``lora_A``/``lora_B`` DO round-trip. Resuming with a different
+        # alpha therefore loads cleanly and changes the model (measured max
+        # |delta| 0.44 at alpha 16 vs 64 on identical adapter weights).
+        peft_method = getattr(training_cfg, "peft_method", None)
+        if peft_method:
+            state["engine.peft_signature"] = {
+                "method": peft_method,
+                "kwargs": dict(getattr(training_cfg, "peft_kwargs", None) or {}),
+            }
         return state
 
     def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
@@ -169,6 +180,21 @@ class TrainingEngine:
                     f"Checkpoint was trained with QAT {saved_qat} but this run configures {current_qat}. "
                     "The bits live on the quantizer modules, not in the state dict, so resuming would "
                     "silently change the model. Match the QAT settings or start a fresh run."
+                )
+
+        saved_peft = state.get("engine.peft_signature")
+        if saved_peft is not None:
+            training_cfg = self.config.training
+            current_peft = {
+                "method": getattr(training_cfg, "peft_method", None),
+                "kwargs": dict(getattr(training_cfg, "peft_kwargs", None) or {}),
+            }
+            if saved_peft != current_peft:
+                raise ValueError(
+                    f"Checkpoint was trained with PEFT {saved_peft} but this run configures {current_peft}. "
+                    "Hyper-parameters such as alpha/dropout are not stored in the state dict, so resuming "
+                    "would silently change how the adapter is scaled. Match the PEFT settings or start a "
+                    "fresh run."
                 )
 
     def _run_callbacks(self, method_name: str, *args, **kwargs):
