@@ -792,3 +792,89 @@ class TestSaveLoadEdgeCases:
         # Both losses must be finite numbers (no NaN / Inf).
         assert torch.isfinite(loss1).item()
         assert torch.isfinite(loss2).item()
+
+
+class TestReloadedModelReproducesTheForward:
+    """The point of save/load is that the model BEHAVES the same afterwards.
+
+    Every existing round-trip case compares adapter TENSORS element-wise. That is
+    necessary but not sufficient: a `load_peft` that wrote the right values into
+    the wrong module (or that matched layers by the wrong key) can satisfy a
+    tensor comparison that walks both models in the same order, while the model
+    itself computes something different. Forward equality is the contract users
+    actually depend on.
+    """
+
+    @staticmethod
+    def _perturb(model) -> None:
+        from llm.core.lora import LoRALinear
+
+        with torch.no_grad():
+            for module in model.modules():
+                if isinstance(module, LoRALinear):
+                    module.lora_A.add_(torch.randn_like(module.lora_A) * 0.1)
+                    module.lora_B.add_(torch.randn_like(module.lora_B) * 0.1)
+
+    def test_lora_reload_reproduces_the_forward_output(self, tmp_path: Path) -> None:
+        from llm.core.lora import apply_lora
+        from llm.core.peft import load_peft, save_peft
+
+        torch.manual_seed(0)
+        source = _TinyMLP(hidden=8, intermediate=16)
+        apply_lora(source, rank=4, alpha=8.0)
+        self._perturb(source)
+        inputs = torch.randn(4, 8)
+        with torch.no_grad():
+            expected = source(inputs).clone()
+
+        path = tmp_path / "lora_e2e.bin"
+        save_peft(source, path, "lora")
+
+        # Same seed => byte-identical base weights, fresh (zeroed-B) adapter.
+        torch.manual_seed(0)
+        destination = _TinyMLP(hidden=8, intermediate=16)
+        apply_lora(destination, rank=4, alpha=8.0)
+        with torch.no_grad():
+            unloaded = destination(inputs).clone()
+
+        load_peft(destination, path, "lora")
+        with torch.no_grad():
+            actual = destination(inputs)
+
+        # Anti-test: without loading, the outputs MUST differ, otherwise the
+        # equality below proves nothing about load_peft.
+        assert not torch.allclose(unloaded, expected, atol=1e-6), (
+            "the unloaded destination already matched the source — the adapter has no effect"
+        )
+        assert torch.allclose(actual, expected, atol=1e-6), (
+            f"reloaded model forward differs from the source, max|delta|={(expected - actual).abs().max().item():.3e}"
+        )
+
+    def test_ia3_reload_reproduces_the_forward_output(self, tmp_path: Path) -> None:
+        from llm.core.ia3 import apply_ia3
+        from llm.core.peft import load_peft, save_peft
+
+        torch.manual_seed(0)
+        source = _TinyMLP(hidden=8, intermediate=16)
+        apply_ia3(source)
+        with torch.no_grad():
+            for name, param in source.named_parameters():
+                if "ia3_l" in name:
+                    param.add_(torch.randn_like(param) * 0.2)
+        inputs = torch.randn(4, 8)
+        with torch.no_grad():
+            expected = source(inputs).clone()
+
+        path = tmp_path / "ia3_e2e.bin"
+        save_peft(source, path, "ia3")
+
+        torch.manual_seed(0)
+        destination = _TinyMLP(hidden=8, intermediate=16)
+        apply_ia3(destination)
+        load_peft(destination, path, "ia3")
+        with torch.no_grad():
+            actual = destination(inputs)
+
+        assert torch.allclose(actual, expected, atol=1e-6), (
+            f"reloaded IA3 model forward differs, max|delta|={(expected - actual).abs().max().item():.3e}"
+        )
