@@ -153,6 +153,23 @@ class SlotPrefixCache:
             del self._entries[key]
 
 
+class NoFreeSlotsError(RuntimeError):
+    """Raised when every KV-cache slot is taken.
+
+    Typed for the same reason as :class:`~llm.serving.scheduler.QueueFullError`:
+    a bare ``RuntimeError`` fell into the routers' generic catch-all and was
+    reported as ``model_unavailable`` ("the model is broken, give up"), when the
+    real condition is backpressure — the server is AT capacity and the same
+    request will very likely succeed after the running batch drains. That is the
+    difference between a client backing off and a client giving up, so it must
+    not be inferred from a message string.
+
+    ``QueueFullError`` and this are siblings: the queue bounds requests
+    *waiting* to be admitted, slots bound those *holding KV memory*. Both are
+    retryable and both surface as 503, but only one existed as a type.
+    """
+
+
 class SlotAllocator:
     """Manages allocation of KV cache slots."""
 
@@ -170,7 +187,7 @@ class SlotAllocator:
         if request_id in self.seq_to_slot:
             return self.seq_to_slot[request_id]
         if not self.free_slots:
-            raise RuntimeError("No free slots available in KV cache.")
+            raise NoFreeSlotsError(f"all {self.total_slots} KV cache slots are in use")
         slot = self.free_slots.pop()
         self.seq_to_slot[request_id] = slot
         return slot

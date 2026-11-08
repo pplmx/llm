@@ -722,3 +722,131 @@ class TestQueueFullCarriesRetryGuidance:
         assert response.json()["error"]["code"] == "queue_full"
         assert response.headers.get("Retry-After") == "1"
         assert response.headers.get("x-should-retry") == "true"
+
+
+# --------------------------------------------------------------------------- #
+# KV-slot exhaustion is backpressure, not a broken model
+# --------------------------------------------------------------------------- #
+
+
+class TestNoFreeSlotsIsRetryableBackpressure:
+    """Two distinct capacity limits exist; only one used to be a type.
+
+    ``QueueFullError`` bounds requests *waiting to be admitted*; KV-slot
+    exhaustion bounds those *holding cache memory*. Both mean "at capacity,
+    come back shortly", but the slot case raised a bare ``RuntimeError``, which
+    fell into the routers' generic catch-all and was reported as
+    ``model_unavailable`` — "the model is broken, give up" — with no retry
+    guidance. A client following that advice abandons a request that would have
+    succeeded moments later.
+
+    ``NoFreeSlotsError`` makes the two conditions distinguishable by type, the
+    same way ``QueueFullError`` already did for the waiting queue.
+    """
+
+    def test_allocator_raises_the_typed_error(self):
+        from llm.serving.batch_engine import NoFreeSlotsError, SlotAllocator
+
+        allocator = SlotAllocator(total_slots=1)
+        allocator.allocate("first")
+        with pytest.raises(NoFreeSlotsError):
+            allocator.allocate("second")
+
+    def test_the_type_is_a_runtime_error_subclass(self):
+        """Existing ``except RuntimeError`` handlers must keep catching it.
+
+        The typed catch has to be placed BEFORE the generic one in each router;
+        keeping the inheritance means a route that forgets still degrades to the
+        old behaviour rather than letting the exception escape as a 500.
+        """
+        from llm.serving.batch_engine import NoFreeSlotsError
+
+        assert issubclass(NoFreeSlotsError, RuntimeError)
+
+    @pytest.mark.parametrize(
+        ("path", "body", "generator"),
+        [
+            ("/generate", {"prompt": "hi", "max_new_tokens": 2}, "generate"),
+            (
+                "/v1/chat/completions",
+                {"model": "llm", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 2},
+                "generate",
+            ),
+            ("/v1/completions", {"model": "llm", "prompt": "hi", "max_tokens": 2}, "generate"),
+        ],
+    )
+    def test_every_generation_route_maps_it_to_retryable_queue_full(self, monkeypatch, path, body, generator):
+        """End-to-end: 503 + ``queue_full`` + retry headers, on all three routes."""
+        from fastapi.testclient import TestClient
+
+        from llm.serving import api
+        from llm.serving.batch_engine import ContinuousBatchingEngine, NoFreeSlotsError
+        from llm.serving.generation_service import ServingGenerationService
+
+        fake_service = MagicMock()
+        fake_service.tokenizer.encode = lambda text: [1]
+        fake_service.generate.side_effect = NoFreeSlotsError("all 2 KV cache slots are in use")
+        fake_service.batch_generate.side_effect = NoFreeSlotsError("all 2 KV cache slots are in use")
+        fake_service.stream.side_effect = NoFreeSlotsError("all 2 KV cache slots are in use")
+
+        monkeypatch.setattr(
+            ServingGenerationService,
+            "from_config",
+            classmethod(lambda cls, config, **kw: fake_service),
+        )
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr(api, "_log_server_config", lambda *a, **kw: None)
+
+        with TestClient(api.app, raise_server_exceptions=False) as client:
+            monkeypatch.setattr("llm.serving.routers.generate.generation_service", fake_service)
+            response = client.post(path, json=body)
+
+        assert response.status_code == 503, response.text
+        assert response.json()["error"]["code"] == "queue_full", (
+            f"{path} reported {response.json()['error']['code']!r} — KV-slot exhaustion "
+            "must not be reported as a model failure"
+        )
+        assert response.headers.get("Retry-After") == "1"
+        assert response.headers.get("x-should-retry") == "true"
+
+    def test_a_real_model_failure_still_maps_to_model_unavailable(self, monkeypatch):
+        """The control: a genuine backend ``RuntimeError`` keeps its old mapping.
+
+        Without this, the tests above would pass even if EVERY ``RuntimeError``
+        had been reclassified as backpressure — which would tell clients to
+        retry a permanently broken model forever.
+        """
+        from fastapi.testclient import TestClient
+
+        from llm.serving import api
+        from llm.serving.batch_engine import ContinuousBatchingEngine
+        from llm.serving.generation_service import ServingGenerationService
+
+        fake_service = MagicMock()
+        fake_service.tokenizer.encode = lambda text: [1]
+        fake_service.generate.side_effect = RuntimeError("CUDA device-side assert")
+
+        monkeypatch.setattr(
+            ServingGenerationService,
+            "from_config",
+            classmethod(lambda cls, config, **kw: fake_service),
+        )
+        monkeypatch.setattr(
+            ContinuousBatchingEngine,
+            "from_serving_config",
+            classmethod(lambda cls, config, **kw: MagicMock()),
+        )
+        monkeypatch.setattr(api, "_log_server_config", lambda *a, **kw: None)
+
+        with TestClient(api.app, raise_server_exceptions=False) as client:
+            monkeypatch.setattr("llm.serving.routers.generate.generation_service", fake_service)
+            response = client.post("/generate", json={"prompt": "hi", "max_new_tokens": 2})
+
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "model_unavailable"
+        # And it must NOT carry retry guidance it cannot honour.
+        assert "Retry-After" not in response.headers

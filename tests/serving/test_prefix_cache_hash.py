@@ -12,7 +12,7 @@ range and is deterministic / collision-free for distinct token lists.
 
 import pytest
 
-from llm.serving.batch_engine import SlotAllocator, SlotPrefixCache
+from llm.serving.batch_engine import NoFreeSlotsError, SlotAllocator, SlotPrefixCache
 
 
 class TestHashTokensRealisticIds:
@@ -146,10 +146,18 @@ class TestSlotAllocator:
         assert slot1 == slot2
 
     def test_allocate_no_free_slots_raises(self):
+        """Exhaustion raises a TYPE, not just a message.
+
+        Matching on message text was the weak point: the routers can only tell
+        backpressure from a broken model by exception type, so a bare
+        ``RuntimeError`` with the right wording is indistinguishable from one
+        saying anything else. ``NoFreeSlotsError`` is what lets the serving tier
+        answer 503-retryable instead of "model unavailable".
+        """
         allocator = SlotAllocator(total_slots=2)
         allocator.allocate("req-1")
         allocator.allocate("req-2")
-        with pytest.raises(RuntimeError, match="No free slots"):
+        with pytest.raises(NoFreeSlotsError):
             allocator.allocate("req-3")
 
     def test_free_returns_slot_to_pool(self):

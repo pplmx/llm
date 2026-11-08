@@ -43,6 +43,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from llm.serving.auth import get_api_key
+from llm.serving.batch_engine import NoFreeSlotsError
 from llm.serving.config import ServingConfig
 from llm.serving.errors import DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS, APIError, ErrorCode
 from llm.serving.metrics import METRICS, ServingMetrics
@@ -180,6 +181,18 @@ async def create_completion(
             raise APIError(
                 ErrorCode.QUEUE_FULL,
                 "server waiting queue is full; retry later",
+                retry_after=DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+                should_retry=True,
+            ) from exc
+        except NoFreeSlotsError as exc:
+            # KV-slot exhaustion is backpressure, not a model failure: the same
+            # request will very likely succeed once the running batch drains.
+            # MUST precede the generic ``RuntimeError`` catch (it subclasses it),
+            # exactly like ``QueueFullError`` above.
+            t.set_status(503)
+            raise APIError(
+                ErrorCode.QUEUE_FULL,
+                "server is at KV-cache capacity; retry later",
                 retry_after=DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS,
                 should_retry=True,
             ) from exc
