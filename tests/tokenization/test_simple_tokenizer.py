@@ -294,3 +294,62 @@ class TestSimpleCharacterTokenizerEndToEnd:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+@pytest.mark.quick
+class TestSimpleCharacterTokenizerFuzz:
+    """Randomised losslessness and failure-mode checks.
+
+    The hand-written identity tests use two fixed strings; a character-mapping
+    bug that only shows for some characters, lengths or whitespace runs would
+    survive them. These sweep the whole in-vocabulary alphabet.
+    """
+
+    def test_round_trip_is_exact_for_random_in_vocabulary_text(self):
+        """encode→decode must be the identity for arbitrary in-vocab strings.
+
+        Catches any character whose mapping is not injective, any length edge
+        (empty strings included), and any join/encode step that drops or
+        reorders characters.
+        """
+        import numpy as np
+
+        corpus = ["abcdefghij", "0123456789", " \t.,!?"]
+        tokenizer = SimpleCharacterTokenizer(corpus)
+        alphabet = "".join(corpus)
+
+        rng = np.random.default_rng(0)
+        failures = []
+        for _ in range(300):
+            length = int(rng.integers(0, 61))
+            indices = rng.integers(0, len(alphabet), size=length)
+            text = "".join(alphabet[i] for i in indices)
+            recovered = tokenizer.decode(tokenizer.encode(text))
+            if recovered != text:
+                failures.append((text, recovered))
+        assert not failures, f"{len(failures)} round-trip failures, first: {failures[0]!r}"
+
+    @pytest.mark.parametrize("char", ["你", "好", "😀", "É", "\n", "\r"])
+    def test_unknown_character_raises_rather_than_being_dropped(self, char):
+        """A character outside the vocabulary must raise, never vanish.
+
+        Silently dropping unknown characters would corrupt training data while
+        looking like a successful encode — the failure mode this tokenizer's
+        KeyError exists to prevent.
+        """
+        tokenizer = SimpleCharacterTokenizer(["abc"])
+        with pytest.raises(KeyError, match="not found in tokenizer vocabulary"):
+            tokenizer.encode(char)
+
+    def test_special_token_id_does_not_collide_with_any_character(self):
+        """``pad_token_id`` must be unused by real characters.
+
+        A collision would make padding indistinguishable from data: the model
+        could not tell a padded position from a genuine one.
+        """
+        corpus = ["abc", "xyz"]
+        tokenizer = SimpleCharacterTokenizer(corpus)
+        used = set(tokenizer.encode("".join(corpus)))
+        assert tokenizer.pad_token_id not in used, (
+            f"pad token id {tokenizer.pad_token_id} collides with a character id ({sorted(used)})"
+        )
