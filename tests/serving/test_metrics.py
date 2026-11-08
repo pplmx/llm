@@ -261,3 +261,62 @@ def test_valid_ratios_still_recorded_after_the_guard():
     exposed = generate_latest(registry).decode()
     assert "NaN" not in exposed, "a NaN reached /metrics"
     assert "Inf" not in exposed, "an Inf reached /metrics"
+
+
+def test_request_timer_defaults_to_the_error_status_label():
+    """A timer whose ``set_status`` was never called must still be labelled.
+
+    ``_RequestTimer`` documents "Defaults to ``status=\\"error\\"`` so a forgotten
+    call still emits a labelled observation". Without that default an exception
+    path that forgets to set a status would either crash on exit or record an
+    unlabelled observation, and the request would vanish from the per-status
+    dashboards instead of showing up as an error.
+    """
+    import time
+
+    m = _fresh()
+    with m.request_timer(endpoint="generate"):
+        time.sleep(0.001)
+        # Deliberately do NOT call set_status.
+
+    count, total = _histogram_count_and_sum(m.request_duration_seconds, endpoint="generate", status="error")
+    assert count == 1, "an unlabelled exit must still record under status='error'"
+    assert total >= 0.0
+
+
+def test_request_timer_records_on_the_exception_path():
+    """An exception inside the block must still produce an observation.
+
+    The histogram is written in ``__exit__``, so the request is counted whether
+    or not the handler completed — that is what makes latency dashboards able to
+    distinguish fast failures from hangs.
+    """
+    import pytest
+
+    m = _fresh()
+
+    def _failing_request() -> None:
+        with m.request_timer(endpoint="chat") as timer:
+            timer.set_status(500)
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        _failing_request()
+
+    count, _ = _histogram_count_and_sum(m.request_duration_seconds, endpoint="chat", status="500")
+    assert count == 1, "the exception path must still record timing"
+
+
+def test_batch_fill_ratio_tracks_the_engine_denominator():
+    """The ratio must be scheduled / configured-slot-count, not scheduled / running.
+
+    ``StepStats.total_active_slots`` is the engine's full slot pool, so the gauge
+    reads 0.25 for 2-of-8 even when only 2 sequences are alive. Using the live
+    count as the denominator would always read 1.0 and hide under-utilisation —
+    the exact signal the metric exists to expose.
+    """
+    m = _fresh()
+    for scheduled, total, expected in [(0, 8, 0.0), (2, 8, 0.25), (8, 8, 1.0)]:
+        m.record_batch_fill_ratio(scheduled=scheduled, total_active_slots=total)
+        value = m.batch_fill_ratio._value.get()
+        assert value == expected, f"{scheduled}/{total} recorded {value}, expected {expected}"
