@@ -650,3 +650,82 @@ def test_resume_restores_the_learning_rate_and_scheduler_counters(tmp_path):
         f"LR restarted instead of resuming: {resumed_optimizer.param_groups[0]['lr']} vs saved {saved_lr}"
     )
     assert resumed_scheduler.state_dict()["last_epoch"] == saved_epoch, "scheduler counters did not resume"
+
+
+def test_resumed_adam_state_continues_the_training_trajectory(tmp_path):
+    """Restoring optimizer state must continue the SAME optimization path.
+
+    Adam's ``exp_avg`` / ``exp_avg_sq`` / ``step`` decide the next update, so a
+    resume that restored only the weights would silently restart the moment
+    estimates — the loss curve would kink and the effective step size would be
+    wrong for several steps. Asserted on final PARAMETERS rather than on a
+    recorded loss (losses are pre-step and would look identical even if the
+    moments were reset).
+
+    Dropout is disabled deliberately: the project documents that RNG state is
+    not part of the checkpoint, so a stochastic model legitimately diverges.
+    With it off, the whole resume must be bit-exact — which isolates the
+    optimizer from the documented RNG caveat.
+    """
+    import torch
+    import torch.nn as nn
+
+    from llm.training.core.checkpoint import CheckpointConfig, CheckpointManager
+
+    logger = logging.getLogger("test-resume-adam")
+    logger.addHandler(logging.NullHandler())
+
+    def _model_and_optimizer():
+        torch.manual_seed(0)
+        model = nn.Sequential(nn.Linear(8, 8), nn.Tanh(), nn.Linear(8, 4))
+        return model, torch.optim.AdamW(model.parameters(), lr=1e-2)
+
+    def _step(model, optimizer, inputs):
+        optimizer.zero_grad()
+        model(inputs).pow(2).mean().backward()
+        optimizer.step()
+
+    torch.manual_seed(1)
+    inputs = torch.randn(4, 8)
+
+    # Reference: four continuous steps.
+    reference_model, reference_optimizer = _model_and_optimizer()
+    for _ in range(4):
+        _step(reference_model, reference_optimizer, inputs)
+
+    # Split: two steps, save, rebuild, load, two more.
+    first_model, first_optimizer = _model_and_optimizer()
+    for _ in range(2):
+        _step(first_model, first_optimizer, inputs)
+
+    checkpoint_dir = tmp_path / "adam_ckpt"
+    manager = CheckpointManager(
+        CheckpointConfig(checkpoint_dir=str(checkpoint_dir), save_interval=1),
+        rank=0,
+        logger=logger,
+    )
+    manager.save_checkpoint(1, first_model, first_optimizer, None, None, loss=0.5)
+
+    resumed_model, resumed_optimizer = _model_and_optimizer()
+    manager.config.resume_from_checkpoint = str(checkpoint_dir / "latest.safetensors")
+    manager.load_checkpoint(resumed_model, resumed_optimizer, None, None, device=torch.device("cpu"))
+
+    # The moments really were restored, not just the weights.
+    saved_step = first_optimizer.state_dict()["state"]
+    restored_state = resumed_optimizer.state_dict()["state"]
+    first_key = next(iter(saved_step))
+    assert torch.equal(saved_step[first_key]["exp_avg"], restored_state[first_key]["exp_avg"]), (
+        "Adam exp_avg was not restored — the optimizer restarted its moment estimates"
+    )
+    assert saved_step[first_key]["step"] == restored_state[first_key]["step"]
+
+    for _ in range(2):
+        _step(resumed_model, resumed_optimizer, inputs)
+
+    for index, (expected, actual) in enumerate(
+        zip(reference_model.state_dict().values(), resumed_model.state_dict().values(), strict=True)
+    ):
+        assert torch.equal(expected, actual), (
+            f"parameter {index} diverged after resume (max |d|={(expected - actual).abs().max():.2e}); "
+            "the optimizer did not continue the same trajectory"
+        )
