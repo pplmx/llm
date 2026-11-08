@@ -1520,3 +1520,52 @@ def test_identical_prompts_produce_identical_tokens_when_batched(tiny_model, dev
 
     results = [list(engine.scheduler.get_sequence(f"same-{i}").generated_ids) for i in range(4)]
     assert all(r == results[0] for r in results), f"identical prompts diverged under batching: {results}"
+
+
+def test_engine_keeps_serving_after_a_forward_failure(tiny_model, device, mock_tokenizer):
+    """A forward failure must not take the engine down with it.
+
+    ``test_persistent_forward_failure_does_not_livelock_engine`` proves the
+    dying request is reaped; this proves the OTHER half — the freed slot is
+    usable again and a fresh request completes normally. A failure path that
+    freed nothing, or released without resetting, would pass the livelock test
+    while leaving the engine degraded to zero capacity.
+    """
+    tiny_model.eval()
+
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    dying = GenerationRequest(prompt="abcd", max_new_tokens=3)
+    dying.request_id = "req-dying"
+    engine.add_request(dying)
+
+    def _failing_step() -> None:
+        with patch.object(engine.model, "forward", side_effect=RuntimeError("simulated OOM")):
+            engine.step()
+
+    with pytest.raises(RuntimeError, match="simulated OOM"):
+        _failing_step()
+
+    # Capacity is fully restored: nothing is allocated for the dead request.
+    assert len(engine.slot_allocator.free_slots) == engine.slot_allocator.total_slots, (
+        f"a failed step leaked slots: {engine.slot_allocator.free_slots}"
+    )
+
+    # A new request must run to completion on the recovered engine.
+    healthy = GenerationRequest(prompt="wxyz", max_new_tokens=2)
+    healthy.request_id = "req-healthy"
+    engine.add_request(healthy)
+    for _ in range(3):
+        engine.step()
+        sequence = engine.scheduler.get_sequence("req-healthy")
+        if sequence is None or sequence.is_finished():
+            break
+
+    sequence = engine.scheduler.get_sequence("req-healthy")
+    assert sequence is None or sequence.is_finished(), "the engine did not finish a request after recovering"
+    assert len(engine.slot_allocator.free_slots) == engine.slot_allocator.total_slots
