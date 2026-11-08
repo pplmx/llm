@@ -770,3 +770,82 @@ class TestOptimizationInertSubOptions:
 
         assert loader.num_workers == 0
         assert list(loader), "the loader must still yield batches"
+
+
+class TestUnusedParallelSizes:
+    """A parallel size knob set under a strategy that never reads it."""
+
+    @pytest.mark.parametrize(
+        ("strategy", "field", "value"),
+        [
+            ("ddp", "tp_size", 2),
+            ("fsdp", "tp_size", 2),
+            ("ddp", "pp_size", 2),
+            ("tp", "pp_size", 2),
+        ],
+    )
+    def test_size_under_the_wrong_strategy_warns(self, strategy, field, value, caplog):
+        """``wrap_model_for_training`` reads tp_size only in 'tp'/'3d' and pp_size only in 'pp'/'3d'.
+
+        Every combination is accepted silently, so ``parallel_strategy: ddp``
+        plus ``tp_size: 2`` runs plain DDP while looking like tensor parallelism
+        was enabled — the kind of config that costs a debugging session.
+        """
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy=strategy, **{field: value})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(field in message and strategy in message for message in messages), (
+            f"{field}={value} under strategy {strategy!r} was not reported: {messages}"
+        )
+
+    @pytest.mark.parametrize(
+        ("strategy", "field"),
+        [("tp", "tp_size"), ("pp", "pp_size"), ("3d", "tp_size"), ("3d", "pp_size")],
+    )
+    def test_size_under_its_own_strategy_is_silent(self, strategy, field, caplog):
+        """The legitimate pairings must not warn."""
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        kwargs = {field: 2}
+        if strategy == "3d":
+            # 3d needs the full grid; supply the other dims so the grid
+            # validator (not this warning) is what would complain.
+            kwargs = {"tp_size": 2, "pp_size": 2, "dp_size": 1}
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy=strategy, **kwargs)
+
+        assert not any("is only read when parallel_strategy" in record.getMessage() for record in caplog.records)
+
+    def test_default_values_do_not_warn(self, caplog):
+        """``tp_size=0`` means 'derive from world_size'; it is not lost intent."""
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy="ddp", tp_size=0, pp_size=0)
+
+        assert not any("is only read when parallel_strategy" in record.getMessage() for record in caplog.records)
+
+    def test_3d_grid_is_validated_at_runtime_not_config_time(self):
+        """The config cannot check the product (world_size is unknown then).
+
+        The real guard lives in ``three_d_layout``, which raises when
+        ``dp_size * pp_size * tp_size != world_size`` — pinned here so nobody
+        moves that check into the config where it cannot see ``world_size``.
+        """
+        from llm.training.core.config import DistributedConfig
+        from llm.training.distributed.parallel import three_d_layout
+
+        # Accepted at config time even though the grid cannot tile a real world.
+        DistributedConfig(parallel_strategy="3d", tp_size=2, pp_size=2, dp_size=2)
+
+        with pytest.raises(ValueError, match="must tile the world exactly"):
+            three_d_layout(world_size=4, dp_size=2, pp_size=2, tp_size=2)

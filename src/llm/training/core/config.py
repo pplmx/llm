@@ -901,6 +901,43 @@ class DistributedConfig(BaseSettings):
         return requested
 
     @model_validator(mode="after")
+    def _warn_unused_parallel_sizes(self) -> DistributedConfig:
+        """Flag a size knob set under a strategy that never reads it.
+
+        ``wrap_model_for_training`` reads ``tp_size`` only in its 'tp' and '3d'
+        branches and ``pp_size`` only in 'pp' and '3d'. Measured: every
+        combination is accepted silently, so ``parallel_strategy: ddp`` with
+        ``tp_size: 2`` runs plain DDP — a config that looks like it enabled
+        tensor parallelism and did not. Reported only when the user explicitly
+        wrote the key, so defaults stay quiet.
+        """
+        explicitly_set = self.model_fields_set
+        valid_under = {
+            "tp_size": {"tp", "3d"},
+            "pp_size": {"pp", "3d"},
+        }
+        for size_field, strategies in valid_under.items():
+            if size_field not in explicitly_set:
+                continue
+            if self.parallel_strategy in strategies:
+                continue
+            if getattr(self, size_field, 0) in (0, 1):
+                # 0 means "derive from world_size" and 1 is a no-op anyway —
+                # neither expresses intent that gets lost.
+                continue
+            logger.warning(
+                "%s=%s is only read when parallel_strategy is one of %s, but the current "
+                "strategy is %r — the value is ignored. Set parallel_strategy accordingly, "
+                "or remove %s.",
+                size_field,
+                getattr(self, size_field),
+                sorted(strategies),
+                self.parallel_strategy,
+                size_field,
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_3d_grid(self) -> DistributedConfig:
         if self.parallel_strategy != "3d":
             return self
