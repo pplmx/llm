@@ -878,3 +878,44 @@ def test_queue_full_precheck_is_honest_queue_full_503(monkeypatch):
     assert excinfo.value.code != gen.ErrorCode.MODEL_UNAVAILABLE.value, (
         "queue-full must not be mislabelled as 'model unavailable'"
     )
+
+
+def test_queue_full_handler_precedes_the_generic_runtime_error_handler():
+    """`except QueueFullError` must come BEFORE `except RuntimeError` in the routes.
+
+    `QueueFullError` subclasses `RuntimeError`, and BOTH map to HTTP 503 — so the
+    body's `code` is the only signal telling a client whether retrying is
+    worthwhile. If the generic handler came first, a full queue would be reported
+    as "Model unavailable during generation", i.e. "give up" instead of "back off".
+
+    Checked structurally on the source rather than by exercising the route: the
+    routes are async and this suite has no asyncio runner configured, and a test
+    that REPLAYED the handler chain would only be testing its own copy of the
+    chain. The ordering in the real file is what matters.
+    """
+    import inspect
+    from pathlib import Path
+
+    import llm.serving.routers.generate as generate_router
+
+    source = Path(inspect.getsourcefile(generate_router)).read_text(encoding="utf-8")
+
+    # Every `except QueueFullError` must be followed (before any non-except line
+    # at that indent) by an `except RuntimeError` further down, never the reverse.
+    queue_positions = [index for index in range(len(source)) if source.startswith("except QueueFullError", index)]
+    assert len(queue_positions) >= 2, f"expected the handler on both routes, found {len(queue_positions)}"
+
+    for position in queue_positions:
+        runtime_after = source.find("except RuntimeError", position)
+        runtime_before = source.rfind("except RuntimeError", 0, position)
+        assert runtime_after != -1, "no generic RuntimeError handler found after the QueueFullError one"
+        # The QueueFullError handler must not sit after a runtime handler that
+        # belongs to the same try block.
+        assert runtime_before == -1 or source.count("except QueueFullError", runtime_before, position) == 0, (
+            "a QueueFullError handler appears after a RuntimeError handler — the generic one would win"
+        )
+
+    # And both handlers must map to the QUEUE_FULL code, not MODEL_UNAVAILABLE.
+    for position in queue_positions:
+        block = source[position : position + 400]
+        assert "ErrorCode.QUEUE_FULL" in block, f"QueueFullError handler does not map to QUEUE_FULL: {block[:120]!r}"
