@@ -95,7 +95,7 @@ def dummy_token_ids(
     return torch.randint(0, upper, (batch_size, seq_len), device=device)
 
 
-__all__ = ["ExportCacheWrapper", "dummy_token_ids", "model_vocab_size"]
+__all__ = ["ExportCacheWrapper", "clamp_input_shape", "dummy_token_ids", "model_vocab_size"]
 
 
 def clamp_input_shape(model: nn.Module, shape: tuple[int, int]) -> tuple[int, int]:
