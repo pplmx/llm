@@ -1569,3 +1569,75 @@ def test_engine_keeps_serving_after_a_forward_failure(tiny_model, device, mock_t
     sequence = engine.scheduler.get_sequence("req-healthy")
     assert sequence is None or sequence.is_finished(), "the engine did not finish a request after recovering"
     assert len(engine.slot_allocator.free_slots) == engine.slot_allocator.total_slots
+
+
+class TestBatchGenerateRequestsIsolation:
+    """Several requests through one engine must not leak state between slots.
+
+    Scope note, so this is not over-trusted: ``batch_generate_requests`` is a
+    sequential loop over ``generate_request`` (not an interleaved batch), so
+    "batched == individual" cannot fail for scheduling reasons. What it DOES
+    exercise is that the engine's slot table, KV pool and sequence bookkeeping are
+    cleanly reset between requests — a stale slot index or an un-reaped sequence
+    would splice one prompt's context into the next request's continuation.
+
+    The genuinely interleaved path (two sequences advancing through shared
+    ``step()`` calls) is covered separately by
+    ``test_engine_prefix_cache_reuses_kv_on_matching_prompt``.
+    """
+
+    def test_batch_matches_individual_requests(self, tiny_model, device, mock_tokenizer):
+        from llm.serving.schemas import GenerationRequest
+
+        engine = ContinuousBatchingEngine(
+            model=tiny_model,
+            tokenizer=mock_tokenizer,
+            device=device,
+            max_batch_size=4,
+            max_seq_len=32,
+        )
+
+        # Deliberately different prompt LENGTHS so the prefill steps land on
+        # different positions within the shared cache.
+        prompts = ["h", "hello", "hello wor"]
+        requests = [GenerationRequest(prompt=prompt, max_new_tokens=4, temperature=0.0) for prompt in prompts]
+
+        batched = engine.batch_generate_requests(requests)
+        assert len(batched) == len(prompts)
+
+        singles = []
+        for prompt in prompts:
+            single_request = GenerationRequest(prompt=prompt, max_new_tokens=4, temperature=0.0)
+            singles.append(prompt + "".join(engine.stream_request(single_request)))
+
+        assert batched == singles, (
+            f"batched results {batched} != individual results {singles} — requests leaked into each other's context"
+        )
+
+    def test_batch_results_are_all_distinct_prompts_not_copies(self, tiny_model, device, mock_tokenizer):
+        """Sanity floor: results must each start with THEIR OWN prompt.
+
+        A slot-management bug can make every sequence read the first sequence's
+        context, which would produce N identical strings. Comparing to the
+        individual runs catches that too, but this makes the failure message say
+        precisely what went wrong.
+        """
+        from llm.serving.schemas import GenerationRequest
+
+        engine = ContinuousBatchingEngine(
+            model=tiny_model,
+            tokenizer=mock_tokenizer,
+            device=device,
+            max_batch_size=4,
+            max_seq_len=32,
+        )
+
+        prompts = ["h", "hello", "hello wor"]
+        requests = [GenerationRequest(prompt=prompt, max_new_tokens=3, temperature=0.0) for prompt in prompts]
+        results = engine.batch_generate_requests(requests)
+
+        for prompt, result in zip(prompts, results, strict=True):
+            assert result.startswith(prompt), (
+                f"result {result!r} does not start with its own prompt {prompt!r} — "
+                "the sequence was assembled from another request's context"
+            )
