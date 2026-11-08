@@ -713,3 +713,58 @@ class TestGLURoleMapping:
         assert torch.allclose(loaded_out, hf_out, atol=1e-5), (
             "Loaded MLP diverges from HF's silu(gate_proj)*up_proj — gate_proj/up_proj roles are swapped."
         )
+
+
+class TestWeightMappingIsInjective:
+    """Two HF tensors must never map to the same parameter of ours.
+
+    The per-key tests above check that individual entries EXIST. They cannot see a
+    collision: if e.g. both `q_proj` and a fused `qkv_proj` rule resolved to
+    `self_attn.qkv_proj.weight`, the loader would apply them in dict order and the
+    last write would silently win — the model would load, produce finite output, and
+    be wrong for exactly one projection.
+
+    `convert_hf_weights` builds a dict keyed by OUR name, so a collision is a silent
+    overwrite rather than an error. Injectivity is the property that rules it out.
+    """
+
+    @pytest.mark.parametrize("architecture", ["llama", "mistral", "qwen2"])
+    def test_no_two_hf_keys_share_a_target(self, architecture):
+        from llm.compat.weight_mapping import expand_layer_mapping, get_weight_mapping
+
+        mapping = expand_layer_mapping(get_weight_mapping(architecture), num_layers=2)
+
+        seen: dict[str, str] = {}
+        collisions: list[tuple[str, str, str]] = []
+        for hf_name, our_name in mapping.items():
+            if our_name in seen:
+                collisions.append((seen[our_name], hf_name, our_name))
+            seen[our_name] = hf_name
+
+        assert not collisions, f"{architecture}: two HF keys map to one parameter:\n  " + "\n  ".join(
+            f"{a} and {b} -> {target}" for a, b, target in collisions
+        )
+
+    @pytest.mark.parametrize("architecture", ["llama", "mistral", "qwen2"])
+    def test_every_rule_survives_layer_expansion(self, architecture):
+        """A `{layer}` placeholder must expand for EVERY layer it claims.
+
+        `expand_layer_mapping` is a loop over `range(num_layers)`; if a rule's
+        placeholder were spelled differently it would be copied verbatim and then
+        never match a real tensor, leaving that weight unmapped (and the load failing
+        with a missing-key error at best, or ignoring it at worst).
+        """
+        from llm.compat.weight_mapping import expand_layer_mapping, get_weight_mapping
+
+        base = get_weight_mapping(architecture)
+        num_layers = 3
+        expanded = expand_layer_mapping(base, num_layers=num_layers)
+
+        leftover = [key for key in expanded if "{layer}" in key or "{layer}" in expanded[key]]
+        assert not leftover, f"{architecture}: unexpanded placeholder(s): {leftover}"
+
+        per_layer_rules = sum(1 for key in base if "{layer}" in key)
+        non_layer_rules = len(base) - per_layer_rules
+        assert len(expanded) == per_layer_rules * num_layers + non_layer_rules, (
+            f"{architecture}: expected {per_layer_rules}*{num_layers}+{non_layer_rules} rules, got {len(expanded)}"
+        )
