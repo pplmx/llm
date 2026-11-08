@@ -574,3 +574,82 @@ class TestFoldReparameterizationModuleLevel:
     def test_empty_model_is_noop(self):
         model = nn.Sequential(nn.Linear(8, 8))
         fold_reparameterization(model)  # must not raise
+
+
+class TestModelLevelFoldIsARealDeploymentTransform:
+    """`fold_reparameterization` on a whole MODEL, not a single attention layer.
+
+    `test_folds_every_wrapped_attention` proves the wrapper swap happens (each attn
+    has `prefix_k`, none has `_reparam_k`), but it never runs the folded model. So
+    it cannot see the two things that make folding worth doing:
+
+    * the parameter COUNT actually drops (the reparam MLPs are gone, replaced by
+      static buffers), and
+    * the whole model's forward output is unchanged — the per-layer test uses one
+      hand-built `MultiHeadAttention`, not a real `DecoderModel` with norms,
+      residuals and an LM head.
+
+    A fold that silently wrote the wrong static prefix would satisfy the structural
+    assertions and still produce a different model.
+    """
+
+    @staticmethod
+    def _adapted_model(prefix_len: int = 4, reparam_hidden: int = 16, layers: int = 2):
+        from llm.core.prefix_tuning import apply_prefix_tuning
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(0)
+        model = DecoderModel(
+            vocab_size=32,
+            hidden_size=16,
+            num_layers=layers,
+            num_heads=2,
+            max_seq_len=16,
+            intermediate_size=32,
+        )
+        model.eval()
+        apply_prefix_tuning(model, prefix_len=prefix_len, reparam_hidden=reparam_hidden)
+        model.eval()  # apply_* does not return a new module; re-assert eval
+        return model
+
+    def test_fold_reduces_the_parameter_count(self):
+        """The reparam MLPs must actually disappear from the model."""
+        from llm.core.prefix_tuning import fold_reparameterization
+
+        model = self._adapted_model()
+        before = sum(p.numel() for p in model.parameters())
+
+        fold_reparameterization(model)
+
+        after = sum(p.numel() for p in model.parameters())
+        assert after < before, f"fold removed no parameters ({before} -> {after})"
+        assert before - after > 0
+
+    def test_fold_preserves_the_whole_model_forward_output(self):
+        """End-to-end: the deployed model must produce the same logits."""
+        from llm.core.prefix_tuning import fold_reparameterization
+
+        model = self._adapted_model()
+        ids = torch.randint(0, 32, (2, 8))
+
+        with torch.no_grad():
+            before = model(ids).clone()
+        fold_reparameterization(model)
+        with torch.no_grad():
+            after = model(ids)
+
+        assert torch.allclose(before, after, atol=1e-5), (
+            f"fold changed the model output, max|delta|={(before - after).abs().max().item():.3e}"
+        )
+
+    def test_a_folded_model_still_runs_forward(self):
+        """Deployment sanity: no dangling attribute is touched at inference time."""
+        from llm.core.prefix_tuning import fold_reparameterization
+
+        model = self._adapted_model()
+        fold_reparameterization(model)
+
+        with torch.no_grad():
+            out = model(torch.randint(0, 32, (3, 5)))
+
+        assert torch.isfinite(out).all(), "a folded model produced non-finite output"
