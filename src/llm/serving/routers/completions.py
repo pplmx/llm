@@ -44,7 +44,7 @@ from fastapi.responses import StreamingResponse
 
 from llm.serving.auth import get_api_key
 from llm.serving.config import ServingConfig
-from llm.serving.errors import APIError, ErrorCode
+from llm.serving.errors import DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS, APIError, ErrorCode
 from llm.serving.metrics import METRICS, ServingMetrics
 from llm.serving.routers.generate import (
     _drive_sync_iterator,
@@ -177,7 +177,12 @@ async def create_completion(
             # MUST precede the generic ``RuntimeError`` catch (QueueFullError
             # subclasses it): backpressure is retryable, not a model failure.
             t.set_status(503)
-            raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
+            raise APIError(
+                ErrorCode.QUEUE_FULL,
+                "server waiting queue is full; retry later",
+                retry_after=DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+                should_retry=True,
+            ) from exc
         except RuntimeError as exc:
             t.set_status(503)
             logger.error("backend generation failed: %s", exc)

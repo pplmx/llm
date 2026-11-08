@@ -28,6 +28,7 @@ not. ``/v1/chat/completions`` is OpenAI-SHAPED, not a strict drop-in.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
@@ -73,6 +74,17 @@ _CODE_TO_STATUS: dict[ErrorCode, int] = {
 }
 
 
+#: Backoff the server suggests when its waiting queue is full.
+#:
+#: ``queue_full`` is the one genuinely transient condition this API reports on a
+#: normal path, so it is also the only one that tells the client WHEN to come
+#: back. OpenAI's SDK reads ``Retry-After`` and prefers it to its own curve,
+#: which starts at 0.5s and caps at 8s — far too eager against a queue that is
+#: still draining. One second is long enough to let a batching step complete and
+#: short enough that a client which honours it does not appear hung.
+DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS = 1.0
+
+
 def default_status_for(code: ErrorCode) -> int:
     """HTTP status code for a given :class:`ErrorCode`."""
     return _CODE_TO_STATUS[code]
@@ -92,6 +104,15 @@ class APIError(Exception):
             status for ``code``; override only if you have a strong reason.
         details: Optional structured context (e.g. field-level validation
             errors, retry-after seconds, etc.).
+        retry_after: Seconds the client should wait before retrying, emitted
+            as the standard ``Retry-After`` header. Set this on genuinely
+            transient conditions so a client honours a server-chosen delay
+            instead of its own backoff (OpenAI's SDK reads the header and
+            prefers it over its default curve, which starts at 0.5s).
+        should_retry: Explicit retry guidance emitted as ``x-should-retry``,
+            the header OpenAI's SDK checks BEFORE any status-code heuristic.
+            Use ``False`` for a failure that will never succeed on retry even
+            though its status code looks transient.
     """
 
     def __init__(
@@ -101,6 +122,8 @@ class APIError(Exception):
         *,
         status_code: int | None = None,
         details: dict[str, Any] | None = None,
+        retry_after: float | None = None,
+        should_retry: bool | None = None,
     ) -> None:
         super().__init__(message)
         if isinstance(code, ErrorCode):
@@ -113,6 +136,27 @@ class APIError(Exception):
         self.message = message
         self.status_code = resolved_status
         self.details: dict[str, Any] = details or {}
+        self.retry_after = retry_after
+        self.should_retry = should_retry
+
+    def response_headers(self) -> dict[str, str]:
+        """Transport headers that tell a client how to react.
+
+        OpenAI's SDK consults ``x-should-retry`` first and ``Retry-After``
+        second, both *before* falling back to its status-code heuristic (which
+        retries every 5xx). Without these a ``queue_full`` 503 tells the client
+        nothing about WHEN to come back, so it uses its own curve — starting at
+        0.5s and capped at 8s — against a queue that may need far longer.
+        """
+        headers: dict[str, str] = {}
+        if self.retry_after is not None:
+            # Standard HTTP header: integer seconds. Round UP so a fractional
+            # delay never advertises a wait shorter than the real one; 0 would
+            # invite an immediate retry into the same full queue.
+            headers["Retry-After"] = str(max(1, math.ceil(self.retry_after)))
+        if self.should_retry is not None:
+            headers["x-should-retry"] = "true" if self.should_retry else "false"
+        return headers
 
 
 def to_envelope(
@@ -342,6 +386,7 @@ def register_exception_handlers(app: FastAPI, *, logger: Any | None = None) -> N
             envelope_from_api_error(exc, get_request_id(request)),
             status_code=exc.status_code,
             request_id=get_request_id(request),
+            headers=exc.response_headers(),
         )
 
     # Framework-generated HTTP errors (404 unknown path, 405 wrong method,

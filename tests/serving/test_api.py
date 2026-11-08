@@ -916,6 +916,17 @@ def test_queue_full_handler_precedes_the_generic_runtime_error_handler():
         )
 
     # And both handlers must map to the QUEUE_FULL code, not MODEL_UNAVAILABLE.
+    #
+    # The handler BODY is delimited by the next ``except`` clause at the same
+    # indentation, not by a fixed character window: a fixed window turns any
+    # harmless reformatting (splitting the raise across lines to add arguments,
+    # as adding retry guidance did) into a false failure while proving nothing
+    # extra about the mapping itself.
     for position in queue_positions:
-        block = source[position : position + 400]
-        assert "ErrorCode.QUEUE_FULL" in block, f"QueueFullError handler does not map to QUEUE_FULL: {block[:120]!r}"
+        following = [index for index in (source.find("except ", position + 1),) if index != -1]
+        end = following[0] if following else len(source)
+        block = source[position:end]
+        assert "ErrorCode.QUEUE_FULL" in block, f"QueueFullError handler does not map to QUEUE_FULL: {block[:200]!r}"
+        assert "ErrorCode.MODEL_UNAVAILABLE" not in block, (
+            f"QueueFullError handler maps to MODEL_UNAVAILABLE: {block[:200]!r}"
+        )

@@ -17,13 +17,15 @@ from fastapi.responses import StreamingResponse
 from llm.serving.auth import get_api_key
 from llm.serving.chat_template import messages_to_prompt
 from llm.serving.config import ServingConfig
-from llm.serving.errors import APIError, ErrorCode
+from llm.serving.errors import DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS, APIError, ErrorCode
 from llm.serving.metrics import METRICS, ServingMetrics
 from llm.serving.routers.generate import (
     _drive_sync_iterator,
     _sync_generate,
     _sync_stream_generate,
     _token_count,
+    _validate_generation_bounds,
+    _validate_queue_has_capacity,
     _validate_stream_request,
 )
 from llm.serving.scheduler import QueueFullError
@@ -114,6 +116,15 @@ async def chat_completions(
             media_type="text/event-stream",
         )
 
+    # Non-streaming twin of the streaming pre-checks. Without the queue check a
+    # full waiting queue surfaced as the generic "model unavailable" 503 (the
+    # backend raises RuntimeError once enqueue fails) instead of the honest,
+    # RETRYABLE ``queue_full`` — and without the bounds check an over-window
+    # prompt reached the backend, which is exactly the divergence
+    # ``/generate`` already fixed on its own non-streaming path.
+    _validate_generation_bounds(prompt, request.max_tokens)
+    _validate_queue_has_capacity()
+
     timer = metrics.request_timer(endpoint="chat_completions")
     with timer as t:
         try:
@@ -140,7 +151,12 @@ async def chat_completions(
             # subclasses it): backpressure is a retryable condition, not a
             # model failure.
             t.set_status(503)
-            raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
+            raise APIError(
+                ErrorCode.QUEUE_FULL,
+                "server waiting queue is full; retry later",
+                retry_after=DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+                should_retry=True,
+            ) from exc
         except RuntimeError as exc:
             # Do NOT echo the backend exception text back to the client: it can contain filesystem paths / framework internals.
             t.set_status(503)

@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from llm.serving.auth import get_api_key
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
-from llm.serving.errors import APIError, ErrorCode
+from llm.serving.errors import DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS, APIError, ErrorCode
 from llm.serving.metrics import METRICS, ServingMetrics
 from llm.serving.scheduler import QueueFullError, Scheduler
 from llm.serving.schemas import (
@@ -307,6 +307,8 @@ def _validate_queue_has_capacity() -> None:
             ErrorCode.QUEUE_FULL,
             f"server waiting queue is full ({scheduler.max_waiting}); retry later",
             status_code=503,
+            retry_after=DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+            should_retry=True,
         )
 
 
@@ -423,7 +425,12 @@ async def generate_text(
             # model failure — the generic block would map it to
             # a misleading "Model unavailable during generation".
             t.set_status(503)
-            raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
+            raise APIError(
+                ErrorCode.QUEUE_FULL,
+                "server waiting queue is full; retry later",
+                retry_after=DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+                should_retry=True,
+            ) from exc
         except RuntimeError as exc:
             # Do NOT echo the backend exception text back to the client: it can contain filesystem paths / framework internals
             # that aid fingerprinting. Log it server-side, send a fixed message.
@@ -590,7 +597,12 @@ async def batch_generate_text(
             # model failure — the generic block would map it to
             # a misleading "Model unavailable during generation".
             t.set_status(503)
-            raise APIError(ErrorCode.QUEUE_FULL, "server waiting queue is full; retry later") from exc
+            raise APIError(
+                ErrorCode.QUEUE_FULL,
+                "server waiting queue is full; retry later",
+                retry_after=DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+                should_retry=True,
+            ) from exc
         except RuntimeError as exc:
             # Do NOT echo the backend exception text back to the client: it can contain filesystem paths / framework internals
             # that aid fingerprinting. Log it server-side, send a fixed message.
