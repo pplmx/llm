@@ -270,6 +270,7 @@ def save_pretrained(model: DecoderModel, save_directory: str | Path) -> Path:
         num_heads=attn0.num_heads,
         num_kv_heads=attn0.num_kv_heads,
         head_dim=attn0.head_dim,
+        strict=True,
     )
 
     # Clone + contiguous for safetensors (it rejects views).

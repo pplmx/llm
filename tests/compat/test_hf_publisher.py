@@ -793,3 +793,85 @@ def test_from_pretrained_refuses_mla_weights_into_mha(tmp_path: Path):
 
     with pytest.raises(ValueError, match="MLA"):
         from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+
+
+class TestUnmappableModelsAreRefused:
+    """Publishing must refuse a model whose weights have no HF mapping.
+
+    Before this guard, ``save_pretrained`` on an MoE model logged one warning
+    and wrote a file containing 8,576 of the model's 25,472 parameters (66%
+    lost) under ``model_type: llama`` with ``num_experts: None``. The call
+    reported success, and ``from_pretrained`` on the result raised "missing
+    model keys" — a data-loss path with no signal at the point of failure.
+    """
+
+    def test_moe_model_is_refused_with_no_file_left_behind(self, tmp_path):
+        import pytest
+
+        from llm.compat.hf_publisher import save_pretrained
+        from llm.models.decoder import DecoderModel
+
+        moe = DecoderModel(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=1,
+            num_heads=2,
+            max_seq_len=32,
+            intermediate_size=64,
+            mlp_impl="moe",
+            num_experts=4,
+            top_k=2,
+        )
+
+        save_dir = tmp_path / "published"
+        with pytest.raises(ValueError, match="no HuggingFace mapping"):
+            save_pretrained(moe, save_dir)
+
+        # Weights are written FIRST in save_pretrained, so the guard has to fire
+        # before that write or a truncated artifact is left on disk.
+        assert not (save_dir / "model.safetensors").exists(), "a refused publish left a weights file behind"
+        assert not (save_dir / "config.json").exists()
+
+    def test_supported_models_still_publish_and_reload_exactly(self, tmp_path):
+        """The guard must not block anything that genuinely round-trips.
+
+        Covers the variants whose mapping goes through the split/fused paths —
+        GQA, GLU, RoPE and a learned positional table — so the strict check is
+        proven to accept every supported architecture, not just the plain one.
+        """
+        import torch
+
+        from llm.compat.hf_loader import from_pretrained
+        from llm.compat.hf_publisher import save_pretrained
+        from llm.models.decoder import DecoderModel
+
+        base = {
+            "vocab_size": 64,
+            "hidden_size": 32,
+            "num_layers": 1,
+            "num_heads": 2,
+            "max_seq_len": 32,
+            "intermediate_size": 64,
+        }
+        variants = {
+            "plain": {},
+            "gqa": {"num_kv_heads": 1},
+            "glu": {"use_glu": True},
+            "rope": {"use_rope": True},
+            "learned_pe": {"pos_encoding_learned": True},
+        }
+
+        for label, extra in variants.items():
+            torch.manual_seed(0)
+            source = DecoderModel(**base, **extra).eval()
+            variant_dir = tmp_path / label
+            save_pretrained(source, variant_dir)
+
+            reloaded = from_pretrained(str(variant_dir), device="cpu", dtype=torch.float32).eval()
+            input_ids = torch.randint(0, 64, (1, 8))
+            with torch.no_grad():
+                expected = source(input_ids)
+                actual = reloaded(input_ids)
+            assert torch.equal(expected, actual), (
+                f"{label}: round trip was not bit-exact (max |d|={(expected - actual).abs().max():.2e})"
+            )

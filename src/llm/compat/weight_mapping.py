@@ -351,6 +351,7 @@ def convert_our_weights(
     num_heads: int | None = None,
     num_kv_heads: int | None = None,
     head_dim: int | None = None,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """
     Convert our naming convention to HuggingFace state dict.
@@ -456,6 +457,17 @@ def convert_our_weights(
         import logging
 
         logger = logging.getLogger(__name__)
+        if strict:
+            # Publishing path: unmapped weights mean the checkpoint would be a
+            # STRICT SUBSET of the model. Measured on an MoE model, 16,896 of
+            # 25,472 parameters (66%) vanished, the file could not be loaded
+            # back, and the caller saw success. A warning cannot carry that.
+            raise ValueError(
+                f"{len(unmapped)} weight(s) have no HuggingFace mapping for architecture "
+                f"{architecture!r} (first: {unmapped[:5]}). Publishing would silently drop them, "
+                "producing a checkpoint that cannot be loaded back. This architecture is not "
+                "supported for export."
+            )
         logger.warning(f"Unmapped weights (ours -> HF): {unmapped[:10]}{'...' if len(unmapped) > 10 else ''}")
 
     return converted
