@@ -401,3 +401,95 @@ class TestDisableEnableInteractions:
 
         unmerge_lora(model)
         assert layer.scaling == original, "the adapter was lost across merge -> disable -> enable -> unmerge"
+
+
+class TestLoRAGradientRouting:
+    """Which parameters a backward reaches, and with what magnitude.
+
+    `test_lora.py` had no gradient test at all: every case checks forward outputs
+    or attribute values. That leaves the training path — the reason LoRA exists —
+    unpinned. Two properties matter and both are cheap to check.
+    """
+
+    @staticmethod
+    def _layer(rank=4, alpha=8.0, seed=0):
+        import torch.nn as nn
+
+        from llm.core.lora import LoRALinear
+
+        torch.manual_seed(seed)
+        base = nn.Linear(8, 6)
+        layer = LoRALinear(base, rank=rank, alpha=alpha)
+        with torch.no_grad():
+            layer.lora_B.normal_(0, 0.5)  # B is zero-initialised; give it signal
+        return layer, base
+
+    def test_a_backward_populates_only_the_adapter(self):
+        """The base weight is frozen, so only lora_A / lora_B may receive grads."""
+        torch.manual_seed(0)
+        layer, base = self._layer()
+        x = torch.randn(3, 8)
+
+        layer(x).sum().backward()
+
+        assert layer.lora_A.grad is not None, "lora_A received no gradient"
+        assert layer.lora_B.grad is not None, "lora_B received no gradient"
+        assert layer.lora_A.grad.abs().sum() > 0, "lora_A gradient is all zeros"
+        assert layer.lora_B.grad.abs().sum() > 0, "lora_B gradient is all zeros"
+        # The base layer is frozen in a LoRA adapter — no gradient may reach it.
+        assert base.weight.grad is None, "a gradient reached the frozen base weight"
+        if base.bias is not None:
+            assert base.bias.grad is None, "a gradient reached the frozen base bias"
+
+    def test_merge_disables_the_adapter_gradient(self):
+        """After merge the branch is folded in (scaling 0), so its grads must vanish.
+
+        This is the deploy-side invariant: a merged layer is meant to be served, not
+        fine-tuned further. If grads kept flowing, an optimizer step after merge
+        would move weights that the folded base already accounts for — silently
+        double-counting the update.
+        """
+        torch.manual_seed(0)
+        layer, _ = self._layer()
+        x = torch.randn(3, 8)
+
+        layer.merge_weights()
+        assert layer.scaling == 0.0, "merge did not zero the adapter scaling"
+
+        layer(x).sum().backward()
+
+        assert layer.lora_A.grad is not None, "lora_A has no gradient recorded after merge"
+        assert layer.lora_B.grad is not None, "lora_B has no gradient recorded after merge"
+        assert layer.lora_A.grad.abs().max() == 0, (
+            f"lora_A still receives gradient after merge: {layer.lora_A.grad.abs().max()}"
+        )
+        assert layer.lora_B.grad.abs().max() == 0, (
+            f"lora_B still receives gradient after merge: {layer.lora_B.grad.abs().max()}"
+        )
+
+    def test_disable_then_enable_restores_the_forward(self):
+        """`disable_lora` must make forward exactly equal the base layer."""
+        import torch.nn.functional as functional
+
+        torch.manual_seed(0)
+        layer, base = self._layer()
+        x = torch.randn(3, 8)
+
+        from llm.core.lora import disable_lora, enable_lora
+
+        with torch.no_grad():
+            adapted = layer(x).clone()
+        disable_lora(layer)
+        with torch.no_grad():
+            disabled = layer(x)
+        enable_lora(layer)
+        with torch.no_grad():
+            reenabled = layer(x)
+
+        assert not torch.allclose(adapted, functional.linear(x, base.weight, base.bias)), (
+            "the adapter had no effect before disabling — the test cannot detect a broken disable"
+        )
+        assert torch.allclose(disabled, functional.linear(x, base.weight, base.bias), atol=1e-6), (
+            "disabled forward does not equal the base layer"
+        )
+        assert torch.allclose(reenabled, adapted, atol=1e-6), "re-enabling did not restore the adapter"
