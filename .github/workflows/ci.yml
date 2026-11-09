@@ -131,6 +131,10 @@ jobs:
                 # unreachable: a slow job is better than a job that fails for a
                 # reason unrelated to the change under test. The fallback is
                 # announced in the log so a silently-slow run is explicable.
+                # `shell: bash` is explicit: the Windows runner defaults to
+                # PowerShell, which cannot parse this (continuations, `if ...
+                # then`, POSIX `cp`/`mv`). Git Bash ships on the Windows image.
+                shell: bash
                 run: |
                     cp uv.lock uv.lock.committed
                     if rm -f uv.lock && uv lock \
