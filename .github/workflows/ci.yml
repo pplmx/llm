@@ -105,7 +105,48 @@ jobs:
                     cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
+                # Checked against the COMMITTED lock, before the CPU re-lock
+                # below replaces it in this workspace. Keeps the "did someone
+                # forget to commit uv.lock" gate honest.
                 run: uv lock --check
+
+            -   name: Re-lock against the CPU-only PyTorch index
+                # Hosted runners have no GPU, yet the committed lock resolves
+                # torch to the CUDA build and pinning `torch>=2.14` pulls the
+                # whole NVIDIA stack: ~2.7 GiB of wheels (cublas 403 MiB, cudnn
+                # 527 MiB, triton 236 MiB, nccl 206 MiB, ...) downloaded and
+                # unpacked on every job, taking ~5.5 min of a ~8 min job. The
+                # suite then skips every GPU test anyway.
+                #
+                # The CPU build of the same version is a normal wheel on
+                # PyTorch's CPU index; re-locking against it drops the venv from
+                # 5.8 GB to 1.2 GB. This rewrites uv.lock in the runner's
+                # checkout only — never committed, and `uv lock --check` above
+                # has already validated the version that IS committed.
+                #
+                # `--index-strategy unsafe-best-match` is required: uv's default
+                # first-match policy would never look at the second index for
+                # torch, since the PyPI mirror also serves it.
+                # Falls back to the committed (CUDA) lock if the CPU index is
+                # unreachable: a slow job is better than a job that fails for a
+                # reason unrelated to the change under test. The fallback is
+                # announced in the log so a silently-slow run is explicable.
+                run: |
+                    cp uv.lock uv.lock.committed
+                    if rm -f uv.lock && uv lock \
+                         --index https://download.pytorch.org/whl/cpu \
+                         --default-index https://pypi.org/simple \
+                         --index-strategy unsafe-best-match; then
+                      if grep -q 'name = "nvidia-' uv.lock; then
+                        echo "::warning::CPU re-lock kept NVIDIA deps; falling back to the committed lock"
+                        mv uv.lock.committed uv.lock
+                      else
+                        echo "CPU-only lock generated (no NVIDIA deps)."
+                      fi
+                    else
+                      echo "::warning::CPU index unreachable; falling back to the committed lock (job will be slower)"
+                      mv uv.lock.committed uv.lock
+                    fi
 
             -   name: Synchronize Dependencies
                 run: uv sync --frozen
