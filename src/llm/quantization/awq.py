@@ -22,6 +22,7 @@ import torch.nn as nn
 
 from llm.quantization._awq_layer import AWQQuantizedLinear
 from llm.quantization._gptq_layer import _pack_4bit
+from llm.quantization._module_utils import replace_module
 from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
 from llm.quantization.calibration import CalibrationDataCollector, _single_thread_reductions
 
@@ -367,15 +368,6 @@ def _pack_weights(
     return packed, scale, effective_group_size
 
 
-def _replace_module(parent: nn.Module, name: str, new_module: nn.Module) -> None:
-    """Replace a child module by dotted name."""
-    parts = name.split(".")
-    obj = parent
-    for part in parts[:-1]:
-        obj = getattr(obj, part)
-    setattr(obj, parts[-1], new_module)
-
-
 def _quantize_linear_with_awq(
     layer: nn.Linear,
     calib_batches: list[torch.Tensor],
@@ -549,7 +541,7 @@ def quantize_model_awq(
         # quant layer, otherwise the forward emits fp32 into the remaining
         # half-precision linears and crashes.
         new_layer = new_layer.to(layer.weight.dtype)
-        _replace_module(model, name, new_layer)
+        replace_module(model, name, new_layer)
         logger.info(
             f"Quantized layer {name}: {layer.weight.shape} → "
             f"{effective_config.bits}-bit, group_size={effective_config.group_size}"

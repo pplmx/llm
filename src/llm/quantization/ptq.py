@@ -16,6 +16,8 @@ from typing import Any, cast
 import torch
 import torch.nn as nn
 
+from llm.quantization._module_utils import replace_module
+
 logger = logging.getLogger(__name__)
 
 
@@ -298,22 +300,11 @@ def quantize_model(
 
     # Apply replacements
     for name, quant_layer in replacements:
-        _replace_module(model, name, quant_layer)
+        replace_module(model, name, quant_layer)
 
     logger.info(f"Quantized {len(replacements)} linear layers")
 
     return model
-
-
-def _replace_module(model: nn.Module, name: str, new_module: nn.Module) -> None:
-    """Replace a module by name."""
-    parts = name.split(".")
-    parent = model
-
-    for part in parts[:-1]:
-        parent = getattr(parent, part)
-
-    setattr(parent, parts[-1], new_module)
 
 
 def compute_model_size(model: nn.Module) -> dict[str, Any]:

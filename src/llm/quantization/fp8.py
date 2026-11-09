@@ -22,6 +22,7 @@ import torch
 import torch.nn as nn
 
 from llm.quantization._fp8_layer import FP8_MAX, Fp8QuantizedLinear, quantize_fp8_linear
+from llm.quantization._module_utils import replace_module
 from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
 
 logger = logging.getLogger(__name__)
@@ -61,14 +62,6 @@ class Fp8Config:
         for i, policy in enumerate(self.layer_policies):
             if not isinstance(policy, LayerQuantPolicy):
                 raise TypeError(f"Fp8Config.layer_policies[{i}] must be LayerQuantPolicy; got {type(policy).__name__}.")
-
-
-def _replace_module(parent: nn.Module, name: str, new_module: nn.Module) -> None:
-    parts = name.split(".")
-    obj = parent
-    for part in parts[:-1]:
-        obj = getattr(obj, part)
-    setattr(obj, parts[-1], new_module)
 
 
 def quantize_model_fp8(
@@ -222,7 +215,7 @@ def quantize_model_fp8(
             per_channel=eff.per_channel,
             activation_scale=as_scale,
         )
-        _replace_module(model, name, new_layer)
+        replace_module(model, name, new_layer)
         replaced += 1
 
     logger.info(

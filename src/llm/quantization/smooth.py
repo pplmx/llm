@@ -20,6 +20,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from llm.quantization._module_utils import replace_module
 from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
 from llm.quantization._smooth_layer import SmoothQuantLinear
 from llm.quantization.calibration import CalibrationDataCollector, _single_thread_reductions
@@ -269,15 +270,6 @@ class SmoothQuantQuantizer:
             return _quantize_layer_components(w, self.act_max, alpha)
 
 
-def _replace_module(parent: nn.Module, name: str, new_module: nn.Module) -> None:
-    """Replace a child module by dotted name."""
-    parts = name.split(".")
-    obj = parent
-    for part in parts[:-1]:
-        obj = getattr(obj, part)
-    setattr(obj, parts[-1], new_module)
-
-
 def _quantize_linear_with_smoothquant(
     layer: nn.Linear,
     calib_batches: list[torch.Tensor],
@@ -439,7 +431,7 @@ def quantize_model_smoothquant(
         # quant layer, otherwise the forward emits fp32 into the remaining
         # half-precision linears and crashes.
         new_layer = new_layer.to(layer.weight.dtype)
-        _replace_module(model, name, new_layer)
+        replace_module(model, name, new_layer)
         logger.info(
             f"Quantized layer {name}: {layer.weight.shape} → INT8 weight+activation "
             f"(alpha={effective_config.alpha}{'+search' if effective_config.search_alpha else ''})"

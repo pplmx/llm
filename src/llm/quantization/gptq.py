@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 
 from llm.quantization._gptq_layer import GPTQQuantizedLinear, _pack_4bit
+from llm.quantization._module_utils import replace_module
 from llm.quantization._policy import LayerQuantPolicy, resolve_layer_policies
 from llm.quantization.calibration import CalibrationDataCollector
 
@@ -356,15 +357,6 @@ class GPTQQuantizer:
         return q_out, scales, zeros
 
 
-def _replace_module(parent: nn.Module, name: str, new_module: nn.Module) -> None:
-    """Replace a child module by dotted name."""
-    parts = name.split(".")
-    obj = parent
-    for part in parts[:-1]:
-        obj = getattr(obj, part)
-    setattr(obj, parts[-1], new_module)
-
-
 def _quantize_linear_with_gptq(
     layer: nn.Linear,
     calib_batches: list[torch.Tensor],
@@ -639,7 +631,7 @@ def quantize_model_gptq(
         # quant layer, otherwise the forward emits fp32 into the remaining
         # half-precision linears and crashes.
         new_layer = new_layer.to(layer.weight.dtype)
-        _replace_module(model, name, new_layer)
+        replace_module(model, name, new_layer)
         logger.info(
             f"Quantized layer {name}: {layer.weight.shape} → "
             f"{effective_config.bits}-bit, group_size={effective_config.group_size}"

@@ -21,6 +21,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
+from llm.quantization._module_utils import replace_module
+
 
 @dataclass
 class LowRankConfig:
@@ -115,14 +117,6 @@ def decompose_layer(linear: nn.Linear, rank: int) -> LowRankLinear:
     )
 
 
-def _replace_module(parent: nn.Module, name: str, new_module: nn.Module) -> None:
-    parts = name.split(".")
-    obj = parent
-    for part in parts[:-1]:
-        obj = getattr(obj, part)
-    setattr(obj, parts[-1], new_module)
-
-
 def _relative_error(approx: torch.Tensor, original: torch.Tensor) -> float:
     denom = torch.linalg.norm(original)
     if denom == 0:
@@ -160,7 +154,7 @@ def decompose_model(model: nn.Module, config: LowRankConfig) -> dict:
         new_layer = decompose_layer(module, rank)
         errors.append(_relative_error(new_layer.reconstruct(), module.weight.detach()))
         layers.append((name, rank))
-        _replace_module(model, name, new_layer)
+        replace_module(model, name, new_layer)
 
     if not layers:
         raise ValueError("decompose_model: target_modules matched no nn.Linear layers.")

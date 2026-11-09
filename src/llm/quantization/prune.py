@@ -27,6 +27,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
+from llm.quantization._module_utils import replace_module
+
 
 def _validate_ratio(ratio: float) -> float:
     if not 0.0 < ratio < 1.0:
@@ -139,15 +141,6 @@ def _compute_mask(weight: torch.Tensor, config: PruningConfig) -> torch.Tensor:
     return _random_mask(weight, config.ratio, config.random_seed)
 
 
-def _replace_module(parent: nn.Module, name: str, new_module: nn.Module) -> None:
-    """Replace a child module by dotted name (getattr/setattr traversal)."""
-    parts = name.split(".")
-    obj = parent
-    for part in parts[:-1]:
-        obj = getattr(obj, part)
-    setattr(obj, parts[-1], new_module)
-
-
 def supports_pruning(model: nn.Module) -> bool:
     """Whether the model has any ``nn.Linear`` (prunable) layer."""
     return any(isinstance(m, nn.Linear) and not isinstance(m, PrunedLinear) for m in model.modules())
@@ -171,7 +164,7 @@ def prune_model(model: nn.Module, config: PruningConfig) -> float:
         if config.target_modules is not None and not any(tok in name for tok in config.target_modules):
             continue
         mask = _compute_mask(module.weight.detach(), config)
-        _replace_module(model, name, PrunedLinear.from_linear(module, mask, config.method))
+        replace_module(model, name, PrunedLinear.from_linear(module, mask, config.method))
         pruned_any = True
 
     if not pruned_any:
