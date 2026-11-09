@@ -31,7 +31,15 @@ def _help_text(module: str, argv: list[str]) -> str:
     import importlib
 
     app = importlib.import_module(module).app
-    result = CliRunner().invoke(app, [*argv, "--help"])
+    # Rich wraps help text to the terminal width and TRUNCATES an option name
+    # that does not fit (``--model`` renders as ``--mod…`` when narrow). The
+    # width here comes from the ambient COLUMNS, which differs between a laptop,
+    # a CI runner and a piped capture — so the same app produced `--model` in
+    # one environment and `--mod…` in another, and `text.index("--model")`
+    # raised `ValueError: substring not found`. These tests compare the
+    # DESCRIPTION, not the wrapping, so pin a width wide enough to print every
+    # option name in full.
+    result = CliRunner().invoke(app, [*argv, "--help"], env={"COLUMNS": "200", "LINES": "50"})
     assert result.exit_code == 0, result.output
     return result.output
 

@@ -164,14 +164,22 @@ def _cli_flags(prefix: tuple[str, ...]) -> set[str]:
     cache a doc with ~100 annotated lines issued several hundred subprocesses and
     the test took 43s — by far the slowest in the CPU gate.
     """
+    import os
     import subprocess
 
+    # Rich truncates an option name to fit the terminal (``--config-path`` renders
+    # as ``--con…`` at 40 columns), and the parent's COLUMNS is not inherited in
+    # a way this test can rely on — on CI it rendered narrow and every
+    # documented long flag "did not exist". Pin the width so the flags are
+    # printed in full; this reads the CLI, it does not test its wrapping.
+    env = {**os.environ, "COLUMNS": "200", "LINES": "50"}
     result = subprocess.run(  # noqa: S603 — argv is built from internal constants, not user input
         ["uv", "run", "--frozen", "llm", *prefix, "--help"],  # noqa: S607 — `uv` comes from PATH by design
         capture_output=True,
         text=True,
         timeout=_CLI_TIMEOUT,
         check=False,
+        env=env,
     )
     assert result.returncode == 0, f"`llm {' '.join(prefix)} --help` failed:\n{result.stderr[-800:]}"
     return set(re.findall(r"(--[a-z][a-z0-9-]+)", result.stdout))

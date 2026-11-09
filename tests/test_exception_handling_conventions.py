@@ -33,7 +33,10 @@ _SILENT_EXCEPTION_ALLOWLIST: dict[str, str] = {}
 def _handlers() -> list[tuple[pathlib.Path, ast.ExceptHandler, list[str]]]:
     out: list[tuple[pathlib.Path, ast.ExceptHandler, list[str]]] = []
     for path in sorted(_SRC.rglob("*.py")):
-        text = path.read_text()
+        # UTF-8 is stated explicitly: the default is platform-dependent, and
+        # on Windows (cp1252) reading a source file containing a non-ASCII
+        # byte raised UnicodeDecodeError, failing the whole scan.
+        text = path.read_text(encoding="utf-8")
         try:
             tree = ast.parse(text)
         except SyntaxError:  # pragma: no cover - the package must parse anyway
