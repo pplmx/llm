@@ -695,6 +695,7 @@ class TestPruningIntegration:
        correspond to the largest post-training magnitudes.
     """
 
+    @pytest.mark.heavy
     def test_prune_keeps_components_whose_magnitude_grew(self):
         torch.manual_seed(0)
         model = nn.Sequential(nn.Linear(32, 64), nn.ReLU(), nn.Linear(64, 16))

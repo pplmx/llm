@@ -486,8 +486,21 @@ class TestDocumentedYamlBlocksValidate:
     def test_every_documented_config_block_validates(self) -> None:
         from pydantic import ValidationError
 
+        from tests.support.devices import cuda_device_count
+
+        available_gpus = cuda_device_count()
         problems: list[str] = []
+        skipped_for_gpus = 0
         for path, parsed in self._blocks():
+            # A block that pins a GPU count above this host's is NOT invalid: it
+            # documents a multi-GPU run, and ``DistributedConfig`` correctly
+            # refuses it at load time on a smaller machine. Validating it here
+            # turned "this box has 0 GPUs" into a docs defect, so the block is
+            # exercised only where the hardware it describes exists.
+            requested_gpus = (parsed.get("distributed") or {}).get("gpus_per_node")
+            if isinstance(requested_gpus, int) and requested_gpus > available_gpus:
+                skipped_for_gpus += 1
+                continue
             try:
                 Config(**parsed)
             except ValidationError as exc:
@@ -500,4 +513,9 @@ class TestDocumentedYamlBlocksValidate:
         assert not problems, (
             "documented YAML blocks that do not pass the real validators "
             "(a copy-paste reader would hit this):\n  " + "\n  ".join(problems)
+        )
+        # Guard against the GPU filter above silently excusing every block: at
+        # least some documented configs must have been validated for real.
+        assert len(problems) + skipped_for_gpus < len(self._blocks()), (
+            "no documented config block was actually validated — the GPU filter excused all of them"
         )

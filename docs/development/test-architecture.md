@@ -40,6 +40,43 @@ slow full-suite gate still runs (just not on every push).
 Markers are registered in `tests/conftest.py::pytest_configure` and the
 per-marker counts live in AGENTS.md.
 
+### Unmarked tests are CPU tests
+
+The absence of a marker is a claim, not a default: **an unmarked test must pass
+on a CPU-only host and must not spend more than ~2 s there**. Both halves of
+that claim were being broken, and neither showed up in CI because the dev boxes
+have GPUs:
+
+- Six tests ran **>7 s each on CPU** (59 s, 23 s, 19 s, 19 s, 15 s, 12 s) with no
+  `heavy` marker, so `just test-fast` paid for them on every run. Any test over
+  30 s belongs in `heavy` per the table above; the two end-to-end training runs
+  in that group (ASR transcription, decoder overfitting) are resource tests by
+  construction. Marking them cut the CPU gate from **450 s to 299 s** without
+  dropping a single assertion from the suite — they still run in `just test` /
+  `just test-heavy`.
+- A test that only *happens* to pass on CPU is not a CPU test. Anything that
+  allocates CUDA tensors, asserts on multi-GPU structure, or trains to
+  convergence on hardware the host may not have needs a `gpu`-family marker so
+  the collection hook can skip it by hardware, not by luck.
+
+### Hardware-dependent assertions vs. genuine defects
+
+A test may also fail on a small host without being broken in any useful sense:
+it asserts something that is only *true* on adequate hardware. Two shipped
+checks did this — `TestDocumentedYamlBlocksValidate` and
+`test_shipped_training_configs_all_load` both feed every documented / shipped
+YAML through the real `Config` validators, and a block pinning
+`distributed.gpus_per_node: 4` is **correctly** rejected on a 0-GPU machine
+(`DistributedConfig` promises what it can verify). Failing there reads as a
+docs bug while the actual condition is "this host cannot run the thing the
+snippet documents".
+
+Those two now skip the block (with a stated reason) when it requests more GPUs
+than the host has, and each carries an anti-vacuity assertion so the filter
+cannot silently excuse every block. This is the place to exercise a GPU-count
+guard: **the validator must still reject a too-large request on a host that has
+the GPUs**, which the `gpu`-marked runs cover.
+
 ## GPU handling (the "how to run without a GPU" contract)
 
 The GPU strategy is a strict fallback ladder. Each test falls into exactly one
@@ -99,7 +136,7 @@ multi-rank NCCL.
 | Recipe          | Marker selection                                    | Use                                          |
 | --------------- | --------------------------------------------------- | -------------------------------------------- |
 | `test-quick`    | `quick`                                             | < 1 min iterative smoke                      |
-| `test-fast`     | `not heavy/e2e/gpu/multi_gpu/need_gpu/full_cluster` | CPU-clean daily dev gate (~7 min)            |
+| `test-fast`     | `not heavy/e2e/gpu/multi_gpu/need_gpu/full_cluster` | CPU-clean daily dev gate (~5 min)            |
 | `test-cov-fast` | same as `test-fast` + coverage                      | **per-push CI gate** (`--cov-fail-under=77`) |
 | `test`          | all markers                                         | full suite on a GPU host                     |
 | `test-gpu`      | `gpu OR multi_gpu OR need_gpu OR full_cluster`      | GPU-only, on a GPU host / self-hosted runner |
@@ -133,7 +170,7 @@ failures and hardens the whole CLI-help family.
 ## Runtime optimization
 
 - Full suite was 6 h (CI timeout) → now ~15 min (perf work).
-- The per-push core gate (`test-cov-fast`) runs in ~7 min with coverage, so CI
+- The per-push core gate (`test-cov-fast`) runs in ~5 min with coverage, so CI
   gives fast green/red on every push.
 - GPU tests isolated into `test-gpu` so they only tax GPU hosts and can be
   scheduled independently.

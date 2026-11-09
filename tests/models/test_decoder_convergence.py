@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -5,6 +6,7 @@ import torch.optim as optim
 from llm.models.decoder import DecoderModel
 
 
+@pytest.mark.heavy
 def test_decoder_overfits_single_sequence():
     """Requirement: DecoderModel can overfit a tiny repeating sequence."""
     torch.manual_seed(42)

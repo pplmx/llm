@@ -254,6 +254,7 @@ def test_awq_search_per_channel_group_mode():
     assert (scale > 0).all()
 
 
+@pytest.mark.heavy
 def test_search_scale_matches_sequential_sweep():
     """The vectorized `_search_scale` must pick EXACTLY the same per-channel
     scale as the original sequential per-candidate sweep (the refactor's

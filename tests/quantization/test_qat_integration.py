@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -64,6 +65,7 @@ def test_training_config_rejects_invalid_qat_bits():
             raise AssertionError(f"qat_bits={bad} should have been rejected")
 
 
+@pytest.mark.heavy
 def test_qat_engine_trains_with_finite_loss():
     """Single-rank QAT engine run stays finite (integration).
 

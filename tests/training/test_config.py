@@ -272,14 +272,29 @@ class TestConfig:
 
         import yaml
 
+        from tests.support.devices import cuda_device_count
+
+        available_gpus = cuda_device_count()
         configs_dir = pathlib.Path(__file__).resolve().parents[2] / "configs"
         checked = 0
+        skipped_for_gpus: list[str] = []
         for path in sorted(configs_dir.glob("*.yaml")):
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             if {"model_path", "tokenizer_path", "host", "api_key"} & set(raw):
                 continue  # serving schema, covered by ServingConfig
+            # A shipped config that pins a GPU count above this host's is not
+            # broken — it documents a multi-GPU run, and ``DistributedConfig``
+            # correctly refuses it here. Requiring it to load on a 0-GPU box
+            # turned the host's hardware into a config defect.
+            requested_gpus = (raw.get("distributed") or {}).get("gpus_per_node")
+            if isinstance(requested_gpus, int) and requested_gpus > available_gpus:
+                skipped_for_gpus.append(path.name)
+                continue
             Config.from_yaml(path)
             checked += 1
+        assert not skipped_for_gpus or checked >= 10, (
+            f"the GPU filter left too few configs to check: checked={checked}, skipped={skipped_for_gpus}"
+        )
         assert checked >= 10, f"expected to check the shipped training configs, only saw {checked}"
 
     def test_log_level_validated_at_config_load(self):

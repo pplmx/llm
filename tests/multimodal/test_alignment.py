@@ -91,6 +91,7 @@ def _train_aligner(aligner, steps: int = 200, lr: float = 1e-2, seed: int = 0) -
     return loss.detach().item(), hits
 
 
+@pytest.mark.heavy
 def test_aligner_info_nce_training_retrieval_reaches_one():
     """Symmetric InfoNCE over random paired data: loss drops and image->text
     top-1 retrieval rises to 1 — the alignment is actually learned."""

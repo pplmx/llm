@@ -279,6 +279,7 @@ def _transcribe_held_out(engine, *, vocab: int, resp_len: int, inst_len: int, n_
     return (pred == held_out.to(device)).float().mean().item()
 
 
+@pytest.mark.heavy
 def test_asr_e2e_trainable_audio_tower_and_decoder_transcribe_heldout_audio():
     """End-to-end: a trainable audio tower + decoder learn to **transcribe**
     audio into text, and greedy-decode a held-out (never-trained) random
