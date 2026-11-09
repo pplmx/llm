@@ -194,7 +194,7 @@ class TokenizerFactory:
         sidecar file, so resolve it through the same path helper the checkpoint
         loader uses and look in that directory.
         """
-        from llm.training.core.checkpoint import _resolve_checkpoint_paths
+        from llm.checkpoint.format import _resolve_checkpoint_paths
 
         try:
             legacy, *_ = _resolve_checkpoint_paths(model_path)

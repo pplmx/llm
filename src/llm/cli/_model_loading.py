@@ -62,7 +62,7 @@ def load_trained_model(model_path: str | Path) -> nn.Module:
 
     # Lazy imports: these pull in the training stack, which the CLI should
     # only pay for on the code paths that need it.
-    from llm.training.core.checkpoint import load_checkpoint_payload
+    from llm.checkpoint import load_checkpoint_payload
 
     try:
         payload = load_checkpoint_payload(path)
@@ -141,7 +141,7 @@ def checkpoint_exists(model_path: str | Path) -> bool:
         # falling through to the sidecar probe (which would produce a
         # confusing "does not exist" for a path that plainly does).
         return False
-    from llm.training.core.checkpoint import _resolve_checkpoint_paths
+    from llm.checkpoint.format import _resolve_checkpoint_paths
 
     _, safetensors_path, meta_path, extra_state_path = _resolve_checkpoint_paths(path)
     return any(p.is_file() for p in (safetensors_path, meta_path, extra_state_path))

@@ -38,7 +38,7 @@ from pathlib import Path
 import torch
 import typer
 
-from llm.training.core.checkpoint import (
+from llm.checkpoint import (
     CheckpointMigrationError,
     convert_legacy_checkpoint_to_split,
 )

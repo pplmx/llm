@@ -50,6 +50,10 @@ src/llm/
 │   └── transformer_block.py
 ├── models/                 # Complete model architectures
 │   └── decoder.py         # Decoder-only transformer
+├── checkpoint/            # On-disk checkpoint format (training-agnostic)
+│   ├── format.py          # v2 split layout read/write, legacy detection, migration
+│   ├── manager.py         # CheckpointManager: retention, best-loss, epoch snapshots
+│   └── errors.py          # CheckpointIncompleteError / CheckpointMigrationError
 ├── training/              # Training infrastructure
 │   ├── core/              # Engine, callbacks, config
 │   └── tasks/             # Task-specific trainers (LM, SFT)

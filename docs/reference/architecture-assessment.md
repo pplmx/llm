@@ -135,11 +135,28 @@ from llm.models.config import ModelConfig  # noqa: E402
 | `runtime → training` (残留 1)   | `tokenizer_factory` 内部用 `training.core.checkpoint._resolve_checkpoint_paths`，同源 |
 | `multimodal → training` (1)     | **合理**。`MultimodalTask` 是 `LanguageModelingTask` 子类，任务本就是训练抽象         |
 
-### 还有一项未做：checkpoint 读取的归属
+### checkpoint 拆分：已执行（授权大规模重构后）
 
-`training/core/checkpoint.py`（1088 行）里的 `load_checkpoint_payload` 和 `_resolve_checkpoint_paths` 只做**读文件 + 解析布局**，不含训练逻辑，却被 `serving/loader`、`runtime/tokenizer_factory`、`cli/_model_loading` 引用。它们应该和 `compat/` 的权重加载归在一起，或独立成 `checkpoint/` 层。
+用户在评估完成后授权大规模重构，原先留作"下一轮"的 checkpoint 归属问题已落地。
 
-做完后 `serving → training` 与 `runtime → training` 的残留也会归零。规模比 `ModelConfig` 小（2 个函数），但涉及面类似，是下一轮的独立项。
+`training/core/checkpoint.py`（1088 行）混装了两件互不相干的事：
+
+| 内容                                                      | 行数 | 受众                                                 |
+| --------------------------------------------------------- | ---- | ---------------------------------------------------- |
+| v2 文件格式读写、legacy 检测、迁移                        | ~604 | serving / runtime / cli / training（都只是读写文件） |
+| `CheckpointManager`（retention / best-loss / epoch 快照） | ~386 | 只有 training                                        |
+
+拆成 `src/llm/checkpoint/`：
+
+- `format.py` — 文件格式层，**零 training 依赖**（已用 grep 验证）
+- `manager.py` — 训练侧管理器，依赖 `training.core.config` 和 `training.distributed`，方向正确（训练组件依赖训练配置）
+- `errors.py` — 两个异常类型，两侧共用
+
+`training/core/checkpoint.py` 变成 40 行门面，重导出全部公开符号（含历史上隐式暴露的 `CheckpointConfig`）。这与仓库既有的 `training/core/utils.py` shim 模式一致。
+
+**结果**：`serving`、`runtime`、`export`、`data` 对 `training` 的依赖**全部归零**（这些层现在从 `llm.checkpoint` 导入）。`multimodal → training` 保留，因为 `MultimodalTask` 确实是 `LanguageModelingTask` 的子类——任务就是训练抽象。
+
+这是本轮唯一一次真正的"大规模"移动，规模：新建 3 个模块、原文件从 1088 行降到 40 行、改 5 处导入、1 处测试 patch 目标。
 
 ## 附：本次评估的局限
 

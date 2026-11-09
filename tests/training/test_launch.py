@@ -260,7 +260,10 @@ def test_failed_checkpoint_save_leaves_no_partial_files(tmp_path):
     half-written ``.tmp`` sitting beside a good trio is how a later debug
     session mistakes garbage for a checkpoint (and how disk fills up silently).
     """
-    import llm.training.core.checkpoint as checkpoint_module
+    # Patch the manager's binding, not ``format``'s: ``manager`` imports the
+    # helper by name, so rebinding it in ``llm.checkpoint.format`` would not
+    # affect the call site.
+    import llm.checkpoint.manager as checkpoint_module
     from llm.models.decoder import DecoderModel
     from llm.training.core.checkpoint import CheckpointConfig, CheckpointManager
 
