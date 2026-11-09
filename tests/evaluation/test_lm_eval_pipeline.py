@@ -6,10 +6,20 @@ Covers:
 - Built-in presets (``MMLU_PRESET``, ``ARCEASY_PRESET``, ``WIKITEXT_PRESET``)
 - :func:`get_preset` lookup + unknown-name error
 - :meth:`LmEvalAdapter.summarize` flattening of the nested result shape
+- :class:`LlamaLmEvalLM` against a fake model: loglikelihood arithmetic,
+  batching, device binding, and the stop-sequence handling
+- :class:`LmEvalAdapter`'s preset/kwargs glue around the upstream evaluator
 - Soft-dependency contract: ``LlamaLmEvalLM`` and ``LmEvalAdapter``
   raise a clear ``ImportError`` with the install hint when ``lm_eval``
   is missing (verified by monkey-patching the module-level
   ``LM_EVAL_AVAILABLE`` flag).
+
+Everything above runs in every environment: ``lm_eval`` is a gate the
+adapters check with ``find_spec`` and then ``import_module``, never an API
+surface whose implementation this project consumes, so the tests register
+stand-in ``lm_eval`` modules rather than skipping on a host without the
+optional ``[eval]`` extra. Skipping would leave the adapters' real logic
+unexecuted on CI, which is exactly where a regression would hide.
 """
 
 from __future__ import annotations
@@ -24,6 +34,76 @@ from llm.evaluation.harness.presets import (
     EvalPreset,
     get_preset,
 )
+
+# --- fake ``lm_eval`` so the adapter's real code path can run -------------
+
+
+def _install_fake_lm_eval(monkeypatch):
+    """Register a stand-in ``lm_eval`` package for the duration of a test.
+
+    ``pytest.importorskip("lm_eval")`` skipped every adapter test on a host
+    without the optional ``[eval]`` extra, even though the package is only a
+    *gate*: ``LlamaLmEvalLM.__init__`` imports ``lm_eval.api.model`` and
+    **discards the result**, and every request object reaching the adapter is
+    duck-typed by the caller. The rest of the surface the code touches is
+    ``lm_eval.tasks.TaskManager`` and ``lm_eval.evaluator.evaluate`` — both
+    resolved through ``import_module`` at call time, so empty modules are
+    enough to execute the real logic (loglikelihood arithmetic, device binding,
+    stop handling, preset kwargs merging) everywhere.
+
+    Registers the full set of modules the code lazily imports and binds each
+    child to its parent the way the import machinery would, then flips both
+    availability flags (they are computed from ``find_spec`` at import time).
+    Returns the registered module objects so a test can attach the fakes it
+    needs without re-deriving them.
+
+    Each module carries a real ``__spec__`` because the packages probe with
+    ``importlib.util.find_spec``.
+    """
+    import importlib.machinery
+    import sys
+    import types
+
+    modules: dict[str, types.ModuleType] = {}
+    for name, is_package in (
+        ("lm_eval", True),
+        ("lm_eval.api", True),
+        ("lm_eval.api.model", False),
+        ("lm_eval.tasks", False),
+        ("lm_eval.evaluator", False),
+    ):
+        module = types.ModuleType(name)
+        module.__spec__ = importlib.machinery.ModuleSpec(name, None, is_package=is_package)
+        if is_package:
+            module.__path__ = []
+        monkeypatch.setitem(sys.modules, name, module)
+        modules[name] = module
+
+    # ``import lm_eval.tasks`` resolves a submodule through its parent package's
+    # attributes, so the children have to be bound there too.
+    modules["lm_eval"].api = modules["lm_eval.api"]
+    modules["lm_eval.api"].model = modules["lm_eval.api.model"]
+    modules["lm_eval"].tasks = modules["lm_eval.tasks"]
+    modules["lm_eval"].evaluator = modules["lm_eval.evaluator"]
+
+    # Both flags are computed at import time, so they have to be refreshed
+    # after the fake modules are in place — otherwise ``_require_lm_eval()``
+    # still rejects the host as if the package were missing.
+    from llm.evaluation.harness import adapter, lm_eval_lm
+
+    monkeypatch.setattr(lm_eval_lm, "LM_EVAL_AVAILABLE", True)
+    monkeypatch.setattr(adapter, "LM_EVAL_AVAILABLE", True)
+    return modules
+
+
+@pytest.fixture
+def lm_eval_lm_with_fake_dependency(monkeypatch):
+    """The adapter module, usable without the real ``lm_eval`` package."""
+    _install_fake_lm_eval(monkeypatch)
+    from llm.evaluation.harness import lm_eval_lm
+
+    return lm_eval_lm
+
 
 # --- EvalPreset dataclass ---------------------------------------------------
 
@@ -408,9 +488,8 @@ class _CountingModel(_FakeModel):
         return super().__call__(input_ids, use_cache)
 
 
-def test_lm_eval_lm_init_with_fake_model():
+def test_lm_eval_lm_init_with_fake_model(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """``LlamaLmEvalLM`` initializes and binds to the model's device."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     assert lm.batch_size == 2
     assert lm.max_length == _FakeModel.max_seq_len
@@ -418,8 +497,26 @@ def test_lm_eval_lm_init_with_fake_model():
     assert lm.tokenizer is not None
 
 
-def test_lm_eval_lm_loglikelihood_returns_one_tuple_per_request():
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+def test_lm_eval_lm_init_honours_an_explicit_device(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
+    """An explicit ``device`` must win over the model's parameter device.
+
+    ``device=None`` means "follow the model", and the sibling test above only
+    covers that arm. Silently overwriting a caller-supplied device would put
+    the input tensors and the weights on different devices and fail at the
+    first forward with a message naming neither.
+    """
+    lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), device="cpu")
+    assert lm.device == torch.device("cpu")
+
+
+def test_lm_eval_lm_init_accepts_a_torch_device(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
+    """Already-built ``torch.device`` objects are used as-is, not re-wrapped."""
+    device = torch.device("cpu")
+    lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), device=device)
+    assert lm.device is device
+
+
+def test_lm_eval_lm_loglikelihood_returns_one_tuple_per_request(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     requests = [
         _FakeRequest(("hello", "world")),
@@ -432,9 +529,8 @@ def test_lm_eval_lm_loglikelihood_returns_one_tuple_per_request():
         assert isinstance(is_greedy, bool)
 
 
-def test_lm_eval_lm_loglikelihood_greedy_match_is_true_for_argmax_model():
+def test_lm_eval_lm_loglikelihood_greedy_match_is_true_for_argmax_model(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """If the model always picks the same id, ``is_greedy`` matches continuation."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=3), _FakeTokenizer(), batch_size=2)
     # Force the tokenizer to encode continuation into ids where 3 dominates
     # the model's argmax — we'll just check the *shape* of the output.
@@ -443,9 +539,8 @@ def test_lm_eval_lm_loglikelihood_greedy_match_is_true_for_argmax_model():
     assert len(out) == 1
 
 
-def test_lm_eval_lm_loglikelihood_handles_empty_continuation():
+def test_lm_eval_lm_loglikelihood_handles_empty_continuation(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """Empty continuation must not crash (guard with ``[0]`` fallback)."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     requests = [_FakeRequest(("hello", ""))]
     out = lm.loglikelihood(requests)
@@ -453,16 +548,30 @@ def test_lm_eval_lm_loglikelihood_handles_empty_continuation():
     assert isinstance(out[0][0], float)
 
 
-def test_lm_eval_lm_loglikelihood_batches_requests():
+def test_lm_eval_lm_loglikelihood_reports_a_zero_for_a_single_token_window(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
+    """A window holding one token has no predicting logit, so it scores 0.0.
+
+    Tokens are scored shift-by-one: the token at window position ``p`` is
+    predicted by logit row ``p - 1``, and row ``-1`` does not exist. When
+    ``max_length`` is 1 the truncated window is a single token, so the
+    continuation has no scorable position. The guard must report ``(0.0,
+    False)`` rather than slicing an empty tensor and either crashing or
+    returning a NaN that would poison a benchmark average.
+    """
+    lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=1, max_length=1)
+    out = lm.loglikelihood([_FakeRequest(("hello", "world"))])
+    assert out == [(0.0, False)]
+
+
+def test_lm_eval_lm_loglikelihood_batches_requests(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """Batching must not drop or reorder results."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2, max_length=64)
     requests = [_FakeRequest((f"context_{i}", "cont")) for i in range(5)]
     out = lm.loglikelihood(requests)
     assert len(out) == 5
 
 
-def test_lm_eval_lm_loglikelihood_continuation_longer_than_max_length():
+def test_lm_eval_lm_loglikelihood_continuation_longer_than_max_length(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """Regression: a continuation longer than ``max_length``
     must not overflow the truncated slice.
 
@@ -472,7 +581,6 @@ def test_lm_eval_lm_loglikelihood_continuation_longer_than_max_length():
     truncated ``full`` — ``torch.arange(cont_len)`` then indexed a shorter
     tensor and raised ``IndexError: indexing tensors could not be broadcast
     together with shapes [20], [16]`` (the exact repro below)."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=1, max_length=16)
     # 20 continuation tokens + 3 context tokens: the window truncates to 16
     # tokens entirely from the continuation, so ctx_len == 0.
@@ -483,9 +591,8 @@ def test_lm_eval_lm_loglikelihood_continuation_longer_than_max_length():
     assert isinstance(out[0][1], bool)
 
 
-def test_lm_eval_lm_loglikelihood_rolling_short_input():
+def test_lm_eval_lm_loglikelihood_rolling_short_input(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """Inputs shorter than 2 tokens yield ``0.0`` rather than crashing."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     requests = [_FakeRequest(("a",)), _FakeRequest(("bb",))]
     out = lm.loglikelihood_rolling(requests)
@@ -494,14 +601,34 @@ def test_lm_eval_lm_loglikelihood_rolling_short_input():
     assert isinstance(out[1], float)
 
 
-def test_lm_eval_lm_loglikelihood_rolling_returns_list_of_floats():
+def test_lm_eval_lm_loglikelihood_rolling_single_token_windows_still_score_every_token(
+    lm_eval_lm_with_fake_dependency,  # noqa: ARG001
+):
+    """``max_length=1`` makes every window hold a single token.
+
+    Each window then scores zero tokens (``target_ids`` is empty) and the loop
+    breaks instead of spinning forever, so the reported sum is exactly ``0.0``
+    — the honest answer, since no token has a predicting logit. The point is
+    that the degenerate configuration terminates; a loop that kept advancing
+    ``start`` would still terminate here, but one that did not would hang, and
+    a negative or NaN sum would corrupt the downstream word-perplexity.
+    """
+    tokenizer = _FakeTokenizer()
+    ids = tokenizer.encode("hello!")
+    assert len(ids) > 1, "the fixture must produce a multi-token doc"
+
+    lm = LlamaLmEvalLM(_FakeModel(), tokenizer, batch_size=1, max_length=1)
+    out = lm.loglikelihood_rolling([_FakeRequest(("hello!",))])
+    assert out == [0.0]
+
+
+def test_lm_eval_lm_loglikelihood_rolling_returns_list_of_floats(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """``loglikelihood_rolling`` must return ``list[float]`` per lm_eval protocol.
 
     WikiText perplexity downstream does ``(loglikelihood,) = results``
     — if we returned 1-tuples, that unpacking would yield a tuple
     instead of a float and corrupt the metric tuple.
     """
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(), _FakeTokenizer(), batch_size=2)
     requests = [_FakeRequest(("hello",)), _FakeRequest(("world!",))]
     out = lm.loglikelihood_rolling(requests)
@@ -512,7 +639,7 @@ def test_lm_eval_lm_loglikelihood_rolling_returns_list_of_floats():
         assert not isinstance(v, tuple)
 
 
-def test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc():
+def test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """rolling perplexity must score the WHOLE document, not just
     the first ``max_length`` tokens.
 
@@ -523,7 +650,6 @@ def test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc():
     must equal ``-(len(ids) - 1) * ln(vocab)`` — proving all tokens beyond
     the first window were scored too.
     """
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     import math
 
     tokenizer = _FakeTokenizer()
@@ -565,7 +691,7 @@ def test_lm_eval_lm_loglikelihood_rolling_covers_whole_long_doc():
     )
 
 
-def test_lm_eval_lm_loglikelihood_rolling_covers_final_token_at_boundary():
+def test_lm_eval_lm_loglikelihood_rolling_covers_final_token_at_boundary(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """a window boundary landing exactly on ``len(ids) - 1`` must
     not drop the final token.
 
@@ -575,7 +701,6 @@ def test_lm_eval_lm_loglikelihood_rolling_covers_final_token_at_boundary():
     len(ids) - 1``, never scoring ``ids[-1]``. Uniform-logits model: the sum
     must equal ``-(len(ids) - 1) * ln(vocab)`` (all 64 shift-targets).
     """
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     import math
 
     tokenizer = _FakeTokenizer()
@@ -611,14 +736,13 @@ def test_lm_eval_lm_loglikelihood_rolling_covers_final_token_at_boundary():
     )
 
 
-def test_lm_eval_lm_strip_stops_cuts_at_earliest_occurrence():
+def test_lm_eval_lm_strip_stops_cuts_at_earliest_occurrence(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """``_strip_stop_strings`` must cut at the EARLIEST string
     stop in the text, not the first stop in list order.
 
     lm_eval's canonical ``postprocess_generated_text`` takes ``min`` over
     stops; returning at the first list-order match retains an earlier
     delimiter in the completion."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
 
     # "ANSWER" (index 4) precedes "END" (index 14); list order must not win.
     assert LlamaLmEvalLM._strip_stop_strings("foo ANSWER bar END", ["END", "ANSWER"]) == "foo "
@@ -629,8 +753,7 @@ def test_lm_eval_lm_strip_stops_cuts_at_earliest_occurrence():
     assert LlamaLmEvalLM._strip_stop_strings("abc", []) == "abc"
 
 
-def test_lm_eval_lm_generate_until_respects_max_gen_toks():
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
+def test_lm_eval_lm_generate_until_respects_max_gen_toks(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     requests = [
         _FakeRequest(("ctx", {"until": [], "max_gen_toks": 3})),
@@ -641,9 +764,8 @@ def test_lm_eval_lm_generate_until_respects_max_gen_toks():
     assert len(lm.tokenizer.decode([1, 1, 1])) == 3
 
 
-def test_lm_eval_lm_generate_until_stops_on_until_token():
+def test_lm_eval_lm_generate_until_stops_on_until_token(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """Once ``until`` is a suffix of ``generated``, stop early."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     # Generate up to 5 tokens but stop as soon as id 1 appears twice
     # (the model always produces 1, so the suffix matches after 2 steps).
@@ -656,7 +778,7 @@ def test_lm_eval_lm_generate_until_stops_on_until_token():
     assert len(out[0]) <= 2
 
 
-def test_lm_eval_lm_generate_until_strips_token_id_stop():
+def test_lm_eval_lm_generate_until_strips_token_id_stop(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """Regression (sibling of the string-stop strip): an
     ``until`` *token-id sequence* must be cut from the returned generation
     the same way the string path is.
@@ -666,7 +788,6 @@ def test_lm_eval_lm_generate_until_strips_token_id_stop():
     decoded into the completion (string stops are stripped post-decode;
     id-sequence stops had no equivalent).
     """
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     # Model emits 1 every step; after two tokens [1,1] is a suffix stop. The
     # stop ids are the whole run, so the completion must be empty — not
@@ -675,7 +796,7 @@ def test_lm_eval_lm_generate_until_strips_token_id_stop():
     assert out == [""]
 
 
-def test_lm_eval_lm_generate_until_stops_on_hf_eos_token():
+def test_lm_eval_lm_generate_until_stops_on_hf_eos_token(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """an HF-style tokenizer whose ``decode([eos_id])`` returns
     \"\" must still halt generation the moment the model emits EOS.
 
@@ -685,7 +806,6 @@ def test_lm_eval_lm_generate_until_stops_on_hf_eos_token():
     the string guard intended to solve. The EOS is now also registered as a
     token-id-sequence stop, which is token-precise and decode-independent.
     """
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     model = _CountingModel(argmax_id=9)  # model always emits the EOS token
     lm = LlamaLmEvalLM(model, _HfLikeTokenizer(), batch_size=1, max_length=64)
     requests = [_FakeRequest(("ctx", {"until": [], "max_gen_toks": 5}))]
@@ -698,13 +818,12 @@ def test_lm_eval_lm_generate_until_stops_on_hf_eos_token():
     assert out == [""]
 
 
-def test_lm_eval_lm_generate_until_stops_on_string_until():
+def test_lm_eval_lm_generate_until_stops_on_string_until(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """Regression: lm_eval passes ``until`` as a list of
     *strings* for essentially all generation tasks, so ``generate_until``
     must stop when the *decoded* generated text ends with a string stop —
     not silently generate the full ``max_gen_toks`` (which then includes
     the delimiter and pollutes downstream exact_match/acc metrics)."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     # _FakeTokenizer.decode([1, 1]) == "\x01\x01" == the stop string.
     requests = [
@@ -717,39 +836,71 @@ def test_lm_eval_lm_generate_until_stops_on_string_until():
     assert len(out[0]) <= 2
 
 
-def test_lm_eval_lm_generate_until_strips_trailing_stop_delimiter():
+def test_lm_eval_lm_generate_until_strips_trailing_stop_delimiter(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """The returned generation must NOT retain the stop-completing token.
     Upstream lm_eval LMs run ``postprocess_generated_text`` (cut at the
     first stop occurrence) before returning; this adapter previously
     returned the raw decode, so a ``until=["\\n"]`` answer ended with a
     trailing newline and every exact_match/acc generation metric compared
     "answer\\n" against "answer" (systematically wrong)."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
     # id 1 decodes to char 1 ("\x01") — that IS the stop string.
     out = lm.generate_until([_FakeRequest(("ctx", {"until": ["\x01"], "max_gen_toks": 5}))])
     assert out == [""]
 
 
-def test_lm_eval_lm_generate_until_auto_appends_and_strips_eos():
+def test_lm_eval_lm_generate_until_auto_appends_and_strips_eos(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """lm_eval's ``handle_stop_sequences`` appends the tokenizer's EOS text
     to ``until``; the adapter must do the same so a model that emits EOS
     stops (and the returned text excludes EOS)."""
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
     lm = LlamaLmEvalLM(_FakeModel(argmax_id=9), _FakeTokenizer(), batch_size=1, max_length=64)
     # id 9 is _FakeTokenizer.eos_token_id; decode([9]) == "\t".
     out = lm.generate_until([_FakeRequest(("ctx", {"until": [], "max_gen_toks": 5}))])
     assert out == [""]
 
 
-def test_lm_eval_lm_generate_until_accepts_scalar_string_until():
+def test_lm_eval_lm_generate_until_treats_missing_until_as_no_stops(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
+    """An explicit ``until: None`` means "no stops", not "crash".
+
+    lm_eval normalizes ``None`` to ``[]`` in ``handle_stop_sequences``
+    upstream, but the adapter is also called directly (and by task configs
+    that write ``until: null``), so it must apply the same normalization
+    rather than handing ``None`` to the suffix matcher, where
+    ``for stop in None`` raises a ``TypeError`` that names nothing useful.
+    """
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _FakeTokenizer(), batch_size=1, max_length=64)
+    out = lm.generate_until([_FakeRequest(("ctx", {"until": None, "max_gen_toks": 3}))])
+    assert len(lm.tokenizer.decode([1, 1, 1])) == 3
+    assert len(out[0]) == 3, f"until=None must mean no stops, got {out!r}"
+
+
+def test_lm_eval_lm_generate_until_without_an_eos_token(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
+    """A tokenizer exposing no ``eos_token_id`` adds no EOS stop.
+
+    The adapter reads EOS defensively (``getattr``), so a plain tokenizer
+    without that attribute must still generate — reading it unguarded would
+    turn a generation task into an ``AttributeError``.
+    """
+
+    class _NoEosTokenizer:
+        def encode(self, text):
+            return [ord(c) % 16 for c in text]
+
+        def decode(self, ids):
+            return "".join(chr(int(i) % 128) for i in ids)
+
+    lm = LlamaLmEvalLM(_FakeModel(argmax_id=1), _NoEosTokenizer(), batch_size=1, max_length=64)
+    out = lm.generate_until([_FakeRequest(("ctx", {"until": [], "max_gen_toks": 3}))])
+    assert len(out[0]) == 3, f"a tokenizer without EOS must still generate, got {out!r}"
+
+
+def test_lm_eval_lm_generate_until_accepts_scalar_string_until(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """``until`` may be a scalar string (a task YAML writes
     ``until: "bc"``), not only a list. A bare ``list("bc")`` split the
     multi-char scalar into per-character stops, so ``_strip_stop_strings``
     trimmed at the FIRST occurrence of any single char anywhere in the
     completion — massively over-trimming.
     """
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
 
     class _GenTokenizer:
         # EOS decodes to 'c' — a char the argmax model never generates, so
@@ -792,7 +943,7 @@ def test_lm_eval_lm_generate_until_accepts_scalar_string_until():
     assert out == ["aaaaa"], f"scalar string until must not be split per-char, got {out!r}"
 
 
-def test_lm_eval_lm_matches_any_suffix_static_helper():
+def test_lm_eval_lm_matches_any_suffix_static_helper(lm_eval_lm_with_fake_dependency):  # noqa: ARG001
     """Static helper should recognise list-based stop sequences."""
     assert LlamaLmEvalLM._matches_any_suffix([1, 2, 3], [[2, 3]]) is True
     assert LlamaLmEvalLM._matches_any_suffix([1, 2, 3], [[4]]) is False
@@ -815,11 +966,9 @@ def test_lm_eval_lm_matches_any_suffix_static_helper():
 # - defaults to ``["mmlu"]`` when no tasks are given,
 # - runs end-to-end via the standalone ``run_preset()`` helper.
 #
-# We use ``unittest.mock`` to replace the names looked up by the
-# adapter's lazy ``from lm_eval.X import Y`` statements — that way we
-# don't need a real TaskManager/evaluator in the test process.
-
-from unittest.mock import patch  # noqa: E402
+# We register stand-in ``lm_eval`` modules for the names the adapter resolves
+# lazily — that way we don't need a real TaskManager/evaluator in the test
+# process, and these tests run in every environment.
 
 import llm.evaluation.harness.adapter as adapter_module  # noqa: E402
 
@@ -840,18 +989,17 @@ class _FakeEvaluator:
 
 
 @pytest.fixture
-def mocked_lm_eval():
-    """Patch the lazy ``from lm_eval.X import Y`` lookups in adapter.py.
+def mocked_lm_eval(monkeypatch):
+    """Stub the ``lm_eval`` surface ``LmEvalAdapter`` resolves at call time.
 
-    ``lm_eval.evaluator`` is not a real attribute on the top-level
-    ``lm_eval`` package (it's loaded lazily by callers), so we set
-    ``create=True`` to make ``unittest.mock.patch`` accept the
-    attribute as a fresh name. ``TaskManager`` exists, so it can be
-    patched normally.
+    ``import_module("lm_eval.tasks").TaskManager()`` and the
+    ``lm_eval.evaluator.evaluate`` lookup both go through the fake package
+    installed by :func:`_install_fake_lm_eval`.
     """
-    pytest.importorskip("lm_eval", reason="lm_eval is an optional eval dependency")
-    with patch("lm_eval.tasks.TaskManager", _FakeTaskManager), patch("lm_eval.evaluator", _FakeEvaluator, create=True):
-        yield
+    modules = _install_fake_lm_eval(monkeypatch)
+    modules["lm_eval.tasks"].TaskManager = _FakeTaskManager
+    modules["lm_eval.evaluator"].evaluate = _FakeEvaluator.evaluate
+    return modules
 
 
 def test_lm_eval_adapter_init_with_mocked_lm_eval(mocked_lm_eval):  # noqa: ARG001

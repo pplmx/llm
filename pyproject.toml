@@ -199,13 +199,20 @@ tests = ["tests", "*/llm/tests"]
 
 [tool.coverage.report]
 # Measured coverage for the ``just test-cov-fast`` marker set on a CPU-only
-# host with no GPU: 83.88% total. The remaining gap is dominated by paths the
+# host with no GPU: 85.15% total. The remaining gap is dominated by paths the
 # CPU run cannot reach — ``training/distributed/tensor_parallel.py`` (8.94%),
 # ``training/distributed/pp_tp.py`` (9.14%), ``training/distributed/pipeline.py``
-# (17.46%), ``core/attn/flash_attn.py`` (17.69%), ``evaluation/harness/lm_eval_lm.py``
-# (18.85%, optional dep), ``training/distributed/zero.py`` (21.05%). Those need a
-# multi-GPU runner or the optional dependency, not more unit tests, so the bar
-# sits comfortably below the measured value rather than pinning it exactly.
+# (17.46%), ``core/attn/flash_attn.py`` (17.69%), ``training/distributed/zero.py``
+# (21.05%). Those need a multi-GPU runner, not more unit tests, so the bar sits
+# comfortably below the measured value rather than pinning it exactly.
+#
+# ``evaluation/harness/lm_eval_lm.py`` used to be on that list at 18.85%
+# "(optional dep)". It is not an unreachable path: ``lm_eval`` is a gate the
+# adapter checks with ``find_spec`` and then imports-and-discards, so the tests
+# register stand-in ``lm_eval`` modules and the module now measures 98.46% on
+# this same CPU-only set. A soft dependency is only a reason to skip a host,
+# not a reason to leave the code underneath unexecuted on CI.
+#
 # Raise ``fail_under`` as Tier 3 work adds GPU CI runners (Tier 3 #1) or marks
 # CUDA-only paths with the ``gpu`` marker so they skip cleanly instead of
 # failing. The numbers above are from the marker set in ``Justfile``'s
