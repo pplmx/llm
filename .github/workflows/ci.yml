@@ -27,6 +27,13 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
+                    # setup-uv's default cache key glob is
+                    # ``**/*requirements*.txt``; this repo has no such file, so
+                    # the key was constant and the cache could never be
+                    # invalidated by a dependency change (and a stale key
+                    # silently reuses an unrelated tree). ``uv.lock`` is the
+                    # actual dependency fingerprint here.
+                    cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
                 run: uv lock --check
@@ -61,6 +68,13 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
+                    # setup-uv's default cache key glob is
+                    # ``**/*requirements*.txt``; this repo has no such file, so
+                    # the key was constant and the cache could never be
+                    # invalidated by a dependency change (and a stale key
+                    # silently reuses an unrelated tree). ``uv.lock`` is the
+                    # actual dependency fingerprint here.
+                    cache-dependency-glob: uv.lock
             -   name: Synchronize Dependencies
                 run: uv sync --frozen
             -   name: Run doctests
@@ -82,6 +96,13 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
+                    # setup-uv's default cache key glob is
+                    # ``**/*requirements*.txt``; this repo has no such file, so
+                    # the key was constant and the cache could never be
+                    # invalidated by a dependency change (and a stale key
+                    # silently reuses an unrelated tree). ``uv.lock`` is the
+                    # actual dependency fingerprint here.
+                    cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
                 run: uv lock --check
@@ -126,6 +147,13 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
+                    # setup-uv's default cache key glob is
+                    # ``**/*requirements*.txt``; this repo has no such file, so
+                    # the key was constant and the cache could never be
+                    # invalidated by a dependency change (and a stale key
+                    # silently reuses an unrelated tree). ``uv.lock`` is the
+                    # actual dependency fingerprint here.
+                    cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
                 run: uv lock --check
@@ -165,12 +193,26 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
+                    # setup-uv's default cache key glob is
+                    # ``**/*requirements*.txt``; this repo has no such file, so
+                    # the key was constant and the cache could never be
+                    # invalidated by a dependency change (and a stale key
+                    # silently reuses an unrelated tree). ``uv.lock`` is the
+                    # actual dependency fingerprint here.
+                    cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
                 run: uv lock --check
 
-            -   name: Synchronize Dependencies
-                run: uv sync --frozen --no-default-groups --group security
+            # No ``uv sync`` here on purpose. Both gates are independent of the
+            # INSTALLED environment:
+            #   - pip-audit reads the requirements file exported from the lock,
+            #   - bandit is a pure static analyser over ``src/llm/``.
+            # Installing the project just to run them pulled the full dependency
+            # tree — including the CUDA torch stack, ~2.7 GiB of NVIDIA wheels
+            # that a GPU-less runner can never use — and cost ~8 min of the job.
+            # ``uvx`` fetches only the pinned tool, so the job now spends its
+            # time auditing instead of downloading.
 
             -   name: Audit locked dependencies (pip-audit)
                 # Strict: any known CVE in the lockfile fails the build.
@@ -184,14 +226,13 @@ jobs:
                 # pip-audit exit 1 with "Dependency not found on PyPI: llm"
                 # on every run.
                 run: |
-                    uv export --frozen --no-hashes -o /tmp/requirements.txt
-                    grep -v '^-e \.' /tmp/requirements.txt > /tmp/audit-requirements.txt
-                    uv run pip-audit -r /tmp/audit-requirements.txt --strict
+                    uv export --frozen --no-hashes --no-emit-project -o /tmp/audit-requirements.txt
+                    uvx --from 'pip-audit>=2.10.1' pip-audit -r /tmp/audit-requirements.txt --strict
 
             -   name: Static security analysis (bandit)
                 # High+ severity findings fail the build. Lower severities
                 # are reported as warnings.
-                run: uv run bandit -r src/llm/ --severity-level high
+                run: uvx --from 'bandit>=1.9.4' bandit -r src/llm/ --severity-level high
 
     docs:
         runs-on: ubuntu-latest
@@ -204,6 +245,13 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
+                    # setup-uv's default cache key glob is
+                    # ``**/*requirements*.txt``; this repo has no such file, so
+                    # the key was constant and the cache could never be
+                    # invalidated by a dependency change (and a stale key
+                    # silently reuses an unrelated tree). ``uv.lock`` is the
+                    # actual dependency fingerprint here.
+                    cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
                 run: uv lock --check
