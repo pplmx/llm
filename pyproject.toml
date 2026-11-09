@@ -48,7 +48,7 @@ dependencies = [
 dev = [
   {include-group = "test"},
   "hypothesis>=6.169.1",
-  "setuptools>=84.0.0",  # bumped: PYSEC-2026-3447 fix in 83.0.0
+  "setuptools>=84.2.1",  # floor is the version that clears PYSEC-2026-3447 and the 2026-11 audit findings
   "ruff>=0.16.1",
   "ty>=0.0.87",
 ]
@@ -63,7 +63,7 @@ test = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "tornado>=6.5.10",  # bumped: PYSEC-2026-3928 + GHSA-* (transitive via ipykernel) fixed in 6.5.8/6.5.9
+    "tornado>=6.6",  # floor is the version that clears the 2026-11 audit findings (CVE-2026-116578 et al.)
 ]
 docs = [
     "mkdocs-material>=9.7.7",
