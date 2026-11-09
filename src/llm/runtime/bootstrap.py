@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import threading
 
-from llm.runtime import model_factory
-from llm.runtime.model_factory import MODEL_REGISTRY
+# Import the submodule directly rather than through the package ``__init__``.
+# ``llm/runtime/__init__.py`` imports this module, so ``from llm.runtime import
+# model_factory`` re-entered the package initialiser — it worked only because
+# the import happened to run after ``model_factory`` was already bound.
+from llm.runtime.model_factory import MODEL_REGISTRY, build_decoder, build_regression_mlp
 from llm.runtime.plugins import load_entry_point_registry
 
 _builtins_registered = False
@@ -39,8 +42,8 @@ def ensure_builtins_registered() -> None:
         if "decoder" not in MODEL_REGISTRY.names():
             # Reference built-ins always register (they are code in this
             # package, independent of entry-point metadata).
-            MODEL_REGISTRY.register("decoder", model_factory.build_decoder)
-            MODEL_REGISTRY.register("regression_mlp", model_factory.build_regression_mlp)
+            MODEL_REGISTRY.register("decoder", build_decoder)
+            MODEL_REGISTRY.register("regression_mlp", build_regression_mlp)
         if not MODEL_REGISTRY.names():
             raise RuntimeError(
                 "llm.models entry points resolved to an EMPTY registry and the code-level "

@@ -33,7 +33,7 @@ import torch.nn.functional as functional
 class TargetTokenReward(nn.Module):
     """Rule-based judge reward: 1.0 iff the last real token equals the target.
 
-    Mirrors :class:`llm.training.rlhf.aifeedback.TargetTokenJudge` as an
+    Mirrors :class:`llm.data.preference_labeling.TargetTokenJudge` as an
     ``nn.Module`` so it can act as PPO's reward model. ``forward`` follows the
     reward-model call contract ``(input_ids: [B, L], attention_mask: [B, L]) ->
     rewards: [B]``.
@@ -131,7 +131,7 @@ def _reference_kl(policy: nn.Module, reference: nn.Module, sequences: torch.Tens
 
 def _dpo_config(base: Any, target_token: int) -> tuple[Any, Any]:
     from llm.data.modules.aifeedback import AIFeedbackDataModule
-    from llm.training.rlhf.aifeedback import TargetTokenJudge
+    from llm.data.preference_labeling import TargetTokenJudge
     from llm.training.tasks.dpo_task import DPOTask
 
     module = AIFeedbackDataModule(base, judge=TargetTokenJudge(target_token=target_token))
@@ -327,7 +327,7 @@ def compare_dpo_vs_ppo(
     evaluated on the same shared preference set, plus a short summary.
     """
     from llm.data.modules.aifeedback import AIFeedbackDataModule
-    from llm.training.rlhf.aifeedback import TargetTokenJudge
+    from llm.data.preference_labeling import TargetTokenJudge
 
     shared = AIFeedbackDataModule(config, judge=TargetTokenJudge(target_token=target_token))
     shared.prepare_data()

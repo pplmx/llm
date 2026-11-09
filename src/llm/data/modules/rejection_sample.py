@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 from llm.data.modules.map_base import SamplerMapDataModule
-from llm.training.rlhf.rejection_sampling import rejection_sample
+from llm.data.rejection_sampling import rejection_sample
 
 
 class RejectionSampleDataModule(SamplerMapDataModule):

@@ -21,7 +21,7 @@ def _config(batch_size: int = 8, num_samples: int = 32):
 
 
 def test_target_token_judge_scores():
-    from llm.training.rlhf.aifeedback import TargetTokenJudge
+    from llm.data.preference_labeling import TargetTokenJudge
 
     judge = TargetTokenJudge(target_token=0)
     responses = torch.tensor([[1, 2, 0], [3, 4, 5], [0, 0, 0]])
@@ -29,7 +29,7 @@ def test_target_token_judge_scores():
 
 
 def test_prefer_batch_labels_chosen_by_judge():
-    from llm.training.rlhf.aifeedback import TargetTokenJudge, prefer_batch
+    from llm.data.preference_labeling import TargetTokenJudge, prefer_batch
 
     judge = TargetTokenJudge(target_token=0)
     a = torch.tensor([[1, 2, 0], [9, 8, 7], [0, 0, 0]])  # rows 0,2 good
@@ -41,7 +41,7 @@ def test_prefer_batch_labels_chosen_by_judge():
 
 
 def test_prefer_batch_validates_shapes():
-    from llm.training.rlhf.aifeedback import TargetTokenJudge, prefer_batch
+    from llm.data.preference_labeling import TargetTokenJudge, prefer_batch
 
     judge = TargetTokenJudge()
     with pytest.raises(ValueError, match="equal"):
@@ -122,7 +122,7 @@ def test_aifeedback_datamodule_rejects_out_of_range_target():
     into the last position → IndexError deep in the forward. Must fail at setup.
     """
     from llm.data.modules.aifeedback import AIFeedbackDataModule
-    from llm.training.rlhf.aifeedback import TargetTokenJudge
+    from llm.data.preference_labeling import TargetTokenJudge
 
     config = _config()  # vocab_size=32
     module = AIFeedbackDataModule(config, judge=TargetTokenJudge(target_token=999))
@@ -135,7 +135,7 @@ def test_aifeedback_datamodule_requires_target_token_judge():
     defeating the module's separable-pairs contract — refuse at construction.
     """
     from llm.data.modules.aifeedback import AIFeedbackDataModule
-    from llm.training.rlhf.aifeedback import PreferenceJudge
+    from llm.data.preference_labeling import PreferenceJudge
 
     class _AlwaysLow(PreferenceJudge):
         def score_batch(self, responses):

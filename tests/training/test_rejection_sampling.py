@@ -21,7 +21,7 @@ def _config(num_samples: int = 64):
 
 
 def test_select_top_k_keeps_highest_scores():
-    from llm.training.rlhf.rejection_sampling import select_top_k
+    from llm.data.rejection_sampling import select_top_k
 
     scores = torch.tensor([0.1, 5.0, 3.0, 9.0, 2.0])
     mask = select_top_k(scores, 2)
@@ -29,7 +29,7 @@ def test_select_top_k_keeps_highest_scores():
 
 
 def test_select_top_k_clamps_large_k_and_validates():
-    from llm.training.rlhf.rejection_sampling import select_top_k
+    from llm.data.rejection_sampling import select_top_k
 
     scores = torch.tensor([1.0, 2.0, 3.0])
     assert select_top_k(scores, 100).sum().item() == 3  # k > N -> keep all
@@ -40,14 +40,14 @@ def test_select_top_k_clamps_large_k_and_validates():
 
 
 def test_select_above_threshold():
-    from llm.training.rlhf.rejection_sampling import select_above_threshold
+    from llm.data.rejection_sampling import select_above_threshold
 
     scores = torch.tensor([0.0, 0.5, 1.0, -1.0])
     assert select_above_threshold(scores, 0.5).tolist() == [False, True, True, False]
 
 
 def test_rejection_sample_requires_exactly_one_mode():
-    from llm.training.rlhf.rejection_sampling import rejection_sample
+    from llm.data.rejection_sampling import rejection_sample
 
     scores = torch.tensor([1.0, 2.0, 3.0])
     with pytest.raises(ValueError, match="exactly one of k or threshold"):
@@ -57,7 +57,7 @@ def test_rejection_sample_requires_exactly_one_mode():
 
 
 def test_rejection_sample_reports_kept_over_base_reward():
-    from llm.training.rlhf.rejection_sampling import rejection_sample
+    from llm.data.rejection_sampling import rejection_sample
 
     # 100 responses: half reward 1, half reward 0; keep top-25% (all reward-1).
     scores = torch.tensor([1.0] * 50 + [0.0] * 50)

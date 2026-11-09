@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 from llm.data.modules.map_base import SamplerMapDataModule
-from llm.training.rlhf.aifeedback import PreferenceJudge, TargetTokenJudge, prefer_batch
+from llm.data.preference_labeling import PreferenceJudge, TargetTokenJudge, prefer_batch
 
 
 class AIFeedbackDataModule(SamplerMapDataModule):
