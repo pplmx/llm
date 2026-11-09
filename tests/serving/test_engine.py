@@ -1765,3 +1765,33 @@ def test_per_row_catch_does_not_swallow_fatal_exceptions(tiny_model, device, moc
     # A KeyboardInterrupt during sampling must escape the per-row handler.
     with pytest.raises(KeyboardInterrupt):
         engine.step()
+
+
+def test_engine_defaults_to_the_host_device_not_cuda(monkeypatch, mock_tokenizer):
+    """Constructing the engine must not require an NVIDIA driver.
+
+    ``device`` defaulted to the literal ``"cuda"``, so building an engine
+    without naming a device raised ``RuntimeError: Found no NVIDIA driver`` on
+    any CPU-only host. Tests that pass ``device=`` never noticed; the ones that
+    omitted it (and every GPU-less CI runner) failed.
+    """
+    import llm.utils.common as common
+    from llm.models.decoder import DecoderModel
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: False)
+
+    model = DecoderModel(vocab_size=100, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16)
+    engine = ContinuousBatchingEngine(model=model, tokenizer=mock_tokenizer)
+    assert engine.device.type == "cpu"
+
+
+def test_engine_honours_an_explicit_device(monkeypatch, mock_tokenizer):
+    """An explicit ``device=`` must win over the automatic selection."""
+    import llm.utils.common as common
+    from llm.models.decoder import DecoderModel
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: True)
+
+    model = DecoderModel(vocab_size=100, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=16)
+    engine = ContinuousBatchingEngine(model=model, tokenizer=mock_tokenizer, device="cpu")
+    assert engine.device.type == "cpu"

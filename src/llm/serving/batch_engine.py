@@ -24,6 +24,7 @@ from llm.models.decoder import DecoderModel
 from llm.serving.scheduler import Scheduler
 from llm.serving.schemas import GenerationRequest, RequestState, Sequence
 from llm.tokenization.tokenizer import BaseTokenizer
+from llm.utils.common import resolve_device
 
 
 @runtime_checkable
@@ -227,7 +228,7 @@ class ContinuousBatchingEngine:
         self,
         model: DecoderModel,
         tokenizer: BaseTokenizer,
-        device: str | torch.device = "cuda",
+        device: str | torch.device | None = None,
         max_batch_size: int = 16,
         max_seq_len: int = 512,
         dtype: torch.dtype = torch.float16,
@@ -244,17 +245,14 @@ class ContinuousBatchingEngine:
         Args:
             model: The loaded DecoderModel instance.
             tokenizer: The tokenizer instance (must have encode/decode methods).
-            device: Target device ("cuda", "cpu", or torch.device).
+            device: Target device ("auto", "cuda", "cpu", or torch.device).
+                ``None`` (the default) and ``"auto"`` both select CUDA when
+                this host has it and CPU otherwise.
             max_batch_size: Maximum number of concurrent sequences.
             max_seq_len: Maximum sequence length for KV cache.
             dtype: Data type for model and cache.
         """
-        if isinstance(device, str):
-            if device == "auto":
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-            self.device = torch.device(device)
-        else:
-            self.device = device
+        self.device = resolve_device(device)
 
         self.dtype = dtype
         self.max_batch_size = max_batch_size

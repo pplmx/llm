@@ -408,6 +408,23 @@ class TestPPOTrainer:
         assert trainer.ref_model is not policy
         assert trainer.value_optimizer.param_groups[0]["lr"] == 1e-5
 
+    def test_trainer_defaults_to_the_host_device(self, tiny_setup):
+        """Constructing the trainer must not require an NVIDIA driver.
+
+        ``device`` defaulted to the literal ``"cuda"``, so constructing a
+        trainer without naming a device raised
+        ``RuntimeError: Found no NVIDIA driver`` on any CPU-only host. Every
+        test here passes ``device=``, so the default went unexercised.
+        """
+        import llm.utils.common as common
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        cuda_expected = common.torch.cuda.is_available()
+        policy, reward_model, tokenizer, config = tiny_setup
+        trainer = PPOTrainer(policy_model=policy, reward_model=reward_model, tokenizer=tokenizer, config=config)
+
+        assert trainer.device.type == ("cuda" if cuda_expected else "cpu")
+
     def test_compute_response_values(self, tiny_setup):
         """Critic should emit one value per response token."""
         from llm.training.rlhf.ppo_trainer import PPOTrainer

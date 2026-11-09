@@ -1,7 +1,8 @@
 import pytest
+import torch
 import torch.nn as nn
 
-from llm.utils.common import get_activation_layer
+from llm.utils.common import get_activation_layer, resolve_device
 
 
 @pytest.mark.quick
@@ -53,3 +54,57 @@ def test_get_activation_layer_case_insensitivity():
     assert get_activation_layer("SwIsH") == nn.SiLU
     assert get_activation_layer("GlU") == nn.GLU
     assert get_activation_layer("LeAkY_ReLu") == nn.LeakyReLU
+
+
+# --- resolve_device ---------------------------------------------------------
+#
+# Three components (CalibrationDataCollector.collect, PagedKVCache.__init__,
+# ContinuousBatchingEngine.__init__) defaulted their ``device`` argument to the
+# literal "cuda". On a CPU-only host that raised
+# ``RuntimeError: Found no NVIDIA driver`` while merely CONSTRUCTING them —
+# before a caller had any chance to pass an explicit device — so every
+# GPU-less CI runner failed. These tests pin the resolver those defaults now
+# use; the component-level regressions live beside each component.
+
+
+@pytest.mark.quick
+def test_resolve_device_auto_follows_the_host(monkeypatch):
+    """``"auto"`` means "CUDA when present, otherwise CPU" — not "always CUDA"."""
+    import llm.utils.common as common
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: False)
+    assert common.resolve_device("auto") == torch.device("cpu")
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: True)
+    assert common.resolve_device("auto") == torch.device("cuda")
+
+
+@pytest.mark.quick
+def test_resolve_device_none_is_the_same_as_auto(monkeypatch):
+    """``None`` must not fall through to ``torch.device(None)``.
+
+    ``None`` is the default at every call site, so treating it as a literal
+    device spec would raise ``TypeError`` on every construction instead of
+    selecting the host's device.
+    """
+    import llm.utils.common as common
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: False)
+    assert common.resolve_device(None) == common.resolve_device("auto")
+
+
+@pytest.mark.quick
+def test_resolve_device_passes_explicit_devices_through(monkeypatch):
+    """An explicit device is honoured even when CUDA is available."""
+    import llm.utils.common as common
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: True)
+    assert common.resolve_device("cpu") == torch.device("cpu")
+    assert common.resolve_device(torch.device("cpu")) == torch.device("cpu")
+
+
+@pytest.mark.quick
+def test_resolve_device_returns_the_same_torch_device_object():
+    """An already-built ``torch.device`` is returned as-is, not re-wrapped."""
+    device = torch.device("cpu")
+    assert resolve_device(device) is device

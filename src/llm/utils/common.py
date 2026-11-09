@@ -13,6 +13,32 @@ class FactoryKwargs(TypedDict, total=False):
     dtype: torch.dtype
 
 
+def resolve_device(device: str | torch.device | None) -> torch.device:
+    """Resolve a device specification, defaulting to whatever this host can run.
+
+    ``None`` and the string ``"auto"`` both mean "use CUDA when this host has
+    it, otherwise CPU". Every other value is passed through to
+    :class:`torch.device` unchanged, including an already-built one.
+
+    Components that allocate their own tensors used to hard-code
+    ``device="cuda"`` as the default, so merely *constructing* them raised
+    ``RuntimeError: Found no NVIDIA driver`` on a CPU-only host — before any
+    caller had a chance to override the argument. Resolving through this helper
+    keeps the convenience of a GPU default while making construction work
+    everywhere.
+
+    Args:
+        device: ``None`` / ``"auto"`` for automatic selection, or any value
+            :class:`torch.device` accepts.
+
+    Returns:
+        The resolved :class:`torch.device`.
+    """
+    if device is None or device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return device if isinstance(device, torch.device) else torch.device(device)
+
+
 def make_factory_kwargs(
     device: torch.device | str | None = None,
     dtype: torch.dtype | None = None,

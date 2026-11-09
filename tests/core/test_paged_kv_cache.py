@@ -1204,3 +1204,31 @@ class TestNoBlockLeakAcrossCycles:
         assert cache.block_manager.num_free_blocks == initial, (
             f"COW leaked a block: {initial} -> {cache.block_manager.num_free_blocks}"
         )
+
+
+def test_construction_defaults_to_the_host_device_not_cuda(monkeypatch):
+    """Constructing the cache must not require an NVIDIA driver.
+
+    ``device`` defaulted to the literal ``"cuda"``, so ``PagedKVCache(...)``
+    raised ``RuntimeError: Found no NVIDIA driver`` while allocating its
+    tensors on any CPU-only host — before a caller could pass ``device=``.
+    Callers that DO pass a device (nearly all of this file) never saw it, so
+    only the tests that omitted the argument failed on GPU-less CI.
+    """
+    import llm.utils.common as common
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: False)
+
+    cache = PagedKVCache(num_layers=1, num_kv_heads=1, head_dim=4, num_blocks=8, block_size=4)
+    assert cache.k_cache.device.type == "cpu"
+    assert cache.v_cache.device.type == "cpu"
+
+
+def test_construction_honours_an_explicit_device(monkeypatch):
+    """An explicit ``device=`` must win over the automatic selection."""
+    import llm.utils.common as common
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: True)
+
+    cache = PagedKVCache(num_layers=1, num_kv_heads=1, head_dim=4, num_blocks=8, block_size=4, device="cpu")
+    assert cache.k_cache.device.type == "cpu"

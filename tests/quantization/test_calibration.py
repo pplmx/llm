@@ -153,3 +153,46 @@ def test_num_batches_limits_the_sweep():
         assert limited < all_batches[name], (
             f"num_batches=1 did not reduce the sweep for {name}: {limited} vs {all_batches[name]}"
         )
+
+
+def test_collect_defaults_to_the_host_device_not_cuda(monkeypatch):
+    """``collect`` must work on a CPU-only host when no device is passed.
+
+    The ``device`` argument defaulted to the literal ``"cuda"``, so the very
+    first line of ``collect`` (``self.model.to(device)``) raised
+    ``RuntimeError: Found no NVIDIA driver`` on any GPU-less machine — every
+    quantization run on a CPU CI runner died before collecting a single batch.
+    The default now resolves through ``resolve_device``.
+    """
+    import llm.utils.common as common
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: False)
+
+    model = _tiny_model()
+    collector = CalibrationDataCollector(model)
+    collector.register_hooks()
+    collector.collect(_tensor_loader(batch_size=4, batches=1))
+    collector.remove_hooks()
+
+    assert collector.stats, "no statistics collected on the default device"
+    assert next(iter(collector.stats.values())).num_samples > 0
+
+
+def test_collect_still_honours_an_explicit_device(monkeypatch):
+    """The new default must not override a caller that names a device.
+
+    A resolver that ignored its argument and always picked the host device
+    would pass the test above while breaking ``collect(..., device="cpu")``
+    on a GPU host.
+    """
+    import llm.utils.common as common
+
+    monkeypatch.setattr(common.torch.cuda, "is_available", lambda: True)
+
+    collector = CalibrationDataCollector(_tiny_model())
+    collector.register_hooks()
+    collector.collect(_tensor_loader(batch_size=4, batches=1), device="cpu")
+    collector.remove_hooks()
+
+    assert collector.stats
+    assert all(stats.num_samples > 0 for stats in collector.stats.values())

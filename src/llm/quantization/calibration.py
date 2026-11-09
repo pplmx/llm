@@ -13,6 +13,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+from llm.utils.common import resolve_device
+
 logger = logging.getLogger(__name__)
 
 
@@ -141,7 +143,7 @@ class CalibrationDataCollector:
         self,
         dataloader: DataLoader,
         num_batches: int | None = None,
-        device: str | torch.device = "cuda",
+        device: str | torch.device | None = None,
     ) -> dict[str, ActivationStats]:
         """
         Collect activation statistics from calibration data.
@@ -149,11 +151,15 @@ class CalibrationDataCollector:
         Args:
             dataloader: Calibration data loader.
             num_batches: Maximum number of batches to process.
-            device: Device to run on.
+            device: Device to run on. ``None`` (the default) and ``"auto"``
+                both select CUDA when this host has it and CPU otherwise, so
+                calibration works on a CPU-only machine without the caller
+                passing a device.
 
         Returns:
             Dictionary of layer name to activation stats.
         """
+        device = resolve_device(device)
         self.model.eval()
         self.model.to(device)
 

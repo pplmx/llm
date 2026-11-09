@@ -8,6 +8,7 @@ import torch
 from torch import Tensor
 
 from llm.core.paged_attention.block_manager import BlockManager
+from llm.utils.common import resolve_device
 
 
 class PrefixCache:
@@ -61,7 +62,7 @@ class PagedKVCache:
         head_dim: int,
         num_blocks: int,
         block_size: int = 16,
-        device: str = "cuda",
+        device: str | torch.device | None = None,
         dtype: torch.dtype = torch.float16,
         enable_prefix_cache: bool = False,
         max_prefixes: int = 10,
@@ -71,6 +72,12 @@ class PagedKVCache:
         self.head_dim = head_dim
         self.block_size = block_size
         self.num_blocks = num_blocks
+
+        # ``None`` / ``"auto"`` pick CUDA when this host has it and CPU
+        # otherwise. The previous ``"cuda"`` default raised
+        # ``RuntimeError: Found no NVIDIA driver`` during construction on any
+        # CPU-only host, before a caller could pass an explicit device.
+        device = resolve_device(device)
 
         self.k_cache = torch.zeros(
             num_layers, num_blocks, num_kv_heads, block_size, head_dim, device=device, dtype=dtype

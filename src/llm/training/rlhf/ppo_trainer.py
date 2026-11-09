@@ -18,6 +18,7 @@ from llm.models.decoder import DecoderModel
 from llm.training.core.config import PPOConfig
 from llm.training.rlhf.rollout_buffer import RolloutBatch, RolloutBuffer
 from llm.training.rlhf.value_model import ValueModel
+from llm.utils.common import resolve_device
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class PPOTrainer:
         config: PPOConfig,
         ref_model: nn.Module | None = None,
         value_model: ValueModel | None = None,
-        device: str | torch.device = "cuda",
+        device: str | torch.device | None = None,
     ):
         """
         Initialize PPO trainer.
@@ -65,13 +66,15 @@ class PPOTrainer:
             config: PPO configuration.
             ref_model: Frozen reference model for KL penalty (optional).
             value_model: Value function model (optional, uses policy if None).
-            device: Device to run training on.
+            device: Device to run training on. ``None`` (the default) and
+                ``"auto"`` both select CUDA when this host has it and CPU
+                otherwise.
         """
         self.policy = policy_model
         self.reward_model = reward_model
         self.tokenizer = tokenizer
         self.config = config
-        self.device = torch.device(device)
+        self.device = resolve_device(device)
 
         # Reference model (frozen copy of initial policy)
         if config.use_ref_model:
