@@ -103,29 +103,43 @@ PEFT 那 8 个方法各带 `apply_*` / `merge_*` / `unmerge_*`（共 48 个函�
 | --------------------- | --------- | ------------------------------------------------------------------------- |
 | #3 包初始化环         | ✅ 已修复 | `MODEL_REGISTRY` 正常注册，57 个 models 测试通过                          |
 | #2 `data → training`  | ✅ 已修复 | `grep 'from llm.training' src/llm/data/` 为空；data/training 相关测试通过 |
-| #1 `ModelConfig` 上移 | ⬜ 未做   | 10 个源文件 + 52 个测试文件受影响，需单独一个提交                         |
+| #1 `ModelConfig` 上移 | ✅ 已修复 | `models/config.py` 新建；`runtime`/`export` 反向依赖归零；全量门禁 0 失败 |
 
-两项修复后跑了完整 CPU 门禁（`GITHUB_ACTIONS=true CI=true CUDA_VISIBLE_DEVICES=""`）：**0 失败**。
+三项修复后都跑了完整 CPU 门禁（`GITHUB_ACTIONS=true CI=true CUDA_VISIBLE_DEVICES=""`）：**0 失败**。
 
-### #1 为什么留到下一轮
+### 迁移 ModelConfig 的做法
 
-`ModelConfig` 上移需要：新建 `models/config.py`、在 `training/core/config.py` 保留向后兼容重导出、逐文件迁移 10 处源码 + 52 处测试导入、跑全量门禁。这是一次独立提交的量，且必须一次成型（半途会留下双份定义）。前两项的收益（`data` 层解耦、包环消除）已经拿到。
+`ModelConfig`（183 行）整体迁到 `src/llm/models/config.py`。关键决定是**在 `training/core/config.py` 保留重导出**：
+
+```python
+from llm.models.config import ModelConfig  # noqa: E402
+```
+
+这样 52 个测试文件、10 处源码导入一行都不用改，全部继续工作；只有真正该消除反向依赖的三处（`runtime/model_factory`、`serving/loader`、`export/gguf/loader`）显式改为引用新位置。重导出是迁移的安全网，不是永久方案——等导入点自然收敛后可删。
+
+`models` 层因此从"只依赖 core"变为"依赖 core（9 次）"，这是正确的：`models/decoder.py` 组装 `core` 的注意力/MLP/norm 组件。
 
 ### 剩下的反向依赖里哪些是合理的
 
-修复后仍有 12 条"下层引用上层"，逐条判定：
+修复后逐条判定剩余的跨层依赖：
 
-| 依赖                            | 判定                                                                       |
-| ------------------------------- | -------------------------------------------------------------------------- |
-| `core → runtime` (3)            | **合理**。`runtime.Registry` 是通用注册表基础设施，core 复用它而非自写一份 |
-| `runtime → models/tokenization` | **合理**。`model_factory`/`tokenizer_factory` 的职责就是构造这些类型       |
-| `utils → *` (5)                 | **合理**。`utils` 是横切工具层，被各层共用是它的用途                       |
-| `generation → serving` (4)      | **函数内局部导入**，运行期不成环                                           |
-| `runtime → training` (2)        | **不合理**，但正是 #1 要修的：`ModelConfig` 放错层                         |
-| `export → training` (1)         | 同源于 `ModelConfig`                                                       |
-| `multimodal → training` (1)     | 同源于 `ModelConfig`                                                       |
+| 依赖                            | 判定                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------- |
+| `core → runtime` (3)            | **合理**。`runtime.Registry` 是通用注册表基础设施，core 复用它而非自写一份            |
+| `runtime → models/tokenization` | **合理**。`model_factory`/`tokenizer_factory` 的职责就是构造这些类型                  |
+| `utils → *` (5)                 | **合理**。`utils` 是横切工具层，被各层共用是它的用途                                  |
+| `generation → serving` (4)      | **函数内局部导入**，运行期不成环                                                      |
+| `runtime → training`            | ✅ 归零（#1 修复）                                                                    |
+| `export → training`             | ✅ 归零（#1 修复）                                                                    |
+| `serving → training` (1)        | `load_checkpoint_payload` —— 见下                                                     |
+| `runtime → training` (残留 1)   | `tokenizer_factory` 内部用 `training.core.checkpoint._resolve_checkpoint_paths`，同源 |
+| `multimodal → training` (1)     | **合理**。`MultimodalTask` 是 `LanguageModelingTask` 子类，任务本就是训练抽象         |
 
-即：**只要修完 #1，剩下 3 条不合理依赖全部消失**，反向依赖从 12 降到 0（按"合理 vs 不合理"划分）。
+### 还有一项未做：checkpoint 读取的归属
+
+`training/core/checkpoint.py`（1088 行）里的 `load_checkpoint_payload` 和 `_resolve_checkpoint_paths` 只做**读文件 + 解析布局**，不含训练逻辑，却被 `serving/loader`、`runtime/tokenizer_factory`、`cli/_model_loading` 引用。它们应该和 `compat/` 的权重加载归在一起，或独立成 `checkpoint/` 层。
+
+做完后 `serving → training` 与 `runtime → training` 的残留也会归零。规模比 `ModelConfig` 小（2 个函数），但涉及面类似，是下一轮的独立项。
 
 ## 附：本次评估的局限
 
