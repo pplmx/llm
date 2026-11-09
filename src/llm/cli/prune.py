@@ -23,6 +23,8 @@ from pathlib import Path
 
 import typer
 
+from llm.cli._compression_args import die, reject_clobbering_output, validate_model_path
+
 app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
@@ -32,45 +34,16 @@ app = typer.Typer(
 )
 
 
-def _die(message: str) -> typer.Exit:
-    typer.echo(f"Error: {message}", err=True)
-    raise typer.Exit(code=1)
-
-
 def _validate_ratio(ratio: float) -> float:
     if not 0.0 < ratio < 1.0:
-        _die(f"--ratio must be in (0, 1); got {ratio}.")
+        die(f"--ratio must be in (0, 1); got {ratio}.")
     return ratio
 
 
 def _validate_method(method: str) -> str:
     if method not in ("magnitude", "random"):
-        _die(f"--method must be 'magnitude' or 'random'; got {method!r}.")
+        die(f"--method must be 'magnitude' or 'random'; got {method!r}.")
     return method
-
-
-def _reject_clobbering_input(output: Path, model: Path) -> None:
-    """Refuse to overwrite the source checkpoint in place (pattern)."""
-    if output.resolve() == model.resolve():
-        _die(
-            f"--output ({output}) must not be the same file as --model ({model}); "
-            "writing would destroy the source checkpoint. Choose a different output path."
-        )
-
-
-def _validate_model_path(model: Path) -> None:
-    """The model path must be a file or a checkpoint stem with v2 sidecars.
-
-    A regular file covers the legacy single-file blob and the ``.safetensors``
-    sidecar; a bare stem / ``<stem>.pt`` spelling resolves to the v2 split
-    trio that :func:`llm.cli._model_loading.load_trained_model` loads.
-    """
-    from llm.cli._model_loading import checkpoint_exists
-
-    if model.is_dir():
-        _die(f"--model {model} is a directory, not a regular file.")
-    if not checkpoint_exists(model):
-        _die(f"--model {model} does not exist (no file and no v2 checkpoint sidecars at this stem).")
 
 
 def _atomic_save_blob(module, output: Path) -> None:
@@ -128,8 +101,8 @@ def prune(
             f"Warning: --seed {seed} is ignored with --method magnitude (only 'random' pruning uses the seed).",
             err=True,
         )
-    _validate_model_path(model)
-    _reject_clobbering_input(output, model)
+    validate_model_path(model)
+    reject_clobbering_output(output, model)
 
     from llm.cli._model_loading import load_trained_model
     from llm.quantization.prune import PruningConfig, prune_model

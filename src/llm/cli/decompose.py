@@ -24,6 +24,8 @@ from pathlib import Path
 
 import typer
 
+from llm.cli._compression_args import die, reject_clobbering_output, validate_model_path
+
 app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
@@ -31,34 +33,6 @@ app = typer.Typer(
     invoke_without_command=True,
     help="Low-rank (SVD U-V) factorize the linear weights of a model checkpoint.",
 )
-
-
-def _die(message: str) -> typer.Exit:
-    typer.echo(f"Error: {message}", err=True)
-    raise typer.Exit(code=1)
-
-
-def _reject_clobbering_input(output: Path, model: Path) -> None:
-    if output.resolve() == model.resolve():
-        _die(
-            f"--output ({output}) must not be the same file as --model ({model}); "
-            "writing would destroy the source checkpoint. Choose a different output path."
-        )
-
-
-def _validate_model_path(model: Path) -> None:
-    """The model path must be a file or a checkpoint stem with v2 sidecars.
-
-    A regular file covers the legacy single-file blob and the ``.safetensors``
-    sidecar; a bare stem / ``<stem>.pt`` spelling resolves to the v2 split
-    trio that :func:`llm.cli._model_loading.load_trained_model` loads.
-    """
-    from llm.cli._model_loading import checkpoint_exists
-
-    if model.is_dir():
-        _die(f"--model {model} is a directory, not a regular file.")
-    if not checkpoint_exists(model):
-        _die(f"--model {model} does not exist (no file and no v2 checkpoint sidecars at this stem).")
 
 
 def _atomic_save_blob(module, output: Path) -> None:
@@ -107,13 +81,13 @@ def decompose(
 ) -> None:
     """Low-rank factorize a pretrained model's linear weights."""
     if (rank is None) == (rank_ratio is None):
-        _die("must supply exactly one of --rank or --rank-ratio.")
+        die("must supply exactly one of --rank or --rank-ratio.")
     if rank is not None and rank <= 0:
-        _die(f"--rank must be > 0; got {rank}.")
+        die(f"--rank must be > 0; got {rank}.")
     if rank_ratio is not None and not 0.0 < rank_ratio <= 1.0:
-        _die(f"--rank-ratio must be in (0, 1]; got {rank_ratio}.")
-    _validate_model_path(model)
-    _reject_clobbering_input(output, model)
+        die(f"--rank-ratio must be in (0, 1]; got {rank_ratio}.")
+    validate_model_path(model)
+    reject_clobbering_output(output, model)
 
     from llm.cli._model_loading import load_trained_model
     from llm.quantization.lowrank import LowRankConfig, decompose_model

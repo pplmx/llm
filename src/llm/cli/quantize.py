@@ -42,6 +42,8 @@ from typing import Literal, cast
 
 import typer
 
+from llm.cli._compression_args import die, reject_clobbering_output, validate_model_path
+
 app = typer.Typer(
     pretty_exceptions_show_locals=False,
     no_args_is_help=True,
@@ -66,16 +68,6 @@ def _root_callback() -> None:
     """
 
 
-def _die(message: str) -> typer.Exit:
-    """Print a one-line error to stderr and exit 1.
-
-    Used for argument validation errors that should never reach the
-    quantization kernel — they are user mistakes, not runtime failures.
-    """
-    typer.echo(f"Error: {message}", err=True)
-    raise typer.Exit(code=1)
-
-
 def _validate_calib_inputs(
     calib_data: Path | None,
     calib_data_tokens: Path | None,
@@ -89,14 +81,14 @@ def _validate_calib_inputs(
     - ``--calib-data`` requires ``--tokenizer`` (raw text needs tokenization).
     """
     if calib_data is not None and calib_data_tokens is not None:
-        _die("--calib-data and --calib-data-tokens are mutually exclusive. Choose one calibration source.")
+        die("--calib-data and --calib-data-tokens are mutually exclusive. Choose one calibration source.")
     if calib_data is None and calib_data_tokens is None:
-        _die(
+        die(
             "must supply calibration data via either --calib-data "
             "(raw text + --tokenizer) or --calib-data-tokens (pre-tokenized .pt)."
         )
     if calib_data is not None and tokenizer is None:
-        _die(
+        die(
             "--calib-data requires --tokenizer PATH "
             "(raw text needs to be tokenized before calibration). "
             "Use --calib-data-tokens for pre-tokenized data instead."
@@ -131,46 +123,6 @@ def _atomic_save_quantized(model_obj, output: Path) -> None:
     tmp.replace(output)
 
 
-def _reject_clobbering_input(output: Path, model: Path) -> None:
-    """Refuse to overwrite the source checkpoint in place.
-
-    ``torch.save(quantized, output)`` with ``--output == --model``
-    irretrievably replaces the original FP weights after an expensive
-    quantization — the single most destructive misuse of this CLI. The
-    comparison resolves symlinks and relative paths so ``out.pt`` vs
-    ``./out.pt`` vs a symlink to ``out.pt`` are all caught.
-    """
-    out_resolved = output.resolve()
-    model_resolved = model.resolve()
-    if out_resolved == model_resolved:
-        _die(
-            f"--output ({output}) must not be the same file as --model ({model}); "
-            "writing would destroy the source checkpoint. Choose a different "
-            "output path."
-        )
-    # An existing directory as --output is a usage error, not a runtime one:
-    # the atomic-save helper writes a sibling ``<name>.tmp`` then renames it
-    # onto ``output``, surfacing as a raw ``IsADirectoryError`` whose message
-    # names the .tmp file, not the path the user typed (CLI polish).
-    if output.exists() and output.is_dir():
-        _die(f"--output ({output}) is an existing directory; must be a file path.")
-
-
-def _validate_model_path(model: Path) -> None:
-    """The model path must be a file or a checkpoint stem with v2 sidecars.
-
-    A regular file covers the legacy single-file blob and the ``.safetensors``
-    sidecar; a bare stem / ``<stem>.pt`` spelling resolves to the v2 split
-    trio that :func:`llm.cli._model_loading.load_trained_model` loads.
-    """
-    from llm.cli._model_loading import checkpoint_exists
-
-    if model.is_dir():
-        _die(f"--model {model} is a directory, not a regular file.")
-    if not checkpoint_exists(model):
-        _die(f"--model {model} does not exist (no file and no v2 checkpoint sidecars at this stem).")
-
-
 def _validate_quant_params(
     bits: int,
     group_size: int,
@@ -189,17 +141,17 @@ def _validate_quant_params(
         # NotImplementedError mid-loop). Reject it here as an argument error
         # (exit 1) instead of letting it surface as an exit-2 "quantization
         # failed" deep in the Hessian loop.
-        _die("--asym asymmetric GPTQ is not yet implemented; use symmetric quantization (default) or drop --asym.")
+        die("--asym asymmetric GPTQ is not yet implemented; use symmetric quantization (default) or drop --asym.")
     if bits not in (4, 8):
-        _die(f"--bits must be 4 or 8 (GPTQ supports these two widths); got {bits}.")
+        die(f"--bits must be 4 or 8 (GPTQ supports these two widths); got {bits}.")
     if group_size != -1 and group_size <= 0:
-        _die(f"--group-size must be -1 (per-channel) or positive; got {group_size}.")
+        die(f"--group-size must be -1 (per-channel) or positive; got {group_size}.")
     if not (0.0 < percdamp < 1.0):
-        _die(f"--percdamp must be in (0, 1); got {percdamp}.")
+        die(f"--percdamp must be in (0, 1); got {percdamp}.")
     if blocksize <= 0:
-        _die(f"--blocksize must be positive; got {blocksize}.")
+        die(f"--blocksize must be positive; got {blocksize}.")
     if group_size > 0 and blocksize % group_size != 0:
-        _die(
+        die(
             f"--blocksize ({blocksize}) must be divisible by --group-size ({group_size}) for correct packing alignment."
         )
 
@@ -351,8 +303,8 @@ def gptq(
     # --- 1. Argument validation (fail fast, exit 1) ---------------------
     _validate_quant_params(bits, group_size, percdamp, blocksize, sym=sym)
     _validate_calib_inputs(calib_data, calib_data_tokens, tokenizer)
-    _validate_model_path(model)
-    _reject_clobbering_input(output, model)
+    validate_model_path(model)
+    reject_clobbering_output(output, model)
 
     # --- 2. Late imports (keep startup cheap) ---------------------------
 
@@ -467,16 +419,16 @@ def fp8(
     calibration data.
     """
     if weight_dtype not in ("e4m3", "e5m2"):
-        _die(f"--weight-dtype must be 'e4m3' or 'e5m2'; got {weight_dtype}.")
+        die(f"--weight-dtype must be 'e4m3' or 'e5m2'; got {weight_dtype}.")
     if activation not in ("static", "dynamic"):
-        _die(f"--activation must be 'static' or 'dynamic'; got {activation}.")
+        die(f"--activation must be 'static' or 'dynamic'; got {activation}.")
 
     if activation == "static":
         if calib_data is None and calib_data_tokens is None:
             # Static is opt-in now (dynamic is the default), so when the user
             # asks for it without data the message should name the only thing
             # they need to add (a calib source) AND the escape hatch: ``--activation dynamic`` needs no calibration at all.
-            _die(
+            die(
                 "activation='static' requires calibration data via --calib-data/"
                 "--calib-data-tokens; use --activation dynamic to quantize "
                 "without calibration."
@@ -485,9 +437,9 @@ def fp8(
     elif calib_data is not None or calib_data_tokens is not None or tokenizer is not None:
         # Calibration is ignored under dynamic activation — refuse rather than
         # silently drop the user's data.
-        _die("activation='dynamic' needs no calibration; drop --calib-data / --calib-data-tokens / --tokenizer.")
-    _validate_model_path(model)
-    _reject_clobbering_input(output, model)
+        die("activation='dynamic' needs no calibration; drop --calib-data / --calib-data-tokens / --tokenizer.")
+    validate_model_path(model)
+    reject_clobbering_output(output, model)
 
     from llm.cli._model_loading import load_trained_model
     from llm.quantization.fp8 import quantize_model_fp8
