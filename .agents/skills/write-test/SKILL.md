@@ -29,7 +29,7 @@ directory or rely on `consider_namespace_packages`.
 | `model_kwargs` / `decoder_model` fixtures             | `tests/models/conftest.py`    | parametrize via `@pytest.mark.parametrize(..., indirect=True)`                            |
 | `sample_text_tokenizer` / `line_tokenizer`            | `tests/data/conftest.py`      | data-layer tests                                                                          |
 
-## Markers (pyproject.toml)
+## Markers (pytest.toml)
 
 `quick` (<1s) · `slow` (1–30s) · `heavy` (>30s, maybe GPU) · `e2e` ·
 `integration` (external deps e.g. HuggingFace) · `gpu` · `multi_gpu` ·
@@ -58,7 +58,7 @@ is missing; CI gates run `not heavy and not e2e` for daily work.
 ```bash
 uv run pytest tests/<dir> -q                    # targeted
 uv run pytest tests/<dir> -m quick -q           # marker-filtered
-uv run pytest -m "not heavy and not e2e" -q     # daily gate (just test-fast)
+uv run pytest -m "not heavy and not e2e and not gpu and not multi_gpu and not full_cluster and not need_gpu" -q  # = just test-fast
 uv run pytest -m e2e -q                         # e2e only (just test-e2e)
 uv run pytest tests/path/test_x.py::test_y -q   # single test
 ```

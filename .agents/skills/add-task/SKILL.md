@@ -15,7 +15,9 @@ description: >
 (`src/llm/training/task_registry.py`), which binds a `TrainingTask` subclass
 to its `BaseDataModule` factory as a frozen `TaskSpec`. Built-ins live in
 `src/llm/training/tasks/builtin.py`: `regression`, `lm`, `stream_lm`, `sft`,
-`dpo`, `reward`, `ppo`.
+`dpo`, `simpo`, `distill`, `multimodal`, `reward`, `ppo`, `grpo` (11 as of this
+writing — read the file for the authoritative list rather than trusting a
+count here).
 
 ## Workflow
 

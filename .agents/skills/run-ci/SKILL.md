@@ -23,7 +23,7 @@ Start
   ├─ Full gate before claiming done → just test        (ALL tests must pass)
   ├─ Lint/format                    → just ruff        (format + lint --fix)
   ├─ Full static gate (matches CI)  → just check       (lock + ruff --check + ty + examples)
-  ├─ Type check                     → just ty          (uvx ty check src/llm/)
+  ├─ Type check                     → just ty          (uv run --group dev ty check src/llm/)
   ├─ Dependency change              → uv lock && uv lock --check
   ├─ Docstring examples changed     → just test-doc    (doctests src/llm)
   └─ e2e workflows                  → just test-e2e
@@ -45,9 +45,9 @@ Start
 | `just test-cov`          | full suite coverage `--cov-fail-under=77` (scheduled deep gate)                                      |
 | `just test-cov-fast`     | core CPU suite coverage (per-push CI gate), `--cov-fail-under=77`                                    |
 | `just test-doc`          | `uv run --frozen pytest --doctest-modules src/llm/`                                                  |
-| `just ruff`              | `uvx ruff format .` then `uvx ruff check . --fix`                                                    |
+| `just ruff`              | `uv run --group dev ruff format .` then `uv run --group dev ruff check . --fix`                      |
 | `just check`             | `uv lock --check` + `ruff format --check` + `ruff check` + `ty` + examples compile (mirrors CI lint) |
-| `just ty`                | `uvx ty check src/llm/` — matches the CI lint gate                                                   |
+| `just ty`                | `uv run --group dev ty check src/llm/` — matches the CI lint gate                                    |
 | `just sync` / `just dev` | `uv sync` default groups / all groups+extras                                                         |
 | `just init`              | deps + `uvx prek install` hooks                                                                      |
 
@@ -62,8 +62,8 @@ collects them. GPU tests run via `just test` / `just test-gpu` on a GPU host.
 
 ## What CI enforces (.github/workflows/ci.yml)
 
-- **lint**: `uv lock --check`, `uvx ruff format --check .`,
-  `uvx ruff check .`, `uvx ty check src/llm/` (hard gate since 2026-08-08,
+- **lint**: `uv lock --check`, `uv run ruff format --check .`,
+  `uv run ruff check .`, `uv run ty check src/llm/` (hard gate since 2026-08-08,
   ticket 08-ty-in-ci), `py_compile` of every `examples/*.py`.
 - **doctest**: `uv run pytest --doctest-modules src/llm/`.
 - **build-and-test**: ubuntu/macos/windows × `uv sync --frozen` + `uv build`

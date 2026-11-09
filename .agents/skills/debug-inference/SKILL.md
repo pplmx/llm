@@ -19,12 +19,12 @@ first when possible.
 
 Work bottom-up; each layer strips one variable:
 
-| Layer              | How to run                                                                                                                                                                  |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sampling math only | unit-run helpers in `src/llm/generation/sampling.py` (`apply_frequency_penalty`, `apply_presence_penalty`, `apply_logit_bias`, top-k/top-p)                                 |
-| Backend, no HTTP   | instantiate a backend via `create_backend(name, engine=...)` (`src/llm/generation/registry.py`: `eager` / `batched` / `speculative`) and call `generate(...)` from a script |
-| Model + KV cache   | `DecoderModel.forward(..., use_cache=True, kv_cache=...)` or `PagedKVCache` directly (see `tests/models/`, `tests/core/`)                                                   |
-| Full serving       | `uv run llm serve` (FastAPI, OpenAI-compatible); exercise via `curl` / `tests/serving/` clients                                                                             |
+| Layer              | How to run                                                                                                                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sampling math only | unit-run helpers in `src/llm/generation/sampling.py` (`apply_frequency_penalty`, `apply_presence_penalty`, `apply_logit_bias`, top-k/top-p)                                         |
+| Backend, no HTTP   | instantiate a backend via `get_generation_backend(name, engine=...)` (`src/llm/generation/registry.py`: `eager` / `batched` / `speculative`) and call `generate(...)` from a script |
+| Model + KV cache   | `DecoderModel.forward(..., use_cache=True, kv_cache=...)` or `PagedKVCache` directly (see `tests/models/`, `tests/core/`)                                                           |
+| Full serving       | `uv run llm serve` (FastAPI, OpenAI-compatible); exercise via `curl` / `tests/serving/` clients                                                                                     |
 
 Logging: Python `logging` (the server logs model version + config on startup,
 audit ticket #12). Raise level before starting:
