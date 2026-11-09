@@ -44,9 +44,9 @@ import torch.nn as nn
 from llm.compat.weight_mapping import convert_gguf_weights, convert_hf_to_combined_qkv
 from llm.export.gguf.reader import GGUFReader
 from llm.export.gguf.spec import GGUFError
+from llm.models.config import ModelConfig
 from llm.models.decoder import DecoderModel
 from llm.runtime.model_factory import ModelFactory
-from llm.training.core.config import ModelConfig
 
 logger = logging.getLogger(__name__)
 

@@ -9,9 +9,9 @@ from typing import Any
 import torch
 import torch.nn as nn
 
+from llm.models.config import ModelConfig
 from llm.models.decoder import DecoderModel
 from llm.runtime.registry import Registry
-from llm.training.core.config import ModelConfig
 
 ModelBuilder = Callable[..., nn.Module]
 
