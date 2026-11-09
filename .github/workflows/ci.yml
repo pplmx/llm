@@ -116,15 +116,47 @@ jobs:
             -   name: Install just (command runner)
                 uses: taiki-e/install-action@just
 
-            -   name: Run Core CPU Tests with Coverage
+            # Platform split.
+            #
+            # The full CPU-clean suite runs on ONE platform (Ubuntu) — that is
+            # where coverage is measured and where the gate is authoritative.
+            # Windows and macOS additionally run only the subset whose failures
+            # are plausibly platform-specific: path handling, filesystem
+            # semantics, locale/encoding, subprocess invocation and the CLI
+            # surface built on them.
+            #
+            # Dropping Windows/macOS entirely was considered and rejected: this
+            # project's own history has multiple bugs that were invisible on
+            # Linux and real elsewhere — a hardcoded ``/data/x.txt`` that became
+            # ``\data\x.txt``, files opened with the locale default encoding
+            # that broke on Windows (cp1252), and a numerical assertion that was
+            # nonzero on Linux but rounded to zero on macOS/Windows. Those are
+            # exactly what this subset is meant to keep catching, without paying
+            # 3800 tests × 2 extra platforms on every push.
+            -   name: Run Core CPU Tests with Coverage (ubuntu, full suite)
+                if: matrix.os == 'ubuntu-latest'
                 # Per-push gate: the fast CPU-clean core suite (excludes
                 # GPU/heavy/e2e). GPU tests auto-skip on this GPU-less runner
                 # (tests/conftest.py); the deep full-suite + coverage gate runs
                 # on the weekly schedule via the `test-full` job.
                 run: just test-cov-fast
 
+            -   name: Run Platform-Sensitive Tests (windows/macos)
+                if: matrix.os != 'ubuntu-latest'
+                # Paths, filesystem, encoding, subprocess and CLI behaviour are
+                # where platform differences actually surface. Excludes the
+                # CPU-clean markers the full suite excludes, minus coverage:
+                # coverage from a partial run would be misleading.
+                run: >
+                    uv run --frozen pytest
+                    tests/cli tests/compat tests/data tests/export
+                    tests/tokenization tests/evaluation tests/utils
+                    -m "not heavy and not e2e and not gpu and not multi_gpu
+                    and not full_cluster and not need_gpu"
+                    -q --no-header
+
             -   name: Upload coverage report as artifact
-                if: always() # Ensure it runs even if tests fail, to upload partial coverage
+                if: always() && matrix.os == 'ubuntu-latest'
                 uses: actions/upload-artifact@v7
                 with:
                     name: coverage-report-${{ matrix.os }} # Make artifact name unique per OS
