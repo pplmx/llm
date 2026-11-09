@@ -27,21 +27,42 @@ _COMMANDS: dict[str, tuple[str, list[str]]] = {
 }
 
 
+def _render_help_unwrapped(invoke) -> str:
+    """Render ``--help`` wide enough that option names are not truncated.
+
+    Rich wraps help text to the terminal width and **truncates** an option name
+    that does not fit (``--model`` renders as ``--mod…`` at 40 columns), which
+    made ``text.index("--model")`` raise ``ValueError: substring not found``.
+
+    The width is not simply ``COLUMNS``: typer sets
+    ``rich_utils.FORCE_TERMINAL = True`` whenever ``GITHUB_ACTIONS`` is in the
+    environment (so CI renders colours), and a forced terminal with no real tty
+    makes rich query the terminal size, fall back to a narrow default, and
+    truncate. Pinning COLUMNS therefore did nothing on CI — only setting
+    ``FORCE_TERMINAL = False`` and a wide ``MAX_WIDTH`` restores the full names.
+    Both are patched because a real terminal would otherwise still take the
+    ambient width. These tests compare the help TEXT, not rich's line wrapping.
+    """
+    import typer.rich_utils as rich_utils
+
+    original_force_terminal = rich_utils.FORCE_TERMINAL
+    original_max_width = rich_utils.MAX_WIDTH
+    rich_utils.FORCE_TERMINAL = False
+    rich_utils.MAX_WIDTH = 200
+    try:
+        result = invoke()
+    finally:
+        rich_utils.FORCE_TERMINAL = original_force_terminal
+        rich_utils.MAX_WIDTH = original_max_width
+    assert result.exit_code == 0, result.output
+    return result.output
+
+
 def _help_text(module: str, argv: list[str]) -> str:
     import importlib
 
     app = importlib.import_module(module).app
-    # Rich wraps help text to the terminal width and TRUNCATES an option name
-    # that does not fit (``--model`` renders as ``--mod…`` when narrow). The
-    # width here comes from the ambient COLUMNS, which differs between a laptop,
-    # a CI runner and a piped capture — so the same app produced `--model` in
-    # one environment and `--mod…` in another, and `text.index("--model")`
-    # raised `ValueError: substring not found`. These tests compare the
-    # DESCRIPTION, not the wrapping, so pin a width wide enough to print every
-    # option name in full.
-    result = CliRunner().invoke(app, [*argv, "--help"], env={"COLUMNS": "200", "LINES": "50"})
-    assert result.exit_code == 0, result.output
-    return result.output
+    return _render_help_unwrapped(lambda: CliRunner().invoke(app, [*argv, "--help"]))
 
 
 @pytest.mark.parametrize("name", sorted(_COMMANDS))

@@ -167,12 +167,26 @@ def _cli_flags(prefix: tuple[str, ...]) -> set[str]:
     import os
     import subprocess
 
-    # Rich truncates an option name to fit the terminal (``--config-path`` renders
-    # as ``--con…`` at 40 columns), and the parent's COLUMNS is not inherited in
-    # a way this test can rely on — on CI it rendered narrow and every
-    # documented long flag "did not exist". Pin the width so the flags are
-    # printed in full; this reads the CLI, it does not test its wrapping.
-    env = {**os.environ, "COLUMNS": "200", "LINES": "50"}
+    # Rich wraps help text to the terminal width and TRUNCATES an option name
+    # that does not fit (``--config-path`` renders as ``--con…``), which made
+    # every documented long flag look nonexistent.
+    #
+    # The width is not simply COLUMNS. typer sets
+    # ``rich_utils.FORCE_TERMINAL = True`` when ``GITHUB_ACTIONS`` is exported
+    # (so CI renders colours); a forced terminal with no real tty makes rich
+    # query the terminal size, fall back to a narrow default, and truncate.
+    # Pinning COLUMNS alone fixed nothing on CI — TERMINAL_WIDTH does set
+    # typer's MAX_WIDTH, but it is read at import time, so it has to be passed
+    # to the SUBPROCESS that imports typer rather than set in this process.
+    env = {
+        **os.environ,
+        "COLUMNS": "200",
+        "LINES": "50",
+        "TERMINAL_WIDTH": "200",
+        # Drop the CI colour trigger so rich does not force a terminal here.
+        "GITHUB_ACTIONS": "",
+        "FORCE_COLOR": "",
+    }
     result = subprocess.run(  # noqa: S603 — argv is built from internal constants, not user input
         ["uv", "run", "--frozen", "llm", *prefix, "--help"],  # noqa: S607 — `uv` comes from PATH by design
         capture_output=True,
