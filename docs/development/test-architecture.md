@@ -71,11 +71,25 @@ YAML through the real `Config` validators, and a block pinning
 docs bug while the actual condition is "this host cannot run the thing the
 snippet documents".
 
-Those two now skip the block (with a stated reason) when it requests more GPUs
-than the host has, and each carries an anti-vacuity assertion so the filter
-cannot silently excuse every block. This is the place to exercise a GPU-count
-guard: **the validator must still reject a too-large request on a host that has
-the GPUs**, which the `gpu`-marked runs cover.
+`gpus_per_node` is a **worker count, not a hardware demand**: its consumers
+spawn that many local processes and fall back to one CPU process when no GPU is
+usable, and the shipped CPU demos pin `1` precisely so an idle multi-GPU host
+does not fan a tutorial into one DDP rank per card. So `1` must load anywhere;
+only a request for **more than one** worker needs that many real GPUs, and
+refusing those on a smaller host is the validator working.
+
+Those two tests therefore skip a block only when it asks for more than one
+worker and the host cannot provide them, each carrying an anti-vacuity
+assertion so the filter cannot silently excuse every block. This is the place to
+exercise a GPU-count guard: **the validator must still reject a too-large
+request on a host that has the GPUs**, which the `gpu`-marked runs cover.
+
+The first version of this filter excused `gpus_per_node: 1` too, which was
+wrong — it treated a worker count as a hardware requirement and, in doing so,
+papered over a real validator bug that made every CPU demo unloadable on a
+GPU-less machine. Skipping in a test is the right answer only when the *test's
+expectation* is hardware-dependent; when the product would also refuse a
+legitimate configuration, the product is what needs fixing.
 
 ## GPU handling (the "how to run without a GPU" contract)
 

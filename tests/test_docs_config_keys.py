@@ -514,13 +514,14 @@ class TestDocumentedYamlBlocksValidate:
         problems: list[str] = []
         skipped_for_gpus = 0
         for path, parsed in self._blocks():
-            # A block that pins a GPU count above this host's is NOT invalid: it
-            # documents a multi-GPU run, and ``DistributedConfig`` correctly
-            # refuses it at load time on a smaller machine. Validating it here
-            # turned "this box has 0 GPUs" into a docs defect, so the block is
-            # exercised only where the hardware it describes exists.
+            # ``gpus_per_node <= 1`` is a worker count, not a hardware demand,
+            # so it validates anywhere. A block asking for MORE than one worker
+            # does describe a multi-GPU run, and refusing it on a host that
+            # cannot provide those GPUs is the validator working correctly —
+            # validating it here would turn "this box has 0 GPUs" into a docs
+            # defect, so it is only exercised where the hardware exists.
             requested_gpus = (parsed.get("distributed") or {}).get("gpus_per_node")
-            if isinstance(requested_gpus, int) and requested_gpus > available_gpus:
+            if isinstance(requested_gpus, int) and requested_gpus > 1 and requested_gpus > available_gpus:
                 skipped_for_gpus += 1
                 continue
             try:

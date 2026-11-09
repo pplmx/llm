@@ -904,7 +904,16 @@ class DistributedConfig(BaseSettings):
         available = torch.cuda.device_count()
         if requested is None:
             return available
-        if requested > available:
+        # ``gpus_per_node`` is a WORKER COUNT, not a hardware requirement: the
+        # consumers (``DistributedManager.get_world_size``, ``train.main``) read
+        # it as "how many local processes to spawn" and fall back to a single
+        # CPU process when no GPU is usable. So ``1`` — which every shipped CPU
+        # demo pins, precisely to stop an idle multi-GPU host from fanning the
+        # tutorial out into one DDP rank per card — must be loadable on a
+        # 0-GPU machine. Only a request for MORE than one worker needs that
+        # many real GPUs, and asking for more than the host has is the case
+        # worth rejecting.
+        if requested > 1 and requested > available:
             raise ValueError(f"Requested {requested} GPUs but only {available} available")
         return requested
 

@@ -82,6 +82,37 @@ class TestConfig:
         ):
             DistributedConfig(gpus_per_node=3)
 
+    def test_single_worker_is_not_a_hardware_requirement(self):
+        """``gpus_per_node=1`` must load on a host with NO GPUs at all.
+
+        The field is a WORKER COUNT, not a hardware demand: the consumers
+        (``DistributedManager.get_world_size`` and ``train.main``) read it as
+        "how many local processes to spawn" and fall back to a single CPU
+        process when no GPU is usable. The validator compared it against
+        ``torch.cuda.device_count()`` unconditionally, so ``1 > 0`` was
+        rejected — and every shipped CPU demo pins exactly ``1``, precisely to
+        stop an idle multi-GPU host from fanning the tutorial out into one DDP
+        rank per card. The result was that the documented demos could not be
+        loaded on a CPU-only machine, which failed four e2e preset-config tests
+        and both shipped-config validation tests on GPU-less CI.
+        """
+        with patch("torch.cuda.device_count", return_value=0):
+            assert DistributedConfig(gpus_per_node=1).gpus_per_node == 1
+
+    def test_multi_worker_still_requires_that_many_gpus(self):
+        """The ``1`` exemption must not become a blanket exemption.
+
+        Asking for more processes than the host has GPUs is a real
+        configuration error and has to keep raising — otherwise the fix above
+        would silently turn an unsatisfiable DDP launch into a single-process
+        run.
+        """
+        with (
+            patch("torch.cuda.device_count", return_value=0),
+            pytest.raises(ValidationError, match="Requested 2 GPUs but only 0 available"),
+        ):
+            DistributedConfig(gpus_per_node=2)
+
     def test_optimization_config_validation_errors(self):
         with pytest.raises(ValidationError, match="Input should be greater than or equal to 0"):
             OptimizationConfig(num_workers=-1)
@@ -282,20 +313,23 @@ class TestConfig:
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             if {"model_path", "tokenizer_path", "host", "api_key"} & set(raw):
                 continue  # serving schema, covered by ServingConfig
-            # A shipped config that pins a GPU count above this host's is not
-            # broken — it documents a multi-GPU run, and ``DistributedConfig``
-            # correctly refuses it here. Requiring it to load on a 0-GPU box
-            # turned the host's hardware into a config defect.
+            # ``gpus_per_node <= 1`` is a worker count, not a hardware demand, so
+            # it loads anywhere (the demo configs pin 1 precisely to stay
+            # single-process). A config asking for MORE than one worker really
+            # does describe a multi-GPU run, and ``DistributedConfig`` rightly
+            # refuses it on a host that cannot provide it — that is the
+            # validator working, not a broken YAML, so it is only exercised
+            # where the hardware exists.
             requested_gpus = (raw.get("distributed") or {}).get("gpus_per_node")
-            if isinstance(requested_gpus, int) and requested_gpus > available_gpus:
+            if isinstance(requested_gpus, int) and requested_gpus > 1 and requested_gpus > available_gpus:
                 skipped_for_gpus.append(path.name)
                 continue
             Config.from_yaml(path)
             checked += 1
-        assert not skipped_for_gpus or checked >= 10, (
-            f"the GPU filter left too few configs to check: checked={checked}, skipped={skipped_for_gpus}"
-        )
         assert checked >= 10, f"expected to check the shipped training configs, only saw {checked}"
+        assert len(skipped_for_gpus) < 10, (
+            f"the GPU filter excused too many configs to be meaningful: {skipped_for_gpus}"
+        )
 
     def test_log_level_validated_at_config_load(self):
         """An unknown level must fail here, not in a logging call later.

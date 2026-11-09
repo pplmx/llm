@@ -136,9 +136,15 @@ class TestServePresetConfigs:
         assert cfg.peft_kwargs == {"rank": 8, "alpha": 16.0}
         assert cfg.peft_adapter_path is not None
         assert cfg.peft_adapter_path.endswith(".bin")
-        # Public-host guard must be satisfied (api_key set, even if
-        # placeholder).
-        assert cfg.api_key is not None
+        # The preset deliberately ships NO api_key: a credential committed to
+        # the repo is a credential that is already leaked, and the placeholder
+        # this file used to carry was accepted as the real key at startup. The
+        # key comes from ``LLM_SERVING_API_KEY`` instead, and an explicit YAML
+        # value would SHADOW that env var under pydantic-settings precedence —
+        # so "absent" is the correct, tested shape here. The public-host guard
+        # still refuses a ``0.0.0.0`` bind without a key; that is covered in
+        # ``tests/serving/test_config.py``.
+        assert cfg.api_key is None
         # Production-shape model.
         assert cfg.hidden_size == 256
         assert cfg.num_layers == 6
