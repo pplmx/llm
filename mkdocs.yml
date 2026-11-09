@@ -176,6 +176,7 @@ nav:
 
   - 📚 参考:
       - reference/architecture.md
+      - reference/architecture-assessment.md
       - reference/cli.md
       - 🔌 API Reference:
           - api/index.md
