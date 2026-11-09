@@ -15,6 +15,7 @@ from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.serving.config import ServingConfig
 from llm.training.core.checkpoint import load_checkpoint_payload
 from llm.training.core.config import ModelConfig
+from llm.utils.common import resolve_device
 from llm.utils.serialization import (
     register_framework_safe_globals as _register_framework_safe_globals,
 )
@@ -284,10 +285,8 @@ def load_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderModel, Any]:
 
 
 def _serving_target_device(device: str) -> torch.device:
-    """Resolve the serving target device (mirrors generation_service)."""
-    if device == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(device)
+    """Resolve the serving target device."""
+    return resolve_device(device)
 
 
 def _compile_if_requested(model: DecoderModel, config: ServingConfig) -> Any:

@@ -13,12 +13,7 @@ from llm.models.decoder import DecoderModel
 from llm.serving.batch_engine import ContinuousBatchingEngine
 from llm.serving.config import ServingConfig
 from llm.serving.loader import load_model_and_tokenizer
-
-
-def _resolve_device(device: str) -> torch.device:
-    if device == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(device)
+from llm.utils.common import resolve_device
 
 
 @dataclass
@@ -41,7 +36,7 @@ class ServingGenerationService:
         *,
         engine: ContinuousBatchingEngine | None = None,
     ) -> ServingGenerationService:
-        device = _resolve_device(config.device)
+        device = resolve_device(config.device)
         model, tokenizer = load_model_and_tokenizer(config)
         if engine is None:
             model.to(device)

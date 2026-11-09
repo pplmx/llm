@@ -22,6 +22,7 @@ from llm.compat.weight_mapping import (
 )
 from llm.models.decoder import DecoderModel
 from llm.runtime import ModelFactory
+from llm.utils.common import resolve_device
 
 logger = logging.getLogger(__name__)
 
@@ -142,8 +143,7 @@ def _load_from_local(
             dtype = torch.float32
 
     # Determine device
-    if device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = str(resolve_device(device))
 
     # Create model
     model = ModelFactory.build(

@@ -21,6 +21,7 @@ from llm.models.decoder import DecoderModel
 from llm.runtime.model_factory import ModelFactory
 from llm.runtime.tokenizer_factory import TokenizerFactory
 from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+from llm.utils.common import resolve_device
 
 
 @dataclass
@@ -190,8 +191,7 @@ def run_e2e_pipeline(
             f"E2EConfig.num_samples must be >= 5 so the validation split "
             f"(num_samples // 5) is non-empty; got {config.num_samples}."
         )
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device(device)
 
     if tokenizer is None:
         tokenizer = TokenizerFactory.from_default_test_corpus()
