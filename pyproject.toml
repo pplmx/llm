@@ -88,7 +88,7 @@ security = [
 # (``uv sync --extra <name>``) and pip (``pip install llm[<name>]``).
 eval = [
     "lm_eval>=0.4.12",
-    "nltk>=3.10.3",  # bumped: CVE-2026-71513 (AllowlistUnpickler RCE) + CVE-2026-81723 fixed in 3.10.3; PYSEC-2026-2078 landed in 3.10.0
+    "nltk>=3.10.4",  # bumped: CVE-2026-71513 (AllowlistUnpickler RCE) + CVE-2026-81723 fixed in 3.10.3; PYSEC-2026-2078 landed in 3.10.0; 3.10.4 additionally carries the pathsec model-artifact hardening (CVE-2026-81726)
     "rouge-score>=0.1.2",
     "sacrebleu>=2.6.0",
     "scikit-learn>=1.9.1",
@@ -101,7 +101,7 @@ perf = [
 ]
 compat = [
     "huggingface_hub>=0.20.0",
-    "pillow>=12.3.0",  # bumped: 18 CVEs (PYSEC-2026-2253/4/5/6/7, -3451/2/3, CVE-2026-54058/59197/59198/59200/59204) fix in 12.3.0
+    "pillow>=13.0.0",  # bumped: 18 CVEs (PYSEC-2026-2253/4/5/6/7, -3451/2/3, CVE-2026-54058/59197/59198/59200/59204) fix in 12.3.0; major bump to 13.0.0 for CVE-2026-112403 (CVSS 9.2 critical) + CVE-2026-112404 (8.7 high)
     "safetensors>=0.8.0",
 ]
 # Optional data-versioning backend (DVC, P0 预训练 productization last item).
