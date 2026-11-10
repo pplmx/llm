@@ -69,10 +69,17 @@ def _disable_core_dumps() -> None:
     ``RLIMIT_CORE = 0`` is inherited by spawned children, so this covers the
     multi-process suites without touching the host's global sysctl (which
     would need root and would outlive the test run).
-    """
-    import resource
 
-    with contextlib.suppress(ValueError, OSError):  # not settable on every platform
+    The ``resource`` module is Unix-only, so both the import and the call sit
+    inside one ``suppress``: on Windows there is no such module, and core dumps
+    are not produced in the first place, so skipping is correct there rather
+    than merely tolerable. Importing outside the guard raised
+    ``ModuleNotFoundError: No module named 'resource'`` at conftest import time
+    and failed the whole Windows job before a single test collected.
+    """
+    with contextlib.suppress(ImportError, ValueError, OSError):
+        import resource
+
         resource.setrlimit(resource.RLIMIT_CORE, (0, resource.RLIM_INFINITY))
 
 
