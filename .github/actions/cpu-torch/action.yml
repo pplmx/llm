@@ -1,0 +1,144 @@
+name: Install CPU-only PyTorch
+description: >
+  Swap torch to the CPU build (dropping the NVIDIA wheel stack) on a GPU-less
+  runner, WITHOUT changing any other locked package version.
+
+# Why this exists
+#
+# Every hosted runner is GPU-less, yet the committed lock resolves torch to the
+# CUDA build, which drags in the whole NVIDIA stack: cublas (403 MiB) + cudnn
+# (527 MiB) + triton (236 MiB) + nccl (206 MiB) and eight more, ~2.7 GiB
+# downloaded and unpacked on EVERY job — measured 5m37s of an 8m06s ubuntu job.
+# The suite then skips every GPU test anyway.
+#
+# The CPU build of the same torch version is an ordinary wheel on PyTorch's CPU
+# index: same version, different distribution. Swapping to it takes the venv
+# from 5.8 GB to 1.2 GB and resolves 270 packages instead of 288 with zero
+# `nvidia-*` deps.
+#
+# Why `--upgrade-package "torch==<exact>"` AND keeping uv.lock in place
+#
+# A bare `uv lock` against a different index re-resolves EVERYTHING to the
+# newest compatible versions. That silently moved typer 0.27.3 -> 0.29.0 and
+# click 8.5.0 -> 8.5.1; typer 0.29 dropped the `click_type` kwarg this CLI uses,
+# so every CLI test failed with
+# `TypeError: Option() got an unexpected keyword argument 'click_type'`.
+#
+# The crash was the symptom. The defect was that CI would have been validating a
+# dependency set that is NOT the committed one — a broken combination could pass
+# review and only surface after release.
+#
+# Two conditions are both required to keep every other version frozen:
+#   1. name exactly one package to re-resolve: `--upgrade-package torch==<ver>`
+#   2. do NOT delete uv.lock first — it is the reference that pins the rest.
+#      (Deleting it makes uv re-resolve the whole graph, which reintroduces the
+#      drift even with --upgrade-package.)
+#
+# The torch version is read from the committed lock, so this keeps working when
+# Renovate bumps torch.
+#
+# Safety rails, in order:
+#   - `uv lock --check` is the CALLER's job, against the committed lock, before
+#     this action runs — keeps the "forgot to commit uv.lock" gate honest.
+#   - After re-locking we verify torch is the ONLY package whose version changed.
+#     Any other drift restores the committed lock and FAILS the job: silently
+#     testing a different dependency set is worse than being slow.
+#   - If the CPU index is unreachable, we restore the committed lock and warn.
+#     A slower job beats a job that fails for a reason unrelated to the change.
+
+inputs:
+  groups:
+    description: >
+      Dependency-group arguments passed through to `uv sync`, e.g.
+      "--no-default-groups --group docs". Empty means uv's default groups.
+    required: false
+    default: ""
+  quiet:
+    description: Pass --quiet to uv sync.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Re-lock against the CPU-only PyTorch index
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        cp uv.lock uv.lock.committed
+
+        TORCH_VERSION=$(python3 - <<'PY'
+        import pathlib, re
+        text = pathlib.Path("uv.lock").read_text()
+        match = re.search(r'\[\[package\]\]\nname = "torch"\nversion = "([^"+]+)', text)
+        if not match:
+            raise SystemExit("could not determine the committed torch version from uv.lock")
+        print(match.group(1))
+        PY
+        )
+        echo "Committed torch version: $TORCH_VERSION"
+
+        # NOTE: uv.lock is deliberately NOT deleted here — it is the reference
+        # that pins every package except the one named in --upgrade-package.
+        if uv lock \
+             --index https://download.pytorch.org/whl/cpu \
+             --default-index https://pypi.org/simple \
+             --index-strategy unsafe-best-match \
+             --upgrade-package "torch==$TORCH_VERSION"; then
+          :
+        else
+          echo "::warning::CPU index unreachable; falling back to the committed lock (job will be slower)"
+          mv uv.lock.committed uv.lock
+          exit 0
+        fi
+
+        if grep -q 'name = "nvidia-' uv.lock; then
+          echo "::warning::CPU re-lock kept NVIDIA deps; falling back to the committed lock (job will be slower)"
+          mv uv.lock.committed uv.lock
+          exit 0
+        fi
+
+        # Only torch may differ; see the header for why this is a hard failure.
+        DRIFT=$(python3 - <<'PY'
+        import pathlib, re
+
+        def versions(path):
+            text = pathlib.Path(path).read_text()
+            found = {}
+            for block in text.split("[[package]]")[1:]:
+                name = re.search(r'^name = "([^"]+)"', block, re.M)
+                version = re.search(r'^version = "([^"]+)"', block, re.M)
+                if name and version:
+                    found.setdefault(name.group(1), version.group(1))
+            return found
+
+        before = versions("uv.lock.committed")
+        after = versions("uv.lock")
+        changed = []
+        for name in sorted(before.keys() & after.keys()):
+            # Compare public versions: the CPU rebuild carries a `+cpu` local
+            # version segment, which is the whole point of the swap.
+            if before[name] != after[name].split("+", 1)[0]:
+                changed.append(f"{name}: {before[name]} -> {after[name]}")
+        print("\n".join(changed))
+        PY
+        )
+
+        if [ -n "$DRIFT" ]; then
+          echo "::error::CPU re-lock changed packages other than torch:"
+          echo "$DRIFT"
+          echo "::error::Restoring the committed lock. Re-locking must only swap torch's distribution."
+          mv uv.lock.committed uv.lock
+          exit 1
+        fi
+
+        echo "CPU-only lock generated: torch $TORCH_VERSION+cpu, no NVIDIA deps, no other version drift."
+        rm -f uv.lock.committed
+
+    - name: Synchronize Dependencies
+      shell: bash
+      run: |
+        QUIET=""
+        if [ "${{ inputs.quiet }}" = "true" ]; then QUIET="--quiet"; fi
+        uv sync --frozen $QUIET ${{ inputs.groups }}

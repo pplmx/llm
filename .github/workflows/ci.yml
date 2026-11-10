@@ -38,19 +38,47 @@ jobs:
             -   name: Verify lockfile is up to date
                 run: uv lock --check
 
-            -   name: Synchronize Dependencies for Linting
-                run: uv sync --frozen --quiet --group dev
+            -   name: Resolve lint tool versions from the lock
+                # The tools are pinned by uv.lock, not by the pyproject floors
+                # (ruff floors at >=0.16.1 but the lock resolves 0.17.0), so
+                # read the resolved versions to keep this gate byte-identical
+                # to what `uv sync --group dev` would have produced.
+                id: lint-tools
+                run: |
+                    RUFF=$(python3 -c "
+                    import pathlib, re
+                    text = pathlib.Path('uv.lock').read_text()
+                    m = re.search(r'\[\[package\]\]\nname = \"ruff\"\nversion = \"([^\"]+)\"', text)
+                    print(m.group(1) if m else '')
+                    ")
+                    TY=$(python3 -c "
+                    import pathlib, re
+                    text = pathlib.Path('uv.lock').read_text()
+                    m = re.search(r'\[\[package\]\]\nname = \"ty\"\nversion = \"([^\"]+)\"', text)
+                    print(m.group(1) if m else '')
+                    ")
+                    test -n "$RUFF" || { echo '::error::could not resolve ruff from uv.lock'; exit 1; }
+                    test -n "$TY"   || { echo '::error::could not resolve ty from uv.lock'; exit 1; }
+                    echo "ruff=$RUFF ty=$TY"
+                    echo "ruff=$RUFF" >> "$GITHUB_OUTPUT"
+                    echo "ty=$TY" >> "$GITHUB_OUTPUT"
 
-            -   name: Check Code Formatting
-                run: uv run ruff format --check .
+            - name: Check Code Formatting
+              run: uvx ruff@${{ steps.lint-tools.outputs.ruff }} format --check .
 
-            -   name: Lint Code
-                run: uv run ruff check .
+            - name: Lint Code
+              run: uvx ruff@${{ steps.lint-tools.outputs.ruff }} check .
 
-            -   name: Type Check (ty)
-                # Finding W in docs/audits/2026-07-12-technical-due-diligence.md:
-                # type-check drift is now a hard CI gate.
-                run: uv run ty check src/llm/
+            - name: Type Check (ty)
+              # Finding W in docs/audits/2026-07-12-technical-due-diligence.md:
+              # type-check drift is now a hard CI gate.
+              #
+              # No project install: `ty check` resolves types from source and was
+              # verified to pass with no environment at all. The `dev` group is
+              # `include-group = "test"` plus ruff/ty, so `uv sync --group dev`
+              # installed the entire test tree — torch, the ~2.7 GiB CUDA NVIDIA
+              # stack, FastAPI, datasets — to run three static analysers.
+              run: uvx ty@${{ steps.lint-tools.outputs.ty }} check src/llm/
 
             -   name: Verify examples compile
                 run: |
@@ -68,15 +96,13 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
-                    # setup-uv's default cache key glob is
-                    # ``**/*requirements*.txt``; this repo has no such file, so
-                    # the key was constant and the cache could never be
-                    # invalidated by a dependency change (and a stale key
-                    # silently reuses an unrelated tree). ``uv.lock`` is the
-                    # actual dependency fingerprint here.
                     cache-dependency-glob: uv.lock
+            -   name: Verify lockfile is up to date
+                run: uv lock --check
             -   name: Synchronize Dependencies
-                run: uv sync --frozen
+                # Doctests import the package, so the real dependency tree is
+                # required here — but torch can still be the CPU build.
+                uses: ./.github/actions/cpu-torch
             -   name: Run doctests
                 run: uv run pytest --doctest-modules src/llm/ --no-header -q
 
@@ -106,54 +132,12 @@ jobs:
 
             -   name: Verify lockfile is up to date
                 # Checked against the COMMITTED lock, before the CPU re-lock
-                # below replaces it in this workspace. Keeps the "did someone
-                # forget to commit uv.lock" gate honest.
+                # replaces it in this workspace. Keeps the "did someone forget
+                # to commit uv.lock" gate honest.
                 run: uv lock --check
 
-            -   name: Re-lock against the CPU-only PyTorch index
-                # Hosted runners have no GPU, yet the committed lock resolves
-                # torch to the CUDA build and pinning `torch>=2.14` pulls the
-                # whole NVIDIA stack: ~2.7 GiB of wheels (cublas 403 MiB, cudnn
-                # 527 MiB, triton 236 MiB, nccl 206 MiB, ...) downloaded and
-                # unpacked on every job, taking ~5.5 min of a ~8 min job. The
-                # suite then skips every GPU test anyway.
-                #
-                # The CPU build of the same version is a normal wheel on
-                # PyTorch's CPU index; re-locking against it drops the venv from
-                # 5.8 GB to 1.2 GB. This rewrites uv.lock in the runner's
-                # checkout only — never committed, and `uv lock --check` above
-                # has already validated the version that IS committed.
-                #
-                # `--index-strategy unsafe-best-match` is required: uv's default
-                # first-match policy would never look at the second index for
-                # torch, since the PyPI mirror also serves it.
-                # Falls back to the committed (CUDA) lock if the CPU index is
-                # unreachable: a slow job is better than a job that fails for a
-                # reason unrelated to the change under test. The fallback is
-                # announced in the log so a silently-slow run is explicable.
-                # `shell: bash` is explicit: the Windows runner defaults to
-                # PowerShell, which cannot parse this (continuations, `if ...
-                # then`, POSIX `cp`/`mv`). Git Bash ships on the Windows image.
-                shell: bash
-                run: |
-                    cp uv.lock uv.lock.committed
-                    if rm -f uv.lock && uv lock \
-                         --index https://download.pytorch.org/whl/cpu \
-                         --default-index https://pypi.org/simple \
-                         --index-strategy unsafe-best-match; then
-                      if grep -q 'name = "nvidia-' uv.lock; then
-                        echo "::warning::CPU re-lock kept NVIDIA deps; falling back to the committed lock"
-                        mv uv.lock.committed uv.lock
-                      else
-                        echo "CPU-only lock generated (no NVIDIA deps)."
-                      fi
-                    else
-                      echo "::warning::CPU index unreachable; falling back to the committed lock (job will be slower)"
-                      mv uv.lock.committed uv.lock
-                    fi
-
-            -   name: Synchronize Dependencies
-                run: uv sync --frozen
+            -   name: Synchronize Dependencies (CPU-only torch)
+                uses: ./.github/actions/cpu-torch
 
             -   name: Build Project
                 run: uv build
@@ -224,19 +208,13 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
-                    # setup-uv's default cache key glob is
-                    # ``**/*requirements*.txt``; this repo has no such file, so
-                    # the key was constant and the cache could never be
-                    # invalidated by a dependency change (and a stale key
-                    # silently reuses an unrelated tree). ``uv.lock`` is the
-                    # actual dependency fingerprint here.
                     cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
                 run: uv lock --check
 
-            -   name: Synchronize Dependencies
-                run: uv sync --frozen
+            -   name: Synchronize Dependencies (CPU-only torch)
+                uses: ./.github/actions/cpu-torch
 
             -   name: Install just (command runner)
                 uses: taiki-e/install-action@just
@@ -270,19 +248,13 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
-                    # setup-uv's default cache key glob is
-                    # ``**/*requirements*.txt``; this repo has no such file, so
-                    # the key was constant and the cache could never be
-                    # invalidated by a dependency change (and a stale key
-                    # silently reuses an unrelated tree). ``uv.lock`` is the
-                    # actual dependency fingerprint here.
                     cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
                 run: uv lock --check
 
-            # No ``uv sync`` here on purpose. Both gates are independent of the
-            # INSTALLED environment:
+            # No environment install here on purpose. Both gates are independent
+            # of the INSTALLED environment:
             #   - pip-audit reads the requirements file exported from the lock,
             #   - bandit is a pure static analyser over ``src/llm/``.
             # Installing the project just to run them pulled the full dependency
@@ -322,18 +294,16 @@ jobs:
                 uses: astral-sh/setup-uv@v10.3.0
                 with:
                     enable-cache: true
-                    # setup-uv's default cache key glob is
-                    # ``**/*requirements*.txt``; this repo has no such file, so
-                    # the key was constant and the cache could never be
-                    # invalidated by a dependency change (and a stale key
-                    # silently reuses an unrelated tree). ``uv.lock`` is the
-                    # actual dependency fingerprint here.
                     cache-dependency-glob: uv.lock
 
             -   name: Verify lockfile is up to date
                 run: uv lock --check
 
             -   name: Synchronize Documentation Dependencies
+                # `--no-default-groups` skips the project's runtime deps
+                # entirely, so no torch is installed here and there is nothing
+                # for the CPU-torch swap to do. mkdocstrings does not import
+                # `llm` either — it parses source with griffe.
                 run: uv sync --frozen --no-default-groups --group docs
 
             -   name: Lint Markdown
