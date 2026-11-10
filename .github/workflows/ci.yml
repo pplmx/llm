@@ -38,47 +38,34 @@ jobs:
             -   name: Verify lockfile is up to date
                 run: uv lock --check
 
-            -   name: Resolve lint tool versions from the lock
-                # The tools are pinned by uv.lock, not by the pyproject floors
-                # (ruff floors at >=0.16.1 but the lock resolves 0.17.0), so
-                # read the resolved versions to keep this gate byte-identical
-                # to what `uv sync --group dev` would have produced.
-                id: lint-tools
-                run: |
-                    RUFF=$(python3 -c "
-                    import pathlib, re
-                    text = pathlib.Path('uv.lock').read_text()
-                    m = re.search(r'\[\[package\]\]\nname = \"ruff\"\nversion = \"([^\"]+)\"', text)
-                    print(m.group(1) if m else '')
-                    ")
-                    TY=$(python3 -c "
-                    import pathlib, re
-                    text = pathlib.Path('uv.lock').read_text()
-                    m = re.search(r'\[\[package\]\]\nname = \"ty\"\nversion = \"([^\"]+)\"', text)
-                    print(m.group(1) if m else '')
-                    ")
-                    test -n "$RUFF" || { echo '::error::could not resolve ruff from uv.lock'; exit 1; }
-                    test -n "$TY"   || { echo '::error::could not resolve ty from uv.lock'; exit 1; }
-                    echo "ruff=$RUFF ty=$TY"
-                    echo "ruff=$RUFF" >> "$GITHUB_OUTPUT"
-                    echo "ty=$TY" >> "$GITHUB_OUTPUT"
+            -   name: Synchronize Dependencies for Linting
+                # The `dev` group is `include-group = "test"` plus ruff/ty, so
+                # this still installs the full test tree — `ty check` needs it.
+                #
+                # Correction to an earlier attempt at trimming this: running
+                # `uvx ty check` with no project environment does NOT work. ty
+                # resolves `import torch` through site-packages, so without the
+                # install it reports 368 `unresolved-import` diagnostics and
+                # fails. That was verified the hard way on CI; a local shell had
+                # torch in .venv and wrongly looked clean.
+                #
+                # torch can still be the CPU build, which is where the ~2.7 GiB
+                # of NVIDIA wheels went.
+                uses: ./.github/actions/cpu-torch
+                with:
+                    groups: "--group dev"
+                    quiet: "true"
 
-            - name: Check Code Formatting
-              run: uvx ruff@${{ steps.lint-tools.outputs.ruff }} format --check .
+            -   name: Check Code Formatting
+                run: uv run ruff format --check .
 
-            - name: Lint Code
-              run: uvx ruff@${{ steps.lint-tools.outputs.ruff }} check .
+            -   name: Lint Code
+                run: uv run ruff check .
 
-            - name: Type Check (ty)
-              # Finding W in docs/audits/2026-07-12-technical-due-diligence.md:
-              # type-check drift is now a hard CI gate.
-              #
-              # No project install: `ty check` resolves types from source and was
-              # verified to pass with no environment at all. The `dev` group is
-              # `include-group = "test"` plus ruff/ty, so `uv sync --group dev`
-              # installed the entire test tree — torch, the ~2.7 GiB CUDA NVIDIA
-              # stack, FastAPI, datasets — to run three static analysers.
-              run: uvx ty@${{ steps.lint-tools.outputs.ty }} check src/llm/
+            -   name: Type Check (ty)
+                # Finding W in docs/audits/2026-07-12-technical-due-diligence.md:
+                # type-check drift is now a hard CI gate.
+                run: uv run ty check src/llm/
 
             -   name: Verify examples compile
                 run: |
