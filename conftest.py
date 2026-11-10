@@ -54,5 +54,29 @@ def _has_usable_gpu_memory() -> bool:
         return True
 
 
+def _disable_core_dumps() -> None:
+    """Stop a crashing test process from writing a multi-GB core file.
+
+    The default here is ``kernel.core_pattern=core`` with ``ulimit -c
+    unlimited``, so ANY child that aborts — and the multi-GPU distributed
+    tests spawn workers that abort on NCCL/CUDA errors — drops a full core
+    file in the CWD. Measured on this repo's own 8xA100 box: six concurrent
+    ranks produced 51 core files totalling **90 GB**, filling the volume to
+    100% and making every *subsequent* test fail with ``OSError(28, 'No space
+    left on device')`` — which then reads as an unrelated flaky failure in
+    whatever test happens to run next.
+
+    ``RLIMIT_CORE = 0`` is inherited by spawned children, so this covers the
+    multi-process suites without touching the host's global sysctl (which
+    would need root and would outlive the test run).
+    """
+    import resource
+
+    with contextlib.suppress(ValueError, OSError):  # not settable on every platform
+        resource.setrlimit(resource.RLIMIT_CORE, (0, resource.RLIM_INFINITY))
+
+
+_disable_core_dumps()
+
 if not _has_usable_gpu_memory():
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
