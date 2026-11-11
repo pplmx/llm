@@ -1,5 +1,5 @@
 # Base image for building the virtual environment
-FROM python:3.14-bookworm AS builder
+FROM python:3.15-bookworm AS builder
 
 ENV PATH="/root/.local/bin:$PATH" \
     UV_INDEX_URL="https://mirrors.cernet.edu.cn/pypi/web/simple" \
@@ -28,7 +28,7 @@ RUN uv sync --frozen
 RUN just build && just test
 
 # Final image for running the application
-FROM python:3.14-slim-bookworm
+FROM python:3.15-slim-bookworm
 
 LABEL author="Mystic"
 
