@@ -5,6 +5,10 @@
 .DS_Store
 logs
 checkpoints
+# Any checkpoint dir a shipped config writes (configs/*.yaml set
+# checkpoint_dir: checkpoints_<name>) — running a documented example must not
+# leave untracked output in the tree.
+checkpoints_*
 checkpoints_wiki
 checkpoints_c4_demo
 allure-results
@@ -16,6 +20,8 @@ core.*
 .sisyphus
 .worktrees
 data/wikitext2_train.txt
+# Corpus the distributed presets' usage block tells the reader to create.
+data/demo.txt
 
 ### Python template
 # Byte-compiled / optimized / DLL files

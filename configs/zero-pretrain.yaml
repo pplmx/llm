@@ -1,11 +1,65 @@
 # ZeRO Stage-1 example — mirrors docs/guides/distributed.md
 # "ZeRO Stage-1 quick start".
-# Usage: uv run llm train --task stream_lm --config-path configs/zero-pretrain.yaml
+#
+# Usage (one worker per visible GPU):
+#   mkdir -p data
+#   uv run python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" > data/demo.txt
+#   uv run llm train --task stream_lm --config-path configs/zero-pretrain.yaml
 #
 # Native ZeRO Stage-1: full param/grad copies per rank (averaged
 # over the world group each step) with round-robin optimized-state sharding.
 # Not layered on DDP — it is its own parallel_strategy.
+#
+# This file carries the full runnable shape (model / training / data /
+# optimization) rather than only the `distributed` block, so following the
+# documented command actually trains: a config holding just `distributed`
+# parses fine and then dies at `data.dataset_path is required`, which is what
+# the config-load test could not see.
+#
+# Multi-GPU: `gpus_per_node` is the number of workers THIS node spawns. Leave it
+# unset to use every visible GPU, or set a number to cap the fan-out. ZeRO needs
+# at least 2 ranks to shard anything — with 1 worker it still runs (an
+# unsharded single-process optimizer), which keeps this file smoke-testable.
+#
+# fp16 AMP is refused under ZeRO v1 (the GradScaler cannot drive the sharded
+# wrapper yet); bf16 and fp32 are fine. Keep the toy model fp32 on GPU or CPU.
+
+model:
+  hidden_size: 64
+  num_heads: 4
+  num_layers: 2
+  vocab_size: 256
+  max_seq_len: 64
+  dropout: 0.0
+
+training:
+  epochs: 1
+  batch_size: 4
+  lr: 1.0e-3
+  warmup_epochs: 0
+  num_samples: 1000
+  max_steps: 20
+
+data:
+  data_source: local
+  tokenizer_type: simple
+  dataset_path: data/demo.txt   # one record per line; see the usage block
+  max_seq_len: 64
+  steps_per_epoch: 5            # streaming needs an explicit step count
+  seen_hashes_path: null
+
+optimization:
+  use_amp: false         # fp16 is refused under ZeRO; bf16 is fine if you want AMP
+  use_compile: false     # collectives are not compiled; keep eager
+  gradient_checkpointing: false
 
 distributed:
   parallel_strategy: zero
   backend: nccl        # gloo also works (e.g. for CPU/gloo e2e tests)
+  # gpus_per_node: 2   # uncomment to cap the fan-out below the GPU count
+
+checkpoint:
+  checkpoint_dir: checkpoints_zero_pretrain
+  save_interval: 1
+  keep_last_n: 2
+  save_best: false

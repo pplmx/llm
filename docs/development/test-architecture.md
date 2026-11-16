@@ -3,7 +3,7 @@
 How tests are organized, how they behave on CPU-only hosts, and how CI splits
 fast per-push feedback from the slow deep gate. See also
 `.agents/skills/run-ci/SKILL.md` for the runnable commands and
-[`Justfile`](../../Justfile) for the recipes.
+[`Justfile`](https://github.com/pplmx/llm/blob/main/Justfile) for the recipes.
 
 ## Core problem (why this design exists)
 

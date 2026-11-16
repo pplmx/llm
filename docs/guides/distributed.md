@@ -55,6 +55,22 @@ sharded optimiser" workload.
 worker per GPU internally (`torch.multiprocessing.spawn`) — there is
 **no `torchrun` step**.
 
+Every preset in this section (`ddp` / `fsdp-pretrain` / `zero-pretrain` /
+`tp-pretrain` / `pp-pretrain`) is a complete runnable config that reads the
+same tiny local corpus, so create it once before running any of the commands
+below:
+
+```bash
+mkdir -p data
+uv run python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" > data/demo.txt
+```
+
+Each preset carries `model` / `training` / `data` / `distributed` (plus a
+`checkpoint` block) so the documented command actually trains. They used to
+hold only the `distributed` block, which parses fine and then dies at
+`data.dataset_path is required` before the parallelism the file demonstrates is
+ever exercised.
+
 Single-node, multi-GPU:
 
 ```yaml

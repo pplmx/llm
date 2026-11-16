@@ -333,6 +333,11 @@ def test_relative_links_in_docs_resolve() -> None:
     Reworking the docs tree silently breaks links, and `mkdocs --strict` does not
     catch a target that is a valid project path but a wrong relative path (nor
     links into non-markdown files it leaves alone).
+
+    Note this checks the REPOSITORY tree, where a link may legitimately point
+    outside `docs/`; :func:`test_docs_links_stay_inside_the_published_site`
+    covers the other half — a link that resolves on disk but is broken once
+    mkdocs copies the tree into `site/`.
     """
     problems: list[str] = []
     for path in _all_docs():
@@ -344,6 +349,41 @@ def test_relative_links_in_docs_resolve() -> None:
                 if not (path.parent / target).resolve().exists():
                     problems.append(f"{path.relative_to(_DOCS.parent)}:{lineno} -> {target}")
     assert not problems, "broken relative links in docs:\n  " + "\n  ".join(problems)
+
+
+def test_docs_links_stay_inside_the_published_site() -> None:
+    """A relative link may only point at files mkdocs actually PUBLISHES.
+
+    `docs/development/test-architecture.md` linked ``../../Justfile``, which
+    resolves against the real repository (the file is there) so the check above
+    passed — but mkdocs only copies ``docs/`` into the site, so the rendered
+    href became ``../../Justfile`` under ``site/`` and every reader got a 404.
+    The link was valid in the one place nobody reads it.
+
+    Relative links must therefore stay within `docs/`; anything outside it has
+    to be an absolute ``https://`` link to the repository (which is what the
+    other docs do for root-level files).
+    """
+    problems: list[str] = []
+    checked = 0
+    for path in _all_docs():
+        for lineno, line in enumerate(path.read_text(errors="ignore").split("\n"), 1):
+            for match in re.finditer(r"\]\(([^)#][^)]*?)(?:#[^)]*)?\)", line):
+                target = match.group(1).strip()
+                if target.startswith(("http://", "https://", "mailto:", "...", "#")):
+                    continue
+                checked += 1
+                resolved = (path.parent / target).resolve()
+                try:
+                    resolved.relative_to(_DOCS)
+                except ValueError:
+                    problems.append(
+                        f"{path.relative_to(_DOCS.parent)}:{lineno} -> {target} "
+                        "(resolves outside docs/, so mkdocs never publishes it — "
+                        "use an absolute GitHub URL)"
+                    )
+    assert checked > 100, f"only {checked} relative links scanned — the scan probably broke"
+    assert not problems, "relative links that would 404 on the published site:\n  " + "\n  ".join(problems)
 
 
 def test_files_referenced_by_docs_exist() -> None:

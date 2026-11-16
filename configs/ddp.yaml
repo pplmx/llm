@@ -1,12 +1,55 @@
 # DDP (data-parallel) example — mirrors docs/guides/distributed.md quick start.
-# Usage: uv run llm train --task stream_lm --config-path configs/ddp.yaml
 #
-# `gpus_per_node` defaults to torch.cuda.device_count() when omitted; the
+# Usage (one worker per visible GPU):
+#   mkdir -p data
+#   uv run python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" > data/demo.txt
+#   uv run llm train --task stream_lm --config-path configs/ddp.yaml
+#
+# `gpus_per_node` defaults to the visible device count when omitted; the
 # explicit 2 here is an example — set it to match your GPU count (or omit to
 # use every visible GPU). Multi-node runs leave it unset and pass
 # GPUS_PER_NODE via environment instead.
 
+# This file carries the full runnable shape (model / training / data /
+# optimization), not only the `distributed` block: a config holding just
+# `distributed` parses fine and then dies at `data.dataset_path is required`,
+# which the config-load test could not see.
+
+model:
+  hidden_size: 64
+  num_heads: 4
+  num_layers: 2
+  vocab_size: 256
+  max_seq_len: 64
+  dropout: 0.0
+
+training:
+  epochs: 1
+  batch_size: 4
+  lr: 1.0e-3
+  warmup_epochs: 0
+  num_samples: 1000
+  max_steps: 20
+
+data:
+  data_source: local
+  tokenizer_type: simple
+  dataset_path: data/demo.txt   # one record per line; see the usage block
+  max_seq_len: 64
+  steps_per_epoch: 5
+  seen_hashes_path: null
+
+optimization:
+  use_amp: true          # bf16 on GPU; harmless on CPU (auto-detected)
+  gradient_checkpointing: false
+
+checkpoint:
+  checkpoint_dir: checkpoints_ddp
+  save_interval: 1
+  keep_last_n: 2
+  save_best: false
+
 distributed:
-  gpus_per_node: 2        # defaults to torch.cuda.device_count()
+  gpus_per_node: 2        # defaults to the visible device count
   parallel_strategy: ddp  # default; shown for clarity
   backend: nccl

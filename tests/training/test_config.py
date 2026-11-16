@@ -1075,3 +1075,134 @@ class TestKvCacheCapabilityMessageStaysAccurate:
         assert "(currently: mha)." not in str(excinfo.value), (
             "the message still ends with the hard-coded '(currently: mha)' list"
         )
+
+
+class TestShippedConfigsCanActuallyStart:
+    """A config that PARSES is not a config that RUNS.
+
+    `test_shipped_training_configs_all_load` only proves the YAML satisfies the
+    schema. The four distributed presets (`ddp`, `zero`, `tp-pretrain`,
+    `pp-pretrain`, `fsdp-pretrain`) each held nothing but a `distributed` block
+    — 11 to 13 lines — while their own header and the distributed guide tell the
+    reader to run `uv run llm train --task stream_lm --config-path <that file>`.
+    Everything the run needs was missing: no `data.dataset_path`, so it died in
+    `StreamingTextDataModule.setup` with "data.dataset_path is required when
+    data_source='local'" — before the parallel strategy the file exists to
+    demonstrate was ever exercised.
+
+    The gap is structural, not a typo: schema validation cannot see "the
+    runnable shape is absent", because every missing field has a default. These
+    tests check the two things a reader needs to be true — the referenced corpus
+    is reachable, and the text source the run builds from it really constructs.
+    """
+
+    @staticmethod
+    def _shipped_configs():
+        import pathlib
+
+        import yaml
+
+        configs_dir = pathlib.Path(__file__).resolve().parents[2] / "configs"
+        for path in sorted(configs_dir.glob("*.yaml")):
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            if {"model_path", "tokenizer_path", "host", "api_key"} & set(raw):
+                continue  # serving schema, not a training run
+            yield path, raw
+
+    #: Configs whose `data` section is filled in AFTER loading, by design.
+    #: `c4-pretrain.yaml` documents "load the YAML, then apply C4_PRESET on top";
+    #: the preset writes the four HF dataset fields, so an empty `dataset_name`
+    #: here is the documented contract, not a defect.
+    _FILLED_BY_A_PRESET = frozenset({"c4-pretrain.yaml"})
+
+    def test_every_runnable_shipped_config_builds_its_text_source(self):
+        """A config the docs tell you to RUN must resolve its text source.
+
+        This calls the same `build_text_source` the streaming DataModule calls,
+        so a config missing `dataset_path` fails here instead of minutes into a
+        launch. It is the check that would have caught the four distributed
+        presets, which shipped with nothing but a `distributed` block.
+
+        Configs whose corpus is user-supplied (SFT / DPO / wikitext demo) are
+        reported separately rather than failed: those files document their own
+        corpus and a fresh clone legitimately lacks it. The assertion below is
+        on the PRESET class of failure only.
+        """
+        from llm.data.sources import build_text_source
+        from llm.training.core.config import Config
+
+        preset_problems: list[str] = []
+        user_corpus: list[str] = []
+        resolved = 0
+        for path, raw in self._shipped_configs():
+            if path.name in self._FILLED_BY_A_PRESET:
+                continue
+            if not raw.get("data"):
+                preset_problems.append(f"{path.name}: has no `data` section at all")
+                continue
+            config = Config.from_yaml(path)
+            try:
+                build_text_source(config.data)
+            except (ValueError, FileNotFoundError) as exc:
+                message = str(exc)
+                # "File not found: <path>" is the user-supplied-corpus case.
+                if message.startswith("File not found:"):
+                    user_corpus.append(path.name)
+                else:
+                    preset_problems.append(f"{path.name}: {message}")
+                continue
+            resolved += 1
+
+        assert resolved >= 9, f"only {resolved} shipped configs resolved a text source"
+        assert not preset_problems, "shipped training configs that cannot start:\n  " + "\n  ".join(preset_problems)
+
+    def test_distributed_presets_declare_a_runnable_shape(self):
+        """The distributed presets must carry the sections their own usage block promises.
+
+        Each preset's header says
+        ``uv run llm train --task stream_lm --config-path configs/<name>.yaml``.
+        That command needs a model, a training schedule and a data source; the
+        files shipped with only a `distributed` block, so the documented command
+        failed with "data.dataset_path is required" before reaching the
+        parallelism the file exists to demonstrate.
+
+        Other shipped configs (SFT / DPO / wikitext) legitimately expect a
+        user-supplied corpus, so this is scoped to the presets whose header
+        command the repo itself provides a corpus for.
+        """
+        import pathlib
+
+        import yaml
+
+        configs_dir = pathlib.Path(__file__).resolve().parents[2] / "configs"
+        presets = [
+            "ddp.yaml",
+            "zero-pretrain.yaml",
+            "tp-pretrain.yaml",
+            "pp-pretrain.yaml",
+            "fsdp-pretrain.yaml",
+            "moe-demo.yaml",
+        ]
+        problems: list[str] = []
+        for name in presets:
+            path = configs_dir / name
+            assert path.exists(), f"{name} is referenced by the docs but missing"
+            text = path.read_text(encoding="utf-8")
+            raw = yaml.safe_load(text) or {}
+            # `moe-demo.yaml` is a single-process demo: it needs no
+            # `distributed` block (the default DDP-of-one path runs it).
+            required = ("model", "training", "data")
+            if name != "moe-demo.yaml":
+                required += ("distributed",)
+            problems.extend(f"{name}: missing `{section}` section" for section in required if not raw.get(section))
+            dataset_path = (raw.get("data") or {}).get("dataset_path")
+            if not dataset_path:
+                problems.append(f"{name}: `data.dataset_path` is required for data_source=local")
+            elif dataset_path not in text:
+                # The corpus the usage block tells the reader to create must be
+                # the one the config reads, or the header command is wrong even
+                # when every section is present.
+                problems.append(f"{name}: usage block never names its own dataset_path ({dataset_path})")
+            elif "print(" not in text:
+                problems.append(f"{name}: uses {dataset_path} without showing how to create it")
+        assert not problems, "distributed presets that cannot run as documented:\n  " + "\n  ".join(problems)

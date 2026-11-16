@@ -1,13 +1,59 @@
 # Pipeline Parallelism example — mirrors docs/guides/distributed.md.
-# Usage: uv run llm train --task stream_lm --config-path configs/pp-pretrain.yaml
+#
+# Usage (one worker per visible GPU):
+#   mkdir -p data
+#   uv run python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" > data/demo.txt
+#   uv run llm train --task stream_lm --config-path configs/pp-pretrain.yaml
 #
 # pp_size=0 (default) = pure PP using the whole world; a pp_size < world_size
 # enables PP + data-parallel 2D (see DistributedConfig.pp_size). PP only
-# supports the standard LM loop: non-standard-loop tasks, AMP, torch.compile
-# and TP+FSDP composition are refused with a clear error.
+# supports the standard LM loop: non-standard-loop tasks, AMP and torch.compile
+# are refused with a clear error, which is why `use_amp` stays false here.
 #
-# World grid: one stage per rank, transformers_blocks split across stages.
+# World grid: one stage per rank; `num_layers: 2` above means a 2-rank run puts
+# one transformer block on each stage.
+
+# This file carries the full runnable shape (model / training / data /
+# optimization), not only the `distributed` block: a config holding just
+# `distributed` parses fine and then dies at `data.dataset_path is required`,
+# which the config-load test could not see.
+
+model:
+  hidden_size: 64
+  num_heads: 4
+  num_layers: 2
+  vocab_size: 256
+  max_seq_len: 64
+  dropout: 0.0
+
+training:
+  epochs: 1
+  batch_size: 4
+  lr: 1.0e-3
+  warmup_epochs: 0
+  num_samples: 1000
+  max_steps: 20
+
+data:
+  data_source: local
+  tokenizer_type: simple
+  dataset_path: data/demo.txt   # one record per line; see the usage block
+  max_seq_len: 64
+  steps_per_epoch: 5
+  seen_hashes_path: null
+
+optimization:
+  use_amp: false         # PP refuses AMP (the schedule owns the backward)
+  gradient_checkpointing: false
+
+checkpoint:
+  checkpoint_dir: checkpoints_pp_pretrain
+  save_interval: 1
+  keep_last_n: 2
+  save_best: false
 
 distributed:
   parallel_strategy: pp
   backend: nccl
+  # pp_size: 0   # 0 = pure PP over the whole world
+  # gpus_per_node: 2

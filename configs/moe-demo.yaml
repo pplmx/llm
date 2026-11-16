@@ -1,14 +1,51 @@
 # MoE demo — mirrors docs/development/guide-extending.md "食谱 4".
-# Usage: uv run llm train --task stream_lm --config-path configs/moe-demo.yaml
+#
+# Usage (one worker per visible GPU; works CPU-only too via gloo):
+#   mkdir -p data
+#   uv run python -c "print('\n'.join(f'this is sample line {i}' for i in range(200)))" > data/demo.txt
+#   uv run llm train --task stream_lm --config-path configs/moe-demo.yaml
 #
 # Enable MoE in the model with mlp_impl: moe + num_experts + top_k;
 # TransformerBlock instantiates the MoE layer instead of the standard MLP.
+#
+# The runnable shape (data / training / optimization) is included on purpose:
+# the guide documents the command above, and a config holding only the `model`
+# block fails at `data.dataset_path is required` before any MoE layer is built.
 
 model:
-  hidden_size: 512
+  hidden_size: 128          # small enough to smoke-test; raise for a real run
   num_layers: 2
   num_heads: 8
-  max_seq_len: 512
+  max_seq_len: 128
+  vocab_size: 256           # character tokenizer
+  dropout: 0.0
   mlp_impl: moe      # Enable MoE
-  num_experts: 8      # 专家总数
-  top_k: 2            # 每个 token 激活的专家数量
+  num_experts: 8     # total experts
+  top_k: 2           # experts activated per token (0 < top_k <= num_experts)
+
+training:
+  epochs: 1
+  batch_size: 4
+  lr: 1.0e-3
+  warmup_epochs: 0
+  num_samples: 1000
+  max_steps: 20
+
+data:
+  data_source: local
+  tokenizer_type: simple
+  dataset_path: data/demo.txt   # one record per line; see the usage block
+  max_seq_len: 128
+  steps_per_epoch: 5            # streaming needs an explicit step count
+  seen_hashes_path: null
+
+optimization:
+  use_amp: false
+  use_compile: false
+  gradient_checkpointing: false
+
+checkpoint:
+  checkpoint_dir: checkpoints_moe_demo
+  save_interval: 1
+  keep_last_n: 2
+  save_best: false
