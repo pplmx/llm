@@ -299,11 +299,18 @@
 #### 10.1 Flash Attention 集成
 
 > [!NOTE]
-> 暂缓: 当前使用自定义 SDPA 实现, Flash Attention 集成优先级降低.
+> `attn_impl="flash_attn"` 已实现并注册（`src/llm/core/attn/flash_attn.py`，
+> 经 `ATTENTION_REGISTRY` 接入），支持 GQA/MQA、KV cache、prefix tuning 与
+> TP 分片；`flash-attn` 是可选依赖（`llm[perf]`，只有 sdist，需在 CUDA 主机上
+> 现场编译）。未装该包时注册表项仍在，实例化时给出清晰错误。
+> 性能基准测试尚未做——见下面第三项。
 
-- [ ] 集成 Flash Attention 2
-- [ ] 在 MHA 和 GQA 中启用 Flash Attention
-- [ ] 性能基准测试和优化
+- [x] 集成 Flash Attention 2 (`FlashAttention` wrapper + `llm[perf]` 可选依赖 + `ATTENTION_REGISTRY` 注册)
+- [x] 在 MHA 和 GQA 中启用 Flash Attention (GQA/MQA 经 `num_kv_heads` 支持；与 MHA 同一套
+      projection/KV-cache 接口，`tests/training/distributed/test_tensor_parallel.py` 覆盖 TP 下的
+      flash 前向/梯度 parity)
+- [ ] 性能基准测试和优化 (`scripts/benchmark_inference.py` 目前只压 serving 引擎，
+      不对比 `attn_impl` 之间的吞吐/延迟)
 
 #### 10.2 高级推理优化
 
@@ -419,7 +426,9 @@
 
 #### 12.3 统一多模态接口
 
-- [ ] 设计通用的多模态数据接口
+- [x] 设计通用的多模态数据接口（`MultimodalDataModule` 定义 batch 契约
+  `{"input_ids","labels","modal_embeds"}`，`MODALITY_ENCODER_REGISTRY` 统一
+  模态编码器注册；不硬改 `DecoderModel`——见 [ADR-013](docs/adr/013-multimodal-encoder-contract.md)）
 - [x] **实现模态特定的预处理器**（图像→token 预处理器研究切片 `multimodal/preprocess.py`: `patchify` 把 `[B,C,H,W]` 切成 `[B,N,C*p*p]` patch + `ImagePatchPreprocessor`（learned linear 投影 + ViT 式可学习 positional embedding）；CPU parity——patchify===手工切片参考、输出 `[B,N,embed]` 且确定、投影/pos_embed 可微；见 [docs/guides/multimodal_preprocess.md](docs/guides/multimodal_preprocess.md)）
 - [ ] 构建多模态 tokenizer
 
