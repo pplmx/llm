@@ -226,3 +226,48 @@ def test_no_zero_row_warning_when_data_loads(tmp_path, caplog):
 
     assert len(dataset) == 1
     assert not [r for r in caplog.records if "Parsed 0 usable" in r.getMessage()]
+
+
+def test_empty_response_record_is_rejected_not_trained_on(tmp_path):
+    """A record with no supervised token must fail loudly, not train on nothing.
+
+    An Alpaca row whose ``output`` is empty produces labels that are ALL
+    ``ignore_index``: ``CrossEntropyLoss`` over that returns NaN, and the task's
+    non-finite guard then reports loss 0.0 and skips the optimizer step. The run
+    looks healthy while every record from that source teaches nothing — a loss
+    curve that never moves for a reason nobody can see.
+
+    The dataset now refuses the record and names its index. This is the cheap
+    place to catch it: at the data boundary, where the offending JSONL line is
+    still identifiable.
+    """
+    from string import printable
+
+    path = tmp_path / "empty_output.jsonl"
+    path.write_text(json.dumps({"instruction": "Say hi.", "input": "", "output": ""}) + "\n", encoding="utf-8")
+    dataset = SFTDataset(path, tokenizer=SimpleCharacterTokenizer([printable]), max_seq_len=32)
+
+    with pytest.raises(ValueError, match="no supervised tokens"):
+        _ = dataset[0]
+
+
+def test_empty_response_does_not_reject_a_normal_neighbour(tmp_path):
+    """Counterpart: a real response in the same file must still work.
+
+    Without this, a guard that rejected every record would satisfy the test
+    above while breaking SFT entirely.
+    """
+    from string import printable
+
+    path = tmp_path / "two_records.jsonl"
+    records = [
+        {"instruction": "Say hi.", "input": "", "output": "Hello!"},
+        {"instruction": "Add.", "input": "1+1", "output": "2"},
+    ]
+    path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+    dataset = SFTDataset(path, tokenizer=SimpleCharacterTokenizer([printable]), max_seq_len=64)
+
+    for index in range(len(dataset)):
+        item = dataset[index]
+        supervised = int((item["labels"] != -100).sum())
+        assert supervised > 0, f"record {index} produced no supervised tokens"

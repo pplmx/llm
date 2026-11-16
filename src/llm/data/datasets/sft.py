@@ -179,6 +179,21 @@ class SFTDataset(Dataset):
             input_ids = input_ids[-self.max_seq_len :]
             labels = labels[-self.max_seq_len :]
 
+        # A record whose every label is ``ignore_index`` contributes no training
+        # signal: CrossEntropyLoss over an all-ignored batch returns NaN, and the
+        # task's non-finite guard then reports loss 0.0 and skips the step — the
+        # run looks healthy while a whole source of records teaches nothing. It
+        # happens with an empty ``output`` (an Alpaca row whose response was
+        # never filled in) or a response the truncation above removed entirely.
+        # Failing here names the record; the alternative is a loss curve that
+        # never moves for a reason nobody can see.
+        if all(label == self.ignore_index for label in labels):
+            raise ValueError(
+                f"SFTDataset record {index} has no supervised tokens: every label is "
+                f"{self.ignore_index}. Its response is empty or was truncated away "
+                f"(max_seq_len={self.max_seq_len}). Fix the record, or drop it from the JSONL."
+            )
+
         # Pad if too short
         pad_len = self.max_seq_len - len(input_ids)
         if pad_len > 0:
