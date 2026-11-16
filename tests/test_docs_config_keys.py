@@ -471,6 +471,64 @@ class TestDocumentedImportsResolve:
 
 
 # --------------------------------------------------------------------------- #
+# A documented command must name the config it claims to use
+# --------------------------------------------------------------------------- #
+
+
+def _documented_serve_commands() -> list[tuple[pathlib.Path, int, str]]:
+    """Every line inside a fenced code block that RUNS ``llm serve``.
+
+    Fenced blocks only: prose also mentions ``llm serve`` next to a config path
+    (the tutorial's bullet list does exactly that) without being a command, and
+    flagging those would force the test to guess intent from formatting.
+    """
+    import re
+
+    commands = []
+    for path in _all_docs():
+        in_fence = False
+        for lineno, line in enumerate(path.read_text(errors="ignore").split("\n"), 1):
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence and re.search(r"llm serve\b", line):
+                commands.append((path, lineno, line.strip()))
+    return commands
+
+
+def test_documented_serve_command_passes_the_config_it_names() -> None:
+    """A command that names a YAML must pass it via ``--config``.
+
+    ``llm serve`` does NOT read ``configs/serve_local_demo.yaml`` implicitly —
+    without ``--config`` it runs on ``ServingConfig``'s field defaults. The
+    tutorial used to present ``LLM_SERVING_HOST=127.0.0.1 uv run llm serve``
+    under the heading "Smoke config: configs/serve_local_demo.yaml" and say it
+    would use "all of the YAML's defaults"; measured, the bare command starts
+    with ``max_seq_len=128`` / ``device=cuda:0`` while the file asks for 64 /
+    CPU. A reader following the tutorial got a server whose configuration was
+    never applied.
+
+    This checks the mechanical part (a command naming a config file passes it),
+    which is what silently drifts when prose and command are edited apart.
+    """
+    import re
+
+    problems: list[str] = []
+    checked = 0
+    for path, lineno, line in _documented_serve_commands():
+        # Placeholders the reader substitutes ("configs/your_serve.yaml").
+        named = re.findall(r"configs/[\w./-]+\.yaml", line)
+        if not named:
+            continue
+        checked += 1
+        if "--config" not in line:
+            problems.append(f"{path.relative_to(_DOCS.parent)}:{lineno} names {named[0]} but has no --config")
+
+    assert checked >= 1, "no documented `llm serve` line names a config file — the scan probably broke"
+    assert not problems, "documented serve commands that would ignore their config:\n  " + "\n  ".join(problems)
+
+
+# --------------------------------------------------------------------------- #
 # Documented YAML must survive validation, not just key-name lookup
 # --------------------------------------------------------------------------- #
 

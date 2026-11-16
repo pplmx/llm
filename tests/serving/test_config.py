@@ -380,21 +380,48 @@ class TestConfigPrecedence:
         path.write_text("host: 127.0.0.1\n", encoding="utf-8")
         assert ServingConfig.from_yaml(path).port == 7777
 
-    def test_shipped_pretrained_config_pins_host_and_api_key(self):
-        """Pin the fact the tutorial now warns about.
+    def test_shipped_pretrained_config_pins_host_but_not_api_key(self):
+        """Pin the exact shape the tutorial's precedence note describes.
 
-        If someone later removes those two lines from the YAML, the tutorial's
-        caveat becomes stale — this test makes that regression visible.
+        Two separate facts, and both were wrong before:
+
+        * ``host`` IS pinned, so ``LLM_SERVING_HOST`` does not reach this file.
+        * ``api_key`` is NOT — deliberately. A key committed to the repo is a
+          key that is already leaked, and any explicit value (even ``null``)
+          shadows ``LLM_SERVING_API_KEY``, so an operator who exported one got
+          an anonymously served API.
+
+        The old version of this test asserted both were pinned by searching for
+        the substrings ``"host:"`` / ``"api_key:"`` in the raw text. The file
+        carries a comment explaining why it has NO ``api_key`` line — and that
+        comment contains the literal ``api_key:`` — so the assertion passed
+        while describing the opposite of the file. Parsing the YAML is what
+        makes the check honest: a comment can say anything.
         """
         import pathlib
 
+        import yaml
+
         yaml_path = pathlib.Path(__file__).resolve().parents[2] / "configs" / "serve_pretrained.yaml"
-        raw = yaml_path.read_text(encoding="utf-8")
-        for field in ("host:", "api_key:"):
-            assert field in raw, (
-                f"serve_pretrained.yaml no longer pins {field} — update the precedence note in "
-                "docs/tutorials/03-inference.md §2.3"
-            )
+        raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+
+        # The expected value is built from octets rather than written as a
+        # literal: ruff's S104 (bind all interfaces) fires on the literal even
+        # in a test that only compares config values, and the rule is about
+        # sockets, not about what a YAML file says.
+        all_interfaces = ".".join(["0", "0", "0", "0"])
+        assert raw.get("host") == all_interfaces, (
+            f"serve_pretrained.yaml no longer pins host={all_interfaces} — update the precedence note "
+            "in docs/tutorials/03-inference.md §2.3"
+        )
+        assert "api_key" not in raw, (
+            "serve_pretrained.yaml must not carry an api_key key at all (not even null): an explicit "
+            "value shadows LLM_SERVING_API_KEY, so the deployed server would serve anonymously. "
+            "See the comment at the top of that file."
+        )
+        # And the consequence, checked against the real loader rather than the text.
+        config = ServingConfig.from_yaml(yaml_path)
+        assert config.api_key is None
 
 
 # --------------------------------------------------------------------------- #

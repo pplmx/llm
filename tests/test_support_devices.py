@@ -24,13 +24,29 @@ def test_all_devices_falls_back_to_cpu():
         assert devices.all_devices() == [torch.device("cpu")]
 
 
-def test_device_strings_match_device_objects():
-    # Both are derived from the same single-sweep helper, so they agree by
-    # construction. This used to be a TOCTOU-sensitive comparison; the fix
-    # below (one mem_get_info sweep per call) is what makes it stable.
+def test_device_strings_match_device_objects(monkeypatch):
+    """``cuda_device_strings`` must be the string form of ``all_gpu_devices``.
+
+    Compared under a FIXED VRAM reading, because two live calls sample at two
+    different moments: on a shared host another job moves free VRAM between
+    them, the sort order legitimately changes, and the comparison fails without
+    anything being wrong. That is what made this test fail only while a GPU job
+    was running — it asserted a property of the hardware (free VRAM is stable
+    across two calls) that the repo does not promise.
+
+    What IS promised is that both helpers agree given the same readings, so the
+    reading is pinned here.
+    """
+    per_device_mb = {0: 9000, 1: 5000, 2: 7000}
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: len(per_device_mb))
+    monkeypatch.setattr(devices, "_free_memory", lambda index: per_device_mb[index] * 1024**2)
+
     strings = devices.cuda_device_strings()
     objects = devices.all_gpu_devices()
     assert strings == [str(device) for device in objects]
+    # Ordering is the VRAM-descending one, so the assertion is not vacuous.
+    assert strings == ["cuda:0", "cuda:2", "cuda:1"]
 
 
 def test_free_vram_ordering_comes_from_one_sampling_sweep():

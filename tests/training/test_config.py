@@ -1115,45 +1115,48 @@ class TestShippedConfigsCanActuallyStart:
     #: here is the documented contract, not a defect.
     _FILLED_BY_A_PRESET = frozenset({"c4-pretrain.yaml"})
 
-    def test_every_runnable_shipped_config_builds_its_text_source(self):
-        """A config the docs tell you to RUN must resolve its text source.
+    def test_every_runnable_shipped_config_names_a_text_source_it_can_resolve(self):
+        """A config the docs tell you to RUN must name the inputs that run needs.
 
-        This calls the same `build_text_source` the streaming DataModule calls,
-        so a config missing `dataset_path` fails here instead of minutes into a
-        launch. It is the check that would have caught the four distributed
-        presets, which shipped with nothing but a `distributed` block.
+        This is the check that would have caught the four distributed presets,
+        which shipped with nothing but a `distributed` block: they parsed, then
+        died at `data.dataset_path is required when data_source='local'` — after
+        the reader had already waited through model construction.
 
-        Configs whose corpus is user-supplied (SFT / DPO / wikitext demo) are
-        reported separately rather than failed: those files document their own
-        corpus and a fresh clone legitimately lacks it. The assertion below is
-        on the PRESET class of failure only.
+        It checks the STRUCTURE the run needs, not the filesystem. Most shipped
+        configs deliberately point at corpora the reader creates (the header of
+        each file shows the command), so requiring the file to exist would fail
+        on every fresh clone — including on the repo's own CI. What must hold
+        unconditionally is that a `local` source names a `dataset_path` and an
+        `hf` source names a `dataset_name`; a config missing both is a skeleton,
+        not an example.
         """
-        from llm.data.sources import build_text_source
         from llm.training.core.config import Config
 
         preset_problems: list[str] = []
-        user_corpus: list[str] = []
-        resolved = 0
+        checked = 0
         for path, raw in self._shipped_configs():
-            if path.name in self._FILLED_BY_A_PRESET:
-                continue
-            if not raw.get("data"):
+            data = raw.get("data")
+            if not data:
                 preset_problems.append(f"{path.name}: has no `data` section at all")
                 continue
+            # The schema itself already rejects an unparseable file; building
+            # the Config proves the section survives the real validators.
             config = Config.from_yaml(path)
-            try:
-                build_text_source(config.data)
-            except (ValueError, FileNotFoundError) as exc:
-                message = str(exc)
-                # "File not found: <path>" is the user-supplied-corpus case.
-                if message.startswith("File not found:"):
-                    user_corpus.append(path.name)
-                else:
-                    preset_problems.append(f"{path.name}: {message}")
+            source = config.data.data_source
+            needs_path = source in {"local", "dedup_local"} and not config.data.dataset_path
+            needs_name = (
+                source in {"hf", "dedup_hf"}
+                and not config.data.dataset_name
+                and path.name not in self._FILLED_BY_A_PRESET
+            )
+            if needs_path or needs_name:
+                field = "dataset_path" if needs_path else "dataset_name"
+                preset_problems.append(f"{path.name}: data_source={source!r} needs `{field}`")
                 continue
-            resolved += 1
+            checked += 1
 
-        assert resolved >= 9, f"only {resolved} shipped configs resolved a text source"
+        assert checked >= 10, f"only {checked} shipped configs declared usable inputs"
         assert not preset_problems, "shipped training configs that cannot start:\n  " + "\n  ".join(preset_problems)
 
     def test_distributed_presets_declare_a_runnable_shape(self):

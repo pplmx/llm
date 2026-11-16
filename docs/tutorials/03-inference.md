@@ -149,9 +149,14 @@ curl http://127.0.0.1:8000/metrics
 最小可行配置 —— 无 checkpoint、CPU 跑、回环 host、无认证。适合 CI 冒烟测试或本地 API 探索。
 
 ```bash
-# 启动（用 YAML 的所有默认 + 可能的 env var 覆盖）
+# 启动：显式把这份 YAML 交给服务端
+uv run llm serve --config configs/serve_local_demo.yaml
+
+# 也可以只用其中几项，其余走默认
 LLM_SERVING_HOST=127.0.0.1 uv run llm serve
 ```
+
+> **`--config` 是必须的。** 裸 `uv run llm serve` 不会自动读取 `configs/serve_local_demo.yaml` — 它用 `ServingConfig` 的字段默认值。两者实际启动出的服务不同：带这份 YAML 是 `max_seq_len=64` / `device=cpu`，裸启动是 `max_seq_len=128` / `device=cuda:0`（有 GPU 时）。想复用文件里的设置就必须传 `--config`。
 
 ### 2.3 生产 config：`configs/serve_pretrained.yaml`
 
@@ -167,12 +172,13 @@ LLM_SERVING_HOST=127.0.0.1 uv run llm serve
 uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 
 # 2. 用 production preset 部署
+#    --config 是必须的：裸 llm serve 不读这个文件。
+#    API key 走环境变量（该 YAML 故意不写 api_key，见下方「配置优先级」）。
 LLM_SERVING_API_KEY=$(openssl rand -hex 32) \
-LLM_SERVING_HOST=0.0.0.0 \
-uv run llm serve
+uv run llm serve --config configs/serve_pretrained.yaml
 ```
 
-`configs/serve_pretrained.yaml` 在 `model_path` / `tokenizer_path` / `peft_*` 字段已经填好了默认值。
+`configs/serve_pretrained.yaml` 在 `model_path` / `tokenizer_path` / `peft_*` 字段已经填好了默认值，`host: 0.0.0.0` 也在文件里（所以 `LLM_SERVING_HOST` 对它无效——要换 host 改 YAML）。
 
 **配置优先级**（`ServingConfig` 是 pydantic `BaseSettings`，`from_yaml` 走 `model_validate`）：
 
@@ -180,8 +186,10 @@ uv run llm serve
 YAML 显式写的字段  >  环境变量 LLM_SERVING_*  >  字段默认值
 ```
 
-也就是说 env vars 只能填 YAML **没有显式设置**的字段。这一点对 `serve_pretrained.yaml` 尤其要注意：该文件**显式写死了 `host: 0.0.0.0` 和 `api_key`**，所以
-`LLM_SERVING_HOST` / `LLM_SERVING_API_KEY` 对它**不生效**——要改这两项得改 YAML，或另写一份不设它们的配置。
+也就是说 env vars 只能填 YAML **没有显式设置**的字段。`serve_pretrained.yaml` 的两种情况正好各占一边：
+
+- 它**显式写了 `host: 0.0.0.0`**，所以 `LLM_SERVING_HOST` 对它**不生效**——要改就得改 YAML，或另写一份不设 `host` 的配置。
+- 它**故意不写 `api_key`**，所以 `LLM_SERVING_API_KEY` 对它**生效**。这是有意的：一个写在仓库里的 key 等于已经泄露，而且显式值会遮蔽环境变量（`api_key: null` 也会），导致运维导出了 key、服务却匿名运行。部署时请看 §2.3 的命令，把 key 交给环境变量。
 
 ### 2.4 配置结构详解
 
