@@ -140,7 +140,12 @@ jobs:
                     # absent, which never fires once the module is already in
                     # ``sys.modules``. A test that only runs when its
                     # dependency is MISSING cannot be maintained.
-                    groups: "--extra eval --extra logging"
+                    #
+                    # ``dvc`` is here for the same reason: its 8 tests are
+                    # skipped without the package, and the module is explicitly
+                    # designed to degrade to a warning when it is missing — a
+                    # branch worth exercising in both states.
+                    groups: "--extra eval --extra logging --extra dvc"
 
             -   name: Build Project
                 run: uv build
