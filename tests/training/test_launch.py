@@ -287,3 +287,73 @@ def test_failed_checkpoint_save_leaves_no_partial_files(tmp_path):
 
     leftovers = sorted(p.name for p in tmp_path.iterdir())
     assert not leftovers, f"a failed save left files behind: {leftovers}"
+
+
+def test_setup_binds_the_cuda_device_before_initialising_the_group():
+    """NCCL attaches the process group to whatever device is CURRENT at
+    ``init_process_group`` time.
+
+    Binding afterwards is too late in two ways: every rank is still on GPU 0
+    when the group forms (NCCL then rejects the group for ranks sharing a
+    device, or "guesses device ID based on global rank" — which is wrong under
+    the free-VRAM mapping), and on a real 4-free-A100 host it showed up as a
+    rank that had bound ``cuda:0`` and then trained on ``cuda:3``. Every GPU
+    e2e in this repo binds first for this reason; the production launcher did
+    not, and no test checked the ORDER.
+    """
+    calls: list[str] = []
+    with (
+        patch(
+            "llm.training.core.distributed.dist.init_process_group",
+            side_effect=lambda **kwargs: calls.append("init_process_group"),
+        ),
+        patch(
+            "llm.training.core.distributed.torch.cuda.set_device",
+            side_effect=lambda index: calls.append(f"set_device:{index}"),
+        ),
+        patch("llm.training.core.distributed.torch.cuda.manual_seed_all"),
+        patch("llm.training.core.distributed.torch.cuda.is_available", return_value=True),
+        patch("llm.training.core.distributed.torch.cuda.device_count", return_value=4),
+        # All cards equally free, so the mapping is the historical identity and
+        # the expectation does not depend on this host's live GPU utilisation.
+        patch("llm.training.core.device_select._free_bytes", return_value=10 * 1024**3),
+        patch("llm.training.core.distributed.torch.manual_seed"),
+    ):
+        config = DistributedConfig(num_nodes=1, gpus_per_node=2, node_rank=0)
+        DistributedManager(config).setup(global_rank=1, world_size=2, local_rank=1, local_world_size=2)
+
+    assert calls[:2] == ["set_device:1", "init_process_group"], (
+        f"the device must be bound before the group is initialised, got {calls}"
+    )
+
+
+def test_setup_maps_two_ranks_onto_distinct_cards_from_one_snapshot():
+    """Two ranks of the same job must never be assigned one card.
+
+    Each rank sampling its own free-VRAM reading is a race — measured on 4 free
+    A100s, 2 of 6 two-rank starts put both ranks on one GPU, which NCCL reports
+    as "Multiple Ranks are using the same GPU/Partition". The mapping is now
+    derived once and read by every rank.
+    """
+    assigned: dict[int, int] = {}
+    # Every rank of the job runs setup() independently; capture what each binds.
+    for local_rank in (0, 1):
+        with (
+            patch("llm.training.core.distributed.dist.init_process_group"),
+            patch(
+                "llm.training.core.distributed.torch.cuda.set_device",
+                side_effect=lambda index, lr=local_rank: assigned.__setitem__(lr, index),
+            ),
+            patch("llm.training.core.distributed.torch.cuda.manual_seed_all"),
+            patch("llm.training.core.distributed.torch.cuda.is_available", return_value=True),
+            patch("llm.training.core.distributed.torch.cuda.device_count", return_value=4),
+            patch("llm.training.core.device_select._free_bytes", return_value=10 * 1024**3),
+            patch("llm.training.core.distributed.torch.manual_seed"),
+        ):
+            config = DistributedConfig(num_nodes=1, gpus_per_node=2, node_rank=0)
+            DistributedManager(config).setup(
+                global_rank=local_rank, world_size=2, local_rank=local_rank, local_world_size=2
+            )
+
+    assert sorted(assigned) == [0, 1], f"both ranks must be assigned, got {assigned}"
+    assert len(set(assigned.values())) == 2, f"ranks collided on one card: {assigned}"

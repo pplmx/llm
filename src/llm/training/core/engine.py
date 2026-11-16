@@ -74,14 +74,8 @@ class TrainingEngine:
 
         if torch.cuda.is_available() and torch.cuda.device_count() > 0 and self.world_size > 0:
             # world_size > 0 is a proxy for intending to use GPUs if available.
-            # Prefer the GPU with the most free VRAM (shared selection), falling
-            # back to the historical ``rank % device_count`` mapping when no
-            # device meets the free-memory floor.
-            local_idx = local_rank if local_rank is not None else rank
-            cuda_idx = select_cuda_index(local_idx)
-            if cuda_idx is None:
-                cuda_idx = local_idx % torch.cuda.device_count()
-            if _cuda_usable(cuda_idx):
+            cuda_idx = self._resolve_cuda_index(local_rank)
+            if cuda_idx is not None and _cuda_usable(cuda_idx):
                 self.device = torch.device(f"cuda:{cuda_idx}")
             else:
                 self.device = torch.device("cpu")
@@ -98,6 +92,31 @@ class TrainingEngine:
             callback.set_engine(cast(TrainingEngine, self))
 
         self._setup_components()
+
+    def _resolve_cuda_index(self, local_rank: int | None) -> int | None:
+        """CUDA index this rank must use, or ``None`` for the historical fallback.
+
+        Once a process group exists the launcher has ALREADY bound each rank to
+        its card (``DistributedManager.setup`` calls ``torch.cuda.set_device``
+        before ``init_process_group``, because NCCL attaches the group to the
+        current device). Re-deriving the card here from a fresh free-VRAM
+        snapshot silently moved a rank off the device its process group was
+        built on: measured on 4 free A100s, rank 0 bound ``cuda:0`` and then ran
+        on ``cuda:3``. It also re-introduced the collision the coherent mapping
+        exists to prevent, because each rank re-samples the inventory.
+
+        So: honour the current device whenever a group is live. The free-VRAM
+        preference still applies to the callers that legitimately own the
+        choice — a single-process run, and tests that build an engine without a
+        group.
+        """
+        if dist.is_available() and dist.is_initialized():
+            return torch.cuda.current_device()
+        local_idx = local_rank if local_rank is not None else self.rank
+        cuda_idx = select_cuda_index(local_idx)
+        if cuda_idx is None:
+            return local_idx % torch.cuda.device_count()
+        return cuda_idx
 
     def _register_task_callbacks(self) -> None:
         """Append and wire any task-supplied callbacks.

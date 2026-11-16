@@ -25,12 +25,46 @@ def test_all_devices_falls_back_to_cpu():
 
 
 def test_device_strings_match_device_objects():
-    # Call both in the same order and compare immediately to avoid a
-    # TOCTOU where GPU free-VRAM shifts between the two calls,
-    # reordering the VRAM-sorted lists.
+    # Both are derived from the same single-sweep helper, so they agree by
+    # construction. This used to be a TOCTOU-sensitive comparison; the fix
+    # below (one mem_get_info sweep per call) is what makes it stable.
     strings = devices.cuda_device_strings()
     objects = devices.all_gpu_devices()
     assert strings == [str(device) for device in objects]
+
+
+def test_free_vram_ordering_comes_from_one_sampling_sweep():
+    """The reported order must describe ONE moment, not a per-comparison resample.
+
+    The old implementation filtered with one ``mem_get_info`` sweep and then
+    re-read VRAM inside the sort key, so on a busy host the order could mix
+    readings taken at different times. Two invocations then disagreed even
+    though both "return the devices sorted by free VRAM" — this test failed
+    only while another GPU job was running, which is the worst kind of
+    flake. Pinning the number of reads catches the resampling directly,
+    instead of hoping a race happens to show up.
+    """
+    if not torch.cuda.is_available():
+        return
+    n_devices = torch.cuda.device_count()
+    calls: list[int] = []
+
+    def counting_free(index: int) -> int | None:
+        calls.append(index)
+        return 8 * 1024**3
+
+    original = devices._free_memory
+    devices._free_memory = counting_free
+    try:
+        result = devices.all_gpu_devices()
+    finally:
+        devices._free_memory = original
+
+    assert len(result) == n_devices
+    assert len(calls) == n_devices, (
+        f"expected one VRAM read per device ({n_devices}), got {len(calls)} — "
+        "the sort is re-sampling instead of using a single snapshot"
+    )
 
 
 def test_default_device_is_usable_or_cpu():

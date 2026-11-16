@@ -236,8 +236,9 @@ bit-identical.
 - **fp16 AMP refused** — use `bf16` or `use_amp=False`. (The fp16 `GradScaler`
   must drive a plain optimizer whose unscale_/per-param-grad internals the
   sharded wrapper does not expose yet.)
-- **Not validated on real GPUs** — the 2-rank CPU/gloo e2e proves the wiring
-  and cross-rank lockstep; a real-CUDA (NCCL) validation pass is the next step.
+- **Validated on real GPUs** — both the 2-rank CPU/gloo e2e (wiring +
+  cross-rank lockstep) and the 2-rank CUDA/NCCL e2e (checkpoint save + resume
+  on a real backend) are covered by `tests/e2e/test_zero_resume.py`.
 - **Stage-2/3 not implemented** — gradient/parameter sharding are future work.
 
 ## Tensor Parallelism quick start

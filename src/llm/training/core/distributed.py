@@ -11,7 +11,7 @@ import torch.distributed as dist
 from torch import nn
 
 from llm.training.core.config import DistributedConfig
-from llm.training.core.device_select import select_cuda_index
+from llm.training.core.device_select import rank_cuda_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +47,23 @@ class DistributedManager:
     def __init__(self, config: DistributedConfig):
         self.config = config
 
-    def setup(self, global_rank: int, world_size: int, local_rank: int | None = None):
+    def setup(
+        self,
+        global_rank: int,
+        world_size: int,
+        local_rank: int | None = None,
+        local_world_size: int | None = None,
+    ):
         """Initialise the process group for ``global_rank`` of ``world_size``.
 
-                ``global_rank`` is the identity across all nodes — a multi-node worker
-                on node ``node_rank`` gets ``node_rank * local_world_size + local``
-        so every node's workers rendezvous into one
-                group without rank collisions.  ``local_rank`` is only used to select
-                the CUDA device index (the per-GPU index on this node); when None it
-                falls back to ``global_rank`` (single-node, where they coincide).
+        ``global_rank`` is the identity across all nodes — a multi-node worker
+        on node ``node_rank`` gets ``node_rank * local_world_size + local``, so
+        every node's workers rendezvous into one group without rank collisions.
+        ``local_rank`` selects the CUDA device index (the per-GPU index on this
+        node); when None it falls back to ``global_rank`` (single-node, where
+        they coincide). ``local_world_size`` is how many workers this node
+        spawns — the rank→card mapping is derived for that many ranks, so a
+        multi-node run does not map global ranks past the local card count.
         """
         torch.manual_seed(42 + global_rank)  # Seed for CPU operations
 
@@ -79,24 +87,32 @@ class DistributedManager:
                     backend,
                 )
 
+            # Bind this rank's card BEFORE the rendezvous. NCCL attaches the
+            # process group to whatever device is current at
+            # ``init_process_group`` time; with no binding every rank is on
+            # GPU 0, and NCCL then either rejects the group ("Multiple Ranks
+            # are using the same GPU/Partition") or falls back to guessing the
+            # device from the global rank — which is wrong under the
+            # free-VRAM mapping below. Every GPU e2e in this repo binds first
+            # for exactly this reason. The mapping is derived from one
+            # snapshot all ranks agree on (see ``rank_cuda_mapping``), so two
+            # ranks whose own free-VRAM readings differ still get distinct
+            # cards.
+            local_world = local_world_size if local_world_size is not None else world_size
+            device_rank = local_rank if local_rank is not None else global_rank
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                mapping = rank_cuda_mapping(local_world)
+                n_devices = torch.cuda.device_count()
+                cuda_idx = mapping.get(device_rank % local_world, device_rank % n_devices)
+                torch.cuda.set_device(cuda_idx)
+                torch.cuda.manual_seed_all(42 + global_rank)
+
             dist.init_process_group(
                 backend=backend,
                 rank=global_rank,
                 world_size=world_size,
                 timeout=timedelta(seconds=self.config.collective_timeout_seconds),
             )
-
-            # Only set device and CUDA seed if CUDA is available and being used.
-            # Prefer the GPU with the most free VRAM (shared selection), falling
-            # back to the historical ``device_rank % device_count`` mapping when
-            # no device meets the free-memory floor.
-            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-                device_rank = local_rank if local_rank is not None else global_rank
-                cuda_idx = select_cuda_index(device_rank)
-                if cuda_idx is None:
-                    cuda_idx = device_rank % torch.cuda.device_count()
-                torch.cuda.set_device(cuda_idx)
-                torch.cuda.manual_seed_all(42 + global_rank)
         elif world_size == 1:
             # Single process execution (could be CPU or single GPU without DDP)
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:

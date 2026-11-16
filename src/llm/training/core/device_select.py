@@ -21,6 +21,7 @@ import torch
 __all__ = [
     "MIN_FREE_VRAM_BYTES",
     "_cuda_usable_impl",
+    "rank_cuda_mapping",
     "select_cuda_index",
     "sort_by_free_vram",
     "usable_cuda_indices",
@@ -117,8 +118,45 @@ def select_cuda_index(
     Ranks beyond the usable count round-robin over the fat GPUs (matching the
     historical ``local_rank % device_count`` collision behaviour). Returns
     ``None`` when no device meets the free-memory floor.
+
+    NOTE for multi-rank callers: this reads the *local* free-VRAM snapshot, and
+    two processes can legitimately disagree (each rank's own CUDA context, and
+    other tenants, move the numbers between the reads). Two ranks that sort the
+    inventory differently then pick the SAME card, which NCCL rejects with
+    "Multiple Ranks are using the same GPU/Partition". Anything that maps
+    several ranks onto distinct cards must therefore derive the whole mapping
+    once and agree on it — use :func:`rank_cuda_mapping`, not this function
+    per rank.
     """
     ordered = usable_cuda_indices(n_devices, free_bytes_fn=free_bytes_fn, min_free_bytes=min_free_bytes)
     if not ordered:
         return None
     return ordered[local_rank % len(ordered)]
+
+
+def rank_cuda_mapping(
+    local_ranks: int,
+    *,
+    n_devices: int | None = None,
+    free_bytes_fn: FreeBytesFn | None = None,
+    min_free_bytes: int = MIN_FREE_VRAM_BYTES,
+) -> dict[int, int]:
+    """One coherent rank → card assignment for ``local_ranks`` ranks on this node.
+
+    Every rank runs this over the SAME input, so every rank derives the SAME
+    ordering and the mapping is collision-free by construction. The alternative
+    — each rank calling :func:`select_cuda_index` with its own free-VRAM
+    reading — races: measured on a host with 8 A100s, 2 of 6 two-rank
+    starts mapped both ranks onto one card purely because their snapshots
+    disagreed, which NCCL reports as "Multiple Ranks are using the same
+    GPU/Partition".
+
+    Ranks beyond the available devices wrap (``index % len(ordered)``), matching
+    :func:`select_cuda_index`'s documented round-robin. Returns an empty dict
+    when no device meets the free-memory floor, so callers keep their own
+    historical fallback.
+    """
+    ordered = usable_cuda_indices(n_devices, free_bytes_fn=free_bytes_fn, min_free_bytes=min_free_bytes)
+    if not ordered:
+        return {}
+    return {rank: ordered[rank % len(ordered)] for rank in range(local_ranks)}

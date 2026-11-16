@@ -78,17 +78,21 @@ def all_gpu_devices(*, min_free_bytes: int = MIN_FREE_VRAM_BYTES) -> list[torch.
     The GPU with the *most* free VRAM comes first, so callers that need a
     single GPU (e.g. ``DEFAULT_DEVICE``) or want to fill slots greedily
     always pick from the fattest available device.
+
+    Every reading comes from ONE ``mem_get_info`` sweep. Sampling inside the
+    sort key instead re-reads VRAM per comparison, so on a busy host the
+    ordering can describe several different moments and two calls that
+    logically return the same thing disagree — which is what made
+    ``test_device_strings_match_device_objects`` fail only while another GPU
+    job was running.
     """
-    indices = _usable_device_indices(min_free_bytes)
-
-    # Sort by free VRAM descending; tie-break by lower device index for
-    # deterministic selection (matches _default_device semantics).
-    def _vram(index: int) -> tuple[int, int]:
-        free = _free_memory(index) or 0
-        return (free, -index)
-
-    indices.sort(key=_vram, reverse=True)
-    return [torch.device(f"cuda:{index}") for index in indices]
+    if not torch.cuda.is_available():
+        return []
+    readings = [(index, _free_memory(index)) for index in range(torch.cuda.device_count())]
+    usable = [(index, free) for index, free in readings if free is not None and free >= min_free_bytes]
+    # Free VRAM descending, ties broken by lower device index.
+    usable.sort(key=lambda item: (item[1], -item[0]), reverse=True)
+    return [torch.device(f"cuda:{index}") for index, _ in usable]
 
 
 def all_devices() -> list[torch.device]:
@@ -132,14 +136,19 @@ def gpu_vram_info(*, min_free_bytes: int = MIN_FREE_VRAM_BYTES) -> list[tuple[in
     """Return ``[(device_index, free_bytes), …]`` for usable GPUs sorted by free VRAM (descending).
 
     Useful for diagnostics, logging, and test selection.  Only devices
-    with at least ``min_free_bytes`` free are included.
+    with at least ``min_free_bytes`` free are included. Like
+    :func:`all_gpu_devices`, all readings come from one sweep so the reported
+    numbers match the reported order.
     """
-    indices = _usable_device_indices(min_free_bytes)
-    return sorted(
-        ((index, _free_memory(index) or 0) for index in indices),
-        key=lambda item: (item[1], -item[0]),
-        reverse=True,
-    )
+    if not torch.cuda.is_available():
+        return []
+    usable = [
+        (index, free)
+        for index in range(torch.cuda.device_count())
+        if (free := _free_memory(index)) is not None and free >= min_free_bytes
+    ]
+    usable.sort(key=lambda item: (item[1], -item[0]), reverse=True)
+    return usable
 
 
 def multi_gpu_devices(*, min_free_bytes: int = MIN_FREE_VRAM_BYTES) -> list[torch.device]:

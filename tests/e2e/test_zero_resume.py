@@ -8,9 +8,9 @@ and refused it (``state dict is for rank 0, this rank is 1``), or, had that tag
 check been absent, silently restarted most of the moments from cold while
 looking like a successful resume.
 
-The test drives the REAL ``TrainingEngine.run()`` with
-``parallel_strategy="zero"`` on two CPU/gloo ranks, then resumes from the
-written checkpoint and asserts:
+The tests drive the REAL ``TrainingEngine.run()`` with
+``parallel_strategy="zero"`` on two ranks, then resume from the written
+checkpoint and assert:
 
 * the resume starts at the saved epoch (the checkpoint was found and read);
 * both ranks come back bit-identical (the sharded all-gather still holds);
@@ -18,8 +18,15 @@ written checkpoint and asserts:
   covers exactly that rank's round-robin parameters (the actual fix — without
   the gap the payload held only ``{"0": ...}``).
 
-Marked ``heavy``: it spawns two training processes (the same classification the
-sibling ZeRO and pipeline-parallel suites use).
+Two transports are covered, because they exercise different code: CPU/gloo
+(always runs, including GPU-less CI) and CUDA/NCCL (``need_gpu(2)``). The NCCL
+variant is the one that proves the shard gather survives a real GPU backend —
+``all_gather_object`` pickles through a device tensor pair there, and the
+engine's device selection maps each rank to its own card.
+
+Marked ``heavy``: each case spawns two training processes and runs two full
+engine runs (the same classification the sibling ZeRO and pipeline-parallel
+suites use).
 """
 
 from __future__ import annotations
@@ -36,11 +43,16 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
+from tests.support.devices import all_gpu_devices
+
 pytestmark = pytest.mark.heavy
 
 JOIN_TIMEOUT_S = 300
 WORLD_SIZE = 2
 TPS = 0.01
+# A usable card must have real headroom: the box hosts other workloads, and a
+# 2-rank run that OOMs reports as an infrastructure flake rather than a defect.
+MIN_FREE_BYTES = 8 * 1024**3
 
 
 def _free_port() -> int:
@@ -50,7 +62,7 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _build_config(checkpoint_dir: Path, *, resume_from: str | None) -> Any:
+def _build_config(checkpoint_dir: Path, *, resume_from: str | None, backend: str) -> Any:
     from llm.training.core.config import (
         CheckpointConfig,
         Config,
@@ -66,7 +78,7 @@ def _build_config(checkpoint_dir: Path, *, resume_from: str | None) -> Any:
         # the second phase has a concrete epoch to resume from.
         training=TrainingConfig(batch_size=4, epochs=2, num_samples=8),
         optimization=OptimizationConfig(use_amp=False, use_compile=False),
-        distributed=DistributedConfig(backend="gloo", parallel_strategy="zero"),
+        distributed=DistributedConfig(backend=backend, parallel_strategy="zero"),
         checkpoint=CheckpointConfig(
             checkpoint_dir=str(checkpoint_dir),
             resume_from_checkpoint=resume_from,
@@ -76,14 +88,33 @@ def _build_config(checkpoint_dir: Path, *, resume_from: str | None) -> Any:
     )
 
 
-def _worker(rank: int, world_size: int, port: int, checkpoint_dir: str, resume: bool, results: dict) -> None:
+def _worker(
+    rank: int,
+    world_size: int,
+    port: int,
+    checkpoint_dir: str,
+    resume: bool,
+    backend: str,
+    device_indices: list[int | None],
+    results: dict,
+) -> None:
     try:
-        # gloo only transports CPU tensors, and a forked child can inherit a
-        # live CUDA context (mirrors the sibling ZeRO / PP engine e2e).
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        # gloo only transports CPU tensors, so the CPU leg hides every GPU from
+        # the children (a forked child can also inherit a live CUDA context).
+        # The NCCL leg must instead see the cards and bind this rank to its own
+        # before the rendezvous — NCCL attaches to the current device, so
+        # spawned ranks that stay on the default would all land on GPU 0.
+        if backend == "gloo":
+            os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        else:
+            # ``mp.spawn`` hands every child the same args, so the per-rank
+            # card is selected here rather than by the parent.
+            torch.cuda.set_device(device_indices[rank])
         os.environ["MASTER_ADDR"] = "127.0.0.1"
         os.environ["MASTER_PORT"] = str(port)
-        dist.init_process_group("gloo", rank=rank, world_size=world_size)
+        os.environ.setdefault("NCCL_DEBUG", "WARN")
+        os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
+        dist.init_process_group(backend, rank=rank, world_size=world_size)
 
         from llm.training.core.engine import TrainingEngine
         from llm.training.distributed.zero import ZeroOptimizer
@@ -92,18 +123,28 @@ def _worker(rank: int, world_size: int, port: int, checkpoint_dir: str, resume: 
 
         torch.manual_seed(0)
         ckpt_dir = Path(checkpoint_dir)
-        config = _build_config(ckpt_dir, resume_from=str(ckpt_dir / "epoch_1") if resume else None)
+        config = _build_config(
+            ckpt_dir,
+            resume_from=str(ckpt_dir / "epoch_1") if resume else None,
+            backend=backend,
+        )
         data_module = DummyLMDataModule(config)
         task = LanguageModelingTask(config, data_module)
         engine = TrainingEngine(config, task, rank=rank, world_size=world_size, data_module=data_module)
 
         assert isinstance(engine.optimizer, ZeroOptimizer)
         assert engine.is_training_zero
+        if backend == "nccl":
+            # The NCCL leg is only meaningful if the ranks really landed on
+            # distinct cards; two ranks sharing one card would still pass the
+            # numeric assertions while proving nothing about the gather.
+            assert engine.device.type == "cuda", f"rank {rank} fell back to {engine.device}"
 
         engine.run()
         results[rank] = {
             "start_epoch": engine.start_epoch,
-            "params": [p.detach().clone() for p in engine.model.parameters()],
+            "params": [p.detach().clone().cpu() for p in engine.model.parameters()],
+            "device": str(engine.device),
             "owned": engine.optimizer.owned_count(),
             "total": len(list(engine.model.parameters())),
             "error": None,
@@ -115,13 +156,20 @@ def _worker(rank: int, world_size: int, port: int, checkpoint_dir: str, resume: 
         results[rank] = {"error": traceback.format_exc()}
 
 
-def _run(checkpoint_dir: Path, *, resume: bool) -> dict:
+def _run(checkpoint_dir: Path, *, resume: bool, backend: str = "gloo") -> dict:
+    device_indices: list[int | None] = [None] * WORLD_SIZE
+    if backend == "nccl":
+        gpus = all_gpu_devices(min_free_bytes=MIN_FREE_BYTES)
+        if len(gpus) < WORLD_SIZE:
+            pytest.skip(f"need {WORLD_SIZE} GPUs with >= {MIN_FREE_BYTES >> 30} GiB free, got {len(gpus)}")
+        device_indices = [device.index for device in gpus[:WORLD_SIZE]]
+
     port = _free_port()
     manager = mp.Manager()
     results: dict = manager.dict()
     context = mp.spawn(
         _worker,
-        args=(WORLD_SIZE, port, str(checkpoint_dir), resume, results),
+        args=(WORLD_SIZE, port, str(checkpoint_dir), resume, backend, device_indices, results),
         nprocs=WORLD_SIZE,
         join=False,
     )
@@ -132,7 +180,7 @@ def _run(checkpoint_dir: Path, *, resume: bool) -> dict:
             for process in context.processes:
                 if process.is_alive():
                     process.kill()
-            raise TimeoutError(f"ZeRO resume spawn exceeded {JOIN_TIMEOUT_S}s")
+            raise TimeoutError(f"ZeRO spawn ({backend}) exceeded {JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
     out = {k: dict(v) if isinstance(v, dict) else v for k, v in dict(results).items()}
@@ -141,11 +189,7 @@ def _run(checkpoint_dir: Path, *, resume: bool) -> dict:
     return out
 
 
-def test_zero_checkpoint_persists_every_rank_shard(tmp_path):
-    """The optimizer slot must hold one shard per rank, not rank 0's shards."""
-    checkpoint_dir = tmp_path / "ckpt"
-    _run(checkpoint_dir, resume=False)
-
+def _assert_every_rank_shard_on_disk(checkpoint_dir: Path) -> None:
     payload = torch.load(checkpoint_dir / "epoch_1.extra_state.pt", weights_only=False)
     optimizer_state = payload["optimizer_state"]
     shards = optimizer_state["__zero_rank_states__"]
@@ -170,23 +214,55 @@ def test_zero_checkpoint_persists_every_rank_shard(tmp_path):
     assert meta["epoch"] == 0
 
 
-def test_zero_multi_rank_resume_restores_every_shard(tmp_path):
-    """A 2-rank ZeRO run resumes from its own checkpoint, ranks in lockstep."""
-    checkpoint_dir = tmp_path / "ckpt"
-    first = _run(checkpoint_dir, resume=False)
+def _assert_multi_rank_resume(checkpoint_dir: Path, backend: str) -> None:
+    first = _run(checkpoint_dir, resume=False, backend=backend)
     for rank, payload in first.items():
         assert payload["total"] == first[0]["total"]
         # A genuine shard: non-empty but strictly smaller than the full set.
         assert 0 < payload["owned"] < payload["total"], f"rank {rank} owned {payload['owned']}/{payload['total']}"
     assert first[0]["owned"] + first[1]["owned"] == first[0]["total"]
 
-    second = _run(checkpoint_dir, resume=True)
+    second = _run(checkpoint_dir, resume=True, backend=backend)
     for rank, payload in second.items():
         # The resume found the checkpoint AND restored the epoch bookkeeping;
         # without the fix the loader raised before training could start.
         assert payload["start_epoch"] == 1, f"rank {rank} start_epoch={payload['start_epoch']}"
     for param_0, param_1 in zip(second[0]["params"], second[1]["params"], strict=True):
         assert torch.equal(param_0, param_1), "ZeRO ranks drifted out of lockstep after resume"
+
+
+# --- CPU / gloo (always runs, GPU-less CI included) -------------------------
+
+
+def test_zero_checkpoint_persists_every_rank_shard(tmp_path):
+    """The optimizer slot must hold one shard per rank, not rank 0's shards."""
+    checkpoint_dir = tmp_path / "ckpt"
+    _run(checkpoint_dir, resume=False)
+    _assert_every_rank_shard_on_disk(checkpoint_dir)
+
+
+def test_zero_multi_rank_resume_restores_every_shard(tmp_path):
+    """A 2-rank ZeRO run resumes from its own checkpoint, ranks in lockstep."""
+    _assert_multi_rank_resume(tmp_path / "ckpt", "gloo")
+
+
+# --- CUDA / NCCL (the real-GPU validation the guide used to defer) ----------
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_zero_checkpoint_persists_every_rank_shard_two_gpu(tmp_path):
+    """The shard gather survives a real NCCL backend, not just gloo's pickling."""
+    checkpoint_dir = tmp_path / "ckpt"
+    _run(checkpoint_dir, resume=False, backend="nccl")
+    _assert_every_rank_shard_on_disk(checkpoint_dir)
+
+
+@pytest.mark.need_gpu(2)
+@pytest.mark.slow
+def test_zero_multi_rank_resume_restores_every_shard_two_gpu(tmp_path):
+    """Multi-rank ZeRO resume works over NCCL, with both ranks on their own GPU."""
+    _assert_multi_rank_resume(tmp_path / "ckpt", "nccl")
 
 
 def test_zero_resume_rejects_a_checkpoint_missing_a_rank_shard():

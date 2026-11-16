@@ -64,7 +64,12 @@ def train_worker(
     )
     distributed_manager = DistributedManager(config.distributed)
     try:
-        distributed_manager.setup(global_rank, world_size, local_rank=local_rank)
+        distributed_manager.setup(
+            global_rank,
+            world_size,
+            local_rank=local_rank,
+            local_world_size=local_world_size if local_world_size is not None else world_size,
+        )
 
         task_spec = TASK_REGISTRY.get(task_name)
         data_module = task_spec.data_module_factory(config)
