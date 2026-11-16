@@ -125,6 +125,22 @@ jobs:
 
             -   name: Synchronize Dependencies (CPU-only torch)
                 uses: ./.github/actions/cpu-torch
+                with:
+                    # The eval + logging extras are installed so the tests that
+                    # guard them actually RUN here instead of skipping.
+                    #
+                    # Without this, `pytest.importorskip` / skipif on
+                    # scikit-learn / rouge-score / sacrebleu / lm_eval /
+                    # tensorboard silently excused ~13 tests on every runner —
+                    # and the soft-dependency install hints they assert
+                    # (``pip install 'llm[eval]'``) were never exercised at
+                    # all. When the eval extra was finally installed locally,
+                    # one of those tests failed immediately: it hooked
+                    # ``builtins.__import__`` to simulate the dependency being
+                    # absent, which never fires once the module is already in
+                    # ``sys.modules``. A test that only runs when its
+                    # dependency is MISSING cannot be maintained.
+                    groups: "--extra eval --extra logging"
 
             -   name: Build Project
                 run: uv build

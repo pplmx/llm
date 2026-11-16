@@ -1,3 +1,5 @@
+from importlib import import_module
+
 import pytest
 
 from llm.evaluation.metrics.accuracy import AccuracyMetric, F1Metric
@@ -108,15 +110,22 @@ def test_f1_missing_sklearn_raises_actionable_install_hint(monkeypatch):
     neither the extra nor the package, so a user had to read the source to
     learn what to run.
     """
-    import builtins
+    # Patch the symbol the metric actually calls. Hooking ``builtins.__import__``
+    # looked equivalent but was not: ``importlib.import_module`` returns a
+    # module straight from ``sys.modules`` when it is already imported, so once
+    # scikit-learn IS installed (``uv sync --extra eval``, which the eval suite
+    # is meant to run under) the hook never executes, the metric succeeds, and
+    # this test fails — demanding the dependency be absent to test the
+    # missing-dependency message. Patching ``import_module`` in the metric's
+    # own namespace exercises the same code path regardless of what is
+    # installed.
+    from llm.evaluation.metrics import accuracy as accuracy_module
 
-    real_import = builtins.__import__
-
-    def _fake_import(name, *args, **kwargs):
-        if name == "sklearn" or name.startswith("sklearn."):
+    def _fake_import_module(name: str, *args, **kwargs):
+        if name == "sklearn.metrics" or name.startswith("sklearn"):
             raise ImportError("No module named 'sklearn'")
-        return real_import(name, *args, **kwargs)
+        return import_module(name, *args, **kwargs)
 
-    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(accuracy_module, "import_module", _fake_import_module)
     with pytest.raises(ImportError, match=r"llm\[eval\]"):
         F1Metric().compute(["a"], ["b"])
