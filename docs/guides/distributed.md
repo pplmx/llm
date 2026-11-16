@@ -220,10 +220,15 @@ bit-identical.
   wrapper), so the semantics are identical on CPU/gloo and CUDA/NCCL.
 - **Weight synchronisation.** After each step the updated parameters are
   all-gathered from their owners, so all ranks converge to identical weights.
-- **Checkpointing.** `ZeroOptimizer.state_dict()`/`load_state_dict()` do
-  serialize per-rank shards (FSDP-sharded style) at the API level, but the
-  engine's save gate persists only the **rank-0** shard today (ZeRO is not in
-  the collective-save list), so multi-rank ZeRO resume is not yet wired.
+- **Checkpointing.** Each rank owns a disjoint slice of the optimizer state,
+  so a multi-rank ZeRO checkpoint must carry all of them:
+  `ZeroOptimizer.collective_state_dict()` all-gathers every rank's shard into
+  one payload keyed by global rank, the checkpoint manager writes it into the
+  optimizer slot, and `load_state_dict()` hands each rank its own slice back.
+  The save is a collective, so **every** rank enters it (same rule as
+  TP/PP/FSDP) — rank 0 writes, the rest discard, and all wait at a barrier
+  before returning. Resuming a job with a different `world_size` is refused
+  loudly rather than silently restarting the unowned shards from cold.
 
 ### Current limits (v1)
 
@@ -520,6 +525,7 @@ uv run llm train --task stream_lm --config-path configs/ddp.yaml
 - [Training flow guide](../development/training-flow.md)
 - `ZeroOptimizer`（原生 ZeRO Stage-1 核心 + 按 rank 分片 checkpoint）见
   `src/llm/training/distributed/zero.py`，多 rank 验证见
-  `tests/training/distributed/test_zero_optimizer.py`。
+  `tests/training/distributed/test_zero_optimizer.py`，多 rank 断点续训见
+  `tests/e2e/test_zero_resume.py`。
 - FSDP 的接线记录（config + state-dict helpers）见 `CHANGELOG.md`
   （Tier 3 #29）。

@@ -1180,13 +1180,16 @@ class TrainingEngine:
                 # collectives: EVERY rank
                 # must enter them via save_checkpoint or rank 0 blocks forever
                 # on the gather. Non-rank-0 ranks enter and discard; only rank
-                # 0 writes and fires the callback.
+                # 0 writes and fires the callback. ZeRO joins this set for the
+                # same reason: its optimizer state is sharded across ranks, so
+                # the payload it persists is gathered collectively.
                 if (
                     self.rank == 0
                     or is_fsdp(self.model)
                     or is_tp(self.model)
                     or is_pp(self.model)
                     or is_pp3d(self.model)
+                    or self.is_training_zero
                 ):
                     # Save checkpoint based on validation loss if available, otherwise training loss
                     metric_for_checkpoint = val_loss if val_loss is not None else avg_loss

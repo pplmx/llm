@@ -16,11 +16,17 @@ all-gather restores a full, identical weight copy on every rank.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import overload
+from typing import Any, overload
 
 import torch
 import torch.distributed as dist
 from torch.optim import Optimizer
+
+# Key under which every rank's shard is persisted in a checkpoint's optimizer
+# slot. The shards are disjoint, so a single rank's ``state_dict`` cannot
+# recreate the others — resume needs the whole set, keyed by the rank that
+# owns each one.
+ZERO_RANK_STATES_KEY = "__zero_rank_states__"
 
 
 def _owner_of(index: int, world_size: int) -> int:
@@ -87,6 +93,21 @@ class ZeroOptimizer(Optimizer):
         # Present the INNER optimizer's groups/state/defaults as our own so the
         # scheduler, GradScaler-disabled path, and checkpoint manager operate on
         # the real sharded optimizer without knowing about the wrapper.
+        self._adopt_inner_state()
+
+    def _adopt_inner_state(self) -> None:
+        """Alias this wrapper's optimizer slots to the inner optimizer's.
+
+        ``Optimizer.load_state_dict`` REBUILDS the inner optimizer's
+        ``param_groups`` / ``state`` (fresh lists and dicts) instead of
+        mutating them in place, so the references captured at construction go
+        stale. Anything holding the wrapper then acts on orphaned state: an
+        ``LRScheduler`` attached before a resume writes each step's learning
+        rate into dicts the optimizer never reads, so training silently keeps
+        the pre-resume LR while the logs report the scheduled one. Re-pointing
+        after every load (and at construction, so both paths agree) keeps the
+        wrapper a faithful view of the optimizer that actually steps.
+        """
         self.param_groups = self._opt.param_groups
         self.state = self._opt.state
         self.defaults = self._opt.defaults
@@ -108,6 +129,11 @@ class ZeroOptimizer(Optimizer):
         style) and needs no collective to serialize. ``global_indices`` records
         which full-model parameter positions this shard covers so a loader can
         audit the mapping or rebuild a gathered full state if ever needed.
+
+        This shard alone is NOT a resumable checkpoint for the whole job: the
+        shards are disjoint, so rank 0's piece cannot replay rank 1's moments.
+        Use :meth:`collective_state_dict` when writing a checkpoint that a
+        multi-rank job will resume from.
         """
         return {
             "_zero_stage1": True,
@@ -117,13 +143,47 @@ class ZeroOptimizer(Optimizer):
             "inner": self._opt.state_dict(),
         }
 
+    def collective_state_dict(self) -> dict[str, Any]:
+        """Gather EVERY rank's shard into one checkpointable payload.
+
+        A ZeRO checkpoint must carry the whole sharded set: each rank owns a
+        disjoint slice of the optimizer state, so persisting only rank 0's
+        shard silently drops the other ranks' Adam moments and makes a
+        multi-rank resume impossible (the loader then either refuses the
+        mismatched rank tag or restarts those shards cold).
+
+        This is a cross-rank collective (``all_gather_object``), so every rank
+        must call it, exactly like the TP/PP/FSDP state-dict gathers. The
+        result is keyed by GLOBAL rank so each rank restores its own slice
+        through :meth:`load_state_dict` without any additional rendezvous.
+        """
+        mine = self.state_dict()
+        if not (dist.is_available() and dist.is_initialized()) or self._world_size == 1:
+            return {ZERO_RANK_STATES_KEY: {str(self._rank): mine}}
+        gathered: list[dict[str, Any]] = [{} for _ in range(self._world_size)]
+        dist.all_gather_object(gathered, mine, group=self._pg)
+        return {ZERO_RANK_STATES_KEY: {str(i): shard for i, shard in enumerate(gathered)}}
+
     def load_state_dict(self, state_dict: dict) -> None:
         """Restore this rank's sharded optimizer state (resume).
 
-        Only ``inner`` is applied, into THIS rank's deterministic owned-param
-        set; the owner mapping is fixed by round-robin, so the same shard slots
-        map onto the same parameters on load as on save.
+        Accepts either the gathered envelope written by
+        :meth:`collective_state_dict` (the multi-rank resume path — this rank
+        picks its own slice out of the set) or a bare per-rank shard (the
+        single-rank / hand-built path). Only ``inner`` is applied, into THIS
+        rank's deterministic owned-param set; the owner mapping is fixed by
+        round-robin, so the same shard slots map onto the same parameters on
+        load as on save.
         """
+        if state_dict.get(ZERO_RANK_STATES_KEY) is not None:
+            shards = state_dict[ZERO_RANK_STATES_KEY]
+            mine = shards.get(str(self._rank))
+            if mine is None:
+                raise ValueError(
+                    f"ZeRO checkpoint carries no optimizer shard for rank {self._rank} "
+                    f"(it holds ranks {sorted(shards)}); was it saved by a job with a different world size?"
+                )
+            state_dict = mine
         if not state_dict.get("_zero_stage1"):
             raise ValueError("not a ZeroOptimizer state dict (missing '_zero_stage1' marker)")
         if state_dict.get("rank") != self._rank:
@@ -131,6 +191,10 @@ class ZeroOptimizer(Optimizer):
         if state_dict.get("world_size") != self._world_size:
             raise ValueError(f"state dict world_size {state_dict.get('world_size')} != current {self._world_size}")
         self._opt.load_state_dict(state_dict["inner"])
+        # ``load_state_dict`` rebuilds the inner optimizer's groups/state, so
+        # re-adopt them or a scheduler attached earlier keeps writing into the
+        # pre-load dicts (training silently ignores every LR update).
+        self._adopt_inner_state()
 
     def zero_grad(self, set_to_none: bool = True) -> None:
         # Zero every parameter's gradient, not just this rank's owned shard:

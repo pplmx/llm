@@ -139,7 +139,12 @@ class CheckpointManager:
         extra_state: dict | None = None,
         model_config: dict | None = None,
     ):
-        collective = is_fsdp(model) or is_tp(model) or is_pp(model) or is_pp3d(model)
+        # ZeRO Stage-1 keeps a plain model (no FSDP/TP/PP wrapper) but still
+        # needs EVERY rank to enter the save: its optimizer state is sharded
+        # across ranks, so the gathered payload below is a collective and the
+        # durability barrier must cover all of them.
+        zero_state_fn = getattr(optimizer, "collective_state_dict", None)
+        collective = is_fsdp(model) or is_tp(model) or is_pp(model) or is_pp3d(model) or zero_state_fn is not None
         # PP stages own DISJOINT parameter slices, so each rank's optimizer
         # state only covers its own stage. Rank 0's state dict
         # alone cannot replay the other stages' moments at resume, so gather
@@ -158,6 +163,16 @@ class CheckpointManager:
             for other in gathered:
                 merged.update(other)
             pp_optimizer_state = {"__pp_stage_states__": merged}
+
+        # ZeRO Stage-1 owns a DISJOINT optimizer-state shard per rank, so
+        # persisting rank 0's ``state_dict`` alone drops every other rank's
+        # moments and makes a multi-rank resume impossible. Gather the whole
+        # sharded set (keyed by global rank) into the single optimizer slot,
+        # mirroring the PP branch above; the loader hands each rank its own
+        # slice back. The gather is a collective, so every rank enters it.
+        zero_optimizer_state: dict[str, Any] | None = None
+        if zero_state_fn is not None and dist.is_initialized():
+            zero_optimizer_state = zero_state_fn()
 
         if self.rank != 0:
             # FSDP's FULL_STATE_DICT state_dict() and the TP full-state-dict
@@ -180,9 +195,12 @@ class CheckpointManager:
             return
 
         model_state_to_save = model_state_dict(model)
-        opt_state = (
-            optimizer.state_dict() if optimizer is not None and pp_optimizer_state is None else pp_optimizer_state
-        )
+        if zero_optimizer_state is not None:
+            opt_state: dict[str, Any] | None = zero_optimizer_state
+        elif optimizer is not None and pp_optimizer_state is None:
+            opt_state = optimizer.state_dict()
+        else:
+            opt_state = pp_optimizer_state
 
         # ``save_best`` updates best_loss before writing the rest of the
         # meta, so the .meta.json best_loss is consistent across files.
