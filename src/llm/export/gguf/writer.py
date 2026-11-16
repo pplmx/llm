@@ -263,7 +263,19 @@ class GGUFWriter:
         infos_size = sum(_tensor_info_size(name, shape) for name, _, shape, _ in self._tensors)
         data_start = align_up(GGUF_HEADER_SIZE + len(metadata_bytes) + infos_size, self.alignment)
 
-        offset = data_start
+        # ``GGUFTensorInfo.offset`` is RELATIVE to the data section, which is
+        # what the reference gguf-py reader (and therefore llama.cpp) expects:
+        # it computes ``data_start + offset`` itself. Writing absolute offsets
+        # here — as this writer did — produces a file that only OUR reader can
+        # open, because our reader treated the field as absolute to match. The
+        # two bugs cancelled internally and the result was unreadable by the
+        # reference implementation: gguf-py reported
+        # ``cannot reshape array of size 1008 into shape (64,32)`` because it
+        # looked 2208 bytes past the real payload.
+        # The recorded ``offset`` is relative to the data section: the writer
+        # emits ``data_start`` zero bytes before the payloads and readers add
+        # the section start themselves.
+        offset = 0
         entries: list[tuple[str, GGMLQuantizationType, tuple[int, ...], bytes, int]] = []
         for name, ttype, shape, payload in self._tensors:
             entries.append((name, ttype, shape, payload, offset))

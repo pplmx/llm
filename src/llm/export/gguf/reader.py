@@ -175,13 +175,17 @@ class GGUFReader:
         self._data_start = align_up(pos, GGUF_DEFAULT_ALIGNMENT)
         self._data = data
         for info in tensors.values():
-            if info.offset < self._data_start:
+            # ``offset`` is relative to the data section (GGUF spec / gguf-py):
+            # the absolute position is ``_data_start + offset``. Treating it as
+            # absolute — as this reader and the writer both once did — made the
+            # pair self-consistent while producing files the reference reader
+            # could not open.
+            if info.offset < 0:
+                raise GGUFError(f"tensor {info.name!r}: negative offset {info.offset}")
+            absolute = self._data_start + info.offset
+            if absolute + info.data_size > len(data):
                 raise GGUFError(
-                    f"tensor {info.name!r}: offset {info.offset} precedes the data section start {self._data_start}"
-                )
-            if info.offset + info.data_size > len(data):
-                raise GGUFError(
-                    f"tensor {info.name!r}: data range {info.offset}..{info.offset + info.data_size} "
+                    f"tensor {info.name!r}: data range {absolute}..{absolute + info.data_size} "
                     f"exceeds file size {len(data)}"
                 )
 
@@ -204,7 +208,8 @@ class GGUFReader:
     def read_tensor_raw(self, name: str) -> bytes:
         """Return the exact on-disk payload bytes for ``name`` (no dequantization)."""
         info = self._info(name)
-        return bytes(self._data[info.offset : info.offset + info.data_size])
+        start = self._data_start + info.offset
+        return bytes(self._data[start : start + info.data_size])
 
     def read_tensor(self, name: str) -> np.ndarray:
         """Read and dequantize ``name`` into a float32 array of its logical shape.
@@ -214,7 +219,8 @@ class GGUFReader:
         dequantized with the reference ggml math.
         """
         info = self._info(name)
-        raw = self._data[info.offset : info.offset + info.data_size]
+        start = self._data_start + info.offset
+        raw = self._data[start : start + info.data_size]
         if info.ggml_type == GGMLQuantizationType.F32:
             return np.frombuffer(raw, dtype="<f4").reshape(info.shape)
         if info.ggml_type == GGMLQuantizationType.F16:

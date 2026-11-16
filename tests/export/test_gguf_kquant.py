@@ -308,7 +308,11 @@ def _build_raw_gguf(
         name_b = name.encode("utf-8")
         infos_size += 8 + len(name_b) + 4 + 8 * len(shape) + 12
     data_start = align_up(GGUF_HEADER_SIZE + len(meta_b) + infos_size, GGUF_DEFAULT_ALIGNMENT)
-    offset = data_start
+    # Tensor offsets are RELATIVE to the data section (GGUF spec / gguf-py),
+    # so the first tensor is at 0. This helper used to write absolute offsets,
+    # matching the reader's equally wrong interpretation; the pair was
+    # self-consistent but produced files the reference reader rejected.
+    offset = 0
     buf = bytearray()
     buf += struct.pack("<IIQQ", GGUF_MAGIC, GGUF_VERSION, len(payloads), len(metadata))
     buf += meta_b

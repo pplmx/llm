@@ -314,11 +314,15 @@ class TestByteLayout:
         reader = GGUFReader(path)
         info_a = reader.tensors["a"]
         info_b = reader.tensors["b"]
-        assert info_a.offset % GGUF_DEFAULT_ALIGNMENT == 0
+        # Offsets are RELATIVE to the data section (GGUF spec / gguf-py), so the
+        # first tensor sits at 0 and the file ends at data_start + last payload.
+        assert info_a.offset == 0
         assert info_b.offset % GGUF_DEFAULT_ALIGNMENT == 0
-        assert info_b.offset == info_a.offset + align_up(info_a.data_size, GGUF_DEFAULT_ALIGNMENT)
+        assert info_b.offset == align_up(info_a.data_size, GGUF_DEFAULT_ALIGNMENT)
         # The file ends exactly after the last padded payload.
-        assert path.stat().st_size == info_b.offset + align_up(info_b.data_size, GGUF_DEFAULT_ALIGNMENT)
+        assert path.stat().st_size == reader._data_start + info_b.offset + align_up(
+            info_b.data_size, GGUF_DEFAULT_ALIGNMENT
+        )
 
     def test_data_section_start_is_aligned(self, tmp_path):
         writer = GGUFWriter(tmp_path / "s.gguf")
@@ -326,7 +330,8 @@ class TestByteLayout:
         writer.add_tensor("w", np.zeros(64, dtype=np.float32), ggml_type="q8_0")
         writer.write()
         reader = GGUFReader(tmp_path / "s.gguf")
-        assert reader.tensors["w"].offset % GGUF_DEFAULT_ALIGNMENT == 0
+        assert reader._data_start % GGUF_DEFAULT_ALIGNMENT == 0
+        assert reader.tensors["w"].offset == 0
 
 
 class TestCorruptFiles:
@@ -403,11 +408,21 @@ class TestCorruptFiles:
         with pytest.raises(GGUFError, match="unsupported GGML type"):
             GGUFReader(path)
 
-    def test_offset_before_data_section(self, tmp_path):
-        head = _header() + _tensor_info(offset=0)
+    def test_relative_offset_past_the_end_is_rejected(self, tmp_path):
+        """Offsets are relative, so a huge one must still be caught.
+
+        The old test asserted "offset precedes the data section", which pinned
+        the ABSOLUTE-offset interpretation. That interpretation was the bug:
+        gguf-py (and therefore llama.cpp) adds the data-section start itself, so
+        absolute offsets made every exported file unreadable by the reference
+        reader. What still matters is that a nonsensical relative offset cannot
+        read past the payload — the bounds check now works on
+        ``data_start + offset``.
+        """
+        head = _header() + _tensor_info(offset=1_000_000)
         path = tmp_path / "early.gguf"
         path.write_bytes(_assemble(head, payload=b"\x00" * 34))
-        with pytest.raises(GGUFError, match="precedes the data section"):
+        with pytest.raises(GGUFError, match="exceeds file size"):
             GGUFReader(path)
 
     def test_offset_beyond_file_size(self, tmp_path):
@@ -445,3 +460,80 @@ class TestReaderMemoryMap:
         reader.close()
         with pytest.raises(ValueError, match="closed"):
             reader.read_tensor("w")
+
+
+class TestReferenceReaderCompatibility:
+    """Our GGUF output must be readable by the OFFICIAL ``gguf`` package.
+
+    ``docs/guides/export.md`` promises the exported file "can be handed straight
+    to llama.cpp", whose loader follows gguf-py's conventions. Every other test
+    in this file exercised our writer against OUR reader, and the two agreed —
+    so a shared misinterpretation stayed invisible. It was exactly that: GGUF
+    stores each tensor's ``offset`` RELATIVE to the data section, but the writer
+    emitted absolute offsets and the reader expected absolute ones. The pair was
+    self-consistent while gguf-py reported
+    ``cannot reshape array of size 1008 into shape (64,32)`` for every exported
+    file, because it looked 2208 bytes past the real payload.
+
+    These tests use gguf-py as the independent oracle. They skip when the
+    reference package is absent (it is not a runtime dependency of this repo).
+    """
+
+    @staticmethod
+    def _gguf_py():
+        return pytest.importorskip("gguf", reason="gguf-py is the reference implementation")
+
+    def _exported(self, tmp_path, **kwargs):
+        from llm.export.gguf.exporter import export_to_gguf
+
+        torch.manual_seed(0)
+        model = torch.nn.Sequential(torch.nn.Linear(16, 8), torch.nn.ReLU(), torch.nn.Linear(8, 4))
+        return export_to_gguf(model, tmp_path / "ref.gguf", **kwargs)
+
+    @pytest.mark.parametrize("quantize", [None, "q8_0"], ids=["float", "q8_0"])
+    def test_reference_reader_opens_our_file(self, tmp_path, quantize):
+        """gguf-py must parse the container we write."""
+        gguf = self._gguf_py()
+        path = self._exported(tmp_path, **({"quantize": quantize} if quantize else {}))
+        reader = gguf.GGUFReader(str(path))
+        assert len(reader.tensors) > 0, "reference reader found no tensors"
+
+    def test_reference_reader_sees_the_first_tensor_at_offset_zero(self, tmp_path):
+        """The first tensor's recorded offset is 0 — the relative convention.
+
+        An absolute offset (the old bug) is non-zero and larger than every
+        previous payload, which is what made gguf-py read the wrong bytes.
+        """
+        gguf = self._gguf_py()
+        path = self._exported(tmp_path)
+        reader = gguf.GGUFReader(str(path))
+        first = reader.tensors[0]
+        raw_offset = int(first.field.parts[5][0])
+        assert raw_offset == 0, f"first tensor offset is {raw_offset}, expected 0 (relative to data section)"
+
+    def test_reference_reader_recovers_the_weights(self, tmp_path):
+        """The values gguf-py reads back must match what was exported.
+
+        F16 storage rounds fp32 weights, so the comparison allows half-precision
+        error rather than demanding bit equality; the point is that the bytes
+        land where the reference reader looks for them.
+        """
+        import numpy as np
+
+        gguf = self._gguf_py()
+        from llm.export.gguf.exporter import export_to_gguf
+
+        torch.manual_seed(0)
+        linear = torch.nn.Linear(16, 8)
+        path = export_to_gguf(torch.nn.Sequential(linear), tmp_path / "w.gguf")
+        reader = gguf.GGUFReader(str(path))
+
+        recovered = None
+        for tensor in reader.tensors:
+            if tensor.name.endswith("weight"):
+                recovered = np.asarray(tensor.data).astype(np.float32)
+                break
+        assert recovered is not None, "no weight tensor surfaced through the reference reader"
+        expected = linear.weight.detach().cpu().float().numpy()
+        assert recovered.shape == expected.shape, f"shape {recovered.shape} != {expected.shape}"
+        assert np.allclose(recovered, expected, atol=1e-2), "values do not match within F16 precision"
