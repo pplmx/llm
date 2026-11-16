@@ -81,3 +81,56 @@ def test_quantize_cli_output_is_servable(tmp_path, tiny_model, tiny_config):
     torch.manual_seed(0)
     actual = model(ids)
     torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.e2e
+def test_quantized_blob_serves_when_its_tokenizer_sits_beside_it(tmp_path, tiny_model, tiny_config):
+    """The documented "point MODEL_PATH at the blob" flow needs a tokenizer.
+
+    ``docs/tutorials/03-inference.md`` §6.7 used to show only
+    ``LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm serve``. The
+    model half works — the loader recognises the bare quantized blob — but the
+    tokenizer half does not: a quantized blob is a standalone file, so the
+    ``tokenizer.pt`` that training wrote into the CHECKPOINT directory is not
+    carried along, and startup dies with "tokenizer_path is required when
+    model_path is set for serving".
+
+    ``tests/e2e/test_quantize_serve.py::test_quantize_cli_output_is_servable``
+    always passed ``tokenizer_path`` explicitly, which is why the gap survived:
+    every test took the other branch.
+
+    This pins both accepted routes — a ``tokenizer.pt`` beside the blob, and an
+    explicit ``tokenizer_path`` — and the failure the docs now warn about.
+    """
+    vocab = tiny_config.model.vocab_size
+    calib_path = tmp_path / "calib.pt"
+    torch.save([torch.randint(0, vocab, (2, 16), device=DEFAULT_DEVICE) for _ in range(3)], calib_path)
+
+    model_path = tmp_path / "model.pt"
+    torch.save(tiny_model, model_path)
+    output_path = tmp_path / "quantized.pt"
+    result = CliRunner().invoke(
+        app,
+        [
+            "gptq",
+            "--model",
+            str(model_path),
+            "--output",
+            str(output_path),
+            "--calib-data-tokens",
+            str(calib_path),
+            "--bits",
+            "8",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    # (1) No tokenizer anywhere → the load fails, and says why.
+    with pytest.raises(ValueError, match="tokenizer_path is required"):
+        load_model_and_tokenizer(ServingConfig(model_path=str(output_path), tokenizer_type="simple"))
+
+    # (2) tokenizer.pt beside the blob → discovered automatically.
+    torch.save(SimpleCharacterTokenizer(list(string.printable[:vocab])), tmp_path / "tokenizer.pt")
+    model, tokenizer = load_model_and_tokenizer(ServingConfig(model_path=str(output_path), tokenizer_type="simple"))
+    assert any(isinstance(m, GPTQQuantizedLinear) for m in model.modules())
+    assert tokenizer.decode(tokenizer.encode("ab")) == "ab"

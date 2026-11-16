@@ -484,7 +484,15 @@ blob 并直接加载，不需要转换或重建——把 `LLM_SERVING_MODEL_PATH
 ```bash
 uv run llm quantize gptq --model ckpt.pt --output quantized.pt \
   --calib-data-tokens calib.pt --bits 4 --group-size 128
+
+# 关键：tokenizer 也必须给出来。量化 blob 是一个独立文件，训练时写进
+# checkpoint 目录的 tokenizer.pt 不会被它带上，loader 也就找不到。
+# 二选一：
+#   a) 把训练产出的 tokenizer.pt 放到 blob 旁边（文件名必须是 tokenizer.pt）
 LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt uv run llm serve
+#   b) 或显式指定一个 tokenizer
+LLM_SERVING_MODEL_PATH=/abs/path/quantized.pt \
+LLM_SERVING_TOKENIZER_PATH=gpt2 uv run llm serve
 ```
 
 如果 `llm serve` 加载 qlora 或 gptq 量化模型失败：
