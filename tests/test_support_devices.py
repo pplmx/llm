@@ -5,23 +5,62 @@ import torch
 from tests.support import devices
 
 
-def test_cuda_device_inventory_is_consistent():
+def _pin_vram(monkeypatch, per_device_mb: dict[int, int]) -> None:
+    """Make every device helper see one fixed VRAM reading.
+
+    Several helpers in this module re-read ``mem_get_info`` on each call, and
+    the suite runs on a shared host where another job changes free VRAM between
+    two calls. Assertions that compare two live calls therefore depend on the
+    hardware holding still — which it does not. Pinning the reading makes each
+    test check the RELATION it is about (inventory, fallback, ordering) instead
+    of the machine's idle state.
+    """
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: len(per_device_mb))
+    monkeypatch.setattr(devices, "_free_memory", lambda index: per_device_mb[index] * 1024**2)
+
+
+def _unpin_cuda(monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+
+def test_cuda_device_inventory_is_consistent(monkeypatch):
+    """``cuda_device_count`` / ``cuda_usable`` / ``all_gpu_devices`` agree.
+
+    Asserted under a pinned reading: three of these helpers each sample VRAM
+    independently, so on a busy host they can legitimately see different moments
+    and disagree without anything being broken.
+    """
+    _pin_vram(monkeypatch, {0: 9000, 1: 6000, 2: 3000})
     gpu_devices = devices.all_gpu_devices()
 
-    assert devices.cuda_device_count() == len(gpu_devices)
+    assert devices.cuda_device_count() == len(gpu_devices) == 3
     assert devices.cuda_usable() is bool(gpu_devices)
     assert len(gpu_devices) == len(set(gpu_devices))
     assert all(device.type == "cuda" for device in gpu_devices)
     assert all(devices.cuda_usable(device) for device in gpu_devices)
+    # A device below the floor is not "usable" — otherwise the assertions above
+    # would hold for a helper that never filtered anything.
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 4)
+    monkeypatch.setattr(devices, "_free_memory", lambda index: {0: 9000, 1: 6000, 2: 3000, 3: 1}[index] * 1024**2)
+    assert len(devices.all_gpu_devices()) == 3
+    assert devices.cuda_usable(3) is False
 
 
-def test_all_devices_falls_back_to_cpu():
-    gpu_devices = devices.all_gpu_devices()
+def test_all_devices_falls_back_to_cpu(monkeypatch):
+    """With no usable GPU, ``all_devices`` must yield exactly CPU.
 
-    if gpu_devices:
-        assert devices.all_devices() == gpu_devices
-    else:
-        assert devices.all_devices() == [torch.device("cpu")]
+    Both branches are pinned. The GPU branch used to compare two LIVE calls, so
+    it failed whenever a concurrent job took the last free card between them —
+    the same defect fixed in ``test_device_strings_match_device_objects``, left
+    behind here.
+    """
+    _pin_vram(monkeypatch, {0: 9000, 1: 6000})
+    assert devices.all_devices() == devices.all_gpu_devices()
+    assert [str(d) for d in devices.all_devices()] == ["cuda:0", "cuda:1"]
+
+    _unpin_cuda(monkeypatch)
+    assert devices.all_devices() == [torch.device("cpu")]
 
 
 def test_device_strings_match_device_objects(monkeypatch):
