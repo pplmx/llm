@@ -215,18 +215,23 @@ All configuration is managed via Pydantic models in `src/llm/training/core/confi
 
 ## Plugin Kernel (`runtime/`)
 
-Third-party and built-in extensions register through a shared **`Registry[T]`** and optional **setuptools entry points** in `pyproject.toml`:
+Third-party and built-in extensions register through a shared **`Registry[T]`**. A registry is filled from two places, and the distinction matters when you go looking for an entry in `pyproject.toml`:
 
-| Entry point group         | Registry                           | Example                                                                                                                                 |
-| ------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `llm.models`              | `MODEL_REGISTRY`                   | `decoder`, `regression_mlp` builders                                                                                                    |
-| `llm.generation_backends` | `BACKEND_REGISTRY`                 | `eager`, `batched`                                                                                                                      |
-| `llm.data_sources`        | `SOURCE_REGISTRY`                  | `local`, `hf` streaming; `dedup_local` / `dedup_hf` compose any inner source with `DedupTextSource` (T3 #39)                            |
-| `llm.export_backends`     | `EXPORT_REGISTRY`                  | `onnx` (built-in), `torchscript`, `gguf` (ADR-011)                                                                                      |
-| `llm.peft_methods`        | `PEFT_REGISTRY`                    | `lora`, `qlora`, `adalora`, `prefix_tuning`, `ia3`, `bitfit`, `adapter`, `pfeiffer_adapter` (T2 PEFT #43, #44, #45, #46, #47, #48, #49) |
-| `llm.tasks`               | hooks via `load_entry_point_hooks` | third-party `TASK_REGISTRY.register(...)`                                                                                               |
+- **setuptools entry points** — declared under `[project.entry-points."<group>"]`; the extension point for *third-party* packages.
+- **in-code registration** — `REGISTRY.register(...)` at import time; what the *built-in* implementations use.
+
+| Entry point group         | Registry                           | Built-ins (registered in code)                                                                                | Registered via `pyproject.toml`                          |
+| ------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `llm.models`              | `MODEL_REGISTRY`                   | —                                                                                                             | `decoder`, `regression_mlp`                              |
+| `llm.generation_backends` | `BACKEND_REGISTRY`                 | —                                                                                                             | `eager`, `batched`                                       |
+| `llm.data_sources`        | `SOURCE_REGISTRY`                  | `dedup_local`, `dedup_hf` (compose any inner source with `DedupTextSource`, T3 #39)                           | `local`, `hf`                                            |
+| `llm.export_backends`     | `EXPORT_REGISTRY`                  | `onnx`                                                                                                        | `torchscript`, `gguf` (ADR-011)                          |
+| `llm.peft_methods`        | `PEFT_REGISTRY`                    | `lora`, `qlora`, `adalora`, `prefix_tuning`, `ia3`, `bitfit`, `adapter`, `pfeiffer_adapter` (T2 PEFT #43–#49) | *(none — the group is declared empty for third parties)* |
+| `llm.tasks`               | hooks via `load_entry_point_hooks` | —                                                                                                             | third-party `TASK_REGISTRY.register(...)`                |
 
 Built-in model builders register via **setuptools entry points** only (`bootstrap.ensure_builtins_registered()` → `load_entry_point_registry("llm.models", ...)`). Attention/MLP/NORM register on module import. `train.py` additionally invokes `llm.tasks` hooks so external packages can add CLI tasks without editing core code.
+
+> The table previously listed every example under "setuptools entry points in `pyproject.toml`", so a reader looking for `lora` or the eight PEFT methods there found nothing — all eight are registered in code, and `llm.peft_methods` is declared as an empty group on purpose (it exists so third parties can add methods). `tests/test_entry_point_doc_consistency.py` now checks each column against the real source of truth.
 
 ## Attention Mechanism
 
