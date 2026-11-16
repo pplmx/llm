@@ -239,3 +239,43 @@ def test_dpo_attention_masks_reach_the_model(tiny_config):
     assert not torch.allclose(loss_ones, loss_masked), (
         "DPO loss is insensitive to the attention mask — the masks never reach the model"
     )
+
+
+def test_dpo_batch_logps_rejects_length_one_sequences(tiny_config):
+    """A length-1 sequence has no next-token target, so it must be refused.
+
+    ``_get_batch_logps`` shifts logits by one, so ``seq_len=1`` yields an EMPTY
+    target tensor and the helper used to return ``0.0`` for every row. DPO and
+    SimPO both consume that number: a zero log-prob makes the implicit reward
+    and the chosen-vs-rejected margin vanish, so the loss sits at exactly its
+    initial value while the run looks healthy — a silent no-op. The sibling
+    LM/SFT/CST shift sites already raise this message; this pins the shared
+    preference helper to the same contract so a degenerate batch cannot take
+    the quiet path.
+    """
+    import pytest
+
+    task = DPOTask(tiny_config, data_module=None)
+    logits = torch.zeros(2, 1, tiny_config.model.vocab_size)
+    labels = torch.zeros(2, 1, dtype=torch.long)
+    with pytest.raises(ValueError, match="sequence length must be > 1"):
+        task._get_batch_logps(logits, labels)
+
+    # The same guard must fire on SimPO's length-normalised path, which passes
+    # ``average_log_prob=True`` and divides by the (empty) mask sum.
+    with pytest.raises(ValueError, match="sequence length must be > 1"):
+        task._get_batch_logps(logits, labels, average_log_prob=True)
+
+
+def test_dpo_batch_logps_still_accepts_a_real_sequence(tiny_config):
+    """Counterpart: the new guard must not reject a usable batch.
+
+    Without this, a guard that fired on every input would satisfy the test
+    above while breaking DPO entirely.
+    """
+    task = DPOTask(tiny_config, data_module=None)
+    logits = torch.zeros(1, 4, tiny_config.model.vocab_size)
+    labels = torch.zeros(1, 4, dtype=torch.long)
+    out = task._get_batch_logps(logits, labels)
+    assert out.shape == (1,), f"expected one log-prob per batch row, got {tuple(out.shape)}"
+    assert torch.isfinite(out).all()

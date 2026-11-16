@@ -288,6 +288,16 @@ class LanguageModelingTask(TrainingTask):
 
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
+        # A length-1 sequence has no next-token target, so the shift above
+        # produces an EMPTY tensor and this helper returned 0.0 for every row.
+        # Callers are DPO and SimPO: a zero log-prob makes both the implicit
+        # reward and the chosen-rejected margin vanish, so the loss sits at
+        # exactly its initial value while the run looks healthy — the silent
+        # no-op the sibling LM/CST shift sites already refuse with this same
+        # message. Refusing here keeps every next-token path consistent
+        # instead of having one quietly succeed on degenerate input.
+        if shift_labels.numel() == 0:
+            raise ValueError("sequence length must be > 1 for next-token language modeling")
 
         log_probs = functional.log_softmax(shift_logits, dim=-1)
         mask = (shift_labels != -100).float()
