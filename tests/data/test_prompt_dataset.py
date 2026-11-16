@@ -134,3 +134,67 @@ class TestPromptDataset:
             _ = ds[1]
         with pytest.raises(IndexError):
             _ = ds[-2]
+
+
+class TestPromptDatasetReportsDroppedRows:
+    """A dropped row must never be silent.
+
+    ``PromptDataset`` is the rollout corpus for PPO, so a row it skips is
+    training data the user does not get. It used to drop malformed rows and
+    rows with no usable prompt without logging anything, while every sibling
+    dataset (SFT / DPO / Reward) warned per row. Measured on a five-row file
+    where three were unusable, the dataset reported nothing at all and PPO
+    would have trained on 40% of the corpus.
+
+    Both tests pin the WARNING text AND the resulting count, so a future change
+    cannot keep the message while starting to accept the rows (or the reverse).
+    """
+
+    def test_malformed_rows_are_reported(self, tmp_path, caplog):
+        data_path = tmp_path / "prompts.jsonl"
+        data_path.write_text(
+            "\n".join(['{"prompt": "good"}', '"a bare string"', '{"no_prompt_key": 1}', '{"prompt": ""}']) + "\n",
+            encoding="utf-8",
+        )
+
+        with caplog.at_level("WARNING"):
+            ds = PromptDataset(data_path)
+
+        assert len(ds) == 1, "only the one well-formed row is usable"
+        messages = [record.message for record in caplog.records]
+        assert any("not a JSON object" in m for m in messages), f"non-object row not reported: {messages}"
+        empty_reports = [m for m in messages if "no non-empty prompt" in m]
+        assert len(empty_reports) == 2, f"both prompt-less rows must be reported, saw {messages}"
+
+    def test_every_drop_has_its_own_message(self, tmp_path, caplog):
+        """One summary line is not enough: the reader needs to know WHICH row.
+
+        The warning carries the offending ``item``, which is what lets someone
+        find the bad line in a large JSONL.
+        """
+        data_path = tmp_path / "prompts.jsonl"
+        data_path.write_text('{"prompt": "ok"}\n{"missing": "prompt"}\n', encoding="utf-8")
+
+        with caplog.at_level("WARNING"):
+            PromptDataset(data_path)
+
+        assert any("missing" in str(record.args) for record in caplog.records if record.args), (
+            "the warning must include the offending row, not just a count"
+        )
+
+    def test_a_clean_file_logs_no_warnings(self, tmp_path, caplog):
+        """Counterpart: nothing dropped means nothing to report.
+
+        Without this, a change that warned on every row would satisfy the tests
+        above while flooding the logs of a healthy run.
+        """
+        data_path = tmp_path / "prompts.jsonl"
+        _write_jsonl(data_path, [{"prompt": "a"}, {"prompt": "b"}, {"instruction": "c"}])
+
+        with caplog.at_level("WARNING"):
+            ds = PromptDataset(data_path)
+
+        assert len(ds) == 3
+        assert not [r for r in caplog.records if r.levelname == "WARNING"], (
+            f"clean file produced warnings: {[r.message for r in caplog.records]}"
+        )
