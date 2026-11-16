@@ -229,7 +229,7 @@ uv run llm train --task sft --config-path configs/sft_alpaca.yaml
 ### 3.2 服务时：env vars 挂载 adapter
 
 ```bash
-LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_5 \
+LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_3 \
 LLM_SERVING_TOKENIZER_PATH=tokenizer \
 LLM_SERVING_TOKENIZER_TYPE=hf \
 LLM_SERVING_PEFT_METHOD=lora \

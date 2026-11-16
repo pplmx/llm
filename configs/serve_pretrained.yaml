@@ -16,7 +16,7 @@
 #
 #   # 2. Serve the trained checkpoint with the PEFT adapter loaded:
 #   #    Pass the YAML values as env vars (LLM_SERVING_* prefix).
-#   LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_5 \
+#   LLM_SERVING_MODEL_PATH=checkpoints_sft_alpaca/epoch_3 \
 #   LLM_SERVING_TOKENIZER_PATH=tokenizer \
 #   LLM_SERVING_TOKENIZER_TYPE=hf \
 #   LLM_SERVING_PEFT_METHOD=lora \
@@ -67,7 +67,11 @@
 # split layout lives at `<stem>.safetensors` + `.meta.json` +
 # `.extra_state.pt`; point at the stem (no suffix) and the loader
 # resolves the trio (a legacy single-file `.pt` is also accepted).
-model_path: checkpoints_sft_alpaca/epoch_5
+# Kept in step with `configs/sft_alpaca.yaml`, which ships `epochs: 3`
+# and therefore writes epoch_1..epoch_3 only. This pointed at `epoch_5`,
+# a checkpoint that training never produces — the documented
+# train-then-serve flow failed with "Checkpoint not found".
+model_path: checkpoints_sft_alpaca/epoch_3
 tokenizer_path: tokenizer
 tokenizer_type: hf
 

@@ -38,6 +38,7 @@ FastAPI app (which loads a model) and run a real training step.
 from __future__ import annotations
 
 import os
+import pathlib
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
@@ -124,10 +125,33 @@ class TestServePresetConfigs:
         path = REPO_ROOT / "configs" / "serve_pretrained.yaml"
         assert path.exists(), f"missing config: {path}"
         cfg = ServingConfig.from_yaml(path)
-        # Production preset points at a real training checkpoint (v2 stem,
-        # resolved by the loader to the split trio).
+        # Production preset points at a training checkpoint (v2 stem, resolved
+        # by the loader to the split trio).
+        #
+        # Cross-checked against the TRAINING config rather than pinned to a
+        # literal: this assertion used to read
+        # ``assert cfg.model_path == "checkpoints_sft_alpaca/epoch_5"``, and
+        # `configs/sft_alpaca.yaml` ships ``epochs: 3`` — so the test guarded a
+        # checkpoint the documented training command never writes. The
+        # train-then-serve flow in the tutorial failed with "Checkpoint not
+        # found: checkpoints_sft_alpaca/epoch_5". Pinning the literal made the
+        # test agree with the bug.
         assert cfg.model_path is not None
-        assert cfg.model_path == "checkpoints_sft_alpaca/epoch_5"
+        model_path = pathlib.Path(cfg.model_path)
+        import yaml
+
+        train_cfg = yaml.safe_load((REPO_ROOT / "configs" / "sft_alpaca.yaml").read_text(encoding="utf-8"))
+        expected_dir = train_cfg["checkpoint"]["checkpoint_dir"]
+        expected_epochs = train_cfg["training"]["epochs"]
+        assert model_path.parent.name == pathlib.Path(expected_dir).name, (
+            f"serve_pretrained model_path {cfg.model_path!r} is not produced by configs/sft_alpaca.yaml "
+            f"(checkpoint_dir {expected_dir!r})"
+        )
+        epoch_no = int(model_path.name.removeprefix("epoch_"))
+        assert epoch_no <= expected_epochs, (
+            f"serve_pretrained expects epoch_{epoch_no} but sft_alpaca trains only {expected_epochs} epoch(s), "
+            "so that checkpoint is never written"
+        )
         # HF tokenizer to match `configs/sft_alpaca.yaml`.
         assert cfg.tokenizer_type == "hf"
         assert cfg.tokenizer_path == "tokenizer"
