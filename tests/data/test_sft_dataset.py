@@ -228,27 +228,33 @@ def test_no_zero_row_warning_when_data_loads(tmp_path, caplog):
     assert not [r for r in caplog.records if "Parsed 0 usable" in r.getMessage()]
 
 
-def test_empty_response_record_is_rejected_not_trained_on(tmp_path):
-    """A record with no supervised token must fail loudly, not train on nothing.
+def test_empty_response_record_never_reaches_the_dataloader(tmp_path, caplog):
+    """A record with no supervised token must be dropped at LOAD time.
 
     An Alpaca row whose ``output`` is empty produces labels that are ALL
     ``ignore_index``: ``CrossEntropyLoss`` over that returns NaN, and the task's
     non-finite guard then reports loss 0.0 and skips the optimizer step. The run
-    looks healthy while every record from that source teaches nothing — a loss
-    curve that never moves for a reason nobody can see.
+    looks healthy while every record from that source teaches nothing.
 
-    The dataset now refuses the record and names its index. This is the cheap
-    place to catch it: at the data boundary, where the offending JSONL line is
-    still identifiable.
+    ``DPODataset`` has always dropped such rows while loading; SFT used to
+    accept them and only refuse them per-item in ``__getitem__``, which wasted a
+    dataset slot and turned one malformed JSONL line into a failed run. Now both
+    datasets drop the row with a warning that names the reason, and the
+    ``__getitem__`` guard stays for the cases that can only be detected after
+    truncation.
     """
     from string import printable
 
     path = tmp_path / "empty_output.jsonl"
     path.write_text(json.dumps({"instruction": "Say hi.", "input": "", "output": ""}) + "\n", encoding="utf-8")
-    dataset = SFTDataset(path, tokenizer=SimpleCharacterTokenizer([printable]), max_seq_len=32)
 
-    with pytest.raises(ValueError, match="no supervised tokens"):
-        _ = dataset[0]
+    with caplog.at_level("WARNING"):
+        dataset = SFTDataset(path, tokenizer=SimpleCharacterTokenizer([printable]), max_seq_len=32)
+
+    assert len(dataset) == 0, "the empty-response row must not occupy a dataset slot"
+    assert any("empty response" in record.message.lower() for record in caplog.records), (
+        "dropping the row silently is no better than training on it"
+    )
 
 
 def test_empty_response_does_not_reject_a_normal_neighbour(tmp_path):

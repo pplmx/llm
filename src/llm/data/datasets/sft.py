@@ -93,6 +93,21 @@ class SFTDataset(Dataset):
                     # (One template+encode per row here is amortized against the
                     # per-epoch re-encode in ``__getitem__``.)
                     _prompt_text, _response_text = self.template_fn(item)
+                    # An empty response leaves every label at ``ignore_index``:
+                    # no supervised token, a NaN criterion, and the task's
+                    # non-finite guard then reports loss 0.0 and skips the step
+                    # — the row teaches nothing while the run looks healthy.
+                    # ``DPODataset`` has always dropped such rows at load time;
+                    # SFT only refused them later, in ``__getitem__``, which
+                    # still wasted a dataset slot and failed the whole run for
+                    # one malformed line. Drop it here, with the row's identity
+                    # in the warning, and let the genuine runtime cases (a
+                    # response truncated away) keep the ``__getitem__`` guard.
+                    if not _response_text.strip():
+                        logger.warning(
+                            "Skipping SFT row with an empty response: there is no supervised token to train on."
+                        )
+                        continue
                     if len(self.tokenizer.encode(_response_text)) >= self.max_seq_len:
                         logger.warning(
                             "Skipping SFT row whose response alone reaches max_seq_len=%d: "
