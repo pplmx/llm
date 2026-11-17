@@ -92,16 +92,26 @@ def main(
     runs: int = typer.Option(5, help="Number of benchmark runs"),
     device: str = typer.Option("auto", help="Device to use"),
     compile: bool = typer.Option(False, help="Enable torch.compile (if supported in engine)"),
+    attn_impl: str = typer.Option(
+        "mha",
+        help=(
+            "Attention implementation to benchmark (a key of ATTENTION_REGISTRY: "
+            "mha / mla / flash_attn when installed). Run the command once per "
+            "implementation to compare; ROADMAP §10.1 tracked the absence of exactly "
+            "this comparison."
+        ),
+    ),
 ):
     """
     LLM Inference Benchmark.
     """
-    config = ServingConfig(device=device)
+    config = ServingConfig(device=device, attn_impl=attn_impl)
     config.compile_model = compile
 
     model, tokenizer = load_model_and_tokenizer(config)
     engine = ContinuousBatchingEngine.from_serving_config(config, model, tokenizer)
 
+    print(f"Attention impl: {attn_impl}")
     try:
         run_benchmark(engine, tokenizer, prompt, max_new_tokens, runs)
     finally:
