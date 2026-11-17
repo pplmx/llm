@@ -24,7 +24,9 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 
+from llm.models.decoder import DecoderModel
 from llm.training.distributed import ZeroOptimizer
+from llm.training.tasks.base_task import TrainingTask
 
 # torch.multiprocessing.spawn multi-rank training: heavy (see
 # test_pipeline_parallel.py); excluded from the per-push CPU gate.
@@ -319,3 +321,145 @@ def test_zero_stage1_engine_standard_loop_two_process_cpu() -> None:
     # updated weights, so their parameters must be bit-identical.
     for p0, p1 in zip(out[0]["params"], out[1]["params"], strict=True):
         assert torch.equal(p0, p1), "zero ranks drifted out of lockstep"
+
+
+# ---------------------------------------------------------------------------
+# Custom-loop refusal for the multi-rank parallel strategies
+# ---------------------------------------------------------------------------
+
+
+class _CustomLoopTaskLike(TrainingTask):
+    """A PPO-shaped task: full standard-loop API surface, custom driver.
+
+    ``PPOTask`` is the production example (``uses_standard_loop = False``), but
+    building one needs a prompt corpus, a tokenizer and a reward model. The
+    engine's guard reads only ``task.uses_standard_training_loop()`` and fires
+    during ``_setup_components`` before any task method runs, so marking a real
+    task custom is enough — and it keeps the test about the guard rather than
+    about PPO's setup.
+    """
+
+    uses_standard_loop = False
+
+    def build_model(self):
+        return DecoderModel(vocab_size=16, hidden_size=16, num_layers=2, num_heads=2, max_seq_len=16)
+
+    def build_criterion(self):
+        return torch.nn.CrossEntropyLoss()
+
+    def build_optimizer(self, model):
+        return torch.optim.SGD(model.parameters(), lr=0.1)
+
+    def build_scheduler(self, optimizer):
+        return None
+
+    def train_step(self, batch, model, criterion):
+        return torch.tensor(0.0), {"loss": 0.0}
+
+    def validation_step(self, batch, model, criterion):
+        return torch.tensor(0.0), {"loss": 0.0}
+
+    def run_training(self, engine):
+        return None
+
+
+def _refusal_worker(rank: int, world_size: int, results: dict) -> None:
+    """Record the engine's exception message for the strategy in ``GUARD_STRATEGY``."""
+    try:
+        strategy = os.environ["GUARD_STRATEGY"]
+        dist.init_process_group("gloo", rank=rank, world_size=world_size)
+
+        from llm.data.modules.synthetic import SyntheticDataModule
+        from llm.training.core.config import (
+            Config,
+            DistributedConfig,
+            LoggingConfig,
+            ModelConfig,
+            OptimizationConfig,
+            TrainingConfig,
+        )
+        from llm.training.core.engine import TrainingEngine
+
+        config = Config(
+            model=ModelConfig(vocab_size=16, hidden_size=16, num_layers=2, num_heads=2, max_seq_len=16),
+            training=TrainingConfig(batch_size=2, num_samples=8, epochs=1, run_validation=False),
+            optimization=OptimizationConfig(num_workers=0, use_compile=False, use_amp=False),
+            distributed=DistributedConfig(
+                parallel_strategy=strategy,
+                gpus_per_node=world_size,
+                pp_size=world_size if strategy in ("pp", "3d") else 0,
+                tp_size=1 if strategy == "3d" else 0,
+                dp_size=1,
+            ),
+            logging=LoggingConfig(log_interval=10, log_level="ERROR", save_logs=False),
+        )
+        data_module = SyntheticDataModule(config)
+        data_module.setup()
+        TrainingEngine(
+            config, _CustomLoopTaskLike(config, data_module), rank=rank, world_size=world_size, data_module=data_module
+        )
+        results[rank] = {"error": None, "message": "NOT REFUSED"}
+    except Exception as exc:  # noqa: BLE001 — the message is the assertion payload
+        results[rank] = {"error": type(exc).__name__, "message": str(exc)}
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+def _run_refusal(world_size: int, strategy: str) -> dict:
+    """Spawn the refusal probe and return the per-rank payloads.
+
+    Unlike :func:`_run_spawn` this must NOT raise on a worker error: the
+    recorded exception message IS the result under test.
+    """
+    os.environ["GUARD_STRATEGY"] = strategy
+    _setup_env()
+    manager = mp.Manager()
+    results: dict = manager.dict()
+    context = mp.spawn(_refusal_worker, args=(world_size, results), nprocs=world_size, join=False)
+    end_at = time.monotonic() + JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"custom-loop refusal probe exceeded {JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+    out = dict(results)
+    manager.shutdown()
+    return out
+
+
+@pytest.mark.quick
+def test_zero_refuses_a_custom_loop_task() -> None:
+    """ZeRO Stage-1 v1 drives only the standard loop.
+
+    ``docs/guides/distributed.md`` states this as the v1 status ("only supports
+    standard-loop tasks"), and the engine enforces it with a named message — but
+    nothing tested the promise, so a refactor could have silently removed the
+    check and left a custom-loop task to run under a sharded optimizer whose
+    step the engine never drives.
+    """
+    out = _run_refusal(2, "zero")
+    for rank, payload in out.items():
+        assert payload["error"] is not None, f"rank {rank}: ZeRO accepted a custom-loop task"
+        assert "only supports standard-loop tasks" in payload["message"], payload["message"]
+        assert "custom training loop" in payload["message"], payload["message"]
+
+
+@pytest.mark.quick
+def test_pp_refuses_a_custom_loop_task() -> None:
+    """PP's loss contract is the LM-shift + CE one, so a custom loop cannot fit.
+
+    This guard sits AFTER ``wrap_model_for_training``, which is why the test
+    needs a live process group: the wrap is where a PP model is partitioned, and
+    it raises the generic "Default process group has not been initialized"
+    error before the guard could speak. With the group up, the guard runs and
+    names the real reason.
+    """
+    out = _run_refusal(2, "pp")
+    for rank, payload in out.items():
+        assert payload["error"] is not None, f"rank {rank}: PP accepted a custom-loop task"
+        assert "only supports standard-loop tasks" in payload["message"], payload["message"]
