@@ -247,3 +247,47 @@ def test_engine_resolves_without_a_group_by_free_vram(monkeypatch):
     monkeypatch.setattr(torch.distributed, "is_initialized", lambda: False)
 
     assert _resolve(rank=0, local_rank=None) == 3
+
+
+class TestDeterministicRankMapping:
+    """Pre-rendezvous binding must not read live VRAM.
+
+    ``rank_cuda_mapping`` orders the inventory by free VRAM, and that snapshot is
+    only *approximately* shared between processes. Measured on two free A100s:
+    rank 0 derived ``{0: 1, 1: 0}`` while rank 1 derived ``{0: 0, 1: 1}``, so both
+    bound ``cuda:1`` and NCCL aborted with "Multiple Ranks are using the same
+    GPU/Partition" — ``configs/zero-pretrain.yaml`` could not start at all.
+    ``deterministic_rank_mapping`` orders by device index, so every rank computes
+    the same map regardless of what the memory counters say.
+    """
+
+    def test_maps_ranks_onto_distinct_devices(self):
+        mapping = ds.deterministic_rank_mapping(4, n_devices=4)
+        assert mapping == {0: 0, 1: 1, 2: 2, 3: 3}
+
+    def test_ignores_free_vram_entirely(self):
+        """The whole point: the result cannot depend on a moving reading.
+
+        ``rank_cuda_mapping`` with a skewed snapshot would hand rank 0 the
+        fattest card; the deterministic variant must return the same map no
+        matter how the memory is distributed.
+        """
+        assert ds.deterministic_rank_mapping(2, n_devices=2) == {0: 0, 1: 1}
+        # And it takes no free_bytes_fn at all — there is nothing to skew.
+        import inspect
+
+        params = inspect.signature(ds.deterministic_rank_mapping).parameters
+        assert "free_bytes_fn" not in params, "the mapping must not accept a live memory reading"
+
+    def test_wraps_when_more_ranks_than_devices(self):
+        mapping = ds.deterministic_rank_mapping(5, n_devices=2)
+        assert mapping == {0: 0, 1: 1, 2: 0, 3: 1, 4: 0}
+
+    def test_no_devices_returns_empty(self):
+        assert ds.deterministic_rank_mapping(2, n_devices=0) == {}
+
+    def test_matches_across_independent_calls(self):
+        """Determinism is the property NCCL depends on."""
+        first = ds.deterministic_rank_mapping(4, n_devices=4)
+        second = ds.deterministic_rank_mapping(4, n_devices=4)
+        assert first == second

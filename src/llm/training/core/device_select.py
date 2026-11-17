@@ -21,6 +21,7 @@ import torch
 __all__ = [
     "MIN_FREE_VRAM_BYTES",
     "_cuda_usable_impl",
+    "deterministic_rank_mapping",
     "rank_cuda_mapping",
     "select_cuda_index",
     "sort_by_free_vram",
@@ -143,20 +144,40 @@ def rank_cuda_mapping(
 ) -> dict[int, int]:
     """One coherent rank → card assignment for ``local_ranks`` ranks on this node.
 
-    Every rank runs this over the SAME input, so every rank derives the SAME
-    ordering and the mapping is collision-free by construction. The alternative
-    — each rank calling :func:`select_cuda_index` with its own free-VRAM
-    reading — races: measured on a host with 8 A100s, 2 of 6 two-rank
-    starts mapped both ranks onto one card purely because their snapshots
-    disagreed, which NCCL reports as "Multiple Ranks are using the same
-    GPU/Partition".
-
-    Ranks beyond the available devices wrap (``index % len(ordered)``), matching
-    :func:`select_cuda_index`'s documented round-robin. Returns an empty dict
-    when no device meets the free-memory floor, so callers keep their own
-    historical fallback.
+    Orders by free VRAM, which is only approximately shared between processes —
+    prefer :func:`deterministic_rank_mapping` for pre-rendezvous binding.
     """
     ordered = usable_cuda_indices(n_devices, free_bytes_fn=free_bytes_fn, min_free_bytes=min_free_bytes)
     if not ordered:
         return {}
     return {rank: ordered[rank % len(ordered)] for rank in range(local_ranks)}
+
+
+def deterministic_rank_mapping(
+    local_ranks: int,
+    *,
+    n_devices: int | None = None,
+) -> dict[int, int]:
+    """Rank → card assignment that does NOT depend on a live VRAM snapshot.
+
+    ``rank_cuda_mapping`` sorts the inventory by free VRAM, and that snapshot is
+    only *approximately* the same across processes: two ranks launched a moment
+    apart read slightly different numbers, which flips the sort. Measured on two
+    free A100s: rank 0 derived ``{0: 1, 1: 0}`` while rank 1 derived
+    ``{0: 0, 1: 1}``, so both bound the same card and NCCL aborted the group with
+    "Multiple Ranks are using the same GPU/Partition". The docstring's premise —
+    "every rank runs this over the SAME input" — does not hold for a reading that
+    moves.
+
+    This variant orders by device index instead, so every rank computes the same
+    map by construction. It is what ``DistributedManager.setup`` uses to bind a
+    card before the rendezvous, where correctness beats the free-VRAM preference
+    (and where the preference has nothing to act on yet: no rank holds memory).
+    """
+    if n_devices is None:
+        if not torch.cuda.is_available():
+            return {}
+        n_devices = torch.cuda.device_count()
+    if n_devices <= 0:
+        return {}
+    return {rank: rank % n_devices for rank in range(local_ranks)}

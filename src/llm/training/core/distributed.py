@@ -11,7 +11,7 @@ import torch.distributed as dist
 from torch import nn
 
 from llm.training.core.config import DistributedConfig
-from llm.training.core.device_select import rank_cuda_mapping
+from llm.training.core.device_select import deterministic_rank_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +94,23 @@ class DistributedManager:
             # are using the same GPU/Partition") or falls back to guessing the
             # device from the global rank — which is wrong under the
             # free-VRAM mapping below. Every GPU e2e in this repo binds first
-            # for exactly this reason. The mapping is derived from one
-            # snapshot all ranks agree on (see ``rank_cuda_mapping``), so two
-            # ranks whose own free-VRAM readings differ still get distinct
-            # cards.
+            # for exactly this reason. The mapping must be DETERMINISTIC (see
+            # ``deterministic_rank_mapping``): a free-VRAM ordering is only
+            # approximately shared between processes. The comment below used to
+            # claim one snapshot made every rank agree; it did not.
             local_world = local_world_size if local_world_size is not None else world_size
             device_rank = local_rank if local_rank is not None else global_rank
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-                mapping = rank_cuda_mapping(local_world)
+                # DETERMINISTIC mapping here, not the free-VRAM one: each rank
+                # computes this independently and a live VRAM reading is only
+                # approximately shared, so two ranks could sort the inventory
+                # differently and bind the SAME card. Measured on two free A100s:
+                # rank 0 derived {0: 1, 1: 0} while rank 1 derived {0: 0, 1: 1},
+                # both bound cuda:1, and NCCL aborted the group with "Multiple
+                # Ranks are using the same GPU/Partition". Ordering by device
+                # index makes every rank agree by construction; the free-VRAM
+                # preference cannot help before any rank holds memory anyway.
+                mapping = deterministic_rank_mapping(local_world)
                 n_devices = torch.cuda.device_count()
                 cuda_idx = mapping.get(device_rank % local_world, device_rank % n_devices)
                 torch.cuda.set_device(cuda_idx)
