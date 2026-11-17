@@ -849,3 +849,138 @@ def test_speculative_with_identical_draft_accepts_everything():
     assert speculative == expected_continuation, (
         f"identical draft produced {speculative!r} but target-only sampling produced {expected_continuation!r}"
     )
+
+
+# --- Stop sequences -------------------------------------------------------
+#
+# ``speculative_generate`` carries its own buffering/truncation logic for the
+# ``stop`` parameter (lines ~438-487): a decoded chunk is appended to a buffer,
+# matched as a suffix, and only the text BEFORE the stop is yielded; a
+# non-matching buffer longer than the longest stop is flushed a character at a
+# time. That whole branch was uncovered — every existing stop test targets the
+# eager backend, and the speculative suite only covered EOS halting. A wrong
+# boundary here silently truncates or leaks part of the stop string into the
+# response.
+
+
+class _SequenceLogitsModel:
+    """Duck-typed model that forces a predetermined token sequence.
+
+    ``_verify_speculative_tokens`` reads ``model(full, kv_caches=None,
+    use_cache=False)`` and takes the logits at positions ``T-1 .. T+gamma``. This
+    stub returns a huge logit for the token the sequence dictates at each
+    position, so the greedy path accepts everything and the generated ids are
+    exactly ``sequence``. That makes stop-sequence behaviour deterministic
+    instead of depending on a random tiny model's argmax.
+    """
+
+    def __init__(self, sequence: list[int], vocab: int = 32):
+        self._sequence = sequence
+        self._vocab = vocab
+        # ``speculative_generate`` calls ``.eval()`` and reads
+        # ``next(target.parameters()).device`` before any forward, so the stub
+        # must look enough like an nn.Module for those two calls.
+        self._device = torch.device(DEFAULT_DEVICE)
+
+    def eval(self):
+        return self
+
+    def parameters(self):
+        yield torch.zeros(1, device=self._device)
+
+    def __call__(self, input_ids, kv_caches=None, use_cache=False):
+        seq = input_ids.size(1)
+        logits = torch.full((1, seq, self._vocab), -100.0, device=input_ids.device)
+        # Position ``p`` predicts the NEXT token. ``input_ids`` here is
+        # ``prompt + draft``, and the prompt is the single token id 0 (see
+        # ``_CharByTokenTokenizer.encode``), so ``p == 0`` is the prediction
+        # right after the prompt and must emit ``sequence[0]``.
+        for pos in range(seq):
+            idx = min(pos, len(self._sequence) - 1)
+            logits[0, pos, self._sequence[idx]] = 100.0
+        return logits
+
+
+def _run_speculative_greedy(target_seq, draft_seq, tokenizer, *, max_new_tokens, **kwargs):
+    """Run the speculative generator with a forced token sequence (greedy)."""
+    from llm.generation.speculative import speculative_generate
+
+    vocab = 32
+    target = _SequenceLogitsModel(target_seq, vocab)
+    draft = _SequenceLogitsModel(draft_seq, vocab)
+    chunks = list(
+        speculative_generate(
+            target,
+            draft,
+            tokenizer,
+            "x",
+            max_new_tokens,
+            gamma=1,
+            temperature=0.0,
+            **kwargs,
+        )
+    )
+    return "".join(chunks)
+
+
+class _CharByTokenTokenizer:
+    """Decode token id ``i`` to ``chr(ord('a') + i)``; prompt is token 0."""
+
+    pad_token_id = 31
+    eos_token_id = None
+
+    def encode(self, text):
+        return [0]
+
+    def decode(self, ids):
+        return "".join(chr(ord("a") + i) for i in ids)
+
+
+def test_speculative_stop_sequence_excluded_from_output():
+    """The stop text must not appear in the returned string (OpenAI semantics).
+
+    Token ids 1..6 decode to 'b','c','d','e','f','g'; the stop is 'efg', so the
+    output must be 'bcd' and generation must not continue past it.
+    """
+    tok = _CharByTokenTokenizer()
+    seq = [1, 2, 3, 4, 5, 6]  # b c d e f g
+    out = _run_speculative_greedy(seq, seq, tok, max_new_tokens=6, stop="efg")
+    assert "efg" not in out, f"stop sequence leaked into the output: {out!r}"
+    assert out == "bcd", f"expected 'bcd' (text before the stop), got {out!r}"
+
+
+def test_speculative_stop_at_the_first_token_returns_empty():
+    """A stop matching immediately must yield nothing, not a partial prefix."""
+    tok = _CharByTokenTokenizer()
+    seq = [1, 2, 3]  # b c d
+    out = _run_speculative_greedy(seq, seq, tok, max_new_tokens=3, stop="b")
+    assert out == "", f"expected an empty result when the stop matches at once, got {out!r}"
+
+
+def test_speculative_stop_never_matching_runs_to_the_window():
+    """A stop that never appears must not truncate generation."""
+    tok = _CharByTokenTokenizer()
+    seq = [1, 2, 3]  # b c d
+    out = _run_speculative_greedy(seq, seq, tok, max_new_tokens=3, stop="zzz")
+    assert out == "bcd", f"a non-matching stop must not truncate the output, got {out!r}"
+
+
+def test_speculative_list_of_stops_first_match_wins():
+    """With several stops, the first one to appear terminates generation."""
+    tok = _CharByTokenTokenizer()
+    seq = [1, 2, 3, 4]  # b c d e
+    out = _run_speculative_greedy(seq, seq, tok, max_new_tokens=4, stop=["cd", "de"])
+    assert out == "b", f"expected 'b' (halt on 'cd', the earlier stop), got {out!r}"
+
+
+def test_speculative_stop_does_not_drop_text_before_the_boundary_chunk():
+    """Buffered text emitted before the stop must still be yielded.
+
+    The generator buffers decoded chunks and only flushes the safe prefix once
+    the buffer exceeds the longest stop. With a 3-char stop, the first two chars
+    of a longer run live in the buffer; if the flush is wrong they are lost.
+    """
+    tok = _CharByTokenTokenizer()
+    seq = [1, 2, 3, 4, 5, 6, 7]  # b c d e f g h
+    out = _run_speculative_greedy(seq, seq, tok, max_new_tokens=7, stop="fgh")
+    assert out == "bcde", f"expected 'bcde', got {out!r}"
