@@ -20,6 +20,18 @@ The SDK's *HTTP client* is not used (its bundled httpx shim mis-parses the
 test-server URL in this environment — ``InvalidURL: Invalid port``); the
 requests go through ``httpx`` directly and only the response MODELS are used.
 That keeps the assertion on the wire format, which is the part that matters.
+
+That gap was closed MANUALLY rather than with a test, because the client cannot
+be made reliable here: constructing ``openai.OpenAI(...)`` itself raises in this
+environment. The ``no_proxy`` variable contains ``[::1]``, which the SDK's
+``httpx2`` URL parser reads as port ``':1]'``, so even instantiation fails before
+any request. Clearing ``no_proxy``/``NO_PROXY``/``*_proxy`` makes the real client
+work — measured against a live ``llm serve`` on a scratch port: non-streaming
+``chat.completions.create`` returned ``finish_reason='length'`` with a correct
+``usage`` block, and ``stream=True`` yielded one chunk per token. So the client
+link holds today; it is recorded here instead of as a test because a test would
+have to delete the host's proxy configuration to run, which is not a property of
+this codebase.
 """
 
 from __future__ import annotations
