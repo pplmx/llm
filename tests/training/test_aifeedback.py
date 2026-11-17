@@ -162,3 +162,27 @@ def test_aifeedback_empty_train_sampler_raises():
     assert len(sampler) == 0, "precondition: 2-row / 16-rank drop_last split is empty"
     with pytest.raises(ValueError, match="too small for world_size"):
         module.train_dataloader(rank=0, world_size=16)
+
+
+def test_aifeedback_datamodule_rejects_nonpositive_num_samples():
+    """``training.num_samples <= 0`` must fail at THIS boundary, with both names.
+
+    Same placement and same motivation as ``SyntheticDataModule``'s guard and
+    the sibling rejection-sample module: ``num_samples`` is read by only the
+    synthetic DataModules, so each guards its own entry point instead of the
+    config layer rejecting it for every real (map-style / streaming) run.
+    Without it, ``-1`` surfaced from ``torch.randint`` as
+    ``RuntimeError: Trying to create tensor with negative dimension -1: ...``.
+    """
+    from llm.data.modules.aifeedback import AIFeedbackDataModule
+
+    for bad in (0, -1):
+        module = AIFeedbackDataModule(_config(num_samples=bad))
+        with pytest.raises(ValueError, match=f"num_samples >= 1, got {bad}"):
+            module.setup()
+
+    # Counterpart: a positive value still produces a usable DPO-shaped dataset.
+    ok = AIFeedbackDataModule(_config(num_samples=8, batch_size=8))
+    ok.prepare_data()
+    ok.setup()
+    assert len(ok.train_dataset) > 0

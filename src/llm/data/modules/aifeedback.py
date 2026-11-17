@@ -41,6 +41,14 @@ class AIFeedbackDataModule(SamplerMapDataModule):
 
     def setup(self, stage: str | None = None) -> None:
         batch = int(self.config.training.num_samples)
+        if batch < 1:
+            # Same boundary guard SyntheticDataModule carries: a non-positive
+            # ``num_samples`` reaches ``torch.randint`` and surfaces as
+            # "Trying to create tensor with negative dimension -1: [-1, N]",
+            # a message naming neither the config key nor the module. A zero
+            # instead built an empty dataset and left the failure for the
+            # engine's zero-batch epoch check, several layers away.
+            raise ValueError(f"AIFeedbackDataModule requires training.num_samples >= 1, got {batch}.")
         seq_len = int(self.config.model.max_seq_len)
         vocab = int(self.config.model.vocab_size)
         target = self.judge.target_token

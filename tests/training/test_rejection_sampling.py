@@ -153,3 +153,30 @@ def test_rejection_sample_dataloader_never_empty_under_large_world_size():
     batch = next(iter(loader))
     # drop_last=False pads so this rank still gets a batch of rows.
     assert batch["input_ids"].shape[0] >= 1
+
+
+def test_rejection_sample_datamodule_rejects_nonpositive_num_samples():
+    """``training.num_samples <= 0`` must fail at THIS boundary, with both names.
+
+    ``num_samples`` has no config-level constraint because only three synthetic
+    DataModules read it (the real map-style / streaming modules ignore it), and
+    each one guards its own entry point — the same placement decision
+    ``data.max_seq_len`` follows. Without the guard, ``-1`` reached
+    ``torch.randint`` and raised
+    ``RuntimeError: Trying to create tensor with negative dimension -1: [-1, 512]``
+    (a message naming neither the config key nor the module), and ``0`` built an
+    empty dataset whose failure only surfaced later in the engine's zero-batch
+    epoch check.
+    """
+    from llm.data.modules.rejection_sample import RejectionSampleDataModule
+
+    for bad in (0, -1):
+        module = RejectionSampleDataModule(_config(num_samples=bad), mode="threshold", threshold=0.0)
+        with pytest.raises(ValueError, match=f"num_samples >= 1, got {bad}"):
+            module.setup()
+
+    # Counterpart: a positive value still builds a real dataset.
+    ok = RejectionSampleDataModule(_config(num_samples=8), mode="threshold", threshold=0.0)
+    ok.prepare_data()
+    ok.setup()
+    assert len(ok.train_dataset) > 0
