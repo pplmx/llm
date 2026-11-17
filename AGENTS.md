@@ -117,7 +117,7 @@
 - 可选依赖组：`dev` · `test` · `docs` · `security` · `eval` · `logging` · `perf` · `compat` · `dvc` · `streaming`（Docker builder 排除 test/docs/streaming）。
 - Python 3.14（PEP 758）：`except A, B:` 不带括号是合法推荐写法，`ruff format` 规范化为该形式——正确行为，勿当成损坏改回。
 - 路径用 `pathlib.Path`；注释 / 日志英文。
-- **测试**：markers 在 `pytest.toml`（`quick` · `slow` · `heavy` · `e2e` · `integration` · `gpu` · `multi_gpu` · `full_cluster` · `need_gpu(n)`）。fixture `stub_tokenizer` / `line_tokenizer`、`decoder_model_kwargs(**overrides)`；避免纯 `isinstance` 弱断言；默认不 mock，跑真实模块；确定性、隔离、全量安全。
+- **测试**：markers 在 `pytest.toml`（`quick` · `slow` · `heavy` · `e2e` · `gpu` · `multi_gpu` · `full_cluster` · `need_gpu(n)`）。fixture `stub_tokenizer` / `line_tokenizer`、`decoder_model_kwargs(**overrides)`；避免纯 `isinstance` 弱断言；默认不 mock，跑真实模块；确定性、隔离、全量安全。
 - **测试桩**：内联 tokenizer 一律改用 `tests/support/tokenizers.py`。
 
 ## 8. 反模式（NEVER）
