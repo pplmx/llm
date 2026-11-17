@@ -16,6 +16,13 @@
 
 ### 分层依赖基本单向
 
+> **下表是 2026-11-09 那次评估的快照**，不是当前状态。它早于下面
+> [「checkpoint 拆分」](#checkpoint-拆分已执行授权大规模重构后)那一步，所以表里没有
+> `checkpoint` 列，并且仍显示 `serving → training` / `runtime → training` 各 1 次；
+> 拆分落地后这两处依赖已经归零（`src/llm/checkpoint/` 现在是独立层，`serving` 与
+> `runtime` 从中导入），`src/llm/` 顶层目录也从 15 个变成了 16 个。读这张表是为了
+> 看当时的形状，不要拿它当现状核对。
+
 ```text
 from\to        core models runtim   data genera traini servin export evalua quanti compat tokeni multim    cli  utils
 core               60      .      3      .      .      .      .      .      .      .      .      .      .      .     12
