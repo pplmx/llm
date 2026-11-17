@@ -7,6 +7,12 @@
 #   cfg = Config.from_yaml("configs/c4-pretrain.yaml")
 #   apply_to_config(cfg.data, C4_PRESET)
 
+model:
+  # Must be >= data.max_seq_len: the positional encoding cannot index past it.
+  # Without this the model fell back to its 512 default while the loader built
+  # 2048-token sequences, so the run died inside the forward pass.
+  max_seq_len: 2048
+
 data:
   data_source: hf            # overwritten by the preset below
   dataset_name: ""           # filled in by the preset

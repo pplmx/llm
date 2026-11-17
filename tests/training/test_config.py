@@ -1209,3 +1209,72 @@ class TestShippedConfigsCanActuallyStart:
             elif "print(" not in text:
                 problems.append(f"{name}: uses {dataset_path} without showing how to create it")
         assert not problems, "distributed presets that cannot run as documented:\n  " + "\n  ".join(problems)
+
+
+class TestDataWindowFitsTheModelContext:
+    """The loader window must not exceed the model's context, checked at TRAIN time.
+
+    ``data.max_seq_len`` and ``model.max_seq_len`` live in different YAML
+    sections and both default to 512, so they agree unless exactly one is
+    overridden. The mismatch used to surface from inside the forward pass as
+    ``Sequence endpoint 2048 exceeds maximum sequence length 512`` from
+    ``positional_encoding.py`` — the right numbers, but not the two config keys
+    behind them. ``configs/c4-pretrain.yaml`` shipped in exactly that state.
+
+    The check deliberately lives at the training entry point, NOT in
+    ``Config``'s own validator: serving / generation / RLHF paths build a
+    ``Config`` for a small model without ever constructing a dataloader, and a
+    config-level rule rejected those perfectly valid setups (measured: it broke
+    32 tests and 209 fixtures across ``serving``, ``generation`` and
+    ``training/rlhf``).
+    """
+
+    def test_mismatch_is_rejected(self):
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_data_window_fits_model_context
+
+        cfg = Config(model=ModelConfig(max_seq_len=32), data=DataConfig(max_seq_len=512))
+        with pytest.raises(ValueError, match=r"data\.max_seq_len \(512\) exceeds model\.max_seq_len \(32\)"):
+            _check_data_window_fits_model_context(cfg)
+
+    def test_matching_lengths_pass(self):
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_data_window_fits_model_context
+
+        _check_data_window_fits_model_context(
+            Config(model=ModelConfig(max_seq_len=64), data=DataConfig(max_seq_len=64))
+        )
+
+    def test_a_shorter_data_window_is_allowed(self):
+        """The data window may be SMALLER than the context — that is legitimate."""
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_data_window_fits_model_context
+
+        _check_data_window_fits_model_context(
+            Config(model=ModelConfig(max_seq_len=512), data=DataConfig(max_seq_len=128))
+        )
+
+    def test_config_alone_still_builds_for_inference_paths(self):
+        """Counterpart to the placement decision: ``Config`` must not reject this.
+
+        Serving and generation build a ``Config`` around a small model and never
+        touch ``data.max_seq_len``; making this construct-time would break them.
+        """
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+
+        cfg = Config(model=ModelConfig(max_seq_len=16), data=DataConfig(max_seq_len=512))
+        assert cfg.model.max_seq_len == 16
+
+    def test_c4_preset_pins_a_model_context_that_can_hold_its_sequences(self):
+        """The shipped C4 preset must load AND pass the training-time check."""
+        from llm.training.core.config import Config
+        from llm.training.train import _check_data_window_fits_model_context
+
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        cfg = Config.from_yaml(repo_root / "configs" / "c4-pretrain.yaml")
+        assert cfg.model.max_seq_len >= cfg.data.max_seq_len
+        _check_data_window_fits_model_context(cfg)

@@ -44,6 +44,35 @@ def _global_rank(node_rank: int, local_rank: int, local_world_size: int) -> int:
     return node_rank * local_world_size + local_rank
 
 
+def _check_data_window_fits_model_context(config: Config) -> None:
+    """Refuse to train when the loader window outruns the model's context.
+
+    ``data.max_seq_len`` decides how long each training sequence is and
+    ``model.max_seq_len`` decides how far the positional encoding can index.
+    They live in different YAML sections and both default to 512, so they agree
+    unless exactly one is overridden — easy to do while writing a small model.
+    The mismatch used to surface from inside the forward pass as
+
+        ValueError: Sequence endpoint 2048 exceeds maximum sequence length 512
+
+    raised by ``positional_encoding.py``: the right two numbers, but not the two
+    config keys behind them. ``configs/c4-pretrain.yaml`` shipped in exactly that
+    state (``data.max_seq_len: 2048`` with no ``model`` section at all).
+
+    This lives at the training entry point rather than in :class:`Config`'s own
+    validator on purpose: ``Config`` is also built by serving, generation and
+    RLHF paths that never construct a dataloader, so a model-level validator
+    rejected perfectly valid inference setups.
+    """
+    if config.data.max_seq_len > config.model.max_seq_len:
+        raise ValueError(
+            f"data.max_seq_len ({config.data.max_seq_len}) exceeds model.max_seq_len "
+            f"({config.model.max_seq_len}): the dataloader would build sequences the "
+            "positional encoding cannot index. Set both to the same value (they "
+            "default to 512 together)."
+        )
+
+
 def train_worker(
     local_rank: int,
     world_size: int,
@@ -72,6 +101,7 @@ def train_worker(
         )
 
         task_spec = TASK_REGISTRY.get(task_name)
+        _check_data_window_fits_model_context(config)
         data_module = task_spec.data_module_factory(config)
         data_module.prepare_data()
         data_module.setup()
