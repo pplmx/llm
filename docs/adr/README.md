@@ -46,6 +46,8 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-010: SmoothQuant Integration](010-smoothquant-integration.md)
 - [ADR-011: GGUF Export Format](011-gguf-export.md)
 - [ADR-012: Use QLoRA for Memory-Efficient Fine-Tuning](012-use-qlora.md)
+- [ADR-013: Multimodal Encoder & Data-Module Contract](013-multimodal-encoder-contract.md)
+- [ADR-014: ZeRO Stage-2 Activation/Gradient Sharding](014-zero-stage-2-activation-sharding.md)
 
 ## Creating a New ADR
 
