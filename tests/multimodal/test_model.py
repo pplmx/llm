@@ -98,3 +98,88 @@ def test_multimodal_model_does_not_patch_decoder():
     with torch.no_grad():
         text_logits = decoder(input_ids)
     assert text_logits.shape == (2, 8, 32)  # unchanged text-only forward
+
+
+class TestGenerateConditionedOnAModalPrefix:
+    """``MultimodalModel.generate`` is the inference seam; most of it had no test.
+
+    Only ``tests/multimodal/test_asr.py`` called ``generate``, inside a
+    ``heavy`` end-to-end ASR run, and only with a non-empty instruction prompt.
+    That left three branches unexercised: the empty-prompt path (seeded with a
+    neutral token whose output is stripped afterwards — this is the "pure
+    audio->text, no instruction" case the ASR tower is meant to serve), the
+    2-D ``modal_embeds`` accepted by ``ModalityFusion``, and every refusal path.
+
+    These are cheap CPU tests; the ASR e2e they complement costs a training run.
+    """
+
+    @staticmethod
+    def _model():
+        from llm.multimodal.model import build_multimodal_model
+
+        return build_multimodal_model(_decoder(), modal_dim=8).eval()
+
+    def test_a_nonempty_prompt_is_preserved_and_extended(self):
+        model = self._model()
+        modal = torch.randn(2, 3, 8)
+        prompt = torch.full((2, 4), 1, dtype=torch.long)
+
+        out = model.generate(prompt, modal_embeds=modal, max_new_tokens=5)
+
+        assert out.shape == (2, 4 + 5), f"expected prompt + 5 new tokens, got {tuple(out.shape)}"
+        assert torch.equal(out[:, :4], prompt), "the prompt must be retained verbatim in the output"
+
+    def test_an_empty_prompt_returns_only_generated_tokens(self):
+        """The neutral seeding token must be stripped, not returned.
+
+        ``generate`` seeds a zero-length prompt with one token so the decoder has
+        something to condition on, then slices it off. Returning it would make
+        audio-only transcription emit a spurious leading token.
+        """
+        model = self._model()
+        modal = torch.randn(2, 3, 8)
+        empty = torch.zeros(2, 0, dtype=torch.long)
+
+        out = model.generate(empty, modal_embeds=modal, max_new_tokens=4)
+
+        assert out.shape == (2, 4), f"expected exactly the 4 generated tokens, got {tuple(out.shape)}"
+
+    def test_2d_modal_embeds_are_accepted(self):
+        """A single embedding per sample is a legal prefix (``ModalityFusion`` accepts 2-D)."""
+        model = self._model()
+        modal_2d = torch.randn(2, 8)
+        prompt = torch.full((2, 3), 1, dtype=torch.long)
+
+        out = model.generate(prompt, modal_embeds=modal_2d, max_new_tokens=2)
+
+        assert out.shape == (2, 5)
+
+    def test_no_modality_at_all_is_refused(self):
+        model = self._model()
+        prompt = torch.full((1, 3), 1, dtype=torch.long)
+        with pytest.raises(ValueError, match="needs modal_embeds or modal_samples"):
+            model.generate(prompt)
+
+    def test_zero_new_tokens_is_refused(self):
+        """``max_new_tokens=0`` would return the prompt unchanged while looking like a decode."""
+        model = self._model()
+        prompt = torch.full((1, 3), 1, dtype=torch.long)
+        with pytest.raises(ValueError, match="max_new_tokens must be >= 1"):
+            model.generate(prompt, modal_embeds=torch.randn(1, 8), max_new_tokens=0)
+
+    def test_raw_samples_without_an_encoder_are_refused(self):
+        """``modal_samples`` requires the encoder that turns them into embeddings."""
+        model = self._model()  # built with modal_dim only, so encoder is None
+        assert model.encoder is None
+        prompt = torch.full((1, 3), 1, dtype=torch.long)
+        with pytest.raises(ValueError, match="needs modal_embeds or a raw modal sample with an encoder"):
+            model.generate(prompt, modal_samples=torch.randn(1, 4, 16))
+
+    def test_generation_is_deterministic_for_a_fixed_model(self):
+        """Greedy decode: the same inputs must give the same tokens."""
+        model = self._model()
+        prompt = torch.full((1, 3), 1, dtype=torch.long)
+        modal = torch.randn(1, 3, 8)
+        first = model.generate(prompt, modal_embeds=modal, max_new_tokens=4)
+        second = model.generate(prompt, modal_embeds=modal, max_new_tokens=4)
+        assert torch.equal(first, second)

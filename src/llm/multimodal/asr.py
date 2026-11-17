@@ -58,7 +58,15 @@ def tokens_to_spectrogram(
     """
     if not torch.is_tensor(tokens) or tokens.dtype not in (torch.int32, torch.int64):
         raise ValueError(f"tokens must be an integer tensor, got {type(tokens).__name__}")
-    if tokens.numel() == 0 or (tokens <= 0).any() or (tokens >= vocab_size).any():
+    if tokens.numel() == 0:
+        # Separate branch: the range message below calls .min()/.max(), which
+        # raise RuntimeError on an empty tensor. The guard fired but the
+        # diagnostic crashed, so the caller saw
+        # "min(): Expected reduction dim to be specified for input.numel() == 0"
+        # (a torch error about reduction dims) instead of the intended
+        # "tokens must be non-empty".
+        raise ValueError("tokens must be non-empty")
+    if (tokens <= 0).any() or (tokens >= vocab_size).any():
         raise ValueError(
             f"tokens must be non-empty and in [1, vocab_size-1], got {tokens.min().item()}..{tokens.max().item()}"
         )

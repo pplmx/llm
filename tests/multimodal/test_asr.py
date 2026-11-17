@@ -393,3 +393,89 @@ def test_asr_e2e_heldout_transcription_fluent_regime():
         assert acc > 0.95, f"held-out transcript accuracy too low in fluent regime: {acc:.3f}"
     finally:
         torch.set_num_threads(prev)
+
+
+class TestTheASRCodecRefusesInvalidInput:
+    """``tokens_to_spectrogram`` / ``spectrogram_to_tokens`` validate aggressively
+    and none of those refusals had a test.
+
+    They are the codec an ASR experiment is built on: a silently-accepted
+    out-of-range token would encode to a frequency bin that decodes back to a
+    DIFFERENT id, so a training run would look healthy while learning an
+    inconsistent label mapping. The guards turn that into an immediate error, but
+    only if they are actually reached — nothing tested them, so a refactor could
+    have dropped one without any signal.
+    """
+
+    def test_non_tensor_tokens_are_refused(self):
+        with pytest.raises(ValueError, match="tokens must be an integer tensor"):
+            tokens_to_spectrogram([1, 2, 3], n_frames=32, n_mels=16, slot_h=4, vocab_size=32)
+
+    def test_float_tokens_are_refused(self):
+        with pytest.raises(ValueError, match="tokens must be an integer tensor"):
+            tokens_to_spectrogram(torch.tensor([1.0, 2.0]), n_frames=32, n_mels=16, slot_h=4, vocab_size=32)
+
+    def test_empty_tokens_are_refused(self):
+        with pytest.raises(ValueError, match="tokens must be non-empty"):
+            tokens_to_spectrogram(torch.empty(0, dtype=torch.long), n_frames=32, n_mels=16, slot_h=4, vocab_size=32)
+
+    def test_token_zero_is_refused(self):
+        """Id 0 is reserved: the codec maps ids to ``2 + ...`` so 0 has no bin."""
+        with pytest.raises(ValueError, match=r"tokens must be non-empty and in \[1, vocab_size-1\]"):
+            tokens_to_spectrogram(torch.tensor([0, 1]), n_frames=32, n_mels=16, slot_h=4, vocab_size=32)
+
+    def test_a_token_at_vocab_size_is_refused(self):
+        with pytest.raises(ValueError, match=r"tokens must be non-empty and in \[1, vocab_size-1\]"):
+            tokens_to_spectrogram(torch.tensor([1, 32]), n_frames=32, n_mels=16, slot_h=4, vocab_size=32)
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"n_frames": 0, "n_mels": 16, "slot_h": 4}, "must be positive"),
+            ({"n_frames": 32, "n_mels": -1, "slot_h": 4}, "must be positive"),
+            ({"n_frames": 32, "n_mels": 16, "slot_h": 0}, "must be positive"),
+            ({"n_frames": 32, "n_mels": 2, "slot_h": 4}, "n_mels must be >= 3"),
+        ],
+    )
+    def test_degenerate_geometry_is_refused(self, kwargs, match):
+        with pytest.raises(ValueError, match=match):
+            tokens_to_spectrogram(torch.tensor([1, 2]), vocab_size=32, **kwargs)
+
+    def test_a_window_that_does_not_fit_is_refused(self):
+        """More token slots than frames would silently truncate the transcript."""
+        with pytest.raises(ValueError, match="exceeds n_frames"):
+            tokens_to_spectrogram(torch.tensor([1, 2, 3, 4]), n_frames=8, n_mels=16, slot_h=4, vocab_size=32)
+
+    def test_a_2d_spectrogram_is_refused(self):
+        with pytest.raises(ValueError, match=r"expected \[\.\.\., 1, n_frames, n_mels\]"):
+            spectrogram_to_tokens(torch.zeros(16, 16), n_tokens=2, slot_h=4, n_mels=16)
+
+    def test_a_multi_channel_spectrogram_is_refused(self):
+        with pytest.raises(ValueError, match="expected single channel"):
+            spectrogram_to_tokens(torch.zeros(1, 2, 16, 16), n_tokens=2, slot_h=4, n_mels=16)
+
+    def test_a_decode_window_that_does_not_fit_is_refused(self):
+        # 2-D tokens give the [B, 1, T, F] shape spectrogram_to_tokens expects.
+        spec = tokens_to_spectrogram(torch.tensor([[1, 2]]), n_frames=16, n_mels=16, slot_h=4, vocab_size=32)
+        assert spec.dim() == 4
+        with pytest.raises(ValueError, match="exceeds n_frames"):
+            spectrogram_to_tokens(spec, n_tokens=8, slot_h=4, n_mels=16)
+
+    def test_a_non_positive_slot_height_is_refused_on_decode(self):
+        spec = tokens_to_spectrogram(torch.tensor([[1, 2]]), n_frames=16, n_mels=16, slot_h=4, vocab_size=32)
+        with pytest.raises(ValueError, match="slot_h must be >= 1"):
+            spectrogram_to_tokens(spec, n_tokens=2, slot_h=0, n_mels=16)
+
+    def test_the_round_trip_still_works_after_all_those_refusals(self):
+        """Positive control: the guards must not have narrowed the valid range.
+
+        Stays inside the codec's documented bijection bound
+        (``vocab_size <= n_mels - 2``); outside it the round trip is expected to
+        corrupt, which ``test_codec_boundary_vocab_roundtrip_is_corrupted`` pins
+        and the DataModule rejects up front.
+        """
+        n_mels, vocab = 16, 14  # exactly at the bound: 14 <= 16 - 2
+        tokens = torch.tensor([[1, 5, 9, vocab - 1]])
+        spec = tokens_to_spectrogram(tokens, n_frames=32, n_mels=n_mels, slot_h=4, vocab_size=vocab)
+        back = spectrogram_to_tokens(spec, n_tokens=4, slot_h=4, n_mels=n_mels)
+        assert torch.equal(back, tokens)
