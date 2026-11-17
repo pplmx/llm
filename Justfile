@@ -15,7 +15,14 @@ init: sync
 sync:
     uv sync
 
-# Sync all dependency groups (test, docs, dev) + runtime extras
+# Sync all dependency groups (test, docs, dev) + every runtime extra.
+#
+# WARNING: `--all-extras` pulls in `perf`, whose `flash-attn` ships as an sdist
+# only — it compiles against CUDA at install time and can take many minutes (or
+# fail on a CPU-only host). For day-to-day work prefer `just sync`, or add the
+# extras you actually need: `uv sync --extra eval --extra logging --extra dvc`
+# (what CI installs). This recipe is for "I want everything, on a GPU box".
+# Sync every dependency group + all extras (needs a CUDA toolchain for `perf`).
 dev:
     uv sync --all-groups --all-extras
 
@@ -34,11 +41,13 @@ test-doc:
 # Test fast: the CPU-clean daily gate.
 # Excludes heavy, e2e AND every GPU-requiring marker, so it runs unchanged on
 # CPU-only hosts (CI / laptops). GPU tests belong to `test` (full) / `test-gpu`.
+# CPU-clean fast gate (no heavy / e2e / GPU markers).
 test-fast:
     uv run --frozen pytest -m "not heavy and not e2e and not gpu and not multi_gpu and not full_cluster and not need_gpu"
 
 # Parallel test — one worker per GPU (min 1), GPU/heavy/e2e excluded (CPU-clean).
 # Each worker pins to a distinct GPU via PYTEST_XDIST_WORKER env.
+# Parallel CPU-clean run, one xdist worker per GPU.
 test-parallel:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -52,6 +61,7 @@ test-quick:
 
 # GPU-only: for GPU-capable hosts / self-hosted GPU runners. Tests also
 # auto-skip individually when too few usable GPUs (tests/conftest.py).
+# GPU-marked tests only (auto-skip when too few usable GPUs).
 test-gpu:
     uv run --frozen pytest -m "gpu or multi_gpu or need_gpu or full_cluster"
 
@@ -71,6 +81,7 @@ test-cov:
 # marked, so the CPU-clean gate is a fast path-usable smoke test (macOS CI
 # timed out at ~90 min on the torch.multiprocessing.spawn distributed tests —
 # those are now excluded here and run in test/heavy/e2e/full).
+# CPU-clean suite + coverage — the per-push CI gate.
 test-cov-fast:
     uv run --frozen pytest -m "not heavy and not e2e and not gpu and not multi_gpu and not full_cluster and not need_gpu" --cov=llm --cov-fail-under=77 --cov-report=term-missing --cov-report=xml
 
