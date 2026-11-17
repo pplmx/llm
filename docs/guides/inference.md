@@ -592,6 +592,23 @@ q/k/v split + concat, plus `fc1` ↔ `up_proj` / `fc2` ↔ `down_proj`
 translation, is exercised in
 `tests/compat/test_hf_publisher.py::test_save_pretrained_roundtrip_through_from_pretrained`.
 
+**等价指的是权重，不是模块状态**：`from_pretrained` 返回的模型处于 **training 模式**
+（`model.training is True`），和 `transformers.from_pretrained` 的约定一致 —— 它不知道
+调用方是接着训练还是直接推理。`DecoderModel` 每个 block 都有 dropout，所以在训练
+模式下调一次前向会得到和原模型**不同**的 logits（实测 `max|Δ| ≈ 0.82`）；调用
+`model.eval()` 之后差异是 `0.0`。纯推理场景 MUST 先 `.eval()`：
+
+```python
+loaded = from_pretrained(ckpt_dir, device="cuda")
+loaded.eval()  # 关掉 dropout；否则 logits 与保存前不一致
+with torch.no_grad():
+    logits = loaded(ids)
+```
+
+导出路径不受影响：`export_to_onnx` / `export_to_torchscript` 内部自己调用
+`model.eval()`。上面那个 roundtrip 测试也显式 `.eval()` 了两个模型，所以它验证的是
+权重等价，不覆盖模块状态。
+
 ### Limitations (Tier 3 follow-ups)
 
 - Only `architecture="llama"` is wired through. Qwen/Mistral

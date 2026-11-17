@@ -921,3 +921,55 @@ class TestPublishedFormatScope:
         norm = model.transformer_blocks[0].norm1
         assert type(norm).__name__ == "LayerNorm", f"default norm changed to {type(norm).__name__}"
         assert norm.bias is not None, "HF Llama's RMSNorm has no bias; a bias here is the structural difference"
+
+
+def test_from_pretrained_returns_a_model_in_training_mode(tmp_path: Path):
+    """Weight equivalence is not module-state equivalence — document the gap.
+
+    ``save_pretrained`` → ``from_pretrained`` reproduces every weight exactly
+    (max |delta| = 0 over all tensors), but the reloaded model comes back with
+    ``training=True``, matching ``transformers.from_pretrained``: the loader
+    cannot know whether the caller resumes training or runs inference.
+    ``DecoderModel`` puts a dropout in every block, so one forward in training
+    mode disagrees with the saved model (measured ``max |delta| ≈ 0.82``) until
+    ``.eval()`` is called, at which point the delta is exactly ``0.0``.
+
+    ``docs/guides/inference.md`` promises an "equivalent model", and the
+    roundtrip test above calls ``.eval()`` on both sides — so nothing recorded
+    this asymmetry. This test does, and it also pins that the fix is
+    ``.eval()`` rather than a change of loader contract: if someone made the
+    loader call ``.eval()``, the first assertion would fail and force the docs
+    to be updated with it.
+    """
+    model = _make_small_decoder()
+    model.eval()
+    save_pretrained(model, tmp_path)
+
+    reloaded = from_pretrained(tmp_path, device=str(DEFAULT_DEVICE), dtype=torch.float32)
+
+    # 1. The loader follows the ecosystem convention: training mode.
+    assert reloaded.training is True, (
+        "from_pretrained now returns eval mode; transformers.from_pretrained does not, "
+        "and docs/guides/inference.md documents the training-mode contract"
+    )
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, model.embedding_layer.token_embeddings.num_embeddings, (1, 8), device=DEFAULT_DEVICE)
+    with torch.no_grad():
+        expected = model(ids).detach()
+        in_training_mode = reloaded(ids).detach()
+
+    # 2. Dropout makes the un-switched model disagree — the reason the doc says
+    #    to call .eval(). If dropout ever stopped being active this would become
+    #    an equality assertion and the caveat could be dropped.
+    assert not torch.allclose(in_training_mode, expected, atol=1e-5), (
+        "training-mode forward matched the eval-mode original; the dropout caveat may be stale"
+    )
+
+    # 3. After .eval() the two agree, which is what "equivalent weights" means.
+    reloaded.eval()
+    with torch.no_grad():
+        after_eval = reloaded(ids).detach()
+    assert torch.allclose(after_eval, expected, atol=1e-5), (
+        f".eval() did not restore equivalence (max |d|={(after_eval - expected).abs().max():.2e})"
+    )
