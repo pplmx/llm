@@ -1579,3 +1579,60 @@ class TestGpusPerNodeLowerBound:
 
         with patch("llm.training.core.config.torch.cuda.device_count", return_value=5):
             assert DistributedConfig(gpus_per_node=None).gpus_per_node == 5
+
+
+class TestWeightDecay:
+    """``training.weight_decay`` must be non-negative and finite.
+
+    The field was unconstrained and reaches ``torch.optim.AdamW`` through three
+    tasks (``lm_task``, ``regression_task``, ``reward_task``). Two values got
+    past the config and behaved differently, and neither named the field:
+
+    * a NEGATIVE value made torch raise
+      ``ValueError: Invalid weight_decay value: -0.1`` from inside the optimizer
+      constructor, i.e. after the model was built;
+    * ``inf`` is ACCEPTED by torch and turns every weight into ``-inf`` on the
+      first step — measured on a two-parameter parameter with an all-zero
+      gradient (pure decay): ``[1.0, 2.0]`` -> ``[-inf, -inf]``.
+
+    ``training.lr`` already carries ``allow_inf_nan=False`` for the same reason,
+    so these bounds match it.
+    """
+
+    @pytest.mark.parametrize("bad", [-0.1, -1.0])
+    def test_negative_weight_decay_is_rejected(self, bad: float):
+        from llm.training.core.config import TrainingConfig
+
+        with pytest.raises(ValidationError, match="weight_decay"):
+            TrainingConfig(weight_decay=bad)
+
+    @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+    def test_non_finite_weight_decay_is_rejected(self, bad: float):
+        """``ge=0`` alone lets ``inf`` through (``inf >= 0`` is True)."""
+        from llm.training.core.config import TrainingConfig
+
+        with pytest.raises(ValidationError, match="weight_decay"):
+            TrainingConfig(weight_decay=bad)
+
+    @pytest.mark.parametrize("good", [0.0, 0.01, 0.1, 1.0])
+    def test_zero_and_positive_weight_decay_is_accepted(self, good: float):
+        """0 is the documented "no decay" setting and must stay legal."""
+        from llm.training.core.config import TrainingConfig
+
+        assert TrainingConfig(weight_decay=good).weight_decay == good
+
+    def test_the_infinite_value_poisons_weights_in_one_step(self):
+        """Record what ``allow_inf_nan=False`` prevents, using the real optimizer."""
+        import torch
+
+        param = torch.nn.Parameter(torch.tensor([1.0, 2.0]))
+        param.grad = torch.zeros(2)  # pure decay: no data gradient at all
+        torch.optim.AdamW([param], lr=0.1, weight_decay=float("inf")).step()
+        assert param.detach().tolist() == [float("-inf"), float("-inf")], (
+            "weight_decay=inf must poison the weights, which is why the config rejects it"
+        )
+
+        # The negative case is rejected by torch itself, just later and anonymously.
+        other = torch.nn.Parameter(torch.zeros(1))
+        with pytest.raises(ValueError, match="Invalid weight_decay value"):
+            torch.optim.AdamW([other], lr=1e-3, weight_decay=-0.1)

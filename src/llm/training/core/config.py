@@ -42,7 +42,19 @@ class TrainingConfig(BaseModel):
             "backwards compatibility with older preset configs."
         ),
     )
-    weight_decay: float = 0.01
+    weight_decay: float = Field(
+        0.01,
+        ge=0,
+        allow_inf_nan=False,
+        description=(
+            "Weight decay (L2 / decoupled, per optimizer). 0 disables it. Must be "
+            "non-negative and finite: negative values made torch's AdamW raise "
+            '"Invalid weight_decay value" from inside the optimizer constructor '
+            "-- a message naming neither this field nor the config -- while ``inf`` "
+            "is ACCEPTED by torch and turns every weight into ``-inf`` on the first "
+            "step. ``training.lr`` already guards the same way."
+        ),
+    )
     num_samples: int = 20000
     scheduler_type: str = Field("cosine", pattern="^(cosine|step|plateau)$")
     warmup_epochs: int = Field(
