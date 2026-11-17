@@ -27,7 +27,7 @@ import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
 from llm.training.distributed import ZeroOptimizer
-from llm.training.distributed.zero import ZeroStage2Optimizer
+from llm.training.distributed.zero import ZERO_RANK_STATES_KEY, ZeroStage2Optimizer
 from llm.training.tasks.base_task import TrainingTask
 
 # torch.multiprocessing.spawn multi-rank training: heavy (see
@@ -818,3 +818,158 @@ def test_zero_stage2_leaves_only_owned_gradients() -> None:
         )
         seen_owned |= set(payload["owned"])
     assert len(seen_owned) == 4, f"the two ranks' shards must cover all 4 params, got {sorted(seen_owned)}"
+
+
+# --- Stage-2 checkpoint roundtrip (ADR-014) -------------------------------
+
+
+def _reference_checkpoint_params_stage2() -> list[torch.Tensor]:
+    """Reference for the Stage-2 resume: the same math a full optimizer does.
+
+    Stage-2 changes WHERE gradients live, not what the update is, so the
+    reference is identical to the Stage-1 one: train STEPS_PRE full, dump, reset,
+    reload, continue STEPS_POST.
+    """
+    return _reference_checkpoint_params()
+
+
+def _stage2_checkpoint_worker(rank: int, world_size: int, results: dict) -> None:
+    try:
+        dist.init_process_group(
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        x = _make_data()
+
+        # Phase 1: train STEPS_PRE with Stage-2, save THE GATHERED payload.
+        model = _build_model()
+        optimizer = ZeroStage2Optimizer(
+            lambda owned: torch.optim.AdamW(owned, lr=0.01),
+            model.parameters(),
+            rank=rank,
+            world_size=world_size,
+        )
+        for _ in range(STEPS_PRE):
+            optimizer.zero_grad()
+            model(x).square().mean().backward()
+            optimizer.clip_gradients_globally(0.0)
+            optimizer.reduce_gradients_to_owners()
+            optimizer.step()
+
+        per_rank_shard = optimizer.state_dict()
+        assert per_rank_shard["zero_stage"] == 2, "the shard must record the stage that wrote it"
+        # The multi-rank resume path persists the GATHERED envelope; it is a
+        # collective, so every rank must enter it.
+        payload = optimizer.collective_state_dict()
+        assert ZERO_RANK_STATES_KEY in payload
+        assert len(payload[ZERO_RANK_STATES_KEY]) == world_size, (
+            "the gathered envelope must hold one shard per rank, or a multi-rank resume "
+            "would silently cold-start the missing shards"
+        )
+
+        # Phase 2: reset to init, reload this rank's slice by its OWN rank key.
+        torch.manual_seed(SEED)
+        reset = _build_model()
+        resumed = ZeroStage2Optimizer(
+            lambda owned: torch.optim.AdamW(owned, lr=0.01),
+            reset.parameters(),
+            rank=rank,
+            world_size=world_size,
+        )
+        resumed.load_state_dict(payload)
+        for _ in range(STEPS_POST):
+            resumed.zero_grad()
+            reset(x).square().mean().backward()
+            resumed.clip_gradients_globally(0.0)
+            resumed.reduce_gradients_to_owners()
+            resumed.step()
+        results[rank] = {"params": [p.detach().clone() for p in reset.parameters()], "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_zero_stage2_checkpoint_roundtrip_two_process_cpu() -> None:
+    """Stage-2 sharded moments survive save/reset/load cumulatively.
+
+    Stage-1 has this test; Stage-2 needs its own because the resume path also has
+    to rebuild a ``ZeroStage2Optimizer`` (not a ``ZeroOptimizer``) and keep taking
+    the clip-then-reduce branch. Agreement with the full-optimizer reference
+    proves the restored moments are the real Adam state, not a cold restart.
+    """
+    reference = _reference_checkpoint_params_stage2()
+    out = _run_spawn(_stage2_checkpoint_worker, 2)
+    for rank in (0, 1):
+        payload = out[rank]
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        for i, (got, want) in enumerate(zip(payload["params"], reference, strict=True)):
+            assert torch.equal(got, want), (
+                f"rank {rank} param {i} diverged after a Stage-2 checkpoint resume "
+                f"(max |d|={(got - want).abs().max().item():.3e})"
+            )
+
+
+def test_zero_cross_stage_resume_is_refused() -> None:
+    """A Stage-1 shard must not load into a Stage-2 job, or vice versa.
+
+    The two stages write the SAME on-disk shape (owned-parameter moments), so
+    nothing about the payload distinguishes them except the recorded stage. A
+    resume across stages would silently change the gradient-reduction path —
+    Stage-1 keeps and averages every gradient, Stage-2 drops the non-owned ones —
+    so the training dynamics after resume would not match the run that was
+    interrupted.
+    """
+
+    def build(cls, seed: int = 0):
+        torch.manual_seed(seed)
+        model = torch.nn.Linear(3, 2)
+        opt = cls(lambda owned: torch.optim.AdamW(owned, lr=0.01), model.parameters(), rank=0, world_size=1)
+        return model, opt
+
+    stage1_model, stage1_opt = build(ZeroOptimizer)
+    for p in stage1_model.parameters():
+        p.grad = torch.ones_like(p)
+    stage1_opt.step()
+    stage1_shard = stage1_opt.state_dict()
+    assert stage1_shard["zero_stage"] == 1
+
+    _model2, stage2_opt = build(ZeroStage2Optimizer)
+    assert stage2_opt.state_dict()["zero_stage"] == 2
+
+    with pytest.raises(ValueError, match="written by ZeRO Stage-1 but the job is running Stage-2"):
+        stage2_opt.load_state_dict(stage1_shard)
+
+    # And the other direction.
+    _model3, stage1_opt_b = build(ZeroOptimizer)
+    with pytest.raises(ValueError, match="written by ZeRO Stage-2 but the job is running Stage-1"):
+        stage1_opt_b.load_state_dict(stage2_opt.state_dict())
+
+
+def test_a_pre_stage_marker_checkpoint_still_loads_as_stage1() -> None:
+    """Checkpoints written before the stage key existed must stay resumable.
+
+    They are Stage-1 by construction (Stage-2 did not exist), so an absent key
+    defaults to 1 rather than failing every older checkpoint.
+    """
+    torch.manual_seed(0)
+    model = torch.nn.Linear(3, 2)
+    opt = ZeroOptimizer(lambda owned: torch.optim.AdamW(owned, lr=0.01), model.parameters(), rank=0, world_size=1)
+    for p in model.parameters():
+        p.grad = torch.ones_like(p)
+    opt.step()
+    legacy = opt.state_dict()
+    del legacy["zero_stage"]  # what an older release wrote
+
+    torch.manual_seed(0)
+    fresh_model = torch.nn.Linear(3, 2)
+    fresh = ZeroOptimizer(
+        lambda owned: torch.optim.AdamW(owned, lr=0.01), fresh_model.parameters(), rank=0, world_size=1
+    )
+    fresh.load_state_dict(legacy)  # must not raise
+    assert fresh.optimizer.state, "the restored shard should carry the moments"

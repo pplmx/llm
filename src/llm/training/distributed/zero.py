@@ -137,6 +137,14 @@ class ZeroOptimizer(Optimizer):
         """
         return {
             "_zero_stage1": True,
+            # Which ZeRO stage produced this shard. The on-disk SHAPE is the same
+            # for both stages (owned-parameter moments only), but the reduction
+            # path is not: a Stage-1 job materialises every gradient and
+            # ``allreduce``s it, while a Stage-2 job drops the non-owned ones.
+            # Resuming across stages would therefore silently change the training
+            # dynamics, so the stage is recorded and validated on load. Older
+            # checkpoints predate this key; they are Stage-1 by construction.
+            "zero_stage": getattr(self, "_stage", 1),
             "rank": self._rank,
             "world_size": self._world_size,
             "global_indices": [i for i, _ in enumerate(self._params) if self._owners[i] == self._rank],
@@ -186,6 +194,19 @@ class ZeroOptimizer(Optimizer):
             state_dict = mine
         if not state_dict.get("_zero_stage1"):
             raise ValueError("not a ZeroOptimizer state dict (missing '_zero_stage1' marker)")
+        # Absent means a checkpoint written before the stage was recorded — those
+        # are all Stage-1, so comparing against the default keeps old files
+        # loadable while still refusing a genuine cross-stage resume.
+        saved_stage = state_dict.get("zero_stage", 1)
+        current_stage = getattr(self, "_stage", 1)
+        if saved_stage != current_stage:
+            raise ValueError(
+                f"this checkpoint was written by ZeRO Stage-{saved_stage} but the job is running "
+                f"Stage-{current_stage}. The shard shapes match, but the gradient-reduction paths differ "
+                "(Stage-1 keeps and averages full gradients; Stage-2 drops the non-owned ones), so "
+                "resuming across stages silently changes the training dynamics. Resume with the same "
+                "distributed.zero_stage, or start a fresh run."
+            )
         if state_dict.get("rank") != self._rank:
             raise ValueError(f"state dict is for rank {state_dict.get('rank')}, this rank is {self._rank}")
         if state_dict.get("world_size") != self._world_size:

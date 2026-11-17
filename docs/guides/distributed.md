@@ -43,11 +43,14 @@ bottleneck is optimiser-state memory (e.g. big LR/Adam moments) but you still
 need every rank to hold a full parameter copy — the classic "DDP but with a
 sharded optimiser" workload.
 
-> **Status (v1):** native ZeRO Stage-1 is integrated into the standard
-> language-modelling loop and verified with a 2-rank CPU/gloo e2e. It is not
-> yet validated on real GPUs, only supports standard-loop tasks, and refuses
-> fp16 AMP (`bf16`/`fp32` are fine). ZeRO Stage-2/3 (gradient / parameter
-> sharding) remain future work.
+> **Status:** native ZeRO Stage-1 is integrated into the standard
+> language-modelling loop and verified with a 2-rank CPU/gloo e2e. It only
+> supports standard-loop tasks and refuses fp16 AMP (`bf16`/`fp32` are fine).
+>
+> **ZeRO Stage-2** (`zero_stage: 2`, ADR-014) is implemented and wired: it also
+> shards GRADIENTS, so each rank keeps only its owned parameters' gradients —
+> one full gradient buffer saved per rank. See [ZeRO Stage-2](#zero-stage-2-gradients-sharded).
+> Stage-3 (parameter sharding + recompute) remains future work.
 
 ## DDP quick start
 
@@ -255,7 +258,56 @@ bit-identical.
 - **Validated on real GPUs** — both the 2-rank CPU/gloo e2e (wiring +
   cross-rank lockstep) and the 2-rank CUDA/NCCL e2e (checkpoint save + resume
   on a real backend) are covered by `tests/e2e/test_zero_resume.py`.
-- **Stage-2/3 not implemented** — gradient/parameter sharding are future work.
+- **Stage-2 is implemented, Stage-3 is not** — `zero_stage: 2` shards
+  gradients (below); parameter sharding + recompute (Stage-3) is future work and
+  needs its own ADR.
+
+## ZeRO Stage-2: gradients sharded
+
+Set `zero_stage: 2` on the ZeRO strategy to shard gradients as well as
+optimiser state ([ADR-014](../adr/014-zero-stage-2-activation-sharding.md)):
+
+```yaml
+distributed:
+  parallel_strategy: zero
+  zero_stage: 2
+  backend: nccl
+```
+
+What changes relative to Stage-1:
+
+|                  | Stage-1                   | Stage-2                     |
+| ---------------- | ------------------------- | --------------------------- |
+| Optimiser state  | sharded (~1/`world_size`) | sharded (~1/`world_size`)   |
+| Gradients        | FULL on every rank        | only the owned shard        |
+| Per-step order   | reduce → clip             | **clip → reduce**           |
+| Checkpoint shape | owned moments only        | same shape (stage recorded) |
+
+The **order reversal matters.** Stage-2 clips on the GLOBAL L2 norm *before*
+reducing, while every rank still holds every gradient. Clipping afterwards — or
+per rank — applies a different multiplier to each shard, so the shards stop
+being updates of the same global step. `ZeroStage2Optimizer.clip_gradients_globally`
+all-reduces the squared norm and returns the cross-rank value; the engine calls
+it, then `reduce_gradients_to_owners()`.
+
+After the reduction a non-owned parameter's `.grad` is `None`. That means "this
+rank does not update it", NOT "its gradient is zero" — so diagnostics that read
+`.grad` must tolerate `None`.
+
+The reduction is one `all_reduce` **per parameter** rather than a single
+`reduce_scatter`. `reduce_scatter` slices by POSITION, which does not line up
+with round-robin parameter ownership (with 4 parameters over 2 ranks, rank 0
+owns indices 0 and 2 — index 2 sits in rank 1's positional segment). Making the
+scatter work needs a rank-major layout. The memory win is unaffected either way:
+what is saved is not keeping a full gradient buffer, not which collective is
+used. A batched reduction over ownership-aligned parameter buckets is the
+obvious future optimisation.
+
+Checkpoints record the stage that wrote them, and a cross-stage resume is
+refused loudly: the on-disk shape is identical, but the gradient-reduction paths
+differ, so resuming a Stage-1 run as Stage-2 would silently change the training
+dynamics. Checkpoints written before the stage was recorded default to Stage-1
+and stay loadable.
 
 ## Tensor Parallelism quick start
 
