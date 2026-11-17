@@ -75,8 +75,18 @@ ROADMAP 写的是「集成 DeepSpeed ZeRO」，但把 DeepSpeed 拉进来会带�
 
 ### 2. Stage-2 的具体机制
 
-梯度分片走 `reduce_scatter_tensor`（gloo 在 torch 2.x 支持；CPU 上退化为
-allreduce+slice 的语义等价实现，仅用于测试）。
+梯度分片走 `torch.distributed.reduce_scatter_single`。**注意 API 名称**：ADR 初稿写的
+`reduce_scatter_tensor` 在 torch 2.14 上已弃用，调用即告警
+（`FutureWarning: reduce_scatter_tensor is deprecated. Please use
+reduce_scatter_single instead`），签名相同，实现应直接用新名。
+
+已验证（gloo / 2 rank / CPU，`uv run`，两进程 `mp.spawn`）：
+
+- `reduce_scatter_single(out, full, op=SUM)` 可用，把 rank0 的全 1 与 rank1 的全 2 归约，
+  每个 rank 拿到 `3.0` —— 即「全量求和后取自己那一段」。除以 `world_size` 即得
+  ADR 假设的**全局平均**梯度（实测 1 与 3 归约后为 2.0）。
+- 不需要为 CPU 单独写「allreduce + slice」的等价实现：gloo 直接支持该 collective。
+  这去掉了初稿里担心的「测试路径与生产路径不同」的风险。
 
 每个 step：
 
@@ -98,6 +108,13 @@ allreduce+slice 的语义等价实现，仅用于测试）。
 - **梯度裁剪**：Stage-2 下全局梯度范数必须在 `reduce_scatter` **之前**算（那时每个
   rank 还持有全量局部梯度），用 `all_reduce` 求平方和再开方。这正是
   `engine.py` 现在 `clip_grad_norm_tp` / `clip_grad_norm_` 的调用位置附近要处理的分支。
+
+  已实测「不在归约前裁剪」的后果：两个局部梯度尺度相差很大的 rank 各自本地裁剪后，
+  范数被压到 1.0000 与 0.9383 —— **两个不同的裁剪系数**，分片从此不再来自同一个更新；
+  用跨 rank 的全局范数（93.837）裁剪时，两个 rank 都乘同一个 `1/93.837`，比例保持一致。
+  `clip_grad_norm_tp` 已经支持「在给定 group 上 all-reduce 平方和」（见
+  `parallel.py:793` 的 docstring：「every rank would clip with a different (too small)
+  local factor and the shards drift apart」），Stage-2 可以直接复用它的 group 语义。
 - **检查点**：沿用 `collective_state_dict()` 与 `ZERO_RANK_STATES_KEY`，Stage-2 的
   优化器状态形状与 Stage-1 一致（仍然是 owned 子集），无需新格式。
 - **AMP**：fp16 继续拒绝（理由不变）；bf16/fp32 可用。
