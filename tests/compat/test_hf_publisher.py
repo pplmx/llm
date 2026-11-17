@@ -1047,3 +1047,72 @@ class TestTheDocumentedScopeCoversTheNumbers:
             f"docstring claims transformers builds RMSNorm, got {type(their_norm).__name__}"
         )
         assert getattr(their_norm, "bias", None) is None, "RMSNorm must have no bias — that is the param gap"
+
+
+class TestTheQuotedWeightLossReproduces:
+    """``convert_our_weights``' strict-path comment quotes a measured loss.
+
+    It says an MoE checkpoint published with the unmapped weights dropped would
+    be a strict subset, with figures. Those figures must be reproducible or the
+    comment stops being evidence — an earlier revision quoted 16,896 of 25,472
+    (66%), which no configuration in the repo produces any more (a search over
+    vocab 16..512 x hidden {16,32,48,64} x experts {2,4,8} found zero models at
+    that total).
+
+    As with the publisher docstring, the numbers are read OUT OF THE SOURCE
+    rather than restated here, so editing the comment without re-measuring fails.
+    """
+
+    def test_the_quoted_loss_reproduces(self):
+        import re
+
+        from llm.compat.weight_mapping import convert_our_weights
+        from llm.models.decoder import DecoderModel
+
+        source = Path(__file__).resolve().parents[2] / "src" / "llm" / "compat" / "weight_mapping.py"
+        text = source.read_text(encoding="utf-8")
+        quoted = re.search(r"(\d[\d,]*) of ([\d,]+) parameters", text)
+        assert quoted is not None, "the strict-path comment no longer quotes a measurable loss"
+        quoted_dropped = int(quoted.group(1).replace(",", ""))
+        quoted_total = int(quoted.group(2).replace(",", ""))
+
+        model = DecoderModel(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            num_experts=4,
+            top_k=2,
+            mlp_impl="moe",
+            max_seq_len=32,
+        )
+        total = sum(p.numel() for p in model.parameters())
+        converted = convert_our_weights(model.state_dict(), "llama", 2, strict=False)
+        dropped = total - sum(t.numel() for t in converted.values())
+
+        assert (dropped, total) == (quoted_dropped, quoted_total), (
+            f"the comment quotes {quoted_dropped:,} of {quoted_total:,} parameters dropped, but a "
+            f"vocab=64 hidden=32 layers=2 heads=4 experts=4 top_k=2 MoE measures "
+            f"{dropped:,} of {total:,}. Re-measure and update "
+            "src/llm/compat/weight_mapping.py."
+        )
+        # The point of quoting the figure: most of the model would vanish.
+        assert dropped / total > 0.5, "the comment calls this 'a strict subset'; keep the measurement honest"
+
+    def test_strict_refuses_the_same_model(self):
+        """The measured model must be the one the guard rejects."""
+        from llm.compat.weight_mapping import convert_our_weights
+        from llm.models.decoder import DecoderModel
+
+        model = DecoderModel(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            num_experts=4,
+            top_k=2,
+            mlp_impl="moe",
+            max_seq_len=32,
+        )
+        with pytest.raises(ValueError, match="no HuggingFace mapping"):
+            convert_our_weights(model.state_dict(), "llama", 2, strict=True)

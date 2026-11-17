@@ -459,9 +459,11 @@ def convert_our_weights(
         logger = logging.getLogger(__name__)
         if strict:
             # Publishing path: unmapped weights mean the checkpoint would be a
-            # STRICT SUBSET of the model. Measured on an MoE model, 16,896 of
-            # 25,472 parameters (66%) vanished, the file could not be loaded
-            # back, and the caller saw success. A warning cannot carry that.
+            # STRICT SUBSET of the model. Measured on an MoE model
+            # (vocab=64, hidden=32, layers=2, heads=4, num_experts=4, top_k=2):
+            # 73,408 of 80,000 parameters (91.8%) vanished, the file could not
+            # be loaded back, and the caller saw success. A warning cannot carry
+            # that.
             raise ValueError(
                 f"{len(unmapped)} weight(s) have no HuggingFace mapping for architecture "
                 f"{architecture!r} (first: {unmapped[:5]}). Publishing would silently drop them, "
