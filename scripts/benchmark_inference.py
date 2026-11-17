@@ -11,8 +11,32 @@ from llm.serving.schemas import GenerationRequest
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-def run_benchmark(engine: ContinuousBatchingEngine, prompt: str, max_new_tokens: int, num_runs: int, warmup: int = 1):
-    """运行推理基准测试."""
+def run_benchmark(
+    engine: ContinuousBatchingEngine,
+    tokenizer: object,
+    prompt: str,
+    max_new_tokens: int,
+    num_runs: int,
+    warmup: int = 1,
+):
+    """运行推理基准测试.
+
+    ``tokens/s`` counts TOKENS, via the tokenizer the served model actually
+    uses. An earlier revision inferred it from string length::
+
+        num_tokens = max(len(output) - len(prompt), 1)
+
+    That is a character count. It is accidentally right for
+    ``TokenizerFactory.from_printable_corpus`` (the demo fallback encodes one
+    printable character per token, verified ``len(ids) == len(text)``), but the
+    serving path only uses that fallback when ``ServingConfig.model_path`` is
+    unset. With a real checkpoint — every ``serve_pretrained.yaml`` style setup —
+    the tokenizer is BPE, where a token averages several characters, so the
+    reported figure overstates throughput by exactly the chars-per-token ratio
+    and two runs are not comparable when the ratio differs (different prompts,
+    other tokenizers, other languages). Benchmarking against a
+    mis-scaled unit is worse than not benchmarking: the number looks precise.
+    """
     print("--- Starting Benchmark ---")
     print(f"Prompt: {prompt}")
     print(f"Max New Tokens: {max_new_tokens}")
@@ -41,7 +65,10 @@ def run_benchmark(engine: ContinuousBatchingEngine, prompt: str, max_new_tokens:
         end_time = time.perf_counter()
 
         latency = end_time - start_time
-        num_tokens = max(len(output) - len(prompt), 1)  # Simple char-level approximation
+        generated = output[len(prompt) :]
+        ids = tokenizer.encode(generated)
+        ids = ids.tolist() if hasattr(ids, "tolist") else list(ids)
+        num_tokens = max(len(ids), 1)
         tps = num_tokens / latency
 
         latencies.append(latency)
@@ -76,7 +103,7 @@ def main(
     engine = ContinuousBatchingEngine.from_serving_config(config, model, tokenizer)
 
     try:
-        run_benchmark(engine, prompt, max_new_tokens, runs)
+        run_benchmark(engine, tokenizer, prompt, max_new_tokens, runs)
     finally:
         engine.unload_model()
 
