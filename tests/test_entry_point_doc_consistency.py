@@ -122,3 +122,122 @@ def test_peft_methods_are_registered_in_code_not_as_entry_points() -> None:
         f"{sorted(overlap)} is both a built-in (registered in code) and a pyproject entry point; "
         "the docs table says the group is empty for third parties"
     )
+
+
+class TestTheTasksHookGroupActuallyWorks:
+    """The ``llm.tasks`` row promises a working third-party extension path.
+
+    The table says ``llm.tasks`` takes "third-party `TASK_REGISTRY.register(...)`"
+    and ``docs/development/guide-extending.md`` tells the reader that after
+    declaring the entry point they can run ``llm train --task classification``.
+    Nothing validated that promise: the consistency tests above only compare
+    DOCUMENTED NAMES against ``pyproject.toml``, and ``llm.tasks`` is deliberately
+    never declared there (this repo ships no entry point for it), so the row was
+    skipped by every existing check.
+
+    These drive the real ``load_entry_point_hooks("llm.tasks")`` path using a
+    temporary module on disk plus a synthetic ``EntryPoint``, so the assertion
+    covers the same object graph a third-party package would produce.
+    """
+
+    @staticmethod
+    def _write_hook(tmp_path: pathlib.Path, module_name: str, body: str) -> None:
+        """Materialise a one-file package whose ``register()`` runs ``body``."""
+        package = tmp_path / module_name
+        package.mkdir()
+        (package / "__init__.py").write_text(body, encoding="utf-8")
+
+    @pytest.fixture
+    def isolate_task_registry(self, monkeypatch):
+        """Restore ``TASK_REGISTRY`` after each test so a probe task never leaks."""
+        from llm.training.task_registry import TASK_REGISTRY
+
+        monkeypatch.setattr(TASK_REGISTRY, "_registry", dict(TASK_REGISTRY._registry))
+        return TASK_REGISTRY
+
+    def test_an_entry_point_hook_can_register_a_task(self, tmp_path, monkeypatch, isolate_task_registry):
+        """End-to-end: a hook named in the group registers a usable task."""
+        import sys
+        from importlib.metadata import EntryPoint
+
+        from llm.runtime import plugins
+
+        name = "_thirdparty_probe_task"
+        assert name not in isolate_task_registry.names()
+
+        module_name = "_thirdparty_task_hook"
+        self._write_hook(
+            tmp_path,
+            module_name,
+            "from llm.training.task_registry import TASK_REGISTRY\n"
+            "from llm.training.tasks.lm_task import LanguageModelingTask\n"
+            "from tests.support.data import DummyLMDataModule\n"
+            "\n"
+            "def register():\n"
+            f"    TASK_REGISTRY.register({name!r}, LanguageModelingTask, DummyLMDataModule, description='probe')\n",
+        )
+        monkeypatch.syspath_prepend(str(tmp_path))
+        sys.modules.pop(module_name, None)
+        monkeypatch.delitem(sys.modules, module_name, raising=False)
+
+        entry_point = EntryPoint(name="register", value=f"{module_name}:register", group="llm.tasks")
+        original = plugins._iter_group_entry_points
+        monkeypatch.setattr(
+            plugins,
+            "_iter_group_entry_points",
+            lambda group: [entry_point] if group == "llm.tasks" else original(group),
+        )
+
+        invoked = plugins.load_entry_point_hooks("llm.tasks")
+
+        assert invoked == ["register"], f"the hook was not invoked: {invoked}"
+        assert name in isolate_task_registry.names(), (
+            "the hook ran but the task did not register; the documented third-party extension path is broken"
+        )
+
+    def test_a_failing_hook_does_not_block_the_others(self, tmp_path, monkeypatch, caplog, isolate_task_registry):
+        """One broken third-party package must not take down ``llm train``.
+
+        ``load_entry_point_hooks`` documents this ("Hooks that fail to load or
+        raise are logged, not fatal"), and it matters here because the group runs
+        at import time of the CLI module: an escaping exception would break every
+        ``llm train`` invocation, not just the broken plugin's task.
+        """
+        import logging
+        import sys
+        from importlib.metadata import EntryPoint
+
+        from llm.runtime import plugins
+
+        good_name = "_thirdparty_good_task"
+        self._write_hook(
+            tmp_path, "_thirdparty_bad_hook", "def register():\n    raise RuntimeError('third-party boom')\n"
+        )
+        self._write_hook(
+            tmp_path,
+            "_thirdparty_good_hook",
+            "from llm.training.task_registry import TASK_REGISTRY\n"
+            "from llm.training.tasks.lm_task import LanguageModelingTask\n"
+            "from tests.support.data import DummyLMDataModule\n"
+            "\n"
+            "def register():\n"
+            f"    TASK_REGISTRY.register({good_name!r}, LanguageModelingTask, DummyLMDataModule)\n",
+        )
+        monkeypatch.syspath_prepend(str(tmp_path))
+        for module_name in ("_thirdparty_bad_hook", "_thirdparty_good_hook"):
+            sys.modules.pop(module_name, None)
+            monkeypatch.delitem(sys.modules, module_name, raising=False)
+
+        entry_points = [
+            EntryPoint(name="bad", value="_thirdparty_bad_hook:register", group="llm.tasks"),
+            EntryPoint(name="good", value="_thirdparty_good_hook:register", group="llm.tasks"),
+        ]
+        monkeypatch.setattr(plugins, "_iter_group_entry_points", lambda group: entry_points)
+
+        with caplog.at_level(logging.ERROR):
+            invoked = plugins.load_entry_point_hooks("llm.tasks")
+
+        assert invoked == ["good"], f"the healthy hook should still run, invoked={invoked}"
+        assert good_name in isolate_task_registry.names()
+        logged = " ".join(record.getMessage() for record in caplog.records)
+        assert "third-party boom" in logged, f"the failing hook's error must be logged, got: {logged!r}"
