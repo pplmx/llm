@@ -750,6 +750,16 @@ class DistributedConfig(BaseSettings):
         available = torch.cuda.device_count()
         if requested is None:
             return available
+        if requested < 0:
+            # A NEGATIVE worker count is not a hardware request that can be
+            # refused by the ``> available`` check below -- it simply passed it.
+            # It then survived into the config (stored as-is) while
+            # ``DistributedManager.get_world_size`` collapsed it to 1 through its
+            # own ``if gpus_per_node and gpus_per_node > 0 else 1`` fallback, so
+            # the run silently trained on ONE process no matter what the YAML
+            # said. ``0`` is deliberately NOT rejected: it is the documented
+            # "derive from the host" spelling and takes the same fallback path.
+            raise ValueError(f"gpus_per_node must be >= 0 (0 means 'derive from the host'), got {requested}")
         # ``gpus_per_node`` is a WORKER COUNT, not a hardware requirement: the
         # consumers (``DistributedManager.get_world_size``, ``train.main``) read
         # it as "how many local processes to spawn" and fall back to a single

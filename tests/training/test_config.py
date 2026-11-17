@@ -1535,3 +1535,47 @@ class TestNodeTopology:
 
         assert all(0 <= rank < world_size for rank in in_range), in_range
         assert not any(0 <= rank < world_size for rank in out_of_range), out_of_range
+
+
+class TestGpusPerNodeLowerBound:
+    """A negative worker count must be rejected; ``0`` stays the "derive" spelling.
+
+    ``gpus_per_node`` goes through a ``mode="before"`` validator that already
+    rejects asking for more workers than the host has GPUs. Any NEGATIVE value
+    slipped past that check — ``requested > 1`` is simply False — and then:
+    the field stored the negative verbatim, while
+    ``DistributedManager.get_world_size`` collapsed it to 1 through its own
+    ``if gpus_per_node and gpus_per_node > 0 else 1`` fallback. The run
+    silently used ONE process regardless of what the YAML said, and the two
+    layers disagreed about what the value meant.
+
+    ``0`` is deliberately still accepted: it is the documented "derive from
+    the host" spelling and takes the same fallback path, so pinning it prevents
+    a blanket positivity rule from breaking that.
+    """
+
+    @pytest.mark.parametrize("bad", [-1, -8])
+    def test_negative_worker_count_is_rejected(self, bad: int):
+        from llm.training.core.config import DistributedConfig
+
+        with pytest.raises(ValidationError, match="gpus_per_node must be >= 0"):
+            DistributedConfig(gpus_per_node=bad)
+
+    @pytest.mark.parametrize("good", [0, 1, 2])
+    def test_zero_and_positive_still_load(self, good: int):
+        """``0`` means "derive from the host" and must keep working."""
+        from unittest.mock import patch
+
+        from llm.training.core.config import DistributedConfig
+
+        # Pin the CUDA count so the ``> available`` check is host-independent.
+        with patch("llm.training.core.config.torch.cuda.device_count", return_value=8):
+            assert DistributedConfig(gpus_per_node=good).gpus_per_node == good
+
+    def test_none_derives_from_the_device_count(self):
+        from unittest.mock import patch
+
+        from llm.training.core.config import DistributedConfig
+
+        with patch("llm.training.core.config.torch.cuda.device_count", return_value=5):
+            assert DistributedConfig(gpus_per_node=None).gpus_per_node == 5
