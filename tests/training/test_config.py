@@ -1278,3 +1278,84 @@ class TestDataWindowFitsTheModelContext:
         cfg = Config.from_yaml(repo_root / "configs" / "c4-pretrain.yaml")
         assert cfg.model.max_seq_len >= cfg.data.max_seq_len
         _check_data_window_fits_model_context(cfg)
+
+
+class TestNonPositiveCadenceKnobs:
+    """The two "every N" knobs that were only validated at use time.
+
+    Both fields are read as divisors/forwarded verbatim, and both accepted a
+    zero that survived config validation, model construction and dataloader
+    construction — the failure arrived much later, in a place that no longer
+    names the config key:
+
+    * ``logging.log_interval`` is the modulus in three call sites (``engine.py``
+      twice, ``ppo_task.py`` once). ``0`` raised a bare
+      ``ZeroDivisionError: division by zero`` on the first logged batch.
+    * ``optimization.prefetch_factor`` is forwarded to ``DataLoader``. ``0`` was
+      accepted by the constructor (torch only validates negatives there) and
+      raised ``AssertionError: prefetch_factor must be greater than 0 for
+      MultiProcessingDataLoaderIter`` on the FIRST iteration, i.e. only once
+      training had started.
+
+    Neither zero was ever a working setting: ``callbacks.py`` did guard its own
+    ``% log_interval`` with ``> 0``, but no call site implemented "0 = off" for
+    the engine, so the value crashed instead of disabling anything.
+    """
+
+    @pytest.mark.parametrize("bad", [0, -1, -25])
+    def test_log_interval_must_be_positive(self, bad: int):
+        from llm.training.core.config import LoggingConfig
+
+        with pytest.raises(ValidationError, match="log_interval"):
+            LoggingConfig(log_interval=bad)
+
+    @pytest.mark.parametrize("good", [1, 10, 50])
+    def test_log_interval_accepts_positive_values(self, good: int):
+        """Counterpart: ordinary cadences still construct."""
+        from llm.training.core.config import LoggingConfig
+
+        assert LoggingConfig(log_interval=good).log_interval == good
+
+    @pytest.mark.parametrize("bad", [0, -1, -8])
+    def test_prefetch_factor_must_be_positive(self, bad: int):
+        with pytest.raises(ValidationError, match="prefetch_factor"):
+            OptimizationConfig(prefetch_factor=bad)
+
+    @pytest.mark.parametrize("good", [1, 2, 4])
+    def test_prefetch_factor_accepts_positive_values(self, good: int):
+        assert OptimizationConfig(prefetch_factor=good).prefetch_factor == good
+
+    def test_prefetch_factor_is_forwarded_to_the_loader_when_workers_run(self):
+        """The guard is only worth having if the field still reaches torch.
+
+        ``num_workers == 0`` deliberately drops the kwarg, so the existing
+        zero-worker test cannot show the field is live. This builds the real
+        ``DataLoader`` for the other branch and reads back what torch received —
+        without iterating it, so no worker processes are spawned.
+        """
+        import torch
+        from torch.utils.data import DistributedSampler, TensorDataset
+
+        from llm.data.modules.map_base import SamplerMapDataModule
+        from llm.training.core.config import Config
+
+        class _Concrete(SamplerMapDataModule):
+            """Minimal concrete subclass — only ``build_dataloader`` is exercised."""
+
+            def prepare_data(self) -> None:
+                return None
+
+            def setup(self) -> None:
+                return None
+
+        config = Config(optimization=OptimizationConfig(num_workers=2, prefetch_factor=3))
+        module = _Concrete(config)
+        dataset = TensorDataset(torch.randn(8, 4), torch.randn(8, 2))
+        sampler = DistributedSampler(dataset, num_replicas=1, rank=0, shuffle=False)
+
+        loader = module.build_dataloader(dataset, sampler)
+
+        assert loader.num_workers == 2
+        assert loader.prefetch_factor == 3, (
+            f"optimization.prefetch_factor must reach the DataLoader when workers run, got {loader.prefetch_factor}"
+        )

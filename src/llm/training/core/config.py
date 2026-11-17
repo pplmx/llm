@@ -819,7 +819,14 @@ class OptimizationConfig(BaseModel):
     # ``model.*`` field) because it is never persisted into the checkpoint.
     num_workers: int = Field(4, ge=0)
     pin_memory: bool = True
-    prefetch_factor: int = 2
+    # Forwarded to ``DataLoader`` only when ``num_workers > 0`` (see
+    # ``SamplerMapDataModule.build_dataloader``). torch rejects a NEGATIVE value
+    # in the DataLoader constructor but lets ZERO through, then asserts
+    # "prefetch_factor must be greater than 0 for MultiProcessingDataLoaderIter"
+    # on the FIRST iteration — i.e. a zero here survived config validation,
+    # model construction and loader construction, and only failed once training
+    # had started. Constrain both signs here, where the YAML is still on screen.
+    prefetch_factor: int = Field(2, gt=0)
     persistent_workers: bool = False
     gradient_accumulation_steps: int = Field(1, ge=1)
 
@@ -866,7 +873,13 @@ class CheckpointConfig(BaseModel):
 class LoggingConfig(BaseModel):
     """Logging configuration"""
 
-    log_interval: int = 10
+    # Must be positive: three call sites compute ``(batch_idx + 1) % log_interval``
+    # to decide when to log (``engine.py`` twice, ``ppo_task.py`` once). A zero
+    # raised a bare ``ZeroDivisionError`` from inside the training loop, on the
+    # first batch that would have logged; ``callbacks.py`` guarded its own use
+    # with ``> 0``, so the layers disagreed about whether 0 was allowed. There is
+    # no "0 = off" anywhere, so constraining the field makes all four agree.
+    log_interval: int = Field(10, gt=0)
     log_level: str = "INFO"
     log_dir: str = "logs"
     save_logs: bool = True
