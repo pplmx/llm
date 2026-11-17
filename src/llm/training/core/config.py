@@ -1096,8 +1096,29 @@ class PPOConfig(BaseModel):
     top_p: float | None = None
     normalize_advantages: bool = True
     normalize_rewards: bool = False
-    policy_lr: float | None = None
-    value_lr: float | None = None
+    policy_lr: float | None = Field(
+        None,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "Policy optimizer learning rate. None -> 1e-5. Must be positive and "
+            "finite, matching ``training.lr``: torch's AdamW rejects a negative or "
+            "NaN rate with 'Invalid learning rate' from inside the RLHF trainer -- "
+            "a message naming neither this field nor the config -- while ``inf`` is "
+            "accepted and turns every weight into -inf on the first step. 0 is "
+            "rejected rather than treated as 'use the default' because the trainer "
+            "resolves it with `config.policy_lr or 1e-5`, i.e. an explicit 0 was "
+            "silently replaced by a real rate the user never asked for."
+        ),
+    )
+    value_lr: float | None = Field(
+        None,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "Critic optimizer learning rate. None -> ``policy_lr``. Same bounds as ``policy_lr`` for the same reasons."
+        ),
+    )
     use_ref_model: bool = True
     ref_model_update_freq: int = 0
 

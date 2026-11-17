@@ -1522,3 +1522,62 @@ class TestPPOBatchingKnobs:
         )
         with pytest.raises(ValueError, match="range\\(\\) arg 3 must not be zero"):
             list(buf.get_batches(mini_batch_size=0))
+
+
+class TestPPOLearningRateKnobs:
+    """``policy_lr`` / ``value_lr`` must be positive and finite, like ``training.lr``.
+
+    Neither had a constraint, and ``PPOTrainer`` builds its optimizers with
+    ``AdamW(lr=config.policy_lr or 1e-5)``. Three values behaved differently and
+    none of them was rejected at config load:
+
+    * a NEGATIVE rate reached ``AdamW`` and raised
+      ``ValueError: Invalid learning rate: -1e-05`` from inside the trainer — a
+      message naming neither the field nor the PPO config;
+    * ``inf`` is ACCEPTED by torch, and the first step turns every weight into
+      ``-inf`` (measured on a one-parameter AdamW);
+    * ``0`` was silently replaced by the ``1e-5`` default via the ``or``
+      fallback, so an explicit "no learning" setting trained at full rate.
+
+    ``training.lr`` already carries ``gt=0, allow_inf_nan=False``; these two now
+    match it.
+    """
+
+    @pytest.mark.parametrize("field", ["policy_lr", "value_lr"])
+    @pytest.mark.parametrize("bad", [0.0, -1e-5, -1.0])
+    def test_non_positive_learning_rate_is_rejected(self, field: str, bad: float):
+        with pytest.raises(ValueError, match=field):
+            PPOConfig(**{field: bad})
+
+    @pytest.mark.parametrize("field", ["policy_lr", "value_lr"])
+    @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+    def test_non_finite_learning_rate_is_rejected(self, field: str, bad: float):
+        """``gt=0`` alone lets ``inf`` through (``inf > 0`` is True)."""
+        with pytest.raises(ValueError, match=field):
+            PPOConfig(**{field: bad})
+
+    @pytest.mark.parametrize("field", ["policy_lr", "value_lr"])
+    @pytest.mark.parametrize("good", [1e-6, 1e-5, 1e-3])
+    def test_positive_learning_rate_is_accepted(self, field: str, good: float):
+        assert getattr(PPOConfig(**{field: good}), field) == good
+
+    @pytest.mark.parametrize("field", ["policy_lr", "value_lr"])
+    def test_unset_stays_none(self, field: str):
+        """``None`` is the documented "derive the default" value and must survive."""
+        assert getattr(PPOConfig(), field) is None
+
+    def test_the_rejected_rate_is_one_torch_rejects_too(self):
+        """Record the raw failure the config guard now prevents, and the one it cannot.
+
+        ``AdamW`` rejects a negative rate itself (late, and without naming the
+        config field); ``inf`` it accepts, which is why the config needs
+        ``allow_inf_nan=False`` rather than relying on torch.
+        """
+        p = torch.nn.Parameter(torch.tensor([1.0]))
+        with pytest.raises(ValueError, match="Invalid learning rate"):
+            torch.optim.AdamW([p], lr=-1e-5)
+
+        q = torch.nn.Parameter(torch.tensor([1.0]))
+        q.grad = torch.tensor([1.0])
+        torch.optim.AdamW([q], lr=float("inf")).step()
+        assert q.item() == float("-inf"), "an inf learning rate poisons the weights in one step"
