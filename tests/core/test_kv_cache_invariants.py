@@ -182,38 +182,58 @@ class TestPrefillPerformance:
         # Variable starts so the old loop has many .item() syncs.
         start_pos = torch.arange(b_curr, device=device).unsqueeze(1).expand(b_curr, seq_len_new).contiguous() * 10
 
-        # Warm up.
-        cache_opt.update_at_indices(batch_indices, k_new, v_new, start_pos)
-        cache_old.update_at_indices(batch_indices, k_new, v_new, start_pos)
-
-        # Measure optimized.
-        t0 = time.perf_counter()
-        for _ in range(10):
+        def _opt_path() -> None:
             cache_opt.update_at_indices(batch_indices, k_new, v_new, start_pos)
-        opt_seconds = (time.perf_counter() - t0) / 10
 
-        # Measure old-loop path (re-implemented inline; we don't keep the
-        # old version in the codebase). It does one .item() per batch slot.
-        t0 = time.perf_counter()
-        for _ in range(10):
+        def _old_path() -> None:
+            # Re-implemented inline; the old version is not kept in the
+            # codebase. It does one .item() per batch slot.
             for b_i, slot_idx in enumerate(batch_indices.tolist()):
                 s = int(start_pos[b_i, 0].item())
                 cache_old.k_cache[slot_idx, :, s : s + seq_len_new] = k_new[b_i]
                 cache_old.v_cache[slot_idx, :, s : s + seq_len_new] = v_new[b_i]
-        old_seconds = (time.perf_counter() - t0) / 10
 
-        # We require at least a 1.1x speedup. The original 5x target assumed
+        def _seconds(fn, repeats: int = 10) -> float:
+            t0 = time.perf_counter()
+            for _ in range(repeats):
+                fn()
+            return (time.perf_counter() - t0) / repeats
+
+        # Warm up both paths so neither measurement pays first-call costs.
+        _opt_path()
+        _old_path()
+
+        # Sample the RATIO several times and gate on the MEDIAN.
+        #
+        # A single pair of timings is not a sound gate on a shared GPU: with
+        # another tenant saturating the device, both paths slow by the same
+        # order of magnitude (measured 4.73ms vs 4.04ms, ratio 0.86x) because
+        # the kernel-launch / sync advantage this test exists to measure is
+        # dwarfed by the contention. Interleaving the samples keeps a slow
+        # window from landing on one path only, and the median rejects a
+        # single outlier in either direction while still failing if the
+        # optimized path is genuinely not faster.
+        speedups = []
+        for _ in range(5):
+            old_seconds = _seconds(_old_path)
+            opt_seconds = _seconds(_opt_path)
+            speedups.append(old_seconds / opt_seconds)
+        speedups.sort()
+        speedup = speedups[len(speedups) // 2]
+
+        worst = speedups[0]
+        # We require at least a 1.05x speedup. The original 5x target assumed
         # CPU-only execution where Python-level ``.item()`` pauses fully; on
         # modern GPUs like A100 a scalar ``.item()`` sync costs ~5-20us while
         # the advanced-indexing scatter torches tensor-construction overhead,
         # so the net gain is modest for small-to-moderate prefill sizes. The
-        # threshold is set to 1.05x so the test gates against
-        # regressions (the optimized path being *slower* than the naive
-        # loop) without requiring an unrealistic speedup on current
-        # hardware or flaking under parallel GPU contention.
-        speedup = old_seconds / opt_seconds
+        # threshold gates against regressions (the optimized path being
+        # *slower* than the naive loop) without requiring an unrealistic
+        # speedup. Measured margins on a quiet device: 1.23-1.35x on GPU and
+        # 3.6-3.8x on CPU, so the bar sits far below the real effect.
         assert speedup >= 1.05, (
-            f"prefill too slow: opt={opt_seconds * 1000:.2f}ms, old={old_seconds * 1000:.2f}ms, speedup={speedup:.2f}x"
+            f"prefill too slow (median of {len(speedups)} samples): "
+            f"speedups={[round(s, 2) for s in speedups]}, median={speedup:.2f}x, worst={worst:.2f}x"
         )
 
 
