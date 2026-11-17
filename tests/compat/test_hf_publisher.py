@@ -973,3 +973,77 @@ def test_from_pretrained_returns_a_model_in_training_mode(tmp_path: Path):
     assert torch.allclose(after_eval, expected, atol=1e-5), (
         f".eval() did not restore equivalence (max |d|={(after_eval - expected).abs().max():.2e})"
     )
+
+
+class TestTheDocumentedScopeCoversTheNumbers:
+    """The module docstring's measured figures must stay reproducible.
+
+    The docstring states the interop boundary with concrete numbers: transformers
+    loads the directory without error but builds RMSNorm (no bias) while
+    ``DecoderModel`` uses LayerNorm *with* bias, so the parameter totals disagree.
+    Those figures are what make the claim checkable rather than a vibe — but they
+    were previously quoted from an older model/config and could not be
+    reproduced, which is precisely the drift a number in prose invites.
+
+    This test pins the reproducible pair for a fixed config, so either side
+    changing (our architecture, or transformers' Llama implementation) fails here
+    and forces the docstring to be re-measured instead of quietly going stale.
+    """
+
+    def test_the_structural_difference_is_real(self):
+        """Our norm really is LayerNorm+bias — the root of the mismatch."""
+        from llm.models.decoder import DecoderModel
+
+        model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=2, num_heads=4, max_seq_len=64)
+        norm = model.transformer_blocks[0].norm1
+        assert type(norm).__name__ == "LayerNorm", (
+            f"the docstring's premise is a LayerNorm block, found {type(norm).__name__}"
+        )
+        assert norm.bias is not None, "the docstring says LayerNorm WITH bias"
+
+    def test_the_documented_parameter_totals_reproduce(self, tmp_path):
+        """The exact ``ours=.. / theirs=..`` pair the docstring quotes.
+
+        The numbers are PARSED OUT OF THE DOCSTRING rather than restated here.
+        Hard-coding them in the test too would let the two drift independently —
+        the docstring could be edited to any figure and this would still pass,
+        which is the exact failure mode this test exists to stop.
+        """
+        import re
+
+        transformers = pytest.importorskip("transformers")
+
+        from llm.compat.hf_publisher import __doc__ as publisher_doc
+        from llm.models.decoder import DecoderModel
+
+        assert publisher_doc is not None
+        quoted = re.search(r"ours=(\d+)\D+theirs=(\d+)", publisher_doc)
+        assert quoted is not None, "the docstring no longer quotes a measurable ours=/theirs= pair"
+        quoted_ours, quoted_theirs = int(quoted.group(1)), int(quoted.group(2))
+
+        model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=2, num_heads=4, max_seq_len=64)
+        ours = sum(p.numel() for p in model.parameters())
+        save_pretrained(model, tmp_path)
+        loaded = transformers.AutoModelForCausalLM.from_pretrained(str(tmp_path))
+        theirs = sum(p.numel() for p in loaded.parameters())
+
+        assert (ours, theirs) == (quoted_ours, quoted_theirs), (
+            f"the docstring quotes ours={quoted_ours} / theirs={quoted_theirs}, but a "
+            f"vocab=64 hidden=32 layers=2 heads=4 model measures ours={ours} theirs={theirs}. "
+            "Re-measure and update src/llm/compat/hf_publisher.py."
+        )
+        assert theirs > ours, "the docstring explains the gap as missing norm biases + up/gate split"
+
+    def test_transformers_builds_a_different_norm(self, tmp_path):
+        """The load SUCCEEDS — that is what makes the silent mismatch dangerous."""
+        transformers = pytest.importorskip("transformers")
+
+        model = _make_small_decoder()
+        save_pretrained(model, tmp_path)
+        loaded = transformers.AutoModelForCausalLM.from_pretrained(str(tmp_path))
+
+        their_norm = loaded.model.layers[0].input_layernorm
+        assert type(their_norm).__name__ == "LlamaRMSNorm", (
+            f"docstring claims transformers builds RMSNorm, got {type(their_norm).__name__}"
+        )
+        assert getattr(their_norm, "bias", None) is None, "RMSNorm must have no bias — that is the param gap"
