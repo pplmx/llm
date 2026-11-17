@@ -4,7 +4,7 @@ Date: 2026-11-18
 
 ## Status
 
-Proposed
+Accepted — Stage-2 已实现并验证（CPU/gloo + 2×GPU NCCL）。
 
 ## Context
 
@@ -65,9 +65,10 @@ Stage-2 额外把**梯度**也分片：每个 rank 只保留自己拥有参数�
 
 ROADMAP 写的是「集成 DeepSpeed ZeRO」，但把 DeepSpeed 拉进来会带来：一个新的大依赖
 （含 CUDA 扩展编译）、它自己的 optimizer/checkpoint 格式、和现有 `ZeroOptimizer`
-的 `state_dict` 契约冲突。而 Stage-2 的核心机制（`reduce_scatter` + 本地梯度切片）
-用 `torch.distributed` 就能实现，且能在 gloo/CPU 上验证——这与本仓既有的分布式测试
-能力一致。
+的 `state_dict` 契约冲突。而 Stage-2 的核心机制（把梯度归约进 owner、丢弃非 owned
+部分）用 `torch.distributed` 就能实现，且能在 gloo/CPU 上验证——这与本仓既有的分布式
+测试能力一致。（初稿这里写的是 `reduce_scatter`；落地后证明它与轮转归属不兼容，已改为
+逐参数 `all_reduce`，详见下面的「实现后修正」。）
 
 因此：**实现 `ZeroStage2Optimizer`，语义对齐 DeepSpeed 的 Stage-2，但作为本仓原生
 组件；是否真的依赖 DeepSpeed 留到 Stage-3（需要参数分片 + 前向/反向重算，复杂度
@@ -124,8 +125,8 @@ RuntimeError: parameter 2 lies outside rank 0's reduced segment
 
 - **配置**：`DistributedConfig` 增 `zero_stage: int = 1`，取值 `1 | 2`；`parallel_strategy="zero"`
   保持不变。不新增 strategy 名字，避免与 tp/pp/3d 的组合矩阵爆炸。
-- **梯度裁剪**：Stage-2 下全局梯度范数必须在 `reduce_scatter` **之前**算（那时每个
-  rank 还持有全量局部梯度），用 `all_reduce` 求平方和再开方。这正是
+- **梯度裁剪**：Stage-2 下全局梯度范数必须在**归约之前**算（那时每个 rank 还持有全量
+  局部梯度），用 `all_reduce` 求平方和再开方。这正是
   `engine.py` 现在 `clip_grad_norm_tp` / `clip_grad_norm_` 的调用位置附近要处理的分支。
 
   已实测「不在归约前裁剪」的后果：两个局部梯度尺度相差很大的 rank 各自本地裁剪后，
