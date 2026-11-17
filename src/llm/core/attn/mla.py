@@ -88,6 +88,22 @@ class MultiLatentAttention(nn.Module):
         factory_kwargs = make_factory_kwargs(device, dtype)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
+        if num_kv_heads is not None and num_kv_heads != num_heads:
+            # This placeholder MLA has NO grouped-query support: its latent path
+            # produces ``num_kv_heads`` keys, but the code below assumes
+            # ``num_heads == num_kv_heads`` (no ``repeat_kv`` step — see the
+            # prefix-injection note in ``forward``). Accepting the value used to
+            # boot fine and then fail on the first cached token with
+            # ``IndexError: index 2 is out of bounds for dimension 1 with size 2``
+            # from deep inside ``KVCache.update_at_indices`` — the cache is
+            # allocated with this attribute but written with the model's head
+            # count. ``mha`` and ``flash_attn`` do implement GQA, so refuse here
+            # rather than silently mis-sizing, and point the caller at them.
+            raise ValueError(
+                f"attn_impl='mla' does not support num_kv_heads ({num_kv_heads}) != num_heads ({num_heads}): "
+                "this placeholder MLA implements no grouped-query attention. Use attn_impl='mha' or "
+                "'flash_attn' for GQA/MQA, or leave num_kv_heads unset."
+            )
         self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
         self.head_dim = hidden_size // num_heads
         self.scale = 1 / math.sqrt(self.head_dim)

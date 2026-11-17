@@ -362,3 +362,76 @@ class TestMLAWorksAtHalfPrecision:
             "torch tensor creations without an explicit dtype default to float32, which breaks "
             "half-precision forward with 'expected scalar type Float but found Half':\n  " + "\n  ".join(offenders)
         )
+
+
+class TestMLARefusesGroupedQueryHeads:
+    """``attn_impl="mla"`` has no GQA, so ``num_kv_heads != num_heads`` must be refused.
+
+    The placeholder MLA produces ``num_kv_heads`` keys but its forward path
+    assumes ``num_heads == num_kv_heads`` (there is no ``repeat_kv`` step — the
+    prefix-injection comment states this outright). The constructor nevertheless
+    accepted any ``num_kv_heads``, so a serving config with
+    ``attn_impl="mla", num_kv_heads=2, num_heads=4`` booted cleanly and then
+    failed on the first CACHED token:
+
+        IndexError: index 2 is out of bounds for dimension 1 with size 2
+
+    raised inside ``KVCache.update_at_indices`` — the cache is allocated from
+    ``self.num_kv_heads`` but written with the model's head count, so the error
+    points at the cache rather than at the configuration that caused it.
+
+    ``mha`` and ``flash_attn`` DO implement GQA (they repeat KV heads), so the
+    right behaviour is a construction-time refusal that names the alternative,
+    not a silent mis-sizing.
+    """
+
+    @staticmethod
+    def _build(**kwargs):
+        from llm.core.attn.mla import MultiLatentAttention
+
+        return MultiLatentAttention(hidden_size=32, num_heads=4, **kwargs)
+
+    def test_grouped_query_heads_are_refused_at_construction(self):
+        with pytest.raises(ValueError, match="does not support num_kv_heads"):
+            self._build(num_kv_heads=2)
+
+    def test_the_error_names_a_working_alternative(self):
+        """A refusal is only useful if it says what to do instead."""
+        with pytest.raises(ValueError, match="does not support num_kv_heads") as excinfo:
+            self._build(num_kv_heads=2)
+        message = str(excinfo.value)
+        assert "mha" in message, "the error should point at an implementation that does support GQA"
+        assert "flash_attn" in message
+
+    def test_matching_num_kv_heads_still_works(self):
+        """The refusal must not break the supported shape."""
+        attn = self._build(num_kv_heads=4)
+        assert attn.num_kv_heads == 4
+        assert attn.num_kv_heads == attn.num_heads
+
+    def test_unset_num_kv_heads_still_defaults_to_num_heads(self):
+        attn = self._build()
+        assert attn.num_kv_heads == attn.num_heads == 4
+
+    def test_the_cached_forward_no_longer_reaches_the_index_error(self):
+        """End-to-end: the config is rejected instead of failing mid-generation.
+
+        Builds the model the way serving does and asserts the failure happens at
+        model construction, so no partially-initialised engine can exist.
+        """
+        import torch
+
+        from llm.models.decoder import DecoderModel
+
+        with pytest.raises(ValueError, match="does not support num_kv_heads"):
+            DecoderModel(
+                vocab_size=64,
+                hidden_size=32,
+                num_layers=2,
+                num_heads=4,
+                num_kv_heads=2,
+                attn_impl="mla",
+                max_seq_len=32,
+            )
+        # Silence an unused-import warning while keeping the intent visible.
+        assert torch is not None
