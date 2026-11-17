@@ -411,7 +411,17 @@ def sampling_probs(
     if top_p is not None and top_p <= 0:
         raise ValueError(f"top_p must be > 0 when set (1.0 or None disables nucleus filtering), got {top_p!r}")
 
-    next_logits = logits / temperature
+    # Compute the distribution in float32. The logits arrive in the MODEL's
+    # dtype, which for a half-precision serving setup is float16/bfloat16; there
+    # the division below overflows long before the mathematics does. Measured on
+    # the demo model: fp16 logits ~1.5 with temperature 1e-5 give ``inf`` (fp16
+    # max finite is 65504) and the softmax then returns NaN, surfacing as
+    # ``RuntimeError: probability tensor contains either `inf`, `nan` or element
+    # < 0`` from torch.multinomial — an error naming neither temperature nor
+    # dtype. Sampling is a tiny fraction of forward cost, so widening is free in
+    # practice and makes small-but-valid temperatures behave the same at every
+    # precision.
+    next_logits = logits.float() / temperature
 
     if top_k is not None:
         vocab_size = next_logits.size(-1)

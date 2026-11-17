@@ -273,3 +273,67 @@ def test_sampling_probs_accepts_top_p_at_or_above_one(top_p):
     assert probs.shape == (8,)
     assert torch.isclose(probs.sum(), torch.ones(()), atol=1e-6)
     assert (probs > 0).all(), "top_p >= 1.0 must not mask any token"
+
+
+class TestSamplingSurvivesHalfPrecisionLogits:
+    """``sampling_probs`` must not overflow when the model emits fp16 logits.
+
+    The logits arrive in the MODEL's dtype, so a half-precision serving setup
+    hands over float16 weights. The temperature division then happens in fp16,
+    whose largest finite value is 65504: with logits around 1.5, a temperature of
+    ``1e-5`` already overflows to ``inf``, the softmax returns NaN, and
+    ``torch.multinomial`` raises
+
+        RuntimeError: probability tensor contains either `inf`, `nan` or element < 0
+
+    an error that names neither the temperature nor the dtype. Small positive
+    temperatures are perfectly valid (`GenerationRequest.temperature` allows
+    ``ge=0.0`` and only ``0`` is special-cased as greedy), so the distribution is
+    now computed in float32 by widening BEFORE the division — widening after it
+    is too late, the fp16 multiply has already saturated.
+
+    Nothing covered dtype here before: every existing sampling test used the
+    default float32.
+    """
+
+    @pytest.mark.parametrize("dtype", ["float16", "bfloat16", "float32"])
+    @pytest.mark.parametrize("temperature", [1e-4, 1e-5, 1e-6, 1e-8])
+    def test_small_temperatures_stay_finite(self, dtype, temperature):
+        import torch
+
+        from llm.generation.sampling import sampling_probs
+
+        logits = torch.tensor([1.526, -1.5, 0.5, 0.0], dtype=getattr(torch, dtype))
+        probs = sampling_probs(logits, temperature=temperature)
+
+        assert torch.isfinite(probs).all(), (
+            f"dtype={dtype} temperature={temperature}: probs contained inf/NaN. The temperature "
+            "division is running in the model dtype and overflowing."
+        )
+        assert probs.sum().item() == pytest.approx(1.0, abs=1e-5), "probs must sum to one"
+
+    def test_the_peak_of_each_distribution_agrees_across_precisions(self):
+        """The fp32 path must not CHANGE the maths, only prevent overflow."""
+        import torch
+
+        from llm.generation.sampling import sampling_probs
+
+        values = [1.526, -1.5, 0.5, 0.0]
+        ref = sampling_probs(torch.tensor(values, dtype=torch.float32), temperature=1e-3)
+        for dtype in (torch.float16, torch.bfloat16):
+            got = sampling_probs(torch.tensor(values, dtype=dtype), temperature=1e-3)
+            assert torch.allclose(got, ref, atol=1e-3), (
+                f"{dtype} produced a different distribution than float32 at a temperature that "
+                "does not overflow; widening must be numerically neutral"
+            )
+
+    def test_a_greedy_high_temperature_still_samples_normally(self):
+        """Regression guard: the widening must not break ordinary sampling."""
+        import torch
+
+        from llm.generation.sampling import sampling_probs
+
+        logits = torch.tensor([0.1, 2.0, -1.0, 0.5], dtype=torch.float16)
+        probs = sampling_probs(logits, temperature=1.0)
+        assert torch.isfinite(probs).all()
+        assert probs.argmax().item() == 1, "the largest logit must keep the largest probability"
