@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `quantize` stays a real subcommand group); `python -m llm` also works. All
   docs / README / user-facing advice strings updated to the new names.
 
+
+- **`zero_stage` wires ZeRO Stage-2 into the training engine** (distributed): adds `DistributedConfig.zero_stage` (`1` default, `2` opt-in, bounded `ge=1, le=2`) and dispatches on it in `TrainingEngine` — `zero_stage=2` builds a `ZeroStage2Optimizer` and takes the **clip-then-reduce** branch (`clip_gradients_globally` while every rank still holds every gradient, then `reduce_gradients_to_owners`), versus Stage-1's reduce-then-clip. Stage-1 behaviour is untouched. Also folded `zero_stage` into the existing `_warn_unused_parallel_sizes` validator, so `zero_stage: 2` under `parallel_strategy: ddp` now warns instead of silently doing nothing — the same lost-intent class that validator already catches for `tp_size`/`pp_size`. Verified end to end: a 2-rank gloo `TrainingEngine` with `zero_stage=2` trains two epochs with finite loss, both ranks stay bit-exact, and after one step only OWNED parameters hold a gradient (the memory claim, observed through the real optimizer). Reverting the dispatch so the engine always builds `ZeroOptimizer` turns the engine test red. Two config tests pin the warning behaviour (fires under `ddp`, silent under `zero`).
+
+### Added
+
 ### Added
 
 - **`ZeroStage2Optimizer`: ZeRO Stage-2 gradient sharding, bit-exact with Stage-1** (distributed): adds `ZeroStage2Optimizer` to `src/llm/training/distributed/zero.py`, subclassing the Stage-1 `ZeroOptimizer` so parameter ownership, the inner-optimizer shard, and the `state_dict` / `collective_state_dict` / `load_state_dict` / `zero_grad` contracts are inherited unchanged — a Stage-2 checkpoint keeps the same on-disk shape. New surface: `reduce_gradients_to_owners()` (mean-reduce then drop non-owned gradients) and `clip_gradients_globally()` (global L2 norm across ranks, which per ADR-014 must run BEFORE the reduction). Verified bit-exactly: 2-rank gloo training for 12 AdamW steps reaches the SAME weights as a single-process full-AdamW reference, and non-owned `.grad` is `None` afterwards. Two more tests pin the reduced value to the cross-rank mean and the clip factor to one common multiplier.

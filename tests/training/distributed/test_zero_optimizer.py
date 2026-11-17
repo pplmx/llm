@@ -685,3 +685,136 @@ def test_zero_stage2_global_clip_uses_one_factor() -> None:
     )
     expected = 1.0 / global_norms[0]
     assert factors[0] == pytest.approx(expected, rel=1e-5)
+
+
+# --- Stage-2 through the real engine (ADR-014) ----------------------------
+
+
+def _engine_zero_stage2_worker(rank: int, world_size: int, results: dict) -> None:
+    """Drive TrainingEngine with parallel_strategy='zero', zero_stage=2."""
+    try:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""  # CPU path; gloo only transports CPU tensors
+        dist.init_process_group(
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        from llm.training.core.config import (
+            Config,
+            DistributedConfig,
+            ModelConfig,
+            OptimizationConfig,
+            TrainingConfig,
+        )
+        from llm.training.core.engine import TrainingEngine
+        from llm.training.tasks.lm_task import LanguageModelingTask
+        from tests.support.data import DummyLMDataModule
+
+        config = Config(
+            model=ModelConfig(vocab_size=64, hidden_size=16, num_layers=2, num_heads=2, max_seq_len=32),
+            training=TrainingConfig(batch_size=4, epochs=2, num_samples=32),
+            optimization=OptimizationConfig(use_amp=False, use_compile=False),
+            distributed=DistributedConfig(backend="gloo", parallel_strategy="zero", zero_stage=2),
+        )
+        data_module = DummyLMDataModule(config)
+        task = LanguageModelingTask(config, data_module)
+        engine = TrainingEngine(config, task, rank=rank, world_size=world_size, data_module=data_module)
+
+        assert engine.is_training_zero
+        assert engine.zero_stage == 2
+        assert isinstance(engine.optimizer, ZeroStage2Optimizer), (
+            f"zero_stage=2 built {type(engine.optimizer).__name__}, not a ZeroStage2Optimizer"
+        )
+
+        loss = engine._run_epoch(0)
+        results[rank] = {
+            "loss": float(loss),
+            "params": [p.detach().clone() for p in engine.model.parameters()],
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_zero_stage2_engine_standard_loop_two_process_cpu() -> None:
+    """The real engine selects Stage-2 from config, trains, and keeps ranks in lockstep.
+
+    Stage-1's engine test already covers "sharded optimizer inside the training
+    loop". What is new here is the DISPATCH: `zero_stage=2` must build a
+    `ZeroStage2Optimizer` and take the clip-then-reduce branch, and the two ranks
+    must end bit-exact (the parameter all-gather still restores identical
+    weights, exactly as in Stage-1).
+    """
+    out = _run_spawn(_engine_zero_stage2_worker, 2)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert payload["loss"] < float("inf"), f"rank {rank}: loss NaN/inf"
+
+    ref = out[0]["params"]
+    for rank in (1,):
+        for i, (got, want) in enumerate(zip(out[rank]["params"], ref, strict=True)):
+            assert torch.equal(got, want), (
+                f"rank {rank} param {i} diverged from rank 0 after a Stage-2 epoch "
+                f"(max |d|={(got - want).abs().max().item():.3e})"
+            )
+
+
+def _stage2_grads_are_sharded_worker(rank: int, world_size: int, results: dict) -> None:
+    """After one Stage-2 step, only OWNED params may still hold a gradient."""
+    try:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        dist.init_process_group(
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        import torch.nn as nn
+
+        from llm.training.distributed.zero import ZeroStage2Optimizer
+
+        torch.manual_seed(SEED)
+        model = nn.Sequential(nn.Linear(IN_DIM, HID_DIM), nn.Tanh(), nn.Linear(HID_DIM, OUT_DIM))
+        params = list(model.parameters())
+        optimizer = ZeroStage2Optimizer(
+            lambda owned: torch.optim.SGD(owned, lr=0.01),
+            params,
+            rank=rank,
+            world_size=world_size,
+        )
+        optimizer.zero_grad()
+        model(_make_data()).square().mean().backward()
+        optimizer.clip_gradients_globally(0.0)
+        optimizer.reduce_gradients_to_owners()
+
+        # Nothing has stepped yet, so the sharding is observable directly.
+        with_grad = [i for i, p in enumerate(params) if p.grad is not None]
+        owned = [i for i, owner in enumerate(optimizer._owners) if owner == rank]
+        results[rank] = {"with_grad": with_grad, "owned": owned, "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_zero_stage2_leaves_only_owned_gradients() -> None:
+    """The memory claim, observed through the real optimizer: non-owned grads gone."""
+    out = _run_spawn(_stage2_grads_are_sharded_worker, 2)
+    seen_owned: set[int] = set()
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert payload["with_grad"] == payload["owned"], (
+            f"rank {rank} holds gradients {payload['with_grad']} but owns {payload['owned']}; "
+            "Stage-2 must drop every non-owned gradient or the memory saving is lost"
+        )
+        seen_owned |= set(payload["owned"])
+    assert len(seen_owned) == 4, f"the two ranks' shards must cover all 4 params, got {sorted(seen_owned)}"

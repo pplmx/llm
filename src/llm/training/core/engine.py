@@ -30,7 +30,7 @@ from llm.training.distributed import (
     tp_dp_layout,
     wrap_model_for_training,
 )
-from llm.training.distributed.zero import ZeroOptimizer
+from llm.training.distributed.zero import ZeroOptimizer, ZeroStage2Optimizer
 from llm.training.tasks.base_task import TrainingTask
 from llm.utils.common import count_parameters
 
@@ -346,9 +346,13 @@ class TrainingEngine:
         if self.config.distributed.parallel_strategy == "3d" and self.world_size <= 1:
             raise ValueError("parallel_strategy='3d' needs world_size > 1 (a 2-stage x N-TP grid)")
         self.is_training_zero = self.config.distributed.parallel_strategy == "zero" and self.world_size > 1
+        # ADR-014: `zero_stage=2` shards gradients too. Parsed even for
+        # world_size==1 (where both stages reduce to the plain optimizer) so the
+        # configuration stays readable in logs.
+        self.zero_stage = int(self.config.distributed.zero_stage) if self.is_training_zero else 1
         if self.config.distributed.parallel_strategy == "zero" and self.world_size <= 1:
             self.logger.info(
-                "ZeRO Stage-1 on a single rank is a no-op identity (one rank IS the "
+                "ZeRO on a single rank is a no-op identity (one rank IS the "
                 "whole optimizer); running the standard loop."
             )
         if self.config.optimization.use_compile and (
@@ -481,7 +485,8 @@ class TrainingEngine:
                 # weights each step. ``build_optimizer_for`` routes the owned
                 # subset through the task's own ``build_optimizer`` so all
                 # hyperparameters/groups are preserved.
-                self.optimizer = ZeroOptimizer(
+                zero_cls = ZeroStage2Optimizer if self.zero_stage == 2 else ZeroOptimizer
+                self.optimizer = zero_cls(
                     lambda owned: self.task.build_optimizer_for(owned),
                     self.model.parameters(),
                     rank=self.rank,
@@ -973,6 +978,22 @@ class TrainingEngine:
                         effective_clip_val,
                         group=clip_group,
                     )
+                elif self.is_training_zero and self.zero_stage == 2:
+                    # ZeRO Stage-2 (ADR-014): gradients are sharded, so the ORDER
+                    # is reversed relative to Stage-1 — clip FIRST on the global
+                    # norm while every rank still holds every gradient, THEN
+                    # reduce and drop the non-owned ones. Clipping after the
+                    # reduction (or per rank) would apply a different factor to
+                    # each shard; measured 1.0000 vs 0.9383 for ranks whose
+                    # gradients differ in scale.
+                    #
+                    # ``clip_gradients_globally`` returns the cross-rank norm; a
+                    # non-finite value is the GradScaler skip signal exactly as in
+                    # the other branches.
+                    if not isinstance(self.optimizer, ZeroStage2Optimizer):  # pragma: no cover - guarded at build
+                        raise RuntimeError("zero_stage=2 requires a ZeroStage2Optimizer")
+                    grad_norm = self.optimizer.clip_gradients_globally(effective_clip_val)
+                    self.optimizer.reduce_gradients_to_owners()
                 elif self.is_training_zero:
                     # ZeRO Stage-1: the model is a plain full
                     # copy (no DDP), so average the locally-summed gradients over

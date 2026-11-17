@@ -872,6 +872,36 @@ class TestUnusedParallelSizes:
 
         assert not any("is only read when parallel_strategy" in record.getMessage() for record in caplog.records)
 
+    def test_zero_stage_under_another_strategy_warns(self, caplog):
+        """ADR-014: ``zero_stage`` is read only on the ZeRO path.
+
+        Setting ``zero_stage: 2`` with ``parallel_strategy: ddp`` looks like it
+        enabled gradient sharding and silently does not — the same lost-intent
+        class as ``tp_size`` under DDP.
+        """
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy="ddp", zero_stage=2)
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("zero_stage=2 is only read when parallel_strategy" in m for m in messages), (
+            f"expected an ignored-knob warning naming zero_stage, got: {messages}"
+        )
+
+    def test_zero_stage_under_zero_is_silent(self, caplog):
+        """The legitimate pairing must not warn."""
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy="zero", zero_stage=2)
+
+        assert not any("zero_stage" in record.getMessage() for record in caplog.records)
+
     def test_default_values_do_not_warn(self, caplog):
         """``tp_size=0`` means 'derive from world_size'; it is not lost intent."""
         import logging

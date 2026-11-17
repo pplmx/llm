@@ -643,6 +643,21 @@ class DistributedConfig(BaseSettings):
             "non-standard-loop tasks are refused in v1."
         ),
     )
+    zero_stage: int = Field(
+        1,
+        ge=1,
+        le=2,
+        description=(
+            "ZeRO stage when parallel_strategy='zero' (ADR-014). "
+            "1 = optimizer-state sharding only: gradients are averaged over the world group "
+            "and every rank keeps a full gradient buffer. "
+            "2 = optimizer-state AND gradient sharding: gradients are mean-reduced and each "
+            "rank keeps only its owned parameters' gradients, dropping the rest (one full "
+            "gradient buffer saved per rank). Stage-2 clips on the GLOBAL norm before the "
+            "reduction, since a per-rank clip would apply a different factor to each shard. "
+            "Ignored for any other parallel_strategy."
+        ),
+    )
     tp_size: int = Field(
         0,
         ge=0,
@@ -800,6 +815,10 @@ class DistributedConfig(BaseSettings):
         valid_under = {
             "tp_size": {"tp", "3d"},
             "pp_size": {"pp", "3d"},
+            # ADR-014: `zero_stage` is read only on the ZeRO path. Setting it
+            # under another strategy looks like it enabled gradient sharding and
+            # does not.
+            "zero_stage": {"zero"},
         }
         for size_field, strategies in valid_under.items():
             if size_field not in explicitly_set:
@@ -808,7 +827,8 @@ class DistributedConfig(BaseSettings):
                 continue
             if getattr(self, size_field, 0) in (0, 1):
                 # 0 means "derive from world_size" and 1 is a no-op anyway —
-                # neither expresses intent that gets lost.
+                # neither expresses intent that gets lost. (For `zero_stage`,
+                # explicit 1 is the default stage, so it is quiet too.)
                 continue
             logger.warning(
                 "%s=%s is only read when parallel_strategy is one of %s, but the current "
