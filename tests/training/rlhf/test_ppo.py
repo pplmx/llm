@@ -1738,3 +1738,96 @@ class TestPPOObjectiveCoefficients:
         # The healthy case actually clamps per element.
         healthy = torch.clamp(ratio, 1.0 - 0.2, 1.0 + 0.2)
         assert healthy.tolist() == pytest.approx([0.8, 1.0, 1.2])
+
+
+class TestPPOScheduleKnobs:
+    """``ppo_epochs`` / ``max_grad_norm`` / ``target_kl`` — the rest of the loop bounds.
+
+    These three complete the PPO knob surface. Their call sites already encode a
+    convention, so the constraints follow it rather than inventing new rules:
+
+    * ``ppo_epochs`` drives ``range(...)`` in the update loop. 0 is explicitly
+      supported (the metric aggregation returns zeroed values instead of
+      dividing by an empty list), so it stays legal; a negative value yields the
+      same zero passes while reading as a real setting, so it is rejected.
+    * ``max_grad_norm`` is guarded by ``if max_grad_norm > 0`` — the same
+      "non-positive means clip off" convention ``training.gradient_clip_val``
+      now follows. It takes identical bounds (`ge=0`, finite) so the two cannot
+      disagree.
+    * ``target_kl`` is compared as ``approx_kl > target_kl``. ``approx_kl`` is a
+      non-negative quantity, so a zero or negative threshold fires on the FIRST
+      update of every step, collapsing PPO to one epoch per step regardless of
+      ``ppo_epochs``. Measured against the loop's own condition with four
+      configured epochs: ``target_kl=0.0`` ran 1, ``target_kl=0.5`` ran 4.
+    """
+
+    def test_zero_ppo_epochs_stays_legal(self):
+        """0 is the documented degenerate case the aggregation explicitly handles."""
+        assert PPOConfig(ppo_epochs=0).ppo_epochs == 0
+
+    @pytest.mark.parametrize("bad", [-1, -4])
+    def test_negative_ppo_epochs_is_rejected(self, bad: int):
+        with pytest.raises(ValueError, match="ppo_epochs"):
+            PPOConfig(ppo_epochs=bad)
+
+    @pytest.mark.parametrize("good", [1, 4, 10])
+    def test_positive_ppo_epochs_is_accepted(self, good: int):
+        assert PPOConfig(ppo_epochs=good).ppo_epochs == good
+
+    def test_zero_max_grad_norm_disables_clipping(self):
+        """Mirrors ``training.gradient_clip_val=0`` — pin the shared convention."""
+        from llm.training.core.config import TrainingConfig
+
+        assert PPOConfig(max_grad_norm=0.0).max_grad_norm == 0.0
+        assert TrainingConfig(gradient_clip_val=0.0).gradient_clip_val == 0.0
+
+    @pytest.mark.parametrize("bad", [-1.0, -0.5])
+    def test_negative_max_grad_norm_is_rejected(self, bad: float):
+        with pytest.raises(ValueError, match="max_grad_norm"):
+            PPOConfig(max_grad_norm=bad)
+
+    @pytest.mark.parametrize("bad", [float("inf"), float("nan")])
+    def test_non_finite_max_grad_norm_is_rejected(self, bad: float):
+        with pytest.raises(ValueError, match="max_grad_norm"):
+            PPOConfig(max_grad_norm=bad)
+
+    @pytest.mark.parametrize("good", [0.1, 1.0, 5.0])
+    def test_positive_max_grad_norm_is_accepted(self, good: float):
+        assert PPOConfig(max_grad_norm=good).max_grad_norm == good
+
+    def test_target_kl_none_disables_early_stopping(self):
+        assert PPOConfig().target_kl is None
+
+    @pytest.mark.parametrize("bad", [0.0, -0.5, -1.0])
+    def test_non_positive_target_kl_is_rejected(self, bad: float):
+        with pytest.raises(ValueError, match="target_kl"):
+            PPOConfig(target_kl=bad)
+
+    @pytest.mark.parametrize("bad", [float("inf"), float("nan")])
+    def test_non_finite_target_kl_is_rejected(self, bad: float):
+        with pytest.raises(ValueError, match="target_kl"):
+            PPOConfig(target_kl=bad)
+
+    @pytest.mark.parametrize("good", [0.01, 0.1, 1.0])
+    def test_positive_target_kl_is_accepted(self, good: float):
+        assert PPOConfig(target_kl=good).target_kl == good
+
+    def test_a_non_positive_target_kl_would_fire_on_every_step(self):
+        """Record the loop condition that makes the threshold need to be positive.
+
+        Uses the exact comparison from ``ppo_trainer.train_step``'s caller:
+        ``approx_kl > target_kl``. A realistic small KL breaches any
+        non-positive threshold immediately.
+        """
+        approx_kl = 0.01  # a small but normal KL
+
+        def epochs_run(target_kl: float | None, n_epochs: int = 4) -> int:
+            for epoch in range(1, n_epochs + 1):
+                if target_kl is not None and approx_kl > target_kl:
+                    return epoch
+            return n_epochs
+
+        assert epochs_run(0.5) == 4, "a healthy threshold must let the configured epochs run"
+        assert epochs_run(None) == 4, "None disables the check entirely"
+        assert epochs_run(0.0) == 1, "a zero threshold must fire on the first update"
+        assert epochs_run(-1.0) == 1, "a negative threshold must fire on the first update too"

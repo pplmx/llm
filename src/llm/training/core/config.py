@@ -1139,10 +1139,44 @@ class PPOConfig(BaseModel):
     )
     gae_lambda: float = 0.95
     gamma: float = 1.0
-    ppo_epochs: int = 4
+    ppo_epochs: int = Field(
+        4,
+        ge=0,
+        description=(
+            "Number of PPO update passes over the rollout buffer per step. 0 is "
+            "supported and documented (the update loop body never runs, and the "
+            "metric aggregation returns zeroed values instead of dividing by an "
+            "empty list). A NEGATIVE value is rejected: ``range(-1)`` yields no "
+            "passes just like 0, so the two meant the same thing while reading "
+            "differently."
+        ),
+    )
     mini_batch_size: int = 64
-    max_grad_norm: float = 1.0
-    target_kl: float | None = None
+    max_grad_norm: float = Field(
+        1.0,
+        ge=0,
+        allow_inf_nan=False,
+        description=(
+            "PPO gradient-norm clip. The trainer guards its use with "
+            "``if max_grad_norm > 0``, so 0 (and any non-positive value) means "
+            '"do not clip" -- the same convention ``training.gradient_clip_val`` '
+            "now follows. A negative value is rejected because it is "
+            "indistinguishable from 0 at the call site while looking like a real "
+            "bound. Matches ``training.gradient_clip_val``'s type (>= 0)."
+        ),
+    )
+    target_kl: float | None = Field(
+        None,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "KL early-stop threshold: the epoch loop breaks when "
+            "``approx_kl > target_kl``. None disables the check. Must be > 0: "
+            "``approx_kl`` is a non-negative quantity, so a zero or negative "
+            "threshold fires on the FIRST update of every step and PPO silently "
+            "degenerates to one epoch per step no matter what ``ppo_epochs`` says."
+        ),
+    )
     rollout_batch_size: int = 16
     response_max_len: int = 256
     temperature: float = Field(
