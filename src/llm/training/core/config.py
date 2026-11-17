@@ -56,7 +56,17 @@ class TrainingConfig(BaseModel):
             "but logs a warning at scheduler construction."
         ),
     )
-    gradient_clip_val: float = 1.0
+    gradient_clip_val: float = Field(
+        1.0,
+        ge=0,
+        description=(
+            "Max global gradient L2 norm. 0 DISABLES clipping (the engine resolves "
+            "it to inf, and torch keeps computing the norm so a non-finite gradient "
+            "still skips the step). Must not be negative: torch's "
+            "``clip_grad_norm_`` takes max_norm at face value, so a negative value "
+            "multiplied every gradient by a NEGATIVE factor instead of clipping."
+        ),
+    )
     run_validation: bool = True
     max_steps: int = Field(
         0,

@@ -907,6 +907,18 @@ class TrainingEngine:
                         if _param.grad is not None:
                             _param.grad.mul_(_scale)
                 accum_counter = 0
+                # ``training.gradient_clip_val == 0`` means "no clipping" — the
+                # documented convention, and what ``ppo.max_grad_norm`` already
+                # does at its call site. Resolving it to ``inf`` here keeps every
+                # branch below on ONE code path: torch still computes the total
+                # norm (so a non-finite gradient still trips the step-skip guard
+                # below) but the clip coefficient is always >= 1, so no gradient
+                # is touched. Passing the 0 through instead multiplied every
+                # gradient by zero — the step was skipped in effect while
+                # ``global_step`` advanced, so training looked healthy and the
+                # weights never moved.
+                clip_val = self.config.training.gradient_clip_val
+                effective_clip_val = float("inf") if clip_val <= 0 else clip_val
                 # TP + data-parallel 2D: average gradients across
                 # the data-parallel groups so replicated params and shard
                 # copies converge to the true full-batch gradient. Runs AFTER
@@ -920,7 +932,7 @@ class TrainingEngine:
                     # model's norm (all-reduced over the TP group), not its own
                     # shard's local norm, or each shard clips by a different
                     # factor and the replicated copies drift.
-                    grad_norm = clip_grad_norm_tp(self.model, self.config.training.gradient_clip_val)
+                    grad_norm = clip_grad_norm_tp(self.model, effective_clip_val)
                 elif is_pp(self.model):
                     # PP + data-parallel 2D: average gradients
                     # across the strided DP group so identical stage copies on
@@ -934,7 +946,7 @@ class TrainingEngine:
                     allreduce_pp_dp_grads(self.model)
                     grad_norm = clip_grad_norm_tp(
                         self.model,
-                        self.config.training.gradient_clip_val,
+                        effective_clip_val,
                         group=cast(Any, self.model)._pp.group,
                     )
                 elif is_pp3d(self.model):
@@ -949,7 +961,7 @@ class TrainingEngine:
                     clip_group = rt3.pp_group if rt3.pp_group is not None else dist.group.WORLD
                     grad_norm = clip_grad_norm_tp(
                         self.model,
-                        self.config.training.gradient_clip_val,
+                        effective_clip_val,
                         group=clip_group,
                     )
                 elif self.is_training_zero:
@@ -961,13 +973,9 @@ class TrainingEngine:
                     # every rank holds the identical full gradient, so the plain
                     # global-norm clip applies a consistent factor on all ranks.
                     allreduce_zero_grads(self.model)
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.config.training.gradient_clip_val
-                    )
+                    grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), effective_clip_val)
                 else:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.config.training.gradient_clip_val
-                    )
+                    grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), effective_clip_val)
                 # GradScaler silently skips the real parameter update when a
                 # gradient is inf/NaN (found_inf, recorded during unscale_).
                 # ``clip_grad_norm_`` computes its total norm from the same

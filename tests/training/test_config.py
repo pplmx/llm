@@ -1359,3 +1359,109 @@ class TestNonPositiveCadenceKnobs:
         assert loader.prefetch_factor == 3, (
             f"optimization.prefetch_factor must reach the DataLoader when workers run, got {loader.prefetch_factor}"
         )
+
+
+class TestGradientClipVal:
+    """``training.gradient_clip_val`` must not be negative, and 0 must mean "off".
+
+    The field had no constraint and was passed straight to torch. Two values
+    were silently wrong:
+
+    * ``0`` zeroed every gradient (``clip_coef = 0 / (norm + eps) == 0``), so
+      the optimizer step was an identity while ``global_step`` still advanced.
+      Measured over 3 epochs on a real engine: ``||dW|| = 0.000000``.
+    * a NEGATIVE value multiplied every gradient by that factor
+      (``clip_coef = -1 / (norm + eps) < 0``), i.e. gradient ASCENT. Measured:
+      the weight displacement of a ``gradient_clip_val=-1.0`` run had cosine
+      ``-0.7644`` against the ``+1.0`` run — the step went the wrong way.
+
+    ``0`` now resolves to "no clipping" (torch's ``max_norm=inf``), matching
+    ``ppo.max_grad_norm``'s existing ``if max_grad_norm > 0`` convention, and a
+    negative value is rejected at config load. ``nan`` is rejected by ``ge=0``
+    as a side effect (a NaN comparison fails the bound); ``inf`` stays legal
+    because it is exactly "no clipping" spelled out.
+    """
+
+    @pytest.mark.parametrize("bad", [-0.1, -1.0, -50.0])
+    def test_negative_gradient_clip_val_is_rejected(self, bad: float):
+        from llm.training.core.config import TrainingConfig
+
+        with pytest.raises(ValidationError, match="gradient_clip_val"):
+            TrainingConfig(gradient_clip_val=bad)
+
+    @pytest.mark.parametrize("good", [0.0, 0.5, 1.0, 10.0, float("inf")])
+    def test_non_negative_gradient_clip_val_is_accepted(self, good: float):
+        """0 and inf both mean "do not clip", and ordinary values still work."""
+        from llm.training.core.config import TrainingConfig
+
+        assert TrainingConfig(gradient_clip_val=good).gradient_clip_val == good
+
+    def test_zero_no_longer_zeroes_the_gradients(self):
+        """The regression itself: ``clip_val=0`` must leave the step alone.
+
+        Drives the real engine so the assertion covers the call site, not just
+        torch's semantics. Compares the weight displacement of a 0-clipped run
+        against the unclipped (``inf``) run — they must be identical, whereas a
+        linearly-scaled gradient would move the weights differently.
+        """
+        zero = _weight_displacement(gradient_clip_val=0.0)
+        unclipped = _weight_displacement(gradient_clip_val=float("inf"))
+        clipped = _weight_displacement(gradient_clip_val=1e-3)
+
+        assert zero > 0, "clip_val=0 must still train — it froze every weight before the fix"
+        assert zero == pytest.approx(unclipped, rel=1e-6), (
+            f"clip_val=0 must be identical to no clipping; got {zero} vs {unclipped} (a zero clip froze the weights)"
+        )
+        assert clipped < unclipped, (
+            "sanity: a tiny positive clip must shrink the step, or this test cannot "
+            f"distinguish clipping from no clipping (got {clipped} vs {unclipped})"
+        )
+
+
+def _weight_displacement(*, gradient_clip_val: float) -> float:
+    """L2 norm of the total weight change after one epoch on a fixed batch.
+
+    ``torch.cuda.is_available`` is patched off so the engine does not spend
+    ~25 s probing free VRAM on a shared host; the clip logic is device-agnostic.
+    """
+    from unittest.mock import patch
+
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from llm.data.modules.synthetic import SyntheticDataModule
+    from llm.training.core.config import Config, LoggingConfig, ModelConfig, OptimizationConfig, TrainingConfig
+    from llm.training.core.engine import TrainingEngine
+    from llm.training.tasks.lm_task import LanguageModelingTask
+
+    torch.manual_seed(11)
+    config = Config(
+        model=ModelConfig(vocab_size=8, hidden_size=32, num_layers=1, num_heads=2, max_seq_len=8),
+        training=TrainingConfig(
+            batch_size=4,
+            num_samples=8,
+            epochs=1,
+            lr=0.01,
+            run_validation=False,
+            gradient_clip_val=gradient_clip_val,
+            weight_decay=0.0,
+            warmup_epochs=0,
+        ),
+        optimization=OptimizationConfig(num_workers=0, use_compile=False, use_amp=False),
+        logging=LoggingConfig(log_interval=100, log_level="ERROR", save_logs=False),
+    )
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    task = LanguageModelingTask(config, data_module)
+    with patch("torch.cuda.is_available", return_value=False):
+        engine = TrainingEngine(config, task, rank=0, world_size=1, data_module=data_module)
+    # One fixed, fittable LM batch: the only variable between runs is the clip.
+    ids = torch.tensor([[0, 1, 2, 3, 4, 5, 6, 7]] * 4)
+    engine.is_streaming = False
+    engine.dataloader = DataLoader(TensorDataset(ids, ids.clone()), batch_size=4, shuffle=False)
+    engine.val_dataloader = None
+
+    before = [p.detach().clone() for p in engine.model.parameters()]
+    engine._run_epoch(0)
+    delta = torch.cat([(p.detach() - b).flatten() for p, b in zip(engine.model.parameters(), before, strict=True)])
+    return delta.norm().item()
