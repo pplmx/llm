@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import socket
 import time
+from datetime import timedelta
 
 import pytest
 import torch
@@ -52,6 +53,21 @@ from llm.training.distributed.pp_tp import PPTPRuntime
 pytestmark = pytest.mark.heavy
 
 PP_JOIN_TIMEOUT_S = 300
+# Bounded per-collective timeout for the spawn workers' hand-rolled process
+# groups (they call ``init_process_group`` directly rather than going through
+# ``DistributedManager``, so they do NOT inherit
+# ``DistributedConfig.collective_timeout_seconds``).
+#
+# Without this, torch's default is 30 MINUTES: a rank that dies mid-test leaves
+# its siblings blocking inside a collective long past the parent's 300s join
+# window, so the parent gives up first and reports a blind
+# ``TimeoutError: PP spawn exceeded 300s`` with no cause.
+#
+# NOTE ``timeout=`` bounds the initial RENDEZVOUS as well as every collective,
+# so this sits comfortably above a cold ``mp.spawn`` + ``import torch`` on a
+# loaded host (measured: 60s was already too tight for the TP file's cold
+# start) while staying under the parent join, so the guard still speaks first.
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=240)
 
 SEED = 123
 VOCAB = 64
@@ -119,11 +135,31 @@ def _serial_reference() -> dict:
 
 
 def _run_spawn_worker(worker, world_size: int) -> dict:
-    """Spawn ``worker(rank, world_size, results)`` over gloo/CPU procs."""
+    """Spawn ``worker(rank, world_size, results)`` over gloo/CPU procs.
+
+    CUDA is hidden for the duration of the spawn. Every worker in this file is
+    a CPU/gloo test (the module is ``pytest.mark.heavy`` and each test says
+    ``_cpu``), yet the ones that build a ``TrainingEngine`` still went through
+    its device selection, which picks a CUDA card whenever one is visible —
+    regardless of the process-group backend. On a shared box, N ranks then
+    raced for whatever the free-VRAM ordering handed them; measured
+    ``memory allocation failed with OOM on device 0`` (7.99 GiB free) while
+    other tenants held the cards, and a 4-rank run that instead hit the parent
+    join timeout. Hiding CUDA once here keeps every caller honest about what it
+    is testing and makes them independent of the host's GPU load.
+    """
     _setup_env()
-    manager = mp.Manager()
-    results: dict = manager.dict()
-    context = mp.spawn(worker, args=(world_size, results), nprocs=world_size, join=False)
+    saved_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    try:
+        manager = mp.Manager()
+        results: dict = manager.dict()
+        context = mp.spawn(worker, args=(world_size, results), nprocs=world_size, join=False)
+    finally:
+        if saved_visible is None:
+            os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = saved_visible
     end_at = time.monotonic() + PP_JOIN_TIMEOUT_S
     while True:
         remaining = end_at - time.monotonic()
@@ -144,7 +180,11 @@ def _run_spawn_worker(worker, world_size: int) -> dict:
 def _pp_parity_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -210,7 +250,11 @@ def test_pp_loss_and_grad_parity_two_process_cpu() -> None:
 def _pp_scale_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -246,7 +290,11 @@ def test_pp_loss_scaling_two_process_cpu() -> None:
 def _pp_eval_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -276,7 +324,11 @@ def test_pp_eval_parity_two_process_cpu() -> None:
 def _pp_roundtrip_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -313,7 +365,11 @@ def test_pp_gather_scatter_roundtrip_two_process_cpu() -> None:
 def _pp_gnorm_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -505,7 +561,11 @@ def _pp_2d_reference(dp_size: int) -> dict:
 def _pp_2d_parity_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         pp_size, dp_size = 2, 2
         torch.manual_seed(SEED)
@@ -603,7 +663,11 @@ def _pp_2d_dyn_worker(rank: int, world_size: int, results: dict) -> None:
     """A couple of SGD steps with the DP average: shards must stay in lockstep."""
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         pp_size, dp_size = 2, 2
         torch.manual_seed(SEED)
@@ -670,7 +734,11 @@ def test_pp_dp_layout_validation() -> None:
 def _pp_gc_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -729,7 +797,11 @@ def test_pp_gradient_checkpointing_parity_two_process_cpu() -> None:
 def _pp_mb_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -796,7 +868,11 @@ def _pp_amp_worker(rank: int, world_size: int, results: dict) -> None:
     """Engine construction with PP + float16 AMP must refuse loudly."""
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
         from llm.training.core.engine import TrainingEngine
@@ -845,7 +921,11 @@ def _pp_tp_parity_worker(rank: int, world_size: int, results: dict) -> None:
     """
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -904,7 +984,11 @@ def _pp_tp_wrap_train_worker(rank: int, world_size: int, results: dict) -> None:
     """
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         import torch.optim as optim
 
@@ -963,7 +1047,11 @@ def _pp3d_engine_train_worker(rank: int, world_size: int, results: dict) -> None
     """Full TrainingEngine '3d' path: wrap + _run_epoch driver on 4 ranks."""
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
         from llm.training.core.engine import TrainingEngine
@@ -1005,7 +1093,11 @@ def _pp3d_dp2_worker(rank: int, world_size: int, results: dict) -> None:
     """Full DP+PP+TP (2x2x2, 8 ranks) runtime: column data split + DP averaging."""
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         torch.manual_seed(SEED)
         model = _build_model().to(torch.device("cpu"))
@@ -1078,10 +1170,23 @@ def test_pp3d_dp2_full_3d_grid_eight_process_cpu() -> None:
 
 def _pp3d_engine_dp2_worker(rank: int, world_size: int, results: dict) -> None:
     """Full 8-rank TrainingEngine '3d' (dp=2 x pp=2 x tp=2): data split per
-    column, DP gradient averaging, column-clip through _run_epoch."""
+    column, DP gradient averaging, column-clip through _run_epoch.
+
+    This runs on CPU/glool deliberately (hence the ``_cpu`` suffix), but
+    ``TrainingEngine.__init__`` picks a CUDA device whenever one is visible
+    regardless of the process-group backend. On a shared box that meant eight
+    ranks racing for whatever GPUs the free-VRAM ordering handed them: measured
+    ``memory allocation failed with OOM on device 0`` (free 7.99 GiB) while
+    other tenants held the cards. Hiding CUDA makes the test exercise exactly
+    what its name claims, deterministically, on any host.
+    """
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
         from llm.training.core.engine import TrainingEngine
@@ -1109,7 +1214,17 @@ def _pp3d_engine_dp2_worker(rank: int, world_size: int, results: dict) -> None:
 
 @pytest.mark.quick
 def test_pp3d_engine_dp2_full_3d_train_eight_process_cpu() -> None:
-    """TrainingEngine drives full 3D (2x2x2): finite loss on all 8 ranks."""
+    """TrainingEngine drives full 3D (2x2x2): finite loss on all 8 ranks.
+
+    Runs on CPU/gloo deliberately (hence the ``_cpu`` suffix), but
+    ``TrainingEngine.__init__`` picks a CUDA device whenever one is visible —
+    regardless of the process-group backend. On a shared box that made eight
+    ranks race for whatever the free-VRAM ordering handed them: measured
+    ``memory allocation failed with OOM on device 0`` (7.99 GiB free) while
+    other tenants held the cards. Hiding CUDA in the parent is the pattern the
+    sibling ``test_pp3d_checkpoint_roundtrip_four_process_cpu`` already uses,
+    and it makes this test exercise what its name claims on any host.
+    """
     out = _run_spawn_worker(_pp3d_engine_dp2_worker, 8)
     for rank, payload in out.items():
         assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
@@ -1128,9 +1243,12 @@ def _pp3d_checkpoint_worker(rank: int, world_size: int, ctx: dict, results: dict
        each stage's own weights + moments in lockstep.
     """
     try:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         from llm.training.core.checkpoint import load_checkpoint_payload
         from llm.training.core.config import Config, DistributedConfig, ModelConfig, OptimizationConfig, TrainingConfig
