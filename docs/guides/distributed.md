@@ -309,6 +309,12 @@ differ, so resuming a Stage-1 run as Stage-2 would silently change the training
 dynamics. Checkpoints written before the stage was recorded default to Stage-1
 and stay loadable.
 
+**Verified on NCCL too.** `tests/e2e/test_zero_resume.py` runs two Stage-2 ranks
+on real GPUs and compares against a full AdamW on **the same device**, bit-exactly.
+The same-device detail matters: a full GPU AdamW differs from a full CPU AdamW by
+~0.22 on the test model, so a CPU reference would report a large "error" that has
+nothing to do with ZeRO — GPU Stage-2 vs GPU full is exactly 0.0.
+
 ## Tensor Parallelism quick start
 
 Tensor parallelism (`parallel_strategy="tp"`) partitions the model's

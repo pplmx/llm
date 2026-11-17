@@ -291,3 +291,218 @@ def test_zero_resume_rejects_a_checkpoint_missing_a_rank_shard():
     envelope = {ZERO_RANK_STATES_KEY: {"0": optimizer.state_dict()}}
     with pytest.raises(ValueError, match="no optimizer shard for rank 1"):
         optimizer.load_state_dict(envelope)
+
+
+# --- ZeRO Stage-2 on a real GPU backend (ADR-014) --------------------------
+#
+# Stage-2 shards gradients, so its reduction runs a different collective path
+# than Stage-1's `allreduce_zero_grads`. The CPU/gloo tests in
+# `tests/training/distributed/test_zero_optimizer.py` cover the semantics; these
+# prove the same code produces the same numbers on NCCL, where the collective
+# actually crosses devices.
+#
+# The reference is computed ON THE SAME DEVICE. That detail is the whole point:
+# a first probe compared the GPU result against a CPU full-AdamW reference and
+# saw max|d| = 0.227, which looks like a bug until you also run a full GPU
+# AdamW — it lands at the SAME 0.227, while GPU-Stage-2 vs GPU-full is bit-exact
+# at 0.0. CPU-vs-GPU float differences, not ZeRO.
+
+
+def _stage2_gpu_worker(rank: int, world_size: int, ctx: dict, results: dict) -> None:
+    try:
+        torch.cuda.set_device(ctx["devices"][rank])
+        os.environ["MASTER_ADDR"] = "127.0.0.1"
+        os.environ["MASTER_PORT"] = str(ctx["port"])
+        os.environ.setdefault("NCCL_DEBUG", "WARN")
+        dist.init_process_group("nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+
+        from llm.training.distributed.zero import ZeroStage2Optimizer
+
+        def build():
+            torch.manual_seed(123)
+            model = torch.nn.Sequential(torch.nn.Linear(4, 5), torch.nn.Tanh(), torch.nn.Linear(5, 3)).to(
+                torch.device(f"cuda:{ctx['devices'][rank]}")
+            )
+            torch.manual_seed(999)
+            data = torch.randn(6, 4, device=model[0].weight.device)
+            return model, data
+
+        model, data = build()
+        params = list(model.parameters())
+        optimizer = ZeroStage2Optimizer(
+            lambda owned: torch.optim.AdamW(owned, lr=0.01),
+            params,
+            rank=rank,
+            world_size=world_size,
+        )
+        for _ in range(12):
+            optimizer.zero_grad()
+            model(data).square().mean().backward()
+            optimizer.clip_gradients_globally(0.0)
+            optimizer.reduce_gradients_to_owners()
+            optimizer.step()
+
+        results[rank] = {
+            "params": [p.detach().cpu().clone() for p in params],
+            "device": str(next(model.parameters()).device),
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+def _stage2_gpu_reference(device_index: int) -> list[torch.Tensor]:
+    """Full AdamW on ONE GPU — the reference Stage-2 must match bit-exactly."""
+    device = torch.device(f"cuda:{device_index}")
+    torch.manual_seed(123)
+    model = torch.nn.Sequential(torch.nn.Linear(4, 5), torch.nn.Tanh(), torch.nn.Linear(5, 3)).to(device)
+    torch.manual_seed(999)
+    data = torch.randn(6, 4, device=device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
+    for _ in range(12):
+        optimizer.zero_grad()
+        model(data).square().mean().backward()
+        optimizer.step()
+    return [p.detach().cpu().clone() for p in model.parameters()]
+
+
+def _run_stage2_gpu() -> tuple[dict, list[torch.Tensor]]:
+    gpus = all_gpu_devices(min_free_bytes=MIN_FREE_BYTES)
+    if len(gpus) < WORLD_SIZE:
+        pytest.skip(f"need {WORLD_SIZE} GPUs with >= {MIN_FREE_BYTES >> 30} GiB free, got {len(gpus)}")
+    devices = [device.index for device in gpus[:WORLD_SIZE]]
+
+    port = _free_port()
+    manager = mp.Manager()
+    results: dict = manager.dict()
+    context = mp.spawn(
+        _stage2_gpu_worker,
+        args=(WORLD_SIZE, {"devices": devices, "port": port}, results),
+        nprocs=WORLD_SIZE,
+        join=False,
+    )
+    end_at = time.monotonic() + JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"Stage-2 NCCL spawn exceeded {JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+    out = {k: dict(v) if isinstance(v, dict) else v for k, v in dict(results).items()}
+    manager.shutdown()
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+
+    return out, _stage2_gpu_reference(devices[0])
+
+
+@pytest.mark.need_gpu(2)
+def test_zero_stage2_matches_full_optimizer_on_two_gpus():
+    """Stage-2 over NCCL reaches the same weights as a full AdamW on the SAME GPU.
+
+    Comparing against a CPU reference would be wrong here: a full GPU AdamW
+    differs from a CPU one by ~0.22 on this model, so a CPU reference would
+    report a large "error" that has nothing to do with ZeRO.
+    """
+    out, reference = _run_stage2_gpu()
+
+    for rank, payload in out.items():
+        assert payload["device"].startswith("cuda"), (
+            f"rank {rank} ran on {payload['device']}, not a GPU — an NCCL test that silently "
+            "falls back to CPU proves nothing about the device path"
+        )
+        for i, (got, want) in enumerate(zip(payload["params"], reference, strict=True)):
+            assert torch.equal(got, want), (
+                f"rank {rank} param {i} not bit-exact to the same-device full-AdamW reference "
+                f"(max |d|={(got - want).abs().max().item():.3e})"
+            )
+
+    # Both ranks must agree as well (the parameter all-gather still restores a
+    # single global state after a sharded step).
+    for rank in (1,):
+        for i, (got, want) in enumerate(zip(out[rank]["params"], out[0]["params"], strict=True)):
+            assert torch.equal(got, want), f"rank {rank} param {i} diverged from rank 0 over NCCL"
+
+
+@pytest.mark.need_gpu(2)
+def test_zero_stage2_drops_non_owned_gradients_on_gpu():
+    """The memory contract holds on the device path too: only owned grads remain.
+
+    On NCCL the tensors live in device memory, so this also exercises the
+    ``grad = None`` assignment against CUDA tensors rather than CPU ones.
+    """
+    gpus = all_gpu_devices(min_free_bytes=MIN_FREE_BYTES)
+    if len(gpus) < WORLD_SIZE:
+        pytest.skip(f"need {WORLD_SIZE} GPUs, got {len(gpus)}")
+    devices = [device.index for device in gpus[:WORLD_SIZE]]
+    port = _free_port()
+    manager = mp.Manager()
+    results: dict = manager.dict()
+    context = mp.spawn(
+        _stage2_grad_worker,
+        args=(WORLD_SIZE, {"devices": devices, "port": port}, results),
+        nprocs=WORLD_SIZE,
+        join=False,
+    )
+    end_at = time.monotonic() + JOIN_TIMEOUT_S
+    while True:
+        remaining = end_at - time.monotonic()
+        if remaining <= 0:
+            for process in context.processes:
+                if process.is_alive():
+                    process.kill()
+            raise TimeoutError(f"Stage-2 NCCL grad-shard spawn exceeded {JOIN_TIMEOUT_S}s")
+        if context.join(timeout=remaining):
+            break
+    out = {k: dict(v) if isinstance(v, dict) else v for k, v in dict(results).items()}
+    manager.shutdown()
+
+    covered: set[int] = set()
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert payload["with_grad"] == payload["owned"], (
+            f"rank {rank} holds gradients for {payload['with_grad']} but owns {payload['owned']}"
+        )
+        covered |= set(payload["owned"])
+    assert len(covered) == 4, f"the two shards must cover all 4 params, got {sorted(covered)}"
+
+
+def _stage2_grad_worker(rank: int, world_size: int, ctx: dict, results: dict) -> None:
+    try:
+        torch.cuda.set_device(ctx["devices"][rank])
+        os.environ["MASTER_ADDR"] = "127.0.0.1"
+        os.environ["MASTER_PORT"] = str(ctx["port"])
+        dist.init_process_group("nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+
+        from llm.training.distributed.zero import ZeroStage2Optimizer
+
+        device = torch.device(f"cuda:{ctx['devices'][rank]}")
+        torch.manual_seed(123)
+        model = torch.nn.Sequential(torch.nn.Linear(4, 5), torch.nn.Tanh(), torch.nn.Linear(5, 3)).to(device)
+        torch.manual_seed(999)
+        data = torch.randn(6, 4, device=device)
+        params = list(model.parameters())
+        optimizer = ZeroStage2Optimizer(
+            lambda owned: torch.optim.SGD(owned, lr=0.01), params, rank=rank, world_size=world_size
+        )
+        optimizer.zero_grad()
+        model(data).square().mean().backward()
+        optimizer.clip_gradients_globally(0.0)
+        optimizer.reduce_gradients_to_owners()
+
+        results[rank] = {
+            "with_grad": [i for i, p in enumerate(params) if p.grad is not None],
+            "owned": [i for i, owner in enumerate(optimizer._owners) if owner == rank],
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
