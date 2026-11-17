@@ -334,3 +334,58 @@ class TestVerifyOnnxActuallyDiscriminates:
             assert verify_onnx(path, model=reference) is False, (
                 "verify_onnx accepted a 1-layer export as a match for a 2-layer model"
             )
+
+
+def test_onnx_dynamic_sequence_is_bounded_by_the_context_window(tmp_path):
+    """Dynamic axes vary the shape; they do NOT extend the context window.
+
+    ``docs/guides/export.md`` used to say the exported graph accepts "任意
+    batch/长度". It does not. The positional encoding is traced as a broadcast
+    against the traced sequence length, so feeding a longer sequence fails
+    inside onnxruntime with
+
+        Attempting to broadcast an axis by a dimension other than 1. 16 by 17
+
+    which says nothing about the real cause, while the eager model raises
+    ``Sequence endpoint 17 exceeds maximum sequence length 16``. Deployments do
+    their own truncation, but they need to know that is their job — hence this
+    test, which pins the limit and the asymmetry so the doc cannot drift back
+    into over-promising.
+
+    The test asserts the BOUNDARY rather than matching the onnxruntime message
+    text: that text comes from ORT internals and changes between releases.
+    """
+    import numpy as np
+    import onnxruntime as ort
+    import torch
+
+    max_seq = 16
+    model = DecoderModel(vocab_size=32, hidden_size=16, num_layers=1, num_heads=2, max_seq_len=max_seq)
+    path = tmp_path / "bounded.onnx"
+    export_to_onnx(model, path, input_shape=(1, 8))
+
+    session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+
+    # At and below the limit: real outputs that match eager.
+    for seq in (1, 8, max_seq):
+        ids = torch.randint(0, 32, (1, seq))
+        got = session.run(None, {"input_ids": ids.numpy()})[0]
+        with torch.no_grad():
+            expected = model(ids).numpy()
+        assert got.shape == (1, seq, 32), f"seq={seq} produced {got.shape}"
+        assert np.allclose(got, expected, atol=1e-4), f"seq={seq} diverged from eager"
+
+    # One past the limit: the graph must refuse rather than emit silent garbage.
+    # ORT signals kernel failures as ``onnxruntime.capi...Fail``; matching the
+    # "broadcast" wording is what identifies THIS failure as the context
+    # overrun rather than some unrelated graph problem.
+    import onnxruntime.capi.onnxruntime_pybind11_state as ort_state
+
+    over = torch.randint(0, 32, (1, max_seq + 1))
+    with pytest.raises(ort_state.Fail, match="broadcast"):
+        session.run(None, {"input_ids": over.numpy()})
+
+    # The eager model still gives the actionable message — that asymmetry is
+    # exactly what the doc note tells deployers to guard against.
+    with pytest.raises(ValueError, match="exceeds maximum sequence length"), torch.no_grad():
+        model(over)

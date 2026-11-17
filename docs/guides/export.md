@@ -133,15 +133,23 @@ info = get_onnx_info("model.onnx")  # 输入/输出签名等
 
 `input_shape` 只决定**追踪用的示例输入**，不影响导出后的可用形状：导出默认写入
 动态轴（`input_ids` 与 `logits` 的 batch / seq_len 两维都是符号维），所以同一份
-`.onnx` 可以直接接受其他 batch 与序列长度：
+`.onnx` 可以直接接受其他 batch 与序列长度，**只要不超过模型的 `max_seq_len`**：
 
 ```python
 sess = ort.InferenceSession("model.onnx", providers=["CPUExecutionProvider"])
-logits = sess.run(None, {"input_ids": ids.numpy()})[0]  # ids 可为任意 batch/长度
+logits = sess.run(None, {"input_ids": ids.numpy()})[0]  # 任意 batch；seq_len ≤ max_seq_len
 ```
 
-实测不同形状下与原模型的输出差都在 1e-07 量级（纯浮点噪声）。若要固定形状
-（某些推理引擎对静态图优化更好），传 `dynamic_axes={}` 覆盖默认值。
+实测 `batch` 取 1/2/3、`seq_len` 取 8/16/20 时，与原模型的输出差都在 1e-07 量级
+（纯浮点噪声）。若要固定形状（某些推理引擎对静态图优化更好），传
+`dynamic_axes={}` 覆盖默认值。
+
+> **超出上下文窗口时的报错不易读。** 位置编码在追踪时被折叠成了对示例长度的
+> 广播，因此喂进长于 `max_seq_len` 的序列时，onnxruntime 会在 `Add` 节点失败并
+> 报 `Attempting to broadcast an axis by a dimension other than 1. 16 by 17` ——
+> 完全看不出是上下文越界。原 PyTorch 模型在同一输入下给的是
+> `Sequence endpoint 17 exceeds maximum sequence length 16`。部署侧请在调用前
+> 自行按 `max_seq_len` 截断；动态轴不会替你扩展上下文。
 
 ## 注册自定义导出后端
 
