@@ -35,8 +35,15 @@ training:
   lr: 1e-3
 ```
 
-任务名通过 CLI 的 `--task distill` 选择（`training.task` 不是有效配置字段——带上去会被
-pydantic 静默忽略，与本文件下方命令行里的 `--task` 重复）。
+任务名通过 CLI 的 `--task distill` 选择。`training.task` **不是**有效配置字段，写进 YAML 会被
+`Config.from_yaml` 拒绝并列出该 section 的已知键：
+
+```text
+ValueError: unknown key(s) in config file <path>: training.task. Known keys here: ...
+```
+
+（本文件里曾写这一步是「pydantic 静默忽略」。实测不是：未知键校验会拒绝，顶层 section 也一样。
+写 `training.task` 的配置根本加载不了，错误信息还会把 `--task` 之外的一堆字段列出来。）
 
 然后：
 

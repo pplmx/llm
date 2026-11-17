@@ -640,3 +640,70 @@ class TestDocumentedYamlBlocksValidate:
         assert len(problems) + skipped_for_gpus < len(self._blocks()), (
             "no documented config block was actually validated — the GPU filter excused all of them"
         )
+
+
+class TestTheUnknownKeyContractIsStatedConsistently:
+    """Docs describing what happens to an unknown config key must match reality.
+
+    ``docs/guides/distillation.md`` used to say that writing ``training.task``
+    into a YAML was "silently ignored by pydantic". It is not: ``Config.from_yaml``
+    runs a strict unknown-key check and raises
+    ``unknown key(s) in config file <path>: training.task. Known keys here: ...``
+    (top-level sections are rejected the same way).
+
+    The direction of that error matters to a reader deciding where to put a
+    setting: "silently ignored" says "harmless, the CLI flag still wins", while
+    the truth is "the config does not load at all". Two sibling docs
+    (``docs/reference/cli.md`` and ``docs/tutorials/03-inference.md``) already get
+    this right for their own options, wording it as "rejected rather than
+    silently ignored".
+
+    The first half pins the actual behaviour so the doc cannot drift back; the
+    second half pins the doc's wording.
+    """
+
+    def test_an_unknown_nested_key_is_rejected_not_ignored(self, tmp_path):
+        """The behaviour the corrected doc describes."""
+        import yaml
+
+        source = tmp_path / "cfg.yaml"
+        source.write_text(
+            yaml.safe_dump(
+                {
+                    "training": {"batch_size": 2, "task": "distill"},
+                    "model": {"vocab_size": 64, "hidden_size": 32, "num_layers": 1, "num_heads": 2, "max_seq_len": 16},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match=r"unknown key\(s\) in config file.*training\.task"):
+            Config.from_yaml(source)
+
+    def test_an_unknown_top_level_key_is_rejected_too(self, tmp_path):
+        """The check is not nested-only, which the doc's blanket claim implied."""
+        import yaml
+
+        source = tmp_path / "cfg.yaml"
+        source.write_text(
+            yaml.safe_dump({"training": {"batch_size": 2}, "bogus_section": {"x": 1}}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match=r"unknown key\(s\) in config file.*bogus_section"):
+            Config.from_yaml(source)
+
+    def test_the_distillation_guide_no_longer_claims_silent_ignoring(self):
+        """Pin the corrected prose."""
+        guide = _DOCS / "guides" / "distillation.md"
+        text = guide.read_text(encoding="utf-8")
+        # The guide may MENTION the old wording while correcting it, so match the
+        # claim rather than the substring: the mistaken version asserted that
+        # pydantic ignores the key, the corrected one says the load fails.
+        assert "unknown key" in text.lower(), (
+            "the guide should show the actual rejection message so a reader recognises it"
+        )
+        assert "`Config.from_yaml` 拒绝" in text or "会被拒绝" in text or "会被\n`Config.from_yaml` 拒绝" in text, (
+            "the guide must state that an unknown key is REJECTED; it previously said the key was "
+            "silently ignored, which tells the reader the config still loads"
+        )
