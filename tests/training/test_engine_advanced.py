@@ -709,9 +709,15 @@ def test_peft_signature_is_persisted_and_validated(mock_config):
     ``lora_A`` / ``lora_B`` round-trip through ``model_state``, but ``alpha`` /
     ``dropout`` / ``target_modules`` live on the wrapped layers or in the config.
     A checkpoint taken at alpha=16 therefore loads cleanly into a model built at
-    alpha=64 and computes something else (measured max |delta| 0.44 on identical
-    adapter weights). ``extra_state`` carries the signature so the drift is
-    caught instead of silently rescaling the adapter.
+    alpha=64 and computes something else, because the adapter contribution is
+    scaled by ``alpha / rank``. ``extra_state`` carries the signature so the
+    drift is caught instead of silently rescaling the adapter.
+
+    The delta is deliberately NOT quoted as a single figure: it scales with the
+    trained adapter's magnitude, and a freshly created LoRA has ``lora_B``
+    zero-initialised so alpha has no effect at all. The invariant that makes the
+    signature necessary is that ``alpha`` is absent from the state dict, which
+    the companion test below pins directly.
 
     Exercises the engine's two state methods directly rather than running a full
     training loop: the property under test is signature bookkeeping, not the
@@ -766,3 +772,57 @@ def test_qat_signature_is_persisted_and_validated(mock_config):
                 "engine.qat_signature": {"bits": 8, "quant_activation": False, "target_modules": []},
             }
         )
+
+
+def test_lora_alpha_is_absent_from_the_state_dict():
+    """The premise of the PEFT signature: alpha cannot round-trip in the weights.
+
+    ``engine.peft_signature`` exists because ``alpha`` / ``dropout`` /
+    ``target_modules`` are not tensors in the model. That is a checkable
+    property of the adapter itself, unlike a quoted output delta (which depends
+    on adapter magnitude and is therefore not a stable figure) — so this pins
+    the mechanism rather than a number.
+    """
+    import torch
+
+    from llm.core.peft import apply_peft
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(0)
+    model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=2, num_heads=4, max_seq_len=32)
+    apply_peft(model, "lora", rank=4, alpha=16.0)
+    keys = list(model.state_dict())
+
+    assert any("lora_A" in k for k in keys), "the adapter factors themselves must round-trip"
+    assert any("lora_B" in k for k in keys), "the adapter factors themselves must round-trip"
+    assert not any("alpha" in k for k in keys), (
+        "alpha appeared in the state dict; the PEFT signature would no longer be load-bearing"
+    )
+
+
+def test_a_fresh_lora_makes_alpha_irrelevant():
+    """Why no output delta can be quoted for alpha on an untrained adapter.
+
+    ``lora_B`` is zero-initialised, so ``x @ A @ B`` is exactly zero regardless
+    of the ``alpha / rank`` scale. Recording this keeps the engine comment
+    honest: quoting a non-zero delta here would be quoting a trained-adapter
+    number as if it applied at init.
+    """
+    import torch
+
+    from llm.core.peft import apply_peft
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(1)
+    ids = torch.randint(0, 64, (2, 8))
+    outs = {}
+    for alpha in (16.0, 64.0):
+        torch.manual_seed(0)
+        model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=2, num_heads=4, max_seq_len=32)
+        apply_peft(model, "lora", rank=4, alpha=alpha)
+        model.eval()
+        with torch.no_grad():
+            outs[alpha] = model(ids).detach()
+
+    delta = (outs[16.0] - outs[64.0]).abs().max().item()
+    assert delta == 0.0, f"a freshly-initialised LoRA should be alpha-independent (lora_B is zero), got |delta|={delta}"

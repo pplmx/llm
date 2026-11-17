@@ -162,8 +162,17 @@ class TrainingEngine:
         # Same reasoning for PEFT: ``alpha`` / ``dropout`` / ``target_modules``
         # live on the wrapped layers or in the config, never in the state dict,
         # while ``lora_A``/``lora_B`` DO round-trip. Resuming with a different
-        # alpha therefore loads cleanly and changes the model (measured max
-        # |delta| 0.44 at alpha 16 vs 64 on identical adapter weights).
+        # alpha therefore loads cleanly and changes the model, since the
+        # adapter's contribution is scaled by ``alpha / rank``.
+        #
+        # The resulting delta is NOT a fixed number, which is why none is
+        # quoted: it scales with the trained adapter's magnitude. A freshly
+        # created LoRA has ``lora_B`` zero-initialised, so alpha has no effect
+        # at all (measured 0.0). A trained adapter does change the output, but
+        # the size depends on the weights: on a vocab=64 hidden=32 2-layer
+        # model with random 0.02-scaled factors, alpha 16 vs 64 differs by
+        # 0.18-0.26 across seeds. The invariant that matters is only that
+        # ``alpha`` is absent from the state dict, not any particular delta.
         peft_method = getattr(training_cfg, "peft_method", None)
         if peft_method:
             state["engine.peft_signature"] = {
