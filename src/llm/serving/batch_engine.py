@@ -689,9 +689,28 @@ class ContinuousBatchingEngine:
            attention + prefix caching must use :meth:`step`, not
            ``step_async``, until the cache is externally synchronized.
 
+        Raises:
+            RuntimeError: On the paged path. The warning above used to be
+                documentation only, and a caller that missed it got no signal at
+                all: four overlapping ``step_async`` calls on a
+                ``use_paged_attention=True, enable_prefix_cache=True`` engine
+                returned four normal ``StepStats``. On CPU the GIL serialises
+                every ``torch`` call, so that specific run happened not to
+                corrupt anything — which is exactly why an unenforced
+                prohibition is dangerous: it looks fine until the forwards
+                actually overlap. This refuses instead of relying on the reader,
+                matching how the rest of the file treats its lock contract.
+
         Returns:
             :class:`StepStats` (same fields as :meth:`step`).
         """
+        if self.paged_kv_cache is not None:
+            raise RuntimeError(
+                "step_async is not safe with use_paged_attention: the forward mutates the paged "
+                "block manager (allocation / extension / copy-on-write of shared prefix blocks) "
+                "outside the step lock, so overlapping calls corrupt the block table. Use step() "
+                "instead, which holds the lock across the whole forward."
+            )
         with self._step_lock:
             inputs = self._lock_step_pre()
         if inputs is None:

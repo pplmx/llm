@@ -408,3 +408,110 @@ def test_step_async_saturates_concurrent_inflight_vs_step():
     assert async_elapsed < sync_elapsed * 10.0, (
         f"step_async is suspiciously slower than step: async={async_elapsed:.3f}s vs sync={sync_elapsed:.3f}s"
     )
+
+
+# --- The documented paged-path prohibition is enforced ---------------------
+
+
+@pytest.fixture
+def paged_engine(device):
+    """Engine on the PAGED path, where ``step_async`` is documented as unsafe."""
+    model = _FakeModel(vocab_size=64, n_layers=1).to(device)
+    tokenizer = _StubTokenizer()
+    return ContinuousBatchingEngine(
+        model=model,
+        tokenizer=tokenizer,
+        device=str(device),
+        max_batch_size=8,
+        max_seq_len=16,
+        dtype=torch.float32,
+        enable_prefix_cache=True,
+        max_prefixes=8,
+        use_paged_attention=True,
+        max_blocks=16,
+        block_size=4,
+    )
+
+
+class TestStepAsyncRefusesThePagedPath:
+    """``step_async``'s paged-path warning must be enforced, not just documented.
+
+    ``step_async`` holds ``_step_lock`` only for pre/post bookkeeping, so the
+    forward runs unlocked. On the paged path that forward mutates the block
+    manager (allocation / extension / copy-on-write of shared prefix blocks),
+    which is not thread-safe — the docstring has always said so.
+
+    Nothing enforced it. Measured before the fix: four overlapping
+    ``step_async`` calls on a ``use_paged_attention=True,
+    enable_prefix_cache=True`` engine returned four normal ``StepStats``. On CPU
+    the GIL happens to serialise every torch call, so that run corrupted
+    nothing — which is exactly why an unenforced prohibition is dangerous: it
+    looks fine until the forwards genuinely overlap (a GPU, or a model whose
+    forward releases the GIL).
+
+    Raises instead of relying on the reader, matching how the rest of the file
+    treats its lock contract.
+    """
+
+    def test_step_async_raises_on_a_paged_engine(self, paged_engine):
+        assert paged_engine.paged_kv_cache is not None, "fixture must be on the paged path"
+        request = GenerationRequest(prompt="x", max_new_tokens=2)
+        request.request_id = "paged-1"
+        paged_engine.add_request(request)
+
+        with pytest.raises(RuntimeError, match="step_async is not safe with use_paged_attention"):
+            asyncio.run(paged_engine.step_async())
+
+    def test_the_error_names_the_safe_alternative(self, paged_engine):
+        """A refusal is only useful if it says what to do instead."""
+        request = GenerationRequest(prompt="x", max_new_tokens=2)
+        request.request_id = "paged-2"
+        paged_engine.add_request(request)
+        with pytest.raises(RuntimeError) as excinfo:
+            asyncio.run(paged_engine.step_async())
+        message = str(excinfo.value)
+        assert "step()" in message, "the error must point at step(), which holds the lock across the forward"
+        assert "block" in message, "the error should explain WHY (block-manager mutation)"
+
+    def test_the_guard_reads_the_paged_flag_not_the_prefix_cache(self, device):
+        """A paged engine WITHOUT the prefix cache must also be refused.
+
+        ``enable_prefix_cache`` is what the docstring's copy-on-write note talks
+        about, so a reader could assume it is the trigger. The lock-safety
+        problem is the block-manager mutation, which the paged path performs
+        regardless — so the guard keys off ``paged_kv_cache``, and this pins
+        that (rather than testing ``step()``, which this file's ``_FakeModel``
+        cannot drive on the paged path: the block manager requires sequences the
+        stub never registers).
+        """
+        model = _FakeModel(vocab_size=64, n_layers=1).to(device)
+        engine = ContinuousBatchingEngine(
+            model=model,
+            tokenizer=_StubTokenizer(),
+            device=str(device),
+            max_batch_size=8,
+            max_seq_len=16,
+            dtype=torch.float32,
+            enable_prefix_cache=False,  # no prefix cache...
+            use_paged_attention=True,  # ...but still paged
+            max_blocks=16,
+            block_size=4,
+        )
+        assert engine.paged_kv_cache is not None
+        request = GenerationRequest(prompt="x", max_new_tokens=2)
+        request.request_id = "paged-nocache"
+        engine.add_request(request)
+
+        with pytest.raises(RuntimeError, match="step_async is not safe with use_paged_attention"):
+            asyncio.run(engine.step_async())
+
+    def test_the_non_paged_path_is_unaffected(self, fake_engine):
+        """The guard must not regress the path that made ``step_async`` worth having."""
+        assert fake_engine.paged_kv_cache is None
+        request = GenerationRequest(prompt="x", max_new_tokens=2)
+        request.request_id = "plain-1"
+        fake_engine.add_request(request)
+
+        stats = asyncio.run(fake_engine.step_async())
+
+        assert stats.scheduled == 1
