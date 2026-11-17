@@ -605,7 +605,7 @@
 - [x] TP + 数据并行 2D — `tp_size < world_size`: 行主序 `[DP][TP]` 网格 (TP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_dp_grads` (AVG) 平均 DP 组梯度; 2x2 / 2x3 / 4x2 网格 parity + 4/6-GPU 真实引擎 e2e 全绿
 - [x] Pipeline Parallelism — `parallel_strategy='pp'`: 按 `transformer_blocks` 切分 stage (stage 0 = embedding + 首块, 末 stage = final_norm + lm_head), `ScheduleGPipe` 驱动, 纯 pipeline 两进程 CPU/gloo bit-exact parity + 引擎 e2e 训练/保存/恢复; 强制 FP32 + LM-only 拒绝
 - [x] PP + 数据并行 2D — `pp_size < world_size`: 行主序 `[DP][PP]` 网格 (PP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_pp_dp_grads` (AVG) 平均 DP 组梯度, loss 按 PP 组 broadcast (`group_src`); 2x2 网格 bit-parity + 4 进程 CPU/gloo 引擎 e2e 全绿 + 状态字典跨 4 rank 逐位一致
-- [ ] 集成 DeepSpeed ZeRO (Stage 2/3)
+- [ ] 集成 DeepSpeed ZeRO (Stage 2/3) — Stage-1 已落地（原生 `ZeroOptimizer`，优化器状态分片 + 参数 all-gather，见 `src/llm/training/distributed/zero.py`）。Stage-2 的设计已定稿在 [ADR-014](docs/adr/014-zero-stage-2-activation-sharding.md)：走原生实现（`reduce_scatter_tensor` 分片梯度），**不引入 DeepSpeed 依赖**，因此本项不是「加载 DeepSpeed checkpoint」的二进制兼容集成，而是语义对齐。Stage-3（参数分片 + 重算）需另立 ADR。
 - [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'`
 
 #### 15.6 文档与社区
