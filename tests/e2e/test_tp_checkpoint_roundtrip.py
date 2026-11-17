@@ -23,6 +23,7 @@ import json
 import os
 import socket
 import time
+from datetime import timedelta
 from pathlib import Path
 from string import printable
 from typing import Any
@@ -59,6 +60,20 @@ from tests.support.devices import all_gpu_devices
 
 ROUNDTRIP_MIN_FREE_BYTES = 1 * 1024**3
 ROUNDTRIP_JOIN_TIMEOUT_S = 480
+# Bounded per-collective timeout for the spawn workers' hand-rolled process
+# groups (they call ``init_process_group`` directly rather than going through
+# ``DistributedManager``, so they do NOT inherit
+# ``DistributedConfig.collective_timeout_seconds``).
+#
+# Without it torch's NCCL default is 30 MINUTES: a rank that dies mid-test
+# leaves its siblings blocking inside a collective far past the 480s parent
+# join, so the parent gives up first and reports a blind
+# ``TimeoutError: TP checkpoint roundtrip spawn exceeded 480s`` with no cause.
+#
+# NOTE ``timeout=`` bounds the initial RENDEZVOUS as well, so this sits well
+# above a cold ``mp.spawn`` + ``import torch`` on a loaded host while staying
+# under the parent join so the guard still speaks first.
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=300)
 
 
 def _free_port() -> int:
@@ -117,7 +132,7 @@ def _roundtrip_worker(rank: int, world_size: int, ctx: dict, results) -> None:
         # the current CUDA device; spawned ranks default to GPU 0 → all ranks
         # collide on GPU 0 / "same GPU/Partition").
         torch.cuda.set_device(rank % torch.cuda.device_count())
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
 
         model = _tiny_model(ctx, device=dev)
@@ -302,7 +317,7 @@ def _engine_checkpoint_worker(rank: int, world_size: int, device_indices: list[i
         # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
         # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         torch.manual_seed(42 + rank)
 
         config = _build_engine_config(ctx)
@@ -443,7 +458,7 @@ def _engine_resume_stage_one_worker(rank: int, world_size: int, device_indices: 
         # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
         # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         torch.manual_seed(42 + rank)
 
         config = _build_engine_config(ctx, epochs=1)
@@ -471,7 +486,7 @@ def _engine_resume_stage_two_worker(rank: int, world_size: int, device_indices: 
         # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
         # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         torch.manual_seed(42 + rank)
 
         # Same 2D grid, same data; resume from the stage-1 epoch checkpoint stem.
