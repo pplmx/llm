@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import socket
 import time
+from datetime import timedelta
 
 import pytest
 import torch
@@ -48,6 +49,28 @@ TP_MIN_FREE_BYTES = 1 * 1024**3
 # multi-rank NCCL rendezvous can take minutes (4-GPU wrap timed out at 180s
 # under load once; instant in isolation). A true deadlock still trips these.
 TP_JOIN_TIMEOUT_S = 360
+# Bounded per-collective timeout for the spawn workers' hand-rolled process
+# groups (they call ``init_process_group`` directly rather than going through
+# ``DistributedManager``, so they do NOT inherit
+# ``DistributedConfig.collective_timeout_seconds``).
+#
+# Without this, torch's default for NCCL is 30 MINUTES: a rank that dies
+# mid-test leaves its siblings blocking inside a collective long past the
+# parent's 360s join window, so the parent gives up first and reports a blind
+# ``TimeoutError: TP parity spawn exceeded 360s`` with no cause.
+#
+# NOTE ``timeout=`` bounds the initial RENDEZVOUS as well as every collective
+# (torch threads it into ``create_store``). That is why this value is NOT the
+# 60s used by tests/e2e/test_tp_dp_2d_engine.py: those workers export their
+# models before the PG and run on a fresh box, whereas these spawn under a
+# loaded shared host where a cold ``mp.spawn`` + ``import torch`` can take tens
+# of seconds. Measured: at 60s a cold run of
+# ``test_stage_tp_forward_parity_two_process_cpu`` failed with
+# ``DistNetworkError: client socket has timed out after 60000ms while trying to
+# connect`` — the rendezvous, not a collective. 300s leaves the guard well
+# under the 360s parent join (so a dead rank still produces torch's real
+# ``TimeoutError`` first) while surviving a slow cold start.
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=300)
 
 
 def _free_port() -> int:
@@ -174,7 +197,7 @@ def _parity_worker(rank: int, world_size: int, device_indices: list[int], result
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device(f"cuda:{device_index}")
 
         # Identical weights on every rank: same CPU seed -> same init.
@@ -304,7 +327,7 @@ def _flash_parity_worker(
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(attn_impl="flash_attn", use_rope=use_rope, num_kv_heads=num_kv_heads).to(dev)
@@ -441,7 +464,7 @@ def _mla_parity_worker(rank: int, world_size: int, device_indices: list[int], re
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(attn_impl="mla").to(dev)
@@ -548,7 +571,7 @@ def _wrap_worker(rank: int, world_size: int, device_indices: list[int], results)
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model().to(dev)
@@ -644,7 +667,7 @@ def _parity_2d_worker(rank: int, world_size: int, device_indices: list[int], res
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model().to(dev)
@@ -827,7 +850,7 @@ def _wrap_2d_worker(rank: int, world_size: int, device_indices: list[int], resul
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device(f"cuda:{device_index}")
 
         tp_size = world_size // 2
@@ -1148,7 +1171,7 @@ def test_three_d_rank_groups_selection():
 def _moe_roundtrip_worker(rank: int, world_size: int, results) -> None:
     """MoE expert-parallel checkpoint boundary on CPU (gloo)."""
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device("cpu")
         ref = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
         model = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
@@ -1224,7 +1247,7 @@ def _moe_dead_rank_worker(rank: int, world_size: int, results) -> None:
     hang this test protects against; collapsed routing is the MoE norm).
     """
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device("cpu")
         # 4 experts / 2 ranks, top_k=1, ONE token -> exactly one rank is dead.
         model = _build_model(num_experts=4, top_k=1, mlp_impl="moe").to(dev)
@@ -1311,7 +1334,7 @@ def _moe_parity_worker(rank: int, world_size: int, device_indices: list[int], re
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
@@ -1380,7 +1403,7 @@ def _clip_global_worker(rank: int, world_size: int, results) -> None:
     """Global-norm clip parity: every rank clips by the FULL
     model norm, not its own shard's local norm."""
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
 
         class _Pair(nn.Module):
             def __init__(self) -> None:
@@ -1466,7 +1489,7 @@ def _stage0_tp_forward_worker(rank: int, world_size: int, results) -> None:
     restore the full hidden state inside the stage).
     """
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         dev = torch.device("cpu")
         model = _build_model(layers=4).to(dev)  # 4 blocks, mha, non-GQA
         torch.manual_seed(999)
