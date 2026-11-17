@@ -66,11 +66,25 @@ def from_pretrained(
     pickled and can execute arbitrary code on load. Local ``*.bin`` files
     are still accepted (you opted into that file by putting it on disk).
 
+    **This loader never executes remote code**, with or without
+    ``trust_remote_code``: it downloads a config and safetensors weights and
+    builds the model itself, so there is no ``auto_map`` custom-module path to
+    gate. That is also why the flag is a no-op (see its entry below) — passing
+    ``True`` does NOT enable remote code, and passing ``False`` is not what keeps
+    you safe, the format restriction is.
+
     Args:
         model_path: Local path or HuggingFace model ID.
         device: Device to load model on ("auto", "cuda", "cpu").
         dtype: Data type for model weights.
-        trust_remote_code: Whether to trust remote code (for HF Hub).
+        trust_remote_code: Accepted for signature compatibility with
+            ``transformers.from_pretrained`` and **currently ignored**. The
+            docstring previously said "Whether to trust remote code", which
+            implies it has an effect: a caller passing ``True`` expecting custom
+            model code to load would silently get the standard path, and one
+            passing ``False`` might believe it is what prevents code execution.
+            Neither is true — see the paragraph above. Kept (rather than
+            removed) so existing calls do not break.
         revision: HF Hub revision (tag / branch / commit) to pin when
             loading from the Hub. Defaults to ``None`` (HF's default branch).
 

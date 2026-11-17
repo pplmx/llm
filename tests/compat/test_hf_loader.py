@@ -986,3 +986,80 @@ class TestRopeThetaSurvivesTheRoundTrip:
             if isinstance(theta, (int, float)):
                 return float(theta)
         return float(model.rope_theta)
+
+
+class TestTheLoaderNeverExecutesRemoteCode:
+    """``trust_remote_code`` is a no-op, and the loader is safe without it.
+
+    ``from_pretrained`` accepts ``trust_remote_code`` for signature compatibility
+    with ``transformers.from_pretrained`` and ignores it. Its docstring used to
+    say only "Whether to trust remote code (for HF Hub)", which implies the flag
+    DOES something: a caller passing ``True`` expecting custom ``auto_map`` model
+    code to load would silently get the standard path, and a caller passing
+    ``False`` might believe that flag is what keeps them safe.
+
+    The actual safety property is different and stronger, so it is pinned here:
+    this loader never executes remote code at all, because it never has a
+    custom-module path — it downloads a config plus safetensors and builds the
+    model itself. A regression that reached for ``AutoModel.from_pretrained`` (or
+    an importlib/eval path) would reintroduce remote-code execution as a side
+    effect of "supporting more checkpoints", and every existing test would still
+    pass.
+    """
+
+    def test_no_symbol_in_the_loader_can_evaluate_code(self):
+        """Static guard against reintroducing a remote-code path."""
+        import ast
+        import pathlib
+
+        source = pathlib.Path(__file__).resolve().parents[2] / "src" / "llm" / "compat" / "hf_loader.py"
+        text = source.read_text(encoding="utf-8")
+        tree = ast.parse(text)
+
+        forbidden = {"eval", "exec", "__import__", "import_module"}
+        offenders = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else (func.id if isinstance(func, ast.Name) else "")
+            if name in forbidden:
+                offenders.append(f"line {node.lineno}: {name}()")
+            # transformers' auto classes are the standard remote-code entry point.
+            # The chain is ``transformers.AutoModelForCausalLM.from_pretrained(...)``,
+            # so the class name is on the INNER attribute (``func.value``), not on
+            # ``func.attr`` — matching only ``func.attr`` silently missed every
+            # real call, which the mutation check for this test caught.
+            if isinstance(func, ast.Attribute):
+                inner = func.value
+                class_name = inner.attr if isinstance(inner, ast.Attribute) else ""
+                if class_name.startswith("AutoModel") or func.attr.startswith("AutoModel"):
+                    offenders.append(f"line {node.lineno}: {class_name or func.attr}(...)")
+
+        assert not offenders, (
+            "hf_loader must build the model itself; these calls can execute remote code:\n  " + "\n  ".join(offenders)
+        )
+
+    def test_the_docstring_says_the_flag_is_ignored(self):
+        """The contract readers rely on must be stated, not implied."""
+        from llm.compat.hf_loader import from_pretrained
+
+        doc = from_pretrained.__doc__
+        assert doc is not None
+        assert "trust_remote_code" in doc
+        assert "ignored" in doc.lower(), (
+            "the docstring must say the flag is ignored; 'Whether to trust remote code' implies it works"
+        )
+        assert "never executes remote code" in doc.lower()
+
+    def test_the_flag_is_a_real_no_op(self):
+        """Passing either value must take the same path for a local checkpoint."""
+        import inspect
+
+        from llm.compat.hf_loader import from_pretrained
+
+        signature = inspect.signature(from_pretrained)
+        assert "trust_remote_code" in signature.parameters
+        assert signature.parameters["trust_remote_code"].default is False, (
+            "the safe default must stay False for signature compatibility"
+        )
