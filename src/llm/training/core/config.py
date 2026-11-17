@@ -1059,6 +1059,18 @@ class PPOConfig(BaseModel):
                 "KL reference is never re-synced to the policy. Remove the "
                 "override or keep the default 0."
             )
+        # A non-positive response budget stops the rollout loop before it emits
+        # a single token, so every sample carries an EMPTY response. The batch
+        # mask then has no set bit anywhere and the clipped objective evaluates
+        # 0/0 clamped to 0.0: a finite loss, zero gradient, and a policy that
+        # never moves while the metrics look healthy. (``ppo_step`` refuses that
+        # batch too, but the config is where the cause is still visible.)
+        if self.response_max_len <= 0:
+            raise ValueError(
+                f"PPOConfig.response_max_len must be > 0; got {self.response_max_len}. "
+                "A non-positive budget stops the rollout loop before it emits a token, "
+                "leaving every response empty and the policy with nothing to learn from."
+            )
         return self
 
 

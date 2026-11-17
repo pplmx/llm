@@ -549,7 +549,25 @@ class PPOTrainer:
 
         Returns:
             Dictionary of training metrics.
+
+        Raises:
+            ValueError: If the batch carries no response token at all.
         """
+        # A batch with no response token has nothing to learn from: the masked
+        # mean below evaluates 0 / clamp(0, min=1) == 0.0, a finite loss with
+        # zero gradient. The step would "succeed", the metrics would look
+        # healthy, and the policy would not move — the same silent no-op the SFT
+        # dataset refuses when every label is ignore_index. Checked HERE, before
+        # any forward work, so a caller sees the error instead of paying for a
+        # re-score it cannot use. Partial batches are fine (padding rows
+        # legitimately carry no response); only the ALL-empty case is unusable.
+        if int(batch.response_mask.sum()) == 0:
+            raise ValueError(
+                "ppo_step received a batch with no response tokens: every response_mask "
+                "row is empty, so the clipped objective would be 0/0 clamped to 0.0 and "
+                "the policy would silently learn nothing. Check the rollout produced "
+                "responses before calling ppo_step."
+            )
         input_ids = batch.input_ids
         attention_mask = batch.attention_mask
         response_mask = batch.response_mask
@@ -630,7 +648,8 @@ class PPOTrainer:
         policy_loss_1 = -response_advantages * ratio
         policy_loss_2 = -response_advantages * clipped_ratio
         # Normalize over real response tokens only (masked mean) so padded
-        # zero positions do not dilute the gradient scale.
+        # zero positions do not dilute the gradient scale. The all-empty case is
+        # rejected at the top of this method.
         policy_loss = (torch.max(policy_loss_1, policy_loss_2) * response_window_mask).sum() / (
             response_window_mask.sum().clamp(min=1)
         )

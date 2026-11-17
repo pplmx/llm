@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as functional
 
 from llm.training.core.config import PPOConfig
+from llm.training.rlhf.ppo_trainer import PPOTrainer
 from llm.training.rlhf.rollout_buffer import RolloutBuffer
 from tests.support.devices import DEFAULT_DEVICE
 
@@ -1403,3 +1404,67 @@ class TestPPOTrainer:
         # rewards are not all equal, so the mean is well-defined).
         assert torch.isfinite(torch.tensor(metrics["reward_mean"]))
         assert abs(metrics["reward_mean"]) < 1e-5
+
+
+class TestPPORefusesAnEmptyResponseBudget:
+    """A non-positive ``response_max_len`` must be rejected, not trained on.
+
+    The rollout loop only appends a token inside its range, so a budget of 0 (or
+    a negative value) exits before emitting anything: every sample carries an
+    empty response, ``response_mask`` has no set bit, and the clipped objective
+    evaluates ``0 / clamp(0, min=1) == 0.0`` — a finite loss with zero gradient.
+    The step "succeeds", the metrics look healthy, and the policy never moves.
+
+    ``PPOConfig`` accepted both values. Two layers now refuse the situation: the
+    config rejects the cause while the offending YAML is still on screen, and
+    ``ppo_step`` rejects any batch that arrives with no response token (which
+    also covers a caller building a batch by hand).
+    """
+
+    @pytest.mark.parametrize("bad", [0, -1, -256])
+    def test_config_rejects_non_positive_budget(self, bad: int):
+        from llm.training.core.config import PPOConfig
+
+        with pytest.raises(ValueError, match="response_max_len must be > 0"):
+            PPOConfig(response_max_len=bad)
+
+    @pytest.mark.parametrize("good", [1, 16, 256])
+    def test_config_accepts_a_positive_budget(self, good: int):
+        """Counterpart: the guard must not reject usable budgets."""
+        from llm.training.core.config import PPOConfig
+
+        assert PPOConfig(response_max_len=good).response_max_len == good
+
+    def test_ppo_step_refuses_a_batch_with_no_response_tokens(self):
+        """The second layer: a hand-built all-empty batch must fail loud.
+
+        Constructed directly rather than through a rollout, because the point is
+        that ANY caller reaching ``ppo_step`` with an empty mask gets an error
+        instead of a silent zero loss.
+        """
+        import torch
+
+        from llm.training.rlhf.rollout_buffer import RolloutBatch
+
+        batch_size, seq = 2, 6
+        prompt_len = seq  # no response token at all
+        batch = RolloutBatch(
+            input_ids=torch.zeros(batch_size, seq, dtype=torch.long),
+            attention_mask=torch.ones(batch_size, seq, dtype=torch.long),
+            response_mask=torch.zeros(batch_size, seq, dtype=torch.long),
+            old_log_probs=torch.zeros(batch_size, 1),
+            advantages=torch.zeros(batch_size, 1),
+            returns=torch.zeros(batch_size, 1),
+            rewards=torch.zeros(batch_size),
+        )
+        del prompt_len
+
+        # Build a trainer without touching the heavy __init__ path: the guard
+        # runs before any of the forward work, so only the attributes it reads
+        # need to exist.
+        trainer = PPOTrainer.__new__(PPOTrainer)
+        trainer.config = type("C", (), {"clip_epsilon": 0.2, "temperature": 1.0, "top_k": None, "top_p": None})()
+        trainer.device = torch.device("cpu")
+
+        with pytest.raises(ValueError, match="no response tokens"):
+            trainer.ppo_step(batch)
