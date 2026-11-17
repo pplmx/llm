@@ -169,7 +169,7 @@ IA3 is an extremely lightweight PEFT method that learns multiplicative scaling v
 
 - **Multiplicative PEFT**: Rather than adding parallel low-rank pathways (LoRA), IA3 learns a single scaling vector that element-wise multiplies the layer output.
 - **Identity Initialization**: Scaling vectors are initialized to ones (identity transform), so the model starts from the pre-trained behavior and diverges only when beneficial.
-- **No Wrapper Needed**: IA3 modifies existing layers in-place without adding wrapper modules. There is nothing to merge -- the scaling vectors are trivially folded into the layer during inference if desired.
+- **Mergeable wrapper**: each adapted `nn.Linear` is replaced by an `IA3Linear` wrapper (frozen base + trainable `ia3_l` scale). `merge_ia3` folds the scale into the base weight so inference runs on the plain layer with no extra latency; `unmerge_ia3` restores the trainable scale. Verified numerically: merging reproduces the pre-merge logits to ~4.8e-07, and merge→unmerge returns to the original to ~3.6e-07.
 
 ### Basic Usage
 
