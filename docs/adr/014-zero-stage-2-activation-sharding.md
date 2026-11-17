@@ -75,18 +75,37 @@ ROADMAP 写的是「集成 DeepSpeed ZeRO」，但把 DeepSpeed 拉进来会带�
 
 ### 2. Stage-2 的具体机制
 
-梯度分片走 `torch.distributed.reduce_scatter_single`。**注意 API 名称**：ADR 初稿写的
-`reduce_scatter_tensor` 在 torch 2.14 上已弃用，调用即告警
-（`FutureWarning: reduce_scatter_tensor is deprecated. Please use
-reduce_scatter_single instead`），签名相同，实现应直接用新名。
+**实现后修正**：初稿写「梯度分片走 `reduce_scatter`」，落地时证明它与本仓的
+round-robin 参数归属**不兼容**，已改为逐参数 `all_reduce(AVG)`。这段记录保留理由，
+因为它是最容易重犯的错误。
 
-已验证（gloo / 2 rank / CPU，`uv run`，两进程 `mp.spawn`）：
+`reduce_scatter` 按**位置**切分输入：rank `r` 拿到第 `r` 段等长连续区间。而
+round-robin 归属是**索引模 world_size**——4 个参数、2 个 rank 时，rank 0 拥有索引 0 和
+2，但索引 2 落在 rank 1 的位置段里。实测报错：
 
-- `reduce_scatter_single(out, full, op=SUM)` 可用，把 rank0 的全 1 与 rank1 的全 2 归约，
-  每个 rank 拿到 `3.0` —— 即「全量求和后取自己那一段」。除以 `world_size` 即得
-  ADR 假设的**全局平均**梯度（实测 1 与 3 归约后为 2.0）。
-- 不需要为 CPU 单独写「allreduce + slice」的等价实现：gloo 直接支持该 collective。
-  这去掉了初稿里担心的「测试路径与生产路径不同」的风险。
+```text
+RuntimeError: parameter 2 lies outside rank 0's reduced segment
+```
+
+要让 `reduce_scatter` 成立，需要一个「rank-major」的参数布局（每个 rank 的参数连续
+排列），而分片优化器并不使用这种布局。换个角度：把全体参数按全局顺序拼成一条扁平
+缓冲区、非 owned 位置补零，可以让所有 rank 的分段对齐——但这样每个 rank 拿到的段里
+混杂着别人拥有的参数，仍需再拷贝一次，收益消失。
+
+因此 Stage-2 逐参数 `all_reduce(grad, op=AVG)`，然后丢弃非 owned 的梯度：
+
+- 对任意归属映射都正确（不依赖参数顺序）。
+- **内存收益不变**：省下的是「不再保留全量梯度缓冲区」，与用哪个 collective 无关。
+- 代价是通信次数：每个参数一次 collective，而不是一次 batched scatter。后续优化
+  方向是按「归属对齐的参数桶」批量归约，需要比 round-robin 更粗粒度的归属映射。
+
+其余已验证事实（gloo / 2 rank / CPU）：
+
+- `reduce_scatter_single` 本身可用且语义正确（rank0 全 1 + rank1 全 2 → 两 rank 都得
+  `3.0`；除以 world_size 得均值 2.0）。它只是**不适用于**本仓的归属布局。
+- **API 名称**：ADR 初稿写的 `reduce_scatter_tensor` 在 torch 2.14 已弃用，
+  调用即告警（`FutureWarning: ... use reduce_scatter_single instead`）。
+- 不需要为 CPU 单独写等价实现，gloo 直接支持该 collective。
 
 每个 step：
 

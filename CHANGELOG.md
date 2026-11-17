@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ZeroStage2Optimizer`: ZeRO Stage-2 gradient sharding, bit-exact with Stage-1** (distributed): adds `ZeroStage2Optimizer` to `src/llm/training/distributed/zero.py`, subclassing the Stage-1 `ZeroOptimizer` so parameter ownership, the inner-optimizer shard, and the `state_dict` / `collective_state_dict` / `load_state_dict` / `zero_grad` contracts are inherited unchanged — a Stage-2 checkpoint keeps the same on-disk shape. New surface: `reduce_gradients_to_owners()` (mean-reduce then drop non-owned gradients) and `clip_gradients_globally()` (global L2 norm across ranks, which per ADR-014 must run BEFORE the reduction). Verified bit-exactly: 2-rank gloo training for 12 AdamW steps reaches the SAME weights as a single-process full-AdamW reference, and non-owned `.grad` is `None` afterwards. Two more tests pin the reduced value to the cross-rank mean and the clip factor to one common multiplier.
+
+- **The ADR's `reduce_scatter` design was wrong and is now corrected** (docs + distributed): ADR-014 originally specified one batched `reduce_scatter` for the gradient reduction. Landing it proved that incompatible with this repo's round-robin ownership: `reduce_scatter` slices by POSITION, so with 4 parameters over 2 ranks, rank 0 owning indices 0 and 2 finds index 2 inside rank 1's positional segment — measured `RuntimeError: parameter 2 lies outside rank 0's reduced segment`, after an earlier revision tripped gloo's own `outputShape[0] * worldSize == inputShape[0]` check by padding on parameter count instead of element count. Making the scatter work needs a rank-major parameter layout (or a zero-padded global layout that then has to be copied again, losing the benefit), so Stage-2 reduces per parameter with `all_reduce(AVG)`. The memory win is unaffected — what is saved is not keeping a full gradient buffer, not which collective is used — but the communication cost is one collective per parameter instead of one scatter. The ADR now records this, including the two failed attempts, because it is the most likely mistake to repeat.
+
+
 - **Astral pre-commit hooks + separate tool configs** (dev tooling):
   `.pre-commit-config.yaml` now adds the maintained
   [`astral-sh/uv-pre-commit`](https://github.com/astral-sh/uv-pre-commit)

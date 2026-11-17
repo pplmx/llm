@@ -27,6 +27,7 @@ import torch.nn as nn
 
 from llm.models.decoder import DecoderModel
 from llm.training.distributed import ZeroOptimizer
+from llm.training.distributed.zero import ZeroStage2Optimizer
 from llm.training.tasks.base_task import TrainingTask
 
 # torch.multiprocessing.spawn multi-rank training: heavy (see
@@ -486,3 +487,201 @@ def test_pp_refuses_a_custom_loop_task() -> None:
     for rank, payload in out.items():
         assert payload["error"] is not None, f"rank {rank}: PP accepted a custom-loop task"
         assert "only supports standard-loop tasks" in payload["message"], payload["message"]
+
+
+# --- ZeRO Stage-2 (ADR-014) ------------------------------------------------
+#
+# Stage-2 shards gradients as well as optimizer state. The property that matters
+# is not "it runs" but "it produces the SAME weights as DDP + Stage-1", since
+# the shard math must not change the optimization. These tests hold it to the
+# bit-exact standard the Stage-1 tests already use.
+
+
+def _stage2_worker(rank: int, world_size: int, results: dict) -> None:
+    """Train with Stage-2: reduce grads to owners, clip globally, then step."""
+    try:
+        dist.init_process_group(
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        model = _build_model()
+        params = list(model.parameters())
+        optimizer = ZeroStage2Optimizer(
+            lambda owned: torch.optim.AdamW(owned, lr=0.01),
+            params,
+            rank=rank,
+            world_size=world_size,
+        )
+        x = _make_data()
+        for _ in range(STEPS):
+            optimizer.zero_grad()
+            model(x).square().mean().backward()
+            # ADR-014: clip on the GLOBAL norm BEFORE the reduction.
+            optimizer.clip_gradients_globally(max_norm=0.0)  # 0 = no clipping
+            optimizer.reduce_gradients_to_owners()
+            optimizer.step()
+
+        # Non-owned gradients must be gone after the reduction.
+        non_owned_with_grad = [
+            i for i, owner in enumerate(optimizer._owners) if owner != rank and params[i].grad is not None
+        ]
+        results[rank] = {
+            "params": [p.detach().clone() for p in params],
+            "non_owned_with_grad": non_owned_with_grad,
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001 - failure reporting path
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_zero_stage2_matches_full_ddp_reference_bit_exactly() -> None:
+    """Stage-2 (gradient sharding) must reach the same weights as a full AdamW.
+
+    The reference is the same one the Stage-1 parity test uses: a single-process
+    full AdamW over the whole gradient. Stage-2 reaches it through a different
+    path — each rank keeps only its owned gradients after a reduce_scatter — so
+    agreement proves the reduction is a true cross-rank MEAN and that dropping
+    the non-owned buffers changes nothing.
+    """
+    reference = _reference_params()
+    out = _run_spawn(_stage2_worker, 2)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        assert payload["non_owned_with_grad"] == [], (
+            f"rank {rank} kept gradients for non-owned params {payload['non_owned_with_grad']}; "
+            "Stage-2 must drop them or the memory saving is lost"
+        )
+        for i, (got, want) in enumerate(zip(payload["params"], reference, strict=True)):
+            assert torch.equal(got, want), (
+                f"rank {rank} param {i} not bit-exact to the full-AdamW reference "
+                f"(max |d|={(got - want).abs().max().item():.3e})"
+            )
+
+
+def _stage2_reduction_worker(rank: int, world_size: int, results: dict) -> None:
+    """Check the reduced gradient equals the cross-rank mean, directly."""
+    try:
+        dist.init_process_group(
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        model = _build_model()
+        params = list(model.parameters())
+        optimizer = ZeroStage2Optimizer(
+            lambda owned: torch.optim.SGD(owned, lr=0.0),  # lr 0: step is a no-op
+            params,
+            rank=rank,
+            world_size=world_size,
+        )
+        # Give each rank a DISTINCT gradient so the mean is not trivially equal
+        # to either contribution.
+        for i, p in enumerate(params):
+            p.grad = torch.full_like(p, float(rank + 1) * float(i + 1))
+
+        expected = {}
+        for i in range(len(params)):
+            expected[i] = sum(float(r + 1) * float(i + 1) for r in range(world_size)) / world_size
+
+        optimizer.reduce_gradients_to_owners()
+
+        got = {}
+        for i, owner in enumerate(optimizer._owners):
+            if owner == rank:
+                grad = params[i].grad
+                got[i] = None if grad is None else float(grad.flatten()[0].item())
+            else:
+                got[i] = "dropped" if params[i].grad is None else "KEPT"
+        results[rank] = {"got": got, "expected": expected, "error": None}
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_zero_stage2_reduction_is_a_cross_rank_mean() -> None:
+    """Each owner sees the mean of the per-rank gradients, and nothing else."""
+    out = _run_spawn(_stage2_reduction_worker, 2)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+        got, expected = payload["got"], payload["expected"]
+        for index, value in got.items():
+            if value == "dropped":
+                continue
+            assert value != "KEPT", f"rank {rank} kept a non-owned gradient for param {index}"
+            assert value == pytest.approx(expected[index], abs=1e-5), (
+                f"rank {rank} param {index}: reduced grad {value} != cross-rank mean {expected[index]}"
+            )
+
+
+def _stage2_clip_worker(rank: int, world_size: int, results: dict) -> None:
+    """Global clipping must use ONE factor across ranks (ADR-014)."""
+    try:
+        dist.init_process_group(
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        model = _build_model()
+        params = list(model.parameters())
+        optimizer = ZeroStage2Optimizer(
+            lambda owned: torch.optim.SGD(owned, lr=0.0),
+            params,
+            rank=rank,
+            world_size=world_size,
+        )
+        # Very different scales per rank: local norms would differ wildly, so a
+        # per-rank clip would not be the same factor.
+        scale = 10.0 if rank == 0 else 0.1
+        for p in params:
+            p.grad = torch.ones_like(p) * scale
+        local_norm = float(torch.sqrt(sum(p.grad.pow(2).sum() for p in params)))
+
+        global_norm = optimizer.clip_gradients_globally(max_norm=1.0)
+
+        after = float(torch.sqrt(sum(p.grad.pow(2).sum() for p in params)))
+        results[rank] = {
+            "local_norm": local_norm,
+            "global_norm": float(global_norm),
+            "after_norm": after,
+            "error": None,
+        }
+        dist.destroy_process_group()
+    except Exception:  # noqa: BLE001
+        import traceback
+
+        results[rank] = {"error": traceback.format_exc()}
+
+
+@pytest.mark.quick
+def test_zero_stage2_global_clip_uses_one_factor() -> None:
+    """The reported norm is the GLOBAL one on every rank, and both scale by it."""
+    out = _run_spawn(_stage2_clip_worker, 2)
+    for rank, payload in out.items():
+        assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+
+    global_norms = [out[r]["global_norm"] for r in (0, 1)]
+    assert global_norms[0] == pytest.approx(global_norms[1], rel=1e-6), (
+        f"ranks disagree on the global norm ({global_norms}); each must all-reduce it"
+    )
+    # Each rank's post-clip norm must be its ORIGINAL norm scaled by the SAME
+    # factor (1/global_norm), not independently clipped to 1.0.
+    factors = [out[r]["after_norm"] / out[r]["local_norm"] for r in (0, 1)]
+    assert factors[0] == pytest.approx(factors[1], rel=1e-5), (
+        f"the clip factors differ per rank ({factors}); that is the desync ADR-014 warns about"
+    )
+    expected = 1.0 / global_norms[0]
+    assert factors[0] == pytest.approx(expected, rel=1e-5)

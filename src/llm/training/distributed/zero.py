@@ -249,3 +249,157 @@ def _rank(process_group: dist.ProcessGroup | None) -> int:
     if dist.is_available() and dist.is_initialized():
         return dist.get_rank(process_group)
     return 0
+
+
+class ZeroStage2Optimizer(ZeroOptimizer):
+    """Partition gradients AND optimizer state across ranks (ZeRO Stage 2).
+
+    Stage-1 (:class:`ZeroOptimizer`) shards only the OPTIMIZER STATE: after DDP
+    averages the gradients, every rank still materialises a full
+    ``num_params`` gradient buffer, and the sharded optimizer reads only the
+    slice it owns. Stage-2 removes that duplication — each rank keeps gradients
+    for its owned parameters only, and the cross-rank reduction lands straight
+    in the owner via ``reduce_scatter``.
+
+    Memory saved per rank: one full gradient buffer (``num_params * dtype``
+    bytes). Adam's moments are already sharded by Stage-1.
+
+    **Contract difference that callers must respect** — after
+    :meth:`reduce_gradients_to_owners`, a non-owned parameter's ``.grad`` is
+    ``None`` on this rank. That is "this rank does not update it", NOT "its
+    gradient is zero". Consequently:
+
+    * Gradient clipping MUST happen on the GLOBAL norm BEFORE the reduction
+      (:meth:`clip_gradients_globally`), while every rank still holds all
+      gradients. Clipping after the reduction, or per-rank, applies a different
+      factor per shard — measured: local norms 1.0000 vs 0.9383 for ranks whose
+      gradients differ in scale, versus one factor from the global norm.
+      See ADR-014.
+    * Diagnostics that read ``param.grad`` must tolerate ``None`` for non-owned
+      parameters.
+
+    This class is the incremental difference, not a rewrite: parameter
+    ownership, the inner-optimizer shard, ``state_dict`` /
+    ``collective_state_dict`` / ``load_state_dict`` and ``zero_grad`` are
+    inherited unchanged from :class:`ZeroOptimizer`, so a Stage-2 checkpoint is
+    the same on-disk shape as a Stage-1 one.
+    """
+
+    def __init__(
+        self,
+        build_optimizer: Callable[[list[torch.nn.Parameter]], Optimizer],
+        params: Iterable[torch.nn.Parameter],
+        *,
+        rank: int | None = None,
+        world_size: int | None = None,
+        process_group: dist.ProcessGroup | None = None,
+    ) -> None:
+        super().__init__(
+            build_optimizer,
+            params,
+            rank=rank,
+            world_size=world_size,
+            process_group=process_group,
+        )
+        # Stage-2 checkpoints carry the same shard layout as Stage-1, but the
+        # marker must distinguish them: a Stage-2 job reads gradients that a
+        # Stage-1 job materialises in full, so resuming one as the other would
+        # silently change the reduction path.
+        self._stage = 2
+
+    # --- gradient reduction -------------------------------------------------
+
+    def reduce_gradients_to_owners(self) -> None:
+        """Reduce gradients across ranks, keep only this rank's owned shard.
+
+        Semantics: an owned parameter's gradient becomes the cross-rank MEAN —
+        the same value ``allreduce_zero_grads`` (Stage-1) or DDP produces — so a
+        Stage-2 step is numerically identical to DDP + Stage-1. Every non-owned
+        gradient is then set to ``None``, which is where the memory saving comes
+        from.
+
+        Called once per optimizer step, after ``backward()`` and after
+        :meth:`clip_gradients_globally`. Idempotent for ``world_size == 1``.
+
+        **Why ``all_reduce`` per parameter and not one ``reduce_scatter``.**
+        ``reduce_scatter`` slices its input by POSITION: rank ``r`` receives the
+        ``r``-th equal contiguous segment. Round-robin ownership does not line up
+        with that — with 4 parameters and 2 ranks, rank 0 owns indices 0 and 2,
+        but index 2 falls inside rank 1's positional segment. (A first
+        implementation did exactly this and failed with "parameter 2 lies outside
+        rank 0's reduced segment".) Making ``reduce_scatter`` work would require
+        a rank-major parameter layout that the sharded optimizer does not use, so
+        Stage-2 reduces per parameter instead: correct for arbitrary ownership,
+        at the cost of one collective per parameter rather than a batched
+        scatter. The memory win — dropping non-owned gradients — does not depend
+        on which collective is used.
+
+        A future optimisation can batch the reduction by bucketing parameters
+        whose ownership aligns, which needs the owner mapping at a coarser
+        granularity than round-robin.
+        """
+        if self._world_size <= 1:
+            for index, owner in enumerate(self._owners):
+                if owner != self._rank:
+                    self._params[index].grad = None
+            return
+
+        for index, param in enumerate(self._params):
+            grad = param.grad
+            if grad is not None:
+                dist.all_reduce(grad, op=dist.ReduceOp.AVG, group=self._pg)
+            elif self._owners[index] == self._rank:  # pragma: no cover - caller contract
+                raise RuntimeError(
+                    f"parameter {index} (owned by rank {self._rank}) has no gradient; "
+                    "reduce_gradients_to_owners must run after backward() and before zero_grad()"
+                )
+            if self._owners[index] != self._rank:
+                param.grad = None
+
+    def clip_gradients_globally(self, max_norm: float, eps: float = 1e-6) -> torch.Tensor:
+        """Clip gradients using the GLOBAL L2 norm across all ranks.
+
+        Must run BEFORE :meth:`reduce_gradients_to_owners`, while every rank
+        still holds every gradient. Clipping afterwards — or per rank — applies
+        a different multiplier per shard: measured 1.0000 vs 0.9383 for two
+        ranks whose local gradients differ in scale, versus one common factor
+        from the global norm (ADR-014).
+
+        Args:
+            max_norm: Maximum global L2 norm. ``<= 0`` disables clipping (the
+                engine's "no clip" convention).
+            eps: Denominator guard for the clip coefficient.
+
+        Returns:
+            The global total norm as a 0-dim tensor (mirrors
+            ``clip_grad_norm_``'s return: ``torch.isfinite`` detects a skipped
+            step, ``.item()`` feeds perf monitoring).
+        """
+        params = [p for p in self._params if p.grad is not None]
+        try:
+            device = next(iter(self._params)).device
+        except StopIteration:
+            device = torch.device("cpu")
+        total_sq = torch.zeros((), dtype=torch.float32, device=device)
+        for param in params:
+            grad = param.grad
+            if grad is None:  # pragma: no cover - filtered above
+                continue
+            total_sq += grad.detach().float().pow(2).sum()
+
+        if self._world_size > 1:
+            dist.all_reduce(total_sq, op=dist.ReduceOp.SUM, group=self._pg)
+        global_norm = total_sq.sqrt()
+
+        if max_norm <= 0:
+            return global_norm
+
+        coefficient = torch.clamp(global_norm.clamp(min=eps), min=eps)
+        scale = float(max_norm) / float(coefficient)
+        if scale < 1.0:
+            for param in params:
+                grad = param.grad
+                if grad is None:  # pragma: no cover - filtered above
+                    continue
+                grad.detach().mul_(scale)
+        return global_norm
