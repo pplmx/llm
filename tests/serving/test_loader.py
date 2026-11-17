@@ -401,3 +401,82 @@ def test_infer_legacy_architecture_recovers_glu_rmsnorm():
     assert arch["mlp_bias"] is False
     assert arch["lm_head_bias"] is False
     assert arch["pos_encoding_learned"] is True
+
+
+class TestTheDummyPathForwardsEveryArchitectureKnob:
+    """The no-checkpoint fallback must honour the same config fields as the real path.
+
+    ``_create_dummy_model_and_tokenizer`` builds the demo model directly through
+    ``ModelFactory`` instead of going through ``_build_decoder`` (the checkpoint
+    path). It forwarded ``attn_impl`` / ``mlp_impl`` but NOT ``num_experts`` /
+    ``top_k``, so a perfectly valid serving config with ``mlp_impl="moe"``,
+    ``num_experts=4``, ``top_k=2`` could never boot the demo model: the factory
+    saw the field defaults (0 / 0) and raised
+    ``ValueError: num_experts and top_k must be positive for MoE`` — blaming a
+    setting the user had actually provided.
+
+    Only the checkpoint path was ever exercised with non-default architecture
+    fields, which is why the divergence survived.
+    """
+
+    def test_moe_dummy_model_builds_and_generates(self):
+        """End-to-end: a MoE demo config must load and produce tokens."""
+        from llm.serving.batch_engine import ContinuousBatchingEngine
+        from llm.serving.schemas import GenerationRequest
+
+        config = ServingConfig(device="cpu", mlp_impl="moe", num_experts=4, top_k=2)
+        model, tokenizer = load_model_and_tokenizer(config)
+
+        mlp = model.transformer_blocks[0].mlp
+        assert type(mlp).__name__ == "MoE", (
+            f"mlp_impl='moe' produced {type(mlp).__name__}; the dummy path is not "
+            "forwarding the MoE fields to ModelFactory"
+        )
+
+        engine = ContinuousBatchingEngine.from_serving_config(config, model, tokenizer)
+        try:
+            out = engine.generate_request(GenerationRequest(prompt="hello world", max_new_tokens=4))
+        finally:
+            engine.unload_model()
+        assert isinstance(out, str)
+        assert out.startswith("hello world"), "generation must echo the prompt back"
+
+    def test_the_two_build_paths_agree_on_the_fields_they_forward(self):
+        """Static pin: the dummy path and ``_build_decoder`` must overlap.
+
+        Comparing the two call sites as source keeps this honest for fields not
+        exercised above — a future knob added to one path only fails here rather
+        than waiting for a user with that exact config.
+        """
+        import pathlib
+        import re
+
+        source = (pathlib.Path(__file__).resolve().parents[2] / "src" / "llm" / "serving" / "loader.py").read_text(
+            encoding="utf-8"
+        )
+        calls = re.findall(r"ModelFactory\.build\(\s*\"decoder\",(.*?)\n\s*\)", source, re.S)
+        assert len(calls) == 2, f"expected the dummy and checkpoint builders, found {len(calls)}"
+
+        def kwargs(block: str) -> set[str]:
+            return {m.group(1) for m in re.finditer(r"^\s*([a-z_]+)=", block, re.M)}
+
+        dummy = next(b for b in calls if "tokenizer.vocab_size" in b)
+        checkpoint = next(b for b in calls if "serving_config." in b)
+
+        arch_fields = {
+            "hidden_size",
+            "num_layers",
+            "num_heads",
+            "max_seq_len",
+            "num_kv_heads",
+            "attn_impl",
+            "mlp_impl",
+            "num_experts",
+            "top_k",
+        }
+        missing_from_dummy = {f for f in arch_fields if f in kwargs(checkpoint) and f not in kwargs(dummy)}
+        assert not missing_from_dummy, (
+            "the dummy (no-checkpoint) builder drops architecture fields that the checkpoint "
+            f"builder forwards: {sorted(missing_from_dummy)}. A config setting them can boot the "
+            "real path but fails on the demo path."
+        )

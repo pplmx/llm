@@ -398,6 +398,13 @@ def _create_dummy_model_and_tokenizer(config: ServingConfig) -> tuple[DecoderMod
         num_kv_heads=config.num_kv_heads,
         attn_impl=config.attn_impl,
         mlp_impl=config.mlp_impl,
+        # The checkpoint path (_build_decoder) forwards these too. Omitting them
+        # here meant a valid config with ``mlp_impl="moe"`` could never boot the
+        # demo model: ModelFactory received the default num_experts=0/top_k=0
+        # and raised "num_experts and top_k must be positive for MoE" even
+        # though the user had set both.
+        num_experts=config.num_experts,
+        top_k=config.top_k,
     )
     if not isinstance(model, DecoderModel):
         raise TypeError(f"dummy model must be a DecoderModel, got {type(model).__name__}")
