@@ -1137,8 +1137,34 @@ class PPOConfig(BaseModel):
             "it resembles."
         ),
     )
-    gae_lambda: float = 0.95
-    gamma: float = 1.0
+    gae_lambda: float = Field(
+        0.95,
+        ge=0,
+        le=1,
+        allow_inf_nan=False,
+        description=(
+            "GAE exponential weight on the advantage bootstrap. The recurrence is "
+            "``A_t = delta_t + c * A_{t+1}`` with ``c = gamma * gae_lambda``, so the "
+            "pair must satisfy ``c <= 1`` or the advantages grow geometrically with "
+            "the response length. Measured with a unit reward: ``gae_lambda=1.5`` on "
+            "a 256-token response produced ``inf`` advantages (and 1.2e11 on a "
+            "64-token one), which then poisons the policy loss and the step. 0 is "
+            "the documented degenerate case (``A_t = delta_t``) and stays legal."
+        ),
+    )
+    gamma: float = Field(
+        1.0,
+        ge=0,
+        le=1,
+        allow_inf_nan=False,
+        description=(
+            "Reward discount factor. Must be in ``[0, 1]``: it multiplies the "
+            "bootstrap value in ``delta_t`` AND scales ``c = gamma * gae_lambda``, so "
+            "``gamma > 1`` makes both the advantage and the return grow without "
+            "bound -- a negative value flips the sign of every bootstrap and makes "
+            "the advantage oscillate. 0 is documented (``A_t = delta_t``)."
+        ),
+    )
     ppo_epochs: int = Field(
         4,
         ge=0,

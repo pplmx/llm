@@ -1831,3 +1831,79 @@ class TestPPOScheduleKnobs:
         assert epochs_run(None) == 4, "None disables the check entirely"
         assert epochs_run(0.0) == 1, "a zero threshold must fire on the first update"
         assert epochs_run(-1.0) == 1, "a negative threshold must fire on the first update too"
+
+
+class TestPPOAdvantageWeights:
+    """``gamma`` / ``gae_lambda`` must keep the GAE recurrence bounded.
+
+    ``_gae_advantages`` computes ``A_t = delta_t + c * A_{t+1}`` with
+    ``c = gamma * gae_lambda`` (the docstring states this explicitly). The pair
+    is only stable while ``|c| <= 1``; beyond that the advantages grow
+    geometrically with the response length. Both fields were unconstrained, so
+    the pathological case was reachable from a YAML file. Measured with a unit
+    reward and zero values:
+
+    * ``gae_lambda=1.5`` gave ``max|adv| = 7.6e+00`` at 6 tokens,
+      ``1.2e+11`` at 64, and ``inf`` at 256 — a length that shipped configs use.
+    * ``gamma=2.0`` gave ``32.0`` at 6 tokens (``2^5``, i.e. exactly ``c^(n-1)``).
+    * a negative ``gamma`` alternated the sign of every advantage.
+
+    ``c == 0`` is a documented degenerate case (``A_t = delta_t``) that the
+    function short-circuits, so 0 must stay legal for both fields — that is why
+    the bounds are ``[0, 1]`` and not ``(0, 1]``.
+    """
+
+    @pytest.mark.parametrize("field", ["gamma", "gae_lambda"])
+    @pytest.mark.parametrize("bad", [1.5, 2.0, 10.0])
+    def test_values_above_one_are_rejected(self, field: str, bad: float):
+        with pytest.raises(ValueError, match=field):
+            PPOConfig(**{field: bad})
+
+    @pytest.mark.parametrize("field", ["gamma", "gae_lambda"])
+    @pytest.mark.parametrize("bad", [-1.0, -0.1])
+    def test_negative_values_are_rejected(self, field: str, bad: float):
+        with pytest.raises(ValueError, match=field):
+            PPOConfig(**{field: bad})
+
+    @pytest.mark.parametrize("field", ["gamma", "gae_lambda"])
+    @pytest.mark.parametrize("bad", [float("inf"), float("nan")])
+    def test_non_finite_values_are_rejected(self, field: str, bad: float):
+        with pytest.raises(ValueError, match=field):
+            PPOConfig(**{field: bad})
+
+    @pytest.mark.parametrize("field", ["gamma", "gae_lambda"])
+    @pytest.mark.parametrize("good", [0.0, 0.5, 0.95, 1.0])
+    def test_zero_and_unit_interval_values_stay_legal(self, field: str, good: float):
+        """0 is the documented ``A_t = delta_t`` case; 1 is the episode end."""
+        assert getattr(PPOConfig(**{field: good}), field) == good
+
+    def test_the_bounds_are_what_keeps_the_gae_recurrence_finite(self):
+        """Replay ``_gae_advantages`` at both ends of the accepted range.
+
+        Uses the real function so the assertion tracks the implementation rather
+        than restating the formula. A unit reward plus zero value estimates makes
+        ``delta_t`` a single spike, so the only thing shaping the result is
+        ``c = gamma * gae_lambda``.
+        """
+        from llm.training.rlhf.rollout_buffer import _gae_advantages
+
+        values = torch.zeros(64)
+        reward = torch.tensor(1.0)
+
+        # Largest accepted c: bounded by construction.
+        worst = _gae_advantages(values, reward, terminal_value=None, gamma=1.0, gae_lambda=1.0)
+        assert torch.isfinite(worst).all()
+        assert worst.abs().max().item() == pytest.approx(1.0), (
+            f"c=1 must give a constant advantage of the reward, got {worst.abs().max().item()}"
+        )
+
+        # The smallest rejected c on the high side overflows a realistic length.
+        blown = _gae_advantages(values, reward, terminal_value=None, gamma=1.0, gae_lambda=1.5)
+        assert not torch.isfinite(blown).all() or blown.abs().max().item() > 1e6, (
+            f"gae_lambda=1.5 must produce a runaway advantage, got max {blown.abs().max().item()}"
+        )
+
+        # c == 0 short-circuits to delta_t, which is why 0 stays legal.
+        flat = _gae_advantages(values, reward, terminal_value=None, gamma=0.0, gae_lambda=0.95)
+        assert flat[:-1].abs().max().item() == 0.0
+        assert flat[-1].item() == pytest.approx(1.0)
