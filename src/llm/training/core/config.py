@@ -1079,10 +1079,54 @@ class DataConfig(BaseModel):
 class PPOConfig(BaseModel):
     """PPO hyperparameters for RLHF training."""
 
-    clip_epsilon: float = 0.2
-    kl_coef: float = 0.1
-    value_coef: float = 0.5
-    entropy_coef: float = 0.01
+    clip_epsilon: float = Field(
+        0.2,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "PPO clip range: the surrogate is clamped to ``[1-eps, 1+eps]``. Must "
+            "be > 0. At 0 the clamp collapses to the point 1.0, so every ratio maps "
+            "to the same value and the clipped surrogate stops clipping anything; a "
+            "NEGATIVE value inverts the bounds (``lo > hi``) and torch.clamp then "
+            "silently returns ``hi`` for every input, which turned the cap into a "
+            "floor. Neither raised: the clamp just returned wrong numbers."
+        ),
+    )
+    kl_coef: float = Field(
+        0.1,
+        ge=0,
+        allow_inf_nan=False,
+        description=(
+            "KL-to-reference penalty weight. 0 disables the penalty (an explicit, "
+            "documented choice). Must not be negative: the term is added straight "
+            "into the loss, so a negative weight pays the policy to DIVERGE from "
+            "the reference instead of staying near it."
+        ),
+    )
+    value_coef: float = Field(
+        0.5,
+        ge=0,
+        allow_inf_nan=False,
+        description=(
+            "Critic loss weight. The trainer multiplies the value loss by it, so 0 "
+            "is a real setting. A negative value is rejected rather than silently "
+            "treated as 0: the ``value_coef > 0`` guard in ``ppo_step`` skips the "
+            "critic loss entirely for any non-positive value, so a negative number "
+            "looked like it configured something while doing nothing."
+        ),
+    )
+    entropy_coef: float = Field(
+        0.01,
+        ge=0,
+        allow_inf_nan=False,
+        description=(
+            "Entropy-bonus weight. 0 disables the bonus (the standard setting). A "
+            "negative value is rejected for the same reason as ``value_coef``: the "
+            "``entropy_coef > 0`` guard skips the term entirely, so a negative value "
+            "was silently a no-op instead of the (meaningless) anti-entropy pressure "
+            "it resembles."
+        ),
+    )
     gae_lambda: float = 0.95
     gamma: float = 1.0
     ppo_epochs: int = 4

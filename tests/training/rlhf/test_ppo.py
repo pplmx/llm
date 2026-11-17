@@ -1665,3 +1665,76 @@ class TestPPORolloutSamplingKnobs:
             sampling_probs(logits, top_p=0.0)
         # ...and the values the config now accepts are the ones it accepts.
         sampling_probs(logits, temperature=0.5, top_k=4, top_p=0.9)
+
+
+class TestPPOObjectiveCoefficients:
+    """The four PPO loss weights must not silently change what the objective means.
+
+    Unlike the sampling knobs, these three failure modes are all different, and
+    only the first one actually raised nothing anywhere:
+
+    * ``clip_epsilon`` is the clamp range ``[1-eps, 1+eps]``. At 0 the clamp
+      collapses to the single point 1.0, so every ratio maps there and the
+      clipped surrogate stops constraining anything; a NEGATIVE value makes
+      ``lo = 1-eps > hi = 1+eps``, and ``torch.clamp`` silently returns ``hi``
+      for every input — the cap becomes a floor. Measured with
+      ``adv=1, ratio=[0.5, 1.0, 2.0]``: ``eps=-0.2`` produced
+      ``[-0.5, -0.8, -0.8]`` against ``eps=0.2``'s ``[-0.5, -1.0, -1.2]``.
+    * ``kl_coef`` is added straight into the loss, so a negative weight pays the
+      policy to DIVERGE from the reference rather than stay near it.
+    * ``value_coef`` / ``entropy_coef`` are guarded by ``> 0`` at the call site,
+      so a negative value was silently identical to 0 — a config that looks
+      tuned and does nothing. 0 itself is a real setting for all three.
+
+    ``clip_epsilon`` is therefore ``gt=0`` while the other three are ``ge=0``.
+    """
+
+    @pytest.mark.parametrize("bad", [0.0, -0.2, -1.0])
+    def test_clip_epsilon_must_be_positive(self, bad: float):
+        """0 is NOT a valid disable for the ratio clamp — it collapses it to a point."""
+        with pytest.raises(ValueError, match="clip_epsilon"):
+            PPOConfig(clip_epsilon=bad)
+
+    @pytest.mark.parametrize("good", [0.01, 0.2, 0.5])
+    def test_clip_epsilon_accepts_positive_values(self, good: float):
+        assert PPOConfig(clip_epsilon=good).clip_epsilon == good
+
+    @pytest.mark.parametrize("field", ["kl_coef", "value_coef", "entropy_coef"])
+    @pytest.mark.parametrize("bad", [-0.01, -1.0])
+    def test_negative_coefficient_is_rejected(self, field: str, bad: float):
+        with pytest.raises(ValueError, match=field):
+            PPOConfig(**{field: bad})
+
+    @pytest.mark.parametrize("field", ["kl_coef", "value_coef", "entropy_coef"])
+    def test_zero_coefficient_stays_legal(self, field: str):
+        """For these three 0 genuinely means "off" — pin it against a blanket ``gt=0``."""
+        assert getattr(PPOConfig(**{field: 0.0}), field) == 0.0
+
+    @pytest.mark.parametrize("field", ["clip_epsilon", "kl_coef", "value_coef", "entropy_coef"])
+    @pytest.mark.parametrize("bad", [float("inf"), float("nan")])
+    def test_non_finite_coefficient_is_rejected(self, field: str, bad: float):
+        with pytest.raises(ValueError, match=field):
+            PPOConfig(**{field: bad})
+
+    @pytest.mark.parametrize("field", ["kl_coef", "value_coef", "entropy_coef"])
+    @pytest.mark.parametrize("good", [0.001, 0.1, 0.5, 1.0])
+    def test_positive_coefficient_is_accepted(self, field: str, good: float):
+        assert getattr(PPOConfig(**{field: good}), field) == good
+
+    def test_the_inverted_clamp_is_what_these_guards_prevent(self):
+        """Record the exact silent misbehaviour, so the reason stays checkable.
+
+        ``torch.clamp`` does not validate ``min <= max``. With ``eps < 0`` the
+        bounds invert to ``lo = 1 - eps > hi = 1 + eps``, and clamp then returns
+        a SINGLE constant for every input — so the ratio is thrown away entirely
+        and the surrogate stops depending on it. No error, no warning.
+        """
+        ratio = torch.tensor([0.5, 1.0, 2.0])
+        eps = -0.2
+        inverted = torch.clamp(ratio, 1.0 - eps, 1.0 + eps)
+        assert inverted.unique().numel() == 1, (
+            f"an inverted clamp must collapse to one constant, got {inverted.tolist()}"
+        )
+        # The healthy case actually clamps per element.
+        healthy = torch.clamp(ratio, 1.0 - 0.2, 1.0 + 0.2)
+        assert healthy.tolist() == pytest.approx([0.8, 1.0, 1.2])
