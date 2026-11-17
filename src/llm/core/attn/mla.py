@@ -403,8 +403,15 @@ class MultiLatentAttention(nn.Module):
         # Process latent attention
         latent_output = self._latent_attention(k, v, batch_size, attn_mask, is_causal=use_causal)
 
-        # Compute uniform weights across latents by default
-        latent_weights = torch.ones(batch_size, 1, self.num_latents, device=latent_output.device) / self.num_latents
+        # Compute uniform weights across latents by default. ``dtype`` must be
+        # stated: ``torch.ones`` defaults to float32, so under autocast or a
+        # half-precision model the ``bmm`` below raised "expected scalar type
+        # Float but found Half" (and BFloat16) for attn_impl="mla" — the other
+        # tensor creations in this file already pass an explicit dtype.
+        latent_weights = (
+            torch.ones(batch_size, 1, self.num_latents, device=latent_output.device, dtype=latent_output.dtype)
+            / self.num_latents
+        )
 
         # Apply weights to latent outputs
         output = torch.bmm(latent_weights, latent_output)

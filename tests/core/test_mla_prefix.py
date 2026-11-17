@@ -271,3 +271,94 @@ class TestMLAPrefixWithPagedCache:
         )
         assert out.shape == (1, 5, 32)
         assert out.isfinite().all()
+
+
+class TestMLAWorksAtHalfPrecision:
+    """``attn_impl="mla"`` must forward in fp16 and bf16, not only fp32.
+
+    ``MultiLatentAttention.forward`` built its uniform latent weights with
+    ``torch.ones(...)`` and no ``dtype``, so the tensor was float32 while the
+    model ran in half precision. The following ``torch.bmm`` then raised
+    ``RuntimeError: expected scalar type Float but found Half`` (and
+    ``BFloat16``), which made MLA unusable for serving: the demo path is fp32,
+    but every real checkpoint path runs AMP or an explicitly half-precision
+    model, and the serving benchmark with ``--attn-impl mla`` crashed before
+    producing a number.
+
+    Nothing covered this: MDA's dtype was pinned in no test, and the other three
+    ``torch.ones``/``torch.zeros`` calls in the module already passed an
+    explicit ``dtype``, so the omission was a single outlier rather than a
+    pattern.
+    """
+
+    @staticmethod
+    def _model(dtype_cast, device):
+        import torch
+
+        from llm.models.decoder import DecoderModel
+
+        torch.manual_seed(0)
+        model = DecoderModel(
+            vocab_size=64,
+            hidden_size=32,
+            num_layers=2,
+            num_heads=4,
+            attn_impl="mla",
+            max_seq_len=32,
+        )
+        return dtype_cast(model).to(device).eval()
+
+    @pytest.mark.parametrize("dtype_name", ["float16", "bfloat16"])
+    def test_forward_produces_the_model_dtype(self, dtype_name):
+        import torch
+
+        dtype = getattr(torch, dtype_name)
+        if dtype is torch.float16 and not torch.cuda.is_available():
+            pytest.skip("float16 forward needs CUDA on this backend")
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+        model = self._model(lambda m: m.to(dtype), device)
+        ids = torch.randint(0, 64, (2, 8), device=device)
+        with torch.no_grad():
+            out = model(ids)
+
+        assert out.dtype == dtype, f"forward returned {out.dtype}, expected {dtype}"
+        assert torch.isfinite(out).all(), "half-precision MLA forward produced non-finite values"
+
+    def test_no_dtype_less_tensor_creation_remains(self):
+        """Static pin: every tensor creation in the module must state a dtype.
+
+        This catches the whole class rather than the one call site that broke —
+        a future ``torch.ones`` added without ``dtype`` reintroduces the same
+        crash for half-precision users only, which is exactly the gap that let
+        this ship.
+        """
+        import pathlib
+        import re
+
+        source = pathlib.Path(__file__).resolve().parents[2] / "src" / "llm" / "core" / "attn" / "mla.py"
+        text = source.read_text(encoding="utf-8")
+
+        offenders = []
+        for match in re.finditer(r"torch\.(ones|zeros|full|empty)\(", text):
+            # The call's argument list, to the matching close paren.
+            start = match.end() - 1
+            depth = 0
+            for i in range(start, len(text)):
+                if text[i] == "(":
+                    depth += 1
+                elif text[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        call = text[start : i + 1]
+                        break
+            else:  # pragma: no cover - unbalanced source
+                continue
+            if "dtype=" not in call and "zeros_like" not in match.group(0):
+                line = text[: match.start()].count("\n") + 1
+                offenders.append(f"mla.py:{line}: {match.group(1)}(... ) has no dtype=")
+
+        assert not offenders, (
+            "torch tensor creations without an explicit dtype default to float32, which breaks "
+            "half-precision forward with 'expected scalar type Float but found Half':\n  " + "\n  ".join(offenders)
+        )
