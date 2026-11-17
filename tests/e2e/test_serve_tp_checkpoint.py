@@ -27,6 +27,7 @@ import json
 import os
 import socket
 import time
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -54,6 +55,16 @@ from tests.support.devices import all_gpu_devices
 
 SERVE_MIN_FREE_BYTES = 1 * 1024**3
 SERVE_JOIN_TIMEOUT_S = 360
+# Bounded per-collective timeout for the spawn workers' hand-rolled process
+# groups (they call ``init_process_group`` directly rather than going through
+# ``DistributedManager``, so they do NOT inherit
+# ``DistributedConfig.collective_timeout_seconds``).
+#
+# Without it torch's default is 30 MINUTES, so a rank that dies mid-test leaves
+# its siblings blocking far past the parent's join window and the parent reports
+# a blind "TP serve-train spawn exceeded" with no cause. ``timeout=`` bounds the initial
+# RENDEZVOUS too, hence above a cold ``mp.spawn`` and under the parent join.
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=300)
 
 
 @pytest.fixture(autouse=True)
@@ -167,7 +178,7 @@ def _train_tp_worker(rank: int, world_size: int, device_indices: list[int], ctx:
         device_index = device_indices[rank]
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         torch.manual_seed(42 + rank)
 
         config = _build_config(ctx)

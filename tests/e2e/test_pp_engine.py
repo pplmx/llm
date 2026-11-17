@@ -28,6 +28,7 @@ import hashlib
 import os
 import socket
 import time
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,16 @@ from tests.support.data import DummyLMDataModule
 pytestmark = pytest.mark.e2e
 
 PP_ENGINE_JOIN_TIMEOUT_S = 300
+# Bounded per-collective timeout for the spawn workers' hand-rolled process
+# groups (they call ``init_process_group`` directly rather than going through
+# ``DistributedManager``, so they do NOT inherit
+# ``DistributedConfig.collective_timeout_seconds``).
+#
+# Without it torch's default is 30 MINUTES, so a rank that dies mid-test leaves
+# its siblings blocking far past the parent's join window and the parent reports
+# a blind "PP engine e2e exceeded" with no cause. ``timeout=`` bounds the initial
+# RENDEZVOUS too, hence above a cold ``mp.spawn`` and under the parent join.
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=240)
 
 
 def _dict_collate(batch: list) -> dict:
@@ -157,7 +168,7 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
     try:
         # Force the CPU path so the run is deterministic regardless of GPUs.
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
-        dist.init_process_group("gloo", rank=rank, world_size=world_size)
+        dist.init_process_group("gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
         ckpt_dir = ctx["checkpoint_dir"]
         pp_size = ctx.get("pp_size")

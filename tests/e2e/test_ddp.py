@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import socket
 import time
+from datetime import timedelta
 
 import pytest
 import torch
@@ -23,6 +24,16 @@ from tests.support.devices import DEFAULT_DEVICE, all_gpu_devices, cuda_usable
 
 DDP_MIN_FREE_BYTES = 4 * 1024**3
 DDP_JOIN_TIMEOUT_S = 120
+# Bounded per-collective timeout for the spawn workers' hand-rolled process
+# groups (they call ``init_process_group`` directly rather than going through
+# ``DistributedManager``, so they do NOT inherit
+# ``DistributedConfig.collective_timeout_seconds``).
+#
+# Without it torch's default is 30 MINUTES, so a rank that dies mid-test leaves
+# its siblings blocking far past the parent's join window and the parent reports
+# a blind "DDP spawn exceeded" with no cause. ``timeout=`` bounds the initial
+# RENDEZVOUS too, hence above a cold ``mp.spawn`` and under the parent join.
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=100)
 
 
 def _free_port() -> int:
@@ -67,7 +78,7 @@ def ddp_test_worker(rank, world_size, device_indices, config, results):
         torch.cuda.set_device(device_index)
 
         # Initialize distributed
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
 
         device = torch.device(f"cuda:{device_index}")
 
@@ -322,7 +333,7 @@ def _ddp_weight_consistency_worker(rank, world_size, device_indices, results):
         device_index = device_indices[rank]
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device).
         torch.cuda.set_device(device_index)
-        _dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        _dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         device = torch.device(f"cuda:{device_index}")
 
         # Exactly the framework's per-rank seed sequence.

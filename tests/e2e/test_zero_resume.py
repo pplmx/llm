@@ -35,6 +35,7 @@ import json
 import os
 import socket
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,17 @@ from tests.support.devices import all_gpu_devices
 pytestmark = pytest.mark.heavy
 
 JOIN_TIMEOUT_S = 300
+# Bounded per-collective timeout for the spawn workers' hand-rolled process
+# groups (they call ``init_process_group`` directly rather than going through
+# ``DistributedManager``, so they do NOT inherit
+# ``DistributedConfig.collective_timeout_seconds``).
+#
+# Without it torch's default is 30 MINUTES: a rank that dies mid-test leaves its
+# siblings blocking in a collective far past the 300s parent join, so the parent
+# gives up first and reports "ZeRO spawn exceeded 300s" with no cause.
+# ``timeout=`` bounds the initial RENDEZVOUS too, hence well above a cold
+# ``mp.spawn`` and still under the parent join so the guard speaks first.
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=240)
 WORLD_SIZE = 2
 TPS = 0.01
 # A usable card must have real headroom: the box hosts other workloads, and a
@@ -114,7 +126,7 @@ def _worker(
         os.environ["MASTER_PORT"] = str(port)
         os.environ.setdefault("NCCL_DEBUG", "WARN")
         os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
-        dist.init_process_group(backend, rank=rank, world_size=world_size)
+        dist.init_process_group(backend, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
 
         from llm.training.core.engine import TrainingEngine
         from llm.training.distributed.zero import ZeroOptimizer

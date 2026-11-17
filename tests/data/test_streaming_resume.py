@@ -334,11 +334,22 @@ def _gather_worker(rank: int, world_size: int, corpus_path: str, init_file: str)
         if path not in sys.path:
             sys.path.insert(0, path)
 
+    # Bounded so a dead sibling raises torch's TimeoutError instead of hanging
+    # the parent's unbounded ``mp.spawn(..., join=True)`` forever. The default is
+    # 30 minutes and this test's whole collective is one small all-gather.
+    from datetime import timedelta
+
     from llm.data.modules.streaming import StreamingTextDataModule
     from llm.training.core.config import Config
     from tests.support.tokenizers import LineTokenizer
 
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, init_method=f"file://{init_file}")
+    dist.init_process_group(
+        backend="gloo",
+        rank=rank,
+        world_size=world_size,
+        init_method=f"file://{init_file}",
+        timeout=timedelta(seconds=120),
+    )
     try:
         config = Config()
         config.data.dataset_path = corpus_path

@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import socket
 import time
+from datetime import timedelta
 
 import pytest
 import torch
@@ -38,6 +39,16 @@ HID_DIM = 5
 OUT_DIM = 3
 STEPS = 12
 JOIN_TIMEOUT_S = 120
+# Bounded per-collective timeout for the spawn workers' hand-rolled process
+# groups (they call ``init_process_group`` directly rather than going through
+# ``DistributedManager``, so they do NOT inherit
+# ``DistributedConfig.collective_timeout_seconds``).
+#
+# Without it torch's default is 30 MINUTES, so a rank that dies mid-test leaves
+# its siblings blocking far past the parent's join window and the parent reports
+# a blind "ZeROOptimizer spawn exceeded" with no cause. ``timeout=`` bounds the initial
+# RENDEZVOUS too, hence above a cold ``mp.spawn`` and under the parent join.
+PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=100)
 STEPS_PRE = 5
 STEPS_POST = 7
 
@@ -105,7 +116,11 @@ def _run_spawn(worker, world_size: int) -> dict:
 def _parity_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         model = _build_model()
         params = list(model.parameters())
@@ -194,7 +209,11 @@ def _reference_checkpoint_params() -> list[torch.Tensor]:
 def _checkpoint_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         x = _make_data()
 
@@ -256,7 +275,11 @@ def _engine_zero_worker(rank: int, world_size: int, results: dict) -> None:
         # CPU tensors.
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"], rank=rank, world_size=world_size
+            "gloo",
+            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
         )
         from llm.training.core.config import (
             Config,
@@ -367,7 +390,7 @@ def _refusal_worker(rank: int, world_size: int, results: dict) -> None:
     """Record the engine's exception message for the strategy in ``GUARD_STRATEGY``."""
     try:
         strategy = os.environ["GUARD_STRATEGY"]
-        dist.init_process_group("gloo", rank=rank, world_size=world_size)
+        dist.init_process_group("gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
 
         from llm.data.modules.synthetic import SyntheticDataModule
         from llm.training.core.config import (
