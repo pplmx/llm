@@ -22,6 +22,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import sys
+import time
 
 import pytest
 
@@ -40,12 +41,22 @@ def _load_script():
 
 
 class _StubEngine:
-    """Return a fixed string so only the TOKENIZER can change the reported rate."""
+    """Return a fixed string, after a DETERMINISTIC delay per call.
 
-    def __init__(self, generated: str):
+    The delay matters: ``run_benchmark`` computes ``tokens / latency``, and with
+    an instantaneous stub the latency is pure timer noise (measured ratios of
+    1.16x where 4.78x was expected), so any ratio-based assertion over the
+    reported rates is flaky — it passed when written and failed in a full suite
+    run under load. A real sleep makes the denominator meaningful, at which point
+    the reported rate depends only on the TOKEN COUNT.
+    """
+
+    def __init__(self, generated: str, delay_seconds: float = 0.002):
         self._generated = generated
+        self._delay = delay_seconds
 
     def generate_request(self, request) -> str:
+        time.sleep(self._delay)
         return request.prompt + self._generated
 
 
@@ -75,13 +86,15 @@ def test_the_two_tokenizers_disagree_on_the_same_text():
 
 
 def test_tokens_per_second_follows_the_tokenizer(bench):
-    """Same generation, different tokenizer => the reported rate changes.
+    """Same generation and same latency => the reported rate depends on tokens only.
 
-    The stub engine does no real work, so latency is pure timer noise and a
-    ratio-based assertion would be flaky. Assert the robust property instead:
-    the reported rate must equal (that tokenizer's token count) / (that run's
-    measured latency). A character count makes this hold only for the per-char
-    tokenizer, so the per-word case fails.
+    ``_StubEngine`` sleeps a fixed amount per call, so both runs have the same
+    denominator and ``tps`` is proportional to the token count the tokenizer
+    reports. With tokens of 43 vs 9 the per-char rate must be ~4.8x the per-word
+    rate; a character count in the script would make them equal.
+
+    The tolerance covers scheduler jitter on a busy machine, which perturbs
+    individual sleeps but cannot move a 4.8x ratio back near 1x.
     """
     prompt = "Hello world this is a benchmark prompt"
     generated = "the quick brown fox jumps over the lazy dog"
@@ -90,23 +103,20 @@ def test_tokens_per_second_follows_the_tokenizer(bench):
     char_tokens = len(generated)
     word_tokens = len(generated.split())
     assert char_tokens != word_tokens, "fixture text must distinguish the two tokenizers"
+    expected_ratio = char_tokens / word_tokens
 
-    lat_char, tps_char = bench.run_benchmark(engine, _PerCharTokenizer(), prompt, 5, 1)
-    lat_word, tps_word = bench.run_benchmark(engine, _PerWordTokenizer(), prompt, 5, 1)
+    _lat_char, tps_char = bench.run_benchmark(engine, _PerCharTokenizer(), prompt, 5, 1)
+    _lat_word, tps_word = bench.run_benchmark(engine, _PerWordTokenizer(), prompt, 5, 1)
 
-    # tps is computed per run and averaged; with a constant generated string the
-    # token count is constant, so avg(tps) = tokens * avg(1/latency) = tokens/avg_latency
-    # only for a single run. Compare the two runs as token-count ratios instead,
-    # which is what the fix controls and noise cannot invert.
-    assert tps_char > tps_word * 2, (
-        f"the per-char tokenizer reports {tps_char:.2f} tokens/s but the per-word one "
-        f"reports {tps_word:.2f}; with {char_tokens} vs {word_tokens} tokens for the same "
-        "text the char-based figure must be several times larger. If they are close, the "
-        "script is counting characters again rather than the tokenizer's tokens."
+    # The deterministic delay lives in the stub, so both runs take the same path
+    # through run_benchmark and differ only in num_tokens.
+    ratio = tps_char / tps_word
+    assert ratio == pytest.approx(expected_ratio, rel=0.5), (
+        f"tokens/s did not scale with the tokenizer's token count: the per-char run reported "
+        f"{tps_char:.2f} and the per-word run {tps_word:.2f} (ratio {ratio:.2f}, expected "
+        f"~{expected_ratio:.2f} from {char_tokens} vs {word_tokens} tokens). If the ratio is "
+        "near 1.0 the script is counting characters again rather than the tokenizer's tokens."
     )
-    # And the exact relationship the fix guarantees, run by run.
-    assert lat_char > 0
-    assert lat_word > 0
 
 
 def test_a_character_count_would_report_identical_rates():
