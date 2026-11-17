@@ -1581,3 +1581,87 @@ class TestPPOLearningRateKnobs:
         q.grad = torch.tensor([1.0])
         torch.optim.AdamW([q], lr=float("inf")).step()
         assert q.item() == float("-inf"), "an inf learning rate poisons the weights in one step"
+
+
+class TestPPORolloutSamplingKnobs:
+    """The three rollout-sampling knobs must agree with ``sampling_probs``.
+
+    ``PPOTrainer`` passes ``temperature`` / ``top_k`` / ``top_p`` straight to
+    ``llm.generation.sampling_probs``, which already rejects the invalid end of
+    each range — from inside the sampling loop, in a message that names the
+    generic argument rather than the PPO config field. Worse, two of the
+    rejected values did not even crash: they quietly changed the distribution.
+
+    The bounds here mirror ``sampling_probs``'s documented contract exactly:
+
+    * ``temperature == 0`` is GREEDY and is special-cased by the rollout loop to
+      ``argmax``, so 0 must stay accepted; a negative value raised
+      ``ValueError: temperature must be > 0`` mid-rollout.
+    * ``top_k`` must be ``>= 1`` when set (torch.topk's ``k`` goes out of range
+      otherwise); ``None`` disables the filter.
+    * ``top_p`` must be ``> 0`` when set (0 or negative made the nucleus filter
+      silently skip and draw from the FULL distribution); ``None`` and any
+      value ``>= 1.0`` disable it, matching the OpenAI convention.
+    """
+
+    def test_zero_temperature_still_means_greedy(self):
+        """0 is a real setting, not a hole — pin it so a `gt=0` rewrite cannot pass."""
+        assert PPOConfig(temperature=0.0).temperature == 0.0
+
+    @pytest.mark.parametrize("bad", [-1.0, -1e-6])
+    def test_negative_temperature_is_rejected(self, bad: float):
+        with pytest.raises(ValueError, match="temperature"):
+            PPOConfig(temperature=bad)
+
+    @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+    def test_non_finite_temperature_is_rejected(self, bad: float):
+        with pytest.raises(ValueError, match="temperature"):
+            PPOConfig(temperature=bad)
+
+    @pytest.mark.parametrize("good", [0.0, 0.5, 1.0, 2.0])
+    def test_positive_temperature_is_accepted(self, good: float):
+        assert PPOConfig(temperature=good).temperature == good
+
+    @pytest.mark.parametrize("bad", [0, -1, -50])
+    def test_non_positive_top_k_is_rejected(self, bad: int):
+        with pytest.raises(ValueError, match="top_k"):
+            PPOConfig(top_k=bad)
+
+    @pytest.mark.parametrize("good", [1, 10, 1000])
+    def test_positive_top_k_is_accepted(self, good: int):
+        assert PPOConfig(top_k=good).top_k == good
+
+    def test_top_k_none_disables_the_filter(self):
+        assert PPOConfig().top_k is None
+
+    @pytest.mark.parametrize("bad", [0.0, -0.5, -1.0])
+    def test_non_positive_top_p_is_rejected(self, bad: float):
+        with pytest.raises(ValueError, match="top_p"):
+            PPOConfig(top_p=bad)
+
+    @pytest.mark.parametrize("good", [0.1, 0.9, 1.0, 2.0])
+    def test_positive_top_p_is_accepted(self, good: float):
+        """``top_p >= 1.0`` is a documented no-op, so it must stay legal."""
+        assert PPOConfig(top_p=good).top_p == good
+
+    def test_top_p_none_disables_the_filter(self):
+        assert PPOConfig().top_p is None
+
+    def test_the_bounds_match_sampling_probs_own_contract(self):
+        """The config must reject exactly what the sampler rejects (plus 0 for temperature).
+
+        Recording the shared boundary here means a future change to either side
+        shows up as a failure instead of letting the two drift apart again.
+        """
+        from llm.generation.sampling import sampling_probs
+
+        logits = torch.randn(1, 8)
+        for temp in (-1.0, -0.001):
+            with pytest.raises(ValueError, match="temperature must be > 0"):
+                sampling_probs(logits, temperature=temp)
+        with pytest.raises(ValueError, match="top_k must be >= 1"):
+            sampling_probs(logits, top_k=0)
+        with pytest.raises(ValueError, match="top_p must be > 0"):
+            sampling_probs(logits, top_p=0.0)
+        # ...and the values the config now accepts are the ones it accepts.
+        sampling_probs(logits, temperature=0.5, top_k=4, top_p=0.9)

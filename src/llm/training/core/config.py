@@ -1091,9 +1091,40 @@ class PPOConfig(BaseModel):
     target_kl: float | None = None
     rollout_batch_size: int = 16
     response_max_len: int = 256
-    temperature: float = 1.0
-    top_k: int | None = None
-    top_p: float | None = None
+    temperature: float = Field(
+        1.0,
+        ge=0,
+        allow_inf_nan=False,
+        description=(
+            "Rollout sampling temperature. 0 is GREEDY (the rollout loop "
+            "special-cases it to argmax) and is the only non-positive value with a "
+            "meaning. A negative value reached ``llm.generation.sampling_probs``, "
+            "which raised 'temperature must be > 0' from inside the sampling loop — "
+            "naming neither the field nor the PPO config. `inf` softmaxes to a "
+            "uniform distribution, i.e. random tokens."
+        ),
+    )
+    top_k: int | None = Field(
+        None,
+        ge=1,
+        description=(
+            "Nucleus top-k filter for rollouts. None disables it. 0 or a negative "
+            "value made torch.topk's k fall out of range inside sampling_probs; "
+            "checking it here names the field instead."
+        ),
+    )
+    top_p: float | None = Field(
+        None,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "Nucleus top-p filter for rollouts. None or >= 1.0 disables it (the "
+            "OpenAI convention sampling_probs documents). 0 or a negative value "
+            "makes the filter silently skip and draw from the full distribution, "
+            "which is why sampling_probs rejects it; rejecting it here names the "
+            "field."
+        ),
+    )
     normalize_advantages: bool = True
     normalize_rewards: bool = False
     policy_lr: float | None = Field(
