@@ -1465,3 +1465,73 @@ def _weight_displacement(*, gradient_clip_val: float) -> float:
     engine._run_epoch(0)
     delta = torch.cat([(p.detach() - b).flatten() for p, b in zip(engine.model.parameters(), before, strict=True)])
     return delta.norm().item()
+
+
+class TestNodeTopology:
+    """``num_nodes`` / ``node_rank`` must describe a runnable topology.
+
+    Both fields were unconstrained. Two silent failures followed:
+
+    * ``num_nodes <= 0`` was coerced to 1 by ``DistributedManager.get_world_size``
+      (``num_nodes if num_nodes > 0 else 1``), so a config claiming 0 nodes
+      trained as a single node with nothing in the logs.
+    * ``node_rank`` outside ``[0, num_nodes)`` produced out-of-range global
+      ranks via ``node_rank * local_world_size + local_rank``. Measured with
+      ``num_nodes=2, gpus_per_node=4``: ``node_rank=2`` gave global ranks
+      ``[8..11]`` against ``world_size=8``, and ``node_rank=-1`` gave
+      ``[-4..-1]``. ``init_process_group`` does not reject those eagerly — it
+      blocks waiting for peers that were never meant to exist, so the symptom is
+      a hang rather than a traceback.
+    """
+
+    @pytest.mark.parametrize("bad", [0, -1, -8])
+    def test_num_nodes_must_be_positive(self, bad: int):
+        from llm.training.core.config import DistributedConfig
+
+        with pytest.raises(ValidationError, match="num_nodes"):
+            DistributedConfig(num_nodes=bad)
+
+    @pytest.mark.parametrize("good", [1, 2, 16])
+    def test_num_nodes_accepts_positive_values(self, good: int):
+        from llm.training.core.config import DistributedConfig
+
+        assert DistributedConfig(num_nodes=good).num_nodes == good
+
+    def test_negative_node_rank_is_rejected(self):
+        from llm.training.core.config import DistributedConfig
+
+        with pytest.raises(ValidationError, match="node_rank"):
+            DistributedConfig(num_nodes=4, node_rank=-1)
+
+    @pytest.mark.parametrize(("num_nodes", "node_rank"), [(2, 2), (1, 3), (4, 4), (4, 9)])
+    def test_node_rank_past_the_last_node_is_rejected(self, num_nodes: int, node_rank: int):
+        """The upper bound is ``num_nodes``, so it needs the cross-field check."""
+        from llm.training.core.config import DistributedConfig
+
+        with pytest.raises(ValidationError, match="outside the run"):
+            DistributedConfig(num_nodes=num_nodes, node_rank=node_rank)
+
+    @pytest.mark.parametrize(("num_nodes", "node_rank"), [(1, 0), (2, 0), (2, 1), (8, 7)])
+    def test_in_range_topologies_still_load(self, num_nodes: int, node_rank: int):
+        """Counterpart: every real multi-node topology must keep working."""
+        from llm.training.core.config import DistributedConfig
+
+        config = DistributedConfig(num_nodes=num_nodes, node_rank=node_rank)
+        assert (config.num_nodes, config.node_rank) == (num_nodes, node_rank)
+
+    def test_the_rejected_ranks_are_the_ones_that_used_to_hang(self):
+        """Records the mechanism, so the constraint's reason stays checkable.
+
+        A node_rank one past the last node is off the end of ``world_size`` for
+        every one of its local workers — the precise condition that leaves a
+        process group waiting for a peer schedule that includes nobody.
+        """
+        from llm.training.train import _global_rank
+
+        local_world_size = 4
+        world_size = 2 * local_world_size
+        in_range = [_global_rank(1, local, local_world_size) for local in range(local_world_size)]
+        out_of_range = [_global_rank(2, local, local_world_size) for local in range(local_world_size)]
+
+        assert all(0 <= rank < world_size for rank in in_range), in_range
+        assert not any(0 <= rank < world_size for rank in out_of_range), out_of_range

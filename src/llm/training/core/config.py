@@ -586,9 +586,28 @@ class DistributedConfig(BaseSettings):
 
     master_addr: str = "127.0.0.1"
     master_port: str = "12355"
-    num_nodes: int = 1
+    num_nodes: int = Field(
+        1,
+        ge=1,
+        description=(
+            "Total number of nodes in the run. Must be >= 1: "
+            "``get_world_size`` silently coerced 0 and the negatives to 1, so a "
+            "config claiming 0 nodes trained as a single node with nothing said."
+        ),
+    )
     gpus_per_node: int | None = None  # Lazy init
-    node_rank: int = 0
+    node_rank: int = Field(
+        0,
+        ge=0,
+        description=(
+            "This node's index in the run, in ``[0, num_nodes)``. A negative value "
+            "makes ``node_rank * local_world_size + local_rank`` negative, and a "
+            "value >= num_nodes puts every worker past ``world_size - 1``; either "
+            "way ``init_process_group`` hangs on a rendezvous that can never "
+            "complete instead of failing. The upper bound depends on "
+            "``num_nodes``, so it is checked in the model validator below."
+        ),
+    )
     backend: str = "nccl"
     parallel_strategy: str = Field(
         "ddp",
@@ -778,6 +797,26 @@ class DistributedConfig(BaseSettings):
                 sorted(strategies),
                 self.parallel_strategy,
                 size_field,
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_node_rank_within_the_run(self) -> DistributedConfig:
+        """``node_rank`` must be one of the run's nodes.
+
+        The global rank is ``node_rank * local_world_size + local_rank``, so a
+        ``node_rank >= num_nodes`` puts every worker past ``world_size - 1`` and
+        ``init_process_group`` waits forever for peers that were never meant to
+        exist. Checked here rather than as a ``Field`` bound because the limit is
+        ``num_nodes``, not a constant.
+        """
+        if self.node_rank >= self.num_nodes:
+            raise ValueError(
+                f"distributed.node_rank={self.node_rank} is outside the run: "
+                f"num_nodes={self.num_nodes}, so valid ranks are 0..{self.num_nodes - 1}. "
+                "The global rank is node_rank * gpus_per_node + local_rank, so an "
+                "out-of-range value makes every worker wait on a rendezvous that "
+                "never completes."
             )
         return self
 
