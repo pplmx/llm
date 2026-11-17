@@ -1059,6 +1059,18 @@ class PPOConfig(BaseModel):
                 "KL reference is never re-synced to the policy. Remove the "
                 "override or keep the default 0."
             )
+        # ``get_batches`` slices with ``range(0, n, mini_batch_size)``, so zero
+        # raises ``ValueError: range() arg 3 must not be zero`` from inside the
+        # buffer — a message that names neither the field nor the config. A
+        # negative value silently yields nothing, which reads as "PPO ran and
+        # did not improve". Neither is a usable setting.
+        if self.mini_batch_size <= 0:
+            raise ValueError(
+                f"PPOConfig.mini_batch_size must be > 0; got {self.mini_batch_size}. "
+                "The rollout buffer slices samples with this stride, so 0 raises a bare "
+                "'range() arg 3 must not be zero' and a negative value yields no batches "
+                "at all."
+            )
         # A non-positive response budget stops the rollout loop before it emits
         # a single token, so every sample carries an EMPTY response. The batch
         # mask then has no set bit anywhere and the clipped objective evaluates

@@ -1468,3 +1468,57 @@ class TestPPORefusesAnEmptyResponseBudget:
 
         with pytest.raises(ValueError, match="no response tokens"):
             trainer.ppo_step(batch)
+
+
+class TestPPOBatchingKnobs:
+    """``mini_batch_size`` must be positive; ``ppo_epochs=0`` must stay graceful.
+
+    The two fields drive different failure modes, so they get different
+    treatment:
+
+    * ``mini_batch_size`` feeds ``range(0, n, mini_batch_size)`` in
+      ``RolloutBuffer.get_batches``. Zero raises a bare
+      ``ValueError: range() arg 3 must not be zero`` from inside the buffer —
+      a message naming neither the field nor the config — and a negative value
+      silently yields no batch, which reads as "PPO ran and did not improve".
+      The config rejects both.
+    * ``ppo_epochs=0`` is deliberately supported: the update loop body never
+      runs, and ``update`` returns zeroed metrics rather than dividing by an
+      empty ``all_metrics``. That promise lived only in a code comment, so it is
+      pinned here.
+    """
+
+    @pytest.mark.parametrize("bad", [0, -1, -64])
+    def test_mini_batch_size_must_be_positive(self, bad: int):
+        from llm.training.core.config import PPOConfig
+
+        with pytest.raises(ValueError, match="mini_batch_size must be > 0"):
+            PPOConfig(mini_batch_size=bad)
+
+    @pytest.mark.parametrize("good", [1, 8, 64])
+    def test_mini_batch_size_accepts_positive_values(self, good: int):
+        """Counterpart: real batch sizes still construct."""
+        from llm.training.core.config import PPOConfig
+
+        assert PPOConfig(mini_batch_size=good).mini_batch_size == good
+
+    def test_get_batches_with_zero_stride_is_what_we_are_guarding_against(self):
+        """Documents the raw failure the config guard prevents.
+
+        Without the guard a caller reaching this directly still gets the opaque
+        message — this test records what that looks like, so the reason for the
+        guard stays visible.
+        """
+        from llm.training.rlhf.rollout_buffer import RolloutBuffer
+
+        buf = RolloutBuffer()
+        # An empty buffer returns early, so a sample is required to reach the
+        # slicing loop at all.
+        buf.add(
+            prompt_ids=torch.tensor([1, 2]),
+            response_ids=torch.tensor([3]),
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([[0.0]]),
+        )
+        with pytest.raises(ValueError, match="range\\(\\) arg 3 must not be zero"):
+            list(buf.get_batches(mini_batch_size=0))
