@@ -377,6 +377,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Ran a flakiness check — two complete CPU-suite runs compared test-by-test, zero differences** (testing). `test-fast` was executed twice against a JUnit report and the per-test outcomes keyed by `classname::name` were diffed: **4823 tests both times, 0 failures, 0 outcome changes**, so no test in the gate is order- or timing-dependent at this scale. Every random source was also audited: the global autouse fixture seeds torch (`torch.manual_seed(42)` around each test), and the three files that draw randomness without relying on it all create explicitly seeded generators — `np.random.default_rng(42)` / `default_rng(0)` / `random.Random(7)` / `random.Random(1234)` — so nothing reads an unseeded global stream. One earlier run in this investigation DID report a failure (`TestShippedConfigsCanActuallyStart::test_every_runnable_shipped_config_names_a_text_source_it_can_resolve`), which is the known `CUDA_VISIBLE_DEVICES=""` artifact documented in this repo's notes, not flakiness; re-running with the normal environment gave 0 failures. **No product defect and no code change.**
 
+
+- **Ran `just test-doc`, the last gate this session had not executed — it passes** (testing): `pytest --doctest-modules src/llm/` = **4 passed, 2 skipped**, the skips being examples that carry pytest's `+SKIP` marker. The low count is not a coverage hole: the source has 24 `>>>` lines but they cluster into a handful of multi-line docstrings (one test per docstring), and the samples that exercise real APIs do run — `core/peft/registry.py` apply-and-count and `core/kv_cache.py`'s construction sample both pass when run directly. Every gate this repo defines has now been executed in this session and is green: `test-fast` (4803 passed), `test-heavy` (86), `test-e2e` (58), `test-gpu` (32), `test-doc` (4), plus `check` and `docs`. **No product defect and no code change.**
+
+### Added
+
 ### Added
 
 ### Added
