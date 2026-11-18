@@ -337,10 +337,11 @@ def _reject_rope_models_for_generation_export(model: nn.Module) -> None:
         if attention is not None and getattr(attention, "use_rope", False):
             raise ValueError(
                 "export_decoder_for_generation does not support RoPE models yet: "
-                f"layer {layer_index} uses rotary position embedding, and the traced decode "
-                "graph freezes `has_past` from a Python comparison, which corrupts the "
-                "attention reshape. Export a non-RoPE model, or use export_to_onnx (single "
-                "graph) for the forward pass."
+                f"layer {layer_index} uses rotary position embedding. The traced decode graph "
+                "is correct for the FIRST step and drifts on later ones (measured: step 1 "
+                "matches eager to 2.4e-07, step 2 to 7.8e-03), because the absolute position "
+                "is derived from the cache length inside the traced model. Export a non-RoPE "
+                "model, or use export_to_onnx (single graph) for a forward pass."
             )
 
 

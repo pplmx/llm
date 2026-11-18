@@ -142,6 +142,21 @@ class MultiHeadAttention(nn.Module):
         if start_pos is None:
             return None
         if isinstance(start_pos, Tensor):
+            # A 0-d tensor is a SCALAR start position, not a per-row
+            # ``position_ids`` grid. ONNX/TorchScript tracing converts the
+            # Python int that the decode path passes into a 0-d tensor, and
+            # returning it unchanged made RoPE index its cos/sin table with a
+            # scalar: the result lost the sequence axis, ``unsqueeze(1)`` then
+            # built ``[dim, 1]`` instead of ``[1, seq, dim]``, and the broadcast
+            # produced a ``[B, H, dim, dim]`` tensor — the reshape later failed
+            # with `shape '[1, 1, 32]' is invalid for input of size 512`.
+            # Measured: with a scalar position RoPE returned [1, 2, 16, 16] for
+            # a [1, 2, 1, 16] query.
+            if start_pos.ndim == 0:
+                base = int(start_pos.item())
+                if base == 0:
+                    return None
+                return torch.arange(base, base + seq_len, device=device, dtype=torch.long).expand(batch_size, -1)
             # The batch-serving path threads a ``[B, S]`` ``position_ids``
             # tensor through as ``start_pos`` — return it unchanged. The
             # ``== 0`` early-return below is int-only; evaluating it on a

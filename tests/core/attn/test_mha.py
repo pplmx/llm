@@ -723,3 +723,64 @@ class TestCausalMaskingIsReal:
                 f"perturbing position {perturbed} affected only {affected} — "
                 "non-causal attention should propagate to every position"
             )
+
+
+def test_mha_rope_accepts_a_zero_dim_start_pos_tensor():
+    """A 0-d ``start_pos`` tensor must behave exactly like the equivalent int.
+
+    TorchScript / ONNX tracing converts the Python int the decode path passes
+    into a 0-d tensor. ``_rope_positions`` returned it unchanged (its tensor
+    branch assumed a ``[B, S]`` grid), so RoPE indexed its cos/sin table with a
+    SCALAR, lost the sequence axis, and ``unsqueeze(1)`` built ``[dim, 1]``
+    instead of ``[1, seq, dim]``. The broadcast then produced a
+    ``[B, H, dim, dim]`` tensor — measured ``[1, 2, 16, 16]`` for a
+    ``[1, 2, 1, 16]`` query — and the caller failed with
+    ``shape '[1, 1, 32]' is invalid for input of size 512``.
+
+    The 2-D case already had a test; the SCALAR one is what tracing produces,
+    and it was the shape that broke ONNX export of every RoPE model.
+    """
+    torch.manual_seed(0)
+    mha = MultiHeadAttention(
+        hidden_size=32,
+        num_heads=2,
+        p=0.0,
+        include_norm_residual=False,
+        is_causal=False,
+        max_seq_len=64,
+        use_rope=True,
+    ).eval()
+    x = torch.randn(1, 1, 32)
+
+    with torch.no_grad():
+        from_int = mha(x, start_pos=5)
+        from_scalar_tensor = mha(x, start_pos=torch.tensor(5))
+
+    assert from_scalar_tensor.shape == from_int.shape == (1, 1, 32), (
+        f"a 0-d start_pos gave shape {tuple(from_scalar_tensor.shape)}, expected "
+        f"{tuple(from_int.shape)}; the scalar was treated as a position GRID"
+    )
+    assert torch.allclose(from_scalar_tensor, from_int, atol=1e-6), (
+        "the 0-d tensor and the int start_pos produced different outputs"
+    )
+
+
+def test_mha_rope_treats_a_zero_dim_zero_as_positions_from_the_start():
+    """``tensor(0)`` must take the same path as ``0`` (the no-positions default)."""
+    torch.manual_seed(0)
+    mha = MultiHeadAttention(
+        hidden_size=32,
+        num_heads=2,
+        p=0.0,
+        include_norm_residual=False,
+        is_causal=False,
+        max_seq_len=64,
+        use_rope=True,
+    ).eval()
+    x = torch.randn(1, 4, 32)
+
+    with torch.no_grad():
+        from_int = mha(x, start_pos=0)
+        from_scalar_tensor = mha(x, start_pos=torch.tensor(0))
+
+    assert torch.allclose(from_scalar_tensor, from_int, atol=1e-6)
