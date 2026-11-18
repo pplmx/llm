@@ -112,8 +112,26 @@ def _interleave_blocks(scales: np.ndarray, data: np.ndarray) -> bytes:
 
 
 def _encode_payload(arr: np.ndarray, ttype: GGMLQuantizationType) -> bytes:
-    """Serialize a flat float32 array into the GGUF payload for ``ttype``."""
+    """Serialize a flat float32 array into the GGUF payload for ``ttype``.
+
+    Non-finite values are REFUSED rather than written. A single NaN or Inf in a
+    float32 tensor used to travel one of three ways, all bad: Q4_K threw
+    ``cannot convert float NaN to integer`` (naming neither the tensor nor the
+    cause), Q5_K and Q2_K SILENTLY swallowed it, and F32/F16 wrote it straight
+    into the file. Measured on a block with one NaN: Q4_K returned a payload
+    whose 256 decoded values were ALL NaN — one bad weight poisoning a whole
+    block. A quantized export of a diverged checkpoint therefore either crashed
+    with an unrelated message or produced a file that loads and generates
+    garbage.
+    """
     flat = arr.reshape(-1)
+    if flat.size and not np.isfinite(flat).all():
+        nonfinite = int((~np.isfinite(flat)).sum())
+        raise GGUFError(
+            f"cannot export non-finite weights as {ttype.name}: {nonfinite} of {flat.size} "
+            "values are NaN or Inf. A diverged checkpoint has to be repaired before export — "
+            "quantizing it would either crash mid-block or silently poison every value in the block."
+        )
     if ttype == GGMLQuantizationType.F32:
         return flat.astype("<f4", copy=False).tobytes()
     if ttype == GGMLQuantizationType.F16:

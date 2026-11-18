@@ -358,3 +358,90 @@ def test_roundtrip_is_exact_across_architecture_variants(label, overrides, tmp_p
     assert torch.equal(expected, actual), (
         f"{label}: round trip was not bit-exact (max |d|={(expected - actual).abs().max():.2e})"
     )
+
+
+# --- non-finite weights must be REFUSED, not written ------------------------
+#
+# A diverged checkpoint carries NaN/Inf weights. Before the guard, one bad value
+# travelled one of three ways and all of them were wrong: Q4_K threw "cannot
+# convert float NaN to integer" (naming neither the tensor nor the cause), Q5_K
+# and Q2_K silently swallowed it, and F32/F16 wrote it straight into the file.
+# Measured on a block with a single NaN: Q4_K produced a payload whose 256
+# decoded values were ALL NaN.
+
+
+def test_a_nan_weight_is_refused_with_an_actionable_error():
+    """The error must name the tensor type and say what to do."""
+    import numpy as np
+    import pytest
+
+    from llm.export.gguf.spec import GGUFError
+    from llm.export.gguf.writer import _encode_payload
+
+    pytest.importorskip("gguf", reason="the gguf library supplies the type enum")
+    from gguf.constants import GGMLQuantizationType
+
+    data = np.ones(256, dtype=np.float32)
+    data[7] = np.nan
+
+    with pytest.raises(GGUFError) as excinfo:
+        _encode_payload(data, GGMLQuantizationType.Q4_K)
+
+    message = str(excinfo.value)
+    assert "Q4_K" in message, "the error should name the target type"
+    assert "non-finite" in message
+    assert "NaN" in message
+    assert "repair" in message.lower(), "the error should say what to do about it"
+
+
+def test_an_inf_weight_is_refused():
+    import numpy as np
+    import pytest
+
+    from llm.export.gguf.spec import GGUFError
+    from llm.export.gguf.writer import _encode_payload
+
+    pytest.importorskip("gguf", reason="the gguf library supplies the type enum")
+    from gguf.constants import GGMLQuantizationType
+
+    data = np.ones(256, dtype=np.float32)
+    data[0] = np.inf
+
+    with pytest.raises(GGUFError, match="non-finite"):
+        _encode_payload(data, GGMLQuantizationType.Q5_K)
+
+
+def test_the_guard_covers_the_unquantized_types_too():
+    """F32/F16 wrote NaN straight into the file, which is worse than a crash.
+
+    The file is valid, loads, and generates garbage — nothing in the pipeline
+    can tell the difference afterwards.
+    """
+    import numpy as np
+    import pytest
+
+    from llm.export.gguf.spec import GGUFError
+    from llm.export.gguf.writer import _encode_payload
+
+    pytest.importorskip("gguf", reason="the gguf library supplies the type enum")
+    from gguf.constants import GGMLQuantizationType
+
+    bad = np.array([np.nan, 1.0], dtype=np.float32)
+    for ttype in (GGMLQuantizationType.F32, GGMLQuantizationType.F16):
+        with pytest.raises(GGUFError, match="non-finite"):
+            _encode_payload(bad, ttype)
+
+
+def test_finite_weights_are_unaffected():
+    """The guard must not reject ordinary data, including zeros and negatives."""
+    import numpy as np
+
+    from llm.export.gguf.writer import _encode_payload
+
+    pytest.importorskip("gguf", reason="the gguf library supplies the type enum")
+    from gguf.constants import GGMLQuantizationType
+
+    rng = np.random.default_rng(0)
+    for ttype in (GGMLQuantizationType.F32, GGMLQuantizationType.F16, GGMLQuantizationType.Q4_K):
+        payload = _encode_payload(rng.standard_normal(256).astype(np.float32), ttype)
+        assert payload, f"{ttype.name} produced an empty payload"
