@@ -586,9 +586,20 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # DecoderModel default).
         "pos_encoding_learned": hf_config.get("pos_encoding_learned", False),
         # Normalization implementation so an RMSNorm-trained model round-trips
-        # with RMSNorm instead of silently rebuilding as LayerNorm. Our own publisher persists it; external checkpoints
-        # default to layer_norm (the DecoderModel default).
-        "norm_impl": hf_config.get("norm_impl", "layer_norm"),
+        # with RMSNorm instead of silently rebuilding as LayerNorm. Our own
+        # publisher persists the explicit flag.
+        #
+        # External checkpoints carry no ``norm_impl`` key, so the default has to
+        # be inferred from the config they DO carry: ``rms_norm_eps`` is the
+        # marker. Every family this loader supports (Llama / Mistral / Qwen /
+        # Mixtral) sets it and uses RMSNorm; a LayerNorm config has no such key.
+        # Defaulting to layer_norm regardless built a model whose norm layers
+        # carry a ``bias`` the checkpoint does not have — measured: loading a
+        # Llama config produced ``LayerNorm`` with ``norm1.bias`` /
+        # ``norm2.bias`` / ``final_norm.bias`` keys absent from the source, and
+        # the loader uses ``strict=False``, so those biases stayed at their
+        # random init and the model generated garbage with no error.
+        "norm_impl": hf_config.get("norm_impl", "rms_norm" if "rms_norm_eps" in hf_config else "layer_norm"),
         # Pre-LN vs post-LN block ordering. Our own publisher persists the
         # explicit flag so a post-LN model roundtrips as post-LN instead of
         # silently becoming the pre-LN default.

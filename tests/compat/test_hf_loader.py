@@ -1063,3 +1063,79 @@ class TestTheLoaderNeverExecutesRemoteCode:
         assert signature.parameters["trust_remote_code"].default is False, (
             "the safe default must stay False for signature compatibility"
         )
+
+
+# --- norm_impl must be inferred for EXTERNAL checkpoints -------------------
+#
+# External Llama / Mistral / Qwen / Mixtral configs carry no ``norm_impl`` key
+# (it is our own publisher's field) but ALL of them use RMSNorm and mark it with
+# ``rms_norm_eps``. Defaulting to layer_norm regardless built a model whose norm
+# layers carry a ``bias`` the checkpoint does not have; the loader uses
+# ``strict=False``, so those biases stayed at their random init and the model
+# generated garbage with no error at all.
+
+
+def test_an_external_llama_config_infers_rms_norm():
+    """``rms_norm_eps`` is the marker every supported family carries."""
+    from llm.compat.weight_mapping import get_config_mapping
+
+    config = get_config_mapping({"model_type": "llama", "rms_norm_eps": 1e-5})
+    assert config["norm_impl"] == "rms_norm", (
+        "an external Llama config was mapped to LayerNorm; the checkpoint has no norm bias, "
+        "so the model would load with random norm biases under strict=False"
+    )
+
+
+def test_a_config_without_rms_norm_eps_stays_layer_norm():
+    """A LayerNorm config has no ``rms_norm_eps`` and must not be switched."""
+    from llm.compat.weight_mapping import get_config_mapping
+
+    assert get_config_mapping({"model_type": "gpt2"})["norm_impl"] == "layer_norm"
+
+
+def test_an_explicit_norm_impl_wins_over_the_inference():
+    """Our own publisher persists the flag; it must not be overridden."""
+    from llm.compat.weight_mapping import get_config_mapping
+
+    config = get_config_mapping({"model_type": "llama", "rms_norm_eps": 1e-5, "norm_impl": "layer_norm"})
+    assert config["norm_impl"] == "layer_norm"
+
+
+def test_the_inferred_config_builds_the_matching_norm_layers():
+    """The consequence the inference exists for, checked on a real model.
+
+    An RMSNorm model and a LayerNorm model do NOT have the same state_dict keys:
+    LayerNorm adds a ``bias`` per norm. Loading an external checkpoint into the
+    wrong one leaves those biases at random init.
+    """
+    from llm.compat.weight_mapping import get_config_mapping
+    from llm.runtime.bootstrap import ensure_builtins_registered
+    from llm.runtime.model_factory import ModelFactory
+    from llm.training.core.config import ModelConfig
+
+    ensure_builtins_registered()
+    hf = {
+        "model_type": "llama",
+        "vocab_size": 64,
+        "hidden_size": 32,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 2,
+        "intermediate_size": 64,
+        "max_position_embeddings": 64,
+        "rms_norm_eps": 1e-6,
+        "hidden_act": "silu",
+    }
+    mapped = get_config_mapping(hf)
+    fields = {key: value for key, value in mapped.items() if key in ModelConfig.model_fields}
+
+    inferred = ModelFactory.from_config(ModelConfig(**fields))
+    explicit = ModelFactory.from_config(ModelConfig(**{**fields, "norm_impl": "rms_norm"}))
+
+    assert type(inferred.transformer_blocks[0].norm1).__name__ == "RMSNorm"
+    assert set(inferred.state_dict()) == set(explicit.state_dict()), (
+        "the inferred config built a different parameter set than an explicit rms_norm one"
+    )
+    assert not any(key.endswith("norm1.bias") for key in inferred.state_dict()), (
+        "the built model has norm biases an RMSNorm checkpoint cannot supply"
+    )
