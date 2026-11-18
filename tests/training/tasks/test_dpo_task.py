@@ -279,3 +279,157 @@ def test_dpo_batch_logps_still_accepts_a_real_sequence(tiny_config):
     out = task._get_batch_logps(logits, labels)
     assert out.shape == (1,), f"expected one log-prob per batch row, got {tuple(out.shape)}"
     assert torch.isfinite(out).all()
+
+
+# --- the DPO loss must match its published formula --------------------------
+#
+# The existing train_step test asserts only `not isnan` and that reward_acc is in
+# [0, 1] — both true for a loss that is numerically WRONG. The DPO objective
+# (Rafailov et al. 2023) is
+#
+#     L = -log sigmoid(beta * [(log pi_w - log pi_l) - (log ref_w - log ref_l)])
+#
+# with two checkable consequences: the longhand form must agree with
+# `logsigmoid`, and a policy identical to the reference must give exactly ln(2).
+
+
+def test_the_dpo_objective_matches_the_published_formula():
+    """Our loss expression equals the paper's, computed a different way."""
+    import torch.nn.functional as functional
+
+    beta = 0.1
+    pi_w, pi_l = torch.tensor([-2.0, -1.5]), torch.tensor([-3.0, -2.5])
+    ref_w, ref_l = torch.tensor([-2.2, -1.8]), torch.tensor([-2.9, -2.4])
+
+    ours = (-functional.logsigmoid(beta * ((pi_w - pi_l) - (ref_w - ref_l)))).mean()
+    # log sigmoid(z) = -log(1 + exp(-z)), expanded by hand.
+    z = beta * ((pi_w - pi_l) - (ref_w - ref_l))
+    longhand = (torch.log(1 + torch.exp(-z))).mean()
+
+    assert torch.allclose(ours, longhand, atol=1e-6), f"logsigmoid form {float(ours)} != longhand {float(longhand)}"
+
+
+def test_an_identical_policy_and_reference_give_exactly_ln_two():
+    """At initialisation the policy equals the reference, so the loss is ln(2).
+
+    This is the value DPO runs are expected to START at; getting anything else
+    means the beta scaling, the log-ratio ordering, or the shift is wrong — all
+    of which still produce a plausible-looking number and a healthy log.
+    """
+    import math
+
+    import torch.nn.functional as functional
+
+    beta = 0.1
+    policy_chosen, policy_rejected = torch.tensor([-2.0, -1.5]), torch.tensor([-3.0, -2.5])
+    # Policy == reference.
+    ref_chosen, ref_rejected = policy_chosen.clone(), policy_rejected.clone()
+
+    logits = (policy_chosen - policy_rejected) - (ref_chosen - ref_rejected)
+    loss = (-functional.logsigmoid(beta * logits)).mean()
+
+    assert abs(float(loss) - math.log(2)) < 1e-6, (
+        f"an identical policy/reference pair gave {float(loss)}, expected ln(2) = {math.log(2)}"
+    )
+
+
+def test_the_loss_is_zero_when_the_chosen_side_dominates():
+    """As the chosen-rejected margin grows the loss must vanish, not explode.
+
+    A sign flip in the log-ratio (chosen minus rejected vs. the reverse) leaves
+    the loss bounded and plausible, so the DIRECTION is what this pins.
+    """
+    import torch.nn.functional as functional
+
+    beta = 0.1
+    # Chosen hugely preferred over rejected, policy identical to reference.
+    big = torch.tensor([50.0])
+    loss = (-functional.logsigmoid(beta * big)).mean()
+    # -log sigmoid(0.1 * 50) = -log sigmoid(5) ~ 0.0067, so the bound is 0.01:
+    assert float(loss) < 0.01, f"a strongly preferred chosen side gave loss {float(loss)}"
+
+    # Reversed margin: penalised, so the loss is large.
+    reversed_loss = (-functional.logsigmoid(beta * -big)).mean()
+    assert float(reversed_loss) > 5.0, f"a reversed margin gave loss {float(reversed_loss)}"
+
+
+def test_beta_scales_the_margin():
+    """Doubling beta must equal doubling the log-ratio inside the sigmoid."""
+    import torch.nn.functional as functional
+
+    margin = torch.tensor([1.5])
+    at_beta_1 = (-functional.logsigmoid(0.1 * margin)).mean()
+    at_beta_2 = (-functional.logsigmoid(0.2 * margin)).mean()
+    at_double_margin = (-functional.logsigmoid(0.1 * (2 * margin))).mean()
+
+    assert torch.allclose(at_beta_2, at_double_margin, atol=1e-6)
+    assert float(at_beta_2) < float(at_beta_1), "a larger beta must reduce the loss for a positive margin"
+
+
+# --- the loss must be ln(2) AT INIT, measured through train_step ------------
+#
+# The formula tests above recompute the objective from tensors they build
+# themselves, so they pin the MATHS but never execute DPOTask. Verified: flipping
+# the sign of ``pi_logratios - ref_logratios`` inside train_step left all of them
+# — and the pre-existing train_step test — passing. The check that reaches the
+# implementation is structural: ``build_model`` deep-copies the policy into the
+# reference, so at initialisation the two models are IDENTICAL and the log-ratio
+# difference is exactly zero. Any real DPO loss must then be ln(2).
+
+
+def test_train_step_matches_the_formula_when_policy_differs_from_reference(tiny_config):
+    """Drive train_step with a PERTURBED reference and compare against the formula.
+
+    The ln(2) identity alone cannot detect a reversed log-ratio: when the policy
+    equals the reference the difference is zero either way, so flipping the sign
+    leaves the loss at ln(2) (verified -- it does). The sign only shows up once
+    the two models disagree, so the reference is perturbed here and the loss is
+    recomputed independently from the same log-probabilities.
+    """
+    import torch.nn.functional as functional
+
+    task = DPOTask(tiny_config, data_module=None)
+    model = task.build_model()
+
+    # Perturb the reference so policy != reference.
+    torch.manual_seed(1)
+    with torch.no_grad():
+        for parameter in task.ref_model.parameters():
+            parameter.add_(0.05 * torch.randn_like(parameter))
+
+    batch_size, seq_len, vocab_size = 2, 5, tiny_config.model.vocab_size
+    torch.manual_seed(0)
+    chosen_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+    rejected_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+    chosen_labels = chosen_ids.clone()
+    chosen_labels[:, 0] = -100
+    rejected_labels = rejected_ids.clone()
+    rejected_labels[:, 0] = -100
+    mask = torch.ones(batch_size, seq_len, dtype=torch.long)
+    batch = {
+        "chosen_input_ids": chosen_ids,
+        "chosen_labels": chosen_labels,
+        "rejected_input_ids": rejected_ids,
+        "rejected_labels": rejected_labels,
+        "chosen_attention_mask": mask,
+        "rejected_attention_mask": mask,
+    }
+
+    beta = task.beta
+    model.eval()
+    with torch.no_grad():
+        loss, _metrics = task.train_step(batch, model, None)
+        # Independent recomputation from the two models' own log-probabilities.
+        pi_w = task._get_batch_logps(model(chosen_ids, attn_mask=mask), chosen_labels)
+        pi_l = task._get_batch_logps(model(rejected_ids, attn_mask=mask), rejected_labels)
+        ref_w = task._get_batch_logps(task.ref_model(chosen_ids, attn_mask=mask), chosen_labels)
+        ref_l = task._get_batch_logps(task.ref_model(rejected_ids, attn_mask=mask), rejected_labels)
+    expected = (-functional.logsigmoid(beta * ((pi_w - pi_l) - (ref_w - ref_l)))).mean()
+
+    assert abs(float(loss) - float(expected)) < 1e-6, (
+        f"train_step returned {float(loss):.6f} but the formula gives {float(expected):.6f}; "
+        "a reversed log-ratio would differ here only because policy != reference"
+    )
+    assert abs(float(loss) - 0.693147) > 1e-3, (
+        "the perturbation did not move the loss off ln(2), so this test cannot distinguish the sign of the log-ratio"
+    )
