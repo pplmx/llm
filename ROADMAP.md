@@ -309,8 +309,10 @@
 - [x] 在 MHA 和 GQA 中启用 Flash Attention (GQA/MQA 经 `num_kv_heads` 支持；与 MHA 同一套
       projection/KV-cache 接口，`tests/training/distributed/test_tensor_parallel.py` 覆盖 TP 下的
       flash 前向/梯度 parity)
-- [ ] 性能基准测试和优化 (`scripts/benchmark_inference.py` 已支持 `--attn-impl`，可对同一 serving
-      引擎逐实现测量；实测小模型下 `mha` 569-585 tokens/s vs `mla` 416-460 tokens/s。仍缺
+- [ ] 性能基准测试和优化 (`scripts/benchmark_inference.py` 的 `--attn-impl` **可重复传入**，一次运行
+      即在同一 prompt / token 预算下测量多个实现并打印对比表：逐实现延迟、tok/s、相对瓶颈项的
+      speedup 与延迟比，不可用的后端（如未安装的 `flash_attn`）记为 SKIPPED 而不中断整轮对比；
+      实测小模型下 `mha` 569-585 tokens/s vs `mla` 416-460 tokens/s。仍缺
       `flash_attn` 一路——本机装不了（`FLASH_ATTN_AVAILABLE is False`），三路对比需要在有 CUDA
       工具链的主机上建包后补完。延迟分位数**已补齐**（P50/P95/P99 + 最慢一轮的 TPS，使用
       nearest-rank 保证报告值是实际观测到的延迟；`statistics.quantiles` 会插值出超出样本范围的

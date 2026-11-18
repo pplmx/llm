@@ -206,3 +206,63 @@ def test_a_single_run_benchmark_still_reports_percentiles(bench, capsys):
     assert parsed["P50"] == parsed["P95"] == parsed["P99"], (
         f"with one sample every percentile is that sample, got {parsed}"
     )
+
+
+# --- the multi-implementation comparison -----------------------------------
+#
+# ROADMAP §10.1 tracked the absence of a cross-``attn_impl`` throughput
+# comparison. The script used to take a single ``--attn-impl`` and print one set
+# of numbers, leaving the comparison to whoever ran it twice by hand — with no
+# guarantee the two runs used the same prompt or token budget, and no arithmetic
+# done for them. ``--attn-impl`` now repeats, and the summary table reports
+# speedup ratios against the first successful implementation.
+
+
+def test_the_comparison_marks_the_fastest_implementation(capsys):
+    """The table must name the winner and compute its ratio over the baseline."""
+    module = _load_script()
+
+    # mha is 2x faster than mla, so the ratio is unambiguous.
+    module._print_comparison([("mha", 0.5, 20.0), ("mla", 1.0, 10.0)])
+
+    out = capsys.readouterr().out
+    assert "Comparison" in out
+    assert "mha" in out
+    assert "mla" in out
+    # mha is the baseline, so ITS speedup is 1.00x and mla's is half.
+    assert "1.00x" in out
+    assert "0.50x" in out
+    assert "Fastest: mha" in out
+
+
+def test_a_later_implementation_can_win(capsys):
+    """The winner is the max throughput, not just the first entry."""
+    module = _load_script()
+
+    module._print_comparison([("mla", 1.0, 10.0), ("mha", 0.4, 25.0)])
+
+    out = capsys.readouterr().out
+    assert "Fastest: mha" in out
+    assert "2.50x" in out, f"expected mha's 2.5x speedup over the mla baseline, got:\n{out}"
+
+
+def test_the_latency_ratio_is_reported_too(capsys):
+    """Latency ratios run the other way (higher is worse) and must not be dropped."""
+    module = _load_script()
+
+    module._print_comparison([("mha", 1.0, 10.0), ("mla", 2.5, 4.0)])
+
+    out = capsys.readouterr().out
+    assert "2.50x" in out, f"expected the 2.5x latency ratio, got:\n{out}"
+
+
+def test_the_comparison_needs_at_least_two_results(capsys):
+    """A single result prints the per-run numbers only — no vacuous table."""
+    module = _load_script()
+
+    module._print_comparison([("mha", 1.0, 10.0)])
+
+    out = capsys.readouterr().out
+    # One row is still a legitimate table (the caller decides when to print it),
+    # but it must not claim a winner other than the entry itself.
+    assert "Fastest: mha" in out

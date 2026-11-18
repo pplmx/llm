@@ -118,30 +118,79 @@ def main(
     runs: int = typer.Option(5, help="Number of benchmark runs"),
     device: str = typer.Option("auto", help="Device to use"),
     compile: bool = typer.Option(False, help="Enable torch.compile (if supported in engine)"),
-    attn_impl: str = typer.Option(
-        "mha",
+    attn_impl: list[str] = typer.Option(
+        ["mha"],
         help=(
-            "Attention implementation to benchmark (a key of ATTENTION_REGISTRY: "
-            "mha / mla / flash_attn when installed). Run the command once per "
-            "implementation to compare; ROADMAP §10.1 tracked the absence of exactly "
-            "this comparison."
+            "Attention implementation(s) to benchmark (keys of ATTENTION_REGISTRY: "
+            "mha / mla / flash_attn when installed). Repeat the flag to compare "
+            "several in one run, e.g. --attn-impl mha --attn-impl mla: the script "
+            "then prints a side-by-side table with relative throughput and latency. "
+            "Skipping the repetition and comparing the printed numbers by hand was "
+            "ROADMAP §10.1's gap."
         ),
     ),
 ):
     """
     LLM Inference Benchmark.
+
+    With more than one ``--attn-impl`` the implementations are benchmarked in
+    sequence on the SAME prompt / token budget, so the numbers are directly
+    comparable, and a summary table is printed at the end.
     """
-    config = ServingConfig(device=device, attn_impl=attn_impl)
-    config.compile_model = compile
+    results: list[tuple[str, float, float]] = []
 
-    model, tokenizer = load_model_and_tokenizer(config)
-    engine = ContinuousBatchingEngine.from_serving_config(config, model, tokenizer)
+    for impl in attn_impl:
+        config = ServingConfig(device=device, attn_impl=impl)
+        config.compile_model = compile
 
-    print(f"Attention impl: {attn_impl}")
-    try:
-        run_benchmark(engine, tokenizer, prompt, max_new_tokens, runs)
-    finally:
-        engine.unload_model()
+        try:
+            model, tokenizer = load_model_and_tokenizer(config)
+        except Exception as exc:  # noqa: BLE001 - a missing backend must not abort the comparison
+            # flash_attn is an optional CUDA-only install; the point of a
+            # comparison run is to report what is available, not to fail because
+            # one requested backend is absent.
+            print(f"\n=== {impl}: SKIPPED ({type(exc).__name__}: {exc}) ===")
+            continue
+
+        engine = ContinuousBatchingEngine.from_serving_config(config, model, tokenizer)
+        print(f"\n=== Attention impl: {impl} ===")
+        try:
+            avg_latency, avg_tps = run_benchmark(engine, tokenizer, prompt, max_new_tokens, runs)
+        finally:
+            engine.unload_model()
+        results.append((impl, avg_latency, avg_tps))
+
+    if len(results) > 1:
+        _print_comparison(results)
+    elif not results:
+        raise typer.Exit(code=1)
+
+
+def _print_comparison(results: list[tuple[str, float, float]]) -> None:
+    """Print a side-by-side table, with the best values marked.
+
+    Relative columns are computed against the FIRST successful implementation,
+    so the table answers "how much faster is B than A" regardless of how many
+    entries there are. Ratios are printed rather than only raw numbers because
+    absolute tokens/s depends entirely on the host, while the ratio is the
+    reproducible part.
+    """
+    baseline_name, baseline_latency, baseline_tps = results[0]
+
+    print("\n--- Comparison ---")
+    header = f"{'impl':<12} {'avg latency':>12} {'avg tok/s':>10} {'speedup':>9} {'latency':>9}"
+    print(header)
+    print("-" * len(header))
+    for name, latency, tps in results:
+        speedup = tps / baseline_tps if baseline_tps else float("nan")
+        latency_ratio = latency / baseline_latency if baseline_latency else float("nan")
+        print(f"{name:<12} {latency:>11.4f}s {tps:>10.2f} {speedup:>8.2f}x {latency_ratio:>8.2f}x")
+
+    best = max(results, key=lambda row: row[2])
+    if best[0] != baseline_name:
+        print(f"\nFastest: {best[0]} ({best[2]:.2f} tok/s, {best[2] / baseline_tps:.2f}x {baseline_name})")
+    else:
+        print(f"\nFastest: {baseline_name} (the baseline)")
 
 
 if __name__ == "__main__":
